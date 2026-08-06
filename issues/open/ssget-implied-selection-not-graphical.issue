@@ -82,14 +82,31 @@ Requested semantics
    returns nil regardless of what was stored. This is the vendor
    behaviour and applications test it.
 
-Point 5 needs a decision I cannot make from the application side: on the
-vendors, the implied selection is **consumed** by the command that reads
-it — after a command completes, the pickfirst set is cleared. Whether
-MockHost should reproduce that, and at what boundary (there is no
-"command" in a headless eval), is a design question. Reproducing it would
-match the CADs; not reproducing it is simpler and is unlikely to bother
-any test. Worth deciding explicitly rather than by accident, and worth a
-vendor probe.
+5. The implied selection is **consumed** on read, as on the vendors: once
+   a command has taken it, the pickfirst set is cleared. **Decision (pjb):
+   reproduce the CAD behaviour.**
+
+   The simpler option — never clearing — was considered and rejected. It
+   would have been easier and would probably not have bothered any
+   existing test, but it would put clautolisp out of parity on a point
+   that applications rely on: code that reads `"_I"` twice must see the
+   set the second time only if something re-selected in between. Getting
+   that wrong is the kind of divergence that surfaces late, in an
+   application, rather than in a test.
+
+   The objection that a headless eval has no notion of "command" does not
+   hold: clautolisp already has one — see
+   `deferred-command-special-form.issue` (COMMAND special form, mock token
+   queue) and `deferred-document-lifecycle-command-semantics.issue`, which
+   is precisely about NEW/OPEN/SAVE/CLOSE versus the running routine. That
+   notion may well need refining as more behaviour is attached to it, and
+   refining it is the right response. Ignoring it is not — least of all
+   here, where command boundaries are exactly what the behaviour is
+   defined against.
+
+   A vendor probe is still wanted, to pin down *when* the clearing
+   happens: at command completion, at first read, or at the next
+   selection. Reproduce what the probe shows.
 
 Why it matters
 --------------
@@ -111,7 +128,10 @@ Suggested tests
 - `(sssetfirst nil js)` then `(ssget "_I")` returns the same membership.
 - `(ssget "_I" filtre)` filters that set, sharing the `"_X"` grammar tests.
 - `(setvar "PICKFIRST" 0)` then `(ssget "_I")` returns nil.
-- A vendor probe comparing the consume-on-read behaviour of point 5.
+- `(sssetfirst nil js)`, then two consecutive `(ssget "_I")`: the first
+  returns the set, the second nil — the consume-on-read of point 5.
+- A vendor probe pinning down the exact clearing boundary on BricsCAD and
+  AutoCAD, to be reproduced rather than approximated.
 
 Related
 -------
