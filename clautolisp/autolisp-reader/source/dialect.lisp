@@ -78,6 +78,9 @@
             (:constructor make-autolisp-dialect
                 (&key
                  (name :strict)
+                 (product nil)
+                 (platform nil)
+                 (version nil)
                  (token-mode :strict)
                  (extended-string-escapes-p nil)
                  (warn-on-integer-overflow-p nil)
@@ -89,6 +92,24 @@
                  (default-source-encoding :iso-8859-1)
                  (default-file-encoding   :iso-8859-1))))
   (name :strict :type keyword)
+  ;; The platform + version axis (dialect-platform-version-axis.issue).
+  ;; PRODUCT   — :autocad / :bricscad, or NIL for the vendor-neutral
+  ;;             profiles (:strict / :clautolisp / :lax).
+  ;; PLATFORM  — :windows / :macos / :linux, or NIL when the profile is
+  ;;             platform-independent (strict/clautolisp/lax). The vendor
+  ;;             dialects carry a concrete platform so builtins can gate
+  ;;             platform-specific portability diagnostics (e.g. the
+  ;;             `/...' subfolder-recursion warning that fires only on
+  ;;             AutoCAD-Windows).
+  ;; VERSION   — the product release as an integer (AutoCAD calendar year
+  ;;             2022/2026/2027…; BricsCAD major 25/26…), or NIL when the
+  ;;             profile is not tied to a specific release. When the CLI
+  ;;             names a bare product (`--dialect autocad'), VERSION is the
+  ;;             "latest known" for that product (see
+  ;;             *autolisp-dialect-latest-version*).
+  (product nil :type (or null keyword))
+  (platform nil :type (or null keyword))
+  (version nil :type (or null integer))
   (token-mode :strict :type keyword)
   (extended-string-escapes-p nil :type boolean)
   (warn-on-integer-overflow-p nil :type boolean)
@@ -115,6 +136,9 @@
 (defparameter *autolisp-dialect-autocad-2026*
   (make-autolisp-dialect
    :name :autocad-2026
+   :product :autocad
+   :platform :windows
+   :version 2026
    :token-mode :strict
    :extended-string-escapes-p nil
    :warn-on-integer-overflow-p t
@@ -137,6 +161,9 @@
   ;; finer 2022-vs-2026 behavioural divergence is a future refinement.
   (make-autolisp-dialect
    :name :autocad-2022
+   :product :autocad
+   :platform :windows
+   :version 2022
    :token-mode :strict
    :extended-string-escapes-p nil
    :warn-on-integer-overflow-p t
@@ -150,6 +177,9 @@
 (defparameter *autolisp-dialect-bricscad-v26*
   (make-autolisp-dialect
    :name :bricscad-v26
+   :product :bricscad
+   :platform :windows
+   :version 26
    :token-mode :lax
    :extended-string-escapes-p t
    :warn-on-integer-overflow-p t
@@ -167,6 +197,9 @@
   ;; and so a future V25-specific knob has a home.
   (make-autolisp-dialect
    :name :bricscad-v25
+   :product :bricscad
+   :platform :windows
+   :version 25
    :token-mode :lax
    :extended-string-escapes-p t
    :warn-on-integer-overflow-p t
@@ -243,12 +276,17 @@
   ;; first and lax always last (alfe-clautolisp-dialect.issue point 2).
   ;; An unversioned vendor name maps to the last known version.
   '(:strict
-    :autocad-2022 :autocad-2026 :autocad
-    :bricscad-v25 :bricscad-v26 :bricscad
+    :autocad-2022 :autocad-2026 :autocad :autocad-mac
+    :bricscad-v25 :bricscad-v26 :bricscad :bricscad-mac :bricscad-linux
     :clautolisp
     :lax)
   "Ordered list of selectable dialect-name keywords (strict first, lax
-last). Drives --list-dialects and validates --dialect.")
+last). Drives --list-dialects and validates --dialect. Beyond the
+enumerated entries the resolver also accepts derived platform+version
+spellings (dialect-platform-version-axis.issue): a product optionally
+suffixed with a platform (`-mac' / `-linux', windows being the default)
+and/or a version (`autocad-2027', `autocad-mac-2027',
+`bricscad-mac-v26'). See FIND-AUTOLISP-DIALECT.")
 
 (defun autolisp-dialect-name-string (keyword)
   "Render a dialect-name KEYWORD as its lower-case CLI string
@@ -259,13 +297,236 @@ last). Drives --list-dialects and validates --dialect.")
   "Return the ordered list of selectable dialect-name strings."
   (mapcar #'autolisp-dialect-name-string *autolisp-dialect-names*))
 
+;;;; ------------------------------------------------------------------
+;;;; Platform + version axis resolution (dialect-platform-version-axis).
+;;;;
+;;;; Beyond the enumerated named dialects, --dialect accepts DERIVED
+;;;; spellings built from a product, an optional platform facet and an
+;;;; optional version facet:
+;;;;
+;;;;   autocad              -> :autocad          windows, latest known
+;;;;   autocad-mac          -> :autocad-mac      macOS,   latest known
+;;;;   autocad-2022         -> :autocad-2022     windows, version 2022
+;;;;   autocad-mac-2027     -> :autocad-mac-2027 macOS,   version 2027
+;;;;   bricscad             -> :bricscad         windows, latest known
+;;;;   bricscad-mac         -> :bricscad-mac     macOS,   latest known
+;;;;   bricscad-linux       -> :bricscad-linux   linux,   latest known
+;;;;   bricscad-mac-v26     -> :bricscad-mac-v26 macOS,   version 26
+;;;;
+;;;; When the platform is omitted it defaults to :windows; when the
+;;;; version is omitted it resolves to the "latest known" for the
+;;;; product. Derived descriptors are built once and cached so repeated
+;;;; lookups return the SAME (EQ) object (dedup / identity keys rely on
+;;;; it). The enumerated named dialects (including the legacy
+;;;; :autocad-2026 / :bricscad-v26 keywords and the bare-product aliases)
+;;;; still resolve through *autolisp-named-dialects* first, unchanged.
+
+(defparameter *autolisp-dialect-latest-version*
+  '((:autocad . 2026) (:bricscad . 26))
+  "The `latest known' release per product, used when --dialect names a
+bare product (or a platform variant) without a version. Bump these as
+newer AutoCAD / BricsCAD releases are characterised. Kept at the values
+the enumerated aliases already resolve to so existing resolution does
+not shift.")
+
+(defun %product-base-dialect (product)
+  "The template descriptor whose behavioural knobs a derived PRODUCT
+dialect inherits (the latest-known windows descriptor for that product)."
+  (ecase product
+    (:autocad  *autolisp-dialect-autocad-2026*)
+    (:bricscad *autolisp-dialect-bricscad-v26*)))
+
+(defun %split-on-dash (string)
+  (loop with start = 0
+        for pos = (position #\- string :start start)
+        collect (subseq string start (or pos (length string)))
+        while pos do (setf start (1+ pos))))
+
+(defun %parse-product-version-token (product token)
+  "Parse TOKEN as a version for PRODUCT. Return the integer version, or
+NIL when TOKEN is not a version token for PRODUCT. AutoCAD versions are
+4-digit calendar years (2022, 2026, 2027…); BricsCAD versions are a
+`vNN' or bare-`NN' major number (v25, v26, 25, 26)."
+  (case product
+    (:autocad
+     (when (and (= (length token) 4)
+                (every #'digit-char-p token))
+       (parse-integer token)))
+    (:bricscad
+     (let ((digits (if (and (plusp (length token))
+                            (char-equal (char token 0) #\v))
+                       (subseq token 1)
+                       token)))
+       (when (and (plusp (length digits))
+                  (every #'digit-char-p digits))
+         (parse-integer digits))))))
+
+(defun %parse-dialect-spelling (name-string)
+  "Decompose NAME-STRING (case-insensitive) into (values PRODUCT PLATFORM
+VERSION EXPLICIT-VERSION-P) for a derived platform+version dialect
+spelling, or NIL when it is not such a spelling. PLATFORM defaults to
+:windows and VERSION to the product's latest known when the respective
+facet is absent."
+  (let* ((tokens (%split-on-dash (string-downcase name-string)))
+         (product (cond ((string= (first tokens) "autocad")  :autocad)
+                        ((string= (first tokens) "bricscad") :bricscad)
+                        (t nil))))
+    (when product
+      (let ((platform nil) (version nil) (explicit-version-p nil))
+        (dolist (token (rest tokens)
+                       (values product
+                               (or platform :windows)
+                               (or version (cdr (assoc product *autolisp-dialect-latest-version*)))
+                               explicit-version-p))
+          (cond
+            ((member token '("mac" "macos" "osx") :test #'string=)
+             (setf platform :macos))
+            ((member token '("windows" "win") :test #'string=)
+             (setf platform :windows))
+            ((string= token "linux")
+             (setf platform :linux))
+            (t (let ((v (%parse-product-version-token product token)))
+                 (if v
+                     (setf version v explicit-version-p t)
+                     ;; unknown token -> not a recognised spelling
+                     (return-from %parse-dialect-spelling nil))))))))))
+
+(defun %canonical-dialect-keyword (product platform version explicit-version-p)
+  "The canonical CLI keyword for a derived dialect: the product name,
+plus `-mac' / `-linux' when PLATFORM is not :windows, plus a version
+suffix when the version was given explicitly (`-2027' for AutoCAD,
+`-v26' for BricsCAD)."
+  (let ((prod (string-downcase (symbol-name product)))
+        (plat (case platform (:macos "-mac") (:linux "-linux") (t "")))
+        (ver  (cond ((not explicit-version-p) "")
+                    ((eq product :bricscad) (format nil "-v~D" version))
+                    (t (format nil "-~D" version)))))
+    (intern (string-upcase (concatenate 'string prod plat ver)) "KEYWORD")))
+
+(defparameter *synthesized-dialects* (make-hash-table :test #'eq)
+  "Cache of derived platform+version descriptors, keyed by canonical
+keyword, so repeated FIND-AUTOLISP-DIALECT calls return the same (EQ)
+object.")
+
+(defun %synthesize-dialect (product platform version explicit-version-p)
+  (let ((canonical (%canonical-dialect-keyword product platform version explicit-version-p)))
+    (or (gethash canonical *synthesized-dialects*)
+        (setf (gethash canonical *synthesized-dialects*)
+              (let ((d (copy-autolisp-dialect (%product-base-dialect product))))
+                (setf (autolisp-dialect-name d)     canonical
+                      (autolisp-dialect-product d)   product
+                      (autolisp-dialect-platform d)  platform
+                      (autolisp-dialect-version d)   version)
+                ;; Version-specific encoding: AutoCAD adopted UTF-8 as the
+                ;; AutoLISP default only in 2025+ (autolisp-spec ch.7); an
+                ;; earlier explicit year keeps the legacy single-byte
+                ;; default, mirroring the enumerated :autocad-2022.
+                (when (and (eq product :autocad) (integerp version) (< version 2025))
+                  (setf (autolisp-dialect-default-source-encoding d) :iso-8859-1
+                        (autolisp-dialect-default-file-encoding d)   :iso-8859-1))
+                d)))))
+
 (defun find-autolisp-dialect (name)
-  "Return the canonical dialect descriptor named NAME (a keyword,
-string, or unversioned alias), or nil."
-  (cdr (assoc (cond ((keywordp name) name)
-                    ((stringp name) (intern (string-upcase name) "KEYWORD"))
-                    (t (error "Invalid dialect name ~S." name)))
-              *autolisp-named-dialects*)))
+  "Return the dialect descriptor named NAME (a keyword, string, or
+unversioned alias), or nil. Enumerated named dialects (including the
+legacy :autocad-2026 / :bricscad-v26 keywords and the bare-product
+aliases) resolve directly; otherwise NAME is parsed as a derived
+platform+version spelling (dialect-platform-version-axis.issue):
+`autocad-mac', `autocad-2027', `autocad-mac-2027', `bricscad-linux',
+`bricscad-mac-v26', … Derived descriptors are cached (EQ-stable)."
+  (let ((kw (cond ((keywordp name) name)
+                  ((stringp name) (intern (string-upcase name) "KEYWORD"))
+                  (t (error "Invalid dialect name ~S." name)))))
+    (or (cdr (assoc kw *autolisp-named-dialects*))
+        (multiple-value-bind (product platform version explicit-version-p)
+            (%parse-dialect-spelling (symbol-name kw))
+          (when product
+            (%synthesize-dialect product platform version explicit-version-p))))))
+
+;;;; ------------------------------------------------------------------
+;;;; Feature / version matrix — SCAFFOLD (incremental).
+;;;;
+;;;; A data-driven table of which AutoLISP features / sysvars /
+;;;; behaviours exist (or differ) per product+platform+version, sourced
+;;;; incrementally by scanning each AutoCAD / BricsCAD release's
+;;;; reference docs and by CAD probes (probes/, `make probe' — see
+;;;; dialect-platform-version-axis.issue scope item 4). This is a large,
+;;;; incrementally-populated table; only a couple of SEED entries are
+;;;; provided here to fix the shape and exercise the lookup. DO NOT try
+;;;; to populate every feature at once — add rows as ground truth is
+;;;; established from docs/probes.
+;;;;
+;;;; Row shape: (FEATURE PRODUCT PLATFORM MIN-VERSION VALUE)
+;;;;   FEATURE      — a keyword naming the feature/behaviour/sysvar.
+;;;;   PRODUCT      — :autocad / :bricscad, or T for "any product".
+;;;;   PLATFORM     — :windows / :macos / :linux, or T for "any platform".
+;;;;   MIN-VERSION  — the earliest product version (integer) the VALUE
+;;;;                  holds for, or NIL for "any / from the beginning".
+;;;;   VALUE        — the feature's value/availability for that cell
+;;;;                  (commonly T = available / NIL = absent, but may be
+;;;;                  any datum, e.g. a default encoding keyword).
+;;;;
+;;;; Lookup: the MOST SPECIFIC matching row wins (a product/platform-
+;;;; specific row beats a T wildcard; among version-matching rows the
+;;;; highest MIN-VERSION <= the queried version wins).
+
+(defparameter *autolisp-feature-matrix*
+  '(;; UTF-8 became the AutoLISP default source/file encoding in
+    ;; AutoCAD 2025+ (autolisp-spec ch.7); earlier AutoCAD is legacy
+    ;; single-byte. BricsCAD V25/V26 are UTF-8 throughout.
+    (:default-utf8-encoding :autocad  t 2025 t)
+    (:default-utf8-encoding :autocad  t nil  nil)
+    (:default-utf8-encoding :bricscad t nil  t)
+    ;; The `/...' subfolder-recursion wildcard is accepted only with a
+    ;; back slash on AutoCAD-Windows; AutoCAD-mac also accepts the
+    ;; forward-slash spelling. (First platform-gated consumer; see
+    ;; EMIT-FORWARD-SLASH-ELLIPSIS-PORTABILITY-WARNING.)
+    (:forward-slash-ellipsis-ok :autocad :macos   nil t)
+    (:forward-slash-ellipsis-ok :autocad :windows nil nil))
+  "SEED feature/version matrix — see the block comment above for the row
+shape and the incremental-population contract. Query via
+DIALECT-FEATURE.")
+
+(defun %feature-row-matches-p (row feature product platform version)
+  (destructuring-bind (row-feature row-product row-platform row-min-version row-value) row
+    (declare (ignore row-value))
+    (and (eq row-feature feature)
+         (or (eq row-product t)  (eq row-product product))
+         (or (eq row-platform t) (eq row-platform platform))
+         (or (null row-min-version)
+             (and (integerp version) (>= version row-min-version))))))
+
+(defun %feature-row-specificity (row)
+  "A sortable specificity score: more concrete rows (named product /
+platform, higher MIN-VERSION) beat wildcard/older rows."
+  (destructuring-bind (feature product platform min-version value) row
+    (declare (ignore feature value))
+    (+ (if (eq product t) 0 100)
+       (if (eq platform t) 0 100)
+       (or min-version 0))))
+
+(defun dialect-feature (feature product platform version)
+  "Return (values VALUE FOUNDP) for FEATURE under PRODUCT/PLATFORM/VERSION
+from *AUTOLISP-FEATURE-MATRIX*, picking the MOST SPECIFIC matching row.
+FOUNDP is NIL (and VALUE NIL) when no row matches — the caller decides
+the default for an uncharacterised cell."
+  (let ((best nil) (best-score -1))
+    (dolist (row *autolisp-feature-matrix*)
+      (when (%feature-row-matches-p row feature product platform version)
+        (let ((score (%feature-row-specificity row)))
+          (when (> score best-score)
+            (setf best row best-score score)))))
+    (if best
+        (values (fifth best) t)
+        (values nil nil))))
+
+(defun dialect-feature-for (dialect feature)
+  "DIALECT-FEATURE keyed off a DIALECT descriptor's product/platform/
+version facets."
+  (dialect-feature feature
+                   (autolisp-dialect-product dialect)
+                   (autolisp-dialect-platform dialect)
+                   (autolisp-dialect-version dialect)))
 
 (defun reader-options-from-dialect (dialect &key source-name retain-comments-p
                                                    recover-malformed-p)

@@ -254,8 +254,10 @@ Actions (processed in order):
   --quit                 Force the engine to shut down after the queue.
 
 Dialect, host, encoding:
-  --dialect NAME         strict (default), autocad-2022, autocad-2026, autocad,
-                         bricscad-v25, bricscad-v26, bricscad, clautolisp, lax.
+  --dialect NAME         strict (default), autocad[-mac][-YEAR], autocad-2022,
+                         autocad-2026, bricscad[-mac|-linux][-vNN], bricscad-v25,
+                         bricscad-v26, clautolisp, lax. Unversioned vendor => last
+                         known version; unqualified platform => windows.
                          Honoured under --clautolisp; ignored under --autocad/--bricscad.
   --list-dialects        Print every --dialect name (strict first, lax last) and exit.
   --list-situations      Print the encoding situations (source/file/console/…) and exit.

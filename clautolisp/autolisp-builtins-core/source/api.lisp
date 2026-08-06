@@ -2265,6 +2265,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
                               (%secureload-trusted-dirs)))
          (located (resolve-existing-file value search-dirs)))
     (emit-dotdot-path-portability-warning value "FINDFILE")
+    (emit-forward-slash-ellipsis-portability-warning value "FINDFILE")
     (if located
         (errno-and-return 0 (make-autolisp-string located))
         (errno-and-return 22 nil))))

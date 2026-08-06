@@ -79,6 +79,62 @@ Status: OPEN, design needed. Surfaced 2026-06-25 from the spec revision.
 Not blocking the secureload phases, which proceed on the current
 keywords.
 
+Progress (2026-08-06) — branch feature-dialect-platform-version-axis
+--------------------------------------------------------------------
+
+DONE
+- Dialect descriptor gained PRODUCT (:autocad/:bricscad/nil), PLATFORM
+  (:windows/:macos/:linux/nil) and VERSION (integer/nil) facets, with
+  public accessors autolisp-dialect-product / -platform / -version
+  (autolisp-reader/source/dialect.lisp + api.lisp + package.lisp).
+  The enumerated vendor descriptors carry them (autocad-2026 ->
+  :autocad/:windows/2026, autocad-2022 -> 2022, bricscad-v26 ->
+  :bricscad/:windows/26, bricscad-v25 -> 25); strict/clautolisp/lax
+  stay neutral (all nil).
+- Derived-spelling resolution in FIND-AUTOLISP-DIALECT: a product,
+  optionally suffixed with a platform (-mac / -linux; windows default)
+  and/or a version (autocad-2027, autocad-mac-2027, bricscad-linux,
+  bricscad-mac-v26). Omitted version -> "latest known" (per
+  *autolisp-dialect-latest-version*, autocad 2026 / bricscad 26 to
+  match the existing aliases). Derived descriptors are cached
+  (EQ-stable). Legacy keywords (:autocad-2026 / :bricscad-v26) and the
+  bare-product aliases resolve unchanged via the named-dialect alist.
+  AutoCAD years < 2025 keep the legacy ISO-8859-1 default encoding.
+- CLI: parse-dialect (shared autolisp-cli, so alfe inherits it) accepts
+  the new spellings and keywordises them verbatim; --list-dialects gains
+  :autocad-mac / :bricscad-mac / :bricscad-linux; help text updated in
+  the clautolisp tool and the alfe front-end. --autocad / --bricscad
+  shorthands still mean latest-known windows.
+- FIRST CONCRETE CONSUMER: the "/..." vs "\..." subfolder-recursion
+  rule. autolisp-path-has-forward-slash-ellipsis-p +
+  emit-forward-slash-ellipsis-portability-warning
+  (autolisp-runtime/source/api.lisp), platform-gated to :windows: warns
+  ([path-slash-ellipsis]) on autocad / autocad-2026 (windows), silent on
+  autocad-mac (:macos) and on the neutral profiles (strict / clautolisp
+  / lax, platform nil). Wired into builtin-findfile alongside the
+  existing [path-dotdot] warning; honours portability-warning-mode
+  :error and dedups once-per-path-per-run.
+- Feature/version matrix SCAFFOLD: *autolisp-feature-matrix* (row shape
+  FEATURE PRODUCT PLATFORM MIN-VERSION VALUE, most-specific-row-wins) +
+  dialect-feature / dialect-feature-for lookup, with a few seed rows
+  (default-utf8-encoding, forward-slash-ellipsis-ok). Clearly marked for
+  incremental population from docs/probes — NOT exhaustively populated.
+- Tests (all headless, FiveAM, 0 failures): autolisp-reader/tests
+  (descriptor facets, latest-known / mac / explicit-version resolution,
+  pre-2025 encoding, unknown-spelling nil, feature-matrix lookup);
+  autolisp-cli/tests (parse-dialect platform+version spellings);
+  autolisp-builtins-core/tests (the "/..."-predicate + platform-gated
+  warn-on-autocad-windows / silent-on-mac+neutral, through findfile).
+
+TODO (incremental, out of this pass)
+- Populate the feature/version matrix from real AutoCAD/BricsCAD doc
+  scans + probes (scope item 4); wire more builtins to dialect-feature.
+- Extend the "/..." (and the deferred platform-dependent ".."
+  BACK-vs-UP) behaviour to open/load if desired, and verify against
+  real CAD on native runners (see CI note in the PR/report).
+- Consider bumping *autolisp-dialect-latest-version* autocad -> 2027
+  once 2027 is characterised (spec text cites 2027 as latest).
+
 Rehomed here (2026-08-06): deferred ".." path-semantics alternative
 ---------------------------------------------------------------------
 From cad-path-dotdot-resolution.issue (now CLOSED): clautolisp currently

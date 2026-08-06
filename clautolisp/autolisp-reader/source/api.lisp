@@ -74,6 +74,15 @@
 (defun autolisp-dialect-name (dialect)
   (clautolisp.autolisp-reader.internal::autolisp-dialect-name dialect))
 
+(defun autolisp-dialect-product (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-product dialect))
+
+(defun autolisp-dialect-platform (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-platform dialect))
+
+(defun autolisp-dialect-version (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-version dialect))
+
 (defun autolisp-dialect-token-mode (dialect)
   (clautolisp.autolisp-reader.internal::autolisp-dialect-token-mode dialect))
 
@@ -111,6 +120,16 @@
   "Ordered list of selectable dialect-name strings (strict first, lax
 last); drives --list-dialects and validates --dialect."
   (clautolisp.autolisp-reader.internal::autolisp-dialect-names))
+
+(defun dialect-feature (feature product platform version)
+  "Look up FEATURE in the incremental feature/version matrix for
+PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
+  (clautolisp.autolisp-reader.internal::dialect-feature
+   feature product platform version))
+
+(defun dialect-feature-for (dialect feature)
+  "DIALECT-FEATURE keyed off a DIALECT descriptor's facets."
+  (clautolisp.autolisp-reader.internal::dialect-feature-for dialect feature))
 
 (defun reader-options-from-dialect (dialect &rest args)
   (apply #'clautolisp.autolisp-reader.internal::reader-options-from-dialect
