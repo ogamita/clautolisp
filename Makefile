@@ -71,7 +71,7 @@ DEFAULT_LISP ?=
 # `make help`.
 
 .PHONY: help all clean build build-sbcl build-ccl documentation test clean-pdf clean-diagrams docker-build-clautolisp-ci docker-push-clautolisp-ci install install-programs install-libraries install-documentation uninstall $(SUBPROJECTS) \
-        build-documentation build-programs build-libraries \
+        submodules build-documentation build-programs build-libraries \
         stage stage-programs stage-libraries stage-documentation clean-stage \
         release release-sources release-documentation release-programs release-libraries \
         probe probe-autocad probe-bricscad probe-clautolisp
@@ -192,7 +192,10 @@ build-documentation:  ## Build all PDF docs + the autolisp-spec paged split (HTM
 build-programs:  ## Build the host program binaries (clautolisp, alfe, …) for each Lisp in RELEASE_LISPS (default sbcl; x86-64 release sets "sbcl ccl").
 	@for l in $(RELEASE_LISPS); do $(MAKE) build-$$l || exit $$?; done
 
-build-libraries:  ## Build the releasable libraries (the drawing/drawing-dwg native libdwg).
+submodules:  ## Check out the git submodules (the vendored libredwg used by the DWG codec). Idempotent; runs automatically as part of build-libraries so a fresh clone builds directly.
+	git submodule update --init --recursive
+
+build-libraries:  ## Build the releasable libraries (the drawing/drawing-dwg native libdwg). Checks out the libredwg submodule first if needed.
 	$(MAKE) -C clautolisp build-libredwg
 
 # --- Release packaging -------------------------------------------------
