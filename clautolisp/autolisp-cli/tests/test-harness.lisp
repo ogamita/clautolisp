@@ -12,7 +12,7 @@ mock so they have real sysvar cells to stamp."
   (clautolisp.autolisp-runtime:reset-default-evaluation-context)
   (let* ((session (clautolisp.autolisp-runtime:evaluation-context-session
                    (clautolisp.autolisp-runtime:current-evaluation-context)))
-         (mock    (clautolisp.autolisp-mock-host:make-mock-host)))
+         (mock    (clautolisp.cador:make-cador)))
     (setf (clautolisp.autolisp-runtime.internal::runtime-session-host session)
           mock)
     (clautolisp.autolisp-runtime:current-evaluation-context)))

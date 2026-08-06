@@ -47,7 +47,7 @@
    #:cli-options-keep-workdir-p  ; A
    #:cli-options-write-workdir-path ; A — --write-workdir-path FILE
    #:cli-options-main            ; A — symbol name (string)
-   #:cli-options-mock-input      ; C — clautolisp mock-host prompt-stream
+   #:cli-options-mock-input      ; C — clautolisp cador prompt-stream
    #:cli-options-gui             ; C — clautolisp DCL subprocess renderer
    #:cli-options-dcl             ; C — clautolisp --dcl tui|gui|auto renderer selection
    #:cli-options-trace-p         ; C — clautolisp --trace

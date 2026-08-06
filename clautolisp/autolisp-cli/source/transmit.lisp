@@ -328,7 +328,7 @@ silently no-ops on hosts (or sysvar subsets) that lack the cell.
 Reached only by the clautolisp engine: alfe's bricscad/autocad
 backends drive a real CAD and never call INSTALL-TRANSMIT-VARIABLES on
 a local context, so this never clobbers a genuine CAD's identity.
-See issues/open/clautolisp-mock-host-getvar.issue."
+See issues/open/clcador-getvar.issue."
   (when context
     (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
       (when host
@@ -423,7 +423,7 @@ See issues/open/bricscad-dialect-sysvar-parity.issue."
   (when context
     (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
       (when (and host (eq dialect-keyword :bricscad-v26))
-        (clautolisp.autolisp-mock-host:apply-bricscad-dialect-sysvars host)))))
+        (clautolisp.cador:apply-bricscad-dialect-sysvars host)))))
 
 (defun call-with-dynamic-transmit-binding (context name value thunk)
   "Set the *AUTOLISP-…* variable NAME to VALUE for the duration of

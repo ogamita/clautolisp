@@ -5,9 +5,9 @@
   (:export
    ;; Protocol class hierarchy
    #:host
-   #:null-host
-   #:make-null-host
-   #:*null-host*
+   #:nihil
+   #:make-nihil
+   #:*nihil*
    #:host-name
    ;; Predicates / introspection
    #:hostp

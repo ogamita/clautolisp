@@ -84,10 +84,10 @@
                 #:install-core-builtins
                 #:autolisp-value->string)
   (:import-from #:clautolisp.autolisp-host
-                #:null-host
-                #:*null-host*)
-  (:import-from #:clautolisp.autolisp-mock-host
-                #:make-mock-host)
+                #:nihil
+                #:*nihil*)
+  (:import-from #:clautolisp.cador
+                #:make-cador)
   (:import-from #:alfe.logging
                 #:log-debug
                 #:log-verbose)
@@ -120,13 +120,15 @@ upstream by EFFECTIVE-DIALECT, not by collapsing the keyword here."
              :details (list :dialect dialect-keyword))))
 
 (defun resolve-clautolisp-host (host-keyword)
-  "Map an alfe host keyword (:mock / :null) to the HAL backend
-instance the clautolisp runtime expects. Defaults to a fresh
-MockHost when unspecified — same default as the standalone
-clautolisp executable."
+  "Map an alfe host keyword (:cador / :nihil, or the deprecated aliases
+:mock / :null) to the HAL backend instance the clautolisp runtime
+expects. Defaults to a fresh cador (the headless CAD core) when
+unspecified — same default as the standalone clautolisp executable.
+Honoured for the --clautolisp backend only; under --autocad / --bricscad
+the real CAD is the host and --host is ignored."
   (case host-keyword
-    ((nil :mock) (make-mock-host))
-    (:null       *null-host*)
+    ((nil :cador :mock) (make-cador))
+    ((:nihil :null)     *nihil*)
     (otherwise
      (error 'backend-bootstrap-error
             :backend :clautolisp

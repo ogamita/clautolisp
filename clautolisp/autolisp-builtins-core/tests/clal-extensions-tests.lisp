@@ -7,11 +7,11 @@
 ;;;; See autolisp-spec §16 ~clautolisp Extensions~ for the normative
 ;;;; entries.
 
-(defun setup-mock-host-context ()
+(defun setup-cador-context ()
   (clautolisp.autolisp-runtime:reset-default-evaluation-context)
   (let* ((session (clautolisp.autolisp-runtime:evaluation-context-session
                    (clautolisp.autolisp-runtime:current-evaluation-context)))
-         (mock    (clautolisp.autolisp-mock-host:make-mock-host)))
+         (mock    (clautolisp.cador:make-cador)))
     (setf (clautolisp.autolisp-runtime.internal::runtime-session-host session)
           mock)
     (clautolisp.autolisp-runtime:current-evaluation-context)))
@@ -19,7 +19,7 @@
 ;;; --- clal-sysvar-list ---------------------------------------------
 
 (test clal-sysvar-list-returns-1836-entries-on-default-mock
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-list)))
     (is (listp result))
     (is (= 1836 (length result)))
@@ -28,14 +28,14 @@
                result))))
 
 (test clal-sysvar-list-is-sorted-lexicographically
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((result (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-list))
          (values (mapcar #'clautolisp.autolisp-runtime:autolisp-string-value
                          result)))
     (is (equal values (sort (copy-list values) #'string<)))))
 
 (test clal-sysvar-list-includes-well-known-names
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((result (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-list))
          (values (mapcar #'clautolisp.autolisp-runtime:autolisp-string-value
                          result)))
@@ -47,7 +47,7 @@
 ;;; --- clal-sysvar-apropos ------------------------------------------
 
 (test clal-sysvar-apropos-ang-matches-angle-family
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((pattern (clautolisp.autolisp-runtime:make-autolisp-string "ANG"))
          (result  (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-apropos pattern))
          (values  (mapcar #'clautolisp.autolisp-runtime:autolisp-string-value
@@ -59,7 +59,7 @@
     (is (null (member "AUNITS" values :test #'string=)))))
 
 (test clal-sysvar-apropos-is-case-insensitive
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((upper (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-apropos
                  (clautolisp.autolisp-runtime:make-autolisp-string "ANG")))
          (lower (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-apropos
@@ -70,20 +70,20 @@
     (is (= (length upper) (length mixed)))))
 
 (test clal-sysvar-apropos-empty-string-returns-all-1836
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-apropos
                  (clautolisp.autolisp-runtime:make-autolisp-string ""))))
     (is (= 1836 (length result)))))
 
 (test clal-sysvar-apropos-no-match-returns-nil
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-apropos
                  (clautolisp.autolisp-runtime:make-autolisp-string
                   "DEFINITELY_NOT_A_SUBSTRING_OF_ANY_NAME_xyzzy"))))
     (is (null result))))
 
 (test clal-sysvar-apropos-rejects-non-string-pattern
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((signalled-p nil))
     (handler-case
         (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-apropos 42)
@@ -102,9 +102,9 @@
 ;;; Unicode-name form in the helpers' return value.
 
 (defun %install-codepages (sys dwg)
-  "Set up a fresh mock-host context and write SYS / DWG into the
+  "Set up a fresh cador context and write SYS / DWG into the
 host's SYSCODEPAGE / DWGCODEPAGE cells via the launch-time bypass."
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((host (clautolisp.autolisp-runtime:current-evaluation-host)))
     (clautolisp.autolisp-host:host-set-derived-sysvar host "SYSCODEPAGE" sys)
     (clautolisp.autolisp-host:host-set-derived-sysvar host "DWGCODEPAGE" dwg)))
@@ -134,7 +134,7 @@ host's SYSCODEPAGE / DWGCODEPAGE cells via the launch-time bypass."
 (test clal-system-codepage-empty-maps-to-ansi-placeholder
   ;; Pre-Phase-1 hosts left SYSCODEPAGE = ""; the helper renders
   ;; that as "ANSI" so user code never sees the empty placeholder.
-  (setup-mock-host-context) ; SYSCODEPAGE stays at the catalogue's ""
+  (setup-cador-context) ; SYSCODEPAGE stays at the catalogue's ""
   (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-system-codepage)))
     (is (string= "ANSI"
                  (clautolisp.autolisp-runtime:autolisp-string-value result)))))
@@ -180,7 +180,7 @@ host's SYSCODEPAGE / DWGCODEPAGE cells via the launch-time bypass."
   "Write BOM-BYTES to SNIFF-PATH then return the encoding string
 CLAL-FILE-ENCODING reports for that file."
   (%write-bytes sniff-path (coerce bom-bytes '(vector (unsigned-byte 8))))
-  (setup-mock-host-context)
+  (setup-cador-context)
   (clautolisp.autolisp-runtime:autolisp-string-value
    (clautolisp.autolisp-builtins-core::builtin-clal-file-encoding
     (clautolisp.autolisp-runtime:make-autolisp-string (namestring sniff-path)))))
@@ -222,7 +222,7 @@ CLAL-FILE-ENCODING reports for that file."
   ;; Resolution failure returns AutoLISP nil and sets ERRNO 73, matching
   ;; LOAD's missing-file behaviour. Don't open a fixture; pick a path
   ;; that demonstrably doesn't exist.
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-file-encoding
                  (clautolisp.autolisp-runtime:make-autolisp-string
                   "/this/path/definitely/does/not/exist/0xDEADBEEF.txt"))))
@@ -245,7 +245,7 @@ CLAL-FILE-ENCODING reports for that file."
 (defun %install-codepages-and-capture-mismatch (sys-codepage dwg-codepage)
   "Set SYSCODEPAGE via the launch bypass, then call set-drawing-codepage
 with DWG-CODEPAGE and return the captured enc-* diagnostic string."
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((host (clautolisp.autolisp-runtime:current-evaluation-host))
         (sink (make-string-output-stream)))
     (clautolisp.autolisp-host:host-set-derived-sysvar host "SYSCODEPAGE" sys-codepage)
@@ -270,14 +270,14 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (string= "" diagnostics))))
 
 (test set-drawing-codepage-actually-updates-the-sysvar
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((host (clautolisp.autolisp-runtime:current-evaluation-host))
          (clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
     (clautolisp.autolisp-host:host-set-derived-sysvar host "SYSCODEPAGE" "ANSI_1252")
     (clautolisp.autolisp-builtins-core::set-drawing-codepage "ANSI_1250")
     (is (string= "ANSI_1250"
-                 (clautolisp.autolisp-mock-host::sysvar-cell-value
-                  (clautolisp.autolisp-mock-host:mock-host-sysvar host "DWGCODEPAGE"))))))
+                 (clautolisp.cador::sysvar-cell-value
+                  (clautolisp.cador:cador-sysvar host "DWGCODEPAGE"))))))
 
 ;;; --- enc-unknown-codepage (Phase 8 item 10) ------------------------
 
@@ -320,7 +320,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
        (clautolisp.autolisp-runtime:autolisp-symbol-name object)))
 
 (test aldo-config-default-parses
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((config (clautolisp.autolisp-builtins-core::default-aldo-configuration-value)))
     (is (consp config))
     (is (string= "SEXP" (%aldo-sym-name (%aldo-config-assoc "NAVIGATOR" config))))
@@ -329,7 +329,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (eql 4301 (%aldo-config-assoc "DEFAULT-ALDB-LISTENING-PORT" config)))))
 
 (test aldo-config-lazy-seed
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
     (is (not (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p sym)))
     (let ((value (clautolisp.autolisp-builtins-core::aldo-configuration-value)))
@@ -338,7 +338,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
       (is (string= "SEXP" (%aldo-sym-name (%aldo-config-assoc "NAVIGATOR" value)))))))
 
 (test aldo-config-save-load-roundtrip
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((path (merge-pathnames "aldo-core-roundtrip.conf" (uiop:temporary-directory)))
         (sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
     (unwind-protect
@@ -370,7 +370,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
   ;; "]") and the listening address are STRINGS and must be written quoted
   ;; (prin1 semantics). The bug: the save used princ semantics, writing
   ;; (selection ascii [ ]) — not readable back as strings.
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((path (merge-pathnames "aldo-core-strings.conf" (uiop:temporary-directory)))
         (sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
     (unwind-protect
@@ -387,7 +387,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
       (ignore-errors (delete-file path)))))
 
 (test aldo-config-file-is-ascii-friendly
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((path (merge-pathnames "aldo-core-ascii.conf" (uiop:temporary-directory)))
         (sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
     (unwind-protect
@@ -467,23 +467,23 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
 ;;; CLAL-COMMON-LISP evaluation entry.
 
 (test clal-common-lisp-evaluates-autolisp-form
-  (setup-mock-host-context)
+  (setup-cador-context)
   (is (= 3 (clautolisp.autolisp-builtins-core::builtin-clal-common-lisp
             (list (clautolisp.autolisp-runtime:intern-autolisp-symbol "+") 1 2)))))
 
 (test clal-common-lisp-evaluates-string-form
-  (setup-mock-host-context)
+  (setup-cador-context)
   (is (= 42 (clautolisp.autolisp-builtins-core::builtin-clal-common-lisp
              (clautolisp.autolisp-runtime:make-autolisp-string "(* 6 7)")))))
 
 (test clal-common-lisp-on-error-ignore-returns-nil
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((common-lisp-user::*clal-on-error* :ignore))
     (is (null (clautolisp.autolisp-builtins-core::builtin-clal-common-lisp
                (clautolisp.autolisp-runtime:make-autolisp-string "(error \"x\")"))))))
 
 (test clal-common-lisp-on-error-object-returns-value
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((common-lisp-user::*clal-on-error* 99))
     (is (= 99 (clautolisp.autolisp-builtins-core::builtin-clal-common-lisp
                (clautolisp.autolisp-runtime:make-autolisp-string "(error \"x\")"))))))
@@ -497,7 +497,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
    (clautolisp.autolisp-runtime:intern-autolisp-symbol "CLAL-COMMON-LISP")))
 
 (test clautolisp-drop-installs-and-unbinds-clal-common-lisp
-  (setup-mock-host-context)
+  (setup-cador-context)
   (%reset-clautolisp-drop)
   (let ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "CLAL-COMMON-LISP")))
     (is (not (clautolisp.autolisp-runtime:autolisp-symbol-function-bound-p sym)))
@@ -507,7 +507,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (not (clautolisp.autolisp-runtime:autolisp-symbol-function-bound-p sym)))))
 
 (test clautolisp-drop-preserves-user-binding
-  (setup-mock-host-context)
+  (setup-cador-context)
   (%reset-clautolisp-drop)
   (let* ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "CLAL-COMMON-LISP"))
          (stub (clautolisp.autolisp-runtime:make-autolisp-string "USER")))
@@ -517,7 +517,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (eq stub (clautolisp.autolisp-runtime:autolisp-symbol-value sym)))))
 
 (test clautolisp-drop-is-idempotent-on-repeated-enable
-  (setup-mock-host-context)
+  (setup-cador-context)
   (%reset-clautolisp-drop)
   (let* ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "CLAL-COMMON-LISP"))
          (stub (clautolisp.autolisp-runtime:make-autolisp-string "USER")))
@@ -549,7 +549,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
       (is (equal "hi there" (clautolisp.autolisp-runtime:autolisp-string-value got))))))
 
 (test clal-clipboard-copy-and-paste-sexp-round-trip
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((box (list nil))
          (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
     ;; copy an AutoLISP list; its source text lands on the system clipboard
@@ -562,14 +562,14 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
 (test clal-clipboard-copy-paste-round-trips-through-the-internal-clipboard
   ;; with the :NULL provider the system clipboard is empty, so paste falls back
   ;; to the in-process *clipboard* set by copy (clipboard-interface.org §Public API)
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((clautolisp.sedit:*clipboard-provider* :null))
     (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-copy-sexp (%al-read "(a b c)"))
     (let ((pasted (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-paste-sexp)))
       (is (string-equal "(a b c)" (%al->src pasted))))))
 
 (test clal-clipboard-paste-does-not-evaluate-foreign-text
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((box (list "#.(error \"boom\")"))
          (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
     ;; a malicious read-macro on the clipboard must not run (no error signalled)
@@ -577,7 +577,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
       (is (not (null pasted))))))
 
 (test clal-sedit-quitting-immediately-returns-the-form
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((*standard-input* (make-string-input-stream (format nil "q~%")))
          (*standard-output* (make-string-output-stream))
          (result (clautolisp.autolisp-builtins-core::builtin-clal-sedit
@@ -586,7 +586,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (not (null clautolisp.sedit:*clal-sedit-initial-form*)))))
 
 (test clal-sedit-recalls-a-recorded-definition
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((clautolisp.sedit:*sedit-recording* nil))
     (clautolisp.sedit:record-source "(defun bar (x) (* x x))" "<test>")
     (let* ((*standard-input* (make-string-input-stream (format nil "q~%")))
@@ -596,7 +596,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
       (is (string-equal "(defun bar (x) (* x x))" (%al->src result))))))
 
 (test clal-sedit-edits-then-returns-the-modified-form
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((*standard-input* (make-string-input-stream
                             ;; select the body, replace it, then quit
                             (format nil "d~%>>~%replace (* x 2)~%q~%")))
@@ -608,7 +608,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
 (test clal-sedit-debug-prefix-routes-to-the-debug-command-hook
   ;; spec §7: `debug'/`aldo' CMD in the editor runs CMD in the attached session
   ;; via *debug-command-hook* (so `aldo help' shows the debugger help)
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((calls '())
          (clautolisp.autolisp-runtime:*debug-command-hook* (lambda (c) (push c calls) nil))
          (*standard-input* (make-string-input-stream (format nil "nav~%aldo help~%q~%")))
@@ -617,7 +617,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (equal '("help") calls))))
 
 (test clal-sedit-debug-prefix-without-a-debugger-notes-it
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((clautolisp.autolisp-runtime:*debug-command-hook* nil)
          (out (make-string-output-stream))
          (*standard-input* (make-string-input-stream (format nil "aldo help~%q~%")))
@@ -627,7 +627,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
 
 (test clal-sedit-evaluates-a-lisp-form-at-the-prompt
   ;; a (form) at the SEDIT/NAV prompt evaluates and prints, like the REPL
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((out (make-string-output-stream))
          ;; `quote' is a special form — no arithmetic builtins needed here
          (*standard-input* (make-string-input-stream (format nil "(quote 30)~%q~%")))

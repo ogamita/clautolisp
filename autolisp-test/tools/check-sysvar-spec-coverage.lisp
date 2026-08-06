@@ -9,8 +9,8 @@
 ;;;;      Variable Entry: NAME~ heading has a matching record in
 ;;;;      autolisp-spec/documentation/system-variables-inventory.sexp;
 ;;;;
-;;;;   2. every inventory record has a matching cell in the mock-host
-;;;;      catalogue clautolisp/autolisp-mock-host/source/sysvar-
+;;;;   2. every inventory record has a matching cell in the cador
+;;;;      catalogue clautolisp/cador/source/sysvar-
 ;;;;      catalogue.lisp (i.e. *full-sysvar-catalogue*);
 ;;;;
 ;;;;   3. every cell in the catalogue has a matching inventory record
@@ -69,7 +69,7 @@
 (defun check-coverage (&key
                         (spec      "autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org")
                         (inventory "autolisp-spec/documentation/system-variables-inventory.sexp")
-                        (catalogue "clautolisp/autolisp-mock-host/source/sysvar-catalogue.lisp")
+                        (catalogue "clautolisp/cador/source/sysvar-catalogue.lisp")
                         (exit-on-failure nil))
   (let* ((spec-names (extract-spec-sysvar-names spec))
          (inv-records (read-inventory inventory))

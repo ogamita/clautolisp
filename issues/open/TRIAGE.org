@@ -73,6 +73,8 @@ retrofitted as they are touched.
 | deferred-clautolisp-out-of-dialect-warnings   | dialect         | DEFERRED | availability bitmap |
 | deferred-document-lifecycle-command-semantics | cad-semantics   | DEFERRED | pjb-decision (NEW/OPEN/SAVE/CLOSE vs running routine) |
 | deferred-bricscad-setq-nil-returns-2          | dialect         | DEFERRED | cosmetic, no functional impact; needs bricscad-access |
+| cador-1-split-nihil-cador                     | infra           | DONE     | name the two headless hosts: nihil=stub host (today null-host), cador=real CAD core (today mock-host); rename + nihil warn-stubs + --host aliases. Epic sub-task 1, implement now |
+| cador-2-multidocument-runtime                 | feature         | TODO     | N isolated document namespaces/engines/programs, shared blackboard on one heap (no copy), per-doc drawing; cooperative coroutine scheduler (1 thread/doc + 1 aldo/doc). Epic sub-task 2, parallel branch cador-multidocument |
 
 * P2 — language / builtins completeness
   :PROPERTIES:
@@ -86,6 +88,7 @@ retrofitted as they are touched.
 | deferred-stubbed-functions               | builtins-epic | DEFERRED | promote stubbed-as-no-op builtins (registry section done 1.5.1) |
 | deferred-spec-research                   | builtins      | DEFERRED | vendor-validate uncertain builtins; needs cad-access |
 | xdroom-xdsize-not-implemented            | builtin/draw  | DEFERRED | XDROOM/XDSIZE still nil stubs (schms-data-selection) |
+| cador-3-host-interface-protocol-spec     | spec          | TODO     | D1 host-interface spec + formal AutoLISP↔host protocol + D2 cador spec + D5 naming note. Epic sub-task 3 |
 
 * P3 — everything else (by workstream)
   :PROPERTIES:
@@ -167,7 +170,8 @@ opendcl-conformance. All =TODO=.
 ** Big features / environment
 | Issue                    | Status   | Note |
 |--------------------------+----------+------|
-| cador-multidocument-host | TODO     | multi-document host (cador) |
+| cador-multidocument-host | TODO     | multi-document host (cador) — DECOMPOSED 2026-08-06 into cador-1..4 (see §0 of the issue). cador-1 (P1) + cador-2 (P1) + cador-3 (P2) + cador-4 (P3) below |
+| cador-4-epic-remainder   | DEFERRED | DB backend / command layer / §7.4 adapt / locking / conformance E1–E10 / wire host — gated on cador-1..3 + CAD access |
 | salve-environment        | DEFERRED | SPEC draft; pjb-decision (SLIME-like Emacs env; aldb ⊂ salve) |
 | alfe-plugin-model        | DEFERRED | V2 plugin contract + EPURE (3 open design decisions) |
 

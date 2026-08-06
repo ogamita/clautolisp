@@ -225,6 +225,24 @@ suffix is accepted on any situation option, preserved on the slot."
     (is (eq :null (cli-options-host opts)))
     (is (eq :autocad-2026 (cli-options-dialect opts)))))
 
+(test cli-host-cador-and-nihil
+  "alfe --host accepts cador and nihil (the canonical clautolisp hosts)."
+  (is (eq :cador (cli-options-host (parse-arguments '("--host" "cador")))))
+  (is (eq :nihil (cli-options-host (parse-arguments '("--host" "nihil")))))
+  ;; deprecated aliases still parse
+  (is (eq :cador (cli-options-host (parse-arguments '("--host" "mock")))))
+  (is (eq :null  (cli-options-host (parse-arguments '("--host" "null"))))))
+
+(test cli-host-resolves-to-the-right-backend-under-clautolisp
+  "resolve-clautolisp-host maps the host keyword to a cador / nihil
+instance (cador for the default and cador/mock; nihil for nihil/null)."
+  (flet ((host-class (k) (class-name (class-of (alfe.backend.clautolisp:resolve-clautolisp-host k)))))
+    (is (eq 'clautolisp.cador:cador (host-class :cador)))
+    (is (eq 'clautolisp.cador:cador (host-class nil)))
+    (is (eq 'clautolisp.cador:cador (host-class :mock)))
+    (is (eq 'clautolisp.autolisp-host:nihil (host-class :nihil)))
+    (is (eq 'clautolisp.autolisp-host:nihil (host-class :null)))))
+
 (test cli-verbosity-flags-single
   "Each verbosity flag in isolation yields its documented level."
   (is (eq :verbose (cli-options-verbosity (parse-arguments '("-v")))))

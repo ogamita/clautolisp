@@ -1896,18 +1896,18 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
 ;;;; mock host. The host-less defaults (LUNITS 2, LUPREC 4, DIMZIN 0)
 ;;;; are exercised by the formatting tests above.
 
-(defun %rtos-with-mock-host (form-source)
+(defun %rtos-with-cador (form-source)
   "Evaluate FORM-SOURCE (an RTOS expression, usually after setvar
 calls) under a mock host and return the resulting CL string."
   (autolisp-string-value
-   (run-autolisp-string form-source :setup-fn #'%install-mock-host-and-core)))
+   (run-autolisp-string form-source :setup-fn #'%install-cador-and-core)))
 
 (defun %getstring-with-input (form-source input-line)
   "Evaluate FORM-SOURCE (a GETSTRING call) under a mock host whose
 prompt-stream yields INPUT-LINE, returning the CL string result (or
 NIL when GETSTRING returns nil)."
-  (let ((mock (clautolisp.autolisp-mock-host:make-mock-host)))
-    (setf (clautolisp.autolisp-mock-host:mock-host-prompt-stream mock)
+  (let ((mock (clautolisp.cador:make-cador)))
+    (setf (clautolisp.cador:cador-prompt-stream mock)
           (make-string-input-stream (format nil "~A~%" input-line)))
     (let ((result
             (run-autolisp-string
@@ -1954,18 +1954,18 @@ NIL when GETSTRING returns nil)."
 (test rtos-precision-defaults-to-luprec
   ;; PRECISION omitted -> LUPREC; MODE omitted -> LUNITS (2 = decimal).
   (reset-autolisp-symbol-table)
-  (is (string= "3.14" (%rtos-with-mock-host
+  (is (string= "3.14" (%rtos-with-cador
                        "(progn (setvar \"LUNITS\" 2) (setvar \"LUPREC\" 2)
                                (rtos 3.14159))")))
   (reset-autolisp-symbol-table)
-  (is (string= "3.1416" (%rtos-with-mock-host
+  (is (string= "3.1416" (%rtos-with-cador
                          "(progn (setvar \"LUPREC\" 4) (rtos 3.14159))"))))
 
 (test rtos-mode-defaults-to-lunits-scientific
   ;; MODE omitted with LUNITS 1 -> scientific, precision from LUPREC.
   (reset-autolisp-symbol-table)
   (is (string= "1.00E+02"
-               (%rtos-with-mock-host
+               (%rtos-with-cador
                 "(progn (setvar \"LUNITS\" 1) (setvar \"LUPREC\" 2)
                         (rtos 100.0))"))))
 
@@ -1973,7 +1973,7 @@ NIL when GETSTRING returns nil)."
   ;; Explicit MODE / PRECISION still win over LUNITS / LUPREC.
   (reset-autolisp-symbol-table)
   (is (string= "1.235"
-               (%rtos-with-mock-host
+               (%rtos-with-cador
                 "(progn (setvar \"LUNITS\" 1) (setvar \"LUPREC\" 0)
                         (rtos 1.234567 2 3))"))))
 
@@ -1981,23 +1981,23 @@ NIL when GETSTRING returns nil)."
   ;; DIMZIN bit 3 (value 8): trailing zeros dropped; an all-zero
   ;; fraction loses its decimal point too.
   (reset-autolisp-symbol-table)
-  (is (string= "12.5" (%rtos-with-mock-host
+  (is (string= "12.5" (%rtos-with-cador
                        "(progn (setvar \"DIMZIN\" 8) (rtos 12.5 2 4))")))
   (reset-autolisp-symbol-table)
-  (is (string= "12" (%rtos-with-mock-host
+  (is (string= "12" (%rtos-with-cador
                      "(progn (setvar \"DIMZIN\" 8) (rtos 12.0 2 4))"))))
 
 (test rtos-dimzin-suppresses-leading-zero
   ;; DIMZIN bit 2 (value 4): a leading 0 in the integer part is dropped
   ;; (sign preserved). Bit 12 = both leading and trailing.
   (reset-autolisp-symbol-table)
-  (is (string= ".5000" (%rtos-with-mock-host
+  (is (string= ".5000" (%rtos-with-cador
                         "(progn (setvar \"DIMZIN\" 4) (rtos 0.5 2 4))")))
   (reset-autolisp-symbol-table)
-  (is (string= "-.5000" (%rtos-with-mock-host
+  (is (string= "-.5000" (%rtos-with-cador
                          "(progn (setvar \"DIMZIN\" 4) (rtos -0.5 2 4))")))
   (reset-autolisp-symbol-table)
-  (is (string= ".5" (%rtos-with-mock-host
+  (is (string= ".5" (%rtos-with-cador
                      "(progn (setvar \"DIMZIN\" 12) (rtos 0.5 2 4))"))))
 
 ;;;; ----- SECURELOAD / TRUSTEDPATHS trust-model primitives -----------
@@ -2203,7 +2203,7 @@ NIL when GETSTRING returns nil)."
     ;; Common-Lisp keyword literal still works.
     (is (eq :utf-8     (funcall parse ":utf-8")))))
 
-(test phase10-entity-builtins-on-mock-host
+(test phase10-entity-builtins-on-cador
   ;; The Phase-10 builtins (ENTGET/ENTMAKE/ENTLAST/ENTNEXT/HANDENT)
   ;; route through the active session's HAL backend. Under the
   ;; default NullHost they signal :host-not-supported; under a
@@ -2217,7 +2217,7 @@ NIL when GETSTRING returns nil)."
       (autolisp-runtime-error (condition)
         (is (eq :host-not-supported (autolisp-runtime-error-code condition))))))
   ;; Swap the default context onto a MockHost-bearing session.
-  (let* ((mock (clautolisp.autolisp-mock-host:make-mock-host))
+  (let* ((mock (clautolisp.cador:make-cador))
          (session (clautolisp.autolisp-runtime:evaluation-context-session
                    (clautolisp.autolisp-runtime:default-evaluation-context))))
     (clautolisp.autolisp-runtime:set-runtime-session-host session mock)
@@ -2259,7 +2259,7 @@ NIL when GETSTRING returns nil)."
   ;; (entget ename) hides xdata; (entget ename '("APP")) appends it.
   (reset-autolisp-symbol-table)
   (install-core-builtins)
-  (let* ((mock (clautolisp.autolisp-mock-host:make-mock-host))
+  (let* ((mock (clautolisp.cador:make-cador))
          (session (clautolisp.autolisp-runtime:evaluation-context-session
                    (clautolisp.autolisp-runtime:default-evaluation-context))))
     (clautolisp.autolisp-runtime:set-runtime-session-host session mock)
@@ -2286,13 +2286,13 @@ NIL when GETSTRING returns nil)."
                                            (list (make-autolisp-string "MYAPP")))))
         (is (not (null (assoc -3 withx))))))))
 
-(test phase13-vlax-builtins-on-mock-host
+(test phase13-vlax-builtins-on-cador
   ;; Round-trip a VLA-object create -> get-property -> put-property
   ;; -> invoke-method, plus a SAFEARRAY round-trip and a VARIANT
   ;; type-tagged round-trip.
   (reset-autolisp-symbol-table)
   (install-core-builtins)
-  (let* ((mock (clautolisp.autolisp-mock-host:make-mock-host))
+  (let* ((mock (clautolisp.cador:make-cador))
          (session (clautolisp.autolisp-runtime:evaluation-context-session
                    (clautolisp.autolisp-runtime:default-evaluation-context))))
     (clautolisp.autolisp-runtime:set-runtime-session-host session mock)
@@ -2357,7 +2357,7 @@ NIL when GETSTRING returns nil)."
 (defun %vla (source)
   "Evaluate SOURCE through run-autolisp-string on a fresh mock host."
   (reset-autolisp-symbol-table)
-  (run-autolisp-string source :setup-fn #'%install-mock-host-and-core))
+  (run-autolisp-string source :setup-fn #'%install-cador-and-core))
 
 (defun %vla-code (source)
   "Evaluate SOURCE, returning the autolisp-runtime-error code it signals
@@ -3537,7 +3537,7 @@ registered, even if many are stubs."
 ;;;; clipboard), STARTAPP (spawns a real process; flaky in CI), DCL
 ;;;; tile/dialog builtins (covered by autolisp-dcl suite via a
 ;;;; different machinery), entity/sysvar/prompt builtins (covered by
-;;;; autolisp-mock-host suite), VLAX-* (need ActiveX bridge), VLR-*
+;;;; cador suite), VLAX-* (need ActiveX bridge), VLR-*
 ;;;; reactors (need reactor dispatcher).
 
 (test coverage-cxxr-accessor-family
@@ -3888,7 +3888,7 @@ resolves to a bound function in the builtins-core package."
 
 ;;;; ----- VLR reactor surface (complete-unit-tests.issue, VLR family) -----
 ;;;;
-;;;; The reactor-fires-on-mock-host-mutation test in the mock-host suite
+;;;; The reactor-fires-on-cador-mutation test in the cador suite
 ;;;; covers dispatch; these backfill behavioural coverage of the 35
 ;;;; previously-untested VLR-* constructors, accessors, predicates,
 ;;;; mutators, and the persistence surface, all headless.
@@ -3899,7 +3899,7 @@ application-scoped VLR reactor constructors work. run-autolisp-string's
 session has no current-document (the CLI boot installs one); document-scoped
 constructors (vlr-dwg-reactor, ...) call current-document-or-error, so
 install one here."
-  (%install-mock-host-and-core context)
+  (%install-cador-and-core context)
   (let ((session (clautolisp.autolisp-runtime:evaluation-context-session context)))
     (unless (clautolisp.autolisp-runtime:runtime-session-current-document session)
       (clautolisp.autolisp-runtime:set-runtime-session-current-document
@@ -4036,8 +4036,8 @@ complete-unit-tests.issue."
   "Evaluate FORM-SOURCE under a MockHost whose prompt-stream yields
 INPUT-LINE; return the raw AutoLISP result. Generalises
 %GETSTRING-WITH-INPUT for the whole GET* family."
-  (let ((mock (clautolisp.autolisp-mock-host:make-mock-host)))
-    (setf (clautolisp.autolisp-mock-host:mock-host-prompt-stream mock)
+  (let ((mock (clautolisp.cador:make-cador)))
+    (setf (clautolisp.cador:cador-prompt-stream mock)
           (make-string-input-stream (format nil "~A~%" input-line)))
     (run-autolisp-string
      form-source
@@ -4238,14 +4238,14 @@ Windows registry / macOS defaults with a persistent per-user store
 descendents, delete, and persistence across a fresh store load."
   (reset-autolisp-symbol-table)
   (uiop:with-temporary-file (:pathname path :type "sexp")
-    (let ((clautolisp.autolisp-mock-host:*mock-registry-path* path)
-          (clautolisp.autolisp-mock-host::*mock-registry* nil)
+    (let ((clautolisp.cador:*mock-registry-path* path)
+          (clautolisp.cador::*mock-registry* nil)
           ;; force the sexp store: this unit test is about the :unix
           ;; backend — on darwin/windows the default backend talks to the
           ;; REAL platform store (covered by the verify:vl-registry jobs)
-          (clautolisp.autolisp-mock-host::*vl-registry-backend* :unix))
+          (clautolisp.cador::*vl-registry-backend* :unix))
       (flet ((run-al (form) (run-autolisp-string
-                             form :setup-fn #'%install-mock-host-and-core))
+                             form :setup-fn #'%install-cador-and-core))
              (s= (expect v) (and (typep v 'autolisp-string)
                                  (string= expect (autolisp-string-value v)))))
         ;; Write + read (named value), and the key's DEFAULT value
@@ -4276,7 +4276,7 @@ descendents, delete, and persistence across a fresh store load."
         (is (null (run-al "(vl-registry-read \"HKCU\\\\Soft\\\\App\")")))
         ;; Persistence: drop the in-memory table — the next call reloads
         ;; the store file written by the last write
-        (setf clautolisp.autolisp-mock-host::*mock-registry* nil)
+        (setf clautolisp.cador::*mock-registry* nil)
         (is (s= "1" (run-al "(vl-registry-read \"HKCU\\\\Soft\\\\App\\\\Sub1\" \"x\")")))))))
 
 (test m5-getcfg-setcfg-roundtrip
@@ -4571,15 +4571,15 @@ written, as a list of (unsigned-byte 8)."
 ;;;; The fixture captures *enc-diagnostic-stream* output, so the
 ;;;; tests don't have to read real *error-output*.
 
-(defun %install-mock-host-and-core (context)
+(defun %install-cador-and-core (context)
   "Wire a fresh MockHost into CONTEXT and install the core builtins.
 Used by tests that exercise sysvar paths through GETVAR / SETVAR —
-the bare RUN-AUTOLISP-STRING uses null-host which signals
+the bare RUN-AUTOLISP-STRING uses nihil which signals
 :host-not-supported."
   (install-core-into context)
   (let ((session (clautolisp.autolisp-runtime:evaluation-context-session
                   context))
-        (mock (clautolisp.autolisp-mock-host:make-mock-host)))
+        (mock (clautolisp.cador:make-cador)))
     (setf (clautolisp.autolisp-runtime.internal::runtime-session-host session)
           mock)))
 
@@ -4590,7 +4590,7 @@ is the string written by SIGNAL-ENCODING-DIAGNOSTIC. DIALECT is a
 keyword (:strict / :clautolisp / :autocad-2026 / :bricscad-v26)
 which we resolve to the named-dialect descriptor.
 
-The setup-fn wires a mock-host so GETVAR / SETVAR work — needed by
+The setup-fn wires a cador so GETVAR / SETVAR work — needed by
 the LISPSYS tests; harmless for the LOAD tests that don't touch
 sysvars."
   (let* ((sink (make-string-output-stream))
@@ -4601,7 +4601,7 @@ sysvars."
            (result (run-autolisp-string
                     form-source
                     :dialect dialect-struct
-                    :setup-fn #'%install-mock-host-and-core)))
+                    :setup-fn #'%install-cador-and-core)))
       (values result (get-output-stream-string sink)))))
 
 (test load-encoding-diagnostic-silent-under-clautolisp
@@ -4951,7 +4951,7 @@ attempts the I/O."
                            (namestring path) (namestring path))
                    :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
                              :bricscad-v26)
-                   :setup-fn #'%install-mock-host-and-core)))
+                   :setup-fn #'%install-cador-and-core)))
       ;; 0xE9 = 233 = é under Latin-1.
       (is (eql 233 result)))))
 
@@ -5165,7 +5165,7 @@ attempts the I/O."
         (run-autolisp-string
          "(clal-suppress-enc-diagnostic 'enc-typo-not-a-code)"
          :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :clautolisp)
-         :setup-fn #'%install-mock-host-and-core)
+         :setup-fn #'%install-cador-and-core)
       (autolisp-runtime-error (c)
         (declare (ignore c))
         (setf signalled-p t)))
@@ -5200,7 +5200,7 @@ attempts the I/O."
                    "(clal-suppress-enc-diagnostic 'enc-extension-used 'enc-foreign-dialect)"
                    :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
                              :clautolisp)
-                   :setup-fn #'%install-mock-host-and-core)))
+                   :setup-fn #'%install-cador-and-core)))
       (is (listp result))
       (is (= 2 (length result))))))
 
@@ -5289,7 +5289,7 @@ attempts the I/O."
                  "(clal-lint-encoding-extensions '(+ 1 2))"
                  :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
                            :clautolisp)
-                 :setup-fn #'%install-mock-host-and-core)))
+                 :setup-fn #'%install-cador-and-core)))
     ;; The literal AutoLISP T symbol is the conventional return.
     (is (not (null result)))
     (is (typep result 'clautolisp.autolisp-runtime:autolisp-symbol))))
@@ -5340,7 +5340,7 @@ character code. The opens are diagnostic-suppressed."
                     c)"
              (namestring path) encoding code (namestring path) encoding)
      :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :clautolisp)
-     :setup-fn #'%install-mock-host-and-core)))
+     :setup-fn #'%install-cador-and-core)))
 
 (defun %host-supports-open-encoding-p (encoding-string)
   "True iff the host CL can OPEN a stream in ENCODING-STRING's external
@@ -5383,7 +5383,7 @@ cp1252-codec-host-independent.issue."
                (namestring path))
        :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
                  :bricscad-v26)
-       :setup-fn #'%install-mock-host-and-core))
+       :setup-fn #'%install-cador-and-core))
     ;; Read raw bytes to verify the encoding actually flowed through
     ;; the ,ccs= splitter.
     (with-open-file (in path :element-type '(unsigned-byte 8))
@@ -5406,7 +5406,7 @@ cp1252-codec-host-independent.issue."
                (namestring path))
        :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
                  :bricscad-v26)
-       :setup-fn #'%install-mock-host-and-core))
+       :setup-fn #'%install-cador-and-core))
     (with-open-file (in path :element-type '(unsigned-byte 8))
       (is (eql #xE9 (read-byte in))))))
 
@@ -5419,7 +5419,7 @@ cp1252-codec-host-independent.issue."
                (namestring path))
        :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
                  :clautolisp)
-       :setup-fn #'%install-mock-host-and-core))
+       :setup-fn #'%install-cador-and-core))
     (with-open-file (in path :element-type '(unsigned-byte 8))
       (let ((bytes (loop for b = (read-byte in nil nil) while b collect b)))
         ;; UTF-16-LE é = 0xE9 0x00.
@@ -5526,7 +5526,7 @@ cp1252-codec-host-independent.issue."
                (namestring path))
        :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
                  :clautolisp)
-       :setup-fn #'%install-mock-host-and-core))
+       :setup-fn #'%install-cador-and-core))
     (with-open-file (in path :element-type '(unsigned-byte 8))
       (let ((bytes (loop for b = (read-byte in nil nil) while b collect b)))
         ;; UTF-16-BE é = 0x00 0xE9 — same bytes as LE, just ordered.
@@ -5642,7 +5642,7 @@ cp1252-codec-host-independent.issue."
 (defun run-on-mock-command-host (source)
   "Evaluate SOURCE with the core builtins installed and the default
 session pointed at a fresh MockHost. Returns (values result mock)."
-  (let ((mock (clautolisp.autolisp-mock-host:make-mock-host)))
+  (let ((mock (clautolisp.cador:make-cador)))
     (values
      (run-autolisp-string
       source
@@ -5653,7 +5653,7 @@ session pointed at a fresh MockHost. Returns (values result mock)."
                   (install-core-builtins)))
      mock)))
 
-(test command-special-form-records-tokens-on-mock-host
+(test command-special-form-records-tokens-on-cador
   "(command \"._LINE\" pt1 pt2 \"\") returns nil and lands on the
 MockHost command log as normalized token strings."
   (reset-autolisp-symbol-table)
@@ -5704,7 +5704,7 @@ Variable Entry: T), matching AutoCAD."
     (is (and (typep v 'clautolisp.autolisp-runtime:autolisp-symbol)
              (string= "T" (clautolisp.autolisp-runtime:autolisp-symbol-name v))))))
 
-(test vl-cmdf-returns-t-on-mock-host-and-shares-the-log
+(test vl-cmdf-returns-t-on-cador-and-shares-the-log
   (reset-autolisp-symbol-table)
   (multiple-value-bind (result mock)
       (run-on-mock-command-host "(vl-cmdf \"._REGEN\")")
@@ -5853,7 +5853,7 @@ itself fails loudly."
               (setq sorted (acad_strlsort (list a b)))
               (and (/= a b) (= (car sorted) a)))
             (vl-sort '(\"ELEMENT-2\" \"ELEMENT-1\") 'compare-with-strlsort)"
-           :setup-fn #'%install-mock-host-and-core)))
+           :setup-fn #'%install-cador-and-core)))
     (is (equal '("ELEMENT-1" "ELEMENT-2")
                (%al-string-values result)))))
 
@@ -5864,7 +5864,7 @@ itself fails loudly."
           (run-autolisp-string
            "(setvar \"MAXSORT\" 3)
             (acad_strlsort '(\"c\" \"b\" \"a\"))"
-           :setup-fn #'%install-mock-host-and-core)))
+           :setup-fn #'%install-cador-and-core)))
     (is (equal '("a" "b" "c") (%al-string-values result)))))
 
 (test acad-strlsort-above-maxsort-returns-nil
@@ -5874,5 +5874,5 @@ itself fails loudly."
           (run-autolisp-string
            "(setvar \"MAXSORT\" 2)
             (acad_strlsort '(\"c\" \"b\" \"a\"))"
-           :setup-fn #'%install-mock-host-and-core)))
+           :setup-fn #'%install-cador-and-core)))
     (is (null result))))

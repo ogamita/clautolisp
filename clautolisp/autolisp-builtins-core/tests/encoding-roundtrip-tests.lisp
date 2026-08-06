@@ -48,7 +48,7 @@ real files) and require ALL ENCODING ROUNDTRIP PASSED."
              (run-autolisp-string
               prefixed
               :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :clautolisp)
-              :setup-fn #'%install-mock-host-and-core)))
+              :setup-fn #'%install-cador-and-core)))
       (ignore-errors (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))
     (let ((s (get-output-stream-string out)))
       (is (search "ALL ENCODING ROUNDTRIP PASSED" s)

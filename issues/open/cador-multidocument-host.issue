@@ -7,6 +7,27 @@
 - **Related:** `clautolisp-debugger-remote-cad-spec.org` (Revision 2), `issue-encoding-dispatch.md`
 - **Blocks:** any further entity-level work, currently mislocated in the null host
 
+## 0. Sub-tasks (decomposition, 2026-08-06)
+
+This epic is decomposed into ordered sub-issues (owner's breakdown):
+
+- **cador-1-split-nihil-cador** (P1, NEXT, branch `cador`) — name the two
+  headless hosts: `nihil` = the stub host (today `null-host`, already
+  stubs; make its stubs warn "not implemented in this host"); `cador` =
+  the real headless CAD core (today `mock-host` — that is where the
+  accumulated CAD functions actually live, not the null host; §7's
+  "null host accumulated" framing pre-dates the mock-host extraction).
+  Implement immediately.
+- **cador-2-multidocument-runtime** (P1, branch `cador-multidocument`, in
+  PARALLEL) — N isolated document namespaces/engines/programs, one shared
+  blackboard on one shared heap (no copy), per-document drawing;
+  cooperative single-runner coroutine scheduler (one thread/document used
+  as a coroutine, aldo-style; one aldo per document ⇒ ~2 threads/document).
+- **cador-3-host-interface-protocol-spec** (P2) — D1 host-interface spec +
+  the formal AutoLISP↔host protocol + D2 cador spec + D5 naming note.
+- **cador-4-epic-remainder** (P3) — DB backend, command layer, §7.4
+  interface adaptation, locking, conformance E1–E10, wire host.
+
 ## 1. Decision record
 
 The following is settled. Do not relitigate it in the deliverables; record it as

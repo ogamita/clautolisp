@@ -71,7 +71,9 @@ separate binary for tool integrators.
   interaction token), and ~T~ (bound to itself, so ~(boundp 'T)~ and
   ~(vl-symbol-value 'T)~ now report it bound as in AutoCAD, in addition
   to self-evaluating). All three remain ordinary, user-settable.
-- Host backend selectable via ~--host mock|null~ (default mock).
+- Host backend selectable via ~--host cador|nihil~ (default cador — the
+  headless in-process CAD core; ~nihil~ is the trivial no-CAD backend).
+  ~mock~ is a deprecated alias of ~cador~; ~null~ / ~none~ of ~nihil~.
 - *Entity model* (mock host): the low-level entity family works end to
   end against an in-memory drawing database. ~entmakex~ returns the new
   entity's ENAME (feedable straight into ~entget~/~entmod~/~entdel~),
@@ -494,6 +496,11 @@ file or COM), and forwards the workload.
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
 - ~--clautolisp~ (default) — drive the in-process clautolisp engine.
+  ~--host cador|nihil~ selects that engine's HAL backend: ~cador~ (the
+  headless CAD core, default) or ~nihil~ (no CAD; operations signal
+  ~:host-not-supported~). Honoured under ~--clautolisp~ only — under
+  ~--autocad~ / ~--bricscad~ the real CAD is the host. (~mock~ = alias of
+  cador; ~null~ / ~none~ = aliases of nihil.)
 - ~--bricscad~ — drive a BricsCAD process via the file-protocol
   bridge (BricsCAD V26 / macOS). Output a script directs to a file it
   opened — ~(princ s f)~, ~(print s f)~, ~(prin1 s f)~ on a descriptor

@@ -11,14 +11,14 @@ allocator, the DXF/DWG class table, and file provenance.
 This package speaks *pure* Common-Lisp values only. The AutoLISP
 wrapper types (autolisp-ename, autolisp-string, …) are not visible
 here; wrapping/unwrapping is the host adapter's job
-(clautolisp.autolisp-mock-host and, later, the LiveHost). MockHost
+(clautolisp.cador and, later, the LiveHost). MockHost
 holds one or more of these drawings and delegates its entity /
 table / sysvar surface to the active one.
 
 The data-carrier structs (ENTITY-HANDLE, SYMBOL-TABLE-RECORD,
 DICTIONARY, SYSVAR-CELL) live here and are re-exported by MockHost
 for backward compatibility with code and tests that imported them
-from the mock-host package before the Phase-17a extraction.")
+from the cador package before the Phase-17a extraction.")
   (:export
    ;; The drawing value object.
    #:drawing

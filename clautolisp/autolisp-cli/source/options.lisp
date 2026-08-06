@@ -118,13 +118,17 @@
                           value)))))
 
 (defun parse-host (value option)
-  (cond ((string-equal value "mock") :mock)
+  ;; cador = the headless CAD core (was named "mock"); null = the trivial
+  ;; backend. "mock" is kept as a deprecated alias of cador.
+  (cond ((string-equal value "cador") :cador)
+        ((string-equal value "mock") :cador)
+        ((string-equal value "nihil") :nihil)
         ((string-equal value "null") :null)
         ((string-equal value "none") :null)
         (t (error 'cli-usage-error
                   :option option
                   :message
-                  (format nil "Unknown --host ~S (expected mock/null)" value)))))
+                  (format nil "Unknown --host ~S (expected cador/nihil; mock=alias of cador, null/none=aliases of nihil)" value)))))
 
 (defun parse-dialect (value option)
   "Validate a --dialect VALUE against the reader's dialect registry

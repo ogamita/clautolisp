@@ -1,0 +1,72 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cador-2-multidocument-runtime — N documents, isolated engines, shared blackboard, cooperative coroutine scheduler
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: feature
+#+DEPENDS: cador-1-split-nihil-cador
+#+BRANCH: cador-multidocument
+
+* Context
+
+Sub-task 2 of the =cador-multidocument-host= epic (§5, §6 C1–C8, and the
+analysis document's §4.2 invariant "one runner, N parked contexts").
+Developed on its OWN branch (=cador-multidocument=) in parallel with
+sub-task 1, per the owner.
+
+* Problem
+
+cador must present a multi-document world to AutoLISP, matching AutoCAD /
+BricsCAD MDI semantics, on a single-runner cooperative model — without a
+global Lisp environment (C1) and without concurrent per-document
+execution (C2).
+
+* Proposal (owner's design, to be specified then implemented)
+
+- **N document images.** Each open drawing is a document with its OWN
+  AutoLISP namespace: separate value/function cells, a separate AutoLISP
+  engine (evaluation context), and a distinct loaded Lisp program set.
+  Switching document switches the active namespace + the active drawing.
+- **Shared blackboard, one heap.** A single AutoLISP heap is kept for the
+  whole session; the blackboard (=vl-bb-ref= / =vl-bb-set=) is shared
+  across documents WITHOUT copying values between per-document heaps —
+  there is one heap, so blackboard values are shared by identity, not
+  duplicated (values only, never functions — C3).
+- **Per-document drawing.** Each namespace owns its drawing (the cador
+  entity DB); entity handles / selection sets / ldata are
+  document-tagged, cross-document dereference signals (C5).
+- **Scheduler = cooperative coroutines.** One thread per document, but run
+  as a coroutine (the aldo signal/park handoff model): at most one
+  evaluation runs at any instant, any number parked (C2, C8 — no worker
+  thread is *required*, but the per-document thread is the coroutine
+  carrier). One aldo (debugger) instance per document ⇒ ~2 threads per
+  document total (the document runner + its aldo), used cooperatively.
+- **Park/resume points.** Reuse the debugger's poll-point / signal-park
+  machinery; specify where a document parks and what resuming restores;
+  a host call outstanding at a park is the hazard to handle (epic §1.2b).
+
+* Non-negotiable (from the epic §6)
+
+C1 no global env; C2 no concurrent per-document execution; C3 blackboard
+values-only; C5 document-tagged handles; C8 single-runner, no mandatory
+worker thread.
+
+* Acceptance criteria
+
+- [ ] N documents open concurrently, each with an isolated namespace +
+      engine + loaded program set + drawing.
+- [ ] Blackboard values shared across documents via the one shared heap,
+      no copying; functions rejected.
+- [ ] Cooperative scheduler: exactly one running context, others parked;
+      document switch parks the current and resumes the target.
+- [ ] One aldo instance per document; the coroutine handoff mirrors the
+      same-image two-thread debugger design.
+- [ ] Cross-document handle dereference signals; per-document drawing
+      isolation holds.
+- [ ] Conformance probes (E1 symbol identity, E2 blackboard sharing) run
+      against cador.
+
+* Notes
+
+Depends on cador-1 (the host must be named cador and own the entity DB
+first) and on the D1/D2 specification (cador-3) for the formal
+autolisp↔host protocol the scheduler and namespace model realise.

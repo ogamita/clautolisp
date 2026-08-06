@@ -707,7 +707,7 @@ extension; the emitted run-common.lsp runs inside the CAD's own
 runtime, so the BricsCAD spelling is what reaches its defun
 parser. clautolisp's parser accepts both spellings as synonyms
 (alfe 1.1.17), so the emitted file also loads correctly under
-the mock-host used by the test suite."
+the cador used by the test suite."
   ;; The bridge block (which carries the variadic shadows) is
   ;; emitted only when BOTH the bootstrap and the runtime LSP are
   ;; staged — emit-run-common-lsp gates the bridge inside the

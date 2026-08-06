@@ -14,7 +14,7 @@
   "Evaluate SOURCE through the evaluator on a fresh mock host; return
 the raw result value."
   (reset-autolisp-symbol-table)
-  (run-autolisp-string source :setup-fn #'%install-mock-host-and-core))
+  (run-autolisp-string source :setup-fn #'%install-cador-and-core))
 
 ;;; --- REGAPP ------------------------------------------------------
 
@@ -37,7 +37,7 @@ dots go to *standard-output*, so rebinding *error-output* is clean."
     (let ((result (let ((*error-output* warn))
                     (run-autolisp-string source
                                          :dialect dialect
-                                         :setup-fn #'%install-mock-host-and-core))))
+                                         :setup-fn #'%install-cador-and-core))))
       (values result (get-output-stream-string warn)))))
 
 ;; A marker-less ELLIPSE (R13+): AutoCAD rejects it, BricsCAD accepts it.

@@ -1,0 +1,302 @@
+(in-package #:clautolisp.cador)
+
+;;;; Sysvar HAL methods on MockHost (Phase 11).
+;;;;
+;;;; Implements: host-getvar, host-setvar.
+;;;;
+;;;; getvar returns the cell's current value, wrapping CL strings in
+;;;; AutoLISP-strings. setvar coerces the supplied value against the
+;;;; cell's :kind: integers / shorts truncate reals, reals coerce
+;;;; from any number, strings come from AutoLISP-strings, points
+;;;; come from coordinate lists.
+
+(defun ensure-sysvar-name (name operator-name)
+  (cond
+    ((typep name 'clautolisp.autolisp-runtime:autolisp-string)
+     (clautolisp.autolisp-runtime:autolisp-string-value name))
+    ((stringp name) name)
+    (t
+     (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+      :invalid-sysvar-name
+      "~A expects a sysvar name string, got ~S."
+      operator-name name))))
+
+(defun mock-string-of (value)
+  (cond
+    ((typep value 'clautolisp.autolisp-runtime:autolisp-string)
+     (clautolisp.autolisp-runtime:autolisp-string-value value))
+    ((stringp value) value)
+    (t nil)))
+
+(defun coerce-sysvar-value (kind value cell-name)
+  "Coerce VALUE against the documented sysvar KIND. Signals
+:invalid-sysvar-value on type mismatch."
+  (case kind
+    ((:integer)
+     (cond
+       ((typep value '(signed-byte 32)) value)
+       ((integerp value) value)
+       ((numberp value) (truncate value))
+       (t
+        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+         :invalid-sysvar-value
+         "Sysvar ~A expects an integer, got ~S."
+         cell-name value))))
+    ((:short)
+     (cond
+       ((numberp value) (max -32768 (min 32767 (truncate value))))
+       (t
+        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+         :invalid-sysvar-value
+         "Sysvar ~A expects a short integer, got ~S."
+         cell-name value))))
+    ((:real)
+     (cond
+       ((numberp value) (coerce value 'double-float))
+       (t
+        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+         :invalid-sysvar-value
+         "Sysvar ~A expects a real number, got ~S."
+         cell-name value))))
+    ((:string)
+     (let ((string (mock-string-of value)))
+       (or string
+           (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+            :invalid-sysvar-value
+            "Sysvar ~A expects a string, got ~S."
+            cell-name value))))
+    ((:point)
+     (cond
+       ((and (listp value) (every #'numberp value)
+             (or (= (length value) 2) (= (length value) 3)))
+        (mapcar (lambda (n) (coerce n 'double-float)) value))
+       (t
+        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+         :invalid-sysvar-value
+         "Sysvar ~A expects a 2-D or 3-D point list, got ~S."
+         cell-name value))))
+    (t value)))
+
+(defun present-sysvar-value (kind raw)
+  "Wrap RAW for AutoLISP consumption; strings get an
+autolisp-string wrapper, others are returned as-is."
+  (case kind
+    ((:string)
+     (clautolisp.autolisp-runtime:make-autolisp-string raw))
+    (t raw)))
+
+;;; --- ERRNO bridge -------------------------------------------------
+;;;
+;;; ERRNO is a documented AutoLISP sysvar (autolisp-spec §16:9354)
+;;; that file/IO/entity/selection builtins set when they return
+;;; nil-on-failure. The authoritative value lives on the runtime
+;;; session (slot AUTOLISP-RUNTIME:RUNTIME-SESSION-ERRNO, accessed
+;;; via AUTOLISP-ERRNO / SET-AUTOLISP-ERRNO). The MockHost catalogue
+;;; carries an ERRNO cell only so that snapshot/restore round-trips
+;;; cleanly; the cell value is not the truth.
+;;;
+;;; (getvar "ERRNO") therefore reads the session value, and
+;;; (setvar "ERRNO" v) writes it. The mock cell's value is updated
+;;; on every read/write so it stays in sync for the next snapshot.
+
+(defun errno-name-p (string)
+  (and (stringp string)
+       (string-equal string "ERRNO")))
+
+;;; --- Live clock sysvars (DATE / CDATE / MILLISECS) ----------------
+;;;
+;;; These are host-derived, read-only, and *dynamic*: each GETVAR
+;;; reports the current clock, so the stored cell value (a 0.0 / 0
+;;; placeholder from the catalogue) is never the truth. Computed here
+;;; from the CL time functions, mirroring the ERRNO live-source path.
+;;;
+;;; DATE  — local date+time as a Julian day number plus the fraction of
+;;;         the day elapsed since local midnight.
+;;; CDATE — the same instant as the decimal YYYYMMDD.HHMMSS.
+;;; MILLISECS — milliseconds since the engine process started (a
+;;;         monotonic tick; the headless analogue of the host uptime).
+;;;
+;;; Note: the exact Julian-day offset convention (whether AutoCAD's DATE
+;;; integer is the noon-based JDN, as assumed here via the standard
+;;; AutoLISP reverse-conversion formulas) should be confirmed against a
+;;; *cad probe; see probes/ and make probe.
+
+(defun clock-sysvar-name-p (string)
+  (and (stringp string)
+       (or (string-equal string "DATE")
+           (string-equal string "CDATE")
+           (string-equal string "MILLISECS"))))
+
+(defun %gregorian-julian-day-number (year month day)
+  "The Julian Day Number for a Gregorian calendar date (integer)."
+  (let* ((a (floor (- 14 month) 12))
+         (y (+ year 4800 (- a)))
+         (m (+ month (* 12 a) -3)))
+    (+ day
+       (floor (+ (* 153 m) 2) 5)
+       (* 365 y)
+       (floor y 4)
+       (- (floor y 100))
+       (floor y 400)
+       -32045)))
+
+;; The three clock sysvars share a 1 ms cache. Their required
+;; resolution is one millisecond, so within a given millisecond every
+;; GETVAR returns the value computed for that millisecond: a tight loop
+;; polling the clock pays the get-universal-time + decode + Julian-day
+;; cost at most once per ms (the per-call cost drops to a single
+;; monotonic tick read). The cache is global because the wall clock is
+;; global; a concurrent reader might at worst trigger a redundant
+;; refresh for the same ms, never observe a wrong value.
+
+(defstruct (clock-cache (:constructor %make-clock-cache))
+  (millis -1 :type integer)            ; the ms tick the cache was filled for
+  (date 0.0d0 :type double-float)
+  (cdate 0.0d0 :type double-float)
+  (millisecs 0 :type integer))
+
+(defparameter *clock-cache* (%make-clock-cache)
+  "1 ms cache shared by the DATE / CDATE / MILLISECS sysvars.")
+
+(defun %clock-now-millis ()
+  "Milliseconds since the engine process started (monotonic)."
+  (floor (* 1000 (get-internal-real-time)) internal-time-units-per-second))
+
+(defun %refresh-clock-cache (now-millis)
+  "Recompute all three clock values for NOW-MILLIS from a single
+universal-time read, so DATE and CDATE always describe the same instant."
+  (multiple-value-bind (sec min hour day month year)
+      (decode-universal-time (get-universal-time))
+    (let ((c *clock-cache*))
+      (setf (clock-cache-date c)
+            (+ (%gregorian-julian-day-number year month day)
+               (/ (+ (* hour 3600) (* min 60) sec) 86400.0d0))
+            (clock-cache-cdate c)
+            (+ (coerce (+ (* year 10000) (* month 100) day) 'double-float)
+               (/ (+ (* hour 10000) (* min 100) sec) 1.0d6))
+            (clock-cache-millisecs c) now-millis
+            (clock-cache-millis c) now-millis))))
+
+(defun %clock-sysvar-at (string now-millis)
+  "Return STRING's clock value for the millisecond NOW-MILLIS, refreshing
+the cache only when NOW-MILLIS differs from the cached tick. Split out
+from COMPUTE-CLOCK-SYSVAR so the cache can be exercised with an injected
+clock."
+  (let ((c *clock-cache*))
+    (unless (eql now-millis (clock-cache-millis c))
+      (%refresh-clock-cache now-millis))
+    (cond
+      ((string-equal string "DATE")      (clock-cache-date c))
+      ((string-equal string "CDATE")     (clock-cache-cdate c))
+      ((string-equal string "MILLISECS") (clock-cache-millisecs c)))))
+
+(defun compute-clock-sysvar (string)
+  (%clock-sysvar-at string (%clock-now-millis)))
+
+;;; --- Method definitions ------------------------------------------
+
+(defmethod host-getvar ((host cador) name)
+  (let* ((string (ensure-sysvar-name name 'getvar))
+         (cell (cador-sysvar host string)))
+    (cond
+      ;; Unknown name -> nil (§16 normative rule on unknown names).
+      ((null cell) nil)
+      ;; ERRNO is sourced from the live runtime session.
+      ((errno-name-p string)
+       (let ((v (clautolisp.autolisp-runtime:autolisp-errno)))
+         (setf (sysvar-cell-value cell) v)
+         v))
+      ;; DATE / CDATE / MILLISECS are computed live from the clock.
+      ((clock-sysvar-name-p string)
+       (let ((v (compute-clock-sysvar string)))
+         (setf (sysvar-cell-value cell) v)
+         v))
+      (t
+       (present-sysvar-value (sysvar-cell-kind cell)
+                             (sysvar-cell-value cell))))))
+
+(defmethod host-sysvar-names ((host cador))
+  "Return the upper-cased names of every sysvar known to HOST,
+sorted lexicographically. Used by the CLAL-SYSVAR-LIST and
+CLAL-SYSVAR-APROPOS clautolisp extensions."
+  (let ((names '()))
+    (maphash (lambda (k v)
+               (declare (ignore v))
+               (push k names))
+             (cador-sysvars host))
+    (sort names #'string<)))
+
+(defmethod host-setvar ((host cador) name value)
+  (let* ((string (ensure-sysvar-name name 'setvar))
+         (cell (cador-sysvar host string)))
+    (cond
+      ((null cell)
+       (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+        :unknown-sysvar
+        "MockHost has no system variable named ~A."
+        string))
+      ((sysvar-cell-read-only-p cell)
+       (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+        :sysvar-read-only
+        "Sysvar ~A is read-only."
+        string))
+      (t
+       (let* ((coerced (coerce-sysvar-value (sysvar-cell-kind cell) value string))
+              (document
+               (clautolisp.autolisp-runtime:evaluation-context-current-document
+                (clautolisp.autolisp-runtime:current-evaluation-context)))
+              (rendered-name (clautolisp.autolisp-runtime:make-autolisp-string string)))
+         (clautolisp.autolisp-runtime:signal-document-event
+          document :sysvar :vlr-sysvarwillchange (list rendered-name))
+         (setf (sysvar-cell-value cell) coerced)
+         (clautolisp.autolisp-runtime:signal-document-event
+          document :sysvar :vlr-sysvarchanged (list rendered-name))
+         (present-sysvar-value (sysvar-cell-kind cell) coerced))))))
+
+(defmethod host-undefine-sysvar ((host cador) name)
+  "Drop NAME from HOST's sysvar table (bricscad dialect overlay). NAME may
+be an autolisp-string or a CL string. Silently no-ops on unknown names so
+the launch-time overlay does not need to know which catalogue is installed."
+  (let ((string (ensure-sysvar-name name 'undefine-sysvar)))
+    (cador-remove-sysvar host string)))
+
+(defmethod host-set-derived-sysvar ((host cador) name value)
+  "Launch-time bypass of the cell's read-only flag for host-derived
+sysvars (SYSCODEPAGE, DWGCODEPAGE, …). The catalogue marks these as
+read-only because user code must not setvar them at runtime, but the
+HAL itself populates them once at session start. NAME must already
+exist; the function silently no-ops on unknown sysvars so transmit-
+side callers don't need to know which catalogue is installed."
+  (let* ((string (ensure-sysvar-name name 'set-derived-sysvar))
+         (cell (cador-sysvar host string)))
+    (when cell
+      (let ((coerced (coerce-sysvar-value
+                      (sysvar-cell-kind cell) value string)))
+        (setf (sysvar-cell-value cell) coerced)
+        coerced))))
+
+(defmethod host-define-sysvar ((host cador) name kind value read-only-p)
+  "Upsert a sysvar cell. When NAME exists, set its value (coerced to
+the cell's kind, or to KIND when supplied) and its read-only flag;
+otherwise create the cell with KIND (defaulting to :string), VALUE and
+READ-ONLY-P. Used at launch to apply dialect-dependent trust defaults
+and to register the clautolisp-only trust sysvars. Returns the stored
+value."
+  (let* ((string (ensure-sysvar-name name 'define-sysvar))
+         (cell (cador-sysvar host string)))
+    (if cell
+        (let* ((effective-kind (or kind (sysvar-cell-kind cell)))
+               (coerced (coerce-sysvar-value effective-kind value string)))
+          (setf (sysvar-cell-kind cell) effective-kind
+                (sysvar-cell-value cell) coerced
+                (sysvar-cell-read-only-p cell) (and read-only-p t))
+          coerced)
+        (let* ((effective-kind (or kind :string))
+               (coerced (coerce-sysvar-value effective-kind value string))
+               (new (make-sysvar-cell :name string
+                                      :kind effective-kind
+                                      :value coerced
+                                      :read-only-p (and read-only-p t)
+                                      :host-derived-p nil)))
+          (setf (gethash string (cador-sysvars host)) new)
+          coerced))))
