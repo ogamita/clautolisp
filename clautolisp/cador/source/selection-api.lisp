@@ -324,11 +324,40 @@ than signalling (the builtin layer validates gross filter shape)."
            (and (pickset-members set)
                 (progn (cador-register-pickset host set)
                        (pickset->ap set))))))
+      ((or (string-equal mode-string "I")
+           (string-equal mode-string "_I"))
+       ;; Implied (pickfirst) selection — the read side of sssetfirst's
+       ;; storage. It is passive: no pointer, no geometry, no prompt, and
+       ;; it never signals (ssget-implied-selection-not-graphical.issue).
+       ;;   - PICKFIRST 0 suppresses it regardless of what is stored.
+       ;;   - The stored set is *consumed* on read (vendor parity, pjb
+       ;;     decision): a second (ssget "_I") without an intervening
+       ;;     sssetfirst returns nil.
+       ;;   - A FILTER applies the shared "_X" grammar to that set.
+       (let ((pf (cador-pickfirst host))
+             (cell (cador-sysvar host "PICKFIRST")))
+         (cond
+           ((and cell (eql 0 (sysvar-cell-value cell))) nil)
+           ((null pf) nil)
+           (t
+            (let ((matches '()))
+              (dolist (entity (pickset-members pf))
+                (when (and entity (not (entity-handle-deleted-p entity))
+                           (clautolisp.drawing:graphical-entity-p entity)
+                           (or (null filter)
+                               (entity-matches-filter-p entity filter)))
+                  (push entity matches)))
+              ;; Consume-on-read: taking the implied set clears it.
+              (setf (cador-pickfirst host) nil)
+              (let ((set (make-pickset :members (nreverse matches))))
+                (and (pickset-members set)
+                     (progn (cador-register-pickset host set)
+                            (pickset->ap set)))))))))
       (t
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
         :unsupported-ssget-mode
-        "MockHost does not yet support ssget mode ~S; accepted modes are ~S and ~S."
-        mode-string "X" "_X")))))
+        "MockHost does not yet support ssget mode ~S; accepted modes are ~S, ~S and ~S."
+        mode-string "X" "_X" "_I")))))
 
 (defmethod host-ssadd ((host cador) ap ename)
   ;; (ssadd)        — create a new empty pickset (handled via the

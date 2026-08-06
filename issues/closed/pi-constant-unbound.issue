@@ -81,3 +81,24 @@ as an unchecked entry in issues/open/schms-call-inventory.md), which is
 what currently stops the same SCHMS+ suite from running headless: it
 makes src-vlx/plateforme.lsp fail to load, and with it
 `schms_transaction_undo`, which every entity-mutating test goes through.
+
+Resolved (clautolisp 1.7.25)
+----------------------------
+RESOLVED. `install-predefined-variables`
+(autolisp-builtins-core/source/api.lisp) now binds the AutoLISP
+predefined variables at engine start, in every dialect, with no host
+required:
+
+  - `PI`   -> `(coerce pi 'double-float)` = 3.141592653589793;
+  - `T`    -> the AutoLISP true value;
+  - `PAUSE`-> the "\\" command-pause string.
+
+The binding is host-independent (a language constant, not a drawing
+property) and writable, matching the vendors (both AutoCAD and BricsCAD
+allow `(setq pi 3)`). `(print pi)` now prints the value in strict, lax,
+clautolisp and every vendor dialect; the SCHMS+ geometry code (97 uses)
+loads. Verified present on master at the time of this close.
+
+Follow-up left open elsewhere (NOT part of this issue): a strict-dialect
+diagnostic for a *read* of an unbound symbol that the vendors define —
+tracked with the dialect-portability-warning work, not here.
