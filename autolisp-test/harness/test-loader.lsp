@@ -138,6 +138,10 @@
         "tests/sysvar/coupling-angle.lsp"
         "tests/sysvar/coupling-units.lsp"
         "tests/sysvar/coupling-date.lsp"
+        "tests/sysvar/coupling-sort.lsp"
+        "tests/sysvar/coupling-viewport.lsp"
+        "tests/sysvar/coupling-command.lsp"
+        "tests/sysvar/coupling-path.lsp"
         "tests/sysvar/inventory-coverage.lsp"
         ;; documentation (clautolisp source-aware ;| |; doc extension)
         "tests/documentation/preceding-doc.lsp"

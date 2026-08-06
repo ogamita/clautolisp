@@ -302,3 +302,110 @@ applies DIMZIN zero-suppression (UNITMODE remains a no-op pending rtos
 modes 3-5); (3) the trust-gating coupling
 (TRUSTEDPATHS/SECURELOAD), which is security-relevant — NEXT; (4) the remaining
 behavioural couplings with tests.
+
+## Progress (2026-08-06) — rtos modes 3-5 + UNITMODE, and coupling tests
+
+Branch feature-system-variables-couplings (off origin/master).
+
+### 1. rtos modes 3-5 + UNITMODE (item 1) — DONE
+
+builtin-rtos now formats every documented LUNITS mode; the
+decimal-fallback / "UNITMODE is a no-op" note is removed.
+New helpers in autolisp-builtins-core/source/api.lisp:
+
+  - %inches->whole-fraction — splits inches into whole + a reduced
+    2^LUPREC fraction, carrying a rounded-up unit.
+  - %format-engineering-real  (mode 3) — feet + decimal inches:
+    (rtos 17.5 3 2) => "1'-5.50\"".
+  - %format-architectural-real (mode 4) — feet + fractional inches:
+    (rtos 17.5 4 2) => "1'-5 1/2\"".
+  - %format-fractional-real   (mode 5) — whole + fraction, no feet:
+    (rtos 17.5 5 2) => "17 1/2".
+
+LUPREC is decimal places for engineering, and the power-of-two
+fraction denominator (2^LUPREC) for architectural/fractional (LUPREC 4
+=> 1/16). UNITMODE is now honoured: 0 = display form (space between
+whole inches and the fraction), 1 = re-readable input form (hyphen),
+e.g. "1'-5-1/2\"" / "17-1/2". builtin-rtos reads UNITMODE alongside
+LUNITS/LUPREC/DIMZIN. The canonical assertions are Autodesk's own rtos
+reference examples for 17.5.
+
+TODO (edge cases, headless): DIMZIN feet-inch zero-suppression bits
+(0-3) for modes 3-5 (only the decimal bits 2/3 are applied, on mode 2);
+engineering-mode inch rounding that lands on 12.000" does not carry a
+foot (architectural/fractional do carry). Negative values that round to
+zero print a leading "-".
+
+### 2. distance / getdist reading LUPREC for input parsing (item 2) — FINDING, no code change
+
+Investigated; there is genuinely nothing for LUPREC to do on input:
+
+  - distance (builtin-distance, api.lisp) takes two POINT arguments
+    (coordinate lists), computes the Euclidean distance, and returns a
+    real. It parses no string and formats no output, so no linear-unit
+    sysvar (LUNITS/LUPREC/DIMZIN/UNITMODE) couples to it.
+  - getdist (host-getdist, cador/source/prompt-api.lisp) reads one line
+    of text and returns a full-precision real (parse-real). LUPREC is a
+    *display* precision (decimal places / fraction denominator for
+    rtos/angtos OUTPUT); it does not and must not truncate parsed input.
+    The spec is explicit that getdist "result is always a real, even
+    when the user enters values in architectural units" — i.e. the
+    return keeps full precision regardless of LUPREC.
+
+  Conclusion: the LUPREC<->input coupling asserted in the seed list does
+  not exist. The only genuine input-side enhancement would be teaching
+  getdist to PARSE feet/inch architectural input ("1'-6\"") — governed
+  by LUNITS/UNITMODE, not LUPREC — which is a separate headless-parsing
+  enhancement, left as a TODO. LUPREC's sole coupling remains the
+  rtos/angtos output path (already implemented).
+
+### 3. Coupling tests (item 3) — DONE (breadth), one behavioural test per coupling
+
+builtins-core FiveAM (autolisp-builtins-core/tests/builtin-tests.lisp),
+all green:
+
+  - RTOS-ENGINEERING/ARCHITECTURAL/FRACTIONAL-MODE-*,
+    RTOS-UNITMODE-SELECTS-DISPLAY-VS-INPUT-FORM,
+    RTOS-MODES-3-5-DEFAULT-PRECISION-FROM-LUPREC.
+  - COUPLING-CMDECHO-GATES-COMMAND-ECHO — captures the prompt output:
+    CMDECHO=1 echoes the command line, CMDECHO=0 silences it while still
+    running/logging the command.
+  - COUPLING-MAXSORT-CAPS-ACAD-STRLSORT.
+  - COUPLING-TILEMODE-CVPORT-VIEWPORT-ACCESS (vports sentinel + setview).
+  - COUPLING-SNAPANG-ANGBASE-SETVAR-RADIANS.
+  - COUPLING-DWGNAME-DWGPREFIX-ARE-PATH-STRINGS.
+  - COUPLING-DATE-FAMILY-ARE-READABLE-REALS (DATE/TDCREATE/TDUPDATE).
+  - COUPLING-SRCHPATH-ROUND-TRIPS.
+  - COUPLING-TRUSTEDPATHS-SECURELOAD-ROUND-TRIP (gating itself is already
+    covered by the SECURELOAD-GATE-* / SECURELOAD-FINDTRUSTEDFILE-* /
+    OPEN-RESOLUTION-USES-SUPPORT-SEARCH-PATH tests).
+
+autolisp-test conformance corpus (tests/sysvar/, profile strict), added
++ registered in harness/test-loader.lsp:
+
+  - coupling-units.lsp: rtos modes 3-5 + UNITMODE 0/1 (+ reset).
+  - coupling-sort.lsp: MAXSORT -> acad_strlsort.
+  - coupling-viewport.lsp: TILEMODE/CVPORT round-trip, vports, setview.
+  - coupling-command.lsp: CMDECHO round-trip; command runs under 0/1.
+  - coupling-path.lsp: DWGNAME/DWGPREFIX shape, SRCHPATH round-trip.
+  - coupling-angle.lsp: SNAPANG radians round-trip (added).
+  - coupling-date.lsp: TDCREATE/TDUPDATE readable reals (added).
+
+### Code change enabling the CMDECHO coupling
+
+The mock command engine (cador/source/command-api.lisp, host-command)
+previously echoed the command line unconditionally, ignoring CMDECHO —
+so the "CMDECHO -> command echo" coupling was not actually wired. Added
+%cador-cmdecho-on-p and gated the prompt echo on it (the command log is
+still recorded unconditionally). This is the code half of that coupling;
+the FiveAM + conformance tests above are the test half.
+
+### Still open / TODO
+
+  - rtos modes 3-5 DIMZIN feet-inch suppression bits and engineering
+    inch->foot carry (above).
+  - getdist architectural INPUT parsing (LUNITS/UNITMODE, not LUPREC).
+  - DIESEL edtime formatter for DATE/CDATE/TDCREATE/TDUPDATE (menucmd is
+    still a stub) — the sysvars are readable but no edtime consumer.
+  - vports/setview remain headless stubs (single-viewport sentinel /
+    nil); a live viewport model needs a CAD host.
