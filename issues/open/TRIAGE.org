@@ -66,7 +66,7 @@ retrofitted as they are touched.
 | accoreconsole-macos-headless-qt-blocker       | cad-runtime     | BLOCKED  | PARKED — Autodesk macOS bug (V26 W.119.M.325 + V27 X.60.M.171, even their own acad20XX.LSP fails); real AutoCAD conformance runs on Windows |
 | alfe-bricscad-automation-macos                | alfe-backend    | TODO     | exercise --mode automation on macOS (no true headless on mac — see rules repo) |
 | dialect-platform-version-axis                 | dialect-design  | TODO     | autocad vs autocad-mac + version suffixes; drives "/…"-warns-on-windows |
-| clautolisp-dialect-portability-warnings       | dialect         | TODO     | verify the portability-warning mechanism; ch.25 DoD |
+| clautolisp-dialect-portability-warnings       | dialect         | DONE     | VERIFIED implemented+tested (knob / once-per-occurrence dedup / dialect-gated emitters for &rest + .. / :error escalation; ~15 tests). Functional proof recorded. Breadth of the catalogue = follow-up. issues/closed/ |
 | cad-path-dotdot-resolution                    | divergence      | BLOCKED  | investigation complete; final verify needs bricscad-access |
 | bricscad-undocumented-clisms                  | dialect-invent  | BLOCKED  | inventory; needs bricscad-access (phase-2 harvest) |
 | clautolisp-windows-pathname-mapping           | portability     | BLOCKED  | needs windows-access; design spec written |

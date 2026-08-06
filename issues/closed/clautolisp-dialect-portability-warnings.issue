@@ -156,3 +156,44 @@ REMAINING (issue stays OPEN):
     issue itself asks to add entries incrementally as hazards are
     confirmed. The static-analysis consumer remains explicitly out of
     scope.
+
+Resolved — VERIFIED implemented + tested (2026-08-06)
+-----------------------------------------------------
+
+Audit outcome: this is "verify", not "build" — the mechanism is fully
+present and works.
+
+Infrastructure (clautolisp/autolisp-runtime/source/api.lisp + reader):
+- Dialect descriptor carries a `portability-warning-mode` knob (:warn
+  default, :error escalation) — autolisp-reader/source/dialect.lisp;
+  reader accessor autolisp-dialect-portability-warning-mode.
+- Once-per-source-occurrence dedup: %portability-warning-occurrence-seen-p,
+  keyed in the session's portability-warnings-seen table (reset per run),
+  NOT keyed by construct class — matches the "once per occurrence" rule.
+- Dialect-gated, evaluation-tied emitters:
+    * emit-lambda-list-extension-warning — `defun`/lambda `&rest` (a
+      clautolisp variadic extension);
+    * emit-dotdot-path-portability-warning — `..` path segments.
+  Under :error mode they escalate to a runtime error.
+
+Functional proof:
+    --dialect strict  : (defun f (a &rest r) r)(f 1 2 3)
+      -> stderr: "[lambda-list-extension] DEFUN: `&REST' is a clautolisp
+         variadic-function extension; --dialect strict flags it as
+         non-portable. Use --dialect clautolisp to silence, …"
+    --dialect clautolisp (native) : same code -> no warning.
+
+Why "never seen": the warnings are dialect-gated and eval-tied, and only
+two constructs currently have emitters (`&rest`, `..`). Under a native
+dialect (clautolisp/lax), or for a construct without an emitter, nothing
+prints — by design.
+
+Tests: clautolisp/autolisp-runtime/tests/evaluator-tests.lisp (~15
+lambda-list-extension / portability assertions, incl. once-per-occurrence
+dedup and :error escalation) + autolisp-builtins-core/tests/
+path-dotdot-tests.lisp.
+
+Closing as verified. FOLLOW-UP (separate issue when wanted): broaden the
+"one knowledge base" catalogue beyond `&rest` / `..` to more
+dialect-nonportable constructs, feeding both the runtime emitter and a
+static linter (spec ch.25). Not a defect in the mechanism.
