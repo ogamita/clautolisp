@@ -1,0 +1,905 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: Clautolisp Host Interface Specification (D1)
+#+SUBTITLE: The backend-agnostic contract every clautolisp host implements, plus the formal AutoLISP↔host protocol
+#+AUTHOR: clautolisp project
+#+DATE: 2026-08-06
+#+OPTIONS: toc:3 num:t ^:nil
+#+STARTUP: overview
+#+DOCUMENT_VERSION: 0.1.0 (draft for review — cador-3 / epic deliverables D1 + D5)
+
+* 0. Status, scope, and how to read this document
+  :PROPERTIES:
+  :CUSTOM_ID: status
+  :END:
+
+This is deliverable *D1* of the =cador-multidocument-host= epic (see
+=issues/open/cador-multidocument-host.issue=, hereafter "the epic"). It
+specifies the *Host Abstraction Layer* (HAL): the single interface through
+which clautolisp reaches every CAD and GUI facility. It also carries
+deliverable *D5*, the naming and architecture note (§2), and the *formal
+AutoLISP↔host protocol* the sub-task issue
+(=cador-3-host-interface-protocol-spec.issue=) requires (§13).
+
+Per epic §3 this document is *backend-agnostic*: it must be readable without
+reference to any one host. Where a host's concrete behaviour is named it is
+named as an *instance* of the contract, never as the contract itself. The
+companion document =clautolisp-cador-spec.org= (D2) specifies the =cador=
+host in full; =nihil= is specified by its negative contract here and in D2's
+sibling material.
+
+** Provenance grades
+
+Every factual claim about *AutoCAD or BricsCAD* behaviour carries a grade,
+inherited from =clautolisp-multidocument-analysis.org= (hereafter "the
+analysis"):
+
+| Grade | Meaning                                                                    |
+|-------+----------------------------------------------------------------------------|
+| A     | Primary vendor documentation (Autodesk help, ObjectARX guide, Bricsys)     |
+| B     | Vendor employee blog or vendor staff forum answer                          |
+| C     | Third-party summary; treat as a hypothesis to verify                       |
+| V     | Not established by any source; must be settled by experiment (analysis §9) |
+| S     | *Clautolisp source of record* — verified against this repository, cited by file. Not a vendor claim; carries no portability risk. |
+
+Grade =S= is local to this document (and D2). It marks a claim about
+*clautolisp's own* code, not about a vendor product, so it never needs a
+=V=-style experiment. Every =S= claim cites the file it was read from.
+
+** Assumptions
+
+Assumptions about vendor behaviour are collected in §14 and flagged inline as
+=[ASSUMPTION]=. Nothing assumed is allowed to read as established.
+
+* 1. The host object and the dispatch model
+  :PROPERTIES:
+  :CUSTOM_ID: dispatch
+  :END:
+
+The HAL is a set of CLOS generic functions specialised on a single first
+argument, a =host= object. [S: =clautolisp/autolisp-host/source/protocol.lisp=]
+
+- =host= is an abstract base class with one slot, =host-name= (a short string
+  printed in diagnostics). [S: protocol.lisp:28]
+- Every HAL operation =host-OP= is a generic function whose *first* required
+  argument is the host. The interpreter never reaches a backend except by
+  calling one of these generics on the session's current host.
+- The base class provides a *default method for every operation* that calls
+  =signal-host-not-supported=, i.e. signals the "operation not supported by
+  this host" condition (§6). A backend therefore inherits a safe "not
+  implemented" shape and overrides only what it supports. [S: protocol.lisp:167–255]
+
+This is *constraint C6* of the epic ("no CAD access outside the host
+interface, from anywhere in the interpreter") expressed structurally: because
+the only path to a backend is a generic-function call on =host=, a linter can
+prove C6 by checking that no code below the HAL boundary names a backend
+package. D2 §15 specifies that boundary.
+
+The session's host is one field of the runtime session
+(=runtime-session-host=); it is orthogonal to the *dialect* descriptor, which
+governs language semantics. A session carries exactly one of each. [S:
+=clautolisp/autolisp-runtime/source/model.lisp:110–117=]
+
+** 1.1 What "an operation" means to the contract
+
+Each operation below is specified by five facets, exactly as the epic §4
+requires:
+
+1. *Name* — the HAL generic (=host-OP=) and the AutoLISP surface it backs.
+2. *Arguments* — value domains (§13.2 defines the domains formally).
+3. *Return value* — value domain, including the =nil= conventions AutoLISP
+   relies on.
+4. *Error conditions* — which taxonomy class (§6) each failure signals.
+5. *Per-host behaviour* — one column each for =nihil=, =cador=, and the
+   =<wire-host>=. AutoCAD/BricsCAD reference behaviour is carried in the
+   fidelity matrix (§12), not repeated per operation.
+
+To keep the per-operation tables legible, the *common* per-host pattern is
+stated once here and only *deviations* are called out per operation:
+
+- =nihil= :: signals =operation-not-supported-by-this-host= (§6) for every CAD
+  operation, with the two documented exceptions =host-set-derived-sysvar=,
+  =host-define-sysvar= and =host-undefine-sysvar=, which are *silent no-ops*
+  because the launch-time wiring calls them unconditionally. [S:
+  =clautolisp/autolisp-host/source/nihil.lisp:145–167=]
+- =cador= :: performs the operation against its in-memory drawing / session
+  state, or signals =unavailable-in-headless-context= for operations that
+  require a display or a live pointer (§6, and D2 §I.11).
+- =<wire-host>= :: forwards the operation to the remote display/editor server
+  and returns its reply, or signals =backend-error= on refusal, or
+  =operation-not-supported-by-this-host= if the remote declares it absent
+  through capability query (§5). The wire host is *not implemented* (epic §11);
+  its column states the *contract* it must meet, graded =S= only where the
+  runtime already constrains it and otherwise left as design intent.
+
+* 2. Naming and architecture note (deliverable D5)
+  :PROPERTIES:
+  :CUSTOM_ID: d5
+  :END:
+
+This section records epic §1 so the decision survives the epic. It is settled;
+it is recorded, not relitigated.
+
+** 2.1 The host interface is clautolisp's single way out
+
+Everything that is not pure AutoLISP evaluation — documents, databases,
+entities, system variables, user interaction, drawing output — crosses the
+HAL. Nothing else in the interpreter may reach a CAD backend directly (C6).
+
+** 2.2 Three hosts
+
+| Host          | Nature                              | Purpose                                                                                             |
+|---------------+-------------------------------------+-----------------------------------------------------------------------------------------------------|
+| =nihil=       | No-op stubs                         | Keeps the interpreter running with no CAD backend. Implements nothing CAD-like *by contract* (C7).  |
+| =cador=       | Headless, in-process CAD core       | Real documents, databases, entities; no GUI. The analogue of AutoCAD Core Console (=accoreconsole=). |
+| =<wire-host>= | Wire protocol to a remote display server | Forwards host operations to a separate CAD/GUI process that owns the real editor and display.  |
+
+Consequences (verbatim from epic §1): =cador= is a *peer* of the wire host,
+not a family name. Entity handling begun in the former null host *belongs in
+=cador=* and was moved there (epic §7, done in cador-1). The null host is
+renamed =nihil= and reduced to no-op stubs; its contract is *negative* — it
+must never grow a CAD-like implementation. Naming the wire host is a separate
+decision (analysis-side placeholder =<wire-host>=; see D2 §9.7 for the naming
+recommendation).
+
+** 2.3 The two wire protocols are distinct
+
+Two unrelated wires exist. Conflating them corrupts both designs.
+
+- *W1 — the =alfe= protocol.* =alfe= exists because AutoLISP inside a real
+  AutoCAD/BricsCAD has *no terminal*: =princ=/=prin1=/=print= and a bare
+  =read-line= address the CAD's own text window or files, never process
+  stdin/stdout, and =read= parses a *string* (it is =cl:read-from-string=
+  under another name). =alfe= is a terminal front-end that ships AutoLISP forms
+  to a real CAD for evaluation by the CAD's own engine, mediating I/O in
+  mid-evaluation. *On W1 the CAD evaluates.* [A, analysis §Terminology and §1.1
+  of the epic]
+- *W2 — the host wire protocol.* The wire host is the mirror image:
+  *clautolisp evaluates*, and the remote process is a display/editor server
+  executing host operations on request. The references are Display PostScript
+  and X11, not SLIME.
+
+=alfe= may use clautolisp as its backend, giving a terminal user access to
+=nihil=, =cador= and any future host. Those host operations reach the host
+*through this interface (the HAL)*, not over W1. *The alfe protocol is not
+involved, and must not be assumed available, when a clautolisp host is in
+play.* This is a hard boundary for D1: nothing in this document may import a W1
+assumption.
+
+** 2.4 The three debugging configurations
+
+The =aldo= debugger runs against three configurations that this interface must
+keep apart (epic §1.2):
+
+- *(a) Hosted.* Debuggee: clautolisp, in-image. Host: =nihil= or =cador=. The
+  same-image, two-thread design with signal/park handoff.
+- *(b) Wire-hosted.* Debuggee: still clautolisp, in-image; the host is a
+  peripheral that may *block on W2*. Poll points remain in clautolisp. New
+  hazard: a host call may be outstanding when a break is requested (§8, §13.5).
+- *(c) Remote CAD.* Debuggee: the CAD's *own* AutoLISP engine, reached over W1.
+  The instrumentation transform runs in =alfe= using clautolisp's reader; two
+  bodies per function are emitted and shipped. *No clautolisp host is involved
+  anywhere in this configuration* — it is out of scope for this interface and
+  is specified by =clautolisp-debugger-remote-cad-spec.org=.
+
+The HAL and D2 specify configurations (a) and (b). The fidelity matrix's
+AutoCAD/BricsCAD columns describe configuration (c)'s reference environment,
+not a clautolisp host.
+
+* 3. Group 1 — Session and document management
+  :PROPERTIES:
+  :CUSTOM_ID: g-session
+  :END:
+
+*Status of this group.* The current HAL has *no* session/document-management
+generics. [S: protocol.lisp carries no =host-open-document= /
+=host-current-document= etc.] The document model itself already exists one
+level up, in the runtime session — =runtime-session= owns a
+=document-namespaces= table, a =blackboard-namespace=, an application context
+(=application-state= / =application-reactors=), a session-level
+=exported-functions= table, and a =current-document= pointer; each
+=document-namespace= carries a lifecycle =state= and a per-document =reactors=
+table. [S: =autolisp-runtime/source/model.lisp:45–158=]
+
+This group therefore specifies the *forward contract* the cador-2 scheduler and
+the wire host must implement, cross-referenced to the runtime structures that
+already realise part of it. Every operation here is marked *proposed* in the
+fidelity matrix (§12) until cador-2 lands it; specifying it now is required by
+epic §4.1 and is what lets cador-2 and the wire host implement against one
+contract.
+
+Document identity is a *first-class AutoLISP-visible value* (epic §4.1): a
+=document= handle, opaque to user code, comparable with =eq=, and carried by
+every entity name, selection set and ldata handle for the cross-document
+dereference check (C5, D2 §I.7).
+
+| Operation (proposed generic)         | Arguments                     | Returns                          | Errors                                                                 |
+|--------------------------------------+-------------------------------+----------------------------------+------------------------------------------------------------------------|
+| =host-document-list=                 | host                          | list of document handles         | —                                                                      |
+| =host-current-document=              | host                          | the current document handle      | —                                                                      |
+| =host-active-document=               | host                          | the active document handle       | — (in a headless core collapses to current; see D2 §I.3)               |
+| =host-set-current-document=          | host document                 | the document                     | =unavailable-in-headless= if switching is disabled mid-input (analysis §4.3) |
+| =host-open-document=                 | host pathname &key format     | the new document handle          | =backend-error= on read failure; =not-yet-implemented= for DWG (D2 §II.12) |
+| =host-new-document=                  | host &key template            | the new document handle          | —                                                                      |
+| =host-close-document=               | host document &key save       | =t=                              | =backend-error= if save fails; closes owned streams (Group 6, R6)      |
+| =host-document-of=                   | host handle                   | the owning document of an ename/pickset/ldata handle | =cross-document-dereference= is a *caller-side* check (C5), not here |
+
+*Per-host behaviour.*
+- =nihil= :: has no documents. =host-document-list= ⇒ the single default
+  document only if one is bound; all mutating operations signal
+  =operation-not-supported-by-this-host=. =nihil= must never grow real
+  multi-document semantics (C7).
+- =cador= :: today holds exactly one active drawing
+  (=cador-active-drawing=). [S: =cador/source/model.lisp:56=] cador-2/Phase-17f
+  grows the set of open drawings with this as the active pointer; the
+  operations above map onto that set. Current-vs-active collapses (D2 §I.3).
+- =<wire-host>= :: forwards to the remote =Documents= collection; =eq=
+  stability of document handles across calls is a wire-host obligation.
+
+* 4. Group 2 — Database and entity access
+  :PROPERTIES:
+  :CUSTOM_ID: g-entity
+  :END:
+
+All generics in this group exist today. [S: protocol.lisp:63–102] Value
+domains: an /ename/ is an opaque, =eq=-stable, document-tagged entity handle
+(D2 §I.7); a /group-code list/ is a DXF association list =((code . value) …)=;
+a /pickset/ is an opaque selection-set handle; a /table-kind/ is a keyword
+(=:layer=, =:block-record=, …); a /dictionary ename/ addresses a dictionary
+object.
+
+** 4.1 Entities
+
+| Generic          | AutoLISP     | Arguments                     | Returns                                           | Errors                                  |
+|------------------+--------------+-------------------------------+---------------------------------------------------+-----------------------------------------|
+| =host-entget=    | =entget=     | host ename &optional applist  | DXF group-code list, or =nil=. =applist= (list of app names or ="*"=) appends matching xdata as a trailing =(-3 …)= cell; absent ⇒ xdata suppressed | =nil= on unknown/erased ename           |
+| =host-entmod=    | =entmod=     | host group-code-list          | the ename, or =nil= on failure                    | invalid list ⇒ =backend-error=/=nil=    |
+| =host-entmake=   | =entmake=    | host group-code-list          | the list on success, =nil= on failure             | —                                       |
+| =host-entmakex=  | =entmakex=   | host group-code-list          | the new ename (non-graphical: XRECORD etc.)       | —                                       |
+| =host-entdel=    | =entdel=     | host ename                    | the ename (toggles delete/undelete)               | =nil= on unknown ename                  |
+| =host-entupd=    | =entupd=     | host ename                    | the ename                                         | =unavailable-in-headless= is *not* used — a headless redraw is a no-op that still returns the ename (D2 §I.11) |
+| =host-entlast=   | =entlast=    | host                          | ename of the last non-deleted entity, or =nil=    | —                                       |
+| =host-entnext=   | =entnext=    | host ename                    | the following ename, or =nil=                     | =nil= past the end                      |
+| =host-handent=   | =handent=    | host handle-string            | the ename for a hex handle, or =nil=              | =nil= on unknown handle                 |
+
+=cador= implements all of these against its in-memory drawing, with
+=eq=-stable enames interned per drawing by hex handle. [S:
+=cador/source/model.lisp:155–170= (ename-cache)] =nihil= signals
+not-supported for every one.
+
+** 4.2 Selection sets
+
+| Generic           | AutoLISP    | Arguments            | Returns                             | Errors                                            |
+|-------------------+-------------+----------------------+-------------------------------------+---------------------------------------------------|
+| =host-ssget=      | =ssget=     | host filter &key mode | a pickset, or =nil= (nothing found) | interactive modes (=:pick=, crossing-window drag) ⇒ =unavailable-in-headless= on =cador= |
+| =host-ssadd=      | =ssadd=     | host pickset ename   | the updated pickset                 | —                                                 |
+| =host-ssdel=      | =ssdel=     | host pickset ename   | the pickset                         | —                                                 |
+| =host-ssname=     | =ssname=    | host pickset index   | the ename at index, or =nil=        | out of range ⇒ =nil=                              |
+| =host-sslength=   | =sslength=  | host pickset         | non-negative integer                | —                                                 |
+| =host-ssmemb=     | =ssmemb=    | host pickset ename   | the ename if a member, else =nil=   | —                                                 |
+| =host-ssgetfirst= | =ssgetfirst= | host                | =(gripped . selected)= pickfirst    | —                                                 |
+| =host-sssetfirst= | =sssetfirst= | host pickset        | the pickset                         | —                                                 |
+
+On =cador=, filter-based =ssget= (mode ="X"= and explicit ename lists) is
+supported; *point/crossing/window pick* modes that require a cursor signal
+=unavailable-in-headless-context= (D2 §I.11). On =nihil=, all signal
+not-supported.
+
+** 4.3 Symbol tables, dictionaries, registered applications
+
+| Generic            | AutoLISP        | Arguments                          | Returns                                   |
+|--------------------+-----------------+------------------------------------+-------------------------------------------|
+| =host-tblsearch=   | =tblsearch=     | host kind name                     | the record's group-code list, or =nil=    |
+| =host-tblnext=     | =tblnext=       | host kind &key rewind              | next record list; =rewind= restarts       |
+| =host-tblobjname=  | =tblobjname=    | host kind name                     | the record's ename, or =nil=              |
+| =host-namedobjdict= | =namedobjdict= | host                               | the root named-object dictionary ename    |
+| =host-dictsearch=  | =dictsearch=    | host dict-ename name &key next-after | the entry's list, or =nil=              |
+| =host-dictnext=    | =dictnext=      | host dict-ename &key rewind        | next entry list                           |
+| =host-dictadd=     | =dictadd=       | host dict-ename name object-ename  | the object ename                          |
+| =host-dictremove=  | =dictremove=    | host dict-ename name               | the removed ename, or =nil=               |
+| =host-dictrename=  | =dictrename=    | host dict-ename old new            | the new name, or =nil=                    |
+| =host-dictobjname= | (=dictsearch= variant) | host dict-ename name        | the object ename (list-free form)         |
+| =host-regapp=      | =regapp=        | host name                          | =name= on success, =nil= if already present |
+
+All exist. [S: protocol.lisp:85–102] =cador= implements them over its
+drawing's tables and handle-addressed dictionaries; =nihil= signals
+not-supported. =host-dictobjname= is a HAL convenience that =nihil.lisp= does
+*not* override (it inherits the base not-supported method — a benign
+inconsistency noted for cleanup in D2 §II.15).
+
+* 5. Group 3 — System variables and scope tiers
+  :PROPERTIES:
+  :CUSTOM_ID: g-sysvar
+  :END:
+
+| Generic                   | AutoLISP / caller     | Arguments                        | Returns                     | Errors                                            |
+|---------------------------+-----------------------+----------------------------------+-----------------------------+---------------------------------------------------|
+| =host-getvar=             | =getvar=              | host name                        | value, or =nil= (unknown name) | — (unknown ⇒ =nil=, the §16 normative rule)     |
+| =host-setvar=             | =setvar=              | host name value                  | the coerced value           | unknown ⇒ =unknown-sysvar=; read-only ⇒ =sysvar-read-only=; bad type ⇒ =invalid-sysvar-value= |
+| =host-set-derived-sysvar= | launch wiring         | host name value                  | the stored value            | *nihil no-ops* (not an error)                     |
+| =host-define-sysvar=      | launch wiring         | host name kind value read-only-p | the stored value            | *live CAD backends* signal not-supported; *nihil no-ops* |
+| =host-undefine-sysvar=    | launch wiring (dialect overlay) | host name              | =t= if removed, else =nil=  | *live CAD backends* no-op; *nihil no-ops*         |
+| =host-sysvar-names=       | =clal-sysvar-list=    | host                             | list of upcased name strings | =nil= host signals not-supported                 |
+
+[S: protocol.lisp:104–110; cador/source/sysvar-api.lisp; nihil.lisp:137–167]
+
+*Scope tier (R4 / C4).* Epic §4.3 and constraint C4 require *every* system
+variable to carry its scope tier as data, one of *Drawing* / *Registry* /
+*Not-saved* [A, analysis §"System variable scopes"]. This is *not yet
+implemented*: the =sysvar-cell= struct carries =name/kind/value/read-only-p/
+host-derived-p= and *no scope slot*. [S: =clautolisp/drawing/source/model.lisp:50–67=]
+D1 fixes the *contract*: =host-getvar='s companion introspector must expose the
+tier, and the cell must gain a =scope= slot. D2 §I.6 states the decision and
+§14/§9 record the gap. Until the slot exists, the tier is derivable only from
+the =host-derived-p= marker and the source inventory, which is insufficient for
+the debugger's scope-aware snapshot (R17).
+
+** 5.1 Registry / persistent store (=vl-registry-*=)
+
+| Generic                       | AutoLISP             | Arguments               | Returns                          |
+|-------------------------------+----------------------+-------------------------+----------------------------------|
+| =host-registry-read=          | =vl-registry-read=   | host key value-name     | the string, or =nil=             |
+| =host-registry-write=         | =vl-registry-write=  | host key value-name value | value                          |
+| =host-registry-delete=        | =vl-registry-delete= | host key value-name     | true if something was deleted    |
+| =host-registry-descendents=   | =vl-registry-descendents= | host key value-names-p | list of names, or =nil=       |
+
+[S: protocol.lisp:112–117] On a real host these reach the Windows registry or
+macOS defaults; =cador= emulates them with a *per-user persistent store* at
+=$XDG_CONFIG_HOME/clautolisp/registry.sexp= (overridable via
+=*mock-registry-path*=). [S: =cador/source/registry-api.lisp:1–18=] This store
+is the concrete home of the *Registry* scope tier for =cador= (D2 §I.6). =nihil=
+signals not-supported.
+
+* 6. Group 4 — Interaction and the console device
+  :PROPERTIES:
+  :CUSTOM_ID: g-interaction
+  :END:
+
+** 6.1 The console device is a host device, not a =cl:stream=
+
+AutoLISP's I/O model *requires* an explicit console device distinct from file
+streams (epic §4.4): =princ=, =prin1=, =print= and a bare =read-line= address
+the *console*, not process stdin/stdout, and =read= parses a *string* rather
+than reading a stream. Therefore:
+
+- The console is a *host-provided device*. It is *not* modelled as a
+  =cl:stream= handed to the interpreter, and no HAL operation accepts or
+  returns a =cl:stream= standing in for it.
+- Each host maps the device differently: =nihil= and =cador= bind it to their
+  own standard streams (=*standard-output*= for output; a configured input
+  source for input); a GUI host would render to a window; a wire host forwards
+  it to the remote editor. This is the group that distinguishes the hosts most
+  sharply (epic §4.4).
+
+The device has two channels, an *output sink* (prompts, =princ= echo) and an
+*input source* (the get-family and a bare =read-line=). On =cador= these are
+the =prompt-output= and =prompt-stream= slots; the input source may be a
+non-tty scripted source and *EOF returns =nil=* (AutoLISP's cancellation
+convention). [S: =cador/source/prompt-api.lisp:42–59, 201–209=] D2 §I.10
+specifies the headless console fully, including the scripted, non-interactive
+mode CI depends on.
+
+** 6.2 Message and typed-input operations
+
+| Generic         | AutoLISP     | Arguments                     | Returns                                  | Errors                                         |
+|-----------------+--------------+-------------------------------+------------------------------------------+------------------------------------------------|
+| =host-prompt=   | =prompt=     | host string                   | =nil= (writes to the console output sink) | —                                              |
+| =host-initget=  | =initget=    | host bits keywords            | =nil= (arms the *next* get-call only)    | —                                              |
+| =host-getstring= | =getstring= | host prompt &key controls     | an AutoLISP string, or =nil= on EOF/cancel | —                                            |
+| =host-getint=   | =getint=     | host prompt &key controls     | an integer, or =nil=                     | —                                              |
+| =host-getreal=  | =getreal=    | host prompt &key controls     | a real, or =nil=                         | —                                              |
+| =host-getpoint= | =getpoint=   | host prompt &key base controls | a point list, or =nil=                  | interactive rubber-band ⇒ =unavailable-in-headless= on a GUI-less host only when a *drag* is requested; scripted point entry is supported |
+| =host-getcorner= | =getcorner= | host prompt &key base controls | a point list, or =nil=                  | as =getpoint=                                  |
+| =host-getdist=  | =getdist=    | host prompt &key base controls | a real distance, or =nil=               | as =getpoint=                                  |
+| =host-getangle= | =getangle=   | host prompt &key base controls | an angle in radians, or =nil=           | as =getpoint=                                  |
+| =host-getorient= | =getorient= | host prompt &key base controls | an oriented angle in radians, or =nil=  | as =getpoint=                                  |
+| =host-getkword= | =getkword=   | host prompt &key controls     | a keyword string, or =nil=              | —                                              |
+
+[S: protocol.lisp:123–134; cador/source/prompt-api.lisp] =initget= arms the
+next get-call and is consumed one-shot. [S: prompt-api.lisp:33–40] On =nihil=,
+every one signals not-supported. On =cador=, each reads one logical line from
+the input source and parses it to the target type; a genuinely *interactive
+pointing gesture* (rubber-band, drag) is =unavailable-in-headless=.
+
+** 6.3 Transient graphics
+
+| Generic        | AutoLISP   | Arguments                          | Returns / behaviour                                              |
+|----------------+------------+------------------------------------+------------------------------------------------------------------|
+| =host-grdraw=  | =grdraw=   | host from to colour highlight      | =nil=; on =cador= recorded to the display log, no pixels         |
+| =host-grtext=  | =grtext=   | host kind text colour highlight    | =nil=; recorded                                                  |
+| =host-grvecs=  | =grvecs=   | host vectors transform             | =nil=; recorded                                                  |
+| =host-grclear= | =grclear=  | host                               | =nil=; recorded                                                  |
+| =host-grread=  | =grread=   | host track key-press cursor        | a graphics-input event                                           |
+| =host-redraw=  | =redraw=   | host ename mode                    | the ename; headless no-op                                        |
+
+[S: protocol.lisp:136–142; cador/source/model.lisp:83–87 (display-log)]
+=host-grread= reads a *real-time cursor/keyboard event*: on =cador= it is
+=unavailable-in-headless-context= (D2 §I.11). The drawing primitives are
+recorded to =cador='s display log for test inspection but produce no display.
+On =nihil=, all signal not-supported.
+
+* 7. Group 5 — Command layer
+  :PROPERTIES:
+  :CUSTOM_ID: g-command
+  :END:
+
+| Generic             | AutoLISP / caller | Arguments      | Returns              | Errors                          |
+|---------------------+-------------------+----------------+----------------------+---------------------------------|
+| =host-command=      | =command=, =command-s= | host arguments | =nil= on success | =backend-error= from a real backend |
+| =host-command-log=  | =clal-command-log= | host          | list of token-string lists, oldest first | =host-not-supported= if the host keeps no log |
+
+[S: protocol.lisp:119–121; cador/source/command-api.lisp] =arguments= is the
+normalised token-string list the runtime's =command= special form produces:
+each element is command-line input text; ="" = is the RETURN token and ="\\"=
+(one backslash) is the PAUSE token. [S: protocol.lisp:120]
+
+*Command-layer scope* is epic §9.4, resolved in D2 §I.11 / §II.13: =cador=
+implements the command channel *observationally* — it records the tokens,
+echoes a one-line ="Command: …"= to the console output, and returns =nil=;
+there is *no command engine* that parses ="_LINE"= into geometry. [S:
+command-api.lisp:28–39] The entity API (=entmake=/=entget=/=entmod=) is the
+primary surface. On =nihil=, =host-command= signals not-supported.
+
+* 8. Group 6 — Filesystem and encoding
+  :PROPERTIES:
+  :CUSTOM_ID: g-fs
+  :END:
+
+This group *interoperates with* the encoding-dispatch work rather than
+duplicating it (epic §4.6, referencing =issue-encoding-dispatch.md= /
+=encoding-consolidation.issue=).
+
+- *File streams.* =open=/=close=/=read-line=/=write-line= over files use
+  =autolisp-file= objects owned by the *document namespace* that created them
+  (R6). A file stream is *never* the console device (§6.1). Closing a document
+  closes the streams it owns (Group 1 =host-close-document=).
+- *Code-page resolution.* =SYSCODEPAGE= is *session-scoped* and =DWGCODEPAGE=
+  is *document-scoped* (R6) [A, analysis §"Stream ownership"]. The HAL exposes
+  both as system variables (Group 3); both are populated once at launch via
+  =host-set-derived-sysvar= from the locale-resolved encoding. [S:
+  protocol.lisp:107] The drawing carries its own =codepage= slot feeding the
+  codec. [S: drawing/source/model.lisp:91–95]
+
+The filesystem itself is *not* mediated by a HAL generic — =open= reaches the
+OS directly through the runtime's file layer, because the file system is
+machine-scoped shared state, not a per-host CAD facility (analysis
+§"Session-wide state"). The HAL's only filesystem responsibility is code-page
+resolution and stream ownership on document close. This is a deliberate
+boundary: a host does not get to redefine =open=.
+
+* 9. Group 7 — Notification (reactors and events)
+  :PROPERTIES:
+  :CUSTOM_ID: g-reactor
+  :END:
+
+Reactors are already modelled *in the runtime*, not in the HAL generics: each
+=document-namespace= carries a =reactors= table and a
+=persistent-reactor-index=; the =runtime-session= carries
+=application-reactors=; and =signal-document-event= / =signal-application-event=
+fan events out to registered callbacks. [S:
+=autolisp-runtime/source/model.lisp:52–66, 124–130=; cador raises
+=:vlr-sysvarwillchange= / =:vlr-sysvarchanged= around =setvar=, S:
+=cador/source/sysvar-api.lisp:245–254=]
+
+*Contract.* A host does not *own* reactors; it *emits events* that the runtime
+dispatches. When a host operation changes observable state (an entity is
+modified, a sysvar changes, a document opens/closes), the host — or the runtime
+wrapper around the host call — must raise the corresponding =vlr-*= event so
+per-document and application reactors fire in the correct namespace (R16).
+
+- =nihil= :: emits no events (it changes no CAD state).
+- =cador= :: emits the object/database/editor/sysvar events its operations
+  imply, in the current document's namespace. The event set cador emits is
+  enumerated in D2 §I (session model) and §II.14 (debugger surfaces).
+- =<wire-host>= :: must translate remote notifications into the same
+  runtime-side =vlr-*= events; the remote's own reactor system is invisible to
+  AutoLISP except through this translation.
+
+There is no separate HAL generic for reactor registration: =vlr-*= builtins
+operate on the runtime's per-namespace tables directly, below the host
+boundary. This keeps reactor *identity* per-document (R16) independent of which
+host is installed.
+
+* 10. Group 8 — Concurrency and locking
+  :PROPERTIES:
+  :CUSTOM_ID: g-concurrency
+  :END:
+
+The governing invariant is analysis §4.2: *one runner, N parked contexts.*
+There is no thread per document; at most one document's evaluation runs at any
+instant, and any number of document contexts may hold a *suspended* evaluation
+(C2). [A, analysis §4.2]
+
+*Parking.* A host operation that must wait for something outside the runner —
+user input at a prompt, or a W2 round trip — is a *park point*. Parking saves
+the current context's continuation and returns control to the single runner,
+which may resume another context. This is the CAD-side analogue of =aldo='s
+signal/park handoff (epic §1.2(a)). The park/resume contract is specified
+formally in §13.5. Its two obligations on the HAL:
+
+1. Any get-family operation (§6.2), any =host-command= that would prompt, and
+   any wire round trip (=<wire-host>= for *every* operation) is a *potential
+   park point*, and the runtime must treat it as one.
+2. A host operation invoked *from a parked context* is legal; what it may not
+   do is assume the runner is idle just because the calling context is parked —
+   another context may be running (R13). The wire host adds the hazard that a
+   host call may be *outstanding* when a break is requested (config (b), §13.5).
+
+*Locking (epic §9.5, R20).* In the real products, code in the application
+context must lock a document before modifying it, and modifying a non-current
+document requires an explicit lock [A, analysis §"Application context and
+locking"]. With a single runner and no user, =cador='s decision (D2 §I.2 /
+§9.5) is the *middle option*: a *checked no-op* — locking is not enforced for
+mutual exclusion (there is nothing to exclude, C8) but the *protocol violation*
+(mutating a non-current document without taking its lock) is *detected and
+signalled*, because that is a bug that would otherwise surface only against a
+real backend. There is a HAL surface for this:
+
+| Operation (proposed generic) | Arguments        | Returns | Errors                                        |
+|------------------------------+------------------+---------+-----------------------------------------------|
+| =host-lock-document=         | host document    | a lock token | —                                        |
+| =host-unlock-document=       | host document lock-token | =t= | unbalanced unlock ⇒ =backend-error=      |
+
+On =cador= these maintain a per-document lock-held flag and signal when a
+cross-document mutation is attempted without it; on =nihil= they signal
+not-supported; on =<wire-host>= they forward to =lockDocument= /
+=unlockDocument=.
+
+*C8 restated.* =cador= needs *no worker thread and must not require one*. The
+single-runner model is a simplification to exploit, not an obstacle (R14, R21).
+
+* 11. Group 9 — ActiveX / Visual LISP COM automation bridge
+  :PROPERTIES:
+  :CUSTOM_ID: g-vlax
+  :END:
+
+The =vlax-*= / =vla-*= surface (autolisp-spec ch.19) is a real HAL group with
+its own generics. [S: protocol.lisp:144–165] It is fully implemented over
+=cador= (task statement; [S: =cador/source/vlax-api.lisp=,
+=com-progids.lisp=]), which is why it is specified as a first-class group here
+rather than folded into entity/interaction.
+
+| Generic                              | AutoLISP                    | Arguments                              | Returns                                   |
+|--------------------------------------+-----------------------------+----------------------------------------+-------------------------------------------|
+| =host-vlax-create-object=            | =vlax-create-object=        | host progid                            | a VLA-object                              |
+| =host-vlax-get-object=               | =vlax-get-object=           | host progid                            | a running-instance VLA-object             |
+| =host-vlax-release-object=           | =vlax-release-object=       | host vla-object                        | =nil=                                     |
+| =host-vlax-get-property=             | =vlax-get-property=         | host vla-object name                   | the property value                        |
+| =host-vlax-put-property=             | =vlax-put-property=         | host vla-object name value             | the value                                 |
+| =host-vlax-invoke-method=            | =vlax-invoke-method=        | host vla-object name args              | the method result                         |
+| =host-vlax-property-available-p=     | =vlax-property-available-p= | host vla-object name                   | boolean                                   |
+| =host-vlax-method-applicable-p=      | =vlax-method-applicable-p=  | host vla-object name                   | boolean                                   |
+| =host-vlax-get-acad-object=          | =vlax-get-acad-object=      | host                                   | the singleton application VLA-object      |
+| =host-vlax-ename->vla-object=        | =vlax-ename->vla-object=    | host ename                             | the wrapping VLA-object (identity-stable) |
+| =host-vlax-vla-object->ename=        | =vlax-vla-object->ename=    | host vla-object                        | the backing ename, or =nil=               |
+| =host-vlax-erased-p=                 | =vlax-erased-p=             | host vla-object                        | boolean                                   |
+| =host-vlax-describe-object=          | =vlax-dump-object=          | host vla-object                        | =(values property-alist method-name-list)= |
+| =host-vlax-ldata-put=                | =vlax-ldata-put=            | host dictionary key value private      | the value                                 |
+| =host-vlax-ldata-get=                | =vlax-ldata-get=            | host dictionary key default private    | the value or default                      |
+| =host-vlax-ldata-delete=             | =vlax-ldata-delete=         | host dictionary key private            | =t= if present                            |
+| =host-vlax-ldata-list=               | =vlax-ldata-list=           | host dictionary private                | alist of =(key . value)=                  |
+| =host-vlax-add-cmd=                  | =vlax-add-cmd=              | host global-name function local-name flags | the global name                       |
+| =host-vlax-remove-cmd=               | =vlax-remove-cmd=           | host global-name                       | =t= if present                            |
+| =host-vlax-queueexpr=                | =vlax-queueexpr=            | host string                            | =nil=                                     |
+| =host-vlax-collection-items=         | =vlax-for= / =vlax-map-collection= | host vla-object                 | list of member VLA-objects                |
+
+*Per-host.* =nihil= signals not-supported for all. =cador= implements them
+against in-memory =mock-com-object= records seeded from a ProgID template
+table, with =ldata= persisted for the host's lifetime and
+=ename->vla-object= identity-stable. [S: =cador/source/model.lisp:29–51,
+132–138=] =ldata= is the headless analogue of ldata stored in the drawing.
+=<wire-host>= forwards to the real COM automation server (Windows) or signals
+=operation-not-supported-by-this-host= off Windows.
+
+* 12. Fidelity matrix
+  :PROPERTIES:
+  :CUSTOM_ID: matrix
+  :END:
+
+This table is the *contract* and the conformance suite's checklist (epic §4,
+§8). Cells:
+
+- =sig= — signals =operation-not-supported-by-this-host=.
+- =full= — implemented with real semantics.
+- =obs= — implemented *observationally* (records/echoes, no CAD effect).
+- =head= — supported except for gestures needing a display, which signal
+  =unavailable-in-headless-context=.
+- =noop= — silent no-op by contract.
+- =prop= — *proposed*: contract defined here, not yet implemented on that host.
+- =fwd= — forwards over W2 (wire host; unimplemented — contract only).
+- =A/B/…= — for the AutoCAD/BricsCAD columns, the *grade* of the reference
+  claim; =native= means the product implements it natively at grade A.
+
+AutoCAD/BricsCAD columns describe configuration (c) reference behaviour, not a
+clautolisp host (§2.4).
+
+| Operation group / op        | nihil | cador | <wire-host> | AutoCAD | BricsCAD |
+|-----------------------------+-------+-------+-------------+---------+----------|
+| *Session/document* (§3)     | sig   | prop  | prop/fwd    | native A | native A |
+| =document-list/current=     | sig   | prop  | fwd         | A       | A        |
+| =open/new/close-document=   | sig   | prop  | fwd         | A       | A        |
+| =set-current-document=      | sig   | prop  | fwd         | A       | A        |
+| *Entities* (§4.1)           |       |       |             |         |          |
+| =entget/entmod/entmake=     | sig   | full  | fwd         | A       | A        |
+| =entmakex/entdel/entupd=    | sig   | full  | fwd         | A       | A        |
+| =entlast/entnext/handent=   | sig   | full  | fwd         | A       | A        |
+| *Selection* (§4.2)          |       |       |             |         |          |
+| =ssget= (filter/"X")        | sig   | full  | fwd         | A       | A        |
+| =ssget= (pick/drag)         | sig   | head  | fwd         | A       | A        |
+| =ssadd/ssdel/ssname=        | sig   | full  | fwd         | A       | A        |
+| =sslength/ssmemb=           | sig   | full  | fwd         | A       | A        |
+| =ssgetfirst/sssetfirst=     | sig   | full  | fwd         | A       | A        |
+| *Tables/dicts* (§4.3)       |       |       |             |         |          |
+| =tblsearch/tblnext/tblobjname= | sig | full | fwd        | A       | A        |
+| =namedobjdict/dict*=        | sig   | full  | fwd         | A       | A        |
+| =dictobjname=               | sig¹  | full  | fwd         | A       | A        |
+| =regapp=                    | sig   | full  | fwd         | A       | A        |
+| *Sysvars* (§5)              |       |       |             |         |          |
+| =getvar/setvar=             | sig   | full  | fwd         | A       | A        |
+| =sysvar scope tier= (R4/C4) | n/a   | prop² | fwd         | A       | A(cfg)   |
+| =set-derived/define/undefine-sysvar= | noop | full | sig     | n/a     | n/a      |
+| =sysvar-names=              | sig   | full  | fwd         | —(clal ext) | —    |
+| *Registry* (§5.1)           |       |       |             |         |          |
+| =registry-read/write/delete/descendents= | sig | full³ | fwd | A (Win) | A (Win/cfg) |
+| *Interaction* (§6)          |       |       |             |         |          |
+| =prompt/initget=            | sig   | full  | fwd         | A       | A        |
+| =getstring/getint/getreal/getkword= | sig | full | fwd    | A       | A        |
+| =getpoint/getcorner/getdist/getangle/getorient= | sig | head | fwd | A | A |
+| =grdraw/grtext/grvecs/grclear/redraw= | sig | obs | fwd     | A       | A        |
+| =grread=                    | sig   | head  | fwd         | A       | A        |
+| *Command* (§7)              |       |       |             |         |          |
+| =command/command-s=         | sig   | obs   | fwd         | A       | A        |
+| =command-log=               | sig   | full  | sig         | —(clal ext) | —    |
+| *Filesystem/encoding* (§8)  |       |       |             |         |          |
+| code-page resolution        | noop  | full  | fwd         | A       | A        |
+| stream ownership on close   | prop  | prop  | prop        | A       | A        |
+| *Notification* (§9)         |       |       |             |         |          |
+| =vlr-*= document/app events | none  | full  | fwd         | A       | A        |
+| *Concurrency/locking* (§10) |       |       |             |         |          |
+| park/resume                 | n/a   | prop  | prop        | A(fibers, historical) B | A B |
+| =lock/unlock-document=      | sig   | prop⁴ | fwd         | A       | A        |
+| *ActiveX/COM* (§11)         |       |       |             |         |          |
+| =vlax-create/get/release-object= | sig | full | fwd(Win)  | A(Win)  | A(Win)   |
+| =vlax-get/put-property/invoke-method= | sig | full | fwd(Win) | A(Win) | A(Win) |
+| =vlax-*-available/applicable-p= | sig | full | fwd(Win) | A(Win)  | A(Win)   |
+| =vlax-get-acad-object=      | sig   | full  | fwd(Win)    | A(Win)  | A(Win)   |
+| =vlax-ename<->vla-object=   | sig   | full  | fwd(Win)    | A(Win)  | A(Win)   |
+| =vlax-erased-p/describe-object= | sig | full | fwd(Win)  | A(Win)  | A(Win)   |
+| =vlax-ldata-put/get/delete/list= | sig | full | fwd(Win) | A(Win)  | A(Win)   |
+| =vlax-add-cmd/remove-cmd/queueexpr= | sig | full | fwd(Win) | A(Win) | A(Win)  |
+| =vlax-collection-items=     | sig   | full  | fwd(Win)    | A(Win)  | A(Win)   |
+
+Notes on the matrix:
+1. =dictobjname= on =nihil= inherits the *base-class* not-supported method
+   rather than an explicit override (nihil.lisp overrides through
+   =dictrename= only). Same observable result; flagged for cleanup (D2 §II.15).
+2. Scope tier is =prop= on =cador=: the data model must gain a =scope= slot on
+   =sysvar-cell= (§5, D2 §I.6). Until then C4 is not satisfiable.
+3. =cador= registry is =full= via a persistent =registry.sexp= store (§5.1).
+4. Locking on =cador= is =prop= and, once landed, a *checked no-op* (§10, D2 §9.5).
+
+A cell that is =prop=/=fwd= is an *untested contract* until its host implements
+it and the conformance suite (epic §8, D4) walks it. That is the intended use
+of this table.
+
+* 13. The formal AutoLISP↔host protocol
+  :PROPERTIES:
+  :CUSTOM_ID: protocol
+  :END:
+
+This section is the artefact the sub-task issue requires: a request/response
+contract precise enough that cador-2's scheduler *and* a future out-of-process
+wire host implement the *same* protocol. It holds for three realisations: an
+in-image host (a direct generic-function call), =cador='s coroutine model, and
+an out-of-process wire host.
+
+** 13.1 The protocol is a synchronous request/response with parking
+
+An AutoLISP evaluation issues *host requests* one at a time and blocks the
+*issuing context* until the *response* arrives. It does not block the *runner*:
+a request that must wait *parks* the issuing context (§13.5). Formally, a host
+interaction is a pair
+
+: REQUEST  = (OP . ARGS)
+: RESPONSE = (:value V) | (:signal CLASS OP DATUM)
+
+where =OP= is the operation name (the AutoLISP-visible name, e.g. =entget=, not
+the CL generic), =ARGS= is a tuple in the value domains of §13.2, =V= is a
+value in a return domain, and =(:signal CLASS OP DATUM)= carries one of the
+four condition classes of §6. Exactly one response is produced per request
+(the *forest* discipline of §13.4 governs *nesting*, not multiplicity).
+
+For the in-image realisation, =REQUEST= is the generic call and =RESPONSE= is
+its return value or the condition it signals; there is no serialisation. For
+the wire realisation, =REQUEST= and =RESPONSE= are serialised messages; §13.6
+gives the wire obligations. *The two realisations are observationally
+identical to AutoLISP code* — that identity is the whole point of the interface.
+
+** 13.2 Value domains
+
+The domains that cross the interface, and their wire-serialisable
+representation:
+
+| Domain           | AutoLISP value                    | Crosses as                                           |
+|------------------+-----------------------------------+------------------------------------------------------|
+| integer / real   | =integer= / =double-float=        | number                                               |
+| string           | =autolisp-string=                 | UTF-8 text + the code-page context (Group 6)         |
+| symbol           | =autolisp-symbol=                 | interned name (see R2 / D2 §I.4 for identity)        |
+| list             | proper list of the above          | recursively                                          |
+| point            | list of 2 or 3 reals              | number vector                                        |
+| ename            | =autolisp-ename= (opaque)         | =(document-tag . hex-handle)= — never a raw address  |
+| pickset          | =autolisp-pickset= (opaque)       | =(document-tag . pickset-id)=                        |
+| vla-object       | =autolisp-vla-object= (opaque)    | =(document-tag . com-id)=                            |
+| group-code list  | =((code . value) …)=              | recursively, value per its own domain                |
+| =nil= / =t=      | the AutoLISP booleans             | as themselves                                        |
+
+*Every handle domain (ename, pickset, vla-object, ldata dictionary) carries a
+document tag* (C5): a handle from document A dereferenced against document B is
+a =cross-document-dereference= error, checked *before* the request reaches the
+host. This is why handles cross as =(document-tag . id)= and never as a bare
+address. [Design; the tagging requirement is R5; the runtime carriers are
+=autolisp-ename= / =autolisp-pickset=, S: =autolisp-runtime/source/model.lisp:186–189=]
+
+** 13.3 Ordering
+
+Within a single context, host requests are *totally ordered* and issued in
+evaluation order; a request's response is observed before the next request is
+issued (§13.1). Across contexts there is *no* ordering guarantee except the
+single-runner invariant (C2): because only one context runs at a time, two
+requests from two contexts never overlap, but their interleaving is determined
+by parking/resume, not by any timestamp.
+
+** 13.4 Correlation is a forest, not a stack (R11)
+
+Nested request/reply works — a host operation may itself trigger AutoLISP
+(e.g. a reactor callback fired by =setvar=, §9). But nesting can *interleave
+across documents*: while document A is parked awaiting a response, the runner
+may resume document B, which starts a fresh top-level evaluation that itself
+nests. Therefore correlation state is *one stack per document context, keyed by
+document*, not a single global stack (R11). A wire host's envelope must carry a
+document discriminator (R10) so responses route to the correct context's stack.
+
+** 13.5 Park and resume
+
+*Definition.* A *park point* is a host request whose response is not
+immediately available: a get-family prompt, a =host-command= that prompts, a
+=lock= that must wait, or — for the wire host — *any* request, since a round
+trip is always outstanding for a non-zero time. At a park point the issuing
+context's continuation is captured and control returns to the single runner
+(*park*); when the response is available the runner *resumes* the context by
+invoking its continuation with the =RESPONSE= (§13.1).
+
+*What resuming restores.* The context's dynamic environment: its current
+document and namespace, its =*error*= handler, its command-echo and
+=vl-enable-user-cancel= state (all per-document, R7), and its correlation stack
+(§13.4). It does *not* restore the wall clock or any session-scoped state that
+another context may have changed while it was parked — a resumed context must
+re-read session/registry sysvars rather than assume them unchanged (R13).
+
+*The parked-context call rule.* A host operation invoked from a parked context
+is legal. The invariant it must respect (C2) is that the *runner* is single: a
+host implementation must not assume idleness because the calling context is
+parked (another may be running), and must not itself spawn a runner. For the
+wire host this yields config (b)'s new hazard: *a host call may be outstanding
+when a break is requested*. The resolution is that a break is observed only at
+the *next park point or poll point* (interrupts are cooperative, R14); a break
+requested while a wire request is outstanding is deferred until that request's
+response returns, at which point the runtime's poll point observes it. There is
+no async interrupt of an outstanding host request.
+
+** 13.6 Wire-host obligations (W2)
+
+For the out-of-process realisation the protocol adds, *without changing the
+above semantics*:
+
+1. *Serialisation* of =REQUEST=/=RESPONSE= per §13.2, with handles as
+   =(document-tag . id)= — the remote must maintain the same document tagging.
+2. *A document discriminator in the envelope* (R10) so nested cross-document
+   nesting routes correctly (§13.4).
+3. *Handle identity stability*: the remote must return =eq=-stable handles for
+   the same underlying object across requests, or the runtime must intern them
+   on receipt, so AutoLISP's =eq= idioms hold (as =cador= does with its
+   ename/COM caches).
+4. *Capability advertisement* at connect time (§5), so the runtime knows which
+   operations the remote supports before issuing them.
+5. *No W1 assumptions* (§2.3): W2 is not =alfe=; the remote is a display
+   server, not a Lisp evaluator.
+
+Because the in-image and cador realisations satisfy 1–5 trivially (no
+serialisation, one process, native =eq=, static capability set, no wire at
+all), a host operation written to this protocol runs unchanged on all three.
+
+* 14. Cross-cutting mechanism A — capability query
+  :PROPERTIES:
+  :CUSTOM_ID: capability
+  :END:
+
+A host must *declare which operations it supports* so that library code,
+=aldo= and the test suite adapt rather than crash (epic §4).
+
+- *Granularity.* Per *operation* (the =host-OP= name), not per group — because
+  =cador= supports most of a group (e.g. selection) but not the interactive
+  members of it (=ssget= pick mode). The query answers, for an operation name,
+  one of =:full= / =:headless-limited= / =:observational= / =:unsupported= /
+  =:not-yet-implemented=, matching the fidelity-matrix cell kinds (§12).
+- *The query.* A generic =host-capability (host op) → keyword=, plus a
+  convenience =host-supports-p (host op) → boolean= (true unless =:unsupported=
+  or =:not-yet-implemented=). This is *proposed* — it does not exist in the
+  current HAL [S: protocol.lisp has no capability generic] and is introduced by
+  this spec; cador-2 lands it.
+- *When consulted.* Both *load time* and *call time* are permitted, with
+  different consumers: library code and =aldo= consult it *at load time* to
+  decide whether to install a feature (so a missing operation degrades a
+  feature rather than crashing mid-run); the conformance suite consults it *at
+  call time* to distinguish an expected =:unsupported= from an =UNEXPECTED=
+  failure (epic §8). The declaration itself is *static per host class* (it does
+  not depend on runtime state), which is what lets the load-time consultation be
+  sound.
+- *Relationship to the base method.* The base =host= class answers
+  =:unsupported= for everything; a backend's capability table is the dual of
+  its method overrides. A backend whose method exists but signals
+  =not-yet-implemented= answers =:not-yet-implemented=, distinguishing a *gap*
+  from a *design boundary* (§6).
+
+* 15. Cross-cutting mechanism B — the condition taxonomy
+  :PROPERTIES:
+  :CUSTOM_ID: taxonomy
+  :END:
+
+Conflating these makes the test suite unable to tell a gap from a design
+boundary (epic §4). Four *distinct* classes, all subclasses of the runtime's
+=autolisp-runtime-error= (so =*error*=, =vl-catch-all-apply= and the debugger
+see a consistent implementation-defined error, per AGENTS.md):
+
+| Class                                   | Meaning                                                                 | Canonical raiser        | Current state |
+|-----------------------------------------+-------------------------------------------------------------------------+-------------------------+---------------|
+| =operation-not-supported-by-this-host=  | This host implements nothing of the kind — a *design boundary*. =nihil= asked for an entity. | =signal-host-not-supported= | *Exists* as code =:host-not-supported= [S: protocol.lisp:47–54] |
+| =unavailable-in-headless-context=       | The host *has* the subsystem but this operation needs a display/pointer this configuration lacks — a *design boundary*. =cador= asked for a rubber-band drag or =grread=. | (proposed) =signal-unavailable-in-headless= | *Proposed* — not yet distinct; cador currently reuses =:host-not-supported= |
+| =operation-not-yet-implemented=         | A *real gap* the host intends to fill. Distinguished so a probe marks it *pending*, not *failing* (epic §8). | (proposed) =signal-not-yet-implemented= | *Proposed* |
+| =backend-error=                         | The backend was asked correctly and *refused* or failed — the remote CAD said no, a DWG failed to parse. | (proposed) =signal-backend-error= | *Proposed* |
+
+*Decision (owner, cador-1).* =nihil= signals
+=operation-not-supported-by-this-host= (code =:host-not-supported=) — *not*
+warn-and-return-=nil=. [S: =issues/open/cador-1-split-nihil-cador.issue=;
+nihil.lisp raises it for every CAD op] This is settled and recorded here so it
+survives the epic.
+
+*Required refinement.* The current runtime has *one* error type
+(=autolisp-runtime-error= with a =code= keyword) and only the
+=:host-not-supported= code is used for host boundaries. [S:
+=autolisp-runtime/source/package.lisp:104–108=] To satisfy the taxonomy, the
+other three classes/codes must be introduced and =cador= must be changed to
+raise =unavailable-in-headless-context= where it currently reuses
+=:host-not-supported= (e.g. the read-only-setvar path raises
+=:host-not-supported= today, which is arguably a mis-grade — it should be
+=sysvar-read-only=). [S: =cador/source/sysvar-api.lisp:238–242= uses the
+distinct =:sysvar-read-only= code correctly; but =cador-set-sysvar= in
+=sysvars.lisp:131–132= raises =:host-not-supported= — flagged for cleanup, D2
+§II.15.] This refinement is a cador-1/cador-2 code change, specified here as the
+contract.
+
+* 16. Conformance and the fidelity matrix as coverage target
+
+Per epic §8, the E1–E10 experiments of the analysis become conformance probes
+runnable against any host; against AutoCAD/BricsCAD they establish reference
+behaviour, against =cador= they assert conformance. Each cell of §12 that is
+not =sig=/=n/a=/=none= is a contract a probe must cover; a cell with no probe is
+an untested contract. The harness writes each probe once and runs it three ways
+(nihil / cador / real product), tabulating per host and version. The =isatty=
+guards, bounded reads and non-interactive =*debugger-hook*= belong to =alfe='s
+terminal layer, not to the host; =cador= contributes a path with *no terminal
+to query* (D2 §I.10, epic §8).
+
+* 17. References
+
+- =issues/open/cador-multidocument-host.issue= — the epic (D1/D2/D5 structure,
+  C1–C8, §9 open questions).
+- =issues/open/cador-3-host-interface-protocol-spec.issue= — this sub-task.
+- =clautolisp/documentation/clautolisp-multidocument-analysis.org= — R1–R21,
+  E1–E10, and all A/B/C/V vendor claims cited above.
+- =clautolisp/documentation/clautolisp-cador-spec.org= — D2, the =cador= host.
+- =clautolisp/documentation/clautolisp-debugger-remote-cad-spec.org= —
+  configuration (c) (W1), explicitly *not* a clautolisp host.
+- Source of record: =clautolisp/autolisp-host/source/protocol.lisp= (the
+  generics), =.../nihil.lisp= (the negative contract),
+  =clautolisp/cador/source/*.lisp=, =clautolisp/autolisp-runtime/source/model.lisp=,
+  =clautolisp/drawing/source/model.lisp=.
