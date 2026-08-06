@@ -81,7 +81,8 @@ if (Test-Path "$alfe.exe") {
 $probes = @(
   @{ Name = "entity-lifecycle"; File = "entity-lifecycle-probe.lsp" },
   @{ Name = "drawing-data";     File = "drawing-data-probe.lsp" },
-  @{ Name = "selection";        File = "selection-probe.lsp" }
+  @{ Name = "selection";        File = "selection-probe.lsp" },
+  @{ Name = "bricscad-extensions"; File = "bricscad-extensions-probe.lsp" }
 )
 
 $failed = 0
@@ -235,6 +236,16 @@ foreach ($p in $probes) {
   # UNEXPECTED / MISSING gate, KNOWN-DIVERGENCE is reported but green.
   $sexp = if ($Backend -eq "clautolisp") { Join-Path $probeDir "$($p.Name).sexp" }
           else { Join-Path $probeDir "$($p.Name)-$Backend.sexp" }
+  # HARVEST probes have no per-vendor expectation file: they RECORD what the
+  # target does (e.g. bricscad-extensions decoding BricsCAD's undocumented
+  # setf/let/let* returns), so there is nothing to conform to yet. Save the
+  # transcript artifact and report HARVEST (green, never gates). Drop in a
+  # <name>[-<backend>].sexp later to promote it to a conformance probe.
+  if (-not (Test-Path $sexp)) {
+    $summary += "HARVEST  $($p.Name) -- transcript saved ($($p.Name).log); no expectation file, not gated"
+    Write-Host "HARVEST  $($p.Name) (no $sexp; transcript in $log)"
+    continue
+  }
   $cmp = & python3 (Join-Path $root "scripts/compare-observations.py") $sexp $log 2>&1
   $cmpRc = $LASTEXITCODE
   $cmp | ForEach-Object { Write-Host "$_" }

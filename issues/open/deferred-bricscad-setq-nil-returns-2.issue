@@ -184,3 +184,22 @@ alfe[debug]: protocol: matched "DONE 5" after 0.06 s
 
 12
 alfe>
+
+== Progress (2026-08-06) — decode probe authored + wired ==
+
+Resolution-path step 1 (run the setf probe in a real BricsCAD session,
+NOT through alfe's print-wrap) is now teed up. The probe
+autolisp-front-end/tests/scenarios/entities/bricscad-extensions-probe.lsp
+(bricscad-undocumented-clisms.issue) captures setf's RAW return directly:
+each result is wrapped in its own princ, so the recorded value is setf's
+own return, not the REPL echo — exactly the print-wrap confound this
+issue flagged. It probes SETF-NIL/1/2/99/STRING/LIST plus a
+SETF-THEN-FOO read-back, so the harvest tells the three hypotheses apart:
+  - echo constant across all values  -> internal sentinel (the "2");
+  - echo tracks the value            -> setf behaves like setq;
+  - SETF-THEN-FOO unchanged          -> setf does not actually assign.
+It is wired into the existing manual vendor-probes jobs
+(vendor:probes:bricscad / :macos) as a HARVEST probe (no gating); the
+transcript lands at dist/vendor-probes/bricscad/bricscad-extensions.log.
+One pjb click on the now-available BricsCAD runner produces the decode;
+this issue then closes per its steps 2-4.

@@ -138,3 +138,43 @@ candidates for follow-up.
   changes will land in per-construct branches/commits; this file
   tracks the meta-decision (which constructs to chase, in what
   order) and the documentation rollout.
+
+== Progress (2026-08-06) — Plan step 1 (probe) authored + CI-wired ==
+
+The harvest probe is written and wired; only the one-click run on real
+BricsCAD remains (pjb, on the now-available runners).
+
+  - Probe: autolisp-front-end/tests/scenarios/entities/bricscad-extensions-probe.lsp.
+    It captures each construct's RAW RETURN VALUE directly — each result is
+    wrapped in its own princ, so what is recorded is the form's own return
+    value, not any REPL/print-wrap echo (this is what
+    deferred-bricscad-setq-nil-returns-2 needs to rule out the alfe layer).
+    setq baseline; setf against nil/1/2/99/"hello"/'(a b) + a
+    setf-then-read to tell "returns a sentinel but assigns correctly" from
+    "does not assign"; let (parallel-binding discipline), let* (sequential);
+    &rest and the bare & separator. Every construct goes through
+    vl-catch-all-apply, so an unsupported one records "ERROR:<msg>" instead
+    of aborting — the probe runs to completion on ANY backend. Output is
+    machine-readable "EXTPROBE <KEY>=<VALUE>", ending "EXTPROBE DONE".
+
+  - CI: NO new job needed. The probe is registered in the existing
+    vendor-probes drivers (scripts/run-vendor-probes.{sh,ps1}); a probe with
+    no per-vendor .sexp expectation file is now treated as HARVEST — its
+    transcript is saved as the artifact and it never gates the pipeline
+    (green). So the existing manual jobs vendor:probes:bricscad (Windows) and
+    vendor:probes:bricscad:macos already carry it. To harvest: trigger
+    either job; read dist/vendor-probes/bricscad/bricscad-extensions.log.
+
+  - Validated locally end-to-end via the clautolisp backend
+    (bash scripts/run-vendor-probes.sh --backend clautolisp): the three
+    conformance probes still PASS and bricscad-extensions reports HARVEST
+    with its transcript. clautolisp's own current behaviour (documents the
+    "faithful host" gap):
+      SETQ -> value; SETF/LET/LET* -> ERROR:Undefined (not implemented);
+      &rest AND bare & both bind (2 3 4).
+
+  - Next after the BricsCAD harvest: Plan steps 2-4 (spec page
+    bricscad-undocumented-extensions.org with the transcript evidence;
+    per-construct clautolisp impl decisions — setf likely a setq alias on
+    symbol places once the return is decoded; let/let* after semantics are
+    pinned; the [ext-bricscad-undocumented] dialect warnings).
