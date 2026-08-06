@@ -204,6 +204,16 @@ from the copy — it names only our manuals, so overwriting `$PREFIX`'s
 would drop every other package's entries — and re-registers each
 manual in the real dir node instead.
 
+## Issue tracking
+
+- Issues live as one file per issue under `issues/open/` (active) and
+  `issues/closed/` (resolved); closing an issue means appending a
+  `Resolved` note and `git mv`-ing it from `open/` to `closed/`.
+- `issues/open/TRIAGE.org` is the triage index — the at-a-glance table of
+  open issues with their status. **It replaced the former
+  `issues/index.txt`**; there is no `index.txt` any more. Keep TRIAGE.org
+  in step when opening, closing, or re-prioritising an issue.
+
 ## Change Discipline
 
 - Prefer small, composable modules.

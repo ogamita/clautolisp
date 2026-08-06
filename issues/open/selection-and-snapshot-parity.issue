@@ -96,11 +96,16 @@ Implemented (headless, green now)
 Out of scope (documented; fail CLEANLY, never crash)
 ----------------------------------------------------
 - Interactive ssget: no-mode (interactive pick), point/window forms, and
-  the graphical modes "_C" "_I" "_W" "_CP" "_WP" "_F" "L" "P" "A" —
+  the graphical modes "_C" "_W" "_CP" "_WP" "_F" "L" "P" "A" —
   signal a catchable AutoLISP error (:host-not-supported /
   :unsupported-ssget-mode), recoverable by vl-catch-all-apply / *error*.
+  ("_I" was moved OUT of this list — it is passive, needs no graphics, and
+  is now implemented; see ssget-implied-selection-not-graphical.issue,
+  RESOLVED.)
 - sssetfirst/ssgetfirst grip highlighting: modelled as plain pickfirst
-  storage, no graphics.
+  storage, no graphics. "_I" is the read side of that same storage:
+  (ssget "_I" [filter]) returns the pickfirst set (honouring PICKFIRST and
+  consuming it on read), sharing the "_X" filter grammar.
 - nentsel/entsel interactive picking: nil M6 stubs.
 These are inherent to a headless (model-only) engine; not defects.
 

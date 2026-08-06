@@ -140,3 +140,34 @@ Related
 out of its "Out of scope" list. The other modes in that list stay there;
 this is a reclassification of one entry, not a challenge to the headless
 boundary.
+
+Resolved (clautolisp 1.8.2)
+---------------------------
+RESOLVED. `host-ssget` on the `cador` host (was MockHost) now handles the
+`"I"`/`"_I"` mode as a passive read of the pickfirst set
+(clautolisp/cador/source/selection-api.lisp), implementing all five
+requested semantics:
+
+  1. `(ssget "_I")` returns the stored pickfirst set as a PICKSET, or nil
+     when empty; it never prompts and never signals.
+  2. `(ssget "_I" filter)` reuses the shared `entity-matches-filter-p`
+     grammar (the same one `"_X"` uses), applied to the implied set.
+  3. `(sssetfirst nil js)` / `(sssetfirst nil nil)` populate/clear it
+     (already modelled; unchanged).
+  4. `PICKFIRST` = 0 suppresses it (returns nil) regardless of what is
+     stored.
+  5. Consume-on-read: the first read returns the set and clears it, so a
+     second `(ssget "_I")` without an intervening `sssetfirst` returns
+     nil — the pjb decision to reproduce vendor behaviour.
+
+Tests: five cases in clautolisp/cador/tests/selection-tests.lisp
+(empty→nil, returns-pickfirst-set, shared-filter-grammar,
+PICKFIRST-zero-suppresses, consumed-on-read).
+`selection-and-snapshot-parity.issue` updated to move `"_I"` out of its
+out-of-scope list.
+
+Still wanted (does NOT block this close): the vendor probe of point 5 —
+the exact clearing boundary on BricsCAD/AutoCAD (command completion vs
+first read vs next selection). Needs cad-access; tracked with the other
+vendor-parity probes. The headless model uses first-read clearing, which
+matches the SCHMS+ usage.

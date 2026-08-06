@@ -83,7 +83,7 @@ retrofitted as they are touched.
 
 | Issue                                    | Type          | Status   | Note |
 |------------------------------------------+---------------+----------+------|
-| pi-constant-unbound                      | builtin       | TODO     | PI evaluates to NIL in every dialect (vendors: 3.14159…); one-line fix, 97 uses in the SCHMS+ sources; error surfaces at the arithmetic, not at the constant |
+| pi-constant-unbound                      | builtin       | DONE     | PI evaluates to NIL in every dialect (vendors: 3.14159…); one-line fix, 97 uses in the SCHMS+ sources; error surfaces at the arithmetic, not at the constant — RESOLVED 1.7.25 (bind PI/T/PAUSE), issues/closed/ |
 | complete-unit-tests                      | coverage-epic | TODO     | backfill builtin coverage to ≥95% |
 | deferred-stubbed-functions               | builtins-epic | DEFERRED | promote stubbed-as-no-op builtins (registry section done 1.5.1) |
 | deferred-spec-research                   | builtins      | DEFERRED | vendor-validate uncertain builtins; needs cad-access |
@@ -101,7 +101,7 @@ the shared blocker.
 
 | Issue                              | Status   | Note |
 |------------------------------------+----------+------|
-| ssget-implied-selection-not-graphical | TODO   | "_I" est classe avec les modes graphiques alors qu'il n'en est pas un : il rend la selection courante, sans pointeur ni geometrie, et le stockage pickfirst dont il depend est deja modelise. Dernier blocage du corpus CAD SCHMS+ en headless |
+| ssget-implied-selection-not-graphical | DONE   | "_I" est classe avec les modes graphiques alors qu'il n'en est pas un : il rend la selection courante, sans pointeur ni geometrie, et le stockage pickfirst dont il depend est deja modelise. Dernier blocage du corpus CAD SCHMS+ en headless — RESOLU 1.8.2 (ssget "_I" pickfirst, filtre partage, PICKFIRST, consomme a la lecture), issues/closed/ |
 | entity-mutation-parity             | TODO     | headless foundation done (1.6.5/6); umbrella for deferred families + CAD verify |
 | drawing-database-api               | TODO     | parent epic — Phase 17f multi-document / 17g ObjectDBX / 17h |
 | drawing-data-structures-parity     | BLOCKED  | headless done (1.6.8–10); needs cad-access to verify |
