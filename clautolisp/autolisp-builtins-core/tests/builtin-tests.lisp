@@ -2347,6 +2347,252 @@ NIL when GETSTRING returns nil)."
                    (autolisp-symbol-name
                     (call-autolisp-function type-fn v)))))))
 
+;;; --- Dynamic vla-* accessor façade (vla-accessor-family.issue) ---
+;;;
+;;; After (vl-load-com), an unbound VLA-GET-<prop> / VLA-PUT-<prop> /
+;;; VLA-<method> operator is resolved on demand to the vlax-* primitive,
+;;; mirroring Visual LISP's type-library-driven accessors. Exercised
+;;; end-to-end against the mock AutoCAD.Application / .Document.
+
+(defun %vla (source)
+  "Evaluate SOURCE through run-autolisp-string on a fresh mock host."
+  (reset-autolisp-symbol-table)
+  (run-autolisp-string source :setup-fn #'%install-mock-host-and-core))
+
+(defun %vla-code (source)
+  "Evaluate SOURCE, returning the autolisp-runtime-error code it signals
+ (or :no-error)."
+  (handler-case (progn (%vla source) :no-error)
+    (clautolisp.autolisp-runtime:autolisp-runtime-error (e)
+      (clautolisp.autolisp-runtime:autolisp-runtime-error-code e))))
+
+(test vla-accessor-undefined-before-vl-load-com
+  ;; The façade is gated: vla-* names are undefined until (vl-load-com).
+  (is (eq :undefined-function
+          (%vla-code "(vla-get-activedocument (vlax-get-acad-object))"))))
+
+(test vla-get-activedocument-resolves-end-to-end
+  (let ((doc (%vla "(vl-load-com)(vla-get-activedocument (vlax-get-acad-object))")))
+    (is (typep doc 'clautolisp.autolisp-runtime:autolisp-vla-object))))
+
+(test vla-get-accessor-reads-a-property
+  (let ((name (%vla "(vl-load-com)(vla-get-name (vla-get-activedocument (vlax-get-acad-object)))")))
+    (is (string= "Drawing.dwg"
+                 (if (typep name 'autolisp-string) (autolisp-string-value name) name)))))
+
+(test vla-put-accessor-writes-a-property
+  (let ((name (%vla (concatenate 'string
+                                 "(vl-load-com)"
+                                 "(setq d (vla-get-activedocument (vlax-get-acad-object)))"
+                                 "(vla-put-name d \"Renamed.dwg\")"
+                                 "(vla-get-name d)"))))
+    (is (string= "Renamed.dwg"
+                 (if (typep name 'autolisp-string) (autolisp-string-value name) name)))))
+
+(test vla-method-dispatch-routes-to-invoke-method
+  ;; A non-get/put vla-<method> dispatches to vlax-invoke-method; an
+  ;; unknown method surfaces the host :unknown-com-method error (proving
+  ;; the route), rather than :undefined-function.
+  (is (eq :unknown-com-method
+          (%vla-code "(vl-load-com)(vla-bogusmethod (vla-get-activedocument (vlax-get-acad-object)))"))))
+
+(test vla-accessor-empty-suffix-stays-undefined
+  ;; Degenerate "vla-get-" / "vla-put-" (empty property) are not accessors.
+  (is (eq :undefined-function (%vla-code "(vl-load-com)(vla-get- (vlax-get-acad-object))")))
+  (is (eq :undefined-function (%vla-code "(vl-load-com)(vla-put- (vlax-get-acad-object) 1)"))))
+
+(test vla-accessor-user-definition-wins
+  ;; A user (defun vla-get-foo …) shadows the façade for that name.
+  (is (eql 42 (%vla "(vl-load-com)(defun vla-get-foo (x) 42)(vla-get-foo nil)"))))
+
+;;; --- vlax-* group A: points / tmatrix / safearray extras ---------
+
+(test vlax-3d-point-builds-variant-double-triple
+  (is (equal '(1.0d0 2.0d0 3.0d0)
+             (%vla "(vlax-safearray->list (vlax-variant-value (vlax-3d-point 1 2 3)))")))
+  ;; A 2D point handed to the 3D form pads Z with 0.0.
+  (is (equal '(1.0d0 2.0d0 0.0d0)
+             (%vla "(vlax-safearray->list (vlax-variant-value (vlax-3d-point '(1 2))))"))))
+
+(test vlax-2d-point-builds-variant-double-pair
+  (is (equal '(4.0d0 5.0d0)
+             (%vla "(vlax-safearray->list (vlax-variant-value (vlax-2d-point 4 5)))"))))
+
+(test vlax-tmatrix-is-a-4x4-safearray
+  (is (eql 2 (%vla "(vlax-safearray-get-dim (vlax-tmatrix '((1 0 0 0)(0 1 0 0)(0 0 1 0)(0 0 0 1))))")))
+  (is (equal '((1.0d0 2.0d0 3.0d0 4.0d0)
+               (5.0d0 6.0d0 7.0d0 8.0d0)
+               (9.0d0 10.0d0 11.0d0 12.0d0)
+               (13.0d0 14.0d0 15.0d0 16.0d0))
+             (%vla "(vlax-safearray-value (vlax-tmatrix '((1 2 3 4)(5 6 7 8)(9 10 11 12)(13 14 15 16))))"))))
+
+(test vlax-safearray-value-and-get-dim-on-1d
+  (is (equal '(10 20 30)
+             (%vla "(setq a (vlax-make-safearray vlax-vbInteger '(0 . 2)))(vlax-safearray-fill a '(10 20 30))(vlax-safearray-value a)")))
+  (is (eql 1 (%vla "(vlax-safearray-get-dim (vlax-make-safearray vlax-vbInteger '(0 . 2)))"))))
+
+;;; --- vlax-* group B: entity<->vla bridge + introspection ---------
+
+(defparameter +vla-line+
+  "(vl-load-com)(setq e (entmakex '((0 . \"LINE\")(10 0.0 0.0 0.0)(11 10.0 0.0 0.0))))")
+
+(test vlax-ename->vla-object-round-trips
+  ;; ename -> vla -> ename yields the same (eq) ename object.
+  (is (%vla (concatenate 'string +vla-line+
+                         "(eq e (vlax-vla-object->ename (vlax-ename->vla-object e)))"))))
+
+(test vlax-ename->vla-object-is-identity-stable
+  (is (%vla (concatenate 'string +vla-line+
+                         "(equal (vlax-vla-object->ename (vlax-ename->vla-object e))"
+                         "       (vlax-vla-object->ename (vlax-ename->vla-object e)))"))))
+
+(test vlax-erased-p-tracks-entity-deletion
+  (is (null (%vla (concatenate 'string +vla-line+
+                               "(vlax-erased-p (vlax-ename->vla-object e))"))))
+  ;; A released COM object reports erased without signalling.
+  (is (%vla (concatenate 'string +vla-line+
+                         "(setq v (vlax-ename->vla-object e))(entdel e)(vlax-erased-p v)"))))
+
+(test vlax-read-write-typeinfo-on-document
+  (is (%vla "(vl-load-com)(vlax-read-enabled-p (vla-get-activedocument (vlax-get-acad-object)))"))
+  (is (%vla "(vl-load-com)(vlax-write-enabled-p (vla-get-activedocument (vlax-get-acad-object)))"))
+  (is (%vla "(vl-load-com)(vlax-typeinfo-available-p (vla-get-activedocument (vlax-get-acad-object)))")))
+
+(test vlax-import-type-library-and-dump-object-return-t
+  (is (%vla "(vl-load-com)(vlax-import-type-library :tlb-filename \"x.tlb\")"))
+  (is (%vla "(vl-load-com)(vlax-dump-object (vla-get-activedocument (vlax-get-acad-object)))")))
+
+;;; --- vlax-* group C (ldata) + group D (product-key / cmd) --------
+
+(test vlax-ldata-put-get-delete-roundtrip
+  (is (eql 42 (%vla "(vl-load-com)(vlax-ldata-put \"D\" \"k\" 42)(vlax-ldata-get \"D\" \"k\")")))
+  (is (eql 99 (%vla "(vl-load-com)(vlax-ldata-get \"D\" \"absent\" 99)")))
+  ;; delete returns AutoLISP T when the entry existed, and the entry is gone.
+  (is (%vla "(vl-load-com)(vlax-ldata-put \"D\" \"k\" 1)(vlax-ldata-delete \"D\" \"k\")"))
+  (is (null (%vla "(vl-load-com)(vlax-ldata-put \"D\" \"k\" 1)(vlax-ldata-delete \"D\" \"k\")(vlax-ldata-get \"D\" \"k\")")))
+  ;; deleting an absent entry returns nil.
+  (is (null (%vla "(vl-load-com)(vlax-ldata-delete \"D\" \"absent\")"))))
+
+(test vlax-ldata-private-and-public-namespaces-are-separate
+  (is (equal '(10 20)
+             (%vla (concatenate 'string
+                                "(vl-load-com)"
+                                "(vlax-ldata-put \"D\" \"k\" 10)"
+                                "(vlax-ldata-put \"D\" \"k\" 20 T)"
+                                "(list (vlax-ldata-get \"D\" \"k\") (vlax-ldata-get \"D\" \"k\" nil T))")))))
+
+(test vlax-ldata-list-and-test
+  (let ((entries (%vla "(vl-load-com)(vlax-ldata-put \"D\" \"a\" 1)(vlax-ldata-put \"D\" \"b\" 2)(vlax-ldata-list \"D\")")))
+    (is (= 2 (length entries)))
+    (is (eql 1 (cdr (find "a" entries
+                          :key (lambda (p) (let ((k (car p)))
+                                             (if (typep k 'autolisp-string)
+                                                 (autolisp-string-value k) k)))
+                          :test #'string=)))))
+  (is (%vla "(vl-load-com)(vlax-ldata-test '(1 2))"))
+  ;; A function is not storable ldata.
+  (is (null (%vla "(vl-load-com)(vlax-ldata-test car)"))))
+
+(test vlax-product-key-and-command-registration
+  (is (stringp (let ((v (%vla "(vl-load-com)(vlax-machine-product-key)")))
+                 (if (typep v 'autolisp-string) (autolisp-string-value v) v))))
+  ;; add-cmd returns the global name; remove-cmd is T then nil.
+  (is (equal "MYCMD" (let ((v (%vla "(vl-load-com)(vlax-add-cmd \"MYCMD\" 'foo)")))
+                       (if (typep v 'autolisp-string) (autolisp-string-value v) v))))
+  ;; remove-cmd is truthy when it removed something, nil when absent.
+  (is (%vla "(vl-load-com)(vlax-add-cmd \"MYCMD\" 'foo)(vlax-remove-cmd \"MYCMD\")"))
+  (is (null (%vla "(vl-load-com)(vlax-remove-cmd \"NOPE\")")))
+  (is (null (%vla "(vl-load-com)(vlax-queueexpr \"(princ)\")"))))
+
+;;; --- vlax-* group E: curve geometry ------------------------------
+
+(defun %pt~ (got expected &optional (eps 1d-9))
+  "True if point list GOT matches EXPECTED within EPS per coordinate."
+  (and (listp got) (= (length got) (length expected))
+       (every (lambda (g e) (and (numberp g) (< (abs (- g e)) eps))) got expected)))
+
+(defparameter +curve-line+
+  "(vl-load-com)(setq e (entmakex '((0 . \"LINE\")(10 0.0 0.0 0.0)(11 10.0 0.0 0.0))))")
+(defparameter +curve-circle+
+  "(vl-load-com)(setq e (entmakex '((0 . \"CIRCLE\")(10 0.0 0.0 0.0)(40 . 5.0))))")
+(defparameter +curve-arc+
+  "(vl-load-com)(setq e (entmakex '((0 . \"ARC\")(10 0.0 0.0 0.0)(40 . 2.0)(50 . 0.0)(51 . 90.0))))")
+(defparameter +curve-pline+
+  (concatenate 'string
+   "(vl-load-com)(setq e (entmakex '((0 . \"LWPOLYLINE\")"
+   "(100 . \"AcDbEntity\")(100 . \"AcDbPolyline\")"
+   "(90 . 3)(70 . 0)(10 0.0 0.0)(10 3.0 0.0)(10 3.0 4.0))))"))
+
+(defun %curve (mk expr) (%vla (concatenate 'string mk expr)))
+
+(test vlax-curve-line-geometry
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getstartpoint e)") '(0 0 0)))
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getendpoint e)") '(10 0 0)))
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getpointatdist e 2.5)") '(2.5 0 0)))
+  (is (< (abs (- 7.0d0 (%curve +curve-line+ "(vlax-curve-getparamatpoint e '(7.0 0.0 0.0))"))) 1d-9))
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getclosestpointto e '(5.0 3.0 0.0))") '(5 0 0)))
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getfirstderiv e 3.0)") '(1 0 0)))
+  (is (null (%curve +curve-line+ "(vlax-curve-isclosed e)")))
+  (is (< (abs (- 10.0d0 (%curve +curve-line+ "(vlax-curve-getperimeter e)"))) 1d-9)))
+
+(test vlax-curve-circle-geometry
+  (is (< (abs (- (* pi 25) (%curve +curve-circle+ "(vlax-curve-getarea e)"))) 1d-6))
+  (is (< (abs (- (* 2 pi 5) (%curve +curve-circle+ "(vlax-curve-getperimeter e)"))) 1d-6))
+  (is (%curve +curve-circle+ "(vlax-curve-isclosed e)"))
+  (is (%curve +curve-circle+ "(vlax-curve-isperiodic e)"))
+  ;; arc-length param r*pi/2 -> quarter turn -> (0 5 0)
+  (is (%pt~ (%curve +curve-circle+ "(vlax-curve-getpointatparam e 7.8539816339744831)")
+            '(0 5 0) 1d-6)))
+
+(test vlax-curve-arc-geometry
+  (is (%pt~ (%curve +curve-arc+ "(vlax-curve-getstartpoint e)") '(2 0 0) 1d-9))
+  (is (%pt~ (%curve +curve-arc+ "(vlax-curve-getendpoint e)") '(0 2 0) 1d-9))
+  ;; quarter circle of radius 2 -> arc length = pi
+  (is (< (abs (- pi (%curve +curve-arc+ "(vlax-curve-getperimeter e)"))) 1d-6))
+  (is (null (%curve +curve-arc+ "(vlax-curve-isclosed e)"))))
+
+(test vlax-curve-polyline-geometry
+  (is (< (abs (- 2.0d0 (%curve +curve-pline+ "(vlax-curve-getendparam e)"))) 1d-9))
+  (is (< (abs (- 7.0d0 (%curve +curve-pline+ "(vlax-curve-getperimeter e)"))) 1d-9))
+  (is (%pt~ (%curve +curve-pline+ "(vlax-curve-getpointatdist e 3.0)") '(3 0 0)))
+  (is (%pt~ (%curve +curve-pline+ "(vlax-curve-getpointatdist e 5.0)") '(3 2 0)))
+  (is (< (abs (- 1.5d0 (%curve +curve-pline+ "(vlax-curve-getparamatpoint e '(3.0 2.0 0.0))"))) 1d-9))
+  (is (%pt~ (%curve +curve-pline+ "(vlax-curve-getclosestpointto e '(5.0 2.0 0.0))") '(3 2 0))))
+
+(test vlax-curve-accepts-vla-object-and-nils-unsupported
+  ;; The curve arg may be a vla-object, not just an ename.
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getstartpoint (vlax-ename->vla-object e))") '(0 0 0)))
+  ;; A non-curve entity yields nil (documented failure return).
+  (is (null (%vla (concatenate 'string
+                   "(vl-load-com)(setq tp (entmakex '((0 . \"POINT\")(10 1.0 2.0 0.0))))"
+                   "(vlax-curve-getstartpoint tp)")))))
+
+;;; --- vlax-for (special form) + vlax-map-collection ---------------
+
+(test vlax-for-iterates-a-collection
+  ;; The mock Documents collection holds the one open document.
+  (is (eql 1 (%vla (concatenate 'string
+                    "(vl-load-com)(setq n 0)"
+                    "(vlax-for d (vlax-get-property (vlax-get-acad-object) \"Documents\")"
+                    "  (setq n (+ n 1)))"
+                    "n"))))
+  ;; VAR is bound to each member (a document VLA-object) in turn.
+  (is (equal "Drawing.dwg"
+             (let ((v (%vla (concatenate 'string
+                             "(vl-load-com)(setq nm nil)"
+                             "(vlax-for d (vlax-get-property (vlax-get-acad-object) \"Documents\")"
+                             "  (setq nm (vlax-get-property d \"Name\")))"
+                             "nm"))))
+               (if (typep v 'autolisp-string) (autolisp-string-value v) v)))))
+
+(test vlax-map-collection-runs-fn-and-returns-nil
+  (is (equal '(1)
+             (%vla (concatenate 'string
+                    "(vl-load-com)(setq c 0)"
+                    "(vlax-map-collection (vlax-get-property (vlax-get-acad-object) \"Documents\")"
+                    "  '(lambda (x) (setq c (+ c 1))))"
+                    "(list c)")))))
+
 (test reader-handles-newline-and-tab-string-escapes
   ;; "\n" / "\t" / "\r" in source code must produce real control
   ;; characters in every dialect, not literal backslash-letter pairs
@@ -5258,7 +5504,6 @@ cp1252-codec-host-independent.issue."
   (reset-autolisp-symbol-table)
   (install-core-builtins)
   (dolist (probe '(("ACET-STR-FORMAT" "%d" 42)
-                   ("VLAX-CURVE-GETAREA" "ent")
                    ("DOS_STRTRIM" "  hi  ")
                    ("OSNAP" "1.0,2.0" "_END")
                    ("GRARC")))

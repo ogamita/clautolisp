@@ -186,7 +186,20 @@
                 #:host-vlax-put-property
                 #:host-vlax-invoke-method
                 #:host-vlax-property-available-p
-                #:host-vlax-method-applicable-p)
+                #:host-vlax-method-applicable-p
+                #:host-vlax-get-acad-object
+                #:host-vlax-ename->vla-object
+                #:host-vlax-vla-object->ename
+                #:host-vlax-erased-p
+                #:host-vlax-describe-object
+                #:host-vlax-ldata-put
+                #:host-vlax-ldata-get
+                #:host-vlax-ldata-delete
+                #:host-vlax-ldata-list
+                #:host-vlax-add-cmd
+                #:host-vlax-remove-cmd
+                #:host-vlax-queueexpr
+                #:host-vlax-collection-items)
   (:export
    #:*core-builtin-names*
    #:core-builtins

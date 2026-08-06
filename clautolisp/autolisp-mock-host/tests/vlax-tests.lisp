@@ -96,3 +96,31 @@
     (let* ((vla (host-vlax-create-object mock "MyTest.Probe")))
       (is (eql 17 (host-vlax-get-property mock vla "Foo")))
       (is (string= "hello" (host-vlax-get-property mock vla "Bar"))))))
+
+;;; --- vlax-get-acad-object + ActiveDocument resolution ------------
+
+(test vlax-get-acad-object-returns-application-with-live-activedocument
+  ;; The acad application's ActiveDocument is a live document VLA-OBJECT
+  ;; (not the nil template default), so the vla-get-activedocument chain
+  ;; resolves end-to-end on the mock.
+  (let* ((mock (make-mock-host))
+         (app  (host-vlax-get-acad-object mock)))
+    (is (typep app 'clautolisp.autolisp-runtime:autolisp-vla-object))
+    (is (string= "Mock AutoCAD" (host-vlax-get-property mock app "Name")))
+    (let ((doc (host-vlax-get-property mock app "ActiveDocument")))
+      (is (typep doc 'clautolisp.autolisp-runtime:autolisp-vla-object))
+      ;; It really is an AutoCAD.Document — its Name default proves it.
+      (is (string= "Drawing.dwg" (host-vlax-get-property mock doc "Name")))
+      ;; And the back-link Document.Application points at the app.
+      (let ((back (host-vlax-get-property mock doc "Application")))
+        (is (typep back 'clautolisp.autolisp-runtime:autolisp-vla-object))
+        (is (string= (clautolisp.autolisp-runtime:autolisp-vla-object-value back)
+                     (clautolisp.autolisp-runtime:autolisp-vla-object-value app)))))))
+
+(test vlax-get-acad-object-is-a-singleton
+  ;; Repeated calls resolve to the same underlying COM object id.
+  (let* ((mock (make-mock-host))
+         (a (host-vlax-get-acad-object mock))
+         (b (host-vlax-get-acad-object mock)))
+    (is (string= (clautolisp.autolisp-runtime:autolisp-vla-object-value a)
+                 (clautolisp.autolisp-runtime:autolisp-vla-object-value b)))))

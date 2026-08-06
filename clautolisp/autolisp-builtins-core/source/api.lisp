@@ -5613,6 +5613,552 @@ issues/open/clautolisp-module-app-extensions.issue."
                              (t name))
                            args))
 
+(defun builtin-vlax-get-acad-object ()
+  "Return the host's top-level application COM object. On the mock host
+this is a singleton AutoCAD.Application whose ActiveDocument resolves to
+a document object; on a real CAD host it is the live acad app."
+  (host-vlax-get-acad-object (current-evaluation-host)))
+
+;;; --- Object-model bridge + introspection (Group B) ---------------
+
+(defun builtin-vlax-ename->vla-object (ename)
+  "Entity name -> VLA-object (spec 69468)."
+  (host-vlax-ename->vla-object (current-evaluation-host) ename))
+
+(defun builtin-vlax-vla-object->ename (vla)
+  "VLA-object -> entity name; inverse of the above (spec 69515)."
+  (host-vlax-vla-object->ename (current-evaluation-host) vla))
+
+(defun builtin-vlax-erased-p (vla)
+  "Non-nil if the object has been erased/released (spec 71674)."
+  (if (host-vlax-erased-p (current-evaluation-host) vla)
+      (autolisp-true)
+      nil))
+
+(defun builtin-vlax-typeinfo-available-p (vla)
+  "T if TypeLib info exists for the object (spec 72201). On the mock,
+objects that expose methods have type info; entity wrappers and bare
+records do not. SPEC-UNCERTAIN: the precise per-object answer (e.g.
+AcadDocument) is a vendor detail we approximate by method presence."
+  (multiple-value-bind (props methods)
+      (host-vlax-describe-object (current-evaluation-host) vla)
+    (declare (ignore props))
+    (if methods (autolisp-true) nil)))
+
+(defun builtin-vlax-read-enabled-p (vla)
+  "T if the object can be read — i.e. it is not erased/released (spec 70303)."
+  (if (host-vlax-erased-p (current-evaluation-host) vla) nil (autolisp-true)))
+
+(defun builtin-vlax-write-enabled-p (object)
+  "T if the drawing object can be modified (spec 70839). Accepts a
+VLA-object or an ename. Writable = live and not flagged ReadOnly."
+  (let* ((host (current-evaluation-host))
+         (vla (if (typep object 'autolisp-ename)
+                  (host-vlax-ename->vla-object host object)
+                  object)))
+    (cond
+      ((host-vlax-erased-p host vla) nil)
+      ((and (host-vlax-property-available-p host vla "ReadOnly")
+            (host-vlax-get-property host vla "ReadOnly"))
+       nil)
+      (t (autolisp-true)))))
+
+(defun builtin-vlax-import-type-library (&rest args)
+  "Import a COM type-library's wrappers (spec 70070). Headless clautolisp
+resolves vla-* dynamically (the accessor façade), so there are no static
+wrappers to generate; the keyword form is accepted and T is returned."
+  (declare (ignore args))
+  (autolisp-true))
+
+(defun builtin-vlax-dump-object (vla &optional detail)
+  "Print an object's properties (and, when DETAIL is non-nil, its
+methods) to standard output; returns T (spec 69945)."
+  (multiple-value-bind (props methods)
+      (host-vlax-describe-object (current-evaluation-host) vla)
+    (let ((out *standard-output*))
+      (format out "; Object properties:~%")
+      (dolist (p props)
+        (format out ";   ~A~%" (car p)))
+      (when detail
+        (format out "; Methods supported:~%")
+        (dolist (m methods)
+          (format out ";   ~A~%" m)))
+      (finish-output out))
+    (autolisp-true)))
+
+;;; --- LDATA + product-key / command registration (Groups C, D) ----
+
+(defun %al->cl-string (x)
+  (cond ((typep x 'autolisp-string) (autolisp-string-value x))
+        ((stringp x) x)
+        (t x)))
+
+(defun %ldata-storable-p (value)
+  "Value categories admissible as ldata (spec 71931): numbers, strings,
+lists, enames, VLA-objects, variants, safearrays, T and nil. Functions
+(subr / usubr) are not storable."
+  (typecase value
+    (null t)
+    (cons t)
+    (number t)
+    (autolisp-string t)
+    (autolisp-ename t)
+    (autolisp-vla-object t)
+    (autolisp-variant t)
+    (autolisp-safearray t)
+    (autolisp-symbol t)
+    (t nil)))
+
+(defun builtin-vlax-ldata-put (dict key value &optional private)
+  (host-vlax-ldata-put (current-evaluation-host) dict key value private))
+
+(defun builtin-vlax-ldata-get (dict key &optional default private)
+  (host-vlax-ldata-get (current-evaluation-host) dict key default private))
+
+(defun builtin-vlax-ldata-delete (dict key &optional private)
+  (if (host-vlax-ldata-delete (current-evaluation-host) dict key private)
+      (autolisp-true)
+      nil))
+
+(defun builtin-vlax-ldata-list (dict &optional private)
+  (mapcar (lambda (pair) (cons (make-autolisp-string (car pair)) (cdr pair)))
+          (host-vlax-ldata-list (current-evaluation-host) dict private)))
+
+(defun builtin-vlax-ldata-test (value)
+  (if (%ldata-storable-p value) (autolisp-true) nil))
+
+(defun builtin-vlax-machine-product-key ()
+  "HKLM registry path for the product (spec 71970). Headless clautolisp
+returns a synthetic path for the emulated CAD product."
+  (make-autolisp-string
+   "HKEY_LOCAL_MACHINE\\SOFTWARE\\clautolisp\\headless-cad\\R1.7"))
+
+(defun builtin-vlax-user-product-key ()
+  (make-autolisp-string
+   "HKEY_CURRENT_USER\\SOFTWARE\\clautolisp\\headless-cad\\R1.7"))
+
+(defun builtin-vlax-product-key ()
+  "Obsolete; prefer vlax-machine-product-key (spec 72007)."
+  (builtin-vlax-machine-product-key))
+
+(defun builtin-vlax-add-cmd (global-name function &optional local-or-flags flags)
+  "Register a command (spec 9703). Accepts (global func [local [flags]])
+and (global func [flags]); returns the global name. Headless records the
+registration for introspection — there is no interactive command line."
+  ;; 3-arg form (global func flags): a bare integer in the third slot is
+  ;; command flags, not a local name.
+  (let ((local (if (and local-or-flags (null flags) (integerp local-or-flags))
+                   nil
+                   local-or-flags)))
+    (make-autolisp-string
+     (host-vlax-add-cmd (current-evaluation-host)
+                        (%al->cl-string global-name)
+                        function
+                        (and local (%al->cl-string local))
+                        flags))))
+
+(defun builtin-vlax-remove-cmd (global-name)
+  "Remove a registered command (spec 72079); T removes the whole group.
+Returns T if something was removed, else nil."
+  (let ((g (if (and (typep global-name 'autolisp-symbol)
+                    (string= (autolisp-symbol-name global-name) "T"))
+               t
+               (%al->cl-string global-name))))
+    (if (host-vlax-remove-cmd (current-evaluation-host) g)
+        (autolisp-true)
+        nil)))
+
+(defun builtin-vlax-queueexpr (string)
+  "Queue a command / Lisp string for async execution (spec 81387,
+BricsCAD); always returns nil."
+  (host-vlax-queueexpr (current-evaluation-host) (%al->cl-string string)))
+
+;;; --- Collection iteration (vlax-for is a runtime special form) ---
+
+(defun builtin-vlax-map-collection (collection function-designator)
+  "Apply FUNCTION-DESIGNATOR to each member of an ActiveX COLLECTION
+(spec 71711); side-effecting traversal, returns nil."
+  (let ((fn (resolve-autolisp-function-designator function-designator)))
+    (dolist (item (host-vlax-collection-items (current-evaluation-host) collection))
+      (call-autolisp-function fn item))
+    nil))
+
+;;; --- Curve geometry (Group E: vlax-curve-*) ----------------------
+;;;
+;;; A vlax-curve-* argument is an entity ENAME or a VLA-object; we
+;;; resolve it to the entity's DXF (host-entget) and compute the
+;;; requested quantity analytically. Parameter conventions (spec 70877
+;;; ff.): `param' is the curve's NATIVE parameter (arc-length for a
+;;; LINE; the angle in radians for CIRCLE/ARC; vertex-index.fraction for
+;;; a polyline), `dist' is arc-length from the start; all points/vectors
+;;; are WCS 3D lists; every operation returns nil on failure / an
+;;; out-of-range argument. Analytic support: LINE, RAY, XLINE, CIRCLE,
+;;; ARC, and straight-segment LWPOLYLINE / POLYLINE. ELLIPSE and SPLINE,
+;;; and the arc segments of a bulged polyline, are SPEC-UNCERTAIN (NURBS
+;;; / elliptic-integral territory) and return nil rather than wrong math
+;;; — see issues/open/vla-accessor-family.issue.
+
+(defun %v (p) "Coerce a DXF/AutoLISP point list to (x y z) doubles."
+  (flet ((d (x) (coerce (if (numberp x) x 0) 'double-float)))
+    (list (d (nth 0 p)) (d (nth 1 p)) (d (nth 2 p)))))
+(defun %v+ (a b) (mapcar #'+ a b))
+(defun %v- (a b) (mapcar #'- a b))
+(defun %v* (a s) (mapcar (lambda (x) (* x s)) a))
+(defun %vdot (a b) (reduce #'+ (mapcar #'* a b)))
+(defun %vlen (a) (sqrt (%vdot a a)))
+(defun %vunit (a) (let ((l (%vlen a))) (if (zerop l) a (%v* a (/ 1.0d0 l)))))
+(defun %pt->list (p) (mapcar (lambda (x) (coerce x 'double-float)) p))
+
+(defun %dxf-ref (dxf code)
+  (cdr (assoc code dxf :test (lambda (c e) (and (numberp e) (= c e))))))
+(defun %dxf-all (dxf code)
+  (loop for pair in dxf
+        when (and (consp pair) (numberp (car pair)) (= (car pair) code))
+          collect (cdr pair)))
+
+(defun %curve-ename (curve operator-name)
+  (cond
+    ((typep curve 'autolisp-ename) curve)
+    ((typep curve 'autolisp-vla-object)
+     (host-vlax-vla-object->ename (current-evaluation-host) curve))
+    (t (signal-builtin-argument-error
+        :invalid-curve operator-name
+        "~A expects a curve ENAME or VLA-object, got ~S." operator-name curve))))
+
+(defun %curve (curve operator-name)
+  "Parse the entity behind CURVE into a descriptor plist, or NIL if the
+entity is absent or not an analytically-supported curve type."
+  (let* ((ename (%curve-ename curve operator-name))
+         (dxf (host-entget (current-evaluation-host) ename nil)))
+    (and dxf (%parse-curve dxf))))
+
+(defun %parse-curve (dxf)
+  (let ((type (%dxf-ref dxf 0)))
+    (setf type (if (typep type 'autolisp-string) (autolisp-string-value type) type))
+    (cond
+      ((equal type "LINE")
+       (let* ((a (%v (%dxf-ref dxf 10))) (b (%v (%dxf-ref dxf 11))))
+         (list :type :line :start a :end b :length (%vlen (%v- b a)))))
+      ((member type '("RAY" "XLINE") :test #'equal)
+       (list :type (if (equal type "RAY") :ray :xline)
+             :base (%v (%dxf-ref dxf 10)) :dir (%vunit (%v (%dxf-ref dxf 11)))))
+      ((equal type "CIRCLE")
+       (list :type :circle :center (%v (%dxf-ref dxf 10))
+             :radius (coerce (%dxf-ref dxf 40) 'double-float)))
+      ((equal type "ARC")
+       (let* ((c (%v (%dxf-ref dxf 10)))
+              (r (coerce (%dxf-ref dxf 40) 'double-float))
+              (s (* (/ pi 180d0) (coerce (%dxf-ref dxf 50) 'double-float)))
+              (e (* (/ pi 180d0) (coerce (%dxf-ref dxf 51) 'double-float))))
+         (when (<= e s) (incf e (* 2 pi)))    ; normalise CCW sweep
+         (list :type :arc :center c :radius r :start-angle s :end-angle e)))
+      ((member type '("LWPOLYLINE" "POLYLINE") :test #'equal)
+       (let* ((verts (mapcar #'%v (%dxf-all dxf 10)))
+              (flags (or (%dxf-ref dxf 70) 0))
+              (closed (logbitp 0 (if (numberp flags) (truncate flags) 0)))
+              (bulges (%dxf-all dxf 42)))
+         (when (>= (length verts) 2)
+           (list :type :polyline :verts verts :closed closed
+                 :bulged (some (lambda (b) (and (numberp b) (not (zerop b)))) bulges)))))
+      (t nil))))                             ; ELLIPSE / SPLINE / other -> nil
+
+;;; Per-descriptor geometry. Each returns nil when undefined.
+
+(defun %poly-segpoints (curve)
+  (let ((v (getf curve :verts)))
+    (if (getf curve :closed) (append v (list (first v))) v)))
+
+(defun %poly-seglens (curve)
+  (let ((pts (%poly-segpoints curve)))
+    (loop for (a b) on pts while b collect (%vlen (%v- b a)))))
+
+(defun %curve-length (curve)
+  (case (getf curve :type)
+    (:line (getf curve :length))
+    (:circle (* 2 pi (getf curve :radius)))
+    (:arc (* (getf curve :radius)
+             (- (getf curve :end-angle) (getf curve :start-angle))))
+    (:polyline (reduce #'+ (%poly-seglens curve) :initial-value 0.0d0))
+    (t nil)))
+
+(defun %curve-start-param (curve)
+  (case (getf curve :type)
+    ((:line :circle :polyline) 0.0d0)
+    (:ray 0.0d0)
+    (:xline nil)                            ; unbounded below
+    (:arc (getf curve :start-angle))
+    (t nil)))
+
+(defun %curve-end-param (curve)
+  (case (getf curve :type)
+    (:line (getf curve :length))
+    (:circle (* 2 pi (getf curve :radius)))  ; circle native param == arc length
+    (:arc (getf curve :end-angle))
+    (:polyline (coerce (1- (length (%poly-segpoints curve))) 'double-float))
+    ((:ray :xline) nil)
+    (t nil)))
+
+(defun %point-at-param (curve p)
+  (case (getf curve :type)
+    (:line (%v+ (getf curve :start)
+                (%v* (%vunit (%v- (getf curve :end) (getf curve :start))) p)))
+    ((:ray :xline) (%v+ (getf curve :base) (%v* (getf curve :dir) p)))
+    (:circle (let ((c (getf curve :center)) (r (getf curve :radius)) (th (/ p (getf curve :radius))))
+               (%v+ c (list (* r (cos th)) (* r (sin th)) 0.0d0))))
+    (:arc (let ((c (getf curve :center)) (r (getf curve :radius)))
+            (%v+ c (list (* r (cos p)) (* r (sin p)) 0.0d0))))
+    (:polyline
+     (let* ((pts (%poly-segpoints curve))
+            (n (1- (length pts))))
+       (when (and (>= p 0) (<= p n))
+         (multiple-value-bind (i f) (floor p)
+           (when (= i n) (setf i (1- n) f 1.0d0))
+           (%v+ (nth i pts) (%v* (%v- (nth (1+ i) pts) (nth i pts)) f))))))
+    (t nil)))
+
+(defun %dist-at-param (curve p)
+  (case (getf curve :type)
+    ((:line :ray :xline :circle) p)          ; native param == arc length
+    (:arc (* (getf curve :radius) (- p (getf curve :start-angle))))
+    (:polyline
+     (let ((lens (%poly-seglens curve)))
+       (multiple-value-bind (i f) (floor p)
+         (+ (reduce #'+ (subseq lens 0 (min i (length lens))) :initial-value 0.0d0)
+            (if (< i (length lens)) (* f (nth i lens)) 0.0d0)))))
+    (t nil)))
+
+(defun %param-at-dist (curve d)
+  (case (getf curve :type)
+    ((:line :ray :xline :circle) d)
+    (:arc (+ (getf curve :start-angle) (/ d (getf curve :radius))))
+    (:polyline
+     (let ((lens (%poly-seglens curve)) (acc 0.0d0) (i 0))
+       (dolist (l lens (coerce (length lens) 'double-float))
+         (when (<= d (+ acc l)) (return (+ i (if (zerop l) 0 (/ (- d acc) l)))))
+         (incf acc l) (incf i))))
+    (t nil)))
+
+(defun %point-at-dist (curve d)
+  (let ((p (%param-at-dist curve d))) (and p (%point-at-param curve p))))
+
+(defun %first-deriv (curve p)
+  (case (getf curve :type)
+    (:line (%vunit (%v- (getf curve :end) (getf curve :start))))
+    ((:ray :xline) (getf curve :dir))
+    (:circle (let ((r (getf curve :radius)) (th (/ p (getf curve :radius))))
+               (list (* (- r) (sin th)) (* r (cos th)) 0.0d0)))
+    (:arc (let ((r (getf curve :radius)))
+            (list (* (- r) (sin p)) (* r (cos p)) 0.0d0)))
+    (:polyline (let* ((pts (%poly-segpoints curve)) (n (1- (length pts)))
+                      (i (min (floor p) (1- n))))
+                 (%vunit (%v- (nth (1+ i) pts) (nth i pts)))))
+    (t nil)))
+
+(defun %second-deriv (curve p)
+  (case (getf curve :type)
+    ((:line :ray :xline :polyline) (list 0.0d0 0.0d0 0.0d0))
+    (:circle (let ((r (getf curve :radius)) (th (/ p (getf curve :radius))))
+               (list (* (- r) (cos th)) (* (- r) (sin th)) 0.0d0)))
+    (:arc (let ((r (getf curve :radius)))
+            (list (* (- r) (cos p)) (* (- r) (sin p)) 0.0d0)))
+    (t nil)))
+
+(defun %closest-on-segment (a b pt extend)
+  "Nearest point on segment A-B (or its infinite line when EXTEND) to PT."
+  (let* ((ab (%v- b a)) (len2 (%vdot ab ab)))
+    (if (zerop len2) a
+        (let ((tt (/ (%vdot (%v- pt a) ab) len2)))
+          (unless extend (setf tt (max 0.0d0 (min 1.0d0 tt))))
+          (%v+ a (%v* ab tt))))))
+
+(defun %closest-point-to (curve pt extend)
+  (case (getf curve :type)
+    ((:line) (%closest-on-segment (getf curve :start) (getf curve :end) pt extend))
+    ((:ray) (let ((c (%closest-on-segment (getf curve :base)
+                                          (%v+ (getf curve :base) (getf curve :dir)) pt t)))
+              ;; clamp to p>=0 unless extend
+              (if (or extend (>= (%vdot (%v- c (getf curve :base)) (getf curve :dir)) 0)) c
+                  (getf curve :base))))
+    ((:xline) (%closest-on-segment (getf curve :base)
+                                   (%v+ (getf curve :base) (getf curve :dir)) pt t))
+    ((:circle :arc)
+     (let* ((c (getf curve :center)) (r (getf curve :radius))
+            (d (%v- (list (nth 0 pt) (nth 1 pt) (nth 2 c)) c))
+            (th (atan (nth 1 d) (nth 0 d))))
+       (when (eq (getf curve :type) :arc)
+         (unless extend
+           (let ((s (getf curve :start-angle)) (e (getf curve :end-angle)))
+             (let ((tn (+ th (if (< th s) (* 2 pi) 0))))
+               (unless (<= s tn e)
+                 (return-from %closest-point-to
+                   (let ((ps (%point-at-param curve s)) (pe (%point-at-param curve e)))
+                     (if (< (%vlen (%v- pt ps)) (%vlen (%v- pt pe))) ps pe))))))))
+       (%v+ c (list (* r (cos th)) (* r (sin th)) 0.0d0))))
+    (:polyline
+     (let ((best nil) (bestd nil))
+       (loop for (a b) on (%poly-segpoints curve) while b
+             for cp = (%closest-on-segment a b pt extend)
+             for dd = (%vlen (%v- pt cp))
+             when (or (null bestd) (< dd bestd)) do (setf best cp bestd dd))
+       best))
+    (t nil)))
+
+(defun %param-at-point (curve pt)
+  "Native parameter of PT if it lies on the curve (within tolerance)."
+  (let ((cp (%closest-point-to curve pt nil)))
+    (when (and cp (< (%vlen (%v- pt cp)) 1.0d-6))
+      (case (getf curve :type)
+        (:line (%vlen (%v- cp (getf curve :start))))
+        ((:ray :xline) (%vdot (%v- cp (getf curve :base)) (getf curve :dir)))
+        ((:circle :arc)
+         (let* ((c (getf curve :center))
+                (d (%v- cp c)) (th (atan (nth 1 d) (nth 0 d))))
+           (if (eq (getf curve :type) :circle)
+               (* (getf curve :radius) (mod th (* 2 pi)))
+               (let ((s (getf curve :start-angle)))
+                 (if (< th s) (+ th (* 2 pi)) th)))))
+        (:polyline
+         (let ((pts (%poly-segpoints curve)) (acc 0))
+           (loop for (a b) on pts while b for i from 0
+                 for seg = (%closest-on-segment a b pt nil)
+                 when (< (%vlen (%v- pt seg)) 1.0d-6)
+                   do (return (+ i (let ((l (%vlen (%v- b a))))
+                                     (if (zerop l) 0 (/ (%vlen (%v- seg a)) l))))))))
+        (t nil)))))
+
+(defun %curve-area (curve)
+  (case (getf curve :type)
+    (:circle (* pi (getf curve :radius) (getf curve :radius)))
+    (:arc (let ((r (getf curve :radius))
+                (dt (- (getf curve :end-angle) (getf curve :start-angle))))
+            (* 0.5d0 r r (- dt (sin dt)))))    ; circular-segment area
+    (:polyline
+     (when (getf curve :closed)
+       (let ((v (getf curve :verts)) (a 0.0d0))
+         (loop for (p q) on (append v (list (first v))) while q
+               do (incf a (- (* (nth 0 p) (nth 1 q)) (* (nth 0 q) (nth 1 p)))))
+         (abs (* 0.5d0 a)))))                  ; shoelace
+    (t nil)))                                  ; open curves: nil
+
+(defun %is-closed (curve)
+  (case (getf curve :type)
+    (:circle t)
+    (:polyline (getf curve :closed))
+    (:arc (>= (- (getf curve :end-angle) (getf curve :start-angle)) (* 2 pi)))
+    (t nil)))
+
+;;; The AutoLISP-visible builtins.
+
+(defmacro %def-curve-op (name (curve-var &rest extra) &body body)
+  "Define a vlax-curve-* builtin whose BODY computes a value from the
+parsed descriptor (bound to CURVE-VAR), returning nil when the entity is
+not an analytically-supported curve."
+  (let ((c (gensym)))
+    `(defun ,name (,curve-var ,@extra)
+       (let ((,c (%curve ,curve-var ',name)))
+         (if (null ,c) nil
+             (let ((,curve-var ,c)) ,@body))))))
+
+(defun %list->al-point (p) (and p (%pt->list p)))
+
+(%def-curve-op builtin-vlax-curve-getstartpoint (curve)
+  (%list->al-point (%point-at-param curve (%curve-start-param curve))))
+(%def-curve-op builtin-vlax-curve-getendpoint (curve)
+  (%list->al-point (%point-at-param curve (%curve-end-param curve))))
+(%def-curve-op builtin-vlax-curve-getstartparam (curve) (%curve-start-param curve))
+(%def-curve-op builtin-vlax-curve-getendparam (curve) (%curve-end-param curve))
+(%def-curve-op builtin-vlax-curve-getpointatparam (curve p)
+  (%list->al-point (%point-at-param curve (coerce (require-number p 'vlax-curve-getpointatparam) 'double-float))))
+(%def-curve-op builtin-vlax-curve-getpointatdist (curve d)
+  (%list->al-point (%point-at-dist curve (coerce (require-number d 'vlax-curve-getpointatdist) 'double-float))))
+(%def-curve-op builtin-vlax-curve-getparamatpoint (curve pt)
+  (require-proper-list pt 'vlax-curve-getparamatpoint)
+  (%param-at-point curve (%v pt)))
+(%def-curve-op builtin-vlax-curve-getdistatparam (curve p)
+  (%dist-at-param curve (coerce (require-number p 'vlax-curve-getdistatparam) 'double-float)))
+(%def-curve-op builtin-vlax-curve-getdistatpoint (curve pt)
+  (require-proper-list pt 'vlax-curve-getdistatpoint)
+  (let ((prm (%param-at-point curve (%v pt)))) (and prm (%dist-at-param curve prm))))
+(%def-curve-op builtin-vlax-curve-getparamatdist (curve d)
+  (%param-at-dist curve (coerce (require-number d 'vlax-curve-getparamatdist) 'double-float)))
+(%def-curve-op builtin-vlax-curve-getfirstderiv (curve p)
+  (%list->al-point (%first-deriv curve (coerce (require-number p 'vlax-curve-getfirstderiv) 'double-float))))
+(%def-curve-op builtin-vlax-curve-getsecondderiv (curve p)
+  (%list->al-point (%second-deriv curve (coerce (require-number p 'vlax-curve-getsecondderiv) 'double-float))))
+(%def-curve-op builtin-vlax-curve-getclosestpointto (curve pt &optional extend)
+  (require-proper-list pt 'vlax-curve-getclosestpointto)
+  (%list->al-point (%closest-point-to curve (%v pt) (and extend t))))
+(%def-curve-op builtin-vlax-curve-getclosestpointtoprojection (curve pt normal &optional extend)
+  ;; SPEC-UNCERTAIN: only the planar (normal ~ Z) case is supported, where
+  ;; projection is the identity and this reduces to getclosestpointto;
+  ;; a general oblique projection returns nil rather than wrong geometry.
+  (require-proper-list pt 'vlax-curve-getclosestpointtoprojection)
+  (require-proper-list normal 'vlax-curve-getclosestpointtoprojection)
+  (let ((n (%vunit (%v normal))))
+    (if (> (abs (%vdot n '(0.0d0 0.0d0 1.0d0))) 0.999d0)
+        (%list->al-point (%closest-point-to curve (%v pt) (and extend t)))
+        nil)))
+(%def-curve-op builtin-vlax-curve-getarea (curve) (%curve-area curve))
+(%def-curve-op builtin-vlax-curve-getperimeter (curve) (%curve-length curve))
+(%def-curve-op builtin-vlax-curve-isclosed (curve) (if (%is-closed curve) (autolisp-true) nil))
+(%def-curve-op builtin-vlax-curve-isperiodic (curve)
+  (if (member (getf curve :type) '(:circle)) (autolisp-true) nil))
+(%def-curve-op builtin-vlax-curve-isplanar (curve) (autolisp-true))
+
+;;; --- Dynamic vla-* accessor façade -------------------------------
+;;
+;; Visual LISP does not ship fixed vla-get-Foo functions: after
+;; (vl-load-com), (vla-get-<Prop> obj), (vla-put-<Prop> obj v) and
+;; (vla-<Method> obj args…) are resolved on demand from the ActiveX
+;; type library, the name after the prefix naming the property/method.
+;; We reproduce that dynamically: an unbound VLA-* operator is
+;; synthesized into a subr dispatching to the vlax-* primitives, via the
+;; runtime's *RESOLVE-UNBOUND-FUNCTION-HOOK* (install-core-builtins wires
+;; RESOLVE-VLA-ACCESSOR into it — the runtime cannot name these builtins
+;; directly, being a layer below this one).
+
+(defvar *com-loaded-p* nil
+  "True once (vl-load-com) has run in this interpreter. Gates
+RESOLVE-VLA-ACCESSOR so vla-* names are undefined beforehand, as in VL.
+Reset by INSTALL-CORE-BUILTINS (a fresh builtin world = COM not loaded).")
+
+(defun %string-prefix-p (prefix string)
+  (let ((p (length prefix)))
+    (and (>= (length string) p)
+         (string= prefix string :end2 p))))
+
+(defun resolve-vla-accessor (symbol context)
+  "Runtime hook (*RESOLVE-UNBOUND-FUNCTION-HOOK*): when COM is loaded and
+SYMBOL names an unbound VLA-GET-<prop> / VLA-PUT-<prop> / VLA-<method>,
+return a freshly built subr dispatching to the corresponding vlax-*
+primitive; otherwise NIL (fall through to :undefined-function). The
+property/method name is the symbol-name suffix, passed verbatim — the
+host does the case-insensitive match."
+  (declare (ignore context))
+  (when *com-loaded-p*
+    (let ((name (autolisp-symbol-name symbol)))
+      (cond
+        ((and (%string-prefix-p "VLA-GET-" name) (> (length name) 8))
+         (let ((prop (subseq name 8)))
+           (make-core-builtin-subr
+            name (lambda (obj) (builtin-vlax-get-property obj prop)))))
+        ((and (%string-prefix-p "VLA-PUT-" name) (> (length name) 8))
+         (let ((prop (subseq name 8)))
+           (make-core-builtin-subr
+            name (lambda (obj value) (builtin-vlax-put-property obj prop value)))))
+        ;; Any other VLA-<method> (with a non-empty suffix, and not a
+        ;; degenerate empty-property "VLA-GET-"/"VLA-PUT-") is a method
+        ;; invocation. Names like VLA-GETBOUNDINGBOX (no hyphen after
+        ;; GET) correctly land here, not in the get-property branch.
+        ((and (%string-prefix-p "VLA-" name) (> (length name) 4)
+              (not (%string-prefix-p "VLA-GET-" name))
+              (not (%string-prefix-p "VLA-PUT-" name)))
+         (let ((method (subseq name 4)))
+           (make-core-builtin-subr
+            name (lambda (obj &rest args)
+                   (apply #'builtin-vlax-invoke-method obj method args)))))
+        (t nil)))))
+
 (defun builtin-vlax-property-available-p (vla name)
   (if (host-vlax-property-available-p
        (current-evaluation-host) vla
@@ -5847,6 +6393,119 @@ issues/open/clautolisp-module-app-extensions.issue."
                    ((keywordp new-type) new-type)
                    (t :variant))))
     (make-autolisp-variant :value (cons target (cdr pair)))))
+
+;;; --- Points, transform matrices, safearray extras (Group A) -------
+;;;
+;;; vla-* methods that take points/matrices expect ActiveX VARIANTs
+;;; wrapping SAFEARRAYs of doubles. vlax-2d-point / -3d-point / -tmatrix
+;;; build those; vlax-safearray-get-dim / -value round out the safearray
+;;; introspection surface. (autolisp-spec ch.19; -2d-point / -value are
+;;; BricsCAD-only spellings, -value documented identical to ->list.)
+
+(defun %args->coordinate-doubles (args count operator-name)
+  "ARGS is either a single point list or COUNT separate numbers. Return
+a list of exactly COUNT double-floats; a 2D point handed to the 3D form
+is padded with Z = 0.0 (spec 69891-69941)."
+  (let ((raw (if (and (= (length args) 1) (listp (first args)))
+                 (first args)
+                 args)))
+    (require-proper-list raw operator-name)
+    (let ((nums (mapcar (lambda (n) (coerce (require-number n operator-name) 'double-float))
+                        raw)))
+      (cond
+        ((= (length nums) count) nums)
+        ((and (= count 3) (= (length nums) 2)) (append nums (list 0.0d0)))
+        (t (signal-builtin-argument-error
+            :invalid-point operator-name
+            "~A expects ~D coordinate(s)~:[~; (or a 2D point)~], got ~D."
+            operator-name count (= count 3) (length nums)))))))
+
+(defun %doubles->safearray (doubles)
+  (let ((n (length doubles)))
+    (make-autolisp-safearray
+     :value (make-safearray-data
+             :type-tag :double
+             :bounds (list (list 0 (1- n)))
+             :storage (make-array n :initial-contents doubles)))))
+
+(defun %safearray-variant (safearray)
+  (make-autolisp-variant :value (cons :array safearray)))
+
+(defun %as-safearray (object operator-name)
+  "Accept a SAFEARRAY, or a VARIANT wrapping one, and return the
+autolisp-safearray. vlax-safearray-value / -get-dim take either."
+  (cond
+    ((typep object 'autolisp-safearray) object)
+    ((and (typep object 'autolisp-variant)
+          (consp (autolisp-variant-value object))
+          (typep (cdr (autolisp-variant-value object)) 'autolisp-safearray))
+     (cdr (autolisp-variant-value object)))
+    (t (signal-builtin-argument-error
+        :invalid-safearray operator-name
+        "~A expects a SAFEARRAY (or a VARIANT wrapping one), got ~S."
+        operator-name object))))
+
+(defun builtin-vlax-3d-point (&rest args)
+  (%safearray-variant (%doubles->safearray
+                       (%args->coordinate-doubles args 3 "VLAX-3D-POINT"))))
+
+(defun builtin-vlax-2d-point (&rest args)
+  (%safearray-variant (%doubles->safearray
+                       (%args->coordinate-doubles args 2 "VLAX-2D-POINT"))))
+
+(defun builtin-vlax-tmatrix (rows)
+  "(vlax-tmatrix '((..4..)(..4..)(..4..)(..4..))) -> a VARIANT wrapping a
+4x4 double SAFEARRAY, as consumed by vla-transformby (spec 72156-72197)."
+  (require-proper-list rows "VLAX-TMATRIX")
+  (unless (= (length rows) 4)
+    (signal-builtin-argument-error
+     :invalid-matrix "VLAX-TMATRIX"
+     "VLAX-TMATRIX expects four rows, got ~D." (length rows)))
+  (let ((storage (make-array 16))
+        (i 0))
+    (dolist (row rows)
+      (require-proper-list row "VLAX-TMATRIX")
+      (unless (= (length row) 4)
+        (signal-builtin-argument-error
+         :invalid-matrix "VLAX-TMATRIX"
+         "VLAX-TMATRIX: each row must have 4 numbers, got ~D." (length row)))
+      (dolist (n row)
+        (setf (aref storage i)
+              (coerce (require-number n "VLAX-TMATRIX") 'double-float))
+        (incf i)))
+    (%safearray-variant
+     (make-autolisp-safearray
+      :value (make-safearray-data :type-tag :double
+                                  :bounds (list (list 0 3) (list 0 3))
+                                  :storage storage)))))
+
+(defun builtin-vlax-safearray-get-dim (safe)
+  (length (safearray-data-bounds
+           (safearray-of (%as-safearray safe "VLAX-SAFEARRAY-GET-DIM")
+                         "VLAX-SAFEARRAY-GET-DIM"))))
+
+(defun %safearray-nested-value (bounds storage)
+  "Reconstruct nested (row-major) lists from flat STORAGE per BOUNDS."
+  (labels ((build (dims offset)
+             (if (null dims)
+                 (aref storage offset)
+                 (let* ((n (first dims))
+                        (rest-dims (rest dims))
+                        (rest-size (reduce #'* rest-dims :initial-value 1)))
+                   (loop for k below n
+                         collect (build rest-dims (+ offset (* k rest-size))))))))
+    (build (bounds-shape bounds) 0)))
+
+(defun builtin-vlax-safearray-value (safe)
+  "Safearray contents as a Lisp list; nested lists for multi-dimensional
+arrays. Documented identical to vlax-safearray->list for 1D (spec 81442)."
+  (let* ((data (safearray-of (%as-safearray safe "VLAX-SAFEARRAY-VALUE")
+                             "VLAX-SAFEARRAY-VALUE"))
+         (bounds (safearray-data-bounds data))
+         (storage (safearray-data-storage data)))
+    (if (<= (length bounds) 1)
+        (coerce storage 'list)
+        (%safearray-nested-value bounds storage))))
 
 ;;; --- Phase 14b: reactor (vlr-*) builtin family ---------------------
 ;;;
@@ -8047,7 +8706,12 @@ name strings."
   ;; clautolisp the VLE-* set is always loaded; T (success).
   (autolisp-true))
 
-(defun builtin-vl-load-com () (autolisp-true))      ; no COM bridge; success.
+(defun builtin-vl-load-com ()
+  ;; Flip the COM-loaded flag that gates the dynamic vla-* accessor
+  ;; façade (RESOLVE-VLA-ACCESSOR), matching Visual LISP where vla-*
+  ;; names become resolvable only after (vl-load-com).
+  (setf *com-loaded-p* t)
+  (autolisp-true))
 (defun builtin-vl-load-reactors () (autolisp-true)) ; no reactors yet; success.
 (defun builtin-vl-load-all () (autolisp-true))      ; alias of the above.
 
@@ -8441,27 +9105,8 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     "ACET-VIEWPORT-FROZEN-LAYER-LIST" "ACET-VIEWPORT-LOCK-SET"
     "ACET-VIEWPORT-NEXT-PICKABLE" "ACET-WMFIN" "ACET-XDATA-GET"
     "ACET-XDATA-SET"
-    ;; VLAX-* (46)
-    "VLAX-2D-POINT" "VLAX-3D-POINT" "VLAX-ADD-CMD"
-    "VLAX-CURVE-GETAREA" "VLAX-CURVE-GETCLOSESTPOINTTO"
-    "VLAX-CURVE-GETCLOSESTPOINTTOPROJECTION"
-    "VLAX-CURVE-GETDISTATPARAM" "VLAX-CURVE-GETDISTATPOINT"
-    "VLAX-CURVE-GETENDPARAM" "VLAX-CURVE-GETENDPOINT"
-    "VLAX-CURVE-GETFIRSTDERIV" "VLAX-CURVE-GETPARAMATDIST"
-    "VLAX-CURVE-GETPARAMATPOINT" "VLAX-CURVE-GETPERIMETER"
-    "VLAX-CURVE-GETPOINTATDIST" "VLAX-CURVE-GETPOINTATPARAM"
-    "VLAX-CURVE-GETSECONDDERIV" "VLAX-CURVE-GETSTARTPARAM"
-    "VLAX-CURVE-GETSTARTPOINT" "VLAX-CURVE-ISCLOSED"
-    "VLAX-CURVE-ISPERIODIC" "VLAX-CURVE-ISPLANAR"
-    "VLAX-DUMP-OBJECT" "VLAX-ENAME->VLA-OBJECT" "VLAX-ERASED-P"
-    "VLAX-FOR" "VLAX-GET-ACAD-OBJECT" "VLAX-IMPORT-TYPE-LIBRARY"
-    "VLAX-LDATA-DELETE" "VLAX-LDATA-GET" "VLAX-LDATA-LIST"
-    "VLAX-LDATA-PUT" "VLAX-LDATA-TEST" "VLAX-MACHINE-PRODUCT-KEY"
-    "VLAX-MAP-COLLECTION" "VLAX-PRODUCT-KEY" "VLAX-QUEUEEXPR"
-    "VLAX-READ-ENABLED-P" "VLAX-REMOVE-CMD"
-    "VLAX-SAFEARRAY-GET-DIM" "VLAX-SAFEARRAY-VALUE" "VLAX-TMATRIX"
-    "VLAX-TYPEINFO-AVAILABLE-P" "VLAX-USER-PRODUCT-KEY"
-    "VLAX-VLA-OBJECT->ENAME" "VLAX-WRITE-ENABLED-P"
+    ;; VLAX-* — all now real: vlax-for is a runtime special form,
+    ;; vlax-map-collection a builtin; nothing left to stub here.
     ;; VLA-* (2)
     "VLA-COLLECTION->LIST" "VLA-POSTCOMMAND"
     ;; VLR-* (4)
@@ -8694,6 +9339,51 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "VLAX-GET-PROPERTY"            #'builtin-vlax-get-property)
    (make-core-builtin-subr "VLAX-PUT-PROPERTY"            #'builtin-vlax-put-property)
    (make-core-builtin-subr "VLAX-INVOKE-METHOD"           #'builtin-vlax-invoke-method)
+   (make-core-builtin-subr "VLAX-GET-ACAD-OBJECT"         #'builtin-vlax-get-acad-object)
+   (make-core-builtin-subr "VLAX-2D-POINT"                #'builtin-vlax-2d-point)
+   (make-core-builtin-subr "VLAX-3D-POINT"                #'builtin-vlax-3d-point)
+   (make-core-builtin-subr "VLAX-TMATRIX"                 #'builtin-vlax-tmatrix)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-GET-DIM"       #'builtin-vlax-safearray-get-dim)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-VALUE"         #'builtin-vlax-safearray-value)
+   (make-core-builtin-subr "VLAX-ENAME->VLA-OBJECT"       #'builtin-vlax-ename->vla-object)
+   (make-core-builtin-subr "VLAX-VLA-OBJECT->ENAME"       #'builtin-vlax-vla-object->ename)
+   (make-core-builtin-subr "VLAX-ERASED-P"                #'builtin-vlax-erased-p)
+   (make-core-builtin-subr "VLAX-TYPEINFO-AVAILABLE-P"    #'builtin-vlax-typeinfo-available-p)
+   (make-core-builtin-subr "VLAX-READ-ENABLED-P"          #'builtin-vlax-read-enabled-p)
+   (make-core-builtin-subr "VLAX-WRITE-ENABLED-P"         #'builtin-vlax-write-enabled-p)
+   (make-core-builtin-subr "VLAX-IMPORT-TYPE-LIBRARY"     #'builtin-vlax-import-type-library)
+   (make-core-builtin-subr "VLAX-DUMP-OBJECT"             #'builtin-vlax-dump-object)
+   (make-core-builtin-subr "VLAX-LDATA-PUT"               #'builtin-vlax-ldata-put)
+   (make-core-builtin-subr "VLAX-LDATA-GET"               #'builtin-vlax-ldata-get)
+   (make-core-builtin-subr "VLAX-LDATA-DELETE"            #'builtin-vlax-ldata-delete)
+   (make-core-builtin-subr "VLAX-LDATA-LIST"              #'builtin-vlax-ldata-list)
+   (make-core-builtin-subr "VLAX-LDATA-TEST"              #'builtin-vlax-ldata-test)
+   (make-core-builtin-subr "VLAX-MACHINE-PRODUCT-KEY"     #'builtin-vlax-machine-product-key)
+   (make-core-builtin-subr "VLAX-USER-PRODUCT-KEY"        #'builtin-vlax-user-product-key)
+   (make-core-builtin-subr "VLAX-PRODUCT-KEY"             #'builtin-vlax-product-key)
+   (make-core-builtin-subr "VLAX-ADD-CMD"                 #'builtin-vlax-add-cmd)
+   (make-core-builtin-subr "VLAX-REMOVE-CMD"              #'builtin-vlax-remove-cmd)
+   (make-core-builtin-subr "VLAX-QUEUEEXPR"               #'builtin-vlax-queueexpr)
+   (make-core-builtin-subr "VLAX-CURVE-GETSTARTPOINT"     #'builtin-vlax-curve-getstartpoint)
+   (make-core-builtin-subr "VLAX-CURVE-GETENDPOINT"       #'builtin-vlax-curve-getendpoint)
+   (make-core-builtin-subr "VLAX-CURVE-GETSTARTPARAM"     #'builtin-vlax-curve-getstartparam)
+   (make-core-builtin-subr "VLAX-CURVE-GETENDPARAM"       #'builtin-vlax-curve-getendparam)
+   (make-core-builtin-subr "VLAX-CURVE-GETPOINTATPARAM"   #'builtin-vlax-curve-getpointatparam)
+   (make-core-builtin-subr "VLAX-CURVE-GETPOINTATDIST"    #'builtin-vlax-curve-getpointatdist)
+   (make-core-builtin-subr "VLAX-CURVE-GETPARAMATPOINT"   #'builtin-vlax-curve-getparamatpoint)
+   (make-core-builtin-subr "VLAX-CURVE-GETPARAMATDIST"    #'builtin-vlax-curve-getparamatdist)
+   (make-core-builtin-subr "VLAX-CURVE-GETDISTATPARAM"    #'builtin-vlax-curve-getdistatparam)
+   (make-core-builtin-subr "VLAX-CURVE-GETDISTATPOINT"    #'builtin-vlax-curve-getdistatpoint)
+   (make-core-builtin-subr "VLAX-CURVE-GETFIRSTDERIV"     #'builtin-vlax-curve-getfirstderiv)
+   (make-core-builtin-subr "VLAX-CURVE-GETSECONDDERIV"    #'builtin-vlax-curve-getsecondderiv)
+   (make-core-builtin-subr "VLAX-CURVE-GETCLOSESTPOINTTO" #'builtin-vlax-curve-getclosestpointto)
+   (make-core-builtin-subr "VLAX-CURVE-GETCLOSESTPOINTTOPROJECTION" #'builtin-vlax-curve-getclosestpointtoprojection)
+   (make-core-builtin-subr "VLAX-CURVE-GETAREA"           #'builtin-vlax-curve-getarea)
+   (make-core-builtin-subr "VLAX-CURVE-GETPERIMETER"      #'builtin-vlax-curve-getperimeter)
+   (make-core-builtin-subr "VLAX-CURVE-ISCLOSED"          #'builtin-vlax-curve-isclosed)
+   (make-core-builtin-subr "VLAX-CURVE-ISPERIODIC"        #'builtin-vlax-curve-isperiodic)
+   (make-core-builtin-subr "VLAX-CURVE-ISPLANAR"          #'builtin-vlax-curve-isplanar)
+   (make-core-builtin-subr "VLAX-MAP-COLLECTION"          #'builtin-vlax-map-collection)
    (make-core-builtin-subr "VLAX-PROPERTY-AVAILABLE-P"    #'builtin-vlax-property-available-p)
    (make-core-builtin-subr "VLAX-METHOD-APPLICABLE-P"     #'builtin-vlax-method-applicable-p)
    (make-core-builtin-subr "VLAX-MAKE-SAFEARRAY"          #'builtin-vlax-make-safearray)
@@ -9256,4 +9946,15 @@ extension-variable convention below."
       (set-autolisp-symbol-function symbol builtin)))
   (install-predefined-variables)
   (install-clal-extension-variables)
+  ;; Fresh builtin world: COM is not loaded yet, and the runtime's
+  ;; unbound-function hook resolves the dynamic vla-* accessor façade.
+  (setf *com-loaded-p* nil)
+  (setf clautolisp.autolisp-runtime:*resolve-unbound-function-hook*
+        #'resolve-vla-accessor)
+  ;; The VLAX-FOR special form (in the runtime) gets its collection
+  ;; members through this hook, since the runtime cannot reach the host
+  ;; COM protocol directly.
+  (setf clautolisp.autolisp-runtime:*vlax-collection-items-hook*
+        (lambda (collection)
+          (host-vlax-collection-items (current-evaluation-host) collection)))
   t)
