@@ -34,7 +34,21 @@ every point of use, in Makefiles and in scripts alike.**
 Cause
 -----
 
-Recipes interpolate the tool variable without quoting it:
+The failure above comes from **`$(MAKE)`**, not from `$(SBCL)`. Line 194
+is `build-programs`:
+
+    Makefile:194
+        @for l in $(RELEASE_LISPS); do $(MAKE) build-$$l || exit $$?; done
+
+`make` sets `MAKE` to its own invocation path. On the reporting machine
+that is `C:\Program Files\make-4.4.1-with-guile-w32\bin\make.exe`, so
+`sh` sees `C:/Program` in command position and reports it missing. Note
+that `SBCL ?= sbcl` is the default in every sub-Makefile, so `$(SBCL)`
+was never the spaced value here — an earlier version of this issue said
+otherwise and was wrong.
+
+The same defect nevertheless applies to the tool variables, and will bite
+as soon as a caller uses the documented override:
 
     autolisp-front-end/Makefile:240
         $(SBCL) --noinform --no-userinit --non-interactive \
@@ -42,9 +56,13 @@ Recipes interpolate the tool variable without quoting it:
     autolisp-front-end/Makefile:253
         $(CCL) --no-init --quiet \
 
-When `SBCL` resolves to a bare `sbcl` found on PATH — the POSIX case —
-this works. When it resolves to an absolute path containing a space, the
-shell word-splits it.
+With `SBCL` left at its default `sbcl`, found on PATH, this works. With
+`make SBCL="/opt/mes outils/sbcl"` it word-splits exactly like `$(MAKE)`
+does today.
+
+`$(MAKE)` deserves its own mention because it is set by make itself, not
+by the caller: no configuration avoids it, and every recursive recipe is
+affected.
 
 Note that the *diagnostics* around those lines already quote correctly:
 
