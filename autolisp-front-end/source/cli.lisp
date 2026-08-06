@@ -265,7 +265,7 @@ Dialect, host, encoding:
                          (acad-2026, accoreconsole-2022, bricscad-v25-fr_FR,
                          or a bare/partial acad / bricscad / autocad → latest;
                          autocad honours --mode: batch→accoreconsole, else acad).
-  --host {mock,null}     HAL backend (clautolisp only).
+  --host {cador,nihil}   HAL backend, --clautolisp only (mock=cador, null/none=nihil aliases).
   -E ENC                 Encoding for every situation (shorthand).
   -Esource ENC           Encoding of .lsp files loaded (-l and (load ...)).
   -Efile[-read|-write] ENC   Encoding of files the program opens.

@@ -496,6 +496,11 @@ file or COM), and forwards the workload.
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
 - ~--clautolisp~ (default) — drive the in-process clautolisp engine.
+  ~--host cador|nihil~ selects that engine's HAL backend: ~cador~ (the
+  headless CAD core, default) or ~nihil~ (no CAD; operations signal
+  ~:host-not-supported~). Honoured under ~--clautolisp~ only — under
+  ~--autocad~ / ~--bricscad~ the real CAD is the host. (~mock~ = alias of
+  cador; ~null~ / ~none~ = aliases of nihil.)
 - ~--bricscad~ — drive a BricsCAD process via the file-protocol
   bridge (BricsCAD V26 / macOS). Output a script directs to a file it
   opened — ~(princ s f)~, ~(print s f)~, ~(prin1 s f)~ on a descriptor
