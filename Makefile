@@ -141,6 +141,7 @@ documentation:  ## Rebuild every subproject's PDF documentation (org â†’ LaTeX â
 	$(MAKE) -C autolisp-front-end documentation
 	$(MAKE) -C autolisp-benchmark documentation
 	$(MAKE) -C documentation diagrams
+	$(MAKE) -C documentation documentation
 
 build: build-programs build-libraries  ## Build the program binaries + native libraries (NO docs). `make stage` goes one step further and lays them out ready to install. Documentation is a separate phase: `make build-documentation`.
 
@@ -325,6 +326,7 @@ clean-pdf:  ## Remove every generated PDF across subprojects (keeps .org sources
 	$(MAKE) -C autolisp-test clean-pdf
 	$(MAKE) -C autolisp-front-end clean-pdf
 	$(MAKE) -C autolisp-benchmark clean-pdf
+	$(MAKE) -C documentation clean-pdf
 
 clean:: clean-diagrams
 clean-diagrams:  ## Remove the rendered top-level diagrams (keeps the .dot sources).
