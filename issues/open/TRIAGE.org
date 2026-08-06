@@ -73,7 +73,7 @@ retrofitted as they are touched.
 | deferred-clautolisp-out-of-dialect-warnings   | dialect         | DEFERRED | availability bitmap |
 | deferred-document-lifecycle-command-semantics | cad-semantics   | DEFERRED | pjb-decision (NEW/OPEN/SAVE/CLOSE vs running routine) |
 | deferred-bricscad-setq-nil-returns-2          | dialect         | DEFERRED | cosmetic, no functional impact; needs bricscad-access |
-| cador-1-split-nihil-cador                     | infra           | NEXT     | name the two headless hosts: nihil=stub host (today null-host), cador=real CAD core (today mock-host); rename + nihil warn-stubs + --host aliases. Epic sub-task 1, implement now |
+| cador-1-split-nihil-cador                     | infra           | DONE     | name the two headless hosts: nihil=stub host (today null-host), cador=real CAD core (today mock-host); rename + nihil warn-stubs + --host aliases. Epic sub-task 1, implement now |
 | cador-2-multidocument-runtime                 | feature         | TODO     | N isolated document namespaces/engines/programs, shared blackboard on one heap (no copy), per-doc drawing; cooperative coroutine scheduler (1 thread/doc + 1 aldo/doc). Epic sub-task 2, parallel branch cador-multidocument |
 
 * P2 — language / builtins completeness

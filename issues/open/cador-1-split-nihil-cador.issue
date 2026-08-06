@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cador-1-split-nihil-cador — name the two headless hosts nihil (stubs) and cador (CAD core)
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: infra
 #+DEPENDS: cador-multidocument-host
@@ -87,23 +87,25 @@ epic's stated intent) or introduce =cador= as the canonical name with
   canonical; null/none deprecated aliases. Suites green (host 30, cli 27),
   alfe still loads.
 
-** OPEN — nihil stub semantics (warn-once-then-nil vs signal)
+** RESOLVED — nihil stub semantics: keep the signal (owner decision)
 
-The chosen "warn-once-then-nil" was NOT applied, pending reconciliation:
-nihil is the *default runtime host* (=*default-runtime-host*=), and its
-=:host-not-supported= signalling is load-bearing —
+Owner decision (2026-08-06): nihil keeps signalling =:host-not-supported=;
+NO warn+nil. Rationale: nihil is a host where the CAD commands/functions
+are simply *not defined* — signalling is the honest, precise answer
+(=:host-not-supported= is more precise than an "undefined function"), and
+it is not a dialect-dependent variant that would warrant a warning. The
+same holds for every host-dependent function: under nihil an entity call
+(or any CAD call) signals =:host-not-supported=.
 
-- =(command "._LINE")= with no CAD host must ERROR (vendor semantics;
-  evaluator test command-without-host-signals-host-not-supported);
-- =vl-cmdf= "returns nil when host lacks command channel" works by
-  *catching* that signal (test in builtins-core);
-- ~23 tests assert :host-not-supported via the default/nihil host;
-- the epic's own D1 condition taxonomy classifies this as a *condition*
-  ("operation not supported by this host"), not a silent warn+nil.
+This is the already-committed behaviour (the 1a/1b renames preserved it),
+so no stub-body change is needed. The message already names the host:
+=signal-host-not-supported= emits "Host backend nihil does not support
+ENTGET." (protocol.lisp). The earlier menu-choice of "warn-once-then-nil"
+was withdrawn once it was clear nihil is the default runtime host and its
+signal is load-bearing for =(command)= / =vl-cmdf= and ~23 tests, and is
+what the epic's D1 condition taxonomy prescribes.
 
-Switching nihil to warn+nil would regress those AutoLISP semantics and
-contradict D1. Recommended reconciliation: nihil keeps signalling the
-catchable :host-not-supported condition (D1 taxonomy) with a clearer
-"…not implemented in the nihil host" message — i.e. the "signal (clear
-condition)" option — rather than warn+nil. Awaiting owner confirmation
-before touching the stub bodies. (1a/1b renames keep current signalling.)
+cador-1 is therefore functionally complete on the =cador= branch (1a +
+1b + alfe --host cador|nihil). A dedicated D1 sub-condition
+(=:not-supported-by-this-host= distinct from =:unavailable-headless= /
+=:not-yet-implemented=) is left to cador-3 (the D1 spec), not needed here.
