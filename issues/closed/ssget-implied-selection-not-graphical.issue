@@ -140,3 +140,24 @@ Related
 out of its "Out of scope" list. The other modes in that list stay there;
 this is a reclassification of one entry, not a challenge to the headless
 boundary.
+
+Resolved (clautolisp 1.7.26)
+----------------------------
+
+Implemented `(ssget "_I")` / `(ssget "I")` on the mock host
+(autolisp-mock-host/source/selection-api.lisp, host-ssget): it returns
+the pickfirst set stored by `sssetfirst` as a PICKSET (or nil), never
+prompts and never signals. A FILTER applies the shared "_X" grammar to
+that set; PICKFIRST 0 suppresses it; and the set is consumed on read (a
+second `(ssget "_I")` without an intervening `sssetfirst` returns nil) —
+the vendor-parity behaviour pjb chose in point 5.
+
+`selection-and-snapshot-parity.issue` updated to move "_I" out of its
+Out-of-scope list. Tests: 5 FiveAM cases in
+autolisp-mock-host/tests/selection-tests.lisp (empty→nil; membership;
+shared filter; PICKFIRST 0→nil; consume-on-read), suite green.
+
+Deferred (not blocking): the vendor probe pinning the exact clearing
+boundary (command completion vs first read vs next selection) on
+BricsCAD/AutoCAD — we reproduce "consume at first read". If a probe
+later shows a different boundary, adjust to match.

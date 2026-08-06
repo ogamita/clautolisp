@@ -44,6 +44,53 @@
                                 :mode (clautolisp.autolisp-runtime:make-autolisp-string "X"))))
       (is (eql 2 (host-sslength mock set))))))
 
+;;; ssget "_I" — implied / pickfirst selection
+;;; (ssget-implied-selection-not-graphical.issue)
+
+(defun al-mode (s) (clautolisp.autolisp-runtime:make-autolisp-string s))
+
+(test ssget-implied-empty-returns-nil
+  "With nothing implied, (ssget \"_I\") returns nil and never signals."
+  (let ((mock (make-mock-host)))
+    (seed-three-lines mock)
+    (is (null (host-ssget mock nil :mode (al-mode "_I"))))
+    ;; the localized bare "I" is the same passive mode
+    (is (null (host-ssget mock nil :mode (al-mode "I"))))))
+
+(test ssget-implied-returns-the-pickfirst-set
+  "(sssetfirst nil js) then (ssget \"_I\") returns that set's membership."
+  (let ((mock (make-mock-host)))
+    (seed-three-lines mock)
+    (host-sssetfirst mock (host-ssget mock nil :mode (al-mode "X")))
+    (let ((set (host-ssget mock nil :mode (al-mode "_I"))))
+      (is (typep set 'clautolisp.autolisp-runtime:autolisp-pickset))
+      (is (eql 3 (host-sslength mock set))))))
+
+(test ssget-implied-applies-the-shared-filter-grammar
+  "(ssget \"_I\" filter) filters the implied set with the \"_X\" grammar."
+  (let ((mock (make-mock-host)))
+    (seed-three-lines mock)
+    (host-sssetfirst mock (host-ssget mock nil :mode (al-mode "X")))
+    (let ((set (host-ssget mock '((0 . "LINE")) :mode (al-mode "_I"))))
+      (is (eql 2 (host-sslength mock set))))))
+
+(test ssget-implied-honours-pickfirst-sysvar-zero
+  "PICKFIRST 0 suppresses the implied selection regardless of storage."
+  (let ((mock (make-mock-host)))
+    (seed-three-lines mock)
+    (host-sssetfirst mock (host-ssget mock nil :mode (al-mode "X")))
+    (host-setvar mock (al-mode "PICKFIRST") 0)
+    (is (null (host-ssget mock nil :mode (al-mode "_I"))))))
+
+(test ssget-implied-is-consumed-on-read
+  "Consume-on-read: the first (ssget \"_I\") returns the set, the second
+returns nil without an intervening sssetfirst (vendor parity)."
+  (let ((mock (make-mock-host)))
+    (seed-three-lines mock)
+    (host-sssetfirst mock (host-ssget mock nil :mode (al-mode "X")))
+    (is (eql 3 (host-sslength mock (host-ssget mock nil :mode (al-mode "_I")))))
+    (is (null (host-ssget mock nil :mode (al-mode "_I"))))))
+
 (test ssget-x-with-comma-alternation-matches-any
   (let ((mock (make-mock-host)))
     (seed-three-lines mock)

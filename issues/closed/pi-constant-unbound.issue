@@ -81,3 +81,28 @@ as an unchecked entry in issues/open/schms-call-inventory.md), which is
 what currently stops the same SCHMS+ suite from running headless: it
 makes src-vlx/plateforme.lsp fail to load, and with it
 `schms_transaction_undo`, which every entity-mutating test goes through.
+
+Resolved (clautolisp 1.7.25)
+----------------------------
+
+install-predefined-variables (autolisp-builtins-core/source/api.lisp) now
+binds the full set the spec classifies as /Predefined Variable/ — T, PI,
+PAUSE:
+
+- PI -> the double-float 3.141592653589793, in every dialect, host-free
+  (a language constant, not a drawing property). (* 2 pi r), (/ pi 2) now
+  work; it read as nil before.
+- T -> bound to the truth symbol itself, so (boundp 'T) and
+  (vl-symbol-value 'T) report it bound as in AutoCAD (it already
+  self-evaluated).
+- PAUSE -> unchanged.
+
+All three stay ordinary, user-settable variables (bound only when not
+already bound), matching the vendors' "bound by default, per-document
+resettable". Tests: pi value/arithmetic/settable + T bound/self-eval
+(autolisp-builtins-core/tests/builtin-tests.lisp), suite green.
+
+Not done (optional, per the issue): a strict-dialect warning when reading
+an unbound symbol the vendors predefine. Deferred as a separate
+diagnostic; the constants themselves are now bound, which removes the
+blast radius.

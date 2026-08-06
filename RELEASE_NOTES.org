@@ -113,8 +113,13 @@ separate binary for tool integrators.
   (~= /= != < > <= >= & &= *~) and logical (~<AND>/<OR>/<NOT>/<XOR>~)
   operators. ~sslength~/~ssname~/~ssadd~/~ssdel~/~ssmemb~ with
   duplicate-safe membership; ~entnext~/~entlast~ as the traversal
-  fallback. Interactive/graphical modes ((ssget) pick, ~_C/_I/_W/_CP/
-  _WP/_F~, grip highlight) are out of scope and fail cleanly (a
+  fallback. ~(ssget "_I" [filter])~ returns the *implied* (pickfirst)
+  selection set — the read side of ~sssetfirst~ — sharing the ~"_X"~
+  filter grammar; it never prompts, honours ~PICKFIRST~ (0 → nil), and
+  is consumed on read (a second read without an intervening
+  ~sssetfirst~ returns nil), matching the vendors. The remaining
+  interactive/graphical modes ((ssget) pick, ~_C/_W/_CP/_WP/_F~, grip
+  highlight) are out of scope and fail cleanly (a
   catchable AutoLISP error), never a crash. A portable
   ~selection-probe.lsp~ fences its assertions to its own entities via an
   XData filter, so they hold on a non-empty drawing and test set
