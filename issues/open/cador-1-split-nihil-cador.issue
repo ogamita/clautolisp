@@ -76,3 +76,34 @@ epic's stated intent) or introduce =cador= as the canonical name with
 - [ ] =mock= / =null= still accepted as deprecated =--host= aliases.
 - [ ] Full =test-system "clautolisp"= green on SBCL and CCL.
 - [ ] AGENTS.md / user-manual updated for the host names.
+
+* Progress (2026-08-06, branch cador)
+
+- **1a DONE (1.7.27).** mock-host → cador: dir, ASDF systems, package
+  clautolisp.cador, class cador, make-cador, all *-accessors, 59 files.
+  --host cador canonical, mock a deprecated alias. Suites green.
+- **1b DONE (1.7.28).** null-host → nihil: class nihil, make-nihil,
+  *nihil*, file nihil.lisp, tests nihil-tests.lisp. --host nihil
+  canonical; null/none deprecated aliases. Suites green (host 30, cli 27),
+  alfe still loads.
+
+** OPEN — nihil stub semantics (warn-once-then-nil vs signal)
+
+The chosen "warn-once-then-nil" was NOT applied, pending reconciliation:
+nihil is the *default runtime host* (=*default-runtime-host*=), and its
+=:host-not-supported= signalling is load-bearing —
+
+- =(command "._LINE")= with no CAD host must ERROR (vendor semantics;
+  evaluator test command-without-host-signals-host-not-supported);
+- =vl-cmdf= "returns nil when host lacks command channel" works by
+  *catching* that signal (test in builtins-core);
+- ~23 tests assert :host-not-supported via the default/nihil host;
+- the epic's own D1 condition taxonomy classifies this as a *condition*
+  ("operation not supported by this host"), not a silent warn+nil.
+
+Switching nihil to warn+nil would regress those AutoLISP semantics and
+contradict D1. Recommended reconciliation: nihil keeps signalling the
+catchable :host-not-supported condition (D1 taxonomy) with a clearer
+"…not implemented in the nihil host" message — i.e. the "signal (clear
+condition)" option — rather than warn+nil. Awaiting owner confirmation
+before touching the stub bodies. (1a/1b renames keep current signalling.)

@@ -89,7 +89,7 @@
   :components
   ((:file "autolisp-host/source/package")
    (:file "autolisp-host/source/protocol")
-   (:file "autolisp-host/source/null-host"))
+   (:file "autolisp-host/source/nihil"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-host/tests")))
   :perform (asdf:test-op (op system)
@@ -380,7 +380,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :components
   ((:file "autolisp-host/tests/package")
    (:file "autolisp-host/tests/test-harness")
-   (:file "autolisp-host/tests/null-host-tests")
+   (:file "autolisp-host/tests/nihil-tests")
    (:file "autolisp-host/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

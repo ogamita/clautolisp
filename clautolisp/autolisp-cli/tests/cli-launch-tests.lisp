@@ -98,9 +98,10 @@ sexp file (UNIX backend), so registry reads/writes stay hermetic."
 
 ;;; --- Option value parsers ---------------------------------------
 
-(test parse-host-accepts-cador-null-none
+(test parse-host-accepts-cador-nihil-and-aliases
   (is (eql :cador (parse-host "cador" "--host")))
-  ;; "mock" is the deprecated alias of cador
+  (is (eql :nihil (parse-host "nihil" "--host")))
+  ;; deprecated aliases: mock->cador, null/none->nihil
   (is (eql :cador (parse-host "mock" "--host")))
   (is (eql :null (parse-host "null" "--host")))
   (is (eql :null (parse-host "none" "--host"))))

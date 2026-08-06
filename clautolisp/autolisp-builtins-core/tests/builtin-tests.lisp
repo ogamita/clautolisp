@@ -4574,7 +4574,7 @@ written, as a list of (unsigned-byte 8)."
 (defun %install-cador-and-core (context)
   "Wire a fresh MockHost into CONTEXT and install the core builtins.
 Used by tests that exercise sysvar paths through GETVAR / SETVAR —
-the bare RUN-AUTOLISP-STRING uses null-host which signals
+the bare RUN-AUTOLISP-STRING uses nihil which signals
 :host-not-supported."
   (install-core-into context)
   (let ((session (clautolisp.autolisp-runtime:evaluation-context-session

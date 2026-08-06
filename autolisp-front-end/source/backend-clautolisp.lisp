@@ -84,8 +84,8 @@
                 #:install-core-builtins
                 #:autolisp-value->string)
   (:import-from #:clautolisp.autolisp-host
-                #:null-host
-                #:*null-host*)
+                #:nihil
+                #:*nihil*)
   (:import-from #:clautolisp.cador
                 #:make-cador)
   (:import-from #:alfe.logging
@@ -126,7 +126,7 @@ MockHost when unspecified — same default as the standalone
 clautolisp executable."
   (case host-keyword
     ((nil :mock) (make-cador))
-    (:null       *null-host*)
+    (:null       *nihil*)
     (otherwise
      (error 'backend-bootstrap-error
             :backend :clautolisp

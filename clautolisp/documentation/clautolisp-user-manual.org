@@ -568,11 +568,12 @@ Both axes are independent.
                             CAD core — an in-memory deterministic
                             CAD-database capable of entget / ssget /
                             getvar / getstring etc. (~mock~ is a
-                            deprecated alias of ~cador~). ~null~: every
-                            CAD-host operation signals
-                            ~:host-not-supported~ — useful for
-                            programs that should not touch a host
-                            at all. A remote wire host is reserved for
+                            deprecated alias of ~cador~). ~nihil~: the
+                            trivial backend — every CAD-host operation
+                            signals ~:host-not-supported~ — useful for
+                            programs that should not touch a host at all
+                            (~null~ / ~none~ are deprecated aliases of
+                            ~nihil~). A remote wire host is reserved for
                             a later phase.
 - ~--mock-input PATH~    :: Attach the file at PATH as the
                             MockHost's prompt-stream. Lines are

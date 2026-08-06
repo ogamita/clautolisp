@@ -28,7 +28,7 @@
   (format t "                         extensions (e.g. variadic functions). Out-of-dialect~%")
   (format t "                         operators stay callable but emit a diagnostic at use.~%")
   (format t "Host:~%")
-  (format t "  --host NAME            HAL backend: cador (default), null. mock=alias of cador.~%")
+  (format t "  --host NAME            HAL backend: cador (default), nihil. mock=alias of cador; null/none=aliases of nihil.~%")
   (format t "  --mock-input PATH      Attach the file at PATH as the MockHost prompt-stream.~%")
   (format t "                         Lines are consumed by GETSTRING / GETPOINT / etc. in order.~%")
   (format t "  --gui CMD              DCL GUI driver: subprocess CMD speaking the sexp wire protocol.~%")
@@ -110,14 +110,15 @@
   "Return a HAL backend instance for the given --host argument."
   (cond
     ((or (null name)
-         (string-equal name "null")
+         (string-equal name "nihil")
+         (string-equal name "null")      ; null/none = deprecated aliases of nihil
          (string-equal name "none"))
-     *null-host*)
+     *nihil*)
     ((or (string-equal name "cador")
-         (string-equal name "mock"))     ; "mock" is the deprecated alias
+         (string-equal name "mock"))     ; "mock" is the deprecated alias of cador
      (make-cador))
     (t
-     (error "Unknown host backend ~S. Expected one of: cador, null (mock = alias of cador)." name))))
+     (error "Unknown host backend ~S. Expected one of: cador, nihil (mock=alias of cador, null/none=aliases of nihil)." name))))
 
 (defun print-version ()
   (format t "~&clautolisp ~A~%" *version*))
@@ -146,8 +147,8 @@ so adding a dialect only touches dialect.lisp."
 cador (the headless CAD core) when HOST-KEYWORD is nil (the empty
 default for clautolisp omits --host). :mock is the deprecated alias."
   (case host-keyword
-    ((nil :cador :mock) (make-cador))
-    ((:null)            *null-host*)))
+    ((nil :cador :mock)  (make-cador))
+    ((:nihil :null)      *nihil*)))
 
 (defun pop-required-argument (option arguments)
   "Pop the next argument off ARGUMENTS or signal a usage error

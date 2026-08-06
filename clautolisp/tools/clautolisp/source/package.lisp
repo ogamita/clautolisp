@@ -67,9 +67,9 @@
                 #:*default-runtime-host*)
   (:import-from #:clautolisp.autolisp-host
                 #:host-name
-                #:null-host
-                #:make-null-host
-                #:*null-host*)
+                #:nihil
+                #:make-nihil
+                #:*nihil*)
   (:import-from #:clautolisp.cador
                 #:make-cador
                 #:cador
