@@ -9931,11 +9931,29 @@ left untouched if already bound (so a user value / a prior session survives)."
   t)
 
 (defun install-predefined-variables ()
-  "Bind the vendor-predefined AutoLISP variables. PAUSE is the
-one-backslash string \"\\\\\" — the token that hands control to the
-user inside a (command ...) sequence (autolisp-spec, Special Form
-Entry: COMMAND). Left untouched when already bound, matching the
-extension-variable convention below."
+  "Bind the three vendor-predefined AutoLISP variables — the complete
+set the spec classifies as /Predefined Variable/ (autolisp-spec ch.:
+Variable Entries T, PI, PAUSE):
+
+- T     — bound to the truth symbol itself. T already self-evaluates, but
+          without the value-cell binding (boundp 'T) and (vl-symbol-value
+          'T) reported it unbound, unlike AutoCAD where T is a predefined
+          variable whose value is itself.
+- PI    — the real 3.141592653589793, so idioms like (* 2 pi r) and
+          (/ pi 2) work out of the box; without it `pi' read as nil and
+          arithmetic on it errored.
+- PAUSE — the one-backslash string \"\\\\\", the token that hands control
+          to the user inside a (command ...) sequence (Special Form
+          Entry: COMMAND).
+
+Each is left untouched when already bound, matching the extension-
+variable convention below."
+  (let ((sym (intern-autolisp-symbol "T")))
+    (unless (autolisp-symbol-value-bound-p sym)
+      (%clal-set-autolisp-var "T" sym)))
+  (let ((sym (intern-autolisp-symbol "PI")))
+    (unless (autolisp-symbol-value-bound-p sym)
+      (%clal-set-autolisp-var "PI" (coerce pi 'double-float))))
   (let ((sym (intern-autolisp-symbol "PAUSE")))
     (unless (autolisp-symbol-value-bound-p sym)
       (%clal-set-autolisp-var "PAUSE" (make-autolisp-string "\\")))))
