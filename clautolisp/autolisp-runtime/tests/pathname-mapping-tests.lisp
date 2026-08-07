@@ -58,29 +58,32 @@
   ;; The WSL trap: WSL is NOT the identity environment (spec §1.1).
   (is (not (clautolisp.pathname-mapping:identity-environment-p (%wsl)))))
 
-(test pathmap-same-frame-is-strict-identity
-  ;; Regression (Windows/MSYS2 runner, 2026-08-07): when build-frame ==
-  ;; run-frame there is nothing to translate, so map-in/map-out must be a
-  ;; STRICT identity — even for a NON-:posix frame, and even when the
-  ;; incoming string is not in that frame's own round-trip form. A mingw
-  ;; SBCL renders native "C:/…" paths from inside an MSYS2 shell (build ==
-  ;; run == :msys2, yet the CL wants native paths); before the fix, map-in
-  ;; rewrote "C:/…" into the mount form "/c/…" and handed the CL a
-  ;; namestring it could not open, breaking LOAD/OPEN of absolute paths.
-  (dolist (make (list #'%native #'%msys2 #'%cygwin #'%wsl))
-    (let ((e (funcall make)))
-      (dolist (s '("C:/gitlab-runner/builds/x/harness/run.lsp"
-                   "C:/Users/pjb/a b/c.lsp"))
-        (is (string= s (clautolisp.pathname-mapping:map-in-namestring
-                        s :run e :build e))
-            "same-frame map-in must be identity, changed ~S" s)
-        (is (string= s (clautolisp.pathname-mapping:map-out-namestring
-                        s :run e :build e))
-            "same-frame map-out must be identity, changed ~S" s))))
-  ;; A distinct instance of the same KIND is still the same frame.
-  (is (string= "C:/x/y.lsp"
-               (clautolisp.pathname-mapping:map-in-namestring
-                "C:/x/y.lsp" :run (%msys2) :build (%msys2)))))
+(test pathmap-mingw-under-msys2-renders-native
+  ;; Regression (Windows/MSYS2 runner, 2026-08-07): a mingw SBCL launched
+  ;; under an MSYS2 shell classifies :msys2 (MSYSTEM is set) but its
+  ;; (truename "/") is "C:/" — it opens NATIVE C:/… paths, not the /c/…
+  ;; mount form. %detect-environment now forces :drive-letter rendering in
+  ;; that case. Simulate it by forcing native rendering on an :msys2 frame
+  ;; that (like the real mingw CL) reports a native home, and assert the CL
+  ;; sees native paths while ~ is still expanded (map-in is NOT a blind
+  ;; identity). Before the fix, map-in rewrote C:/…run.lsp -> /c/…run.lsp
+  ;; and LOAD/OPEN of absolute paths failed.
+  (is (clautolisp.pathname-mapping::%cl-renders-native-drive-paths-p "C:/"))
+  (is (clautolisp.pathname-mapping::%cl-renders-native-drive-paths-p "C:\\"))
+  (is (not (clautolisp.pathname-mapping::%cl-renders-native-drive-paths-p "/")))
+  (let ((e (clautolisp.pathname-mapping::%force-native-drive-style
+            (clautolisp.pathname-mapping:make-environment-for-kind
+             :msys2 :home "C:/msys64/home/pjb"))))
+    (is (eq :drive-letter (clautolisp.pathname-mapping:menv-drive-style e)))
+    (is (null (clautolisp.pathname-mapping:menv-mount-table e)))
+    ;; an already-native absolute path stays native (openable), NOT /c/… :
+    (is (string= "C:/gitlab-runner/x/harness/run.lsp"
+                 (clautolisp.pathname-mapping:map-in-namestring
+                  "C:/gitlab-runner/x/harness/run.lsp" :run e :build e)))
+    ;; …yet ~ is still expanded per the frame home:
+    (is (string= "C:/msys64/home/pjb/a.lsp"
+                 (clautolisp.pathname-mapping:map-in-namestring
+                  "~/a.lsp" :run e :build e)))))
 
 ;; ---------------------------------------------------------------------------
 ;; W2 — run-frame classification from synthetic probe inputs
