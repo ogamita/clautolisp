@@ -301,50 +301,21 @@ returned unchanged for the caller to merge against the canonical cwd."
 (defvar *build-environment*)
 (defvar *run-environment*)
 
-(defun %mount-tables-equal-p (ta tb)
-  "Element-wise structural equality of two mount-tables.  MOUNT-ENTRY is a
-struct, so EQUAL on the raw lists would compare by identity and miss two
-logically-identical tables built from distinct instances (the common case
-when the run and build frames are detected separately)."
-  (and (= (length ta) (length tb))
-       (every (lambda (x y)
-                (and (string= (mount-frame-prefix x)     (mount-frame-prefix y))
-                     (string= (mount-canonical-prefix x) (mount-canonical-prefix y))))
-              ta tb)))
-
-(defun environments-equal-p (a b)
-  "True when A and B describe the SAME frame, so a path expressed in one is
-already exactly what the other's host expects — map-in/map-out must then be
-a STRICT identity, with NO canonical round-trip.
-
-This is the case that the plain IDENTITY-ENVIRONMENT-P (:posix-only) guard
-misses: a CL that renders native drive-letter paths from *inside* a
-POSIX-style shell — a mingw SBCL launched under MSYS2, whose (truename \"/\")
-is \"C:/\" — has build-frame == run-frame, yet neither is :posix. Without
-this guard map-in would rewrite an already-correct C:/… into the MSYS2
-mount form /c/…, handing the mingw CL a namestring it cannot open (this
-broke LOAD/OPEN of absolute paths on the Windows/MSYS2 runner). When the
-two frames are equal there is by definition nothing to translate.
-
-Conservative: any structural difference (or an un-comparable mount-table)
-falls through to the normal translation path, which is always the safe
-choice."
-  (or (eq a b)
-      (and (eq    (menv-kind a)               (menv-kind b))
-           (eql   (menv-separator a)          (menv-separator b))
-           (eq    (menv-drive-style a)        (menv-drive-style b))
-           (equal (menv-drive-mount-prefix a) (menv-drive-mount-prefix b))
-           (equal (menv-home a)               (menv-home b))
-           (%mount-tables-equal-p (menv-mount-table a) (menv-mount-table b)))))
-
 (defun map-in-namestring (string &key
                                    (run   (run-environment))
                                    (build (build-environment)))
   "User/run-frame STRING -> physical path string the BUILD host can open.
-Identity (returns STRING unchanged) when both frames are :POSIX, or when the
-run and build frames are the SAME environment (nothing to translate)."
-  (if (or (and (identity-environment-p run) (identity-environment-p build))
-          (environments-equal-p run build))
+Identity (returns STRING unchanged) when both frames are :POSIX.
+
+Note that when the run and build frames are the *same* frame this is NOT a
+blind identity: the round trip still performs the within-frame
+normalisation the host needs (~ expansion, separator folding, drive
+canonicalisation).  The Windows/MSYS2 case where an already-native C:/…
+path must be left alone is handled at DETECTION time — a CL whose
+(truename \"/\") is a drive letter is recorded with a :drive-letter
+drive-style (see %detect-environment), so from-canonical renders native
+paths rather than the /c/… mount form."
+  (if (and (identity-environment-p run) (identity-environment-p build))
       string
       (from-canonical (to-canonical string run) build)))
 
@@ -352,10 +323,9 @@ run and build frames are the SAME environment (nothing to translate)."
                                     (run   (run-environment))
                                     (build (build-environment)))
   "Physical BUILD-frame STRING -> path string in the user/run frame.
-Identity when both frames are :POSIX, or when the run and build frames are
-the SAME environment (nothing to translate)."
-  (if (or (and (identity-environment-p run) (identity-environment-p build))
-          (environments-equal-p run build))
+Identity when both frames are :POSIX (see MAP-IN-NAMESTRING on the
+same-frame case)."
+  (if (and (identity-environment-p run) (identity-environment-p build))
       string
       (from-canonical (to-canonical string build) run)))
 
@@ -456,14 +426,41 @@ arguments) by the conformance harness / tests to build synthetic frames."
 (defun %detect-home ()
   (ignore-errors (namestring (user-homedir-pathname))))
 
+(defun %cl-renders-native-drive-paths-p (root-truename)
+  "True when the host CL renders NATIVE drive-letter physical paths — its
+(truename \"/\") is a drive path such as \"C:/\".  This is ground truth for
+how the CL names files, and it overrides the surrounding shell: a mingw
+SBCL launched under an MSYS2 shell reports MSYSTEM=UCRT64 (so the kind
+classifies :msys2) yet its truename of \"/\" is \"C:/\" — it opens C:/… ,
+never the /c/… mount form."
+  (and root-truename
+       (drive-path-p (normalize-separators root-truename))))
+
+(defun %force-native-drive-style (env)
+  "Make ENV render native drive-letter paths: from-canonical must emit
+C:/… (what the CL opens), not a POSIX mount form.  Clears the mount-table
+and mount prefix, which describe a POSIX-rooted view the CL does not use."
+  (setf (menv-drive-style env)        :drive-letter
+        (menv-drive-mount-prefix env) nil
+        (menv-mount-table env)        '())
+  env)
+
 (defun %detect-environment (probe-tag)
   (let* ((inputs (%detect-inputs))
          (kind (apply #'classify-environment-kind inputs))
-         (root-truename (ignore-errors (namestring (truename #P"/")))))
-    (make-environment-for-kind
-     kind
-     :home (%detect-home)
-     :probe (list* :tag probe-tag :root-truename root-truename inputs))))
+         (root-truename (ignore-errors (namestring (truename #P"/"))))
+         (env (make-environment-for-kind
+               kind
+               :home (%detect-home)
+               :probe (list* :tag probe-tag :root-truename root-truename inputs))))
+    ;; Ground-truth override (spec §5.1: the build frame is "what the CL
+    ;; expects as physical pathnames"): if this CL renders native drive
+    ;; paths, force native rendering regardless of the shell that set
+    ;; MSYSTEM/OSTYPE.  Fixes the mingw-SBCL-under-MSYS2 runner where a
+    ;; native C:/… was being rewritten to /c/… and became unopenable.
+    (when (%cl-renders-native-drive-paths-p root-truename)
+      (%force-native-drive-style env))
+    env))
 
 (defun detect-build-environment ()
   "Detect the environment SBCL/CCL is being BUILT in.  Called at file load
