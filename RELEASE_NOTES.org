@@ -545,7 +545,13 @@ separate binary for tool integrators.
   LWPOLYLINE (e.g. a DONUT) carries one 10 group per vertex, and
   transforming only the first corrupted its geometry — visibly, the
   bas/haut side discrimination of an inserted block. Point arity is
-  preserved (2D vertices stay 2D). Command-name resolution honours that a leading
+  preserved (2D vertices stay 2D).
+- ~GetBoundingBox~ extends a text entity's box by its height in the
+  direction the *vertical justification* dictates: a top-anchored
+  (~_TL~/~_TC~/~_TR~) TEXT grows downward from its anchor, a
+  baseline / bottom one upward, a middle one both ways (MTEXT: top
+  attachment). Getting this wrong flipped topological above/below
+  readings of ~_TL~ labels — the SCHMS côté BAS check. Command-name resolution honours that a leading
   ~-~ is *not* a generic modifier: ~-FOO~ is a distinct,
   explicitly-defined console-form command, so each dash form is
   registered explicitly (~-BLOCK~ today; on this TUI-only host the

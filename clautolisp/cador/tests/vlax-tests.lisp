@@ -622,3 +622,20 @@ the shape of the SCHMS sigfic fixtures."
     (is (not (null (cador-find-table-record mock :block-record "SIGFIC_OK"))))
     ;; The abandoned name was never registered.
     (is (null (cador-find-table-record mock :block-record "ABANDONNE")))))
+
+(test entity-getboundingbox-honours-vertical-justification
+  ;; A top-left justified TEXT grows DOWNWARD from its anchor: box
+  ;; [y-h, y]. (Regression: the box always grew upward, flipping the
+  ;; SCHMS topological côté BAS reading of TL labels.)
+  (let* ((mock (make-cador))
+         (view (host-entmake
+                mock (list (cons 0 "TEXT") (cons 8 "0")
+                           (list 10 0.0d0 5.0d0 0.0d0)
+                           (list 11 0.0d0 5.0d0 0.0d0)
+                           (cons 40 2.5d0) (cons 1 "tl")
+                           (cons 72 0) (cons 73 3))))
+         (ename (cdr (first view)))
+         (vla (host-vlax-ename->vla-object mock ename))
+         (box (host-vlax-invoke-method mock vla "GetBoundingBox" '())))
+    (is (%tv~= 2.5d0 (second (first box))))
+    (is (%tv~= 5.0d0 (second (second box))))))

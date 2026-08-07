@@ -490,14 +490,34 @@ the mock approximates from the stored groups (deferred-spec-research)."
                        collect (cdr pair)))
              (collect-entity (e)
                (dolist (p (entity-points e)) (push p points))
-               (when (member (entity-handle-kind e)
-                             '(:text :mtext :attrib :attdef))
-                 (let ((p (%entity-group-value e 10))
-                       (h (%entity-group-value e 40)))
-                   (when (and (consp p) (realp h))
-                     (push (list (first p) (+ (second p) h)
-                                 (or (third p) 0.0d0))
-                           points))))))
+               ;; Text-bearing kinds: extend the box by the text height
+               ;; in the direction the VERTICAL JUSTIFICATION dictates —
+               ;; a top-anchored (_TL/_TC/_TR) text grows DOWNWARD from
+               ;; its anchor, a baseline/bottom one upward, a middle one
+               ;; both ways. Getting this wrong flips topological
+               ;; above/below readings of justified labels (the SCHMS
+               ;; côté BAS bug, 1.8.20).
+               (let ((kind (entity-handle-kind e)))
+                 (when (member kind '(:text :mtext :attrib :attdef))
+                   (let* ((anchor (or (and (not (eq kind :mtext))
+                                           (%entity-group-value e 11))
+                                      (%entity-group-value e 10)))
+                          (h (%entity-group-value e 40))
+                          (v (cond
+                               ;; MTEXT's default attachment is top-left.
+                               ((eq kind :mtext) 3)
+                               ((eq kind :text)
+                                (or (%entity-group-value e 73) 0))
+                               (t (or (%entity-group-value e 74) 0)))))
+                     (when (and (consp anchor) (realp h))
+                       (let ((x (first anchor))
+                             (y (second anchor))
+                             (z (or (third anchor) 0.0d0)))
+                         (case v
+                           (3 (push (list x (- y h) z) points))
+                           (2 (push (list x (- y (/ h 2)) z) points)
+                              (push (list x (+ y (/ h 2)) z) points))
+                           (t (push (list x (+ y h) z) points))))))))))
       (collect-entity entity)
       (dolist (handle (%entity-subentity-handles host entity))
         (let ((sub (cador-find-entity-by-handle host handle)))

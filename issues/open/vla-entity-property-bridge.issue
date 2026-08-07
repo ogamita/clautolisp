@@ -98,6 +98,18 @@
   upward and breaking the côté BAS/HAUT discrimination. Fixed with
   %entity-map-point-groups (arity-preserving); bbox collects all
   occurrences. BAS and HAUT shapes verified discriminating e2e.
+- *1.8.20 (2026-08-07): text boxes honour vertical justification.*
+  Tenth round, same FAIL — but pjb shared =test-cad-SIGFIC.lsp=: the
+  oracle is TOPOLOGICAL (per-element bounding-box y-midpoints ordered
+  texte / trait horizontal / donut). The mock's text box always grew
+  UPWARD (baseline assumption); the sigfic label is =_TL=-justified,
+  so its box must grow DOWNWARD from the anchor. Côté HAUT the error
+  was harmless (label far above), côté BAS it lifted the label's
+  midpoint above the horizontal line (-5.4 > -6) — order violated,
+  =nil= instead of ='BAS=. Fixed: height extension follows 73/74
+  (top→down, middle→both, baseline/bottom→up; MTEXT top attachment).
+  Full topological oracle replayed e2e both sides:
+  COTE=2 → [8.92 > 6 > 0] HAUT; COTE=1 → [-8.92 < -6 < 0] BAS.
 - *Remaining open:* confirm against the SCHMS =test-cad-clautolisp=
   re-run and extend the property table to what it still consumes
   (candidates: =TrueColor=, =Closed=, =MTextAttribute=, MTEXT
