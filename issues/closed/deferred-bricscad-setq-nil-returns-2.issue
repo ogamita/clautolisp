@@ -203,3 +203,32 @@ It is wired into the existing manual vendor-probes jobs
 transcript lands at dist/vendor-probes/bricscad/bricscad-extensions.log.
 One pjb click on the now-available BricsCAD runner produces the decode;
 this issue then closes per its steps 2-4.
+
+== DECODED + RESOLVED (2026-08-07, real BricsCAD V26 / macOS runner) ==
+
+vendor:probes:bricscad:macos ran the probe against real BricsCAD. The
+setf transcript, capturing setf's RAW return directly (each wrapped in
+its own princ, so this is setf's own return value, not the alfe REPL
+print-wrap the original report worried about):
+
+  SETF-NIL=2  SETF-1=2  SETF-2=2  SETF-99=2  SETF-STRING=2  SETF-LIST=2
+  SETF-THEN-FOO=nil
+
+Answer to "what is the 2?": it is a FIXED INTERNAL SENTINEL. `setf'
+returns 2 for EVERY value — nil, 1, 2, 99, "hello", '(a b) — so the 2 is
+not the assigned value, not a type tag of the value, and not a slot
+number that varies. Moreover SETF-THEN-FOO=nil: after (setf foo 42), foo
+still reads nil, so BricsCAD's `setf' does NOT even assign on a symbol
+place. It is a non-assigning op that returns a constant 2. The original
+alfe REPL showing "2" was therefore faithful — the 2 came straight from
+`setf', not from the print-wrap.
+
+Decision (resolution-path step 4): clautolisp does NOT implement `setf'
+and must NOT imitate the "2". Recorded in the umbrella
+bricscad-undocumented-clisms.issue (which stays open for the spec page +
+the `let' parallel-binding extension). A Bricsys support ticket to ask
+whether the setf-"2" is intentional or a defect is optionally still
+wanted, but does not block this specific investigation.
+
+STATUS: RESOLVED — the "2" is decoded (internal sentinel, non-assigning
+setf). Closing; moved to issues/closed/.
