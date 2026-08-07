@@ -214,6 +214,7 @@
    #:cador-remove-sysvar
    ;; BricsCAD-dialect sysvar overlay
    #:*bricscad-absent-sysvars*
+   #:*bricscad-factory-defaults*
    #:apply-bricscad-dialect-sysvars
    ;; Entity-allocation helpers (Phase 10)
    #:cador-creation-order

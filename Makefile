@@ -585,16 +585,25 @@ docker-build-clautolisp-ci:  ## Build the GitLab-CI Docker image used to run cla
 docker-push-clautolisp-ci: docker-build-clautolisp-ci  ## Build and push the CI image to the configured registry.
 	docker push "$(CLAUTOLISP_CI_IMAGE)"
 
+# Overridable so the clean-harvest CI job (harvest:sysvars:bricscad:* in
+# .gitlab/native.yml) can point at a built-not-installed alfe binary and
+# restrict the harvest to the bricscad backend/dialect. Defaults preserve
+# the original all-backends behaviour for a plain `make save-sysvars`.
+ALFE                  ?= alfe
+CLAUTOLISP            ?= clautolisp
+SAVE_SYSVARS_BACKENDS ?= clautolisp bricscad autocad
+SAVE_SYSVARS_DIALECTS ?= strict autocad bricscad clautolisp lax
+
 save-sysvars: ## Dumps the sysvars of various implementations and configuration in sysvars-*.txt files.
-	for backend in clautolisp bricscad autocad ; do \
-		alfe --$$backend --dialect=$$backend --mode batch \
+	for backend in $(SAVE_SYSVARS_BACKENDS) ; do \
+		$(ALFE) --$$backend --dialect=$$backend --mode batch \
 			-Esource Windows-1252 \
 			-norc \
 			-l autolisp-spec/autolisp/dump-sysvars.lsp \
 			-x "(dump-sysvars \"sysvars-alfe-$$(uname)-$${backend}.txt\")"  || true ;\
 	done
-	for dialect in strict autocad bricscad clautolisp lax ; do \
-		clautolisp --dialect $$dialect \
+	for dialect in $(SAVE_SYSVARS_DIALECTS) ; do \
+		$(CLAUTOLISP) --dialect $$dialect \
 			-norc \
 			-l autolisp-spec/autolisp/dump-sysvars.lsp \
 			-x "(dump-sysvars \"sysvars-clautolisp-$$(uname)-$${dialect}.txt\")"  || true ;\

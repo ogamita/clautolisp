@@ -139,6 +139,51 @@
     (clautolisp.cador:apply-bricscad-dialect-sysvars mock)
     (is (= (- before 382) (hash-table-count (cador-sysvars mock))))))
 
+;;; --- BricsCAD-dialect factory-default value overlay (Phase 2) ----
+;;;
+;;; Beyond dropping absent sysvars, APPLY-BRICSCAD-DIALECT-SYSVARS applies
+;;; each row of *BRICSCAD-FACTORY-DEFAULTS* — (NAME . VALUE) overrides of
+;;; the AutoCAD-derived catalogue default — under the bricscad dialect
+;;; only. The shipped table is empty (inert) until the clean-profile
+;;; harvest is classified; these tests bind a SYNTHETIC row to exercise
+;;; the mechanism without adopting any unvetted value.
+
+(test bricscad-factory-default-overrides-shared-sysvar-under-bricscad
+  ;; OSMODE is shared with AutoCAD; the catalogue ships AutoCAD's 4133
+  ;; (see osmode-is-bitcoded-integer-with-vendor-divergence). A synthetic
+  ;; factory-default row overrides it under --bricscad only.
+  (let ((clautolisp.cador:*bricscad-factory-defaults* '(("OSMODE" . 4135))))
+    ;; A plain (autocad / no-overlay) host keeps the catalogue default.
+    (let ((plain (make-cador)))
+      (is (eql 4133 (host-getvar plain "OSMODE")))
+      (is (eql 4133 (sysvar-cell-value (cador-sysvar plain "OSMODE")))))
+    ;; The bricscad overlay adopts the override.
+    (let ((mock (make-cador)))
+      (clautolisp.cador:apply-bricscad-dialect-sysvars mock)
+      (is (eql 4135 (host-getvar mock "OSMODE")))
+      (is (eql 4135 (sysvar-cell-value (cador-sysvar mock "OSMODE")))))))
+
+(test bricscad-factory-default-coerces-to-cell-kind
+  ;; The override goes through HOST-SET-DERIVED-SYSVAR, which coerces to
+  ;; the target cell's kind — a string literal lands as an integer for an
+  ;; :integer cell (CMDECHO), exactly like a catalogue default.
+  (let ((clautolisp.cador:*bricscad-factory-defaults* '(("CMDECHO" . 0))))
+    (let ((mock (make-cador)))
+      (clautolisp.cador:apply-bricscad-dialect-sysvars mock)
+      (is (eql 0 (host-getvar mock "CMDECHO"))))))
+
+(test bricscad-factory-default-skips-unknown-and-dropped-names
+  ;; A row naming a sysvar the catalogue does not carry — or one Phase 1
+  ;; has just dropped — must be skipped with no error.
+  (let ((clautolisp.cador:*bricscad-factory-defaults*
+          '(("DEFINITELYNOTASYSVAR" . 1)
+            ("DYNPROMPT" . 1))))          ; DYNPROMPT is bricscad-absent
+    (let ((mock (make-cador)))
+      ;; Must not signal; an error here would fail the test outright.
+      (is (eq mock (clautolisp.cador:apply-bricscad-dialect-sysvars mock)))
+      (is (null (cador-sysvar mock "DEFINITELYNOTASYSVAR")))
+      (is (null (cador-sysvar mock "DYNPROMPT"))))))
+
 ;;; --- ERRNO bridge -------------------------------------------------
 ;;;
 ;;; (getvar "ERRNO") must reflect the live runtime errno, not the

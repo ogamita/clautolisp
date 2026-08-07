@@ -119,6 +119,74 @@ ones that are bricscad-absent (ACTIVITYINSIGHTSPATH) already resolve to
 nil under --bricscad via Phase 1; MENUNAME / INETLOCATION / FONTMAP etc.
 are bricscad-present and will get correct BricsCAD defaults during Phase 2.
 
+Phase 2 — value-overlay mechanism + harvest tooling (THIS CHANGE, 1.8.10)
+-------------------------------------------------------------------------
+
+Phase 2 ships the MECHANISM, the clean-harvest JOB and the classifier
+TOOLING for the 174 genuine value disagreements, but adopts NO values.
+The only BricsCAD reference dump today is the customised / French /
+metric session the caveat above warns against; separating real factory
+defaults from locale/template/profile state needs a clean re-harvest we
+do not yet have. So the value table ships EMPTY (inert) and the residual
+is blocked on ops (pjb).
+
+What landed:
+
+  - *BRICSCAD-FACTORY-DEFAULTS* in cador/source/bricscad-sysvar-
+    overrides.lisp — an alist of (SYSVAR-NAME-STRING . VALUE) factory-
+    default overrides, SEEDED EMPTY. APPLY-BRICSCAD-DIALECT-SYSVARS now,
+    after the Phase-1 removals, applies each row via HOST-SET-DERIVED-
+    SYSVAR (coerces to the cell's kind, bypasses the read-only flag for
+    host-populated cells, silently no-ops on unknown / just-dropped
+    names). Bricscad-dialect only; autocad/clautolisp untouched. Empty
+    table => today this is a no-op.
+
+  - harvest:sysvars:bricscad:macos (+ :windows twin) in .gitlab/native.yml
+    — a NON-GATING (soft gate, allow_failure) data-collection job that
+    builds alfe and runs `make save-sysvars` restricted to the bricscad
+    backend/dialect (new Makefile vars SAVE_SYSVARS_BACKENDS /
+    SAVE_SYSVARS_DIALECTS / ALFE / CLAUTOLISP) from a PRISTINE profile
+    (BRICSCAD_PROFILE_CLEAN -> AUTOLISP_BRICSCAD_PROFILE, the vendor-probe
+    convention) and a freshly-created default drawing. Uploads
+    sysvars-alfe-*-bricscad.txt and sysvars-clautolisp-*-bricscad.txt
+    (expire_in 30 days). The Windows twin depends on the runner's make
+    having a POSIX shell for the recipe; the authoritative reference is
+    the Darwin dump, so it is not release-blocking.
+
+  - scripts/classify-sysvar-diff.py — stdlib python3 triage tool: parses
+    two dumps (clautolisp, alfe/reference) and sorts the differing vars
+    into the taxonomy buckets (a) existence, (b) genuine value
+    disagreements, (c) session/drawing/clock state, (d) machine paths,
+    (e) colour-format, (f) single-float print noise, (g) radian-vs-
+    degree. For bucket (b) it prints a ready-to-paste ("NAME" . <alfe
+    value>) skeleton.
+
+RUNBOOK (populate *BRICSCAD-FACTORY-DEFAULTS* — pjb ops):
+
+  1. On the bricscad runner, provision a pristine BricsCAD profile and set
+     BRICSCAD_PROFILE_CLEAN to its name; run harvest:sysvars:bricscad:macos
+     (start it from the pipeline when the macOS bricscad runner is online).
+     Ensure the reference session opens a freshly-created DEFAULT drawing,
+     not a saved customised .dwg.
+  2. Fetch the job artifacts: sysvars-alfe-Darwin-bricscad.txt and
+     sysvars-clautolisp-Darwin-bricscad.txt.
+  3. Run: scripts/classify-sysvar-diff.py \
+            sysvars-clautolisp-Darwin-bricscad.txt \
+            sysvars-alfe-Darwin-bricscad.txt
+  4. Human-vet bucket (b): DROP any row that is locale (LOCALE, DIMSTYLE
+     "ISO-25", INTERFERELAYER/OVERKILLLAYER French names), metric-template
+     (DIMASZ/DIMTXT/INSUNITS/MEASUREMENT/TEXTSIZE) or profile/search-path
+     state; KEEP only true AutoCAD-vs-BricsCAD factory-default divergences.
+     Paste the survivors into *BRICSCAD-FACTORY-DEFAULTS*.
+  5. Bump DEVELOP; add a test row in sysvar-catalogue-tests.lisp asserting
+     one adopted value (GETVAR returns the BricsCAD default under
+     --bricscad, the AutoCAD default under --autocad), mirroring
+     bricscad-factory-default-overrides-shared-sysvar-under-bricscad.
+
+STATUS: mechanism + tooling DONE (1.8.10). Value residual BLOCKED on the
+clean-profile harvest (pjb ops); *BRICSCAD-FACTORY-DEFAULTS* stays empty
+until then.
+
 Phase 3 — host-derived state not yet computed (deferred)
 --------------------------------------------------------
 
