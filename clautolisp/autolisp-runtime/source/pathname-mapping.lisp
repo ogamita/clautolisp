@@ -301,12 +301,50 @@ returned unchanged for the caller to merge against the canonical cwd."
 (defvar *build-environment*)
 (defvar *run-environment*)
 
+(defun %mount-tables-equal-p (ta tb)
+  "Element-wise structural equality of two mount-tables.  MOUNT-ENTRY is a
+struct, so EQUAL on the raw lists would compare by identity and miss two
+logically-identical tables built from distinct instances (the common case
+when the run and build frames are detected separately)."
+  (and (= (length ta) (length tb))
+       (every (lambda (x y)
+                (and (string= (mount-frame-prefix x)     (mount-frame-prefix y))
+                     (string= (mount-canonical-prefix x) (mount-canonical-prefix y))))
+              ta tb)))
+
+(defun environments-equal-p (a b)
+  "True when A and B describe the SAME frame, so a path expressed in one is
+already exactly what the other's host expects — map-in/map-out must then be
+a STRICT identity, with NO canonical round-trip.
+
+This is the case that the plain IDENTITY-ENVIRONMENT-P (:posix-only) guard
+misses: a CL that renders native drive-letter paths from *inside* a
+POSIX-style shell — a mingw SBCL launched under MSYS2, whose (truename \"/\")
+is \"C:/\" — has build-frame == run-frame, yet neither is :posix. Without
+this guard map-in would rewrite an already-correct C:/… into the MSYS2
+mount form /c/…, handing the mingw CL a namestring it cannot open (this
+broke LOAD/OPEN of absolute paths on the Windows/MSYS2 runner). When the
+two frames are equal there is by definition nothing to translate.
+
+Conservative: any structural difference (or an un-comparable mount-table)
+falls through to the normal translation path, which is always the safe
+choice."
+  (or (eq a b)
+      (and (eq    (menv-kind a)               (menv-kind b))
+           (eql   (menv-separator a)          (menv-separator b))
+           (eq    (menv-drive-style a)        (menv-drive-style b))
+           (equal (menv-drive-mount-prefix a) (menv-drive-mount-prefix b))
+           (equal (menv-home a)               (menv-home b))
+           (%mount-tables-equal-p (menv-mount-table a) (menv-mount-table b)))))
+
 (defun map-in-namestring (string &key
                                    (run   (run-environment))
                                    (build (build-environment)))
   "User/run-frame STRING -> physical path string the BUILD host can open.
-Identity (returns STRING unchanged) when both frames are :POSIX."
-  (if (and (identity-environment-p run) (identity-environment-p build))
+Identity (returns STRING unchanged) when both frames are :POSIX, or when the
+run and build frames are the SAME environment (nothing to translate)."
+  (if (or (and (identity-environment-p run) (identity-environment-p build))
+          (environments-equal-p run build))
       string
       (from-canonical (to-canonical string run) build)))
 
@@ -314,8 +352,10 @@ Identity (returns STRING unchanged) when both frames are :POSIX."
                                     (run   (run-environment))
                                     (build (build-environment)))
   "Physical BUILD-frame STRING -> path string in the user/run frame.
-Identity when both frames are :POSIX."
-  (if (and (identity-environment-p run) (identity-environment-p build))
+Identity when both frames are :POSIX, or when the run and build frames are
+the SAME environment (nothing to translate)."
+  (if (or (and (identity-environment-p run) (identity-environment-p build))
+          (environments-equal-p run build))
       string
       (from-canonical (to-canonical string build) run)))
 
