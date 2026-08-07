@@ -531,6 +531,17 @@ separate binary for tool integrators.
   commands that consume object selection: ~ERASE~ (the subentity run
   goes too), ~MOVE~ and ~COPY~ (selection, base point, second point),
   each also accepting entity-handle input and the ~_Last~ option.
+- ~ROTATE~ (selection, base point, angle in command angular units) and
+  *~-BLOCK~* (name, base point, selection: registers the definition
+  and absorbs the selected entities, translated so the base point
+  becomes the definition origin — they leave model space, the vendor
+  contract; a same-name definition is redefined) complete the engine's
+  block-factory path. Command-name resolution honours that a leading
+  ~-~ is *not* a generic modifier: ~-FOO~ is a distinct,
+  explicitly-defined console-form command, so each dash form is
+  registered explicitly (~-BLOCK~ today; on this TUI-only host the
+  dialog spelling ~BLOCK~ projects onto the same console grammar);
+  only the ~.~ and ~_~ prefixes are stripped as modifiers.
 - ~acad_strlsort~ now really sorts: it returns a *new* list of the
   input strings in ascending, case-sensitive, ordinal order (upper
   before lower; accented / non-ASCII letters after the ASCII range),

@@ -296,6 +296,25 @@ POLYLINE."
                                  (+ (coerce (or (third p) 0.0d0) 'double-float)
                                     dz)))))))
 
+(defun %entity-rotate-one (entity bx by angle)
+  (let ((c (cos angle)) (s (sin angle)))
+    (dolist (code '(10 11 12 13))
+      (let ((p (%entity-group-value entity code)))
+        (when (consp p)
+          (let ((x (- (coerce (first p) 'double-float) bx))
+                (y (- (coerce (second p) 'double-float) by)))
+            (%entity-set-group entity code
+                               (list (+ bx (- (* c x) (* s y)))
+                                     (+ by (+ (* s x) (* c y)))
+                                     (coerce (or (third p) 0.0d0)
+                                             'double-float)))))))
+    (when (member (entity-handle-kind entity)
+                  '(:text :mtext :attrib :attdef :insert))
+      (%entity-set-group entity 50
+                         (+ (coerce (or (%entity-group-value entity 50) 0.0d0)
+                                    'double-float)
+                            angle)))))
+
 (defun %clone-entity-with-run (host entity)
   "Duplicate ENTITY (and its subentity run, owners remapped) in the
 same container; returns the new ENTITY-HANDLE."

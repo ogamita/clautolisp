@@ -195,3 +195,48 @@
               do (push (first (cdr (assoc 10 (host-entget mock e)))) firsts)
                  (setq e (host-entnext mock e)))
         (is (equal '(0.0d0 5.0d0) (sort firsts #'<)))))))
+
+;;; --- The -BLOCK / ROTATE commands (the SCHMS block factory path) --
+;;; (schms_creer_bloc: draw via commands, optionally ROTATE the
+;;; selection, then "-block" NAME BASE SELECTION "" — the dash form is
+;;; the same command with its UI projected on the console TUI.)
+
+(test command-block-registers-and-absorbs-the-selection
+  (let ((mock (make-cador)))
+    ;; Two lines drawn around (100 50).
+    (clautolisp.autolisp-host:host-command
+     mock '("._line" "100,50" "100,56" ""))
+    (clautolisp.autolisp-host:host-command
+     mock '("._line" "100,56" "108,56" ""))
+    (let ((ss (host-ssget mock nil :mode "X")))
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.-block" "sigfic_1" "100,50" ss ""))
+      ;; The definition exists; model space is empty (the entities
+      ;; were absorbed); the block holds the two lines translated so
+      ;; the base point is the origin.
+      (is (not (null (cador-find-table-record mock :block-record "sigfic_1"))))
+      (is (null (host-entnext mock nil)))
+      (let* ((data (host-tblsearch mock "BLOCK" "sigfic_1"))
+             (entry (cdr (assoc -2 data)))
+             (first-data (host-entget mock entry))
+             (p10 (cdr (assoc 10 first-data))))
+        (is (typep entry 'autolisp-ename))
+        (is (= 0.0d0 (first p10)))
+        (is (= 0.0d0 (second p10)))
+        (let ((second-entity (host-entnext mock entry)))
+          (is (typep second-entity 'autolisp-ename))
+          (is (null (host-entnext mock second-entity))))))))
+
+(test command-rotate-rotates-the-selection-about-the-base
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command
+     mock '("._line" "0,0" "1,0" ""))
+    (let ((ss (host-ssget mock nil :mode "X")))
+      ;; Rotate a quarter turn (command input in decimal degrees).
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.rotate" ss "" "0,0" "90.0"))
+      (let* ((e (host-entnext mock nil))
+             (data (host-entget mock e))
+             (p11 (cdr (assoc 11 data))))
+        (is (< (abs (first p11)) 1d-9))
+        (is (< (abs (- 1.0d0 (second p11))) 1d-9))))))

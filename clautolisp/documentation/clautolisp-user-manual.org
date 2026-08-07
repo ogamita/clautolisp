@@ -657,6 +657,12 @@ provides that surface through the host backend:
   erases the set's members (and their subentity runs); ~MOVE~ and
   ~COPY~ take a selection, a base point and a second point. Entity
   handles and ~_Last~ work as selection input too.
+- ~ROTATE~ (selection, base point, angle) and ~-BLOCK~ (name, base
+  point, selection) complete the block-factory path: ~-BLOCK~
+  registers the definition and absorbs the selected entities,
+  translated to the base point, out of model space. A leading ~-~ is
+  part of the command's *name* (each console form is defined
+  explicitly), unlike the ~.~ / ~_~ prefixes which are modifiers.
 - Entity ActiveX *properties* read and write the entity's DXF groups:
   on an entity-backed VLA-object, ~TextString~ / ~TagString~ /
   ~Layer~ / ~Color~ / ~Height~ / ~Rotation~ (radians, the entget

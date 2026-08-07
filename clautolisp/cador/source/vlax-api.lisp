@@ -447,25 +447,6 @@ the displacement between the two points."
         (when sub (%entity-translate sub dx dy dz))))
     nil))
 
-(defun %entity-rotate-one (entity bx by angle)
-  (let ((c (cos angle)) (s (sin angle)))
-    (dolist (code '(10 11 12 13))
-      (let ((p (%entity-group-value entity code)))
-        (when (consp p)
-          (let ((x (- (coerce (first p) 'double-float) bx))
-                (y (- (coerce (second p) 'double-float) by)))
-            (%entity-set-group entity code
-                               (list (+ bx (- (* c x) (* s y)))
-                                     (+ by (+ (* s x) (* c y)))
-                                     (coerce (or (third p) 0.0d0)
-                                             'double-float)))))))
-    (when (member (entity-handle-kind entity)
-                  '(:text :mtext :attrib :attdef :insert))
-      (%entity-set-group entity 50
-                         (+ (coerce (or (%entity-group-value entity 50) 0.0d0)
-                                    'double-float)
-                            angle)))))
-
 (defun %entity-rotate (host entity args)
   "Rotate(BasePoint, RotationAngle): rotate ENTITY (and its
 subentities) about the base point, in radians about +Z."

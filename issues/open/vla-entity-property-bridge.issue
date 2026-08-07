@@ -66,6 +66,20 @@
   =COPY= with selection / handle / =_Last= input. Full fixture flow
   (draw → ssget → clone into block → erase → insertblock → checker)
   green e2e.
+- *1.8.17 (2026-08-07): the real factory path — -BLOCK + ROTATE.*
+  =creation_blocs.lsp= (pjb) revealed =schms_creer_bloc='s actual
+  mechanism: when the draw produced entities, the block is created by
+  =(command-s "_.-block" nom pt sel "")= (after an optional
+  =(command-s "_.rotate" sel "" pt ang)=) — NOT the entmake pair,
+  which only runs for an *empty* draw (that branch is why 1.8.12/13
+  registered empty blocks). Landed: engine =-BLOCK= (registers the
+  definition, absorbs the selection translated to the base point) and
+  =ROTATE=; command-name resolution keeps a leading =-= as part of
+  the name (each console form is explicitly defined — pjb), stripping
+  only the =.= / =_= modifiers. Verbatim =schms_creer_bloc= flow
+  (draw → jsmemder → rotate → -block → vla-item → put-explodable →
+  insertblock → checker finds 2 LINE → tatouage via
+  =(vlax-ename->vla-object (cdr (assoc -2 …)))=) green e2e.
 - *Remaining open:* confirm against the SCHMS =test-cad-clautolisp=
   re-run and extend the property table to what it still consumes
   (candidates: =TrueColor=, =Closed=, =MTextAttribute=, MTEXT

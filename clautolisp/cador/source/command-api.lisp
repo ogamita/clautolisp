@@ -104,15 +104,18 @@ so a host that never sets CMDECHO keeps echoing. system-variables.issue
               (or (third numbers) 0.0d0))))))
 
 (defun %command-name (token)
-  "The upcased command name of TOKEN with the \".\" (English), \"_\"
-\(non-localized) and \"-\" (command-line form) prefixes stripped; NIL
-for tokens that read as data (numbers, points, RETURN, PAUSE)."
+  "The upcased command name of TOKEN with the \".\" (English) and \"_\"
+\(non-localized) prefix modifiers stripped; NIL for tokens that read as
+data (numbers, points, RETURN, PAUSE). A leading \"-\" is NOT a
+modifier — \"-FOO\" is a distinct, explicitly-defined command whose
+user interface is projected on the console TUI — so it stays part of
+the name and each dash form is registered explicitly in the dispatch."
   (and (stringp token)
        (plusp (length token))
        (not (string= token "\\"))
        (not (%command-token-point token))
        (not (%command-token-number token))
-       (let ((name (string-left-trim "._-" token)))
+       (let ((name (string-left-trim "._" token)))
          (and (plusp (length name)) (string-upcase name)))))
 
 (defun %command-option-p (token &rest spellings)
@@ -399,6 +402,75 @@ the selection (subentity runs included) displaced by the two points."
                       (when sub (%entity-translate sub dx dy dz)))))))))))
     tokens))
 
+(defun %cmd-rotate (host tokens)
+  "ROTATE: object selection, RETURN, base point, rotation angle —
+command angular input, read in decimal degrees (the TEXT note on
+AUNITS applies) and applied in radians."
+  (multiple-value-bind (entities tokens) (%command-selection host tokens)
+    (let ((base (%command-token-point (first tokens))))
+      (when base
+        (pop tokens)
+        (let ((angle (%command-token-number (first tokens))))
+          (when angle
+            (pop tokens)
+            (let ((radians (* angle (/ pi 180.0d0)))
+                  (bx (first base))
+                  (by (second base)))
+              (dolist (entity entities)
+                (%entity-rotate-one entity bx by radians)
+                (dolist (handle (%entity-subentity-handles host entity))
+                  (let ((sub (cador-find-entity-by-handle host handle)))
+                    (when sub
+                      (%entity-rotate-one sub bx by radians))))))))))
+    tokens))
+
+(defun %cmd-block (host tokens)
+  "-BLOCK: block name, base point, object selection, RETURN. Registers
+the definition and ABSORBS the selected entities into it — translated
+so the base point becomes the definition origin, leaving model space —
+the vendor command contract. A same-name definition is redefined (its
+previous contents erased), which the SCHMS factory guarantees never
+happens (it purges beforehand)."
+  (let ((name (first tokens)))
+    (unless (and (stringp name)
+                 (plusp (length name))
+                 (not (%command-token-point name))
+                 (not (%command-token-number name))
+                 (not (equal name "?")))
+      (return-from %cmd-block tokens))
+    (pop tokens)
+    (let ((base (%command-token-point (first tokens))))
+      (unless base (return-from %cmd-block tokens))
+      (pop tokens)
+      (multiple-value-bind (entities tokens) (%command-selection host tokens)
+        ;; Redefinition: the previous contents are erased.
+        (when (cador-find-table-record host :block-record name)
+          (loop for handle in (cador-creation-order host)
+                for entity = (gethash handle (cador-entities host))
+                when (and entity
+                          (entity-handle-block entity)
+                          (string-equal (entity-handle-block entity) name))
+                  do (setf (entity-handle-deleted-p entity) t)))
+        (let ((header (list (cons 0 "BLOCK") (cons 2 name) (cons 70 0)
+                            (cons 10 (list 0.0d0 0.0d0 0.0d0)))))
+          (cador-add-table-record
+           host (make-symbol-table-record :kind :block-record
+                                          :name name :data header))
+          (clautolisp.drawing:add-block (cador-active-drawing host)
+                                        name header))
+        (let ((dx (- (first base)))
+              (dy (- (second base)))
+              (dz (- (third base))))
+          (dolist (entity entities)
+            (setf (entity-handle-block entity) name)
+            (%entity-translate entity dx dy dz)
+            (dolist (handle (%entity-subentity-handles host entity))
+              (let ((sub (cador-find-entity-by-handle host handle)))
+                (when sub
+                  (setf (entity-handle-block sub) name)
+                  (%entity-translate sub dx dy dz))))))
+        tokens))))
+
 (defun %execute-command-tokens (host tokens)
   "Interpret TOKENS — one HOST-COMMAND call's normalized sequence —
 executing the drawing commands the engine knows; the first unknown
@@ -419,6 +491,14 @@ command log either way). Never signals."
                          ((string= name "ERASE")  (%cmd-erase host tokens))
                          ((string= name "MOVE")   (%cmd-move host tokens))
                          ((string= name "COPY")   (%cmd-copy host tokens))
+                         ((string= name "ROTATE") (%cmd-rotate host tokens))
+                         ;; -BLOCK is the explicitly-defined console
+                         ;; form of BLOCK; on this TUI-only host the
+                         ;; dialog form projects onto the same console
+                         ;; grammar, so both spellings run it.
+                         ((or (string= name "-BLOCK")
+                              (string= name "BLOCK"))
+                          (%cmd-block host tokens))
                          (t (return))))))
     (error () nil))
   nil)
