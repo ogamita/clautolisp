@@ -327,6 +327,73 @@ vendor:probes:bricscad:macos:
     - make -C autolisp-front-end build-alfe-sbcl
     - bash scripts/run-vendor-probes.sh --backend bricscad --keep-workdir "$PROBE_KEEP_WORKDIR"
 
+# --- clean-profile sysvar harvest for BricsCAD Phase 2 ---------------------
+# NON-GATING data collection (allow_failure via the soft gate). Drives
+# `make save-sysvars` restricted to the bricscad backend/dialect against
+# real BricsCAD via a built-not-installed alfe, from a PRISTINE profile and
+# a freshly-created default drawing, so sysvars-alfe-<uname>-bricscad.txt is
+# a *clean factory-default* reference — unlike the customised / French /
+# metric dump the issue's "IMPORTANT caveat" warns against bulk-importing.
+#
+# Feed the artifacts to scripts/classify-sysvar-diff.py and paste bucket
+# (b) into *BRICSCAD-FACTORY-DEFAULTS* (cador/source/bricscad-sysvar-
+# overrides.lisp). Full steps: "Phase 2 runbook" in
+# issues/open/bricscad-dialect-sysvar-parity.issue.
+#
+# pjb must provision on the bricscad runner:
+#   BRICSCAD_PROFILE_CLEAN  — name of a pristine BricsCAD profile (no
+#                             vertical app / custom paths / non-default
+#                             locale). Exported here to alfe as
+#                             AUTOLISP_BRICSCAD_PROFILE, the same clean-
+#                             profile knob the vendor-probe scripts use.
+# The drawing must be a freshly-created default (metric/imperial per the
+# template decision) — do NOT open a saved customised .dwg.
+.sysvars-artifacts:
+  interruptible: true
+  artifacts:
+    name: "sysvars-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths:
+      - sysvars-alfe-*-bricscad.txt
+      - sysvars-clautolisp-*-bricscad.txt
+    expire_in: 30 days
+
+harvest:sysvars:bricscad:macos:
+  extends: [.gate-macos-bricscad-soft, .sysvars-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    ALFE_BIN: '$CI_PROJECT_DIR/autolisp-front-end/tools/alfe/bin/alfe-sbcl'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    # CAD-side runtime for a built-not-installed alfe (see the probe scripts).
+    - export ALFE_RUNTIME_LSP="$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-remote-io.lsp"
+    - export ALFE_BOOTSTRAP_LSP="$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-bootstrap.lsp"
+    # Clean profile: name a pristine BricsCAD profile so no vertical app or
+    # custom path/locale contaminates the factory-default reference.
+    - export AUTOLISP_BRICSCAD_PROFILE="${BRICSCAD_PROFILE_CLEAN:-<<Profil sans nom>>}"
+    - make save-sysvars ALFE="$ALFE_BIN" SAVE_SYSVARS_BACKENDS=bricscad SAVE_SYSVARS_DIALECTS=bricscad
+
+# Windows twin. Provided for parity with the sibling bricscad windows jobs
+# (pathname:probe / encoding:experiment). NOTE: `make save-sysvars` uses a
+# POSIX `for` recipe, so it depends on the runner's GNU make having a sh
+# (as `make build-alfe-sbcl` already does on this runner). Non-gating; the
+# authoritative reference is the Darwin dump, so a Windows shell mismatch
+# here is not release-blocking. pjb must confirm this runs before relying
+# on the Windows artifact.
+harvest:sysvars:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .sysvars-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    ALFE_BIN: '$CI_PROJECT_DIR/autolisp-front-end/tools/alfe/bin/alfe-sbcl'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - export ALFE_RUNTIME_LSP="$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-remote-io.lsp"
+    - export ALFE_BOOTSTRAP_LSP="$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-bootstrap.lsp"
+    - export AUTOLISP_BRICSCAD_PROFILE="${BRICSCAD_PROFILE_CLEAN:-<<Profil sans nom>>}"
+    - make save-sysvars ALFE="$ALFE_BIN" SAVE_SYSVARS_BACKENDS=bricscad SAVE_SYSVARS_DIALECTS=bricscad
+
 # --- native "does alfe build on this OS" check (no CAD) ---------------------
 # Gated like the other native jobs: auto when the runner is online. Not a CAD
 # job, so plain [os, arch, shell] tags (may run on the higher-concurrency

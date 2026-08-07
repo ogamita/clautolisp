@@ -177,12 +177,62 @@ both the inventory's :bricscad version marker and a live BricsCAD V26
 probe. Dropped from the host table under the bricscad dialect so GETVAR
 returns nil. See the file header for provenance.")
 
+;;;; Phase 2 — factory-default value overlay
+;;;; ----------------------------------------
+;;;; Beyond *existence* (Phase 1), BricsCAD sets a number of *shared*
+;;;; sysvars to different factory defaults than AutoCAD (the issue's
+;;;; "174 genuine value disagreements"). Each such divergence is one row
+;;;; here: (SYSVAR-NAME-STRING . VALUE). At launch, under the bricscad
+;;;; dialect only, APPLY-BRICSCAD-DIALECT-SYSVARS pushes VALUE into that
+;;;; sysvar's catalogue cell (via HOST-SET-DERIVED-SYSVAR, which coerces
+;;;; to the cell's kind, bypasses the read-only flag for host-populated
+;;;; cells, and silently no-ops on names the catalogue does not carry).
+;;;;
+;;;; SEEDED EMPTY on purpose. The only BricsCAD reference dump we have is
+;;;; a customised / French-locale / metric session (see the issue's
+;;;; "IMPORTANT caveat"): its values conflate real factory defaults with
+;;;; locale, loaded-template and profile state, so bulk-importing them
+;;;; would ship wrong defaults. Populating this table requires a CLEAN
+;;;; re-harvest — a pristine BricsCAD profile plus a freshly-created
+;;;; default drawing — classified with scripts/classify-sysvar-diff.py.
+;;;; See the "Phase 2 runbook" in
+;;;; issues/open/bricscad-dialect-sysvar-parity.issue. Do NOT invent
+;;;; values: leave this empty until the pristine-profile dump is
+;;;; classified and human-vetted for locale/template rows.
+
+(defparameter *bricscad-factory-defaults*
+  '(
+    ;; ("OSMODE" . 4135)   ; example row shape only — NOT adopted.
+    )
+  "Alist of (SYSVAR-NAME-STRING . VALUE) BricsCAD factory-default value
+overrides, applied to the AutoCAD-derived catalogue under the bricscad
+dialect only. INTENTIONALLY EMPTY (inert) until the clean-profile harvest
+is classified — see this file's Phase-2 header and the issue's runbook.
+Rows naming an unknown or BricsCAD-absent sysvar are skipped harmlessly.")
+
 (defun apply-bricscad-dialect-sysvars (host)
-  "Launch-time bricscad-dialect sysvar overlay (Phase 1): drop the
-catalogue entries BricsCAD does not define from HOST, so GETVAR on them
-returns nil and SETVAR signals unknown-sysvar, as on a real BricsCAD.
+  "Launch-time bricscad-dialect sysvar overlay. Two effects, both
+bricscad-dialect only, never touching autocad/clautolisp:
+
+  Phase 1 (existence): drop the catalogue entries BricsCAD does not
+  define from HOST, so GETVAR on them returns nil and SETVAR signals
+  unknown-sysvar, as on a real BricsCAD.
+
+  Phase 2 (factory defaults): for each (NAME . VALUE) row in
+  *BRICSCAD-FACTORY-DEFAULTS*, override that sysvar's catalogue default
+  cell with VALUE. Applied AFTER the removals, so a row that happens to
+  name a dropped sysvar simply no-ops (HOST-SET-DERIVED-SYSVAR skips
+  unknown names). Empty until the clean harvest, so this is inert today.
+
 Mock-host only; no-ops on hosts without a sysvar table. Returns HOST."
   (when host
     (dolist (name *bricscad-absent-sysvars*)
-      (clautolisp.autolisp-host:host-undefine-sysvar host name)))
+      (clautolisp.autolisp-host:host-undefine-sysvar host name))
+    (dolist (row *bricscad-factory-defaults*)
+      ;; HOST-SET-DERIVED-SYSVAR coerces to the cell's kind, bypasses the
+      ;; read-only flag (these are host-populated defaults), and silently
+      ;; no-ops when the name is absent/unknown — so an unknown or
+      ;; just-dropped name is skipped without error.
+      (clautolisp.autolisp-host:host-set-derived-sysvar
+       host (car row) (cdr row))))
   host)
