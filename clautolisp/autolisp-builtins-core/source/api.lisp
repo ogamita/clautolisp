@@ -1289,12 +1289,27 @@ when no debug session is active (the hook declines)."
     (or (absolute-path-string-p normalized)
         (position #\/ normalized))))
 
+(defun %map-in-safe (string)
+  ;; MAP-IN, but a path the mapping layer can't place (UNMAPPABLE-PATH — e.g.
+  ;; a foreign-frame absolute path with no mount entry) must NOT escape a
+  ;; file builtin as a raw CL condition. Fall back to the input string: the
+  ;; host's open/probe then simply reports not-found, so findfile/open return
+  ;; nil and load raises a proper AutoLISP LOAD-FILE-NOT-FOUND — never a raw
+  ;; UNMAPPABLE-PATH out of an AutoLISP function. (Surfaced on the MSYS2
+  ;; runner: findfile "/no/such/path" leaked UNMAPPABLE-PATH.)
+  (handler-case (clautolisp.pathname-mapping:map-in-namestring string)
+    (clautolisp.pathname-mapping:unmappable-path () string)))
+
+(defun %map-out-safe (string)
+  ;; MAP-OUT with the same unmappable-path fallback as %MAP-IN-SAFE.
+  (handler-case (clautolisp.pathname-mapping:map-out-namestring string)
+    (clautolisp.pathname-mapping:unmappable-path () string)))
+
 (defun resolve-open-pathname (string)
   ;; MAP-IN the user/run-frame string to the physical string the host CL
   ;; can open (clautolisp-windows-pathname-mapping spec §4.3).  On
   ;; macOS/Linux this is the identity mapping, so NORMALIZED is unchanged.
-  (let ((normalized (clautolisp.pathname-mapping:map-in-namestring
-                     (normalize-path-string string))))
+  (let ((normalized (%map-in-safe (normalize-path-string string))))
     (if (absolute-path-string-p normalized)
         (pathname normalized)
         (merge-pathnames normalized
@@ -2247,8 +2262,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
   ;; and relative paths. Absolute paths are looked up directly via
   ;; probe-file; relative paths walk the configured support / trusted
   ;; path list.
-  (let ((normalized (clautolisp.pathname-mapping:map-in-namestring
-                     (normalize-path-string filename))))
+  (let ((normalized (%map-in-safe (normalize-path-string filename))))
     (cond
       ((directory-prefix-p normalized)
        (let* ((path (if (absolute-path-string-p normalized)
@@ -2274,9 +2288,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
     (if located
         ;; MAP-OUT the physical (build-frame) path back to the user/run
         ;; frame before returning it (spec §4.3).  Identity on Unix.
-        (errno-and-return 0 (make-autolisp-string
-                             (clautolisp.pathname-mapping:map-out-namestring
-                              located)))
+        (errno-and-return 0 (make-autolisp-string (%map-out-safe located)))
         (errno-and-return 22 nil))))
 
 (defun builtin-findtrustedfile (filename)
@@ -2286,9 +2298,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
   (let* ((value (autolisp-string-value (require-string filename "FINDTRUSTEDFILE")))
          (located (resolve-existing-file value (%secureload-trusted-dirs))))
     (if located
-        (errno-and-return 0 (make-autolisp-string
-                             (clautolisp.pathname-mapping:map-out-namestring
-                              located)))
+        (errno-and-return 0 (make-autolisp-string (%map-out-safe located)))
         (errno-and-return 22 nil))))
 
 (defun builtin-vl-directory-files (&optional directory pattern directories)
