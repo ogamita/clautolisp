@@ -453,6 +453,110 @@ separate binary for tool integrators.
   ~vlax-map-collection~ iterate an ActiveX collection, binding / applying
   to each member. With this, *every* ~vlax-*~ operator is now a real
   implementation over the headless-CAD host — none remain nil stubs.
+- Live drawing-backed document collections: ~(vla-get-blocks doc)~,
+  ~(vla-get-layers doc)~, ~(vla-get-modelspace doc)~ and
+  ~(vla-get-paperspace doc)~ return identity-stable collection objects
+  computed from the drawing database — members and ~Count~ always
+  reflect the current block-record / layer tables and entities, and
+  every collection answers the generic ~Item~ (0-based integer index or
+  case-insensitive name; a missing item raises an error catchable by
+  ~vl-catch-all-apply~). ~Blocks.Add~ / ~Layers.Add~ create records,
+  ~Block.Delete~ erases a definition and its entities (layout blocks
+  refuse). Fixes the SCHMS CAD suite's "AutoCAD.Document has no
+  property named BLOCKS" failure on ~--host mock~. See the user manual
+  § /Host backend / The ActiveX / COM object model/ and
+  ~issues/open/vla-accessor-family.issue~.
+- Block definitions through ~entmake~: an ~entmake~ of a
+  ~(0 . "BLOCK")~ header opens a block-definition run — the entities
+  entmade next belong to the block, not to model space — and the
+  closing ~(0 . "ENDBLK")~ registers the definition in the block table
+  and returns the block's *name* (the vendor contract; ~"*U"~ + flag
+  bit 0 allocates an anonymous ~*U<n>~ name, re-defining an existing
+  name replaces its contents). Block contents stay out of ~ssget "X"~,
+  ~entlast~ and the top-level ~entnext~ walk; ~(entnext (tblobjname
+  "BLOCK" name))~ walks the block's entities — the classic ATTDEF
+  scan. Fixes the SCHMS "Item: no item named sigfic_N" failures on
+  ~--host mock~.
+- Entity ActiveX properties bridge onto the entity's DXF groups: on an
+  entity-backed VLA-object (from ~vlax-ename->vla-object~ or a block's
+  members), ~vla-get-/put-~ ~TextString~, ~TagString~, ~PromptString~,
+  ~Layer~, ~Linetype~, ~Color~, ~Lineweight~, ~StyleName~, ~Height~,
+  ~Rotation~ (radians, the entget convention), ~Mode~, ~Elevation~,
+  ~Name~ / ~EffectiveName~ (INSERT), ~X/Y/ZScaleFactor~, ~Handle~ and
+  ~ObjectName~ (read-only), ~Alignment~ (the acAlignment enum over
+  groups 72 + 73/74), and the point-valued ~InsertionPoint~ /
+  ~TextAlignmentPoint~ as VARIANT-wrapped double SAFEARRAYs
+  (consumable by ~vlax-variant-value~ + ~vlax-safearray->list~, and
+  writable from ~vlax-3d-point~ or a plain point list). See
+  ~issues/open/vla-entity-property-bridge.issue~.
+- Block references end-to-end: ~InsertBlock~ on a space / block
+  collection creates the INSERT — instantiating an ATTRIB (translated,
+  scaled, rotated to the placement) per non-constant ATTDEF of the
+  definition, closed by a SEQEND — and returns the reference;
+  ~GetAttributes~ hands the ATTRIB objects back as a VARIANT-wrapped
+  SAFEARRAY; ~HasAttributes~ reads group 66. Entity methods ~Move~,
+  ~Rotate~ (radians, group 50 follows), ~Copy~, ~Delete~ / ~Erase~
+  (taking the subentity run along), ~Update~ and ~GetBoundingBox~ —
+  the latter honouring the vendor by-reference contract
+  ~(vla-getboundingbox obj 'll 'ur)~: the two quoted output symbols
+  receive *bare* double SAFEARRAYs — consumed directly with
+  ~(vlax-safearray->list ll)~, no ~vlax-variant-value~, exactly as on
+  the vendors. Subentity runs (ATTRIB / VERTEX / SEQEND) are
+  no longer listed as space / block collection members, matching the
+  vendors.
+- ~vlax-invoke~, ~vlax-get~ and ~vlax-put~ (spec 70000 ff.) join the
+  ActiveX surface with their plain-LISP-data contract: arguments and
+  results are ordinary lists — VARIANT / SAFEARRAY values are converted
+  on the way out (e.g. ~(vlax-invoke ref 'GetAttributes)~ returns a
+  list of VLA-objects, ~(vlax-get ref 'InsertionPoint)~ a point list).
+- The classic block-contents walk works: a BLOCK record's ~tblsearch~ /
+  ~tblnext~ view carries the vendors' ~(-2 . <first-entity ename>)~
+  entry — ~(entnext (cdr (assoc -2 (tblsearch "BLOCK" n))))~ walks the
+  definition — and ~entget~ on a symbol-table record's ename (from
+  ~tblobjname~) returns the record's group-code view, ~(-1 . ename)~
+  head and ~-2~ included for blocks.
+- The mock host grew a *drawing-command engine*: ~(command ...)~ still
+  records and echoes every call, and now EXECUTES the model-only
+  drawing commands the SCHMS corpus draws with — ~LINE~ (with
+  ~_Close~), ~CIRCLE~, ~TEXT~ (with the ~_Justify~ options, decimal-
+  degree rotation input stored as radians), ~DONUT~ (the vendors'
+  closed two-arc constant-width LWPOLYLINE) and ~SOLID~ — creating
+  real entities on the current layer that ~entlast~ / ~entnext~ /
+  reactors see. Unknown commands and malformed input stay record-only.
+  ~entlast~ now also skips subentities (ATTRIB / VERTEX / SEQEND), so
+  ~(entlast)~ after an attribute-bearing insert names the INSERT, as
+  the vendors do.
+- ~(command ...)~ accepts a *selection set* argument, as the vendors
+  do wherever a command prompts for object selection — the classic
+  ~(command "._erase" ss "")~ idiom. The live set passes through to
+  the host un-normalized, and the command engine grew the editing
+  commands that consume object selection: ~ERASE~ (the subentity run
+  goes too), ~MOVE~ and ~COPY~ (selection, base point, second point),
+  each also accepting entity-handle input and the ~_Last~ option.
+- ~ROTATE~ (selection, base point, angle in command angular units) and
+  *~-BLOCK~* (name, base point, selection: registers the definition
+  and absorbs the selected entities, translated so the base point
+  becomes the definition origin — they leave model space, the vendor
+  contract; a same-name definition is redefined) complete the engine's
+  block-factory path.
+- Geometric transforms (translate / rotate — Move, Copy, -BLOCK
+  absorption, the command ~ROTATE~) and ~GetBoundingBox~ now apply to
+  *every* occurrence of a point group, not just the first: a
+  LWPOLYLINE (e.g. a DONUT) carries one 10 group per vertex, and
+  transforming only the first corrupted its geometry — visibly, the
+  bas/haut side discrimination of an inserted block. Point arity is
+  preserved (2D vertices stay 2D).
+- ~GetBoundingBox~ extends a text entity's box by its height in the
+  direction the *vertical justification* dictates: a top-anchored
+  (~_TL~/~_TC~/~_TR~) TEXT grows downward from its anchor, a
+  baseline / bottom one upward, a middle one both ways (MTEXT: top
+  attachment). Getting this wrong flipped topological above/below
+  readings of ~_TL~ labels — the SCHMS côté BAS check. Command-name resolution honours that a leading
+  ~-~ is *not* a generic modifier: ~-FOO~ is a distinct,
+  explicitly-defined console-form command, so each dash form is
+  registered explicitly (~-BLOCK~ today; on this TUI-only host the
+  dialog spelling ~BLOCK~ projects onto the same console grammar);
+  only the ~.~ and ~_~ prefixes are stripped as modifiers.
 - ~acad_strlsort~ now really sorts: it returns a *new* list of the
   input strings in ascending, case-sensitive, ordinal order (upper
   before lower; accented / non-ASCII letters after the ASCII range),

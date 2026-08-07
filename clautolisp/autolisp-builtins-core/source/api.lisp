@@ -3987,11 +3987,16 @@ most recent first."
   ;; the host stores) and nil on failure. We echo DATA, keeping ENTMAKE
   ;; conformant; the resolved entity (with defaults + handle + ename) is
   ;; obtained with (entget (entlast)) — or, directly, via ENTMAKEX.
+  ;; Exception: completing a block definition — entmake of the closing
+  ;; (0 . "ENDBLK") — returns the new block's NAME, not the data echo
+  ;; (the vendor block-creation contract); the host signals that case
+  ;; by returning the name as a string.
   (require-proper-list data "ENTMAKE")
   (let ((result (host-entmake (current-evaluation-host) data)))
-    (if result
-        (errno-and-return 0 data)
-        (errno-and-return 36 nil))))
+    (cond
+      ((typep result 'autolisp-string) (errno-and-return 0 result))
+      (result (errno-and-return 0 data))
+      (t (errno-and-return 36 nil)))))
 
 (defun builtin-entmakex (data)
   ;; Same ERRNO contract as ENTMAKE, but the return value is the new
@@ -5709,12 +5714,65 @@ issues/open/clautolisp-module-app-extensions.issue."
                           value))
 
 (defun builtin-vlax-invoke-method (vla name &rest args)
-  (host-vlax-invoke-method (current-evaluation-host) vla
-                           (cond
-                             ((typep name 'autolisp-string) (autolisp-string-value name))
-                             ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
-                             (t name))
-                           args))
+  (let ((method-name (cond
+                       ((typep name 'autolisp-string) (autolisp-string-value name))
+                       ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
+                       (t name))))
+    (if (and (string-equal method-name "GetBoundingBox")
+             (= (length args) 2)
+             (every (lambda (argument) (typep argument 'autolisp-symbol))
+                    args))
+        ;; Vendor by-reference contract: (vla-getboundingbox obj 'll 'ur)
+        ;; assigns the two quoted OUTPUT symbols bare double SAFEARRAYs
+        ;; of the box corners — NOT variants: the canonical consumption
+        ;; is (vlax-safearray->list ll) directly — and returns nil. The
+        ;; host hands the plain ((minx miny minz) (maxx maxy maxz)) box
+        ;; up; the assignment happens here, where the evaluator's
+        ;; symbols live.
+        (let ((box (host-vlax-invoke-method (current-evaluation-host) vla
+                                            method-name '())))
+          (when (consp box)
+            (clautolisp.autolisp-runtime:set-autolisp-symbol-value
+             (first args) (%doubles->safearray (first box)))
+            (clautolisp.autolisp-runtime:set-autolisp-symbol-value
+             (second args) (%doubles->safearray (second box))))
+          nil)
+        (host-vlax-invoke-method (current-evaluation-host) vla
+                                 method-name args))))
+
+(defun %plain-com-value (value)
+  "Vendor vlax-invoke / vlax-get data semantics: VARIANTs and
+SAFEARRAYs in a result are converted to plain LISP data (nested lists);
+every other value passes through."
+  (cond
+    ((typep value 'autolisp-variant)
+     (let ((inner (autolisp-variant-value value)))
+       (%plain-com-value (if (and (consp inner) (eq (car inner) :array))
+                             (cdr inner)
+                             inner))))
+    ((typep value 'autolisp-safearray)
+     (mapcar #'%plain-com-value
+             (coerce (safearray-data-storage
+                      (safearray-of value "VLAX-INVOKE"))
+                     'list)))
+    (t value)))
+
+(defun builtin-vlax-invoke (vla name &rest args)
+  "(vlax-invoke obj method args…) — vlax-invoke-method with the plain
+LISP data contract (spec 70000): VARIANT / SAFEARRAY results come back
+as nested lists."
+  (%plain-com-value (apply #'builtin-vlax-invoke-method vla name args)))
+
+(defun builtin-vlax-get (vla name)
+  "(vlax-get obj property) — vlax-get-property with the plain LISP data
+contract: VARIANT / SAFEARRAY values come back as nested lists."
+  (%plain-com-value (builtin-vlax-get-property vla name)))
+
+(defun builtin-vlax-put (vla name value)
+  "(vlax-put obj property value) — vlax-put-property accepting plain
+LISP data; returns nil (the vendor contract)."
+  (builtin-vlax-put-property vla name value)
+  nil)
 
 (defun builtin-vlax-get-acad-object ()
   "Return the host's top-level application COM object. On the mock host
@@ -9442,6 +9500,9 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "VLAX-GET-PROPERTY"            #'builtin-vlax-get-property)
    (make-core-builtin-subr "VLAX-PUT-PROPERTY"            #'builtin-vlax-put-property)
    (make-core-builtin-subr "VLAX-INVOKE-METHOD"           #'builtin-vlax-invoke-method)
+   (make-core-builtin-subr "VLAX-INVOKE"                  #'builtin-vlax-invoke)
+   (make-core-builtin-subr "VLAX-GET"                     #'builtin-vlax-get)
+   (make-core-builtin-subr "VLAX-PUT"                     #'builtin-vlax-put)
    (make-core-builtin-subr "VLAX-GET-ACAD-OBJECT"         #'builtin-vlax-get-acad-object)
    (make-core-builtin-subr "VLAX-2D-POINT"                #'builtin-vlax-2d-point)
    (make-core-builtin-subr "VLAX-3D-POINT"                #'builtin-vlax-3d-point)
@@ -10078,4 +10139,34 @@ variable convention below."
   (setf clautolisp.autolisp-runtime:*vlax-collection-items-hook*
         (lambda (collection)
           (host-vlax-collection-items (current-evaluation-host) collection)))
+  ;; Point-valued COM properties (InsertionPoint, …) cross the
+  ;; host/builtins boundary through these hooks: the host hands a plain
+  ;; doubles list up, the builtins layer (which owns the safearray
+  ;; representation) wraps it as the VARIANT(SAFEARRAY of doubles) the
+  ;; vendor surface returns — and unwraps one for the write direction.
+  (setf clautolisp.autolisp-runtime:*com-point-wrap-hook*
+        (lambda (doubles)
+          (%safearray-variant (%doubles->safearray doubles))))
+  (setf clautolisp.autolisp-runtime:*com-point-unwrap-hook*
+        (lambda (value)
+          (and (or (typep value 'autolisp-safearray)
+                   (and (typep value 'autolisp-variant)
+                        (consp (autolisp-variant-value value))
+                        (typep (cdr (autolisp-variant-value value))
+                               'autolisp-safearray)))
+               (coerce (safearray-data-storage
+                        (safearray-of (%as-safearray value "COM-POINT")
+                                      "COM-POINT"))
+                       'list))))
+  ;; Object-array results (GetAttributes, …) are VARIANT-wrapped
+  ;; SAFEARRAYs of VLA-objects on the vendor surface.
+  (setf clautolisp.autolisp-runtime:*com-objects-wrap-hook*
+        (lambda (values)
+          (let ((n (length values)))
+            (%safearray-variant
+             (make-autolisp-safearray
+              :value (make-safearray-data
+                      :type-tag :vla-object
+                      :bounds (list (list 0 (1- n)))
+                      :storage (make-array n :initial-contents values)))))))
   t)

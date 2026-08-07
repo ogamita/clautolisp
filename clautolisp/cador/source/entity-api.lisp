@@ -197,14 +197,172 @@ such entity exists or it has been deleted."
 
 (defmethod host-entget ((host cador) ename &optional applist)
   (let* ((handle (ename->handle ename 'entget))
-         (entity (safe-find-entity (cador-active-drawing host) handle)))
-    (and entity (entity->al-view host entity applist))))
+         (entity (and (or (stringp handle) (integerp handle))
+                      (safe-find-entity (cador-active-drawing host) handle))))
+    (cond
+      (entity (entity->al-view host entity applist))
+      (t
+       ;; A symbol-table record's ename (from tblobjname) is
+       ;; entget-able on the vendors: the record's group-code view,
+       ;; (-1 . ename) head, and for a BLOCK record the (-2 . first
+       ;; entity) walk entry.
+       (let ((record (%find-table-record-by-id host handle)))
+         (and record
+              (cons (cons -1 ename)
+                    (table-record-al-view+extras host record))))))))
 
 (defun %data-type-string (data)
   "The (0 . TYPE) string of the pure group-code list DATA, or NIL."
   (dolist (pair data nil)
     (when (and (consp pair) (group-code-equal-p (car pair) 0) (stringp (cdr pair)))
       (return (cdr pair)))))
+
+(defun %data-group-value (data code)
+  "The value of the first CODE group in the pure group-code list DATA,
+or NIL when absent."
+  (dolist (pair data nil)
+    (when (and (consp pair) (group-code-equal-p (car pair) code))
+      (return (cdr pair)))))
+
+(defun main-space-entity-p (entity)
+  "True when ENTITY belongs to model or paper space rather than to a
+block definition's contents. ssget's whole-database scan, entlast and
+the top-level entnext walk only main-space entities, as the vendors do;
+block contents are reached through their block (tblobjname + entnext,
+or the ActiveX block collection)."
+  (let ((owner (entity-handle-block entity)))
+    (or (null owner)
+        (string-equal owner "*Model_Space")
+        (string-equal owner "*Paper_Space"))))
+
+(defun %block-entity-handles (host name)
+  "Hex handles of the live entities owned by block NAME, oldest first.
+Model-space entities are those with a NIL owner (plus any explicitly
+owned by *Model_Space); other blocks own by name. Subentities (ATTRIB /
+VERTEX / SEQEND runs) are not members — vendor space and block
+collections enumerate only their top-level entities."
+  (let ((model-p (string-equal name "*Model_Space")))
+    (loop for handle in (reverse (cador-creation-order host))
+          for entity = (cador-find-entity-by-handle host handle)
+          when (and entity
+                    (not (member (entity-handle-kind entity)
+                                 '(:attrib :vertex :seqend)))
+                    (let ((owner (entity-handle-block entity)))
+                      (if owner
+                          (string-equal owner name)
+                          model-p)))
+            collect handle)))
+
+;;; --- Shared entity utilities (property bridge + command engine) --
+
+(defun %entity-group-value (entity code)
+  (dolist (pair (entity-handle-data entity) nil)
+    (when (and (consp pair) (group-code-equal-p (car pair) code))
+      (return (cdr pair)))))
+
+(defun %entity-set-group (entity code value)
+  "Set the first CODE group of ENTITY's data to VALUE, appending the
+group when absent (the entmod convention)."
+  (let ((pair (find-if (lambda (pair)
+                         (and (consp pair)
+                              (group-code-equal-p (car pair) code)))
+                       (entity-handle-data entity))))
+    (if pair
+        (setf (cdr pair) value)
+        (setf (entity-handle-data entity)
+              (append (entity-handle-data entity)
+                      (list (cons code value)))))
+    value))
+
+(defun %entity-subentity-handles (host entity)
+  "Handles of the live subentities owned (group 330) by ENTITY, oldest
+first — the ATTRIB…SEQEND run of an INSERT, the VERTEX…SEQEND run of a
+POLYLINE."
+  (let ((id (entity-handle-id entity)))
+    (loop for handle in (reverse (cador-creation-order host))
+          for sub = (cador-find-entity-by-handle host handle)
+          when (and sub
+                    (let ((owner (%entity-group-value sub 330)))
+                      (and owner (string-equal owner id))))
+            collect handle)))
+
+(defun %entity-map-point-groups (entity function
+                                 &optional (codes '(10 11 12 13)))
+  "Apply FUNCTION — a point-list -> point-list transform — to EVERY
+occurrence of the point groups CODES in ENTITY's data. A LWPOLYLINE
+carries one 10 group per vertex; transforming only the first corrupts
+the geometry (the bas/haut discrimination bug, 1.8.19)."
+  (dolist (pair (entity-handle-data entity))
+    (when (and (consp pair)
+               (member (car pair) codes :test #'group-code-equal-p)
+               (consp (cdr pair)))
+      (setf (cdr pair) (funcall function (cdr pair))))))
+
+(defun %entity-translate (entity dx dy dz)
+  (%entity-map-point-groups
+   entity
+   (lambda (p)
+     (let ((x (+ (coerce (first p) 'double-float) dx))
+           (y (+ (coerce (second p) 'double-float) dy)))
+       ;; Preserve the point's arity: LWPOLYLINE vertices are 2D.
+       (if (cddr p)
+           (list x y (+ (coerce (third p) 'double-float) dz))
+           (list x y))))))
+
+(defun %entity-rotate-one (entity bx by angle)
+  (let ((c (cos angle)) (s (sin angle)))
+    (%entity-map-point-groups
+     entity
+     (lambda (p)
+       (let ((x (- (coerce (first p) 'double-float) bx))
+             (y (- (coerce (second p) 'double-float) by)))
+         (let ((rx (+ bx (- (* c x) (* s y))))
+               (ry (+ by (+ (* s x) (* c y)))))
+           (if (cddr p)
+               (list rx ry (coerce (third p) 'double-float))
+               (list rx ry))))))
+    (when (member (entity-handle-kind entity)
+                  '(:text :mtext :attrib :attdef :insert))
+      (%entity-set-group entity 50
+                         (+ (coerce (or (%entity-group-value entity 50) 0.0d0)
+                                    'double-float)
+                            angle)))))
+
+(defun %clone-entity-with-run (host entity)
+  "Duplicate ENTITY (and its subentity run, owners remapped) in the
+same container; returns the new ENTITY-HANDLE."
+  (let* ((drawing (cador-active-drawing host))
+         (new (clautolisp.drawing:add-entity
+               drawing (copy-tree (entity-handle-data entity))
+               :block (entity-handle-block entity))))
+    (dolist (handle (%entity-subentity-handles host entity))
+      (let ((sub (cador-find-entity-by-handle host handle)))
+        (when sub
+          (let ((data (copy-tree (entity-handle-data sub))))
+            (dolist (pair data)
+              (when (and (consp pair) (group-code-equal-p (car pair) 330))
+                (setf (cdr pair) (entity-handle-id new))))
+            (clautolisp.drawing:add-entity drawing data
+                                           :block (entity-handle-block sub))))))
+    new))
+
+(defun table-record-al-view+extras (host record)
+  "The tblsearch / tblnext / entget view of a symbol-table RECORD: its
+wrapped group-code data, plus — for a BLOCK record — the vendors'
+(-2 . <first-entity ename>) group, the entry point of the classic
+block-contents walk ((entnext (cdr (assoc -2 (tblsearch \"BLOCK\" n)))).
+SPEC-UNCERTAIN: on the vendors an *empty* block's -2 names its ENDBLK
+entity; the mock stores no ENDBLK and omits the group
+(deferred-spec-research.issue)."
+  (let ((view (pure->al-value (symbol-table-record-data record))))
+    (if (eq (symbol-table-record-kind record) :block-record)
+        (let ((first-handle
+                (first (%block-entity-handles
+                        host (symbol-table-record-name record)))))
+          (if first-handle
+              (append view (list (cons -2 (handle->ename host first-handle))))
+              view))
+        view)))
 
 ;;; --- Vendor-divergence policy (autolisp-spec ch.25) -------------
 ;;;
@@ -249,7 +407,7 @@ but that divergence is not portable and not condoned: the create returns ~
 nil under autocad, clautolisp and strict.~%"
           type missing (length missing)))
 
-(defun %host-add-entity (host data operator-name)
+(defun %host-add-entity (host data operator-name &optional owner)
   "Shared worker for HOST-ENTMAKE / HOST-ENTMAKEX. Validate + normalise
 DATA against the entity-family registry (clautolisp.drawing), add the
 entity to the active drawing, fire the object-appended reactor events,
@@ -283,7 +441,14 @@ and bricscad additionally warn."
           (values nil nil)
           (let* ((owned (%link-subentity-owner host normalised))
                  (entity (handler-case
-                             (clautolisp.drawing:add-entity drawing owned)
+                             (clautolisp.drawing:add-entity
+                              drawing owned
+                              ;; OWNER (InsertBlock's target space), or
+                              ;; the block whose entmake definition run
+                              ;; is open — NIL = model space.
+                              :block (or owner
+                                         (car (cador-open-block-definition
+                                               host))))
                            (clautolisp.drawing:drawing-error () nil))))
             (if (null entity)
                 (values nil nil)
@@ -338,21 +503,108 @@ a SEQEND closes it."
       ((and type (string-equal type "SEQEND"))
        (setf (cador-open-complex-handle host) nil)))))
 
+;;; --- Block-definition creation through ENTMAKE -------------------
+;;;
+;;; The vendor contract (AutoLISP Reference, entmake): entmake of a
+;;; (0 . "BLOCK") header opens a block definition; the entities entmade
+;;; next belong to it; entmake of (0 . "ENDBLK") completes it — the
+;;; definition is added to the block table and entmake returns the
+;;; block's NAME (not an entity list). An anonymous block is requested
+;;; with name "*U" plus bit 0 of the 70 flags; the actual "*U<n>" name
+;;; is allocated at open and returned by the closing ENDBLK.
+
+(defun %allocate-anonymous-block-name (host)
+  "A fresh \"*U<n>\" anonymous-block name not present in the
+:block-record table."
+  (loop for n from 0
+        for name = (format nil "*U~D" n)
+        unless (cador-find-table-record host :block-record name)
+          return name))
+
+(defun %entmake-open-block (host pure)
+  "ENTMAKE of a (0 . \"BLOCK\") header: open a block-definition run.
+Returns the echoed header on success; NIL (the vendor entmake failure
+value) when the header names no block. A definition left open by an
+interrupted factory (an error between BLOCK and ENDBLK, swallowed by
+the caller's *error*) is ABANDONED — its collected entities stay
+orphaned under the abandoned name, never registered — so one failed
+factory cannot silently break every later one. SPEC-UNCERTAIN: the
+vendors' recovery from an abandoned entmake block sequence is not
+probed (deferred-spec-research.issue)."
+  (let ((name (%data-group-value pure 2))
+        (flags (or (%data-group-value pure 70) 0)))
+    (when (cador-open-block-definition host)
+      (setf (cador-open-block-definition host) nil))
+    (cond
+      ((not (and (stringp name) (plusp (length name)))) nil)
+      (t
+       (when (and (integerp flags) (logbitp 0 flags)
+                  (string-equal name "*U"))
+         (setf name (%allocate-anonymous-block-name host)))
+       ;; Redefinition: the new run replaces the old definition — its
+       ;; previous contents are erased now, so the entities entmade
+       ;; before the ENDBLK are the whole new content.
+       (when (cador-find-table-record host :block-record name)
+         (loop for handle in (clautolisp.drawing:drawing-creation-order
+                              (cador-active-drawing host))
+               for entity = (gethash handle (cador-entities host))
+               when (and entity
+                         (entity-handle-block entity)
+                         (string-equal (entity-handle-block entity) name))
+                 do (setf (entity-handle-deleted-p entity) t)))
+       (setf (cador-open-block-definition host) (cons name pure))
+       (pure->al-value pure)))))
+
+(defun %entmake-close-block (host)
+  "ENTMAKE of (0 . \"ENDBLK\"): complete the open block definition.
+Registers it in the :block-record table and the drawing's block
+registry, and returns the block's name (the vendor contract); NIL when
+no definition is open."
+  (let ((open (cador-open-block-definition host)))
+    (and open
+         (let ((name (car open))
+               (header (cdr open)))
+           (cador-add-table-record
+            host (make-symbol-table-record :kind :block-record
+                                           :name name :data header))
+           (clautolisp.drawing:add-block (cador-active-drawing host)
+                                         name header)
+           (setf (cador-open-block-definition host) nil)
+           (clautolisp.autolisp-runtime:make-autolisp-string name)))))
+
 (defmethod host-entmake ((host cador) data)
   ;; ENTMAKE returns the entget-style view (the (-1 . ename) head +
   ;; wrapped data) on success, nil on failure. The AutoLISP builtin
   ;; layer decides what the user ultimately sees (see BUILTIN-ENTMAKE).
-  (multiple-value-bind (entity ename) (%host-add-entity host data 'entmake)
-    (declare (ignore ename))
-    (and entity (entity->al-view host entity))))
+  ;; BLOCK / ENDBLK are the block-definition pseudo-entities, not
+  ;; database entities — see above.
+  (let* ((pure (al-data->pure data 'entmake))
+         (type (%data-type-string pure)))
+    (cond
+      ((and type (string-equal type "BLOCK"))
+       (%entmake-open-block host pure))
+      ((and type (string-equal type "ENDBLK"))
+       (%entmake-close-block host))
+      (t
+       (multiple-value-bind (entity ename) (%host-add-entity host data 'entmake)
+         (declare (ignore ename))
+         (and entity (entity->al-view host entity)))))))
 
 (defmethod host-entmakex ((host cador) data)
   ;; ENTMAKEX's distinguishing contract: return the new entity's ENAME
   ;; (feedable straight into entget/entmod/entdel), not the DXF list.
   ;; See issues/closed/entmakex-returns-list.issue.
-  (multiple-value-bind (entity ename) (%host-add-entity host data 'entmakex)
-    (declare (ignore entity))
-    ename))
+  ;; SPEC-UNCERTAIN: whether vendor entmakex can open/close a block
+  ;; definition (BLOCK / ENDBLK) as entmake does; clautolisp returns
+  ;; nil for both until probed (deferred-spec-research.issue).
+  (let* ((pure (al-data->pure data 'entmakex))
+         (type (%data-type-string pure)))
+    (if (and type (or (string-equal type "BLOCK")
+                      (string-equal type "ENDBLK")))
+        nil
+        (multiple-value-bind (entity ename) (%host-add-entity host data 'entmakex)
+          (declare (ignore entity))
+          ename))))
 
 ;;; --- Divergence D3: ENTMOD on a non-graphical object -----------
 ;;;
@@ -438,29 +690,88 @@ condoned: it is a no-op under autocad, clautolisp and strict.~%"
          ename)))
 
 (defmethod host-entlast ((host cador))
-  ;; Most recently created entity that is not deleted. creation-order
-  ;; is newest-first.
+  ;; Most recently created main-space MAIN entity that is not deleted:
+  ;; block-definition contents are never entlast, and neither are
+  ;; subentities (ATTRIB / VERTEX / SEQEND) — the vendor contract, so
+  ;; (entlast) after an attribute-bearing insert names the INSERT.
+  ;; creation-order is newest-first.
   (let ((drawing (cador-active-drawing host)))
     (loop for handle in (clautolisp.drawing:drawing-creation-order drawing)
-          when (clautolisp.drawing:find-entity drawing handle)
+          for entity = (clautolisp.drawing:find-entity drawing handle)
+          when (and entity
+                    (main-space-entity-p entity)
+                    (not (member (entity-handle-kind entity)
+                                 '(:attrib :vertex :seqend))))
             return (handle->ename host handle)
           finally (return nil))))
 
+(defun %entity-container-key (entity)
+  "The container an ENTITY-HANDLE lives in, for the entnext walk:
+:MAIN for model / paper space, the upcased block name for
+block-definition contents."
+  (if (main-space-entity-p entity)
+      :main
+      (string-upcase (entity-handle-block entity))))
+
+(defun %find-table-record-by-id (host id)
+  "The SYMBOL-TABLE-RECORD (any kind) whose id matches ID (an ename
+value from tblobjname), or NIL."
+  (let ((found nil))
+    (maphash (lambda (kind table)
+               (declare (ignore kind))
+               (maphash (lambda (name record)
+                          (declare (ignore name))
+                          (when (string= (string (symbol-table-record-id record))
+                                         (string id))
+                            (setf found record)))
+                        table))
+             (cador-tables host))
+    found))
+
+(defun %find-block-record-by-id (host id)
+  "The :block-record SYMBOL-TABLE-RECORD whose id matches ID (an ename
+value from tblobjname), or NIL."
+  (let ((record (%find-table-record-by-id host id)))
+    (and record
+         (eq (symbol-table-record-kind record) :block-record)
+         record)))
+
 (defmethod host-entnext ((host cador) ename)
-  ;; (entnext)       -> first non-deleted entity, or nil.
-  ;; (entnext ENAME) -> next non-deleted entity after ENAME, or nil.
+  ;; (entnext)       -> first non-deleted main-space entity, or nil.
+  ;; (entnext ENAME) -> next non-deleted entity in the SAME container
+  ;;                    (main space, or the same block definition).
+  ;; (entnext TBL)   -> TBL a block table-record ename (tblobjname
+  ;;                    "BLOCK" name): the block's first entity — the
+  ;;                    canonical ATTDEF walk. SPEC-UNCERTAIN: whether
+  ;;                    the vendor walk ends on an ENDBLK entity; the
+  ;;                    mock stores none and returns nil after the last
+  ;;                    owned entity (deferred-spec-research.issue).
   (let* ((drawing (cador-active-drawing host))
          (order (reverse (clautolisp.drawing:drawing-creation-order drawing))))
-    (flet ((first-live (handles)
+    (flet ((first-live-in (handles container)
              (loop for handle in handles
-                   when (clautolisp.drawing:find-entity drawing handle)
+                   for entity = (clautolisp.drawing:find-entity drawing handle)
+                   when (and entity
+                             (equal container (%entity-container-key entity)))
                      return (handle->ename host handle)
                    finally (return nil))))
       (if (null ename)
-          (first-live order)
+          (first-live-in order :main)
           (let* ((needle (ename->handle ename 'entnext))
-                 (tail (member needle order :test #'string=)))
-            (first-live (rest tail)))))))
+                 ;; A table-record ename's value is not an entity
+                 ;; handle (hex string) — don't feed it to the entity
+                 ;; lookup, fall through to the block-record branch.
+                 (entity (and (or (stringp needle) (integerp needle))
+                              (safe-find-entity drawing needle
+                                                :include-deleted t))))
+            (if entity
+                (first-live-in (rest (member needle order :test #'string=))
+                               (%entity-container-key entity))
+                (let ((record (%find-block-record-by-id host needle)))
+                  (and record
+                       (first-live-in
+                        order
+                        (string-upcase (symbol-table-record-name record)))))))))))
 
 (defmethod host-handent ((host cador) handle-string)
   (let ((value

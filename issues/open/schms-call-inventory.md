@@ -547,33 +547,33 @@ références de bloc attribuées portant des XData.
 > ci-dessous est validé de bout en bout sur le mock ; les autres se résolvent
 > mais dépendent encore de la couverture du graphe d'objets mock (P2).
 
-- [ ] `vla-put-textstring` — 188
-- [ ] `vla-get-layer` — 170
-- [ ] `vla-get-insertionpoint` — 169
-- [ ] `vla-get-rotation` — 154
-- [ ] `vla-put-height` — 126
-- [ ] `vla-put-textalignmentpoint` — 126
-- [ ] `vla-put-alignment` — 125
-- [ ] `vla-rotate` — 87
-- [ ] `vla-item` — 18
-- [ ] `vla-get-blocks` — 14
-- [ ] `vla-delete` — 9
-- [ ] `vla-get-handle` — 8
-- [ ] `vla-get-effectivename` — 7
-- [ ] `vla-copy` — 6
-- [ ] `vla-get-name` — 6
-- [ ] `vla-get-objectname` — 6
+- [x] `vla-put-textstring` — 188 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-layer` — 170 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-insertionpoint` — 169 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-rotation` — 154 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-height` — 126 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-textalignmentpoint` — 126 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-alignment` — 125 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-rotate` — 87 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
+- [x] `vla-item` — 18 (1.8.10: generic collection Item, 0-based index or case-insensitive name, missing item catchable via vl-catch-all-apply; end-to-end on mock)
+- [x] `vla-get-blocks` — 14 (1.8.10: live drawing-backed Blocks collection; end-to-end on mock)
+- [x] `vla-delete` — 9 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
+- [x] `vla-get-handle` — 8 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-effectivename` — 7 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-copy` — 6 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
+- [x] `vla-get-name` — 6 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-objectname` — 6 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-getbulge` — 6
-- [ ] `vla-put-insertionpoint` — 6
-- [ ] `vla-put-layer` — 6
-- [ ] `vla-getboundingbox` — 5
-- [ ] `vla-put-color` — 5
-- [ ] `vla-put-explodable` — 5
+- [x] `vla-put-insertionpoint` — 6 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-layer` — 6 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-getboundingbox` — 5 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
+- [x] `vla-put-color` — 5 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-explodable` — 5 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-add` — 4
-- [ ] `vla-get-layers` — 4
-- [ ] `vla-get-modelspace` — 4
-- [ ] `vla-move` — 4
-- [ ] `vla-put-lineweight` — 4
+- [x] `vla-get-layers` — 4 (1.8.10: live Layers collection + Layers.Add; end-to-end on mock)
+- [x] `vla-get-modelspace` — 4 (1.8.10: live *Model_Space entity collection, was a placeholder string; end-to-end on mock)
+- [x] `vla-move` — 4 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
+- [x] `vla-put-lineweight` — 4 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-documents` — 3
 - [ ] `vla-get-fullname` — 3
 - [ ] `vla-get-ownerid` — 3
@@ -583,17 +583,17 @@ références de bloc attribuées portant des XData.
 - [ ] `vla-activate` — 2
 - [ ] `vla-endundomark` — 2
 - [x] `vla-get-activedocument` — 2 (façade + vlax-get-acad-object; end-to-end on mock)
-- [ ] `vla-get-alignment` — 2
-- [ ] `vla-get-elevation` — 2
+- [x] `vla-get-alignment` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-elevation` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-propertyname` — 2
-- [ ] `vla-get-textalignmentpoint` — 2
-- [ ] `vla-get-textstring` — 2
+- [x] `vla-get-textalignmentpoint` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-textstring` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-value` — 2
 - [ ] `vla-getwidth` — 2
 - [ ] `vla-intersectwith` — 2
 - [ ] `vla-object` — 2
-- [ ] `vla-put-name` — 2
-- [ ] `vla-put-stylename` — 2
+- [x] `vla-put-name` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-stylename` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-regen` — 2
 - [ ] `vla-save` — 2
 - [ ] `vla-setbulge` — 2
@@ -606,27 +606,27 @@ références de bloc attribuées portant des XData.
 - [ ] `vla-addobject` — 1
 - [ ] `vla-addvertex` — 1
 - [ ] `vla-appendouterloop` — 1
-- [ ] `vla-erase` — 1
+- [x] `vla-erase` — 1 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
 - [ ] `vla-evaluate` — 1
-- [ ] `vla-get-count` — 1
-- [ ] `vla-get-height` — 1
-- [ ] `vla-get-isdynamicblock` — 1
+- [x] `vla-get-count` — 1 (1.8.10: live Count on every collection; end-to-end on mock)
+- [x] `vla-get-height` — 1 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-isdynamicblock` — 1 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-mtextattribute` — 1
 - [ ] `vla-get-readonly` — 1
-- [ ] `vla-get-tagstring` — 1
+- [x] `vla-get-tagstring` — 1 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-truecolor` — 1
 - [ ] `vla-getextensiondictionary` — 1
-- [ ] `vla-insertblock` — 1
+- [x] `vla-insertblock` — 1 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
 - [ ] `vla-movebelow` — 1
 - [ ] `vla-open` — 1
 - [ ] `vla-put-closed` — 1
 - [ ] `vla-put-layeron` — 1
-- [ ] `vla-put-mode` — 1
+- [x] `vla-put-mode` — 1 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-put-mtextattribute` — 1
 - [ ] `vla-put-truecolor` — 1
 - [ ] `vla-put-value` — 1
 - [ ] `vla-startundomark` — 1
-- [ ] `vla-update` — 1
+- [x] `vla-update` — 1 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
 - [ ] `vla-updatemtextattribute` — 1
 
 ### ActiveX support `vlax-*` (safearray/variant/curve/object — curve fns are geometry, rest is COM)
@@ -639,14 +639,14 @@ références de bloc attribuées portant des XData.
 - [ ] `vlax-curve-getpointatparam` — 19
 - [ ] `vlax-curve-getendpoint` — 15
 - [ ] `vlax-vla-object->ename` — 14
-- [ ] `vlax-invoke` — 13
+- [x] `vlax-invoke` — 13 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
 - [ ] `vlax-curve-getparamatpoint` — 12
 - [ ] `vlax-get-acad-object` — 12
 - [ ] `vlax-curve-getclosestpointto` — 11
 - [ ] `vlax-property-available-p` — 8
 - [ ] `vlax-curve-getendparam` — 7
 - [ ] `vlax-for` — 7
-- [ ] `vlax-get` — 6
+- [x] `vlax-get` — 6 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
 - [ ] `vlax-make-safearray` — 6
 - [ ] `vlax-erased-p` — 5
 - [ ] `vlax-object-released-p` — 5
@@ -657,7 +657,7 @@ références de bloc attribuées portant des XData.
 - [ ] `vlax-safearray-put-element` — 4
 - [ ] `vlax-curve-getfirstderiv` — 3
 - [ ] `vlax-invoke-method` — 3
-- [ ] `vlax-put` — 3
+- [x] `vlax-put` — 3 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
 - [ ] `vlax-curve-getdistatparam` — 2
 - [ ] `vlax-curve-getstartparam` — 2
 - [ ] `vlax-method-applicable-p` — 2

@@ -312,10 +312,13 @@ than signalling (the builtin layer validates gross filter shape)."
               (matches '()))
          (dolist (handle order)
            (let ((entity (gethash handle (cador-entities host))))
-             ;; The whole-database scan returns only graphical entities,
-             ;; exactly like the vendor: dictionaries, xrecords and other
-             ;; non-graphical objects are never selected by ssget.
+             ;; The whole-database scan returns only graphical
+             ;; main-space entities, exactly like the vendor:
+             ;; dictionaries, xrecords and other non-graphical objects
+             ;; are never selected by ssget, and neither are the
+             ;; contents of block definitions.
              (when (and entity (not (entity-handle-deleted-p entity))
+                        (main-space-entity-p entity)
                         (clautolisp.drawing:graphical-entity-p entity)
                         (or (null filter)
                             (entity-matches-filter-p entity filter)))

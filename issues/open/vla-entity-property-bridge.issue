@@ -1,0 +1,215 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vla-entity-property-bridge — COM properties on entity-backed VLA-objects (DXF-group bridge)
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: cad-runtime
+#+DEPENDS: -
+#+BRANCH: feature-vla-entity-property-bridge
+
+* Progress
+
+- *1.8.11 (2026-08-07): the bridge LANDED* for the SCHMS subset —
+  =Handle= / =ObjectName= (read-only), =Layer=, =Linetype=, =Color=,
+  =Lineweight=, =Thickness=, =TextString=, =TagString=,
+  =PromptString=, =StyleName=, =Height=, =Rotation= (radians, the
+  entget convention — no conversion), =Mode=, =Elevation=,
+  =Name= / =EffectiveName= (INSERT), =X/Y/ZScaleFactor=,
+  =InsertionPoint= / =TextAlignmentPoint= (VARIANT-wrapped double
+  SAFEARRAYs), and =Alignment= (acAlignment enum over 72 + 73/74).
+  The representation boundary was solved with runtime hooks
+  (=*com-point-wrap-hook*= / =*com-point-unwrap-hook*=, installed by
+  autolisp-builtins-core like =*vlax-collection-items-hook*=) instead
+  of moving =safearray-data= down — no struct migration needed.
+  Same release: entmake =BLOCK=/=ENDBLK= block-definition creation
+  (see =entmake-symbol-table-records.issue=), main-space filtering of
+  =ssget "X"= / =entlast= / top-level =entnext=, and the
+  =(entnext (tblobjname "BLOCK" name))= block walk.
+- *1.8.12 (2026-08-07): the method surface followed* — third SCHMS
+  round failed on "AutoCAD.Block has no method named INSERTBLOCK".
+  Landed: =InsertBlock= on space / block collections (instantiates an
+  ATTRIB per non-constant ATTDEF, transformed to the placement, SEQEND
+  closed; returns the reference), =GetAttributes= (VARIANT array of
+  the ATTRIB objects, via the new =*com-objects-wrap-hook*=),
+  =HasAttributes= (group 66), entity =Move= / =Rotate= / =Copy= /
+  =Delete= / =Erase= / =Update=, =GetBoundingBox= with the vendor
+  by-reference output symbols (assigned at the builtins layer), and
+  the =vlax-invoke= / =vlax-get= / =vlax-put= builtins (plain-data
+  contract). Subentity runs excluded from collection membership.
+- *1.8.13 (2026-08-07): the classic block-contents walk* — fourth
+  SCHMS round moved past all COM errors (1 OK / 5 FAIL: "attendu 2
+  LINE dans le bloc sigfic, trouve 0"): the fixture checker walks the
+  definition from the BLOCK table record. Landed: the vendors'
+  =(-2 . <first-entity ename>)= group on BLOCK =tblsearch= /
+  =tblnext= views, and =entget= on a symbol-table record's ename
+  (record view + =(-1 . ename)= head + =-2= for blocks).
+- *1.8.14 (2026-08-07): the drawing-command engine* — the fifth round's
+  persistent "attendu 2 LINE…trouve 0" was finally explained by the
+  SIGFIC.LSP source (pjb): the sigfic block factory DRAWS through the
+  command channel (=._donut= / =._line= / =._text _j _tl= / =._solid=)
+  and clones entlast..entnext into the entmake BLOCK pair — and the
+  mock recorded commands without executing them, so the block ended up
+  empty. Landed: a mock command engine executing LINE (with _Close),
+  CIRCLE, TEXT (_Justify options, degree→radian rotation), DONUT
+  (closed two-arc constant-width LWPOLYLINE) and SOLID; unknown
+  commands / malformed input stay record-only, never signal. Also:
+  entlast skips subentities (vendor "last MAIN entity" contract).
+  The full =dessine= shape (draw → clone into block → insertblock →
+  (vlax-ename->vla-object (entlast)) → the checker's -2 walk finding
+  2 LINE) verified end-to-end on =--host mock=.
+- *1.8.15 (2026-08-07): selection sets through COMMAND* — sixth round:
+  "COMMAND argument must be a string, number, point list, or entity
+  name, got <Selection set>". Vendor COMMAND accepts a live selection
+  set wherever a command prompts for object selection (the
+  =(command "._erase" ss "")= cleanup in the block factory). Landed:
+  the runtime token normalization passes picksets through live, and
+  the engine executes =ERASE= (subentity runs included), =MOVE= and
+  =COPY= with selection / handle / =_Last= input. Full fixture flow
+  (draw → ssget → clone into block → erase → insertblock → checker)
+  green e2e.
+- *1.8.17 (2026-08-07): the real factory path — -BLOCK + ROTATE.*
+  =creation_blocs.lsp= (pjb) revealed =schms_creer_bloc='s actual
+  mechanism: when the draw produced entities, the block is created by
+  =(command-s "_.-block" nom pt sel "")= (after an optional
+  =(command-s "_.rotate" sel "" pt ang)=) — NOT the entmake pair,
+  which only runs for an *empty* draw (that branch is why 1.8.12/13
+  registered empty blocks). Landed: engine =-BLOCK= (registers the
+  definition, absorbs the selection translated to the base point) and
+  =ROTATE=; command-name resolution keeps a leading =-= as part of
+  the name (each console form is explicitly defined — pjb), stripping
+  only the =.= / =_= modifiers. Verbatim =schms_creer_bloc= flow
+  (draw → jsmemder → rotate → -block → vla-item → put-explodable →
+  insertblock → checker finds 2 LINE → tatouage via
+  =(vlax-ename->vla-object (cdr (assoc -2 …)))=) green e2e.
+- *1.8.18 (2026-08-07): GetBoundingBox output symbols are BARE
+  safearrays.* Eighth round: 1 OK / 5 ERROR
+  "VLAX-SAFEARRAY->LIST expects a SAFEARRAY, got #<VARIANT …>" — the
+  vendor assigns the two by-reference output symbols bare double
+  SAFEARRAYs (canonical consumption =(vlax-safearray->list ll)=
+  directly); 1.8.17 wrapped them in VARIANTs. Fixed at the builtins
+  interception; regression test in builtin-tests
+  (vla-getboundingbox-assigns-bare-safearrays).
+- *1.8.19 (2026-08-07): every point-group occurrence transforms.*
+  Ninth round: 1 OK / 5 FAIL "COTE = 1 doit se dessiner cote BAS" —
+  pjb's hint ("round-trip … ou les coordonnées") pinned it: the
+  translate / rotate helpers (and GetBoundingBox collection) touched
+  only the FIRST 10/11/12/13 group, but a LWPOLYLINE (the sigfic
+  donut) has one 10 group per vertex — -BLOCK's translation left the
+  second vertex in absolute coordinates, blowing the reference's box
+  upward and breaking the côté BAS/HAUT discrimination. Fixed with
+  %entity-map-point-groups (arity-preserving); bbox collects all
+  occurrences. BAS and HAUT shapes verified discriminating e2e.
+- *1.8.20 (2026-08-07): text boxes honour vertical justification.*
+  Tenth round, same FAIL — but pjb shared =test-cad-SIGFIC.lsp=: the
+  oracle is TOPOLOGICAL (per-element bounding-box y-midpoints ordered
+  texte / trait horizontal / donut). The mock's text box always grew
+  UPWARD (baseline assumption); the sigfic label is =_TL=-justified,
+  so its box must grow DOWNWARD from the anchor. Côté HAUT the error
+  was harmless (label far above), côté BAS it lifted the label's
+  midpoint above the horizontal line (-5.4 > -6) — order violated,
+  =nil= instead of ='BAS=. Fixed: height extension follows 73/74
+  (top→down, middle→both, baseline/bottom→up; MTEXT top attachment).
+  Full topological oracle replayed e2e both sides:
+  COTE=2 → [8.92 > 6 > 0] HAUT; COTE=1 → [-8.92 < -6 < 0] BAS.
+- *CONFIRMED 2026-08-07 (pjb):* =make test-cad-clautolisp=
+  (host=cador, dcl=tui) is *6/6 OK* at 1.8.20 — the [sigfic-cad]
+  suite passes entirely headless: fixture discrimination, all four
+  migrations, and the no-op current-schema case. The SCHMS driver of
+  this issue is satisfied.
+- *Remaining open (downgraded from the SCHMS blocker):* extend the
+  property table as other SCHMS suites consume it
+  (candidates: =TrueColor=, =Closed=, =MTextAttribute=, MTEXT
+  =Rotation= units — SPEC-UNCERTAIN); vendor probes for the
+  SPEC-UNCERTAIN notes (EffectiveName on dynamic blocks,
+  entmakex-on-BLOCK, ENDBLK-terminated entnext walk, glyph-metric
+  bounding boxes).
+
+* Context
+
+Split out of =vla-accessor-family.issue= while resolving the SCHMS
+"AutoCAD.Document has no property named BLOCKS" failure (1.8.10,
+2026-08-07). The document collections (Blocks / Layers / ModelSpace /
+PaperSpace, generic Item / Count / Add / Delete) are now live and
+drawing-backed, and =vlax-ename->vla-object= wraps any entity in an
+identity-stable =AutoCAD.Entity= COM object.
+
+That entity wrapper, however, carries an *empty* properties table:
+every =vla-get-<prop>= / =vla-put-<prop>= on an entity-backed
+VLA-object raises =:unknown-com-property=. The SCHMS+ corpus leans
+heavily on exactly these accessors (counts from
+=schms-call-inventory.md=): =vla-put-textstring= 188,
+=vla-get-layer= 170, =vla-get-insertionpoint= 169, =vla-get-rotation=
+154, =vla-put-height= / =vla-put-textalignmentpoint= 126 each,
+=vla-put-alignment= 125, =vla-get-effectivename= 7, … This is the
+most likely next headless blocker for =make test-cad-clautolisp= once
+the Blocks fix ships.
+
+* Problem
+
+Entity COM properties must read and write the entity's DXF groups —
+the mock stores entities as group-code lists — but three sub-problems
+make this more than a table fill:
+
+1. *Mapping + conversion.* Property ⇄ group with per-entity-kind rules
+   and unit conversions, e.g. =Layer= ⇄ 8, =TextString= ⇄ 1 (TEXT /
+   MTEXT / ATTRIB / ATTDEF), =TagString= ⇄ 2 (ATTRIB / ATTDEF),
+   =Name= / =EffectiveName= ⇄ 2 (INSERT; EffectiveName = Name headless
+   — no dynamic blocks in the mock), =Handle= ⇄ 5 (read-only),
+   =ObjectName= ⇐ kind ("LINE" → "AcDbLine", INSERT →
+   "AcDbBlockReference", …), =Color= ⇄ 62 (256 = ByLayer default),
+   =Height= ⇄ 40, =Rotation= ⇄ 50 **with degrees (DXF) ⇄ radians
+   (ActiveX) conversion**, =Alignment= ⇄ 72 + 73 (TEXT) / 74 (ATTRIB)
+   via the acAlignment enum.
+2. *Representation boundary.* Point-valued properties
+   (=InsertionPoint=, =TextAlignmentPoint=, =GetBoundingBox=) are
+   VARIANT-wrapped double SAFEARRAYs on the vendor side, and SCHMS
+   consumes them through =vlax-variant-value= + =vlax-safearray->list=
+   (196 / 203 uses). The =safearray-data= struct behind
+   =autolisp-safearray= lives in *autolisp-builtins-core*
+   (=api.lisp=), which =cador= cannot depend on (builtins-core is
+   above the host layer). Either the safearray representation moves
+   down into =autolisp-runtime= (where =autolisp-variant= /
+   =autolisp-safearray= already live), or the bridge exposes points as
+   a host-neutral pure value that the builtins layer wraps.
+3. *Write-through.* =vla-put-<prop>= must mutate the entity data the
+   same way =entmod= does (shared helpers, ename cache / al-view
+   invariants preserved), and reject read-only properties (=Handle=,
+   =ObjectName=, =EffectiveName=).
+
+* Proposal
+
+- Move =safearray-data= (struct + accessors + the
+  doubles→safearray→variant builders) from
+  =autolisp-builtins-core/source/api.lisp= down to
+  =clautolisp.autolisp-runtime= next to =autolisp-variant= /
+  =autolisp-safearray=; keep re-exports so builtins code is untouched.
+- In =cador/source/vlax-api.lisp=, extend =host-vlax-get-property= /
+  =-put-property= / =-property-available-p= with an entity-backed
+  branch: resolve =mock-com-object-backing-ename= → entity, then
+  dispatch on a declarative property table
+  =(NAME KINDS GROUP READ-ONLY-P ENCODER DECODER)= covering the SCHMS
+  subset above first.
+- Classify each mapping per AGENTS.md § Dialect Divergence before
+  coding (Rotation radians and the acAlignment enum are documented
+  vendor behaviour; anything less certain gets a SPEC-UNCERTAIN marker
+  + an entry in =deferred-spec-research.issue=).
+- Regression tests at the cador layer (property read/write round-trips
+  against entget) and one end-to-end .lsp on =--host mock= exercising
+  the ATTRIB rewrite pattern the SCHMS migrations use
+  (=vla-get-tagstring= → =vla-put-textstring= →
+  =vla-put-textalignmentpoint= → =vla-put-alignment=).
+
+* Acceptance criteria
+
+- =(vla-get-layer (vlax-ename->vla-object e))= and friends work on
+  =--host mock= for the mapped subset; unknown properties still raise
+  =:unknown-com-property=.
+- Point-valued getters return VARIANT(SAFEARRAY of doubles) consumable
+  by =vlax-variant-value= / =vlax-safearray->list=; putters accept the
+  same, plain lists, and =vlax-3d-point= results.
+- Rotation converts degrees⇄radians; writes are visible to =entget=.
+- SCHMS =make test-cad-clautolisp= progresses past any
+  entity-property =:unknown-com-property= error (verified by pjb's
+  re-run; adjust the mapped subset to what the suite actually
+  consumes).
+- Suite green on SBCL + CCL; RELEASE_NOTES + user-manual §ActiveX
+  updated.

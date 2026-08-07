@@ -1412,6 +1412,28 @@ ActiveX collection's member values; used by the VLAX-FOR special form.
 Set by the builtins layer (which owns the host COM protocol), so the
 runtime need not depend on the host/builtins layers above it.")
 
+(defparameter *com-point-wrap-hook* nil
+  "When non-nil, a function (DOUBLES-LIST) returning the ActiveX
+VARIANT-wrapped double SAFEARRAY the vendor COM surface hands back for a
+point-valued property (InsertionPoint, TextAlignmentPoint, …). Set by
+the builtins layer, which owns the safearray representation; a host
+returning point properties calls it so the runtime/host layers need not
+depend on the builtins layer above them. When nil (builtins not loaded,
+e.g. bare host unit tests) points pass through as plain lists.")
+
+(defparameter *com-point-unwrap-hook* nil
+  "When non-nil, a function (VALUE) returning the CL list of doubles
+inside a VARIANT / SAFEARRAY point value, or NIL when VALUE is neither.
+The write-side companion of *COM-POINT-WRAP-HOOK*: lets a host accept
+vlax-3d-point results for point-valued property writes.")
+
+(defparameter *com-objects-wrap-hook* nil
+  "When non-nil, a function (VALUES-LIST) returning the ActiveX
+VARIANT-wrapped SAFEARRAY of the given values (VLA-objects, typically)
+that object-array-valued COM methods hand back — GetAttributes et al.
+Set by the builtins layer alongside *COM-POINT-WRAP-HOOK*; when nil the
+values pass through as a plain list.")
+
 (defparameter *debug-define-command-hook* nil
   "When non-nil, a function (NAMES FUNCTION DOC) the CLAL-DEFINE-DEBUGGER-COMMAND
 builtin calls to register an AutoLISP-defined debugger command (command
@@ -2539,6 +2561,11 @@ returning the last form's value. Outside a session this is AUTOLISP-EVAL-PROGN."
 ;;;               comma-separated coordinates a user would type
 ;;;               ("1.0,2.0" / "1.0,2.0,3.0").
 ;;;   ename    -> the entity handle text (entity-selection input).
+;;;   pickset  -> the live selection-set value itself, un-normalized —
+;;;               vendor COMMAND accepts a selection set wherever a
+;;;               command prompts for object selection (the classic
+;;;               (command "._erase" ss "") idiom); it has no textual
+;;;               spelling, so the backend receives the object.
 ;;;   others   -> :invalid-command-argument (nil included: vendor
 ;;;               AutoLISP rejects nil command input too).
 ;;;
@@ -2614,10 +2641,15 @@ no command-input reading (nil, symbols, nested lists, functions, …)."
      (format nil "~{~A~^,~}" (mapcar #'format-command-number value)))
     ((typep value 'autolisp-ename)
      (format nil "~A" (autolisp-ename-value value)))
+    ((typep value 'autolisp-pickset)
+     ;; A selection set has no command-line spelling: it passes to the
+     ;; backend live (vendor COMMAND accepts one wherever a command
+     ;; prompts for object selection).
+     value)
     (t
      (signal-autolisp-runtime-error
       :invalid-command-argument
-      "COMMAND argument must be a string, number, point list, or entity name, got ~S."
+      "COMMAND argument must be a string, number, point list, entity name, or selection set, got ~S."
       value))))
 
 (defun dispatch-autolisp-command (values &optional (context (current-evaluation-context)))

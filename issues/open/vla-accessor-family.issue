@@ -2,7 +2,35 @@
 
 # Issue: implement the `vla-get-*` / `vla-put-*` / `vla-<method>` accessor family
 
-- **Status:** open — **P1 + most of P2 landed.** v1.7.19 generic façade +
+- **Status:** open — **REPRIORITISED P1 (2026-08-07).** SCHMS
+  `make test-cad-clautolisp` (host=mock) fails 6/6 [sigfic-cad] tests with
+  "VLA-OBJECT AutoCAD.Document has no property named BLOCKS": the P2
+  remainder below (object-valued mock properties — `Blocks`, `ModelSpace`,
+  `Layers` — plus the collection surface `Item`/`Count`/`Add`) is exactly
+  the gap, and it now blocks the SCHMS CAD suite headless. Tracked in
+  `issues/open/TRIAGE.org` § P1.
+  - **1.8.10 (same day): the collection layer LANDED.** The document's
+    `Blocks` / `Layers` / `ModelSpace` / `PaperSpace` are live,
+    identity-stable, drawing-backed collection objects (members + `Count`
+    recomputed from the block-record / layer tables and the entity store
+    on each access); every collection answers the generic `Item` (0-based
+    integer or case-insensitive name; a missing item raises
+    `:com-item-not-found`, catchable via `vl-catch-all-apply`);
+    `Blocks.Add` / `Layers.Add` create table records; `Block.Delete`
+    erases a definition + its entities (layout blocks refuse). A block
+    object is itself a collection of its entities (entity-backed members
+    round-trip through `vlax-vla-object->ename`). cador vlax-tests cover
+    it (30 new checks); the whole SCHMS chain
+    `vla-get-blocks → vla-item → vla-get-name / vlax-for / vla-add`
+    verified end-to-end on `--host mock`.
+  - **Likely next SCHMS gap (still open, P2):** COM *properties on
+    entity-backed VLA-objects* — `vla-get-layer`, `vla-put-textstring`,
+    `vla-get-insertionpoint`, … (the high-count accessors in
+    `schms-call-inventory.md`) need a DXF-group ↔ COM-property bridge on
+    `AutoCAD.Entity` objects; today their properties table is empty, so
+    any such read raises `:unknown-com-property`. Re-run the SCHMS suite
+    after this pass to confirm what it actually consumes.
+- **Previous status:** open — **P1 + most of P2 landed.** v1.7.19 generic façade +
   vlax-get-acad-object + ActiveDocument; v1.7.20 group A (points / tmatrix /
   safearray extras); v1.7.21 group B (ename<->vla bridge + introspection);
   v1.7.22 groups C+D (ldata, product-key, command registration); v1.7.23

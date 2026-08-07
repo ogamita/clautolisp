@@ -48,7 +48,15 @@ vlax-release-object."
   ;; …), COLLECTION-P is T and COLLECTION-MEMBERS is the ordered list of
   ;; its member VLA-objects, iterated by vlax-for / vlax-map-collection.
   (collection-p nil)
-  (collection-members '()))
+  (collection-members '())
+  ;; Live collections are backed by the drawing database instead of a
+  ;; static member list: COLLECTION-KIND is NIL (static), :BLOCKS
+  ;; (the document's block-definition collection), :LAYERS (the layer
+  ;; table), or (:BLOCK-ENTITIES . NAME) (the entities owned by block
+  ;; NAME — *Model_Space / *Paper_Space / a user block). Their members
+  ;; and Count are recomputed from the drawing on each access, so
+  ;; entmake / DXF loads / Add / Delete are always reflected.
+  (collection-kind nil))
 
 ;;; --- MockHost ---------------------------------------------------
 
@@ -76,10 +84,12 @@ builtin and the get* prompts write to. Tests inspect it.")
                              :accessor cador-command-log
                              :documentation "Reverse-order list of
 recorded (command ...) token sequences — each element is the
-normalized token-string list one HOST-COMMAND call received.
-MockHost has no command engine; recording the tokens (and echoing
-them to PROMPT-OUTPUT) is the whole mock semantics. Read oldest-
-first through HOST-COMMAND-LOG / the CLAL-COMMAND-LOG extension.")
+normalized token-string list one HOST-COMMAND call received. Every
+call is recorded (and echoed to PROMPT-OUTPUT per CMDECHO); the
+model-only drawing commands the engine knows (LINE, CIRCLE, TEXT,
+DONUT, SOLID — see command-api.lisp) are additionally EXECUTED
+against the drawing. Read oldest-first through HOST-COMMAND-LOG /
+the CLAL-COMMAND-LOG extension.")
    (display-log              :initform '()
                              :accessor cador-display-log
                              :documentation "Reverse-order list of
@@ -123,6 +133,13 @@ COM-object ids.")
 singleton AutoCAD.Application returned by (vlax-get-acad-object),
 or NIL before the first call. Lazily created together with its
 ActiveDocument so the vla-get-activedocument chain resolves.")
+   (live-collection-ids      :initform (make-hash-table :test #'equalp)
+                             :reader   cador-live-collection-ids
+                             :documentation "Identity map for the
+drawing-backed (live) COM objects: a stable key string (\"BLOCKS\",
+\"LAYERS\", \"BLOCK:<name>\", \"LAYER:<name>\") -> COM-object id, so
+repeated vla-get-blocks / Item calls return the same VLA object, as
+vendor ActiveX does.")
    (entity-vla-map           :initform (make-hash-table :test #'equal)
                              :accessor cador-entity-vla-map
                              :documentation "Entity hex-handle string ->
@@ -152,6 +169,14 @@ ATTRIB subentity gets its owner (group 330) set to this handle
 unless the caller supplied one, matching the AutoCAD/BricsCAD
 create-sequence contract. A SEQEND closes the run (clears the
 slot). This is session state, not drawing state.")
+   (open-block-definition    :initform nil
+                             :accessor cador-open-block-definition
+                             :documentation "The block-definition run
+opened by an entmake of a (0 . \"BLOCK\") header, as (NAME . HEADER),
+or NIL. While open, every entmade entity is owned by NAME (not model
+space); the closing (0 . \"ENDBLK\") registers the definition in the
+:block-record table + the drawing's block registry and clears the
+slot, per the vendor entmake block-creation contract. Session state.")
    (ename-cache              :initform (make-hash-table :test #'equal)
                              :accessor cador-ename-cache
                              :documentation "Interns AutoLISP ENAMEs by

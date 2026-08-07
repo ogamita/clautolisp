@@ -617,11 +617,82 @@ provides that surface through the host backend:
   works. Before ~(vl-load-com)~ these names are undefined, and a user
   ~(defun vla-get-foo …)~ shadows the façade for that name.
 
+- The document's *collections* are live and drawing-backed:
+  ~(vla-get-blocks doc)~, ~(vla-get-layers doc)~,
+  ~(vla-get-modelspace doc)~ and ~(vla-get-paperspace doc)~ return
+  identity-stable collection objects whose members and ~Count~ are
+  recomputed from the drawing database on each access — a
+  block-record created by ~entmake~, a DXF load or ~Blocks.Add~ is
+  immediately visible. Every collection answers the generic ~Item~
+  method with a 0-based integer index or a case-insensitive name
+  (~(vla-item blocks "*Model_Space")~); a missing item raises an
+  error catchable through ~vl-catch-all-apply~, as the vendor ActiveX
+  exception is. ~Blocks.Add~ / ~Layers.Add~ create table records;
+  ~Delete~ on a block object erases the definition and its owned
+  entities (the ~*Model_Space~ / ~*Paper_Space~ layout blocks refuse,
+  as in AutoCAD). A block object is itself a collection of the
+  entities it owns, so ~vlax-for~ walks block contents; its members
+  are entity-backed VLA-objects that ~vlax-vla-object->ename~
+  round-trips.
+- Block definitions are also created the AutoLISP way: ~entmake~ of a
+  ~(0 . "BLOCK")~ header opens a definition run, the entities entmade
+  next belong to it, and the closing ~(0 . "ENDBLK")~ registers the
+  block and returns its *name* (redefining an existing name replaces
+  its contents; ~"*U"~ with flag bit 0 allocates an anonymous name).
+  Block contents never appear in ~ssget "X"~, ~entlast~ or the
+  top-level ~entnext~ walk; ~(entnext (tblobjname "BLOCK" name))~
+  walks the block's own entities (the classic ATTDEF scan), a BLOCK
+  record's ~tblsearch~ / ~tblnext~ view carries the vendors'
+  ~(-2 . <first-entity>)~ walk entry, and ~entget~ works on a
+  symbol-table record's ename.
+- The mock host executes the model-only *drawing commands*: a
+  ~(command "._line" p1 p2 "")~ (and ~CIRCLE~, ~TEXT~ with
+  ~_Justify~, ~DONUT~, ~SOLID~) creates real entities on the current
+  layer — the create-by-command / collect-by-~entlast~ idiom works
+  headless. Every call is still recorded on the command log
+  (~clal-command-log~) and echoed per ~CMDECHO~; commands outside the
+  engine's subset remain record-only.
+- A ~(command ...)~ argument may be a *selection set* (the vendor
+  contract for object-selection prompts): ~(command "._erase" ss "")~
+  erases the set's members (and their subentity runs); ~MOVE~ and
+  ~COPY~ take a selection, a base point and a second point. Entity
+  handles and ~_Last~ work as selection input too.
+- ~ROTATE~ (selection, base point, angle) and ~-BLOCK~ (name, base
+  point, selection) complete the block-factory path: ~-BLOCK~
+  registers the definition and absorbs the selected entities,
+  translated to the base point, out of model space. A leading ~-~ is
+  part of the command's *name* (each console form is defined
+  explicitly), unlike the ~.~ / ~_~ prefixes which are modifiers.
+- Entity ActiveX *properties* read and write the entity's DXF groups:
+  on an entity-backed VLA-object, ~TextString~ / ~TagString~ /
+  ~Layer~ / ~Color~ / ~Height~ / ~Rotation~ (radians, the entget
+  convention) / ~Alignment~ (acAlignment enum) / ~Name~ and
+  ~EffectiveName~ (INSERT) / ~Handle~ and ~ObjectName~ (read-only) /
+  … are live views of the entity data, and the point-valued
+  ~InsertionPoint~ / ~TextAlignmentPoint~ come back as
+  VARIANT-wrapped double SAFEARRAYs —
+  ~(vlax-safearray->list (vlax-variant-value …))~ — and accept
+  ~vlax-3d-point~ results (or plain lists) on writes.
+- Block references work end-to-end: ~(vla-insertblock space pt name
+  xs ys zs rot)~ creates the INSERT with an ATTRIB per non-constant
+  ATTDEF of the definition (transformed to the placement);
+  ~(vla-getattributes ref)~ returns them as a VARIANT array —
+  or ~(vlax-invoke ref 'GetAttributes)~ as a plain list, since
+  ~vlax-invoke~ / ~vlax-get~ / ~vlax-put~ implement the vendor
+  plain-LISP-data contract. Entity methods ~Move~ / ~Rotate~ /
+  ~Copy~ / ~Delete~ / ~Erase~ / ~Update~ mutate the drawing, and
+  ~(vla-getboundingbox obj 'll 'ur)~ assigns the two quoted output
+  symbols, as the vendors do.
+
 Example (headless, against the mock host):
 
 : (vl-load-com)
 : (setq doc (vla-get-activedocument (vlax-get-acad-object)))
 : (vla-get-name doc)            ; => "Drawing.dwg"
+: (setq blocks (vla-get-blocks doc))
+: (vla-get-count blocks)        ; => 2   (*Model_Space, *Paper_Space)
+: (vla-get-name (vla-item blocks 0)) ; => "*Model_Space"
+: (vlax-for b blocks (princ (vla-get-name b)) (princ " "))
 
 ** DCL dialogs — renderer selection and the "-" convention
 An AutoLISP program that puts up a DCL dialog (~load_dialog~ /

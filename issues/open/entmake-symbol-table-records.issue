@@ -3,6 +3,15 @@ entmake-symbol-table-records — create LAYER/LTYPE/STYLE/BLOCK rows from AutoLI
 
 Status: DEFERRED (schms-data-selection 1.6.8). Parent: drawing-data-structures-parity.
 
+PARTIAL 2026-08-07 (1.8.11): the BLOCK/ENDBLK *block-definition* path is
+now implemented on the entmake side (cador entity-api: a (0 . "BLOCK")
+header opens a definition run, entities entmade next are block-owned,
+ENDBLK registers the :block-record row + the drawing block registry and
+returns the block's name; redefinition replaces contents, "*U" + flag
+bit 0 allocates an anonymous name). What REMAINS deferred here is the
+symbol-table *row* creation for LAYER/LTYPE/STYLE/VPORT/DIMSTYLE/UCS/
+VIEW (and a bare BLOCK_RECORD row without a definition run).
+
 Today the standard symbol tables are pre-seeded and answer
 TBLSEARCH/TBLNEXT/TBLOBJNAME, and APPID grows through REGAPP. What is NOT
 yet supported is CREATING a symbol-table record from AutoLISP with

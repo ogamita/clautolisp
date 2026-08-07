@@ -6108,3 +6108,24 @@ itself fails loudly."
             (acad_strlsort '(\"c\" \"b\" \"a\"))"
            :setup-fn #'%install-cador-and-core)))
     (is (null result))))
+
+(test vla-getboundingbox-assigns-bare-safearrays
+  ;; Vendor by-reference contract: (vla-getboundingbox obj 'll 'ur)
+  ;; assigns the two quoted output symbols BARE safearrays — the
+  ;; canonical consumption is (vlax-safearray->list ll) directly, no
+  ;; vlax-variant-value. (Regression: 1.8.17 wrapped them in variants,
+  ;; breaking the SCHMS geometry checks.)
+  (let ((result (%vla "(vl-load-com)
+     (entmake (list (cons 0 \"TEXT\") (cons 8 \"0\")
+                    (cons 10 (list 1.0 2.0 0.0)) (cons 40 2.5)
+                    (cons 1 \"boite\")))
+     (setq bbobj (vlax-ename->vla-object (entlast)))
+     (vla-getboundingbox bbobj 'bbmin 'bbmax)
+     (list (vlax-safearray->list bbmin) (vlax-safearray->list bbmax))")))
+    (is (consp result))
+    (let ((min-corner (first result))
+          (max-corner (second result)))
+      (is (= 1.0d0 (first min-corner)))
+      (is (= 2.0d0 (second min-corner)))
+      ;; The text height extends the box upward: 2.0 + 2.5.
+      (is (= 4.5d0 (second max-corner))))))

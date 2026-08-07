@@ -21,6 +21,7 @@
                 #:drawing-named-object-dictionary
                 #:drawing-header-variables
                 #:drawing-classes
+                #:drawing-blocks
                 #:entity-handle
                 #:make-entity-handle
                 #:entity-handle-id
@@ -235,6 +236,9 @@
    #:mock-com-object-properties
    #:mock-com-object-methods
    #:mock-com-object-released-p
+   #:mock-com-object-collection-p
+   #:mock-com-object-collection-members
+   #:mock-com-object-collection-kind
    #:cador-com-objects
    #:cador-next-com-counter
    #:cador-allocate-com-id
