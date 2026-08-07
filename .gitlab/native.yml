@@ -73,6 +73,14 @@ stages:
     - when: manual
       allow_failure: true
 
+# manual-only: NEVER auto-start, even when the runner is online. For a job
+# that is known not to work headlessly and would otherwise hang the runner.
+.gate-macos-manual:
+  tags: [macos, arm64, shell]
+  rules:
+    - when: manual
+      allow_failure: true
+
 # --- unit suites on the real OS --------------------------------------------
 test:clautolisp:macos:
   extends: .gate-macos-hard
@@ -170,8 +178,13 @@ verify:bricscad-hidden-ui:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-bricscad-hidden-ui.ps1
 
+# MANUAL-ONLY (not auto-gated): --mode automation on macOS is not yet
+# validated — BricsCAD launches but the osascript/AppleScript path does not
+# drive it (it sits interactive), so an auto-run would just hang the serial
+# macOS runner. Kept clickable, pending the alfe-bricscad-automation-macos
+# decision (batch works; automation is the open question).
 verify:bricscad-automation:macos:
-  extends: .gate-macos-hard
+  extends: .gate-macos-manual
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
