@@ -539,6 +539,36 @@ release:windows:x86-64:
 # process spawning) gets validated on the real OS. They use the machine's
 # own sbcl + ~/quicklisp (both runners build releases, so the toolchain is
 # there). allow_failure: intermittent laptops must never block a pipeline.
+# --- Auto-start native jobs when their intermittent runner is ONLINE -------
+# The macOS/Windows runners are intermittent laptops. Their jobs are declared
+# `when: manual` (so an offline runner leaves them clickable, non-blocking,
+# never stuck-pending, never red — the manual fallback). This orchestrator
+# runs FIRST (.pre) on the always-on Linux runner, asks the API which native
+# runners are ONLINE, and `play`s this pipeline's matching manual jobs — so an
+# ONLINE runner => the native jobs start automatically. See
+# scripts/ci-autostart-native-runners.py and runner-availability-gating.issue.
+#
+# FAIL-SAFE: with no RUNNER_STATUS_TOKEN (or any API error) it plays nothing
+# and exits 0 — every native job stays manual, i.e. today's behaviour. It can
+# never wrongly auto-start a job or block a pipeline. release:* / benchmark:*
+# are excluded (deliberately manual). Needs a CI/CD variable
+# RUNNER_STATUS_TOKEN with `api` scope (playing a job is a write).
+autostart:native-runners:
+  stage: .pre
+  tags: [linux, amd64, docker]
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  rules:
+    - if: '$CI_COMMIT_TAG'          # releases: native jobs are already mandatory
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      allow_failure: true
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      allow_failure: true
+    - when: never
+  script:
+    - python3 scripts/ci-autostart-native-runners.py
+
 .platform-test-common:
   stage: test
   rules:

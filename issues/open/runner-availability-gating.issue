@@ -1,0 +1,72 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: runner-availability-gating — auto-start native (macOS/Windows) jobs only when their runner is online
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: RUNNER_STATUS_TOKEN (a CI/CD variable pjb must add)
+#+BRANCH: feature-runner-availability-gating
+
+* Context
+
+The macOS/Windows CI runners are intermittent laptops. Native jobs
+therefore can't simply be `when: on_success`: when the runner is offline
+they pile up as stuck-pending jobs and (if not allow_failure) redden the
+pipeline. Until now the manual jobs (vendor:probes, verify:*, pathname:*,
+benchmark, release) never auto-ran even when the runner WAS online, and
+the test:* jobs auto-ran on master but piled up when the runner was down.
+
+pjb's request: two "is-the-runner-up?" probes, from which the native jobs
+depend so they launch AUTOMATICALLY when the runner is online, and fall
+back to MANUAL when it is offline (manual trigger always available).
+
+* Problem / GitLab constraint
+
+`rules:` are evaluated at pipeline-CREATION time and cannot see a probe
+job's runtime result in the same pipeline. So "on_success if online else
+manual" via rules needs the runner status known at creation — impossible
+for a same-pipeline probe. Two viable shapes:
+  - a parent→child pipeline (detect job passes MACOS/WINDOWS=online var to
+    a child whose native jobs use rules on it) — clean, but moves every
+    native job into a child YAML (big refactor; breaks parent↔child
+    needs:/artifacts);
+  - an ORCHESTRATOR that keeps every native job `when: manual` (so offline
+    == the manual fallback) and, from the always-on Linux runner, `play`s
+    the manual jobs whose runner is online.
+
+* Implemented (orchestrator, chosen for zero disruption)
+
+- scripts/ci-autostart-native-runners.py + the `.pre` job
+  `autostart:native-runners` in .gitlab-ci.yml. It queries
+  GET /projects/:id/runners?tag_list={macos,windows} for an online runner,
+  then `play`s this pipeline's manual jobs carrying that tag. Excludes
+  release:* / benchmark:*. FAIL-SAFE: no token / API error => plays
+  nothing => every native job stays manual (today's behaviour). Validated:
+  the runners API filters by tag and reports online/offline correctly;
+  glab ci lint is green.
+
+* To activate (pjb)
+
+1. Add a CI/CD variable RUNNER_STATUS_TOKEN = a project access token with
+   `api` scope (playing a job is a write; read_api is not enough). Masked;
+   protected if auto-start should only happen on protected refs (note: an
+   MR pipeline from a non-protected branch then won't get the token, so its
+   native jobs stay manual — acceptable, or make it unprotected).
+2. Watch a pipeline: online runners => their native manual jobs auto-start;
+   offline => they stay manual.
+
+* Follow-ups
+
+- Phase 2 (optional): flip test:* (.platform-test-common) and the encoding
+  jobs from `on_success` to `when: manual` so they too fall back to manual
+  (no stuck-pending) when the runner is offline, and are auto-started by
+  this orchestrator when online. Deferred until the token is confirmed, so
+  master test coverage is not left manual-without-auto in the interim.
+- Tune SKIP_PREFIXES (or add a per-job marker) if some native jobs should
+  NOT auto-run on every push (e.g. the AutoCAD probes while unlicensed).
+
+* Acceptance criteria
+
+- With RUNNER_STATUS_TOKEN set: native manual jobs whose runner is online
+  start automatically; offline ones stay manual; pipeline never reddens or
+  piles up because of an offline laptop.
+- Without the token: identical to today (all native jobs manual).
