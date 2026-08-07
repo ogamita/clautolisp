@@ -110,8 +110,13 @@
   (top→down, middle→both, baseline/bottom→up; MTEXT top attachment).
   Full topological oracle replayed e2e both sides:
   COTE=2 → [8.92 > 6 > 0] HAUT; COTE=1 → [-8.92 < -6 < 0] BAS.
-- *Remaining open:* confirm against the SCHMS =test-cad-clautolisp=
-  re-run and extend the property table to what it still consumes
+- *CONFIRMED 2026-08-07 (pjb):* =make test-cad-clautolisp=
+  (host=cador, dcl=tui) is *6/6 OK* at 1.8.20 — the [sigfic-cad]
+  suite passes entirely headless: fixture discrimination, all four
+  migrations, and the no-op current-schema case. The SCHMS driver of
+  this issue is satisfied.
+- *Remaining open (downgraded from the SCHMS blocker):* extend the
+  property table as other SCHMS suites consume it
   (candidates: =TrueColor=, =Closed=, =MTextAttribute=, MTEXT
   =Rotation= units — SPEC-UNCERTAIN); vendor probes for the
   SPEC-UNCERTAIN notes (EffectiveName on dynamic blocks,
