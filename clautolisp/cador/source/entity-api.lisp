@@ -590,13 +590,18 @@ condoned: it is a no-op under autocad, clautolisp and strict.~%"
          ename)))
 
 (defmethod host-entlast ((host cador))
-  ;; Most recently created main-space entity that is not deleted
-  ;; (block-definition contents are never entlast, as in the vendors).
+  ;; Most recently created main-space MAIN entity that is not deleted:
+  ;; block-definition contents are never entlast, and neither are
+  ;; subentities (ATTRIB / VERTEX / SEQEND) — the vendor contract, so
+  ;; (entlast) after an attribute-bearing insert names the INSERT.
   ;; creation-order is newest-first.
   (let ((drawing (cador-active-drawing host)))
     (loop for handle in (clautolisp.drawing:drawing-creation-order drawing)
           for entity = (clautolisp.drawing:find-entity drawing handle)
-          when (and entity (main-space-entity-p entity))
+          when (and entity
+                    (main-space-entity-p entity)
+                    (not (member (entity-handle-kind entity)
+                                 '(:attrib :vertex :seqend))))
             return (handle->ename host handle)
           finally (return nil))))
 

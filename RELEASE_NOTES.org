@@ -513,6 +513,17 @@ separate binary for tool integrators.
   definition — and ~entget~ on a symbol-table record's ename (from
   ~tblobjname~) returns the record's group-code view, ~(-1 . ename)~
   head and ~-2~ included for blocks.
+- The mock host grew a *drawing-command engine*: ~(command ...)~ still
+  records and echoes every call, and now EXECUTES the model-only
+  drawing commands the SCHMS corpus draws with — ~LINE~ (with
+  ~_Close~), ~CIRCLE~, ~TEXT~ (with the ~_Justify~ options, decimal-
+  degree rotation input stored as radians), ~DONUT~ (the vendors'
+  closed two-arc constant-width LWPOLYLINE) and ~SOLID~ — creating
+  real entities on the current layer that ~entlast~ / ~entnext~ /
+  reactors see. Unknown commands and malformed input stay record-only.
+  ~entlast~ now also skips subentities (ATTRIB / VERTEX / SEQEND), so
+  ~(entlast)~ after an attribute-bearing insert names the INSERT, as
+  the vendors do.
 - ~acad_strlsort~ now really sorts: it returns a *new* list of the
   input strings in ascending, case-sensitive, ordinal order (upper
   before lower; accented / non-ASCII letters after the ASCII range),

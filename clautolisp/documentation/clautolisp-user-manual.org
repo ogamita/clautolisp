@@ -645,6 +645,13 @@ provides that surface through the host backend:
   record's ~tblsearch~ / ~tblnext~ view carries the vendors'
   ~(-2 . <first-entity>)~ walk entry, and ~entget~ works on a
   symbol-table record's ename.
+- The mock host executes the model-only *drawing commands*: a
+  ~(command "._line" p1 p2 "")~ (and ~CIRCLE~, ~TEXT~ with
+  ~_Justify~, ~DONUT~, ~SOLID~) creates real entities on the current
+  layer — the create-by-command / collect-by-~entlast~ idiom works
+  headless. Every call is still recorded on the command log
+  (~clal-command-log~) and echoed per ~CMDECHO~; commands outside the
+  engine's subset remain record-only.
 - Entity ActiveX *properties* read and write the entity's DXF groups:
   on an entity-backed VLA-object, ~TextString~ / ~TagString~ /
   ~Layer~ / ~Color~ / ~Height~ / ~Rotation~ (radians, the entget

@@ -42,6 +42,20 @@
   =(-2 . <first-entity ename>)= group on BLOCK =tblsearch= /
   =tblnext= views, and =entget= on a symbol-table record's ename
   (record view + =(-1 . ename)= head + =-2= for blocks).
+- *1.8.14 (2026-08-07): the drawing-command engine* — the fifth round's
+  persistent "attendu 2 LINE…trouve 0" was finally explained by the
+  SIGFIC.LSP source (pjb): the sigfic block factory DRAWS through the
+  command channel (=._donut= / =._line= / =._text _j _tl= / =._solid=)
+  and clones entlast..entnext into the entmake BLOCK pair — and the
+  mock recorded commands without executing them, so the block ended up
+  empty. Landed: a mock command engine executing LINE (with _Close),
+  CIRCLE, TEXT (_Justify options, degree→radian rotation), DONUT
+  (closed two-arc constant-width LWPOLYLINE) and SOLID; unknown
+  commands / malformed input stay record-only, never signal. Also:
+  entlast skips subentities (vendor "last MAIN entity" contract).
+  The full =dessine= shape (draw → clone into block → insertblock →
+  (vlax-ename->vla-object (entlast)) → the checker's -2 walk finding
+  2 LINE) verified end-to-end on =--host mock=.
 - *Remaining open:* confirm against the SCHMS =test-cad-clautolisp=
   re-run and extend the property table to what it still consumes
   (candidates: =TrueColor=, =Closed=, =MTextAttribute=, MTEXT

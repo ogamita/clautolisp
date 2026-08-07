@@ -84,10 +84,12 @@ builtin and the get* prompts write to. Tests inspect it.")
                              :accessor cador-command-log
                              :documentation "Reverse-order list of
 recorded (command ...) token sequences — each element is the
-normalized token-string list one HOST-COMMAND call received.
-MockHost has no command engine; recording the tokens (and echoing
-them to PROMPT-OUTPUT) is the whole mock semantics. Read oldest-
-first through HOST-COMMAND-LOG / the CLAL-COMMAND-LOG extension.")
+normalized token-string list one HOST-COMMAND call received. Every
+call is recorded (and echoed to PROMPT-OUTPUT per CMDECHO); the
+model-only drawing commands the engine knows (LINE, CIRCLE, TEXT,
+DONUT, SOLID — see command-api.lisp) are additionally EXECUTED
+against the drawing. Read oldest-first through HOST-COMMAND-LOG /
+the CLAL-COMMAND-LOG extension.")
    (display-log              :initform '()
                              :accessor cador-display-log
                              :documentation "Reverse-order list of
