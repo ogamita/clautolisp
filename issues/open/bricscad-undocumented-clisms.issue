@@ -178,3 +178,52 @@ BricsCAD remains (pjb, on the now-available runners).
     per-construct clautolisp impl decisions — setf likely a setq alias on
     symbol places once the return is decoded; let/let* after semantics are
     pinned; the [ext-bricscad-undocumented] dialect warnings).
+
+== Harvest RESULTS (2026-08-07, real BricsCAD V26 / macOS runner) ==
+
+vendor:probes:bricscad:macos (pipeline on master @ b97d9fd) ran the probe
+against real BricsCAD. Transcript
+(dist/vendor-probes/bricscad/bricscad-extensions.log):
+
+  EXTPROBE SETQ-99=99          EXTPROBE SETQ-NIL=nil
+  EXTPROBE SETF-NIL=2          EXTPROBE SETF-1=2      EXTPROBE SETF-2=2
+  EXTPROBE SETF-99=2           EXTPROBE SETF-STRING=2 EXTPROBE SETF-LIST=2
+  EXTPROBE SETF-THEN-FOO=nil
+  EXTPROBE LET-SUM=3           EXTPROBE LET-PARALLEL=(1 10)
+  EXTPROBE LETSTAR-SEQ=ERROR:no function definition <LET*>
+  EXTPROBE REST-BINDS=(2 3 4)  EXTPROBE AMP-BINDS=ERROR:too few / too many
+
+Confirmed per-construct (this is the vendor-confirmation evidence Plan
+step 2/3 wanted):
+
+  - setf : returns the CONSTANT 2 for every value (nil/1/2/99/"hello"/
+    '(a b)) => the "2" is an INTERNAL SENTINEL, not the assigned value.
+    And SETF-THEN-FOO=nil: after (setf foo 42), foo is still nil => setf
+    does NOT assign at all on a symbol place. So BricsCAD's `setf' is NOT
+    a setq alias; it is a quirky non-assigning op returning a fixed 2.
+    DECISION (revises Plan step 3b): clautolisp must NOT imitate this.
+    If clautolisp ever offers `setf' it should be a clean clautolisp
+    EXTENSION (CL-style generalised assignment), never the BricsCAD "2"
+    behaviour; under --dialect bricscad, `setf' on a symbol is best left
+    unbound/emitting [ext-bricscad-undocumented] rather than faked.
+    This also resolves deferred-bricscad-setq-nil-returns-2 (closed).
+
+  - let : real PARALLEL binding confirmed — (setq x 10)(let ((x 1)(y x))
+    (list x y)) => (1 10) (y sees the OUTER x, not the let's x=1).
+    LET-SUM=3. So `let' IS a load-bearing BricsCAD extension worth
+    implementing in clautolisp with parallel-binding semantics.
+
+  - let* : DOES NOT EXIST on BricsCAD V26 ("no function definition
+    <LET*>"). This REFUTES the issue's original assumption that let* is a
+    silent extension. Do NOT add let* under --dialect bricscad; if
+    clautolisp wants let* it is a pure clautolisp extension.
+
+  - &rest : works ((2 3 4)); bare `&' : rejected ("too few / too many").
+    Confirms the &rest spelling already implemented (variadic-functions),
+    and that bare `&' must NOT be accepted under --dialect bricscad.
+
+Remaining (Plan steps 2-4, unchanged): write
+bricscad-undocumented-extensions.org from this transcript; implement `let'
+(parallel) as the one genuine extension; wire [ext-bricscad-undocumented]
+warnings for setf/let*/& under the strict/autocad dialects. A Bricsys
+support ticket to confirm the setf-"2" is intentional is still wanted.
