@@ -720,7 +720,7 @@ benchmark:clautolisp:windows:
 
 benchmark:bricscad:macos:
   extends: .benchmark-cad
-  tags: [macos, arm64, shell]
+  tags: [macos, arm64, shell, bricscad]
   needs: [{ job: "build:alfe:macos", artifacts: true }]
   script:
     - mkdir -p dist/bench
@@ -728,7 +728,7 @@ benchmark:bricscad:macos:
 
 benchmark:bricscad:windows:
   extends: .benchmark-cad
-  tags: [windows, amd64, shell]
+  tags: [windows, amd64, shell, bricscad]
   needs: [{ job: "build:alfe:windows", artifacts: true }]
   variables:
     AUTOLISP_BRICSCAD_PROFILE: '<<Profil sans nom>>'
@@ -739,7 +739,7 @@ benchmark:bricscad:windows:
 
 benchmark:autocad:windows:
   extends: .benchmark-cad
-  tags: [windows, amd64, shell]
+  tags: [windows, amd64, shell, autocad]
   needs: [{ job: "build:alfe:windows", artifacts: true }]
   script:
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
