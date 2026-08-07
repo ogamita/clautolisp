@@ -498,8 +498,10 @@ separate binary for tool integrators.
   ~Rotate~ (radians, group 50 follows), ~Copy~, ~Delete~ / ~Erase~
   (taking the subentity run along), ~Update~ and ~GetBoundingBox~ —
   the latter honouring the vendor by-reference contract
-  ~(vla-getboundingbox obj 'll 'ur)~ (assigns the two quoted symbols
-  VARIANT point arrays). Subentity runs (ATTRIB / VERTEX / SEQEND) are
+  ~(vla-getboundingbox obj 'll 'ur)~: the two quoted output symbols
+  receive *bare* double SAFEARRAYs — consumed directly with
+  ~(vlax-safearray->list ll)~, no ~vlax-variant-value~, exactly as on
+  the vendors. Subentity runs (ATTRIB / VERTEX / SEQEND) are
   no longer listed as space / block collection members, matching the
   vendors.
 - ~vlax-invoke~, ~vlax-get~ and ~vlax-put~ (spec 70000 ff.) join the

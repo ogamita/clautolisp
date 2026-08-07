@@ -80,6 +80,14 @@
   (draw → jsmemder → rotate → -block → vla-item → put-explodable →
   insertblock → checker finds 2 LINE → tatouage via
   =(vlax-ename->vla-object (cdr (assoc -2 …)))=) green e2e.
+- *1.8.18 (2026-08-07): GetBoundingBox output symbols are BARE
+  safearrays.* Eighth round: 1 OK / 5 ERROR
+  "VLAX-SAFEARRAY->LIST expects a SAFEARRAY, got #<VARIANT …>" — the
+  vendor assigns the two by-reference output symbols bare double
+  SAFEARRAYs (canonical consumption =(vlax-safearray->list ll)=
+  directly); 1.8.17 wrapped them in VARIANTs. Fixed at the builtins
+  interception; regression test in builtin-tests
+  (vla-getboundingbox-assigns-bare-safearrays).
 - *Remaining open:* confirm against the SCHMS =test-cad-clautolisp=
   re-run and extend the property table to what it still consumes
   (candidates: =TrueColor=, =Closed=, =MTextAttribute=, MTEXT

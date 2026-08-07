@@ -5723,17 +5723,19 @@ issues/open/clautolisp-module-app-extensions.issue."
              (every (lambda (argument) (typep argument 'autolisp-symbol))
                     args))
         ;; Vendor by-reference contract: (vla-getboundingbox obj 'll 'ur)
-        ;; assigns the two quoted OUTPUT symbols VARIANT-wrapped double
-        ;; SAFEARRAYs of the box corners and returns nil. The host hands
-        ;; the plain ((minx miny minz) (maxx maxy maxz)) box up; the
-        ;; assignment happens here, where the evaluator's symbols live.
+        ;; assigns the two quoted OUTPUT symbols bare double SAFEARRAYs
+        ;; of the box corners — NOT variants: the canonical consumption
+        ;; is (vlax-safearray->list ll) directly — and returns nil. The
+        ;; host hands the plain ((minx miny minz) (maxx maxy maxz)) box
+        ;; up; the assignment happens here, where the evaluator's
+        ;; symbols live.
         (let ((box (host-vlax-invoke-method (current-evaluation-host) vla
                                             method-name '())))
           (when (consp box)
             (clautolisp.autolisp-runtime:set-autolisp-symbol-value
-             (first args) (%safearray-variant (%doubles->safearray (first box))))
+             (first args) (%doubles->safearray (first box)))
             (clautolisp.autolisp-runtime:set-autolisp-symbol-value
-             (second args) (%safearray-variant (%doubles->safearray (second box)))))
+             (second args) (%doubles->safearray (second box))))
           nil)
         (host-vlax-invoke-method (current-evaluation-host) vla
                                  method-name args))))
