@@ -36,6 +36,29 @@ Returns the context."
     (is (null result))
     (is (eql 22 (autolisp-errno)))))
 
+(test findfile-unmappable-path-returns-nil-not-cl-error
+  ;; Regression (MSYS2 runner, 2026-08-07): on a cross-frame host the
+  ;; pathname-mapping layer raises UNMAPPABLE-PATH for an absolute path with
+  ;; no mount entry. That CL condition must NOT escape the AutoLISP builtin:
+  ;; findfile of a missing/unmappable path returns nil (errno 22), never a
+  ;; raw UNMAPPABLE-PATH. Force a cross-frame (WSL run / native build) pair
+  ;; so map-in genuinely hits the unmappable branch on this Linux host.
+  (setup-mock-evaluation-context)
+  (set-autolisp-errno 0)
+  (let ((clautolisp.pathname-mapping:*run-environment*
+          (clautolisp.pathname-mapping:make-environment-for-kind
+           :wsl :home "/home/pjb"))
+        (clautolisp.pathname-mapping:*build-environment*
+          (clautolisp.pathname-mapping:make-environment-for-kind
+           :native-windows :home "C:/Users/pjb")))
+    (let ((result (handler-case
+                      (clautolisp.autolisp-builtins-core::builtin-findfile
+                       (make-autolisp-string "/no/such/rootfs/path/xyz"))
+                    (clautolisp.pathname-mapping:unmappable-path () :leaked))))
+      (is (null result)
+          "findfile of an unmappable path must return nil, got ~S" result)
+      (is (eql 22 (autolisp-errno))))))
+
 (test errno-findfile-on-hit-resets-to-0
   (setup-mock-evaluation-context)
   (set-autolisp-errno 99)
