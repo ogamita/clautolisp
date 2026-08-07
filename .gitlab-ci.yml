@@ -592,28 +592,10 @@ native:pipeline:
     # would hang this parent job (re-creating the pile-up we're avoiding). The
     # child runs independently; its jobs are allow_failure anyway.
 
-.alfe-build:
-  stage: build
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
-  script:
-    - make -C autolisp-front-end build-alfe-sbcl
-  artifacts:
-    name: "alfe-$CI_COMMIT_SHORT_SHA"
-    paths: [autolisp-front-end/tools/alfe/bin/]
-    expire_in: 1 day
-  rules:
-    - *on-release-mandatory
-    - when: manual
-      allow_failure: true
-
-build:alfe:windows:
-  extends: .alfe-build
-  tags: [windows, amd64, shell]
-
-build:alfe:macos:
-  extends: .alfe-build
-  tags: [macos, arm64, shell]        # thalassa (intermittent)
+# NOTE: build:alfe:{macos,windows} moved to the child pipeline
+# .gitlab/native.yml so they are runner-availability gated (on_success when
+# the runner is online — a native "does alfe build on this OS" check). The
+# benchmark:*:cad jobs below no longer `needs:` them; they self-build alfe.
 
 .encoding-experiment:
   stage: test
@@ -721,18 +703,18 @@ benchmark:clautolisp:windows:
 benchmark:bricscad:macos:
   extends: .benchmark-cad
   tags: [macos, arm64, shell, bricscad]
-  needs: [{ job: "build:alfe:macos", artifacts: true }]
   script:
+    - make -C autolisp-front-end build-alfe-sbcl
     - mkdir -p dist/bench
     - make -C autolisp-benchmark run-bricscad-macos 2>&1 | tee dist/bench/bricscad-macos.txt
 
 benchmark:bricscad:windows:
   extends: .benchmark-cad
   tags: [windows, amd64, shell, bricscad]
-  needs: [{ job: "build:alfe:windows", artifacts: true }]
   variables:
     AUTOLISP_BRICSCAD_PROFILE: '<<Profil sans nom>>'
   script:
+    - make -C autolisp-front-end build-alfe-sbcl
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
     - make -C autolisp-benchmark run-bricscad-windows *>&1 | Out-File -Encoding utf8 dist/bench/bricscad-windows.txt
     - Get-Content dist/bench/bricscad-windows.txt
@@ -740,8 +722,8 @@ benchmark:bricscad:windows:
 benchmark:autocad:windows:
   extends: .benchmark-cad
   tags: [windows, amd64, shell, autocad]
-  needs: [{ job: "build:alfe:windows", artifacts: true }]
   script:
+    - make -C autolisp-front-end build-alfe-sbcl
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
     - make -C autolisp-benchmark run-autocad-windows *>&1 | Out-File -Encoding utf8 dist/bench/autocad-windows.txt
     - Get-Content dist/bench/autocad-windows.txt

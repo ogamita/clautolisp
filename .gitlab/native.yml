@@ -326,3 +326,31 @@ vendor:probes:bricscad:macos:
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - bash scripts/run-vendor-probes.sh --backend bricscad --keep-workdir "$PROBE_KEEP_WORKDIR"
+
+# --- native "does alfe build on this OS" check (no CAD) ---------------------
+# Gated like the other native jobs: auto when the runner is online. Not a CAD
+# job, so plain [os, arch, shell] tags (may run on the higher-concurrency
+# runner). The binary is published as an artifact for download.
+build:alfe:macos:
+  extends: .gate-macos-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+  artifacts:
+    name: "alfe-$CI_COMMIT_SHORT_SHA"
+    paths: [autolisp-front-end/tools/alfe/bin/]
+    expire_in: 1 day
+
+build:alfe:windows:
+  extends: .gate-windows-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+  artifacts:
+    name: "alfe-$CI_COMMIT_SHORT_SHA"
+    paths: [autolisp-front-end/tools/alfe/bin/]
+    expire_in: 1 day
