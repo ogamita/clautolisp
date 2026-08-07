@@ -1,59 +1,133 @@
-# Child pipeline: native (macOS / Windows) jobs, gated on runner availability.
+# Child pipeline: native (macOS / Windows) intermittent-runner jobs, gated on
+# runner availability (runner-availability-gating.issue).
 #
-# Triggered by the parent's `native:pipeline` job, which passes MACOS_RUNNER /
-# WINDOWS_RUNNER (online|offline) computed by detect:runners. Here they are
-# ordinary variables, KNOWN at this pipeline's creation, so the rules: below
-# choose:
+# Triggered by the parent's `native:pipeline`, which passes MACOS_RUNNER /
+# WINDOWS_RUNNER (online|offline) from detect:runners. Here they are ordinary
+# variables, KNOWN at this pipeline's creation, so the gate rules: below pick
 #   online  -> when: on_success  (the job runs automatically)
 #   offline -> when: manual      (fallback: clickable, non-blocking, never
 #                                 stuck-pending, never reddens the pipeline)
-# A release tag makes the native jobs mandatory (on_success) regardless.
+# and a release-* TAG keeps the jobs that used to be release-mandatory
+# mandatory (block the release).
 #
-# Child pipelines do NOT inherit the parent's anchors / default:/ templates,
-# so the two runner templates are defined here. Native jobs run on the shell
-# executors (macos/windows), so no image is needed.
+# Child pipelines do NOT inherit the parent's anchors / templates, so the gate
+# templates are defined here. Native jobs run on shell executors, no image.
 #
-# Migration status (runner-availability-gating.issue): the
-# conformance:pathname-mapping:* jobs are migrated first as the end-to-end
-# proof; the remaining native jobs (test:*, verify:*, vendor:probes:*,
-# pathname:probe:*, encoding:*, benchmark:*, release:*, + their build:alfe:*
-# deps) follow incrementally.
+# STILL IN THE PARENT (.gitlab-ci.yml), not here:
+#   - release:* (must not auto-run per push; mandatory only on release tags),
+#     benchmark:* (expensive, manual);
+#   - build:alfe:{macos,windows} + vendor:probes:* — build:alfe is a `needs:`
+#     dependency of the parent's benchmark:*:cad jobs, so it can't move alone;
+#     vendor:probes migrate in a follow-up (made self-building so they no
+#     longer need build:alfe);
+#   - the *:linux encoding / pathname probes (Linux runner is always-on).
 
 stages:
   - test
 
-.native-macos:
-  stage: test
-  tags: [macos, arm64, shell]          # thalassa (intermittent)
+# --- gate templates --------------------------------------------------------
+# *-hard : jobs that were release-mandatory (test:*, verify:*) -> on a
+#          release tag they are on_success and BLOCK the release
+#          (allow_failure:false), as before.
+# *-soft : jobs that were never release-blocking (conformance:*, encoding:*,
+#          pathname:*) -> allow_failure everywhere.
+.gate-macos-hard:
+  tags: [macos, arm64, shell]
   rules:
-    - if: '$CI_COMMIT_TAG'             # release: native jobs are mandatory
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
       when: on_success
+      allow_failure: false
     - if: '$MACOS_RUNNER == "online"'
       when: on_success
       allow_failure: true
     - when: manual
       allow_failure: true
 
-.native-windows:
-  stage: test
-  tags: [windows, amd64, shell]        # windows PC (intermittent)
+.gate-windows-hard:
+  tags: [windows, amd64, shell]
   rules:
-    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
       when: on_success
+      allow_failure: false
     - if: '$WINDOWS_RUNNER == "online"'
       when: on_success
       allow_failure: true
     - when: manual
       allow_failure: true
 
-# --- W4 conformance: cross-environment pathname mapping (real frames) -------
-# scripts/verify-pathname-mapping.lisp (clautolisp-windows-pathname-mapping,
-# spec §8): the synthetic (build x run) matrix runs everywhere; on the native
-# runner it also exercises the real detected run frame (CLAUTOLISP_DEBUG_PATHMAP
-# logs which) + a real-file round trip. Pass/fail = the sbcl exit code. Only
-# loads clautolisp/autolisp-runtime -> no submodules.
+.gate-macos-soft:
+  tags: [macos, arm64, shell]
+  rules:
+    - if: '$MACOS_RUNNER == "online"'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+
+.gate-windows-soft:
+  tags: [windows, amd64, shell]
+  rules:
+    - if: '$WINDOWS_RUNNER == "online"'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+
+# --- unit suites on the real OS --------------------------------------------
+test:clautolisp:macos:
+  extends: .gate-macos-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C clautolisp test-sbcl
+    - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
+
+test:clautolisp:windows:
+  extends: .gate-windows-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C clautolisp test-sbcl
+    - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
+
+test:autolisp-test:macos:
+  extends: .gate-macos-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-test test
+
+test:autolisp-test:windows:
+  extends: .gate-windows-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-test test
+
+test:alfe:macos:
+  extends: .gate-macos-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end test-sbcl
+
+test:alfe:windows:
+  extends: .gate-windows-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end test-sbcl
+
+# --- W4 pathname-mapping conformance (real frames) -------------------------
 conformance:pathname-mapping:macos:
-  extends: .native-macos
+  extends: .gate-macos-soft
+  stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
     CLAUTOLISP_DEBUG_PATHMAP: "1"
@@ -61,9 +135,125 @@ conformance:pathname-mapping:macos:
     - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-pathname-mapping.lisp"
 
 conformance:pathname-mapping:windows:
-  extends: .native-windows
+  extends: .gate-windows-soft
+  stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
     CLAUTOLISP_DEBUG_PATHMAP: "1"
   script:
     - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-pathname-mapping.lisp"
+
+# --- platform vl-registry verification -------------------------------------
+verify:vl-registry:macos:
+  extends: .gate-macos-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
+
+verify:vl-registry:windows:
+  extends: .gate-windows-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
+
+# --- real-CAD BricsCAD automation checks (self-building) -------------------
+verify:bricscad-hidden-ui:windows:
+  extends: .gate-windows-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-bricscad-hidden-ui.ps1
+
+verify:bricscad-automation:macos:
+  extends: .gate-macos-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  artifacts:
+    name: "bricscad-automation-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/bricscad-automation/]
+    expire_in: 30 days
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/verify-bricscad-automation.sh
+
+# --- encoding experiment (self-contained, builds alfe in-script) -----------
+.encoding-artifacts:
+  interruptible: true
+  artifacts:
+    name: "encoding-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/encoding/]
+    expire_in: 30 days
+
+encoding:experiment:bricscad:macos:
+  extends: [.gate-macos-soft, .encoding-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-encoding-experiment.sh --backend bricscad
+
+encoding:experiment:bricscad:windows:
+  extends: [.gate-windows-soft, .encoding-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend bricscad
+
+encoding:experiment:autocad:windows:
+  extends: [.gate-windows-soft, .encoding-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad -Dwg $env:PROBE_DWG
+
+# --- pathname "." / ".." probe (self-contained) ----------------------------
+.pathname-artifacts:
+  interruptible: true
+  artifacts:
+    name: "pathname-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/pathname/]
+    expire_in: 30 days
+
+pathname:probe:bricscad:macos:
+  extends: [.gate-macos-soft, .pathname-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-pathname-probe.sh --backend bricscad
+
+pathname:probe:bricscad:windows:
+  extends: [.gate-windows-soft, .pathname-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend bricscad
+
+pathname:probe:autocad:windows:
+  extends: [.gate-windows-soft, .pathname-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend autocad -Dwg $env:PROBE_DWG
