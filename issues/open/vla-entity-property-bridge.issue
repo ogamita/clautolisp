@@ -24,12 +24,24 @@
   (see =entmake-symbol-table-records.issue=), main-space filtering of
   =ssget "X"= / =entlast= / top-level =entnext=, and the
   =(entnext (tblobjname "BLOCK" name))= block walk.
+- *1.8.12 (2026-08-07): the method surface followed* — third SCHMS
+  round failed on "AutoCAD.Block has no method named INSERTBLOCK".
+  Landed: =InsertBlock= on space / block collections (instantiates an
+  ATTRIB per non-constant ATTDEF, transformed to the placement, SEQEND
+  closed; returns the reference), =GetAttributes= (VARIANT array of
+  the ATTRIB objects, via the new =*com-objects-wrap-hook*=),
+  =HasAttributes= (group 66), entity =Move= / =Rotate= / =Copy= /
+  =Delete= / =Erase= / =Update=, =GetBoundingBox= with the vendor
+  by-reference output symbols (assigned at the builtins layer), and
+  the =vlax-invoke= / =vlax-get= / =vlax-put= builtins (plain-data
+  contract). Subentity runs excluded from collection membership.
 - *Remaining open:* confirm against the SCHMS =test-cad-clautolisp=
   re-run and extend the property table to what it still consumes
-  (candidates: =GetBoundingBox= as a method, =TrueColor=, =Closed=,
-  =MTextAttribute=, MTEXT =Rotation= units — SPEC-UNCERTAIN); vendor
-  probes for the SPEC-UNCERTAIN notes (EffectiveName on dynamic
-  blocks, entmakex-on-BLOCK, ENDBLK-terminated entnext walk).
+  (candidates: =TrueColor=, =Closed=, =MTextAttribute=, MTEXT
+  =Rotation= units — SPEC-UNCERTAIN); vendor probes for the
+  SPEC-UNCERTAIN notes (EffectiveName on dynamic blocks,
+  entmakex-on-BLOCK, ENDBLK-terminated entnext walk, glyph-metric
+  bounding boxes).
 
 * Context
 

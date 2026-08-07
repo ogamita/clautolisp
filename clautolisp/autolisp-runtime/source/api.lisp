@@ -1427,6 +1427,13 @@ inside a VARIANT / SAFEARRAY point value, or NIL when VALUE is neither.
 The write-side companion of *COM-POINT-WRAP-HOOK*: lets a host accept
 vlax-3d-point results for point-valued property writes.")
 
+(defparameter *com-objects-wrap-hook* nil
+  "When non-nil, a function (VALUES-LIST) returning the ActiveX
+VARIANT-wrapped SAFEARRAY of the given values (VLA-objects, typically)
+that object-array-valued COM methods hand back — GetAttributes et al.
+Set by the builtins layer alongside *COM-POINT-WRAP-HOOK*; when nil the
+values pass through as a plain list.")
+
 (defparameter *debug-define-command-hook* nil
   "When non-nil, a function (NAMES FUNCTION DOC) the CLAL-DEFINE-DEBUGGER-COMMAND
 builtin calls to register an AutoLISP-defined debugger command (command

@@ -64,7 +64,8 @@
                 #:host-vlax-get-acad-object
                 #:host-vlax-collection-items
                 #:host-vlax-ename->vla-object
-                #:host-vlax-vla-object->ename)
+                #:host-vlax-vla-object->ename
+                #:host-vlax-erased-p)
   (:import-from #:clautolisp.cador
                 #:cador
                 #:make-cador

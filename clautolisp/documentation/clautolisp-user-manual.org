@@ -652,6 +652,16 @@ provides that surface through the host backend:
   VARIANT-wrapped double SAFEARRAYs —
   ~(vlax-safearray->list (vlax-variant-value …))~ — and accept
   ~vlax-3d-point~ results (or plain lists) on writes.
+- Block references work end-to-end: ~(vla-insertblock space pt name
+  xs ys zs rot)~ creates the INSERT with an ATTRIB per non-constant
+  ATTDEF of the definition (transformed to the placement);
+  ~(vla-getattributes ref)~ returns them as a VARIANT array —
+  or ~(vlax-invoke ref 'GetAttributes)~ as a plain list, since
+  ~vlax-invoke~ / ~vlax-get~ / ~vlax-put~ implement the vendor
+  plain-LISP-data contract. Entity methods ~Move~ / ~Rotate~ /
+  ~Copy~ / ~Delete~ / ~Erase~ / ~Update~ mutate the drawing, and
+  ~(vla-getboundingbox obj 'll 'ur)~ assigns the two quoted output
+  symbols, as the vendors do.
 
 Example (headless, against the mock host):
 

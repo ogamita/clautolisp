@@ -267,7 +267,7 @@ but that divergence is not portable and not condoned: the create returns ~
 nil under autocad, clautolisp and strict.~%"
           type missing (length missing)))
 
-(defun %host-add-entity (host data operator-name)
+(defun %host-add-entity (host data operator-name &optional owner)
   "Shared worker for HOST-ENTMAKE / HOST-ENTMAKEX. Validate + normalise
 DATA against the entity-family registry (clautolisp.drawing), add the
 entity to the active drawing, fire the object-appended reactor events,
@@ -303,10 +303,12 @@ and bricscad additionally warn."
                  (entity (handler-case
                              (clautolisp.drawing:add-entity
                               drawing owned
-                              ;; While an entmake block-definition run is
-                              ;; open, the entity belongs to that block,
-                              ;; not to model space.
-                              :block (car (cador-open-block-definition host)))
+                              ;; OWNER (InsertBlock's target space), or
+                              ;; the block whose entmake definition run
+                              ;; is open — NIL = model space.
+                              :block (or owner
+                                         (car (cador-open-block-definition
+                                               host))))
                            (clautolisp.drawing:drawing-error () nil))))
             (if (null entity)
                 (values nil nil)

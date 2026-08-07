@@ -431,3 +431,130 @@ the shape of the SCHMS sigfic fixtures."
     (host-vlax-put-property mock vla "TagString" "NOUVEAU")
     (is (string= "NOUVEAU" (autolisp-string-value
                             (host-vlax-get-property mock vla "TagString"))))))
+
+;;; --- InsertBlock + attribute instantiation + entity methods -------
+;;; (Regression for the SCHMS "AutoCAD.Block has no method named
+;;; INSERTBLOCK" failure: fixtures insert their sigfic block into model
+;;; space, then the migrations walk / rewrite its attributes.)
+
+(defun %tv~= (a b) (< (abs (- a b)) 1d-9))
+
+(test insertblock-creates-a-reference-with-instantiated-attributes
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (modelspace (host-vlax-get-property mock doc "ModelSpace")))
+    (%tv-make-sigfic-block mock "SIGFIC_I")
+    (let ((insert (host-vlax-invoke-method
+                   mock modelspace "InsertBlock"
+                   (list (list 10.0d0 20.0d0 0.0d0) "SIGFIC_I"
+                         1.0d0 1.0d0 1.0d0 0.0d0))))
+      (is (typep insert 'clautolisp.autolisp-runtime:autolisp-vla-object))
+      (is (string= "AcDbBlockReference"
+                   (autolisp-string-value
+                    (host-vlax-get-property mock insert "ObjectName"))))
+      (is (string= "SIGFIC_I"
+                   (autolisp-string-value
+                    (host-vlax-get-property mock insert "Name"))))
+      (is (eq t (host-vlax-get-property mock insert "HasAttributes")))
+      ;; The reference (not its attribute run) is the space's member.
+      (is (eql 1 (host-vlax-get-property mock modelspace "Count")))
+      ;; GetAttributes: the ATTRIB clone of the definition's ATTDEF,
+      ;; translated to the insertion point.
+      (let ((attributes (host-vlax-invoke-method mock insert
+                                                 "GetAttributes" '())))
+        (is (= 1 (length attributes)))
+        (let ((attribute (first attributes)))
+          (is (string= "SIGTAG"
+                       (autolisp-string-value
+                        (host-vlax-get-property mock attribute "TagString"))))
+          (is (string= "default"
+                       (autolisp-string-value
+                        (host-vlax-get-property mock attribute "TextString"))))
+          (let ((p (host-vlax-get-property mock attribute "InsertionPoint")))
+            (is (%tv~= 10.0d0 (first p)))
+            (is (%tv~= 20.0d0 (second p)))))))))
+
+(test insertblock-applies-rotation-to-attribute-positions
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (modelspace (host-vlax-get-property mock doc "ModelSpace"))
+         (half-pi (/ pi 2)))
+    ;; A definition whose ATTDEF sits at (1 0 0).
+    (host-entmake mock (list (cons 0 "BLOCK") (cons 2 "SIGFIC_R") (cons 70 2)
+                             (list 10 0.0d0 0.0d0 0.0d0)))
+    (host-entmake mock (list (cons 0 "ATTDEF") (cons 8 "0")
+                             (list 10 1.0d0 0.0d0 0.0d0) (cons 40 2.5d0)
+                             (cons 1 "v") (cons 2 "T") (cons 3 "p")
+                             (cons 70 0)))
+    (host-entmake mock (list (cons 0 "ENDBLK")))
+    (let* ((insert (host-vlax-invoke-method
+                    mock modelspace "InsertBlock"
+                    (list (list 0.0d0 0.0d0 0.0d0) "SIGFIC_R"
+                          1.0d0 1.0d0 1.0d0 half-pi)))
+           (attribute (first (host-vlax-invoke-method mock insert
+                                                      "GetAttributes" '())))
+           (p (host-vlax-get-property mock attribute "InsertionPoint")))
+      ;; (1 0 0) rotated a quarter turn -> (0 1 0).
+      (is (%tv~= 0.0d0 (first p)))
+      (is (%tv~= 1.0d0 (second p)))
+      ;; And the attribute's own rotation follows the reference's.
+      (is (%tv~= half-pi (host-vlax-get-property mock attribute "Rotation"))))))
+
+(test entity-move-rotate-copy-delete-methods
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (modelspace (host-vlax-get-property mock doc "ModelSpace"))
+         (view (host-entmake mock (%tv-text-dxf "mobile")))
+         (ename (cdr (first view)))
+         (vla (host-vlax-ename->vla-object mock ename)))
+    ;; Move((0 0 0) -> (5 5 0)).
+    (host-vlax-invoke-method mock vla "Move"
+                             (list (list 0.0d0 0.0d0 0.0d0)
+                                   (list 5.0d0 5.0d0 0.0d0)))
+    (let ((p (host-vlax-get-property mock vla "InsertionPoint")))
+      (is (%tv~= 5.0d0 (first p)))
+      (is (%tv~= 5.0d0 (second p))))
+    ;; Rotate about the origin by pi: (5 5) -> (-5 -5); rotation group
+    ;; follows.
+    (host-vlax-invoke-method mock vla "Rotate"
+                             (list (list 0.0d0 0.0d0 0.0d0)
+                                   (coerce pi 'double-float)))
+    (let ((p (host-vlax-get-property mock vla "InsertionPoint")))
+      (is (%tv~= -5.0d0 (first p)))
+      (is (%tv~= -5.0d0 (second p))))
+    (is (%tv~= (coerce pi 'double-float)
+               (host-vlax-get-property mock vla "Rotation")))
+    ;; Copy duplicates in place; Delete erases.
+    (let ((copy (host-vlax-invoke-method mock vla "Copy" '())))
+      (is (typep copy 'clautolisp.autolisp-runtime:autolisp-vla-object))
+      (is (eql 2 (host-vlax-get-property mock modelspace "Count")))
+      (host-vlax-invoke-method mock copy "Delete" '())
+      (is (eql 1 (host-vlax-get-property mock modelspace "Count"))))))
+
+(test insert-delete-erases-the-attribute-run
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (modelspace (host-vlax-get-property mock doc "ModelSpace")))
+    (%tv-make-sigfic-block mock "SIGFIC_D")
+    (let* ((insert (host-vlax-invoke-method
+                    mock modelspace "InsertBlock"
+                    (list (list 0.0d0 0.0d0 0.0d0) "SIGFIC_D")))
+           (attribute (first (host-vlax-invoke-method mock insert
+                                                      "GetAttributes" '()))))
+      (host-vlax-invoke-method mock insert "Delete" '())
+      (is (eql 0 (host-vlax-get-property mock modelspace "Count")))
+      ;; The attribute run went down with the reference.
+      (is (host-vlax-erased-p mock attribute)))))
+
+(test entity-getboundingbox-covers-points-and-text-height
+  (let* ((mock (make-cador))
+         (view (host-entmake mock (%tv-text-dxf "boite")))
+         (ename (cdr (first view)))
+         (vla (host-vlax-ename->vla-object mock ename))
+         (box (host-vlax-invoke-method mock vla "GetBoundingBox" '())))
+    (is (consp box))
+    (let ((min-corner (first box)) (max-corner (second box)))
+      (is (%tv~= 0.0d0 (first min-corner)))
+      (is (%tv~= 0.0d0 (second min-corner)))
+      ;; The text height extends the box upward.
+      (is (%tv~= 2.5d0 (second max-corner))))))

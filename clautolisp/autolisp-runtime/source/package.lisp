@@ -138,6 +138,7 @@
    #:*vlax-collection-items-hook*
    #:*com-point-wrap-hook*
    #:*com-point-unwrap-hook*
+   #:*com-objects-wrap-hook*
    #:set-autolisp-errno
    #:autolisp-exit-status
    #:set-autolisp-exit-status

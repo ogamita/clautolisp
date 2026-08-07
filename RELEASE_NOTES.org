@@ -489,6 +489,24 @@ separate binary for tool integrators.
   (consumable by ~vlax-variant-value~ + ~vlax-safearray->list~, and
   writable from ~vlax-3d-point~ or a plain point list). See
   ~issues/open/vla-entity-property-bridge.issue~.
+- Block references end-to-end: ~InsertBlock~ on a space / block
+  collection creates the INSERT — instantiating an ATTRIB (translated,
+  scaled, rotated to the placement) per non-constant ATTDEF of the
+  definition, closed by a SEQEND — and returns the reference;
+  ~GetAttributes~ hands the ATTRIB objects back as a VARIANT-wrapped
+  SAFEARRAY; ~HasAttributes~ reads group 66. Entity methods ~Move~,
+  ~Rotate~ (radians, group 50 follows), ~Copy~, ~Delete~ / ~Erase~
+  (taking the subentity run along), ~Update~ and ~GetBoundingBox~ —
+  the latter honouring the vendor by-reference contract
+  ~(vla-getboundingbox obj 'll 'ur)~ (assigns the two quoted symbols
+  VARIANT point arrays). Subentity runs (ATTRIB / VERTEX / SEQEND) are
+  no longer listed as space / block collection members, matching the
+  vendors.
+- ~vlax-invoke~, ~vlax-get~ and ~vlax-put~ (spec 70000 ff.) join the
+  ActiveX surface with their plain-LISP-data contract: arguments and
+  results are ordinary lists — VARIANT / SAFEARRAY values are converted
+  on the way out (e.g. ~(vlax-invoke ref 'GetAttributes)~ returns a
+  list of VLA-objects, ~(vlax-get ref 'InsertionPoint)~ a point list).
 - ~acad_strlsort~ now really sorts: it returns a *new* list of the
   input strings in ascending, case-sensitive, ordinal order (upper
   before lower; accented / non-ASCII letters after the ASCII range),
