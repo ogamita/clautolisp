@@ -56,6 +56,16 @@
   The full =dessine= shape (draw → clone into block → insertblock →
   (vlax-ename->vla-object (entlast)) → the checker's -2 walk finding
   2 LINE) verified end-to-end on =--host mock=.
+- *1.8.15 (2026-08-07): selection sets through COMMAND* — sixth round:
+  "COMMAND argument must be a string, number, point list, or entity
+  name, got <Selection set>". Vendor COMMAND accepts a live selection
+  set wherever a command prompts for object selection (the
+  =(command "._erase" ss "")= cleanup in the block factory). Landed:
+  the runtime token normalization passes picksets through live, and
+  the engine executes =ERASE= (subentity runs included), =MOVE= and
+  =COPY= with selection / handle / =_Last= input. Full fixture flow
+  (draw → ssget → clone into block → erase → insertblock → checker)
+  green e2e.
 - *Remaining open:* confirm against the SCHMS =test-cad-clautolisp=
   re-run and extend the property table to what it still consumes
   (candidates: =TrueColor=, =Closed=, =MTextAttribute=, MTEXT

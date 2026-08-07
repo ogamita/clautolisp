@@ -652,6 +652,11 @@ provides that surface through the host backend:
   headless. Every call is still recorded on the command log
   (~clal-command-log~) and echoed per ~CMDECHO~; commands outside the
   engine's subset remain record-only.
+- A ~(command ...)~ argument may be a *selection set* (the vendor
+  contract for object-selection prompts): ~(command "._erase" ss "")~
+  erases the set's members (and their subentity runs); ~MOVE~ and
+  ~COPY~ take a selection, a base point and a second point. Entity
+  handles and ~_Last~ work as selection input too.
 - Entity ActiveX *properties* read and write the entity's DXF groups:
   on an entity-backed VLA-object, ~TextString~ / ~TagString~ /
   ~Layer~ / ~Color~ / ~Height~ / ~Rotation~ (radians, the entget

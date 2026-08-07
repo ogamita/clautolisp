@@ -141,3 +141,57 @@
         (setq types (nreverse types))
         (is (= 5 (length types)))
         (is (= 2 (count "LINE" types :test #'string=)))))))
+
+;;; --- Selection sets through the command channel ------------------
+;;; (Regression for the SCHMS "(command \"._erase\" ss \"\")" idiom:
+;;; a live selection set is a valid COMMAND argument and the engine
+;;; consumes it as object selection.)
+
+(test command-erase-consumes-a-selection-set
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command
+     mock '("._line" "0,0" "1,1" ""))
+    (clautolisp.autolisp-host:host-command
+     mock '("._line" "2,2" "3,3" ""))
+    (let ((ss (host-ssget mock nil :mode "X")))
+      (is (not (null ss)))
+      (clautolisp.autolisp-host:host-command
+       mock (list "._erase" ss ""))
+      ;; Both lines gone; the database walk is empty.
+      (is (null (host-entnext mock nil)))
+      (is (null (host-entlast mock))))))
+
+(test command-erase-accepts-the-last-option-and-handles
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command
+     mock '("._line" "0,0" "1,1" ""))
+    (clautolisp.autolisp-host:host-command
+     mock (list "._erase" "_l" ""))
+    (is (null (host-entnext mock nil)))))
+
+(test command-move-translates-the-selection
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command
+     mock '("._line" "0,0" "1,0" ""))
+    (let ((ss (host-ssget mock nil :mode "X")))
+      (clautolisp.autolisp-host:host-command
+       mock (list "._move" ss "" "0,0" "10.0,5.0"))
+      (let* ((e (host-entnext mock nil))
+             (data (host-entget mock e))
+             (p10 (cdr (assoc 10 data))))
+        (is (= 10.0d0 (first p10)))
+        (is (= 5.0d0 (second p10)))))))
+
+(test command-copy-clones-the-selection-displaced
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command
+     mock '("._line" "0,0" "1,0" ""))
+    (let ((ss (host-ssget mock nil :mode "X")))
+      (clautolisp.autolisp-host:host-command
+       mock (list "._copy" ss "" "0,0" "5.0,0.0"))
+      ;; Two lines now: the original at x=0, the clone at x=5.
+      (let ((firsts '()) (e (host-entnext mock nil)))
+        (loop while e
+              do (push (first (cdr (assoc 10 (host-entget mock e)))) firsts)
+                 (setq e (host-entnext mock e)))
+        (is (equal '(0.0d0 5.0d0) (sort firsts #'<)))))))

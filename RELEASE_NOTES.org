@@ -524,6 +524,13 @@ separate binary for tool integrators.
   ~entlast~ now also skips subentities (ATTRIB / VERTEX / SEQEND), so
   ~(entlast)~ after an attribute-bearing insert names the INSERT, as
   the vendors do.
+- ~(command ...)~ accepts a *selection set* argument, as the vendors
+  do wherever a command prompts for object selection — the classic
+  ~(command "._erase" ss "")~ idiom. The live set passes through to
+  the host un-normalized, and the command engine grew the editing
+  commands that consume object selection: ~ERASE~ (the subentity run
+  goes too), ~MOVE~ and ~COPY~ (selection, base point, second point),
+  each also accepting entity-handle input and the ~_Last~ option.
 - ~acad_strlsort~ now really sorts: it returns a *new* list of the
   input strings in ascending, case-sensitive, ordinal order (upper
   before lower; accented / non-ASCII letters after the ASCII range),

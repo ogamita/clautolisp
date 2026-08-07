@@ -13,11 +13,11 @@
 ;;;;   * and — since the SCHMS corpus DRAWS through the command
 ;;;;     channel (its block factories run ._LINE / ._TEXT / ._DONUT /
 ;;;;     ._SOLID and then clone entlast..entnext into a block pair) —
-;;;;     a small COMMAND ENGINE executes the model-only drawing
-;;;;     commands the corpus uses: LINE, CIRCLE, TEXT, DONUT, SOLID
-;;;;     (see %EXECUTE-COMMAND-TOKENS below). Anything else stays
-;;;;     record-only, and malformed input degrades to record-only —
-;;;;     the engine never signals.
+;;;;     a small COMMAND ENGINE executes the model-only drawing and
+;;;;     editing commands the corpus uses: LINE, CIRCLE, TEXT, DONUT,
+;;;;     SOLID, ERASE, MOVE, COPY (see %EXECUTE-COMMAND-TOKENS
+;;;;     below). Anything else stays record-only, and malformed input
+;;;;     degrades to record-only — the engine never signals.
 ;;;;
 ;;;; The call returns nil — the documented COMMAND return-value rule.
 ;;;; Tests and the CLAL-COMMAND-LOG extension read the log back
@@ -25,8 +25,10 @@
 
 (defun render-command-token (token)
   "Echo spelling for TOKEN: the RETURN token \"\" prints as <RETURN>,
-the PAUSE token \"\\\\\" as <PAUSE>, anything else verbatim."
+the PAUSE token \"\\\\\" as <PAUSE>, a non-string token (a live
+selection set) as its printed form, anything else verbatim."
   (cond
+    ((not (stringp token)) (princ-to-string token))
     ((string= token "")   "<RETURN>")
     ((string= token "\\") "<PAUSE>")
     (t token)))
@@ -307,6 +309,96 @@ solid repeats the third corner, as the vendors do."
                                  (cons 12 p3) (cons 13 p4)))))))
   tokens)
 
+(defun %command-selection (host tokens)
+  "Consume object-selection input: live selection sets, entity-handle
+tokens and the _Last option, up to the closing RETURN. Returns
+\(values ENTITY-HANDLES REMAINING-TOKENS)."
+  (let ((entities '()))
+    (loop
+      (let ((token (first tokens)))
+        (cond
+          ((null tokens) (return))
+          ((typep token 'clautolisp.autolisp-runtime:autolisp-pickset)
+           (let ((set (ignore-errors (ap->pickset host token 'command))))
+             (when set
+               (dolist (entity (pickset-members set))
+                 (when (and entity (not (entity-handle-deleted-p entity)))
+                   (push entity entities)))))
+           (pop tokens))
+          ((not (stringp token)) (return))
+          ((equal token "") (pop tokens) (return))
+          ((%command-option-p token "l" "last")
+           (let* ((ename (host-entlast host))
+                  (entity
+                    (and ename
+                         (cador-find-entity-by-handle
+                          host
+                          (clautolisp.autolisp-runtime:autolisp-ename-value
+                           ename)))))
+             (when entity (push entity entities)))
+           (pop tokens))
+          ((let ((entity (safe-find-entity (cador-active-drawing host)
+                                           token)))
+             (when entity (push entity entities) t))
+           (pop tokens))
+          (t (return)))))
+    (values (nreverse entities) tokens)))
+
+(defun %erase-entity-and-run (host entity)
+  "Mark ENTITY and its subentity run (330-owned ATTRIBs / VERTEXes /
+SEQEND) deleted."
+  (dolist (handle (%entity-subentity-handles host entity))
+    (let ((sub (cador-find-entity-by-handle host handle)))
+      (when sub (setf (entity-handle-deleted-p sub) t))))
+  (setf (entity-handle-deleted-p entity) t))
+
+(defun %cmd-erase (host tokens)
+  "ERASE: object selection, then RETURN."
+  (multiple-value-bind (entities tokens) (%command-selection host tokens)
+    (dolist (entity entities)
+      (%erase-entity-and-run host entity))
+    tokens))
+
+(defun %cmd-move (host tokens)
+  "MOVE: object selection, RETURN, base point, second point."
+  (multiple-value-bind (entities tokens) (%command-selection host tokens)
+    (let ((from (%command-token-point (first tokens))))
+      (when from
+        (pop tokens)
+        (let ((to (%command-token-point (first tokens))))
+          (when to
+            (pop tokens)
+            (let ((dx (- (first to) (first from)))
+                  (dy (- (second to) (second from)))
+                  (dz (- (third to) (third from))))
+              (dolist (entity entities)
+                (%entity-translate entity dx dy dz)
+                (dolist (handle (%entity-subentity-handles host entity))
+                  (let ((sub (cador-find-entity-by-handle host handle)))
+                    (when sub (%entity-translate sub dx dy dz))))))))))
+    tokens))
+
+(defun %cmd-copy (host tokens)
+  "COPY: object selection, RETURN, base point, second point — clones
+the selection (subentity runs included) displaced by the two points."
+  (multiple-value-bind (entities tokens) (%command-selection host tokens)
+    (let ((from (%command-token-point (first tokens))))
+      (when from
+        (pop tokens)
+        (let ((to (%command-token-point (first tokens))))
+          (when to
+            (pop tokens)
+            (let ((dx (- (first to) (first from)))
+                  (dy (- (second to) (second from)))
+                  (dz (- (third to) (third from))))
+              (dolist (entity entities)
+                (let ((clone (%clone-entity-with-run host entity)))
+                  (%entity-translate clone dx dy dz)
+                  (dolist (handle (%entity-subentity-handles host clone))
+                    (let ((sub (cador-find-entity-by-handle host handle)))
+                      (when sub (%entity-translate sub dx dy dz)))))))))))
+    tokens))
+
 (defun %execute-command-tokens (host tokens)
   "Interpret TOKENS — one HOST-COMMAND call's normalized sequence —
 executing the drawing commands the engine knows; the first unknown
@@ -324,6 +416,9 @@ command log either way). Never signals."
                          ((string= name "TEXT")   (%cmd-text host tokens))
                          ((string= name "DONUT")  (%cmd-donut host tokens))
                          ((string= name "SOLID")  (%cmd-solid host tokens))
+                         ((string= name "ERASE")  (%cmd-erase host tokens))
+                         ((string= name "MOVE")   (%cmd-move host tokens))
+                         ((string= name "COPY")   (%cmd-copy host tokens))
                          (t (return))))))
     (error () nil))
   nil)

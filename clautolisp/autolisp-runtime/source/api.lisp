@@ -2561,6 +2561,11 @@ returning the last form's value. Outside a session this is AUTOLISP-EVAL-PROGN."
 ;;;               comma-separated coordinates a user would type
 ;;;               ("1.0,2.0" / "1.0,2.0,3.0").
 ;;;   ename    -> the entity handle text (entity-selection input).
+;;;   pickset  -> the live selection-set value itself, un-normalized —
+;;;               vendor COMMAND accepts a selection set wherever a
+;;;               command prompts for object selection (the classic
+;;;               (command "._erase" ss "") idiom); it has no textual
+;;;               spelling, so the backend receives the object.
 ;;;   others   -> :invalid-command-argument (nil included: vendor
 ;;;               AutoLISP rejects nil command input too).
 ;;;
@@ -2636,10 +2641,15 @@ no command-input reading (nil, symbols, nested lists, functions, …)."
      (format nil "~{~A~^,~}" (mapcar #'format-command-number value)))
     ((typep value 'autolisp-ename)
      (format nil "~A" (autolisp-ename-value value)))
+    ((typep value 'autolisp-pickset)
+     ;; A selection set has no command-line spelling: it passes to the
+     ;; backend live (vendor COMMAND accepts one wherever a command
+     ;; prompts for object selection).
+     value)
     (t
      (signal-autolisp-runtime-error
       :invalid-command-argument
-      "COMMAND argument must be a string, number, point list, or entity name, got ~S."
+      "COMMAND argument must be a string, number, point list, entity name, or selection set, got ~S."
       value))))
 
 (defun dispatch-autolisp-command (values &optional (context (current-evaluation-context)))

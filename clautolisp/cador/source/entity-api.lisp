@@ -253,6 +253,67 @@ collections enumerate only their top-level entities."
                           model-p)))
             collect handle)))
 
+;;; --- Shared entity utilities (property bridge + command engine) --
+
+(defun %entity-group-value (entity code)
+  (dolist (pair (entity-handle-data entity) nil)
+    (when (and (consp pair) (group-code-equal-p (car pair) code))
+      (return (cdr pair)))))
+
+(defun %entity-set-group (entity code value)
+  "Set the first CODE group of ENTITY's data to VALUE, appending the
+group when absent (the entmod convention)."
+  (let ((pair (find-if (lambda (pair)
+                         (and (consp pair)
+                              (group-code-equal-p (car pair) code)))
+                       (entity-handle-data entity))))
+    (if pair
+        (setf (cdr pair) value)
+        (setf (entity-handle-data entity)
+              (append (entity-handle-data entity)
+                      (list (cons code value)))))
+    value))
+
+(defun %entity-subentity-handles (host entity)
+  "Handles of the live subentities owned (group 330) by ENTITY, oldest
+first — the ATTRIB…SEQEND run of an INSERT, the VERTEX…SEQEND run of a
+POLYLINE."
+  (let ((id (entity-handle-id entity)))
+    (loop for handle in (reverse (cador-creation-order host))
+          for sub = (cador-find-entity-by-handle host handle)
+          when (and sub
+                    (let ((owner (%entity-group-value sub 330)))
+                      (and owner (string-equal owner id))))
+            collect handle)))
+
+(defun %entity-translate (entity dx dy dz)
+  (dolist (code '(10 11 12 13))
+    (let ((p (%entity-group-value entity code)))
+      (when (consp p)
+        (%entity-set-group entity code
+                           (list (+ (coerce (first p) 'double-float) dx)
+                                 (+ (coerce (second p) 'double-float) dy)
+                                 (+ (coerce (or (third p) 0.0d0) 'double-float)
+                                    dz)))))))
+
+(defun %clone-entity-with-run (host entity)
+  "Duplicate ENTITY (and its subentity run, owners remapped) in the
+same container; returns the new ENTITY-HANDLE."
+  (let* ((drawing (cador-active-drawing host))
+         (new (clautolisp.drawing:add-entity
+               drawing (copy-tree (entity-handle-data entity))
+               :block (entity-handle-block entity))))
+    (dolist (handle (%entity-subentity-handles host entity))
+      (let ((sub (cador-find-entity-by-handle host handle)))
+        (when sub
+          (let ((data (copy-tree (entity-handle-data sub))))
+            (dolist (pair data)
+              (when (and (consp pair) (group-code-equal-p (car pair) 330))
+                (setf (cdr pair) (entity-handle-id new))))
+            (clautolisp.drawing:add-entity drawing data
+                                           :block (entity-handle-block sub))))))
+    new))
+
 (defun table-record-al-view+extras (host record)
   "The tblsearch / tblnext / entget view of a symbol-table RECORD: its
 wrapped group-code data, plus — for a BLOCK record — the vendors'

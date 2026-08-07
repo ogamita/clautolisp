@@ -418,18 +418,6 @@ new block reference's VLA-object."
 (defun find-block-definition-p (host name)
   (nth-value 1 (gethash name (drawing-blocks (cador-active-drawing host)))))
 
-(defun %entity-subentity-handles (host entity)
-  "Handles of the live subentities owned (group 330) by ENTITY, oldest
-first — the ATTRIB…SEQEND run of an INSERT, the VERTEX…SEQEND run of a
-POLYLINE."
-  (let ((id (entity-handle-id entity)))
-    (loop for handle in (reverse (cador-creation-order host))
-          for sub = (cador-find-entity-by-handle host handle)
-          when (and sub
-                    (let ((owner (%entity-group-value sub 330)))
-                      (and owner (string-equal owner id))))
-            collect handle)))
-
 (defun %entity-attributes (host entity)
   "The ATTRIB VLA-objects of block reference ENTITY, oldest first."
   (loop for handle in (%entity-subentity-handles host entity)
@@ -444,16 +432,6 @@ POLYLINE."
       (when sub (setf (entity-handle-deleted-p sub) t))))
   (setf (entity-handle-deleted-p entity) t)
   nil)
-
-(defun %entity-translate (entity dx dy dz)
-  (dolist (code '(10 11 12 13))
-    (let ((p (%entity-group-value entity code)))
-      (when (consp p)
-        (%entity-set-group entity code
-                           (list (+ (coerce (first p) 'double-float) dx)
-                                 (+ (coerce (second p) 'double-float) dy)
-                                 (+ (coerce (or (third p) 0.0d0) 'double-float)
-                                    dz)))))))
 
 (defun %entity-move (host entity args)
   "Move(FromPoint, ToPoint): translate ENTITY and its subentities by
@@ -509,19 +487,7 @@ subentities) about the base point, in radians about +Z."
 (defun %entity-copy (host entity)
   "Copy(): duplicate ENTITY (and its subentity run) in place; return
 the new VLA-object."
-  (let* ((drawing (cador-active-drawing host))
-         (new (clautolisp.drawing:add-entity
-               drawing (copy-tree (entity-handle-data entity))
-               :block (entity-handle-block entity))))
-    (dolist (handle (%entity-subentity-handles host entity))
-      (let ((sub (cador-find-entity-by-handle host handle)))
-        (when sub
-          (let ((data (copy-tree (entity-handle-data sub))))
-            (dolist (pair data)
-              (when (and (consp pair) (group-code-equal-p (car pair) 330))
-                (setf (cdr pair) (entity-handle-id new))))
-            (clautolisp.drawing:add-entity drawing data
-                                           :block (entity-handle-block sub))))))
+  (let ((new (%clone-entity-with-run host entity)))
     (host-vlax-ename->vla-object host (handle->ename host
                                                      (entity-handle-id new)))))
 
@@ -736,24 +702,6 @@ NAME, or NIL."
                (member (entity-handle-kind entity) kinds)))
          (cdr entry))))
 
-(defun %entity-group-value (entity code)
-  (dolist (pair (entity-handle-data entity) nil)
-    (when (and (consp pair) (group-code-equal-p (car pair) code))
-      (return (cdr pair)))))
-
-(defun %entity-set-group (entity code value)
-  "Set the first CODE group of ENTITY's data to VALUE, appending the
-group when absent (the entmod convention)."
-  (let ((pair (find-if (lambda (pair)
-                         (and (consp pair)
-                              (group-code-equal-p (car pair) code)))
-                       (entity-handle-data entity))))
-    (if pair
-        (setf (cdr pair) value)
-        (setf (entity-handle-data entity)
-              (append (entity-handle-data entity)
-                      (list (cons code value)))))
-    value))
 
 (defun %wrap-com-point (doubles)
   (let ((wrap clautolisp.autolisp-runtime:*com-point-wrap-hook*))
