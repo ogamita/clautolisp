@@ -257,3 +257,46 @@ pathname:probe:autocad:windows:
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend autocad -Dwg $env:PROBE_DWG
+
+# --- vendor probes on real BricsCAD / AutoCAD ------------------------------
+# Self-building (make build-alfe-sbcl in-script), like the encoding/pathname
+# probes, so they no longer `needs:` build:alfe:* (which stays in the parent
+# for benchmark:*:cad). Release-mandatory when a release tag runs (.gate-hard).
+.vendor-probe-artifacts:
+  artifacts:
+    name: "vendor-probes-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/vendor-probes/]
+    expire_in: 30 days
+
+vendor:probes:bricscad:
+  extends: [.gate-windows-hard, .vendor-probe-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
+    PROBE_KEEP_WORKDIR: '1'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend bricscad -Dwg $env:PROBE_DWG -KeepWorkdir $env:PROBE_KEEP_WORKDIR
+
+vendor:probes:autocad:
+  extends: [.gate-windows-hard, .vendor-probe-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
+    PROBE_KEEP_WORKDIR: '1'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad -Dwg $env:PROBE_DWG -KeepWorkdir $env:PROBE_KEEP_WORKDIR
+
+vendor:probes:bricscad:macos:
+  extends: [.gate-macos-hard, .vendor-probe-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_KEEP_WORKDIR: '1'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-vendor-probes.sh --backend bricscad --keep-workdir "$PROBE_KEEP_WORKDIR"
