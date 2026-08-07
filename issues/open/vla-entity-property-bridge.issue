@@ -88,6 +88,16 @@
   directly); 1.8.17 wrapped them in VARIANTs. Fixed at the builtins
   interception; regression test in builtin-tests
   (vla-getboundingbox-assigns-bare-safearrays).
+- *1.8.19 (2026-08-07): every point-group occurrence transforms.*
+  Ninth round: 1 OK / 5 FAIL "COTE = 1 doit se dessiner cote BAS" —
+  pjb's hint ("round-trip … ou les coordonnées") pinned it: the
+  translate / rotate helpers (and GetBoundingBox collection) touched
+  only the FIRST 10/11/12/13 group, but a LWPOLYLINE (the sigfic
+  donut) has one 10 group per vertex — -BLOCK's translation left the
+  second vertex in absolute coordinates, blowing the reference's box
+  upward and breaking the côté BAS/HAUT discrimination. Fixed with
+  %entity-map-point-groups (arity-preserving); bbox collects all
+  occurrences. BAS and HAUT shapes verified discriminating e2e.
 - *Remaining open:* confirm against the SCHMS =test-cad-clautolisp=
   re-run and extend the property table to what it still consumes
   (candidates: =TrueColor=, =Closed=, =MTextAttribute=, MTEXT

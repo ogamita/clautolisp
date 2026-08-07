@@ -479,10 +479,17 @@ definition's transformed points. Text-bearing kinds extend max-y by the
 text height. SPEC-UNCERTAIN: vendor boxes account for glyph metrics;
 the mock approximates from the stored groups (deferred-spec-research)."
   (let ((points '()))
-    (labels ((collect-entity (e)
-               (dolist (code '(10 11 12 13))
-                 (let ((p (%entity-group-value e code)))
-                   (when (consp p) (push p points))))
+    (labels ((entity-points (e)
+               ;; EVERY point-group occurrence — a LWPOLYLINE has one
+               ;; 10 group per vertex.
+               (loop for pair in (entity-handle-data e)
+                     when (and (consp pair)
+                               (member (car pair) '(10 11 12 13)
+                                       :test #'group-code-equal-p)
+                               (consp (cdr pair)))
+                       collect (cdr pair)))
+             (collect-entity (e)
+               (dolist (p (entity-points e)) (push p points))
                (when (member (entity-handle-kind e)
                              '(:text :mtext :attrib :attdef))
                  (let ((p (%entity-group-value e 10))
@@ -506,16 +513,14 @@ the mock approximates from the stored groups (deferred-spec-research)."
             (dolist (handle (%block-entity-handles host name))
               (let ((member (cador-find-entity-by-handle host handle)))
                 (when member
-                  (dolist (code '(10 11 12 13))
-                    (let ((p (%entity-group-value member code)))
-                      (when (consp p)
-                        (push (%transform-block-point
-                               p ip
-                               (coerce xs 'double-float)
-                               (coerce ys 'double-float)
-                               (coerce zs 'double-float)
-                               (coerce rot 'double-float))
-                              points)))))))))))
+                  (dolist (p (entity-points member))
+                    (push (%transform-block-point
+                           p ip
+                           (coerce xs 'double-float)
+                           (coerce ys 'double-float)
+                           (coerce zs 'double-float)
+                           (coerce rot 'double-float))
+                          points)))))))))
     (if (null points)
         nil
         (list (list (reduce #'min points :key #'first)

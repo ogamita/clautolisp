@@ -286,28 +286,41 @@ POLYLINE."
                       (and owner (string-equal owner id))))
             collect handle)))
 
+(defun %entity-map-point-groups (entity function
+                                 &optional (codes '(10 11 12 13)))
+  "Apply FUNCTION — a point-list -> point-list transform — to EVERY
+occurrence of the point groups CODES in ENTITY's data. A LWPOLYLINE
+carries one 10 group per vertex; transforming only the first corrupts
+the geometry (the bas/haut discrimination bug, 1.8.19)."
+  (dolist (pair (entity-handle-data entity))
+    (when (and (consp pair)
+               (member (car pair) codes :test #'group-code-equal-p)
+               (consp (cdr pair)))
+      (setf (cdr pair) (funcall function (cdr pair))))))
+
 (defun %entity-translate (entity dx dy dz)
-  (dolist (code '(10 11 12 13))
-    (let ((p (%entity-group-value entity code)))
-      (when (consp p)
-        (%entity-set-group entity code
-                           (list (+ (coerce (first p) 'double-float) dx)
-                                 (+ (coerce (second p) 'double-float) dy)
-                                 (+ (coerce (or (third p) 0.0d0) 'double-float)
-                                    dz)))))))
+  (%entity-map-point-groups
+   entity
+   (lambda (p)
+     (let ((x (+ (coerce (first p) 'double-float) dx))
+           (y (+ (coerce (second p) 'double-float) dy)))
+       ;; Preserve the point's arity: LWPOLYLINE vertices are 2D.
+       (if (cddr p)
+           (list x y (+ (coerce (third p) 'double-float) dz))
+           (list x y))))))
 
 (defun %entity-rotate-one (entity bx by angle)
   (let ((c (cos angle)) (s (sin angle)))
-    (dolist (code '(10 11 12 13))
-      (let ((p (%entity-group-value entity code)))
-        (when (consp p)
-          (let ((x (- (coerce (first p) 'double-float) bx))
-                (y (- (coerce (second p) 'double-float) by)))
-            (%entity-set-group entity code
-                               (list (+ bx (- (* c x) (* s y)))
-                                     (+ by (+ (* s x) (* c y)))
-                                     (coerce (or (third p) 0.0d0)
-                                             'double-float)))))))
+    (%entity-map-point-groups
+     entity
+     (lambda (p)
+       (let ((x (- (coerce (first p) 'double-float) bx))
+             (y (- (coerce (second p) 'double-float) by)))
+         (let ((rx (+ bx (- (* c x) (* s y))))
+               (ry (+ by (+ (* s x) (* c y)))))
+           (if (cddr p)
+               (list rx ry (coerce (third p) 'double-float))
+               (list rx ry))))))
     (when (member (entity-handle-kind entity)
                   '(:text :mtext :attrib :attdef :insert))
       (%entity-set-group entity 50

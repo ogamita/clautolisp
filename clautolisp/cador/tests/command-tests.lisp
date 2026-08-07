@@ -240,3 +240,55 @@
              (p11 (cdr (assoc 11 data))))
         (is (< (abs (first p11)) 1d-9))
         (is (< (abs (- 1.0d0 (second p11))) 1d-9))))))
+
+(test block-absorption-translates-every-polyline-vertex
+  ;; The donut LWPOLYLINE has one 10 group per vertex: -BLOCK's
+  ;; translation to the base point must transform them ALL (1.8.19
+  ;; regression: only the first was translated, corrupting the
+  ;; geometry and the bas/haut discrimination).
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command
+     mock '("._donut" "0" "2" "100.0,50.0,0.0" ""))
+    (let ((ss (host-ssget mock nil :mode "X")))
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.-block" "sigfic_d" "100,50" ss "")))
+    (let* ((data (host-tblsearch mock "BLOCK" "sigfic_d"))
+           (entry (cdr (assoc -2 data)))
+           (view (host-entget mock entry))
+           (vertices (loop for pair in view
+                           when (and (consp pair) (eql 10 (car pair)))
+                             collect (cdr pair))))
+      (is (= 2 (length vertices)))
+      ;; Both vertices are local now: x = ±0.5, y = 0.
+      (is (every (lambda (v) (< (abs (second v)) 1d-9)) vertices))
+      (is (< (abs (+ 0.5d0 (first (first vertices)))) 1d-9))
+      (is (< (abs (- 0.5d0 (first (second vertices)))) 1d-9)))))
+
+(test insert-boundingbox-covers-every-vertex-and-discriminates-side
+  ;; A bas-drawn shape (all geometry at or below the insertion point)
+  ;; must yield a bounding box that stays below it — the SCHMS côté
+  ;; BAS check.
+  (let ((mock (make-cador)))
+    ;; Donut at the insertion, vertical line going DOWN (côté bas).
+    (clautolisp.autolisp-host:host-command
+     mock '("._donut" "0" "2" "100.0,50.0,0.0" ""))
+    (clautolisp.autolisp-host:host-command
+     mock '("._line" "100,50" "100,44" ""))
+    (let ((ss (host-ssget mock nil :mode "X")))
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.-block" "sigfic_b" "100,50" ss "")))
+    (let* ((doc (%tv-active-document mock))
+           (modelspace (host-vlax-get-property mock doc "ModelSpace"))
+           (ref (host-vlax-invoke-method
+                 mock modelspace "InsertBlock"
+                 (list (list 100.0d0 50.0d0 0.0d0) "sigfic_b"
+                       1.0d0 1.0d0 1.0d0 0.0d0)))
+           (box (host-vlax-invoke-method mock ref "GetBoundingBox" '()))
+           (min-corner (first box))
+           (max-corner (second box)))
+      ;; max-y == insertion y (nothing above), min-y == 44 (the line).
+      (is (< (abs (- 50.0d0 (second max-corner))) 1d-9))
+      (is (< (abs (- 44.0d0 (second min-corner))) 1d-9))
+      ;; x spread is the donut's, centred on the insertion.
+      (is (< (abs (- 99.5d0 (first min-corner))) 1d-9))
+      (is (< (abs (- 100.5d0 (first max-corner))) 1d-9)))))

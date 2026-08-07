@@ -538,7 +538,14 @@ separate binary for tool integrators.
   and absorbs the selected entities, translated so the base point
   becomes the definition origin — they leave model space, the vendor
   contract; a same-name definition is redefined) complete the engine's
-  block-factory path. Command-name resolution honours that a leading
+  block-factory path.
+- Geometric transforms (translate / rotate — Move, Copy, -BLOCK
+  absorption, the command ~ROTATE~) and ~GetBoundingBox~ now apply to
+  *every* occurrence of a point group, not just the first: a
+  LWPOLYLINE (e.g. a DONUT) carries one 10 group per vertex, and
+  transforming only the first corrupted its geometry — visibly, the
+  bas/haut side discrimination of an inserted block. Point arity is
+  preserved (2D vertices stay 2D). Command-name resolution honours that a leading
   ~-~ is *not* a generic modifier: ~-FOO~ is a distinct,
   explicitly-defined console-form command, so each dash form is
   registered explicitly (~-BLOCK~ today; on this TUI-only host the
