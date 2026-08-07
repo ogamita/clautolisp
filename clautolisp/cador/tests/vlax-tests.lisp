@@ -607,3 +607,18 @@ the shape of the SCHMS sigfic fixtures."
         (is (string= "ATTDEF"
                      (autolisp-string-value
                       (cdr (assoc 0 (host-entget mock entry))))))))))
+
+(test entmake-block-abandons-a-dangling-open-definition
+  ;; A factory that died between BLOCK and ENDBLK (its error swallowed
+  ;; by *error*) must not brick every later factory: the next BLOCK
+  ;; header abandons the dangling run and opens normally.
+  (let* ((mock (make-cador)))
+    (host-entmake mock (list (cons 0 "BLOCK") (cons 2 "ABANDONNE")
+                             (cons 70 2) (list 10 0.0d0 0.0d0 0.0d0)))
+    ;; …no ENDBLK: the factory died here. A fresh definition works.
+    (let ((closing (%tv-make-sigfic-block mock "SIGFIC_OK")))
+      (is (typep closing 'autolisp-string))
+      (is (string= "SIGFIC_OK" (autolisp-string-value closing))))
+    (is (not (null (cador-find-table-record mock :block-record "SIGFIC_OK"))))
+    ;; The abandoned name was never registered.
+    (is (null (cador-find-table-record mock :block-record "ABANDONNE")))))

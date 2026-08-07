@@ -492,11 +492,18 @@ a SEQEND closes it."
 (defun %entmake-open-block (host pure)
   "ENTMAKE of a (0 . \"BLOCK\") header: open a block-definition run.
 Returns the echoed header on success; NIL (the vendor entmake failure
-value) when a definition is already open or the header names no block."
+value) when the header names no block. A definition left open by an
+interrupted factory (an error between BLOCK and ENDBLK, swallowed by
+the caller's *error*) is ABANDONED — its collected entities stay
+orphaned under the abandoned name, never registered — so one failed
+factory cannot silently break every later one. SPEC-UNCERTAIN: the
+vendors' recovery from an abandoned entmake block sequence is not
+probed (deferred-spec-research.issue)."
   (let ((name (%data-group-value pure 2))
         (flags (or (%data-group-value pure 70) 0)))
+    (when (cador-open-block-definition host)
+      (setf (cador-open-block-definition host) nil))
     (cond
-      ((cador-open-block-definition host) nil)
       ((not (and (stringp name) (plusp (length name)))) nil)
       (t
        (when (and (integerp flags) (logbitp 0 flags)
