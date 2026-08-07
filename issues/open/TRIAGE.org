@@ -125,6 +125,7 @@ the shared blocker.
 | Issue                         | Status | Note |
 |-------------------------------+--------+------|
 | ci-github-ccl-lane            | TODO   | add a CCL job to the GitHub Actions workflow |
+| windows-runner-quicklisp-deps | TODO   | Windows runner can't ql:quickload fiveam at job time (network: "Unable to process HTTP header") → test:clautolisp:windows / test:alfe:windows abort; bake deps into its ~/quicklisp like the Dockerfile/macOS runner. Code is green where no fetch is needed (conformance/autolisp-test:windows). Found 2026-08-07 |
 | build-tool-paths-unquoted     | TODO   | toute variable portant un chemin de programme ou de fichier doit être quotée, dans les Makefile comme dans les scripts ; règle de correction générale, pas de portabilité Windows — un chemin POSIX peut aussi contenir une espace, et SBCL= est un override documenté |
 
 | cloud-platform-runners        | TODO   | pjb: survey on-demand macOS/Windows cloud runners |
