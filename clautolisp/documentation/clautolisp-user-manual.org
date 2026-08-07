@@ -634,6 +634,24 @@ provides that surface through the host backend:
   entities it owns, so ~vlax-for~ walks block contents; its members
   are entity-backed VLA-objects that ~vlax-vla-object->ename~
   round-trips.
+- Block definitions are also created the AutoLISP way: ~entmake~ of a
+  ~(0 . "BLOCK")~ header opens a definition run, the entities entmade
+  next belong to it, and the closing ~(0 . "ENDBLK")~ registers the
+  block and returns its *name* (redefining an existing name replaces
+  its contents; ~"*U"~ with flag bit 0 allocates an anonymous name).
+  Block contents never appear in ~ssget "X"~, ~entlast~ or the
+  top-level ~entnext~ walk; ~(entnext (tblobjname "BLOCK" name))~
+  walks the block's own entities (the classic ATTDEF scan).
+- Entity ActiveX *properties* read and write the entity's DXF groups:
+  on an entity-backed VLA-object, ~TextString~ / ~TagString~ /
+  ~Layer~ / ~Color~ / ~Height~ / ~Rotation~ (radians, the entget
+  convention) / ~Alignment~ (acAlignment enum) / ~Name~ and
+  ~EffectiveName~ (INSERT) / ~Handle~ and ~ObjectName~ (read-only) /
+  … are live views of the entity data, and the point-valued
+  ~InsertionPoint~ / ~TextAlignmentPoint~ come back as
+  VARIANT-wrapped double SAFEARRAYs —
+  ~(vlax-safearray->list (vlax-variant-value …))~ — and accept
+  ~vlax-3d-point~ results (or plain lists) on writes.
 
 Example (headless, against the mock host):
 

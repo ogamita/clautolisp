@@ -3987,11 +3987,16 @@ most recent first."
   ;; the host stores) and nil on failure. We echo DATA, keeping ENTMAKE
   ;; conformant; the resolved entity (with defaults + handle + ename) is
   ;; obtained with (entget (entlast)) — or, directly, via ENTMAKEX.
+  ;; Exception: completing a block definition — entmake of the closing
+  ;; (0 . "ENDBLK") — returns the new block's NAME, not the data echo
+  ;; (the vendor block-creation contract); the host signals that case
+  ;; by returning the name as a string.
   (require-proper-list data "ENTMAKE")
   (let ((result (host-entmake (current-evaluation-host) data)))
-    (if result
-        (errno-and-return 0 data)
-        (errno-and-return 36 nil))))
+    (cond
+      ((typep result 'autolisp-string) (errno-and-return 0 result))
+      (result (errno-and-return 0 data))
+      (t (errno-and-return 36 nil)))))
 
 (defun builtin-entmakex (data)
   ;; Same ERRNO contract as ENTMAKE, but the return value is the new
@@ -10078,4 +10083,23 @@ variable convention below."
   (setf clautolisp.autolisp-runtime:*vlax-collection-items-hook*
         (lambda (collection)
           (host-vlax-collection-items (current-evaluation-host) collection)))
+  ;; Point-valued COM properties (InsertionPoint, …) cross the
+  ;; host/builtins boundary through these hooks: the host hands a plain
+  ;; doubles list up, the builtins layer (which owns the safearray
+  ;; representation) wraps it as the VARIANT(SAFEARRAY of doubles) the
+  ;; vendor surface returns — and unwraps one for the write direction.
+  (setf clautolisp.autolisp-runtime:*com-point-wrap-hook*
+        (lambda (doubles)
+          (%safearray-variant (%doubles->safearray doubles))))
+  (setf clautolisp.autolisp-runtime:*com-point-unwrap-hook*
+        (lambda (value)
+          (and (or (typep value 'autolisp-safearray)
+                   (and (typep value 'autolisp-variant)
+                        (consp (autolisp-variant-value value))
+                        (typep (cdr (autolisp-variant-value value))
+                               'autolisp-safearray)))
+               (coerce (safearray-data-storage
+                        (safearray-of (%as-safearray value "COM-POINT")
+                                      "COM-POINT"))
+                       'list))))
   t)

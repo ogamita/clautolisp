@@ -63,6 +63,7 @@
                 #:host-vlax-method-applicable-p
                 #:host-vlax-get-acad-object
                 #:host-vlax-collection-items
+                #:host-vlax-ename->vla-object
                 #:host-vlax-vla-object->ename)
   (:import-from #:clautolisp.cador
                 #:cador

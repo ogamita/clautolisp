@@ -6,6 +6,31 @@
 #+DEPENDS: -
 #+BRANCH: feature-vla-entity-property-bridge
 
+* Progress
+
+- *1.8.11 (2026-08-07): the bridge LANDED* for the SCHMS subset —
+  =Handle= / =ObjectName= (read-only), =Layer=, =Linetype=, =Color=,
+  =Lineweight=, =Thickness=, =TextString=, =TagString=,
+  =PromptString=, =StyleName=, =Height=, =Rotation= (radians, the
+  entget convention — no conversion), =Mode=, =Elevation=,
+  =Name= / =EffectiveName= (INSERT), =X/Y/ZScaleFactor=,
+  =InsertionPoint= / =TextAlignmentPoint= (VARIANT-wrapped double
+  SAFEARRAYs), and =Alignment= (acAlignment enum over 72 + 73/74).
+  The representation boundary was solved with runtime hooks
+  (=*com-point-wrap-hook*= / =*com-point-unwrap-hook*=, installed by
+  autolisp-builtins-core like =*vlax-collection-items-hook*=) instead
+  of moving =safearray-data= down — no struct migration needed.
+  Same release: entmake =BLOCK=/=ENDBLK= block-definition creation
+  (see =entmake-symbol-table-records.issue=), main-space filtering of
+  =ssget "X"= / =entlast= / top-level =entnext=, and the
+  =(entnext (tblobjname "BLOCK" name))= block walk.
+- *Remaining open:* confirm against the SCHMS =test-cad-clautolisp=
+  re-run and extend the property table to what it still consumes
+  (candidates: =GetBoundingBox= as a method, =TrueColor=, =Closed=,
+  =MTextAttribute=, MTEXT =Rotation= units — SPEC-UNCERTAIN); vendor
+  probes for the SPEC-UNCERTAIN notes (EffectiveName on dynamic
+  blocks, entmakex-on-BLOCK, ENDBLK-terminated entnext walk).
+
 * Context
 
 Split out of =vla-accessor-family.issue= while resolving the SCHMS

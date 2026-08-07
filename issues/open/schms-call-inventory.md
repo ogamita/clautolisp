@@ -547,33 +547,33 @@ références de bloc attribuées portant des XData.
 > ci-dessous est validé de bout en bout sur le mock ; les autres se résolvent
 > mais dépendent encore de la couverture du graphe d'objets mock (P2).
 
-- [ ] `vla-put-textstring` — 188
-- [ ] `vla-get-layer` — 170
-- [ ] `vla-get-insertionpoint` — 169
-- [ ] `vla-get-rotation` — 154
-- [ ] `vla-put-height` — 126
-- [ ] `vla-put-textalignmentpoint` — 126
-- [ ] `vla-put-alignment` — 125
+- [x] `vla-put-textstring` — 188 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-layer` — 170 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-insertionpoint` — 169 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-rotation` — 154 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-height` — 126 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-textalignmentpoint` — 126 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-alignment` — 125 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-rotate` — 87
 - [x] `vla-item` — 18 (1.8.10: generic collection Item, 0-based index or case-insensitive name, missing item catchable via vl-catch-all-apply; end-to-end on mock)
 - [x] `vla-get-blocks` — 14 (1.8.10: live drawing-backed Blocks collection; end-to-end on mock)
 - [ ] `vla-delete` — 9
-- [ ] `vla-get-handle` — 8
-- [ ] `vla-get-effectivename` — 7
+- [x] `vla-get-handle` — 8 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-effectivename` — 7 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-copy` — 6
-- [ ] `vla-get-name` — 6
-- [ ] `vla-get-objectname` — 6
+- [x] `vla-get-name` — 6 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-objectname` — 6 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-getbulge` — 6
-- [ ] `vla-put-insertionpoint` — 6
-- [ ] `vla-put-layer` — 6
+- [x] `vla-put-insertionpoint` — 6 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-layer` — 6 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-getboundingbox` — 5
-- [ ] `vla-put-color` — 5
-- [ ] `vla-put-explodable` — 5
+- [x] `vla-put-color` — 5 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-explodable` — 5 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-add` — 4
 - [x] `vla-get-layers` — 4 (1.8.10: live Layers collection + Layers.Add; end-to-end on mock)
 - [x] `vla-get-modelspace` — 4 (1.8.10: live *Model_Space entity collection, was a placeholder string; end-to-end on mock)
 - [ ] `vla-move` — 4
-- [ ] `vla-put-lineweight` — 4
+- [x] `vla-put-lineweight` — 4 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-documents` — 3
 - [ ] `vla-get-fullname` — 3
 - [ ] `vla-get-ownerid` — 3
@@ -583,17 +583,17 @@ références de bloc attribuées portant des XData.
 - [ ] `vla-activate` — 2
 - [ ] `vla-endundomark` — 2
 - [x] `vla-get-activedocument` — 2 (façade + vlax-get-acad-object; end-to-end on mock)
-- [ ] `vla-get-alignment` — 2
-- [ ] `vla-get-elevation` — 2
+- [x] `vla-get-alignment` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-elevation` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-propertyname` — 2
-- [ ] `vla-get-textalignmentpoint` — 2
-- [ ] `vla-get-textstring` — 2
+- [x] `vla-get-textalignmentpoint` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-textstring` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-value` — 2
 - [ ] `vla-getwidth` — 2
 - [ ] `vla-intersectwith` — 2
 - [ ] `vla-object` — 2
-- [ ] `vla-put-name` — 2
-- [ ] `vla-put-stylename` — 2
+- [x] `vla-put-name` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-stylename` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-regen` — 2
 - [ ] `vla-save` — 2
 - [ ] `vla-setbulge` — 2
@@ -609,11 +609,11 @@ références de bloc attribuées portant des XData.
 - [ ] `vla-erase` — 1
 - [ ] `vla-evaluate` — 1
 - [x] `vla-get-count` — 1 (1.8.10: live Count on every collection; end-to-end on mock)
-- [ ] `vla-get-height` — 1
-- [ ] `vla-get-isdynamicblock` — 1
+- [x] `vla-get-height` — 1 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-isdynamicblock` — 1 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-mtextattribute` — 1
 - [ ] `vla-get-readonly` — 1
-- [ ] `vla-get-tagstring` — 1
+- [x] `vla-get-tagstring` — 1 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-truecolor` — 1
 - [ ] `vla-getextensiondictionary` — 1
 - [ ] `vla-insertblock` — 1
@@ -621,7 +621,7 @@ références de bloc attribuées portant des XData.
 - [ ] `vla-open` — 1
 - [ ] `vla-put-closed` — 1
 - [ ] `vla-put-layeron` — 1
-- [ ] `vla-put-mode` — 1
+- [x] `vla-put-mode` — 1 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-put-mtextattribute` — 1
 - [ ] `vla-put-truecolor` — 1
 - [ ] `vla-put-value` — 1

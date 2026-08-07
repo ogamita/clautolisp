@@ -466,6 +466,29 @@ separate binary for tool integrators.
   property named BLOCKS" failure on ~--host mock~. See the user manual
   § /Host backend / The ActiveX / COM object model/ and
   ~issues/open/vla-accessor-family.issue~.
+- Block definitions through ~entmake~: an ~entmake~ of a
+  ~(0 . "BLOCK")~ header opens a block-definition run — the entities
+  entmade next belong to the block, not to model space — and the
+  closing ~(0 . "ENDBLK")~ registers the definition in the block table
+  and returns the block's *name* (the vendor contract; ~"*U"~ + flag
+  bit 0 allocates an anonymous ~*U<n>~ name, re-defining an existing
+  name replaces its contents). Block contents stay out of ~ssget "X"~,
+  ~entlast~ and the top-level ~entnext~ walk; ~(entnext (tblobjname
+  "BLOCK" name))~ walks the block's entities — the classic ATTDEF
+  scan. Fixes the SCHMS "Item: no item named sigfic_N" failures on
+  ~--host mock~.
+- Entity ActiveX properties bridge onto the entity's DXF groups: on an
+  entity-backed VLA-object (from ~vlax-ename->vla-object~ or a block's
+  members), ~vla-get-/put-~ ~TextString~, ~TagString~, ~PromptString~,
+  ~Layer~, ~Linetype~, ~Color~, ~Lineweight~, ~StyleName~, ~Height~,
+  ~Rotation~ (radians, the entget convention), ~Mode~, ~Elevation~,
+  ~Name~ / ~EffectiveName~ (INSERT), ~X/Y/ZScaleFactor~, ~Handle~ and
+  ~ObjectName~ (read-only), ~Alignment~ (the acAlignment enum over
+  groups 72 + 73/74), and the point-valued ~InsertionPoint~ /
+  ~TextAlignmentPoint~ as VARIANT-wrapped double SAFEARRAYs
+  (consumable by ~vlax-variant-value~ + ~vlax-safearray->list~, and
+  writable from ~vlax-3d-point~ or a plain point list). See
+  ~issues/open/vla-entity-property-bridge.issue~.
 - ~acad_strlsort~ now really sorts: it returns a *new* list of the
   input strings in ascending, case-sensitive, ordinal order (upper
   before lower; accented / non-ASCII letters after the ASCII range),

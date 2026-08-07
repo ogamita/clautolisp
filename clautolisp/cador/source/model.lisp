@@ -167,6 +167,14 @@ ATTRIB subentity gets its owner (group 330) set to this handle
 unless the caller supplied one, matching the AutoCAD/BricsCAD
 create-sequence contract. A SEQEND closes the run (clears the
 slot). This is session state, not drawing state.")
+   (open-block-definition    :initform nil
+                             :accessor cador-open-block-definition
+                             :documentation "The block-definition run
+opened by an entmake of a (0 . \"BLOCK\") header, as (NAME . HEADER),
+or NIL. While open, every entmade entity is owned by NAME (not model
+space); the closing (0 . \"ENDBLK\") registers the definition in the
+:block-record table + the drawing's block registry and clears the
+slot, per the vendor entmake block-creation contract. Session state.")
    (ename-cache              :initform (make-hash-table :test #'equal)
                              :accessor cador-ename-cache
                              :documentation "Interns AutoLISP ENAMEs by

@@ -136,6 +136,8 @@
    #:signal-autolisp-runtime-error
    #:*resolve-unbound-function-hook*
    #:*vlax-collection-items-hook*
+   #:*com-point-wrap-hook*
+   #:*com-point-unwrap-hook*
    #:set-autolisp-errno
    #:autolisp-exit-status
    #:set-autolisp-exit-status

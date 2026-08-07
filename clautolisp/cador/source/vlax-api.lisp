@@ -123,7 +123,9 @@ itself a live collection of the entities the block owns."
        (setf (gethash "Name" props)       (%al-string name)
              (gethash "ObjectName" props) (%al-string "AcDbBlockTableRecord")
              (gethash "IsLayout" props)   (%layout-block-name-p name)
-             (gethash "IsXRef" props)     nil)
+             (gethash "IsXRef" props)     nil
+             (gethash "IsDynamicBlock" props) nil
+             (gethash "Explodable" props) t)
        object))))
 
 (defun %layer-object (host name)
@@ -323,6 +325,254 @@ RESULT T) when NAME was handled, (values NIL NIL) otherwise."
         (and (consp kind) (eq (car kind) :block-entities)
              (string-equal name "Delete")))))
 
+;;; --- Entity-backed COM properties (DXF-group bridge) --------------
+;;;
+;;; An entity's ActiveX properties read and write its DXF groups: the
+;;; entity behind a vlax-ename->vla-object wrapper carries no property
+;;; hash — instead vlax-get/put-property dispatch on the declarative
+;;; table below (vla-entity-property-bridge.issue). Angular values
+;;; follow the entget convention (radians), which is also the ActiveX
+;;; convention, so Rotation maps to group 50 without conversion.
+;;; Point-valued properties cross the layer boundary through the
+;;; runtime's *com-point-wrap-hook* / *com-point-unwrap-hook* (owned by
+;;; the builtins layer, which has the safearray representation): with
+;;; the hooks installed they are VARIANT-wrapped double SAFEARRAYs, as
+;;; the vendor surface hands back; without (bare host unit tests) they
+;;; pass as plain lists.
+
+(defparameter *entity-com-object-names*
+  '((:line . "AcDbLine") (:point . "AcDbPoint") (:circle . "AcDbCircle")
+    (:arc . "AcDbArc") (:ellipse . "AcDbEllipse") (:ray . "AcDbRay")
+    (:xline . "AcDbXline") (:lwpolyline . "AcDbPolyline")
+    (:polyline . "AcDb2dPolyline") (:vertex . "AcDb2dVertex")
+    (:seqend . "AcDbSequenceEnd") (:spline . "AcDbSpline")
+    (:text . "AcDbText") (:mtext . "AcDbMText")
+    (:attdef . "AcDbAttributeDefinition") (:attrib . "AcDbAttribute")
+    (:insert . "AcDbBlockReference") (:3dface . "AcDbFace")
+    (:solid . "AcDbSolid") (:trace . "AcDbTrace")
+    (:xrecord . "AcDbXrecord") (:dictionary . "AcDbDictionary"))
+  "Entity kind -> the ActiveX ObjectName class string.")
+
+(defparameter *entity-com-properties*
+  ;; (NAME . plist) — :group DXF-GROUP, :type :string|:real|:integer|:point,
+  ;; :kinds (KEYWORD…) restricting applicability (absent = every kind),
+  ;; :default value when the group is absent, :read-only t.
+  '(("Handle"             :group 5   :type :string  :read-only t)
+    ("Layer"              :group 8   :type :string  :default "0")
+    ("Linetype"           :group 6   :type :string  :default "BYLAYER")
+    ("Color"              :group 62  :type :integer :default 256)
+    ("Lineweight"         :group 370 :type :integer :default -1)
+    ("Thickness"          :group 39  :type :real    :default 0.0d0)
+    ("TextString"         :group 1   :type :string  :default ""
+                          :kinds (:text :mtext :attrib :attdef))
+    ("TagString"          :group 2   :type :string  :default ""
+                          :kinds (:attrib :attdef))
+    ("PromptString"       :group 3   :type :string  :default ""
+                          :kinds (:attdef))
+    ("StyleName"          :group 7   :type :string  :default "Standard"
+                          :kinds (:text :mtext :attrib :attdef))
+    ("Height"             :group 40  :type :real    :default 0.0d0
+                          :kinds (:text :mtext :attrib :attdef))
+    ("Rotation"           :group 50  :type :real    :default 0.0d0
+                          :kinds (:text :attrib :attdef :insert))
+    ("Mode"               :group 70  :type :integer :default 0
+                          :kinds (:attrib :attdef))
+    ("Elevation"          :group 38  :type :real    :default 0.0d0
+                          :kinds (:lwpolyline))
+    ("Name"               :group 2   :type :string  :default ""
+                          :kinds (:insert))
+    ("EffectiveName"      :group 2   :type :string  :read-only t
+                          :kinds (:insert))
+    ("XScaleFactor"       :group 41  :type :real    :default 1.0d0
+                          :kinds (:insert))
+    ("YScaleFactor"       :group 42  :type :real    :default 1.0d0
+                          :kinds (:insert))
+    ("ZScaleFactor"       :group 43  :type :real    :default 1.0d0
+                          :kinds (:insert))
+    ("InsertionPoint"     :group 10  :type :point
+                          :kinds (:text :mtext :attrib :attdef :insert :point))
+    ("TextAlignmentPoint" :group 11  :type :point
+                          :kinds (:text :attrib :attdef)))
+  "Scalar / point entity COM properties bridged onto DXF groups.
+EffectiveName = Name headless — the mock has no dynamic blocks
+(SPEC-UNCERTAIN; vla-entity-property-bridge.issue). ObjectName and
+Alignment are computed outside this table.")
+
+(defun %resolve-backing-entity (host object)
+  "The live ENTITY-HANDLE behind an entity-backed COM object, or NIL."
+  (let ((handle (mock-com-object-backing-ename object)))
+    (and handle (safe-find-entity (cador-active-drawing host) handle))))
+
+(defun %entity-property-descriptor (entity name)
+  "The *entity-com-properties* plist applicable to ENTITY for property
+NAME, or NIL."
+  (let ((entry (assoc name *entity-com-properties* :test #'string-equal)))
+    (and entry
+         (let ((kinds (getf (cdr entry) :kinds)))
+           (or (null kinds)
+               (member (entity-handle-kind entity) kinds)))
+         (cdr entry))))
+
+(defun %entity-group-value (entity code)
+  (dolist (pair (entity-handle-data entity) nil)
+    (when (and (consp pair) (group-code-equal-p (car pair) code))
+      (return (cdr pair)))))
+
+(defun %entity-set-group (entity code value)
+  "Set the first CODE group of ENTITY's data to VALUE, appending the
+group when absent (the entmod convention)."
+  (let ((pair (find-if (lambda (pair)
+                         (and (consp pair)
+                              (group-code-equal-p (car pair) code)))
+                       (entity-handle-data entity))))
+    (if pair
+        (setf (cdr pair) value)
+        (setf (entity-handle-data entity)
+              (append (entity-handle-data entity)
+                      (list (cons code value)))))
+    value))
+
+(defun %wrap-com-point (doubles)
+  (let ((wrap clautolisp.autolisp-runtime:*com-point-wrap-hook*))
+    (if wrap (funcall wrap doubles) doubles)))
+
+(defun %unwrap-com-point (value operator-name)
+  "Coerce VALUE — a VARIANT / SAFEARRAY (via the unwrap hook) or a
+plain number list — to a list of CL doubles."
+  (let* ((unwrap clautolisp.autolisp-runtime:*com-point-unwrap-hook*)
+         (doubles (or (and unwrap (funcall unwrap value))
+                      (and (consp value)
+                           (every #'realp value)
+                           value))))
+    (unless doubles
+      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+       :invalid-com-point
+       "~A expects a point (a VARIANT/SAFEARRAY of doubles or a number list), got ~S."
+       operator-name value))
+    (mapcar (lambda (x) (coerce x 'double-float)) doubles)))
+
+(defun %alignment-vertical-code (kind)
+  "The DXF vertical-justification group for KIND: 73 on TEXT, 74 on
+ATTRIB / ATTDEF."
+  (if (eq kind :text) 73 74))
+
+(defun %entity-alignment (entity)
+  "The acAlignment enum value from the 72 + 73/74 groups."
+  (let* ((kind (entity-handle-kind entity))
+         (h (min (or (%entity-group-value entity 72) 0) 5))
+         (v (or (%entity-group-value entity (%alignment-vertical-code kind)) 0)))
+    (case v
+      (3 (+ 6 (min h 2)))                 ; top row
+      (2 (+ 9 (min h 2)))                 ; middle row
+      (1 (+ 12 (min h 2)))                ; bottom row
+      (t h))))                            ; baseline: 0..5 direct
+
+(defun (setf %entity-alignment) (value entity)
+  (multiple-value-bind (h v)
+      (cond
+        ((and (integerp value) (<= 0 value 5))  (values value 0))
+        ((and (integerp value) (<= 6 value 8))  (values (- value 6) 3))
+        ((and (integerp value) (<= 9 value 11)) (values (- value 9) 2))
+        ((and (integerp value) (<= 12 value 14)) (values (- value 12) 1))
+        (t (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+            :invalid-com-alignment
+            "Alignment expects an acAlignment value 0-14, got ~S." value)))
+    (%entity-set-group entity 72 h)
+    (%entity-set-group entity
+                       (%alignment-vertical-code (entity-handle-kind entity))
+                       v)
+    value))
+
+(defun %alignment-property-p (entity name)
+  (and (string-equal name "Alignment")
+       (member (entity-handle-kind entity) '(:text :attrib :attdef))))
+
+(defun %entity-com-property-get (host object name)
+  "Read entity-backed COM property NAME. Returns (values VALUE T) when
+bridged, (values NIL NIL) otherwise."
+  (let ((entity (%resolve-backing-entity host object)))
+    (cond
+      ((null entity) (values nil nil))
+      ((string-equal name "ObjectName")
+       (let ((kind (entity-handle-kind entity)))
+         (values (%al-string
+                  (or (cdr (assoc kind *entity-com-object-names*))
+                      (concatenate 'string "AcDb"
+                                   (string-capitalize (symbol-name kind)))))
+                 t)))
+      ((%alignment-property-p entity name)
+       (values (%entity-alignment entity) t))
+      (t
+       (let ((descriptor (%entity-property-descriptor entity name)))
+         (if (null descriptor)
+             (values nil nil)
+             (let* ((raw (%entity-group-value entity
+                                              (getf descriptor :group)))
+                    (value (if (null raw) (getf descriptor :default) raw)))
+               (values
+                (ecase (getf descriptor :type)
+                  (:string (%al-string (if (stringp value) value
+                                           (princ-to-string value))))
+                  (:real (if (realp value) (coerce value 'double-float) value))
+                  (:integer value)
+                  (:point (%wrap-com-point
+                           (mapcar (lambda (x) (coerce x 'double-float))
+                                   (or value '(0.0d0 0.0d0 0.0d0))))))
+                t))))))))
+
+(defun %entity-com-property-put (host object name value)
+  "Write entity-backed COM property NAME. Returns (values VALUE T) when
+bridged, (values NIL NIL) when unknown; a read-only property signals
+:com-read-only-property."
+  (let ((entity (%resolve-backing-entity host object)))
+    (cond
+      ((null entity) (values nil nil))
+      ((or (string-equal name "ObjectName")
+           (and (%entity-property-descriptor entity name)
+                (getf (%entity-property-descriptor entity name) :read-only)))
+       (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+        :com-read-only-property
+        "VLA-OBJECT property ~A is read-only." name))
+      ((%alignment-property-p entity name)
+       (values (setf (%entity-alignment entity) value) t))
+      (t
+       (let ((descriptor (%entity-property-descriptor entity name)))
+         (if (null descriptor)
+             (values nil nil)
+             (let ((group (getf descriptor :group)))
+               (ecase (getf descriptor :type)
+                 (:string
+                  (let ((string (%com-string value)))
+                    (unless string
+                      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                       :invalid-com-property-value
+                       "Property ~A expects a string, got ~S." name value))
+                    (%entity-set-group entity group string)))
+                 (:real
+                  (unless (realp value)
+                    (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                     :invalid-com-property-value
+                     "Property ~A expects a number, got ~S." name value))
+                  (%entity-set-group entity group (coerce value 'double-float)))
+                 (:integer
+                  (unless (integerp value)
+                    (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                     :invalid-com-property-value
+                     "Property ~A expects an integer, got ~S." name value))
+                  (%entity-set-group entity group value))
+                 (:point
+                  (%entity-set-group entity group
+                                     (%unwrap-com-point value name))))
+               (values value t))))))))
+
+(defun %entity-com-property-known-p (host object name)
+  (let ((entity (%resolve-backing-entity host object)))
+    (and entity
+         (or (string-equal name "ObjectName")
+             (%alignment-property-p entity name)
+             (%entity-property-descriptor entity name))
+         t)))
+
 ;;; --- Method definitions ------------------------------------------
 
 (defmethod host-vlax-create-object ((host cador) progid)
@@ -370,20 +620,32 @@ RESULT T) when NAME was handled, (values NIL NIL) otherwise."
               (string-equal string "Count"))
          (length (live-collection-members host object)))
         (t
-         (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
-          :unknown-com-property
-          "VLA-OBJECT ~A has no property named ~A."
-          (mock-com-object-progid object) string))))))
+         ;; Entity-backed objects read their properties off the
+         ;; entity's DXF groups.
+         (multiple-value-bind (result handled-p)
+             (%entity-com-property-get host object string)
+           (if handled-p
+               result
+               (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                :unknown-com-property
+                "VLA-OBJECT ~A has no property named ~A."
+                (mock-com-object-progid object) string))))))))
 
 (defmethod host-vlax-put-property ((host cador) vla name value)
   (let* ((object (resolve-vla-object host vla 'vlax-put-property))
          (string (ensure-property-name-string name 'vlax-put-property)))
-    (unless (nth-value 1 (gethash string (mock-com-object-properties object)))
-      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
-       :unknown-com-property
-       "VLA-OBJECT ~A has no property named ~A."
-       (mock-com-object-progid object) string))
-    (setf (gethash string (mock-com-object-properties object)) value)
+    (if (nth-value 1 (gethash string (mock-com-object-properties object)))
+        (setf (gethash string (mock-com-object-properties object)) value)
+        ;; Entity-backed objects write their properties into the
+        ;; entity's DXF groups.
+        (multiple-value-bind (result handled-p)
+            (%entity-com-property-put host object string value)
+          (declare (ignore result))
+          (unless handled-p
+            (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+             :unknown-com-property
+             "VLA-OBJECT ~A has no property named ~A."
+             (mock-com-object-progid object) string))))
     value))
 
 (defmethod host-vlax-invoke-method ((host cador) vla name args)
@@ -406,7 +668,8 @@ RESULT T) when NAME was handled, (values NIL NIL) otherwise."
          (string (ensure-property-name-string name 'vlax-property-available-p)))
     (or (and (nth-value 1 (gethash string (mock-com-object-properties object))) t)
         (and (mock-com-object-collection-p object)
-             (string-equal string "Count")))))
+             (string-equal string "Count"))
+        (%entity-com-property-known-p host object string))))
 
 (defmethod host-vlax-method-applicable-p ((host cador) vla name)
   (let* ((object (resolve-vla-object host vla 'vlax-method-applicable-p))

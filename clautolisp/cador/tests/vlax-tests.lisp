@@ -261,3 +261,173 @@
     (host-vlax-invoke-method mock layers "Add" '("SIGNALISATION"))
     (is (eql 2 (host-vlax-get-property mock layers "Count")))
     (is (not (null (cador-find-table-record mock :layer "SIGNALISATION"))))))
+
+;;; --- Block definitions through ENTMAKE + the entity property bridge ---
+;;; (Regression for the SCHMS "Item: no item named sigfic_N" failure:
+;;; fixtures entmake their block definitions, which must land in the
+;;; block table and be reachable through the Blocks collection.)
+
+(defun %tv-attdef-dxf (tag)
+  (list (cons 0 "ATTDEF") (cons 8 "0")
+        (list 10 0.0d0 0.0d0 0.0d0) (cons 40 2.5d0)
+        (cons 1 "default") (cons 2 tag) (cons 3 "prompt?") (cons 70 0)))
+
+(defun %tv-text-dxf (string)
+  (list (cons 0 "TEXT") (cons 8 "0")
+        (list 10 0.0d0 0.0d0 0.0d0) (cons 40 2.5d0) (cons 1 string)))
+
+(defun %tv-make-sigfic-block (mock name)
+  "Entmake a block definition NAME holding one ATTDEF and one TEXT,
+the shape of the SCHMS sigfic fixtures."
+  (host-entmake mock (list (cons 0 "BLOCK") (cons 2 name) (cons 70 2)
+                           (list 10 0.0d0 0.0d0 0.0d0)))
+  (host-entmake mock (%tv-attdef-dxf "SIGTAG"))
+  (host-entmake mock (%tv-text-dxf "corps"))
+  (host-entmake mock (list (cons 0 "ENDBLK"))))
+
+(test entmake-block-endblk-registers-a-visible-block-definition
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (blocks (host-vlax-get-property mock doc "Blocks"))
+         (closing (%tv-make-sigfic-block mock "SIGFIC_T")))
+    ;; ENDBLK returns the completed block's name (vendor contract).
+    (is (typep closing 'autolisp-string))
+    (is (string= "SIGFIC_T" (autolisp-string-value closing)))
+    ;; The definition is in the :block-record table and the collection.
+    (is (not (null (cador-find-table-record mock :block-record "SIGFIC_T"))))
+    (is (eql 3 (host-vlax-get-property mock blocks "Count")))
+    (let ((sigfic (host-vlax-invoke-method mock blocks "Item" '("sigfic_t"))))
+      ;; The block owns its two entities, visible through the block object.
+      (is (eql 2 (host-vlax-get-property mock sigfic "Count"))))))
+
+(test entmake-block-contents-stay-out-of-main-space
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (modelspace (host-vlax-get-property mock doc "ModelSpace")))
+    (%tv-make-sigfic-block mock "SIGFIC_U")
+    ;; Nothing in model space, no entlast, no top-level entnext.
+    (is (eql 0 (host-vlax-get-property mock modelspace "Count")))
+    (is (null (host-entlast mock)))
+    (is (null (host-entnext mock nil)))
+    ;; A model-space entity entmade after the ENDBLK is back to normal.
+    (host-entmake mock (%tv-text-dxf "en model space"))
+    (is (eql 1 (host-vlax-get-property mock modelspace "Count")))
+    (is (typep (host-entlast mock) 'autolisp-ename))
+    ;; The top-level walk sees only the model-space entity.
+    (let ((first (host-entnext mock nil)))
+      (is (typep first 'autolisp-ename))
+      (is (null (host-entnext mock first))))))
+
+(test entnext-from-block-table-record-walks-the-block-entities
+  (let* ((mock (make-cador)))
+    (%tv-make-sigfic-block mock "SIGFIC_V")
+    (let ((record-ename (host-tblobjname mock "BLOCK" "SIGFIC_V")))
+      (is (typep record-ename 'autolisp-ename))
+      ;; The canonical ATTDEF scan: entnext from the table record's
+      ;; ename yields the block's entities in creation order.
+      (let* ((first (host-entnext mock record-ename))
+             (second (and first (host-entnext mock first))))
+        (is (typep first 'autolisp-ename))
+        (is (typep second 'autolisp-ename))
+        (is (null (host-entnext mock second)))
+        (let ((vla (host-vlax-ename->vla-object mock first)))
+          (is (string= "AcDbAttributeDefinition"
+                       (autolisp-string-value
+                        (host-vlax-get-property mock vla "ObjectName")))))))))
+
+(test entmake-block-redefinition-replaces-the-contents
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (blocks (host-vlax-get-property mock doc "Blocks")))
+    (%tv-make-sigfic-block mock "SIGFIC_W")
+    ;; Redefine with a single entity: the old contents are erased.
+    (host-entmake mock (list (cons 0 "BLOCK") (cons 2 "SIGFIC_W") (cons 70 2)
+                             (list 10 0.0d0 0.0d0 0.0d0)))
+    (host-entmake mock (%tv-text-dxf "v2"))
+    (host-entmake mock (list (cons 0 "ENDBLK")))
+    (is (eql 3 (host-vlax-get-property mock blocks "Count")))
+    (let ((block (host-vlax-invoke-method mock blocks "Item" '("SIGFIC_W"))))
+      (is (eql 1 (host-vlax-get-property mock block "Count"))))))
+
+(test entity-property-bridge-reads-and-writes-dxf-groups
+  (let* ((mock (make-cador))
+         (view (host-entmake mock (%tv-text-dxf "hello")))
+         (ename (cdr (first view)))
+         (vla (host-vlax-ename->vla-object mock ename)))
+    ;; Reads off the DXF groups, strings as AutoLISP strings.
+    (is (string= "hello" (autolisp-string-value
+                          (host-vlax-get-property mock vla "TextString"))))
+    (is (string= "0" (autolisp-string-value
+                      (host-vlax-get-property mock vla "Layer"))))
+    (is (string= "AcDbText" (autolisp-string-value
+                             (host-vlax-get-property mock vla "ObjectName"))))
+    (is (typep (host-vlax-get-property mock vla "Handle") 'autolisp-string))
+    (is (= 0.0d0 (host-vlax-get-property mock vla "Rotation")))
+    ;; Absent group -> documented default.
+    (is (eql 256 (host-vlax-get-property mock vla "Color")))
+    ;; Writes go into the entity data, visible to entget.
+    (host-vlax-put-property mock vla "TextString"
+                            (make-autolisp-string "monde"))
+    (host-vlax-put-property mock vla "Rotation" 1.5d0)
+    (is (string= "monde" (autolisp-string-value
+                          (host-vlax-get-property mock vla "TextString"))))
+    (is (= 1.5d0 (host-vlax-get-property mock vla "Rotation")))
+    (let* ((data (host-entget mock ename))
+           (group1 (find-if (lambda (pair)
+                              (and (consp pair) (eql 1 (car pair))))
+                            data)))
+      (is (string= "monde" (autolisp-string-value (cdr group1)))))
+    ;; Points pass as plain lists at the host layer (no builtins hooks).
+    (is (equal '(0.0d0 0.0d0 0.0d0)
+               (host-vlax-get-property mock vla "InsertionPoint")))
+    (host-vlax-put-property mock vla "InsertionPoint" '(1.0d0 2.0d0 0.0d0))
+    (is (equal '(1.0d0 2.0d0 0.0d0)
+               (host-vlax-get-property mock vla "InsertionPoint")))
+    ;; Availability introspection covers the bridge.
+    (is (host-vlax-property-available-p mock vla "TextString"))
+    (is (not (host-vlax-property-available-p mock vla "Bogus")))))
+
+(test entity-property-bridge-alignment-enum-round-trips
+  (let* ((mock (make-cador))
+         (view (host-entmake mock (%tv-text-dxf "aligne")))
+         (ename (cdr (first view)))
+         (vla (host-vlax-ename->vla-object mock ename)))
+    (is (eql 0 (host-vlax-get-property mock vla "Alignment")))
+    ;; acAlignmentMiddleCenter = 10 -> groups 72=1, 73=2 on TEXT.
+    (host-vlax-put-property mock vla "Alignment" 10)
+    (is (eql 10 (host-vlax-get-property mock vla "Alignment")))
+    (let* ((data (host-entget mock ename))
+           (g72 (find-if (lambda (p) (and (consp p) (eql 72 (car p)))) data))
+           (g73 (find-if (lambda (p) (and (consp p) (eql 73 (car p)))) data)))
+      (is (eql 1 (cdr g72)))
+      (is (eql 2 (cdr g73))))))
+
+(test entity-property-bridge-rejects-read-only-and-unknown
+  (let* ((mock (make-cador))
+         (view (host-entmake mock (%tv-text-dxf "ro")))
+         (ename (cdr (first view)))
+         (vla (host-vlax-ename->vla-object mock ename)))
+    (handler-case
+        (progn (host-vlax-put-property mock vla "Handle" "FFFF")
+               (is nil "putting Handle should have signalled"))
+      (autolisp-runtime-error (condition)
+        (is (eq :com-read-only-property
+                (autolisp-runtime-error-code condition)))))
+    (handler-case
+        (progn (host-vlax-get-property mock vla "NoSuchProp")
+               (is nil "unknown property should have signalled"))
+      (autolisp-runtime-error (condition)
+        (is (eq :unknown-com-property
+                (autolisp-runtime-error-code condition)))))))
+
+(test attdef-bridge-tagstring-and-mode
+  (let* ((mock (make-cador))
+         (view (host-entmake mock (%tv-attdef-dxf "ALT")))
+         (ename (cdr (first view)))
+         (vla (host-vlax-ename->vla-object mock ename)))
+    (is (string= "ALT" (autolisp-string-value
+                        (host-vlax-get-property mock vla "TagString"))))
+    (is (eql 0 (host-vlax-get-property mock vla "Mode")))
+    (host-vlax-put-property mock vla "TagString" "NOUVEAU")
+    (is (string= "NOUVEAU" (autolisp-string-value
+                            (host-vlax-get-property mock vla "TagString"))))))

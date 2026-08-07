@@ -1412,6 +1412,21 @@ ActiveX collection's member values; used by the VLAX-FOR special form.
 Set by the builtins layer (which owns the host COM protocol), so the
 runtime need not depend on the host/builtins layers above it.")
 
+(defparameter *com-point-wrap-hook* nil
+  "When non-nil, a function (DOUBLES-LIST) returning the ActiveX
+VARIANT-wrapped double SAFEARRAY the vendor COM surface hands back for a
+point-valued property (InsertionPoint, TextAlignmentPoint, …). Set by
+the builtins layer, which owns the safearray representation; a host
+returning point properties calls it so the runtime/host layers need not
+depend on the builtins layer above them. When nil (builtins not loaded,
+e.g. bare host unit tests) points pass through as plain lists.")
+
+(defparameter *com-point-unwrap-hook* nil
+  "When non-nil, a function (VALUE) returning the CL list of doubles
+inside a VARIANT / SAFEARRAY point value, or NIL when VALUE is neither.
+The write-side companion of *COM-POINT-WRAP-HOOK*: lets a host accept
+vlax-3d-point results for point-valued property writes.")
+
 (defparameter *debug-define-command-hook* nil
   "When non-nil, a function (NAMES FUNCTION DOC) the CLAL-DEFINE-DEBUGGER-COMMAND
 builtin calls to register an AutoLISP-defined debugger command (command
