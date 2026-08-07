@@ -68,6 +68,261 @@ released and :unknown-vla-object if it never existed."
         operator-name id))
       (t object))))
 
+;;; --- Live drawing-backed collections ------------------------------
+;;;
+;;; The document's object-valued collections (Blocks, Layers,
+;;; ModelSpace, PaperSpace) are backed by the drawing database rather
+;;; than a static member list: their members and Count are recomputed
+;;; on each access, so entmake / DXF loads / Add / Delete are always
+;;; reflected. Each live object is identity-stable — repeated
+;;; vla-get-blocks or Item calls hand back the same VLA object, as
+;;; vendor ActiveX does. (vla-accessor-family.issue, P2 remainder.)
+
+(defun %al-string (string)
+  "Wrap STRING as the AutoLISP string value COM properties hand back,
+so user code can strcat / strcase / = the result."
+  (clautolisp.autolisp-runtime:make-autolisp-string string))
+
+(defun %com-string (value)
+  "Coerce a COM property value or method argument to a CL string, or
+NIL when VALUE is not string-like."
+  (cond
+    ((typep value 'clautolisp.autolisp-runtime:autolisp-string)
+     (clautolisp.autolisp-runtime:autolisp-string-value value))
+    ((stringp value) value)
+    (t nil)))
+
+(defun %layout-block-name-p (name)
+  (or (string-equal name "*Model_Space")
+      (string-equal name "*Paper_Space")))
+
+(defun %live-com-object (host key constructor)
+  "Return the identity-stable live COM object registered under KEY,
+building it with CONSTRUCTOR (a thunk yielding a mock-com-object) and
+registering it on first reference."
+  (let* ((ids (cador-live-collection-ids host))
+         (id (gethash key ids))
+         (cached (and id (cador-find-com-object host id))))
+    (if (and cached (not (mock-com-object-released-p cached)))
+        cached
+        (let ((object (%register-mock-com-object host (funcall constructor))))
+          (setf (gethash key ids) (mock-com-object-id object))
+          object))))
+
+(defun %block-object (host name)
+  "The identity-stable AutoCAD.Block COM object for block NAME —
+itself a live collection of the entities the block owns."
+  (%live-com-object
+   host (concatenate 'string "BLOCK:" (string-upcase name))
+   (lambda ()
+     (let* ((object (make-mock-com-object
+                     :progid "AutoCAD.Block"
+                     :collection-p t
+                     :collection-kind (cons :block-entities name)))
+            (props (mock-com-object-properties object)))
+       (setf (gethash "Name" props)       (%al-string name)
+             (gethash "ObjectName" props) (%al-string "AcDbBlockTableRecord")
+             (gethash "IsLayout" props)   (%layout-block-name-p name)
+             (gethash "IsXRef" props)     nil)
+       object))))
+
+(defun %layer-object (host name)
+  "The identity-stable AutoCAD.Layer COM object for layer NAME."
+  (%live-com-object
+   host (concatenate 'string "LAYER:" (string-upcase name))
+   (lambda ()
+     (let* ((object (make-mock-com-object :progid "AutoCAD.Layer"))
+            (props (mock-com-object-properties object)))
+       (setf (gethash "Name" props)       (%al-string name)
+             (gethash "ObjectName" props) (%al-string "AcDbLayerTableRecord"))
+       object))))
+
+(defun %blocks-collection (host)
+  "The document's live Blocks collection object."
+  (%live-com-object
+   host "BLOCKS"
+   (lambda () (make-mock-com-object :progid "AutoCAD.Blocks"
+                                    :collection-p t
+                                    :collection-kind :blocks))))
+
+(defun %layers-collection (host)
+  "The document's live Layers collection object."
+  (%live-com-object
+   host "LAYERS"
+   (lambda () (make-mock-com-object :progid "AutoCAD.Layers"
+                                    :collection-p t
+                                    :collection-kind :layers))))
+
+(defun %block-names (host)
+  "Ordered names of the document's block definitions: *Model_Space and
+*Paper_Space first (as vendor Blocks collections have them), then every
+other :block-record table entry and DXF-loaded block definition, sorted
+case-insensitively."
+  (let ((names '()))
+    (maphash (lambda (name record)
+               (declare (ignore record))
+               (pushnew name names :test #'string-equal))
+             (cador-table host :block-record))
+    (maphash (lambda (name header)
+               (declare (ignore header))
+               (pushnew name names :test #'string-equal))
+             (drawing-blocks (cador-active-drawing host)))
+    (append (list "*Model_Space" "*Paper_Space")
+            (sort (remove-if #'%layout-block-name-p names)
+                  #'string-lessp))))
+
+(defun %block-entity-handles (host name)
+  "Hex handles of the live entities owned by block NAME, oldest first.
+Model-space entities are those with a NIL owner (plus any explicitly
+owned by *Model_Space); other blocks own by name."
+  (let ((model-p (string-equal name "*Model_Space")))
+    (loop for handle in (reverse (cador-creation-order host))
+          for entity = (cador-find-entity-by-handle host handle)
+          when (and entity
+                    (let ((owner (entity-handle-block entity)))
+                      (if owner
+                          (string-equal owner name)
+                          model-p)))
+            collect handle)))
+
+(defun live-collection-members (host object)
+  "The current member VLA-objects of collection OBJECT: computed from
+the drawing for a live collection, the stored list for a static one."
+  (let ((kind (mock-com-object-collection-kind object)))
+    (cond
+      ((eq kind :blocks)
+       (mapcar (lambda (name) (com-object->vla (%block-object host name)))
+               (%block-names host)))
+      ((eq kind :layers)
+       (let ((names '()))
+         (maphash (lambda (name record)
+                    (declare (ignore record))
+                    (push name names))
+                  (cador-table host :layer))
+         (mapcar (lambda (name) (com-object->vla (%layer-object host name)))
+                 (sort names #'string-lessp))))
+      ((and (consp kind) (eq (car kind) :block-entities))
+       (mapcar (lambda (handle)
+                 (host-vlax-ename->vla-object host (handle->ename host handle)))
+               (%block-entity-handles host (cdr kind))))
+      (t (copy-list (mock-com-object-collection-members object))))))
+
+(defun %collection-item (host object args operator-name)
+  "Generic collection Item: ARGS is (INDEX-OR-NAME). An integer indexes
+the member list 0-based (the ActiveX convention); a string matches the
+members' Name property case-insensitively. A missing item signals
+:com-item-not-found — the mock's analogue of the ActiveX exception,
+catchable through vl-catch-all-apply."
+  (let ((key (first args))
+        (members (live-collection-members host object)))
+    (cond
+      ((integerp key)
+       (if (and (<= 0 key) (< key (length members)))
+           (nth key members)
+           (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+            :com-item-not-found
+            "~A: index ~D is out of range for collection ~A (Count = ~D)."
+            operator-name key (mock-com-object-progid object) (length members))))
+      ((%com-string key)
+       (let ((name (%com-string key)))
+         (or (find-if (lambda (member-vla)
+                        (let* ((member (resolve-vla-object host member-vla
+                                                           operator-name))
+                               (member-name (%com-string
+                                             (gethash "Name"
+                                                      (mock-com-object-properties
+                                                       member)))))
+                          (and member-name (string-equal member-name name))))
+                      members)
+             (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+              :com-item-not-found
+              "~A: no item named ~A in collection ~A."
+              operator-name name (mock-com-object-progid object)))))
+      (t
+       (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+        :invalid-com-item-key
+        "~A expects an integer index or a name string, got ~S."
+        operator-name key)))))
+
+(defun %require-com-string-argument (args operator-name)
+  "The first string-like element of ARGS, or an :invalid-com-argument
+error. Vendor Add signatures differ in argument order (Blocks.Add takes
+Origin then Name, Layers.Add takes Name); picking the string argument
+covers both."
+  (or (some #'%com-string args)
+      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+       :invalid-com-argument
+       "~A expects a name string argument, got ~S."
+       operator-name args)))
+
+(defun %blocks-add (host args)
+  "Blocks.Add(Origin, Name): register a block-definition record and
+return its (live, initially empty) AutoCAD.Block object."
+  (let ((name (%require-com-string-argument args "Blocks.Add")))
+    (unless (cador-find-table-record host :block-record name)
+      (cador-add-table-record
+       host (make-symbol-table-record
+             :kind :block-record :name name
+             :data (list (cons 0 "BLOCK") (cons 2 name) (cons 70 0)))))
+    (com-object->vla (%block-object host name))))
+
+(defun %layers-add (host args)
+  "Layers.Add(Name): register a layer record and return its
+AutoCAD.Layer object."
+  (let ((name (%require-com-string-argument args "Layers.Add")))
+    (unless (cador-find-table-record host :layer name)
+      (cador-add-table-record
+       host (make-symbol-table-record
+             :kind :layer :name name
+             :data (list (cons 0 "LAYER") (cons 2 name) (cons 70 0)
+                         (cons 62 7) (cons 6 "Continuous")))))
+    (com-object->vla (%layer-object host name))))
+
+(defun %block-delete (host object)
+  "Block.Delete: erase the block definition OBJECT wraps — its owned
+entities, its table records, and the COM object itself. The layout
+blocks *Model_Space / *Paper_Space cannot be deleted, as in vendor
+ActiveX."
+  (let ((name (cdr (mock-com-object-collection-kind object))))
+    (when (%layout-block-name-p name)
+      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+       :com-cannot-delete-layout-block
+       "Delete: block ~A is a layout block and cannot be deleted." name))
+    (dolist (handle (%block-entity-handles host name))
+      (let ((entity (cador-find-entity-by-handle host handle)))
+        (when entity (setf (entity-handle-deleted-p entity) t))))
+    (remhash name (cador-table host :block-record))
+    (remhash name (drawing-blocks (cador-active-drawing host)))
+    (remhash (concatenate 'string "BLOCK:" (string-upcase name))
+             (cador-live-collection-ids host))
+    (setf (mock-com-object-released-p object) t)
+    nil))
+
+(defun %collection-fallback-method (host object name args)
+  "Handle the generic collection methods (Item, Add, Delete) that live
+collections support without a per-object handler. Returns (values
+RESULT T) when NAME was handled, (values NIL NIL) otherwise."
+  (let ((kind (mock-com-object-collection-kind object)))
+    (cond
+      ((and (mock-com-object-collection-p object) (string-equal name "Item"))
+       (values (%collection-item host object args "Item") t))
+      ((and (eq kind :blocks) (string-equal name "Add"))
+       (values (%blocks-add host args) t))
+      ((and (eq kind :layers) (string-equal name "Add"))
+       (values (%layers-add host args) t))
+      ((and (consp kind) (eq (car kind) :block-entities)
+            (string-equal name "Delete"))
+       (values (%block-delete host object) t))
+      (t (values nil nil)))))
+
+(defun %collection-fallback-method-p (object name)
+  "Whether %COLLECTION-FALLBACK-METHOD would handle NAME on OBJECT."
+  (let ((kind (mock-com-object-collection-kind object)))
+    (or (and (mock-com-object-collection-p object) (string-equal name "Item"))
+        (and (member kind '(:blocks :layers)) (string-equal name "Add") t)
+        (and (consp kind) (eq (car kind) :block-entities)
+             (string-equal name "Delete")))))
+
 ;;; --- Method definitions ------------------------------------------
 
 (defmethod host-vlax-create-object ((host cador) progid)
@@ -109,12 +364,16 @@ released and :unknown-vla-object if it never existed."
     (multiple-value-bind (value present-p)
         (gethash string (mock-com-object-properties object))
       (cond
-        ((not present-p)
+        (present-p value)
+        ;; Collections answer Count from their (live) member list.
+        ((and (mock-com-object-collection-p object)
+              (string-equal string "Count"))
+         (length (live-collection-members host object)))
+        (t
          (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
           :unknown-com-property
           "VLA-OBJECT ~A has no property named ~A."
-          (mock-com-object-progid object) string))
-        (t value)))))
+          (mock-com-object-progid object) string))))))
 
 (defmethod host-vlax-put-property ((host cador) vla name value)
   (let* ((object (resolve-vla-object host vla 'vlax-put-property))
@@ -131,23 +390,29 @@ released and :unknown-vla-object if it never existed."
   (let* ((object (resolve-vla-object host vla 'vlax-invoke-method))
          (string (ensure-property-name-string name 'vlax-invoke-method))
          (handler (gethash string (mock-com-object-methods object))))
-    (cond
-      ((null handler)
-       (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
-        :unknown-com-method
-        "VLA-OBJECT ~A has no method named ~A."
-        (mock-com-object-progid object) string))
-      (t (funcall handler host object args)))))
+    (if handler
+        (funcall handler host object args)
+        (multiple-value-bind (result handled-p)
+            (%collection-fallback-method host object string args)
+          (if handled-p
+              result
+              (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+               :unknown-com-method
+               "VLA-OBJECT ~A has no method named ~A."
+               (mock-com-object-progid object) string))))))
 
 (defmethod host-vlax-property-available-p ((host cador) vla name)
   (let* ((object (resolve-vla-object host vla 'vlax-property-available-p))
          (string (ensure-property-name-string name 'vlax-property-available-p)))
-    (and (nth-value 1 (gethash string (mock-com-object-properties object))) t)))
+    (or (and (nth-value 1 (gethash string (mock-com-object-properties object))) t)
+        (and (mock-com-object-collection-p object)
+             (string-equal string "Count")))))
 
 (defmethod host-vlax-method-applicable-p ((host cador) vla name)
   (let* ((object (resolve-vla-object host vla 'vlax-method-applicable-p))
          (string (ensure-property-name-string name 'vlax-method-applicable-p)))
-    (and (gethash string (mock-com-object-methods object)) t)))
+    (or (and (gethash string (mock-com-object-methods object)) t)
+        (%collection-fallback-method-p object string))))
 
 (defun %register-mock-com-object (host object)
   "Store OBJECT in HOST's com-objects table (build-mock-com-object
@@ -174,6 +439,19 @@ document. Repeated calls return the same application object."
                 (com-object->vla doc))
           (setf (gethash "Application" (mock-com-object-properties doc))
                 (com-object->vla app))
+          ;; Drawing-backed collections: Blocks / Layers, and the
+          ;; ModelSpace / PaperSpace layout blocks (replacing the
+          ;; template's placeholder strings), so vla-get-blocks /
+          ;; vla-item / vlax-for resolve against the live drawing.
+          (let ((props (mock-com-object-properties doc)))
+            (setf (gethash "Blocks" props)
+                  (com-object->vla (%blocks-collection host))
+                  (gethash "Layers" props)
+                  (com-object->vla (%layers-collection host))
+                  (gethash "ModelSpace" props)
+                  (com-object->vla (%block-object host "*Model_Space"))
+                  (gethash "PaperSpace" props)
+                  (com-object->vla (%block-object host "*Paper_Space"))))
           ;; A Documents collection holding the one open document, so
           ;; vlax-for / vlax-map-collection have something to iterate.
           (let ((docs (%register-mock-com-object
@@ -191,7 +469,7 @@ document. Repeated calls return the same application object."
 :not-a-collection if VLA is not a collection object."
   (let ((obj (resolve-vla-object host vla 'vlax-collection-items)))
     (if (mock-com-object-collection-p obj)
-        (copy-list (mock-com-object-collection-members obj))
+        (live-collection-members host obj)
         (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
          :not-a-collection
          "vlax-for / vlax-map-collection: ~A is not an ActiveX collection."

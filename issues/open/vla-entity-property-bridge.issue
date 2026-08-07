@@ -1,0 +1,98 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vla-entity-property-bridge — COM properties on entity-backed VLA-objects (DXF-group bridge)
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: cad-runtime
+#+DEPENDS: -
+#+BRANCH: feature-vla-entity-property-bridge
+
+* Context
+
+Split out of =vla-accessor-family.issue= while resolving the SCHMS
+"AutoCAD.Document has no property named BLOCKS" failure (1.8.10,
+2026-08-07). The document collections (Blocks / Layers / ModelSpace /
+PaperSpace, generic Item / Count / Add / Delete) are now live and
+drawing-backed, and =vlax-ename->vla-object= wraps any entity in an
+identity-stable =AutoCAD.Entity= COM object.
+
+That entity wrapper, however, carries an *empty* properties table:
+every =vla-get-<prop>= / =vla-put-<prop>= on an entity-backed
+VLA-object raises =:unknown-com-property=. The SCHMS+ corpus leans
+heavily on exactly these accessors (counts from
+=schms-call-inventory.md=): =vla-put-textstring= 188,
+=vla-get-layer= 170, =vla-get-insertionpoint= 169, =vla-get-rotation=
+154, =vla-put-height= / =vla-put-textalignmentpoint= 126 each,
+=vla-put-alignment= 125, =vla-get-effectivename= 7, … This is the
+most likely next headless blocker for =make test-cad-clautolisp= once
+the Blocks fix ships.
+
+* Problem
+
+Entity COM properties must read and write the entity's DXF groups —
+the mock stores entities as group-code lists — but three sub-problems
+make this more than a table fill:
+
+1. *Mapping + conversion.* Property ⇄ group with per-entity-kind rules
+   and unit conversions, e.g. =Layer= ⇄ 8, =TextString= ⇄ 1 (TEXT /
+   MTEXT / ATTRIB / ATTDEF), =TagString= ⇄ 2 (ATTRIB / ATTDEF),
+   =Name= / =EffectiveName= ⇄ 2 (INSERT; EffectiveName = Name headless
+   — no dynamic blocks in the mock), =Handle= ⇄ 5 (read-only),
+   =ObjectName= ⇐ kind ("LINE" → "AcDbLine", INSERT →
+   "AcDbBlockReference", …), =Color= ⇄ 62 (256 = ByLayer default),
+   =Height= ⇄ 40, =Rotation= ⇄ 50 **with degrees (DXF) ⇄ radians
+   (ActiveX) conversion**, =Alignment= ⇄ 72 + 73 (TEXT) / 74 (ATTRIB)
+   via the acAlignment enum.
+2. *Representation boundary.* Point-valued properties
+   (=InsertionPoint=, =TextAlignmentPoint=, =GetBoundingBox=) are
+   VARIANT-wrapped double SAFEARRAYs on the vendor side, and SCHMS
+   consumes them through =vlax-variant-value= + =vlax-safearray->list=
+   (196 / 203 uses). The =safearray-data= struct behind
+   =autolisp-safearray= lives in *autolisp-builtins-core*
+   (=api.lisp=), which =cador= cannot depend on (builtins-core is
+   above the host layer). Either the safearray representation moves
+   down into =autolisp-runtime= (where =autolisp-variant= /
+   =autolisp-safearray= already live), or the bridge exposes points as
+   a host-neutral pure value that the builtins layer wraps.
+3. *Write-through.* =vla-put-<prop>= must mutate the entity data the
+   same way =entmod= does (shared helpers, ename cache / al-view
+   invariants preserved), and reject read-only properties (=Handle=,
+   =ObjectName=, =EffectiveName=).
+
+* Proposal
+
+- Move =safearray-data= (struct + accessors + the
+  doubles→safearray→variant builders) from
+  =autolisp-builtins-core/source/api.lisp= down to
+  =clautolisp.autolisp-runtime= next to =autolisp-variant= /
+  =autolisp-safearray=; keep re-exports so builtins code is untouched.
+- In =cador/source/vlax-api.lisp=, extend =host-vlax-get-property= /
+  =-put-property= / =-property-available-p= with an entity-backed
+  branch: resolve =mock-com-object-backing-ename= → entity, then
+  dispatch on a declarative property table
+  =(NAME KINDS GROUP READ-ONLY-P ENCODER DECODER)= covering the SCHMS
+  subset above first.
+- Classify each mapping per AGENTS.md § Dialect Divergence before
+  coding (Rotation radians and the acAlignment enum are documented
+  vendor behaviour; anything less certain gets a SPEC-UNCERTAIN marker
+  + an entry in =deferred-spec-research.issue=).
+- Regression tests at the cador layer (property read/write round-trips
+  against entget) and one end-to-end .lsp on =--host mock= exercising
+  the ATTRIB rewrite pattern the SCHMS migrations use
+  (=vla-get-tagstring= → =vla-put-textstring= →
+  =vla-put-textalignmentpoint= → =vla-put-alignment=).
+
+* Acceptance criteria
+
+- =(vla-get-layer (vlax-ename->vla-object e))= and friends work on
+  =--host mock= for the mapped subset; unknown properties still raise
+  =:unknown-com-property=.
+- Point-valued getters return VARIANT(SAFEARRAY of doubles) consumable
+  by =vlax-variant-value= / =vlax-safearray->list=; putters accept the
+  same, plain lists, and =vlax-3d-point= results.
+- Rotation converts degrees⇄radians; writes are visible to =entget=.
+- SCHMS =make test-cad-clautolisp= progresses past any
+  entity-property =:unknown-com-property= error (verified by pjb's
+  re-run; adjust the mapped subset to what the suite actually
+  consumes).
+- Suite green on SBCL + CCL; RELEASE_NOTES + user-manual §ActiveX
+  updated.

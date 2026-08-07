@@ -79,8 +79,13 @@ type-library ProgIDs. Idempotent."
                      "Path"             ""
                      "Saved"            t
                      "ReadOnly"         nil
-                     "ModelSpace"       "ModelSpace"
-                     "PaperSpace"       "PaperSpace"
+                     ;; Object-valued collections: NIL in the bare
+                     ;; template; the active document created by
+                     ;; host-vlax-get-acad-object rebinds them to live
+                     ;; drawing-backed objects (vlax-api.lisp).
+                     "ModelSpace"       nil
+                     "PaperSpace"       nil
+                     "Blocks"           nil
                      "Layers"           nil
                      "Linetypes"        nil
                      "TextStyles"       nil

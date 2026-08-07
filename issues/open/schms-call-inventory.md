@@ -555,8 +555,8 @@ références de bloc attribuées portant des XData.
 - [ ] `vla-put-textalignmentpoint` — 126
 - [ ] `vla-put-alignment` — 125
 - [ ] `vla-rotate` — 87
-- [ ] `vla-item` — 18
-- [ ] `vla-get-blocks` — 14
+- [x] `vla-item` — 18 (1.8.10: generic collection Item, 0-based index or case-insensitive name, missing item catchable via vl-catch-all-apply; end-to-end on mock)
+- [x] `vla-get-blocks` — 14 (1.8.10: live drawing-backed Blocks collection; end-to-end on mock)
 - [ ] `vla-delete` — 9
 - [ ] `vla-get-handle` — 8
 - [ ] `vla-get-effectivename` — 7
@@ -570,8 +570,8 @@ références de bloc attribuées portant des XData.
 - [ ] `vla-put-color` — 5
 - [ ] `vla-put-explodable` — 5
 - [ ] `vla-add` — 4
-- [ ] `vla-get-layers` — 4
-- [ ] `vla-get-modelspace` — 4
+- [x] `vla-get-layers` — 4 (1.8.10: live Layers collection + Layers.Add; end-to-end on mock)
+- [x] `vla-get-modelspace` — 4 (1.8.10: live *Model_Space entity collection, was a placeholder string; end-to-end on mock)
 - [ ] `vla-move` — 4
 - [ ] `vla-put-lineweight` — 4
 - [ ] `vla-get-documents` — 3
@@ -608,7 +608,7 @@ références de bloc attribuées portant des XData.
 - [ ] `vla-appendouterloop` — 1
 - [ ] `vla-erase` — 1
 - [ ] `vla-evaluate` — 1
-- [ ] `vla-get-count` — 1
+- [x] `vla-get-count` — 1 (1.8.10: live Count on every collection; end-to-end on mock)
 - [ ] `vla-get-height` — 1
 - [ ] `vla-get-isdynamicblock` — 1
 - [ ] `vla-get-mtextattribute` — 1

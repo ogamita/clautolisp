@@ -124,3 +124,140 @@
          (b (host-vlax-get-acad-object mock)))
     (is (string= (clautolisp.autolisp-runtime:autolisp-vla-object-value a)
                  (clautolisp.autolisp-runtime:autolisp-vla-object-value b)))))
+
+;;; --- Live drawing-backed collections (Blocks / Layers / spaces) ---
+;;; (vla-accessor-family.issue P2 remainder; regression for the SCHMS
+;;; "AutoCAD.Document has no property named BLOCKS" failure.)
+
+(defun %tv-vla-id (vla)
+  (clautolisp.autolisp-runtime:autolisp-vla-object-value vla))
+
+(defun %tv-active-document (mock)
+  (host-vlax-get-property mock (host-vlax-get-acad-object mock)
+                          "ActiveDocument"))
+
+(defun %tv-line-dxf ()
+  (list (cons 0 "LINE") (cons 8 "0")
+        (list 10 0.0d0 0.0d0 0.0d0) (list 11 1.0d0 0.0d0 0.0d0)))
+
+(test document-blocks-is-a-live-collection-with-layout-blocks
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (blocks (host-vlax-get-property mock doc "Blocks")))
+    (is (typep blocks 'clautolisp.autolisp-runtime:autolisp-vla-object))
+    ;; Count is computed live and covers the two layout blocks.
+    (is (eql 2 (host-vlax-get-property mock blocks "Count")))
+    (is (host-vlax-property-available-p mock blocks "Count"))
+    (is (host-vlax-method-applicable-p mock blocks "Item"))
+    ;; Item by name is case-insensitive; Name comes back as an
+    ;; AutoLISP string so user code can strcase / strcat it.
+    (let* ((model (host-vlax-invoke-method mock blocks "Item"
+                                           '("*model_space")))
+           (name (host-vlax-get-property mock model "Name")))
+      (is (typep model 'clautolisp.autolisp-runtime:autolisp-vla-object))
+      (is (typep name 'autolisp-string))
+      (is (string= "*Model_Space" (autolisp-string-value name))))
+    ;; Item by integer indexes the ordered member list, 0-based.
+    (let ((first-block (host-vlax-invoke-method mock blocks "Item" '(0))))
+      (is (string= "*Model_Space"
+                   (autolisp-string-value
+                    (host-vlax-get-property mock first-block "Name")))))))
+
+(test blocks-item-missing-name-signals-com-item-not-found
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (blocks (host-vlax-get-property mock doc "Blocks")))
+    (handler-case
+        (progn (host-vlax-invoke-method mock blocks "Item" '("NoSuchBlock"))
+               (is nil "Item on a missing name should have signalled"))
+      (autolisp-runtime-error (condition)
+        (is (eq :com-item-not-found
+                (autolisp-runtime-error-code condition)))))))
+
+(test blocks-collection-reflects-later-block-records-and-entities
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (blocks (host-vlax-get-property mock doc "Blocks")))
+    ;; A block-record registered AFTER the collection was obtained is
+    ;; visible: the collection is drawing-backed, not a snapshot.
+    (cador-add-table-record
+     mock (make-symbol-table-record
+           :kind :block-record :name "SIGFIC"
+           :data (list (cons 0 "BLOCK") (cons 2 "SIGFIC"))))
+    (is (eql 3 (host-vlax-get-property mock blocks "Count")))
+    (let ((sigfic (host-vlax-invoke-method
+                   mock blocks "Item"
+                   (list (make-autolisp-string "sigfic")))))
+      ;; Item is identity-stable: same VLA id on every lookup.
+      (is (string= (%tv-vla-id sigfic)
+                   (%tv-vla-id (host-vlax-invoke-method mock blocks "Item"
+                                                        '("SIGFIC")))))
+      ;; Entities owned by the block enumerate through the block object,
+      ;; which is itself a live collection.
+      (clautolisp.drawing:add-entity (cador-active-drawing mock)
+                                     (%tv-line-dxf) :block "SIGFIC")
+      (is (eql 1 (host-vlax-get-property mock sigfic "Count")))
+      (let ((items (host-vlax-collection-items mock sigfic)))
+        (is (= 1 (length items)))
+        ;; The member is entity-backed: it round-trips to an ENAME.
+        (is (typep (host-vlax-vla-object->ename mock (first items))
+                   'autolisp-ename))))))
+
+(test blocks-add-creates-a-block-and-delete-erases-it
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (blocks (host-vlax-get-property mock doc "Blocks"))
+         ;; Blocks.Add(Origin, Name) — vendor argument order.
+         (new-block (host-vlax-invoke-method
+                     mock blocks "Add"
+                     (list (list 0.0d0 0.0d0 0.0d0) "CARTOUCHE"))))
+    (is (typep new-block 'clautolisp.autolisp-runtime:autolisp-vla-object))
+    (is (not (null (cador-find-table-record mock :block-record "CARTOUCHE"))))
+    (is (eql 3 (host-vlax-get-property mock blocks "Count")))
+    (let ((entity (clautolisp.drawing:add-entity (cador-active-drawing mock)
+                                                 (%tv-line-dxf)
+                                                 :block "CARTOUCHE")))
+      (host-vlax-invoke-method mock new-block "Delete" '())
+      (is (null (cador-find-table-record mock :block-record "CARTOUCHE")))
+      (is (eql 2 (host-vlax-get-property mock blocks "Count")))
+      (is (clautolisp.drawing:entity-handle-deleted-p entity)))))
+
+(test blocks-delete-refuses-layout-blocks
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (blocks (host-vlax-get-property mock doc "Blocks"))
+         (model (host-vlax-invoke-method mock blocks "Item" '("*Model_Space"))))
+    (handler-case
+        (progn (host-vlax-invoke-method mock model "Delete" '())
+               (is nil "Delete on *Model_Space should have signalled"))
+      (autolisp-runtime-error (condition)
+        (is (eq :com-cannot-delete-layout-block
+                (autolisp-runtime-error-code condition)))))))
+
+(test document-modelspace-is-a-live-entity-collection
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (modelspace (host-vlax-get-property mock doc "ModelSpace")))
+    (is (typep modelspace 'clautolisp.autolisp-runtime:autolisp-vla-object))
+    (is (eql 0 (host-vlax-get-property mock modelspace "Count")))
+    ;; An entmade (owner-less) entity lands in model space.
+    (host-entmake mock (%tv-line-dxf))
+    (is (eql 1 (host-vlax-get-property mock modelspace "Count")))
+    (let ((items (host-vlax-collection-items mock modelspace)))
+      (is (= 1 (length items)))
+      (is (typep (host-vlax-vla-object->ename mock (first items))
+                 'autolisp-ename)))))
+
+(test document-layers-is-live-and-supports-item-and-add
+  (let* ((mock (make-cador))
+         (doc (%tv-active-document mock))
+         (layers (host-vlax-get-property mock doc "Layers")))
+    ;; The default layer "0" is there.
+    (is (eql 1 (host-vlax-get-property mock layers "Count")))
+    (let ((zero (host-vlax-invoke-method mock layers "Item" '("0"))))
+      (is (string= "0" (autolisp-string-value
+                        (host-vlax-get-property mock zero "Name")))))
+    ;; Layers.Add(Name) registers a layer record.
+    (host-vlax-invoke-method mock layers "Add" '("SIGNALISATION"))
+    (is (eql 2 (host-vlax-get-property mock layers "Count")))
+    (is (not (null (cador-find-table-record mock :layer "SIGNALISATION"))))))

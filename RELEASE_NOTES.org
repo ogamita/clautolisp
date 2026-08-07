@@ -453,6 +453,19 @@ separate binary for tool integrators.
   ~vlax-map-collection~ iterate an ActiveX collection, binding / applying
   to each member. With this, *every* ~vlax-*~ operator is now a real
   implementation over the headless-CAD host — none remain nil stubs.
+- Live drawing-backed document collections: ~(vla-get-blocks doc)~,
+  ~(vla-get-layers doc)~, ~(vla-get-modelspace doc)~ and
+  ~(vla-get-paperspace doc)~ return identity-stable collection objects
+  computed from the drawing database — members and ~Count~ always
+  reflect the current block-record / layer tables and entities, and
+  every collection answers the generic ~Item~ (0-based integer index or
+  case-insensitive name; a missing item raises an error catchable by
+  ~vl-catch-all-apply~). ~Blocks.Add~ / ~Layers.Add~ create records,
+  ~Block.Delete~ erases a definition and its entities (layout blocks
+  refuse). Fixes the SCHMS CAD suite's "AutoCAD.Document has no
+  property named BLOCKS" failure on ~--host mock~. See the user manual
+  § /Host backend / The ActiveX / COM object model/ and
+  ~issues/open/vla-accessor-family.issue~.
 - ~acad_strlsort~ now really sorts: it returns a *new* list of the
   input strings in ascending, case-sensitive, ordinal order (upper
   before lower; accented / non-ASCII letters after the ASCII range),

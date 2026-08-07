@@ -61,7 +61,9 @@
                 #:host-vlax-invoke-method
                 #:host-vlax-property-available-p
                 #:host-vlax-method-applicable-p
-                #:host-vlax-get-acad-object)
+                #:host-vlax-get-acad-object
+                #:host-vlax-collection-items
+                #:host-vlax-vla-object->ename)
   (:import-from #:clautolisp.cador
                 #:cador
                 #:make-cador
@@ -85,6 +87,7 @@
                 #:sysvar-cell-host-derived-p
                 #:*full-sysvar-catalogue*
                 #:cador-entities
+                #:cador-active-drawing
                 #:cador-picksets
                 #:cador-tables
                 #:cador-named-object-dictionary
