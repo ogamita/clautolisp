@@ -539,35 +539,58 @@ release:windows:x86-64:
 # process spawning) gets validated on the real OS. They use the machine's
 # own sbcl + ~/quicklisp (both runners build releases, so the toolchain is
 # there). allow_failure: intermittent laptops must never block a pipeline.
-# --- Auto-start native jobs when their intermittent runner is ONLINE -------
-# The macOS/Windows runners are intermittent laptops. Their jobs are declared
-# `when: manual` (so an offline runner leaves them clickable, non-blocking,
-# never stuck-pending, never red — the manual fallback). This orchestrator
-# runs FIRST (.pre) on the always-on Linux runner, asks the API which native
-# runners are ONLINE, and `play`s this pipeline's matching manual jobs — so an
-# ONLINE runner => the native jobs start automatically. See
-# scripts/ci-autostart-native-runners.py and runner-availability-gating.issue.
+# --- Runner-availability gating (detect + child pipeline) ------------------
+# The macOS/Windows runners are intermittent laptops. Native jobs can't be
+# gated by plain rules: (evaluated at pipeline creation, blind to the runtime
+# runner state), nor by "playing" manual jobs from an orchestrator (a manual
+# job stays `created`, unplayable, until its stage/needs are ready). So:
+#   detect:runners  — on the always-on Linux runner, records which native
+#                     runners are ONLINE into a dotenv;
+#   native:pipeline — triggers the CHILD pipeline .gitlab/native.yml, passing
+#                     those variables; the child's native jobs' rules: are
+#                     evaluated at the CHILD's creation (variables now KNOWN)
+#                     => on_success when the runner is online, `manual`
+#                     (non-blocking fallback) when it is offline.
+# See runner-availability-gating.issue.
 #
-# FAIL-SAFE: with no RUNNER_STATUS_TOKEN (or any API error) it plays nothing
-# and exits 0 — every native job stays manual, i.e. today's behaviour. It can
-# never wrongly auto-start a job or block a pipeline. release:* / benchmark:*
-# are excluded (deliberately manual). Needs a CI/CD variable
-# RUNNER_STATUS_TOKEN with `api` scope (playing a job is a write).
-autostart:native-runners:
+# FAIL-SAFE: no RUNNER_STATUS_TOKEN (api scope) or any API error => offline =>
+# the child's native jobs are manual (today's behaviour). Never a false online.
+detect:runners:
   stage: .pre
   tags: [linux, amd64, docker]
   variables:
     GIT_SUBMODULE_STRATEGY: none
   rules:
-    - if: '$CI_COMMIT_TAG'          # releases: native jobs are already mandatory
-      when: never
+    - if: '$CI_COMMIT_TAG'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      allow_failure: true
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      allow_failure: true
     - when: never
   script:
-    - python3 scripts/ci-autostart-native-runners.py
+    - python3 scripts/ci-detect-runners.py runners.env
+    - cat runners.env
+  artifacts:
+    reports:
+      dotenv: runners.env
+
+native:pipeline:
+  stage: test
+  needs:
+    - job: detect:runners
+      artifacts: true
+  variables:
+    MACOS_RUNNER: "$MACOS_RUNNER"
+    WINDOWS_RUNNER: "$WINDOWS_RUNNER"
+  rules:
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - when: never
+  trigger:
+    include: '.gitlab/native.yml'
+    # NB: no `strategy: depend` — when the runner is offline the child's jobs
+    # are `manual` and the child pipeline never "completes", so depending on it
+    # would hang this parent job (re-creating the pile-up we're avoiding). The
+    # child runs independently; its jobs are allow_failure anyway.
 
 .platform-test-common:
   stage: test
@@ -627,32 +650,10 @@ test:alfe:windows:
   script:
     - make -C autolisp-front-end test-sbcl
 
-# --- W4 conformance: cross-environment pathname mapping (real frames) -------
-# Runs scripts/verify-pathname-mapping.lisp (clautolisp-windows-pathname-mapping
-# issue, spec §8) on the native runners. The synthetic (build x run) matrix
-# runs everywhere; on Windows it ALSO exercises the real detected run frame
-# (native / msys2 / cygwin / wsl -- CLAUTOLISP_DEBUG_PATHMAP=1 logs which) plus
-# a real-file round trip. Pass/fail is the sbcl exit code (0 ok / 1 failed
-# check / 2 load failure), so no output parsing. Only loads
-# clautolisp/autolisp-runtime -> no submodules. macOS is :posix identity and
-# should pass cleanly, proving the harness's portable core on the other runner.
-conformance:pathname-mapping:windows:
-  extends: .platform-test-common
-  tags: [windows, amd64, shell]        # windows PC (intermittent)
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
-    CLAUTOLISP_DEBUG_PATHMAP: "1"
-  script:
-    - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-pathname-mapping.lisp"
-
-conformance:pathname-mapping:macos:
-  extends: .platform-test-common
-  tags: [macos, arm64, shell]          # thalassa (intermittent)
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
-    CLAUTOLISP_DEBUG_PATHMAP: "1"
-  script:
-    - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-pathname-mapping.lisp"
+# NOTE: conformance:pathname-mapping:{windows,macos} moved to the child
+# pipeline .gitlab/native.yml (runner-availability gating: on_success when the
+# runner is online, manual when offline). First jobs migrated to the child;
+# the rest of the native jobs follow incrementally.
 
 .verify-registry-common:
   stage: test

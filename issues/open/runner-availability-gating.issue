@@ -70,3 +70,35 @@ for a same-pipeline probe. Two viable shapes:
   start automatically; offline ones stay manual; pipeline never reddens or
   piles up because of an offline laptop.
 - Without the token: identical to today (all native jobs manual).
+
+* UPDATE 2026-08-07 — orchestrator-play abandoned; child pipeline adopted
+
+The orchestrator-play approach (v1) was tried on master (pipeline
+2740098321) with the token set. The probe CORRECTLY reported
+`online native runners: ['macos', 'windows']`, but it played 0 jobs.
+Root cause (empirical): a GitLab `when: manual` job only reaches the
+`manual` (playable) status once its STAGE is active and its `needs:` are
+satisfied — until then it is `created`, and `POST .../jobs/:id/play`
+cannot start it. At `.pre` (and even a minute later) the native jobs were
+`created`, not `manual` (only build:alfe:* had become manual). The
+pipeline jobs API also does not expose each job's `when:`, so
+"will-be-manual" jobs can't be pre-identified. A single early play-pass
+therefore cannot start a cascade of jobs that only become manual later.
+=> orchestrator-play is structurally unable to do the job; removed
+(scripts/ci-autostart-native-runners.py deleted).
+
+CHOSEN (pjb, 2026-08-07): the child-pipeline design. Parent
+detect:runners (scripts/ci-detect-runners.py) writes a dotenv
+MACOS_RUNNER/WINDOWS_RUNNER=online|offline; native:pipeline triggers the
+child .gitlab/native.yml passing those vars; the child's native jobs use
+rules: evaluated at the CHILD's creation (vars now known) => on_success
+when online, `manual` when offline. No `strategy: depend` (a manual-only
+child must not hang the parent). Still fail-safe (no token => offline =>
+manual). First jobs migrated: conformance:pathname-mapping:{macos,windows}
+(self-contained, no needs) as the end-to-end proof; the rest of the native
+jobs (test:*, verify:*, vendor:probes:* + build:alfe:* deps, pathname:*,
+encoding:*, benchmark:*, release:*) migrate incrementally, each validated
+on a real pipeline. Release-tag pipelines: native jobs are on_success
+(mandatory) via the `$CI_COMMIT_TAG` rule; a `strategy: depend` may be
+wanted on the trigger for tag pipelines so the release waits for them
+(follow-up).

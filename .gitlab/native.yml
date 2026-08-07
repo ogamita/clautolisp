@@ -1,0 +1,69 @@
+# Child pipeline: native (macOS / Windows) jobs, gated on runner availability.
+#
+# Triggered by the parent's `native:pipeline` job, which passes MACOS_RUNNER /
+# WINDOWS_RUNNER (online|offline) computed by detect:runners. Here they are
+# ordinary variables, KNOWN at this pipeline's creation, so the rules: below
+# choose:
+#   online  -> when: on_success  (the job runs automatically)
+#   offline -> when: manual      (fallback: clickable, non-blocking, never
+#                                 stuck-pending, never reddens the pipeline)
+# A release tag makes the native jobs mandatory (on_success) regardless.
+#
+# Child pipelines do NOT inherit the parent's anchors / default:/ templates,
+# so the two runner templates are defined here. Native jobs run on the shell
+# executors (macos/windows), so no image is needed.
+#
+# Migration status (runner-availability-gating.issue): the
+# conformance:pathname-mapping:* jobs are migrated first as the end-to-end
+# proof; the remaining native jobs (test:*, verify:*, vendor:probes:*,
+# pathname:probe:*, encoding:*, benchmark:*, release:*, + their build:alfe:*
+# deps) follow incrementally.
+
+stages:
+  - test
+
+.native-macos:
+  stage: test
+  tags: [macos, arm64, shell]          # thalassa (intermittent)
+  rules:
+    - if: '$CI_COMMIT_TAG'             # release: native jobs are mandatory
+      when: on_success
+    - if: '$MACOS_RUNNER == "online"'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+
+.native-windows:
+  stage: test
+  tags: [windows, amd64, shell]        # windows PC (intermittent)
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: on_success
+    - if: '$WINDOWS_RUNNER == "online"'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+
+# --- W4 conformance: cross-environment pathname mapping (real frames) -------
+# scripts/verify-pathname-mapping.lisp (clautolisp-windows-pathname-mapping,
+# spec §8): the synthetic (build x run) matrix runs everywhere; on the native
+# runner it also exercises the real detected run frame (CLAUTOLISP_DEBUG_PATHMAP
+# logs which) + a real-file round trip. Pass/fail = the sbcl exit code. Only
+# loads clautolisp/autolisp-runtime -> no submodules.
+conformance:pathname-mapping:macos:
+  extends: .native-macos
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    CLAUTOLISP_DEBUG_PATHMAP: "1"
+  script:
+    - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-pathname-mapping.lisp"
+
+conformance:pathname-mapping:windows:
+  extends: .native-windows
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    CLAUTOLISP_DEBUG_PATHMAP: "1"
+  script:
+    - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-pathname-mapping.lisp"
