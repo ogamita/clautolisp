@@ -58,6 +58,30 @@
   ;; The WSL trap: WSL is NOT the identity environment (spec §1.1).
   (is (not (clautolisp.pathname-mapping:identity-environment-p (%wsl)))))
 
+(test pathmap-same-frame-is-strict-identity
+  ;; Regression (Windows/MSYS2 runner, 2026-08-07): when build-frame ==
+  ;; run-frame there is nothing to translate, so map-in/map-out must be a
+  ;; STRICT identity — even for a NON-:posix frame, and even when the
+  ;; incoming string is not in that frame's own round-trip form. A mingw
+  ;; SBCL renders native "C:/…" paths from inside an MSYS2 shell (build ==
+  ;; run == :msys2, yet the CL wants native paths); before the fix, map-in
+  ;; rewrote "C:/…" into the mount form "/c/…" and handed the CL a
+  ;; namestring it could not open, breaking LOAD/OPEN of absolute paths.
+  (dolist (make (list #'%native #'%msys2 #'%cygwin #'%wsl))
+    (let ((e (funcall make)))
+      (dolist (s '("C:/gitlab-runner/builds/x/harness/run.lsp"
+                   "C:/Users/pjb/a b/c.lsp"))
+        (is (string= s (clautolisp.pathname-mapping:map-in-namestring
+                        s :run e :build e))
+            "same-frame map-in must be identity, changed ~S" s)
+        (is (string= s (clautolisp.pathname-mapping:map-out-namestring
+                        s :run e :build e))
+            "same-frame map-out must be identity, changed ~S" s))))
+  ;; A distinct instance of the same KIND is still the same frame.
+  (is (string= "C:/x/y.lsp"
+               (clautolisp.pathname-mapping:map-in-namestring
+                "C:/x/y.lsp" :run (%msys2) :build (%msys2)))))
+
 ;; ---------------------------------------------------------------------------
 ;; W2 — run-frame classification from synthetic probe inputs
 ;; ---------------------------------------------------------------------------
