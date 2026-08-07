@@ -820,3 +820,198 @@ COMMAND fails loudly with :host-not-supported."
       (autolisp-runtime-error (condition)
         (setf signalled-code (autolisp-runtime-error-code condition))))
     (is (eq :host-not-supported signalled-code))))
+
+;;; --- LET: the BricsCAD V26 undocumented extension ------------------
+;;;
+;;; issues/open/bricscad-undocumented-clisms.issue, "Harvest RESULTS
+;;; (2026-08-07, real BricsCAD V26 / macOS runner)". LET is the one
+;;; genuine, implementable BricsCAD extension the harvest confirmed:
+;;; CL-style PARALLEL binding, with an implicit-progn body. LET* was
+;;; refuted ("no function definition <LET*>") and is intentionally NOT
+;;; provided. These tests pin the semantics + the
+;;; [ext-bricscad-undocumented] dialect-warning gate.
+
+(defun install-list-and-plus-subrs-for-test (context)
+  "Test helper: register LIST and `+' subrs in the bare runtime (which
+does not load autolisp-builtins-core) so LET snippets can mirror the
+harvest transcript — (list x y) and (+ x y) — without hitting
+:undefined-function."
+  (declare (ignore context))
+  (flet ((reg (name fn)
+           (clautolisp.autolisp-runtime:set-autolisp-symbol-function
+            (intern-autolisp-symbol name)
+            (clautolisp.autolisp-runtime:make-autolisp-subr name fn))))
+    (reg "LIST" (lambda (&rest args) args))
+    (reg "+" (lambda (&rest args) (apply #'+ args)))))
+
+(defun %run-let-silently (source)
+  "Run SOURCE under the :clautolisp dialect (LET silent there) with the
+LIST/`+' subrs installed, swallowing *error-output*. Returns the value
+of the last form."
+  (let ((*error-output* (make-string-output-stream)))
+    (run-autolisp-string
+     source
+     :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :clautolisp)
+     :setup-fn #'install-list-and-plus-subrs-for-test)))
+
+(test let-parallel-binding-matches-bricscad-harvest
+  "The exact 2026-08-07 harvest case: (setq x 10)(let ((x 1)(y x))
+(list x y)) => (1 10). PARALLEL binding — the y init-form sees the
+OUTER x (=10), NOT the let's x (=1); had binding been sequential (a
+let*) y would be 1 and the result (1 1)."
+  (reset-autolisp-symbol-table)
+  (is (equal '(1 10)
+             (%run-let-silently
+              "(setq x 10) (let ((x 1) (y x)) (list x y))"))))
+
+(test let-sum-matches-bricscad-harvest
+  "The harvest LET-SUM=3: (let ((x 1)(y 2)) (+ x y)) => 3."
+  (reset-autolisp-symbol-table)
+  (is (eql 3 (%run-let-silently "(let ((x 1) (y 2)) (+ x y))"))))
+
+(test let-body-is-implicit-progn-returning-last
+  "The LET body is an implicit progn: every form runs in order and the
+value of the LAST is returned. No builtins needed — SETQ is a special
+form and the bare variable reference returns the binding."
+  (reset-autolisp-symbol-table)
+  (is (eql 3 (%run-let-silently "(let ((x 1)) (setq x 2) (setq x 3) x)"))))
+
+(test let-empty-body-returns-nil
+  "A LET with no body forms returns nil (the implicit-progn of nothing)."
+  (reset-autolisp-symbol-table)
+  (is (null (%run-let-silently "(let ((x 1)))"))))
+
+(test let-bare-symbol-binding-defaults-to-nil
+  "A bare-symbol binding (no init-form) binds the variable to nil, like
+Common Lisp's (let (x) ...)."
+  (reset-autolisp-symbol-table)
+  (is (null (%run-let-silently "(let (x) x)")))
+  (reset-autolisp-symbol-table)
+  (is (eql 5 (%run-let-silently "(let ((x 5)) x)"))))
+
+(test let-shadow-is-torn-down-after-body
+  "A LET binding shadows the surrounding binding only for the extent of
+the body: mutating the LET-bound X inside does not leak out. After the
+LET, X resolves to its outer value 99."
+  (reset-autolisp-symbol-table)
+  (is (eql 99 (%run-let-silently "(setq x 99) (let ((x 1)) (setq x 2)) x"))))
+
+(test let-shadow-interacts-with-slash-locals
+  "LET nested inside a defun's `/'-locals: the LET shadows the local Y
+for its body, and the shadow is torn down on exit so the enclosing
+local's value (5) is what the function returns."
+  (reset-autolisp-symbol-table)
+  (is (eql 5 (%run-let-silently
+              "(defun f (/ y) (setq y 5) (let ((y 1)) (setq y 2)) y) (f)"))))
+
+(test let-malformed-binding-signals
+  "A binding that is neither a symbol nor a (symbol init-form) list is
+rejected with :invalid-let-binding."
+  (reset-autolisp-symbol-table)
+  (let ((signalled-code nil)
+        (*error-output* (make-string-output-stream)))
+    (handler-case
+        (run-autolisp-string
+         "(let ((5 1)) 5)"
+         :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :clautolisp))
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :invalid-let-binding signalled-code))))
+
+;;; --- LET dialect-warning gate [ext-bricscad-undocumented] ----------
+
+(test let-warning-silent-under-bricscad-dialect
+  "Under --dialect bricscad-v26, LET is native — no warning."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :bricscad-v26 "(let ((x 1)) x)")
+    (declare (ignore result))
+    (is (null (search "ext-bricscad-undocumented" diag))
+        "LET must be silent under :bricscad-v26; got: ~S" diag)))
+
+(test let-warning-silent-under-clautolisp-dialect
+  "Under --dialect clautolisp, LET is a blessed extension — no warning."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :clautolisp "(let ((x 1)) x)")
+    (declare (ignore result))
+    (is (null (search "ext-bricscad-undocumented" diag))
+        "LET must be silent under :clautolisp; got: ~S" diag)))
+
+(test let-warning-silent-under-lax-dialect
+  "Under --dialect lax (accept every vendor extension quietly), LET is
+silent."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :lax "(let ((x 1)) x)")
+    (declare (ignore result))
+    (is (null (search "ext-bricscad-undocumented" diag))
+        "LET must be silent under :lax; got: ~S" diag)))
+
+(test let-warning-fires-under-strict-dialect
+  "Under --dialect strict, LET emits the [ext-bricscad-undocumented]
+warning — portable AutoLISP has no LET — yet still evaluates."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :strict "(let ((x 1)) x)")
+    (is (eql 1 result) "LET still evaluates under :strict; got: ~S" result)
+    (is (search "[ext-bricscad-undocumented]" diag)
+        "LET should warn under :strict; got: ~S" diag)))
+
+(test let-warning-fires-under-autocad-dialect
+  "Under --dialect autocad-2026, LET warns the same way — AutoCAD has
+no LET."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :autocad-2026 "(let ((x 1)) x)")
+    (declare (ignore result))
+    (is (search "[ext-bricscad-undocumented]" diag)
+        "LET should warn under :autocad-2026; got: ~S" diag)))
+
+(test let-warning-once-per-occurrence
+  "autolisp-spec ch.25 once-per-occurrence: the SAME LET re-evaluated in
+a loop warns exactly once (dedup key is the binding-list cons identity)."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :strict "(repeat 3 (let ((x 1)) x))")
+    (declare (ignore result))
+    (is (= 1 (%count-substrings "[ext-bricscad-undocumented]" diag))
+        "Expected exactly one LET warning across 3 iterations; got: ~S" diag)))
+
+(test let-warning-escalation-signals-error
+  "autolisp-spec ch.25 escalation knob: with :portability-warning-mode
+:error a strict-dialect LET becomes a :non-portable-construct runtime
+error instead of an advisory."
+  (reset-autolisp-symbol-table)
+  (let ((escalating
+          (clautolisp.autolisp-reader:make-autolisp-dialect
+           :name :strict
+           :portability-warning-mode :error))
+        (signalled-code nil)
+        (*error-output* (make-string-output-stream)))
+    (handler-case
+        (run-autolisp-string "(let ((x 1)) x)" :dialect escalating)
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :non-portable-construct signalled-code)
+        "Expected :non-portable-construct under escalation; got: ~S"
+        signalled-code)))
+
+(test let-star-is-not-a-bricscad-extension
+  "The harvest refuted LET* on BricsCAD V26 (\"no function definition
+<LET*>\"). clautolisp must NOT provide LET* as a special operator: a
+(let* ...) call falls through to ordinary function dispatch and, with
+no such function defined, is an undefined-function error — never a
+silently-accepted sequential-binding form."
+  (reset-autolisp-symbol-table)
+  (let ((signalled-code nil)
+        (*error-output* (make-string-output-stream)))
+    (handler-case
+        (run-autolisp-string
+         "(let* ((x 1) (y (+ x 1))) y)"
+         :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :bricscad-v26))
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :undefined-function signalled-code)
+        "LET* must be undefined, not a special operator; got: ~S"
+        signalled-code)))
