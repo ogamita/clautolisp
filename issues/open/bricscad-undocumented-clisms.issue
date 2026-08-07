@@ -227,3 +227,71 @@ bricscad-undocumented-extensions.org from this transcript; implement `let'
 (parallel) as the one genuine extension; wire [ext-bricscad-undocumented]
 warnings for setf/let*/& under the strict/autocad dialects. A Bricsys
 support ticket to confirm the setf-"2" is intentional is still wanted.
+
+== Progress (2026-08-07) — Plan steps 2-4 (spec page, `let', warnings, tests) ==
+
+Landed on branch feature-bricscad-undocumented-clisms (clautolisp 1.8.9).
+
+DONE:
+
+  - Spec page. autolisp-spec/documentation/bricscad-undocumented-extensions.org
+    (org-mode, UTF-8, mode/coding header). One section per construct
+    (setf / let / let* / &rest / bare-&), each with the 2026-08-07
+    vendor:probes:bricscad:macos harvest evidence (the EXTPROBE values),
+    observed semantics, and the clautolisp recommendation. Marked
+    explicitly as a vendor-extensions catalogue, NOT promoted into the
+    normative spec draft.
+
+  - `let' implemented (the one genuine extension). New EVAL-LET-FORM +
+    PARSE-LET-BINDING in clautolisp/autolisp-runtime/source/api.lisp,
+    registered as ("LET" . #'eval-let-form) in *special-operator-dispatch*.
+    CL-style PARALLEL binding: every init-form is evaluated in the
+    enclosing scope first, then the vars are bound simultaneously in a
+    fresh dynamic frame (shadow torn down on normal + non-local exit, like
+    foreach / usubr /-locals). Body is an implicit progn (empty => nil).
+    Bindings: bare symbol (=> nil) or (symbol init-form). Reproduces the
+    harvest exactly: (setq x 10)(let ((x 1)(y x))(list x y)) => (1 10),
+    and (let ((x 1)(y 2))(+ x y)) => 3.
+
+  - Dialect warnings. New EMIT-BRICSCAD-UNDOCUMENTED-WARNING reuses the
+    existing ch.25 portability-warning infra (dialect-name gate +
+    %portability-warning-occurrence-seen-p once-per-occurrence dedup +
+    portability-warning-mode :error escalation, to *error-output*). `let'
+    emits [ext-bricscad-undocumented] under --dialect strict / autocad;
+    silent under bricscad / clautolisp / lax. bare-& / &rest keep firing
+    via the pre-existing [lambda-list-extension] emitter.
+
+  - Tests (FiveAM), added to
+    clautolisp/autolisp-runtime/tests/evaluator-tests.lisp: LET parallel
+    binding (the (1 10) harvest case), LET-SUM=3, implicit-progn body +
+    return value, empty body => nil, bare-symbol => nil, shadow
+    teardown, LET x /-locals interaction, malformed binding
+    (:invalid-let-binding), and the [ext-bricscad-undocumented] gate
+    (silent bricscad/clautolisp/lax, warns strict/autocad, once-per-
+    occurrence, :error escalation), plus a guard test that `let*' is NOT
+    a special operator (stays :undefined-function).
+
+  Verification (SBCL, both suites 0 failures):
+    make -C clautolisp test-sbcl TEST_SYSTEM=clautolisp/autolisp-runtime/tests
+        => Did 422 checks. Pass: 422 (100%). Fail: 0.
+    make -C clautolisp test-sbcl TEST_SYSTEM=clautolisp/autolisp-builtins-core/tests
+        => Did 1776 checks. Pass: 1776 (100%). Fail: 0.
+
+DECIDED / NOT done (deliberately):
+
+  - `setf' NOT implemented and NOT imitated. The harvest proved BricsCAD's
+    setf returns a constant sentinel 2 and does NOT assign; faking that is
+    worthless. clautolisp leaves setf undefined (=> :undefined-function).
+  - `let*' NOT added. Refuted by the harvest ("no function definition
+    <LET*>"); not a BricsCAD extension. Stays :undefined-function.
+
+TODO (low value, left as a clearly-marked follow-up):
+
+  - Dedicated [ext-bricscad-undocumented] diagnostic for setf / let*.
+    Both are intentionally undefined, so today a use raises
+    :undefined-function rather than a targeted extension note. Emitting the
+    dedicated note would need a small recognise-but-don't-define hook in
+    resolve-unbound-function-or-signal. Deferred: the undefined error
+    already prevents silent BricsCAD-only behaviour.
+  - Bricsys support ticket to confirm the setf-"2" sentinel is intentional
+    and to pin `let's official support status.

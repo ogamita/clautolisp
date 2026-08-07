@@ -1854,6 +1854,66 @@ non-portable. Use --dialect clautolisp to silence, or rewrite ~
 without a rest parameter.~%"
                 who token (or name "default"))))))
 
+(defun emit-bricscad-undocumented-warning (construct &optional occurrence)
+  "Emit an `[ext-bricscad-undocumented]' dialect portability warning
+when CONSTRUCT (a short string such as \"LET\") — a BricsCAD V26
+undocumented Common-Lisp construct catalogued in
+`autolisp-spec/documentation/bricscad-undocumented-extensions.org' —
+is evaluated under a dialect whose target host does NOT provide it.
+
+Vendor-confirmed on 2026-08-07 (the vendor:probes:bricscad:macos
+harvest against real BricsCAD V26; see the issue
+`bricscad-undocumented-clisms.issue'): LET is a genuine BricsCAD
+extension (CL-style PARALLEL binding), while AutoCAD and the strict
+portable profile have no LET. So:
+
+  - :bricscad-v26 — silent (native; this is where LET lives).
+  - :clautolisp   — silent (clautolisp implements LET as a blessed
+                    extension of its own).
+  - :lax          — silent (the catch-all `accept every vendor's
+                    extension without complaining' mode, matching the
+                    encoding-diagnostic and lambda-list-extension gates).
+  - :strict, :autocad-2026 (and any other target host that lacks the
+                    construct) — warn, because the construct is not
+                    portable: portable AutoLISP has no LET.
+
+Once-per-source-occurrence via `%portability-warning-occurrence-seen-p'
+(keyed on OCCURRENCE — the binding-list cons identity — so a LET
+re-evaluated in a loop warns only once, and a DIFFERENT LET warns on
+its own first evaluation). Honours the active dialect's
+`portability-warning-mode': when it is `:error', a non-silent hit
+signals an AutoLISP runtime error instead of printing — the same
+warning->error escalation as `emit-lambda-list-extension-warning'.
+Advisory otherwise: the construct still evaluates normally. Warnings
+go to *ERROR-OUTPUT*."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (name (and dialect
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+         (mode (or (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                          dialect)))
+                   :warn))
+         (silent-p
+           (case name
+             ((:bricscad-v26 :clautolisp :lax) t)
+             (t nil))))
+    (unless silent-p
+      (when (eq mode :error)
+        ;; Escalation: turn the advisory into a hard error. Runs before
+        ;; dedup — the first reached occurrence aborts the run.
+        (signal-autolisp-runtime-error
+         :non-portable-construct
+         "~A is a BricsCAD V26 undocumented extension, not portable to dialect ~(~A~); --portability-warning-mode error escalates it to an error."
+         construct (or name "default")))
+      (unless (%portability-warning-occurrence-seen-p occurrence)
+        (format *error-output*
+                "~&[ext-bricscad-undocumented] ~A is a BricsCAD V26 ~
+undocumented Common-Lisp construct; --dialect ~(~A~) flags it as ~
+non-portable (portable AutoLISP has no ~A). Use --dialect bricscad or ~
+clautolisp to silence.~%"
+                construct (or name "default") construct)))))
+
 (defun autolisp-path-has-dotdot-component-p (path)
   "T iff the string PATH contains a `..' PATH COMPONENT — a `..' segment
 delimited by `/' or `\\' or a string end. So `../x', `a/../b', `x/..'
@@ -2731,6 +2791,80 @@ builtins layer installs (the runtime cannot reach the host COM protocol)."
                (setf result (if body (autolisp-eval-progn body context) nil))))
         (pop-dynamic-frame context)))))
 
+(defun parse-let-binding (binding)
+  "Parse one LET binding, returning (values SYMBOL INIT-FORM). A binding
+is either a bare symbol (bound to NIL, so INIT-FORM is NIL) or a
+two-element list (SYMBOL INIT-FORM). Anything else signals
+:invalid-let-binding. Mirrors Common Lisp's LET binding shapes; the
+one-element list (SYMBOL) is also accepted as a NIL initialiser."
+  (cond
+    ((typep binding 'autolisp-symbol)
+     (values binding nil))
+    ((and (consp binding)
+          (typep (first binding) 'autolisp-symbol)
+          (null (cddr binding)))
+     (values (first binding) (second binding)))
+    (t
+     (signal-autolisp-runtime-error
+      :invalid-let-binding
+      "LET binding must be a symbol or a (symbol init-form) list, got ~S."
+      binding))))
+
+(defun eval-let-form (arguments context)
+  ;; (let ((x 1) (y 2)) body...) — the BricsCAD V26 undocumented
+  ;; Common-Lisp extension (see
+  ;; autolisp-spec/documentation/bricscad-undocumented-extensions.org).
+  ;; Semantics vendor-confirmed on 2026-08-07 against real BricsCAD V26:
+  ;; CL-style PARALLEL binding — every init-form is evaluated in the
+  ;; ENCLOSING scope first, then the variables are bound simultaneously
+  ;; in a fresh dynamic frame (so in (let ((x 1) (y x)) ...) the y init
+  ;; sees the OUTER x, not the let's x=1; the harvest gave (1 10) for
+  ;; (setq x 10)(let ((x 1)(y x))(list x y))). The body is an implicit
+  ;; progn returning its last form's value; an empty body returns nil.
+  ;;
+  ;; The binding frame is a dynamic-frame like defun's `/'-locals, so a
+  ;; LET-bound name shadows the surrounding binding for the extent of the
+  ;; body and is torn down on both normal and non-local exit — matching
+  ;; the FOREACH / usubr-frame discipline.
+  ;;
+  ;; Availability is dialect-controlled: under a dialect whose target
+  ;; host lacks LET (strict / autocad) EVAL-LET-FORM still evaluates the
+  ;; form but emits an [ext-bricscad-undocumented] warning (or errors
+  ;; when --portability-warning-mode error); under bricscad / clautolisp
+  ;; / lax it is silent. LET* is deliberately NOT provided — the harvest
+  ;; proved BricsCAD V26 has no LET* ("no function definition <LET*>").
+  (unless (>= (length arguments) 1)
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "LET expects a binding list and body forms, got ~D arguments."
+     (length arguments)))
+  (let ((binding-list (first arguments))
+        (body (rest arguments)))
+    (unless (listp binding-list)
+      (signal-autolisp-runtime-error
+       :invalid-let-bindings
+       "LET binding list must be a proper list, got ~S."
+       binding-list))
+    (emit-bricscad-undocumented-warning "LET" binding-list)
+    ;; Parallel binding: parse + evaluate EVERY init-form against the
+    ;; enclosing scope BEFORE any LET variable is bound.
+    (let ((symbols '())
+          (values '()))
+      (dolist (binding binding-list)
+        (multiple-value-bind (symbol init-form) (parse-let-binding binding)
+          (push symbol symbols)
+          (push (autolisp-eval init-form context) values)))
+      (setf symbols (nreverse symbols)
+            values (nreverse values))
+      (unwind-protect
+           (progn
+             (push-dynamic-frame context)
+             (loop for symbol in symbols
+                   for value in values
+                   do (bind-dynamic-variable symbol value context))
+             (autolisp-eval-progn body context))
+        (pop-dynamic-frame context)))))
+
 (defun maybe-warn-about-rest-separator (lambda-list who)
   "Walk LAMBDA-LIST, find the rest-separator if any, and emit a
 dialect-aware warning via `emit-lambda-list-extension-warning'.
@@ -2865,6 +2999,12 @@ malformed cases surface at call-time via `bind-usubr-frame')."
         (cons "REPEAT" #'eval-repeat-form)
         (cons "FOREACH" #'eval-foreach-form)
         (cons "VLAX-FOR" #'eval-vlax-for-form)
+        ;; LET — BricsCAD V26 undocumented extension (CL-style parallel
+        ;; binding), vendor-confirmed 2026-08-07. Available under
+        ;; bricscad / clautolisp / lax; warns under strict / autocad via
+        ;; EVAL-LET-FORM's [ext-bricscad-undocumented] gate. LET* is NOT
+        ;; registered — the same harvest proved BricsCAD V26 has no LET*.
+        (cons "LET" #'eval-let-form)
         (cons "LAMBDA" #'eval-lambda-form)
         (cons "FUNCTION" #'eval-function-form)
         (cons "DEFUN-Q" #'eval-defun-q-form)
