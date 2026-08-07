@@ -558,3 +558,52 @@ the shape of the SCHMS sigfic fixtures."
       (is (%tv~= 0.0d0 (second min-corner)))
       ;; The text height extends the box upward.
       (is (%tv~= 2.5d0 (second max-corner))))))
+
+;;; --- The classic block-contents walk: tblsearch -2 + entget -------
+;;; (Regression for the SCHMS "attendu 2 LINE dans le bloc sigfic,
+;;; trouve 0" failure: the fixture checker walks the definition from
+;;; the BLOCK table record's -2 group.)
+
+(test tblsearch-block-record-carries-the-minus-2-walk-entry
+  (let* ((mock (make-cador)))
+    ;; A sigfic-shaped definition with two LINEs, as the SCHMS check
+    ;; expects.
+    (host-entmake mock (list (cons 0 "BLOCK") (cons 2 "SIGFIC_L") (cons 70 2)
+                             (list 10 0.0d0 0.0d0 0.0d0)))
+    (host-entmake mock (list (cons 0 "LINE") (cons 8 "0")
+                             (list 10 0.0d0 0.0d0 0.0d0)
+                             (list 11 1.0d0 0.0d0 0.0d0)))
+    (host-entmake mock (list (cons 0 "LINE") (cons 8 "0")
+                             (list 10 0.0d0 1.0d0 0.0d0)
+                             (list 11 1.0d0 1.0d0 0.0d0)))
+    (host-entmake mock (%tv-attdef-dxf "SIGTAG"))
+    (host-entmake mock (list (cons 0 "ENDBLK")))
+    (let* ((data (host-tblsearch mock "BLOCK" "SIGFIC_L"))
+           (entry (cdr (assoc -2 data))))
+      (is (typep entry 'autolisp-ename))
+      ;; Walk from the -2 entry: LINE, LINE, ATTDEF, then nil.
+      (let ((types '()) (e entry))
+        (loop while e
+              do (let* ((view (host-entget mock e))
+                        (zero (cdr (assoc 0 view))))
+                   (push (autolisp-string-value zero) types)
+                   (setf e (host-entnext mock e))))
+        (is (equal '("LINE" "LINE" "ATTDEF") (reverse types)))))
+    ;; The layer table view is unchanged (no -2 on non-BLOCK kinds).
+    (is (null (assoc -2 (host-tblsearch mock "LAYER" "0"))))))
+
+(test entget-on-a-block-table-record-ename-yields-the-record-view
+  (let* ((mock (make-cador)))
+    (%tv-make-sigfic-block mock "SIGFIC_G")
+    (let* ((record-ename (host-tblobjname mock "BLOCK" "SIGFIC_G"))
+           (data (host-entget mock record-ename)))
+      (is (consp data))
+      ;; (-1 . ename) head, the record's own groups, and the -2 entry.
+      (is (eq record-ename (cdr (assoc -1 data))))
+      (is (string= "SIGFIC_G"
+                   (autolisp-string-value (cdr (assoc 2 data)))))
+      (let ((entry (cdr (assoc -2 data))))
+        (is (typep entry 'autolisp-ename))
+        (is (string= "ATTDEF"
+                     (autolisp-string-value
+                      (cdr (assoc 0 (host-entget mock entry))))))))))

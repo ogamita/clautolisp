@@ -74,7 +74,9 @@ group-code list with every string value wrapped as an autolisp-string."
   (let ((record (cador-find-table-record host
                                               (resolve-table-kind kind 'tblsearch)
                                               (resolve-record-name name 'tblsearch))))
-    (and record (table-record->al-view record))))
+    ;; BLOCK records additionally carry the (-2 . first-entity) walk
+    ;; entry, as on the vendors (see TABLE-RECORD-AL-VIEW+EXTRAS).
+    (and record (table-record-al-view+extras host record))))
 
 (defmethod host-tblnext ((host cador) kind &key rewind)
   (let* ((k (resolve-table-kind kind 'tblnext))
@@ -99,7 +101,7 @@ group-code list with every string value wrapped as an autolisp-string."
         (t
          (let ((next (first remaining)))
            (setf (gethash k iterators) (rest remaining))
-           (table-record->al-view next)))))))
+           (table-record-al-view+extras host next)))))))
 
 (defmethod host-tblobjname ((host cador) kind name)
   (let ((record (cador-find-table-record host

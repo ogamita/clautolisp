@@ -641,7 +641,10 @@ provides that surface through the host backend:
   its contents; ~"*U"~ with flag bit 0 allocates an anonymous name).
   Block contents never appear in ~ssget "X"~, ~entlast~ or the
   top-level ~entnext~ walk; ~(entnext (tblobjname "BLOCK" name))~
-  walks the block's own entities (the classic ATTDEF scan).
+  walks the block's own entities (the classic ATTDEF scan), a BLOCK
+  record's ~tblsearch~ / ~tblnext~ view carries the vendors'
+  ~(-2 . <first-entity>)~ walk entry, and ~entget~ works on a
+  symbol-table record's ename.
 - Entity ActiveX *properties* read and write the entity's DXF groups:
   on an entity-backed VLA-object, ~TextString~ / ~TagString~ /
   ~Layer~ / ~Color~ / ~Height~ / ~Rotation~ (radians, the entget

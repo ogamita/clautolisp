@@ -35,6 +35,13 @@
   by-reference output symbols (assigned at the builtins layer), and
   the =vlax-invoke= / =vlax-get= / =vlax-put= builtins (plain-data
   contract). Subentity runs excluded from collection membership.
+- *1.8.13 (2026-08-07): the classic block-contents walk* — fourth
+  SCHMS round moved past all COM errors (1 OK / 5 FAIL: "attendu 2
+  LINE dans le bloc sigfic, trouve 0"): the fixture checker walks the
+  definition from the BLOCK table record. Landed: the vendors'
+  =(-2 . <first-entity ename>)= group on BLOCK =tblsearch= /
+  =tblnext= views, and =entget= on a symbol-table record's ename
+  (record view + =(-1 . ename)= head + =-2= for blocks).
 - *Remaining open:* confirm against the SCHMS =test-cad-clautolisp=
   re-run and extend the property table to what it still consumes
   (candidates: =TrueColor=, =Closed=, =MTextAttribute=, MTEXT

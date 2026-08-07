@@ -173,24 +173,6 @@ case-insensitively."
             (sort (remove-if #'%layout-block-name-p names)
                   #'string-lessp))))
 
-(defun %block-entity-handles (host name)
-  "Hex handles of the live entities owned by block NAME, oldest first.
-Model-space entities are those with a NIL owner (plus any explicitly
-owned by *Model_Space); other blocks own by name. Subentities (ATTRIB /
-VERTEX / SEQEND runs) are not members — vendor space and block
-collections enumerate only their top-level entities."
-  (let ((model-p (string-equal name "*Model_Space")))
-    (loop for handle in (reverse (cador-creation-order host))
-          for entity = (cador-find-entity-by-handle host handle)
-          when (and entity
-                    (not (member (entity-handle-kind entity)
-                                 '(:attrib :vertex :seqend)))
-                    (let ((owner (entity-handle-block entity)))
-                      (if owner
-                          (string-equal owner name)
-                          model-p)))
-            collect handle)))
-
 (defun live-collection-members (host object)
   "The current member VLA-objects of collection OBJECT: computed from
 the drawing for a live collection, the stored list for a static one."

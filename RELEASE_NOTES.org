@@ -507,6 +507,12 @@ separate binary for tool integrators.
   results are ordinary lists — VARIANT / SAFEARRAY values are converted
   on the way out (e.g. ~(vlax-invoke ref 'GetAttributes)~ returns a
   list of VLA-objects, ~(vlax-get ref 'InsertionPoint)~ a point list).
+- The classic block-contents walk works: a BLOCK record's ~tblsearch~ /
+  ~tblnext~ view carries the vendors' ~(-2 . <first-entity ename>)~
+  entry — ~(entnext (cdr (assoc -2 (tblsearch "BLOCK" n))))~ walks the
+  definition — and ~entget~ on a symbol-table record's ename (from
+  ~tblobjname~) returns the record's group-code view, ~(-1 . ename)~
+  head and ~-2~ included for blocks.
 - ~acad_strlsort~ now really sorts: it returns a *new* list of the
   input strings in ascending, case-sensitive, ordinal order (upper
   before lower; accented / non-ASCII letters after the ASCII range),

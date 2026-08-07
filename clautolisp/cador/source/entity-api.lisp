@@ -197,8 +197,19 @@ such entity exists or it has been deleted."
 
 (defmethod host-entget ((host cador) ename &optional applist)
   (let* ((handle (ename->handle ename 'entget))
-         (entity (safe-find-entity (cador-active-drawing host) handle)))
-    (and entity (entity->al-view host entity applist))))
+         (entity (and (or (stringp handle) (integerp handle))
+                      (safe-find-entity (cador-active-drawing host) handle))))
+    (cond
+      (entity (entity->al-view host entity applist))
+      (t
+       ;; A symbol-table record's ename (from tblobjname) is
+       ;; entget-able on the vendors: the record's group-code view,
+       ;; (-1 . ename) head, and for a BLOCK record the (-2 . first
+       ;; entity) walk entry.
+       (let ((record (%find-table-record-by-id host handle)))
+         (and record
+              (cons (cons -1 ename)
+                    (table-record-al-view+extras host record))))))))
 
 (defun %data-type-string (data)
   "The (0 . TYPE) string of the pure group-code list DATA, or NIL."
@@ -223,6 +234,42 @@ or the ActiveX block collection)."
     (or (null owner)
         (string-equal owner "*Model_Space")
         (string-equal owner "*Paper_Space"))))
+
+(defun %block-entity-handles (host name)
+  "Hex handles of the live entities owned by block NAME, oldest first.
+Model-space entities are those with a NIL owner (plus any explicitly
+owned by *Model_Space); other blocks own by name. Subentities (ATTRIB /
+VERTEX / SEQEND runs) are not members — vendor space and block
+collections enumerate only their top-level entities."
+  (let ((model-p (string-equal name "*Model_Space")))
+    (loop for handle in (reverse (cador-creation-order host))
+          for entity = (cador-find-entity-by-handle host handle)
+          when (and entity
+                    (not (member (entity-handle-kind entity)
+                                 '(:attrib :vertex :seqend)))
+                    (let ((owner (entity-handle-block entity)))
+                      (if owner
+                          (string-equal owner name)
+                          model-p)))
+            collect handle)))
+
+(defun table-record-al-view+extras (host record)
+  "The tblsearch / tblnext / entget view of a symbol-table RECORD: its
+wrapped group-code data, plus — for a BLOCK record — the vendors'
+(-2 . <first-entity ename>) group, the entry point of the classic
+block-contents walk ((entnext (cdr (assoc -2 (tblsearch \"BLOCK\" n)))).
+SPEC-UNCERTAIN: on the vendors an *empty* block's -2 names its ENDBLK
+entity; the mock stores no ENDBLK and omits the group
+(deferred-spec-research.issue)."
+  (let ((view (pure->al-value (symbol-table-record-data record))))
+    (if (eq (symbol-table-record-kind record) :block-record)
+        (let ((first-handle
+                (first (%block-entity-handles
+                        host (symbol-table-record-name record)))))
+          (if first-handle
+              (append view (list (cons -2 (handle->ename host first-handle))))
+              view))
+        view)))
 
 ;;; --- Vendor-divergence policy (autolisp-spec ch.25) -------------
 ;;;
@@ -561,17 +608,28 @@ block-definition contents."
       :main
       (string-upcase (entity-handle-block entity))))
 
+(defun %find-table-record-by-id (host id)
+  "The SYMBOL-TABLE-RECORD (any kind) whose id matches ID (an ename
+value from tblobjname), or NIL."
+  (let ((found nil))
+    (maphash (lambda (kind table)
+               (declare (ignore kind))
+               (maphash (lambda (name record)
+                          (declare (ignore name))
+                          (when (string= (string (symbol-table-record-id record))
+                                         (string id))
+                            (setf found record)))
+                        table))
+             (cador-tables host))
+    found))
+
 (defun %find-block-record-by-id (host id)
   "The :block-record SYMBOL-TABLE-RECORD whose id matches ID (an ename
 value from tblobjname), or NIL."
-  (let ((found nil))
-    (maphash (lambda (name record)
-               (declare (ignore name))
-               (when (string= (string (symbol-table-record-id record))
-                              (string id))
-                 (setf found record)))
-             (cador-table host :block-record))
-    found))
+  (let ((record (%find-table-record-by-id host id)))
+    (and record
+         (eq (symbol-table-record-kind record) :block-record)
+         record)))
 
 (defmethod host-entnext ((host cador) ename)
   ;; (entnext)       -> first non-deleted main-space entity, or nil.
