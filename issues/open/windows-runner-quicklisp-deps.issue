@@ -1,0 +1,63 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: windows-runner-quicklisp-deps — the Windows CI runner cannot quickload FiveAM (network) so test:*:windows fail
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: windows-runner-provisioning
+#+BRANCH: infra-windows-runner-quicklisp-deps
+
+* Context
+
+On 2026-08-07, with the native Windows runner back online, several
+Windows CI jobs failed NOT on clautolisp code but because Quicklisp on the
+runner cannot fetch dependencies over the network:
+
+    ; file: C:/msys64/home/PPBN02261/quicklisp/quicklisp/http.lisp
+    ;     (ERROR "Unable to process HTTP header")
+
+This aborts (ql:quickload "fiveam" ...) at the top of `make test-sbcl`, so
+the FiveAM test systems never load → "compilation unit aborted; caught 1
+fatal ERROR". Observed on test:clautolisp:windows (job 15764322028) and
+earlier test:alfe:windows — both do a runtime ql:quickload of fiveam (+
+bordeaux-threads / babel / trivial-gray-streams for alfe).
+
+The same commit is GREEN on the macOS runner (fiveam already present in
+its ~/quicklisp) and on Linux docker (deps baked into the image — see the
+clautolisp-quicklisp-ci-deps rule). The gap is specific to the Windows
+runner's Quicklisp/network.
+
+* Problem
+
+test:clautolisp:windows / test:alfe:windows can never be trusted while the
+Windows runner must reach the Quicklisp CDN at job time: the fetch is
+flaky (TLS "unexpected eof", "Unable to process HTTP header"). They are
+allow_failure, so they do not block, but they never give a real signal
+either.
+
+Jobs that do NOT ql-fetch pass fine on the same runner, proving the code
+and toolchain are healthy: conformance:pathname-mapping:windows and
+test:autolisp-test:windows were GREEN on the very same pipeline.
+
+* Proposal
+
+Provision the Windows runner's Quicklisp the way the Dockerfile / macOS
+runner already are — bake the fixed dep set into ~/quicklisp so no
+job-time download is needed:
+  - fiveam, bordeaux-threads, babel, trivial-gray-streams (the set the
+    Makefiles quickload), plus whatever alfe's spec-coverage adds.
+  - i.e. run one `(ql:quickload ...)` of that set at provisioning time (or
+    ship a local-projects / bundle), then jobs run fully offline.
+Alternatively, point the runner at a local Quicklisp mirror.
+
+* Acceptance criteria
+
+- test:clautolisp:windows and test:alfe:windows run to a real
+  pass/fail on the Windows runner with NO network fetch at job time.
+- Re-run the current master pipeline: those two go green (the code is
+  already green everywhere the fetch is not needed).
+
+* Notes
+
+Runner-provisioning task (owner: pjb / the Windows box), not a clautolisp
+source change. Filed per the "write tickets for bugs found in passing"
+rule while confirming the 1.8.7 pathname fix.
