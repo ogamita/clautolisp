@@ -1,0 +1,43 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: vl-file-systime: element count and day-of-week convention differ from BricsCAD/Autodesk
+#+AUTHOR: Pascal J. Bourguignon
+#+DATE: 2026-08-09
+
+Found by the alpm verification probes (alpm repo,
+tests/verification/verification.lsp, probe V-2) run at the same
+moment (Sun 2026-08-09 00:05 local) on both engines:
+
+- clautolisp 1.8.21:      (2026 8 0 9 0 5 28)      -- 7 elements
+- BricsCAD V26 (macOS):   (2026 8 7 9 0 5 55 0)    -- 8 elements
+
+* Differences
+
+1. Element count: BricsCAD returns the Autodesk-documented 8-element
+   list (year month day-of-week day hours minutes seconds
+   MILLISECONDS); clautolisp omits the milliseconds element.
+   Autodesk reference example: (2003 9 4 10 16 25 4 230).
+2. Day-of-week convention for the same Sunday:
+   - clautolisp: 0  (C struct tm convention, Sunday = 0; consistent
+     with an earlier probe: Friday 2026-08-07 -> 5)
+   - BricsCAD V26: 7 (Sunday = 7, ISO-8601-like Mon=1..Sun=7?)
+   - Autodesk documentation example implies Sunday = 1
+     (2003-09-10 was a Wednesday, documented day-of-week = 4,
+     i.e. Sun=1..Sat=7).
+   BricsCAD and the Autodesk doc disagree with each other too --
+   worth a probe on real AutoCAD (day known) before choosing; parity
+   target should be per --dialect.
+
+* Suggested fix
+
+- Add the milliseconds element (0 when the platform cannot provide
+  it) so the shape matches the vendors.
+- Match the day-of-week convention of the emulated dialect
+  (autocad-* vs bricscad-*), after confirming AutoCAD's actual
+  runtime value vs its documentation.
+- Extend the conformance suite with a fixed-file check of the shape.
+
+* Source
+
+alpm CI job verify:bricscad:macos (pipeline 2744343498, job
+15791433487) and verify:clautolisp:macos (job 15791433486),
+2026-08-09.

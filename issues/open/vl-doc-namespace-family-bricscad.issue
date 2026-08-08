@@ -1,0 +1,33 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: vl-doc-*/VLX-namespace family: BricsCAD V26 provides it, contradicting the multidocument analysis
+#+AUTHOR: Pascal J. Bourguignon
+#+DATE: 2026-08-09
+
+The multidocument analysis document
+(clautolisp-multidocument-analysis.org) classifies ~vl-doc-export~ /
+~vl-doc-import~ / ~vl-arx-import~ as existing "under --autocad only"
+and says that under ~--bricscad~ they "should signal an
+unsupported-feature condition rather than silently degrade".
+
+Reality check on a real BricsCAD V26 (macOS, LispEx 26.0), via the
+alpm verification probes (probe V-9, alpm CI job
+verify:bricscad:macos, pipeline 2744343498, job 15791433487,
+2026-08-09): the WHOLE family is present as SUBRs --
+vl-doc-export, vl-doc-import, vl-doc-ref, vl-doc-set, vl-arx-import,
+vl-list-exported-functions, vl-list-loaded-vlx, vl-vlx-loaded-p,
+vl-unload-vlx, vl-acad-defun, vl-acad-undefun, vl-bb-ref, vl-bb-set.
+~(vl-doc-export 'fn)~ executed in the document namespace returns T
+(inert success; probe V-7).
+
+This matches the Bricsys V25/V26 DevRef "VLX NameSpace Support"
+page: since BricsCAD V18.2 (DEScoder v2.7+), the VLX-NameSpace
+feature is supported for DES-encrypted LISP files, and these
+functions are listed as supported.
+
+* Suggested fix
+
+- Correct the multidocument analysis (vl-doc-* is NOT AutoCAD-only;
+  BricsCAD supports it for DES-encrypted namespace modules).
+- The bricscad-* dialects should provide the family (inert T outside
+  a namespace module, like the real engine), not signal
+  unsupported-feature.
