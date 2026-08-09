@@ -527,8 +527,21 @@ INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARI
 .PHONY: install install-programs install-documentation install-libraries \
         install-lisp-systems uninstall
 
-install: build  ## Install built executables + docs into $$PREFIX (build first; sudo-friendly). Native libraries are a separate `install-libraries' phase.
+# Whether a missing native DWG codec (LibreDWG) is fatal to
+# `install-libraries'. Default 0: a plain `make install' from a checkout
+# without the libredwg submodule still installs the Lisp sources, the
+# ASDF systems and the programs, warning about the codec it skipped --
+# only the `clautolisp/drawing-dwg' system needs it, and nothing else
+# in the tree depends on that system. Set to 1 where an incomplete tree
+# would be a defect rather than a degraded install: the release
+# packaging does exactly that (see release-libraries in the root
+# Makefile), so a published libraries tarball can never silently ship
+# without its codec.
+REQUIRE_NATIVE_LIBRARIES ?= 0
+
+install: build  ## Install built executables + docs + Lisp sources/systems (+ native libraries when built) into $$PREFIX; build first, sudo-friendly.
 	$(MAKE) install-programs
+	$(MAKE) install-libraries
 	$(MAKE) install-documentation
 
 install-programs:  ## Install just the clautolisp/read-autolisp/gui/run-file-compat executables (no docs) -- the CI-friendly fast path.
@@ -611,11 +624,26 @@ install-documentation:  ## Install just the clautolisp documentation (org/pdf/in
 install-libraries: install-lisp-systems  ## Install everything the release-libraries artefact ships: the ASDF systems (share/common-lisp), the native DWG codec libraries (lib/), the libredwg header (include/), and the drawing spec + libredwg licence (share/doc).
 	install -d $(LIB_INSTALL_DIR)
 	@runtime_manifest=third-party/libredwg/build/clautolisp-runtime-library; \
-	[ -s "$$runtime_manifest" ] || { echo "error: missing LibreDWG runtime manifest; run make build-libredwg" >&2; exit 1; }; \
-	runtime=$$(cat "$$runtime_manifest"); \
-	[ -f "$$runtime" ] || { echo "error: recorded LibreDWG runtime does not exist: $$runtime" >&2; exit 1; }; \
-	install -m 0755 "$$runtime" $(LIB_INSTALL_DIR)/; \
-	echo "installed: $$runtime -> $(LIB_INSTALL_DIR)/"; \
+	runtime=; \
+	if [ -s "$$runtime_manifest" ]; then runtime=$$(cat "$$runtime_manifest"); fi; \
+	if [ -n "$$runtime" ] && [ -f "$$runtime" ]; then \
+	  install -m 0755 "$$runtime" $(LIB_INSTALL_DIR)/; \
+	  echo "installed: $$runtime -> $(LIB_INSTALL_DIR)/"; \
+	elif [ "$(REQUIRE_NATIVE_LIBRARIES)" = "1" ]; then \
+	  if [ -z "$$runtime" ]; then \
+	    echo "error: missing LibreDWG runtime manifest; run make build-libredwg" >&2; \
+	  else \
+	    echo "error: recorded LibreDWG runtime does not exist: $$runtime" >&2; \
+	  fi; \
+	  exit 1; \
+	else \
+	  echo "[skip]     LibreDWG runtime not built -- installing without the native DWG codec." >&2; \
+	  echo "           Only the clautolisp/drawing-dwg system needs it; every other" >&2; \
+	  echo "           ASDF system, and the Lisp sources, are installed regardless." >&2; \
+	  echo "           To add it later:  git submodule update --init clautolisp/third-party/libredwg" >&2; \
+	  echo "                             make -C clautolisp build-libredwg install-libraries" >&2; \
+	  echo "           It would be installed into $(LIB_INSTALL_DIR)/." >&2; \
+	fi; \
 	for f in drawing-dwg/source/clal_dwg.so \
 	          drawing-dwg/source/clal_dwg.dylib \
 	          drawing-dwg/source/clal_dwg.dll; do \
