@@ -394,6 +394,11 @@ $(ALFE_CCL):
 
 BIN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/bin
 LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
+# Executable suffix. On Windows, PowerShell (and cmd) require the .exe
+# extension to run a program from $(PREFIX)/bin or libexec even though the
+# MSYS2 shell runs it without one; empty on POSIX. Appended to every
+# executable installed into bin/ and libexec/ below.
+EXE := $(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),.exe,)
 DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
 INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
 MAN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/man/man1
@@ -413,22 +418,29 @@ install-programs:  ## Install just the alfe executables (no docs).
 	install -d $(LIBEXEC_INSTALL_DIR)
 	@for exe in $(INSTALL_BINARIES); do \
 	  if [ -x "$$exe" ]; then \
-	    install -m 0755 "$$exe" $(BIN_INSTALL_DIR)/ ; \
-	    echo "installed: $$exe -> $(BIN_INSTALL_DIR)/" ; \
+	    dest="$$(basename "$$exe")" ; case "$$dest" in *.exe) ;; *) dest="$$dest$(EXE)" ;; esac ; \
+	    install -m 0755 "$$exe" "$(BIN_INSTALL_DIR)/$$dest" ; \
+	    echo "installed: $$exe -> $(BIN_INSTALL_DIR)/$$dest" ; \
 	  else \
 	    echo "[skip]     $$exe (not built — run build-programs first)" ; \
 	  fi ; \
 	done
-	@# Bare-name `alfe' symlink pointing at the user's preferred
-	@# CL impl. Relative target so the install tree stays
-	@# relocatable across machines/staging dirs.
+	@# Bare-name `alfe' launcher pointing at the user's preferred CL
+	@# impl. On POSIX a relative symlink keeps the tree relocatable;
+	@# on Windows PowerShell can't execute an MSYS symlink, so copy a
+	@# real alfe.exe instead.
 	@if [ -n "$(DEFAULT_LISP)" ]; then \
-	  target="alfe-$(DEFAULT_LISP)" ; \
+	  target="alfe-$(DEFAULT_LISP)$(EXE)" ; \
 	  if [ -x "$(BIN_INSTALL_DIR)/$$target" ]; then \
-	    ln -sf "$$target" "$(BIN_INSTALL_DIR)/alfe" ; \
-	    echo "linked:    $(BIN_INSTALL_DIR)/alfe -> $$target" ; \
+	    if [ -n "$(EXE)" ]; then \
+	      cp -f "$(BIN_INSTALL_DIR)/$$target" "$(BIN_INSTALL_DIR)/alfe$(EXE)" ; \
+	      echo "copied:    $(BIN_INSTALL_DIR)/alfe$(EXE) <- $$target (Windows: PowerShell can't exec an MSYS symlink)" ; \
+	    else \
+	      ln -sf "$$target" "$(BIN_INSTALL_DIR)/alfe" ; \
+	      echo "linked:    $(BIN_INSTALL_DIR)/alfe -> $$target" ; \
+	    fi ; \
 	  else \
-	    echo "[skip]     $(BIN_INSTALL_DIR)/alfe (target $$target not installed)" ; \
+	    echo "[skip]     $(BIN_INSTALL_DIR)/alfe$(EXE) (target $$target not installed)" ; \
 	  fi ; \
 	else \
 	  echo "[skip]     bare alfe symlink (DEFAULT_LISP is empty)" ; \
