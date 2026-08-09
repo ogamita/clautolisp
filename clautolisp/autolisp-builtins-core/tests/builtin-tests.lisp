@@ -1348,6 +1348,37 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
                                  (clautolisp.autolisp-runtime:make-autolisp-string new-path))))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))))
 
+;;; The day-of-week divergence is exactly one value wide, so it is
+;;; tested directly on the mapping rather than through a real file:
+;;; a file created while the suite runs lands on whatever weekday that
+;;; is, and could never exercise Sunday -- the only value that differs.
+(test vl-file-systime-day-of-week-differs-only-on-sunday
+  (let ((day-of-week #'clautolisp.autolisp-builtins-core::autolisp-day-of-week)
+        (all-dialects '(nil :strict :clautolisp :lax
+                        :autocad-2022 :autocad-2026
+                        :bricscad-v25 :bricscad-v26)))
+    ;; CL numbers Monday=0..Saturday=5; every engine reports these as
+    ;; 1..6, which is all the vendor documentation actually pins down.
+    (dolist (dialect all-dialects)
+      (loop for common-lisp-day from 0 to 5
+            do (is (= (1+ common-lisp-day)
+                      (funcall day-of-week common-lisp-day dialect)))))
+    ;; CL Sunday=6 is the sole divergence: the documentation is silent,
+    ;; and the two runtimes complete it differently (probed 2026-08-09).
+    (dolist (dialect '(nil :strict :clautolisp :lax :autocad-2022 :autocad-2026))
+      (is (= 0 (funcall day-of-week 6 dialect))))
+    (dolist (dialect '(:bricscad-v25 :bricscad-v26))
+      (is (= 7 (funcall day-of-week 6 dialect))))
+    ;; The published portability recipe: (mod dow 7) collapses the one
+    ;; divergent value -- (mod 0 7) and (mod 7 7) are both 0 -- and
+    ;; leaves Monday..Saturday alone, so it yields the POSIX numbering
+    ;; on every engine and every dialect. Documented in the spec entry
+    ;; and the user manual; asserted here so it cannot silently rot.
+    (dolist (dialect all-dialects)
+      (loop for common-lisp-day from 0 to 6
+            do (is (= (mod (funcall day-of-week common-lisp-day dialect) 7)
+                      (mod (1+ common-lisp-day) 7)))))))
+
 (test builtin-vl-file-copy-systime-and-mktemp
   (reset-autolisp-symbol-table)
   (install-core-builtins)
@@ -1412,7 +1443,10 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
                                     (clautolisp.autolisp-runtime:make-autolisp-string
                                      source-path))))
       (is (listp systime))
-      (is (= 7 (length systime)))
+      ;; year month dow day hours minutes seconds MILLISECONDS -- eight,
+      ;; the shape every probed vendor engine returns even though both
+      ;; reference pages state seven (vl-file-systime-parity.issue).
+      (is (= 8 (length systime)))
       (is (every #'integerp systime))
       (let ((write-date (file-write-date source-path)))
         (multiple-value-bind (second minute hour day month year common-lisp-day-of-week)

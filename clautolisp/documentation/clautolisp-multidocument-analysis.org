@@ -99,7 +99,7 @@ The load-time behaviour matters for the propagation primitives:
 | Loaded ARX/BRX/.NET modules and their subrs    | Session              | callable from every document namespace | A     |
 | C++/.NET globals and statics inside those      | Session              | —                                      | A/B   |
 | Application object and Documents collection    | Session              | ~vlax-get-acad-object~ (COM, Windows)    | A     |
-| Separate-namespace VLX (AutoCAD only)          | Session              | ~vl-doc-export~ / ~vl-doc-import~         | A     |
+| Separate-namespace VLX (both vendors)          | Session              | ~vl-doc-export~ / ~vl-doc-import~         | A     |
 | Menus, CUI, profiles, support paths            | Session              | ~getvar~, ~vl-registry-*~                | A     |
 | Filesystem, OS environment                     | Machine              | ~open~, ~getenv~                         | A     |
 
@@ -153,10 +153,24 @@ The "and into any document opened later in the session" clause of
 the document-creation path consults.  ~clautolisp~ must model this
 explicitly; it is not derivable from a snapshot of the open documents.
 
-BricsCAD has no separate-namespace compilation mode: projects compile to
-~.des~ rather than ~.vlx~, and globals remain exposed as if uncompiled. [C,
-well-informed third party; verify]  This is a real dialect divergence for
-~--autocad~ versus ~--bricscad~.
+/Corrected 2026-08-09./  The claim previously recorded here — that
+BricsCAD has no separate-namespace compilation mode, so globals remain
+exposed as if uncompiled — was sourced from a 2017 third-party blog post
+[C], and it is now *refuted by direct probe*.  It was accurate for the
+engines of its day: the VLX-NameSpace feature arrived in BricsCAD V18.2
+(DEScoder v2.7+), after that post.
+
+BricsCAD does compile to ~.des~ rather than ~.vlx~, and that part stands.
+But ~DESCoder -namespace~ is a separate-namespace compilation mode, and a
+module built with it hides its non-exported functions exactly as an
+AutoCAD separate-namespace VLX does (verified on BricsCAD V25,
+2026-08-09; see R8).  A ~.des~ built *without* ~-namespace~ does leave
+everything global — which is the default, and the likely origin of the
+older claim.
+
+So the packaging *format* diverges between the vendors while the
+namespace *semantics* converge.  Treat the format as the dialect
+divergence, not the semantics.
 
 ** System variable scopes
 
@@ -307,10 +321,38 @@ side contributes only poll points and blocking round trips.
   ~vl-enable-user-cancel~ state and any redefinition of built-ins are
   per-document.
 
-- *R8 — Dialect gating of separate namespaces.* Separate-namespace VLX,
-  ~vl-doc-export~, ~vl-doc-import~ and ~vl-arx-import~ exist under ~--autocad~
-  only.  Under ~--bricscad~ they should signal an unsupported-feature
-  condition rather than silently degrade.
+- *R8 — Separate namespaces are NOT dialect-gated.*  /Corrected
+  2026-08-09; this rule previously said the opposite./  Separate-namespace
+  VLX is *not* an AutoCAD-only facility: BricsCAD has supported the
+  VLX-NameSpace feature since V18.2 (DEScoder v2.7+) for DES-encrypted
+  LISP files, and a probe on a real BricsCAD V26 (macOS, LispEx 26.0)
+  found the whole family present as SUBRs — ~vl-doc-export~,
+  ~vl-doc-import~, ~vl-doc-ref~, ~vl-doc-set~, ~vl-arx-import~,
+  ~vl-list-exported-functions~, ~vl-list-loaded-vlx~, ~vl-vlx-loaded-p~,
+  ~vl-unload-vlx~, ~vl-acad-defun~, ~vl-acad-undefun~, ~vl-bb-ref~,
+  ~vl-bb-set~.  Loading a ~DESCoder -namespace~ module on BricsCAD V25
+  reproduces the AutoCAD separate-namespace semantics exactly:
+  non-exported functions are invisible from the document namespace,
+  exported ones are callable, and the module is reported by
+  ~vl-list-loaded-vlx~ under its file base name.
+
+  So the family must *not* signal an unsupported-feature condition under
+  ~--bricscad~; it must behave as it does on the real engine — an inert
+  success outside a namespace module.  This is also what clautolisp
+  already does: the thirteen builtins are registered unconditionally,
+  with no dialect gate.
+
+  What *does* need care is the opposite failure mode.  Per the Bricsys
+  DevRef, a namespace-enabled ~.des~ loaded on a pre-V18.2 engine loads
+  with "no NameSpaces available" and its isolation silently degrades to
+  global visibility — no error, no diagnostic.  Namespace hiding is a
+  delivery facility, not a correctness or security boundary, and no
+  design here may rely on it for correctness.
+
+  Evidence: alpm probes V-7 and V-9, CI job ~verify:bricscad:macos~
+  (pipeline 2744343498, job 15791433487) and ~verify:descoder:windows~
+  (job 15795237203), 2026-08-09.  See ~autolisp-spec~ chapter 22
+  § /VLX namespace family: verification 2026-08-09/.
 
 - *R9 — Session-level pending-load list.* Implement ~vl-propagate~ and
   ~vl-load-all~ against an explicit list consulted by the document-creation
@@ -447,9 +489,17 @@ and the result recorded as a lesson.
   mode.  Verify ~clautolisp~ behaves correctly in a one-document session and
   decide whether ~SDI~ is worth emulating at all.
 
-- *E9 — Separate-namespace VLX on BricsCAD.*  Confirm the absence of a
-  separate-namespace compilation mode and the ~.des~ output format on the
-  targeted version.  Feeds R8.
+- *E9 — Separate-namespace VLX on BricsCAD.*  *DONE 2026-08-09 — and the
+  hypothesis was wrong.*  The experiment was framed as confirming the
+  /absence/ of a separate-namespace compilation mode; the probe found it
+  present.  ~DESCoder -namespace~ produces a module whose non-exported
+  functions are invisible from the document namespace, whose exported
+  ones are callable, and which ~vl-list-loaded-vlx~ reports under its
+  file base name — the AutoCAD semantics, through a different tool.  The
+  ~.des~ output format is confirmed.  R8 has been rewritten accordingly.
+  Remaining sub-question, not blocking: whether ~-namespace~ can be
+  reached from project mode (~.prv~ ~(:separate-namespace)~) as well as
+  from the single-file form.
 
 - *E10 — MTFLAGS interaction.*  Confirm that no ~MTFLAGS~ setting introduces
   parallel Lisp evaluation, i.e. that the invariant of §4.2 holds with

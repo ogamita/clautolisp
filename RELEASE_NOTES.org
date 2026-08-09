@@ -595,6 +595,20 @@ separate binary for tool integrators.
 - ~(substr s start 0)~ returns ~""~.
 - Locale-insensitive numeric I/O (period decimal separator regardless
   of ~LC_NUMERIC~ / ~DIMDSEP~).
+- ~vl-file-systime~ returns *eight* elements — year, month, day of
+  week, day of month, hours, minutes, seconds, milliseconds — matching
+  every engine probed (AutoCAD 2022, BricsCAD V25 and V26) rather than
+  the seven both vendors' reference pages state. The milliseconds
+  field is currently always 0: ~CL:FILE-WRITE-DATE~ is defined in whole
+  seconds. Day of week is 1..6 for Monday..Saturday everywhere; Sunday
+  is the one value the vendor documentation never pins down, so it is
+  dialect dependent — 0 under ~clautolisp~ / ~strict~ / ~autocad-*~
+  (the POSIX ~struct tm~ completion, which is also what AutoCAD's
+  runtime returns) and 7 under ~bricscad-v25~ / ~bricscad-v26~.
+  ~(mod day-of-week 7)~ normalises every engine and dialect to the
+  POSIX numbering, since ~(mod 0 7)~ and ~(mod 7 7)~ are both 0 and
+  Monday..Saturday pass through unchanged. See the AutoLISP Spec entry
+  § /VL-FILE-SYSTIME/ for the evidence.
 
 ** read-autolisp
 
@@ -948,6 +962,27 @@ ASDF-loadable Common Lisp library:
 =clautolisp-<ver>-libraries-<os>-<arch>.tar.bz2= artefact packages —
 same files, same paths — so installing from source and unpacking the
 release tarball are interchangeable.
+
+~make -C clautolisp install~ now runs this phase too, so the
+subproject-level install produces the same complete tree the top-level
+~make install~ does: programs + Lisp sources + ASDF systems + native
+libraries + documentation. Previously it installed only programs and
+documentation, and a full installation could be obtained only from the
+repository root or by unpacking a release tarball.
+
+A checkout without the LibreDWG submodule no longer fails the phase.
+Only the ~clautolisp/drawing-dwg~ system needs the native DWG codec, so
+when it has not been built the phase installs everything else, prints
+what it skipped, and says how to add it later:
+
+#+BEGIN_EXAMPLE
+git submodule update --init clautolisp/third-party/libredwg
+make -C clautolisp build-libredwg install-libraries
+#+END_EXAMPLE
+
+Release packaging keeps the old hard failure — ~make release-libraries~
+sets ~REQUIRE_NATIVE_LIBRARIES=1~ — so a published libraries tarball can
+never silently ship without its codec.
 
 With ~$PREFIX/share/common-lisp/~ on ASDF's source-registry (the
 default system registry already covers ~/opt/local~, ~/usr/local~ and

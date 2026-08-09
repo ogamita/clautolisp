@@ -274,7 +274,13 @@ release-programs: build-programs  ## Build programs and package this host's per-
 	rm -rf "$$stage"; \
 	echo "wrote $(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2"
 
-release-libraries: stage-libraries  ## Package this host's per-target libraries artefact (ASDF systems + native libdwg + header) from the same $(STAGE)/libraries tree install-libraries installs. CI unions the targets into clautolisp-<ver>-libraries.tar.bz2.
+# REQUIRE_NATIVE_LIBRARIES=1: a published artefact must be complete, so a
+# missing LibreDWG codec is an error here, even though it is only a
+# warning for a plain `make install' (see clautolisp/Makefile). Staging is
+# invoked as a sub-make rather than a prerequisite so the override reaches
+# it -- command-line variables propagate through MAKEFLAGS.
+release-libraries:  ## Package this host's per-target libraries artefact (ASDF systems + native libdwg + header) from the same $(STAGE)/libraries tree install-libraries installs. CI unions the targets into clautolisp-<ver>-libraries.tar.bz2.
+	$(MAKE) stage-libraries REQUIRE_NATIVE_LIBRARIES=1
 	@mkdir -p "$(DIST)"
 	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
 	tar -C "$(STAGE_LIBRARIES)" -cjf "$(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2" .; \

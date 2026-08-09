@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.9.2
+#+VERSION: 0.9.5
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -1795,8 +1795,11 @@ Modern `defun` covers the first concern. `defun-q` exists only for the second, c
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022, BricsCAD V25 and V26: verified behaviourally by runtime
+  probe 2026-08-09 -- `defun-q` defines a callable, and
+  `defun-q-list-ref` returns the list form `((X) X)`, on every engine.
+- Status: verified on both vendors (no longer "presumed compatible").
+  (`defun-q-list-set` was not part of that probe and stays presumed.)
 
 *** Source Notes
 - [defun-q (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-AutoLISP-Reference/files/GUID-5EE138EF-D531-441B-9F12-8D5645C540FE.htm)
@@ -1866,8 +1869,11 @@ The sampled Autodesk reference does not document additional exceptional situatio
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022, BricsCAD V25 and V26: verified behaviourally by runtime
+  probe 2026-08-09 -- `defun-q` defines a callable, and
+  `defun-q-list-ref` returns the list form `((X) X)`, on every engine.
+- Status: verified on both vendors (no longer "presumed compatible").
+  (`defun-q-list-set` was not part of that probe and stays presumed.)
 
 *** Source Notes
 - [defun-q-list-ref (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ITA/AutoCAD-MAC-AutoLISP-Reference/files/GUID-DAF4A76E-9346-4A68-A0C8-17695177033B.htm)
@@ -7398,16 +7404,26 @@ None.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022, BricsCAD V25 and V26: verified by runtime probe
+  2026-08-09 — absolute paths written with forward slashes are accepted
+  on every engine.
+- Status: verified on both vendors (no longer "presumed compatible").
 
 *** Source Notes
 - [findfile (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-D671F67D-F92B-41FF-B9FA-A48EF52CF607.htm)
+- Runtime probe: alpm `tests/verification/verification.lsp` (V-5), 2026-08-09.
 
 *** Notes
 - Autodesk documents that `filename` must not contain a directory prefix.
 - Autodesk documents that the support-file search path is searched.
 - Autodesk documents that URL strings may also be returned when appropriate.
+- *Separator asymmetry — verified 2026-08-09.* Both CADs accept a
+  forward-slash absolute path on input but return the located path with
+  *backslashes*. The argument and the result are therefore not
+  interchangeable: a caller that compares `findfile`'s result against
+  the string it passed in, or that feeds one result to another path
+  operation expecting its own spelling, will mismatch on Windows-style
+  output. Normalise separators before comparing.
 - In clautolisp, ~findfile~ searches the *union* of the support search
   path and the trusted folders (~TRUSTEDPATHS~ plus the implicit folders),
   without trust-filtering. See *Normative Rules: Secure File Loading and
@@ -7497,11 +7513,15 @@ Part of the Visual LISP extension layer, but documented as broadly available acr
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022, BricsCAD V25 and V26: the `directories` selector was
+  verified by runtime probe 2026-08-09 — `-1` returns directories only
+  and `1` returns files only on every engine, matching the Autodesk
+  signature above.
+- Status: verified on both vendors (no longer "presumed compatible").
 
 *** Source Notes
 - [vl-directory-files (AutoLISP)](https://help.autodesk.com/cloudhelp/2025/JPN/AutoCAD-AutoLISP-Reference/files/GUID-C28C0CB0-FBBE-4AA8-BAC4-2FF222772514.htm)
+- Runtime probe: alpm `tests/verification/verification.lsp` (V-6), 2026-08-09.
 
 *** Notes
 - Autodesk documents a Unicode/LISPSYS behavior change in AutoCAD 2021.
@@ -7727,7 +7747,7 @@ Returns the last modification time of the specified file.
 *** Return Values
 List or `nil`.
 
-Autodesk documents a list containing:
+Both vendors document a *seven*-element list containing:
 - year
 - month
 - day of week
@@ -7735,6 +7755,56 @@ Autodesk documents a list containing:
 - hours
 - minutes
 - seconds
+
+Every engine tested returns an *eighth* element, milliseconds, so the
+documented arity is wrong on both sides. The Bricsys page contradicts
+itself on this point in a single screen: it states the seven-element
+format and then shows the eight-value sample return
+`(2019 10 4 24 4 1 10 0)`. Portable code must not assume the length.
+
+**** Day-of-week numbering
+Autodesk states only "Monday is day 1 of day of week, Tuesday is day 2,
+and so on", and stops. Bricsys states no numbering at all. Critically,
+**no documented example falls on a Sunday**, so no reference page pins
+Sunday down:
+
+| Reference page  | Example date | Weekday   | Documented value |
+|-----------------+--------------+-----------+------------------|
+| Autodesk        | 1998-04-08   | Wednesday |                3 |
+| Bricsys V25/V26 | 2019-10-24   | Thursday  |                4 |
+| progeCAD        | 2011-02-25   | Friday    |                5 |
+
+Monday through Saturday are therefore 1..6 everywhere, and that is the
+whole of what the documentation establishes. The engines complete the
+remaining silence differently (probed 2026-08-09, itself a Sunday):
+
+| Engine                  | Sunday | Numbering                    |
+|-------------------------+--------+------------------------------|
+| AutoCAD 2022 runtime    |      0 | C `struct tm` / POSIX tm_wday |
+| BricsCAD V25 and V26    |      7 | ISO-8601                     |
+
+Neither engine contradicts its own documentation — each resolves a gap
+in it — so this is a *divergence of exactly one value*.
+
+**** Reading the day of week portably
+Because the divergence is confined to Sunday, and because the two
+values it takes are 0 and 7, one operation normalises every engine:
+
+#+begin_example
+(mod day-of-week 7)
+#+end_example
+
+`(mod 0 7)` and `(mod 7 7)` are both 0, and Monday..Saturday are 1..6,
+which `mod 7` leaves untouched. So `(mod day-of-week 7)` yields the
+POSIX `struct tm` numbering — Sunday = 0, Monday = 1, ... Saturday = 6
+— on AutoCAD, on BricsCAD, and on clautolisp under any dialect,
+without testing which engine is running.
+
+Portable code should therefore read position 3 through `mod 7` rather
+than avoid it. Positions 1, 2, 4, 5, 6 and 7 (year, month, day of
+month, hours, minutes, seconds) need no such treatment; position 8
+(milliseconds) is absent from both vendors' documented arity and must
+not be assumed present.
 
 *** Side Effects
 None.
@@ -7744,14 +7814,46 @@ Autodesk documents this on Windows and macOS, not Web.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified by runtime probe 2026-08-09 (eight elements, Sunday=0).
+- BricsCAD V25 and V26: verified by runtime probe 2026-08-09 (eight elements, Sunday=7);
+  the Bricsys DevRef page carries the same text in V25 and in CurVer/V26.
+- Status: verified on both vendors (no longer "presumed compatible").
 
 *** Source Notes
 - [vl-file-systime (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7F6A31B2-7D51-4C4D-B239-206F398D67CA.htm)
+- [vl-file-systime (AutoLISP), AutoCAD 2016 reference — the page carrying the "Monday is day 1" sentence and the 1998-04-08 example](https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-7F6A31B2-7D51-4C4D-B239-206F398D67CA.htm)
+- [vl-file-systime — BricsCAD V25 Developer Reference](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/vl-file-systime.htm)
+- [vl-file-systime — BricsCAD CurVer (V26) Developer Reference](https://developer.bricsys.com/bricscad/help/en_US/CurVer/DevRef/source/vl-file-systime.htm)
+- [(vl-file-systime) — progeCAD Professional manual](https://www.progesoft.com/products/progecad-professional/manual?mp=developer-reference/lisp/lisp-functions/vl-file-systime)
+- Runtime probes: alpm `tests/verification/verification.lsp` (V-2), CI jobs
+  `verify:autocad:windows`, `verify:bricscad:{macos,windows}`,
+  `verify:clautolisp:macos`, 2026-08-09.
 
 *** Notes
 - Autodesk documents a Unicode/LISPSYS behavior change in AutoCAD 2021.
+
+*** clautolisp
+clautolisp implementation deviation — not part of the normative
+specification above.
+
+- **Arity.** clautolisp returns the eight-element list the engines
+  return, not the seven the pages state.
+- **Day of week.** Monday..Saturday are 1..6, as documented. For the
+  one value the documentation leaves open, clautolisp keeps the POSIX
+  (`struct tm`) completion, Sunday = 0 — which is also what AutoCAD's
+  runtime does. The `bricscad-v25` and `bricscad-v26` dialects
+  reproduce their engine's Sunday = 7. This is a case-2 divergence
+  under Chapter 25: the difference is real, each vendor is faithful to
+  its own silence-filling choice, and clautolisp adopts one while the
+  deviant-from-it dialect reproduces the other. Note that the
+  normalisation above, `(mod day-of-week 7)`, collapses the two
+  dialects' values as well — clautolisp code that applies it is
+  insensitive to the selected dialect.
+- **Milliseconds.** The eighth element is currently always 0.
+  `CL:FILE-WRITE-DATE` is defined in whole seconds, so the sub-second
+  part of the modification time is not reachable portably, even though
+  the underlying filesystems (APFS, ext4, NTFS) do store it. No probe
+  has yet caught either vendor returning a non-zero value here.
 
 #+LATEX: \newpage
 
@@ -7968,13 +8070,27 @@ Returns a character code according to the host's character model.
 - Autodesk documents Unicode-related return behavior changes in 2021+
 - newline normalization is documented
 
+*** Notes
+- *`read-char` is byte-level — verified 2026-08-09 on all four engine
+  combinations.* It returns raw bytes one at a time, never decoded
+  characters. Reading back a character stored as UTF-8 yields the
+  individual bytes: on BricsCAD V26 macOS, a file holding `é` reads as
+  `(195 169)`, not `233`.
+- This makes `read-char` and `write-char` *asymmetric*: `write-char`
+  emits a character in the platform encoding, while `read-char` reads
+  bytes. The pair round-trips only on single-byte platforms — see
+  `write-char` § /Notes/ for the full picture and the portability
+  consequence.
+
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022, BricsCAD V25 and V26: byte-level behaviour verified by
+  runtime probe 2026-08-09.
+- Status: verified on both vendors (no longer "presumed compatible").
 
 *** Source Notes
 - [read-char (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/KOR/AutoCAD-AutoLISP-Reference/files/GUID-7E94BD14-F018-47D0-88DA-2B08DE32DB2C.htm)
+- Runtime probe: alpm `tests/verification/verification.lsp` (V-10), 2026-08-09.
 - Status: documented.
 
 #+LATEX: \newpage
@@ -8036,13 +8152,33 @@ Produces output to the selected destination.
 *** Compatibility
 Character interpretation is version-sensitive in Unicode-capable environments.
 
+*** Notes
+- *`write-char` emits a character, not a byte — verified 2026-08-09.*
+  The value is written in the *platform* encoding, so the number of
+  bytes produced depends on the engine's platform, not on the argument.
+  Writing code 233 (`é`) produces one byte, 233, on clautolisp and on
+  both Windows CADs, but the two-byte UTF-8 sequence `C3 A9` on
+  BricsCAD V26 under macOS.
+- *Consequence: `write-char` cannot portably emit an arbitrary byte.*
+  Code that needs exact bytes on disk must not go through it.
+- *The `write-char` / `read-char` pair is asymmetric.* `write-char`
+  writes an encoded character; `read-char` reads raw bytes (see its
+  own § /Notes/). They round-trip only where the platform encoding is
+  single-byte. On a UTF-8 platform, writing `é` and reading it back
+  yields two values, `(195 169)`, not the one that was written — with
+  no error to signal that a decode was skipped. Portable code should
+  treat the pair as byte I/O on one side and encoded I/O on the other,
+  and use `read-line` / `write-line` where text semantics are wanted.
+
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022, BricsCAD V25 and V26: platform-encoding behaviour
+  verified by runtime probe 2026-08-09.
+- Status: verified on both vendors (no longer "presumed compatible").
 
 *** Source Notes
 - [About File Descriptors (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/CHT/AutoCAD-AutoLISP/files/GUID-EDADF856-4D64-4E19-A7BD-5017C4135A01.htm)
+- Runtime probe: alpm `tests/verification/verification.lsp` (V-10), 2026-08-09.
 - [What's New or Changed with AutoLISP (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLisp/files/GUID-037BF4D4-755E-4A5C-8136-80E85CCEDF3E.htm)
 - Status: documented.
 
@@ -8968,6 +9104,16 @@ Autodesk documents the extension search order used when `filename` has no extens
 
 As soon as a match is found, loading stops and that file is loaded.
 
+That search order applies only when `filename` carries *no* extension.
+When an extension is given explicitly, the file is read as LISP source
+whatever that extension is — verified 2026-08-09 on all four engine
+combinations: `(load "foo.alpm")` evaluates the file on clautolisp, on
+BricsCAD V25 and V26, and on AutoCAD 2022. The compiled formats are
+recognised by being *found* under the search order above, not by any
+rejection of unfamiliar extensions; an explicit extension bypasses the
+search entirely. Applications may therefore choose their own source
+extension freely.
+
 *** Notes
 Autodesk also documents that VLX support is Windows-only.
 
@@ -8982,11 +9128,13 @@ Secure File Loading and Trust Model* (this chapter).
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022, BricsCAD V25 and V26: the explicit-extension rule above
+  was verified by runtime probe 2026-08-09 on every engine.
+- Status: verified on both vendors (no longer "presumed compatible").
 
 *** Source Notes
 - [load (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-MAC-AutoLISP-Reference/files/GUID-F3639BAA-FD70-487C-AEB5-9E6096EC0255.htm)
+- Runtime probe: alpm `tests/verification/verification.lsp` (V-1), 2026-08-09.
 - Status: documented.
 
 #+LATEX: \newpage
@@ -69018,8 +69166,12 @@ Exposes the designated function to external ObjectARX callers.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified present as a SUBR by runtime probe 2026-08-09.
+- BricsCAD V25 and V26: verified present as a SUBR by runtime probe
+  2026-08-09. The Bricsys DevRef "VLX NameSpace Support" page documents
+  the family as supported since V18.2 (DEScoder v2.7+).
+- Status: verified on both vendors (no longer "presumed compatible");
+  see chapter 22 § /VLX namespace family: verification 2026-08-09/.
 
 *** Source Notes
 - [vl-acad-defun (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-D15CB87F-5B69-4BC3-B8BB-E45D57602B27.htm)
@@ -69055,8 +69207,12 @@ Removes external visibility of the designated function.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified present as a SUBR by runtime probe 2026-08-09.
+- BricsCAD V25 and V26: verified present as a SUBR by runtime probe
+  2026-08-09. The Bricsys DevRef "VLX NameSpace Support" page documents
+  the family as supported since V18.2 (DEScoder v2.7+).
+- Status: verified on both vendors (no longer "presumed compatible");
+  see chapter 22 § /VLX namespace family: verification 2026-08-09/.
 
 *** Source Notes
 - [vl-acad-undefun (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-MAC-AutoLISP-Reference/files/GUID-81CEB01F-8A57-4465-A4F9-CE2E357D692B.htm)
@@ -69129,8 +69285,12 @@ Returns a list of strings naming exported functions, or `nil` if none are export
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified present as a SUBR by runtime probe 2026-08-09.
+- BricsCAD V25 and V26: verified present as a SUBR by runtime probe
+  2026-08-09. The Bricsys DevRef "VLX NameSpace Support" page documents
+  the family as supported since V18.2 (DEScoder v2.7+).
+- Status: verified on both vendors (no longer "presumed compatible");
+  see chapter 22 § /VLX namespace family: verification 2026-08-09/.
 
 *** Source Notes
 - [vl-list-exported-functions (AutoLISP/Visual LISP IDE)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP-Reference/files/GUID-3D87AA2E-DB4B-4B28-B5A8-04A8183BF8AD.htm)
@@ -69162,8 +69322,12 @@ Returns a list of symbols naming separate-namespace VLX applications, or `nil` i
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified present as a SUBR by runtime probe 2026-08-09.
+- BricsCAD V25 and V26: verified present as a SUBR by runtime probe
+  2026-08-09. The Bricsys DevRef "VLX NameSpace Support" page documents
+  the family as supported since V18.2 (DEScoder v2.7+).
+- Status: verified on both vendors (no longer "presumed compatible");
+  see chapter 22 § /VLX namespace family: verification 2026-08-09/.
 
 *** Source Notes
 - [vl-list-loaded-vlx (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-0F0C7A45-41AA-410F-AEF0-EECAE812FCF3.htm)
@@ -74003,6 +74167,128 @@ This chapter covers `.fas`, `.vlx`, namespace isolation, and related packaging/c
 ** Normative Rules
 - these features affect more than delivery; they influence name visibility and execution environment
 - BricsCAD supports related but different packaging mechanisms such as DEScoder
+- namespace isolation is a *delivery* facility, not a security or
+  correctness boundary: an engine that does not implement it loads the
+  module anyway, with every name globally visible (see /VLX namespace
+  compatibility/ below). Code must not depend on namespace hiding for
+  correctness.
+
+** VLX namespace family: verification 2026-08-09
+
+The whole VLX namespace family was probed on four engine/platform
+combinations, resolving the "presumed compatible pending Phase 4
+verification" status the individual entries used to carry.
+
+*** Availability
+All thirteen names are present as SUBRs on AutoCAD 2022 *and* on
+BricsCAD V25 and V26: `vl-doc-export`, `vl-doc-import`, `vl-doc-ref`,
+`vl-doc-set`, `vl-arx-import`, `vl-list-exported-functions`,
+`vl-list-loaded-vlx`, `vl-vlx-loaded-p`, `vl-unload-vlx`,
+`vl-acad-defun`, `vl-acad-undefun`, `vl-bb-ref`, `vl-bb-set`.
+
+This matches the Bricsys DevRef *VLX NameSpace Support* page: the
+feature has been supported since BricsCAD V18.2 (DEScoder v2.7+) for
+DES-encrypted LISP files, and these functions are listed as supported.
+
+*** Behavior outside a namespace module
+Called from the document namespace — i.e. from plainly loaded source,
+with no separate-namespace module involved — `(vl-doc-export 'f)` is an
+inert success: it returns `T` on both CADs (the symbol on clautolisp)
+and changes nothing. Portable code may therefore call it
+unconditionally.
+
+*** DES namespace semantics
+Verified on BricsCAD V25 by loading a `DESCoder -namespace` `.des`
+whose source exports one function with `vl-doc-export` and defines
+another without exporting it:
+
+- the non-exported function is *invisible* — its symbol evaluates to
+  `nil` in the document namespace;
+- the exported function is callable, and reports as a SUBR;
+- `(vl-list-loaded-vlx)` reports the module under its *file base name*
+  (`"v8ns"` for `v8ns.des`);
+- `(vl-list-exported-functions nil)` lists the exported name.
+
+A `.des` encoded *without* `-namespace` defines everything globally.
+These are the AutoCAD separate-namespace VLX semantics exactly, reached
+through a different packaging tool.
+
+*** VLX namespace compatibility
+Per the Bricsys DevRef, the DES data format and its options storage are
+backward *and* forward compatible. The consequence matters more than
+the compatibility itself: a namespace-enabled `.des` loaded on a
+pre-V18.2 engine loads with "no NameSpaces available", and its
+isolation *silently degrades to global visibility* — no error, no
+diagnostic. Hence the normative rule above.
+
+#+LATEX: \newpage
+
+** DEScoder command line
+
+DEScoder is BricsCAD's LISP packaging tool; version 2.10 ships with
+BricsCAD V25. No web documentation exists — the following is
+transcribed from the tool's own GUI help.
+
+#+begin_example
+DESCoder.exe [-namespace] [-keep] [-nocompress] [-dialog] [SourceLisp]
+DESCoder.exe [-keep] [-nocompress] [-dialog] [-project ProjectFile]
+DESCoder.exe [-keep] [-nocompress] [-dialog] ProjectFile.prv
+DESCoder.exe [-keep] [-nocompress] [-dialog] ProjectFile.prj
+#+end_example
+
+- `SourceLisp` accepts wildcards, giving a batch mode, and any file
+  extension is allowed.
+- `-namespace` is the VLX-NameSpace opt-in, available in recent
+  DEScoder only. It is listed only in the single-file form; project
+  mode is presumed to inherit the `.prv` `(:separate-namespace)` entry
+  instead — *hypothesis, not verified*.
+- `-keep` corresponds to the GUI's "Keep the Intermediate Files"; it
+  leaves the staged intermediates beside the source
+  (`name.lsp.x.lsp`, `name.lsp.0.lsp`, `name.lsp.1.lsp`) before the
+  `.des`.
+- `ProjectFile` must be `.prj` or `.prv`. DEScoder therefore *consumes*
+  the VLISP project-file formats: those formats are load-bearing on
+  BricsCAD, not merely an AutoCAD IDE artifact.
+- Given no usable arguments, DEScoder opens its GUI and waits.
+  Automation must bound the process rather than assume it exits.
+
+#+LATEX: \newpage
+
+** VLISP project files: .prj and .prv
+
+No official specification exists. What follows is derived from four
+real samples plus the Make Application wizard's GUI mapping, and is
+recorded here because DEScoder consumes these files (above). The full
+reference lives in alpm's `documentation/vlisp-project-files.org`.
+
+*** .prj — project definition
+A `VLISP-PROJECT-LIST` property list.
+
+- *Key case is unstable across writers*: the same product wrote
+  `:NAME` in 2024 and `:name` in 2025. Readers must fold case.
+- `:OWN-LIST` entries appear both with and without the `.lsp`
+  extension.
+- `:PROJECT-KEYS :BUILD` is `(:standard)` or
+  `(:OPTIMIZE :LOCALIZE :link)`, mapping to the GUI's *Standard* versus
+  *Optimize and Link*, and thus to `vlisp-compile` mode `st` versus
+  `lsm` / `lsa`.
+
+*** .prv — application (VLX) definition
+An association list under `PRV-DEF` — a *different shape* from `.prj`,
+not a variant of it. Observed keys: `:target`, `:active-x`,
+`:separate-namespace`, `:protected`, `:load-file-list` (tagged by the
+wizard's Program File Types; `:prj` observed), `:require-file-list`
+(`:DCL` observed, `:DVB` expected), `:ob-directory`, `:tmp-directory`,
+`:optimization` (`st` / `lsm` / `lsa`).
+
+Two traps worth normative text:
+
+- An *empty* `(:separate-namespace)` means OFF, not "unset". Two
+  independent proofs: the schms VLXs' functions are visible to
+  runtime-loaded files, and the schms sources contain no
+  `vl-doc-export` at all.
+- `(:active-x . T)` is stored even when the GUI gates that checkbox
+  behind Separate Namespace. Do *not* infer namespace mode from it.
 
 #+LATEX: \newpage
 
@@ -74032,8 +74318,12 @@ Applies to separate-namespace VLX applications. Autodesk documents behavior diff
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified present as a SUBR by runtime probe 2026-08-09.
+- BricsCAD V25 and V26: verified present as a SUBR by runtime probe
+  2026-08-09. The Bricsys DevRef "VLX NameSpace Support" page documents
+  the family as supported since V18.2 (DEScoder v2.7+).
+- Status: verified on both vendors (no longer "presumed compatible");
+  see chapter 22 § /VLX namespace family: verification 2026-08-09/.
 
 *** Source Notes
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
@@ -74064,8 +74354,12 @@ Imports bindings across namespace boundaries.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified present as a SUBR by runtime probe 2026-08-09.
+- BricsCAD V25 and V26: verified present as a SUBR by runtime probe
+  2026-08-09. The Bricsys DevRef "VLX NameSpace Support" page documents
+  the family as supported since V18.2 (DEScoder v2.7+).
+- Status: verified on both vendors (no longer "presumed compatible");
+  see chapter 22 § /VLX namespace family: verification 2026-08-09/.
 
 *** Source Notes
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
@@ -74096,8 +74390,12 @@ None.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified present as a SUBR by runtime probe 2026-08-09.
+- BricsCAD V25 and V26: verified present as a SUBR by runtime probe
+  2026-08-09. The Bricsys DevRef "VLX NameSpace Support" page documents
+  the family as supported since V18.2 (DEScoder v2.7+).
+- Status: verified on both vendors (no longer "presumed compatible");
+  see chapter 22 § /VLX namespace family: verification 2026-08-09/.
 
 *** Source Notes
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
@@ -74128,8 +74426,12 @@ Mutates document-namespace state.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified present as a SUBR by runtime probe 2026-08-09.
+- BricsCAD V25 and V26: verified present as a SUBR by runtime probe
+  2026-08-09. The Bricsys DevRef "VLX NameSpace Support" page documents
+  the family as supported since V18.2 (DEScoder v2.7+).
+- Status: verified on both vendors (no longer "presumed compatible");
+  see chapter 22 § /VLX namespace family: verification 2026-08-09/.
 
 *** Source Notes
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
@@ -74167,8 +74469,12 @@ None.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified present as a SUBR by runtime probe 2026-08-09.
+- BricsCAD V25 and V26: verified present as a SUBR by runtime probe
+  2026-08-09. The Bricsys DevRef "VLX NameSpace Support" page documents
+  the family as supported since V18.2 (DEScoder v2.7+).
+- Status: verified on both vendors (no longer "presumed compatible");
+  see chapter 22 § /VLX namespace family: verification 2026-08-09/.
 
 *** Source Notes
 - [Namespace Communication Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2025/ITA/AutoCAD-MAC-AutoLISP-Reference/files/GUID-F5DD5472-1695-4CA3-9110-E6008E87BB89.htm)
@@ -74208,8 +74514,12 @@ Mutates blackboard-namespace state.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified present as a SUBR by runtime probe 2026-08-09.
+- BricsCAD V25 and V26: verified present as a SUBR by runtime probe
+  2026-08-09. The Bricsys DevRef "VLX NameSpace Support" page documents
+  the family as supported since V18.2 (DEScoder v2.7+).
+- Status: verified on both vendors (no longer "presumed compatible");
+  see chapter 22 § /VLX namespace family: verification 2026-08-09/.
 
 *** Source Notes
 - [vl-bb-set (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/CSY/AutoCAD-AutoLISP-Reference/files/GUID-2B1484FC-BBD1-408B-A8A0-DB931363630F.htm)
@@ -74317,8 +74627,12 @@ Applies to separate-namespace VLX applications and has documented behavior diffe
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified present as a SUBR by runtime probe 2026-08-09.
+- BricsCAD V25 and V26: verified present as a SUBR by runtime probe
+  2026-08-09. The Bricsys DevRef "VLX NameSpace Support" page documents
+  the family as supported since V18.2 (DEScoder v2.7+).
+- Status: verified on both vendors (no longer "presumed compatible");
+  see chapter 22 § /VLX namespace family: verification 2026-08-09/.
 
 *** Source Notes
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
@@ -74353,8 +74667,12 @@ Returns `T` if the specified separate-namespace VLX application is loaded; other
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified present as a SUBR by runtime probe 2026-08-09.
+- BricsCAD V25 and V26: verified present as a SUBR by runtime probe
+  2026-08-09. The Bricsys DevRef "VLX NameSpace Support" page documents
+  the family as supported since V18.2 (DEScoder v2.7+).
+- Status: verified on both vendors (no longer "presumed compatible");
+  see chapter 22 § /VLX namespace family: verification 2026-08-09/.
 
 *** Source Notes
 - [vl-vlx-loaded-p (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP-Reference/files/GUID-2322688B-F1FA-416E-AEF0-E14256717588.htm)
@@ -74392,8 +74710,12 @@ Signals an AutoLISP-visible error if the named application cannot be unloaded.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified present as a SUBR by runtime probe 2026-08-09.
+- BricsCAD V25 and V26: verified present as a SUBR by runtime probe
+  2026-08-09. The Bricsys DevRef "VLX NameSpace Support" page documents
+  the family as supported since V18.2 (DEScoder v2.7+).
+- Status: verified on both vendors (no longer "presumed compatible");
+  see chapter 22 § /VLX namespace family: verification 2026-08-09/.
 
 *** Source Notes
 - [vl-unload-vlx (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-7AF6AC48-3435-4625-B210-C8FFFF1D2717.htm)
@@ -74473,6 +74795,20 @@ Writes the compiled output file to disk.
 - AutoCAD 2026: documented; produces `.fas` (and `.vlx` archives via auxiliary tooling).
 - BricsCAD V26: documented; produces `.des`; the `mode` argument is parsed but ignored.
 - Status: cross-vendor divergence — see Phase 4 reconciliation in `vendor-inventory-2026.org` §10.
+
+*** Mode names outside the function
+The three `mode` names are not private to `vlisp-compile`; they are the
+same build setting the VLISP IDE stores in its project files, so a
+project and a call can be read against each other:
+
+| `vlisp-compile` | Make Application wizard | `.prj` `:BUILD`               | `.prv` `:optimization` |
+|-----------------+-------------------------+-------------------------------+------------------------|
+| `st`            | Standard                | `(:standard)`                 | `st`                   |
+| `lsm` / `lsa`   | Optimize and Link       | `(:OPTIMIZE :LOCALIZE :link)` | `lsm` / `lsa`          |
+
+See chapter 22 § /VLISP project files: .prj and .prv/. On BricsCAD the
+argument is parsed and ignored, but the project files still carry the
+setting, and DEScoder consumes those files.
 
 *** See Also
 - Cross-vendor divergence: AutoCAD produces `.fas` (and `.vlx` archives via auxiliary tooling); BricsCAD produces `.des` and ignores the `mode` argument. See body Description above and `vendor-inventory-2026.org` §10 item 1.

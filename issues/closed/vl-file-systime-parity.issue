@@ -2,10 +2,10 @@
 #+TITLE: vl-file-systime: element count and day-of-week convention differ from BricsCAD/Autodesk
 #+AUTHOR: Pascal J. Bourguignon
 #+DATE: 2026-08-09
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: divergence
-#+DEPENDS: pjb-decision (day-of-week target; see Triage)
+#+DEPENDS: -
 #+BRANCH: fix-vl-file-systime-parity
 
 Found by the alpm verification probes (alpm repo,
@@ -119,3 +119,96 @@ Part A is not blocked by this and can ship first.
   bullet) — the corpus has no shape assertion today.
 - The chosen day-of-week rule is documented in the spec entry's
   =*** clautolisp= note per the deviation convention.
+
+* RESOLVED 2026-08-09 (clautolisp 1.8.23, autolisp-spec 0.9.3)
+
+** A premise of this issue was wrong: there is no third convention
+
+Per pjb's instruction the reference documentation was scanned across
+versions and vendors first. That scan overturns the framing above.
+
+The example cited in this issue as Autodesk's,
+=(2003 9 4 10 16 25 4 230)= "implying Sunday=1", does not appear on any
+Autodesk page found, and it is internally inconsistent: 2003-09-10 is a
+*Wednesday*, which is 3 under both candidate conventions, not 4. The
+actual Autodesk example is =(1998 4 3 8 10 6 52)= — 1998-04-08, a
+Wednesday, = 3. So the "Sunday=1" reading rested on a bad datum and
+there is no third convention.
+
+What the pages actually say:
+
+| Reference page     | Elements documented | Example      | Weekday   | Value |
+|--------------------+---------------------+--------------+-----------+-------|
+| Autodesk (2016 +)  |                   7 | 1998-04-08   | Wednesday |     3 |
+| Bricsys V25/CurVer |     7 (sample is 8) | 2019-10-24   | Thursday  |     4 |
+| progeCAD           |                   7 | 2011-02-25   | Friday    |     5 |
+
+Autodesk states "Monday is day 1 of day of week, Tuesday is day 2, and
+so on" and stops; Bricsys states no numbering at all. **No documented
+example falls on a Sunday.** Monday..Saturday are therefore 1..6
+everywhere — that is the whole of what the documentation establishes —
+and the divergence is *exactly one value wide*: the two engines fill the
+documented silence differently (AutoCAD 2022 runtime Sunday=0, the C
+=struct tm= convention; BricsCAD V25/V26 Sunday=7, ISO-8601). Neither
+engine contradicts its own documentation.
+
+That also dissolves the tension recorded in the Triage section: matching
+BricsCAD does not require moving off AutoCAD except on Sundays, and the
+POSIX completion pjb chose for the =clautolisp= dialect *is* AutoCAD's.
+
+Both vendors' pages are wrong about the arity, in the same direction:
+every probed engine returns a trailing milliseconds element, and the
+Bricsys page contradicts itself within one screen — a seven-element
+format line above an eight-value sample return =(2019 10 4 24 4 1 10 0)=.
+
+** What shipped
+
+- =builtin-vl-file-systime= returns eight elements in every dialect.
+- =autolisp-day-of-week= takes the dialect: Monday..Saturday = 1..6
+  everywhere; Sunday = 7 under =bricscad-v25= / =bricscad-v26=, 0
+  (POSIX) everywhere else, including =clautolisp= and =strict=.
+- =%file-write-date-milliseconds= is a narrow seam returning 0, with a
+  =;;; SPEC-UNCERTAIN:= marker. =CL:FILE-WRITE-DATE= is defined in whole
+  seconds; the filesystems underneath (APFS, ext4, NTFS) do keep a finer
+  timestamp, so the seam is where an implementation-specific stat would
+  go. pjb licensed 0 for now.
+- Tests: =vl-file-systime-day-of-week-differs-only-on-sunday= exercises
+  all seven weekdays across all eight dialect names. It tests the
+  mapping directly rather than through a real file, because a file
+  created while the suite runs lands on whatever weekday that is and
+  could never exercise Sunday — the only value that differs. The three
+  places that pinned the seven-element shape were updated
+  (builtin-tests, the file-compat api-test, and the declarative
+  scenario =mutations/file-systime-basic.sexp=).
+- autolisp-spec entry rewritten with the per-vendor table, the
+  documented-silence analysis and a =*** clautolisp= deviation note;
+  Availability moved from "presumed compatible" to verified on both
+  vendors. Spec document version 0.9.2 -> 0.9.3.
+- Suite green: 6230 checks, 0 failures (SBCL).
+
+** Residual work (not blocking, belongs to the vendor-probe register)
+
+pjb: "then we'll verify bricscad and autocad implementation in the
+various versions we may try it". The Sunday value has been probed on
+AutoCAD 2022, BricsCAD V25 (Windows) and V26 (macOS) only, and only on
+one Sunday. Probing further versions needs a run scheduled on a Sunday
+or a file whose mtime is forced to one — the latter is the cheap way and
+is worth adding to the alpm verification probe (set the mtime, then
+read it back). Track under
+=vendor-probe-autocad-bricscad-divergences.issue=.
+
+** Addendum 2026-08-09 (pjb): the portable reading is =(mod dow 7)=
+
+Because the divergence is confined to Sunday and the two values it takes
+are 0 and 7, a single operation normalises every engine and every
+dialect: =(mod day-of-week 7)=. =(mod 0 7)= and =(mod 7 7)= are both 0,
+and Monday..Saturday (1..6) pass through =mod 7= unchanged, so the
+result is always the POSIX =struct tm= numbering with no test for which
+engine is running.
+
+This supersedes the earlier advice to avoid position 3: portable code
+should *read* it, through =mod 7=. Recorded in the spec entry (new
+"Reading the day of week portably" subsection + a line in the
+=*** clautolisp= note), in the user manual, and in RELEASE_NOTES; and
+asserted by the regression test over all 7 weekdays x 8 dialects so the
+identity cannot silently rot. Spec document version 0.9.3 -> 0.9.4.
