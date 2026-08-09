@@ -19,13 +19,17 @@ moment (Sun 2026-08-09 00:05 local) on both engines:
 2. Day-of-week convention for the same Sunday:
    - clautolisp: 0  (C struct tm convention, Sunday = 0; consistent
      with an earlier probe: Friday 2026-08-07 -> 5)
-   - BricsCAD V26: 7 (Sunday = 7, ISO-8601-like Mon=1..Sun=7?)
-   - Autodesk documentation example implies Sunday = 1
-     (2003-09-10 was a Wednesday, documented day-of-week = 4,
-     i.e. Sun=1..Sat=7).
-   BricsCAD and the Autodesk doc disagree with each other too --
-   worth a probe on real AutoCAD (day known) before choosing; parity
-   target should be per --dialect.
+   - BricsCAD V25/V26: 7
+   - AutoCAD 2022 RUNTIME (probed 2026-08-09, alpm CI job
+     verify:autocad:windows, job 15795067578): (2026 8 0 9 12 21 8 1)
+     -- Sunday = 0, WITH milliseconds. So AutoCAD's runtime uses
+     Sunday=0, contradicting Autodesk's own documentation example
+     (2003-09-10 Wednesday documented as day-of-week 4, implying
+     Sunday=1); and BricsCAD (Sunday=7) diverges from AutoCAD.
+   clautolisp therefore already matches AutoCAD's day-of-week
+   convention; only the milliseconds element is missing for
+   AutoCAD-shape parity. For bricscad-* dialects, Sunday=7 would be
+   the parity target.
 
 * Suggested fix
 
