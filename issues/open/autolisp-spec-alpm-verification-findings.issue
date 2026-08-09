@@ -38,6 +38,10 @@ Three different shapes for the same instant (Sun 2026-08-09):
 - BricsCAD V25/V26: (2026 8 7 9 ...) -- 8 elements, Sunday=7.
 - clautolisp 1.8.21: (2026 8 0 9 ...) -- 7 elements, NO
   milliseconds, Sunday=0.
+There's no reason to make a clautolisp specific extension here.
+Let's match what bricscad does, and document it. Then we'll verify
+briscad and autocad implementation in the various versions we may try
+it. 
 The entry should document the three conventions, the doc-vs-runtime
 divergence on AutoCAD, and advise portable use of positions
 1,2,4,5,6,7 only. (clautolisp fix tracked separately in
