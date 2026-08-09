@@ -502,6 +502,25 @@ produce warnings when compiled and when used.
 Unknown dialect names produce a diagnostic on standard error and exit
 code 1.
 
+*** Where the dialect changes a returned value
+A few operators return a genuinely different value per dialect, because
+the vendors themselves differ. These are behaviour differences, not
+warnings, and they are listed in the AutoLISP Spec entry for each
+operator under its ~*** clautolisp~ note.
+
+- ~vl-file-systime~ — the day-of-week element (third position) is
+  ~0~ for Sunday under ~strict~, ~clautolisp~, ~lax~ and the
+  ~autocad-*~ dialects, and ~7~ under ~bricscad-v25~ /
+  ~bricscad-v26~. Monday to Saturday are ~1~..~6~ in every dialect.
+  This is not an arbitrary choice: both vendors' reference pages say
+  only "Monday is day 1 ... and so on" and never state a value for
+  Sunday, so each engine filled that silence its own way — AutoCAD
+  with the POSIX ~struct tm~ numbering, BricsCAD with ISO-8601.
+  clautolisp keeps the POSIX one. Code that must be portable across
+  both should derive the weekday from the date rather than read
+  position 3. The list has eight elements — the eighth is
+  milliseconds, currently always ~0~.
+
 ** Input selection
 - ~-x EXPRESSION~        :: Evaluate EXPRESSION instead of reading a
                             file. Implies expression mode. Must be

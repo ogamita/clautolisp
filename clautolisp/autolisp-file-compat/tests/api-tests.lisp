@@ -393,7 +393,10 @@ World
                                             :input-text "stamp"))
                             :builtin-name "VL-FILE-SYSTIME"
                             :arguments '("stamp.txt")
-                            :expected-value '(:predicate :list-length 7))))
+                            ;; Eight: year month dow day h m s milliseconds
+                            ;; -- the shape every probed vendor engine
+                            ;; returns (vl-file-systime-parity.issue).
+                            :expected-value '(:predicate :list-length 8))))
     (is (every #'file-compat-check-passed-p
                (file-compat-report-checks
                 (run-builtin-scenario rename-scenario))))

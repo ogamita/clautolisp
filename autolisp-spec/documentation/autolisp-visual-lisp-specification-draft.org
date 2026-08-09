@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.9.2
+#+VERSION: 0.9.3
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -7727,7 +7727,7 @@ Returns the last modification time of the specified file.
 *** Return Values
 List or `nil`.
 
-Autodesk documents a list containing:
+Both vendors document a *seven*-element list containing:
 - year
 - month
 - day of week
@@ -7735,6 +7735,39 @@ Autodesk documents a list containing:
 - hours
 - minutes
 - seconds
+
+Every engine tested returns an *eighth* element, milliseconds, so the
+documented arity is wrong on both sides. The Bricsys page contradicts
+itself on this point in a single screen: it states the seven-element
+format and then shows the eight-value sample return
+`(2019 10 4 24 4 1 10 0)`. Portable code must not assume the length.
+
+**** Day-of-week numbering
+Autodesk states only "Monday is day 1 of day of week, Tuesday is day 2,
+and so on", and stops. Bricsys states no numbering at all. Critically,
+**no documented example falls on a Sunday**, so no reference page pins
+Sunday down:
+
+| Reference page  | Example date | Weekday   | Documented value |
+|-----------------+--------------+-----------+------------------|
+| Autodesk        | 1998-04-08   | Wednesday |                3 |
+| Bricsys V25/V26 | 2019-10-24   | Thursday  |                4 |
+| progeCAD        | 2011-02-25   | Friday    |                5 |
+
+Monday through Saturday are therefore 1..6 everywhere, and that is the
+whole of what the documentation establishes. The engines complete the
+remaining silence differently (probed 2026-08-09, itself a Sunday):
+
+| Engine                  | Sunday | Numbering                    |
+|-------------------------+--------+------------------------------|
+| AutoCAD 2022 runtime    |      0 | C `struct tm` / POSIX tm_wday |
+| BricsCAD V25 and V26    |      7 | ISO-8601                     |
+
+Neither engine contradicts its own documentation — each resolves a gap
+in it — so this is a *divergence of exactly one value*. Portable code
+should use positions 1, 2, 4, 5, 6 and 7 (year, month, day of month,
+hours, minutes, seconds) and derive the weekday from the date itself
+rather than reading position 3.
 
 *** Side Effects
 None.
@@ -7744,14 +7777,43 @@ Autodesk documents this on Windows and macOS, not Web.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2022: verified by runtime probe 2026-08-09 (eight elements, Sunday=0).
+- BricsCAD V25 and V26: verified by runtime probe 2026-08-09 (eight elements, Sunday=7);
+  the Bricsys DevRef page carries the same text in V25 and in CurVer/V26.
+- Status: verified on both vendors (no longer "presumed compatible").
 
 *** Source Notes
 - [vl-file-systime (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7F6A31B2-7D51-4C4D-B239-206F398D67CA.htm)
+- [vl-file-systime (AutoLISP), AutoCAD 2016 reference — the page carrying the "Monday is day 1" sentence and the 1998-04-08 example](https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-7F6A31B2-7D51-4C4D-B239-206F398D67CA.htm)
+- [vl-file-systime — BricsCAD V25 Developer Reference](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/vl-file-systime.htm)
+- [vl-file-systime — BricsCAD CurVer (V26) Developer Reference](https://developer.bricsys.com/bricscad/help/en_US/CurVer/DevRef/source/vl-file-systime.htm)
+- [(vl-file-systime) — progeCAD Professional manual](https://www.progesoft.com/products/progecad-professional/manual?mp=developer-reference/lisp/lisp-functions/vl-file-systime)
+- Runtime probes: alpm `tests/verification/verification.lsp` (V-2), CI jobs
+  `verify:autocad:windows`, `verify:bricscad:{macos,windows}`,
+  `verify:clautolisp:macos`, 2026-08-09.
 
 *** Notes
 - Autodesk documents a Unicode/LISPSYS behavior change in AutoCAD 2021.
+
+*** clautolisp
+clautolisp implementation deviation — not part of the normative
+specification above.
+
+- **Arity.** clautolisp returns the eight-element list the engines
+  return, not the seven the pages state.
+- **Day of week.** Monday..Saturday are 1..6, as documented. For the
+  one value the documentation leaves open, clautolisp keeps the POSIX
+  (`struct tm`) completion, Sunday = 0 — which is also what AutoCAD's
+  runtime does. The `bricscad-v25` and `bricscad-v26` dialects
+  reproduce their engine's Sunday = 7. This is a case-2 divergence
+  under Chapter 25: the difference is real, each vendor is faithful to
+  its own silence-filling choice, and clautolisp adopts one while the
+  deviant-from-it dialect reproduces the other.
+- **Milliseconds.** The eighth element is currently always 0.
+  `CL:FILE-WRITE-DATE` is defined in whole seconds, so the sub-second
+  part of the modification time is not reachable portably, even though
+  the underlying filesystems (APFS, ext4, NTFS) do store it. No probe
+  has yet caught either vendor returning a non-zero value here.
 
 #+LATEX: \newpage
 

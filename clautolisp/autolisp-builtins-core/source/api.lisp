@@ -2408,20 +2408,77 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
          (file-error ()
            nil))))))
 
-(defun autolisp-day-of-week (common-lisp-day-of-week)
-  ;; CL uses Monday=0..Sunday=6. AutoLISP compatibility is modeled here as
-  ;; Sunday=0..Saturday=6, matching common host file-time conventions.
-  (mod (1+ common-lisp-day-of-week) 7))
+;;; VL-FILE-SYSTIME day-of-week: only SUNDAY actually diverges.
+;;;
+;;; Both vendors' reference pages say "Monday is day 1 of day of week,
+;;; Tuesday is day 2, and so on" -- and stop there. Neither states what
+;;; Sunday is, and not one documented example falls on a Sunday:
+;;; Autodesk's is 1998-04-08 (a Wednesday) = 3, the Bricsys page's is
+;;; 2019-10-24 (a Thursday) = 4, progeCAD's is 2011-02-25 (a Friday)
+;;; = 5. Monday through Saturday are therefore 1..6 on every engine,
+;;; and the two runtimes merely complete the documented silence
+;;; differently -- probed 2026-08-09, a Sunday:
+;;;
+;;;   AutoCAD 2022 runtime    Sunday = 0   (C struct tm / POSIX tm_wday)
+;;;   BricsCAD V25/V26        Sunday = 7   (ISO-8601 numbering)
+;;;
+;;; So neither vendor contradicts its own documentation; they resolve a
+;;; gap in it, and the divergence is exactly one value wide. clautolisp
+;;; keeps the POSIX completion (pjb, 2026-08-09) -- which is also what
+;;; AutoCAD's runtime does -- while the bricscad-* dialects reproduce
+;;; Sunday=7. See autolisp-spec "Function Entry: VL-FILE-SYSTIME".
+
+(defun %day-of-week-sunday-value (dialect-name)
+  "The number DIALECT-NAME's engine uses for Sunday (see the note above)."
+  (case dialect-name
+    ((:bricscad-v25 :bricscad-v26) 7)
+    (t 0)))
+
+(defun autolisp-day-of-week (common-lisp-day-of-week &optional dialect-name)
+  "Map CL's Monday=0..Sunday=6 onto AutoLISP's day-of-week numbering.
+
+Monday..Saturday are 1..6 in every dialect; only Sunday is dialect
+dependent, because only Sunday is left unspecified by the vendor
+documentation."
+  (let ((iso-day-of-week (1+ common-lisp-day-of-week))) ; Monday=1 .. Sunday=7
+    (if (= iso-day-of-week 7)
+        (%day-of-week-sunday-value dialect-name)
+        iso-day-of-week)))
+
+(defun %file-write-date-milliseconds (pathname)
+  "The sub-second part of PATHNAME's modification time, in milliseconds.
+
+A narrow seam for a platform capability Common Lisp does not expose:
+CL:FILE-WRITE-DATE is defined in whole seconds, while the filesystems
+underneath (APFS, ext4, NTFS, ...) do keep a finer timestamp. Until an
+implementation-specific stat is wired in here this reports 0, which the
+vendors' own reference examples also show -- the Bricsys page's sample
+return ends in 0 -- and which is what pjb licensed for the shape fix.
+
+;;; SPEC-UNCERTAIN: whether either engine ever returns a non-zero
+;;; millisecond field, and from which clock; no probe has caught one."
+  (declare (ignore pathname))
+  0)
 
 (defun builtin-vl-file-systime (filename)
+  ;; Eight elements, not the seven both vendors' pages *state*: every
+  ;; probed engine returns a trailing milliseconds field, and the Bricsys
+  ;; page's own example (2019 10 4 24 4 1 10 0) shows eight values under
+  ;; a seven-element format line. The docs are internally inconsistent;
+  ;; the engines agree with each other, so the engines win.
   (let* ((value (autolisp-string-value
                  (require-string filename "VL-FILE-SYSTIME")))
          (resolved (resolve-open-pathname value))
-         (write-date (ignore-errors (file-write-date resolved))))
+         (write-date (ignore-errors (file-write-date resolved)))
+         (dialect-name (ignore-errors
+                        (clautolisp.autolisp-reader:autolisp-dialect-name
+                         (current-evaluation-dialect)))))
     (if write-date
         (multiple-value-bind (second minute hour day month year day-of-week)
             (decode-universal-time write-date)
-          (list year month (autolisp-day-of-week day-of-week) day hour minute second))
+          (list year month (autolisp-day-of-week day-of-week dialect-name) day
+                hour minute second
+                (%file-write-date-milliseconds resolved)))
         nil)))
 
 (defun copy-stream-contents (input output)
