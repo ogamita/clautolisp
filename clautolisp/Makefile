@@ -464,6 +464,11 @@ clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt:
 
 BIN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/bin
 LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
+# Executable suffix. On Windows, PowerShell (and cmd) require the .exe
+# extension to run a program from $(PREFIX)/bin or libexec even though the
+# MSYS2 shell runs it without one; empty on POSIX. Appended to every
+# executable installed into bin/ and libexec/ below.
+EXE := $(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),.exe,)
 DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
 INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
 MAN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/man/man1
@@ -531,21 +536,24 @@ install-programs:  ## Install just the clautolisp/read-autolisp/gui/run-file-com
 	install -d $(LIBEXEC_INSTALL_DIR)
 	@for exe in $(INSTALL_BINARIES); do \
 	  if [ -x "$$exe" ]; then \
-	    install -m 0755 "$$exe" $(BIN_INSTALL_DIR)/ ; \
-	    echo "installed: $$exe -> $(BIN_INSTALL_DIR)/" ; \
+	    dest="$$(basename "$$exe")" ; case "$$dest" in *.exe) ;; *) dest="$$dest$(EXE)" ;; esac ; \
+	    install -m 0755 "$$exe" "$(BIN_INSTALL_DIR)/$$dest" ; \
+	    echo "installed: $$exe -> $(BIN_INSTALL_DIR)/$$dest" ; \
 	  else \
 	    echo "[skip]     $$exe (not built — run build-programs first)" ; \
 	  fi ; \
 	done
 	@if [ -x "$(CLAUTOLISP_GUI_QT_BIN)" ]; then \
-	  install -m 0755 "$(CLAUTOLISP_GUI_QT_BIN)" $(BIN_INSTALL_DIR)/ ; \
-	  echo "installed: $(CLAUTOLISP_GUI_QT_BIN) -> $(BIN_INSTALL_DIR)/" ; \
+	  dest="$$(basename "$(CLAUTOLISP_GUI_QT_BIN)")" ; case "$$dest" in *.exe) ;; *) dest="$$dest$(EXE)" ;; esac ; \
+	  install -m 0755 "$(CLAUTOLISP_GUI_QT_BIN)" "$(BIN_INSTALL_DIR)/$$dest" ; \
+	  echo "installed: $(CLAUTOLISP_GUI_QT_BIN) -> $(BIN_INSTALL_DIR)/$$dest" ; \
 	else \
 	  echo "[skip] $(CLAUTOLISP_GUI_QT_BIN) not built (run 'cmake -B tools/clautolisp-gui-qt/build && cmake --build tools/clautolisp-gui-qt/build' first)" ; \
 	fi
 	@if [ -x "$(RUN_FILE_COMPAT_BIN)" ]; then \
-	  install -m 0755 "$(RUN_FILE_COMPAT_BIN)" $(LIBEXEC_INSTALL_DIR)/ ; \
-	  echo "installed: $(RUN_FILE_COMPAT_BIN) -> $(LIBEXEC_INSTALL_DIR)/" ; \
+	  dest="$$(basename "$(RUN_FILE_COMPAT_BIN)")" ; case "$$dest" in *.exe) ;; *) dest="$$dest$(EXE)" ;; esac ; \
+	  install -m 0755 "$(RUN_FILE_COMPAT_BIN)" "$(LIBEXEC_INSTALL_DIR)/$$dest" ; \
+	  echo "installed: $(RUN_FILE_COMPAT_BIN) -> $(LIBEXEC_INSTALL_DIR)/$$dest" ; \
 	fi
 	@# Bare-name symlinks pointing at the user's preferred CL impl.
 	@# Relative targets so the install tree stays relocatable
@@ -553,12 +561,17 @@ install-programs:  ## Install just the clautolisp/read-autolisp/gui/run-file-com
 	@# the link keeps pointing at the sibling binary).
 	@if [ -n "$(DEFAULT_LISP)" ]; then \
 	  for stem in clautolisp read-autolisp; do \
-	    target="$$stem-$(DEFAULT_LISP)" ; \
+	    target="$$stem-$(DEFAULT_LISP)$(EXE)" ; \
 	    if [ -x "$(BIN_INSTALL_DIR)/$$target" ]; then \
-	      ln -sf "$$target" "$(BIN_INSTALL_DIR)/$$stem" ; \
-	      echo "linked:    $(BIN_INSTALL_DIR)/$$stem -> $$target" ; \
+	      if [ -n "$(EXE)" ]; then \
+	        cp -f "$(BIN_INSTALL_DIR)/$$target" "$(BIN_INSTALL_DIR)/$$stem$(EXE)" ; \
+	        echo "copied:    $(BIN_INSTALL_DIR)/$$stem$(EXE) <- $$target (Windows: PowerShell can't exec an MSYS symlink)" ; \
+	      else \
+	        ln -sf "$$target" "$(BIN_INSTALL_DIR)/$$stem" ; \
+	        echo "linked:    $(BIN_INSTALL_DIR)/$$stem -> $$target" ; \
+	      fi ; \
 	    else \
-	      echo "[skip]     $(BIN_INSTALL_DIR)/$$stem (target $$target not installed)" ; \
+	      echo "[skip]     $(BIN_INSTALL_DIR)/$$stem$(EXE) (target $$target not installed)" ; \
 	    fi ; \
 	  done ; \
 	else \

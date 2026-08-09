@@ -35,6 +35,13 @@ separate binary for tool integrators.
 - Documentation builds now locate MSYS2 UCRT64 TeX/Graphviz tools and use
   Windows-compatible Kpathsea paths, allowing ~make documentation~ to run
   from plain MSYS and Emacs shells.
+- On Windows, ~make install~ now appends ~.exe~ to every executable it
+  places under =$PREFIX/bin= and =$PREFIX/libexec= (clautolisp,
+  read-autolisp, alfe, the Qt GUI, run-file-compat), and ships the
+  bare-name launcher (=clautolisp.exe=, =alfe.exe=, …) as a real copy
+  rather than an MSYS symlink — so the installed programs run from
+  PowerShell and cmd, not only from the MSYS2 shell. POSIX installs are
+  unchanged (no suffix, relative symlinks).
 
 ** Standalone CLI (clautolisp-sbcl / clautolisp-ccl)
 
