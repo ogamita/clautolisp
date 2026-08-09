@@ -2,6 +2,11 @@
 #+TITLE: vl-doc-*/VLX-namespace family: BricsCAD V26 provides it, contradicting the multidocument analysis
 #+AUTHOR: Pascal J. Bourguignon
 #+DATE: 2026-08-09
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: doc
+#+DEPENDS: -
+#+BRANCH: fix-vl-doc-namespace-family-bricscad
 
 The multidocument analysis document
 (clautolisp-multidocument-analysis.org) classifies ~vl-doc-export~ /
@@ -31,3 +36,36 @@ functions are listed as supported.
 - The bricscad-* dialects should provide the family (inert T outside
   a namespace module, like the real engine), not signal
   unsupported-feature.
+
+* Triage 2026-08-09 — NO CODE CHANGE NEEDED; docs-only
+
+Verified against the tree at =528578c=: the runtime *already* behaves
+the way the probe found the real BricsCAD behaves. All thirteen names
+of the family are registered unconditionally in
+=clautolisp/autolisp-builtins-core/source/api.lisp= —
+VL-ACAD-DEFUN, VL-ACAD-UNDEFUN, VL-ARX-IMPORT, VL-BB-REF, VL-BB-SET,
+VL-DOC-EXPORT, VL-DOC-IMPORT, VL-DOC-REF, VL-DOC-SET,
+VL-LIST-EXPORTED-FUNCTIONS, VL-LIST-LOADED-VLX, VL-UNLOAD-VLX,
+VL-VLX-LOADED-P — and a grep for dialect gating over the whole family
+(=dialect= / =unsupported= / =availab= / =autocad-only=) returns
+nothing. So the second bullet of the suggested fix is already
+satisfied: no dialect signals unsupported-feature, because the family
+was never gated in the first place.
+
+What is actually wrong is only the analysis *document*,
+=clautolisp/documentation/clautolisp-multidocument-analysis.org=, in
+two places:
+
+- line 102, the table row labelling separate-namespace VLX
+  "(AutoCAD only)";
+- line 311, the prose asserting the family "exist[s] under
+  =--autocad=" and should signal unsupported-feature under
+  =--bricscad=.
+
+Scope: correct those two passages and cite the probe (alpm job
+=verify:bricscad:macos=, pipeline 2744343498, job 15791433487) plus
+the Bricsys DevRef "VLX NameSpace Support" page. Docs-only ⇒ no
+=version.lisp= bump. Overlaps the VL-DOC-EXPORT section of
+=autolisp-spec-alpm-verification-findings.issue= (that one upgrades
+the *spec* entries from "presumed compatible" to verified; this one
+fixes the *analysis* document) — do them together.
