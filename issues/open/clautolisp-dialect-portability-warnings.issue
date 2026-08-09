@@ -1,3 +1,11 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: clautolisp-dialect-portability-warnings — verify the dialect portability-warning mechanism, with tests
+#+STATUS: BLOCKED
+#+PRIORITY: P1
+#+TYPE: dialect
+#+DEPENDS: pjb-decision (canonical warning message format)
+#+BRANCH: work-unblocked-p1
+
 clautolisp-dialect-portability-warnings — verify the dialect portability-warning mechanism is implemented, with tests
 ====================================================================================================================
 
@@ -156,3 +164,101 @@ REMAINING (issue stays OPEN):
     issue itself asks to add entries incrementally as hazards are
     confirmed. The static-analysis consumer remains explicitly out of
     scope.
+
+
+Progress (2026-08-09, clautolisp 1.8.26) — DoD 2 and DoD 4 done
+---------------------------------------------------------------
+
+The second REMAINING item, the shared knowledge base, is implemented.
+Only the pjb message-format call is left, so the issue moves to BLOCKED
+rather than TODO: there is no implementable work outstanding.
+
+ONE KNOWLEDGE BASE (DoD 2). New
+clautolisp/autolisp-runtime/source/portability.lisp holds a
+PORTABILITY-CONSTRUCT registry keyed by label. Each entry records:
+
+  - KIND       :provided (clautolisp implements it, advisory warning)
+               or :declined (clautolisp deliberately does not, so the
+               diagnostic explains rather than warns);
+  - TAG        the bracketed diagnostic tag;
+  - NATIVE-IN  dialect names whose target host provides the construct;
+  - SILENT-IN  dialects that stay quiet anyway (:lax, :clautolisp);
+  - SUMMARY + EVIDENCE, so an entry can be audited without digging
+    through issues.
+
+Query surface, exported and tested: FIND-PORTABILITY-CONSTRUCT (by
+label, case-insensitive — AutoLISP symbols are),
+PORTABILITY-CONSTRUCT-SUPPORTED-P, PORTABILITY-CONSTRUCT-SILENT-P and
+MAP-PORTABILITY-CONSTRUCTS. The file is deliberately dependency-free —
+pure data plus lookup, loaded before api.lisp and knowing nothing about
+evaluation — which is what lets the still-out-of-scope static linter
+consume it without starting a runtime.
+
+Both existing emitters now take their SUPPORT decision from the
+catalogue instead of an inline `case'. Their message TEXT is untouched
+(see the blocker below), so output is byte-identical — except for one
+latent bug the migration exposed and fixed:
+
+  * `let'' was silent under :bricscad-v26 but WARNED under
+    :bricscad-v25, because the hand-written case listed only v26.
+    BricsCAD V25 provides `let'' just as V26 does, so that was a false
+    portability warning against the dialect's own host. Regression test
+    added (let-warning-silent-under-bricscad-v25). This is exactly the
+    class of drift a single table prevents.
+
+FIRST DECLINED CONSUMERS. SETF and LET* are catalogued as :declined and
+consumed by a new recognise-but-don't-define hook in
+RESOLVE-UNBOUND-FUNCTION-OR-SIGNAL — see
+bricscad-undocumented-clisms.issue, whose last implementable item this
+closes.
+
+DoD 4 (enumerate the other constructs) — scoped as the issue itself
+directs. "Out of scope: authoring the full construct catalogue in one
+pass ... add entries incrementally as cross-vendor hazards are
+confirmed." So the backlog is enumerated and made reproducible rather
+than transcribed:
+
+  clautolisp/tools/portability-catalogue/extract-bricscad-only.sh
+
+reports chapter 24 = 473 BricsCAD-only names, 655 implemented builtins,
+and the intersection = *215 silent hazards*. The intersection is the
+right target, not chapter 24 wholesale: a BricsCAD-only name clautolisp
+does NOT implement already fails loudly with :undefined-function, so it
+is not silent. The hazard is the name that WORKS here and on BricsCAD
+and fails on AutoCAD — (acos x), (vle-nth0 l), (mod a b) — which code
+written against clautolisp picks up with no signal that it has left
+portable AutoLISP.
+
+Those 215 are NOT wired as warnings in this pass, deliberately, on two
+grounds: the issue puts one-pass authoring out of scope, and each entry
+needs its supporting-host set confirmed before it can claim anything —
+chapter 24 says which names BricsCAD has, not which ones AutoCAD lacks,
+and several (MOD, FLOOR, REMOVE, POSITION) are common enough that a
+wrong entry would be loud and wrong. Adding one is now a single
+REGISTER-PORTABILITY-CONSTRUCT form.
+
+Tests: 12 added (catalogue lookup/case-insensitivity, unknown-construct
+silence, native/silent sets, bare-& native nowhere, enumeration, the
+v25 regression, declined setf + let* explaining themselves while
+staying undefined, the note under all five dialects, and an ordinary
+undefined function getting NO note). Clean from-scratch rebuild: 6321
+checks, 0 failures, no undefined functions.
+
+Docs: user manual gains a "Dialect-portability diagnostics" section
+answering DoD 6 directly — how to see them (stderr, nothing to enable;
+if you have never seen one you were probably running --dialect
+clautolisp or --lax, which are deliberately quiet), the tag table, the
+escalation knob, and the declined constructs. RELEASE_NOTES updated.
+
+STILL BLOCKED — [pjb] canonical message format
+----------------------------------------------
+
+Unchanged and untouched, as before: the emitter keeps
+"[lambda-list-extension] ..." while spec ch.25 shows a representative
+"DIALECT WARNING: DEFUN FOO with &REST only works in bricscad and
+clautolisp". Deciding which is canonical — and whether to name the
+function — means rewriting the pinning tests, so it stays a pjb call.
+The catalogue is ready for it: when the format is settled, the message
+text can move into the entries (a MESSAGE slot) and the emitters lose
+their last hand-written string. That refactor is one commit once the
+wording is chosen.

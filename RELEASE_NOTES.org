@@ -167,6 +167,22 @@ separate binary for tool integrators.
   ~:portability-warning-mode :error~ knob (default ~:warn~), mirroring
   ~:unbound-variable-mode :strict-error~; off unless opted in.
   See ~issues/open/clautolisp-dialect-portability-warnings.issue~.
+- One knowledge base. Every portability decision now comes from a
+  single catalogue
+  (~clautolisp/autolisp-runtime/source/portability.lisp~) instead of
+  per-emitter ~case~ forms: each entry records the construct, the
+  dialects whose host provides it natively, the dialects that stay
+  quiet anyway, and the evidence behind the entry. Fixing a side
+  effect of the old arrangement, ~let~ is now correctly silent under
+  ~--dialect bricscad-v25~ as well as ~bricscad-v26~.
+- Constructs clautolisp *deliberately* does not implement now say so.
+  Calling BricsCAD's ~setf~ or ~let*~ is still an undefined-function
+  error, but a ~[ext-bricscad-undocumented]~ note now precedes it
+  explaining the refusal — ~setf~ on BricsCAD returns a constant
+  sentinel ~2~ and does not assign, and ~let*~ does not exist on
+  BricsCAD either. Unlike the advisory warnings this note is not
+  dialect-gated: the error fires everywhere, and a ~--dialect bricscad~
+  user is the likeliest to be surprised.
 
 ** Encoding handling (issues/closed/encoding-dispatch.issue)
 

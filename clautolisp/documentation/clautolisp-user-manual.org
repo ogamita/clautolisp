@@ -1098,6 +1098,55 @@ closes.
 The exact set of error codes lives in the runtime; see
 ~autolisp-runtime/source/api.lisp~ for the canonical mapping.
 
+** Dialect-portability diagnostics (~lambda-list-extension~, ~ext-bricscad-undocumented~)
+Separate from the encoding diagnostics below, and following the same
+advisory principle: a construct that is not portable across CAD
+vendors still *runs*, but says so on standard error when the active
+dialect targets a host that lacks it.
+
+*How to see them.* Nothing to enable — they print to *standard error*
+during a normal ~clautolisp~ or ~alfe~ run, and no quiet/verbosity
+knob suppresses them. If you have never seen one, that is the
+expected outcome of running under ~--dialect clautolisp~ or ~--lax~,
+which are deliberately quiet; run the same file under ~--strict~ (the
+default) or ~--autocad~ to surface them. Each site reports at most
+once per run, so a loop around a non-portable form warns once, and a
+form that is never reached never warns at all.
+
+| Tag                           | Meaning                                             |
+|-------------------------------+-----------------------------------------------------|
+| ~lambda-list-extension~       | a ~&~ / ~&REST~ rest parameter in a ~defun~/~lambda~ |
+| ~ext-bricscad-undocumented~   | a BricsCAD-only construct such as ~let~             |
+
+*Turning them into errors.* The dialect descriptor carries
+~:portability-warning-mode~, default ~:warn~. Set it to ~:error~ and
+the first non-portable construct actually reached aborts the run with
+a ~:non-portable-construct~ error instead of printing. This is
+non-conforming by design — it changes whether a program runs — so it
+is never a dialect default; it exists for a portability audit, in the
+same spirit as ~:unbound-variable-mode :strict-error~.
+
+*Constructs clautolisp declines to implement.* A few BricsCAD
+constructs are deliberately absent rather than merely unimplemented,
+and calling one prints an ~ext-bricscad-undocumented~ note explaining
+the refusal before the usual undefined-function error:
+
+- ~setf~ — on a real BricsCAD V26 this returns a constant sentinel
+  ~2~ for every value and does *not* assign, so imitating it would
+  propagate a broken operator. If clautolisp ever gains ~setf~ it
+  will be a clean generalised assignment, not this.
+- ~let*~ — BricsCAD has no ~let*~ either, so it is not a vendor
+  extension that anyone's portable code can depend on.
+
+That note is *not* dialect-gated, because the error fires under every
+dialect and a ~--dialect bricscad~ user is the likeliest to be
+surprised — on the real engine, ~setf~ does exist.
+
+The decisions behind all of this live in one table,
+~clautolisp/autolisp-runtime/source/portability.lisp~, which records
+for each construct the dialects whose host provides it, the dialects
+that stay quiet regardless, and the evidence the entry rests on.
+
 ** Encoding-dispatch diagnostics (~enc-*~)
 Each dialect dispatches a distinct diagnostic when user code uses an
 encoding-related extension that belongs to a different dialect. The

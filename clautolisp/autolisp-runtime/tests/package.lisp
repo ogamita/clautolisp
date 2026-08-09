@@ -9,6 +9,16 @@
                 #:results-status
                 #:test)
   (:import-from #:clautolisp.autolisp-runtime
+                ;; Dialect-portability knowledge base (ch.25). Imported
+                ;; by name like everything else here: this package
+                ;; :uses only CL, so a MISSING name fails at run time as
+                ;; an undefined-function rather than at compile time.
+                #:find-portability-construct
+                #:map-portability-constructs
+                #:portability-construct-label
+                #:portability-construct-native-in
+                #:portability-construct-supported-p
+                #:portability-construct-silent-p
                 #:autolisp-runtime-error
                 #:autolisp-runtime-error-code
                 #:autolisp-runtime-error-details

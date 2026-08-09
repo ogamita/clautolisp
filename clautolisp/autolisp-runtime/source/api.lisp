@@ -1687,13 +1687,21 @@ disabled / the debugger is absent, so the caller falls back to the plain body."
 (defun resolve-unbound-function-or-signal (symbol context)
   "SYMBOL has no function binding. Give *RESOLVE-UNBOUND-FUNCTION-HOOK* a
 chance to synthesize one (the vla-* accessor façade); otherwise signal
-:undefined-function. Never returns NIL — either a callable or a throw."
+:undefined-function. Never returns NIL — either a callable or a throw.
+
+Recognise-but-don't-define: before signalling, a name the portability
+catalogue lists as `:declined' (BricsCAD's `SETF', `LET*') gets a note
+saying the omission is deliberate and why. The error itself is
+unchanged — the note only precedes it — so nothing downstream that
+matches on :undefined-function is affected."
   (or (and *resolve-unbound-function-hook*
            (funcall *resolve-unbound-function-hook* symbol context))
-      (signal-autolisp-runtime-error
-       :undefined-function
-       "Undefined AutoLISP function ~A."
-       (autolisp-symbol-name symbol))))
+      (progn
+        (emit-declined-construct-note (autolisp-symbol-name symbol))
+        (signal-autolisp-runtime-error
+         :undefined-function
+         "Undefined AutoLISP function ~A."
+         (autolisp-symbol-name symbol)))))
 
 (defun resolve-autolisp-function-designator (designator
                                             &optional
@@ -1851,15 +1859,19 @@ run surfaces (stderr is not swallowed by the quiet/verbosity knobs)."
                          (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
                           dialect)))
                    :warn))
-         (silent-p
-           (case name
-             ((:clautolisp :lax) t)
-             ((:bricscad-v26) (eq spelling :and-rest))
-             (t nil)))
          (token (case spelling
                   (:ampersand "&")
                   (:and-rest  "&REST")
-                  (t "<rest-separator>"))))
+                  (t "<rest-separator>")))
+         ;; The support decision comes from the ONE knowledge base
+         ;; (autolisp-spec ch.25); this used to be an inline `case'.
+         ;; The message text below is deliberately NOT taken from the
+         ;; catalogue: its canonical wording is an open pjb decision
+         ;; (see clautolisp-dialect-portability-warnings.issue) and the
+         ;; existing tests pin it, so the format string stays here
+         ;; until that call is made.
+         (silent-p (portability-construct-silent-p
+                    (find-portability-construct token) name)))
     (unless silent-p
       (when (eq mode :error)
         ;; Escalation: turn the advisory into a hard error. This runs
@@ -1916,10 +1928,14 @@ go to *ERROR-OUTPUT*."
                          (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
                           dialect)))
                    :warn))
-         (silent-p
-           (case name
-             ((:bricscad-v26 :clautolisp :lax) t)
-             (t nil))))
+         ;; Support decision from the ONE knowledge base (ch.25). An
+         ;; uncatalogued CONSTRUCT is not silent — a caller that asked
+         ;; for a diagnostic gets one — but a catalogued construct is
+         ;; gated by its own native-in / silent-in sets, which is how
+         ;; :bricscad-v25 now behaves like :bricscad-v26 (the old
+         ;; inline `case' listed only v26).
+         (silent-p (portability-construct-silent-p
+                    (find-portability-construct construct) name)))
     (unless silent-p
       (when (eq mode :error)
         ;; Escalation: turn the advisory into a hard error. Runs before
@@ -1935,6 +1951,47 @@ undocumented Common-Lisp construct; --dialect ~(~A~) flags it as ~
 non-portable (portable AutoLISP has no ~A). Use --dialect bricscad or ~
 clautolisp to silence.~%"
                 construct (or name "default") construct)))))
+
+(defun emit-declined-construct-note (label)
+  "Explain a construct clautolisp DELIBERATELY does not implement.
+
+For catalogue entries of kind `:declined' — today BricsCAD's `SETF'
+and `LET*' (see `portability.lisp' for the harvest evidence). Calling
+one is an `:undefined-function' error, which is correct but tells the
+user nothing about WHY: `SETF' looks like an obvious omission when it
+is in fact a considered refusal to imitate an operator that returns a
+constant sentinel 2 and does not assign, and `LET*' looks like an
+oversight when BricsCAD has no `LET*' either.
+
+So this prints a note and RETURNS — the caller still signals the
+error. Three deliberate differences from the advisory emitters:
+
+  - Not dialect-gated. The error fires under every dialect, so the
+    explanation is useful under every dialect; a `--dialect bricscad'
+    user is in fact the most likely to be surprised, because on the
+    real engine the construct does exist.
+  - No escalation knob. The outcome is already an error; there is
+    nothing to escalate.
+  - Deduped per label rather than per source occurrence, since an
+    undefined-function error normally aborts the run anyway and the
+    note is about the construct, not the call site.
+
+Silent for anything not catalogued as `:declined', which is what keeps
+this off the path of ordinary undefined-function errors. Goes to
+*ERROR-OUTPUT* like every other portability diagnostic."
+  (let ((entry (find-portability-construct label)))
+    (when (and entry (eq (portability-construct-kind entry) :declined))
+      (unless (%portability-warning-occurrence-seen-p
+               (portability-construct-label entry))
+        (format *error-output*
+                "~&[~A] ~A is not implemented by clautolisp, deliberately: ~A ~
+Evidence: ~A. It stays undefined rather than silently doing something ~
+different from the vendor.~%"
+                (portability-construct-tag entry)
+                (portability-construct-label entry)
+                (portability-construct-summary entry)
+                (portability-construct-evidence entry)))
+      t)))
 
 (defun autolisp-path-has-dotdot-component-p (path)
   "T iff the string PATH contains a `..' PATH COMPONENT — a `..' segment
