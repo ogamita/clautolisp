@@ -2,7 +2,7 @@
 #+TITLE: vl-doc-*/VLX-namespace family: BricsCAD V26 provides it, contradicting the multidocument analysis
 #+AUTHOR: Pascal J. Bourguignon
 #+DATE: 2026-08-09
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: doc
 #+DEPENDS: -
@@ -69,3 +69,42 @@ the Bricsys DevRef "VLX NameSpace Support" page. Docs-only ⇒ no
 =autolisp-spec-alpm-verification-findings.issue= (that one upgrades
 the *spec* entries from "presumed compatible" to verified; this one
 fixes the *analysis* document) — do them together.
+
+* RESOLVED 2026-08-09 (autolisp-spec 0.9.5; docs-only, no version.lisp bump)
+
+As the triage predicted, no code changed: the thirteen builtins were
+already registered unconditionally, so clautolisp already matched the
+probed BricsCAD reality.
+
+Corrected in =clautolisp/documentation/clautolisp-multidocument-analysis.org=:
+
+1. The scope table row "Separate-namespace VLX (AutoCAD only)" -> "(both
+   vendors)".
+2. R8, which said the family "exist[s] under --autocad only" and "should
+   signal an unsupported-feature condition" under --bricscad. Rewritten:
+   the family must behave as the real engine does (inert success outside
+   a namespace module), which is what clautolisp already does. R8 now
+   carries the opposite warning instead -- a namespace-enabled .des on a
+   pre-V18.2 engine loads with "no NameSpaces available" and its
+   isolation SILENTLY degrades to global visibility, so namespace hiding
+   is a delivery facility, never a correctness or security boundary.
+
+Two further stale claims were found in the same document while checking
+for others, both traceable to one 2017 third-party blog post [C] that
+predates the V18.2 feature:
+
+3. "BricsCAD has no separate-namespace compilation mode ... globals
+   remain exposed as if uncompiled" -- refuted by probe. =DESCoder
+   -namespace= IS such a mode. The .des-versus-.vlx *format* divergence
+   stands; the namespace *semantics* converge. The old claim was
+   accurate for its day and matches the default (a .des built without
+   -namespace does leave everything global), which is likely its origin.
+4. Experiment E9, framed as confirming the ABSENCE of that mode, is
+   marked DONE with the note that its hypothesis was wrong.
+
+Also in autolisp-spec: the thirteen entries' Availability moved from
+"presumed compatible pending Phase 4 verification" to verified on both
+vendors, and chapter 22 gained a "VLX namespace family: verification
+2026-08-09" section carrying the inventory, the outside-a-module
+behaviour, the DES namespace semantics and the silent-degradation
+caveat.
