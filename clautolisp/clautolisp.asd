@@ -73,6 +73,7 @@
    (:file "autolisp-runtime/source/pathname-mapping")
    (:file "autolisp-runtime/source/model")
    (:file "autolisp-runtime/source/terminal-color")
+   (:file "autolisp-runtime/source/portability")
    (:file "autolisp-runtime/source/api")
    (:file "autolisp-runtime/source/ontology"))
   :in-order-to ((asdf:test-op

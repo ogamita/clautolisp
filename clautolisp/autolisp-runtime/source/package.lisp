@@ -268,6 +268,24 @@
    ;; back-slash `\...' spelling of the `...' wildcard.
    #:emit-forward-slash-ellipsis-portability-warning
    #:autolisp-path-has-forward-slash-ellipsis-p
+   ;; The dialect-portability knowledge base (autolisp-spec ch.25 "one
+   ;; knowledge base"): the catalogue the run-time emitters consult, and
+   ;; the query surface a static linter consumes without a runtime.
+   #:portability-construct
+   #:portability-construct-p
+   #:portability-construct-label
+   #:portability-construct-kind
+   #:portability-construct-tag
+   #:portability-construct-native-in
+   #:portability-construct-silent-in
+   #:portability-construct-summary
+   #:portability-construct-evidence
+   #:register-portability-construct
+   #:find-portability-construct
+   #:map-portability-constructs
+   #:portability-construct-supported-p
+   #:portability-construct-silent-p
+   #:emit-declined-construct-note
    #:derive-reader-options-for-dialect
    #:read-current-source
    #:make-default-runtime-context

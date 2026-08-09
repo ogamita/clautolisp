@@ -968,6 +968,151 @@ no LET."
     (is (search "[ext-bricscad-undocumented]" diag)
         "LET should warn under :autocad-2026; got: ~S" diag)))
 
+(test let-warning-silent-under-bricscad-v25
+  "Under --dialect bricscad-v25, LET is native too, so it is silent.
+
+Regression guard: the gate used to be an inline `case' naming only
+:bricscad-v26, so v25 warned about a construct its own host provides.
+Routing the decision through the catalogue fixed that."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :bricscad-v25 "(let ((x 1)) x)")
+    (is (eql 1 result) "LET still evaluates under :bricscad-v25; got: ~S" result)
+    (is (null (search "ext-bricscad-undocumented" diag))
+        "LET must be silent under :bricscad-v25; got: ~S" diag)))
+
+;;; --- The portability knowledge base (autolisp-spec ch.25) ----------
+;;;
+;;; The catalogue is the single source the emitters consult. These
+;;; tests pin the query surface itself, so a future static linter can
+;;; rely on it without starting a runtime.
+
+(test portability-catalogue-lookup-is-case-insensitive
+  "Constructs are looked up by label, case-insensitively — AutoLISP
+symbols are case-insensitive, so `let' and `LET' must find one entry."
+  (let ((upper (find-portability-construct "LET"))
+        (lower (find-portability-construct "let")))
+    (is (not (null upper)) "LET must be catalogued")
+    (is (eq upper lower) "LET and let must resolve to the same entry")))
+
+(test portability-catalogue-unknown-construct-is-not-silent-business
+  "An uncatalogued name has no entry, and is therefore never reported
+as silent — the catalogue only speaks about what it knows."
+  (is (null (find-portability-construct "CAR")))
+  (is (null (portability-construct-silent-p nil :strict))))
+
+(test portability-catalogue-native-and-silent-sets
+  "The support decision is data: LET is native to both BricsCAD
+versions, silent in the two permissive dialects, and reportable under
+strict and AutoCAD."
+  (let ((let-entry (find-portability-construct "LET")))
+    (is (portability-construct-supported-p let-entry :bricscad-v25))
+    (is (portability-construct-supported-p let-entry :bricscad-v26))
+    (is (not (portability-construct-supported-p let-entry :autocad-2026)))
+    (is (portability-construct-silent-p let-entry :clautolisp))
+    (is (portability-construct-silent-p let-entry :lax))
+    (is (not (portability-construct-silent-p let-entry :strict)))
+    (is (not (portability-construct-silent-p let-entry :autocad-2026)))))
+
+(test portability-catalogue-bare-ampersand-is-native-nowhere
+  "The bare `&' rest-separator is native to NO vendor — the harvest
+showed BricsCAD rejects it — yet clautolisp accepts it, which is
+exactly why it stays silent only under clautolisp and lax."
+  (let ((amp (find-portability-construct "&")))
+    (is (not (null amp)))
+    (is (null (portability-construct-native-in amp)))
+    (is (portability-construct-silent-p amp :clautolisp))
+    (is (not (portability-construct-silent-p amp :bricscad-v26)))))
+
+(test portability-catalogue-is-enumerable
+  "MAP-PORTABILITY-CONSTRUCTS visits every entry — the enumeration a
+linter or a report consumes."
+  (let ((labels '()))
+    (map-portability-constructs
+     (lambda (entry) (push (portability-construct-label entry) labels)))
+    (dolist (expected '("LET" "SETF" "LET*" "&REST" "&"))
+      (is (member expected labels :test #'string=)
+          "~A must be enumerated; got ~S" expected labels))))
+
+;;; --- Declined constructs: recognise, explain, still don't define ---
+
+(test declined-setf-explains-itself-and-stays-undefined
+  "SETF is catalogued as declined: calling it still raises
+:undefined-function, but a note first explains that the omission is
+deliberate — BricsCAD's SETF returns a sentinel and does not assign."
+  (reset-autolisp-symbol-table)
+  (let ((signalled-code nil)
+        (captured nil)
+        (*error-output* (make-string-output-stream)))
+    (handler-case
+        (run-autolisp-string
+         "(setf foo 42)"
+         :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :clautolisp))
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (setf captured (get-output-stream-string *error-output*))
+    (is (eq :undefined-function signalled-code)
+        "SETF must remain undefined; got ~S" signalled-code)
+    (is (search "[ext-bricscad-undocumented]" captured)
+        "SETF should explain itself; got: ~S" captured)
+    (is (search "does NOT assign" captured)
+        "the note should say why clautolisp declines it; got: ~S" captured)))
+
+(test declined-let-star-explains-itself-and-stays-undefined
+  "LET* likewise — and the note records that BricsCAD has no LET*
+either, so it is not a vendor extension anyone is missing."
+  (reset-autolisp-symbol-table)
+  (let ((signalled-code nil)
+        (captured nil)
+        (*error-output* (make-string-output-stream)))
+    (handler-case
+        (run-autolisp-string
+         "(let* ((x 1)) x)"
+         :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :clautolisp))
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (setf captured (get-output-stream-string *error-output*))
+    (is (eq :undefined-function signalled-code))
+    (is (search "[ext-bricscad-undocumented]" captured)
+        "LET* should explain itself; got: ~S" captured)
+    (is (search "does not exist on BricsCAD" captured)
+        "the note should cite the harvest refutation; got: ~S" captured)))
+
+(test declined-note-is-emitted-under-every-dialect
+  "Unlike the advisory warnings, the declined-construct note is NOT
+dialect-gated: the error fires everywhere, so the explanation is
+useful everywhere. A --dialect bricscad user is the most likely to be
+surprised, because on the real engine SETF does exist."
+  (dolist (dialect-name '(:strict :autocad-2026 :bricscad-v26 :clautolisp :lax))
+    (reset-autolisp-symbol-table)
+    (let ((captured nil)
+          (*error-output* (make-string-output-stream)))
+      (ignore-errors
+       (run-autolisp-string
+        "(setf foo 42)"
+        :dialect (clautolisp.autolisp-reader:find-autolisp-dialect dialect-name)))
+      (setf captured (get-output-stream-string *error-output*))
+      (is (search "[ext-bricscad-undocumented]" captured)
+          "SETF note must appear under ~S; got: ~S" dialect-name captured))))
+
+(test ordinary-undefined-function-gets-no-declined-note
+  "The hook must stay off the path of ordinary undefined-function
+errors: a name the catalogue does not know produces the error alone."
+  (reset-autolisp-symbol-table)
+  (let ((signalled-code nil)
+        (captured nil)
+        (*error-output* (make-string-output-stream)))
+    (handler-case
+        (run-autolisp-string
+         "(no-such-function-anywhere 1)"
+         :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :clautolisp))
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (setf captured (get-output-stream-string *error-output*))
+    (is (eq :undefined-function signalled-code))
+    (is (null (search "ext-bricscad-undocumented" captured))
+        "an unknown name must not get a portability note; got: ~S" captured)))
+
 (test let-warning-once-per-occurrence
   "autolisp-spec ch.25 once-per-occurrence: the SAME LET re-evaluated in
 a loop warns exactly once (dedup key is the binding-list cons identity)."

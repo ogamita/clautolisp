@@ -1,3 +1,11 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: bricscad-undocumented-clisms — inventory of BricsCAD V26 undocumented Common Lisp constructs
+#+STATUS: BLOCKED
+#+PRIORITY: P1
+#+TYPE: divergence
+#+DEPENDS: bricsys-support (vendor confirmation of the setf-"2" sentinel)
+#+BRANCH: work-unblocked-p1
+
 title: BricsCAD V26: inventory of undocumented Common Lisp constructs
 status: open
 type: enhancement + spec
@@ -295,3 +303,49 @@ TODO (low value, left as a clearly-marked follow-up):
     already prevents silent BricsCAD-only behaviour.
   - Bricsys support ticket to confirm the setf-"2" sentinel is intentional
     and to pin `let's official support status.
+
+== Progress (2026-08-09) — the last implementable item is DONE ==
+
+The "TODO (low value)" item above — a dedicated
+[ext-bricscad-undocumented] diagnostic for setf / let* — is implemented
+(clautolisp 1.8.26), via the recognise-but-don't-define hook the note
+predicted, now sitting in RESOLVE-UNBOUND-FUNCTION-OR-SIGNAL.
+
+Both constructs remain intentionally UNDEFINED: calling them still
+signals :undefined-function, unchanged, so nothing that matches on that
+code is affected. What changed is that a note now precedes the error and
+explains that the omission is deliberate:
+
+  [ext-bricscad-undocumented] SETF is not implemented by clautolisp,
+  deliberately: BricsCAD's SETF returns a constant sentinel 2 and does
+  NOT assign; clautolisp declines to imitate it. Evidence:
+  vendor:probes:bricscad:macos harvest against real BricsCAD V26,
+  2026-08-07. ...
+
+Design points worth keeping:
+
+  - The note is NOT dialect-gated, unlike the advisory warnings. The
+    error fires under every dialect, so the explanation is useful under
+    every dialect — and a --dialect bricscad user is the MOST likely to
+    be surprised, because on the real engine setf does exist. Tested
+    across all five dialects.
+  - No escalation knob: the outcome is already an error.
+  - Deduped per label rather than per source occurrence, since an
+    undefined-function error normally ends the run anyway.
+  - Silent for any name the catalogue does not list, so ordinary
+    undefined-function errors are untouched (regression test).
+
+The knowledge behind it moved into the shared portability catalogue
+(clautolisp/autolisp-runtime/source/portability.lisp) built for
+clautolisp-dialect-portability-warnings — SETF and LET* are its two
+:declined entries, carrying the harvest evidence string. LET, &REST and
+bare-& are :provided entries there too, so all five harvest results now
+live in one table rather than in scattered case forms.
+
+REMAINING — external only, hence BLOCKED rather than open-with-work:
+
+  - The Bricsys support ticket confirming that the setf-"2" sentinel is
+    intentional and pinning `let''s official support status. That is a
+    vendor conversation, not repository work; nothing in the tree is
+    waiting on it, and the implemented behaviour does not depend on the
+    answer (clautolisp declines setf either way).
