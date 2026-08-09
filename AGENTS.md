@@ -465,3 +465,344 @@ format is **deprecated**, not deleted — use `release-M.m.d` for every
 new release. `release-1.3.1` not being an ancestor of
 `release-1.4.0` is correct, not damage: it is a maintenance release cut
 in parallel with trunk development (`version-rules.md` I4).
+
+---
+
+# Agent Operational Notes
+
+Working knowledge distilled from prior agent sessions — the "how to
+actually get things done here" that complements the normative policy
+above. These are point-in-time observations: file/line citations and
+version numbers may drift, so **verify against current code before
+asserting as fact**. Dates and versions are stamped so you can tell how
+fresh a note is.
+
+## Repository layout and provenance
+
+- Primary remote is **`gitlab:ogamita/clautolisp`**, auto **git-mirrored**
+  to GitHub. Mirroring copies files verbatim; it does **not** translate CI
+  (see *CI parity* below).
+- Monorepo root holds sibling subprojects: `clautolisp/` (the
+  implementation — one directory per ASDF system: `autolisp-reader`,
+  `autolisp-runtime`, `autolisp-builtins-core`, `autolisp-cli`,
+  `autolisp-interactor`, `autolisp-dcl`, `autolisp-sedit`, `tools/clautolisp`,
+  …), `autolisp-front-end/` (**alfe**, the multi-backend driver),
+  `autolisp-spec/` (the specification), `autolisp-test/` (the AutoLISP
+  conformance corpus/harness), `autolisp-benchmark/`, plus `issues/`,
+  `documentation/`, `scripts/`.
+- The shipped binaries: **clautolisp** (the runtime/REPL) and **alfe**
+  (`autolisp-front-end`, picks a backend: `--clautolisp` / `--bricscad` /
+  `--autocad`). alfe's `--clautolisp` `:direct` mode runs the runtime
+  in-process.
+
+## Build and test incantations
+
+- Build: `make -C clautolisp build-clautolisp-sbcl` (~5 min);
+  `make -C autolisp-front-end build-alfe-sbcl`. CCL variants swap `-ccl`.
+- Unit tests: `make -C clautolisp test-sbcl` / `test-ccl`;
+  `make -C autolisp-front-end test-sbcl`. Under the hood: `asdf:test-system`
+  with `XDG_CACHE_HOME=$HOME/.cache/clautolisp-build` + quicklisp + fiveam.
+- Always pass `-norc` / `--no-init` in test invocations and scripts.
+- On the project's SBCL platforms `internal-time-units-per-second` =
+  1000000 → `get-internal-real-time` / `-run-time` give **microsecond**
+  precision. Use them (not 1-second `get-universal-time`) wherever
+  sub-second resolution matters — e.g. unique timestamped names (two
+  `YYYYMMDDTHHMMSS` starts within one second collide), test fixtures
+  needing distinguishable times, benchmarking.
+
+## Test-harness gotchas (FiveAM)
+
+- **`.` pollution:** FiveAM writes `.` to `*standard-output*` per passing
+  `is`. A test that rebinds `*standard-output*`/`*error-output*` to capture
+  output must snapshot the captured value into a local **before** running
+  any `is`, or the dots corrupt the string.
+- **`is t` is a compile error in some contexts** — use `(pass ...)` to
+  register an unconditional pass, not `(is t ...)`.
+- **`deftest-error` matches by error-MESSAGE substring**
+  (`autolisp-test--message-mentions-p`), not by class/code. Pick a
+  substring stable across implementations. When behaviour becomes an
+  intentional divergence (warns instead of errors), convert to
+  `deftest-skip`, don't delete.
+- **Reset ordering** in unit tests: `reset-autolisp-symbol-table` →
+  `reset-default-evaluation-context` → `install-core-builtins` → lookups.
+  Wrong order ⇒ "Expected an AutoLISP function object, got NIL"
+  (`reset-default-evaluation-context` wipes the symbol table).
+- **Switch dialect in a test:** `reset-default-evaluation-context` +
+  `set-runtime-session-dialect`.
+- **Corpus baseline:** the raw `autolisp-test` corpus carries ~232
+  pre-existing failures (harness `:SUBR` classifier noise + missing
+  version-expectation overlay) plus a known recap crash. Judge changes by
+  **"no NEW failures"**, not absolute count.
+
+## Dialect system — single source of truth
+
+- Dialects modelled: `:strict` (default), `:autocad-2022`, `:autocad-2026`,
+  `:autocad`(→2026), `:bricscad-v25`, `:bricscad-v26`, `:bricscad`(→v26),
+  `:clautolisp`, `:lax`. Unversioned names alias the newest known version.
+- The registry (`*autolisp-named-dialects*`, `*autolisp-dialect-names*`) and
+  the sole resolver `find-autolisp-dialect` live **only** in
+  `clautolisp/autolisp-reader/source/dialect.lisp`. Everything delegates:
+  `parse-dialect` (cli), `keyword->dialect` (clautolisp main),
+  `resolve-clautolisp-dialect`/`dialect-cli-name` (alfe). **Adding a dialect
+  touches only `dialect.lisp`** — never scatter name tables.
+- **Shared CLI:** the clautolisp binary and alfe share
+  `*common-option-specs*` (`autolisp-cli/source/spec.lisp`) + the
+  `cli-options` struct (`options.lisp`). `--dialect` / `--list-dialects`
+  fall through to the shared spec; alfe overrides only
+  `--clautolisp`/`--autocad`/`--bricscad`.
+- **alfe backend ≠ dialect (decoupled):** the backend flags set only the
+  backend. `effective-dialect` (`cli.lisp`): a CAD backend imposes its own
+  dialect and IGNORES `--dialect`; the clautolisp backend HONORS `--dialect`
+  in any argv order, defaulting to `strict`.
+- **`*AUTOLISP-DIALECT*` is dynamic.** `current-evaluation-dialect` consults
+  the AutoLISP variable `*AUTOLISP-DIALECT*` first (via `lookup-variable`,
+  ignore-errors-guarded), then the runtime-session dialect, then strict. So
+  `(setq *AUTOLISP-DIALECT* 'lax)` changes dialect mid-run.
+
+## Dialect extensions — warn, don't error
+
+clautolisp intentionally extends beyond real AutoCAD/BricsCAD. A
+clautolisp-only extension used under a non-clautolisp dialect emits a
+**non-fatal warning** to `*error-output*` and **proceeds** — silent under
+`:clautolisp` and `:lax`, warns under strict/autocad/bricscad. Pattern:
+`emit-…-extension-warning`, gated by `(member dialect '(:clautolisp :lax))`.
+Model: `emit-lambda-list-extension-warning`; canonical case `(terpri <file>)`
+(real AutoCAD 2026 + BricsCAD V26 `terpri` is zero-arity/command-line-only).
+**Do not make these hard errors** — pjb corrected exactly this. The broad
+sweep of remaining hard dialect errors that should become warnings is
+`issues/open/deferred-clautolisp-out-of-dialect-warnings.issue` (DEFERRED —
+don't start without asking). This is the *implementation* companion to the
+normative **Dialect Divergence and Warnings** section above.
+
+## Version-bump discipline
+
+`clautolisp/tools/clautolisp/source/version.lisp` (`*version*`,
+`MAJOR.MINOR.DEVELOP`, shown by `clautolisp --version`; package
+`#:clautolisp.tools.clautolisp`) MUST have **DEVELOP incremented by 1 on
+every commit that touches source** — any file outside `documentation/` and
+`issues/` (lisp sources, tests, `.asd`, Makefiles). Docs-only / issues-only
+commits do **not** bump. Put the version in the commit subject (e.g.
+`clautolisp 1.7.18: …`). alfe carries its own version axis (see the
+Programs-versus-release note above). Watch for version-bump **conflicts**
+when merging parallel work branches — resolve to the higher DEVELOP.
+
+## CI — GitLab is source of truth; mirror common lanes to GitHub
+
+Mirroring does not translate CI: `.gitlab-ci.yml` is inert on GitHub
+(Actions reads only `.github/workflows/*`), and GitLab ignores `.github/`.
+So the two CIs are **hand-maintained separately**.
+
+**RULE (since 2026-08-03):** `.gitlab-ci.yml` is authoritative;
+`.github/workflows/ci.yml` mirrors **only** the COMMON (`ubuntu-latest`,
+host-portable) lanes. **Before merging to master or cutting a release
+tag/branch, re-sync `ci.yml`** — a new/renamed common `make` target or dep
+bump in `.gitlab-ci.yml` gets the matching edit in the same change. Full
+contract + job-mapping table: `.github/workflows/README.md`; `.gitlab-ci.yml`
+carries a COMMON-vs-GITLAB-ONLY banner near the top — keep it in step.
+
+- Common lanes (mirrored): `test:clautolisp:{sbcl,ccl}`,
+  `file-compat:{sbcl,ccl}`, `autolisp-test:sbcl`,
+  `alfe:{sbcl,ccl,conformance,spec-coverage}`, `build:alfe:sbcl`.
+- GitLab-only (never mirrored — need self-hosted / CAD runners GitHub
+  lacks): every `*:macos` / `*:windows`, `verify:*`, `vendor:probes:*`,
+  `*:probe:*`, `encoding:experiment:*`, `benchmark:*`,
+  `build:clautolisp-ci-image`, `release:*` / `pages` / `collect` / `deploy`.
+- Setup is a composite action `.github/actions/setup-lisp` (input
+  `ccl:true`): installs SBCL (apt) + Clozure CL v1.13 the same way
+  `clautolisp/docker/Dockerfile` does (clone source, overlay release
+  kernel/heap tarball, wrap `lx86cl64` as `ccl`) + Quicklisp cache/pre-warm.
+  Keep `CCL_VERSION` in the action and the Dockerfile in step.
+
+## CI — native macOS/Windows lanes (platform-bug playbook)
+
+Since alfe 1.7.22 the alfe + autolisp-test **unit** suites run on native
+macOS (thalassa) and Windows (PF5S26BT) GitLab runners
+(`test:{alfe,autolisp-test}:{macos,windows}`, extend
+`.platform-test-common`, `allow_failure`). Recurring platform gotchas:
+
+- **The unit lane must NOT depend on real CAD.** `backend-available-p` gates
+  `:bricscad-only`/`:autocad-only` behind `ALFE_VENDOR_CONFORMANCE` opt-in;
+  `run-scenario` unsets `AUTOCAD_ACCORECONSOLE` in its sandbox so the corpus
+  runs an AutoCAD-absent baseline regardless of runner env.
+- **Scenario DSL `:skip-on-os (:windows …)`** (`conformance.lisp`,
+  `current-os-keyword`): for scenarios whose premise is false on a platform.
+  Don't mislabel a platform-specific assertion `:portable`.
+- **Windows rename is non-atomic** (UIOP overwrite = delete+rename): relax
+  contention stress tests on Windows via `(pass …)`; readers use
+  `:if-does-not-exist nil`, never probe-then-open (the delete-gap of a
+  hot-rewritten file makes TOCTOU fire). POSIX `rename(2)` is atomic.
+- **`-Eterminal` fd-reopen is unreliable on Windows** — first *write* EBADFs
+  under a non-console shell; `%make-terminal-fd-stream` returns NIL on
+  Windows → warn-and-keep-default. Proper fix (Console API /
+  `SetConsoleOutputCP`) tracked by `windows-terminal-encoding-fd-stream.issue`.
+- **Windows msys paths:** pass native paths (`cygpath -m`) as `#P"C:/…"`
+  literals to ASDF, not msys `/c/…` namestrings. (A "Component … not found"
+  from a Windows `make test` is usually a **stale clone** — `git pull` — not
+  a code bug.)
+- Debugging is iterative: each fix un-masks the next scenario. Monitor via
+  `glab api projects/ogamita%2Fclautolisp/pipelines/<id>/jobs` then
+  `/jobs/<jid>/trace`.
+
+## CI — adding a Quicklisp dependency
+
+A new **quicklisp** dep breaks the alfe SBCL/CCL lanes with
+`ASDF/FIND-COMPONENT:MISSING-DEPENDENCY` — quicklisp's ASDF hook installs
+only systems named in an explicit `ql:quickload`, **not** transitive deps.
+Add the dep in **three** places: (1) `clautolisp/docker/Dockerfile`
+`ql:quickload` bake (both SBCL and CCL RUN lines); (2)
+`autolisp-front-end/Makefile` quickload blocks (`test-sbcl`/`test-ccl`/
+`conformance`); (3) `autolisp-front-end/scripts/check-spec-coverage.lisp`.
+Keep the Dockerfile bake in sync with the pre-warm anchor list in
+`.gitlab-ci.yml`.
+
+## CI — job placement (poseidon-first)
+
+If a job *can* run on **poseidon** (`[linux,amd64,docker]`), run it there —
+it is ~2× faster than thalassa, 128 GB RAM, RAID-1 SSD, always-on. Pin to
+thalassa (`macos,arm64,shell`) or the Windows PC (`windows,amd64,shell`)
+only when **genuinely platform-bound** (native macOS/Windows builds, GUI
+BricsCAD/AutoCAD). `release:linux:arm64` is the one lane that could move to
+poseidon but can't yet (needs a qemu arm64 runner).
+
+## CAD pathname semantics
+
+`..` / `.` resolution is **OS-level, not per-engine**. Missing-intermediate
+`..` (`BASE/noexist/../t`) is the discriminator: POSIX (clautolisp
+everywhere, BricsCAD **macOS**) = **UP** (physical walk → fails on missing
+dir); Windows (BricsCAD Windows, AutoCAD Windows) = **BACK** (textual
+collapse → succeeds). So clautolisp is *stricter* than the native Windows
+CADs. pjb ruling (clautolisp 1.7.5): open/findfile/load emit a
+`[path-dotdot]` warning for ANY path with a `..` component in every dialect
+except `--lax` (`emit-dotdot-path-portability-warning` +
+`autolisp-path-has-dotdot-component-p` in runtime `api.lisp`, deduped
+per-path/session). Relative paths anchor to the process working directory:
+alfe `:direct` mode re-anchors `*default-pathname-defaults*` +
+`set-autolisp-current-directory` + support-paths to `uiop:getcwd` at
+start-engine. **TEMPPREFIX** resolves registry → TMPDIR/TEMP/TMP → platform
+default (`/tmp/` | `C:/Temp/`) via `apply-tempprefix-default`. Evidence:
+`autolisp-front-end/tests/scenarios/entities/pathname-probe.lsp`
+(`pathname:probe:*` CI jobs, `when: manual`).
+
+## Documenting clautolisp deviations
+
+Whenever clautolisp deviates from / extends AutoCAD/BricsCAD, document in
+**both**: (1) a `*** clautolisp` subsection at the end of the corresponding
+`** Function Entry:` (or sysvar) in
+`autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org`,
+phrased explicitly as "clautolisp implementation deviation — not part of the
+normative specification above" (**never** edit the normative
+Syntax/Arguments/Return sections); and (2) a user-facing subsection in
+`clautolisp/documentation/clautolisp-user-manual.org`. Match the existing
+`*** clautolisp` style (TRUSTEDPATHS sysvar, the nine get\* pages). Docs-only
+edits do **not** bump `version.lisp`. Worked example: the interactive get\*
+family is GUI in AutoCAD/BricsCAD but **TUI** in clautolisp (prompt→stdout,
+one line←stdin; `--mock-input` for scripted runs; invalid/EOF → nil, no
+re-prompt). The `SPEC-UNCERTAIN` / `STUB:` two-place conventions above are
+the related source-marker discipline.
+
+## The interactor framework
+
+All interaction loops (REPL / ALDO debugger / NAVI / LAVI / INSPECT / SEDIT)
+run on `clautolisp/autolisp-interactor` (package `clautolisp.interactor`,
+dependency-free). Design record: `issues/open/interactor-design-revision.issue`
+(interactor-unification CLOSED at 1.6.1).
+
+- Interactors are **singletons**; `*interactor-stack*` holds **activations**
+  `(interactor . state)` like call frames. A stop's ALDO stacks over the
+  ambient stack; "global" user commands live on AUTOLISP and fall through.
+- Registration (never routing) via `DEFINE-INTERACTOR` +
+  `(clal-define-command "NAME" NAMES FN [DOC])` /
+  `(clal-list-interactor-names)`. One reader entry `read-current-source`
+  consults `*AUTOLISP-DIALECT*` live at each read.
+- **Typed command arguments** (1.6.1): lambda-list entry `(NAME TYPE)`, TYPE
+  ∈ string/integer/float/ident/sexp; conversion in
+  `convert-command-argument`; mismatch → `command-argument-error`, call
+  skipped, loop stays alive. `(&whole arg)` = raw convention.
+- SEDIT is an interactor (`autolisp-sedit`); `q` above a stop = warn + y/n +
+  `aldo quit`. Full transition diagram deferred
+  (`interactor-state-diagram-revision.issue`, pjb-decision).
+- Deep design/implementation/debugging know-how for porting this + the ALDO
+  debugger to a full CL lives in
+  `/home/claude/skill-aldo-style-debugger-for-common-lisp.md` (reference impl
+  clautolisp v1.5.0) — hand it to a porting agent.
+
+## DCL — Dialog Control Language (GUI + TUI)
+
+A pluggable **`dcl-renderer`** struct (open/run/close/set-tile/mode/
+image-paint/populate-list fns) in `clautolisp/autolisp-dcl`. Two renderers:
+a **terminal (TUI)** renderer (default, headless) and a **Qt subprocess**
+renderer (Lisp side complete; the C++ app under `tools/clautolisp-gui-qt` is
+unbuilt here — tracked by `dcl-tui-completion.issue` / the OpenDCL epic).
+
+- **`--dcl tui|gui|auto`** selects the renderer (`auto` = GUI only on a TTY
+  with a driver configured, else TUI); wired in
+  `tools/clautolisp/source/main.lisp` (`select-and-install-dcl-renderer`).
+  AutoCAD's `-command` (headless) convention is mapped onto `--dcl tui` +
+  the auto-TUI-when-not-a-TTY path (clautolisp has no per-command
+  dispatcher).
+- Reserved magic vars are interned **without** the trailing `$`: `$KEY`,
+  `$VALUE`, `$REASON`, `$DATA` (`runtime.lisp`); `$reason` is a code
+  1/2/3/4 via `dcl-reason-code`.
+- Predefined **clusters** (`ok_only`, `ok_cancel`, `ok_cancel_help`, …)
+  expand at load into real accept/cancel/help/errtile tiles — a
+  keyword-normalization mismatch previously left an unexpandable
+  `<ok-cancel>` placeholder.
+- Validation artifact: `clautolisp/examples/all-widgets/` — a
+  standard-DCL-only dialog with one of every interactive tile plus a driver
+  that prints a labelled value report. Run the *same* program in BricsCAD,
+  AutoCAD, clautolisp GUI, and clautolisp TUI and diff the reports. Headless
+  TUI smoke test:
+  `printf 'name=…\naccept\n' | clautolisp-sbcl -norc -q --dcl tui -l all-widgets.lsp`.
+
+## CLI option convention
+
+Single-dash options must be **short** (one-letter); word options take
+**two** dashes: `-q`/`--quit`, never `-quit`. No silent legacy aliases — a
+removed spelling gets "Unknown option" + usage. Update every in-tree caller
+(Makefiles, docs, man, org tables) in the same commit. Exception: a short
+option with an attached parameter domain is fine — `-Eterminal encoding` is
+`-E` + the `terminal` domain (clisp-style). Host-Lisp lanes in Makefiles
+keep the host's own spelling.
+
+## Issue triage workflow
+
+`issues/open/TRIAGE.org` is the authoritative index (replaces the old
+`index.txt`). Priority order set by pjb: **P1** CAD backend / dialect
+divergences → **P2** language / builtins completeness → **P3** everything
+else. Rules: process `NEXT` before `TODO` within a tier, skip
+`BLOCKED`/`DEFERRED`; strive to complete an issue fully (only inconsistency
+or a dependency justifies parking it); check the tree first (progress may
+have made an issue moot → close with explanation); a **bug found
+incidentally** gets its own `issues/open/<slug>.issue` ticket (symptom,
+repro, cause) — don't just mention it. Every issue file uses the org keyword
+header (`#+STATUS`/`#+PRIORITY`/`#+TYPE`/`#+DEPENDS`/`#+BRANCH`). Branch
+naming: `fix-<slug>` / `feat-<slug>`; an epic runs one long-lived branch;
+fetch + rebase before merging back. A completed issue is closed and moved to
+`issues/closed/`.
+
+## Commit / push identity
+
+pjb has delegated (standing, 2026-06-21, "Option A") committing under **his
+identity** (`Pascal J. Bourguignon` / informatimago@gmail.com) and pushing
+to **master** — proceed without asking. Feature-branch + MR only when he
+requests it. End commit messages with the Co-Authored-By: Claude trailer. If
+the harness classifier still gates the author/push, that is authorization
+friction, not a reason to stop.
+
+## Ongoing epics (as of clautolisp 1.7.18 / alfe 1.7.24, 2026-08)
+
+- **Coverage epic** (`complete-unit-tests.issue`, P2): backfill builtin
+  behavioural coverage toward ≥95%. Tooling:
+  `clautolisp/autolisp-builtins-core/tests/scripts/coverage-report.sh`
+  (implemented set = `make-core-builtin-subr` names + special-op dispatch;
+  tested = literal `(NAME …` heads + `find-autolisp-symbol`). Remaining gaps
+  concentrate in VLAX-\* (need constructed mock objects), SS/entity mutation
+  (ENTUPD/SSGETFIRST), and misc families.
+- **Compiler** (`compiler.issue`, flagship DRAFT): interpreter companion +
+  AutoLISP→CL compiler. The full bytecode-VM + compiler know-how (staged
+  plan, ISA/IR, NLX via interpreter frames, fasl/boot-image bootstrap, the
+  lisp-1/dynamic-binding adaptation) is written up as a transfer skill in the
+  **bocl** repo: `design/skill-bytecode-vm-and-compiler.md` — copy it into
+  `.claude/skills/bytecode-vm-and-compiler/SKILL.md` when that work starts.
+- P1 items are largely gated on CAD hardware access, `pjb-decision`, or
+  upstream (libredwg) — see TRIAGE.org for the current gates.
