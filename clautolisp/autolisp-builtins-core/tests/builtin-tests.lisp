@@ -1368,7 +1368,16 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
     (dolist (dialect '(nil :strict :clautolisp :lax :autocad-2022 :autocad-2026))
       (is (= 0 (funcall day-of-week 6 dialect))))
     (dolist (dialect '(:bricscad-v25 :bricscad-v26))
-      (is (= 7 (funcall day-of-week 6 dialect))))))
+      (is (= 7 (funcall day-of-week 6 dialect))))
+    ;; The published portability recipe: (mod dow 7) collapses the one
+    ;; divergent value -- (mod 0 7) and (mod 7 7) are both 0 -- and
+    ;; leaves Monday..Saturday alone, so it yields the POSIX numbering
+    ;; on every engine and every dialect. Documented in the spec entry
+    ;; and the user manual; asserted here so it cannot silently rot.
+    (dolist (dialect all-dialects)
+      (loop for common-lisp-day from 0 to 6
+            do (is (= (mod (funcall day-of-week common-lisp-day dialect) 7)
+                      (mod (1+ common-lisp-day) 7)))))))
 
 (test builtin-vl-file-copy-systime-and-mktemp
   (reset-autolisp-symbol-table)

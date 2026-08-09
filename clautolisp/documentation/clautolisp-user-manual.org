@@ -516,10 +516,23 @@ operator under its ~*** clautolisp~ note.
   only "Monday is day 1 ... and so on" and never state a value for
   Sunday, so each engine filled that silence its own way — AutoCAD
   with the POSIX ~struct tm~ numbering, BricsCAD with ISO-8601.
-  clautolisp keeps the POSIX one. Code that must be portable across
-  both should derive the weekday from the date rather than read
-  position 3. The list has eight elements — the eighth is
-  milliseconds, currently always ~0~.
+  clautolisp keeps the POSIX one.
+
+  Because the two values are ~0~ and ~7~, one operation normalises
+  every engine and every dialect:
+
+  #+BEGIN_EXAMPLE
+  (mod day-of-week 7)
+  #+END_EXAMPLE
+
+  ~(mod 0 7)~ and ~(mod 7 7)~ are both ~0~, and Monday to Saturday
+  (~1~..~6~) pass through unchanged, so the result is always the POSIX
+  numbering — Sunday ~0~ through Saturday ~6~ — with no test for which
+  engine or dialect is in use. Read position 3 through ~mod 7~ rather
+  than avoiding it.
+
+  The list has eight elements — the eighth is milliseconds, currently
+  always ~0~.
 
 ** Input selection
 - ~-x EXPRESSION~        :: Evaluate EXPRESSION instead of reading a

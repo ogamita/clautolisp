@@ -196,3 +196,19 @@ or a file whose mtime is forced to one — the latter is the cheap way and
 is worth adding to the alpm verification probe (set the mtime, then
 read it back). Track under
 =vendor-probe-autocad-bricscad-divergences.issue=.
+
+** Addendum 2026-08-09 (pjb): the portable reading is =(mod dow 7)=
+
+Because the divergence is confined to Sunday and the two values it takes
+are 0 and 7, a single operation normalises every engine and every
+dialect: =(mod day-of-week 7)=. =(mod 0 7)= and =(mod 7 7)= are both 0,
+and Monday..Saturday (1..6) pass through =mod 7= unchanged, so the
+result is always the POSIX =struct tm= numbering with no test for which
+engine is running.
+
+This supersedes the earlier advice to avoid position 3: portable code
+should *read* it, through =mod 7=. Recorded in the spec entry (new
+"Reading the day of week portably" subsection + a line in the
+=*** clautolisp= note), in the user manual, and in RELEASE_NOTES; and
+asserted by the regression test over all 7 weekdays x 8 dialects so the
+identity cannot silently rot. Spec document version 0.9.3 -> 0.9.4.

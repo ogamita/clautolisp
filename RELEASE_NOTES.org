@@ -604,8 +604,11 @@ separate binary for tool integrators.
   is the one value the vendor documentation never pins down, so it is
   dialect dependent — 0 under ~clautolisp~ / ~strict~ / ~autocad-*~
   (the POSIX ~struct tm~ completion, which is also what AutoCAD's
-  runtime returns) and 7 under ~bricscad-v25~ / ~bricscad-v26~. See
-  the AutoLISP Spec entry § /VL-FILE-SYSTIME/ for the evidence.
+  runtime returns) and 7 under ~bricscad-v25~ / ~bricscad-v26~.
+  ~(mod day-of-week 7)~ normalises every engine and dialect to the
+  POSIX numbering, since ~(mod 0 7)~ and ~(mod 7 7)~ are both 0 and
+  Monday..Saturday pass through unchanged. See the AutoLISP Spec entry
+  § /VL-FILE-SYSTIME/ for the evidence.
 
 ** read-autolisp
 
