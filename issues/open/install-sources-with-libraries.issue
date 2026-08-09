@@ -1,3 +1,11 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: install-sources-with-libraries — make install doit aussi installer les sources CL et les bibliothèques natives
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-install-sources-with-libraries
+
 make install : installer aussi les sources CL (avec install-libraries)
 =======================================================================
 
@@ -61,3 +69,69 @@ Notes
   `asdf:*central-registry*` et non via les local-projects de quicklisp
   (dont l'indexeur écrit un system-index.txt dans le répertoire
   enregistré).
+
+* Triage 2026-08-09 — en grande partie DÉJÀ FAIT ; reste le make install de clautolisp/
+
+Vérifié sur l'arbre à =528578c=. Les trois points « Attendu » sont
+satisfaits *à la racine* :
+
+1. La cible demandée existe, sous le nom =install-lisp-systems=
+   (=clautolisp/Makefile= l.651) et fait exactement ce qui est
+   décrit : chaque =.lisp= / =.asd= copié en mode 0644 sous
+   =$(PREFIX)/share/common-lisp/source/clautolisp/=, plus le lien
+   relatif =share/common-lisp/systems/clautolisp.asd →
+   ../source/clautolisp/clautolisp.asd=. Elle installe en prime un
+   fragment =conf.d= source-registry, non demandé mais utile.
+2. =install= à la racine (=Makefile= l.463) est
+   =install-programs install-libraries install-documentation=, et
+   =clautolisp/Makefile= l.611 déclare
+   =install-libraries: install-lisp-systems=. Donc un =make install=
+   depuis la racine produit bien déjà programmes + docs + sources +
+   bibliothèques natives, identique au contenu des tarballs release
+   (les deux passent par le même arbre =$(STAGE)/libraries=, cf.
+   =release-libraries= l.277).
+3. =uninstall= (=clautolisp/Makefile= l.681) retire déjà
+   =$(CL_SOURCE_INSTALL_DIR)=, le lien =systems/clautolisp.asd=, le
+   fragment conf.d, puis les bibliothèques natives.
+
+Reste donc *un seul* écart, celui que le titre vise par « et
+clautolisp/ » : =clautolisp/Makefile= l.530
+
+: install: build
+: 	$(MAKE) install-programs
+: 	$(MAKE) install-documentation
+
+n'appelle pas =install-libraries=, si bien que
+=make -C clautolisp install= n'installe toujours ni les sources ni les
+bibliothèques.
+
+** Ce n'est pas un simple oubli — arbitrage nécessaire
+
+=install-libraries= échoue *dur* quand libredwg n'est pas construit :
+
+: [ -s "$$runtime_manifest" ] || { echo "error: missing LibreDWG runtime manifest; run make build-libredwg" >&2; exit 1; }
+
+L'ajouter en dépendance de =clautolisp/install= casserait donc
+=make -C clautolisp install= sur tout hôte sans libredwg (dont
+plusieurs lanes CI), là où il fonctionne aujourd'hui. Trois options :
+
+1. ajouter =install-libraries= à =clautolisp/install= et rendre le
+   manifeste manquant non fatal (avertir + sauter), en gardant l'échec
+   dur pour =release-libraries= où l'artefact doit être complet ;
+2. n'ajouter que =install-lisp-systems= (sources CL, aucune dépendance
+   native) à =clautolisp/install= et laisser les bibliothèques
+   natives en phase séparée — couvre le besoin de dwg-identifier pour
+   les *sources*, pas pour =lib/clautolisp/<os>/<arch>/= ;
+3. clore comme WONTFIX au niveau sous-projet : documenter que
+   l'installation complète se fait depuis la racine, et que les
+   phases de =clautolisp/= sont des briques appelées par le staging.
+
+Option 1 est la seule qui satisfait littéralement l'énoncé sans
+régression ; elle demande une décision parce qu'elle change la
+sémantique d'échec d'une cible de packaging.
+
+** Critère d'acceptation révisé
+=make -C clautolisp install= puis =make -C clautolisp uninstall= sur un
+PREFIX jetable, avec et sans libredwg construit, laissent l'arbre
+propre et installent =share/common-lisp/source/clautolisp/= dans les
+deux cas.

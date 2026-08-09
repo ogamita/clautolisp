@@ -2,6 +2,11 @@
 #+TITLE: autolisp-spec: incorporate the engine facts from the alpm verification campaign
 #+AUTHOR: Pascal J. Bourguignon
 #+DATE: 2026-08-09
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: spec
+#+DEPENDS: -
+#+BRANCH: feature-autolisp-spec-alpm-verification-findings
 
 The alpm project (gitlab.com/ogamita/alpm) ran a portability probe
 suite (tests/verification/verification.lsp, greppable ALPM-VERIFY
@@ -165,3 +170,58 @@ lsm/lsa = "Optimize and Link" = :BUILD (:OPTIMIZE :LOCALIZE :link);
 - Result log: alpm documentation/alpm-specification.org,
   "Portability / Verification Checklist" (V-1..V-11), and
   tests/verification/README.org "Recorded results".
+
+* Triage 2026-08-09 — NEXT; the anchor for this batch
+
+Marked =NEXT= (P1, spec): this is Phase-4-grade four-engine evidence
+already in hand, so the work is pure documentation editing with no CAD
+access, no runner, and no dependency to wait on. It is the natural
+anchor for the whole alpm batch — the two sibling issues spun out of
+it are both *narrower than they look*:
+
+- =vl-doc-namespace-family-bricscad= turns out to need **no code
+  change at all**: all thirteen names of the family are already
+  registered unconditionally in
+  =clautolisp/autolisp-builtins-core/source/api.lisp= with no dialect
+  gating anywhere, so clautolisp already matches the probed BricsCAD
+  reality. Only =clautolisp-multidocument-analysis.org= (l.102, l.311)
+  is wrong. Fold that correction in with the VL-DOC-EXPORT section
+  below.
+- =vl-file-systime-parity= splits cleanly: the missing milliseconds
+  element is an unambiguous shape bug (ship it), while the
+  day-of-week convention needs a ruling — see that issue's Triage
+  section for the conflict between the correction added here ("match
+  what bricscad does") and clautolisp's current Sunday=0, which is
+  what AutoCAD's *runtime* actually returns.
+
+Suggested order of work, cheapest and least contentious first:
+
+1. the four "presumed → verified" upgrades that only raise confidence
+   and change no behaviour: VL-DOC-EXPORT family, DEFUN-Q /
+   DEFUN-Q-LIST-REF, VL-DIRECTORY-FILES, FINDFILE (+ the
+   normalise-backslashes note);
+2. LOAD (explicit extension ⇒ read as source on all four engines) —
+   a genuine clarification of an existing entry;
+3. WRITE-CHAR / READ-CHAR — the asymmetry is the sharpest new fact
+   here (write-char is platform-encoding, read-char is byte-level;
+   only a round trip on single-byte platforms) and deserves normative
+   text plus a cross-reference from the encoding issues;
+4. VL-FILE-SYSTIME — document all three conventions and the
+   AutoCAD doc-vs-runtime contradiction, advise portable use of
+   positions 1,2,4,5,6,7 only; behaviour change tracked separately;
+5. Chapter 22 additions (DEScoder command line, DES namespace
+   semantics, VLX backward/forward compatibility, .prj/.prv formats,
+   VLISP-COMPILE GUI mapping) — the largest chunk, and the one that
+   should cite alpm's =documentation/vlisp-project-files.org= rather
+   than duplicate it.
+
+Two repository rules bind this work: every edit to
+=autolisp-visual-lisp-specification-draft.org= must increment that
+document's own version (AGENTS § Documentation), and the per-vendor
+differences must be classified into the case 0/1/2/3 taxonomy with a
+=*** clautolisp= note saying what each dialect does (AGENTS § Dialect
+Divergence). The VLX backward-compatibility point — a
+namespace-enabled .des silently degrading to global visibility on
+pre-V18.2 engines — is exactly the kind of fact that belongs in
+normative text: code must not rely on namespace hiding for
+correctness.

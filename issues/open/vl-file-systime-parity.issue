@@ -2,6 +2,11 @@
 #+TITLE: vl-file-systime: element count and day-of-week convention differ from BricsCAD/Autodesk
 #+AUTHOR: Pascal J. Bourguignon
 #+DATE: 2026-08-09
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: divergence
+#+DEPENDS: pjb-decision (day-of-week target; see Triage)
+#+BRANCH: fix-vl-file-systime-parity
 
 Found by the alpm verification probes (alpm repo,
 tests/verification/verification.lsp, probe V-2) run at the same
@@ -45,3 +50,72 @@ moment (Sun 2026-08-09 00:05 local) on both engines:
 alpm CI job verify:bricscad:macos (pipeline 2744343498, job
 15791433487) and verify:clautolisp:macos (job 15791433486),
 2026-08-09.
+
+* Triage 2026-08-09 — code located; one open decision
+
+** Where it lives
+
+=clautolisp/autolisp-builtins-core/source/api.lisp=:
+
+- =builtin-vl-file-systime= (l.2416) builds the 7-element list
+  =(year month dow day hour minute second)= from =decode-universal-time=
+  of =(file-write-date resolved)=;
+- =autolisp-day-of-week= (l.2410) is =(mod (1+ cl-dow) 7)=, i.e. CL's
+  Monday=0..Sunday=6 remapped to Sunday=0..Saturday=6 — which is
+  exactly the Sunday=0 the probe observed, and exactly AutoCAD 2022's
+  runtime convention.
+
+** Split into two independent parts
+
+*** Part A — element count (unambiguous, do it now)
+Both vendors return 8 elements; clautolisp returns 7. This is a plain
+shape bug with no divergence question attached: append the
+milliseconds element. Note the substrate limit — =file-write-date= is
+defined to second granularity, so the value will be a constant 0
+unless the implementation-specific stat is used (SBCL
+=sb-posix:stat-mtime= / CCL =ccl::%stat=, both nanosecond-capable but
+non-portable, and the AGENTS "isolate implementation-specific code
+behind a narrow interface" rule applies). The issue itself already
+licenses "0 when the platform cannot provide it", so 0 is an
+acceptable first cut; record it as a =;;; SPEC-UNCERTAIN:= marker if
+it ships that way.
+
+*** Part B — day-of-week (needs pjb's ruling)
+Three conventions are in evidence and the vendor documentation
+contradicts its own runtime:
+
+| source                  | Sunday | note                          |
+|-------------------------+--------+-------------------------------|
+| AutoCAD 2022 runtime    |      0 | probed                        |
+| Autodesk documentation  |      1 | implied by the 2003-09-10 ex. |
+| BricsCAD V25/V26        |      7 | probed                        |
+| clautolisp (today)      |      0 | matches AutoCAD's runtime     |
+
+Per AGENTS "Dialect Divergence and Warnings" this is a *case 3*
+(unresolved, symmetric) divergence on the face of it — no vendor is
+obviously right, and a majority does not make one right — which would
+mean every dialect except =lax= warns.
+
+But =autolisp-spec-alpm-verification-findings.issue= carries a later
+correction from pjb: "There's no reason to make a clautolisp specific
+extension here. Let's match what bricscad does, and document it." Read
+literally that selects Sunday=7 as the clautolisp behaviour, which
+would *move clautolisp away from* the AutoCAD runtime it currently
+matches, and it is in tension with this issue's own text ("clautolisp
+therefore already matches AutoCAD's day-of-week convention").
+
+So the ruling to confirm before writing Part B is one of:
+
+1. per-dialect: =autocad-*= → Sunday=0, =bricscad-*= → Sunday=7,
+   =clautolisp=/=strict= → pick one and warn (case-2 treatment);
+2. uniformly Sunday=7 (the literal reading of the correction);
+3. leave Sunday=0 and only document the divergence (status quo + spec).
+
+Part A is not blocked by this and can ship first.
+
+** Acceptance criteria
+- vl-file-systime returns 8 elements on every dialect.
+- A fixed-file conformance check pins the shape (issue's own third
+  bullet) — the corpus has no shape assertion today.
+- The chosen day-of-week rule is documented in the spec entry's
+  =*** clautolisp= note per the deviation convention.
