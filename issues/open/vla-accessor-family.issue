@@ -189,3 +189,34 @@ driven by demand rather than seeding everything up front.
   lacks (VL raises an ActiveX exception catchable by `vl-catch-all-apply`) —
   probe against a real AutoCAD/BricsCAD and record in `deferred-spec-research`.
 - Whether `vla-*` names are visible before `(vl-load-com)` in every vendor build.
+
+## CI 2026-08-10 — job SCHMS ajouté (inerte tant que non provisionné)
+
+`test:cad:schms:linux` dans `.gitlab-ci.yml`, sur poseidon
+`[linux, amd64, docker]`. La suite SCHMS tourne contre `--host cador`,
+le cœur CAD headless : elle n'a besoin d'AUCUN AutoCAD/BricsCAD ni
+d'aucun runner natif, ce qui la distingue de toutes les autres lanes
+CAD et justifie poseidon.
+
+Le job installe clautolisp (`install-programs` dans un PREFIX de job),
+clone le corpus, lance `make test-cad-clautolisp` et publie
+`schms-report.txt` en artefact. Non bloquant (`allow_failure`) : le
+churn d'un corpus externe ne doit jamais rougir un pipeline clautolisp
+— sa valeur est le rapport.
+
+INERTE PAR DÉFAUT. SCHMS est un corpus client privé
+(`sncf-reseau/src/schms`), ni sous-module ni public : le job ne peut pas
+le cloner sans identifiants. La première règle est
+`if: $SCHMS_REPO_URL == null || == "" -> when: never`, donc le job
+n'existe tout simplement pas tant que pjb n'a pas défini la variable —
+même schéma que `BRICSCAD_PROFILE_CLEAN` pour le harvest sysvars et
+`RUNNER_STATUS_TOKEN` pour la sonde de runners : jamais de faux rouge,
+jamais de job stuck-pending.
+
+À provisionner par pjb (variables CI/CD masquées) :
+  SCHMS_REPO_URL   URL de clone avec identifiants
+  SCHMS_REF        optionnel, branche/tag à tester
+
+Non vérifié ici, faute d'accès au corpus : que `make test-cad-clautolisp`
+existe bien sous ce nom dans le SCHMS courant et que ses prérequis se
+limitent à clautolisp sur le PATH. À confirmer au premier run.

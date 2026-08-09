@@ -45,8 +45,8 @@ SUBPROJECT_NAME := clautolisp
 # binary into HAVE_<IMPL>, append a token to
 # AVAILABLE_IMPLEMENTATIONS, define a build-<impl> alias, and add
 # the matching file-target rules.
-HAVE_SBCL := $(shell command -v $(SBCL) >/dev/null 2>&1 && echo yes)
-HAVE_CCL  := $(shell command -v $(CCL)  >/dev/null 2>&1 && echo yes)
+HAVE_SBCL := $(shell command -v "$(SBCL)" >/dev/null 2>&1 && echo yes)
+HAVE_CCL  := $(shell command -v "$(CCL)"  >/dev/null 2>&1 && echo yes)
 AVAILABLE_IMPLEMENTATIONS :=
 ifeq ($(HAVE_SBCL),yes)
   AVAILABLE_IMPLEMENTATIONS += sbcl
@@ -184,16 +184,16 @@ build-sbcl:  ## Strictly build the SBCL clautolisp + read-autolisp images (error
 	  echo "Error: sbcl not found in PATH (looked for '$(SBCL)')"; \
 	  exit 2; \
 	fi
-	$(MAKE) build-read-autolisp-sbcl
-	$(MAKE) build-clautolisp-sbcl
+	"$(MAKE)" build-read-autolisp-sbcl
+	"$(MAKE)" build-clautolisp-sbcl
 
 build-ccl:  ## Strictly build the CCL clautolisp + read-autolisp images (errors if ccl is missing).
 	@if [ "$(HAVE_CCL)" != "yes" ]; then \
 	  echo "Error: ccl not found in PATH (looked for '$(CCL)')"; \
 	  exit 2; \
 	fi
-	$(MAKE) build-read-autolisp-ccl
-	$(MAKE) build-clautolisp-ccl
+	"$(MAKE)" build-read-autolisp-ccl
+	"$(MAKE)" build-clautolisp-ccl
 
 submodules:  ## Check out the git submodules (the vendored libredwg) if they are not already present. Run automatically by build-libredwg so `make build-libraries` works straight after a clone. No-op when already checked out or when building from a source tarball (no .git).
 	@if [ -z "$$(ls -A third-party/libredwg 2>/dev/null)" ]; then \
@@ -218,7 +218,7 @@ test: test-sbcl
 
 test-sbcl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(require :asdf)' \
@@ -237,7 +237,7 @@ test-ccl:
 
 build-read-autolisp-sbcl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(READ_AUTOLISP_TOOL_DIR)/generate-read-autolisp.lisp" \
@@ -253,7 +253,7 @@ build-read-autolisp-ccl:
 
 build-clautolisp-sbcl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(CLAUTOLISP_TOOL_DIR)/generate-clautolisp.lisp" \
@@ -272,16 +272,16 @@ build-clautolisp-ccl:
 # back to the strict per-impl entry points so probe-check fires
 # when the implementation is missing.
 $(CLAUTOLISP_SBCL):
-	$(MAKE) build-clautolisp-sbcl
+	"$(MAKE)" build-clautolisp-sbcl
 
 $(CLAUTOLISP_CCL):
-	$(MAKE) build-clautolisp-ccl
+	"$(MAKE)" build-clautolisp-ccl
 
 $(READ_AUTOLISP_SBCL):
-	$(MAKE) build-read-autolisp-sbcl
+	"$(MAKE)" build-read-autolisp-sbcl
 
 $(READ_AUTOLISP_CCL):
-	$(MAKE) build-read-autolisp-ccl
+	"$(MAKE)" build-read-autolisp-ccl
 
 run-file-compat: run-file-compat-sbcl
 
@@ -383,7 +383,7 @@ endif
 # in-place output org-export produced from the source.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@mkdir -p $(@D)
-	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" $(EMACS) --batch \
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" "$(EMACS)" --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
@@ -399,7 +399,7 @@ $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 # emits them in the standard place at the top.
 $(BUILD_DIR)/%.texi: %.org
 	@mkdir -p $(@D)
-	$(EMACS) --batch \
+	"$(EMACS)" --batch \
 		--eval '(progn (require (quote ox-texinfo)) (setq org-export-with-broken-links t))' \
 		--visit "$<" \
 		--funcall org-texinfo-export-to-texinfo
@@ -540,9 +540,9 @@ INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARI
 REQUIRE_NATIVE_LIBRARIES ?= 0
 
 install: build  ## Install built executables + docs + Lisp sources/systems (+ native libraries when built) into $$PREFIX; build first, sudo-friendly.
-	$(MAKE) install-programs
-	$(MAKE) install-libraries
-	$(MAKE) install-documentation
+	"$(MAKE)" install-programs
+	"$(MAKE)" install-libraries
+	"$(MAKE)" install-documentation
 
 install-programs:  ## Install just the clautolisp/read-autolisp/gui/run-file-compat executables (no docs) -- the CI-friendly fast path.
 	install -d $(BIN_INSTALL_DIR)

@@ -184,10 +184,10 @@ harness-self-test: $(CLAUTOLISP_SBCL)  ## Harness regression tests (detection + 
 # a runtime fix.
 
 $(CLAUTOLISP_SBCL): $(CLAUTOLISP_SOURCES)
-	$(MAKE) -C $(CLAUTOLISP_ROOT) build-clautolisp-sbcl
+	"$(MAKE)" -C $(CLAUTOLISP_ROOT) build-clautolisp-sbcl
 
 $(CLAUTOLISP_CCL): $(CLAUTOLISP_SOURCES)
-	$(MAKE) -C $(CLAUTOLISP_ROOT) build-clautolisp-ccl
+	"$(MAKE)" -C $(CLAUTOLISP_ROOT) build-clautolisp-ccl
 
 build-clautolisp-sbcl: $(CLAUTOLISP_SBCL)
 build-clautolisp-ccl:  $(CLAUTOLISP_CCL)
@@ -212,7 +212,7 @@ test-clautolisp-ccl-debug: $(CLAUTOLISP_CCL)
 
 test-asdf-sbcl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
@@ -222,7 +222,7 @@ test-asdf-sbcl:
 
 test-asdf-sbcl-debug:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit \
+	"$(SBCL)" --noinform --no-userinit \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
@@ -232,7 +232,7 @@ test-asdf-sbcl-debug:
 
 test-asdf-ccl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(CCL) --no-init --quiet \
+	"$(CCL)" --no-init --quiet \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
@@ -243,7 +243,7 @@ test-asdf-ccl:
 
 test-asdf-ccl-debug:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(CCL) --no-init --quiet \
+	"$(CCL)" --no-init --quiet \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
@@ -286,7 +286,7 @@ endif
 # the source path) and delete the intermediate .tex so the source tree stays clean.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@mkdir -p $(@D)
-	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" $(EMACS) --batch \
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" "$(EMACS)" --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
@@ -439,8 +439,8 @@ INSTALL_INFO        ?= install-info
 .PHONY: install install-programs install-documentation uninstall
 
 install: build  ## Install harness + tests + docs into $$PREFIX (build first; sudo-friendly).
-	$(MAKE) install-programs
-	$(MAKE) install-documentation
+	"$(MAKE)" install-programs
+	"$(MAKE)" install-documentation
 
 install-programs:  ## Install just the autolisp-test harness + tests (no docs).
 	install -d $(LIBEXEC_INSTALL_DIR)/harness

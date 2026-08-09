@@ -55,8 +55,8 @@ SUBPROJECT_NAME := autolisp-front-end
 # Same convention as clautolisp/Makefile: the user-facing 'build' and
 # 'install' walk this list; per-impl 'build-sbcl' / 'build-ccl'
 # variants are strict (error when their impl is missing).
-HAVE_SBCL := $(shell command -v $(SBCL) >/dev/null 2>&1 && echo yes)
-HAVE_CCL  := $(shell command -v $(CCL)  >/dev/null 2>&1 && echo yes)
+HAVE_SBCL := $(shell command -v "$(SBCL)" >/dev/null 2>&1 && echo yes)
+HAVE_CCL  := $(shell command -v "$(CCL)"  >/dev/null 2>&1 && echo yes)
 AVAILABLE_IMPLEMENTATIONS :=
 ifeq ($(HAVE_SBCL),yes)
   AVAILABLE_IMPLEMENTATIONS += sbcl
@@ -157,14 +157,14 @@ build-sbcl:  ## Strictly build the SBCL alfe image (errors if sbcl is missing).
 	  echo "Error: sbcl not found in PATH (looked for '$(SBCL)')"; \
 	  exit 2; \
 	fi
-	$(MAKE) build-alfe-sbcl
+	"$(MAKE)" build-alfe-sbcl
 
 build-ccl:  ## Strictly build the CCL alfe image (errors if ccl is missing).
 	@if [ "$(HAVE_CCL)" != "yes" ]; then \
 	  echo "Error: ccl not found in PATH (looked for '$(CCL)')"; \
 	  exit 2; \
 	fi
-	$(MAKE) build-alfe-ccl
+	"$(MAKE)" build-alfe-ccl
 
 documentation: $(PDF_FILES) $(INFO_FILES)  ## Render every documentation/*.org into a PDF and .info via Emacs org-export.
 
@@ -202,7 +202,7 @@ endif
 # the source path) and delete the intermediate .tex so the source tree stays clean.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@mkdir -p $(@D)
-	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" $(EMACS) --batch \
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" "$(EMACS)" --batch \
 	    --eval "(setq org-confirm-babel-evaluate nil)" \
 	    --eval "(setq org-export-with-broken-links t)" \
 	    --eval "(require 'ox-latex)" \
@@ -216,7 +216,7 @@ $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 
 $(BUILD_DIR)/%.texi: %.org
 	@mkdir -p $(@D)
-	$(EMACS) --batch \
+	"$(EMACS)" --batch \
 	    --eval '(progn (require (quote ox-texinfo)) (setq org-export-with-broken-links t))' \
 	    --visit "$<" \
 	    --funcall org-texinfo-export-to-texinfo
@@ -237,7 +237,7 @@ test: test-sbcl  ## Run the alfe FiveAM suite under SBCL.
 
 test-sbcl:  ## Run the alfe FiveAM suite under SBCL.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
@@ -250,7 +250,7 @@ test-sbcl:  ## Run the alfe FiveAM suite under SBCL.
 
 test-ccl:  ## Run the alfe FiveAM suite under CCL.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(CCL) --no-init --quiet \
+	"$(CCL)" --no-init --quiet \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
@@ -271,7 +271,7 @@ test-ccl:  ## Run the alfe FiveAM suite under CCL.
 
 build-alfe-sbcl:  ## Build tools/alfe/bin/alfe-sbcl via save-lisp-and-die.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(ALFE_GENERATE)" \
@@ -279,7 +279,7 @@ build-alfe-sbcl:  ## Build tools/alfe/bin/alfe-sbcl via save-lisp-and-die.
 
 build-alfe-ccl:  ## Build tools/alfe/bin/alfe-ccl via save-application.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(CCL) --no-init --quiet \
+	"$(CCL)" --no-init --quiet \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(ALFE_GENERATE)" \
@@ -294,7 +294,7 @@ build-alfe-ccl:  ## Build tools/alfe/bin/alfe-ccl via save-application.
 
 conformance:  ## Run the alfe scenario corpus and exit non-zero on any failure.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
@@ -308,7 +308,7 @@ conformance:  ## Run the alfe scenario corpus and exit non-zero on any failure.
 
 check-spec-coverage:  ## Assert every CLI option in the spec is covered by ≥1 scenario.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--load scripts/check-spec-coverage.lisp
 
 clean: clean-pdf  ## Remove built executables and generated PDFs.
@@ -371,10 +371,10 @@ test-alfe-ccl-autocad-windows: $(ALFE_CCL)  ## alfe-ccl --autocad smoke test (Wi
 # directly; the binary file targets here are real files, so make
 # rebuilds only when missing.
 $(ALFE_SBCL):
-	$(MAKE) build-alfe-sbcl
+	"$(MAKE)" build-alfe-sbcl
 
 $(ALFE_CCL):
-	$(MAKE) build-alfe-ccl
+	"$(MAKE)" build-alfe-ccl
 
 # ---------------------------------------------------------------------
 # Install / uninstall.
@@ -410,8 +410,8 @@ INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARI
 .PHONY: install install-programs install-documentation uninstall
 
 install: build  ## Install built alfe binaries + docs into $$PREFIX (build first; sudo-friendly).
-	$(MAKE) install-programs
-	$(MAKE) install-documentation
+	"$(MAKE)" install-programs
+	"$(MAKE)" install-documentation
 
 install-programs:  ## Install just the alfe executables (no docs).
 	install -d $(BIN_INSTALL_DIR)

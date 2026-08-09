@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: runner-availability-gating — auto-start native (macOS/Windows) jobs only when their runner is online
-#+STATUS: TODO
+#+STATUS: BLOCKED
 #+PRIORITY: P2
 #+TYPE: infra
 #+DEPENDS: RUNNER_STATUS_TOKEN (a CI/CD variable pjb must add)
@@ -102,3 +102,21 @@ on a real pipeline. Release-tag pipelines: native jobs are on_success
 (mandatory) via the `$CI_COMMIT_TAG` rule; a `strategy: depend` may be
 wanted on the trigger for tag pipelines so the release waits for them
 (follow-up).
+
+
+Statut 2026-08-10 — implémenté, en attente d'une variable CI/CD
+--------------------------------------------------------------
+
+Le mécanisme est en place et vérifié sur master : le job `.pre`
+`detect:runners` (scripts/ci-detect-runners.py) publie MACOS_RUNNER /
+WINDOWS_RUNNER via un artefact dotenv, `native:pipeline` déclenche le
+pipeline enfant .gitlab/native.yml, et les gates `.gate-{macos,windows}-{hard,soft}`
+y basculent en `when: on_success` dès que la variable vaut "online",
+avec repli `when: manual` sinon (et `allow_failure: false` sur un tag
+release pour les gates `hard`).
+
+Il ne reste donc aucun travail de dépôt : le fail-safe fait que sans
+RUNNER_STATUS_TOKEN (portée api) tout reste `manual`, c'est-à-dire le
+comportement d'avant — jamais un faux "online". Le statut passe de TODO
+à BLOCKED sur cette variable, que pjb doit ajouter dans les CI/CD
+settings du projet.

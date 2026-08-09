@@ -1,3 +1,11 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: build-tool-paths-unquoted — variables holding a program or file path are not quoted
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: schms-ci-and-p3
+
 -*- coding:utf-8 -*-
 
 build-tool-paths-unquoted — variables holding a program or file path are not quoted
@@ -164,3 +172,46 @@ The Linux lane is unaffected *by chance*: `sbcl` happens to be on PATH
 there under a path without spaces. Move the CI workspace under a
 directory with a space, or let anyone use the documented `SBCL=` override
 with such a path, and the same failure appears on Linux.
+
+
+RÉSOLU 2026-08-10 (clautolisp 1.8.27)
+=====================================
+
+105 sites quotés dans les sept Makefiles, plus les quatre sondes
+`command -v`. Portée : toute interpolation en ligne de recette des
+variables d'outil (SBCL, CCL, LISP, CLAUTOLISP, ALFE, PYTHON, EMACS,
+PANDOC) **et de $(MAKE)**, qui est la cause réelle du rapport d'origine
+(`C:/Program Files/make-4.4.1-with-guile-w32/bin/make.exe`).
+
+    Makefile                     54    autolisp-test/Makefile       9
+    clautolisp/Makefile          16    autolisp-spec/Makefile       7
+    autolisp-front-end/Makefile  14    autolisp-benchmark/Makefile  5
+
+Les occurrences déjà protégées ont été laissées telles quelles : le
+correctif saute celles qui sont directement entre guillemets et celles
+qui se trouvent à l'intérieur d'une chaîne déjà ouverte (les
+diagnostics du type `looked for '$(SBCL)'`, que le ticket signalait
+comme déjà corrects).
+
+Les trois scripts nommés par le ticket — run-pathname-probe.sh,
+run-encoding-experiment.sh, verify-bricscad-automation.sh — se sont
+avérés DÉJÀ propres à la relecture : la seule interpolation non nue est
+dans une chaîne diagnostique déjà entre guillemets. Aucune modification.
+
+Preuve avant/après, avec un outil sous un chemin espacé
+(`/…/mes outils/sbcl`) :
+
+    avant :  HAVE_SBCL :=            <- vide
+    après :  HAVE_SBCL := yes
+
+C'est exactement le mode d'échec silencieux que le ticket décrivait pour
+`command -v` : pas d'erreur, une mauvaise réponse, et la build continue
+sur une fausse prémisse. Suite complète après correction : 6321 checks,
+0 échec.
+
+NON FAIT, délibérément : la « borne haute » de 268 interpolations. Le
+ticket la qualifie lui-même de « reading task, not a grep », et la
+majorité est inoffensive ($(MAKE) en position d'argument, listes de
+`for`, drapeaux numériques). Quoter PREFIX/DESTDIR au cas par cas
+demande de distinguer chemin et liste, ce qui mérite sa propre passe
+relue plutôt qu'une réécriture automatique de masse.

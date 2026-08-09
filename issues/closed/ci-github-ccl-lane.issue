@@ -1,3 +1,11 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: ci-github-ccl-lane — extend the GitHub Actions workflow with a CCL job
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+
 ci-github-ccl-lane — extend the GitHub Actions workflow with a CCL job
 ======================================================================
 
@@ -157,3 +165,28 @@ The Clozure release tarball naming has been stable across recent
 versions (v1.12, v1.13), so a CCL_VERSION env var with a
 sensible default is enough. When CCL 1.14 drops, bump the
 default and invalidate the cache key — usually a one-line PR.
+
+
+RESOLVED — verified 2026-08-10 (already shipped, never closed)
+==============================================================
+
+Checked against .github/workflows/ci.yml on master; every acceptance
+criterion is met, so this issue was done and simply not moved:
+
+  - `ccl-test` job exists ("CCL — clautolisp + alfe suites"), parallel to
+    `sbcl-test`, running the three CCL lanes GitLab runs:
+    make -C clautolisp test-ccl, run-file-compat-ccl (json report), and
+    make -C autolisp-front-end test-ccl.
+  - Triggers match: push to master / alfe-development, tags '*', and
+    pull_request against master.
+  - The CCL install is the composite action .github/actions/setup-lisp
+    with `ccl: "true"` — the Dockerfile recipe the Notes recommended
+    (clone + overlay the release tarball + wrap lx86cl64 as `ccl`),
+    with CCL_VERSION as an input, exactly as suggested.
+  - The preamble comment names the lane ("the SBCL + CCL FiveAM suites").
+  - The change was purely additive to GitHub.
+
+Not re-verified here: the "under 10 minutes from a warm cache" timing and
+the deliberate CCL-only-regression drill. Both are observations about a
+live runner rather than repository state; the lane's existence and wiring
+are what this issue tracked.
