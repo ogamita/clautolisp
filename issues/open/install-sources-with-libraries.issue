@@ -1,0 +1,63 @@
+make install : installer aussi les sources CL (avec install-libraries)
+=======================================================================
+
+Résumé
+------
+
+`make install` (racine et clautolisp/) n'installe ni les sources Common
+Lisp ni les bibliothèques natives :
+
+- les sources CL (`share/common-lisp/source/clautolisp/`) ne sont
+  produites que par `release-libraries` (staging du tarball
+  `clautolisp-<ver>-libraries-<os>-<arch>.tar.bz2`) — aucune cible
+  `install-sources` n'existe ;
+- `install-libraries` (libredwg + shim CFFI vers
+  `lib/clautolisp/<os>/<arch>/`) est une phase séparée, non incluse
+  dans `install`.
+
+Une « installation système complète » ne s'obtient donc aujourd'hui
+qu'en dépaquetant un tarball release dans le PREFIX, pas par
+`make install` depuis un checkout.
+
+Motivation
+----------
+
+Les consommateurs externes requièrent désormais une installation
+système complète de clautolisp au lieu d'un sous-module. Exemple :
+dwg-identifier (outils-autolisp) construit son exécutable contre les
+sources installées — le chargeur CFFI de drawing-dwg
+(drawing-dwg/source/bindings.lisp) dérive
+`<PREFIX>/lib/clautolisp/<os>/<arch>/` du répertoire source installé
+`<PREFIX>/share/common-lisp/source/clautolisp/`, donc le binaire ne
+dépend plus d'aucun checkout. Il faut que `make install` produise ce
+layout complet.
+
+Attendu
+-------
+
+1. Une cible `install-sources` dans clautolisp/Makefile (et son relais
+   racine), reprenant le staging de `release-libraries` :
+
+     - `git ls-files '*.lisp' '*.asd'` (dans clautolisp/) copiés sous
+       `$(DESTDIR)$(PREFIX)/share/common-lisp/source/clautolisp/` ;
+     - lien `share/common-lisp/systems/clautolisp.asd`
+       → `../source/clautolisp/clautolisp.asd`.
+
+2. `install` inclut `install-sources` ET `install-libraries`, pour
+   qu'un simple `make install` donne une installation complète
+   (programmes + docs + sources + bibliothèques natives), identique au
+   contenu des tarballs release.
+
+3. `uninstall` retire aussi `share/common-lisp/source/clautolisp/`,
+   le lien `systems/clautolisp.asd` et `lib/clautolisp/`.
+
+Notes
+-----
+
+- `install-libraries` doit rester invocable seule (CI, packaging), de
+  même qu'`install-sources`.
+- Attention aux droits : l'arbre installé est typiquement root
+  (/opt/local) ; les consommateurs doivent l'enregistrer via
+  `asdf:*central-registry*` et non via les local-projects de quicklisp
+  (dont l'indexeur écrit un system-index.txt dans le répertoire
+  enregistré).
