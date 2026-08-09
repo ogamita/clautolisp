@@ -99,6 +99,21 @@ From the DEScoder GUI help (no web documentation exists):
 - Without usable arguments DEScoder opens its GUI and waits
   (observed): automation must bound the process.
 
+** DES namespace semantics -- VERIFIED (probe, BricsCAD V25, 2026-08-09)
+Loading a =DESCoder -namespace= .des (whose source vl-doc-exports
+one function and defines another without exporting it):
+- the non-exported function is INVISIBLE (its symbol evaluates to
+  nil in the document namespace);
+- the vl-doc-export'ed function is callable (SUBR);
+- (vl-list-loaded-vlx) reports the module under the FILE BASE NAME
+  ("v8ns" for v8ns.des);
+- (vl-list-exported-functions nil) lists the exported name.
+A .des encoded WITHOUT -namespace defines everything globally.
+I.e. the AutoCAD separate-namespace VLX semantics, exactly.
+Also observed: -keep leaves staged intermediates next to the source
+(name.lsp.x.lsp, name.lsp.0.lsp, name.lsp.1.lsp) before the .des.
+(alpm CI job verify:descoder:windows, job 15795237203.)
+
 ** VLX NameSpace compatibility (Bricsys DevRef)
 DES data format and options storage are backward+forward
 compatible; a namespace-ENABLED .des on pre-V18.2 engines loads
