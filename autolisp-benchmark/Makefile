@@ -129,10 +129,10 @@ run-smoke: $(CLAUTOLISP_SBCL)
 # --- The standalone clautolisp executable --------------------------
 
 $(CLAUTOLISP_SBCL): $(CLAUTOLISP_SOURCES)
-	$(MAKE) -C $(CLAUTOLISP_ROOT) build-clautolisp-sbcl
+	"$(MAKE)" -C $(CLAUTOLISP_ROOT) build-clautolisp-sbcl
 
 $(CLAUTOLISP_CCL): $(CLAUTOLISP_SOURCES)
-	$(MAKE) -C $(CLAUTOLISP_ROOT) build-clautolisp-ccl
+	"$(MAKE)" -C $(CLAUTOLISP_ROOT) build-clautolisp-ccl
 
 build-clautolisp-sbcl: $(CLAUTOLISP_SBCL)
 build-clautolisp-ccl:  $(CLAUTOLISP_CCL)
@@ -249,7 +249,7 @@ endif
 # the source path) and delete the intermediate .tex so the source tree stays clean.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@mkdir -p $(@D)
-	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" $(EMACS) --batch \
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" "$(EMACS)" --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
@@ -270,8 +270,8 @@ INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
 INSTALL_INFO        ?= install-info
 
 install: build  ## Install harness + benchmarks + docs into $$PREFIX (build first; sudo-friendly).
-	$(MAKE) install-programs
-	$(MAKE) install-documentation
+	"$(MAKE)" install-programs
+	"$(MAKE)" install-documentation
 
 install-programs:  ## Install just the autolisp-benchmark harness + benchmarks (no docs).
 	install -d $(LIBEXEC_INSTALL_DIR)/harness

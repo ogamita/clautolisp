@@ -215,6 +215,64 @@ test:alfe:spec-coverage:
   script:
     - make -C autolisp-front-end check-spec-coverage
 
+# --- SCHMS CAD corpus, headless on poseidon --------------------------------
+#
+# The SCHMS+ suite (`make test-cad-clautolisp`) is the end-to-end consumer
+# that keeps surfacing gaps in the vlax / VLA surface — vla-accessor-family
+# and vla-entity-property-bridge were both driven by its failures, and the
+# latter's remaining item is literally "re-run SCHMS to confirm what it
+# consumes". It runs against `--host cador`, i.e. the headless CAD core, so
+# unlike every other CAD lane it needs NO AutoCAD, NO BricsCAD and no native
+# runner: poseidon [linux, amd64, docker] is the right home for it.
+#
+# INERT UNTIL PROVISIONED. SCHMS is a private client corpus
+# (sncf-reseau/src/schms), not a submodule and not public, so this job
+# cannot clone it without credentials. The first rule makes the job simply
+# not exist until pjb defines SCHMS_REPO_URL, exactly like
+# BRICSCAD_PROFILE_CLEAN gates the sysvar harvest and RUNNER_STATUS_TOKEN
+# gates the runner probe — never a false red, never a stuck-pending job.
+#
+# pjb must provide, as masked CI/CD variables:
+#   SCHMS_REPO_URL    clone URL for the SCHMS corpus, credentials included
+#                     (e.g. https://gitlab-ci-token:<PAT>@host/group/schms.git)
+#   SCHMS_REF         optional; branch/tag to test (default: the repo default)
+#
+# Non-gating on purpose (allow_failure): SCHMS is an external corpus whose
+# own churn must never redden a clautolisp pipeline. Its value is the
+# report, and the artifact is the report.
+test:cad:schms:linux:
+  stage: test
+  tags: [linux, amd64, docker]
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    SCHMS_DIR: "$CI_PROJECT_DIR/../schms"
+  rules:
+    # No credentials configured => the job does not exist at all.
+    - if: '$SCHMS_REPO_URL == null || $SCHMS_REPO_URL == ""'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  script:
+    # Install clautolisp where the corpus expects to find it on PATH. The
+    # programs phase only (install-documentation needs the TeX/Emacs
+    # toolchain this image does not carry, and SCHMS needs none of it).
+    - make install-programs PREFIX="$CI_PROJECT_DIR/stage"
+    - export PATH="$CI_PROJECT_DIR/stage/bin:$PATH"
+    - clautolisp --version
+    - rm -rf "$SCHMS_DIR"
+    - git clone --depth 1 ${SCHMS_REF:+--branch "$SCHMS_REF"} "$SCHMS_REPO_URL" "$SCHMS_DIR"
+    # The corpus drives clautolisp itself; host=cador is the headless CAD
+    # core, which is what makes this runnable off a CAD runner at all.
+    - make -C "$SCHMS_DIR" test-cad-clautolisp 2>&1 | tee schms-report.txt
+  artifacts:
+    name: "schms-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [schms-report.txt]
+    expire_in: 30 days
+
 # Mirror of the GitHub `alfe-binary` job: build alfe-sbcl, assert
 # its --version matches the source-declared version, smoke-test the
 # headline `--clautolisp -x '(princ (+ 1 2))'` invocation, and

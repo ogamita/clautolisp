@@ -120,44 +120,44 @@ all: build  ## Default target: build programs + libraries (NOT docs). Documentat
 
 
 autolisp-spec:  ## Build the autolisp-spec subproject (delegates to its Makefile).
-	$(MAKE) -C autolisp-spec all
+	"$(MAKE)" -C autolisp-spec all
 
 clautolisp:  ## Build the clautolisp subproject — runtime, executables, GUI driver, docs.
-	$(MAKE) -C clautolisp all
+	"$(MAKE)" -C clautolisp all
 
 autolisp-test:  ## Build the autolisp-test conformance harness subproject.
-	$(MAKE) -C autolisp-test all
+	"$(MAKE)" -C autolisp-test all
 
 autolisp-front-end:  ## Build the autolisp-front-end (alfe) subproject — unified CLI front-end for clautolisp + CAD-resident REPLs.
-	$(MAKE) -C autolisp-front-end all
+	"$(MAKE)" -C autolisp-front-end all
 
 autolisp-benchmark:  ## Build the autolisp-benchmark subproject (AutoLISP performance suite; docs only — the suite is loaded into an engine).
-	$(MAKE) -C autolisp-benchmark all
+	"$(MAKE)" -C autolisp-benchmark all
 
 documentation:  ## Rebuild every subproject's PDF documentation (org → LaTeX → PDF) + the top-level diagrams (dot → svg/png).
-	$(MAKE) -C autolisp-spec documentation
-	$(MAKE) -C clautolisp documentation
-	$(MAKE) -C autolisp-test documentation
-	$(MAKE) -C autolisp-front-end documentation
-	$(MAKE) -C autolisp-benchmark documentation
-	$(MAKE) -C documentation diagrams
-	$(MAKE) -C documentation documentation
+	"$(MAKE)" -C autolisp-spec documentation
+	"$(MAKE)" -C clautolisp documentation
+	"$(MAKE)" -C autolisp-test documentation
+	"$(MAKE)" -C autolisp-front-end documentation
+	"$(MAKE)" -C autolisp-benchmark documentation
+	"$(MAKE)" -C documentation diagrams
+	"$(MAKE)" -C documentation documentation
 
 build: build-programs build-libraries  ## Build the program binaries + native libraries (NO docs). `make stage` goes one step further and lays them out ready to install. Documentation is a separate phase: `make build-documentation`.
 
 build-sbcl:  ## Strictly build SBCL images across subprojects (errors if sbcl is missing).
-	$(MAKE) -C clautolisp         build-sbcl
-	$(MAKE) -C autolisp-front-end build-sbcl
+	"$(MAKE)" -C clautolisp         build-sbcl
+	"$(MAKE)" -C autolisp-front-end build-sbcl
 
 build-ccl:  ## Strictly build CCL images across subprojects (errors if ccl is missing).
-	$(MAKE) -C clautolisp         build-ccl
-	$(MAKE) -C autolisp-front-end build-ccl
+	"$(MAKE)" -C clautolisp         build-ccl
+	"$(MAKE)" -C autolisp-front-end build-ccl
 
 test:  ## Run the clautolisp test suite plus the autolisp-test conformance corpus.
-	$(MAKE) -C clautolisp test
-	$(MAKE) -C autolisp-test test
-	$(MAKE) -C autolisp-front-end test
-	$(MAKE) -C autolisp-benchmark test
+	"$(MAKE)" -C clautolisp test
+	"$(MAKE)" -C autolisp-test test
+	"$(MAKE)" -C autolisp-front-end test
+	"$(MAKE)" -C autolisp-benchmark test
 
 # --- CAD ground-truth probes (see probes/README.org) -------------------
 #
@@ -171,9 +171,9 @@ test:  ## Run the clautolisp test suite plus the autolisp-test conformance corpu
 # to skip the auto-commit.
 
 probe:  ## Run CAD ground-truth probes on this host (auto-detect AutoCAD/BricsCAD, else clautolisp) and commit results under probe-results/.
-	@if   bash probes/scripts/detect-cad.sh autocad  >/dev/null 2>&1; then $(MAKE) probe-autocad; \
-	 elif bash probes/scripts/detect-cad.sh bricscad >/dev/null 2>&1; then $(MAKE) probe-bricscad; \
-	 else echo "make probe: no AutoCAD/BricsCAD detected — running the clautolisp baseline."; $(MAKE) probe-clautolisp; fi
+	@if   bash probes/scripts/detect-cad.sh autocad  >/dev/null 2>&1; then "$(MAKE)" probe-autocad; \
+	 elif bash probes/scripts/detect-cad.sh bricscad >/dev/null 2>&1; then "$(MAKE)" probe-bricscad; \
+	 else echo "make probe: no AutoCAD/BricsCAD detected — running the clautolisp baseline."; "$(MAKE)" probe-clautolisp; fi
 
 probe-autocad:  ## Probe AutoCAD (accoreconsole/acad; override AUTOCAD_ACCORECONSOLE / AUTOCAD_EXE / AUTOCAD_RUNNER).
 	bash probes/scripts/run-probes.sh autocad
@@ -187,17 +187,17 @@ probe-clautolisp:  ## Probe the bundled clautolisp binary (headless baseline col
 # --- Build phases, split by artefact kind ------------------------------
 
 build-documentation:  ## Build all PDF docs + the autolisp-spec paged split (HTML/info/pages — the slow part).
-	$(MAKE) documentation
-	$(MAKE) -C autolisp-spec paged
+	"$(MAKE)" documentation
+	"$(MAKE)" -C autolisp-spec paged
 
 build-programs:  ## Build the host program binaries (clautolisp, alfe, …) for each Lisp in RELEASE_LISPS (default sbcl; x86-64 release sets "sbcl ccl").
-	@for l in $(RELEASE_LISPS); do $(MAKE) build-$$l || exit $$?; done
+	@for l in $(RELEASE_LISPS); do "$(MAKE)" build-$$l || exit $$?; done
 
 submodules:  ## Check out the git submodules (the vendored libredwg used by the DWG codec). Idempotent; runs automatically as part of build-libraries so a fresh clone builds directly.
 	git submodule update --init --recursive
 
 build-libraries:  ## Build the releasable libraries (the drawing/drawing-dwg native libdwg). Checks out the libredwg submodule first if needed.
-	$(MAKE) -C clautolisp build-libredwg
+	"$(MAKE)" -C clautolisp build-libredwg
 
 # --- Release packaging -------------------------------------------------
 #
@@ -280,7 +280,7 @@ release-programs: build-programs  ## Build programs and package this host's per-
 # invoked as a sub-make rather than a prerequisite so the override reaches
 # it -- command-line variables propagate through MAKEFLAGS.
 release-libraries:  ## Package this host's per-target libraries artefact (ASDF systems + native libdwg + header) from the same $(STAGE)/libraries tree install-libraries installs. CI unions the targets into clautolisp-<ver>-libraries.tar.bz2.
-	$(MAKE) stage-libraries REQUIRE_NATIVE_LIBRARIES=1
+	"$(MAKE)" stage-libraries REQUIRE_NATIVE_LIBRARIES=1
 	@mkdir -p "$(DIST)"
 	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
 	tar -C "$(STAGE_LIBRARIES)" -cjf "$(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2" .; \
@@ -327,16 +327,16 @@ collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the c
 
 clean:: clean-pdf
 clean-pdf:  ## Remove every generated PDF across subprojects (keeps .org sources).
-	$(MAKE) -C autolisp-spec clean-pdf
-	$(MAKE) -C clautolisp clean-pdf
-	$(MAKE) -C autolisp-test clean-pdf
-	$(MAKE) -C autolisp-front-end clean-pdf
-	$(MAKE) -C autolisp-benchmark clean-pdf
-	$(MAKE) -C documentation clean-pdf
+	"$(MAKE)" -C autolisp-spec clean-pdf
+	"$(MAKE)" -C clautolisp clean-pdf
+	"$(MAKE)" -C autolisp-test clean-pdf
+	"$(MAKE)" -C autolisp-front-end clean-pdf
+	"$(MAKE)" -C autolisp-benchmark clean-pdf
+	"$(MAKE)" -C documentation clean-pdf
 
 clean:: clean-diagrams
 clean-diagrams:  ## Remove the rendered top-level diagrams (keeps the .dot sources).
-	$(MAKE) -C documentation clean
+	"$(MAKE)" -C documentation clean
 
 clean:: clean-backups
 clean-backups:
@@ -440,29 +440,29 @@ stage: stage-programs stage-libraries stage-documentation  ## Build + stage ever
 stage-programs: build-programs  ## Build the programs and stage them (bin/, libexec/, the harnesses and the alref libs) under $(STAGE)/programs.
 	rm -rf "$(STAGE_PROGRAMS)"
 	install -d "$(STAGE_PROGRAMS)"
-	$(MAKE) -C autolisp-spec      install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
-	$(MAKE) -C clautolisp         install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
-	$(MAKE) -C autolisp-test      install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
-	$(MAKE) -C autolisp-front-end install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
-	$(MAKE) -C autolisp-benchmark install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
+	"$(MAKE)" -C autolisp-spec      install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
+	"$(MAKE)" -C clautolisp         install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
+	"$(MAKE)" -C autolisp-test      install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
+	"$(MAKE)" -C autolisp-front-end install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
+	"$(MAKE)" -C autolisp-benchmark install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
 	@$(call stage-manifest,$(STAGE_PROGRAMS),programs)
 	@echo "staged: $(STAGE_PROGRAMS)"
 
 stage-libraries: build-libraries  ## Build the native libraries and stage them with the ASDF systems + header under $(STAGE)/libraries.
 	rm -rf "$(STAGE_LIBRARIES)"
 	install -d "$(STAGE_LIBRARIES)"
-	$(MAKE) -C clautolisp         install-libraries PREFIX= DESTDIR=$(STAGE_LIBRARIES) $(LISP_VARS)
+	"$(MAKE)" -C clautolisp         install-libraries PREFIX= DESTDIR=$(STAGE_LIBRARIES) $(LISP_VARS)
 	@$(call stage-manifest,$(STAGE_LIBRARIES),libraries)
 	@echo "staged: $(STAGE_LIBRARIES)"
 
 stage-documentation: build-documentation  ## Render the documentation and stage it (share/doc, share/info, share/man, the spec's HTML/pages) under $(STAGE)/documentation.
 	rm -rf "$(STAGE_DOCUMENTATION)"
 	install -d "$(STAGE_DOCUMENTATION)"
-	$(MAKE) -C autolisp-spec      install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
-	$(MAKE) -C clautolisp         install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
-	$(MAKE) -C autolisp-test      install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
-	$(MAKE) -C autolisp-front-end install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
-	$(MAKE) -C autolisp-benchmark install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
+	"$(MAKE)" -C autolisp-spec      install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
+	"$(MAKE)" -C clautolisp         install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
+	"$(MAKE)" -C autolisp-test      install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
+	"$(MAKE)" -C autolisp-front-end install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
+	"$(MAKE)" -C autolisp-benchmark install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
 	@$(call stage-manifest,$(STAGE_DOCUMENTATION),documentation)
 	@echo "staged: $(STAGE_DOCUMENTATION)"
 
@@ -504,11 +504,11 @@ clean-stage:  ## Remove the install staging area ($(STAGE)).
 	rm -rf "$(STAGE)"
 
 uninstall:  ## Remove every subproject's install from $$PREFIX.
-	$(MAKE) -C autolisp-spec      uninstall $(INSTALL_VARS)
-	$(MAKE) -C clautolisp         uninstall $(INSTALL_VARS)
-	$(MAKE) -C autolisp-test      uninstall $(INSTALL_VARS)
-	$(MAKE) -C autolisp-front-end uninstall $(INSTALL_VARS)
-	$(MAKE) -C autolisp-benchmark uninstall $(INSTALL_VARS)
+	"$(MAKE)" -C autolisp-spec      uninstall $(INSTALL_VARS)
+	"$(MAKE)" -C clautolisp         uninstall $(INSTALL_VARS)
+	"$(MAKE)" -C autolisp-test      uninstall $(INSTALL_VARS)
+	"$(MAKE)" -C autolisp-front-end uninstall $(INSTALL_VARS)
+	"$(MAKE)" -C autolisp-benchmark uninstall $(INSTALL_VARS)
 
 # ---------------------------------------------------------------------
 # Forwarded fine-grained test targets (see issues/closed/test-targets.issue).
@@ -561,7 +561,7 @@ ALFE_FORWARDED := \
 # $(MAKE) call.
 define forward-target-to
 $(1):
-	$$(MAKE) -C $(2) $$@
+	$"$(MAKE)" -C $(2) $$@
 endef
 
 $(foreach t,$(AUTOLISP_TEST_FORWARDED), \
@@ -602,14 +602,14 @@ SAVE_SYSVARS_DIALECTS ?= strict autocad bricscad clautolisp lax
 
 save-sysvars: ## Dumps the sysvars of various implementations and configuration in sysvars-*.txt files.
 	for backend in $(SAVE_SYSVARS_BACKENDS) ; do \
-		$(ALFE) --$$backend --dialect=$$backend --mode batch \
+		"$(ALFE)" --$$backend --dialect=$$backend --mode batch \
 			-Esource Windows-1252 \
 			-norc \
 			-l autolisp-spec/autolisp/dump-sysvars.lsp \
 			-x "(dump-sysvars \"sysvars-alfe-$$(uname)-$${backend}.txt\")"  || true ;\
 	done
 	for dialect in $(SAVE_SYSVARS_DIALECTS) ; do \
-		$(CLAUTOLISP) --dialect $$dialect \
+		"$(CLAUTOLISP)" --dialect $$dialect \
 			-norc \
 			-l autolisp-spec/autolisp/dump-sysvars.lsp \
 			-x "(dump-sysvars \"sysvars-clautolisp-$$(uname)-$${dialect}.txt\")"  || true ;\
