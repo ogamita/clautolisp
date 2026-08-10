@@ -80,6 +80,82 @@ Note that the *diagnostics* around those lines already quote correctly:
 so the fix is to extend to the invocations the care already taken in the
 messages.
 
+RÉOUVERTE — une seconde forme survit au correctif
+--------------------------------------------------
+
+Le correctif de quotage a bien été livré (clautolisp 1.8.27, « quote tool
+paths ») : les six Makefile sont traités, `"$(SBCL)"`, `"$(MAKE)"` et
+`command -v "$(SBCL)"` sont désormais protégés. Ce volet est clos.
+
+Mais le build Windows de SCHMS+ échoue toujours, sur une **seconde forme
+du même défaut, qui survit à un quotage shell correct** :
+
+    $ make build-libraries
+    CMake Error at CMakeLists.txt:2 (project):
+      The CMAKE_C_COMPILER:
+
+        C
+
+      is not a full path and was not found in the PATH.
+
+`C` est `C:/msys64/ucrt64/bin/gcc` tronqué au premier deux-points. Le
+site est `clautolisp/drawing-dwg/build-libredwg.sh:115`, inchangé :
+
+    compiler_path="$(command -v "$compiler" 2>/dev/null || true)"
+    ...
+    cmake -S "$lr" -B "$build" \
+          -DCMAKE_C_COMPILER="$compiler_path" \
+
+Les guillemets shell sont présents et corrects. Ce qui découpe la valeur,
+c'est **CMake**, pour qui `:` est le séparateur de liste dans un argument
+`-D`. Aucun quotage shell n'atteint cela.
+
+Deux correctifs, l'un ou l'autre :
+
+- typer la valeur, pour que CMake cesse d'y voir une liste :
+  `-DCMAKE_C_COMPILER:FILEPATH="$compiler_path"` ;
+- ou lui donner un chemin sans lettre de lecteur,
+  `cygpath -u "$compiler_path"` — le script calcule et affiche déjà cette
+  forme comme « compiler runtime directory » (`/c/msys64/ucrt64/bin`),
+  elle ne coûte rien.
+
+La règle générale énoncée plus haut gagne donc un corollaire : protéger
+un chemin du SHELL ne suffit pas, il doit aussi survivre à ce que l'outil
+destinataire en fait. Les deux-points dans un `-D` de CMake, les
+points-virgules de ses listes, les virgules de certaines expressions de
+générateur découpent toutes des valeurs que le shell avait livrées
+intactes.
+
+Voir aussi `compiler_target` quelques lignes plus bas : il vient de
+`"$compiler_path" -dumpmachine`, donc il hérite du même chemin et de la
+même exposition.
+
+Contrairement au cas `$(MAKE)`, celui-ci n'a **aucun contournement côté
+appelant** : le deux-points naît à l'intérieur du script, entre le `CC`
+que l'appelant pose et l'appel à `cmake`.
+
+Chemin parcouru pour y arriver
+------------------------------
+
+Consigné parce qu'il a coûté plusieurs itérations, et que deux détails
+du script y ont contribué.
+
+Le build échouait d'abord sur « the native MSYS2 MINGW64 compiler is not
+installed » — message qui nomme ce que le script *cherche*, non ce qui
+est installé. La machine a UCRT64, pas MINGW64 : `command -v gcc` y
+répond `/ucrt64/bin/gcc`. Poser `MSYSTEM=MINGW64` ne changeait rien, le
+script ne lisant pas cette variable : il teste `-x /mingw64/bin/gcc` puis
+se rabat sur `$CC` (ligne 39). C'est en posant `CC=/ucrt64/bin/gcc` que
+la troncature CMake est apparue.
+
+D'où deux suggestions annexes, peu coûteuses :
+
+- que la branche MINGW64 considère les sous-systèmes frères (UCRT64,
+  CLANG64) plutôt que le seul `/mingw64/bin/gcc`, ou qu'elle dise
+  lesquels ont été essayés ;
+- que le message nomme ce qui est présent, et pas seulement ce qui
+  manque.
+
 Extent
 ------
 
