@@ -1,3 +1,12 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: navi-double-quit — NAVI's quit command should also quit ALDO
+#+STATUS: DRAFT
+#+TYPE: bug
+#+DEPENDS: -
+
+DRAFT: still needs work — capture the exact reproduction steps and
+decide the intended quit semantics (one q = leave NAVI and ALDO, or
+distinct commands).
 
 DBG> Error at <toplevel> line 1 col 1 — AutoLISP builtin CLAL-SEDIT signaled an error: The file
                                                #P"/Users/pjb/src/ogamita/clautolisp/\"~/src/public/autolisp/fact.lsp\""

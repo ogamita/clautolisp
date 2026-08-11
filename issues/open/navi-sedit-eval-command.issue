@@ -1,2 +1,12 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: navi-sedit-eval-command — eval-the-selection command in navi and sedit
+#+STATUS: DRAFT
+#+TYPE: enhancement
+#+DEPENDS: -
+
+DRAFT: still needs work — specify the command (key binding, what
+"selection" means in navi vs sedit, where the result is printed,
+error handling).
+
 I would want an eval-the-selection command in navi and sedit.
 
