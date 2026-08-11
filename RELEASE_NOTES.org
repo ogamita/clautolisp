@@ -252,6 +252,17 @@ separate binary for tool integrators.
   the editor =SEDIT>= — is evaluated and its result printed, like the REPL.
 - =,settings NAME= now reports an error for an unknown setting name instead of
   printing a bogus value.
+- The Lisp REPL has its own persistent configuration, and configurations stack
+  the way interactors do: =,set= lists the REPL's settings (marking which are
+  still at their built-in default), =,set NAME VALUE= changes one, and
+  =,write-settings= writes =$XDG_CONFIG_HOME/clautolisp/lisp.conf=. Its first
+  setting is ~sedit-on-quit~, governing ~(clal-sedit …)~ from the REPL while
+  aldo's setting of the same name governs debugger-side invocations. At the
+  REPL only =lisp.conf= is active; inside the debugger both are, aldo over lisp
+  — so a setting you put only in =lisp.conf= is honoured at =DBG>= too. Writes
+  always go to the active interactor's own file. Both files now record only
+  what you explicitly set, so they read as a diff against the defaults. See §
+  /Settings and configuration/.
 - The public =*clal-*= extension variables (=*clal-clipboard*=,
   =*clal-sedit-initial-form*= / =*clal-sedit-last-result*=, the =*clal-form*= /
   =*clal-result*= / =*clal-source-form*= eval-history trio and their =-1= / =-2=

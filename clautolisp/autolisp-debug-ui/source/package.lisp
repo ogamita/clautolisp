@@ -102,6 +102,14 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    ;; settings / configuration (command reference §8)
    #:*aldo-configuration* #:*default-aldo-configuration* #:*setting-specs*
    #:reset-aldo-configuration
+   ;; LISP (REPL) interactor configuration + the stacked lookup
+   ;; (lisp-configuration.issue)
+   #:*lisp-configuration* #:*default-lisp-configuration* #:*lisp-setting-specs*
+   #:reset-lisp-configuration
+   #:config-explicit #:lisp-setting #:debugger-setting
+   #:set-lisp-setting #:get-lisp-setting #:lisp-settings-lines
+   #:lisp-config-save-path #:lisp-config-load-path
+   #:save-lisp-configuration #:load-lisp-configuration
    #:config-get #:config-set #:config-keys #:normalize-config-key
    #:set-aldo-setting #:get-aldo-setting #:setting-spec #:parse-setting-value
    #:aldo-settings-lines #:format-setting-value #:aldo-decoration-glyph

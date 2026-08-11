@@ -70,16 +70,69 @@ types and the :DECORATIONS sub-list for the theme glyphs.")
 parsing and validation. :DECORATIONS is structural (edited as data, not via
 `set'), so it is not listed here.")
 
+;;; --------------------------------------------------------------------------
+;;; The LISP (REPL) interactor's own settings — lisp-configuration.issue
+;;;
+;;; pjb's point-6 answer in interactor-design-revision.issue: the REPL
+;;; interactor needs its own persistent configuration, and configurations
+;;; STACK the way interactors do — at the REPL only lisp.conf is active; in
+;;; the debugger both are, aldo OVER lisp, so a setting absent from aldo.conf
+;;; but present in lisp.conf is taken from lisp.conf.
+
+(defparameter *default-lisp-configuration*
+  '((:sedit-on-quit . :ask))
+  "Built-in defaults for the LISP (REPL) interactor. Its first setting is
+:SEDIT-ON-QUIT — the same key aldo carries, governing (clal-sedit …)
+invocations made from the REPL while aldo's governs debugger-side ones.")
+
+(defparameter *lisp-setting-specs*
+  '((:sedit-on-quit :enum (:auto-save :do-not-save :ask)))
+  "(KEY TYPE [ALLOWED]) for the LISP interactor's settings; same shape as
+*SETTING-SPECS*.")
+
+;;; --------------------------------------------------------------------------
+;;; Layers
+;;;
+;;; Each configuration variable holds ONLY the settings explicitly set — by
+;;; `set', or by loading a conf file. The built-in defaults are a third,
+;;; bottom layer consulted at lookup time.
+;;;
+;;; This is option (b) of lisp-configuration.issue, and it is what makes the
+;;; stacking work at all: the aldo-over-lisp fall-through needs "present in
+;;; aldo.conf" to be distinguishable from "aldo's built-in default". While the
+;;; store was SEEDED from the defaults (as it was before), every common key
+;;; always looked present on the aldo layer and the lisp layer could never be
+;;; reached from DBG>. Tracking explicitly-set keys in a set alongside the
+;;; alist — option (a) — would work too, but it keeps two structures in step
+;;; where one suffices.
+;;;
+;;; One visible consequence, and the reason this is worth stating: SAVE now
+;;; writes only what was explicitly set, so aldo.conf becomes a diff against
+;;; the defaults rather than a full dump. Reading an old full-dump conf still
+;;; works — every key in it simply counts as explicit.
+
 (defvar *aldo-configuration* nil
-  "The current aldo configuration (an alist like *DEFAULT-ALDO-CONFIGURATION*).
-Initialised from the defaults; updated by `set' / CONFIG-SET; (re)loaded from
-the XDG aldo.conf by LOAD-ALDO-CONFIGURATION; saved only on request.")
+  "The EXPLICIT aldo settings (an alist of (KEY . VALUE)) — NOT seeded from
+the defaults; see the Layers commentary above. Updated by `set' / CONFIG-SET;
+(re)loaded from the XDG aldo.conf by LOAD-ALDO-CONFIGURATION; saved only on
+request. Read it through CONFIG-GET / DEBUGGER-SETTING, which resolve the
+defaults, rather than by ASSOC.")
+
+(defvar *lisp-configuration* nil
+  "The EXPLICIT LISP (REPL) interactor settings; the counterpart of
+*ALDO-CONFIGURATION* for lisp.conf.")
 
 (defun reset-aldo-configuration ()
-  "Reset *ALDO-CONFIGURATION* to a fresh copy of the built-in defaults."
-  (setf *aldo-configuration* (copy-tree *default-aldo-configuration*)))
+  "Drop every explicitly-set aldo setting, leaving the built-in defaults in
+effect."
+  (setf *aldo-configuration* nil))
+
+(defun reset-lisp-configuration ()
+  "Drop every explicitly-set LISP-interactor setting."
+  (setf *lisp-configuration* nil))
 
 (reset-aldo-configuration)
+(reset-lisp-configuration)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Key / value normalisation (case-insensitive)
@@ -88,9 +141,53 @@ the XDG aldo.conf by LOAD-ALDO-CONFIGURATION; saved only on request.")
   "Normalise KEY (a string, symbol or keyword) to an upper-cased keyword."
   (intern (string-upcase (string key)) :keyword))
 
-(defun config-get (key &optional (config *aldo-configuration*))
-  "The value of KEY in CONFIG (case-insensitive), or NIL if absent."
-  (cdr (assoc (normalize-config-key key) config)))
+(defun config-explicit (key &optional (config *aldo-configuration*))
+  "(values VALUE PRESENTP) for KEY in CONFIG's EXPLICIT layer only — no
+default resolution. The predicate the stacking is built on."
+  (let ((cell (assoc (normalize-config-key key) config)))
+    (if cell (values (cdr cell) t) (values nil nil))))
+
+(defun config-get (key &optional (config *aldo-configuration*)
+                            (defaults *default-aldo-configuration*))
+  "The value of KEY (case-insensitive): CONFIG's explicit setting if it has
+one, else the built-in DEFAULTS, else NIL.
+
+Every reader should come through here rather than ASSOC the alist directly —
+since the store holds only explicit settings, a direct ASSOC now misses every
+value the user has not overridden."
+  (multiple-value-bind (value presentp) (config-explicit key config)
+    (if presentp
+        value
+        (cdr (assoc (normalize-config-key key) defaults)))))
+
+(defun %default-setting (key)
+  "KEY's built-in default: aldo's table, else the LISP interactor's."
+  (let ((k (normalize-config-key key)))
+    (let ((cell (or (assoc k *default-aldo-configuration*)
+                    (assoc k *default-lisp-configuration*))))
+      (and cell (cdr cell)))))
+
+(defun lisp-setting (key)
+  "Resolve KEY for the LISP (REPL) interactor: at the REPL only lisp.conf is
+active, so it is the explicit lisp setting, else the built-in default."
+  (multiple-value-bind (value presentp) (config-explicit key *lisp-configuration*)
+    (if presentp value (%default-setting key))))
+
+(defun debugger-setting (key)
+  "Resolve KEY inside the debugger: the ALDO layer over the LISP layer over
+the built-in defaults (lisp-configuration.issue). A key the user set in
+aldo.conf wins; a key they set only in lisp.conf is taken from there;
+otherwise the built-in default applies.
+
+The middle clause is the whole reason the layers hold only explicit settings:
+were the aldo layer still seeded from the defaults, it could never be
+reached."
+  (multiple-value-bind (value presentp) (config-explicit key *aldo-configuration*)
+    (if presentp
+        value
+        (multiple-value-bind (value presentp)
+            (config-explicit key *lisp-configuration*)
+          (if presentp value (%default-setting key))))))
 
 (defun config-set (key value &optional (config *aldo-configuration*))
   "Set KEY to VALUE in CONFIG (default *ALDO-CONFIGURATION*), creating the pair
@@ -111,8 +208,8 @@ place when CONFIG is it."
 ;;; ---------------------------------------------------------------------------
 ;;; The `set NAME VALUE' setter: parse + validate a textual value
 
-(defun setting-spec (key)
-  (assoc (normalize-config-key key) *setting-specs*))
+(defun setting-spec (key &optional (specs *setting-specs*))
+  (assoc (normalize-config-key key) specs))
 
 (defun parse-setting-value (type raw &optional allowed)
   "Parse the textual RAW value for a setting of TYPE (with ALLOWED for :ENUM).
@@ -151,8 +248,34 @@ setting or an invalid value."
         value))))
 
 (defun get-aldo-setting (name &optional (config *aldo-configuration*))
-  "The current value of setting NAME (case-insensitive)."
+  "The current value of setting NAME (case-insensitive) on the aldo layer,
+with the built-in default resolved. NOTE: this is the single-layer read. Code
+running inside the debugger should prefer DEBUGGER-SETTING, which also
+consults the LISP layer as lisp-configuration.issue specifies."
   (config-get name config))
+
+(defun set-lisp-setting (name value-string &optional (config *lisp-configuration*))
+  "`,set NAME VALUE' at the REPL: the LISP-interactor counterpart of
+SET-ALDO-SETTING. Writes go to the ACTIVE interactor's own configuration
+(lisp-configuration.issue), so this always writes the LISP layer, never
+aldo's — even for a key both define."
+  (let ((spec (setting-spec name *lisp-setting-specs*)))
+    (unless spec
+      (error "unknown setting ~S" (string-downcase (string name))))
+    (destructuring-bind (key type &optional allowed) spec
+      (let ((value (parse-setting-value type value-string allowed)))
+        (if (eq config *lisp-configuration*)
+            (let ((cell (assoc (normalize-config-key key) *lisp-configuration*)))
+              (if cell
+                  (setf (cdr cell) value)
+                  (push (cons (normalize-config-key key) value)
+                        *lisp-configuration*)))
+            (config-set key value config))
+        value))))
+
+(defun get-lisp-setting (name)
+  "The current value of LISP-interactor setting NAME, defaults resolved."
+  (lisp-setting name))
 
 (defun %decoration-glyph->string (spec)
   "Turn a decoration glyph SPEC — a literal string or a list of Unicode code
@@ -170,7 +293,11 @@ decoration table). PART is :open (the glyph, or the opening 【 for :selection) 
   (let* ((theme (or (config-get :theme config) :unicode))
          (variant (if (eq theme :ascii) :ascii :unicode))
          (entry (find-if (lambda (e) (and (eq (first e) name) (eq (second e) variant)))
-                         (cdr (assoc :decorations config))))
+                         ;; CONFIG-GET, not ASSOC: the store holds only
+                         ;; explicitly-set keys now, so a direct ASSOC would
+                         ;; find no decorations at all until the user had
+                         ;; overridden one — every glyph would come out blank.
+                         (config-get :decorations config)))
          (spec (if (eq part :close) (fourth entry) (third entry))))
     (and spec (%decoration-glyph->string spec))))
 
@@ -186,6 +313,21 @@ decoration table). PART is :open (the glyph, or the opening 【 for :selection) 
   (loop :for (key) :in *setting-specs*
         :collect (format nil "~(~A~) = ~A"
                          key (format-setting-value (config-get key config)))))
+
+(defun lisp-settings-lines ()
+  "A list of \"name = value [(default)]\" strings for the LISP interactor's
+settings, for the REPL's `,settings'. Marks which values are the user's and
+which are still the built-in default — the distinction the layered store now
+makes, and the one that tells you whether a setting will be shadowed inside
+the debugger."
+  (loop :for (key) :in *lisp-setting-specs*
+        :collect (multiple-value-bind (value presentp)
+                     (config-explicit key *lisp-configuration*)
+                   (format nil "~(~A~) = ~A~:[ (default)~;~]"
+                           key
+                           (format-setting-value (if presentp value
+                                                     (%default-setting key)))
+                           presentp))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; XDG path resolution (command reference §8 — Loading)
@@ -205,24 +347,31 @@ decoration table). PART is :open (the glyph, or the opening 【 for :selection) 
     (loop :for part :in (uiop:split-string v :separator ":")
           :when (plusp (length part)) :collect part)))
 
-(defun aldo-config-relative-path ()
-  (make-pathname :directory '(:relative "clautolisp") :name "aldo" :type "conf"))
+(defun config-relative-path (&optional (name "aldo"))
+  (make-pathname :directory '(:relative "clautolisp") :name name :type "conf"))
 
-(defun aldo-config-save-path ()
-  "Where SAVE writes: $XDG_CONFIG_HOME/clautolisp/aldo.conf."
-  (merge-pathnames (aldo-config-relative-path)
+(defun config-save-path (&optional (name "aldo"))
+  "Where SAVE writes: $XDG_CONFIG_HOME/clautolisp/NAME.conf."
+  (merge-pathnames (config-relative-path name)
                    (uiop:ensure-directory-pathname (xdg-config-home))))
 
-(defun aldo-config-load-path ()
+(defun config-load-path (&optional (name "aldo"))
   "Where LOAD reads from: the save path if it exists, else the first
-clautolisp/aldo.conf found along $XDG_CONFIG_DIRS; NIL if none."
-  (let ((home (aldo-config-save-path)))
+clautolisp/NAME.conf found along $XDG_CONFIG_DIRS; NIL if none."
+  (let ((home (config-save-path name)))
     (if (probe-file home)
         home
         (loop :for dir :in (xdg-config-dirs)
-              :for path := (merge-pathnames (aldo-config-relative-path)
+              :for path := (merge-pathnames (config-relative-path name)
                                             (uiop:ensure-directory-pathname dir))
               :when (probe-file path) :return path))))
+
+(defun aldo-config-relative-path () (config-relative-path "aldo"))
+(defun aldo-config-save-path () (config-save-path "aldo"))
+(defun aldo-config-load-path () (config-load-path "aldo"))
+
+(defun lisp-config-save-path () (config-save-path "lisp"))
+(defun lisp-config-load-path () (config-load-path "lisp"))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Sexp I/O — aldo.conf is an AutoLISP-friendly sexp of bare lower-case symbols
@@ -286,10 +435,34 @@ Creates the containing directory. Returns the path written."
 (defun load-aldo-configuration (&optional (path (aldo-config-load-path)))
   "Read the configuration from PATH (default: the first available XDG aldo.conf)
 into *ALDO-CONFIGURATION*. With no file, leaves the defaults in place. Returns
-the path read, or NIL if none."
+the path read, or NIL if none.
+
+Every key the file carries counts as explicitly set, so an aldo.conf written
+by an older clautolisp — a full dump of every setting — keeps behaving exactly
+as it did, shadowing the LISP layer for all of them."
   (when (and path (probe-file path))
     (with-open-file (in path :direction :input :external-format :utf-8)
       (let ((config (read-aldo-configuration in)))
         (when (consp config)
           (setf *aldo-configuration* config))))
+    path))
+
+(defun save-lisp-configuration (&optional (path (lisp-config-save-path)))
+  "Write *LISP-CONFIGURATION* to PATH (default $XDG_CONFIG_HOME/clautolisp/
+lisp.conf) as UTF-8. Returns the path written."
+  (ensure-directories-exist path)
+  (with-open-file (out path :direction :output :if-exists :supersede
+                            :if-does-not-exist :create
+                            :external-format :utf-8)
+    (write-aldo-configuration out *lisp-configuration*))
+  path)
+
+(defun load-lisp-configuration (&optional (path (lisp-config-load-path)))
+  "Read lisp.conf from PATH into *LISP-CONFIGURATION*. With no file, leaves
+the defaults in place. Returns the path read, or NIL if none."
+  (when (and path (probe-file path))
+    (with-open-file (in path :direction :input :external-format :utf-8)
+      (let ((config (read-aldo-configuration in)))
+        (when (consp config)
+          (setf *lisp-configuration* config))))
     path))

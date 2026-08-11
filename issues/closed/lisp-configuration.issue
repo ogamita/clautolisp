@@ -1,0 +1,124 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: a lisp-interactor configuration (lisp.conf), stacked under aldo.conf
+#+AUTHOR: Pascal J. Bourguignon
+#+DATE: 2026-07-22
+
+From pjb's point-6 answer in =interactor-design-revision.issue=: the
+LISP (REPL) interactor needs its own persistent configuration, and
+configurations STACK like the interactors do.
+
+* Design (pjb)
+
+- A lisp configuration file (lisp.conf), like aldo.conf; its first
+  setting is the same =sedit-on-quit auto-save|do-not-save|ask= —
+  governing =(clal-sedit …)= invocations from the REPL, while the aldo
+  setting of the same name governs debugger-side invocations.
+- Stacking: at the LISP interactor only lisp.conf is active; in the
+  debugger both aldo.conf AND lisp.conf are active, aldo over lisp — a
+  setting absent from aldo.conf but present in lisp.conf is taken from
+  lisp.conf (for common settings).
+- Writes go to the ACTIVE interactor's own configuration: =set
+  sedit-on-quit …= at the debugger modifies only the aldo
+  configuration (shadowing lisp's even when the key was not previously
+  present in aldo.conf); at the REPL it modifies lisp.conf.
+
+* Current state (1.4.48)
+
+- =sedit-on-quit= exists as an ALDO setting (default =ask=) and is
+  consulted by the NAV->SEDIT bridge; the REPL-side =(clal-sedit …)=
+  uses the built-in default (=ask=) — no lisp.conf yet, no REPL =,set=
+  command, no stacked lookup.
+
+* To do
+
+- A settings table + conf file for the LISP interactor (XDG path like
+  aldo's), with =sedit-on-quit= as its first key.
+- A REPL =,set NAME VALUE= / =,settings= command pair over it.
+- The stacked lookup (aldo over lisp) for common settings, and
+  write-to-the-active-layer semantics.
+- Route the CLAL-SEDIT builtin's :on-quit thunk through the stacked
+  lookup instead of the built-in default.
+
+* On hold (2026-07-23) — RESOLVED 2026-08-11
+
+Implementation question for pjb before this can be done right: the
+aldo-over-lisp fall-through needs "present in aldo.conf" to be
+distinguishable from "aldo built-in default" — but *ALDO-CONFIGURATION*
+is seeded from the defaults, so every common key always looks present
+on the aldo layer and the lisp layer would never be consulted at DBG>.
+Options: (a) track explicitly-set keys per layer (a set alongside the
+alist), (b) make the layers hold only EXPLICIT settings and resolve
+defaults at lookup time (defaults become a third, bottom layer).
+(b) matches the stacking model best. [pjb to confirm]
+
+** Decision taken: (b), the ticket's own recommendation
+
+Implemented under that assumption rather than blocking, since pjb had
+delegated the P3 pass and the ticket already named (b) as the better
+fit. Flagged here because it has ONE user-visible consequence worth a
+second opinion: a conf file now records only what was explicitly set,
+so it is a diff against the defaults rather than a full dump. Reading
+an old full-dump aldo.conf still behaves exactly as before — every key
+in it simply counts as explicit. If pjb prefers (a), the change is
+confined to CONFIG-EXPLICIT and the two resolvers.
+
+A survey done before committing to (b) showed the risk was smaller than
+the "on hold" note implied: the existing tests bind a defaults-seeded
+alist, which under (b) reads as "everything explicit", so they pass
+unchanged; and exactly one place in the tree read the store by ASSOC
+rather than through CONFIG-GET (the :DECORATIONS lookup), which would
+otherwise have gone blank.
+
+* DONE (clautolisp 1.8.29)
+
+All four "To do" items, plus the routing:
+
+- =clautolisp/autolisp-debug-ui/source/settings.lisp= — the layers now
+  hold only explicit settings; *DEFAULT-ALDO-CONFIGURATION* /
+  *DEFAULT-LISP-CONFIGURATION* are the bottom layer, resolved by
+  CONFIG-GET. New: *LISP-CONFIGURATION*, *LISP-SETTING-SPECS*
+  (=sedit-on-quit= as its first key), CONFIG-EXPLICIT (the predicate
+  the stacking rests on), LISP-SETTING, DEBUGGER-SETTING,
+  SET-LISP-SETTING, LISP-SETTINGS-LINES, and lisp.conf save/load on the
+  same XDG rules as aldo.conf.
+- REPL commands in =tools/clautolisp/source/main.lisp=: =,set= (bare:
+  list, marking which values are still defaults; NAME VALUE: assign)
+  and =,write-settings=.
+- Stacked lookup wired: the debugger's SEDIT bridge
+  (=autolisp-debug-ui-dumb/source/dumb-ui.lisp=) now calls
+  DEBUGGER-SETTING instead of GET-ALDO-SETTING, so a user who set
+  =sedit-on-quit= only at the REPL is no longer ignored there.
+- CLAL-SEDIT routed: SEDIT-ENTER's =:on-quit= now defaults to a new
+  =clautolisp.sedit:*default-on-quit-policy*= hook instead of a hard
+  =(constantly :ask)=; the tool installs the LISP-layer lookup at
+  start-up. A hook because the policy lives in CLAUTOLISP.DEBUG.UI,
+  which sits above the sedit system — the dependency cannot be direct.
+
+** Deviation from the requested command names
+
+The issue asked for a =,set NAME VALUE= / =,settings= pair. That pair is
+not representable: the interactor framework enforces a §0 naming rule
+that a command's key is its words' initials, and =set= and =settings=
+both yield =s=. Nor could =,save-settings= be spelled as two words —
+the long invocation is the words joined with SPACES, so it would have to
+be typed =,save settings=. Hence bare =,set= lists (the usual shell
+idiom) and persistence is =,write-settings=.
+
+** Verified
+
+Layer behaviour, on the built binary and in the suite: both layers empty
+-> the default; set only at the REPL -> the DEBUGGER picks it up (the
+case that was impossible before); aldo set too -> aldo wins at DBG> while
+the REPL keeps its own value; an aldo-only key (=pager-height=) still
+resolves at DBG>; dropping the aldo layer re-exposes the lisp one. Plus
+=,set= listing/assigning/rejecting bad values and unknown keys,
+=,write-settings= writing lisp.conf, and a new session reloading it.
+8 new FiveAM tests; SBCL 6369 / CCL 6372 checks, 0 failures.
+
+** Noted, not changed
+
+SAVE writes symbols pipe-escaped — =((|sedit-on-quit| . |auto-save|))= —
+rather than the "bare lower-case symbols" the file's own commentary
+promises. This is pre-existing WRITE-ALDO-CONFIGURATION behaviour (an
+aldo.conf saved before this work looks the same) and it round-trips
+correctly through READ-ALDO-CONFIGURATION, so it is left alone here.
