@@ -1,0 +1,55 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-bricscad-argv-template-ccl — BUILD-LAUNCH-ARGV drops the BricsCAD template path on CCL
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: portability
+#+DEPENDS: -
+#+BRANCH: -
+
+* Symptom
+
+The alfe FiveAM suite has one failing check under CCL and zero under
+SBCL, on =origin/master= (verified at 630ee59, independently of any
+work in flight):
+
+: BRICSCAD-WINDOWS-BATCH-ARGV-HAS-SINGLE-AUTOMATION-BEFORE-B
+:   (MEMBER "C:/t.dwt" ARGV :TEST #'STRING=) was NIL.
+
+* Repro
+
+: make -C autolisp-front-end test-ccl
+
+Green on =make -C autolisp-front-end test-sbcl=. The test is
+=autolisp-front-end/tests/backend-cad-tests.lisp:1159=; the argv comes
+from =%BRICSCAD-BATCH-ARGV= (same file, l.1147), which builds a
+=bricscad-backend= with =:template-path "C:/t.dwt"= and calls
+=ALFE.BACKEND.BRICSCAD:BUILD-LAUNCH-ARGV=.
+
+* Suspected cause — NOT yet confirmed
+
+Almost certainly a pathname difference, not an argv-assembly bug: CCL
+and SBCL do not agree on how to parse a Windows-drive namestring such
+as ="C:/t.dwt"= on a POSIX host — CCL is liable to read =C:= as a host
+component. If BUILD-LAUNCH-ARGV round-trips the template through
+PATHNAME/NAMESTRING anywhere, the string that comes back out on CCL is
+not the string that went in, and the MEMBER test fails.
+
+The first thing to check is therefore whether BUILD-LAUNCH-ARGV touches
+the template with anything pathname-ish at all; if it passes the string
+through untouched, this hypothesis is wrong and the cause is elsewhere.
+
+* Why it has been invisible
+
+=make -C autolisp-front-end test-ccl= exits 0 even though the suite
+reports a failure and CCL prints "Error: autolisp-front-end tests
+failed" — so neither the shell nor CI notices. That swallowed exit
+status is arguably the more serious half of this ticket: it means the
+alfe CCL lane cannot fail. Worth splitting out if the argv fix turns
+out to be trivial.
+
+* Notes
+
+Found while verifying that cp1252-codec-host-independent introduced no
+regression: the failure reproduces identically on a clean
+=origin/master= worktree, so it predates that work and is unrelated to
+encodings.

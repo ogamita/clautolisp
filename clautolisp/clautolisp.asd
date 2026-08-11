@@ -31,12 +31,18 @@
   :description "AutoLISP reader subsystem for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("uiop")
+  :depends-on ("uiop"
+               ;; Source of truth for the single-octet code-page tables
+               ;; the built-in codec falls back to when the host CL ships
+               ;; no codec of its own (cp1252-codec-host-independent).
+               "babel"
+               "trivial-gray-streams")
   :serial t
   :components
   ((:file "autolisp-reader/source/package")
    (:file "autolisp-reader/source/model")
    (:file "autolisp-reader/source/dialect")
+   (:file "autolisp-reader/source/external-format")
    (:file "autolisp-reader/source/input")
    (:file "autolisp-reader/source/tokenizer")
    (:file "autolisp-reader/source/parser")

@@ -105,7 +105,13 @@
    #:autolisp-dialect-autocad-2026
    #:autolisp-dialect-bricscad-v26
    #:autolisp-dialect-clautolisp
-   #:autolisp-dialect-lax))
+   #:autolisp-dialect-lax
+   ;; Host-independent external formats (cp1252-codec-host-independent).
+   #:open-with-external-format
+   #:external-format-available-p
+   #:external-format-base
+   #:host-external-format-supported-p
+   #:unencodable-character-error))
 
 (defpackage #:clautolisp.autolisp-reader.internal
   (:use #:cl)
@@ -160,4 +166,12 @@
    #:*autolisp-dialect-autocad-2026*
    #:*autolisp-dialect-bricscad-v26*
    #:*autolisp-dialect-clautolisp*
-   #:*autolisp-dialect-lax*))
+   #:*autolisp-dialect-lax*
+   ;; Host-independent external formats (cp1252-codec-host-independent).
+   #:open-with-external-format
+   #:external-format-available-p
+   #:external-format-base
+   #:external-format-newline
+   #:host-external-format-supported-p
+   #:single-octet-tables
+   #:unencodable-character-error))

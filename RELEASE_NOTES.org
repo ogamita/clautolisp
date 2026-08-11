@@ -206,6 +206,13 @@ separate binary for tool integrators.
   ~enc-lispsys-out-of-range~, ~enc-codepage-mismatch~,
   ~enc-unknown-codepage~, ~enc-host-dependent~. See § /Errors and
   Diagnostics / Encoding-dispatch diagnostics (enc-*)/.
+- The named code pages work the same on every host. Where the
+  underlying Common Lisp ships no codec — CCL has none for CP-1252,
+  CP-1250/51/53/54 or KOI8-R, so ~(open f "w" "CP-1252")~ used to
+  succeed on SBCL and signal on CCL — clautolisp supplies its own.
+  ~--list-encodings~ names them in a /Provided by clautolisp/ section
+  (absent on a host that needs no help). See § /Which encodings you
+  actually get/.
 
 ** clautolisp-only helpers (CLAL-* prefix)
 
