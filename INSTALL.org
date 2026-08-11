@@ -1,8 +1,54 @@
 #+TITLE: Installation
-#+DATE: 2026-06-18
+#+DATE: 2026-08-11
 
 This document describes how to obtain the dependencies needed to build,
-document, and test the clautolisp project.
+document, and test the clautolisp project.  It is the canonical
+dependency list; CI recipes and container images should be derived from
+it (the published CI image is defined by =clautolisp/docker/Dockerfile=).
+
+* Dependency overview
+
+Two independent toolchains are involved.  A CI job that only builds and
+tests the programs and libraries does not need the documentation
+toolchain, and vice versa.
+
+** Building the programs and libraries
+
+| Dependency               | Role                                                       |
+|--------------------------+------------------------------------------------------------|
+| sbcl (and/or ccl)        | Common Lisp compiler; the executables are built with SBCL  |
+| quicklisp                | CL library manager (manual install, see below)             |
+| make                     | Build driver                                               |
+| git                      | Source control + libredwg submodule checkout               |
+| curl                     | Quicklisp download                                         |
+| C compiler (gcc/clang)   | Optional DWG codec: vendored libredwg + CFFI shim          |
+| cmake                    | Optional DWG codec: libredwg build                         |
+| Qt 6 base + pkg-config   | Optional Qt GUI (=clautolisp/tools/clautolisp-gui-qt=)     |
+
+Common Lisp libraries (fetched by Quicklisp, see the dedicated section):
+=fiveam=, =bordeaux-threads=, =cffi=, =trivial-gray-streams=, =babel=.
+
+The DWG codec's =libredwg= itself is a vendored git submodule
+(=clautolisp/third-party/libredwg=), not a package-manager dependency;
+=make build-libraries= checks it out automatically.
+
+** Generating the documentation
+
+| Dependency               | Role                                          |
+|--------------------------+-----------------------------------------------|
+| emacs                    | Org-mode → LaTeX / Texinfo export             |
+| TeX Live with xelatex    | PDF output (plus wrapfig, ulem, capt-of)      |
+| texinfo                  | makeinfo (.texi → .info)                      |
+| graphviz                 | dot (diagram rendering)                       |
+
+The Org exports are driven by the subproject Makefiles through the
+Emacs Org exporter (not pandoc).
+
+** Running the tests
+
+No extra dependency beyond the build toolchain: the CL test framework
+is =fiveam= (fetched by Quicklisp on demand), and the =autolisp-test=
+conformance harness is pure AutoLISP run through the built executable.
 
 * Fedora / Red Hat
 
@@ -18,24 +64,32 @@ sudo dnf install -y \
   texlive-capt-of   \
   texinfo           \
   graphviz          \
+  gcc               \
+  cmake             \
+  qt6-qtbase-devel  \
+  pkgconf-pkg-config \
   make              \
   git               \
   curl
 #+end_src
 
-| Package           | Provides                    |
-|-------------------+-----------------------------|
-| sbcl              | SBCL Common Lisp compiler   |
-| emacs             | Org-mode → LaTeX export     |
-| texlive-xetex     | xelatex (PDF from .org)     |
-| texlive-wrapfig   | wrapfig.sty                 |
-| texlive-ulem      | ulem.sty                    |
-| texlive-capt-of   | capt-of.sty                 |
-| texinfo           | makeinfo (.texi → .info)    |
-| graphviz          | dot (top-level diagrams)     |
-| make              | Build driver                |
-| git               | Source control               |
-| curl              | Quicklisp download           |
+| Package            | Provides                    |
+|--------------------+-----------------------------|
+| sbcl               | SBCL Common Lisp compiler   |
+| emacs              | Org-mode → LaTeX export     |
+| texlive-xetex      | xelatex (PDF from .org)     |
+| texlive-wrapfig    | wrapfig.sty                 |
+| texlive-ulem       | ulem.sty                    |
+| texlive-capt-of    | capt-of.sty                 |
+| texinfo            | makeinfo (.texi → .info)    |
+| graphviz           | dot (top-level diagrams)     |
+| gcc                | C compiler (DWG codec shim) |
+| cmake              | C build system (libredwg, Qt GUI) |
+| qt6-qtbase-devel   | Qt 6 Core + Widgets (GUI)   |
+| pkgconf-pkg-config | Probe tool for Qt6 detection |
+| make               | Build driver                |
+| git                | Source control               |
+| curl               | Quicklisp download           |
 
 The remaining TeX packages (=graphicx=, =hyperref=, =longtable=,
 =rotating=, =ulem=) are part of the standard TeX Live distribution and
@@ -54,6 +108,7 @@ sudo apt install -y \
   texlive-latex-extra \
   texinfo             \
   graphviz            \
+  gcc                 \
   cmake               \
   qt6-base-dev        \
   pkg-config          \
@@ -70,7 +125,8 @@ sudo apt install -y \
 | texlive-latex-extra    | wrapfig, ulem, capt-of, etc.      |
 | texinfo                | makeinfo (.texi → .info)          |
 | graphviz               | dot (top-level diagrams)           |
-| cmake                  | C++ build system (Qt GUI)         |
+| gcc                    | C compiler (DWG codec shim)       |
+| cmake                  | C/C++ build system (libredwg, Qt GUI) |
 | qt6-base-dev           | Qt 6 Core + Widgets (GUI)         |
 | pkg-config             | Probe tool for Qt6 detection      |
 | make                   | Build driver                      |
@@ -89,6 +145,33 @@ sudo apt install -y clozure-cl
 
 The manual install procedure in the Quick-Reference section remains
 available when the system package lags behind upstream.
+
+* Windows / MSYS2
+
+Building the optional LibreDWG codec requires the native MINGW64 GCC
+package:
+
+#+begin_src sh
+pacman -S --needed mingw-w64-x86_64-gcc
+#+end_src
+
+Building all PDF, Info, and diagram documentation requires Emacs,
+Texinfo, XeLaTeX, the LaTeX packages used by the repository preamble,
+and Graphviz:
+
+#+begin_src sh
+pacman -S --needed \
+  mingw-w64-x86_64-emacs \
+  mingw-w64-ucrt-x86_64-texinfo \
+  mingw-w64-ucrt-x86_64-texlive-bin \
+  mingw-w64-ucrt-x86_64-texlive-core \
+  mingw-w64-ucrt-x86_64-texlive-latex-recommended \
+  mingw-w64-ucrt-x86_64-texlive-latex-extra \
+  mingw-w64-ucrt-x86_64-graphviz
+#+end_src
+
+The documentation Makefiles locate the UCRT64 tools automatically from
+plain MSYS and Emacs shells.
 
 * Common Lisp implementations
 
@@ -149,16 +232,24 @@ ccl --no-init --quiet \
 
 * Common Lisp library dependencies
 
-The test suite needs =fiveam= (the test framework) and
-=bordeaux-threads= (used by the debugger subsystem).  These are fetched
-automatically by Quicklisp when the test target runs, but can be
-pre-loaded:
+The systems depend on the following external CL libraries:
+
+| Library              | Used by                                     |
+|----------------------+---------------------------------------------|
+| fiveam               | Test suites (all subprojects)               |
+| bordeaux-threads     | Debugger subsystem                          |
+| cffi                 | DWG codec bindings (drawing-dwg)            |
+| trivial-gray-streams | Stream layers                               |
+| babel                | Encoding conversions                        |
+
+These are fetched automatically by Quicklisp (with their transitive
+dependencies, e.g. =alexandria=) when the build or test targets run,
+but can be pre-loaded:
 
 #+begin_src sh
 sbcl --noinform --no-userinit --non-interactive \
   --eval '(load "~/quicklisp/setup.lisp")' \
-  --eval '(ql:quickload "fiveam" :silent t)' \
-  --eval '(ql:quickload "bordeaux-threads" :silent t)' \
+  --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "cffi" "trivial-gray-streams" "babel") :silent t)' \
   --eval '(sb-ext:quit)'
 #+end_src
 
@@ -186,7 +277,8 @@ autolisp-test conformance harness.  Both must exit 0.
 #+begin_src sh
 # Fedora system packages
 sudo dnf install -y sbcl emacs texlive-xetex texlive-wrapfig \
-  texlive-ulem texlive-capt-of texinfo make git curl
+  texlive-ulem texlive-capt-of texinfo graphviz gcc cmake \
+  qt6-qtbase-devel pkgconf-pkg-config make git curl
 
 # CCL (manual)
 curl -fsSL -o /tmp/linuxx86.tar.gz \
@@ -203,10 +295,9 @@ sbcl --noinform --no-userinit --non-interactive \
   --eval '(sb-ext:quit)'
 rm -f /tmp/quicklisp.lisp
 
-# Pre-load Quicklisp libraries (optional, tests fetch them on demand)
+# Pre-load Quicklisp libraries (optional, builds/tests fetch them on demand)
 sbcl --noinform --no-userinit --non-interactive \
   --eval '(load "~/quicklisp/setup.lisp")' \
-  --eval '(ql:quickload "fiveam" :silent t)' \
-  --eval '(ql:quickload "bordeaux-threads" :silent t)' \
+  --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "cffi" "trivial-gray-streams" "babel") :silent t)' \
   --eval '(sb-ext:quit)'
 #+end_src

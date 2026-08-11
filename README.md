@@ -156,35 +156,30 @@ The implementation subproject is intended to work with:
 
 The long-term build target is a standalone executable.
 
-On MSYS2, building the optional LibreDWG codec requires the native
-MINGW64 GCC package:
+### Dependencies
 
-```sh
-pacman -S --needed mingw-w64-x86_64-gcc
-```
+The canonical dependency list lives in `INSTALL.org`.  It separates the
+two toolchains — useful in particular for CI agents:
 
-Building all PDF, Info, and diagram documentation on MSYS2 requires Emacs,
-Texinfo, XeLaTeX, the LaTeX packages used by the repository preamble, and
-Graphviz:
+- **building the programs and libraries**:
+  SBCL (and/or CCL), Quicklisp with `fiveam`, `bordeaux-threads`,
+  `cffi`, `trivial-gray-streams`, `babel`, plus `make`, `git`, `curl`;
+  the optional DWG codec additionally needs a C compiler and `cmake`
+  (libredwg is a vendored submodule, not a package), and the optional
+  Qt GUI needs Qt 6 base and `pkg-config`;
+- **generating the documentation**:
+  Emacs (Org exporter), TeX Live with `xelatex` (wrapfig, ulem,
+  capt-of), `texinfo` (makeinfo), and Graphviz (`dot`).
 
-```sh
-pacman -S --needed \
-  mingw-w64-x86_64-emacs \
-  mingw-w64-ucrt-x86_64-texinfo \
-  mingw-w64-ucrt-x86_64-texlive-bin \
-  mingw-w64-ucrt-x86_64-texlive-core \
-  mingw-w64-ucrt-x86_64-texlive-latex-recommended \
-  mingw-w64-ucrt-x86_64-texlive-latex-extra \
-  mingw-w64-ucrt-x86_64-graphviz
-```
-
-The documentation Makefiles locate the UCRT64 tools automatically from plain
-MSYS and Emacs shells.
+`INSTALL.org` provides ready-to-run package commands for Fedora/Red
+Hat, Ubuntu/Debian, and Windows/MSYS2, plus the manual CCL and
+Quicklisp install steps.
 
 The global `Makefile` and subproject `Makefile`s provide targets for:
 
 - running tests,
-- building PDF output from Org documents through `pandoc`.
+- building PDF and Info output from Org documents through the Emacs
+  Org exporter (`xelatex`, `makeinfo`).
 
 The `clautolisp` subproject also includes dedicated tools for:
 

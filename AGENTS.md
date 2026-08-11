@@ -69,6 +69,10 @@ General directives for this repository.
 - The project must be buildable with SBCL.
 - The build should be able to produce a standalone executable.
 - Command-line and batch execution are first-class use cases.
+- The canonical dependency list (build/test toolchain on one hand,
+  documentation toolchain on the other, with per-distribution package
+  commands) is `INSTALL.org`; keep it current when adding a dependency,
+  and derive CI recipes from it.
 
 ## Licensing
 
