@@ -1,4 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
+#+TITLE: dribble — record REPL interactions to a log file
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: -
+#+BRANCH: schms-ci-and-p3
 
 * Dribble
 
@@ -175,9 +181,47 @@ Two deliberate refinements over the example above:
 - prompts are not recorded: a partial output line still open when an
   input line completes is prompt text and is dropped, not emitted.
 
-** Remaining: alfe
+** Split out: alfe
 
 The alfe half (--dribble on the alfe CLI, the
 ";; H: alfe $alfe_version $backend $cad_version" header, the
 ${XDG_STATE_HOME}/alfe/dribbles/${BACKEND}/ default path) is not
-implemented yet.
+implemented — verified 2026-08-11, =grep -r dribble
+autolisp-front-end/= matches zero Lisp files. Rehomed to
+=alfe-dribble.issue= so this ticket can close on the half it
+delivered rather than stay open on a differently-scoped remainder.
+
+** CLOSED 2026-08-11 (clautolisp 1.8.28) — end-to-end verification
+
+pjb: "dribble est deja implemente (clal-dribble). Check functionalities
+and close." Checked against the built binary, not just the unit tests
+(14 FiveAM tests in clautolisp/clautolisp-tool/tests cover the pieces;
+what follows exercises the assembled feature). Every functionality this
+ticket specifies for the clautolisp half:
+
+| specified                                   | observed                                            |
+|---------------------------------------------+-----------------------------------------------------|
+| =--dribble= default path                    | =$XDG_STATE_HOME/clautolisp/dribbles/20260811T190209.log= — ISO-8601 =YYYYMMDDTHHMMSS.log= as specified |
+| =--dribble=FILE=                            | writes FILE                                          |
+| append when the file exists                 | second run appended, first run's content intact      |
+| =;; H:= header                              | =;; H: clautolisp 1.8.28=                            |
+| =(clal-dribble "p")= result                 | returns the ABSOLUTE path                            |
+| =(clal-dribble)= toggle off                 | returns nil, closes; later forms not recorded        |
+| =(clal-dribble)= start mid-session          | works                                                |
+| input lines recorded raw                    | yes                                                  |
+| =;; O:= / =;; E:= / =;; C:=                 | all three, matching the ticket's Example (with the two documented refinements: backtrace as E, prompts dropped) |
+| =--dribble-interactors=t=                   | DBG/NAV interaction recorded                         |
+| =--dribble-interactors=autolisp,dbg=        | DBG recorded, NAV *not* — named filtering discriminates |
+| =*clal-dribble-interactors*= set from Lisp  | T honoured on the next start                         |
+| pause during a foreign interactor           | default (AUTOLISP-only) run records the erroring call and stops at the debugger |
+
+Two known cosmetic edges, both filed separately, neither affecting the
+above:
+
+- the debugger's stop *announcement* leaks past the AUTOLISP-only
+  filter — =dribble-stop-announcement-interactor.issue=, which pjb had
+  already opened and marked very low priority. Reproduced here exactly
+  as described, so that ticket's diagnosis stands.
+- the prompt pending at EOF is recorded as =;; O: _$= —
+  =dribble-eof-prompt-recorded.issue= (new). There is a real tradeoff
+  behind it; see that ticket before "fixing" it.
