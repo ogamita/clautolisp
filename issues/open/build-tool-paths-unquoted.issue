@@ -1,6 +1,6 @@
 # -*- mode:org;coding:utf-8 -*-
 #+TITLE: build-tool-paths-unquoted — variables holding a program or file path are not quoted
-#+STATUS: DONE
+#+STATUS: OPEN
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
@@ -291,3 +291,67 @@ majorité est inoffensive ($(MAKE) en position d'argument, listes de
 `for`, drapeaux numériques). Quoter PREFIX/DESTDIR au cas par cas
 demande de distinguer chemin et liste, ce qui mérite sa propre passe
 relue plutôt qu'une réécriture automatique de masse.
+
+
+Encore ouverte au 2026-08-10 : le volet CMake n'est pas corrigé
+===============================================================
+
+Le fichier était marqué DONE alors qu'il contient une section
+« RÉOUVERTE » non traitée. Le volet quotage est bien clos (1.8.27) ; le
+volet CMake ne l'est pas, et il bloque toujours
+`build:clautolisp:windows`. Statut remis à OPEN.
+
+Job 476930 (pipeline 81948), identique au précédent :
+
+    C compiler: C:/msys64/ucrt64/bin/gcc
+    -- The C compiler identification is unknown
+    CMake Error at CMakeLists.txt:2 (project):
+      The CMAKE_C_COMPILER:
+        C
+      is not a full path and was not found in the PATH.
+
+Deux enseignements nouveaux de ce run.
+
+1. Aucun contournement par la forme de CC — confirmé par l'essai
+--------------------------------------------------------------
+
+L'appelant a posé `CC=/ucrt64/bin/gcc`, en forme POSIX, vérifié dans le
+job (« CC=/ucrt64/bin/gcc » au dump d'environnement). Le script a
+pourtant reçu la forme Windows. La cause est en aval de l'appelant : le
+`make` employé est un make **Windows natif**
+(`C:/Program Files/make-4.4.1-with-guile-w32/bin/make`), et la couche
+MSYS convertit les variables d'environnement en franchissant la
+frontière vers un programme natif. Un appelant sous MSYS ne peut donc
+pas garantir la forme de `CC` telle que `build-libredwg.sh` la lira.
+
+Cela confirme la phrase déjà présente plus haut — « aucun contournement
+côté appelant » — en la fondant sur une mesure plutôt que sur un
+raisonnement.
+
+2. La troncature masquait un second refus
+------------------------------------------
+
+Le garde-fou des lignes 64-68 :
+
+    case "$compiler_path" in
+      /ucrt64/*|/clang64/*|/clangarm64/*)
+        echo "error: use the MINGW64/MSVCRT compiler for the native Windows codec"
+
+n'a pas tiré, alors que le compilateur EST celui d'UCRT64 : la valeur
+reçue était `C:/msys64/ucrt64/...`, qui ne filtre pas sur `/ucrt64/*`.
+Le build a donc dépassé un refus qui le visait, pour échouer plus loin
+sur la troncature.
+
+C'est un défaut à part entière, indépendant du premier : **le test de
+sous-système ne reconnaît que la forme POSIX du chemin.** Sur toute
+machine où `CC` arrive en forme Windows — c'est-à-dire dès qu'un make
+natif est dans la chaîne — la protection contre UCRT64/CLANG64 est
+inopérante et silencieuse. Un build ainsi passé produirait un
+`clal_dwg.dll` important des jeux d'API UCRT privés, exactement ce que
+le garde-fou entend interdire ; la vérification `objdump` de la ligne
+149 est le dernier filet, et elle n'intervient qu'après compilation.
+
+Correctif suggéré : normaliser `compiler_path` une fois, tôt, avant tout
+test — `cygpath -u` sous MSYS — puis convertir explicitement à l'endroit
+où CMake l'exige. Les tests portent alors tous sur une forme unique et
+connue, au lieu de dépendre de celle que l'appelant a bien voulu fournir.
