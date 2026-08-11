@@ -24,6 +24,29 @@ of interaction transcript a dribble is for — arguably more valuable
 than the clautolisp one, since a CAD session is harder to reproduce.
 Today there is no way to record it.
 
+** Scope, per pjb (2026-08-11)
+
+"dribble sur alfe signifie que la fonction travaille avec bricscad et
+autocad. alfe --clautolisp surement l'implemente deja dans clautolisp."
+
+That is the right split, and it makes the two backend families
+genuinely different pieces of work:
+
+- =--clautolisp= backend: the engine already dribbles. The work is a
+  *pass-through* — forward the flag into the spawned argv.
+  =BUILD-SUBPROCESS-ARGV= (=autolisp-front-end/source/backend-clautolisp.lisp=,
+  l.767) already does exactly this for =-Esource=, so there is a
+  worked precedent to copy; today it forwards nothing dribble-related.
+  For the *direct* (in-process) clautolisp variant the recording is
+  already in-process and needs less still. One caveat: the spawned
+  engine is launched with =--no-init= because "the front-end owns
+  bootstrap/init policy", so the flag must come from alfe's own CLI,
+  not from the user's rc.
+- =bricscad= / =autocad= backends: nothing exists to forward to. These
+  engines have no dribble of their own, so the recording has to be
+  built on the alfe side from what alfe already sees of the
+  conversation. This is the substance of the ticket.
+
 * Proposal
 
 Mirror the clautolisp half, whose implementation is the reference:
@@ -53,18 +76,24 @@ From =dribble.issue=, the alfe-specific requirements:
 
 * Open question
 
-What counts as an "interactor" on the alfe side. The clautolisp filter
-keys off =clautolisp.interactor:*interactor-stack*=, which an alfe
-session driving a foreign CAD does not have in the same shape. Either
-map alfe's own phases onto interactor names, or declare
-=--dribble-interactors= clautolisp-only and record everything on the
-alfe side. Worth settling before writing code — it is the one place
-where the mirror is not mechanical.
+What counts as an "interactor" on the alfe side, for the CAD backends.
+The clautolisp filter keys off
+=clautolisp.interactor:*interactor-stack*=, which a session driving
+BricsCAD or AutoCAD does not have in the same shape. Either map alfe's
+own phases onto interactor names, or declare =--dribble-interactors=
+meaningful only for the clautolisp backend (where it is forwarded and
+the engine applies it itself) and record everything for the CAD ones.
+
+The second reading follows naturally from pjb's split above and is the
+recommendation unless a use case for CAD-side filtering shows up.
+Worth settling before writing code.
 
 * Acceptance criteria
 
 - =alfe --dribble= against each available backend produces a file at
   the documented per-backend path with the two-version =;; H:= header.
+- Against =--clautolisp=, the flag reaches the spawned engine and the
+  transcript is the engine's own (no double recording).
 - =--dribble=FILE= writes FILE; an existing file is appended to.
 - O/E/C tagging and the interleaving rule match the clautolisp output
   byte for byte for an equivalent session.
