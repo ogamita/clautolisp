@@ -197,3 +197,106 @@ global store."
     (clautolisp.debug.ui:set-aldo-setting "theme" "ascii")
     (is (string= "^" (clautolisp.debug.ui:aldo-decoration-glyph :enabled-bp)))
     (is (string= "_" (clautolisp.debug.ui:aldo-decoration-glyph :disabled-bp)))))
+
+;;;; ---------------------------------------------------------------------------
+;;;; The LISP-interactor configuration and the aldo-over-lisp stacking
+;;;; (lisp-configuration.issue).
+
+(defmacro with-empty-layers (&body body)
+  "Run BODY with both configuration layers empty — i.e. nothing explicitly
+set, everything resolving from the built-in defaults."
+  `(let ((clautolisp.debug.ui:*aldo-configuration* nil)
+         (clautolisp.debug.ui:*lisp-configuration* nil))
+     ,@body))
+
+(test lisp-config-defaults-resolve-from-empty-layers
+  ;; The layers hold only explicit settings, so an empty store must still
+  ;; answer with the built-in default rather than NIL. This is what every
+  ;; existing reader depends on.
+  (with-empty-layers
+    (is (eq :ask (clautolisp.debug.ui:lisp-setting :sedit-on-quit)))
+    (is (eq :ask (clautolisp.debug.ui:debugger-setting :sedit-on-quit)))
+    ;; an aldo-only key still resolves at DBG> through the same fallback
+    (is (eql 24 (clautolisp.debug.ui:debugger-setting :pager-height)))))
+
+(test lisp-config-explicit-is-distinguishable-from-default
+  ;; The whole feature rests on this: "present in the conf" must be
+  ;; distinguishable from "equal to the built-in default", or the debugger
+  ;; could never fall through to the lisp layer.
+  (with-empty-layers
+    (is (null (nth-value 1 (clautolisp.debug.ui:config-explicit
+                            :sedit-on-quit
+                            clautolisp.debug.ui:*aldo-configuration*))))
+    (clautolisp.debug.ui:set-aldo-setting "sedit-on-quit" "ask")
+    ;; same VALUE as the default, but now explicitly set
+    (is (eq t (nth-value 1 (clautolisp.debug.ui:config-explicit
+                            :sedit-on-quit
+                            clautolisp.debug.ui:*aldo-configuration*))))))
+
+(test lisp-config-debugger-falls-through-to-lisp-layer
+  ;; Set ONLY at the REPL: the debugger must pick it up, since aldo.conf says
+  ;; nothing about it.
+  (with-empty-layers
+    (clautolisp.debug.ui:set-lisp-setting "sedit-on-quit" "auto-save")
+    (is (eq :auto-save (clautolisp.debug.ui:lisp-setting :sedit-on-quit)))
+    (is (eq :auto-save (clautolisp.debug.ui:debugger-setting :sedit-on-quit)))))
+
+(test lisp-config-aldo-shadows-lisp-and-writes-stay-on-their-layer
+  (with-empty-layers
+    (clautolisp.debug.ui:set-lisp-setting "sedit-on-quit" "auto-save")
+    (clautolisp.debug.ui:set-aldo-setting "sedit-on-quit" "do-not-save")
+    ;; aldo over lisp inside the debugger...
+    (is (eq :do-not-save (clautolisp.debug.ui:debugger-setting :sedit-on-quit)))
+    ;; ...while the REPL keeps its own: a write goes to the ACTIVE layer only
+    (is (eq :auto-save (clautolisp.debug.ui:lisp-setting :sedit-on-quit)))
+    ;; dropping the aldo layer re-exposes the lisp one
+    (let ((clautolisp.debug.ui:*aldo-configuration* nil))
+      (is (eq :auto-save (clautolisp.debug.ui:debugger-setting :sedit-on-quit))))))
+
+(defun %errors-p (thunk)
+  "True when THUNK signals. This package :USEs only CL and imports FiveAM
+name by name, so SIGNALS / IS-TRUE / IS-FALSE are NOT available here even
+though IS is — and a missing import shows up as an unbound-variable at run
+time, not as a compile error."
+  (handler-case (progn (funcall thunk) nil)
+    (error () t)))
+
+(test lisp-config-set-validates-like-aldo
+  (with-empty-layers
+    (is (%errors-p (lambda ()
+                     (clautolisp.debug.ui:set-lisp-setting "sedit-on-quit" "banana"))))
+    (is (%errors-p (lambda ()
+                     (clautolisp.debug.ui:set-lisp-setting "no-such-key" "1"))))
+    ;; keys are case-insensitive, like aldo's
+    (clautolisp.debug.ui:set-lisp-setting "SEDIT-ON-QUIT" "do-not-save")
+    (is (eq :do-not-save (clautolisp.debug.ui:lisp-setting :sedit-on-quit)))))
+
+(test lisp-config-settings-lines-mark-defaults
+  (with-empty-layers
+    (let ((lines (clautolisp.debug.ui:lisp-settings-lines)))
+      (is (= 1 (length lines)))
+      (is (search "(default)" (first lines))))
+    (clautolisp.debug.ui:set-lisp-setting "sedit-on-quit" "auto-save")
+    (let ((lines (clautolisp.debug.ui:lisp-settings-lines)))
+      (is (search "auto-save" (first lines)))
+      (is (null (search "(default)" (first lines)))))))
+
+(test lisp-config-file-round-trip
+  (with-empty-layers
+    (uiop:with-temporary-file (:pathname path :type "conf" :keep nil)
+      (clautolisp.debug.ui:set-lisp-setting "sedit-on-quit" "do-not-save")
+      (clautolisp.debug.ui:save-lisp-configuration path)
+      (let ((clautolisp.debug.ui:*lisp-configuration* nil))
+        (is (eq :ask (clautolisp.debug.ui:lisp-setting :sedit-on-quit)))
+        (clautolisp.debug.ui:load-lisp-configuration path)
+        (is (eq :do-not-save (clautolisp.debug.ui:lisp-setting :sedit-on-quit)))))))
+
+(test lisp-config-save-writes-only-explicit-settings
+  ;; The visible consequence of holding explicit settings only: a conf file is
+  ;; a diff against the defaults, not a full dump.
+  (with-empty-layers
+    (clautolisp.debug.ui:set-aldo-setting "pager-height" "40")
+    (let ((written (with-output-to-string (out)
+                     (clautolisp.debug.ui:write-aldo-configuration out))))
+      (is (search "pager-height" written))
+      (is (null (search "navigator" written))))))

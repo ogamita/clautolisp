@@ -341,8 +341,21 @@ setting); above a debugger stop, quitting aborts the debugged execution
 
 ;;; --- entering the editor ---------------------------------------------------
 
+(defvar *default-on-quit-policy* (constantly :ask)
+  "The sedit-on-quit policy thunk used when SEDIT-ENTER's caller supplies no
+:ON-QUIT — i.e. every entry that is not the debugger's own bridge, chiefly
+(clal-sedit …) from the REPL.
+
+A hook rather than a direct lookup because the policy lives in the LISP
+interactor's configuration (lisp-configuration.issue), which is owned by
+CLAUTOLISP.DEBUG.UI — a system that sits ABOVE this one, so this file cannot
+call into it. The clautolisp tool, which depends on both, installs the real
+lookup at start-up; until it does, the built-in :ASK applies, which is also
+what a bare library user of the sedit system gets.")
+
 (defun sedit-enter (session &key debug-hook eval-hook load-hook eval-print-hook
-                                 save-hook (on-quit (constantly :ask))
+                                 save-hook
+                                 (on-quit *default-on-quit-policy*)
                                  (input *standard-input*)
                                  (output *standard-output*)
                                  (error-output output))

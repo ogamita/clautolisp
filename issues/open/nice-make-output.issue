@@ -17,3 +17,36 @@ it could display:
 A DEBUG flag would make make display the whole commands again.
 
 Low priority, we'll do that at the end, when everything is mostly debugged and we don't need the whole commands.
+
+* DEFERRED 2026-08-11 — on the ticket's own condition
+
+Reached in the P3 pass and deliberately left. "At the end, when
+everything is mostly debugged" is not yet true (the =compiler= and
+=drawing-database-api= epics are open, and the native macOS/Windows CI
+lanes are still being brought up), and this session gave two concrete
+counter-examples where the raw command dump was exactly what made a
+failure diagnosable: the ASDF =MISSING-DEPENDENCY= for babel in
+=run-file-compat/launch.lisp=, and the interactor framework's
+command-key rejection during the =lisp-configuration= work. CI logs are
+also the main debugging surface for the runners pjb cannot easily reach.
+
+* Sizing, for when it is picked up
+
+~1040 recipe lines across 7 Makefiles (clautolisp 290,
+autolisp-front-end 180, root 211, autolisp-test 111, autolisp-spec 78,
+autolisp-benchmark 65, documentation 5), with no shared include and no
+existing quiet infrastructure.
+
+Cheapest correct shape:
+
+- a =make/quiet.mk= included by all seven (single source of truth),
+  holding =.SILENT:= under =ifeq ($(DEBUG),)= — one line silences the
+  echoing of every recipe in a Makefile without touching the 1040 lines,
+  and it suppresses only the *echo*, not the commands' own output;
+- per-target =@echo '[…]'= messages on the targets worth announcing,
+  added where they earn their place rather than everywhere — a silent
+  long build otherwise looks hung;
+- =DEBUG=1= set globally in =.gitlab-ci.yml= =variables:= and the GitHub
+  workflow =env:= (one line each), so CI logs keep the full commands
+  while interactive use gets the concise output. That is what makes the
+  deferral rationale above moot when the time comes.

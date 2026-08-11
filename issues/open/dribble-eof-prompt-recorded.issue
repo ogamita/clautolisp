@@ -1,0 +1,67 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: dribble-eof-prompt-recorded — the prompt pending at EOF lands in the dribble as ";; O: _$"
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-dribble-eof-prompt
+
+* Symptom
+
+Every dribble file that is still open when the session ends gains a
+trailing line:
+
+: ;; O: _$
+
+=dribble.issue= states the opposite rule — "prompts are not recorded: a
+partial output line still open when an input line completes is prompt
+text and is dropped, not emitted."
+
+* Repro (clautolisp 1.8.28)
+
+: printf '(+ 1 1)\n' | clautolisp-sbcl --dribble=/tmp/t.log
+: cat /tmp/t.log
+
+Last line is =;; O: _$=. It does *not* appear when the dribble is
+closed explicitly with =(clal-dribble)= before exit, because the input
+echo has just discarded the pending partial line at that point.
+
+* Cause
+
+=DRIBBLE-STOP= (=clautolisp/tools/clautolisp/source/dribble.lisp=)
+calls =(%dribble-terminate-open-line)= with no =:discard=, so a partial
+line pending at stop time is emitted rather than dropped. At EOF the
+pending partial is the prompt that was printed while waiting for input
+that never came.
+
+* Why this is NOT simply "pass :discard t"
+
+The suppression rule elsewhere is evidence-based: the input echo
+discards a pending partial *because an input line completed*, which
+proves the partial was a prompt. At EOF there is no such proof — a
+program ending with =(princ "no trailing newline")= leaves a pending
+partial that is genuine output and must be recorded. Discarding
+unconditionally at stop would silently drop it.
+
+So the current behaviour is the conservative half of a real tradeoff,
+not an oversight: it keeps real output at the cost of one spurious
+prompt line. Anyone "fixing" this must preserve unterminated genuine
+output.
+
+* Proposal (if judged worth doing at all)
+
+Have the REPL tell the dribble that what it is about to print is a
+prompt — e.g. emit prompts through a distinguishable path, or set a
+flag around the prompt write — so =DRIBBLE-STOP= can discard a pending
+partial *known* to be a prompt and emit anything else. That is the only
+way to satisfy both rules at once.
+
+Low priority: one cosmetic line at the end of a file, and the
+neighbouring =dribble-stop-announcement-interactor.issue= is in the
+same "known, minor, tradeoff" category. WONTFIX is a defensible
+outcome; the ticket exists so the next reader does not mistake it for
+an unnoticed bug.
+
+* Notes
+
+Found 2026-08-11 while verifying dribble.issue end-to-end for closure.

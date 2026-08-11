@@ -298,6 +298,15 @@ an explicit --debugger-ui says otherwise. NIL when no UI was requested."
 $XDG_CONFIG_HOME/clautolisp/aldo.conf), :tui when unset — the value an
 explicit --debugger-ui overrides for this run only."
   (ignore-errors (clautolisp.debug.ui:load-aldo-configuration))
+  (ignore-errors (clautolisp.debug.ui:load-lisp-configuration))
+  ;; Route (clal-sedit …) from the REPL through the LISP interactor's own
+  ;; configuration. Only lisp.conf is active at the REPL — the debugger side
+  ;; has its own bridge and gets the stacked aldo-over-lisp lookup
+  ;; (lisp-configuration.issue).
+  (setf clautolisp.sedit:*default-on-quit-policy*
+        (lambda ()
+          (or (ignore-errors (clautolisp.debug.ui:lisp-setting :sedit-on-quit))
+              :ask)))
   (or (ignore-errors (clautolisp.debug.ui:get-aldo-setting :default-user-interface))
       :tui))
 
@@ -743,6 +752,52 @@ the current dialect can come later).")
 (define-command (*autolisp* q quit) ()
     "Exit the Lisp REPL (sometimes (quit) is not available)."
   (interactor-return :quit))
+
+;;; The LISP interactor's own configuration (lisp-configuration.issue): the
+;;; `,set' / `,settings' pair mirrors the debugger's `set' / `,settings'.
+;;; Writes go to the ACTIVE interactor's configuration, so `,set' here always
+;;; writes lisp.conf — never aldo.conf, even for a key both define.
+
+(define-command (*autolisp* s set) (&whole arguments)
+    "Show the LISP interactor's settings, or set one: ,set [NAME VALUE]."
+  ;; The issue asked for a `,set NAME VALUE' / `,settings' pair. They are
+  ;; folded into one command because the framework derives a command's key
+  ;; from its words' initials, and `set' and `settings' both yield `s' — two
+  ;; commands could not both be reached by key. Bare `,set' listing the
+  ;; settings is the usual shell idiom anyway.
+  (let* ((words (remove "" (uiop:split-string (string-trim " " (or arguments ""))
+                                              :separator " ")
+                        :test #'string=))
+         (name (first words))
+         (value (second words)))
+    (cond
+      ((null name)
+       (format t "~&LISP interactor settings (~A):~%"
+               (clautolisp.debug.ui:lisp-config-save-path))
+       (dolist (line (clautolisp.debug.ui:lisp-settings-lines))
+         (format t "  ~A~%" line))
+       (format t "  ,set NAME VALUE changes one, ,write-settings persists it.~%~
+  Inside DBG> the debugger's own `set' shadows these.~%"))
+      ((null value)
+       (format t "~&usage: ,set NAME VALUE  (bare ,set lists them)~%"))
+      (t
+       (handler-case
+           (let ((stored (clautolisp.debug.ui:set-lisp-setting name value)))
+             (format t "~&~(~A~) = ~A~%" name
+                     (clautolisp.debug.ui:format-setting-value stored)))
+         (error (condition)
+           (format t "~&,set: ~A~%" condition)))))))
+
+;; `,write-settings', not `,save-settings': the framework enforces the §0
+;; naming rule that a command's key is its words' initials, and it derives the
+;; long invocation by joining the words with SPACES. So `save-settings' would
+;; have to take the key `s' — already `set' — and `(save settings)' would have
+;; to be typed `,save settings'. `write' sidesteps both.
+(define-command (*autolisp* w write-settings) ()
+    "Write the LISP interactor's settings to lisp.conf."
+  (handler-case
+      (format t "~&saved ~A~%" (clautolisp.debug.ui:save-lisp-configuration))
+    (error (condition) (format t "~&,write-settings: ~A~%" condition))))
 
 (defun repl-loop (dialect context &key quiet-p mock-input gui trace-p
                                         session break-on-error

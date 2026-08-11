@@ -1522,17 +1522,19 @@ inside (`aldo c', the confirmed quit) is returned to be propagated."
                      :eval-print-hook (lambda (node) (nav-eval-node-string session node))
                      ;; the sedit-on-quit guard (design-revision point-6
                      ;; answer): saving here means installing the edited
-                     ;; definition in the running system; the policy comes
-                     ;; from the aldo configuration (a lisp-interactor
-                     ;; configuration stacks under it —
-                     ;; issues/open/lisp-configuration.issue).
+                     ;; definition in the running system. We are inside the
+                     ;; debugger, so the policy comes from the STACKED lookup
+                     ;; — aldo.conf over lisp.conf over the built-in default
+                     ;; (lisp-configuration.issue). Reading the aldo layer
+                     ;; alone, as this did before, meant a user who set
+                     ;; sedit-on-quit only at the REPL saw it ignored here.
                      :save-hook (lambda (sedit-session)
                                   (nav-install-edited-form
                                    ui session
                                    (clautolisp.sedit:session-result sedit-session)
                                    loc))
                      :on-quit (lambda ()
-                                (or (ignore-errors (get-aldo-setting :sedit-on-quit))
+                                (or (ignore-errors (debugger-setting :sedit-on-quit))
                                     :ask)))
             (cond
               (directive directive)

@@ -349,6 +349,36 @@ is written automatically. Save and reload explicitly:
 The same is available from AutoLISP as ~(clal-save-aldo-configuration)~
 and ~(clal-load-aldo-configuration)~.
 
+*** The REPL has its own configuration, and the two stack
+Configurations stack the way interactors do. The Lisp REPL — the bottom
+interactor — carries its own =lisp.conf= alongside the debugger's
+=aldo.conf=:
+
+- =,set= — list the REPL's settings (each marked =(default)= while you
+  have not overridden it);
+- =,set NAME VALUE= — set one;
+- =,write-settings= — write them to
+  =$XDG_CONFIG_HOME/clautolisp/lisp.conf= (UTF-8). As with =aldo.conf=,
+  nothing is written automatically.
+
+Its first setting is ~sedit-on-quit~ (=auto-save= | =do-not-save= |
+=ask=), governing ~(clal-sedit …)~ invocations made *from the REPL*,
+while aldo's setting of the same name governs debugger-side ones.
+
+The stacking rule: at the REPL only =lisp.conf= is active; inside the
+debugger *both* are, aldo over lisp. So a setting you did not put in
+=aldo.conf= but did put in =lisp.conf= is taken from =lisp.conf= even at
+the =DBG>= prompt. Writes always go to the *active* interactor's own
+configuration — =set sedit-on-quit …= at =DBG>= changes only aldo's (and
+from then on shadows lisp's), =,set sedit-on-quit …= at the REPL changes
+only lisp's.
+
+Both files record only what you have explicitly set; anything you have
+not touched keeps following the built-in default. That is what makes the
+fall-through above possible — otherwise every key would always look
+"set" on the aldo layer and =lisp.conf= could never be reached from the
+debugger.
+
 ** Long output and the pager
 
 Commands whose output exceeds the screen — =help=, a long
