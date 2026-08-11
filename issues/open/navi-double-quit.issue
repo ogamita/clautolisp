@@ -1,0 +1,20 @@
+
+DBG> Error at <toplevel> line 1 col 1 — AutoLISP builtin CLAL-SEDIT signaled an error: The file
+                                               #P"/Users/pjb/src/ogamita/clautolisp/\"~/src/public/autolisp/fact.lsp\""
+                                               does not exist:
+                                                 No such file or directory
+DBG>   <stack: <toplevel> ← top>
+DBG>   (q abort, r <form> return a value, c continue/run *error*)
+(DEFUN
+  <toplevel>
+  NIL
+  【(CLAL-SEDIT (QUOTE FACT))】)
+NAV> q
+
+DBG> q
+
+_$
+
+
+The quit command of NAVI should also quit from ALDO.
+
