@@ -13,10 +13,13 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       bzip2 \
       ca-certificates \
+      cmake \
       curl \
       emacs-nox \
+      gcc \
       git \
       graphviz \
+      libc6-dev \
       make \
       m4 \
       sbcl \
