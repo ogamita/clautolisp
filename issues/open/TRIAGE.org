@@ -147,7 +147,8 @@ the shared blocker.
 | nice-make-output              | TODO   | concise per-target make output |
 | lisp-configuration            | TODO   | lisp.conf + stacked settings + REPL ,set |
 | windows-terminal-encoding-fd-stream | TODO | -Eterminal must use Console API (SetConsoleOutputCP) on Windows, not fd reopening; stopgap warns-and-keeps-default (1.7.21) |
-| cp1252-codec-host-independent | TODO | provide CP-1252/Windows-1252 codec (CCL lacks it); roundtrip test skips it on such hosts (1.7.11) |
+| cp1252-codec-host-independent | DONE   | RÉSOLU 1.8.28 : codec single-octet intégré (flux Gray), tables construites DEPUIS BABEL — pas écrites à la main, babel était déjà une dépendance du dépôt et livre les mêmes tables sur SBCL et CCL. Le trou n'était pas CP-1252 mais CP-125x+KOI8 : CCL n'a AUCUN des cinq. Chemin natif inchangé là où l'hôte fournit le codec (rien ne bouge sur SBCL). 3 sites, pas 1 : OPEN, le validateur CLI `-e' (`-e cp1251' était une usage-error sur CCL) et le diagnostic ENC-UNSUPPORTED-TARGET (il aurait averti contre une opération qui marche) ; LOAD avait le même trou. Preuve octet : € -> 0x80 et é -> 0xE9 sur les DEUX hôtes (€ est le caractère discriminant, é seul ne prouve rien). Stopgap de skip supprimé : 8/8 lignes sur CCL, 0 skip dans tout l'arbre. Bug préexistant corrigé au passage : `--list-encodings' appelait CCL::MAP-CHARACTER-ENCODINGS, inexistant dans toute version de CCL. issues/closed/ |
+| alfe-bricscad-argv-template-ccl | TODO | NOUVEAU 1.8.28 : BUILD-LAUNCH-ARGV perd le template "C:/t.dwt" sous CCL (pathname drive-letter ?) ; reproduit à l'identique sur origin/master, donc préexistant. Surtout : `make -C autolisp-front-end test-ccl' sort 0 malgré l'échec — la lane alfe CCL ne peut pas échouer |
 
 ** Debugger
 | Issue                                | Status   | Note |

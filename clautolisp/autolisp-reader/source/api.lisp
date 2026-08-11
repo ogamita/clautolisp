@@ -448,3 +448,32 @@ PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
    :extended-string-escapes-p extended-string-escapes-p
    :source-name (or source-name (namestring path))))
+
+;;; --- Host-independent external formats -------------------------------
+;;;
+;;; Thin re-exports of the codec in external-format.lisp. Every caller in
+;;; the tree that needs to open a file under a named encoding, or to ask
+;;; whether a named encoding is usable at all, goes through these rather
+;;; than through the host CL's registry directly — see the commentary at
+;;; the head of external-format.lisp for why the two answers differ.
+
+(defun open-with-external-format (path &rest open-args
+                                  &key direction external-format
+                                  &allow-other-keys)
+  (declare (ignore direction external-format))
+  (apply #'clautolisp.autolisp-reader.internal:open-with-external-format
+         path open-args))
+
+(defun external-format-available-p (external-format)
+  (clautolisp.autolisp-reader.internal:external-format-available-p
+   external-format))
+
+(defun external-format-base (external-format)
+  (clautolisp.autolisp-reader.internal:external-format-base external-format))
+
+(defun host-external-format-supported-p (external-format)
+  (clautolisp.autolisp-reader.internal:host-external-format-supported-p
+   external-format))
+
+(deftype unencodable-character-error ()
+  'clautolisp.autolisp-reader.internal:unencodable-character-error)

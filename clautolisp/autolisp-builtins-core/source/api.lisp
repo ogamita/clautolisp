@@ -1520,20 +1520,19 @@ accepts as :external-format. See encoding-dispatch.issue, section
 'Code pages: the ANSI row, expanded'.")
 
 (defun %host-cl-supports-encoding-p (keyword)
-  "True when the running CL implementation accepts KEYWORD as an
-:external-format value. SBCL and CCL expose introspectable
-registries; on other impls we conservatively return T (let the CL
-OPEN surface its own error if the keyword turns out not to work).
+  "True when clautolisp can open a stream in KEYWORD's external format.
+
+Asks CLAUTOLISP.AUTOLISP-READER:EXTERNAL-FORMAT-AVAILABLE-P, which
+answers for the host CL's registry *and* for the built-in single-octet
+codec that backs the code pages a host omits. Probing the host directly
+— the shape this had before cp1252-codec-host-independent — would fire
+ENC-UNSUPPORTED-TARGET on CCL for CP-1252 even though the OPEN right
+after it now succeeds, i.e. warn the user off an operation that works.
 
 Used by %CHECK-OPEN-ENCODING-SUPPORTED to surface
-ENC-UNSUPPORTED-TARGET when user code requests a CP-NNNN the host
-doesn't ship — e.g. CP-936 on a stripped-down SBCL build."
-  #+sbcl
-  (not (null (ignore-errors (sb-impl::get-external-format keyword))))
-  #+ccl
-  (not (null (ignore-errors (ccl:lookup-character-encoding keyword))))
-  #-(or sbcl ccl)
-  t)
+ENC-UNSUPPORTED-TARGET when user code requests a CP-NNNN nothing here
+can provide — e.g. CP-950, which neither host CL nor babel ships."
+  (clautolisp.autolisp-reader:external-format-available-p keyword))
 
 (defun parse-open-external-format (string)
   "Decode the third argument of (open path mode ENCODING). Accepted
@@ -2246,11 +2245,12 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
 location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
                   path-string))))))
         (handler-case
-            (let ((stream (open path
-                                :direction direction
-                                :if-exists if-exists
-                                :if-does-not-exist if-does-not-exist
-                                :external-format external-format)))
+            (let ((stream (clautolisp.autolisp-reader:open-with-external-format
+                           path
+                           :direction direction
+                           :if-exists if-exists
+                           :if-does-not-exist if-does-not-exist
+                           :external-format external-format)))
               (if stream
                   (errno-and-return 0 (make-autolisp-file stream path-string raw-mode-string))
                   (errno-and-return 22 nil)))
