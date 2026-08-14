@@ -1,0 +1,96 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-autocad-vbscript-comments — the emitted COM bridge opens with Lisp `;;' comments, so cscript fails at line 1
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: cad-runtime
+#+DEPENDS: -
+#+BRANCH: schms-ci-and-p3
+
+* Context
+
+Reported by pjb on 2026-08-12, as a row in =issues/open/TRIAGE.org=:
+
+  "ALFE 1.8.3 emits bridge-autocad.vbs with Lisp =;;= comments; cscript
+   fails at line 1 before AutoCAD COM initialization. Reproduce with
+   =--autocad --cad acad-2022 --mode automation=."
+
+The =.issue= file itself was never created — only the index row. Written up
+here on 2026-08-14 while working the Windows-runner issues, and fixed in the
+same pass.
+
+* Problem
+
+=*BRIDGE-AUTOCAD-VBS-TEMPLATE*= (=autolisp-front-end/source/backend-autocad.lisp=)
+opened with:
+
+: ;; AutoCAD COM bridge — emitted by alfe.backend.autocad
+: ;; Placeholders: ${RUNLSPFILE}, ${STATUSFILE}, ${ERRFILE},
+: ;; ...
+
+=;;= is Lisp. VBScript has no such comment syntax — a comment is an
+apostrophe or =REM=. Because these are the FIRST lines of the file, the
+failure does not degrade into something diagnosable further along: cscript
+raises a syntax error at line 1, before AutoCAD COM is touched at all. Every
+=--mode automation= run against AutoCAD dies there.
+
+* The ticket named AutoCAD; BricsCAD had it too
+
+=*BRIDGE-BRICSCAD-VBS-TEMPLATE*= (=backend-bricscad.lisp=) carried the
+identical defect in the identical position — the header is a copy. It had
+not been reported because the BricsCAD automation path on Windows had not
+been exercised (the macOS route does not use VBScript, and
+=verify:bricscad-hidden-ui:windows= drives PowerShell, not the bridge).
+
+Fixing only the reported one would have left a live copy of the same bug
+behind a lane that is about to start running.
+
+* A second, latent defect in the same lines
+
+The headers also contained an em dash (=—=). =EMIT-BRIDGE-VBS= writes the
+file as UTF-8 *without a BOM*, and cscript reads a =.vbs= as ANSI unless one
+is present, so any non-ASCII character arrives mangled. Inside a comment
+that is merely ugly — but it is one edit away from being inside code, and
+the file already had a second em dash further down, on a legitimately
+commented line. Both are now ASCII.
+
+This is the same class of trap as the tag it sits beside: the *comment
+marker* and the *encoding* are both properties of how the receiving tool
+parses the file, and neither is visible from the Lisp side.
+
+* Fix (clautolisp 1.8.32+)
+
+- Both templates' comment lines use a plain ASCII apostrophe, the VBScript
+  comment marker.
+- Both headers are pure ASCII, with a comment recording WHY (the missing
+  BOM), so the next editor does not reintroduce a typographic dash.
+
+* Verified
+
+Three new tests in =autolisp-front-end/tests/backend-cad-tests.lisp=, run
+against the EMITTED FILE rather than the template constant — what cscript
+parses is the file, and a substitution could in principle introduce a line
+the template never had:
+
+- =autocad-emitted-vbs-is-valid-vbscript= — no line begins with =;=, and the
+  whole file is ASCII;
+- =bricscad-emitted-vbs-is-valid-vbscript= — the same for the copy;
+- =vbs-offending-line-detector-actually-detects= — proves the detector fires
+  on both defects it is meant to catch. A check that cannot fail is worth
+  nothing.
+
+The alfe SBCL suite reports 589 checks, =Fail: 0=, with the three new test
+names present in the log — checked by NAME rather than by exit status,
+because =make -C autolisp-front-end test-ccl= is known to exit 0 even when a
+test fails (=alfe-bricscad-argv-template-ccl.issue=).
+
+The defect itself was confirmed present before the fix by reading the
+templates out of the previous commit: both opened with =";; …"=.
+
+* Not verified here
+
+An actual =cscript= run. That needs the Windows runner with AutoCAD, and no
+job could reach it while the CAD-capable jobs were tagged =bricscad= /
+=autocad= — tags no runner carries. That is fixed in the same branch (one
+=cad= tag, concurrency=1, per pjb), so =encoding:experiment:autocad:windows=
+and the vendor probes can now be scheduled; this fix is what they need in
+place first.

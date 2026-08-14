@@ -249,12 +249,20 @@ Order of precedence:
 ;;; --- emitter: bridge-autocad.vbs (Windows automation) -------------
 
 (defparameter *bridge-autocad-vbs-template*
-  ";; AutoCAD COM bridge — emitted by alfe.backend.autocad
-;; Placeholders: ${RUNLSPFILE}, ${STATUSFILE}, ${ERRFILE},
-;; ${COMMODE}, ${DEBUGFILE}, ${WAIT_SECS}.
-;; Mirrors the legacy bash wrapper's bridge-autocad.vbs; preserve
-;; the WaitQuiescent + GetAcadState handshake — it's the hard-won
-;; piece that keeps the bridge from racing AutoCAD's UI init.
+  ;; A VBScript comment is an apostrophe (or REM), NEVER `;;'. These lines
+  ;; are the FIRST thing cscript reads, so a Lisp comment marker here does
+  ;; not degrade — it is a syntax error at line 1, before AutoCAD COM is
+  ;; even touched. Kept ASCII for the same reason the marker matters:
+  ;; cscript reads a .vbs as ANSI unless it carries a BOM, and this file is
+  ;; written UTF-8 without one, so any non-ASCII character would arrive
+  ;; mangled. Inside a comment that is only ugly; it is not worth the risk
+  ;; of ever moving one of these characters into code.
+  "' AutoCAD COM bridge - emitted by alfe.backend.autocad
+' Placeholders: ${RUNLSPFILE}, ${STATUSFILE}, ${ERRFILE},
+' ${COMMODE}, ${DEBUGFILE}, ${WAIT_SECS}.
+' Mirrors the legacy bash wrapper's bridge-autocad.vbs; preserve
+' the WaitQuiescent + GetAcadState handshake - it's the hard-won
+' piece that keeps the bridge from racing AutoCAD's UI init.
 
 Option Explicit
 Dim fso, app, doc, runFile, statusFile, errFile, commode, debugFile, waitSecs
@@ -359,7 +367,7 @@ If Err.Number <> 0 Then
 End If
 On Error GoTo 0
 
-' Don't call app.Quit here — the runtime publishes its own status
+' Don't call app.Quit here - the runtime publishes its own status
 ' and the alfe-side poller decides on the lifecycle.
 WScript.Quit 0
 "

@@ -1429,3 +1429,83 @@ always passes a template."
     ;; emitting a broken `open -a APP ""'.
     (is (not (search "quoted form of docPath" no-doc)))
     (is (search "open -a " no-doc))))
+
+;;; --- the emitted .vbs must be VALID VBScript ------------------------------
+;;;
+;;; alfe-autocad-vbscript-comments (pjb, 2026-08-12): the bridge templates
+;;; opened with `;;' comment lines — Lisp syntax, which VBScript does not
+;;; have. A VBScript comment is an apostrophe or REM. Those lines are the
+;;; FIRST thing cscript reads, so this did not degrade: it was a syntax error
+;;; at line 1, before AutoCAD COM was touched.
+;;;
+;;; Asserted on the EMITTED FILE, not on the template constant: what cscript
+;;; parses is the file, and a substitution could in principle introduce a
+;;; line the template never had.
+
+(defun %vbs-offending-lines (content)
+  "Lines of CONTENT that VBScript cannot parse as a comment or as ASCII code.
+Returns a list of (LINE-NUMBER REASON LINE)."
+  (let ((offenders '())
+        (number 0))
+    (dolist (line (uiop:split-string content :separator '(#\Newline))
+                  (nreverse offenders))
+      (incf number)
+      (let ((trimmed (string-left-trim '(#\Space #\Tab #\Return) line)))
+        (when (and (plusp (length trimmed))
+                   (char= #\; (char trimmed 0)))
+          (push (list number "Lisp comment marker" line) offenders))
+        (when (some (lambda (character) (>= (char-code character) 128)) line)
+          (push (list number "non-ASCII" line) offenders))))))
+
+(test autocad-emitted-vbs-is-valid-vbscript
+  "No `;;' comment line, and pure ASCII: cscript reads a .vbs as ANSI unless
+it carries a BOM, and this file is written UTF-8 without one."
+  (let ((workdir (uiop:ensure-directory-pathname
+                  (merge-pathnames
+                   (format nil "alfe-test-acad-vbs-valid-~D/" (random 999999))
+                   (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist workdir)
+          (let ((vbs (merge-pathnames "bridge-autocad.vbs" workdir)))
+            (alfe.backend.autocad:emit-bridge-vbs
+             vbs
+             :runtime-load-path (merge-pathnames "run-common.lsp" workdir)
+             :status-path (merge-pathnames "protocol/status.txt" workdir)
+             :error-path (merge-pathnames "protocol/stderr.txt" workdir))
+            (let ((offenders (%vbs-offending-lines (read-back vbs))))
+              (is (null offenders)
+                  "bridge-autocad.vbs has lines cscript cannot parse: ~S"
+                  offenders))))
+      (uiop:delete-directory-tree workdir :validate t
+                                          :if-does-not-exist :ignore))))
+
+(test bricscad-emitted-vbs-is-valid-vbscript
+  "The BricsCAD template carried the SAME defect, though the ticket named
+only AutoCAD — it is the same file position in a copy of the same header."
+  (let ((workdir (uiop:ensure-directory-pathname
+                  (merge-pathnames
+                   (format nil "alfe-test-bcad-vbs-valid-~D/" (random 999999))
+                   (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist workdir)
+          (let ((vbs (merge-pathnames "bridge-bricscad.vbs" workdir)))
+            (alfe.backend.bricscad:emit-bridge-vbs
+             vbs
+             :runtime-load-path (merge-pathnames "run-common.lsp" workdir)
+             :status-path (merge-pathnames "protocol/status.txt" workdir)
+             :error-path (merge-pathnames "protocol/stderr.txt" workdir))
+            (let ((offenders (%vbs-offending-lines (read-back vbs))))
+              (is (null offenders)
+                  "bridge-bricscad.vbs has lines cscript cannot parse: ~S"
+                  offenders))))
+      (uiop:delete-directory-tree workdir :validate t
+                                          :if-does-not-exist :ignore))))
+
+(test vbs-offending-line-detector-actually-detects
+  "A check that cannot fail is worth nothing: prove the detector fires on
+both defects it is meant to catch."
+  (is (= 1 (length (%vbs-offending-lines (format nil "Option Explicit~%;; nope~%")))))
+  (is (= 1 (length (%vbs-offending-lines (format nil "' emitted by alfe~C~%" (code-char 233))))))
+  (is (null (%vbs-offending-lines (format nil "' fine~%Option Explicit~%")))))

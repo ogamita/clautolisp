@@ -311,9 +311,13 @@ Returns the path of the emitted file."
 ;;; --- emitter: bridge-bricscad.vbs (Windows automation) ------------
 
 (defparameter *bridge-bricscad-vbs-template*
-  ";; BricsCAD COM bridge — emitted by alfe.backend.bricscad
-;; The placeholders ${RUNLSPFILE}, ${STATUSFILE}, ${ERRFILE},
-;; ${COMMODE}, ${DEBUGFILE} are substituted by EMIT-BRIDGE-VBS.
+  ;; A VBScript comment is an apostrophe (or REM), NEVER `;;' — see the
+  ;; note on the AutoCAD template. Same defect, same file position: it is
+  ;; a syntax error at line 1. Kept ASCII because cscript reads a .vbs as
+  ;; ANSI unless it carries a BOM, and this one is written UTF-8 without.
+  "' BricsCAD COM bridge - emitted by alfe.backend.bricscad
+' The placeholders ${RUNLSPFILE}, ${STATUSFILE}, ${ERRFILE},
+' ${COMMODE}, ${DEBUGFILE} are substituted by EMIT-BRIDGE-VBS.
 
 Option Explicit
 Dim fso, app, doc, runFile, statusFile, errFile, commode, debugFile
