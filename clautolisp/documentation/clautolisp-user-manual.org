@@ -1214,10 +1214,34 @@ default) or ~--autocad~ to surface them. Each site reports at most
 once per run, so a loop around a non-portable form warns once, and a
 form that is never reached never warns at all.
 
-| Tag                           | Meaning                                             |
-|-------------------------------+-----------------------------------------------------|
-| ~lambda-list-extension~       | a ~&~ / ~&REST~ rest parameter in a ~defun~/~lambda~ |
-| ~ext-bricscad-undocumented~   | a BricsCAD-only construct such as ~let~             |
+*What a diagnostic looks like.* Every one is a single line carrying a
+bracketed *tag*, the place, and what is wrong:
+
+: [lambda-list-extension] drawing.lsp:12 in COMPUTE-AREA: DEFUN `&REST': rest parameter not portable to strict
+
+The *tag* is the stable identifier: it is what to grep for, and what to
+look up. The location is ~FILE:LINE in FUNCTION~ with whichever parts
+are known — the file and line require the source map (a debug load),
+while the function is always reported.
+
+The line is deliberately short, because the explanation belongs
+somewhere it can be as long as it needs to be. Every tag is documented
+in the annex /Dialect portability warnings/
+(~clautolisp-dialect-warnings.org~, shipped with the manual): what the
+construct is, exactly how each engine diverges, why it matters, and the
+reference material. The annex is *generated* from the same register the
+diagnostics are formatted from, so it cannot disagree with what you see
+on screen.
+
+The tags fall into five families:
+
+| Family             | What it means                                                 |
+|--------------------+---------------------------------------------------------------|
+| portability        | a construct one engine has and another does not               |
+| extension notice   | a clautolisp extension used outside ~--dialect clautolisp~     |
+| vendor divergence  | clautolisp follows the spec where a vendor does not           |
+| encoding           | the ~enc-*~ codes — encoding controls and codepages            |
+| trust              | the ~sec-*~ codes — SECURELOAD's warn-and-proceed path         |
 
 *Turning them into errors.* The dialect descriptor carries
 ~:portability-warning-mode~, default ~:warn~. Set it to ~:error~ and

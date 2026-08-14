@@ -273,6 +273,24 @@ separate binary for tool integrators.
   kept. Symbols in both files are also written plainly again
   (=(navigator . line)=, not =(|navigator| . |line|)=). See §
   /Editing a configuration file by hand/.
+- *Dialect warnings are now one short line with a place, and a register
+  behind them.* A diagnostic reads
+  =[lambda-list-extension] drawing.lsp:12 in COMPUTE-AREA: DEFUN `&REST': rest parameter not portable to strict=:
+  the bracketed *tag* is the stable identifier, followed by
+  =FILE:LINE in FUNCTION= (the function is always reported; the file and
+  line need the source map, i.e. a debug load) and one short sentence.
+  The former "use =--dialect X= to silence" tail is gone from the runtime
+  line — it was the same for every occurrence — and now lives in the new
+  annex /Dialect portability warnings/, shipped with the manual, which
+  documents all *18* tags: what each construct is, exactly how each
+  engine diverges, why it matters, and the references. The annex is
+  GENERATED from the same register the diagnostics are formatted from, so
+  the two cannot disagree; =make check-dialect-warnings-annex= fails if
+  the shipped annex goes stale. Three of those tags
+  (=enc-invalid-value=, =sec-untrusted-load=, =sec-untrusted-open=) never
+  appear as literals anywhere in the sources — their families build the
+  bracket from a code keyword — so a test walks the closed code sets
+  instead, and fails when a code is added without an entry.
 - The public =*clal-*= extension variables (=*clal-clipboard*=,
   =*clal-sedit-initial-form*= / =*clal-sedit-last-result*=, the =*clal-form*= /
   =*clal-result*= / =*clal-source-form*= eval-history trio and their =-1= / =-2=

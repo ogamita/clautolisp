@@ -1810,7 +1810,74 @@ or no session is reachable, dedup is skipped (always emit)."
       ((gethash occurrence table) t)
       (t (setf (gethash occurrence table) t) nil))))
 
-(defun emit-lambda-list-extension-warning (spelling who &optional occurrence)
+;;; --- the shared shape of every dialect portability diagnostic ------
+;;;
+;;; pjb's 2026-08-14 ruling (see the register at the top of
+;;; portability.lisp) settles what these lines look like:
+;;;
+;;;   [TAG] FILE:LINE in FUNCTION: one short line
+;;;
+;;; The TAG is the stable identifier and the key into the manual's
+;;; annex; the location is reported because we warn only once per
+;;; occurrence and can afford to look it up; the message is short
+;;; because everything longer belongs in the annex.
+
+(defun %portability-warning-function-name ()
+  "The name of the innermost AutoLISP function being executed, or NIL at
+top level. Read from the live evaluator stack, whose :USUBR frames are
+ (:USUBR NAME . ARGUMENTS) — the same stack `vl-bt' prints."
+  (loop :for frame :in *autolisp-call-stack*
+        :when (and (consp frame)
+                   (eq :usubr (car frame))
+                   (consp (cdr frame))
+                   (stringp (cadr frame)))
+          :return (cadr frame)))
+
+(defun %portability-warning-location (occurrence &optional function-name)
+  "\"FILE:LINE in FUNCTION\" for this occurrence, with whichever parts are
+known; NIL when none are.
+
+The position comes from the debugger's source map, which records a span
+for every compound form — but only while `clautolisp.source:*track-source-
+positions*' is set (a debug load). In a plain production run the table is
+empty by design, so the file and line are simply absent and the warning
+degrades to \"in FUNCTION\", or to no location at all. Reporting the parts
+we have beats either fabricating a position or suppressing the warning.
+
+FUNCTION-NAME is passed by callers that know the name directly — DEFUN
+knows the function it is defining, which is the one the user cares about
+and which no stack walk could supply, since the body is not running yet."
+  (let* ((position (and occurrence
+                        (ignore-errors (clautolisp.source:position-of occurrence))))
+         (file (and position (clautolisp.source:source-position-file position)))
+         (line (and position (clautolisp.source:source-position-start-line position)))
+         (name (or function-name (%portability-warning-function-name))))
+    (cond ((and file line name) (format nil "~A:~D in ~A" file line name))
+          ((and file line)      (format nil "~A:~D" file line))
+          (name                 (format nil "in ~A" name))
+          (t nil))))
+
+(defun %portability-diagnostic (tag location &rest arguments)
+  "The complete one-line diagnostic for TAG: \"[TAG] LOCATION: MESSAGE\".
+
+MESSAGE is formatted from the register entry's control string with
+ARGUMENTS, so the wording lives in exactly one place and the manual annex
+is generated from that same entry. An unregistered TAG cannot produce a
+sensible line and is a programming error caught by a test
+ (`UNREGISTERED-CONSTRUCT-TAGS'); it degrades here to the raw arguments
+rather than signalling, because a diagnostic must never be the thing that
+breaks the run it is diagnosing."
+  (let* ((entry (find-dialect-warning tag))
+         (control (if entry
+                      (dialect-warning-message entry)
+                      "~{~A~^ ~}"))
+         (body (if entry
+                   (apply #'format nil control arguments)
+                   (format nil control (list arguments)))))
+    (format nil "[~A]~@[ ~A~]: ~A" tag location body)))
+
+(defun emit-lambda-list-extension-warning (spelling who &optional occurrence
+                                                          function-name)
   "When a defun/lambda lambda-list uses a rest-parameter separator,
 emit a `[lambda-list-extension]' dialect portability warning
 (autolisp-spec ch.25) unless the current dialect explicitly accepts
@@ -1865,28 +1932,25 @@ run surfaces (stderr is not swallowed by the quiet/verbosity knobs)."
                   (t "<rest-separator>")))
          ;; The support decision comes from the ONE knowledge base
          ;; (autolisp-spec ch.25); this used to be an inline `case'.
-         ;; The message text below is deliberately NOT taken from the
-         ;; catalogue: its canonical wording is an open pjb decision
-         ;; (see clautolisp-dialect-portability-warnings.issue) and the
-         ;; existing tests pin it, so the format string stays here
-         ;; until that call is made.
+         ;; The message text now comes from the register, so the
+         ;; wording, the annex and this line cannot drift apart.
          (silent-p (portability-construct-silent-p
-                    (find-portability-construct token) name)))
+                    (find-portability-construct token) name))
+         (message (and (not silent-p)
+                       (%portability-diagnostic
+                        "lambda-list-extension"
+                        (%portability-warning-location occurrence function-name)
+                        who token (or name "default")))))
     (unless silent-p
       (when (eq mode :error)
         ;; Escalation: turn the advisory into a hard error. This runs
         ;; before dedup — the first reached occurrence aborts the run.
-        (signal-autolisp-runtime-error
-         :non-portable-construct
-         "~A: `~A' is a clautolisp variadic-function extension, not portable to dialect ~(~A~); --portability-warning-mode error escalates it to an error."
-         who token (or name "default")))
+        ;; "~A" and not MESSAGE as a control: a path or a token could
+        ;; contain a tilde and would then be re-processed as FORMAT
+        ;; directives.
+        (signal-autolisp-runtime-error :non-portable-construct "~A" message))
       (unless (%portability-warning-occurrence-seen-p occurrence)
-        (format *error-output*
-                "~&[lambda-list-extension] ~A: `~A' is a clautolisp ~
-variadic-function extension; --dialect ~(~A~) flags it as ~
-non-portable. Use --dialect clautolisp to silence, or rewrite ~
-without a rest parameter.~%"
-                who token (or name "default"))))))
+        (format *error-output* "~&~A~%" message)))))
 
 (defun emit-bricscad-undocumented-warning (construct &optional occurrence)
   "Emit an `[ext-bricscad-undocumented]' dialect portability warning
@@ -1935,22 +1999,19 @@ go to *ERROR-OUTPUT*."
          ;; :bricscad-v25 now behaves like :bricscad-v26 (the old
          ;; inline `case' listed only v26).
          (silent-p (portability-construct-silent-p
-                    (find-portability-construct construct) name)))
+                    (find-portability-construct construct) name))
+         (message (and (not silent-p)
+                       (%portability-diagnostic
+                        "ext-bricscad-undocumented"
+                        (%portability-warning-location occurrence)
+                        construct (or name "default")))))
     (unless silent-p
       (when (eq mode :error)
         ;; Escalation: turn the advisory into a hard error. Runs before
         ;; dedup — the first reached occurrence aborts the run.
-        (signal-autolisp-runtime-error
-         :non-portable-construct
-         "~A is a BricsCAD V26 undocumented extension, not portable to dialect ~(~A~); --portability-warning-mode error escalates it to an error."
-         construct (or name "default")))
+        (signal-autolisp-runtime-error :non-portable-construct "~A" message))
       (unless (%portability-warning-occurrence-seen-p occurrence)
-        (format *error-output*
-                "~&[ext-bricscad-undocumented] ~A is a BricsCAD V26 ~
-undocumented Common-Lisp construct; --dialect ~(~A~) flags it as ~
-non-portable (portable AutoLISP has no ~A). Use --dialect bricscad or ~
-clautolisp to silence.~%"
-                construct (or name "default") construct)))))
+        (format *error-output* "~&~A~%" message)))))
 
 (defun emit-declined-construct-note (label)
   "Explain a construct clautolisp DELIBERATELY does not implement.
@@ -2059,18 +2120,14 @@ go to *ERROR-OUTPUT*."
                             dialect)))
                      :warn)))
       (unless (eq name :lax)
-        (when (eq mode :error)
-          (signal-autolisp-runtime-error
-           :non-portable-construct
-           "~A: path ~S contains a `..' component, whose resolution is not portable across engines/platforms (POSIX-UP vs Windows-BACK, and they differ on symbolic links); --portability-warning-mode error escalates it to an error. Use --dialect lax to silence."
-           who path))
-        (unless (%dotdot-path-warning-seen-p path)
-          (format *error-output*
-                  "~&[path-dotdot] ~A: path ~S contains a `..' component; ~
-its resolution is not portable — POSIX hosts walk physically (UP), ~
-Windows CADs rewrite textually (BACK), and the two differ on symbolic ~
-links. --dialect lax silences this; prefer a path without `..'.~%"
-                  who path))))))
+        (let ((message (%portability-diagnostic
+                        "path-dotdot"
+                        (%portability-warning-location nil)
+                        who path)))
+          (when (eq mode :error)
+            (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+          (unless (%dotdot-path-warning-seen-p path)
+            (format *error-output* "~&~A~%" message)))))))
 
 (defun autolisp-path-has-forward-slash-ellipsis-p (path)
   "T iff PATH contains a `...' subfolder-recursion component (AutoCAD's
@@ -2146,18 +2203,14 @@ otherwise; warnings go to *ERROR-OUTPUT*."
                             dialect)))
                      :warn)))
       (when (eq platform :windows)
-        (when (eq mode :error)
-          (signal-autolisp-runtime-error
-           :non-portable-construct
-           "~A: path ~S uses a forward-slash `/...' subfolder-recursion wildcard, which AutoCAD-Windows does not accept (it requires the back-slash spelling `\\...'); --portability-warning-mode error escalates it to an error. Use `\\...' or --dialect autocad-mac."
-           who path))
-        (unless (%forward-slash-ellipsis-warning-seen-p path)
-          (format *error-output*
-                  "~&[path-slash-ellipsis] ~A: path ~S uses a forward-slash ~
-`/...' subfolder-recursion wildcard; AutoCAD-Windows accepts only the ~
-back-slash spelling `\\...' here. Use `\\...', or --dialect autocad-mac ~
-where `/...' is accepted.~%"
-                  who path))))))
+        (let ((message (%portability-diagnostic
+                        "path-slash-ellipsis"
+                        (%portability-warning-location nil)
+                        who path)))
+          (when (eq mode :error)
+            (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+          (unless (%forward-slash-ellipsis-warning-seen-p path)
+            (format *error-output* "~&~A~%" message)))))))
 
 (defun split-usubr-lambda-list (lambda-list)
   "Walk LAMBDA-LIST and split it into the three positional groups
@@ -2954,16 +3007,23 @@ one-element list (SYMBOL) is also accepted as a NIL initialiser."
              (autolisp-eval-progn body context))
         (pop-dynamic-frame context)))))
 
-(defun maybe-warn-about-rest-separator (lambda-list who)
+(defun maybe-warn-about-rest-separator (lambda-list who &optional function-name)
   "Walk LAMBDA-LIST, find the rest-separator if any, and emit a
 dialect-aware warning via `emit-lambda-list-extension-warning'.
 A no-op when LAMBDA-LIST has no separator or is malformed (the
-malformed cases surface at call-time via `bind-usubr-frame')."
+malformed cases surface at call-time via `bind-usubr-frame').
+
+FUNCTION-NAME is the name being defined, when there is one. The
+diagnostic reports the function concerned (pjb's ruling), and here it
+cannot be read off the call stack: DEFUN's body is not running yet, so
+the innermost frame is whatever called DEFUN. The definer knows the
+name; a LAMBDA has none and passes NIL."
   (when (listp lambda-list)
     (dolist (element lambda-list)
       (let ((spelling (autolisp-ampersand-spelling element)))
         (when spelling
-          (emit-lambda-list-extension-warning spelling who lambda-list)
+          (emit-lambda-list-extension-warning spelling who lambda-list
+                                              function-name)
           (return))))))
 
 (defun eval-lambda-form (arguments context)
@@ -3032,7 +3092,8 @@ malformed cases surface at call-time via `bind-usubr-frame')."
        :invalid-defun-name
        "DEFUN-Q name must be an AutoLISP symbol, got ~S."
        name))
-    (maybe-warn-about-rest-separator lambda-list "DEFUN-Q")
+    (maybe-warn-about-rest-separator lambda-list "DEFUN-Q"
+                                     (autolisp-symbol-name name))
     (let ((function (make-autolisp-usubr (autolisp-symbol-name name)
                                          lambda-list
                                          body
@@ -3056,7 +3117,8 @@ malformed cases surface at call-time via `bind-usubr-frame')."
        :invalid-defun-name
        "DEFUN name must be an AutoLISP symbol, got ~S."
        name))
-    (maybe-warn-about-rest-separator lambda-list "DEFUN")
+    (maybe-warn-about-rest-separator lambda-list "DEFUN"
+                                     (autolisp-symbol-name name))
     (let ((function (make-autolisp-usubr (autolisp-symbol-name name)
                                          lambda-list
                                          body

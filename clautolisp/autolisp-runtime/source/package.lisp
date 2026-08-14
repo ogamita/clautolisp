@@ -285,6 +285,28 @@
    #:map-portability-constructs
    #:portability-construct-supported-p
    #:portability-construct-silent-p
+   ;; The register of dialect warnings, keyed by [tag]: the message
+   ;; templates the emitters format from, the per-dialect divergence
+   ;; detail, and the references. The manual's annex is generated from
+   ;; it (pjb's 2026-08-14 ruling; see portability.lisp).
+   #:dialect-warning
+   #:dialect-warning-p
+   #:dialect-warning-tag
+   #:dialect-warning-title
+   #:dialect-warning-message
+   #:dialect-warning-arguments
+   #:dialect-warning-example
+   #:dialect-warning-dialects
+   #:dialect-warning-rationale
+   #:dialect-warning-references
+   #:register-dialect-warning
+   #:find-dialect-warning
+   #:dialect-warning-tags
+   #:map-dialect-warnings
+   #:dialect-warning-kind
+   #:unregistered-construct-tags
+   #:unregistered-diagnostic-codes
+   #:render-dialect-warnings-annex
    #:emit-declined-construct-note
    #:derive-reader-options-for-dialect
    #:read-current-source

@@ -345,6 +345,12 @@ documentation:
     - pkgs=""; command -v emacs >/dev/null || pkgs="$pkgs emacs-nox"; command -v xelatex >/dev/null || pkgs="$pkgs texlive texlive-latex-extra texlive-xetex texlive-plain-generic"; command -v makeinfo >/dev/null || pkgs="$pkgs texinfo"; command -v dot >/dev/null || pkgs="$pkgs graphviz"; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
     - command -v emacs makeinfo xelatex dot >/dev/null
   script:
+    # The dialect-warnings annex is generated from the register in
+    # autolisp-runtime/source/portability.lisp and TRACKED, so it can go
+    # stale the moment someone improves an entry without regenerating.
+    # Fail here rather than ship a manual that disagrees with what the
+    # program prints.
+    - make -C clautolisp check-dialect-warnings-annex
     - make release-documentation      # build-documentation + package the share/doc tarball
   artifacts:
     name: "clautolisp-documentation-$CI_COMMIT_SHORT_SHA"

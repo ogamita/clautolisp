@@ -1160,3 +1160,108 @@ silently-accepted sequential-binding form."
     (is (eq :undefined-function signalled-code)
         "LET* must be undefined, not a special operator; got: ~S"
         signalled-code)))
+
+;;; --- the register of dialect warnings, keyed by [tag] --------------
+;;;
+;;; pjb's 2026-08-14 ruling: the tag is the stable identifier, the
+;;; message is free prose, and a register keyed by tag carries the
+;;; detail and the references. These tests guard the two properties
+;;; that make the register worth having: it is COMPLETE (every tag a
+;;; user can meet is in it) and it is REACHABLE (the emitters format
+;;; from it, so the annex cannot drift from what is printed).
+
+(test dialect-warning-register-covers-every-catalogued-construct
+  "Every construct in the portability catalogue names a tag that the
+register documents. Otherwise a user meets a bracketed identifier that
+leads nowhere."
+  (is (null (unregistered-construct-tags))
+      "Catalogued constructs whose tag is undocumented: ~S"
+      (unregistered-construct-tags)))
+
+(test dialect-warning-register-covers-every-closed-code-set
+  "The encoding and secureload diagnostics build their bracket from a
+code keyword at emission time, so their tags appear NOWHERE as literals
+in the sources — grepping cannot enumerate them, and a grep of `[...]'
+also picks up struct names and UI decorations that are not tags at all.
+This is the exact check instead: add a code without documenting it and
+this fails."
+  (is (null (unregistered-diagnostic-codes *enc-diagnostic-codes*))
+      "Encoding codes with no register entry: ~S"
+      (unregistered-diagnostic-codes *enc-diagnostic-codes*))
+  (is (null (unregistered-diagnostic-codes *secureload-diagnostic-codes*))
+      "Secureload codes with no register entry: ~S"
+      (unregistered-diagnostic-codes *secureload-diagnostic-codes*)))
+
+(test dialect-warning-entries-are-complete
+  "Every register entry carries what the annex needs. An entry with an
+empty explanation is worse than no entry: it looks documented."
+  (map-dialect-warnings
+   (lambda (entry)
+     (let ((tag (dialect-warning-tag entry)))
+       (is (plusp (length (dialect-warning-title entry)))
+           "~A has no title" tag)
+       (is (plusp (length (dialect-warning-example entry)))
+           "~A has no example line" tag)
+       (is (plusp (length (dialect-warning-dialects entry)))
+           "~A does not say how the dialects diverge" tag)
+       (is (plusp (length (dialect-warning-rationale entry)))
+           "~A does not say why it matters" tag)
+       (is (consp (dialect-warning-references entry))
+           "~A has no references" tag)
+       ;; The example must actually show the tag it documents — an
+       ;; example copied from a neighbouring entry is a real mistake
+       ;; and an easy one.
+       (is (search (format nil "[~A]" tag) (dialect-warning-example entry))
+           "~A's example line does not show its own tag: ~S"
+           tag (dialect-warning-example entry))))))
+
+(test dialect-warning-message-comes-from-the-register
+  "The emitted line is formatted from the register entry, so improving
+the wording in one place changes both the diagnostic and the annex.
+Checked on the real emission path rather than on the formatter."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :strict "(defun compute-area (a &rest r) r)")
+    (declare (ignore result))
+    ;; the tag, the function concerned, and the register's own wording
+    (is (search "[lambda-list-extension]" diag)
+        "Expected the tag; got: ~S" diag)
+    (is (search "in COMPUTE-AREA" diag)
+        "Expected the function name (pjb's point 2); got: ~S" diag)
+    (is (search "rest parameter not portable to strict" diag)
+        "Expected the register's wording; got: ~S" diag)
+    ;; one line, per pjb's point 3
+    (is (zerop (count #\Newline (string-trim '(#\Newline #\Space) diag)))
+        "The diagnostic must stand on a single line; got: ~S" diag)))
+
+(test dialect-warning-reports-the-defined-function-not-the-caller
+  "DEFUN's warning names the function being DEFINED. It cannot come off
+the call stack — the body is not running yet — so the definer passes it
+explicitly. Guard against a refactor that drops the argument and
+silently falls back to the enclosing frame."
+  (reset-autolisp-symbol-table)
+  ;; A nested DEFUN, so there IS an enclosing frame to be confused with:
+  ;; OUTER is on the call stack when INNER's lambda list is checked.
+  ;; DEFUN is a special operator, so this needs no builtins.
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :strict
+                          "(defun outer () (defun inner (a &rest r) r))
+                           (outer)")
+    (declare (ignore result))
+    (is (search "in INNER" diag)
+        "Expected the defined function INNER, not the caller OUTER; got: ~S"
+        diag)
+    (is (null (search "in OUTER" diag))
+        "The enclosing frame must not win over the defined name; got: ~S"
+        diag)))
+
+(test dialect-warning-annex-renders-every-entry
+  "The manual annex is GENERATED from the register, so the generator
+must survive every entry — including the code families, whose MESSAGE
+is deliberately empty because their text varies by call site."
+  (let ((annex (with-output-to-string (out)
+                 (render-dialect-warnings-annex out))))
+    (is (plusp (length annex)) "The annex came out empty")
+    (dolist (tag (dialect-warning-tags))
+      (is (search (format nil "=[~A]=" tag) annex)
+          "~A is missing from the generated annex" tag))))
