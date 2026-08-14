@@ -11,7 +11,7 @@ make_compiler () {
   target=$2
   printf '%s\n' '#!/bin/sh' \
     "if [ \"\${1:-}\" = -dumpmachine ]; then printf '%s\\n' '$target'; exit 0; fi" \
-    'exit 99' > "$temp/$name"
+    'exit 0' > "$temp/$name"
   chmod +x "$temp/$name"
 }
 
@@ -19,22 +19,24 @@ make_compiler msys-cc x86_64-pc-msys
 make_compiler mingw-cc x86_64-w64-mingw32
 
 if PATH="$temp:$PATH" MSYSTEM=MSYS CC=msys-cc \
-   CLAUTOLISP_BUILD_PROBE_ONLY=1 "$script" >"$temp/reject.log" 2>&1; then
+   CLAUTOLISP_COMPILER_PROBE_ONLY=1 "$script" >"$temp/reject.log" 2>&1; then
   echo "FAIL: MSYS compiler was accepted" >&2
   exit 1
 fi
-grep -q "Native Windows SBCL/CCL cannot safely load" "$temp/reject.log"
+grep -q "does not target native Windows" "$temp/reject.log"
 
-if PATH="$temp:$PATH" MSYSTEM=UCRT64 CC=mingw-cc \
-   CLAUTOLISP_BUILD_PROBE_ONLY=1 "$script" >"$temp/reject-ucrt.log" 2>&1; then
-  echo "FAIL: UCRT64 compiler was accepted" >&2
-  exit 1
+if [ -x /ucrt64/bin/gcc ]; then
+  if MSYSTEM=UCRT64 CC=/ucrt64/bin/gcc \
+     CLAUTOLISP_COMPILER_PROBE_ONLY=1 "$script" >"$temp/reject-ucrt.log" 2>&1; then
+    echo "FAIL: UCRT64 compiler was accepted" >&2
+    exit 1
+  fi
+  grep -q "use the MINGW64/MSVCRT compiler" "$temp/reject-ucrt.log"
 fi
-grep -q "must be built from an MSYS2 MINGW64 shell" "$temp/reject-ucrt.log"
 
 PATH="$temp:$PATH" MSYSTEM=MINGW64 CC=mingw-cc \
-  CLAUTOLISP_BUILD_PROBE_ONLY=1 "$script" >"$temp/accept.log" 2>&1
-grep -q "x86_64-w64-mingw32 (mingw" "$temp/accept.log"
+  CLAUTOLISP_COMPILER_PROBE_ONLY=1 "$script" >"$temp/accept.log" 2>&1
+grep -q "compiler target: x86_64-w64-mingw32" "$temp/accept.log"
 
 printf '!<arch>\n' > "$temp/libredwg.dll.a"
 printf 'MZ' > "$temp/libredwg.dll"
