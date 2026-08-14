@@ -117,7 +117,7 @@ TEST_SYSTEM ?= autolisp-front-end
 .PHONY: help all documentation test test-sbcl test-ccl \
         build build-sbcl build-ccl probe-check \
         build-alfe-sbcl build-alfe-ccl clean-pdf clean \
-        conformance check-spec-coverage \
+        conformance conformance-harness-tests check-spec-coverage \
         test-alfe-sbcl-clautolisp test-alfe-ccl-clautolisp \
         test-alfe-sbcl-bricscad-macos test-alfe-ccl-bricscad-macos \
         test-alfe-sbcl-bricscad-windows test-alfe-ccl-bricscad-windows \
@@ -292,7 +292,7 @@ build-alfe-ccl:  ## Build tools/alfe/bin/alfe-ccl via save-application.
 # producing a focused summary without the surrounding unit-test
 # output.
 
-conformance:  ## Run the alfe scenario corpus and exit non-zero on any failure.
+conformance: conformance-harness-tests  ## Run the alfe scenario corpus and exit non-zero on any failure.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
 	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
@@ -305,6 +305,15 @@ conformance:  ## Run the alfe scenario corpus and exit non-zero on any failure.
 		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
 		--eval '(asdf:load-system "autolisp-front-end/tool-run-alfe-conformance")' \
 		--eval '(alfe.tools.run-alfe-conformance:main nil)'
+
+# The vendor harness compares a probe's OBSERVE lines against the scenario's
+# expectations through scripts/compare-observations.py. That comparator is
+# not exercised by the Lisp suite, and when it silently failed to decode a
+# UTF-16 log the harness reported "backend unreachable or probe crashed"
+# about probes that had emitted 101 perfectly good observations. Run its
+# tests wherever the conformance corpus runs.
+conformance-harness-tests:  ## Test the probe-comparison harness itself.
+	sh ../scripts/tests/compare-observations-encoding-test.sh
 
 check-spec-coverage:  ## Assert every CLI option in the spec is covered by ≥1 scenario.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \

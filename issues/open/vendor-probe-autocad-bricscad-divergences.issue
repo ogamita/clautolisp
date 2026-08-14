@@ -239,15 +239,67 @@ d'arguments trop important=). But BricsCAD HAS =&rest=, takes no such
 fallback, and loses its OBSERVE lines identically. A cause common to both
 is upstream of that.
 
-** Where to look next
+** FOUND 2026-08-14 — the log was UTF-16 and the comparator read UTF-8
 
-The observation CHANNEL, not the drawing and not the language: the probe
-scenarios emit OBSERVE lines somewhere the harness is not reading, or the
-scenarios are not being reached at all despite the loop returning
-normally. =PROBE_KEEP_WORKDIR= is already honoured and the workdir is
-copied into =dist/vendor-probes/<vendor>/<scenario>-workdir=, so the
-emitted files from this very run are downloadable from the job artifacts
-— that is the cheapest place to start, before running anything again.
+The observation channel it was. Diagnosed entirely from the archived
+artifacts of the failed run, without re-running anything.
+
+The chain is: probe =princ='s =OBSERVE <name> <token>=, alfe bridges the
+CAD's output into =protocol/stdout.txt= and relays it to its own stdout,
+the PowerShell harness tees that into =<scenario>.log=, and
+=scripts/compare-observations.py= parses the log. Every link worked. The
+last one silently did not:
+
+: $ python3 -c "b=open('entity-lifecycle.log','rb').read(); ..."
+: BOM b'\xff\xfe'
+: ascii  OBSERVE occurrences: 0
+: utf16  OBSERVE occurrences: 101
+: NUL bytes: 7596
+
+Windows PowerShell's =Tee-Object -FilePath= writes UTF-16LE with a BOM.
+The comparator opened the log with =encoding="utf-8", errors="replace"=,
+which does NOT raise — it yields a wall of replacement characters. Every
+OBSERVE line vanished, the table came out empty, and the script printed
+"(no OBSERVE lines — backend unreachable or probe crashed)", accusing a
+CAD that had just emitted 101 perfectly good observations.
+
+A warning for whoever reads this next: =grep= misled the first pass.
+=ugrep=, the grep in use here, transparently decodes UTF-16, so grepping
+the log found all 101 OBSERVE lines and made it look like the harness was
+being handed good data. Only =od= / a byte count settled it. When a text
+tool disagrees with a program about a file, check the bytes.
+
+** The result: every vendor probe PASSES, on both engines
+
+Re-running the comparator over the SAME archived logs, with the decode
+fixed (1.8.36):
+
+| probe            | AutoCAD                  | BricsCAD                              |
+|------------------+--------------------------+---------------------------------------|
+| entity-lifecycle | 101 conforms, 0 missing  | 97 conforms + 4 known-divergence      |
+| drawing-data     | 27 conforms, 0 missing   | 26 conforms + 1 known-divergence      |
+| selection        | 21 conforms, 0 missing   | 21 conforms, 0 missing                |
+
+Exit 0 on all six. And the divergences are not noise — they are exactly
+the two this register documents, now confirmed against real hardware
+rather than inferred:
+
+- D1: =d1.markerless-{ellipse,lwpolyline,ray,xline}: created (normative
+  rejected)= — BricsCAD accepts ENTMAKE data with the R13+ subclass
+  markers omitted, where the spec (per AutoCAD) requires them. Precisely
+  the =[entmake-subclass-marker]= entry.
+- D3: =dict.entmod-xrecord-entry: payload2 (normative payload)= —
+  BricsCAD applies ENTMOD to a non-graphical object where AutoCAD makes
+  it a no-op. Precisely the =[entmod-nongraphical]= entry.
+
+The AutoCAD side also harvested, in the same run, direct confirmation of
+what the portability register had only inferred: =EXTPROBE
+SETF-STRING=ERROR:no function definition: SETF=, =LET-SUM=ERROR:no
+function definition: Y=, =REST-BINDS=ERROR:nombre d'arguments trop
+important=. AutoCAD has no SETF, no LET, and rejects &REST.
+
+So the "selection re-verify" this ticket lists as residual is DONE —
+21/21 on both vendors — and it never needed a new empty.dwg.
 
 ** On sourcing a blank drawing, when one IS needed
 
