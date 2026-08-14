@@ -33,8 +33,9 @@ separate binary for tool integrators.
   expose its runtime directory to compiler subprocesses, reject private
   UCRT dependencies, and install the exact DLL imported by the CFFI shim.
 - Documentation builds now locate MSYS2 UCRT64 TeX/Graphviz tools and use
-  Windows-compatible Kpathsea paths, allowing ~make documentation~ to run
-  from plain MSYS and Emacs shells.
+  Windows-compatible Kpathsea paths. They also translate Windows-form
+  temporary-directory variables before starting POSIX Emacs, allowing
+  ~make documentation~ to run from plain MSYS and Emacs shells.
 - On Windows, ~make install~ now appends ~.exe~ to every executable it
   places under =$PREFIX/bin= and =$PREFIX/libexec= (clautolisp,
   read-autolisp, alfe, the Qt GUI, run-file-compat), and ships the

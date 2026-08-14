@@ -81,20 +81,20 @@ $(SPEC_PDF_VERSIONED): $(SPEC_PDF)
 pages: $(PAGES_DIR)/.stamp  ## Emit one .txt per * chapter and ** subsection under build/pages/.
 
 $(PAGES_DIR)/.stamp: $(SPEC_ORG) scripts/build-paged-spec.el
-	"$(EMACS)" --batch --script scripts/build-paged-spec.el \
+	sh ../scripts/run-emacs.sh "$(EMACS)" --batch --script scripts/build-paged-spec.el \
 		$(SPEC_ORG) $(PAGES_DIR) text
 	@touch $@
 
 html: $(HTML_DIR)/.stamp  ## Render every section + the index/symbol pages as HTML.
 
 $(HTML_DIR)/.stamp: $(BUILD_DIR)/.org-stamp scripts/build-paged-html.el
-	"$(EMACS)" --batch --script scripts/build-paged-html.el $(BUILD_DIR)
+	sh ../scripts/run-emacs.sh "$(EMACS)" --batch --script scripts/build-paged-html.el $(BUILD_DIR)
 	@touch $@
 
 info: $(INFO_DIR)/autolisp-spec.info  ## Build the .info manual from the spec.
 
 $(INFO_DIR)/autolisp-spec.texi: $(SPEC_ORG) scripts/build-paged-info.el
-	"$(EMACS)" --batch --script scripts/build-paged-info.el \
+	sh ../scripts/run-emacs.sh "$(EMACS)" --batch --script scripts/build-paged-info.el \
 		$(SPEC_ORG) $(BUILD_DIR)
 
 $(INFO_DIR)/autolisp-spec.info: $(INFO_DIR)/autolisp-spec.texi
@@ -112,7 +112,7 @@ paged: pages html info  ## Build every paged derivative (pages + html + info).
 # both consume. The stamp file pegs the rebuild trigger to the spec
 # org's mtime.
 $(BUILD_DIR)/.org-stamp: $(SPEC_ORG) scripts/build-paged-spec.el
-	"$(EMACS)" --batch --script scripts/build-paged-spec.el \
+	sh ../scripts/run-emacs.sh "$(EMACS)" --batch --script scripts/build-paged-spec.el \
 		$(SPEC_ORG) $(BUILD_DIR)/org org
 	@mkdir -p $(BUILD_DIR)
 	@touch $@
@@ -240,7 +240,7 @@ endif
 # the source path) and delete the intermediate .tex so the source tree stays clean.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@mkdir -p $(@D)
-	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" "$(EMACS)" --batch \
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf

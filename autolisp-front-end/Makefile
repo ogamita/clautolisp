@@ -202,7 +202,7 @@ endif
 # the source path) and delete the intermediate .tex so the source tree stays clean.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@mkdir -p $(@D)
-	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" "$(EMACS)" --batch \
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 	    --eval "(setq org-confirm-babel-evaluate nil)" \
 	    --eval "(setq org-export-with-broken-links t)" \
 	    --eval "(require 'ox-latex)" \
@@ -216,7 +216,7 @@ $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 
 $(BUILD_DIR)/%.texi: %.org
 	@mkdir -p $(@D)
-	"$(EMACS)" --batch \
+	sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 	    --eval '(progn (require (quote ox-texinfo)) (setq org-export-with-broken-links t))' \
 	    --visit "$<" \
 	    --funcall org-texinfo-export-to-texinfo
