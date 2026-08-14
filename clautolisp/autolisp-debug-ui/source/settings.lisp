@@ -15,7 +15,9 @@
 ;;;; or a service-name string.  On disk aldo.conf is a plain sexp with bare,
 ;;;; lower-case symbols (AutoLISP-friendly, UTF-8); a glyph anywhere may be a
 ;;;; literal string or a list of integer code points (so the file can stay
-;;;; ASCII).
+;;;; ASCII).  The settings left at their default are written out too, but
+;;;; commented, so the file documents what may be edited into it — see
+;;;; WRITE-CONFIGURATION-FILE.
 
 (in-package #:clautolisp.debug.ui)
 
@@ -379,8 +381,15 @@ clautolisp/NAME.conf found along $XDG_CONFIG_DIRS; NIL if none."
 (defun %externalize (form)
   "Convert the internal config FORM (keyword keys/enums) to its external,
 AutoLISP-friendly shape: keywords become bare lower-case symbols (printed as
-tokens), everything else is kept."
-  (cond ((keywordp form) (make-symbol (string-downcase (symbol-name form))))
+tokens), everything else is kept.
+
+The uninterned symbol keeps the keyword's UPPER-CASE name and is rendered
+lower-case by *PRINT-CASE* at print time, rather than being built lower-case:
+a symbol actually named \"navigator\" does not read back as itself under the
+standard readtable, so PRIN1 has to write it |navigator|. That was invisible
+while the file was only ever machine-written and machine-read — it stops being
+invisible now that the file documents itself for hand editing."
+  (cond ((keywordp form) (make-symbol (string-upcase (symbol-name form))))
         ((consp form) (cons (%externalize (car form)) (%externalize (cdr form))))
         (t form)))
 
@@ -400,14 +409,118 @@ strings and conses are preserved structurally."
         ((consp form) (cons (%internalize (car form)) (%internalize (cdr form))))
         (t form)))
 
-(defun write-aldo-configuration (stream &optional (config *aldo-configuration*))
-  "Write CONFIG to STREAM as a readable sexp (bare lower-case symbols)."
-  (let ((*print-case* :downcase)
+(defun %config-entry-string (entry)
+  "ENTRY (a (KEY . VALUE) cell) printed in the file's external syntax.
+
+A NIL value is written as an explicit `. nil' rather than left to print as the
+end of the list — (break-on-caught) is correct but reads, to someone editing
+the file, like a setting with its value missing."
+  (let ((entry (if (null (cdr entry))
+                   (cons (%externalize (car entry)) (make-symbol "NIL"))
+                   entry))
+        (*print-case* :downcase)
         (*print-readably* nil)
         (*print-gensym* nil)            ; uninterned symbols print bare, no #:
-        (*print-pretty* t))
-    (prin1 (%externalize config) stream)
-    (terpri stream)))
+        (*print-pretty* t)
+        (*print-right-margin* 72))
+    (prin1-to-string (%externalize entry))))
+
+(defun %prefix-lines (text prefix &optional (continuation prefix))
+  "TEXT with PREFIX prepended to its first line and CONTINUATION to the rest —
+so a pretty-printed multi-line entry can be commented out or indented as a
+whole."
+  (let ((lines (uiop:split-string text :separator (string #\Newline))))
+    (format nil "~{~A~^~%~}"
+            (loop :for line :in lines
+                  :for first := t :then nil
+                  :collect (concatenate 'string (if first prefix continuation) line)))))
+
+(defun %setting-value-syntax (key specs)
+  "A one-line description of the values setting KEY accepts, annotating the
+commented-out defaults in a saved conf file. NIL for a key with no scalar spec
+\(:DECORATIONS, which is edited as data).
+
+Note this describes the FILE syntax, not `set''s: a boolean is written t / nil
+here, because the file reader maps only those two symbols to booleans — an
+\"off\" in the file would read back as the (true) symbol :OFF."
+  (let ((spec (assoc (normalize-config-key key) specs)))
+    (when spec
+      (destructuring-bind (name type &optional allowed) spec
+        (declare (ignore name))
+        (ecase type
+          (:enum    (format nil "~{~(~A~)~^ | ~}" allowed))
+          (:integer "an integer")
+          (:boolean "t | nil")
+          (:string  "a string")
+          (:port    "a port number, or a service name in a string"))))))
+
+(defun write-configuration-file (stream config defaults specs
+                                 &key (name "aldo.conf") (what "the aldo debugger")
+                                      (save-command ",settings save"))
+  "Write CONFIG to STREAM as the self-documenting sexp a conf file is.
+
+The settings the user explicitly set are written as live data; every OTHER
+known setting is then written commented out, at its built-in default value and
+annotated with the values it accepts. That is what makes the file editable by
+hand without the manual open beside it: it lists what exists, what it is
+currently worth, and what may be put there (pjb's request).
+
+Only the live entries are data — `;' comments are skipped by the reader, so
+the file still reads back as exactly one form, and reads back as the same
+configuration it was saved from. LOAD therefore does not turn the documented
+defaults into explicit settings, which is what keeps the file a diff against
+the defaults and keeps the aldo-over-lisp stacking working."
+  ;; Everything written here stays ASCII: the settings themselves are kept
+  ;; ASCII-representable on purpose (a glyph may be a list of code points
+  ;; rather than a literal character), so the prose must not be what forces
+  ;; the file to need a UTF-8 reader.
+  (format stream ";;;; clautolisp ~A - the configuration of ~A.~%" name what)
+  (format stream ";;;;~%")
+  (format stream ";;;; One list of (name . value) settings, read at start-up.~%")
+  (format stream ";;;; Only the settings you changed are stored.  The lines commented~%")
+  (format stream ";;;; out below are at their built-in default: they are listed so you~%")
+  (format stream ";;;; can see what exists -- uncomment one and edit its value to~%")
+  (format stream ";;;; override it.  The accepted values follow each line.~%")
+  (format stream ";;;;~%")
+  (format stream ";;;; Saving (~A) rewrites this file; comments you~%" save-command)
+  (format stream ";;;; add by hand are not kept.~%")
+  (write-line "(" stream)
+  (dolist (cell config)
+    (write-line (%prefix-lines (%config-entry-string cell) " " "  ") stream))
+  (let ((documented (remove-if (lambda (cell)
+                                 (nth-value 1 (config-explicit (car cell) config)))
+                               defaults)))
+    (when documented
+      (when config (terpri stream))
+      (write-line " ;; Defaults -- uncomment a line to set it." stream)
+      (dolist (cell documented)
+        (let ((syntax (%setting-value-syntax (car cell) specs)))
+          (if syntax
+              (format stream " ;;~A~36T; ~A~%"
+                      (%config-entry-string cell) syntax)
+              ;; No scalar spec: a structural setting, printed over as many
+              ;; lines as it takes, every one of them commented out.
+              (write-line (%prefix-lines (%config-entry-string cell) " ;;" " ;;  ")
+                          stream))))))
+  (write-line ")" stream))
+
+(defun write-aldo-configuration (stream &optional (config *aldo-configuration*))
+  "Write CONFIG to STREAM as aldo.conf (see WRITE-CONFIGURATION-FILE)."
+  (write-configuration-file stream config
+                            *default-aldo-configuration* *setting-specs*
+                            :name "aldo.conf" :what "the aldo debugger"
+                            :save-command ",settings save"))
+
+(defun write-lisp-configuration (stream &optional (config *lisp-configuration*))
+  "Write CONFIG to STREAM as lisp.conf. Not WRITE-ALDO-CONFIGURATION with
+another argument: the documented defaults and the accepted values must come
+from the LISP interactor's own tables, or lisp.conf would advertise aldo's
+settings as if they were its own."
+  (write-configuration-file stream config
+                            *default-lisp-configuration* *lisp-setting-specs*
+                            :name "lisp.conf"
+                            :what "the LISP (REPL) interactor"
+                            :save-command ",write-settings"))
 
 (defparameter +config-read-package-name+ "CLAUTOLISP.DEBUG.UI.CONFIO"
   "A throw-away package the config reader interns file symbols into, so reading
@@ -454,7 +567,7 @@ lisp.conf) as UTF-8. Returns the path written."
   (with-open-file (out path :direction :output :if-exists :supersede
                             :if-does-not-exist :create
                             :external-format :utf-8)
-    (write-aldo-configuration out *lisp-configuration*))
+    (write-lisp-configuration out *lisp-configuration*))
   path)
 
 (defun load-lisp-configuration (&optional (path (lisp-config-load-path)))

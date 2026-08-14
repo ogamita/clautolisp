@@ -122,3 +122,65 @@ rather than the "bare lower-case symbols" the file's own commentary
 promises. This is pre-existing WRITE-ALDO-CONFIGURATION behaviour (an
 aldo.conf saved before this work looks the same) and it round-trips
 correctly through READ-ALDO-CONFIGURATION, so it is left alone here.
+[Fixed in the follow-up below — see 1.8.30.]
+
+* Follow-up 2026-08-14 — self-documenting conf files (1.8.30)
+
+pjb, on this ticket: "would it be possible when writing the configuration
+files, to write the settings that have their default value in a comment,
+so the user may know what is available, if he wants to edit the
+configuration files?"
+
+Done. A saved aldo.conf / lisp.conf now carries a short header, then the
+settings the user explicitly set as live data, then every remaining known
+setting commented out at its built-in default and annotated with the
+values it accepts. WRITE-CONFIGURATION-FILE takes the store, the defaults
+table and the specs table, so each file documents its OWN settings.
+
+This is only expressible because of option (b) above: the writer can mark
+a setting as "left at its default" only if the store distinguishes that
+from "explicitly set to the same value". The two halves of this ticket
+are the same change seen from its two ends.
+
+The commented lines must stay documentation, never data — if LOAD took
+them as explicit settings, a saved-then-loaded aldo.conf would shadow
+every key of the lisp layer and silently break the stacking this ticket
+exists for. There is a test for exactly that, and one that strips the
+comments and checks the remaining text still reads as exactly one form.
+
+** Two defects fixed, both surfaced by the new tests
+
+- The pipe-escaping recorded under "Noted, not changed" above is now
+  fixed: %EXTERNALIZE built its uninterned symbols with LOWER-CASE names,
+  which PRIN1 must write =|navigator|= since they would not read back as
+  themselves. Giving them UPPER-CASE names and letting *PRINT-CASE*
+  :DOWNCASE render them yields the bare tokens the file's commentary
+  always promised. Harmless while the file was only machine-written and
+  machine-read; not harmless once the point of the file is that a human
+  edits it — which is what this follow-up changed.
+- SAVE-LISP-CONFIGURATION called WRITE-ALDO-CONFIGURATION with the lisp
+  store. Equivalent while the writer only dumped an alist; wrong the
+  moment it consults a defaults table, since lisp.conf would then have
+  documented aldo's settings as if they were its own. Hence
+  WRITE-LISP-CONFIGURATION.
+
+Also: a NIL value is now written =(break-on-caught . nil)= rather than
+left to print as =(break-on-caught)=, which reads to a human like a
+missing value; and the generated prose is ASCII, so the documentation is
+not what forces the file to need a UTF-8 reader (the pre-existing
+=settings-conf-file-is-ascii-friendly= test caught an em dash in the
+first draft of the header).
+
+** Not folded in
+
+=(clal-save-aldo-configuration)= writes the same aldo.conf from the
+AutoLISP side and still emits the plain sexp. Reusing the rich writer
+there would be a layering violation (=autolisp-builtins-core= does not
+depend on =autolisp-debug-ui=). Split out as
+=clal-save-aldo-configuration-undocumented-file.issue=.
+
+** Verified (follow-up)
+
+SBCL and CCL suites green (exit 0, every suite Fail: 0), 4 new FiveAM
+tests, and the generated files eyeballed for both the "some settings set"
+and the "nothing set" cases.

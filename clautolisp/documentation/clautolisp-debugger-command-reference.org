@@ -1240,6 +1240,17 @@ the in-memory value holds, so a user who prefers an ASCII file keeps glyphs as
 code points. (Unicode decorations apply only where the build supports Unicode;
 the =ascii= theme is the always-available fallback.)
 
+*A saved file documents itself.* =,settings save= writes the settings you
+changed as live data, then every setting you left alone *commented out*, at
+its built-in default and followed by the values it accepts — so the file can
+be edited by hand without this reference beside it. The commented lines are
+documentation, not data: the reader skips them, so loading such a file sets
+only its live entries, and the settings shown at their default stay
+unset (which is what keeps the aldo-over-lisp fall-through of =lisp.conf=
+working). Saving rewrites the file; comments added by hand are not kept.
+Values there use the file's syntax rather than =set='s — a boolean is =t= or
+=nil=, since =off= would read back as a (true) symbol.
+
 - backing: =[new]= — =*clal-aldo-configuration*=, the XDG load/search, the two
   =clal-*= functions, the save / reload subcommands, the =theme= selector, and
   the string-or-codepoints decoration reader. No auto-save.

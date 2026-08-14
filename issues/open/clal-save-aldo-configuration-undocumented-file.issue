@@ -1,0 +1,78 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: clal-save-aldo-configuration-undocumented-file — saving aldo.conf from AutoLISP drops the self-documentation the debugger writes
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-clal-save-aldo-conf-documentation
+
+* Symptom
+
+Two commands write the *same* file, =$XDG_CONFIG_HOME/clautolisp/aldo.conf=,
+and they no longer write it the same way:
+
+- =,settings save= at =DBG>= writes the self-documenting form (1.8.30): the
+  settings you changed, then every untouched setting commented out at its
+  built-in default with its accepted values;
+- =(clal-save-aldo-configuration)= from AutoLISP writes a bare sexp with no
+  header and no commented defaults.
+
+So saving from AutoLISP *silently strips* the documentation from a file the
+user may have been editing by hand. Nothing breaks — a stripped file reads
+back identically — but the next hand edit is done blind.
+
+* Repro (clautolisp 1.8.30)
+
+: clautolisp-sbcl -e '(clal-save-aldo-configuration)'
+: head -3 ~/.config/clautolisp/aldo.conf
+
+No =;;;;= header; compare with the file left by =,settings save=.
+
+* Cause
+
+They are two different serialisers over two different stores:
+
+- =clautolisp.debug.ui:WRITE-CONFIGURATION-FILE=
+  (=clautolisp/autolisp-debug-ui/source/settings.lisp=) writes the settings
+  store, and has =*DEFAULT-ALDO-CONFIGURATION*= / =*SETTING-SPECS*= to
+  document it from;
+- =SAVE-ALDO-CONFIGURATION-TO= (=clautolisp/autolisp-builtins-core/source/
+  api.lisp=) writes whatever AutoLISP value is bound to
+  =*clal-aldo-configuration*=, through the AutoLISP printer.
+
+The obvious fix — call the first from the second — is a *layering violation*:
+=clautolisp/autolisp-builtins-core= does not depend on
+=clautolisp/autolisp-debug-ui= (the dependency runs the other way, via
+=config-bridge=), and it should not start to.
+
+There is also a genuine semantic gap, not just a plumbing one:
+=*clal-aldo-configuration*= is a user-controlled AutoLISP value, not the
+settings store. The user may have put arbitrary keys in it, so "the settings
+you did not set" is not well defined on that side the way it is on the
+debugger's.
+
+* Options
+
+1. Move the writer down. Put the serialiser plus the defaults/specs tables in
+   a layer both can reach (=autolisp-runtime= or a small new system), and have
+   both callers use it. Cleanest, most work; the tables' natural home is
+   arguably not the UI layer anyway.
+2. Have the builtin delegate through the existing bridge. =config-bridge=
+   already carries values across the boundary in the other direction; a hook
+   variable set by the UI layer at start-up (the pattern
+   =*default-on-quit-policy*= uses for sedit) would let the builtin use the
+   rich writer when the debugger UI is loaded and fall back to the bare sexp
+   when it is not. Smallest change; leaves two code paths.
+3. WONTFIX, documented. State in the manual that
+   =(clal-save-aldo-configuration)= writes the plain form. Defensible: the
+   AutoLISP entry point serialises a variable, and a user driving it from
+   AutoLISP is scripting, not hand-editing.
+
+Option 2 is the recommendation if this is picked up: it matches an existing
+pattern in the tree and does not move the tables.
+
+* Notes
+
+Found 2026-08-14 while implementing the self-documenting conf files
+(pjb's request on =lisp-configuration=, shipped in 1.8.30). Deliberately not
+folded into that change, which stops at the layer that owns the settings.
