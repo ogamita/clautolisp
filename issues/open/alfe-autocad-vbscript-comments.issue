@@ -1,0 +1,106 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: alfe-autocad-vbscript-comments — generated AutoCAD bridge starts with invalid VBScript comments
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: cad-runtime
+#+DEPENDS: -
+#+BRANCH: fix-alfe-autocad-vbscript-comments
+
+* Context
+
+ALFE 1.8.3 uses a generated =bridge-autocad.vbs= to start the full
+AutoCAD application through COM when the AutoCAD backend is selected in
+automation mode.  This is the path selected, for example, by:
+
+#+begin_src sh
+alfe -norc --autocad --cad acad-2022 --mode automation \
+  --dwg drawing.dwg --keep-workdir --print-command
+#+end_src
+
+The full application is required by CAD tests which use ActiveX.  The
+batch alternative selects =accoreconsole.exe=, where functions such as
+=vlax-get-acad-object= and =vlax-ename->vla-object= are unavailable, so
+it is not a workaround for those tests.
+
+* Problem
+
+The bridge emitted by ALFE 1.8.3 begins with Lisp-style comments:
+
+#+begin_src vbscript
+;; AutoCAD COM bridge — emitted by alfe.backend.autocad
+;; Placeholders: ...
+;; auto, , 60.
+;; Mirrors the legacy bash wrapper's bridge-autocad.vbs; preserve
+;; the WaitQuiescent + GetAcadState handshake — it's the hard-won
+;; piece that keeps the bridge from racing AutoCAD's UI init.
+Option Explicit
+#+end_src
+
+=;;= is not a VBScript comment marker.  VBScript accepts an apostrophe
+(='=) or =Rem=, and consequently =cscript= rejects the generated file
+before any COM or AutoCAD initialization takes place:
+
+#+begin_example
+bridge-autocad.vbs(1, 1) Erreur de compilation Microsoft VBScript: Instruction attendue
+alfe[warn]: backend AUTOCAD: process exited after 0.16 s; last status = "BOOTING"
+alfe: alfe AUTOCAD backend error (phase BOOTSTRAP): AutoCAD process exited before READY (exit 1) [PROCESS-EXITED-BEFORE-READY]
+#+end_example
+
+The invalid text comes from the VBScript template in
+=autolisp-front-end/source/backend-autocad.lisp= (the template beginning
+near line 252), not from the generated work directory or the installed
+AutoCAD version.
+
+* Reproduction
+
+1. Install ALFE 1.8.3 on Windows with AutoCAD 2022 available.
+2. Run the command above with an existing DWG and inspect the command
+   printed for automation mode.  It invokes:
+
+   #+begin_example
+   cscript //nologo C:/msys64/tmp/alfe-autocad-.../bridge-autocad.vbs
+   #+end_example
+
+3. Run the command without =--print-command=, or invoke =cscript=
+   directly on the retained bridge.  Compilation fails at line 1,
+   column 1 with =Instruction attendue=.
+4. Inspect the retained file: its first bytes are =;; AutoCAD COM
+   bridge= and the first valid VBScript statement, =Option Explicit=,
+   occurs only after six invalid comment lines.
+
+The same failure is visible from SCHMS CAD tests run through ALFE with
+=--autocad --cad acad-2022 --mode automation=.
+
+* Cause
+
+The string template in =backend-autocad.lisp= was copied with Common
+Lisp/AutoLISP =;;= comment syntax.  ALFE writes that string verbatim to
+a =.vbs= file.  No translation step changes the comment delimiters, so
+the Windows Script Host parser sees the first semicolon as an invalid
+instruction.
+
+* Proposal
+
+1. Change the introductory lines in the generated VBScript template to
+   use apostrophe comments (or =Rem=) while leaving the bridge protocol,
+   =WaitQuiescent= and =GetAcadState= logic unchanged.
+2. Add a regression test for the emitted bridge.  At minimum, assert
+   that every introductory comment uses valid VBScript syntax and that
+   the generated file begins with syntactically valid VBScript.  On a
+   Windows test lane, ask =cscript //nologo= to compile/start the bridge
+   far enough to prove that it no longer reports a line-1 compilation
+   error.
+3. Exercise the real backend with the explicit selector
+   =--cad acad-2022 --mode automation=; do not validate only batch mode.
+
+* Acceptance criteria
+
+- A newly emitted =bridge-autocad.vbs= contains no =;;= comment prefix
+  and is accepted by the VBScript parser.
+- =alfe -norc --autocad --cad acad-2022 --mode automation ...= gets
+  beyond bridge compilation and can reach the backend =READY= state on
+  a Windows host with AutoCAD 2022 installed.
+- An automated regression test fails if Lisp comment syntax is emitted
+  into the VBScript template again.
+- AutoCAD batch-mode command selection and the existing bridge protocol
+  are unchanged.
