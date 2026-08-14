@@ -104,3 +104,58 @@ instruction.
   into the VBScript template again.
 - AutoCAD batch-mode command selection and the existing bridge protocol
   are unchanged.
+
+* Status 2026-08-14 — FIXED IN CODE (clautolisp 1.8.33), one criterion open
+
+Two copies of this ticket existed for a few hours: this one, pushed from
+Windows, and a shorter write-up filed in =issues/closed/= when the code was
+fixed earlier the same evening. They are merged here, keeping THIS text — it
+carries the real =cscript= error, the exact selector to reproduce with, and
+the acceptance criteria, none of which the other had. The =issues/closed/=
+copy is deleted.
+
+It stays OPEN because one acceptance criterion is genuinely unmet. Checking
+them off in order:
+
+1. [X] No =;;= prefix, accepted by the VBScript parser — the template's
+   comment lines now use an apostrophe.
+2. [ ] =alfe --autocad --cad acad-2022 --mode automation= reaching =READY=
+   on a Windows host with AutoCAD 2022 — *NOT verified.* It needs the
+   Windows runner with AutoCAD, which no job could reach: the CAD-capable
+   jobs were tagged =bricscad= / =autocad=, tags NO runner carries (checked
+   through the API: zero for both). Fixed in the same release — one =cad=
+   tag on the concurrency=1 runner, per pjb — so those jobs can now be
+   scheduled, but the run itself has not happened.
+3. [X] A regression test that fails if Lisp comment syntax comes back —
+   three tests in =autolisp-front-end/tests/backend-cad-tests.lisp=,
+   asserted on the EMITTED FILE rather than on the template constant (what
+   cscript parses is the file, and a substitution could in principle
+   introduce a line the template never had). One of the three proves the
+   detector fires on both defects it is meant to catch: a check that cannot
+   fail is worth nothing.
+4. [X] Batch-mode selection and the bridge protocol unchanged — only
+   comment lines changed; WaitQuiescent / GetAcadState / SendCommand are
+   untouched and their pinning test still passes.
+
+** Two findings beyond the report
+
+- *BricsCAD carried the identical defect*, in the identical position — its
+  header is a copy of this one. Unreported because the BricsCAD automation
+  path on Windows has not been exercised (macOS does not use VBScript, and
+  =verify:bricscad-hidden-ui:windows= drives PowerShell rather than the
+  bridge). Fixing only the reported one would have left a live copy of the
+  same bug behind a lane that is about to start running. Both are fixed.
+- *The headers also carried an em dash*, and =EMIT-BRIDGE-VBS= writes the
+  file as UTF-8 WITHOUT a BOM while cscript reads a =.vbs= as ANSI unless
+  one is present. Inside a comment that is only ugly — but it is one edit
+  away from being inside code, and there was a second em dash further down.
+  Both headers are ASCII now, with the reason recorded so a typographic
+  dash is not reintroduced. Same class of trap as the comment marker: a
+  property of how the RECEIVING tool parses the file, invisible from the
+  Lisp side.
+
+** Next step
+
+Schedule =encoding:experiment:autocad:windows= and the AutoCAD probes on the
+now-reachable =cad= runner, and confirm the bridge compiles and reaches
+READY. That closes criterion 2, and the ticket.
