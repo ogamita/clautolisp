@@ -273,6 +273,15 @@ separate binary for tool integrators.
   kept. Symbols in both files are also written plainly again
   (=(navigator . line)=, not =(|navigator| . |line|)=). See §
   /Editing a configuration file by hand/.
+- *The vl-registry backend works on a localised Windows.* =reg.exe= answers
+  in the console OEM code page (CP850 in western Europe, CP437 in the US),
+  not UTF-8 — and decoding that as UTF-8 does not garble, it *signals*: the
+  offending byte 130 is the =é= of "Opération terminée avec succès",
+  =reg.exe='s own success message. Every registry operation therefore aborted
+  on such a host, including the write path, which was dying while decoding
+  output it discards. The helper's output is now decoded with the console
+  code page when the running Lisp knows it (SBCL knows CP437 and CP850), and
+  otherwise with LATIN-1, which is byte-transparent and cannot signal.
 - *Dialect warnings are now one short line with a place, and a register
   behind them.* A diagnostic reads
   =[lambda-list-extension] drawing.lsp:12 in COMPUTE-AREA: DEFUN `&REST': rest parameter not portable to strict=:
