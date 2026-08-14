@@ -1575,3 +1575,92 @@ interpretable, and option B — driving the launcher by hand at the machine —
 is still open). Guard against a later cleanup deleting them as dead code."
   (is (fboundp 'alfe.backend.bricscad:emit-launcher-applescript))
   (is (fboundp 'alfe.backend.bricscad:macos-app-bundle-for)))
+
+;;; --- templates shipped inside the BricsCAD bundle -------------------------
+;;;
+;;; pjb, 2026-08-14: "on pourrait copier '/Applications/BricsCAD V26.app/
+;;; Contents/Resources/UserDataCache/Templates/fr_FR/Default-m.dwt' empty.dwt
+;;; et ainsi obtenir des empty.dwg avec ce template."
+;;;
+;;; The product ships a perfectly good blank drawing; discovery simply could
+;;; not see it. The user-Library candidates name ONE locale (en_US) and one
+;;; location, so a French install was invisible — while the AutoCAD backend
+;;; has searched inside its own install (UserDataCache/Template/…) all along.
+;;; Runs on any OS: the bundle is a directory shape, not a macOS feature.
+
+(defun %fake-bricscad-bundle (root locales names)
+  "Build ROOT/Fake.app/…/Templates/<locale>/<name> for each pair, and return
+the executable path inside the bundle."
+  (dolist (locale locales)
+    (dolist (name names)
+      (let ((path (merge-pathnames
+                   (format nil "Fake.app/Contents/Resources/UserDataCache/Templates/~A/~A"
+                           locale name)
+                   root)))
+        (ensure-directories-exist path)
+        (with-open-file (out path :direction :output :if-exists :supersede
+                                  :if-does-not-exist :create)
+          (write-string "not really a dwt" out)))))
+  (namestring (merge-pathnames "Fake.app/Contents/MacOS/bricscad" root)))
+
+(test bricscad-bundle-templates-prefer-neutral-locale-and-mm
+  "Ordering is deliberate: en_US first, because a localised template carries
+localised layer and linetype names and this drawing is the BASELINE of a
+vendor-divergence harness — anything the file contributes is noise in the
+measurement. Then Default-mm before Default-m, matching the existing
+preference."
+  (let ((root (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "alfe-bundle-tpl-~D/" (random 999999))
+                                (uiop:temporary-directory)))))
+    (unwind-protect
+        (let* ((exe (%fake-bricscad-bundle root '("fr_FR" "en_US")
+                                           '("Default-m.dwt" "Default-mm.dwt")))
+               (found (alfe.backend.bricscad:bundle-template-candidates exe)))
+          (is (= 4 (length found)) "expected all four templates; got ~S" found)
+          (is (search "/en_US/" (first found))
+              "the neutral locale must come first; got ~S" (first found))
+          (is (search "Default-mm.dwt" (first found))
+              "Default-mm must be preferred; got ~S" (first found))
+          ;; the localised ones are still offered, after the neutral ones
+          (is (search "/fr_FR/" (third found))
+              "localised templates must still be reachable; got ~S" found))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
+
+(test bricscad-bundle-templates-take-what-exists-when-no-neutral-locale
+  "A French-only install — exactly the case pjb reported — must still yield a
+template rather than nothing."
+  (let ((root (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "alfe-bundle-fr-~D/" (random 999999))
+                                (uiop:temporary-directory)))))
+    (unwind-protect
+        (let* ((exe (%fake-bricscad-bundle root '("fr_FR") '("Default-m.dwt")))
+               (found (alfe.backend.bricscad:bundle-template-candidates exe)))
+          (is (= 1 (length found)))
+          (is (search "/fr_FR/Default-m.dwt" (first found))))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
+
+(test bricscad-bundle-templates-degrade-quietly
+  "No bundle, no executable, nothing there: NIL, never an error. Discovery
+runs on hosts with no BricsCAD at all."
+  (is (null (alfe.backend.bricscad:bundle-template-candidates nil)))
+  (is (null (alfe.backend.bricscad:bundle-template-candidates "/opt/bricsys/bricscad")))
+  (is (null (alfe.backend.bricscad:bundle-template-candidates
+             "/nonexistent/Nothing.app/Contents/MacOS/bricscad"))))
+
+(test bricscad-template-env-override-still-wins
+  "$AUTOLISP_BRICSCAD_TEMPLATE remains the zero-code way to point a machine at
+a specific blank drawing — preferable to copying a vendor template to a fixed
+name, and far preferable to committing one."
+  (let ((path (merge-pathnames (format nil "alfe-tpl-~D.dwt" (random 999999))
+                               (uiop:temporary-directory))))
+    (unwind-protect
+        (progn
+          (with-open-file (out path :direction :output :if-exists :supersede
+                                    :if-does-not-exist :create)
+            (write-string "x" out))
+          (is (string= (namestring (truename path))
+                       (namestring
+                        (truename
+                         (alfe.backend.bricscad:discover-bricscad-template
+                          :requested path))))))
+      (ignore-errors (delete-file path)))))
