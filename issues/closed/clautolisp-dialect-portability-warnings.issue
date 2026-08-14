@@ -1,9 +1,9 @@
 # -*- mode:org;coding:utf-8 -*-
 #+TITLE: clautolisp-dialect-portability-warnings — verify the dialect portability-warning mechanism, with tests
-#+STATUS: BLOCKED
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: dialect
-#+DEPENDS: pjb-decision (canonical warning message format)
+#+DEPENDS: -
 #+BRANCH: work-unblocked-p1
 
 clautolisp-dialect-portability-warnings — verify the dialect portability-warning mechanism is implemented, with tests
@@ -250,15 +250,108 @@ if you have never seen one you were probably running --dialect
 clautolisp or --lax, which are deliberately quiet), the tag table, the
 escalation knob, and the declined constructs. RELEASE_NOTES updated.
 
-STILL BLOCKED — [pjb] canonical message format
-----------------------------------------------
+RESOLVED 2026-08-14 (clautolisp 1.8.31) — pjb settled the format
+================================================================
 
-Unchanged and untouched, as before: the emitter keeps
-"[lambda-list-extension] ..." while spec ch.25 shows a representative
-"DIALECT WARNING: DEFUN FOO with &REST only works in bricscad and
-clautolisp". Deciding which is canonical — and whether to name the
-function — means rewriting the pinning tests, so it stays a pjb call.
-The catalogue is ready for it: when the format is settled, the message
-text can move into the entries (a MESSAGE slot) and the emitters lose
-their last hand-written string. That refactor is one commit once the
-wording is chosen.
+pjb's ruling, verbatim in substance:
+
+  1. The unique TAG identifying the warning is what we keep — it is
+     what lets a reference documentation carry more detail than a
+     warning printed while the program runs.
+  2. Report the source file, the line, and the name of the function
+     concerned. We warn only once per occurrence, so we can afford to
+     spend a little time finding them.
+  3. The warning text is as clear and concise as it can be, ideally on
+     a single line.
+  4. The exact message is NOT formally specified anywhere.
+  5. Open a REGISTER of these warnings, keyed by the [tag], listing the
+     message (or template), the detail of the variations between
+     dialects, and the URLs to the diverging reference material. It
+     becomes an annex to the user manual.
+
+So the ch.25 "DIALECT WARNING: …" wording was never the question: the
+bracketed tag stays, and the prose is free. What was blocking was a
+false constraint — the issue recorded that "the existing tests pin the
+message", but they do not: every test matches the TAG (and, in two
+cases, the token in backquotes). Nothing pinned the wording. That is
+why this landed without rewriting a single existing assertion.
+
+What shipped
+------------
+
+The line is now:
+
+  [TAG] FILE:LINE in FUNCTION: one short line
+
+for example
+
+  [lambda-list-extension] drawing.lsp:12 in COMPUTE-AREA: DEFUN `&REST': rest parameter not portable to strict
+
+- The register lives in autolisp-runtime/source/portability.lisp beside
+  the construct catalogue: TAG, TITLE, KIND, MESSAGE (a format control),
+  ARGUMENTS, EXAMPLE, DIALECTS, RATIONALE, REFERENCES. The four emitters
+  format from it through %PORTABILITY-DIAGNOSTIC, and the escalation
+  error now carries the same text, so a wording change lands in all
+  three places at once.
+- The location: the FUNCTION is always reported — read off the live
+  evaluator stack's :USUBR frames, except for DEFUN, which passes the
+  name it is defining (its body is not running yet, so no stack walk
+  could supply it). FILE:LINE comes from the debugger's source map,
+  which is only populated on a debug load; the diagnostic degrades to
+  "in FUNCTION" rather than fabricating a position.
+- The "use --dialect X to silence" advice is GONE from the runtime
+  lines. It is identical for every occurrence and it is what made them
+  three lines long; it lives in the annex now (pjb's points 1 and 3).
+
+The register covers 18 tags, not 4
+----------------------------------
+
+pjb grepped the tree and produced a list of 18 bracketed tags. Comparing
+it against the sources found errors on both sides, and that comparison
+is the reason the register has a completeness TEST rather than a
+convention:
+
+- [clock-cache] is a FALSE POSITIVE — a defstruct in cador's
+  sysvar-api.lisp, never emitted as a tag.
+- [dcl-debug] is developer tracing of the DCL renderer selection, not a
+  dialect diagnostic.
+- [enc-CODE] is not a tag but the TEMPLATE in a docstring: the whole
+  enc-* family is emitted by SIGNAL-ENCODING-DIAGNOSTIC, which builds
+  the bracket from a code keyword. Those tags therefore appear NOWHERE
+  as literals, and a grep cannot enumerate them.
+- Consequently three real tags were missing from the list:
+  enc-invalid-value, sec-untrusted-load, sec-untrusted-open.
+
+So a literal grep can neither enumerate these nor tell a tag from a
+struct name. UNREGISTERED-DIAGNOSTIC-CODES walks the closed code sets
+(*ENC-DIAGNOSTIC-CODES*, *SECURELOAD-DIAGNOSTIC-CODES*) instead, and a
+test fails if a code is added without a register entry.
+
+The 18 registered tags fall into five KINDS, kept apart because they
+share the bracketed shape but not their mechanism: :portability (4),
+:extension-notice (2), :vendor-divergence (2), :encoding (8), :trust
+(2). The code families have no single MESSAGE — each call site writes
+its own text — so their entries carry an example instead, and say so.
+
+The annex
+---------
+
+clautolisp/documentation/clautolisp-dialect-warnings.org is GENERATED
+from the register by clautolisp/tools/generate-dialect-warnings-annex.lisp
+(`make -C clautolisp dialect-warnings-annex'). It is tracked, because it
+ships in the manual and is built to PDF/Info by the documentation
+target's wildcard. `make check-dialect-warnings-annex' regenerates into
+a temp file and fails on any difference; the GitLab `documentation' job
+runs it, so the annex cannot silently go stale. The check was verified
+to FAIL on a deliberately corrupted annex, not merely to pass.
+
+Verified
+--------
+
+SBCL and CCL suites green (exit 0, every suite Fail: 0) with six new
+tests: register completeness against the construct catalogue and against
+both closed code sets, entry completeness (including that each example
+shows its own tag), the message coming from the register on the real
+emission path, the single-line rule, DEFUN naming the function it
+defines rather than its caller, and the annex rendering every entry.
+The annex was built to PDF and Info. No existing assertion changed.

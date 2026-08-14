@@ -331,6 +331,32 @@ documentation: $(PDF_FILES) $(INFO_FILES) $(BUILD_DIR)/documentation/RELEASE_NOT
 user-manual: $(BUILD_DIR)/documentation/clautolisp-user-manual.pdf $(BUILD_DIR)/documentation/clautolisp-user-manual.info
 specifications: $(BUILD_DIR)/documentation/clautolisp-specifications.pdf $(BUILD_DIR)/documentation/clautolisp-specifications.info
 
+# The dialect-warnings annex is GENERATED from the register in
+# autolisp-runtime/source/portability.lisp, so a warning's wording,
+# its per-dialect detail and its references exist in exactly one place
+# (pjb's 2026-08-14 ruling on clautolisp-dialect-portability-warnings).
+# The generated .org is tracked, because it ships in the manual and is
+# built to PDF/Info like every other doc.
+DIALECT_WARNINGS_ANNEX := documentation/clautolisp-dialect-warnings.org
+
+dialect-warnings-annex:  ## Regenerate the manual's dialect-warnings annex from the register.
+	$(SBCL) --non-interactive --disable-debugger \
+	        --load tools/generate-dialect-warnings-annex.lisp
+
+check-dialect-warnings-annex:  ## Fail if the tracked annex is stale w.r.t. the register.
+	@tmp=$$(mktemp -t dialect-warnings-XXXXXX.org); \
+	 $(SBCL) --non-interactive --disable-debugger \
+	         --load tools/generate-dialect-warnings-annex.lisp "$$tmp" >/dev/null; \
+	 if diff -u "$(DIALECT_WARNINGS_ANNEX)" "$$tmp"; then \
+	   rm -f "$$tmp"; \
+	   echo "dialect-warnings annex is up to date"; \
+	 else \
+	   rm -f "$$tmp"; \
+	   echo "ERROR: $(DIALECT_WARNINGS_ANNEX) is stale."; \
+	   echo "       Run: make -C clautolisp dialect-warnings-annex"; \
+	   exit 1; \
+	 fi
+
 # RELEASE_NOTES.org lives at the repo root (single source of truth)
 # but ships to $PREFIX/share/doc/clautolisp/ alongside the other
 # user-facing org docs. Mirror the file into documentation/ at build

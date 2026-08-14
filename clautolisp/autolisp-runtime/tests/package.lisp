@@ -19,6 +19,24 @@
                 #:portability-construct-native-in
                 #:portability-construct-supported-p
                 #:portability-construct-silent-p
+                #:portability-construct-tag
+                ;; The register of dialect warnings, keyed by [tag].
+                #:find-dialect-warning
+                #:map-dialect-warnings
+                #:dialect-warning-tag
+                #:dialect-warning-kind
+                #:dialect-warning-title
+                #:dialect-warning-message
+                #:dialect-warning-example
+                #:dialect-warning-dialects
+                #:dialect-warning-rationale
+                #:dialect-warning-references
+                #:dialect-warning-tags
+                #:unregistered-construct-tags
+                #:unregistered-diagnostic-codes
+                #:render-dialect-warnings-annex
+                #:*enc-diagnostic-codes*
+                #:*secureload-diagnostic-codes*
                 #:autolisp-runtime-error
                 #:autolisp-runtime-error-code
                 #:autolisp-runtime-error-details
