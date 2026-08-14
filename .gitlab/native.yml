@@ -82,17 +82,27 @@ stages:
       allow_failure: true
 
 # CAD-capability variants: jobs that LAUNCH a real BricsCAD/AutoCAD add the
-# vendor tag, routing them to the CAD-capable runner (which pjb configures
-# concurrency=1 — a GUI CAD can't run concurrently). Same rules as the base
-# gate; only the tag list differs. Non-CAD native jobs keep the plain
-# [os, arch, shell] tags and may run on a higher-concurrency runner.
-.gate-macos-bricscad-hard:   { extends: .gate-macos-hard,   tags: [macos, arm64, shell, bricscad] }
-.gate-macos-bricscad-soft:   { extends: .gate-macos-soft,   tags: [macos, arm64, shell, bricscad] }
-.gate-macos-bricscad-manual: { extends: .gate-macos-manual, tags: [macos, arm64, shell, bricscad] }
-.gate-windows-bricscad-hard: { extends: .gate-windows-hard, tags: [windows, amd64, shell, bricscad] }
-.gate-windows-bricscad-soft: { extends: .gate-windows-soft, tags: [windows, amd64, shell, bricscad] }
-.gate-windows-autocad-hard:  { extends: .gate-windows-hard, tags: [windows, amd64, shell, autocad] }
-.gate-windows-autocad-soft:  { extends: .gate-windows-soft, tags: [windows, amd64, shell, autocad] }
+# `cad' tag, routing them to the CAD-capable runner, which pjb configures
+# concurrency=1. Same rules as the base gate; only the tag list differs.
+# Non-CAD native jobs keep the plain [os, arch, shell] tags and may run on a
+# higher-concurrency runner.
+#
+# ONE tag, not one per vendor (pjb, 2026-08-14). The mutex a CAD job needs is
+# GLOBAL, not per-vendor: two BricsCAD must not run at once, two AutoCAD must
+# not, and a BricsCAD must not run beside an AutoCAD either. A single `cad'
+# tag on a concurrency=1 runner is what serialises all of them. Per-vendor
+# tags would have created two pools that can each run one job — i.e. two CADs
+# at once, the case this is meant to prevent.
+#
+# So there is no `bricscad' / `autocad' distinction to make here, and the
+# templates are named for the capability rather than the vendor: a job's
+# vendor is visible in its own name, and two identical templates under two
+# names would only invite someone to believe they route differently.
+.gate-macos-cad-hard:   { extends: .gate-macos-hard,   tags: [macos, arm64, shell, cad] }
+.gate-macos-cad-soft:   { extends: .gate-macos-soft,   tags: [macos, arm64, shell, cad] }
+.gate-macos-cad-manual: { extends: .gate-macos-manual, tags: [macos, arm64, shell, cad] }
+.gate-windows-cad-hard: { extends: .gate-windows-hard, tags: [windows, amd64, shell, cad] }
+.gate-windows-cad-soft: { extends: .gate-windows-soft, tags: [windows, amd64, shell, cad] }
 
 # --- unit suites on the real OS --------------------------------------------
 test:clautolisp:macos:
@@ -183,7 +193,7 @@ verify:vl-registry:windows:
 
 # --- real-CAD BricsCAD automation checks (self-building) -------------------
 verify:bricscad-hidden-ui:windows:
-  extends: .gate-windows-bricscad-hard
+  extends: .gate-windows-cad-hard
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -197,7 +207,7 @@ verify:bricscad-hidden-ui:windows:
 # macOS runner. Kept clickable, pending the alfe-bricscad-automation-macos
 # decision (batch works; automation is the open question).
 verify:bricscad-automation:macos:
-  extends: .gate-macos-bricscad-manual
+  extends: .gate-macos-cad-manual
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -220,7 +230,7 @@ verify:bricscad-automation:macos:
     expire_in: 30 days
 
 encoding:experiment:bricscad:macos:
-  extends: [.gate-macos-bricscad-soft, .encoding-artifacts]
+  extends: [.gate-macos-cad-soft, .encoding-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -229,7 +239,7 @@ encoding:experiment:bricscad:macos:
     - bash scripts/run-encoding-experiment.sh --backend bricscad
 
 encoding:experiment:bricscad:windows:
-  extends: [.gate-windows-bricscad-soft, .encoding-artifacts]
+  extends: [.gate-windows-cad-soft, .encoding-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -238,7 +248,7 @@ encoding:experiment:bricscad:windows:
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend bricscad
 
 encoding:experiment:autocad:windows:
-  extends: [.gate-windows-autocad-soft, .encoding-artifacts]
+  extends: [.gate-windows-cad-soft, .encoding-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -257,7 +267,7 @@ encoding:experiment:autocad:windows:
     expire_in: 30 days
 
 pathname:probe:bricscad:macos:
-  extends: [.gate-macos-bricscad-soft, .pathname-artifacts]
+  extends: [.gate-macos-cad-soft, .pathname-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -266,7 +276,7 @@ pathname:probe:bricscad:macos:
     - bash scripts/run-pathname-probe.sh --backend bricscad
 
 pathname:probe:bricscad:windows:
-  extends: [.gate-windows-bricscad-soft, .pathname-artifacts]
+  extends: [.gate-windows-cad-soft, .pathname-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -275,7 +285,7 @@ pathname:probe:bricscad:windows:
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend bricscad
 
 pathname:probe:autocad:windows:
-  extends: [.gate-windows-autocad-soft, .pathname-artifacts]
+  extends: [.gate-windows-cad-soft, .pathname-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -296,7 +306,7 @@ pathname:probe:autocad:windows:
     expire_in: 30 days
 
 vendor:probes:bricscad:
-  extends: [.gate-windows-bricscad-hard, .vendor-probe-artifacts]
+  extends: [.gate-windows-cad-hard, .vendor-probe-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -307,7 +317,7 @@ vendor:probes:bricscad:
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend bricscad -Dwg $env:PROBE_DWG -KeepWorkdir $env:PROBE_KEEP_WORKDIR
 
 vendor:probes:autocad:
-  extends: [.gate-windows-autocad-hard, .vendor-probe-artifacts]
+  extends: [.gate-windows-cad-hard, .vendor-probe-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -318,7 +328,7 @@ vendor:probes:autocad:
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad -Dwg $env:PROBE_DWG -KeepWorkdir $env:PROBE_KEEP_WORKDIR
 
 vendor:probes:bricscad:macos:
-  extends: [.gate-macos-bricscad-hard, .vendor-probe-artifacts]
+  extends: [.gate-macos-cad-hard, .vendor-probe-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -359,7 +369,7 @@ vendor:probes:bricscad:macos:
     expire_in: 30 days
 
 harvest:sysvars:bricscad:macos:
-  extends: [.gate-macos-bricscad-soft, .sysvars-artifacts]
+  extends: [.gate-macos-cad-soft, .sysvars-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -382,7 +392,7 @@ harvest:sysvars:bricscad:macos:
 # here is not release-blocking. pjb must confirm this runs before relying
 # on the Windows artifact.
 harvest:sysvars:bricscad:windows:
-  extends: [.gate-windows-bricscad-soft, .sysvars-artifacts]
+  extends: [.gate-windows-cad-soft, .sysvars-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none

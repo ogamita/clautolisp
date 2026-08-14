@@ -1,9 +1,9 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: windows-runner-quicklisp-deps — the Windows CI runner cannot quickload FiveAM (network) so test:*:windows fail
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: infra
-#+DEPENDS: windows-runner-provisioning
+#+DEPENDS: -
 #+BRANCH: infra-windows-runner-quicklisp-deps
 
 * Context
@@ -61,3 +61,47 @@ Alternatively, point the runner at a local Quicklisp mirror.
 Runner-provisioning task (owner: pjb / the Windows box), not a clautolisp
 source change. Filed per the "write tickets for bugs found in passing"
 rule while confirming the 1.8.7 pathname fix.
+
+* RESOLVED 2026-08-14 — measured on the runner, no fetch failure left
+
+pjb brought the Windows runner online and asked for the Windows issues to
+be worked. Rather than provision anything, the first step was to MEASURE:
+a fresh master pipeline (2761319717) was triggered so `detect:runners'
+would see the runner and the native child pipeline would create its
+Windows jobs automatically.
+
+Result — the acceptance criteria are met as they stand:
+
+| job                              | outcome                     |
+|----------------------------------+-----------------------------|
+| test:alfe:windows                | SUCCESS                     |
+| test:autolisp-test:windows       | SUCCESS                     |
+| build:alfe:windows               | SUCCESS                     |
+| conformance:pathname-mapping:windows | SUCCESS                 |
+| test:clautolisp:windows          | ran the FULL suite, then failed on an unrelated bug |
+
+The two jobs this ticket names — test:alfe:windows and
+test:clautolisp:windows — no longer abort on `(ql:quickload "fiveam")'.
+There is no "Unable to process HTTP header" anywhere in either trace, and
+the runner's own dist is being used: the traces show babel loading from
+   C:/msys64/home/PPBN02261/quicklisp/dists/quicklisp/software/babel-20260101-git/
+which is exactly the "deps present locally, no job-time download" state
+the Proposal asked for. babel and trivial-gray-streams — core dependencies
+only since 1.8.28, i.e. added AFTER this ticket was filed — resolve too.
+
+test:clautolisp:windows still fails, but NOT on this. Its trace shows every
+suite running to completion with `Fail: 0`, and the job then dies in the
+`verify-vl-registry.lisp' step that follows `make test-sbcl' — on a UTF-8
+decoding error over reg.exe's output. That is a genuine clautolisp bug,
+independent of Quicklisp, and it is split out as
+vl-registry-reg-exe-oem-codepage.issue (fixed in 1.8.32).
+
+So: the clautolisp unit suite is GREEN on Windows. Closing.
+
+* Note on what was NOT done
+
+No provisioning, no bundle, no local mirror — none turned out to be
+needed. Worth recording, because the Proposal above argued for baking a
+dep set into ~/quicklisp and that work would have been wasted. The
+ticket's own diagnosis was right for 2026-08-07; the environment moved.
+Measuring first cost one pipeline.

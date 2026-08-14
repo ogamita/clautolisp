@@ -37,7 +37,9 @@ variables:
 default:
   image: $CLAUTOLISP_CI_LATEST
   # Runners are selected by CONFIGURATION tags: <os>,<arch>,<executor>
-  # (+ capability tags like gui/bricscad/autocad where a job needs them).
+  # (+ capability tags like gui/cad where a job needs them; `cad' is ONE tag
+  # for every vendor, on a concurrency=1 runner, because the mutex is global
+  # — see the CAD-capability note in .gitlab/native.yml).
   # The linux/amd64 work runs in the CI image on the self-hosted poseidon
   # group runner (ogamita-linux-docker, tags linux,amd64,docker; poseidon
   # is the always-on Linux compute box). Jobs needing another platform
@@ -766,7 +768,7 @@ benchmark:clautolisp:windows:
 
 benchmark:bricscad:macos:
   extends: .benchmark-cad
-  tags: [macos, arm64, shell, bricscad]
+  tags: [macos, arm64, shell, cad]
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - mkdir -p dist/bench
@@ -774,7 +776,7 @@ benchmark:bricscad:macos:
 
 benchmark:bricscad:windows:
   extends: .benchmark-cad
-  tags: [windows, amd64, shell, bricscad]
+  tags: [windows, amd64, shell, cad]
   variables:
     AUTOLISP_BRICSCAD_PROFILE: '<<Profil sans nom>>'
   script:
@@ -785,7 +787,7 @@ benchmark:bricscad:windows:
 
 benchmark:autocad:windows:
   extends: .benchmark-cad
-  tags: [windows, amd64, shell, autocad]
+  tags: [windows, amd64, shell, cad]
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - New-Item -ItemType Directory -Force dist/bench | Out-Null

@@ -4,9 +4,17 @@ clautolisp's CI runs entirely on **self-hosted** runners — no GitLab
 shared minutes:
 
 Runners are selected by **configuration tags** — `<os>,<arch>,<executor>`
-(plus capability tags `gui`/`bricscad`/`autocad` where a job needs the
-licensed GUI app). Tags describe the *machine*, not the project (the
-group already scopes projects).
+(plus capability tags `gui`/`cad` where a job needs the licensed GUI app).
+Tags describe the *machine*, not the project (the group already scopes
+projects).
+
+**One `cad` tag, not one per vendor.** A job that launches a real CAD is
+tagged `cad` and runs on a runner configured `concurrency = 1`, which is
+what serialises them. The mutex is **global, not per-vendor**: two BricsCAD
+must not run at once, two AutoCAD must not, and a BricsCAD must not run
+beside an AutoCAD either. Per-vendor tags would have created two pools that
+can each run one job — that is, two CADs at once, the situation this exists
+to prevent. The vendor a job targets is visible in the job's own name.
 
 - **poseidon** (`poseidon.informatimago.com`) — a Debian server running
   `gitlab-runner` (under the unprivileged `runners` user, rootless docker)

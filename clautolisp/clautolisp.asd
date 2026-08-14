@@ -433,6 +433,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "cador/tests/vlax-tests")
    (:file "cador/tests/reactor-tests")
    (:file "cador/tests/sysvar-catalogue-tests")
+   (:file "cador/tests/subprocess-encoding-tests")
    (:file "cador/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

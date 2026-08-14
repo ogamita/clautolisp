@@ -1,0 +1,105 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vl-registry-reg-exe-oem-codepage — reg.exe answers in the console OEM code page, and decoding it as UTF-8 SIGNALS
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: schms-ci-and-p3
+
+* Symptom
+
+Every vl-registry operation dies on a localised Windows:
+
+: Unhandled SB-INT:STREAM-DECODING-ERROR
+:   :UTF-8 stream decoding error on #<SB-SYS:FD-STREAM for "descriptor 712">
+:     the octet sequence #(130) cannot be decoded.
+:
+:   26: (CLAUTOLISP.CADOR::%RUN-LINES ("reg" "add" "HKCU\\Software\\..." …))
+:   27: (CLAUTOLISP.CADOR::%REG-WRITE "HKCU\\Software\\…\\Sub" "k1" "v1")
+
+Found 2026-08-14 on the French Windows CI runner, in the pipeline pjb asked
+for after bringing that runner online. It took down TWO jobs, which is why
+it looked like two problems:
+
+- =verify:vl-registry:windows= — failed outright;
+- =test:clautolisp:windows= — ran the entire unit suite to completion with
+  every suite at =Fail: 0=, then died in the =verify-vl-registry.lisp= step
+  that follows =make test-sbcl= in the same job. The suite is green on
+  Windows; only this killed the job.
+
+* Cause
+
+=%RUN-LINES= (=clautolisp/cador/source/registry-api.lisp=) called
+=uiop:run-program= with no =:external-format=, so the child's output was
+decoded with the implementation default — UTF-8.
+
+=reg.exe= does not write UTF-8. Like every Windows console program it writes
+in the CONSOLE OUTPUT CODE PAGE, an OEM page on a localised install: CP850 in
+western Europe, CP437 in the US. Neither is the ANSI page and neither is
+UTF-8.
+
+The failure mode is worse than mojibake. Most OEM high bytes are not valid
+UTF-8 lead sequences, so the decode does not garble — it SIGNALS. Octet 130
+is the =é= of "Opération terminée avec succès", =reg.exe='s own SUCCESS
+message: the operation had worked, and reading the confirmation is what
+crashed.
+
+Note =%REG-WRITE= discards =lines= entirely — it only wants the exit code.
+It was dying while decoding output it then throws away.
+
+* Why it had never been seen
+
+The registry backend has only ever run on English-locale Windows in the
+earlier probes, where =reg.exe='s messages are pure ASCII and decode as UTF-8
+by accident. The bug needs a localised Windows, which is exactly what this
+runner is. Nothing about the code changed; the machine did.
+
+* Fix (clautolisp 1.8.32)
+
+=%RUN-LINES= now passes an explicit =:external-format=, resolved once per
+image by =%SUBPROCESS-EXTERNAL-FORMAT=:
+
+- Windows: the console code page, read from =chcp= and mapped to a keyword,
+  when the running Lisp knows it. SBCL knows =:cp437= and =:cp850= natively
+  (measured — it is babel that lacks CP850, not SBCL), so on this runner the
+  decode is now EXACT, not merely non-fatal.
+- Windows, host without that code page: =:latin-1=, which is byte-transparent
+  and so can never signal, and leaves exact the ASCII structure this file
+  actually parses (="REG_SZ"=, key paths, value names). Non-ASCII *data* may
+  read back mangled on such a host — a lesser fault than aborting, and the
+  =cadstdio= situation of =encoding-situations-cli-options=.
+- Elsewhere: UTF-8, unchanged, which is what =/usr/bin/defaults= writes.
+
+Three deliberate details:
+
+1. =chcp='s own answer is decoded LATIN-1. It runs precisely because the
+   console page is unknown; decoding it as UTF-8 would risk the very error
+   it exists to avoid.
+2. The page number is taken as the LAST run of digits. =chcp= answers in a
+   localised sentence ("Active code page: 850", "Page de codes active : 850",
+   "Aktive Codepage: 850"), so no wording can be relied on — and it was a
+   localisation that caused this bug in the first place.
+3. The platform test is at RUN time (=uiop:os-windows-p=), not a =#+windows=
+   read-time conditional, so the Windows branch is COMPILED and testable on
+   every host. A read-time conditional would hide a typo in it from every
+   machine except the one that cannot afford the bug.
+
+* Verified
+
+Five new FiveAM tests in =cador/tests/subprocess-encoding-tests.lisp=,
+running on every platform because the parsing is a pure function separated
+from the subprocess: the three localisations, a trailing CR, a decoy number
+earlier in the sentence, unparsable input degrading to NIL rather than
+signalling, the OEM page → keyword mapping (and an unknown page yielding NIL
+so the caller falls back rather than inventing a format), UTF-8 preserved off
+Windows, and the cache being honoured.
+
+SBCL and CCL suites green (exit 0). Confirmation on the real runner is the
+re-run of =verify:vl-registry:windows= and =test:clautolisp:windows= after
+this lands.
+
+* Notes
+
+Filed and fixed together: it was found while working the Windows-runner
+issues at pjb's request, and it is the single thing standing between the
+Windows lane and a green =test:clautolisp:windows=.

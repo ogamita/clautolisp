@@ -91,11 +91,104 @@ the aldo.conf princ-serialisation lesson), sorted for stable diffs."
 ;;;            keys "REGPATH|VALUENAME" (BricsCAD-style plist mapping).
 ;;;   unix:    the sexp store above ($XDG_CONFIG_HOME/clautolisp/registry.sexp).
 
+;;; --- decoding a helper program's output ------------------------------------
+;;;
+;;; `reg.exe' does not answer in UTF-8. Like every Windows console program it
+;;; writes in the CONSOLE OUTPUT CODE PAGE, which on a localised install is an
+;;; OEM page (CP850 in western Europe, CP437 in the US), not the ANSI one and
+;;; certainly not UTF-8. Decoding it as UTF-8 does not produce mojibake — it
+;;; SIGNALS, because most OEM high bytes are not valid UTF-8 lead sequences:
+;;;
+;;;   :UTF-8 stream decoding error … the octet sequence #(130) cannot be decoded
+;;;
+;;; and 130 is simply the `é' of "Opération terminée avec succès", reg.exe's
+;;; own success message. Found by verify:vl-registry:windows on the French
+;;; Windows runner, 2026-08-14; it took down every registry operation on that
+;;; host, including %REG-WRITE, which discards the output it was dying on.
+;;;
+;;; The code page is a per-machine property, so this is cached: one `chcp'
+;;; per image, not one per registry read.
+
+(defparameter *subprocess-external-format* :unresolved
+  "Cache for %SUBPROCESS-EXTERNAL-FORMAT; :UNRESOLVED until first asked.")
+
+(defun %parse-chcp-code-page (text)
+  "The code-page number in TEXT, `chcp''s output, or NIL.
+
+`chcp' answers in a LOCALISED sentence — \"Active code page: 850\",
+\"Page de codes active : 850\", \"Aktive Codepage: 850\" — so nothing about
+the wording can be relied on. The number is the last run of digits, which is
+true of every localisation and does not require reading any of the words.
+Kept separate from running the program so it can be tested on any host."
+  (when (stringp text)
+    (let ((end (position-if #'digit-char-p text :from-end t)))
+      (when end
+        (let ((start (1+ (or (position-if-not #'digit-char-p text
+                                              :from-end t :end end)
+                             -1))))
+          (ignore-errors (parse-integer text :start start :end (1+ end))))))))
+
+(defun %windows-console-code-page ()
+  "The console output code page as an integer, or NIL if it cannot be read.
+
+Decoded as LATIN-1 rather than UTF-8: this runs precisely BECAUSE the console
+page is unknown, and latin-1 maps every octet to a character, so it can never
+signal the very error it exists to avoid."
+  (%parse-chcp-code-page
+   (ignore-errors
+    (uiop:run-program '("cmd" "/c" "chcp")
+                      :output '(:string :stripped t)
+                      :error-output nil
+                      :ignore-error-status t
+                      :external-format :latin-1))))
+
+(defun %code-page-external-format (code-page)
+  "The external-format keyword for CODE-PAGE, or NIL for one we do not name."
+  (case code-page
+    (65001 :utf-8)
+    (437   :cp437)
+    (850   :cp850)
+    (852   :cp852)
+    (1252  :cp1252)
+    (1251  :cp1251)
+    (t     nil)))
+
+(defun %subprocess-external-format ()
+  "The external format a helper program's output should be decoded with.
+
+Windows: the console code page when the running Lisp knows it (SBCL knows
+CP437/CP850; a host that does not falls through), otherwise LATIN-1 — which
+is byte-transparent, so it cannot signal and leaves the ASCII structure this
+file actually parses (\"REG_SZ\", key paths) exact. Non-ASCII *data* may then
+read back mangled on such a host; that is a lesser fault than aborting, and
+it is the `cadstdio' situation of encoding-situations-cli-options.
+
+Elsewhere: UTF-8, which is what /usr/bin/defaults writes on macOS.
+
+The platform test is at RUN time, not a #+windows read-time conditional, so
+that the Windows branch is compiled — and testable — on every host. A
+read-time conditional would hide a typo in it from every machine but the one
+that cannot afford the bug."
+  (when (eq *subprocess-external-format* :unresolved)
+    (setf *subprocess-external-format*
+          (if (uiop:os-windows-p)
+              (let* ((page (%windows-console-code-page))
+                     (format (and page (%code-page-external-format page))))
+                (if (and format
+                         (ignore-errors
+                          (clautolisp.autolisp-reader:host-external-format-supported-p
+                           format)))
+                    format
+                    :latin-1))
+              :utf-8)))
+  *subprocess-external-format*)
+
 (defun %run-lines (command)
   "Run COMMAND (a list); return (values output-lines exit-code)."
   (multiple-value-bind (out err code)
       (uiop:run-program command :output '(:string :stripped t)
-                                :error-output nil :ignore-error-status t)
+                                :error-output nil :ignore-error-status t
+                                :external-format (%subprocess-external-format))
     (declare (ignore err))
     (values (if (and out (plusp (length out)))
                 ;; strip the CR of CRLF line endings (reg.exe output on
