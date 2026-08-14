@@ -355,3 +355,51 @@ Correctif suggéré : normaliser `compiler_path` une fois, tôt, avant tout
 test — `cygpath -u` sous MSYS — puis convertir explicitement à l'endroit
 où CMake l'exige. Les tests portent alors tous sur une forme unique et
 connue, au lieu de dépendre de celle que l'appelant a bien voulu fournir.
+
+CORRECTION DE CAUSE — 2026-08-14 (pjb)
+=======================================
+
+La cause avancée ci-dessus est FAUSSE, et il vaut mieux le dire ici que
+laisser le prochain lecteur y perdre du temps. pjb, depuis Windows :
+
+  « Pour cmake, il y a eu des corrections sur windows. Ce n'est pas une
+    troncation de c:/ qui est assez bien gere par cmake, mais il y avait
+    un probleme pour retrouver CC parmis les differents environnemnt
+    windows. »
+
+Donc :
+
+- CMake gère correctement `C:/…` dans un `-D`. La section « c'est CMake,
+  pour qui `:` est le séparateur de liste » est à écarter, ainsi que le
+  correctif `-DCMAKE_C_COMPILER:FILEPATH=…` qu'elle motivait — il ne
+  répare pas un problème qui n'existe pas.
+- Le vrai sujet est la SÉLECTION du compilateur parmi les sous-systèmes
+  MSYS2 (MSYS, MINGW64, UCRT64, CLANG64), ce que la section « Chemin
+  parcouru » décrivait déjà correctement sans en tirer la conclusion :
+  le script ne cherche que `/mingw64/bin/gcc`, ne lit pas `MSYSTEM`, et
+  son message nomme ce qu'il cherche plutôt que ce qui est installé.
+
+Le message « The CMAKE_C_COMPILER: C is not a full path » reste réel et
+observé ; ce qui est faux, c'est l'explication qu'on en avait donnée. Ce
+qui l'a produit se trouve donc en amont, dans la valeur de `CC` retenue,
+pas dans l'analyse de l'argument par CMake.
+
+Le second défaut identifié plus haut TIENT et reste le plus intéressant :
+le garde-fou `case "$compiler_path" in /ucrt64/*|…` ne reconnaît que la
+forme POSIX du chemin, donc sur toute machine où `CC` arrive en forme
+Windows il est silencieusement inopérant — un build UCRT64 passe un refus
+qui le visait. C'est indépendant de la question CMake.
+
+À rapprocher de `clautolisp/drawing-dwg/tests/msys2-native-toolchain-test.sh`
+(ajouté 2026-08-14) : ce test pilote précisément la sélection par
+`MSYSTEM` et attend des messages de refus par sous-système
+(« must be built from an MSYS2 MINGW64 shell », « Native Windows SBCL/CCL
+cannot safely load ») que le `build-libredwg.sh` du dépôt n'émet pas, et
+une variable `CLAUTOLISP_BUILD_PROBE_ONLY` qu'il ne lit pas (il lit
+`CLAUTOLISP_COMPILER_PROBE_ONLY`). Vérifié par `git log --all -S` : ces
+chaînes n'apparaissent dans aucun commit hors du test lui-même. Le test
+décrit donc le comportement VOULU — celui de cette correction de cause —
+plutôt que le comportement actuel. pjb : « laissons le comme ça, on verra
+sur windows ». Ni ce test ni `scripts/tests/run-emacs-msys2-test.sh` ne
+sont câblés dans un Makefile ou un job CI, donc rien ne les exécute
+aujourd'hui.

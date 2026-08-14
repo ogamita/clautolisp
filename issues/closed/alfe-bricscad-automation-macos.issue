@@ -222,3 +222,57 @@ Everything the investigation produced is worth keeping either way: the
 LAUNCHER-FAILED fast-fail, the launcher-state reporting, the
 Accessibility preflight, launcher-focus.txt, and the batch control
 phase — which is what made every one of these rounds interpretable.
+
+* RESOLVED 2026-08-14 — pjb chose A
+
+pjb: "Oui, A ; sur macos, les scripts ne marchent pas en combinaison avec
+--automation."
+
+=--mode automation= is now WINDOWS-ONLY. Off Windows it signals
+BACKEND-NOT-AVAILABLE with code :NO-AUTOMATION — the same refusal Linux
+has always given — instead of launching a CAD and timing out 240 s later.
+
+** Where the refusal lives, and why it matters
+
+In CHOOSE-EFFECTIVE-MODE, not in BUILD-LAUNCH-ARGV. That is what makes
+the failure IMMEDIATE: both the launcher emitter and the argv builder
+come through that function, so nothing is written to the workdir and no
+process is spawned before the error. Putting it in BUILD-LAUNCH-ARGV
+would have refused *after* launcher.applescript had been emitted — a
+smaller trap, but still a trap.
+
+Two distinct messages, because two distinct situations reach it:
+
+- explicit =--mode automation= → "not supported on this OS (Windows
+  only). Use --mode batch, which is the default when the BricsCAD CLI is
+  found";
+- =--mode auto= with NO CLI binary → this used to fall back to
+  automation. That fallback is gone, so the message names the REAL
+  problem: "BricsCAD CLI executable not found, and --mode automation is
+  not supported on this OS, so there is no fallback."
+
+The second is the more valuable half. A user with no BricsCAD installed
+previously got a 240-second timeout that said nothing; they now get the
+actual cause immediately.
+
+** Deliberately KEPT
+
+The AppleScript emitter, MACOS-APP-BUNDLE-FOR, the Accessibility
+preflight and the launcher-state reporting, exactly as the
+Recommendation above asks. They are what made the five rounds
+interpretable, and option B — driving the emitted launcher by hand at
+the machine, with BricsCAD visible — remains open. A test asserts the
+emitter is still FBOUNDP, so a later "remove dead code" pass cannot
+quietly delete it.
+
+** Verified
+
+Four new tests in =autolisp-front-end/tests/backend-cad-tests.lisp=,
+written to assert the right thing on BOTH platforms (on Windows the mode
+still resolves; elsewhere it refuses), so they do not become vacuous on
+the Windows lane: the explicit refusal with its code and message, the
+=--mode auto= no-executable case, batch left untouched on every
+platform, and the emitter still present. alfe SBCL suite: 599 checks,
+Fail: 0, with the four names present in the log — checked by NAME, not by
+exit status, since that lane is known to exit 0 despite a failure
+(alfe-bricscad-argv-template-ccl).

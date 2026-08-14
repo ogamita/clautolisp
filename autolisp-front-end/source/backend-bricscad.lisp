@@ -663,11 +663,43 @@ Windows batch is `bricscad.exe -B run.scr` — the same GUI-exe + script
 mechanism macOS/Linux use, which is simpler and far more robust than the
 COM/VBScript bridge (no SendCommand timing, no modal security/startup
 dialogs silently swallowing the (load)). The VBScript automation path
-remains available via an explicit --mode automation."
-  (case cli-mode
-    (:auto
-     (if (bricscad-backend-executable-path backend) :batch :automation))
-    ((:batch :automation) cli-mode)))
+remains available via an explicit --mode automation.
+
+AUTOMATION IS WINDOWS-ONLY. pjb, 2026-08-14, taking option A of
+alfe-bricscad-automation-macos: \"sur macos, les scripts ne marchent pas
+en combinaison avec --automation\". The macOS route drove BricsCAD through
+an AppleScript that types into the app; five rounds of CI eliminated five
+hypotheses and found no working path, and the remaining ones cannot be
+tested from a headless job. Rather than leave a mode that launches a CAD
+and times out 240 s later, it now fails HERE — before anything is emitted
+or spawned — with the same BACKEND-NOT-AVAILABLE :NO-AUTOMATION that
+Linux has always given.
+
+The refusal is in this function rather than in BUILD-LAUNCH-ARGV because
+this is where the variant is decided, and both the emitter and the argv
+builder come through here: putting it here is what makes the failure
+immediate instead of arriving after launcher.applescript has been
+written.
+
+The AppleScript emitter, the Accessibility preflight and the launcher
+state reporting are DELIBERATELY KEPT. They are what made the five
+investigation rounds interpretable, and option B of the ticket — driving
+the emitted launcher by hand at the machine — is still open."
+  (let ((variant (case cli-mode
+                   (:auto
+                    (if (bricscad-backend-executable-path backend)
+                        :batch
+                        :automation))
+                   ((:batch :automation) cli-mode))))
+    (when (and (eq variant :automation) (not (windows-p)))
+      (error 'backend-not-available
+             :backend :bricscad
+             :code :no-automation
+             :message
+             (if (eq cli-mode :automation)
+                 "BricsCAD --mode automation is not supported on this OS (Windows only). Use --mode batch, which is the default when the BricsCAD CLI is found."
+                 "BricsCAD CLI executable not found, and --mode automation is not supported on this OS (Windows only), so there is no fallback. Install BricsCAD or point alfe at it.")))
+    variant))
 
 (defun build-launch-argv (backend protocol-session
                           &key (mode :auto))

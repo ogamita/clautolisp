@@ -1509,3 +1509,69 @@ both defects it is meant to catch."
   (is (= 1 (length (%vbs-offending-lines (format nil "Option Explicit~%;; nope~%")))))
   (is (= 1 (length (%vbs-offending-lines (format nil "' emitted by alfe~C~%" (code-char 233))))))
   (is (null (%vbs-offending-lines (format nil "' fine~%Option Explicit~%")))))
+
+;;; --- automation is Windows-only (alfe-bricscad-automation-macos, A) -------
+;;;
+;;; pjb, 2026-08-14, taking option A: "sur macos, les scripts ne marchent pas
+;;; en combinaison avec --automation". The mode used to launch a CAD and time
+;;; out 240 s later; it now refuses up front, with the same
+;;; BACKEND-NOT-AVAILABLE :NO-AUTOMATION Linux has always given.
+;;;
+;;; Asserted through CHOOSE-EFFECTIVE-MODE, because that is where the refusal
+;;; lives and therefore what makes it IMMEDIATE — the emitter and the argv
+;;; builder both come through it, so nothing is written before the failure.
+
+(test bricscad-automation-refused-off-windows
+  "Explicit --mode automation off Windows signals BACKEND-NOT-AVAILABLE
+:NO-AUTOMATION rather than proceeding."
+  (let ((backend (alfe.backend.bricscad:make-bricscad-backend
+                  :executable-path "/fake/bricscad")))
+    (if (alfe.backend.cad-common:windows-p)
+        ;; On Windows the COM bridge is real: the mode resolves normally.
+        (is (eq :automation
+                (alfe.backend.bricscad::choose-effective-mode backend :automation)))
+        (handler-case
+            (progn
+              (alfe.backend.bricscad::choose-effective-mode backend :automation)
+              (is nil "Expected BACKEND-NOT-AVAILABLE off Windows."))
+          (alfe.error:backend-not-available (condition)
+            (is (eq :bricscad (alfe.error:backend-error-backend condition)))
+            (is (eq :no-automation (alfe.error:backend-error-code condition)))
+            (is (search "not supported on this OS"
+                        (alfe.error:backend-error-message condition)))
+            ;; the message must point at the mode that DOES work
+            (is (search "--mode batch"
+                        (alfe.error:backend-error-message condition))))))))
+
+(test bricscad-auto-mode-without-executable-refused-off-windows
+  "--mode auto used to fall back to automation when no CLI binary was found.
+Off Windows that fallback no longer exists, so the failure must name the
+REAL problem — a missing BricsCAD — instead of silently selecting a mode
+that cannot work."
+  (let ((backend (alfe.backend.bricscad:make-bricscad-backend
+                  :executable-path nil)))
+    (unless (alfe.backend.cad-common:windows-p)
+      (handler-case
+          (progn
+            (alfe.backend.bricscad::choose-effective-mode backend :auto)
+            (is nil "Expected BACKEND-NOT-AVAILABLE with no executable."))
+        (alfe.error:backend-not-available (condition)
+          (is (eq :no-automation (alfe.error:backend-error-code condition)))
+          (is (search "not found"
+                      (alfe.error:backend-error-message condition))))))))
+
+(test bricscad-batch-mode-is-untouched-by-the-automation-refusal
+  "The refusal must not disturb the path every real run uses. Batch resolves
+on every platform, and --mode auto still prefers it when the CLI is found."
+  (let ((backend (alfe.backend.bricscad:make-bricscad-backend
+                  :executable-path "/fake/bricscad")))
+    (is (eq :batch (alfe.backend.bricscad::choose-effective-mode backend :batch)))
+    (is (eq :batch (alfe.backend.bricscad::choose-effective-mode backend :auto)))))
+
+(test bricscad-applescript-emitter-is-kept
+  "The AppleScript emitter, the preflight and the launcher-state reporting are
+deliberately KEPT (the ticket: they are what made five investigation rounds
+interpretable, and option B — driving the launcher by hand at the machine —
+is still open). Guard against a later cleanup deleting them as dead code."
+  (is (fboundp 'alfe.backend.bricscad:emit-launcher-applescript))
+  (is (fboundp 'alfe.backend.bricscad:macos-app-bundle-for)))
