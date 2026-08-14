@@ -198,3 +198,74 @@ clautolisp code:
     not a language divergence — see the MEASURED note above).
 This issue stays OPEN as the tracker for those two residual items.
 Next: the cadaptor forks; the empty.dwg regen is a one-shot runner task.
+
+* MEASURED 2026-08-14 — empty.dwg is NOT the blocker
+
+The CAD-tagged jobs ran for the first time on 2026-08-14 (they had been
+queued against =bricscad= / =autocad= tags that no runner carries; one
+=cad= tag on the concurrency=1 runner fixed that). What they show
+contradicts the "empty.dwg regen" line above, so it is corrected here
+rather than acted on.
+
+The file exists, is wired, and WORKS. =PROBE_DWG= is
+=c:/gitlab-runner/dwg/empty.dwg= in =.gitlab/native.yml=, and in the same
+pipeline (2761360851) three jobs consumed it successfully:
+
+| encoding:experiment:autocad:windows  | SUCCESS |
+| pathname:probe:autocad:windows       | SUCCESS |
+| pathname:probe:bricscad:windows      | SUCCESS |
+
+And the two vendor-probe jobs that FAILED opened it without complaint:
+
+: autocad  — protocol: matched "READY" after 0.78 s
+: bricscad — protocol: matched "READY" after 9.40 s
+
+Both then ran their server loop to a normal return and produced:
+
+:   observations: 0 conforms, 0 known-divergence, 0 unexpected, N missing
+:   (no OBSERVE lines — backend unreachable or probe crashed)
+
+So the drawing opens, the runtime bootstraps, the loop runs — and NO
+OBSERVE line is emitted. On BOTH vendors. Regenerating empty.dwg cannot
+change that.
+
+** What it is not
+
+Not the =&rest= gap either, tempting as it looks. The AutoCAD trace does
+log =[CAD] host lacks &rest; keeping bootstrap 1-arg shadows +
+walk-rewriting normalize= — and the vendor harvest in the same job
+confirms AutoCAD rejects it (=EXTPROBE REST-BINDS=ERROR:nombre
+d'arguments trop important=). But BricsCAD HAS =&rest=, takes no such
+fallback, and loses its OBSERVE lines identically. A cause common to both
+is upstream of that.
+
+** Where to look next
+
+The observation CHANNEL, not the drawing and not the language: the probe
+scenarios emit OBSERVE lines somewhere the harness is not reading, or the
+scenarios are not being reached at all despite the loop returning
+normally. =PROBE_KEEP_WORKDIR= is already honoured and the workdir is
+copied into =dist/vendor-probes/<vendor>/<scenario>-workdir=, so the
+emitted files from this very run are downloadable from the job artifacts
+— that is the cheapest place to start, before running anything again.
+
+** On sourcing a blank drawing, when one IS needed
+
+Recorded because the question was asked (pjb) and the answer is not
+obvious:
+
+- Do NOT commit a .dwg. It is a vendor binary bound to a format version,
+  and this project already decided against shipping one (see
+  libredwg-empty-dwg-write-invalid: "the vendor probes use the runner's
+  CAD-made empty.dwg + clean-slate, no generated DWG shipped").
+- Do NOT generate it with libredwg: its writer emits files real CADs
+  reject (AcDbDictionary where AcDbLayerTable is expected; AutoCAD
+  ErrorStatus=53). That is the whole subject of that ticket.
+- PREFER the templates the products ship, which is what pjb suggested and
+  what the code already does: =discover-bricscad-template= and
+  =discover-autocad-template= (the latter looking for
+  =Template/acadiso.dwt=) exist in the two backends today.
+- A provisioning job that opens a shipped template under accoreconsole
+  and SAVEAS to .dwg is the right fallback IF a real =.dwg= is required
+  rather than a =.dwt=. It is a one-shot runner task, not per-pipeline
+  work.
