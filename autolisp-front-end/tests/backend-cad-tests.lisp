@@ -1509,3 +1509,158 @@ both defects it is meant to catch."
   (is (= 1 (length (%vbs-offending-lines (format nil "Option Explicit~%;; nope~%")))))
   (is (= 1 (length (%vbs-offending-lines (format nil "' emitted by alfe~C~%" (code-char 233))))))
   (is (null (%vbs-offending-lines (format nil "' fine~%Option Explicit~%")))))
+
+;;; --- automation is Windows-only (alfe-bricscad-automation-macos, A) -------
+;;;
+;;; pjb, 2026-08-14, taking option A: "sur macos, les scripts ne marchent pas
+;;; en combinaison avec --automation". The mode used to launch a CAD and time
+;;; out 240 s later; it now refuses up front, with the same
+;;; BACKEND-NOT-AVAILABLE :NO-AUTOMATION Linux has always given.
+;;;
+;;; Asserted through CHOOSE-EFFECTIVE-MODE, because that is where the refusal
+;;; lives and therefore what makes it IMMEDIATE — the emitter and the argv
+;;; builder both come through it, so nothing is written before the failure.
+
+(test bricscad-automation-refused-off-windows
+  "Explicit --mode automation off Windows signals BACKEND-NOT-AVAILABLE
+:NO-AUTOMATION rather than proceeding."
+  (let ((backend (alfe.backend.bricscad:make-bricscad-backend
+                  :executable-path "/fake/bricscad")))
+    (if (alfe.backend.cad-common:windows-p)
+        ;; On Windows the COM bridge is real: the mode resolves normally.
+        (is (eq :automation
+                (alfe.backend.bricscad::choose-effective-mode backend :automation)))
+        (handler-case
+            (progn
+              (alfe.backend.bricscad::choose-effective-mode backend :automation)
+              (is nil "Expected BACKEND-NOT-AVAILABLE off Windows."))
+          (alfe.error:backend-not-available (condition)
+            (is (eq :bricscad (alfe.error:backend-error-backend condition)))
+            (is (eq :no-automation (alfe.error:backend-error-code condition)))
+            (is (search "not supported on this OS"
+                        (alfe.error:backend-error-message condition)))
+            ;; the message must point at the mode that DOES work
+            (is (search "--mode batch"
+                        (alfe.error:backend-error-message condition))))))))
+
+(test bricscad-auto-mode-without-executable-refused-off-windows
+  "--mode auto used to fall back to automation when no CLI binary was found.
+Off Windows that fallback no longer exists, so the failure must name the
+REAL problem — a missing BricsCAD — instead of silently selecting a mode
+that cannot work."
+  (let ((backend (alfe.backend.bricscad:make-bricscad-backend
+                  :executable-path nil)))
+    (unless (alfe.backend.cad-common:windows-p)
+      (handler-case
+          (progn
+            (alfe.backend.bricscad::choose-effective-mode backend :auto)
+            (is nil "Expected BACKEND-NOT-AVAILABLE with no executable."))
+        (alfe.error:backend-not-available (condition)
+          (is (eq :no-automation (alfe.error:backend-error-code condition)))
+          (is (search "not found"
+                      (alfe.error:backend-error-message condition))))))))
+
+(test bricscad-batch-mode-is-untouched-by-the-automation-refusal
+  "The refusal must not disturb the path every real run uses. Batch resolves
+on every platform, and --mode auto still prefers it when the CLI is found."
+  (let ((backend (alfe.backend.bricscad:make-bricscad-backend
+                  :executable-path "/fake/bricscad")))
+    (is (eq :batch (alfe.backend.bricscad::choose-effective-mode backend :batch)))
+    (is (eq :batch (alfe.backend.bricscad::choose-effective-mode backend :auto)))))
+
+(test bricscad-applescript-emitter-is-kept
+  "The AppleScript emitter, the preflight and the launcher-state reporting are
+deliberately KEPT (the ticket: they are what made five investigation rounds
+interpretable, and option B — driving the launcher by hand at the machine —
+is still open). Guard against a later cleanup deleting them as dead code."
+  (is (fboundp 'alfe.backend.bricscad:emit-launcher-applescript))
+  (is (fboundp 'alfe.backend.bricscad:macos-app-bundle-for)))
+
+;;; --- templates shipped inside the BricsCAD bundle -------------------------
+;;;
+;;; pjb, 2026-08-14: "on pourrait copier '/Applications/BricsCAD V26.app/
+;;; Contents/Resources/UserDataCache/Templates/fr_FR/Default-m.dwt' empty.dwt
+;;; et ainsi obtenir des empty.dwg avec ce template."
+;;;
+;;; The product ships a perfectly good blank drawing; discovery simply could
+;;; not see it. The user-Library candidates name ONE locale (en_US) and one
+;;; location, so a French install was invisible — while the AutoCAD backend
+;;; has searched inside its own install (UserDataCache/Template/…) all along.
+;;; Runs on any OS: the bundle is a directory shape, not a macOS feature.
+
+(defun %fake-bricscad-bundle (root locales names)
+  "Build ROOT/Fake.app/…/Templates/<locale>/<name> for each pair, and return
+the executable path inside the bundle."
+  (dolist (locale locales)
+    (dolist (name names)
+      (let ((path (merge-pathnames
+                   (format nil "Fake.app/Contents/Resources/UserDataCache/Templates/~A/~A"
+                           locale name)
+                   root)))
+        (ensure-directories-exist path)
+        (with-open-file (out path :direction :output :if-exists :supersede
+                                  :if-does-not-exist :create)
+          (write-string "not really a dwt" out)))))
+  (namestring (merge-pathnames "Fake.app/Contents/MacOS/bricscad" root)))
+
+(test bricscad-bundle-templates-prefer-neutral-locale-and-mm
+  "Ordering is deliberate: en_US first, because a localised template carries
+localised layer and linetype names and this drawing is the BASELINE of a
+vendor-divergence harness — anything the file contributes is noise in the
+measurement. Then Default-mm before Default-m, matching the existing
+preference."
+  (let ((root (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "alfe-bundle-tpl-~D/" (random 999999))
+                                (uiop:temporary-directory)))))
+    (unwind-protect
+        (let* ((exe (%fake-bricscad-bundle root '("fr_FR" "en_US")
+                                           '("Default-m.dwt" "Default-mm.dwt")))
+               (found (alfe.backend.bricscad:bundle-template-candidates exe)))
+          (is (= 4 (length found)) "expected all four templates; got ~S" found)
+          (is (search "/en_US/" (first found))
+              "the neutral locale must come first; got ~S" (first found))
+          (is (search "Default-mm.dwt" (first found))
+              "Default-mm must be preferred; got ~S" (first found))
+          ;; the localised ones are still offered, after the neutral ones
+          (is (search "/fr_FR/" (third found))
+              "localised templates must still be reachable; got ~S" found))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
+
+(test bricscad-bundle-templates-take-what-exists-when-no-neutral-locale
+  "A French-only install — exactly the case pjb reported — must still yield a
+template rather than nothing."
+  (let ((root (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "alfe-bundle-fr-~D/" (random 999999))
+                                (uiop:temporary-directory)))))
+    (unwind-protect
+        (let* ((exe (%fake-bricscad-bundle root '("fr_FR") '("Default-m.dwt")))
+               (found (alfe.backend.bricscad:bundle-template-candidates exe)))
+          (is (= 1 (length found)))
+          (is (search "/fr_FR/Default-m.dwt" (first found))))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
+
+(test bricscad-bundle-templates-degrade-quietly
+  "No bundle, no executable, nothing there: NIL, never an error. Discovery
+runs on hosts with no BricsCAD at all."
+  (is (null (alfe.backend.bricscad:bundle-template-candidates nil)))
+  (is (null (alfe.backend.bricscad:bundle-template-candidates "/opt/bricsys/bricscad")))
+  (is (null (alfe.backend.bricscad:bundle-template-candidates
+             "/nonexistent/Nothing.app/Contents/MacOS/bricscad"))))
+
+(test bricscad-template-env-override-still-wins
+  "$AUTOLISP_BRICSCAD_TEMPLATE remains the zero-code way to point a machine at
+a specific blank drawing — preferable to copying a vendor template to a fixed
+name, and far preferable to committing one."
+  (let ((path (merge-pathnames (format nil "alfe-tpl-~D.dwt" (random 999999))
+                               (uiop:temporary-directory))))
+    (unwind-protect
+        (progn
+          (with-open-file (out path :direction :output :if-exists :supersede
+                                    :if-does-not-exist :create)
+            (write-string "x" out))
+          (is (string= (namestring (truename path))
+                       (namestring
+                        (truename
+                         (alfe.backend.bricscad:discover-bricscad-template
+                          :requested path))))))
+      (ignore-errors (delete-file path)))))

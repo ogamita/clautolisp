@@ -112,6 +112,7 @@
            #:build-launch-argv
            #:discover-bricscad-binary
            #:discover-bricscad-template
+           #:bundle-template-candidates
            #:cui-file-corrupt-p
            #:quarantine-corrupt-bricscad-cui))
 
@@ -208,12 +209,58 @@ Returns the absolute path of a usable bricscad executable, or NIL."
         ((eq os :windows) (first-existing (windows-bricscad-candidates)))
         (t nil))))
 
-(defun discover-bricscad-template (&key requested)
+(defun bundle-template-candidates (executable-path)
+  "The templates shipped INSIDE a macOS BricsCAD bundle, best first.
+
+BricsCAD keeps them at
+  <bundle>/Contents/Resources/UserDataCache/Templates/<locale>/Default-m*.dwt
+which the user-Library paths below do not cover: those name one locale
+ (en_US) and one location, so a French install — where the templates are
+=…/Templates/fr_FR/Default-m.dwt= — was invisible to discovery even
+though the product ships a perfectly good blank drawing. The AutoCAD
+backend has looked inside its own install (=UserDataCache/Template/…=)
+all along; this is the same idea for the other vendor.
+
+Ordering is deliberate rather than alphabetical:
+
+- en_US first. A localised template carries localised layer and linetype
+  names, and this drawing is the BASELINE of a vendor-divergence harness:
+  anything the file contributes is noise in the measurement. Prefer the
+  neutral one when the install has it, take what exists otherwise.
+- =Default-mm.dwt= before =Default-m.dwt=, matching the existing
+  preference below."
+  (let ((bundle (and executable-path (macos-app-bundle-for executable-path))))
+    (when bundle
+      (let ((found (mapcar #'namestring
+                           (directory
+                            (merge-pathnames
+                             "Contents/Resources/UserDataCache/Templates/*/Default-m*.dwt"
+                             (uiop:ensure-directory-pathname bundle))))))
+        (flet ((neutral-p (path) (and (search "/en_US/" path) t)))
+          (sort found
+                (lambda (a b)
+                  (let ((na (neutral-p a))
+                        (nb (neutral-p b)))
+                    (cond ((and na (not nb)) t)
+                          ((and nb (not na)) nil)
+                          ;; "Default-mm.dwt" > "Default-m.dwt" under
+                          ;; STRING>, which is the preference we want.
+                          (t (string> a b)))))))))))
+
+(defun discover-bricscad-template (&key requested executable-path)
   "Resolve the template DWG/DWT to launch BricsCAD with. REQUESTED,
 when non-NIL, comes from --dwg / $AUTOLISP_DWG and takes priority.
 Falls back to $AUTOLISP_BRICSCAD_TEMPLATE, then the macOS-default
-~/Library/Application Support/Bricsys/.../Default-mm.dwt path, and
-finally NIL (the backend will launch without an explicit template)."
+~/Library/Application Support/Bricsys/.../Default-mm.dwt path, then a
+template shipped inside the application bundle (EXECUTABLE-PATH is what
+locates it), and finally NIL (the backend will launch without an
+explicit template).
+
+$AUTOLISP_BRICSCAD_TEMPLATE is the zero-code answer when a machine wants
+a specific blank drawing: point it at any .dwt/.dwg and nothing here
+needs to change. That is preferable to copying a vendor template to a
+fixed name, and far preferable to committing one — a .dwg is a vendor
+binary bound to a format version (see libredwg-empty-dwg-write-invalid)."
   (or (and requested
            (probe-file requested)
            (namestring (truename requested)))
@@ -223,7 +270,8 @@ finally NIL (the backend will launch without an explicit template)."
        (mapcar (lambda (p) (uiop:native-namestring p))
                (list "~/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-mm.dwt"
                      "~/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-m.dwt"
-                     "/Library/Application Support/Bricsys/BricsCAD/V26x64/Templates/Default-mm.dwt")))))
+                     "/Library/Application Support/Bricsys/BricsCAD/V26x64/Templates/Default-mm.dwt")))
+      (first-existing (bundle-template-candidates executable-path))))
 
 (defun discover-bricscad-profile ()
   "Resolve the BricsCAD user profile to launch with (the /p or -P switch).
@@ -260,7 +308,7 @@ unnamed \"<<Profil sans nom>>\") rather than trust the default."
                                ((windows-p) "/c/Program Files*/Bricsys/*/bricscad.exe"))))))
     (setf (bricscad-backend-executable-path backend) binary
           (bricscad-backend-template-path backend)
-          (discover-bricscad-template)
+          (discover-bricscad-template :executable-path binary)
           (bricscad-backend-profile backend)
           (discover-bricscad-profile))
     backend))
@@ -663,11 +711,43 @@ Windows batch is `bricscad.exe -B run.scr` — the same GUI-exe + script
 mechanism macOS/Linux use, which is simpler and far more robust than the
 COM/VBScript bridge (no SendCommand timing, no modal security/startup
 dialogs silently swallowing the (load)). The VBScript automation path
-remains available via an explicit --mode automation."
-  (case cli-mode
-    (:auto
-     (if (bricscad-backend-executable-path backend) :batch :automation))
-    ((:batch :automation) cli-mode)))
+remains available via an explicit --mode automation.
+
+AUTOMATION IS WINDOWS-ONLY. pjb, 2026-08-14, taking option A of
+alfe-bricscad-automation-macos: \"sur macos, les scripts ne marchent pas
+en combinaison avec --automation\". The macOS route drove BricsCAD through
+an AppleScript that types into the app; five rounds of CI eliminated five
+hypotheses and found no working path, and the remaining ones cannot be
+tested from a headless job. Rather than leave a mode that launches a CAD
+and times out 240 s later, it now fails HERE — before anything is emitted
+or spawned — with the same BACKEND-NOT-AVAILABLE :NO-AUTOMATION that
+Linux has always given.
+
+The refusal is in this function rather than in BUILD-LAUNCH-ARGV because
+this is where the variant is decided, and both the emitter and the argv
+builder come through here: putting it here is what makes the failure
+immediate instead of arriving after launcher.applescript has been
+written.
+
+The AppleScript emitter, the Accessibility preflight and the launcher
+state reporting are DELIBERATELY KEPT. They are what made the five
+investigation rounds interpretable, and option B of the ticket — driving
+the emitted launcher by hand at the machine — is still open."
+  (let ((variant (case cli-mode
+                   (:auto
+                    (if (bricscad-backend-executable-path backend)
+                        :batch
+                        :automation))
+                   ((:batch :automation) cli-mode))))
+    (when (and (eq variant :automation) (not (windows-p)))
+      (error 'backend-not-available
+             :backend :bricscad
+             :code :no-automation
+             :message
+             (if (eq cli-mode :automation)
+                 "BricsCAD --mode automation is not supported on this OS (Windows only). Use --mode batch, which is the default when the BricsCAD CLI is found."
+                 "BricsCAD CLI executable not found, and --mode automation is not supported on this OS (Windows only), so there is no fallback. Install BricsCAD or point alfe at it.")))
+    variant))
 
 (defun build-launch-argv (backend protocol-session
                           &key (mode :auto))
@@ -953,8 +1033,11 @@ future ticket."
                        :executable-path (bricscad-backend-executable-path backend)
                        ;; Open a drawing with the app: no document, no command
                        ;; line, nowhere for the keystrokes to land.
-                       :template-path (or (bricscad-backend-template-path backend)
-                                          (discover-bricscad-template)))
+                       :template-path
+                       (or (bricscad-backend-template-path backend)
+                           (discover-bricscad-template
+                            :executable-path
+                            (bricscad-backend-executable-path backend))))
                   (log-debug "backend BRICSCAD: wrote launcher.applescript -> ~A" apl))))))
           (let ((argv (build-launch-argv backend protocol :mode mode))
                 (session (%make-bricscad-session

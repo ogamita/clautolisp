@@ -62,7 +62,7 @@ Runner-provisioning task (owner: pjb / the Windows box), not a clautolisp
 source change. Filed per the "write tickets for bugs found in passing"
 rule while confirming the 1.8.7 pathname fix.
 
-* RESOLVED 2026-08-14 — measured on the runner, no fetch failure left
+* RESOLVED 2026-08-14 — measured on the runner (see the CORRECTION below)
 
 pjb brought the Windows runner online and asked for the Windows issues to
 be worked. Rather than provision anything, the first step was to MEASURE:
@@ -82,8 +82,7 @@ Result — the acceptance criteria are met as they stand:
 
 The two jobs this ticket names — test:alfe:windows and
 test:clautolisp:windows — no longer abort on `(ql:quickload "fiveam")'.
-There is no "Unable to process HTTP header" anywhere in either trace, and
-the runner's own dist is being used: the traces show babel loading from
+The runner's own dist is being used: the traces show babel loading from
    C:/msys64/home/PPBN02261/quicklisp/dists/quicklisp/software/babel-20260101-git/
 which is exactly the "deps present locally, no job-time download" state
 the Proposal asked for. babel and trivial-gray-streams — core dependencies
@@ -98,10 +97,52 @@ vl-registry-reg-exe-oem-codepage.issue (fixed in 1.8.32).
 
 So: the clautolisp unit suite is GREEN on Windows. Closing.
 
+* CORRECTION 2026-08-14 — the fetch still fails; it is no longer FATAL
+
+The closure above originally claimed "there is no 'Unable to process HTTP
+header' anywhere in either trace". That was WRONG, and the correction
+matters because it changes what the next reader should expect.
+
+Grepping the traces of the very jobs that PASS:
+
+: test:clautolisp:windows (job 15908371542, SUCCESS) -> 1 occurrence
+: test:alfe:windows        (job 15908371546, SUCCESS) -> 1 occurrence
+: verify:bricscad-hidden-ui:windows (FAILED, for its own reasons) -> 1 occurrence
+
+So Quicklisp still tries to reach the CDN at job time and still fails to.
+What changed is that the failure is no longer fatal: every system the
+Makefiles quickload is already installed in the runner's dist, so the
+resolution succeeds from local files after the failed fetch and the run
+continues. The jobs are green because the DEPENDENCIES are present, not
+because the network was fixed.
+
+Two consequences worth writing down rather than rediscovering:
+
+1. The acceptance criterion "with NO network fetch at job time" is, read
+   literally, still unmet — a fetch is attempted on every run. The
+   criterion that matters in practice ("those two go green") is met, and
+   the lane is trustworthy today, which is why this stays closed.
+2. The exposure is exactly one new dependency wide. Add a system that is
+   NOT already in the runner's dist and the fetch that currently fails
+   harmlessly becomes fatal again, in precisely the shape this ticket
+   describes. That is not hypothetical: babel and trivial-gray-streams
+   became core dependencies in 1.8.28, after this ticket was filed, and
+   they happen to be present. The next one might not be — see the
+   clautolisp-quicklisp-ci-deps rule, which exists for that reason.
+
+If that happens, this ticket is the diagnosis, and the Proposal above
+(bake the dep set into the runner's ~/quicklisp, or point it at a local
+mirror) is the fix — it was not wasted work, only work not yet needed.
+
 * Note on what was NOT done
 
 No provisioning, no bundle, no local mirror — none turned out to be
-needed. Worth recording, because the Proposal above argued for baking a
-dep set into ~/quicklisp and that work would have been wasted. The
-ticket's own diagnosis was right for 2026-08-07; the environment moved.
-Measuring first cost one pipeline.
+needed TODAY. Measuring first cost one pipeline and avoided building
+infrastructure for a symptom that had stopped biting.
+
+But per the CORRECTION above, "not needed" is weaker than it first looked:
+the fetch still runs and still fails on every job, and what makes that
+survivable is that the dist happens to hold every system we ask for. The
+Proposal is therefore not wrong work — it is deferred work, and the thing
+that would make it due again is one dependency this project adds that the
+runner does not already have.
