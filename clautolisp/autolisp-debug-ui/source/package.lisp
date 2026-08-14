@@ -117,6 +117,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:aldo-config-save-path #:aldo-config-load-path
    #:save-aldo-configuration #:load-aldo-configuration
    #:write-aldo-configuration #:read-aldo-configuration
+   #:write-lisp-configuration #:write-configuration-file
    ;; theme / decorations renderer (command reference §8)
    #:glyph->string #:theme-of #:decoration-entries #:decoration-for
    #:color-theme-p #:sgr-wrap #:apply-decoration #:situation-prefix

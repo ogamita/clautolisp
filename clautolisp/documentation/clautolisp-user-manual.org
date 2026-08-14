@@ -379,6 +379,45 @@ fall-through above possible — otherwise every key would always look
 "set" on the aldo layer and =lisp.conf= could never be reached from the
 debugger.
 
+*** Editing a configuration file by hand
+The files are meant to be readable, so a saved file also *documents
+itself*: below the settings you actually changed, every remaining
+setting is written out *commented*, at its built-in default value and
+followed by the values it accepts. Uncomment a line and edit its value to
+override it. A freshly saved =lisp.conf= therefore looks like this:
+
+#+begin_example
+;;;; clautolisp lisp.conf - the configuration of the LISP (REPL) interactor.
+;;;;
+;;;; One list of (name . value) settings, read at start-up.
+;;;; Only the settings you changed are stored.  The lines commented
+;;;; out below are at their built-in default: they are listed so you
+;;;; can see what exists -- uncomment one and edit its value to
+;;;; override it.  The accepted values follow each line.
+;;;;
+;;;; Saving (,write-settings) rewrites this file; comments you
+;;;; add by hand are not kept.
+(
+ (sedit-on-quit . do-not-save)
+
+ ;; Defaults -- uncomment a line to set it.
+ ;;(navigator . sexp)               ; sexp | line
+)
+#+end_example
+
+Two consequences worth knowing:
+
+- the commented lines are *documentation, not data*: they are skipped by
+  the reader, so a loaded file still sets only its live entries — the
+  documented defaults do not become explicit settings, and the stacking
+  rule above keeps working;
+- saving *rewrites* the file, so comments you add by hand are not kept.
+
+The values in the file use the file's own syntax rather than =set='s: a
+boolean is written =t= or =nil= there (=on= would read back as a symbol,
+which is true). The generated comments spell out the accepted values for
+each setting, so this is visible on the spot.
+
 ** Long output and the pager
 
 Commands whose output exceeds the screen — =help=, a long

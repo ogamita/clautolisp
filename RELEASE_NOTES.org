@@ -263,6 +263,16 @@ separate binary for tool integrators.
   always go to the active interactor's own file. Both files now record only
   what you explicitly set, so they read as a diff against the defaults. See §
   /Settings and configuration/.
+- A saved =aldo.conf= / =lisp.conf= now *documents itself*: under the settings
+  you changed, every setting you left alone is written out commented, at its
+  built-in default and followed by the values it accepts — so the file can be
+  edited by hand without the manual beside it. The commented lines are
+  documentation, not data: they are skipped by the reader, so loading such a
+  file still sets only its live entries and the aldo-over-lisp stacking is
+  unaffected. Saving rewrites the file, so comments you add by hand are not
+  kept. Symbols in both files are also written plainly again
+  (=(navigator . line)=, not =(|navigator| . |line|)=). See §
+  /Editing a configuration file by hand/.
 - The public =*clal-*= extension variables (=*clal-clipboard*=,
   =*clal-sedit-initial-form*= / =*clal-sedit-last-result*=, the =*clal-form*= /
   =*clal-result*= / =*clal-source-form*= eval-history trio and their =-1= / =-2=
