@@ -1226,6 +1226,107 @@ Within the REPL, individual evaluation errors are reported but do
 *not* terminate the loop; the binary will still exit 0 once stdin
 closes.
 
+** Choosing your own exit status
+The three codes above are what clautolisp itself produces. An AutoLISP
+program can also *choose* the status, through a small channel that
+mirrors the one the CAD engines' bootstrap provides — so a single
+~run-tests.lsp~ or ~C:MAIN~ is portable across BricsCAD, AutoCAD and
+clautolisp with no per-engine branch:
+
+- ~(autolisp-set-status N)~ :: record integer ~N~ as the pending exit
+  status, and return it. Nothing terminates.
+- ~(autolisp-status)~ :: read the pending status back; 0 when it was
+  never set.
+- ~(quit [N])~ :: with an argument, terminate with exit code ~N~;
+  without one, terminate with the *pending* status. ~(exit [N])~ takes
+  the same optional argument and behaves identically.
+
+So the status can be decided early and consumed later, which is the
+usual shape of a test script:
+
+#+BEGIN_SRC autolisp
+(autolisp-set-status (if all-tests-passed 0 1))
+;; … more work, possibly in another function …
+(quit)                       ; exits 1 if a test failed
+#+END_SRC
+
+These three are *clautolisp extensions*. They are available under the
+~clautolisp~ dialect and usable under ~lax~; under ~strict~, ~autocad~
+or ~bricscad~ they still work but emit the ~[exit-status-extension]~
+portability diagnostic, like every other out-of-dialect extension (see
+/Errors and Diagnostics/). ~autolisp-set-status~ is deliberately named
+and typed exactly like the CAD-side bootstrap function — minus its
+STATUSFILE write — while ~autolisp-status~ has no vendor counterpart and
+is clautolisp's own way of letting ~quit~ consult the pending value.
+
+Because a program may pick any integer, the guarantee stated above is
+narrower than it looks: codes 0, 1 and 2 are stable *when clautolisp
+itself decides them*. A script that calls ~quit~ with its own status
+owns the meaning of that code, and a shell caller cannot tell the two
+apart from the exit status alone.
+
+* Paths on Windows
+On macOS and Linux this section does not apply: the mapping layer
+detects an identity environment and every path you write is used
+verbatim. It matters on Windows, where the *same machine* offers
+several incompatible ways to spell the same file.
+
+AutoLISP works with path *strings*, not Common Lisp pathnames — that is
+the vendors' API and clautolisp keeps it. But on Windows a string like
+~/c/work/a.lsp~ is meaningful in an MSYS2 shell, ~/cygdrive/c/work/a.lsp~
+in Cygwin, ~/mnt/c/work/a.lsp~ under WSL and ~C:/work/a.lsp~ to a native
+Windows program — four spellings, one file. clautolisp can also be
+*built* in one of those environments and *run* from another, so the
+form baked into the image at build time need not be the form you type at
+run time.
+
+clautolisp therefore recognises five kinds of environment — ~posix~,
+~native-windows~, ~cygwin~, ~msys2~ and ~wsl~ — and records two frames:
+the *build frame*, frozen into the image when the executable was made,
+and the *run frame*, detected at startup. Paths coming *in* (~open~,
+~load~, the file arguments of the command line) are understood in the
+frame you are actually running in, and paths going *out* — notably
+~findfile~ and ~findtrustedfile~ — are handed back in that same frame.
+The practical consequence is the one you want: *you write paths the way
+your shell spells them*, and a path that clautolisp gives you can be
+pasted straight back into that shell.
+
+The drive mappings are not guessed from convention alone. Cygwin and
+MSYS2 record the truth in ~/etc/fstab~ and WSL reports it through
+~mount~; clautolisp reads whichever applies and *prefers* it, keeping
+the conventional layout (~/cygdrive/c~, ~/c~, ~/mnt/c~) underneath for
+anything the system does not mention. So an MSYS2 installed somewhere
+other than ~C:\msys64~, a mapped network share, or an extra WSL drive
+are all handled, and a machine with no readable mount table still
+starts — it simply falls back to the conventions.
+
+To see how your host was classified, set ~CLAUTOLISP_DEBUG_PATHMAP~ to
+any value; the build and run frames are dumped to standard error at
+startup:
+
+#+BEGIN_EXAMPLE
+$ CLAUTOLISP_DEBUG_PATHMAP=1 clautolisp --version
+build-environment: kind=:MSYS2 drive-style=:POSIX-MOUNT drive-mount-prefix="/"
+    home=… mount-table=…
+    probe=…
+run-environment: kind=:MSYS2 drive-style=:POSIX-MOUNT drive-mount-prefix="/"
+    …
+#+END_EXAMPLE
+
+Each frame reports its ~kind~, how it spells drives, the mount table in
+force, and a ~probe~ plist recording what the detection actually saw —
+including how many entries came from the live system rather than the
+conventions.
+
+This is the first thing to look at if a path that works in your shell is
+not found by ~load~ or ~findfile~: it tells you whether clautolisp
+believes it is in the environment you think it is in.
+
+Two related behaviours are documented elsewhere in this manual: ~".."~
+segments are resolved uniformly and warn outside ~--lax~ (see the
+dialect diagnostics below), and relative paths resolve against the
+launch directory rather than the build directory.
+
 * Errors and Diagnostics
 - Reader errors are produced by the AutoLISP reader and surface as
   ~simple-error~ conditions whose printable form embeds a structured
@@ -1474,6 +1575,16 @@ Both targets reuse the ~read-autolisp~ build harness. The SBCL build
 sets ~:save-runtime-options t~ so the saved core forwards every
 command-line argument to ~clautolisp~ rather than letting SBCL
 intercept ~--help~ or other runtime flags.
+
+~make install~ also installs the Common Lisp sources and the libraries.
+A native library that is missing — in practice the DWG codec, which only
+~clautolisp/drawing-dwg~ needs — does *not* fail the install: everything
+else is installed and a warning names the affected system and the
+commands to add it later. Pass ~REQUIRE_NATIVE_LIBRARIES=1~ to turn that
+warning back into a hard error, which is what you want when an
+incomplete tree is a defect rather than a local inconvenience; the
+release targets pass it, so a published tarball cannot silently ship
+without its codec.
 
 * Versioning
 The version string is stored in
@@ -1758,6 +1869,90 @@ a custom user command of the named interactor —
 ~"NAVI"~, ~"LAVI"~, ~"INSPECT"~, ~"AUTOLISP"~) —
 and ~(clal-define-debugger-command NAMES FN [DOC])~ is its deprecated
 ALDO-only equivalent. See /Debugger/ above.
+
+*** ~CLAL-COMMON-LISP~ / ~CLAL-BACK~ -- drop into a live Common Lisp REPL
+The developer escape hatch out of AutoLISP and into the Common Lisp
+image that is running it. It is *deliberately not available by
+default*: the AutoLISP symbol ~clal-common-lisp~ is unbound until you
+set the read/write sysvar ~CLAUTOLISPDROP~ (default ~0~) to a non-zero
+value, which shadows it with the builtin — saving any binding of your
+own, and restoring it when you set the sysvar back to ~0~. An AutoLISP
+program therefore cannot fall into a CL REPL by accident.
+
+#+BEGIN_SRC autolisp
+_$ (setvar "CLAUTOLISPDROP" 1)
+_$ (clal-common-lisp)                  ; no argument: interactive REPL
+CL-USER> (lisp-implementation-type)
+"SBCL"
+CL-USER> (clal-back 42)                ; leave, yielding 42 to AutoLISP
+42
+_$ (clal-common-lisp "(+ 1 2)")        ; a string: read one form, evaluate it
+3
+#+END_SRC
+
+With no argument it runs an interactive REPL reading in
+~COMMON-LISP-USER~ — leave it with ~(clal-back [VALUE])~, which returns
+~VALUE~ (default nil) as the value of the ~clal-common-lisp~ call, or
+with end of input. With a string argument it reads *one* CL form from
+the string and evaluates it; with any other AutoLISP value it converts
+the value structurally into a CL form and evaluates that.
+
+Values cross the boundary by conversion, and the conversion is where the
+surprises live: integers, reals and nil pass through; strings unwrap and
+re-wrap; AutoLISP symbols are *re-read* with the CL reader under the
+current ~*package*~ and ~*readtable*~, so ~'(foo cl:car :kw)~ arrives as
+~(CL-USER::FOO CL:CAR :KW)~. Coming back, an integer outside the
+AutoLISP range, a circular structure, or an object with no AutoLISP
+counterpart is a CL error rather than a silently truncated value.
+
+An unhandled CL error is governed by ~common-lisp-user::*clal-on-error*~:
+~:debug~ (the default) enters the native CL debugger at the point of the
+error, ~:error~ signals a catchable AutoLISP error that
+~vl-catch-all-apply~ can see, ~:ignore~ yields AutoLISP nil, and any
+other value is returned as the result. Set it to ~:error~ when the drop
+is used from a script that must not stop at a debugger prompt.
+
+*** ~CLAL-OPTIMIZE~ / ~CLAL-OPTIMIZATION~ -- optimization qualities
+~(clal-optimization)~ returns the current qualities as
+~((DEBUG n) (SPACE n) (SPEED n))~; ~(clal-optimize QUALITIES)~ sets them
+and returns the new set. Each element of ~QUALITIES~ is either a bare
+quality symbol — which means level 3 — or a ~(SYMBOL LEVEL)~ pair, and
+any quality you do not mention keeps its current level.
+
+~DEBUG~ is the one with an observable effect today: above 0 the runtime
+weaves the instrumented fork of a function, which is what makes
+breakpoints and stepping possible; at 0 functions run plain and the
+debugger cannot stop inside them. ~SPEED~ is *pinned at 0* and setting
+it is silently ineffective — it is reserved for the compiler-to-CL tier,
+which does not exist yet. It is documented here so that reading back a
+~SPEED~ of 0 you did not ask for is not mistaken for a bug.
+
+#+BEGIN_SRC autolisp
+_$ (clal-optimize '((debug 0) (space 3)))   ; run plain, no instrumentation
+((DEBUG 0) (SPACE 3) (SPEED 0))
+#+END_SRC
+
+*** ~CLAL-COMPILE~ -- build an applicable function object
+~(clal-compile NAME LAMBDA-EXPRESSION)~ compiles a
+~(lambda LAMBDA-LIST . BODY)~ form into an applicable function object,
+weaving the instrumented fork when the current ~DEBUG~ quality is above
+0. ~NAME~ is nil for an anonymous function, or a symbol naming it.
+Anything that is not a ~lambda~ form is a ~:bad-argument~ error.
+
+*** ~CLAL-MODULE-EXTENSION~ -- the host's packaged-artefact extensions
+~(clal-module-extension KIND)~ returns, as a string with a leading dot,
+the file extension clautolisp uses for a packaged artefact — so
+portability layers can *ask* instead of hard-coding a guess. ~KIND~ is
+matched case-insensitively:
+
+- ~"compiled-app"~ :: ~".lap"~ ("Lisp APplication"), the clautolisp
+  analogue of AutoCAD's ~.vlx~ and BricsCAD's ~.des~. The name is
+  clautolisp's own.
+- ~"native-module"~ :: the host operating system's shared-library
+  extension — ~".dll"~ on Windows, ~".dylib"~ on macOS, ~".so"~
+  elsewhere. This is the ~.arx~ / ~.brx~ slot; a clautolisp native
+  module is a shared library loaded by the host Common Lisp, so unlike
+  the vendors' fixed extensions this one is OS-dependent.
 
 The full normative entries for these functions live in
 ~autolisp-spec~ §16 *clautolisp Extensions*; this section is a

@@ -175,6 +175,23 @@ stay in lock-step. The matrix:
 `.info` files for user-manuals install under `$(PREFIX)/share/info`
 and the dir node is updated via `install-info --info-dir`.
 
+**The user-visible rule** (pjb, 2026-08-16 — standing policy).
+*Adding or modifying **any** user-visible feature requires updating the
+documentation, **including the user manual of the tool concerned**.* Not
+only CLI options: a new setting, a REPL or interactor command, a new
+escape character, a builtin whose behaviour a user can observe, a new
+environment variable, a changed default, a new file the program reads or
+writes — each is user-visible and each lands in the user manual of
+`clautolisp` or `alfe` (or the module's own manual when that is where the
+audience is).
+
+The test to apply: *could a user notice this without reading the source?*
+If yes, it is documented before the issue is closed. An issue whose
+feature is user-visible and absent from the manual is **not done**,
+however green its tests are — the code half of the work is not the whole
+of it. Design specs (`documentation/*-spec.org`) do **not** discharge
+this: they address the implementer, not the user.
+
 **The synchronisation rule.** Any change to one track requires
 matching changes in the others:
 

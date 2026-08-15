@@ -194,6 +194,13 @@ Disable ANSI colour output (https://no-color.org).
 .B AUTOLISP_NO_INIT\fR, \fBCLAUTOLISP_NO_INIT
 Equivalent to
 .BR \-norc .
+.TP
+.B CLAUTOLISP_DEBUG_PATHMAP
+When set to any value, dump the recorded build frame and the detected
+run frame of the path-mapping layer to standard error at startup.
+Diagnostic aid on Windows, where MSYS2, Cygwin, WSL and native
+programs spell the same file differently; a no-op elsewhere, where the
+mapping is the identity.
 .SH FILES
 .TP
 .B ~/.clautolisp\fR, \fB~/.clautolisprc\fR, \fB~/.autolisp\fR, \fB~/.autolisprc
@@ -212,6 +219,18 @@ Runtime error or unhandled condition.
 .TP
 .B 2
 File error (cannot open / read).
+.PP
+These are the codes
+.B clautolisp
+itself produces. An AutoLISP program may choose its own status with the
+clautolisp extensions
+.BR "(autolisp-set-status " N ")"
+and
+.BR "(quit " [ N ])
+\(em
+.B (quit)
+with no argument exits with the status recorded earlier, 0 by default.
+A caller cannot distinguish such a status from the ones above.
 .SH "SEE ALSO"
 .BR alfe (1),
 .BR read-autolisp (1).

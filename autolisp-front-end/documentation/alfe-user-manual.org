@@ -180,6 +180,52 @@ that consumes =--mock-input PATH= for =GETSTRING= /
 For the CAD backends the host is the CAD itself — =--host= has no
 effect there.
 
+* CAD engine control
+
+Four options govern *how* a CAD engine is obtained and how much of the
+bootstrap it runs. They apply to the CAD backends (=--bricscad=,
+=--autocad=); the clautolisp backend ignores them, since it needs
+neither a launch nor a workdir handshake.
+
+| Option                        | Effect                                          |
+|-------------------------------+-------------------------------------------------|
+| =--backend attach\vert{}launch=      | Attach to an already-running CAD, or launch a fresh one. |
+| =--workdir DIR=               | Override the exchange directory (default: =$AUTOLISP_WORKDIR=). |
+| =--bootstrap-phase PHASE=     | Truncate the bootstrap at =marker=, =core=, =log= or =full=. |
+| =--epure=                     | Enable the EPURE plugin hook (default: =$AUTOLISP_EPURE=). |
+
+=--workdir= names the directory through which alfe and the CAD engine
+exchange files — the file-IPC channel the CAD backends run on. Point it
+somewhere you can read when you want to inspect that traffic; combine it
+with =--keep-workdir= (or =$AUTOLISP_KEEP_WORKDIR=), which stops alfe
+deleting the directory at the end of the run, since by default there is
+nothing left to look at.
+
+=--bootstrap-phase= truncates the engine-side bootstrap, which is how
+you diagnose a CAD that never reaches =READY= — work *up* from =marker=
+and the phase that stops working is the one at fault:
+
+| Phase     | Behaviour                                                       |
+|-----------+-----------------------------------------------------------------|
+| =marker=  | Writes a startup marker and a status, nothing else. *Your actions are not executed* — this only proves the engine started and can write to the workdir. |
+| =core=    | Executes actions with basic file I/O, but does *not* capture =print= / =princ= / =prompt= output. |
+| =log=     | =core= plus the CAD-log setup (=LOGFILEMODE=, =LOGFILEPATH=, =LOGFILENAME=). |
+| =full=    | The default: CAD log, capture of Lisp output, batch REPL under =-i=, and the remote protocol. |
+
+Two consequences worth knowing before you use a truncated phase: under
+=marker= a run that "succeeds" has not run your script at all, and under
+=core= a script that prints its results looks silent because the capture
+is not installed. =--interactive= requires =full= — combined with any
+other phase, alfe exits with code =2=.
+
+=--epure= turns on the EPURE plugin hook. Note that BricsCAD's EPURE
+profile is not selected by this option — it requires its own explicit
+launch options.
+
+The three environment variables =$AUTOLISP_WORKDIR=,
+=$AUTOLISP_BOOTSTRAP_PHASE= and =$AUTOLISP_EPURE= supply the defaults;
+an explicit option always wins.
+
 * Actions
 
 alfe accepts an ordered queue of actions on the command line. The
