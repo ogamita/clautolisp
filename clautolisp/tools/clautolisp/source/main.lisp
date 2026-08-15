@@ -22,6 +22,8 @@
   (format t "                         bricscad-v26, clautolisp, lax. An unversioned vendor name maps~%")
   (format t "                         to the last known version; an unqualified platform means windows.~%")
   (format t "  --list-dialects        Print every --dialect name (strict first, lax last) and exit.~%")
+  (format t "  --lax                  Shorthand for --dialect lax: every extension available, no~%")
+  (format t "                         out-of-dialect diagnostic.~%")
   (format t "  --strict               Shorthand for --dialect strict (portable AutoCAD ∩ BricsCAD).~%")
   (format t "  --autocad              Shorthand for --dialect autocad-2026.~%")
   (format t "  --bricscad             Shorthand for --dialect bricscad-v26.~%")
@@ -105,7 +107,11 @@
   (format t "  --list-encodings       Print every encoding name accepted by -e / -E~%")
   (format t "                         (mandatory four + every encoding the running CL~%")
   (format t "                         implementation exposes) and exit. Encoding names~%")
-  (format t "                         are case-insensitive on the CLI.~%"))
+  (format t "                         are case-insensitive on the CLI.~%")
+  (format t "  --list-situations      Print the encoding situations settable with~%")
+  (format t "                         -E<situation>[-<dir>] / --<situation>[-<dir>]-encoding,~%")
+  (format t "                         with their defaults, and exit. Under a backend flag,~%")
+  (format t "                         shows that backend's defaults and their provenance.~%"))
 
 (defun resolve-host-backend (name)
   "Return a HAL backend instance for the given --host argument."

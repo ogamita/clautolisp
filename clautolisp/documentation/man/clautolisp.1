@@ -55,6 +55,11 @@ One of:
 .BR \-\-strict ", " \-\-autocad ", " \-\-bricscad ", " \-\-clautolisp
 Shorthands for the matching
 .BR \-\-dialect .
+.TP
+.B \-\-lax
+Shorthand for
+.BR "\-\-dialect lax" :
+every extension available, no out-of-dialect diagnostic.
 .SS Host (HAL backend)
 .TP
 .BR \-\-host " " \fIBACKEND\fR
@@ -65,6 +70,18 @@ Feed the file at PATH to the MockHost as its prompt-stream.
 .TP
 .BR \-\-gui " " \fICMD\fR
 Subprocess command speaking the DCL sexp wire protocol.
+.TP
+.BR \-\-dcl " " \fI{tui,gui,auto}\fR
+DCL renderer selection.
+.B tui
+forces the terminal form,
+.B gui
+uses the
+.B \-\-gui
+subprocess driver, and
+.B auto
+(the default) picks the GUI when a driver is configured and stdout is a
+TTY, so every headless or piped run gets the terminal form.
 .TP
 .B \-\-trace
 Print every AutoLISP call (entry args + exit value) on stderr.
@@ -170,6 +187,17 @@ Print every encoding name accepted by
 .BR \-e " / " \-E
 (mandatory four + every encoding the running CL implementation
 exposes) and exit.
+.TP
+.B \-\-list-dialects
+Print every
+.B \-\-dialect
+name, strict first and lax last, and exit.
+.TP
+.B \-\-list-situations
+Print the encoding situations settable with
+.BR \-E\fIsituation\fR [ \-\fIdir\fR ]
+and their defaults, then exit. Under a backend flag, show that
+backend's defaults and where each comes from.
 .SH "*AUTOLISP-…* GLOBALS"
 clautolisp publishes a set of
 .B *AUTOLISP-…*

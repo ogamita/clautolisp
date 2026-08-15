@@ -96,8 +96,27 @@ terminal side (line-buffered by default).
 .BR \-\-dwg " " \fIFILE\fR
 Drawing to open before running the script.
 .TP
+.BR \-\-cad " " \fIDENOTATION\fR
+Pick a specific installed CAD by its canonical denotation
+.RI ( acad-2026 ", " bricscad-v25-fr_FR ", " autocad-2022 ", ...).
+.TP
+.B \-\-list-cad-programs
+Scan the host for installed CADs, print each with its canonical
+denotation, and exit.
+.TP
 .B \-\-epure
 Enable the EPURE plugin hook.
+.TP
+.B \-\-print-command
+Stage the workdir for real, print the CAD command line that would be
+launched, and launch nothing. CAD backends only.
+.TP
+.BR \-\-write-workdir-path " " \fIFILE\fR
+After the workdir is prepared, write its absolute path to FILE, one
+line. Lets a caller locate a
+.B \-\-keep-workdir
+workdir without scraping stdout. Honoured equivalently via
+.BR $AUTOLISP_WRITE_WORKDIR_PATH .
 .SS Bootstrap and runtime
 .TP
 .BR \-\-bootstrap-phase " " \fI{marker,core,log,full}\fR
