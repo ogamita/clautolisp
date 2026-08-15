@@ -335,6 +335,29 @@ Per-session options are read and set from any interface:
   =attributes=), ~pager~ (=on= | =off=), ~pager-height~,
   ~source-window-height~, ~value-line-width~, ~break-on-caught~.
 
+The complete set of aldo settings, with their types:
+
+| Setting                          | Type / values                                                     |
+|----------------------------------+-------------------------------------------------------------------|
+| ~navigator~                      | =sexp= \vert{} =line=                                             |
+| ~directory-listing~              | =long= \vert{} =column= \vert{} =short=                           |
+| ~directory-window~               | integer — context lines around the selection                      |
+| ~navigation-history-max~         | integer (1000) — how many previous browse stacks the navigation history keeps; the oldest are dropped past this |
+| ~sedit-on-quit~                  | =auto-save= \vert{} =do-not-save= \vert{} =ask=                   |
+| ~break-on-caught~                | boolean                                                           |
+| ~source-window-height~           | integer                                                           |
+| ~value-line-width~               | integer                                                           |
+| ~pager~                          | =on= \vert{} =off=                                                |
+| ~pager-height~                   | integer                                                           |
+| ~theme~                          | =unicode= \vert{} =ascii= \vert{} =white-on-black= \vert{} =black-on-white= \vert{} =green-on-black= \vert{} =attributes= |
+| ~default-user-interface~         | =tui= \vert{} =ncurses= \vert{} =aldb=                            |
+| ~default-aldb-listening-address~ | string (=127.0.0.1=) — address the aldb (Emacs) transport listens on when no ~--aldb-listen~ / ~--aldb-stdio~ is given |
+| ~default-aldb-listening-port~    | port (=4301=) — the matching port                                 |
+
+~decorations~ is not in this table: it is structural (the theme glyphs,
+edited as data in the configuration file) rather than something =set=
+changes.
+
 The configuration lives in an AutoLISP sexp bound to
 ~*clal-aldo-configuration*~, read at start-up from
 =$XDG_CONFIG_HOME/clautolisp/aldo.conf= (or searched along
@@ -1110,6 +1133,59 @@ an ~enc-unsupported-target~ diagnostic naming it.
                             you want when a file reads correctly under
                             one backend and not another. See
                             /Source-file and terminal encoding/ above.
+
+* Environment variables
+Two kinds live here, and the difference matters: *knobs* you set to
+change what clautolisp does, and *probes* clautolisp reads to find out
+where it is running. Setting a probe is legitimate — it is how you
+correct a wrong guess — but it is not its purpose.
+
+** Knobs
+- ~$CLAUTOLISP_GUI~ :: DCL GUI driver command, used when ~--gui~ is
+  omitted. See /DCL dialogs/ above.
+- ~$CLAUTOLISP_DCL_DEBUG~ :: when set and non-empty, trace the DCL
+  subprocess renderer on standard error, each line prefixed
+  ~[dcl-debug]~. The first thing to set when a dialog does not appear
+  or the driver does not shut down.
+- ~$CLAUTOLISP_BACKGROUND~ :: ~dark~ or ~light~; overrides the detected
+  terminal background. See /Colour output/ above.
+- ~$CLAUTOLISP_DEBUG_PATHMAP~ :: when set to any value, dump the
+  build and run path-mapping frames at startup. See /Paths on Windows/.
+- ~$CLAUTOLISP_DWG_LIBDIR~ :: explicit directory for the DWG codec
+  shared library, tried *before* the development tree and the installed
+  layout. The way to point clautolisp at a codec you built yourself.
+- ~$CLAUTOLISP_PREFIX~ :: the ~$PREFIX~ used to build the trusted
+  search path for ~findtrustedfile~ and secure loading; omitted from
+  the path when unset.
+- ~$AUTOLISP_NO_INIT~, ~$CLAUTOLISP_NO_INIT~ :: equivalent to
+  ~-norc~ / ~--no-init~.
+- ~$NO_COLOR~ :: disable ANSI colour ([[https://no-color.org][no-color.org]]).
+- ~$XDG_CONFIG_HOME~, ~$XDG_CONFIG_DIRS~ :: where ~lisp.conf~ and
+  ~aldo.conf~ are read and written.
+- ~$XDG_DATA_HOME~ :: contributes ~$XDG_DATA_HOME/autolisp/~ to the
+  trusted search path (falling back to ~$HOME/.local/share~).
+- ~$XDG_STATE_HOME~ :: where the default dribble file is written.
+
+** Probes
+- ~$LC_ALL~, ~$LANG~, ~$LC_CTYPE~ :: consulted in that order for the
+  default source and terminal encoding when ~-e~ / ~-E~ are absent.
+- ~$COLORFGBG~, ~$TMUX~ :: consulted, after ~$CLAUTOLISP_BACKGROUND~,
+  to work out whether the terminal is dark or light.
+- ~$COLUMNS~ :: the width the debugger's ~:column~ directory listing
+  fills, when it parses as an integer above 20; otherwise 80. A dumb
+  terminal often cannot report its size, which is why this is read at
+  all.
+- ~$MSYSTEM~, ~$OSTYPE~ :: detection inputs for classifying the run
+  environment on Windows (MSYS2 / Cygwin / WSL / native). If
+  ~$CLAUTOLISP_DEBUG_PATHMAP~ shows a classification you did not
+  expect, these are what produced it.
+- ~$HOME~, ~$PATH~, ~$SHELL~ :: the usual meanings. ~$SHELL~ is the
+  shell the ~!~ escape runs your command in.
+
+** Build-time
+- ~$CLAUTOLISP_STRICT_BUILD~ :: when set to 1, a build that produces
+  any non-style warning aborts instead of completing with the warnings
+  merely logged. Read by the build, not by the program.
 
 * Image-introspection variables (~*AUTOLISP-…*~)
 At startup ~clautolisp~ publishes a set of globally-bound variables
