@@ -52,6 +52,11 @@ implementations, not here.")
    #:read-line-from-input-context #:read-sexp-from-input-context
    #:unread-line-from-input-context
    #:comma-command-read #:command-read
+   ;; shell escape (bang.issue): both halves are hooks, because this
+   ;; system is dependency-free — running a subprocess and reading the
+   ;; configuration both live above it.
+   #:*shell-escape-character-hook* #:*shell-escape-runner*
+   #:shell-escape-character
    #:input-command #:make-input-command #:input-command-p
    #:input-command-raw #:input-command-tokens
    #:input-command-invocation #:input-command-arguments
