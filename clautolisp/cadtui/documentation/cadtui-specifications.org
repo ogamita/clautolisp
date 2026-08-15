@@ -1,0 +1,882 @@
+#+TITLE: Spécification — CAD TUI (interface texte pilotable pour clautolisp)
+#+AUTHOR: Pascal (informatimago/ogamita) — rédigé avec Claude
+#+DATE: [2026-08-14]
+#+OPTIONS: toc:3 num:t
+
+* Objectif et contexte
+
+clautolisp implémente AutoLISP (et une partie de l'environnement Visual
+LISP) au-dessus de Common Lisp. Le besoin initial était de pouvoir tester
+interactivement des boîtes de dialogue DCL sans dépendre d'un vrai CAD
+(saisie dans les textbox, clic sur les boutons). Ce besoin est généralisé
+ici à *toute* l'interface utilisateur d'un CAD façon AutoCAD/BricsCAD :
+barre de menus, bandeaux (toolbars/ruban), fenêtres de dessin multiples
+(MDI), vue de dessin avec ses entités et leurs poignées (grips), alertes,
+dialogues DCL et applications filles, et fenêtre console (texte).
+
+L'idée centrale : représenter tout cela comme une *arborescence d'objets
+d'interface* interrogeable et dumpable sous forme textuelle structurée, et
+pilotable par un petit *langage d'ordres d'interaction* tapé au clavier,
+en remplacement des clics souris — mais en conservant la sémantique
+*non modale* du GUI réel (on peut dumper un menu sans être obligé de
+choisir un item avant d'aller interagir ailleurs).
+
+Deux configurations d'hébergement de ce système :
+
+- =--host cador= : configuration actuelle, accès direct à la console
+  (c'est un cas particulier où seule la fenêtre console existe/est
+  utile — pas de fenêtres de dessin, pas de GUI simulé).
+- =--host cadtui= : configuration générale — l'arborescence complète
+  décrite ici est active (menus, bandeaux, fenêtres de dessin, vue CAD,
+  console, dialogues).
+
+=cador= est donc un sous-ensemble dégénéré de =cadtui= (arbre réduit à la
+racine =application= + =console=, pas de =barre-menu= ni de =dessins=).
+
+* Étude des interfaces AutoCAD / BricsCAD (éléments retenus)
+
+Cette section résume ce qui, dans l'organisation réelle du GUI
+AutoCAD/BricsCAD et de sa personnalisation (CUIX, ex-MNU/MNS), a guidé
+l'arborescence proposée plus bas.
+
+- *Workspaces* : ensembles nommés de bandeaux/rubans/palettes affichés
+  simultanément ; on peut basculer de l'un à l'autre. → notion de
+  *disposition* (layout) au niveau de la fenêtre de dessin, orthogonale
+  à l'arbre lui-même (l'arbre contient tout ce qui est chargé, une
+  disposition ne fait que filtrer ce qui est *visible*).
+- *MenuGroup* (CUIX) contient, entre autres : =PopMenuCollection=
+  (menus déroulants ou contextuels), =PanelSet=/rubans (onglets →
+  panneaux → boutons), =QuickAccessToolbarCollection=,
+  =AcceleratorCollection= (raccourcis clavier), =MouseButtonGroupCollection=,
+  =LspFileCollection= (fichiers LISP chargés avec le groupe de menus).
+  → confirme que chaque item de menu/bouton de bandeau porte une
+  *fonction Lisp associée* (macro de commande), exactement ce que le
+  besoin décrit ; on retient donc un couple (étiquette, icône
+  optionnelle, fonction/commande associée, état) comme structure
+  minimale d'un item de menu ou de bouton.
+- *Fenêtre texte / F2* : =F2= (ou =Ctrl+F2= si la ligne de commande est
+  flottante) bascule l'affichage de l'historique complet des commandes
+  — c'est très exactement la fenêtre console de notre arbre, avec un
+  flux récent et un historique paginable.
+- *Ligne de commande* : accepte indifféremment un nom de commande, des
+  coordonnées, ou (dans notre cas) une expression Lisp — sans qu'il soit
+  nécessaire de « sélectionner » explicitement un champ de saisie au
+  préalable : elle a un focus clavier implicite en permanence. → modèle
+  retenu pour la *saisie implicite de commande* (cf. § langage
+  d'interaction).
+- *Poignées (grips)* et *sélection noun-verb / pickfirst* : une entité
+  sélectionnée affiche des poignées numérotées sur ses points
+  caractéristiques ; on peut cliquer une poignée précise, la
+  sélectionner avec Maj pour en cumuler plusieurs, et le mode
+  d'édition (déplacer/tourner/étirer/...) se choisit ensuite par
+  Entrée/clic-droit/barre d'espace. Le style « noun-verb » (sélection
+  d'abord, commande ensuite) coexiste avec le style « verb-noun »
+  (commande d'abord, puis sélection demandée par la commande). → notre
+  arbre attribue à chaque entité une liste ordonnée et numérotée de
+  poignées, adressables individuellement, et le protocole de sélection
+  supporte les deux styles.
+- *Sélection implicite (pickfirst)* : une commande lancée avec une
+  sélection déjà active l'utilise sans redemander ; sinon elle bascule
+  en mode « attente de sélection ». → notre modèle de « commande CAD
+  active » (cf. § 5.6) doit connaître l'état de sélection courante de
+  la fenêtre de dessin active, indépendamment de la commande en cours.
+- *Console(s) — AutoCAD* : la fenêtre texte (F2/Ctrl+F2) est un
+  historique des commandes qui existe *avant même* qu'un dessin soit
+  ouvert — le Start tab (contrôlé par =STARTUP=/=STARTMODE=) laisse
+  une ligne de commande active permettant par exemple de taper =OPEN=
+  ou =NEW= sans document courant. Chaque dessin, lui, tient son propre
+  fichier journal de commandes (=LOGFILEON=/=LOGFILEOFF=, chemin commun
+  réglé par =LOGFILEPATH= mais « chaque dessin sauvegarde un fichier
+  journal » distinct, du nom du dessin). Côté espace de noms Lisp :
+  « quand on charge du code Lisp ou qu'on positionne des variables
+  Lisp dans AutoCAD, elles se rapportent à un document particulier »
+  — la communication inter-documents passe par un mécanisme dédié
+  appelé le *tableau noir* (« blackboard »), une zone globale
+  explicite permettant de partager des variables entre espaces de noms
+  de documents ; en dehors de ce canal, un AutoLISP natif ne travaille
+  qu'avec un seul document à la fois et ne peut pas, par exemple,
+  exécuter =entmake= dans le namespace d'un autre document depuis celui
+  où tourne le code. → confirme : une console (et un espace Lisp) *par
+  dessin*, plus une console d'*application* distincte, active tant
+  qu'aucun dessin n'est le document courant (ou activable
+  explicitement), avec un canal de partage explicite et optionnel entre
+  les deux niveaux plutôt qu'un espace global implicite.
+- *Console — BricsCAD* : contre-exemple instructif. Un rapport de bug
+  du forum Bricsys montre qu'une variable globale positionnée dans un
+  premier dessin, redéfinie dans un second dessin, puis relue depuis le
+  premier dessin, renvoie la valeur du *second* — c'est-à-dire que les
+  espaces de noms Lisp de deux dessins différents ne sont pas isolés
+  comme le veut la sémantique AutoCAD documentée, ce qui correspond à
+  l'expérience utilisateur rapportée (mélange/plantage à l'usage
+  lorsqu'on exécute du Lisp dans un dessin puis dans un autre avec
+  sortie console). → argument supplémentaire pour ne *pas* reproduire
+  ce comportement dans clautolisp : chaque console/dessin doit avoir un
+  espace de noms et un flux de sortie strictement isolés, sans état
+  partagé implicite entre dessins.
+- *Localisation des commandes* : AutoCAD (et BricsCAD, qui reproduit le
+  même mécanisme) donne à chaque commande un nom *international*
+  (anglais) et un nom *local* traduit ; préfixer le nom international
+  d'un caractère souligné force son usage quel que soit la langue de
+  l'installation — « le caractère souligné signale au programme que le
+  nom de commande ou la valeur d'option doit être traduit vers la
+  langue locale du produit avant exécution ». Concrètement =_LINE=
+  fonctionne sur une installation française (où l'utilisateur tape
+  normalement =LIGNE=), et l'AutoLISP =getcname= fait la traduction
+  programmatique dans les deux sens : appelé sur un nom local il
+  renvoie le nom international souligné, appelé sur un nom international
+  souligné il renvoie le nom local. Les *mots-clés d'option* à
+  l'intérieur d'une commande (ex. l'option "Fenêtre" du choix de mode
+  de sélection) sont traduits *séparément* du nom de la commande, avec
+  leur propre lettre-clé d'abréviation par langue (=W= pour "Window" en
+  anglais, =F= pour "Fenêtre" en français) — BricsCAD documente même un
+  commutateur (=PROMPTOPTIONTRANSLATEKEYWORDS=) pour désactiver
+  spécifiquement cette traduction des mots-clés indépendamment de celle
+  des commandes. Un *alias* (raccourci saisi au clavier, type =L= pour
+  =LIGNE=, défini dans =acad.pgp=/=default.pgp=) est un mécanisme
+  *distinct* : purement local, jamais invocable avec le préfixe
+  international. → trois dictionnaires séparés à prévoir : noms de
+  commande, mots-clés d'option, alias — et un mécanisme de traduction
+  bidirectionnelle explicite (à la =getcname=) plutôt qu'une simple
+  table de correspondance figée dans le code.
+
+* Arborescence des objets d'interface
+
+Notation : =nom-de-type:clé= pour un nœud identifié par une clé stable
+(persistante d'un dump à l'autre tant que l'objet existe), =nom[i]=
+pour un nœud identifié par sa position dans une liste ordonnée.
+
+#+begin_example
+/application
+├── barre-menu                              (absent en config cador)
+│   └── menu:<label>*                       (menu déroulant, ex menu:Dessiner)
+│       └── item:<label>* | separateur*     (item peut avoir un sous-menu)
+├── dessins[]                               (liste ordonnée; dessins[1] = actif)
+│   └── dessin:<nom-fichier>
+│       ├── bandeaux[]
+│       │   └── bandeau:<label>             (style: toolbar | ruban)
+│       │       ├── bouton:<label>*         (style toolbar : plat)
+│       │       └── onglet:<label>*         (style ruban : onglet > panneau > bouton)
+│       │           └── panneau:<label>*
+│       │               └── bouton:<label>*
+│       ├── menus-locaux[]                  (menu déroulant ouvert / menu contextuel)
+│       │   └── menu:<label> (idem barre-menu)
+│       ├── vue-cad
+│       │   ├── fenetre-visualisation        (bornes monde visibles + échelle)
+│       │   ├── selection[]                  (entités actuellement sélectionnées)
+│       │   └── entite:<handle>*
+│       │       └── poignee:<n>*             (points caractéristiques numérotés)
+│       ├── alertes[]                        (pile d'alertes, LIFO, la dernière est active)
+│       │   └── alerte:<id>
+│       ├── dialogues[]                      (DCL ou application fille)
+│       │   └── dialogue:<id>
+│       │       └── tuile:<clé>*             (edit_box, button, list_box, toggle, ...)
+│       └── console                          (historique + invite PROPRES à ce dessin ; togglée par F2)
+│           ├── flux                         (historique récent, paginable ; adossé à un fichier journal)
+│           └── zone-saisie                  (dernière ligne = saisie courante)
+└── console                                  (console d'APPLICATION — toujours présente, y compris sans dessin ouvert)
+    ├── flux                                 (chargements Lisp d'application, sortie hors-contexte-dessin)
+    └── zone-saisie
+#+end_example
+
+Remarques :
+
+- =dessins[]= modélise le MDI (multi-document) : =activer(dessin[2])= ou
+  =activer(dessin:"plan-masse.dwg")= change le dessin actif, comme un
+  clic sur une fenêtre de dessin en arrière-plan dans le GUI réel.
+- =menus-locaux= et =alertes= et =dialogues= sont des listes *souvent
+  vides* — elles ne portent des enfants que lorsqu'un menu est
+  effectivement déroulé / qu'une alerte est affichée / qu'un dialogue
+  est ouvert. Le dump d'une branche vide est juste absent ou marqué
+  =(vide)=.
+- Chaque nœud interactif (=item=, =bouton=, =tuile=, =entite=,
+  =poignee=, =dessin=, =menu=...) porte au minimum : une *clé* stable,
+  un *rôle* (le type de nœud), un *libellé* affichable, un *état*
+  (normal / grisé / coché / focus / sélectionné...), et pour les nœuds
+  exécutables une *fonction associée* (nom de commande AutoLISP ou
+  closure Lisp — cf. LspFileCollection des CUIX).
+- Il y a *une console par dessin* (comme le fichier journal
+  =LOGFILEON= d'AutoCAD, propre à chaque document) *plus une console
+  d'application* à la racine, distincte, active par défaut tant
+  qu'aucun dessin n'est le dessin actif — c'est elle qui reçoit par
+  exemple les traces de chargement Lisp d'application (équivalent
+  =acad.lsp=/=on_start.lsp=, avant tout document courant) et qui reste
+  utilisable pour taper =OPEN=/=NEW= sans dessin ouvert, comme le
+  permet le Start tab d'AutoCAD. Ce n'est ni un cas particulier
+  arbitraire ni une console unique partagée entre dessins (défaut
+  documenté de BricsCAD, cf. § étude, à ne pas reproduire) : chaque
+  console — celle de l'application et celle de chaque dessin — a son
+  propre flux et son propre espace de noms Lisp, strictement isolés
+  sauf transfert explicite via un mécanisme de type *tableau noir*
+  (cf. § Communication inter-dessins).
+- =activer(console)= est donc ambigu sans contexte : il désigne la
+  console du dessin actif s'il y a un dessin actif, sinon la console
+  d'application — voir la règle de saisie implicite (§5.6) qui suit
+  exactement la même logique de résolution.
+
+** Communication inter-dessins (tableau noir)
+
+Par défaut, les espaces de noms Lisp des consoles (un par dessin, plus
+celui de l'application) sont *strictement isolés* — pas de variable
+globale implicitement partagée entre deux dessins. Si un partage est
+un jour nécessaire, il doit passer par un objet explicite,
+=tableau-noir=, rattaché à =/application= (au même niveau que =console=
+d'application), sur le modèle documenté du « blackboard » AutoLISP :
+une zone de variables nommées, lues/écrites par des fonctions dédiées
+plutôt que par un simple =setq= partagé, pour que le partage soit
+toujours *volontaire et visible* dans le code plutôt qu'un effet de
+bord accidentel comme observé dans BricsCAD. Hors scope pour les
+premières phases d'implémentation (cf. roadmap).
+
+* Modèle de données (esquisse CLOS)
+
+#+begin_src lisp
+(defclass ui-node ()
+  ((key      :initarg :key      :reader ui-key)       ; symbole ou chaîne stable
+   (role     :initarg :role     :reader ui-role)       ; :menu :bouton :entite ...
+   (label    :initarg :label    :initform nil :reader ui-label)
+   (state    :initarg :state    :initform :normal :accessor ui-state)
+   (action   :initarg :action   :initform nil :reader ui-action) ; fonction/commande
+   (parent   :initarg :parent   :initform nil :accessor ui-parent)
+   (children :initarg :children :initform nil :accessor ui-children)))
+
+(defclass ui-application       (ui-node) ((menubar) (drawings) (console)))
+(defclass ui-menubar      (ui-node) ())
+(defclass ui-menu         (ui-node) ())
+(defclass ui-menu-item    (ui-node) ())
+(defclass ui-drawing      (ui-node) ((filename) (bands) (local-menus)
+                                      (view) (alerts) (dialogs) (console)
+                                      (lisp-namespace))) ; espace de noms isolé, propre au dessin
+(defclass ui-band         (ui-node) ((style :initform :toolbar))) ; :toolbar | :ribbon
+(defclass ui-button       (ui-node) ())
+(defclass ui-ribbon-tab   (ui-node) ())
+(defclass ui-ribbon-panel (ui-node) ())
+(defclass ui-cad-view     (ui-node) ((viewport) (selection)))
+(defclass ui-entity       (ui-node) ((entity-type) (layer) (properties) (handles)))
+(defclass ui-grip         (ui-node) ((index) (point)))
+(defclass ui-alert        (ui-node) ((severity) (message)))
+(defclass ui-dialog       (ui-node) ((dcl-source) (tiles)))
+(defclass ui-tile         (ui-node) ((tile-type) (value)))
+(defclass ui-console      (ui-node) ((stream-buffer) (input-zone)
+                                      (lignes-en-attente)   ; file de lignes passe-plat, cf. § classification/tamponnage
+                                      (lisp-thread) (debug-thread))) ; suspendus/réveillés, jamais tués
+#+end_src
+
+Toute la mécanique de dump/navigation/interaction ci-dessous n'agit que
+sur ces slots génériques (=key/role/label/state/action/children=) : les
+sous-classes n'ajoutent que ce qui est nécessaire au rendu détaillé
+d'un rôle particulier (ex. =entity-type=/=layer= pour une entité).
+
+Localisation (§ dédiée plus bas) : trois tables associatives par
+locale, chargées comme données (pas de classes CLOS supplémentaires
+nécessaires, de simples fonctions de résolution) :
+
+#+begin_src lisp
+(defgeneric local-name (international-name locale category))
+;; category ∈ (:command :command-keyword :interaction-verb :interaction-keyword)
+;; retourne international-name inchangé si aucune entrée pour cette locale
+;; (repli automatique, jamais d'échec)
+
+(defgeneric international-name (any-name locale category))
+;; bidirectionnel : accepte aussi bien un nom déjà international
+;; (préfixé _ pour les commandes CAD) qu'un nom local
+#+end_src
+
+* Langage d'ordres d'interaction
+
+** Principes
+
+1. *Non modal* : chaque ligne saisie est un ordre complet et immédiat ;
+   aucun ordre ne « bloque » en attendant une suite. Un
+   =dump(menu:Dessiner)= ne présuppose pas qu'on va choisir un item —
+   on peut enchaîner sur =activer(dessin[2])= puis
+   =dump(dessin-actif.vue-cad)= sans que rien n'ait été perdu.
+2. *Adressage indépendant du focus* : une cible peut toujours être
+   désignée par un *chemin absolu* dans l'arbre, indépendamment de la
+   fenêtre « active » au sens du focus clavier. =activer(...)= change
+   le dessin actif (donc la cible implicite de la ligne de commande),
+   pas la possibilité de désigner un objet ailleurs.
+3. *Discipline d'entrée LINE* : une commande par ligne, lue et exécutée
+   entièrement avant de lire la suivante (cf. config =cador= actuelle).
+4. *Caractère d'échappement méta-commande, en tête de ligne* : on ne
+   peut *pas* distinguer une méta-commande d'une saisie ordinaire par
+   la seule syntaxe =identifiant(arguments)= — un programme AutoLISP en
+   cours d'exécution peut très bien être en train de lire, via
+   =read-line=/=read-char=, une ligne qui a exactement cette forme sans
+   être du tout une méta-commande (l'utilisateur répond à un
+   =(getstring)=, par exemple, avec un texte qui ressemble à
+   =foo(bar)=). Il faut donc un marqueur *hors ambiguïté*, pas une
+   heuristique de reconnaissance de grammaire. On utilise un caractère
+   d'échappement, =!= par défaut mais *configurable* (§ ci-dessous),
+   qui n'a de sens *qu'en tête de ligne* :
+   - une ligne commençant par un seul =!= est *entièrement* une
+     méta-commande : le =!= est retiré, le reste de la ligne est
+     analysé comme =verbe(arguments)= (§5.3) et exécuté — la
+     méta-commande occupe *toute* la ligne, il n'y a plus de "reste"
+     à faire suivre ailleurs ;
+   - une ligne commençant par =!!= (le caractère doublé) *annule* sa
+     fonction d'échappement : un seul =!= est retiré, et la ligne
+     restante (qui commence donc par un =!= littéral) est transmise
+     telle quelle, comme passe-plat ordinaire (cf. § 5.6), au flux
+     AutoLISP — c'est le recours quand la saisie légitime attendue par
+     le programme AutoLISP doit elle-même commencer par =!= ;
+   - toute ligne qui ne commence *ni* par =!= ni par =!!= est
+     entièrement passe-plat, transmise sans modification (§5.6).
+   Le doublement n'est nécessaire qu'en tête de ligne : =!= au milieu
+   d'une ligne n'a jamais de fonction spéciale, puisqu'une
+   méta-commande ne peut de toute façon commencer qu'en tout début de
+   ligne. Ce mécanisme élimine complètement l'ambiguïté — plus besoin
+   d'analyser la ligne pour deviner si elle "ressemble" à une
+   méta-commande — et simplifie le tamponnage (§ suivant) : une ligne
+   est désormais soit intégralement une méta-commande, soit
+   intégralement destinée au flux AutoLISP, jamais un mélange des deux.
+
+   #+begin_example
+   _$ (read-line)
+   !dump(entite(face42))
+   <entite :handle face42 ....>
+   !! ma ligne!
+   #+end_example
+
+   Dans cet exemple : le programme AutoLISP est bloqué dans un
+   =(read-line)=. =!dump(entite(face42))= est reconnu comme
+   méta-commande (le =!= en tête le signale sans ambiguïté possible,
+   même si =dump(entite(face42))= a la même forme syntaxique qu'une
+   saisie AutoLISP ordinaire) ; elle s'exécute et imprime le dump, mais
+   le =(read-line)= reste bloqué — cette ligne ne lui est *jamais*
+   délivrée. La ligne suivante, =!! ma ligne!=, commence par le
+   caractère doublé : un seul =!= est retiré, et c'est la ligne
+   =! ma ligne!= (avec un unique =!= initial, littéral) qui est enfin
+   délivrée au =(read-line)= en attente.
+
+   Remarque pour l'avenir : ce mécanisme d'échappement en bande (dans
+   le flux de caractères lui-même) est ce qu'impose la discipline LINE
+   stricte sur =*standard-input*=/=*terminal-io*=. Un backend disposant
+   d'un contrôle plus fin du terminal (=cadtui-curses=, § architecture)
+   pourra introduire les méta-commandes *hors bande*, via une touche de
+   fonction dédiée interceptée avant d'atteindre le flux de caractères
+   — auquel cas le caractère =!= n'a plus lieu d'être pour ce backend
+   précis, les deux mécanismes n'étant pas mutuellement exclusifs.
+
+** Configuration du caractère d'échappement
+
+Le caractère d'échappement du principe 4 n'est pas figé dans le code :
+il se configure par une fonction Lisp, appelable depuis un fichier
+d'initialisation ou en cours de session (comme une méta-commande
+=locale(...)= le ferait pour la langue) :
+
+#+begin_src lisp
+(TUI-COMMAND-ESCAPE ASCII "!")        ; caractère ASCII/imprimable ordinaire
+(TUI-COMMAND-ESCAPE UNICODE (182))    ; point de code Unicode — ici ¶ (PILCROW SIGN, U+00B6)
+#+end_src
+
+Deux formes reconnues pour le second argument :
+- =ASCII "<chaîne d'un caractère>"= : le caractère d'échappement est
+  donné littéralement, tel qu'il apparaîtra tapé au clavier ;
+- =UNICODE (<point de code>)= : le caractère est donné par son point
+  de code, pour choisir délibérément un caractère hors du jeu ASCII
+  imprimable usuel (donc à très faible risque de collision avec une
+  saisie AutoLISP légitime, un nom de calque, un mot de passe...) —
+  utile en particulier pour un dessin dont le contenu textuel (textes,
+  attributs, scripts existants) pourrait légitimement commencer par
+  =!=, où choisir un caractère rare limite le besoin de doubler
+  l'échappement au quotidien.
+
+Propriétés à respecter par toute valeur configurée :
+- un seul caractère (pas une chaîne multi-caractères) ;
+- doit rester distinguable d'un caractère qu'une ligne AutoLISP
+  ordinaire commencerait plausiblement à produire dans le contexte
+  d'usage réel — c'est un compromis laissé à qui configure, la spec
+  n'impose pas de liste noire/blanche ;
+- le doublement en tête de ligne (§ principe 4) s'applique
+  identiquement quel que soit le caractère choisi.
+
+La valeur active fait partie de la configuration de session (au même
+titre que la locale, § Localisation) : elle peut être fixée par
+défaut, surchargée en ligne de commande, et changée en cours de
+session — mais un changement de caractère d'échappement en cours de
+session doit être annoncé explicitement (rappel dans la console
+active), puisque c'est le seul mécanisme qui permette de continuer à
+interpréter correctement les lignes suivantes.
+
+** Adressage des cibles
+
+#+begin_example
+ligne        ::= "!" meta-commande        ; méta-commande (§ principe 4)
+             |    "!!" reste-de-ligne     ; échappement annulé → passe-plat, "!"+reste-de-ligne délivré tel quel
+             |    reste-de-ligne          ; passe-plat ordinaire (ne commence pas par "!")
+meta-commande::= verbe "(" [arguments] ")"
+chemin       ::= "/" segment ("/" segment)*
+segment      ::= role ":" cle | role "[" indice "]" | mot-cle
+mot-cle      ::= "dessin-actif" | "console" | "application" | "vue" | "selection-active"
+reference-D  ::= "D" entier "." cle ("." cle)*    ; référence relative au n-ième dump
+#+end_example
+
+- Un chemin absolu commence à =/application=. Exemple :
+  =/application/dessins[2]/vue-cad/entite:deadface/poignee:2=.
+- =dessin-actif= est un raccourci pour =dessins[1]= (toujours en tête
+  de liste par construction — activer un dessin le remonte en tête).
+- Chaque =dump= reçoit un identifiant =D<n>= croissant ; toute clé
+  apparue dans ce dump reste adressable par =D<n>.<clé>= même après
+  qu'on a changé de fenêtre active ou fait d'autres dumps — c'est ce
+  qui permet l'exemple donné : dumper un menu (D1), activer une autre
+  fenêtre, dumper les entités (D2), puis désigner
+  =D2.deadface.poignee2= sans ambiguïté.
+- Une clé seule (sans chemin ni préfixe =D<n>=) se résout dans le
+  contexte du *dernier dump*, si elle y est unique ; sinon c'est une
+  erreur d'ambiguïté qui liste les candidats.
+
+** Répertoire des méta-commandes
+
+Chaque entrée ci-dessous s'utilise précédée de =!= en tête de ligne
+(§ principe 4) — le tableau omet ce préfixe par lisibilité, mais
+=activer(cible)= s'écrit en pratique =!activer(cible)=.
+
+| Méta-commande                              | Effet                                                              |
+|---------------------------------------------+----------------------------------------------------------------------|
+| =activer(cible)=                           | Donne le focus à une fenêtre/dessin/dialogue (≈ clic sur sa barre de titre) |
+| =touche(nom)=                              | Simule une touche spéciale ou de fonction (=f2=, =echap=, =suppr=, =tab=, =maj-tab=...) — alias vers une méta-commande ou une action native |
+| =dump(cible [, options])=                  | Imprime la description structurée du sous-arbre =cible=            |
+| =page(n)=, =suite=, =precedent=            | Navigue dans la pagination du dernier dump                         |
+| =clic(cible)=                              | Clic simple (bouton, item de menu, entité, poignée...)             |
+| =dclic(cible)=                             | Double-clic                                                        |
+| =clic-droit(cible)=                        | Clic droit / menu contextuel                                       |
+| =glisser(cible, dx, dy)= ou =glisser(cible1, cible2)= | Glisser-déposer (déplacement de poignée, redimensionnement de fenêtre) |
+| =selectionner(cible...)=                   | Remplace la sélection courante de la vue CAD concernée             |
+| =ajouter-selection(cible...)=, =retirer-selection(cible...)= | Modifie la sélection courante (≈ clic+Maj)               |
+| =saisir(cible, texte)=                     | Saisie directe dans une tuile de type edit_box (sans passer par le focus implicite) |
+| =fermer(cible)=                            | Ferme une fenêtre de dessin, un dialogue ou une alerte              |
+| =zoom(cible, fenetre: (x1 y1 x2 y2))=, =zoom(cible, facteur: n)= | Change la fenêtre de visualisation d'une vue CAD    |
+| =pan(cible, dx, dy)=                       | Décale la fenêtre de visualisation                                  |
+| =annuler-commande()=                       | Équivaut à Échap : annule la commande CAD active de la fenêtre active |
+| =aide()=                                   | Rappelle ce répertoire                                              |
+
+Chaque méta-commande retourne immédiatement le résultat pertinent
+(accusé de réception, nouvel état, ou dump si l'action en implique un
+— ex. =clic(menu:Dessiner)= imprime le contenu du menu qu'il vient
+d'ouvrir, exactement comme un vrai clic le déroulerait à l'écran).
+
+** Touches et raccourcis
+
+=touche(f2)= est strictement équivalent à =activer(dessin-actif.console)=
+s'il y a un dessin actif, sinon =activer(/application/console)= — exactement
+le comportement F2/Ctrl+F2 documenté d'AutoCAD, qui bascule la fenêtre
+texte *du document courant* (F2 est un *raccourci* vers une action déjà
+exprimable autrement, comme dans le vrai GUI). La table des touches est
+extensible et fait le lien avec la =AcceleratorCollection= des
+CUIX : chaque entrée associe un nom de touche à soit une méta-commande
+préconstruite, soit une action native (fonction Lisp).
+
+Exemples : =touche(f2)= ↔ =activer(dessin-actif.console)= ou
+=activer(/application/console)= selon le contexte ; =touche(echap)= ↔
+=annuler-commande()= ; =touche(suppr)= ↔ suppression de la sélection
+active ; =touche(tab)= ↔ cycle sur les poignées de l'entité
+sélectionnée (comme le Tab d'AutoCAD sur les poignées superposées).
+
+** Saisie implicite de commande et d'expressions Lisp
+
+Toute ligne qui ne commence *pas* par =!= (ou qui commence par =!!=,
+auquel cas un seul =!= est retiré au préalable, § principe 4) est
+transmise telle quelle, sans autre analyse de sa forme, à la *cible de
+saisie implicite* :
+
+0. La *cible de saisie implicite* est d'abord déterminée : la console
+   du dessin actif s'il existe un dessin actif, sinon la console
+   d'application (=/application/console=) — jamais les deux à la fois, comme
+   AutoCAD isole l'espace de noms Lisp par document et garde une
+   console d'application distincte accessible avant tout dessin ouvert
+   (Start tab). C'est la même console qui reçoit le texte, que la
+   fenêtre *visuellement* active soit un menu, un bandeau ou un
+   dialogue — comme en GUI réel, où la ligne de commande garde le
+   focus clavier implicite quel que soit ce qu'on regarde à l'écran.
+1. *Priorité absolue* : si le thread AutoLISP de cette console est
+   actuellement bloqué dans un appel de lecture — =read-line=,
+   =read-char=, =getstring=, une commande CAD en attente d'un
+   argument, ou toute autre primitive de lecture invoquée par du code
+   AutoLISP quelconque, pas seulement une "commande" au sens strict —
+   la ligne lui est délivrée *telle quelle, sans aucune interprétation
+   de sa syntaxe* : c'est exactement le cas qui motive le mécanisme
+   d'échappement du principe 4 (une ligne qui ressemblerait à
+   =verbe(arguments)= mais qui n'en est pas une reste ici transmise
+   littéralement, puisqu'elle ne commençait pas par =!=).
+2. Sinon (le thread AutoLISP de cette console est *au niveau REPL*,
+   sans lecture en cours), on interprète le contenu de la ligne : si
+   elle commence par =(=, c'est une expression Lisp, lue et évaluée
+   dans l'espace de noms Lisp associé à cette console (celui, isolé,
+   du dessin actif ; ou celui, distinct, de l'application), comme à la
+   ligne de commande Visual LISP.
+3. Sinon, c'est un nom de commande CAD (=LIGNE=, =CERCLE=,
+   =DEPLACER=...) qui démarre une nouvelle commande CAD active sur
+   cette console, en tenant compte de la sélection courante
+   (=pickfirst= : si une sélection est déjà active et que la commande
+   l'accepte, elle est utilisée directement, sinon la commande passe en
+   attente de sélection et la ligne suivante devra être soit une
+   méta-commande =selectionner(...)/clic(...)=, soit du texte
+   d'entités décrit par référence). Sur la console d'application (pas
+   de dessin actif), seules les commandes qui n'exigent pas de document
+   courant ont un sens (=OPEN=, =NEW=...).
+
+Le mode actuel de clautolisp (accès direct, un seul flux) est
+simplement le cas où l'arbre est réduit à =/application/console= (config
+=cador=, cf. §1) : aucune règle spéciale, c'est la console
+d'application appliquant les mêmes règles 1-3 en l'absence de tout
+dessin.
+
+** Classification des lignes et tamponnage
+
+Grâce au caractère d'échappement (§ principe 4), la classification
+d'une ligne physique est immédiate et ne demande plus d'analyser sa
+syntaxe :
+
+1. La ligne commence par =!= (non doublé) → méta-commande,
+   *intégralement* : exécutée tout de suite, quelle que soit la
+   console active à ce moment, jamais délivrée à aucun lecteur
+   AutoLISP.
+2. La ligne commence par =!!= → un =!= est retiré, le reste est
+   passe-plat.
+3. Sinon → passe-plat intégral, tel quel.
+
+Une ligne n'est donc plus jamais scindée entre "avant" et "après" une
+méta-commande — la complication de repérage mi-ligne a disparu avec
+l'ambiguïté qui la motivait. Il reste néanmoins un tamponnage minimal
+à prévoir, pour une raison différente : au moment où une ligne
+passe-plat arrive, le thread AutoLISP de la console cible (§5.6 règle
+0) n'est pas forcément *actuellement* suspendu dans un appel de
+lecture — il peut être ailleurs dans son exécution, ou tout juste
+réveillé sans avoir encore atteint son prochain =read-line=. Chaque
+console possède donc une *file d'attente de lignes* (et non plus un
+tampon de caractères façon FIFO fine comme envisagé précédemment) :
+une ligne passe-plat non immédiatement consommable y est simplement
+posée, et en est retirée au prochain appel de lecture de cette
+console, dans l'ordre d'arrivée — un cas de figure proche du
+"type-ahead" d'un terminal classique, rien de plus élaboré.
+
+** Modèle d'exécution : un thread actif à la fois
+
+Chaque dessin possède exactement deux threads : un *thread AutoLISP*
+(exécute le REPL/les commandes CAD de ce dessin, lit et évalue sur la
+file d'attente de sa console) et un *thread débogueur*, généralement
+en attente, réveillé lorsque le débogueur est invoqué pour ce dessin
+(erreur, point d'arrêt...). La console d'application suit le même
+modèle par symétrie (un thread AutoLISP d'application + un thread
+débogueur d'application), pour l'exécution hors contexte d'un dessin
+particulier.
+
+Invariant global : *un seul thread est actif à la fois*, dans toute
+l'application. Quand =!activer(...)= (ou l'équivalent implicite décrit
+ci-dessus) change la console active, les deux threads du dessin (ou de
+l'application) précédemment actif sont suspendus — pas terminés, juste
+gelés exactement là où ils en étaient (au milieu d'une commande, en
+attente d'une entrée, arrêtés dans le débogueur...) — et le thread
+pertinent du nouveau dessin actif (le thread AutoLISP normalement, ou
+le thread débogueur si ce dessin était arrêté dans son débogueur) est
+réveillé. C'est ce mécanisme de suspension/réveil qui rend cohérente
+la règle du § précédent : une ligne passe-plat peut arriver dans la
+file d'attente d'une console pendant que son thread est suspendu, elle
+y patiente simplement jusqu'au réveil.
+
+Ce modèle correspond à l'usage réel d'un CAD MDI (une seule
+interaction utilisateur possible à la fois, mais chaque document garde
+son état — commande en cours, halte du débogueur — en changeant de
+document actif) sans recourir à une vraie concurrence applicative :
+l'implémentation clautolisp peut se limiter à un ordonnanceur
+coopératif suspend/resume plutôt qu'à des threads système lourds, du
+moment que l'invariant « un seul actif à la fois » est respecté.
+
+** Exemple de session (le scénario du besoin)
+
+#+begin_src text
+> !dump(menu:Dessiner)
+D1 menu:Dessiner (barre-menu)
+  item:Ligne          → c:ligne
+  item:Cercle         → c:cercle
+  item:Polyligne      → c:pline
+  ...
+> !activer(dessin[2])
+dessin[2] "plan-masse.dwg" devient dessin-actif (ex-dessin[1] repoussé en 2e position)
+> !dump(dessin-actif.vue-cad.entites, page: 1, taille: 20)
+D2 vue-cad.entites (1/250, 20 par page)
+  entite:deadface   TYPE=LWPOLYLINE  CALQUE=MURS   poignees=[1..6]
+  entite:cafebabe   TYPE=CERCLE      CALQUE=COTES  poignees=[1..2]
+  ...
+> !suite
+D2 vue-cad.entites (2/250, page suivante)
+  ...
+> !dclic(D2.deadface.poignee2)
+Poignée 2 de deadface (entité D2.deadface) : double-clic → mode Étirer activé
+> 10,5
+Point suivant : (10.0 5.0) — étirement appliqué à la poignée 2
+> !touche(f2)
+console activée — flux récent :
+  Commande : DEPLACER 1 trouvé(s)
+  Point de base : ...
+#+end_src
+
+Notez la ligne =10,5= : elle ne commence pas par =!=, donc elle est
+passe-plat intégral, délivrée telle quelle au mode Étirer actif de la
+poignée — même si, par construction, une syntaxe fortuite comme
+=touche(rouge)= tapée à ce même endroit serait elle aussi transmise
+littéralement plutôt que confondue avec une méta-commande, puisque
+seul le =!= initial en décide.
+
+Ce fragment illustre : non-modalité (dump du menu sans choix, puis
+activation d'une autre fenêtre, puis dump des entités d'une troisième
+partie de l'arbre, avant de revenir agir sur une poignée dumpée bien
+avant), pagination, adressage relatif à un dump antérieur (=D2.=...),
+double-clic sur poignée déclenchant un mode d'édition puis saisie
+implicite d'une coordonnée comme argument de ce mode, et bascule vers
+la console par raccourci touche.
+
+* Localisation
+
+** Principe général
+
+Deux vocabulaires distincts doivent être localisables, sur exactement
+le même modèle : les *commandes CAD* (héritage AutoLISP/DCL existant)
+et les *méta-commandes* du langage d'interaction (§5). Dans les deux
+cas :
+
+- chaque mot a une forme *canonique internationale* (anglais,
+  identifiant stable dans le code et dans les dictionnaires) ;
+- chaque locale supportée fournit une *traduction* de cette forme ;
+- un préfixe explicite force la forme internationale quel que soit la
+  locale active — =_= pour les commandes CAD (convention AutoCAD
+  reprise telle quelle), utilisable de la même façon pour les
+  méta-commandes (=_activate(...)= fonctionne toujours, même sous une
+  locale =fr_FR= où la forme normale attendue est =activer(...)=) ;
+- la traduction est *bidirectionnelle et programmatique* (sur le
+  modèle de =getcname=), jamais une simple substitution figée : on doit
+  pouvoir demander « quel est le nom international de X » et « quel
+  est le nom local de X » dans les deux sens.
+
+Ce qui n'est *jamais* localisé, à l'identique du choix fait par
+Autodesk : le langage Lisp lui-même. =defun=, =setq=, =command=, les
+noms de fonctions AutoLISP restent en anglais quelle que soit la
+locale — seuls les *noms de commandes CAD invocables interactivement*
+et les *mots-clés d'option* qu'elles acceptent sont traduits. Le
+langage d'interaction du §5 suit la même règle : ses verbes et
+mots-clés (=activer=, =dessin=, =poignee=...) sont localisables, mais
+la syntaxe elle-même (parenthèses, virgules, =D<n>.clé=, chemins
+=/=...) ne l'est pas.
+
+** Trois dictionnaires distincts (commandes CAD)
+
+Confirmé par l'étude AutoCAD/BricsCAD (§2) : ne pas mélanger ces trois
+mécanismes, qui ont des règles de préfixage différentes.
+
+1. *Noms de commande* : =_OPEN= (international) ↔ =OUVRIR= (fr_FR)
+   ↔ ... Invocable avec ou sans =_=, jamais sans passer par ce
+   dictionnaire.
+2. *Mots-clés d'option* à l'intérieur d'une commande active, avec leur
+   propre lettre d'abréviation par locale, *indépendante* de celle du
+   nom de la commande (ex. option "Window"/=W= vs "Fenêtre"/=F=) —
+   dictionnaire séparé, clé = (commande internationale, mot-clé
+   international).
+3. *Alias* clavier (type =L= → =LIGNE=) : mécanisme purement local,
+   jamais préfixable par =_=, distinct des deux précédents — ne pas le
+   confondre avec une "traduction". Un alias est une abréviation dans
+   une langue donnée, pas une forme canonique.
+
+** Dictionnaire des méta-commandes (langage d'interaction)
+
+Même structure que le dictionnaire n°1 ci-dessus, appliquée au
+répertoire de méta-commandes du §5.3 et à leurs mots-clés d'argument
+(=dessin=, =menu=, =bouton=, =poignee=, =page=, =fenetre=...). Exemple
+donné dans la demande, tel que le dictionnaire doit le représenter :
+
+#+begin_example
+verbe international : activate
+  fr_FR : activer
+  de_DE : aktivieren
+  es_ES : activar
+
+mot-clé international : drawing
+  fr_FR : dessin
+  de_DE : Zeichnung
+  es_ES : dibujo
+#+end_example
+
+d'où l'équivalence exacte demandée :
+
+#+begin_example
+activer(dessin("Dessin1.dwg"))
+  = activate(drawing("Dessin1.dwg"))
+  = aktivieren(Zeichnung("Dessin1.dwg"))
+  = activar(dibujo("Dessin1.dwg"))
+#+end_example
+
+Les *chaînes littérales* passées en argument (ici le nom de fichier)
+ne sont bien sûr jamais traduites — seuls les tokens du langage
+(verbes, noms de rôles/mots-clés reconnus) le sont. Architecture
+retenue : le *parseur* du §5 travaille en interne uniquement sur les
+tokens canoniques anglais ; la localisation est une passe de
+traduction *lexicale* appliquée avant analyse syntaxique (une locale
+= une table token-local → token-international), jamais une
+grammaire dupliquée par langue. Ça garde l'interpréteur unique et
+évite que les 7 langues divergent un jour sur un point de syntaxe.
+
+** Sélection de la locale
+
+Ordre de résolution, classique Unix :
+
+1. Option CLI explicite (ex. =--locale fr_FR= ou =--lang fr_FR=),
+   prioritaire sur tout le reste ;
+2. =LC_ALL= ;
+3. =LANG= ;
+4. repli sur =en= (forme internationale) si rien n'est reconnu ou si
+   aucun dictionnaire n'existe pour la locale demandée — avec un
+   avertissement explicite plutôt qu'un échec silencieux.
+
+Un repli partiel est aussi prévu : si =fr_CA= est demandé mais que
+seul =fr_FR= est disponible, repli sur la langue seule (=fr=) avant de
+tomber sur =en=. La locale active est modifiable en cours de session
+via une méta-commande dédiée (ex. =locale(fr_FR)=, elle-même bien sûr
+définie dans le dictionnaire des méta-commandes...).
+
+** Format des dictionnaires et extensibilité
+
+Un dictionnaire de locale est un *fichier de données*, pas du code :
+au minimum une table associative (forme internationale → forme
+locale) par catégorie (commandes, mots-clés d'option, verbes
+d'interaction, mots-clés d'interaction), chargée dynamiquement selon
+la locale active. Ajouter une langue = ajouter un fichier, jamais
+toucher au parseur ni à l'arbre CLOS — condition nécessaire pour que
+« collecter des dictionnaires complets » (comme demandé) reste une
+tâche de données et non de développement. Une locale *incomplète*
+(dictionnaire partiel) doit pouvoir coexister : toute entrée absente
+retombe sur la forme internationale plutôt que d'échouer.
+
+** Sources pour peupler les dictionnaires
+
+Pour les *commandes CAD*, plusieurs pistes, à trier avec prudence
+(le vocabulaire technique générique — "ligne", "cercle" — n'est pas
+propriétaire, mais des listes de correspondance *complètes* recopiées
+telles quelles depuis la documentation Autodesk pourraient l'être) :
+
+- la fonction =getcname= elle-même, si un AutoCAD ou BricsCAD localisé
+  est disponible pour la génération (script balayant la liste des
+  commandes connues et interrogeant =getcname= dans chaque sens) —
+  c'est la source la plus fiable, generée plutôt que recopiée ;
+  les fichiers =acad.pgp=/=default.pgp= locaux (alias) sont accessibles
+  de la même façon depuis une installation existante, pour le
+  dictionnaire n°3 ;
+- la commande =COMMANDS= de BricsCAD, qui liste explicitement chaque
+  commande avec son nom anglais suivi du nom localisé, si une instance
+  BricsCAD localisée est disponible ;
+- à défaut d'installation localisée, des listes communautaires
+  anglais/langue existent (forums CAD, sites de formation) mais leur
+  statut de reproduction doit être vérifié au cas par cas avant import
+  en masse plutôt que supposé libre.
+
+Pour le *langage d'interaction* (méta-commandes), le dictionnaire est
+entièrement de notre fait — pas de source externe à consulter, juste à
+rédiger et faire relire par un locuteur natif pour chaque langue
+ajoutée au-delà du français.
+
+* Dump : format et pagination
+
+** Format générique
+
+Chaque ligne de dump : =rôle:clé  LIBELLE  [attribut=valeur]*=, avec
+indentation pour la hiérarchie. Un en-tête =D<n> <chemin-relatif>
+(m/N, k par page)= précède un dump paginé. Les nœuds sans enfants
+affichés (élagués par la pagination ou parce que la branche est fermée
+dans le GUI réel — menu non déroulé, dialogue fermé) sont simplement
+absents plutôt que dumpés vides, sauf demande explicite
+(=dump(cible, profondeur: 0)= pour n'avoir que le nœud lui-même sans
+ses enfants, utile pour vérifier juste un état).
+
+** Pagination
+
+Motivée par les dessins à 5000+ entités. Toute commande =dump= sur une
+liste accepte =page:= et =taille:= (taille par défaut configurable,
+p.ex. 50). =suite=/=precedent= opèrent sur le *dernier* dump paginé,
+quel qu'il soit (entités, historique console, contenu d'un =list_box=
+DCL...). Le numéro de dump =D<n>= est conservé d'une page à l'autre
+(ce n'est pas un nouveau dump, seulement une page suivante du même).
+
+** Navigation spatiale 2D dans la vue de dessin
+
+En plus de la pagination « par liste », =dump(vue-cad.entites)=
+accepte un filtre spatial :
+
+#+begin_src text
+dump(dessin-actif.vue-cad.entites, fenetre: (0 0 100 50))
+#+end_src
+
+qui ne dumpe que les entités dont la boîte englobante intersecte le
+rectangle monde donné — c'est l'équivalent textuel d'un zoom-fenêtre,
+*sans* modifier l'affichage réel (contrairement à =zoom(...)= qui, lui,
+change effectivement =fenetre-visualisation=). Par défaut, en
+l'absence de =fenetre:=, le filtre appliqué est celui de la
+=fenetre-visualisation= courante (ce qu'on verrait réellement à
+l'écran) — pour tout dumper indépendamment de l'affichage, utiliser
+=dump(..., fenetre: :tout)=.
+
+* Architecture logicielle
+
+Trois couches, réutilisant les recommandations issues des recherches
+précédentes sur les TUI et le testing (accessibility tree / pilote
+headless / backend de rendu) :
+
+1. *Modèle d'arbre UI* (classes CLOS ci-dessus + opérations
+   =dump-node=, =find-node=, =resolve-target=) : indépendant de tout
+   rendu, c'est la seule source de vérité.
+2. *Interpréteur du langage d'interaction* : parseur des méta-commandes
+   + routeur du passe-plat vers la cible de saisie implicite. Ne
+   connaît que le modèle d'arbre, pas le rendu.
+3. *Backends de présentation*, interchangeables :
+   - =cadtui-text= : dump textuel structuré + lecture ligne par ligne
+     (le mode décrit ici, utilisable sur dumb terminal comme sur
+     terminal riche) ;
+   - =cadtui-curses= (optionnel, ultérieur) : rendu visuel réel
+     (fenêtres/menus dessinés) au-dessus de croatoan/cl-charms,
+     traduisant les clics souris en les mêmes méta-commandes que
+     celles tapées au clavier en mode texte — garantissant que les
+     deux modes restent strictement équivalents en pouvoir
+     d'expression.
+
+=--host cador= instancie le modèle d'arbre réduit à =/application/console=
+(pas de =barre-menu=, =dessins[]= vide) avec le backend =cadtui-text= ;
+=--host cadtui= instancie l'arbre complet.
+
+* Roadmap d'implémentation (phases suggérées)
+
+1. Modèle d'arbre CLOS minimal (=ui-node= et sous-classes), fonctions
+   =dump-node= / =find-node= / =resolve-target=, sans aucune commande
+   CAD réelle derrière (juste de quoi représenter et dumper).
+2. Interpréteur du langage : parseur des méta-commandes (§5.3),
+   résolution d'adresses (§5.2, y compris =D<n>.clé=), boucle
+   LINE non modale.
+3. Intégration DCL : les dialogues existants (=new_dialog=/
+   =start_dialog=/=action_tile=) devienent des =ui-dialog=/=ui-tile=
+   dans l'arbre — c'est le besoin d'origine, à traiter en premier
+   « pour de vrai » puisque le parseur DCL existe déjà.
+4. Consoles : une par dessin (flux + zone-saisie + espace de noms Lisp
+   isolé) plus la console d'application, résolution de la cible de
+   saisie implicite (§5.6, règle 0) et bascule =cador=/=cadtui= comme
+   cas dégénéré. Vérifier explicitement l'absence de fuite d'état
+   entre consoles de dessins différents (cf. contre-exemple BricsCAD,
+   § étude) avant de clore cette phase. Inclut le mécanisme
+   d'échappement =!=/=!!= (§ principe 4) — à implémenter *avant* tout
+   parseur de méta-commande, puisque c'est lui qui décide si une ligne
+   lui est même soumise — et le modèle suspend/resume à un seul thread
+   actif (§ « Classification des lignes et tamponnage » et § « Modèle
+   d'exécution »). Tester explicitement le cas qui a motivé
+   l'échappement : un programme AutoLISP bloqué dans un =read-line=
+   recevant une ligne qui a la forme =identifiant(arguments)= sans être
+   une méta-commande (pas de =!= en tête) doit la recevoir intacte.
+5. Vue CAD, entités et poignées (nécessite une représentation même
+   minimale des entités de dessin dans clautolisp) + pagination et
+   filtre spatial.
+6. Barre de menus et bandeaux, chargés depuis une description
+   équivalente à un CUIX/MNU simplifié (association label/fonction
+   Lisp).
+7. Localisation : =local-name=/=international-name= (§ dédiée),
+   dictionnaire fr_FR complet pour commandes CAD + méta-commandes,
+   sélection de locale par CLI/=LANG=/=LC_ALL=. Peut être menée en
+   parallèle des phases 3-6 dès que le parseur du §5 est écrit en
+   tokens canoniques anglais (condition posée en phase 2) — ne pas
+   attendre la fin des autres phases pour commencer à collecter les
+   dictionnaires.
+8. (Optionnel) backend curses rendant visuellement l'arbre, réutilisant
+   exactement l'interpréteur de la phase 2.

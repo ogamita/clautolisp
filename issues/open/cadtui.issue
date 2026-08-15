@@ -1,0 +1,16 @@
+
+Implementation du host cadtui, présentant un interface utilisateur
+textuel pour les objets CAD et l'application CAD (clautolisp).
+
+Voir les fichiers:
+- clautolisp/cadtui/documentation/cadtui-specifications.org
+- clautolisp/cadtui/prompt-claude-code.md
+- clautolisp/cadtui/CLAUDE.md
+
+Note: les spécifications de ce module généralisent celles du host
+cador, alors on peut prévoir un peu de refactoring de cador et
+d'avoir quelques sous-modules en commun.
+
+Effectuer une planification (y inclus des tâches de recherches pouvant
+utiliser le CI et les runners macos et windows pour obtenir les noms
+localisés des commandes), et implémenter le host cadtui.
