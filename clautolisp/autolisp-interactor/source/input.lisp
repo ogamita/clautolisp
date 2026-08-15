@@ -95,19 +95,101 @@ token (only a string can embed whitespace)."
   (make-input-command :raw (subseq line start)
                       :tokens (parse-command line :start start :lenient t)))
 
+;;; --- shell escape (bang.issue) ----------------------------------------
+;;;
+;;; A line whose FIRST character is the shell-escape character sends its
+;;; remainder to $SHELL with stdin/stdout/stderr inherited — which is what
+;;; `startapp' cannot do.
+;;;
+;;; Both halves are hooks rather than code, because this system is
+;;; deliberately dependency-free ("reusable outside the debugger"): running
+;;; a subprocess would drag in uiop, and reading the setting would drag in
+;;; the configuration layer, which sits ABOVE this one. The tool installs
+;;; both at start-up, exactly as it installs SEDIT's on-quit policy.
+;;;
+;;; The character is fetched through a function, not stored in a variable,
+;;; so that `,set shell-escape-character …' takes effect immediately
+;;; instead of at the next launch.
+
+(defparameter *shell-escape-character-hook* (constantly nil)
+  "Called with no arguments; returns the shell-escape CHARACTER, or NIL to
+disable the escape entirely. NIL by default: an embedder that installs
+nothing gets no shell escape, and no surprise.")
+
+(defparameter *shell-escape-runner* nil
+  "Called with the command STRING when a shell escape fires. NIL disables
+the escape as surely as a NIL character does.")
+
+(defun shell-escape-character ()
+  "The active shell-escape character, or NIL when the escape is off."
+  (let ((character (ignore-errors (funcall *shell-escape-character-hook*))))
+    (and (characterp character) *shell-escape-runner* character)))
+
+(defun %shell-escape-command (line input-context)
+  "The command text of a shell-escape LINE, continuation lines included.
+
+A trailing backslash continues onto the next line (the ticket's
+`!echo hello \\' / `world.'), so the backslash is dropped and the next
+line appended verbatim. Reads RAW lines: leading whitespace on a
+continuation belongs to the command."
+  (let ((command (subseq line 1)))
+    (loop :while (and (plusp (length command))
+                      (char= #\\ (char command (1- (length command)))))
+          :for next := (read-line-from-input-context input-context)
+          :do (setf command (concatenate 'string
+                                         (subseq command 0 (1- (length command)))
+                                         (if (eq next :eof) "" next)))
+          :until (eq next :eof))
+    command))
+
+(defun %shell-escape-command-to-run (command)
+  "COMMAND as it should be handed to the shell.
+
+A command ending in `&' is backgrounded, and a NON-INTERACTIVE bash prints
+neither the PID nor any job-control notice — so ` echo $!' is appended to
+print it, per the ticket. The test is made on the TRIMMED text because the
+ticket allows spaces on either side; note that `a && b' does not end in
+`&' and is therefore left alone, which is the intent."
+  (let ((trimmed (string-trim '(#\Space #\Tab #\Return) command)))
+    (if (and (plusp (length trimmed))
+             (char= #\& (char trimmed (1- (length trimmed)))))
+        (concatenate 'string trimmed " echo $!")
+        trimmed)))
+
+(defun %maybe-shell-escape (raw-line input-context)
+  "When RAW-LINE begins with the shell-escape character, run its remainder
+and return T; otherwise NIL.
+
+RAW-LINE is deliberately untrimmed: the ticket requires that nothing —
+not even a space — precede the escape character, and trimming first would
+silently accept ` !pwd'."
+  (let ((escape (shell-escape-character)))
+    (when (and escape
+               (stringp raw-line)
+               (plusp (length raw-line))
+               (char= escape (char raw-line 0)))
+      (let ((command (%shell-escape-command-to-run
+                      (%shell-escape-command raw-line input-context))))
+        (when (plusp (length command))
+          (funcall *shell-escape-runner* command))
+        t))))
+
 (defun comma-command-read (input-context
                            &optional (sexp-reader #'read-sexp-from-input-context))
   "The Lisp REPL reader: a line starting with a comma is a command
-\(`,date'); anything else is unread and handed to SEXP-READER."
-  (let ((line (%read-command-line input-context)))
-    (case line
-      ((:eof :blank) line)
-      (otherwise
-       (if (char= #\, (char line 0))
-           (%parse-command-line line :start 1)
-           (progn
-             (unread-line-from-input-context line input-context)
-             (funcall sexp-reader input-context)))))))
+\(`,date'); a line starting with the shell-escape character goes to the
+shell (bang.issue); anything else is unread and handed to SEXP-READER."
+  (let ((raw (read-line-from-input-context input-context)))
+    (if (eq raw :eof)
+        :eof
+        (if (%maybe-shell-escape raw input-context)
+            :blank                      ; handled; ask the loop for another line
+            (let ((line (string-left-trim *whitespaces* raw)))
+              (cond
+                ((zerop (length line)) :blank)
+                ((char= #\, (char line 0)) (%parse-command-line line :start 1))
+                (t (unread-line-from-input-context line input-context)
+                   (funcall sexp-reader input-context))))))))
 
 (defun command-read (input-context
                      &optional (sexp-reader #'read-sexp-from-input-context))
@@ -115,12 +197,15 @@ token (only a string can embed whitespace)."
 command — symbols are command names, not Lisp variables — except a line
 starting with `(', a Lisp form to evaluate (we can always use (print var),
 and there is no reader macro to deal with in AutoLISP)."
-  (let ((line (%read-command-line input-context)))
-    (case line
-      ((:eof :blank) line)
-      (otherwise
-       (if (char= #\( (char line 0))
-           (progn
-             (unread-line-from-input-context line input-context)
-             (funcall sexp-reader input-context))
-           (%parse-command-line line))))))
+  (let ((raw (read-line-from-input-context input-context)))
+    (if (eq raw :eof)
+        :eof
+        (if (%maybe-shell-escape raw input-context)
+            :blank
+            (let ((line (string-left-trim *whitespaces* raw)))
+              (cond
+                ((zerop (length line)) :blank)
+                ((char= #\( (char line 0))
+                 (unread-line-from-input-context line input-context)
+                 (funcall sexp-reader input-context))
+                (t (%parse-command-line line))))))))

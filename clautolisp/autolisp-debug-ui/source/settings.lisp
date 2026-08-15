@@ -82,13 +82,20 @@ parsing and validation. :DECORATIONS is structural (edited as data, not via
 ;;; but present in lisp.conf is taken from lisp.conf.
 
 (defparameter *default-lisp-configuration*
-  '((:sedit-on-quit . :ask))
+  '((:sedit-on-quit . :ask)
+    (:shell-escape-character . #\!))
   "Built-in defaults for the LISP (REPL) interactor. Its first setting is
 :SEDIT-ON-QUIT — the same key aldo carries, governing (clal-sedit …)
-invocations made from the REPL while aldo's governs debugger-side ones.")
+invocations made from the REPL while aldo's governs debugger-side ones.
+
+:SHELL-ESCAPE-CHARACTER is the bang.issue escape: a line starting with it
+goes to $SHELL. It belongs to the LISP interactor (pjb, 2026-08-15), and
+the other interactors inherit it through the ordinary stacking rule — a
+key absent from aldo.conf is taken from lisp.conf.")
 
 (defparameter *lisp-setting-specs*
-  '((:sedit-on-quit :enum (:auto-save :do-not-save :ask)))
+  '((:sedit-on-quit :enum (:auto-save :do-not-save :ask))
+    (:shell-escape-character :character))
   "(KEY TYPE [ALLOWED]) for the LISP interactor's settings; same shape as
 *SETTING-SPECS*.")
 
@@ -233,6 +240,23 @@ Signals a SIMPLE-ERROR on a bad value."
              ((member raw '("off" "false" "nil" "no" "0") :test #'string-equal) nil)
              (t (error "value ~S is not a boolean (on/off)" raw))))
       (:string raw)
+      (:character
+       ;; "ascii character or unicode code point" (pjb). Both spellings are
+       ;; accepted, exactly as the :DECORATIONS glyphs accept either a
+       ;; literal string or a list of code points — one convention in this
+       ;; file, not two. A bare digit run is a code point, so a decimal
+       ;; digit cannot be chosen as the escape by typing it; give its code
+       ;; point instead, which is unambiguous.
+       (let ((text (string-trim "\"" raw)))
+         (cond
+           ((and (plusp (length text))
+                 (every #'digit-char-p text))
+            (let ((code (parse-integer text)))
+              (unless (and (<= 0 code) (< code char-code-limit))
+                (error "code point ~D is out of range" code))
+              (code-char code)))
+           ((= 1 (length text)) (char text 0))
+           (t (error "value ~S is not a single character or a code point" raw)))))
       (:port
        (multiple-value-bind (n end) (parse-integer raw :junk-allowed t)
          (if (and n (= end (length raw))) n raw))))))
@@ -278,6 +302,30 @@ aldo's — even for a key both define."
 (defun get-lisp-setting (name)
   "The current value of LISP-interactor setting NAME, defaults resolved."
   (lisp-setting name))
+
+(defun setting-character (value)
+  "VALUE as a CHARACTER, or NIL.
+
+Accepts every spelling the setting's type admits, because the conf file
+is hand-editable and all three are reasonable things to have typed:
+a character (what `set' stores), a one-character string (=\"@\"=, the
+spelling the annex shows), or an integer code point (=64=, the way to
+name a character that is awkward to type). A value that is none of those
+yields NIL rather than an error — a malformed escape character disables
+the escape, it does not break the REPL."
+  (typecase value
+    (character value)
+    (string (when (= 1 (length value)) (char value 0)))
+    (integer (when (and (<= 0 value) (< value char-code-limit))
+               (code-char value)))
+    (t nil)))
+
+(defun shell-escape-character-setting ()
+  "The LISP interactor's shell-escape character (bang.issue), or NIL.
+
+Read through LISP-SETTING, so `,set shell-escape-character …' takes
+effect at once and the built-in default applies when nothing was set."
+  (setting-character (lisp-setting :shell-escape-character)))
 
 (defun %decoration-glyph->string (spec)
   "Turn a decoration glyph SPEC — a literal string or a list of Unicode code
@@ -448,11 +496,12 @@ here, because the file reader maps only those two symbols to booleans — an
       (destructuring-bind (name type &optional allowed) spec
         (declare (ignore name))
         (ecase type
-          (:enum    (format nil "~{~(~A~)~^ | ~}" allowed))
-          (:integer "an integer")
-          (:boolean "t | nil")
-          (:string  "a string")
-          (:port    "a port number, or a service name in a string"))))))
+          (:enum      (format nil "~{~(~A~)~^ | ~}" allowed))
+          (:integer   "an integer")
+          (:boolean   "t | nil")
+          (:string    "a string")
+          (:character "one character, as \"x\" or a Unicode code point")
+          (:port      "a port number, or a service name in a string"))))))
 
 (defun write-configuration-file (stream config defaults specs
                                  &key (name "aldo.conf") (what "the aldo debugger")

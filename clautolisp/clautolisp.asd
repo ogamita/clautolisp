@@ -681,6 +681,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-interactor/tests/parse-tests")
    (:file "autolisp-interactor/tests/command-tests")
    (:file "autolisp-interactor/tests/interactor-tests")
+   (:file "autolisp-interactor/tests/shell-escape-tests")
    (:file "autolisp-interactor/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -872,6 +873,12 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader/tests"
+               ;; The interactor framework had its own test system and its
+               ;; own suite, but was never listed here — so INTERACTOR-SUITE
+               ;; had never run in CI (found 2026-08-15 while adding the
+               ;; shell-escape tests of bang.issue: the new tests reported
+               ;; neither pass nor fail, because nothing invoked them).
+               "clautolisp/autolisp-interactor/tests"
                "clautolisp/autolisp-source-map/tests"
                "clautolisp/autolisp-runtime/tests"
                "clautolisp/drawing/tests"
@@ -893,6 +900,8 @@ identity / TEMPPREFIX stamping, option value parsers)."
                          (declare (ignore op system))
                          (progn
                            (uiop:symbol-call :clautolisp.autolisp-reader.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.interactor.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-runtime.tests
                                              :run-all-tests)

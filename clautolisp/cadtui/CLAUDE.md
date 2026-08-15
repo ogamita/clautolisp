@@ -76,10 +76,27 @@ dump/pagination, et la roadmap de phases.
 - Désambiguïsation méta-commande / saisie AutoLISP : PAS de
   reconnaissance par syntaxe (`identifiant(args)` est ambigu — un
   `read-line` AutoLISP en cours peut légitimement attendre une ligne
-  de cette forme). Mécanisme retenu : caractère d'échappement `!` en
+  de cette forme). Mécanisme retenu : caractère d'échappement `=` en
   tête de ligne obligatoire pour une méta-commande (qui occupe alors
-  toute la ligne) ; `!!` en tête annule l'échappement et délivre la
-  ligne telle quelle (moins un `!`) comme saisie AutoLISP ordinaire.
+  toute la ligne) ; `==` en tête annule l'échappement et délivre la
+  ligne telle quelle (moins un `=`) comme saisie AutoLISP ordinaire.
+
+  Le caractère est `=` et non `!` (décision pjb, 2026-08-15) : `!` est
+  l'échappement SHELL de tous les interactors (issue `bang`), et `,`
+  introduit les commandes clautolisp. Répartition des débuts de ligne
+  dans la console cadtui — `(` expression Lisp, `,` commande
+  clautolisp, `!` shell, `=` méta-commande cadtui, `.` `-` `_` ou rien
+  commande CAD. Écartés au passage : `@` est le préfixe des
+  COORDONNÉES RELATIVES d'AutoCAD (`@10,5`) et `#` celui des absolues —
+  les deux saisies les plus courantes d'une ligne de commande CAD.
+
+  La console cadtui est un INTERACTOR au sens du cadre existant
+  (`INTERACTOR-LOOP`), pas un lecteur de lignes ad hoc : conséquence
+  voulue, on peut passer d'un interactor à l'autre, la console
+  s'empilant et se dépilant comme aldo ou sedit. La classification des
+  lignes est donc le *reader* de cet interactor, et le caractère
+  d'échappement est un réglage d'interactor empilé (comme `lisp.conf`
+  sous `aldo.conf`), pas une variable globale.
   Une ligne n'est donc jamais scindée en deux flux — chaque console a
   juste une file d'attente de lignes passe-plat (pas un tampon de
   caractères) pour le cas où son thread n'est pas encore en train de
