@@ -33,6 +33,43 @@ if (Test-Path "$alfe.exe") {
   exit 2
 }
 
+# Give BricsCAD BOTH a drawing and a profile.
+#
+# pjb, 2026-08-14: "sans dessins et sans profile, bricscad met des dialogues
+# pour demander a l'utilisateur quoi utiliser." Those dialogs are fatal in a
+# CI job — nobody can answer them — and under /Automation the main frame is
+# hidden, so the prompt is not even visible. The run simply sits at BOOTING.
+#
+# That is exactly what happened here: READY-TIMEOUT after 180 s, "last
+# status: BOOTING; launcher still running", while in the SAME pipeline the
+# vendor probes reached READY on BricsCAD in 9.4 s. The two command lines:
+#
+#   probes (works):  bricscad.exe /Automation empty.dwg /p <profile> /b run.scr
+#   this   (hangs):  bricscad.exe /Automation /b run.scr
+#
+# Every other Windows driver in scripts/ passes both; this one passed
+# neither.
+#
+# Two things this means, both worth stating because both were got wrong
+# before the argv was read:
+#
+#   - The timeout was NOT evidence against /Automation. The run never got
+#     far enough to say anything about the switch, which is the only thing
+#     this check exists to test.
+#   - It was not the profile "auto-loading EPURE" either. That was a guess
+#     of mine; the launched argv carries no /p at all, and per pjb EPURE is
+#     loaded by explicit options, not by the default profile. The profile is
+#     needed here to stop a PROMPT, not to unload an application.
+if (-not $env:AUTOLISP_DWG) {
+  $env:AUTOLISP_DWG = if ($env:PROBE_DWG) { $env:PROBE_DWG } else { "c:/gitlab-runner/dwg/empty.dwg" }
+}
+if (-not $env:AUTOLISP_BRICSCAD_PROFILE) {
+  $env:AUTOLISP_BRICSCAD_PROFILE =
+    if ($env:BRICSCAD_PROFILE_CLEAN) { $env:BRICSCAD_PROFILE_CLEAN } else { "<<Profil sans nom>>" }
+}
+Write-Host "AUTOLISP_DWG = $env:AUTOLISP_DWG"
+Write-Host "AUTOLISP_BRICSCAD_PROFILE = $env:AUTOLISP_BRICSCAD_PROFILE"
+
 # CAD-side runtime for a built-not-installed alfe (see alfe-cad-console-encoding).
 if (-not $env:ALFE_RUNTIME_LSP)   { $env:ALFE_RUNTIME_LSP   = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-remote-io.lsp") -replace '\\','/' }
 if (-not $env:ALFE_BOOTSTRAP_LSP) { $env:ALFE_BOOTSTRAP_LSP = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-bootstrap.lsp") -replace '\\','/' }

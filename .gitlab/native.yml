@@ -397,12 +397,22 @@ harvest:sysvars:bricscad:windows:
   variables:
     GIT_SUBMODULE_STRATEGY: none
     ALFE_BIN: '$CI_PROJECT_DIR/autolisp-front-end/tools/alfe/bin/alfe-sbcl'
+    # These were `export' lines copied from the macOS twin below. `export' is
+    # a POSIX builtin and this job's shell is PowerShell, where it is not a
+    # command at all: the job died with CommandNotFoundException on the first
+    # one, having never launched BricsCAD. `variables:' is shell-agnostic,
+    # which is the property this job needed all along.
+    ALFE_RUNTIME_LSP: '$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-remote-io.lsp'
+    ALFE_BOOTSTRAP_LSP: '$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-bootstrap.lsp'
   script:
     - make -C autolisp-front-end build-alfe-sbcl
-    - export ALFE_RUNTIME_LSP="$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-remote-io.lsp"
-    - export ALFE_BOOTSTRAP_LSP="$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-bootstrap.lsp"
-    - export AUTOLISP_BRICSCAD_PROFILE="${BRICSCAD_PROFILE_CLEAN:-<<Profil sans nom>>}"
-    - make save-sysvars ALFE="$ALFE_BIN" SAVE_SYSVARS_BACKENDS=bricscad SAVE_SYSVARS_DIALECTS=bricscad
+    # Clean profile, honouring $BRICSCAD_PROFILE_CLEAN. Not a `variables:'
+    # entry because the default must not shadow a project-level override, and
+    # `${VAR:-default}' is a shell expansion PowerShell does not have either.
+    - 'if ($env:BRICSCAD_PROFILE_CLEAN) { $env:AUTOLISP_BRICSCAD_PROFILE = $env:BRICSCAD_PROFILE_CLEAN } else { $env:AUTOLISP_BRICSCAD_PROFILE = "<<Profil sans nom>>" }'
+    # $env:NAME, not $NAME: in PowerShell the bare form is a script variable
+    # that does not exist here, so the make invocation was passing ALFE="".
+    - 'make save-sysvars ALFE="$env:ALFE_BIN" SAVE_SYSVARS_BACKENDS=bricscad SAVE_SYSVARS_DIALECTS=bricscad'
 
 # --- native "does alfe build on this OS" check (no CAD) ---------------------
 # Gated like the other native jobs: auto when the runner is online. Not a CAD
