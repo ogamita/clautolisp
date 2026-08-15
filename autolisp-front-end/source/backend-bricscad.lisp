@@ -93,6 +93,7 @@
                 #:launcher-alive-or-clean-p
                 #:launcher-failure-details
                 #:launcher-state-description
+                #:kill-engine-process
                 #:launcher-exit-code)
   (:import-from #:alfe.logging
                 #:log-debug
@@ -1174,26 +1175,13 @@ future ticket."
     (:shutdown   :stopped)
     (:interrupt  :interrupted)))
 
+;;; %KILL-ENGINE-PROCESS moved to backend-cad-common as KILL-ENGINE-PROCESS:
+;;; the hazard it guards against (an unbounded wait-process on a GUI CAD
+;;; that will not die) is not BricsCAD-specific, and AutoCAD had kept the
+;;; unbounded `wait-process' this very code exists to avoid.
 (defun %kill-engine-process (info &key (timeout 6))
-  "Best-effort terminate the launched engine within TIMEOUT seconds, NEVER
-blocking indefinitely. uiop:wait-process can hang on Windows when the engine
-(a GUI BricsCAD) is slow to die or a child shares its handles -- that would
-freeze alfe in shutdown and hang the whole job. So we terminate, then POLL
-process-alive-p up to TIMEOUT, force-killing (:urgent) if it outlives that,
-and never issue an unbounded wait. On exit the OS reaps it."
-  (when info
-    (ignore-errors
-     (when (uiop:process-alive-p info) (uiop:terminate-process info)))
-    (let ((start (get-internal-real-time)))
-      (loop while (and (ignore-errors (uiop:process-alive-p info))
-                       (< (/ (float (- (get-internal-real-time) start))
-                             internal-time-units-per-second)
-                          timeout))
-            do (sleep 0.2)))
-    (ignore-errors
-     (when (uiop:process-alive-p info)
-       (uiop:terminate-process info :urgent t))))
-  nil)
+  "Deprecated local name; see ALFE.BACKEND.CAD-COMMON:KILL-ENGINE-PROCESS."
+  (kill-engine-process info :timeout timeout))
 
 (defmethod shutdown ((session bricscad-session) &key reason)
   (declare (ignore reason))
