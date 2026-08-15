@@ -1,0 +1,80 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cad-runner-wedged-by-modal-dialog — a CAD job that waits on an invisible dialog blocks every other CAD job
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-cad-runner-wedge
+
+* Symptom
+
+On 2026-08-14, with the Windows runner online for a limited window (laptop
+on battery), NOT ONE CAD job ran in an hour. All of them sat =pending=.
+
+The runner was online and idle-looking. What was actually happening:
+
+: running: 1
+:   verify:bricscad-hidden-ui:windows | pipeline 2761439584
+:   started 21:12:16Z, duration 1937 s, status running
+
+One job, running for 32 minutes, holding the =cad=-tagged runner — which is
+configured =concurrency = 1= precisely so CAD jobs serialise. Everything
+else queued behind it: 70 CAD jobs across nine pipelines by the time it was
+noticed.
+
+* Cause, in two layers
+
+*The job hung* because it launched BricsCAD with neither a drawing nor a
+profile. pjb: "sans dessins et sans profile, bricscad met des dialogues pour
+demander a l'utilisateur quoi utiliser." Under =/Automation= the main frame
+is hidden, so the dialog is invisible as well as unanswerable. Fixed
+separately (=scripts/verify-bricscad-hidden-ui.ps1= now passes both).
+
+*The job did not END*, and that is the part this ticket is about. alfe's own
+=--timeout 180= fired — the READY wait gave up — but the CAD process alfe had
+spawned stayed alive, so the job kept running. alfe's timeout protects the
+PROTOCOL wait; it does not guarantee the engine is gone.
+
+With no =timeout:= on the job, the ceiling was the project default (an
+hour). One wedged job could therefore deny the shared CAD runner for an
+hour, and did.
+
+* Fixed here (partially)
+
+=timeout: 30m= on the four CAD gate templates in =.gitlab/native.yml=. The
+value is measured, not guessed: the longest legitimate CAD job observed is
+=encoding:experiment:bricscad:windows= at 1158 s (19 min); every other CAD
+job runs in under 223 s. 30m leaves ~55% headroom over the real outlier and
+halves the worst case.
+
+That caps the DAMAGE. It does not stop the wedge.
+
+* Still open — the engine outliving its job
+
+Two things worth doing, neither urgent now that the ceiling exists:
+
+1. *alfe should reap the engine it spawned when the protocol wait times
+   out.* It already does this on abnormal exit for BricsCAD (the .ps1
+   drivers have a "safety net" that kills the exact PID alfe reported), which
+   is evidence the problem was known but handled at the DRIVER level rather
+   than in alfe. A READY timeout should terminate the launched process
+   before returning, not leave it to whoever called alfe.
+2. *A dialog-shaped hang deserves a distinct diagnosis.* "READY-TIMEOUT,
+   last status BOOTING, launcher still running" is what BOTH a slow start
+   and a modal prompt look like. If the engine is still alive and has
+   produced no status transition at all, saying so — "the engine is running
+   but has not moved past BOOTING; on Windows this is usually a startup
+   dialog waiting for input" — would have pointed at the real cause in one
+   read instead of three wrong hypotheses.
+
+* Notes
+
+The three wrong hypotheses are worth recording, since each looked plausible:
+the default profile auto-loading the EPURE vertical application (refuted: the
+launched argv carries no =/p= at all, and per pjb EPURE needs explicit
+options); a missing document leaving =/b= no command context (plausible but
+not the mechanism); and the =/Automation= switch itself being at fault
+(refuted by the argv — the run never got far enough to exercise it).
+
+Reading the command line the script already logs settled it in one look. It
+is worth checking that first, before theorising about what a CAD does.

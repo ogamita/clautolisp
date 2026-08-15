@@ -98,11 +98,29 @@ stages:
 # templates are named for the capability rather than the vendor: a job's
 # vendor is visible in its own name, and two identical templates under two
 # names would only invite someone to believe they route differently.
-.gate-macos-cad-hard:   { extends: .gate-macos-hard,   tags: [macos, arm64, shell, cad] }
-.gate-macos-cad-soft:   { extends: .gate-macos-soft,   tags: [macos, arm64, shell, cad] }
-.gate-macos-cad-manual: { extends: .gate-macos-manual, tags: [macos, arm64, shell, cad] }
-.gate-windows-cad-hard: { extends: .gate-windows-hard, tags: [windows, amd64, shell, cad] }
-.gate-windows-cad-soft: { extends: .gate-windows-soft, tags: [windows, amd64, shell, cad] }
+#
+# A CAD job gets an explicit TIMEOUT, which the non-CAD jobs do not need.
+#
+# On 2026-08-14 a verify:bricscad-hidden-ui:windows launched BricsCAD with
+# neither a drawing nor a profile; BricsCAD put up a modal dialog asking what
+# to use, invisible under /Automation, and waited. alfe's own 180 s READY
+# timeout fired, but the CAD process it had spawned stayed alive, so the JOB
+# did not end: it was still running 32 minutes later, holding the single
+# concurrency=1 CAD slot. Every other CAD job queued behind it — 70 of them
+# by the time it was noticed — and an hour of a laptop's battery went to
+# nothing. Without this, the ceiling is the project default (an hour).
+#
+# 30m is measured, not guessed: the longest legitimate CAD job observed is
+# encoding:experiment:bricscad:windows at 1158 s (19 min); everything else
+# runs in under 223 s. That leaves ~55% headroom over the real outlier while
+# halving the worst case. Raise it if a legitimate job ever approaches it —
+# but raise it deliberately, because the cost of this ceiling being too high
+# is paid by every other job on the runner.
+.gate-macos-cad-hard:   { extends: .gate-macos-hard,   tags: [macos, arm64, shell, cad], timeout: 30m }
+.gate-macos-cad-soft:   { extends: .gate-macos-soft,   tags: [macos, arm64, shell, cad], timeout: 30m }
+.gate-macos-cad-manual: { extends: .gate-macos-manual, tags: [macos, arm64, shell, cad], timeout: 30m }
+.gate-windows-cad-hard: { extends: .gate-windows-hard, tags: [windows, amd64, shell, cad], timeout: 30m }
+.gate-windows-cad-soft: { extends: .gate-windows-soft, tags: [windows, amd64, shell, cad], timeout: 30m }
 
 # --- unit suites on the real OS --------------------------------------------
 test:clautolisp:macos:
