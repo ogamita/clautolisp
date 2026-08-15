@@ -196,3 +196,64 @@ from the live /etc/fstab (cygwin/msys2) and `mount` 9p/drvfs output
 (WSL2) rather than the built-in defaults; today the standard tables use
 the conventional /cygdrive, /<letter>, /mnt/<letter> prefixes and a
 supplied install-root.
+
+Progress (2026-08-15) — W4 CONFIRMED on real Windows, live mount tables
+----------------------------------------------------------------------
+
+W4 is done. The [windows, amd64, shell] job this issue was waiting for
+turned out to be wired already (conformance:pathname-mapping:windows in
+.gitlab/native.yml), and it now RUNS — the runner came back online and
+the CAD tag fix let the native child pipeline through. Its output:
+
+    ok    round-trip build=MSYS2 run=MSYS2 "/c/x/y/z.lsp"
+    ok    round-trip build=CYGWIN run=NATIVE "C:/work/proj/a.lsp"
+    ... (full synthetic build x run matrix)
+    --- live-frame REAL FILE round trip (identity on Unix) ---
+    ok    map-in of a real file resolves to an openable pathname
+    ok    map-out(map-in(s)) round-trips to the run-frame form
+    pathname-mapping conformance: OK (build=MSYS2 run=MSYS2)
+
+Note the live frames: build=MSYS2 run=MSYS2, DETECTED — not a fallback to
+:posix. So the classification of §5 works on the real machine, the whole
+synthetic matrix passes there, and a real file round-trips through the
+live frames. That is what W4 asked for.
+
+W5 remains out of scope (§7, optional logical pathnames).
+
+LIVE MOUNT TABLES — the issue's "Still TODO after Windows CI"
+
+Implemented. STANDARD-MOUNT-TABLE described the CONVENTIONAL layout
+(/cygdrive/c, /c, /mnt/c, a supplied install root), which is right on a
+default install and wrong on any machine whose owner moved something: an
+msys2 installed elsewhere than C:/msys64, an fstab mapping a share, a WSL
+distro with extra drvfs mounts. The system already knows the truth —
+cygwin and msys2 keep it in /etc/fstab, WSL reports it through `mount' —
+and it is now read and PREFERRED, with the conventional table kept
+underneath for whatever it does not mention (%MERGE-MOUNT-TABLES).
+
+Parsing is separated from acquisition on purpose: PARSE-FSTAB-MOUNT-ENTRIES
+and PARSE-MOUNT-COMMAND-ENTRIES are pure functions over text, so the
+formats are tested on a host that has neither. LIVE-MOUNT-ENTRIES does the
+reading and never signals — a machine with no /etc/fstab, no `mount', or
+an unreadable one falls back to the conventions, because the mapping layer
+must not fail to start because a probe did.
+
+Details that needed care, each with a test:
+
+- fstab's field order is (Windows path, POSIX mount point), i.e. exactly
+  (canonical-prefix, frame-prefix);
+- an fstab also lists pseudo-filesystems (none, cygdrive, proc) that name
+  no physical Windows path — they are skipped rather than turned into a
+  bogus mapping;
+- fstab escapes a space as \040, which is what any path under
+  "Program Files" needs, so it is decoded;
+- under WSL both 9p (usually C:) and drvfs (the other drives) are Windows
+  filesystems and both are kept; ext4/proc/tmpfs are the distro's own and
+  are not.
+
+The number of live entries found is recorded in the environment's probe
+plist, so CLAUTOLISP_DEBUG_PATHMAP shows whether a frame was seeded from
+the system or from the conventions.
+
+Verified: SBCL and CCL suites green (exit 0), 7 new tests. The Windows
+job exercises the result on the real machine.
