@@ -41,6 +41,7 @@
            #:launcher-alive-or-clean-p
            #:launcher-state-description
            #:launcher-failure-details
+           #:kill-engine-process
            ;; CAD program discovery + denotation (backend selection)
            #:cad-program
            #:cad-program-kind
@@ -415,6 +416,35 @@ a process already known to be dead, so it cannot block on a live pipe."
                   code
                   (when (plusp (length err)) (string-trim '(#\Newline #\Space) err))
                   (when (plusp (length out)) (string-trim '(#\Newline #\Space) out))))))))
+
+(defun kill-engine-process (info &key (timeout 6))
+  "Best-effort terminate the launched engine within TIMEOUT seconds, NEVER
+blocking indefinitely.
+
+`uiop:wait-process' can hang on Windows when the engine (a GUI CAD) is
+slow to die, or when a child of it shares the handles — that would freeze
+alfe in shutdown and hang the whole job. So this terminates, then POLLS
+`process-alive-p' up to TIMEOUT, force-killing (:urgent) if it outlives
+that, and never issues an unbounded wait. On exit the OS reaps it.
+
+This lived in the BricsCAD backend, which is where the hazard was first
+paid for. It is not BricsCAD-specific — AutoCAD spawns a GUI process the
+same way — and having only one backend own the careful version is exactly
+how the other one kept the unbounded `wait-process' that this docstring
+warns about. Shared here so both use it."
+  (when info
+    (ignore-errors
+     (when (uiop:process-alive-p info) (uiop:terminate-process info)))
+    (let ((start (get-internal-real-time)))
+      (loop while (and (ignore-errors (uiop:process-alive-p info))
+                       (< (/ (float (- (get-internal-real-time) start))
+                             internal-time-units-per-second)
+                          timeout))
+            do (sleep 0.2)))
+    (ignore-errors
+     (when (uiop:process-alive-p info)
+       (uiop:terminate-process info :urgent t))))
+  nil)
 
 (defun drive-protocol-actions (protocol-session plan
                                &key

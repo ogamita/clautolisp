@@ -78,3 +78,60 @@ not the mechanism); and the =/Automation= switch itself being at fault
 
 Reading the command line the script already logs settled it in one look. It
 is worth checking that first, before theorising about what a CAD does.
+
+* PARTLY RESOLVED 2026-08-15 (clautolisp 1.8.39) — and the premise was wrong
+
+The remaining item read "alfe should reap the engine it spawned when the
+protocol wait times out". Reading the code first showed that BricsCAD
+ALREADY DOES: START-ENGINE wraps the READY wait in an UNWIND-PROTECT that
+terminates the engine unless the start completed. So the premise of this
+half of the ticket was wrong, and stating it plainly matters more than
+the code that follows.
+
+What was actually missing, found by comparing the two backends:
+
+1. *AutoCAD's START-ENGINE had no such guard at all.* On a READY timeout
+   it signalled and left the spawned engine running. That is the exact
+   shape of the incident, on the other backend.
+2. *AutoCAD's SHUTDOWN used* =(uiop:terminate-process info)= *followed by
+   an UNBOUNDED* =(uiop:wait-process info)=. That is precisely the call
+   BricsCAD's own killer exists to avoid — its docstring says so: "can
+   hang on Windows when the engine (a GUI BricsCAD) is slow to die or a
+   child shares its handles -- that would freeze alfe in shutdown and
+   hang the whole job."
+3. *The careful killer was private to one backend.* %KILL-ENGINE-PROCESS
+   lived in backend-bricscad.lisp, which is exactly how the other backend
+   kept the dangerous call. Having one backend own the lesson is the
+   structural defect behind both symptoms.
+
+Fixed: KILL-ENGINE-PROCESS moves to backend-cad-common (it is not
+BricsCAD-specific — AutoCAD spawns a GUI process the same way), AutoCAD's
+shutdown uses it instead of the unbounded wait, and AutoCAD's START-ENGINE
+gains the unwind-protect reaping, mirroring BricsCAD.
+
+** Tests
+
+Four, none needing a CAD:
+
+- a live child is terminated;
+- a child that TRAPS SIGTERM is still killed, and the call RETURNS
+  promptly — the bounded-ness is the whole point, and a test that only
+  killed a cooperative process would prove nothing;
+- NIL and already-dead processes are tolerated, since the call runs from
+  an unwind-protect on a failed start where the engine may never have
+  been spawned;
+- both backends use the bounded killer and neither issues
+  =(uiop:wait-process info)= on the engine handle. Asserted on CODE with
+  comments stripped: the comment explaining why that call was removed
+  contains the call, and a check that its own rationale can fail is worse
+  than no check. (It fired on exactly that during development.)
+
+** Still open
+
+The DIAGNOSIS half. "READY-TIMEOUT, last status BOOTING, launcher still
+running" reads identically for a slow start and for a modal dialog
+waiting on input nobody can give. Distinguishing them — the engine is
+alive but has not moved off BOOTING at all, which on Windows usually
+means a startup dialog — would have pointed at the cause in one read
+instead of three wrong hypotheses. Left open deliberately: it is a
+message, not a mechanism, and the mechanism is now safe.

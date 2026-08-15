@@ -1664,3 +1664,89 @@ name, and far preferable to committing one."
                          (alfe.backend.bricscad:discover-bricscad-template
                           :requested path))))))
       (ignore-errors (delete-file path)))))
+
+;;; --- reaping a spawned engine (cad-runner-wedged-by-modal-dialog) ---------
+;;;
+;;; alfe's --timeout bounds the PROTOCOL wait; it never bounded the
+;;; ENGINE's lifetime. On 2026-08-14 a BricsCAD launched with neither a
+;;; drawing nor a profile sat on an invisible modal dialog: alfe's 180 s
+;;; READY timeout fired, but the spawned process stayed alive and the CI
+;;; job kept running — 32 minutes on a concurrency=1 CAD runner, with 70
+;;; jobs queued behind it.
+;;;
+;;; KILL-ENGINE-PROCESS is the bounded killer. It was private to the
+;;; BricsCAD backend, which is why AutoCAD still had the unbounded
+;;; `uiop:wait-process' its own docstring warns about. Tested here with a
+;;; real process, no CAD required.
+
+(test kill-engine-process-terminates-a-live-process
+  "The ordinary case: a running child is gone when this returns."
+  (let ((info (uiop:launch-program (list "sleep" "60") :output nil :error-output nil)))
+    (is (uiop:process-alive-p info))
+    (alfe.backend.cad-common:kill-engine-process info :timeout 5)
+    (is (not (uiop:process-alive-p info))
+        "the process outlived kill-engine-process")))
+
+(test kill-engine-process-is-bounded-not-blocking
+  "The point of the function: it must RETURN, even for a child that
+ignores the polite signal. `uiop:wait-process' would block here for as
+long as the process chose to live — which on Windows is what froze alfe
+in shutdown and hung the whole job.
+
+The child traps SIGTERM and keeps running; the call must still come back
+promptly, and must escalate to :urgent so the process really dies."
+  (let ((info (uiop:launch-program
+               (list "sh" "-c" "trap '' TERM; sleep 60")
+               :output nil :error-output nil)))
+    (unwind-protect
+        (let ((start (get-internal-real-time)))
+          (alfe.backend.cad-common:kill-engine-process info :timeout 2)
+          (let ((elapsed (/ (float (- (get-internal-real-time) start))
+                            internal-time-units-per-second)))
+            ;; bounded: nowhere near the child's 60 s
+            (is (< elapsed 20)
+                "kill-engine-process took ~,1F s — it is not bounded" elapsed)
+            ;; and it escalated rather than giving up
+            (is (not (uiop:process-alive-p info))
+                "a TERM-ignoring process survived; :urgent did not fire")))
+      (ignore-errors (uiop:terminate-process info :urgent t)))))
+
+(test kill-engine-process-tolerates-nil-and-dead-processes
+  "Called from an unwind-protect on a failed start, so it must cope with
+having nothing to kill — the engine may never have been spawned, or may
+have exited on its own."
+  (is (null (alfe.backend.cad-common:kill-engine-process nil)))
+  (let ((info (uiop:launch-program (list "true") :output nil :error-output nil)))
+    (ignore-errors (uiop:wait-process info))
+    (is (null (alfe.backend.cad-common:kill-engine-process info :timeout 1)))))
+
+(defun %code-lines (text)
+  "TEXT's lines with `;'-comments removed. Crude — it does not know about
+semicolons inside strings — but enough to tell code from commentary, and
+the alternative is a test that its own explanatory comment can fail."
+  (mapcar (lambda (line)
+            (let ((semi (position #\; line)))
+              (if semi (subseq line 0 semi) line)))
+          (uiop:split-string text :separator '(#\Newline))))
+
+(test both-cad-backends-use-the-bounded-killer
+  "Guard against the shape of the original bug: the careful killer existed,
+but only one backend used it, so the other kept the unbounded
+`uiop:wait-process' that the killer's own docstring warns about.
+
+Asserted on CODE, not on the file text: the comment explaining why that
+call was removed contains the call, and a check that its own rationale
+can fail is worse than no check."
+  (is (fboundp 'alfe.backend.cad-common:kill-engine-process))
+  (dolist (file '("backend-autocad.lisp" "backend-bricscad.lisp"))
+    (let* ((path (merge-pathnames (format nil "source/~A" file)
+                                  (asdf:system-source-directory "autolisp-front-end")))
+           (code (%code-lines (uiop:read-file-string path))))
+      (is (some (lambda (l) (search "kill-engine-process" l)) code)
+          "~A does not use the bounded killer" file)
+      ;; `(uiop:wait-process info)' on the ENGINE handle is the hazard.
+      ;; PROCESS-EXIT-DETAILS also waits, but only on a process already
+      ;; known to have exited, where it merely collects the code — that is
+      ;; why this looks for the engine variable specifically.
+      (is (notany (lambda (l) (search "(uiop:wait-process info)" l)) code)
+          "~A still issues an UNBOUNDED wait-process on its engine" file))))

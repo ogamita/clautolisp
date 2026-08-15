@@ -61,7 +61,8 @@
                 #:vbs-escape
                 #:discover-runtime-lsp
                 #:discover-bootstrap-lsp
-                #:drive-protocol-actions)
+                #:drive-protocol-actions
+                #:kill-engine-process)
   (:import-from #:alfe.logging
                 #:log-debug
                 #:log-verbose
@@ -706,6 +707,44 @@ pipe read, so the default stays the robust total decoder (G2)."
             (log-debug "backend AUTOCAD: spawned, process-info-pid = ~A"
                        (ignore-errors (uiop:process-info-pid process-info))))
           (setf (autocad-session-process-info session) process-info)
+          ;; Reap the engine when the start does NOT complete. Without this,
+          ;; a READY timeout signalled below left the spawned AutoCAD alive:
+          ;; alfe reported the timeout and returned, but the CI job kept
+          ;; running because the surviving process still held the console
+          ;; handles — 32 minutes on the shared concurrency=1 CAD runner,
+          ;; 2026-08-14. alfe's --timeout bounds the PROTOCOL wait; it never
+          ;; bounded the engine's lifetime. The BricsCAD backend has had
+          ;; this guard; AutoCAD had not.
+          (let ((started-ok nil))
+            (unwind-protect
+                (progn
+                  (%autocad-await-ready session protocol process-info workdir
+                                        ready-timeout wait-for-ready)
+                  (session-state-set session :ready)
+                  (setq started-ok t)
+                  session)
+              (unless started-ok
+                (when process-info
+                  (ignore-errors
+                   (log-warn "backend AUTOCAD: start aborted; terminating spawned engine (pid ~A)"
+                             (ignore-errors (uiop:process-info-pid process-info))))
+                  (kill-engine-process process-info))))))
+    (alfe.error:backend-error (probe)
+      (error probe))
+    (error (probe)
+      (error 'backend-bootstrap-error
+             :backend :autocad
+             :code :bootstrap-failed
+             :message (format nil "AutoCAD start-engine failed: ~A" probe)
+             :details (list :origin probe))))))
+
+(defun %autocad-await-ready (session protocol process-info workdir
+                             ready-timeout wait-for-ready)
+  "Wait for the engine to reach READY, signalling on exit-before-ready or
+timeout. Split out of START-ENGINE so the caller can wrap it in the
+unwind-protect that reaps the engine when it does not get there."
+  (declare (ignorable session))
+  (block nil
           (when wait-for-ready
             (log-verbose "backend AUTOCAD: waiting for READY (timeout ~A s)"
                          ready-timeout)
@@ -737,16 +776,7 @@ pipe read, so the default stays the robust total decoder (G2)."
                         (format nil "AutoCAD did not reach READY within ~A s (last: ~S)."
                                 ready-timeout last)
                         :details (list :workdir workdir :last-status last))))))
-          (session-state-set session :ready)
-          session))
-    (alfe.error:backend-error (probe)
-      (error probe))
-    (error (probe)
-      (error 'backend-bootstrap-error
-             :backend :autocad
-             :code :bootstrap-failed
-             :message (format nil "AutoCAD start-engine failed: ~A" probe)
-             :details (list :origin probe)))))
+    nil))
 
 ;;; --- EVAL-PLAN ----------------------------------------------------
 
@@ -798,12 +828,13 @@ pipe read, so the default stays the robust total decoder (G2)."
       (ignore-errors
        (alfe.protocol.file:wait-for-status
         protocol alfe.protocol.file:+status-stopped+ :timeout 5))
-      (when info
-        (handler-case
-            (when (uiop:process-alive-p info)
-              (uiop:terminate-process info)
-              (uiop:wait-process info))
-          (error () nil))))
+      ;; NOT terminate + (uiop:wait-process info): that wait is UNBOUNDED,
+      ;; and on Windows a GUI CAD that is slow to die — or a child of it
+      ;; still holding the handles — hangs it, freezing alfe in shutdown
+      ;; and with it the whole CI job. The BricsCAD backend learned this
+      ;; and grew a bounded killer; AutoCAD had kept the unbounded call.
+      ;; KILL-ENGINE-PROCESS is now shared by both.
+      (kill-engine-process info))
     (session-state-set session :stopped))
   session)
 
