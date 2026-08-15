@@ -306,22 +306,22 @@ nécessaires, de simples fonctions de résolution) :
    =(getstring)=, par exemple, avec un texte qui ressemble à
    =foo(bar)=). Il faut donc un marqueur *hors ambiguïté*, pas une
    heuristique de reconnaissance de grammaire. On utilise un caractère
-   d'échappement, =!= par défaut mais *configurable* (§ ci-dessous),
+   d'échappement, ~=~ par défaut mais *configurable* (§ ci-dessous),
    qui n'a de sens *qu'en tête de ligne* :
-   - une ligne commençant par un seul =!= est *entièrement* une
-     méta-commande : le =!= est retiré, le reste de la ligne est
+   - une ligne commençant par un seul ~=~ est *entièrement* une
+     méta-commande : le ~=~ est retiré, le reste de la ligne est
      analysé comme =verbe(arguments)= (§5.3) et exécuté — la
      méta-commande occupe *toute* la ligne, il n'y a plus de "reste"
      à faire suivre ailleurs ;
-   - une ligne commençant par =!!= (le caractère doublé) *annule* sa
-     fonction d'échappement : un seul =!= est retiré, et la ligne
-     restante (qui commence donc par un =!= littéral) est transmise
+   - une ligne commençant par ~==~ (le caractère doublé) *annule* sa
+     fonction d'échappement : un seul ~=~ est retiré, et la ligne
+     restante (qui commence donc par un ~=~ littéral) est transmise
      telle quelle, comme passe-plat ordinaire (cf. § 5.6), au flux
      AutoLISP — c'est le recours quand la saisie légitime attendue par
-     le programme AutoLISP doit elle-même commencer par =!= ;
-   - toute ligne qui ne commence *ni* par =!= ni par =!!= est
+     le programme AutoLISP doit elle-même commencer par ~=~ ;
+   - toute ligne qui ne commence *ni* par ~=~ ni par ~==~ est
      entièrement passe-plat, transmise sans modification (§5.6).
-   Le doublement n'est nécessaire qu'en tête de ligne : =!= au milieu
+   Le doublement n'est nécessaire qu'en tête de ligne : ~=~ au milieu
    d'une ligne n'a jamais de fonction spéciale, puisqu'une
    méta-commande ne peut de toute façon commencer qu'en tout début de
    ligne. Ce mécanisme élimine complètement l'ambiguïté — plus besoin
@@ -332,20 +332,20 @@ nécessaires, de simples fonctions de résolution) :
 
    #+begin_example
    _$ (read-line)
-   !dump(entite(face42))
+   =dump(entite(face42))
    <entite :handle face42 ....>
-   !! ma ligne!
+   == ma ligne=
    #+end_example
 
    Dans cet exemple : le programme AutoLISP est bloqué dans un
-   =(read-line)=. =!dump(entite(face42))= est reconnu comme
-   méta-commande (le =!= en tête le signale sans ambiguïté possible,
+   =(read-line)=. ~=dump(entite(face42))~ est reconnu comme
+   méta-commande (le ~=~ en tête le signale sans ambiguïté possible,
    même si =dump(entite(face42))= a la même forme syntaxique qu'une
    saisie AutoLISP ordinaire) ; elle s'exécute et imprime le dump, mais
    le =(read-line)= reste bloqué — cette ligne ne lui est *jamais*
-   délivrée. La ligne suivante, =!! ma ligne!=, commence par le
-   caractère doublé : un seul =!= est retiré, et c'est la ligne
-   =! ma ligne!= (avec un unique =!= initial, littéral) qui est enfin
+   délivrée. La ligne suivante, ~== ma ligne=~, commence par le
+   caractère doublé : un seul ~=~ est retiré, et c'est la ligne
+   ~= ma ligne=~ (avec un unique ~=~ initial, littéral) qui est enfin
    délivrée au =(read-line)= en attente.
 
    Remarque pour l'avenir : ce mécanisme d'échappement en bande (dans
@@ -354,7 +354,7 @@ nécessaires, de simples fonctions de résolution) :
    d'un contrôle plus fin du terminal (=cadtui-curses=, § architecture)
    pourra introduire les méta-commandes *hors bande*, via une touche de
    fonction dédiée interceptée avant d'atteindre le flux de caractères
-   — auquel cas le caractère =!= n'a plus lieu d'être pour ce backend
+   — auquel cas le caractère ~=~ n'a plus lieu d'être pour ce backend
    précis, les deux mécanismes n'étant pas mutuellement exclusifs.
 
 ** Configuration du caractère d'échappement
@@ -365,7 +365,7 @@ d'initialisation ou en cours de session (comme une méta-commande
 =locale(...)= le ferait pour la langue) :
 
 #+begin_src lisp
-(TUI-COMMAND-ESCAPE ASCII "!")        ; caractère ASCII/imprimable ordinaire
+(TUI-COMMAND-ESCAPE ASCII "=")        ; caractère ASCII/imprimable ordinaire
 (TUI-COMMAND-ESCAPE UNICODE (182))    ; point de code Unicode — ici ¶ (PILCROW SIGN, U+00B6)
 #+end_src
 
@@ -378,7 +378,7 @@ Deux formes reconnues pour le second argument :
   saisie AutoLISP légitime, un nom de calque, un mot de passe...) —
   utile en particulier pour un dessin dont le contenu textuel (textes,
   attributs, scripts existants) pourrait légitimement commencer par
-  =!=, où choisir un caractère rare limite le besoin de doubler
+  ~=~, où choisir un caractère rare limite le besoin de doubler
   l'échappement au quotidien.
 
 Propriétés à respecter par toute valeur configurée :
@@ -401,9 +401,9 @@ interpréter correctement les lignes suivantes.
 ** Adressage des cibles
 
 #+begin_example
-ligne        ::= "!" meta-commande        ; méta-commande (§ principe 4)
-             |    "!!" reste-de-ligne     ; échappement annulé → passe-plat, "!"+reste-de-ligne délivré tel quel
-             |    reste-de-ligne          ; passe-plat ordinaire (ne commence pas par "!")
+ligne        ::= "=" meta-commande        ; méta-commande (§ principe 4)
+             |    "==" reste-de-ligne     ; échappement annulé → passe-plat, "="+reste-de-ligne délivré tel quel
+             |    reste-de-ligne          ; passe-plat ordinaire (ne commence pas par "=")
 meta-commande::= verbe "(" [arguments] ")"
 chemin       ::= "/" segment ("/" segment)*
 segment      ::= role ":" cle | role "[" indice "]" | mot-cle
@@ -427,9 +427,9 @@ reference-D  ::= "D" entier "." cle ("." cle)*    ; référence relative au n-i�
 
 ** Répertoire des méta-commandes
 
-Chaque entrée ci-dessous s'utilise précédée de =!= en tête de ligne
+Chaque entrée ci-dessous s'utilise précédée de ~=~ en tête de ligne
 (§ principe 4) — le tableau omet ce préfixe par lisibilité, mais
-=activer(cible)= s'écrit en pratique =!activer(cible)=.
+=activer(cible)= s'écrit en pratique ~=activer(cible)~.
 
 | Méta-commande                              | Effet                                                              |
 |---------------------------------------------+----------------------------------------------------------------------|
@@ -474,8 +474,8 @@ sélectionnée (comme le Tab d'AutoCAD sur les poignées superposées).
 
 ** Saisie implicite de commande et d'expressions Lisp
 
-Toute ligne qui ne commence *pas* par =!= (ou qui commence par =!!=,
-auquel cas un seul =!= est retiré au préalable, § principe 4) est
+Toute ligne qui ne commence *pas* par ~=~ (ou qui commence par ~==~,
+auquel cas un seul ~=~ est retiré au préalable, § principe 4) est
 transmise telle quelle, sans autre analyse de sa forme, à la *cible de
 saisie implicite* :
 
@@ -497,7 +497,7 @@ saisie implicite* :
    de sa syntaxe* : c'est exactement le cas qui motive le mécanisme
    d'échappement du principe 4 (une ligne qui ressemblerait à
    =verbe(arguments)= mais qui n'en est pas une reste ici transmise
-   littéralement, puisqu'elle ne commençait pas par =!=).
+   littéralement, puisqu'elle ne commençait pas par ~=~).
 2. Sinon (le thread AutoLISP de cette console est *au niveau REPL*,
    sans lecture en cours), on interprète le contenu de la ligne : si
    elle commence par =(=, c'est une expression Lisp, lue et évaluée
@@ -527,11 +527,11 @@ Grâce au caractère d'échappement (§ principe 4), la classification
 d'une ligne physique est immédiate et ne demande plus d'analyser sa
 syntaxe :
 
-1. La ligne commence par =!= (non doublé) → méta-commande,
+1. La ligne commence par ~=~ (non doublé) → méta-commande,
    *intégralement* : exécutée tout de suite, quelle que soit la
    console active à ce moment, jamais délivrée à aucun lecteur
    AutoLISP.
-2. La ligne commence par =!!= → un =!= est retiré, le reste est
+2. La ligne commence par ~==~ → un ~=~ est retiré, le reste est
    passe-plat.
 3. Sinon → passe-plat intégral, tel quel.
 
@@ -562,7 +562,7 @@ débogueur d'application), pour l'exécution hors contexte d'un dessin
 particulier.
 
 Invariant global : *un seul thread est actif à la fois*, dans toute
-l'application. Quand =!activer(...)= (ou l'équivalent implicite décrit
+l'application. Quand ~=activer(...)~ (ou l'équivalent implicite décrit
 ci-dessus) change la console active, les deux threads du dessin (ou de
 l'application) précédemment actif sont suspendus — pas terminés, juste
 gelés exactement là où ils en étaient (au milieu d'une commande, en
@@ -585,38 +585,38 @@ moment que l'invariant « un seul actif à la fois » est respecté.
 ** Exemple de session (le scénario du besoin)
 
 #+begin_src text
-> !dump(menu:Dessiner)
+> =dump(menu:Dessiner)
 D1 menu:Dessiner (barre-menu)
   item:Ligne          → c:ligne
   item:Cercle         → c:cercle
   item:Polyligne      → c:pline
   ...
-> !activer(dessin[2])
+> =activer(dessin[2])
 dessin[2] "plan-masse.dwg" devient dessin-actif (ex-dessin[1] repoussé en 2e position)
-> !dump(dessin-actif.vue-cad.entites, page: 1, taille: 20)
+> =dump(dessin-actif.vue-cad.entites, page: 1, taille: 20)
 D2 vue-cad.entites (1/250, 20 par page)
   entite:deadface   TYPE=LWPOLYLINE  CALQUE=MURS   poignees=[1..6]
   entite:cafebabe   TYPE=CERCLE      CALQUE=COTES  poignees=[1..2]
   ...
-> !suite
+> =suite
 D2 vue-cad.entites (2/250, page suivante)
   ...
-> !dclic(D2.deadface.poignee2)
+> =dclic(D2.deadface.poignee2)
 Poignée 2 de deadface (entité D2.deadface) : double-clic → mode Étirer activé
 > 10,5
 Point suivant : (10.0 5.0) — étirement appliqué à la poignée 2
-> !touche(f2)
+> =touche(f2)
 console activée — flux récent :
   Commande : DEPLACER 1 trouvé(s)
   Point de base : ...
 #+end_src
 
-Notez la ligne =10,5= : elle ne commence pas par =!=, donc elle est
+Notez la ligne =10,5= : elle ne commence pas par ~=~, donc elle est
 passe-plat intégral, délivrée telle quelle au mode Étirer actif de la
 poignée — même si, par construction, une syntaxe fortuite comme
 =touche(rouge)= tapée à ce même endroit serait elle aussi transmise
 littéralement plutôt que confondue avec une méta-commande, puisque
-seul le =!= initial en décide.
+seul le ~=~ initial en décide.
 
 Ce fragment illustre : non-modalité (dump du menu sans choix, puis
 activation d'une autre fenêtre, puis dump des entités d'une troisième
@@ -854,17 +854,45 @@ headless / backend de rendu) :
 4. Consoles : une par dessin (flux + zone-saisie + espace de noms Lisp
    isolé) plus la console d'application, résolution de la cible de
    saisie implicite (§5.6, règle 0) et bascule =cador=/=cadtui= comme
-   cas dégénéré. Vérifier explicitement l'absence de fuite d'état
+   cas dégénéré.
+
+   *Note d'implémentation (pjb, 2026-08-15) : la console cadtui est un
+   INTERACTOR*, au sens du cadre existant (=INTERACTOR-LOOP=, la même
+   boucle qui sert au REPL lisp, à aldo, au navigateur, à l'inspecteur
+   et à sedit) — et non un lecteur de lignes écrit pour l'occasion.
+
+   Ce n'est pas un détail de réutilisation de code : la conséquence
+   directe est qu'on peut *passer d'un interactor à l'autre*, puisque
+   c'est ce que le cadre fait déjà. La console cadtui s'empile et se
+   dépile comme les autres, le prompt indique la profondeur, et depuis
+   la console on peut descendre dans aldo ou sedit et revenir, sans
+   qu'aucun mécanisme nouveau soit inventé pour cela.
+
+   Ce que cela impose au reste de cette phase :
+
+   - la classification des lignes (§ ci-dessous) est le READER de cet
+     interactor, à la place de =COMMA-COMMAND-READ= (le lecteur du REPL
+     lisp) ou de =COMMAND-READ= (celui d'aldo/navi/sedit). Les trois
+     sont des variantes du même point d'extension, pas trois boucles ;
+   - la répartition des caractères de tête devient une propriété de
+     l'interactor actif et doit rester cohérente à travers la pile :
+     =(= expression Lisp, =,= commande clautolisp, =!= échappement
+     shell (issue =bang=), ~=~ méta-commande cadtui, =.= =-= =_= ou
+     rien commande CAD ;
+   - la configuration suit la même règle d'empilement que les autres
+     interactors (cf. =lisp.conf= empilé sous =aldo.conf=) : le
+     caractère d'échappement, la locale et la pagination sont des
+     réglages d'interactor, pas des variables globales. Vérifier explicitement l'absence de fuite d'état
    entre consoles de dessins différents (cf. contre-exemple BricsCAD,
    § étude) avant de clore cette phase. Inclut le mécanisme
-   d'échappement =!=/=!!= (§ principe 4) — à implémenter *avant* tout
+   d'échappement ~=~/~==~ (§ principe 4) — à implémenter *avant* tout
    parseur de méta-commande, puisque c'est lui qui décide si une ligne
    lui est même soumise — et le modèle suspend/resume à un seul thread
    actif (§ « Classification des lignes et tamponnage » et § « Modèle
    d'exécution »). Tester explicitement le cas qui a motivé
    l'échappement : un programme AutoLISP bloqué dans un =read-line=
    recevant une ligne qui a la forme =identifiant(arguments)= sans être
-   une méta-commande (pas de =!= en tête) doit la recevoir intacte.
+   une méta-commande (pas de ~=~ en tête) doit la recevoir intacte.
 5. Vue CAD, entités et poignées (nécessite une représentation même
    minimale des entités de dessin dans clautolisp) + pagination et
    filtre spatial.

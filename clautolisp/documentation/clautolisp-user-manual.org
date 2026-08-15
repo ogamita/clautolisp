@@ -365,6 +365,48 @@ Its first setting is ~sedit-on-quit~ (=auto-save= | =do-not-save= |
 =ask=), governing ~(clal-sedit …)~ invocations made *from the REPL*,
 while aldo's setting of the same name governs debugger-side ones.
 
+*** Running a shell command: the =!= escape
+A line whose *first* character is the shell-escape character sends the
+rest of the line to your =$SHELL=, with standard input, output and error
+*inherited* — so an interactive command can prompt, page, or draw:
+
+#+begin_example
+_$ !pwd
+/Users/pjb/src/ogamita
+_$ !ls -l | less
+#+end_example
+
+This is what ~startapp~ cannot do: it launches a program but does not
+hand it the terminal.
+
+Three details worth knowing:
+
+- *nothing may precede the character*, not even a space — ~ !pwd~ is an
+  ordinary line, not a shell escape. That is what makes the rule
+  unambiguous;
+- a command ending in ~&~ is backgrounded, and a non-interactive shell
+  prints neither the PID nor a job-control notice, so ~echo $!~ is
+  appended for you and the PID is printed. Spaces around the command do
+  not defeat this; ~a && b~ does not end in ~&~ and is left alone;
+- a line ending in a backslash *continues* onto the next, so a long
+  command can be typed over several lines.
+
+The character is the ~shell-escape-character~ setting of the REPL's own
+configuration, ~!~ by default. Set it as a character or as a Unicode
+code point — the second is the way to choose one that is awkward to
+type:
+
+#+begin_example
+_$ ,set shell-escape-character "%"
+_$ ,set shell-escape-character 182
+_$ ,write-settings
+#+end_example
+
+The setting lives in =lisp.conf= because the escape belongs to the Lisp
+interactor. The same character is in force in the debugger and the
+editors too — they read this setting, not one of their own — so the
+escape looks the same wherever you are.
+
 The stacking rule: at the REPL only =lisp.conf= is active; inside the
 debugger *both* are, aldo over lisp. So a setting you did not put in
 =aldo.conf= but did put in =lisp.conf= is taken from =lisp.conf= even at

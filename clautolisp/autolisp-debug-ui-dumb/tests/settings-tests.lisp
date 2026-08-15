@@ -271,15 +271,31 @@ time, not as a compile error."
     (clautolisp.debug.ui:set-lisp-setting "SEDIT-ON-QUIT" "do-not-save")
     (is (eq :do-not-save (clautolisp.debug.ui:lisp-setting :sedit-on-quit)))))
 
+(defun %settings-line-for (name lines)
+  "The `,set' listing line for setting NAME, or NIL."
+  (find-if (lambda (line) (eql 0 (search name line))) lines))
+
 (test lisp-config-settings-lines-mark-defaults
+  ;; Asserted on the LINE FOR A SETTING, not on the line count. The
+  ;; original version checked (= 1 (length lines)), which was only ever
+  ;; true because lisp.conf had exactly one setting; adding
+  ;; shell-escape-character (bang.issue) broke it without breaking
+  ;; anything it meant to test.
   (with-empty-layers
-    (let ((lines (clautolisp.debug.ui:lisp-settings-lines)))
-      (is (= 1 (length lines)))
-      (is (search "(default)" (first lines))))
+    (let* ((lines (clautolisp.debug.ui:lisp-settings-lines))
+           (line (%settings-line-for "sedit-on-quit" lines)))
+      (is (not (null line)) "no line for sedit-on-quit in ~S" lines)
+      (is (search "(default)" line))
+      ;; every setting listed, and every one of them still at its default
+      (is (every (lambda (l) (search "(default)" l)) lines)))
     (clautolisp.debug.ui:set-lisp-setting "sedit-on-quit" "auto-save")
-    (let ((lines (clautolisp.debug.ui:lisp-settings-lines)))
-      (is (search "auto-save" (first lines)))
-      (is (null (search "(default)" (first lines)))))))
+    (let* ((lines (clautolisp.debug.ui:lisp-settings-lines))
+           (line (%settings-line-for "sedit-on-quit" lines)))
+      (is (search "auto-save" line))
+      (is (null (search "(default)" line)))
+      ;; the OTHER settings are untouched — a write goes to one key
+      (is (search "(default)"
+                  (%settings-line-for "shell-escape-character" lines))))))
 
 (test lisp-config-file-round-trip
   (with-empty-layers

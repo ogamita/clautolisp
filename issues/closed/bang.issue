@@ -1,0 +1,122 @@
+
+There is startapp, but it doesn't transfer stdin/stdout to the program.
+For interactive use in clautolisp (and alfe), we introduce the shell escape
+character "!".
+It is a configurable value shell-escape-character
+
+When a line is input at the REPL (any interactor, lisp, aldo, navi,
+sedit), that starts with this shell escape character, the rest of the
+line is passed to the $SHELL for interpretation, with
+stdin/stdout/stderr inherited.
+
+If the command ends in & the shell will fork a child process, but bash
+doesn't display the PID or any job-control instruction in this
+(non-interactive) mode. So we must add "echo $!" to the command to
+print the pid of the child.
+
+| Example interaction    | What is executed/printed     | Alternative output     |
+|------------------------+------------------------------+------------------------|
+| _$ !pwd                | bash -c 'pwd'                |                        |
+| /Users/pjb/src/ogamita | /Users/pjb/src/ogamita       |                        |
+|------------------------+------------------------------+------------------------|
+| _$ !pwd &              | bash -c 'pwd & echo $!'      |                        |
+| 4819                   | 4819                         | /Users/pjb/src/ogamita |
+| /Users/pjb/src/ogamita | /Users/pjb/src/ogamita       | 4819                   |
+|------------------------+------------------------------+------------------------|
+| _$ !echo hello \       |                              |                        |
+| > world.               | bash -c 'echo hello  world.' |                        |
+| hello world.           | hello world.                 |                        |
+|------------------------+------------------------------+------------------------|
+
+There may not be any space or other character input before the
+shell-escape-character.
+
+There may be spaces before or after the shell command, so the test for
+& must take into account this possibility.
+
+There may be continuation lines when the preceeding line ends with a
+backslash "\".
+
+The "What is executed" column is only an example, it depends on $SHELL
+environment variable.
+
+* RESOLVED 2026-08-15 (clautolisp 1.8.37)
+
+Implemented, with the setting in the LISP interactor's own
+configuration, per pjb: "c'est une caractéristique de l'interactor lisp,
+sa configuration est enregistrée dans la configuration de l'interactor
+lisp. setting name: shell-escape-character, type: ascii character or
+unicode code point."
+
+** Two hooks, not code, and why
+
+=clautolisp/autolisp-interactor= is deliberately dependency-free — its
+own description says "No clautolisp dependencies, so it is reusable
+outside the debugger". Running a subprocess would drag in uiop; reading
+the setting would drag in the configuration layer, which sits ABOVE it.
+So the interactor carries two hooks and no policy:
+
+- =*SHELL-ESCAPE-CHARACTER-HOOK*= — no arguments, returns the character
+  or NIL;
+- =*SHELL-ESCAPE-RUNNER*= — called with the command string.
+
+Both installed by the tool at start-up, exactly as
+=*DEFAULT-ON-QUIT-POLICY*= is for sedit. Either being NIL disables the
+escape, so an embedder that installs nothing sees no change at all.
+
+The character is fetched through a FUNCTION rather than copied into a
+variable at launch, so =,set shell-escape-character …= takes effect on
+the next line rather than the next session.
+
+** The detail that dictated the shape
+
+"There may not be any space or other character input before the
+shell-escape-character." The existing readers call =%READ-COMMAND-LINE=,
+which LEFT-TRIMS — testing there would have accepted =" !pwd"= and
+silently broken the rule. The readers now take the RAW line and trim
+only after the escape test. That is the one place a naive implementation
+goes wrong; there is a test for it.
+
+** The rest of the rules, each with a test
+
+- a trailing backslash continues onto the next line, and a backslash on
+  the LAST line terminates instead of reading forever;
+- a command ending in =&= gets = echo $!= appended, because a
+  non-interactive bash prints neither the PID nor a job-control notice.
+  Tested on the TRIMMED text since the ticket allows spaces on either
+  side — and =a && b= does not end in =&=, so it is left alone;
+- =$SHELL= (or =/bin/sh=) runs it with stdin/stdout/stderr INHERITED,
+  which is the whole point: =startapp= exists and cannot do that;
+- a failing shell command is reported, never signalled — a typo must not
+  unwind the REPL that launched it.
+
+** The setting
+
+=shell-escape-character= in =lisp.conf=, default =!=. New setting type
+=:character=, accepting a one-character string or a decimal code point —
+the same two spellings the =:decorations= glyphs already accept in
+=aldo.conf=, so the file keeps one convention rather than two. A code
+point is how you name a character awkward to type. Values are normalised
+on read by =SETTING-CHARACTER=, so a hand-edited
+=(shell-escape-character . "@")= works as well as the character syntax,
+and a malformed value disables the escape rather than breaking the REPL.
+
+** Found while doing this: a whole test suite was never running
+
+The new tests reported neither pass nor fail. =INTERACTOR-SUITE= was
+absent from the aggregate =clautolisp/tests=: the interactor framework
+had its own test system and its own suite, and nothing invoked them.
+Now wired in — 190 checks, including the pre-existing ones that had
+never run in CI.
+
+** Scope note
+
+The ticket says "any interactor, lisp, aldo, navi, sedit". The escape IS
+active in all of them (both readers changed, both consulting the same
+hook), but the character is read through =LISP-SETTING=, so it always
+comes from =lisp.conf= — aldo cannot name a different one. That matches
+pjb's narrowing; making it per-interactor is a one-line change to the
+hook if ever wanted.
+
+Verified: SBCL and CCL suites green (exit 0), the 8 new tests named in
+the log.

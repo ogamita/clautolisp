@@ -61,6 +61,11 @@
    ;; Detection (spec §5)
    #:classify-environment-kind
    #:standard-mount-table
+   ;; Live mount tables: what the running system reports, preferred over
+   ;; the conventional prefixes. Parsers are pure so they test anywhere.
+   #:parse-fstab-mount-entries
+   #:parse-mount-command-entries
+   #:live-mount-entries
    #:standard-drive-mount-prefix
    #:make-environment-for-kind
    #:detect-build-environment
@@ -445,14 +450,148 @@ and mount prefix, which describe a POSIX-rooted view the CL does not use."
         (menv-mount-table env)        '())
   env)
 
+;;; ------------------------------------------------------------------
+;;; Live mount tables (the issue's "Still TODO" after Windows CI)
+;;; ------------------------------------------------------------------
+;;;
+;;; STANDARD-MOUNT-TABLE describes the CONVENTIONAL layout: /cygdrive/c,
+;;; /c, /mnt/c and a supplied install root. That is right on a default
+;;; install and wrong on any machine whose owner moved something — an
+;;; msys2 installed elsewhere than C:/msys64, an fstab that maps a share,
+;;; a WSL distro with extra drvfs mounts.
+;;;
+;;; The system already knows the truth: cygwin and msys2 keep it in
+;;; /etc/fstab, and WSL reports it through `mount'. Both are read here and
+;;; take precedence over the conventions, which stay as the fallback for
+;;; when neither can be read.
+;;;
+;;; Parsing is separated from acquisition on purpose: the parsers are pure
+;;; functions over text, so the formats can be tested on any host instead
+;;; of only on the machine that has them.
+
+(defun %split-whitespace (line)
+  (let ((fields '()) (start nil))
+    (dotimes (index (length line) (nreverse (if start
+                                                (cons (subseq line start) fields)
+                                                fields)))
+      (let ((blank (member (char line index) '(#\Space #\Tab))))
+        (cond ((and blank start) (push (subseq line start index) fields)
+                                 (setf start nil))
+              ((not (or blank start)) (setf start index)))))))
+
+(defun %unescape-fstab-field (field)
+  "Undo fstab's octal escapes — cygwin writes a space as \\040, which is
+exactly what a Windows path under \"Program Files\" needs."
+  (with-output-to-string (out)
+    (let ((index 0) (end (length field)))
+      (loop :while (< index end)
+            :do (let ((character (char field index)))
+                  (if (and (char= character #\\)
+                           (<= (+ index 4) end)
+                           (every #'digit-char-p (subseq field (1+ index) (+ index 4))))
+                      (progn (write-char (code-char
+                                          (parse-integer field :start (1+ index)
+                                                               :end (+ index 4)
+                                                               :radix 8))
+                                         out)
+                             (incf index 4))
+                      (progn (write-char character out) (incf index))))))))
+
+(defun %ensure-trailing-slash (s)
+  (if (and (plusp (length s)) (char= #\/ (char s (1- (length s)))))
+      s
+      (concatenate 'string s "/")))
+
+(defun parse-fstab-mount-entries (text)
+  "MOUNT-ENTRYs from the TEXT of a cygwin/msys2 /etc/fstab.
+
+Format: <canonical-path> <mount-point> <type> <options>…, `#' comments,
+octal escapes for spaces. Field 1 is the Windows side and field 2 the
+POSIX side, which is exactly (canonical-prefix, frame-prefix).
+
+Skips the pseudo-filesystems an fstab also lists (none, cygdrive, proc…):
+they name no physical Windows path, so they cannot be a canonical prefix."
+  (let ((entries '()))
+    (dolist (raw (uiop:split-string text :separator '(#\Newline)) (nreverse entries))
+      (let* ((line (string-trim '(#\Space #\Tab #\Return) raw))
+             (hash (position #\# line))
+             (line (if hash (subseq line 0 hash) line))
+             (fields (%split-whitespace line)))
+        (when (<= 2 (length fields))
+          (let ((device (normalize-separators (%unescape-fstab-field (first fields))))
+                (point  (normalize-separators (%unescape-fstab-field (second fields)))))
+            (when (and (drive-path-p device) (absolute-posix-p point))
+              (push (make-mount-entry
+                     :frame-prefix (%ensure-trailing-slash point)
+                     :canonical-prefix (%ensure-trailing-slash (canonicalize-drive device)))
+                    entries))))))))
+
+(defun parse-mount-command-entries (text)
+  "MOUNT-ENTRYs from the TEXT of `mount' under WSL.
+
+Lines read `<device> on <mount-point> type <fstype> (<options>)'. Only
+9p and drvfs are Windows filesystems — the rest (ext4, proc, tmpfs…) are
+the distro's own and have no canonical Windows form."
+  (let ((entries '()))
+    (dolist (raw (uiop:split-string text :separator '(#\Newline)) (nreverse entries))
+      (let ((fields (%split-whitespace (string-trim '(#\Space #\Return) raw))))
+        (when (and (<= 5 (length fields))
+                   (string= "on" (second fields))
+                   (string= "type" (fourth fields))
+                   (member (fifth fields) '("9p" "drvfs") :test #'string-equal))
+          (let ((device (normalize-separators (first fields)))
+                (point  (normalize-separators (third fields))))
+            (when (and (drive-path-p device) (absolute-posix-p point))
+              (push (make-mount-entry
+                     :frame-prefix (%ensure-trailing-slash point)
+                     :canonical-prefix (%ensure-trailing-slash (canonicalize-drive device)))
+                    entries))))))))
+
+(defun live-mount-entries (kind)
+  "The mount entries the RUNNING system reports for KIND, or NIL.
+
+Never signals: a machine with no /etc/fstab, no `mount', or an
+unreadable one simply falls back to the conventional table. The mapping
+layer must not fail to start because a probe did."
+  (ignore-errors
+   (case kind
+     ((:cygwin :msys2)
+      (let ((text (ignore-errors (uiop:read-file-string "/etc/fstab"))))
+        (and text (parse-fstab-mount-entries text))))
+     (:wsl
+      (let ((text (ignore-errors
+                   (uiop:run-program '("mount") :output :string
+                                                :error-output nil
+                                                :ignore-error-status t))))
+        (and text (parse-mount-command-entries text))))
+     (t '()))))
+
+(defun %merge-mount-tables (live standard)
+  "LIVE entries first, then the STANDARD ones whose frame-prefix the live
+table does not already define. Longest-prefix-wins decides the rest, so
+this only settles ties — and a machine that states its own layout should
+win a tie against a convention."
+  (append live
+          (remove-if (lambda (entry)
+                       (find (mount-frame-prefix entry) live
+                             :key #'mount-frame-prefix :test #'string=))
+                     standard)))
+
 (defun %detect-environment (probe-tag)
   (let* ((inputs (%detect-inputs))
          (kind (apply #'classify-environment-kind inputs))
          (root-truename (ignore-errors (namestring (truename #P"/"))))
+         (live (live-mount-entries kind))
          (env (make-environment-for-kind
                kind
                :home (%detect-home)
-               :probe (list* :tag probe-tag :root-truename root-truename inputs))))
+               :probe (list* :tag probe-tag :root-truename root-truename
+                             :live-mounts (length live) inputs))))
+    ;; Seed from what the system actually reports, keeping the conventional
+    ;; table underneath for whatever it does not mention.
+    (when live
+      (setf (menv-mount-table env)
+            (%merge-mount-tables live (menv-mount-table env))))
     ;; Ground-truth override (spec §5.1: the build frame is "what the CL
     ;; expects as physical pathnames"): if this CL renders native drive
     ;; paths, force native rendering regardless of the shell that set

@@ -220,3 +220,79 @@
     (is (string= "/mnt/c/x/a.lsp"
                  (clautolisp.pathname-mapping:map-in-namestring
                   "C:/x/a.lsp" :run msys2 :build wsl)))))
+
+;;; --- live mount tables ----------------------------------------------------
+;;;
+;;; The conventional table (/cygdrive/c, /c, /mnt/c, a supplied install
+;;; root) is right on a DEFAULT install and wrong on any machine whose
+;;; owner moved something. cygwin and msys2 state the truth in /etc/fstab,
+;;; WSL states it through `mount'.
+;;;
+;;; Acquisition and parsing are separate on purpose: these tests exercise
+;;; the formats as text, so they run on a host that has neither.
+
+(defun %fstab-pairs (entries)
+  (mapcar (lambda (e)
+            (cons (clautolisp.pathname-mapping:mount-frame-prefix e)
+                  (clautolisp.pathname-mapping:mount-canonical-prefix e)))
+          entries))
+
+(test pathmap-fstab-parses-an-msys2-table
+  "The two leading fields are (Windows path, POSIX mount point), which is
+exactly (canonical-prefix, frame-prefix)."
+  (let ((entries (clautolisp.pathname-mapping:parse-fstab-mount-entries
+                  (format nil "# comment~%C:/msys64 / ntfs binary,noacl,auto 0 0~%~
+D:/shared /work ntfs binary 0 0~%"))))
+    (is (equal '(("/" . "C:/msys64/") ("/work/" . "D:/shared/"))
+               (%fstab-pairs entries)))))
+
+(test pathmap-fstab-skips-pseudo-filesystems
+  "An fstab also lists entries that name no physical Windows path — none,
+cygdrive, proc. They cannot be a canonical prefix, so they are dropped
+rather than turned into a bogus mapping."
+  (let ((entries (clautolisp.pathname-mapping:parse-fstab-mount-entries
+                  (format nil "none /cygdrive cygdrive binary,posix=0 0 0~%~
+proc /proc proc binary 0 0~%C:/cygwin64 / ntfs binary 0 0~%"))))
+    ;; The install root maps / to where cygwin actually lives — which is
+    ;; the whole point of reading fstab instead of assuming C:/.
+    (is (equal '(("/" . "C:/cygwin64/")) (%fstab-pairs entries)))))
+
+(test pathmap-fstab-decodes-octal-escapes
+  "fstab escapes a space as \\040 — which is exactly what a path under
+\"Program Files\" needs, so this is not a corner case."
+  (let ((entries (clautolisp.pathname-mapping:parse-fstab-mount-entries
+                  "C:/Program\\040Files/msys64 /opt ntfs binary 0 0")))
+    (is (equal '(("/opt/" . "C:/Program Files/msys64/"))
+               (%fstab-pairs entries)))))
+
+(test pathmap-fstab-tolerates-junk
+  "A missing, empty or malformed fstab yields no entries rather than an
+error: the mapping layer must still start."
+  (is (null (clautolisp.pathname-mapping:parse-fstab-mount-entries "")))
+  (is (null (clautolisp.pathname-mapping:parse-fstab-mount-entries
+             (format nil "#only a comment~%~%   ~%"))))
+  (is (null (clautolisp.pathname-mapping:parse-fstab-mount-entries "onefield"))))
+
+(test pathmap-mount-output-keeps-only-windows-filesystems
+  "Under WSL only 9p and drvfs are Windows filesystems; ext4, proc and
+tmpfs are the distro's own and have no canonical Windows form."
+  (let ((entries (clautolisp.pathname-mapping:parse-mount-command-entries
+                  (format nil "C:\\ on /mnt/c type 9p (rw,dirsync)~%~
+D: on /mnt/d type drvfs (rw)~%~
+/dev/sdc on / type ext4 (rw)~%proc on /proc type proc (rw)~%"))))
+    ;; WSL2 shows the C: drive as 9p and extra drives as drvfs; both are
+    ;; Windows filesystems and both must be kept. ext4 and proc must not.
+    (is (equal '(("/mnt/c/" . "C:/") ("/mnt/d/" . "D:/")) (%fstab-pairs entries))
+        "expected the 9p and drvfs drives only; got ~S" (%fstab-pairs entries))))
+
+(test pathmap-mount-output-tolerates-junk
+  (is (null (clautolisp.pathname-mapping:parse-mount-command-entries "")))
+  (is (null (clautolisp.pathname-mapping:parse-mount-command-entries "garbage line"))))
+
+(test pathmap-live-mount-entries-never-signals
+  "Called during environment detection, so it must degrade rather than
+prevent the layer from starting. On this (POSIX) host there is nothing to
+read, and that is a valid answer."
+  (is (null (clautolisp.pathname-mapping:live-mount-entries :posix)))
+  (is (listp (clautolisp.pathname-mapping:live-mount-entries :msys2)))
+  (is (listp (clautolisp.pathname-mapping:live-mount-entries :wsl))))

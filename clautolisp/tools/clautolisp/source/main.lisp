@@ -307,8 +307,34 @@ explicit --debugger-ui overrides for this run only."
         (lambda ()
           (or (ignore-errors (clautolisp.debug.ui:lisp-setting :sedit-on-quit))
               :ask)))
+  ;; Shell escape (bang.issue). Two hooks for one feature, because the
+  ;; interactor system is deliberately dependency-free: it can neither read
+  ;; the configuration (which lives above it) nor spawn a process (which
+  ;; would drag in uiop). Both are supplied here, where both are available.
+  (setf clautolisp.interactor:*shell-escape-character-hook*
+        (lambda ()
+          (ignore-errors (clautolisp.debug.ui:shell-escape-character-setting)))
+        clautolisp.interactor:*shell-escape-runner* #'run-shell-command)
   (or (ignore-errors (clautolisp.debug.ui:get-aldo-setting :default-user-interface))
       :tui))
+
+(defun run-shell-command (command)
+  "Run COMMAND through $SHELL with stdin/stdout/stderr INHERITED.
+
+Inheriting is the whole point of bang.issue: `startapp' exists already and
+does not do it, so an interactive shell command run from the REPL could
+neither prompt nor page. Failure is reported, never signalled — a mistyped
+shell command must not unwind the REPL that launched it."
+  (let ((shell (or (uiop:getenv "SHELL") "/bin/sh")))
+    (handler-case
+        (uiop:run-program (list shell "-c" command)
+                          :input :interactive
+                          :output :interactive
+                          :error-output :interactive
+                          :ignore-error-status t)
+      (error (condition)
+        (format *error-output* "~&shell: ~A~%" condition)
+        nil))))
 
 (defun prepend-init-file-actions (actions no-init-p)
   "Walk the user's init-file stem list and prepend a (:FILE PATH)
