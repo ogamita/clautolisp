@@ -2,8 +2,8 @@
 
 Indicative figures, **measured**, to answer "is this pipeline slow or is it
 stuck?" and "can I fit this run in the time I have?". Companion to
-[`documentation/self-hosted-runners.md`](../../documentation/self-hosted-runners.md),
-which describes the machines and their tags.
+[`self-hosted-runners.md`](self-hosted-runners.md), which describes the
+machines and their tags.
 
 Method: median of the successful runs of each job across the pipelines of
 2026-08-14/15 (n given per row). Treat these as orders of magnitude, not
