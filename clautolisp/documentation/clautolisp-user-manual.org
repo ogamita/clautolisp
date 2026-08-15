@@ -1095,6 +1095,21 @@ an ~enc-unsupported-target~ diagnostic naming it.
                             value of ~clautolisp.tools.clautolisp:*version*~
                             (format ~MAJOR.MINOR.DEVELOP~).
 - ~--help~               :: Print a short usage summary and exit 0.
+- ~--list-dialects~      :: Print every name accepted by ~--dialect~ —
+                            ~strict~ first, ~lax~ last — one per line,
+                            and exit 0. The reliable way to discover
+                            the versioned vendor names rather than
+                            guessing at a spelling.
+- ~--list-situations~    :: Print the encoding *situations* — the
+                            channels settable with
+                            ~-E<situation>[-<dir>]~ or
+                            ~--<situation>[-<dir>]-encoding~ — with
+                            their defaults, and exit 0. Given a backend
+                            flag it prints that backend's defaults and
+                            where each one comes from, which is what
+                            you want when a file reads correctly under
+                            one backend and not another. See
+                            /Source-file and terminal encoding/ above.
 
 * Image-introspection variables (~*AUTOLISP-…*~)
 At startup ~clautolisp~ publishes a set of globally-bound variables

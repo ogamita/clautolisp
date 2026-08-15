@@ -353,6 +353,11 @@ documentation:
     # Fail here rather than ship a manual that disagrees with what the
     # program prints.
     - make -C clautolisp check-dialect-warnings-annex
+    # The user-visible rule (AGENTS.md): a CLI option or CLAL- builtin that
+    # reaches no manual fails here. Run BEFORE the build -- it is seconds,
+    # and the point is to fail on the documentation gap rather than after
+    # several minutes of LaTeX.
+    - make check-user-visible-documentation
     - make release-documentation      # build-documentation + package the share/doc tarball
   artifacts:
     name: "clautolisp-documentation-$CI_COMMIT_SHORT_SHA"

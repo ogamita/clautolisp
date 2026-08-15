@@ -209,6 +209,14 @@ build-libraries:  ## Build the releasable libraries (the drawing/drawing-dwg nat
 check-versions:  ## Audit the release tags / version-* pointers against the shared version rules (see AGENTS.md; run `git fetch --prune --tags` first).
 	sh scripts/check-versions.sh
 
+# The user-visible rule (AGENTS.md, Documentation Synchronisation) is a
+# review rule, and review is exactly what stops happening under pressure.
+# This reads the surface out of the code -- CLI option specs, the CLAL-
+# builtin registrations -- and fails when a name reaches no manual. It
+# needs neither a build nor a CAD, so it belongs in the documentation lane.
+check-user-visible-documentation:  ## Fail if a user-visible surface (CLI option, CLAL- builtin) is missing from the manuals.
+	python3 scripts/check-user-visible-documentation.py
+
 release: release-sources release-documentation release-programs release-libraries  ## Produce every release artefact for this host.
 
 release-sources:  ## Produce the source tarball + zip (tracked files incl. submodules).
