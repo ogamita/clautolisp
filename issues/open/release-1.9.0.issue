@@ -1,0 +1,87 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: release-1.9.0 — cut 1.9.0 before starting cadtui
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: feat-release-1.9.0
+
+* Context
+
+pjb, 2026-08-15: "Avant de commencer cadtui, il faudra bumper la version a
+1.9.0 et faire une release."
+
+So 1.9.0 is a boundary, not a routine bump: the 1.8 series closes on the
+work done to date, and =cadtui= — an 882-line specification for a new host
+that also generalises =cador= — opens on a fresh series. Cutting first means
+the series that shipped the codec, the interactor configuration, the dialect
+warning register and this week's Windows/CAD fixes is frozen and installable
+before a large refactor starts moving =cador= underneath it.
+
+=m= (not =d=) is the right digit: the 1.8 series added user-visible features
+(host-independent single-octet codecs, =lisp.conf=, the =[tag]= diagnostic
+format and its manual annex, self-documenting configuration files).
+
+* NOT YET — this is a gate, not a next action
+
+pjb, same day: "Mais ne bump pas la version tout de suite, on a peut-être
+d'autres issues à implémenter avant."
+
+So nothing here is to be done on sight. 1.9.0 is the gate that must be
+crossed *before cadtui starts*, and whatever else ships first ships INTO
+1.9.0. Concretely: keep bumping clautolisp's DEVELOP as usual (1.8.37,
+1.8.38, …) while more work lands; the stamps below are set once, in the
+release commit itself, not incrementally.
+
+Cutting early would be the actual mistake — it would either strand the
+issues finished afterwards in a 1.9.1 nobody planned, or tempt a
+re-tag.
+
+* What the version numbers must become
+
+Measured against =release-1.8.0=, not assumed:
+
+| program        | now    | must become | why |
+|----------------+--------+-------------+-----|
+| clautolisp     | 1.8.36 | *1.9.0*     | changed throughout the series |
+| alfe           | 1.8.3  | *1.9.0*     | 11 commits since release-1.8.0 |
+| read-autolisp  | 1.6.0  | *unchanged* | 0 commits since release-1.8.0 |
+
+The rule is =version-rules.md= "a program changed within a series must have
+A.B = M.m; a program that has not changed may stay at an older A.B and still
+ship". read-autolisp staying at 1.6.0 in a 1.9.0 release is therefore
+correct, not an oversight — worth writing down, because it looks wrong.
+
+Check with =bash scripts/manifest-versions.sh= (prints the three stamps) and
+=git log release-1.8.0..master -- <path>= per program.
+
+* Procedure (AGENTS.md § Cutting a release; full text in version-rules.md §5)
+
+1. bump the shipped programs' stamps, update =RELEASE_NOTES.org=, commit;
+2. =git tag -a release-1.9.0=;
+3. fast-forward =version-1.9= and =version-1= onto that commit — =version-1.9=
+   must be CREATED, since d = 0;
+4. push the tag and both pointers to =origin=;
+5. post-release bump on master, so no untagged commit claims a released
+   version;
+6. =glab release create release-1.9.0=.
+
+* Before tagging
+
+- =make check-versions= must pass (it does today: 14 releases, 10 series, all
+  invariants hold — run =git fetch --prune --tags= first);
+- =RELEASE_NOTES.org= already carries this series' entries; give 1.9.0 a
+  heading rather than leaving them under the running section;
+- the CI lane parity rule applies (=clautolisp-ci-github-gitlab-parity=):
+  mirror the common Linux lanes into =.github/workflows/ci.yml= before a
+  release tag, by hand;
+- on a =release-*= tag the whole pipeline runs automatically and the
+  release-mandatory jobs BLOCK it (see the =.gate-*-hard= templates), so the
+  native runners should be up when the tag is pushed — including the CAD
+  machine, which is a laptop. Budget it: a full CAD sweep is ~30 minutes of
+  exclusive runner time (=documentation/ci-job-durations.md=).
+
+* Note
+
+Create no =clautolisp-v*= / =alfe-*= tag: those formats are deprecated, a
+program version is read from its source.
