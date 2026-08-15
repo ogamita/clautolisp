@@ -257,3 +257,22 @@ the system or from the conventions.
 
 Verified: SBCL and CCL suites green (exit 0), 7 new tests. The Windows
 job exercises the result on the real machine.
+
+
+CLOSED 2026-08-15 (clautolisp 1.8.38, merged as MR !81)
+-------------------------------------------------------
+
+Every work item this issue defined is delivered: W0 (model + identity),
+W1 (build-frame recording), W2 (run-frame detection), W3 (translation)
+and W4 (conformance matrix, now CONFIRMED on the real Windows runner
+with build=MSYS2 run=MSYS2 detected rather than fallen back to :posix).
+
+W5 is not left undone — it was declared out of scope by this issue's own
+§7, which lists optional logical pathnames as a non-goal. Closing on the
+scope the issue set for itself, not on a reduced one.
+
+The "Still TODO after Windows CI" item (seed the mount tables from the
+live system instead of the conventions) is delivered in the same release,
+so nothing carries forward from this ticket. Should logical pathnames
+ever be wanted, they warrant a new issue with their own justification —
+reopening this one would resurrect a non-goal.
