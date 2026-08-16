@@ -88,6 +88,26 @@ cad_path() {
     fi
 }
 
+# A path for the engine's COMMAND LINE, which is not the same thing.
+#
+# Inside a Lisp file the mixed form (C:/Users/...) is right: forward
+# slashes need no escaping in a string. On a command line it is wrong for
+# accoreconsole, which scans its arguments for `/letter' switches -- so
+# C:/Users/PPBN02261/works/... offers it /U, /P, /w and more, none of
+# which it knows, and it answers by printing its USAGE and ignoring the
+# script. That is what pjb's three failed runs did.
+#
+# The native form (C:\Users\...) has no slashes to misread. Quoted at the
+# substitution site because a Windows path may contain spaces and the
+# runner templates do not quote the placeholder.
+cad_arg_path() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -w "$1"
+    else
+        printf '%s' "$1"
+    fi
+}
+
 # --- generate the probe wrapper (.lsp) -------------------------------
 {
   # Every path below is consumed by the CAD, not by this shell, so each
@@ -155,22 +175,22 @@ EOF
 write_metadata "prepared" 0
 
 # The engine is a NATIVE program, so the file it is pointed at must be
-# named in ITS path form -- and MSYS2 will not do this one for us.
+# named in ITS path form -- and MSYS2 will not do this one for us: its
+# argument converter treats an argument beginning with `/' followed by a
+# letter as a WINDOWS SWITCH, so `/c/Users/...' is passed through
+# untouched.
 #
-# Its argument converter treats an argument that starts with `/' followed
-# by a letter as a WINDOWS SWITCH, not a path. So `/c/Users/...' is passed
-# through untouched, accoreconsole receives something it cannot read as a
-# script, PRINTS ITS USAGE TEXT, opens a default drawing and exits 0.
-# That is precisely what the 2026-08-16 AutoCAD runs did, and the usage
-# banner in the console was the tell -- it is not printed on a good run.
+# Then the NATIVE form, not the mixed one: see cad_arg_path. Quoted here
+# because a Windows path may contain spaces and the templates do not
+# quote the placeholder.
 #
-# The paths written INSIDE the generated files needed the same treatment
-# for a different reason (MSYS2 cannot convert file contents at all), and
-# fixing only those left this one, which is why the second attempt failed
-# the same way as the first.
+# CORRECTION to an earlier reading of this: accoreconsole prints its
+# USAGE TEXT on every run, good or bad. It is NOT a sign of a malformed
+# command line, and treating it as one sent this diagnosis down a false
+# path once already.
 cmd="$runner_template"
-cmd="${cmd//__PROBE_FILE__/$(cad_path "$wrapper_file")}"
-cmd="${cmd//__SCRIPT_FILE__/$(cad_path "$script_file")}"
+cmd="${cmd//__PROBE_FILE__/\"$(cad_arg_path "$wrapper_file")\"}"
+cmd="${cmd//__SCRIPT_FILE__/\"$(cad_arg_path "$script_file")\"}"
 
 echo "run-probes: $product on $platform" >&2
 echo "  runner : $cmd" >&2
