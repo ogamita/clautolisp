@@ -1,0 +1,252 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: release-artefact-set-incomplete — the published release set is missing 7 of the 10 required artefacts
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-release-artefact-set
+
+* Context
+
+pjb, 2026-08-16, named the artefact set a release must publish:
+
+#+begin_example
+clautolisp-${release}-binaries-linux-x86-64.tar.bz2
+clautolisp-${release}-libraries-linux-x86-64.tar.bz2
+clautolisp-${release}-binaries-darwin-arm64.tar.bz2
+clautolisp-${release}-libraries-darwin-arm64.tar.bz2
+clautolisp-${release}-binaries-windows-x86-64.tar.bz2
+clautolisp-${release}-libraries-windows-x86-64.tar.bz2
+clautolisp-${release}-documentation.tar.bz2
+clautolisp-${release}-sources.tar.bz2
+clautolisp-${release}-sources.zip
+clautolisp-${release}-all.tar.bz2      -- includes the contents of all the above
+#+end_example
+
+This blocks =release-1.9.0=: cutting the tag today publishes an
+incomplete set.
+
+* Problem
+
+Verified by RUNNING the real =collect-artefacts= over a fabricated
+complete set of per-target inputs, not by reading the recipe. Given all
+nine per-target artefacts plus sources and documentation, the combined
+set it writes is:
+
+#+begin_example
+clautolisp-1.8.40-binaries.tar.bz2                    <- merged, multi-platform
+clautolisp-1.8.40-binaries-windows-x86-64.tar.bz2
+clautolisp-1.8.40-documentation.tar.bz2
+clautolisp-1.8.40-libraries.tar.bz2                   <- merged, multi-platform
+clautolisp-1.8.40-libraries-windows-x86-64.tar.bz2
+clautolisp-1.8.40-sources.tar.bz2
+clautolisp-1.8.40-sources.zip
+#+end_example
+
+Three independent causes, worth separating because they need different
+fixes:
+
+** C1 — the per-platform unix artefacts are merged away (4 files)
+
+=collect-artefacts= UNIONS every =binaries-*= into one
+=clautolisp-<ver>-binaries.tar.bz2= and every =libraries-*= into one
+=clautolisp-<ver>-libraries.tar.bz2=, then passes through only
+sources, documentation and =*windows*=. So
+=binaries-linux-x86-64=, =libraries-linux-x86-64=,
+=binaries-darwin-arm64= and =libraries-darwin-arm64= exist as
+per-JOB artefacts but never reach the combined set.
+
+The merge itself is correct — verified that the union really is a union
+(each target's marker survives), not a last-writer-wins overwrite. The
+defect is that the per-target inputs are consumed rather than also
+published.
+
+** C2 — the Windows lane is a STUB (2 files)
+
+=release:windows:x86-64= (.gitlab-ci.yml) does not package anything: it
+probes the toolchain and writes =dist/windows-x86-64-STUB.txt=. So
+=binaries-windows-x86-64= and =libraries-windows-x86-64= cannot be
+produced at all today. The =*windows*= passthrough in
+=collect-artefacts= is ready for them; there is simply nothing to pass.
+The intended work is =documentation/windows-package-spec.md=.
+
+The GitHub lane has the same stub (=.github/workflows/release.yml=,
+"Build + package (Windows)").
+
+** C3 — the =-all= bundle does not exist (1 file)
+
+Nothing anywhere writes =clautolisp-<ver>-all.tar.bz2=. Confirmed by
+grep over the root Makefile, =.gitlab-ci.yml=, =scripts/= and
+=.github/workflows/=: zero matches for =all.tar.bz2=. It is not
+mis-wired, it was never implemented.
+
+* Two further findings, same audit
+
+- *arm32 is built and silently dropped.* =release:linux:arm32= produces
+  per-target artefacts, but =collect:release='s =needs:= lists only
+  linux:x86-64, linux:arm64, darwin:arm64, windows:x86-64 and
+  documentation. The arm32 artefact therefore never reaches the collect
+  job. Either add it to =needs:= or stop building it — today the
+  pipeline pays for a build whose output is discarded without a word.
+
+- *GitHub's collect job is an explicit TODO.* It unions nothing; it
+  downloads every artefact and attaches them as-is. So the two forges
+  publish DIFFERENT sets from the same tag. Per AGENTS.md, GitLab is the
+  source of truth, but the divergence should be deliberate rather than
+  accidental.
+
+* Proposal
+
+1. =collect-artefacts=: pass the per-target =binaries-<os>-<arch>= and
+   =libraries-<os>-<arch>= through to =COLLECT_OUT= in addition to
+   writing the merged pair. Cheap: they are already in =COLLECT_IN=.
+2. Add =release:linux:arm32= to =collect:release='s =needs:= (or drop
+   the lane), so nothing is built and discarded.
+3. Implement =clautolisp-<ver>-all.tar.bz2= in =collect-artefacts=,
+   containing every other artefact of the set. Decide first WHAT it
+   contains: the artefact FILES verbatim (an archive of archives —
+   simple, verifiable, what "includes the contents of all the above"
+   most directly means), or their unpacked union (one tree that installs
+   everything at once). These are different products; pjb to arbitrate.
+4. Windows packaging per =documentation/windows-package-spec.md= — the
+   only item here that is real work rather than plumbing, and the one
+   that gates two of the ten files.
+
+* RESOLVED except C2 — 2026-08-16
+
+pjb's rulings: add linux-arm32 *and any future runner's binaries*; the
+=-all= artefact is an UNPACKED UNION (one tree that installs everything
+at once); a 1.8.x release is cut today, so prepare the CI.
+
+Done:
+
+- *C1* — =collect-artefacts= now passes every per-target
+  =binaries-<os>-<arch>= / =libraries-<os>-<arch>= through to the
+  combined set, *by glob*, alongside the merged multi-platform pair. A
+  new runner's artefact joins the set with no edit here. The old special
+  case that copied =*windows*= through is gone, subsumed by that glob —
+  it also used to copy the Windows lane's STUB =.txt= into the release.
+- *C3* — =clautolisp-<ver>-all.tar.bz2= is built as the unpacked union
+  of every per-target artefact plus documentation and sources.
+  =sources.tar.bz2= unions safely because it unpacks under its own
+  =clautolisp-<ver>/= prefix, alongside rather than into =bin/=, =lib/=,
+  =libexec/= and =share/=. =sources.zip= is deliberately left out: same
+  content as the tarball, so it would duplicate the source tree.
+- *arm32* — added to =collect:release='s =needs:=, so a full build is no
+  longer discarded in silence.
+- Two checks, both PROVEN to fail before being trusted.
+  =scripts/check-release-artefact-set.sh= fabricates a complete input
+  set, runs the REAL recipe and diffs the produced file list against the
+  specified one — breaking the passthrough made it name the ten lost
+  files and exit 1. =scripts/check-release-collect-needs.sh= fails when
+  a =release:*= job is missing from =collect:release='s =needs:=; it
+  caught arm32 on its first run, before the fix. Wired as
+  =make check-release= and run by a new =check:release= CI job.
+- That job is deliberately NOT folded into =documentation=, which is
+  skipped on tags — exactly the pipeline where a release is cut. It runs
+  in the =test= stage, so a tag pipeline fails before the whole release
+  matrix builds.
+- =collect-artefacts= now prints which targets actually reached it. A
+  short set is then visible in the log instead of being silently
+  smaller.
+
+*C2 — IMPLEMENTED 2026-08-16, shakedown pending.* pjb: « J'ai construit
+les zip windows avec make release sur windows sans probleme (a partir
+d'un bash msys2) », so the lane runs the ordinary Makefile from bash
+instead of reimplementing packaging in PowerShell.
+
+- =pack-release-artefact= chooses the CONTAINER by target: =.zip= for
+  windows, =.tar.bz2= elsewhere. So =make release-programs= produces the
+  right artefact on the box with no Windows-specific recipe.
+- The zip branch would otherwise ship having NEVER RUN anywhere but
+  Windows, so =scripts/tests/test-pack-release-artefact.sh= forces the
+  target OS and drives BOTH branches on a Unix host. A typo in the zip
+  branch now fails on Linux, not on the release runner.
+- =scripts/release-windows.sh= does the build+package and ASSERTS the two
+  expected zips exist before exiting, so a build that produced nothing
+  fails in the lane that owns it rather than in collect.
+- The PowerShell → MSYS2 handoff follows run-forest-run
+  (=poseidon:/home/pjb/src/fabrik=, pointed at by pjb):
+  =scripts/avec-bash.ps1= + =scripts/environnement-windows.sh= are adapted
+  from it. Reading it corrected a real defect in my first draft — I had
+  defaulted =MSYSTEM= to UCRT64 because that is what the reference box
+  has installed, whereas =build-libredwg.sh= REFUSES UCRT64 and CLANG64
+  for the native codec. Details in build-tool-paths-unquoted.issue.
+- Two silent-failure modes closed: PowerShell does not fail a step on a
+  native program's non-zero exit (the job checks =$LASTEXITCODE=, without
+  which a failed build would go GREEN and the release would come up two
+  artefacts short), and =git-bash.exe= is avoided — it is a GRAPHICAL
+  launcher that detaches and returns at once.
+
+SHAKEDOWN PENDING: like the vendor probes before it, the lane needs its
+first run on the real runner to settle. =avec-bash.ps1= could not be
+executed here (no PowerShell on poseidon); =environnement-windows.sh= WAS
+executed, and its non-Windows paths behave.
+
+Still open on C2: nothing in code, only the first real run — plus the
+=build-libredwg.sh= guard noted in build-tool-paths-unquoted.issue, which
+protects any caller that does NOT go through these scripts.
+
+** Windows format and -all containers — SETTLED 2026-08-16 (pjb)
+
+*Windows ships =.zip=, not =.tar.bz2=.* The conflict below is therefore
+resolved in favour of the Windows-native format. The collect side is
+already wired for it: =clautolisp-<ver>-{binaries,libraries}-windows-*.zip=
+pass through and join the =-all= union, but are deliberately NOT fed to
+the merged multi-platform =binaries.tar.bz2= / =libraries.tar.bz2= —
+those are a =$PREFIX=-shaped unix tree, and the Windows package has its
+own layout. Keeping it out is the point, not an oversight.
+
+*=-all= ships in BOTH containers*: =clautolisp-<ver>-all.tar.bz2= and
+=clautolisp-<ver>-all.zip=, "pour nos amis windowsiens". Same union
+tree, two containers. The check verifies BOTH are complete unions —
+checking only the tarball would let a half-built zip reach the very
+users it exists for.
+
+=collect-artefacts= ERRORS when =zip= or =unzip= is missing while a
+Windows artefact is present, instead of skipping: a release must not
+quietly ship without the artefacts a whole platform depends on. Both CI
+jobs' package guards now install them.
+
+The expected set is therefore *17* artefacts: 8 unix per-target
+(4 targets x binaries/libraries), 2 Windows zips, the 2 merged unix
+tarballs, documentation, sources.tar.bz2, sources.zip, and the 2 =-all=
+containers.
+
+** A specification conflict to settle before C2 is implemented
+
+The artefact list asks for
+=clautolisp-<ver>-binaries-windows-x86-64.tar.bz2= and
+=...-libraries-windows-x86-64.tar.bz2= — the same shape as every other
+target, a =$PREFIX=-shaped =tar.bz2= pair.
+
+=documentation/windows-package-spec.md= specifies a DIFFERENT product:
+=<App>-<version>-win-<arch>.zip=, exactly one top-level =<App>\=
+directory, Windows-native layout (=bin/=, =lib/common-lisp/=, =doc/=),
+app-local CRT, no absolute path anywhere.
+
+SETTLED above: pjb chose =.zip=. What remains of C2 is the packaging
+work itself — producing those two zips on the Windows runner per
+=windows-package-spec.md=. One question survives for whoever does it:
+the spec describes ONE application zip
+(=<App>-<version>-win-<arch>.zip=, single top-level =<App>\=), while the
+artefact list keeps the binaries/libraries SPLIT that every other target
+has. The collect side currently expects the split
+(=...-binaries-windows-x86-64.zip= + =...-libraries-windows-x86-64.zip=);
+if the single app zip is wanted instead, say so and the expected set
+changes by one line in =check-release-artefact-set.sh=.
+
+Consequence for the 1.8.x release cut today: the Windows lane is still a
+stub, so the set will contain *14 of the 16* artefacts. Every other
+target is complete.
+
+* Acceptance criteria
+
+1. On a =release-*= tag, =collect:release='s artefact contains all ten
+   files named above, with the version substituted.
+2. Verified the way this issue was: run =collect-artefacts= over a
+   complete input set and DIFF the produced file list against the ten
+   names — a check that can fail, not an eyeball.
+3. Nothing is built by the release pipeline whose output does not reach
+   the collect job.
+4. =make check-versions= still passes.

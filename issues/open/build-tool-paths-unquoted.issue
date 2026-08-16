@@ -390,6 +390,59 @@ forme POSIX du chemin, donc sur toute machine où `CC` arrive en forme
 Windows il est silencieusement inopérant — un build UCRT64 passe un refus
 qui le visait. C'est indépendant de la question CMake.
 
+LE MÉCANISME, TROUVÉ — 2026-08-16 (run-forest-run)
+===================================================
+
+La correction de cause ci-dessus disait OÙ chercher (la sélection de CC)
+sans dire COMMENT `CC` finissait en forme Windows. run-forest-run, que
+pjb a désigné le 2026-08-16 (`poseidon:/home/pjb/src/fabrik`), le dit :
+
+  « Posé depuis PowerShell, la couche MSYS convertit la valeur à l'entrée
+    du processus, et « /ucrt64/bin/gcc » ressort en
+    « C:/msys64/ucrt64/bin/gcc ». »
+
+C'est la pièce qui manquait. La valeur n'est pas mal écrite par
+l'appelant : elle est RÉÉCRITE à la frontière du processus, entre le
+PowerShell du runner et le bash MSYS2. D'où, d'un seul coup :
+
+- pourquoi `CC` arrive en forme Windows alors que le job affiche bien
+  `CC=/ucrt64/bin/gcc` à son dump d'environnement — les deux sont vrais,
+  à deux endroits différents de la chaîne ;
+- pourquoi le garde-fou `case "$compiler_path" in /ucrt64/*|…` est
+  silencieusement inopérant : il teste une forme que la conversion a déjà
+  détruite. Le second défaut « qui TIENT » ci-dessus est donc le MÊME
+  problème vu en aval, pas un défaut indépendant.
+
+Le correctif, tel que run-forest-run l'applique :
+
+1. poser `CC` DU CÔTÉ BASH, en forme POSIX, jamais depuis PowerShell ;
+2. `MSYS2_ENV_CONV_EXCL=CC` pour que la conversion ne le reprenne pas si
+   un outil Windows natif est invoqué ensuite ;
+3. `MSYS2_PATH_TYPE=inherit` avant `bash -l`, sans quoi le profil de
+   connexion REMPLACE le PATH Windows et sbcl disparaît ;
+4. MINGW64 EN TÊTE quel que soit `MSYSTEM` : le codec DWG refuse UCRT64
+   et CLANG64, qui importent des jeux d'API UCRT privés absents du SBCL
+   natif. Retenir « ce qui est installé » serait reprendre le constat
+   pour un critère.
+
+DÉSACCORD À TRANCHER, signalé plutôt que masqué : la correction de cause
+du 2026-08-14 affirme que « ce n'est pas une troncation de c:/ qui est
+assez bien géré par cmake », tandis que le commentaire de
+run-forest-run/scripts/environnement-windows.sh attribue explicitement la
+troncature à CMake — « CMake découpe ses -D sur « : », donc « C:/… » lui
+arrivait tronqué au seul « C » ». Les deux sont de pjb. Le correctif
+retenu ne dépend PAS de l'arbitrage : garder `CC` en forme POSIX supprime
+le deux-points, donc la question de savoir qui le coupe devient sans
+objet. Elle reste ouverte pour la documentation.
+
+CE QUI EST FAIT, ET CE QUI RESTE : clautolisp verse désormais
+`scripts/avec-bash.ps1` et `scripts/environnement-windows.sh` (adaptés de
+run-forest-run) et sa lane `release:windows:x86-64` les utilise, donc la
+release Windows est à l'abri des quatre points ci-dessus. En revanche
+`build-libredwg.sh` lui-même n'est PAS corrigé : son garde-fou reste
+POSIX-seul, et un appelant qui ne passerait pas par ces scripts
+retomberait dans le même trou. C'est ce qui garde ce ticket ouvert.
+
 À rapprocher de `clautolisp/drawing-dwg/tests/msys2-native-toolchain-test.sh`
 (ajouté 2026-08-14) : ce test pilote précisément la sélection par
 `MSYSTEM` et attend des messages de refus par sous-système

@@ -98,6 +98,44 @@ REL_ARCH := $(shell uname -m | tr 'A-Z' 'a-z' | sed -e 's/^x86_64$$/x86-64/' -e 
 # (x86-64 -> "sbcl ccl"); the default keeps everything else SBCL-only.
 RELEASE_LISPS ?= sbcl
 
+# Pack a staged tree into this target's per-target artefact, choosing the
+# container by PLATFORM: Windows ships .zip, every other target .tar.bz2
+# (pjb, 2026-08-16 — "fetch .zip from windows, not tar.bz2"). A Windows
+# user should not need a tar that Explorer cannot open, and the Windows
+# package has its own layout anyway (documentation/windows-package-spec.md).
+#
+# $(1) staged tree  $(2) kind (binaries|libraries)  $(3) version
+# $(4) os           $(5) arch
+#
+# Both branches archive the tree's CONTENTS (cd + `.'), never a wrapper
+# directory, so the artefact unpacks straight into $PREFIX.
+# Test hook: pack an arbitrary staged tree, so the Windows branch can be
+# exercised on a Unix developer machine instead of shipping unexecuted
+# (scripts/tests/test-pack-release-artefact.sh). Not part of a release.
+PACK_STAGE ?=
+PACK_KIND  ?= binaries
+PACK_VER   ?= 0.0.0
+PACK_OS    ?= $(REL_OS)
+PACK_ARCH  ?= $(REL_ARCH)
+release-libraries-pack-only:  ## (test hook) Pack PACK_STAGE as PACK_KIND for PACK_OS/PACK_ARCH; exercises the Windows .zip branch off Windows.
+	@test -n "$(PACK_STAGE)" || { echo "PACK_STAGE is required"; exit 1; }
+	@mkdir -p "$(DIST)"
+	@$(call pack-release-artefact,$(PACK_STAGE),$(PACK_KIND),$(PACK_VER),$(PACK_OS),$(PACK_ARCH))
+
+define pack-release-artefact
+	if [ "$(4)" = windows ]; then \
+	  command -v zip >/dev/null 2>&1 || { \
+	    echo "ERROR: zip is required to package the Windows artefact"; exit 1; }; \
+	  out="$(DIST)/clautolisp-$(3)-$(2)-$(4)-$(5).zip"; \
+	  rm -f "$$out"; \
+	  ( cd "$(1)" && zip -qr "$$out" . ); \
+	else \
+	  out="$(DIST)/clautolisp-$(3)-$(2)-$(4)-$(5).tar.bz2"; \
+	  tar -C "$(1)" -cjf "$$out" .; \
+	fi; \
+	echo "wrote $$out"
+endef
+
 help:  ## Show this message (list available targets and their purpose).
 	@awk 'BEGIN { \
 	    FS = ":.*?## "; \
@@ -217,6 +255,31 @@ check-versions:  ## Audit the release tags / version-* pointers against the shar
 check-user-visible-documentation:  ## Fail if a user-visible surface (CLI option, CLAL- builtin) is missing from the manuals.
 	python3 scripts/check-user-visible-documentation.py
 
+# The release set was found incomplete by RUNNING collect-artefacts, not
+# by reading it (release-artefact-set-incomplete.issue): 7 of the 10
+# specified artefacts were missing. These two keep it that way only if
+# someone re-breaks it deliberately. Neither needs a build.
+check-release-artefact-set:  ## Fail unless collect-artefacts produces the specified release artefact set (incl. the -all union).
+	sh scripts/check-release-artefact-set.sh
+
+check-release-collect-needs:  ## Fail if a release:* job's artefacts never reach collect:release.
+	sh scripts/check-release-collect-needs.sh
+
+check-release: check-release-artefact-set check-release-collect-needs  ## Every release-packaging check.
+
+# avec-bash.ps1 drives the Windows release lane and cannot run on this host
+# (no PowerShell, pjb 2026-08-16: do not install it). A container gives the
+# only off-Windows coverage there is -- syntax, argument passing, and the
+# EXIT-CODE PROPAGATION that is the launcher's whole reason to exist. It is
+# NOT part of check-release: that one must stay dependency-free so the CI
+# documentation lane can run it; this needs a docker daemon.
+POWERSHELL_IMAGE ?= mcr.microsoft.com/powershell:debian-12
+check-avec-bash:  ## Test scripts/avec-bash.ps1 in a PowerShell container (needs docker).
+	@command -v docker >/dev/null 2>&1 || { \
+	  echo "docker is required: this test runs pwsh in $(POWERSHELL_IMAGE)"; exit 1; }
+	docker run --rm -v "$(CURDIR):/w" -w /w $(POWERSHELL_IMAGE) \
+	       pwsh -NoProfile -File scripts/tests/test-avec-bash.ps1
+
 release: release-sources release-documentation release-programs release-libraries  ## Produce every release artefact for this host.
 
 release-sources:  ## Produce the source tarball + zip (tracked files incl. submodules).
@@ -278,9 +341,8 @@ release-programs: build-programs  ## Build programs and package this host's per-
 	done; \
 	mkdir -p "$$stage/$(MANIFEST_DIR)"; \
 	sh scripts/make-manifest.sh programs > "$$stage/$(MANIFEST_DIR)/manifest-programs.txt"; \
-	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2" .; \
-	rm -rf "$$stage"; \
-	echo "wrote $(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2"
+	$(call pack-release-artefact,$$stage,binaries,$$ver,$$os,$$arch); \
+	rm -rf "$$stage"
 
 # REQUIRE_NATIVE_LIBRARIES=1: a published artefact must be complete, so a
 # missing LibreDWG codec is an error here, even though it is only a
@@ -291,16 +353,39 @@ release-libraries:  ## Package this host's per-target libraries artefact (ASDF s
 	"$(MAKE)" stage-libraries REQUIRE_NATIVE_LIBRARIES=1
 	@mkdir -p "$(DIST)"
 	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
-	tar -C "$(STAGE_LIBRARIES)" -cjf "$(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2" .; \
-	echo "wrote $(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2"
+	$(call pack-release-artefact,$(STAGE_LIBRARIES),libraries,$$ver,$$os,$$arch)
 
 # CI collect phase: union the per-target artefacts (gathered by the
 # pipeline into COLLECT_IN) into the final combined release set in
 # COLLECT_OUT. Pure repackaging — no build, no rebuild. The combined
 # binaries/libraries tarballs merge each target's libexec/<os>/<arch>/
 # and lib/<os>/<arch>/ subtrees (the shared bin/, lisp sources, include/
-# overwrite identically); sources + documentation pass through once;
-# the Windows artefact is kept as-is.
+# overwrite identically); sources + documentation pass through once.
+#
+# Every per-target artefact ALSO passes through unchanged, by glob rather
+# than by a list of platforms: a release publishes both the merged
+# multi-platform pair and one tarball per target, and a new runner's
+# artefact joins the set with no edit here (pjb, 2026-08-16 — "et tout
+# autre binaires que nous pourrions builder a l'avenir avec des runners
+# supplementaires"). The former special case that copied `*windows*'
+# through is gone, subsumed by that glob; it also used to copy the
+# Windows lane's STUB .txt into the release set.
+#
+# WINDOWS SHIPS .zip, NOT .tar.bz2 (pjb, 2026-08-16). Its per-target
+# artefacts pass through and join the -all union like any other, but they
+# are NOT fed to the merged multi-platform binaries/libraries tarballs:
+# those are a $PREFIX-shaped unix tree, and the Windows package has its
+# own layout (documentation/windows-package-spec.md). Keeping it out is
+# the point, not an oversight.
+#
+# The -all artefact is the UNPACKED UNION (pjb's ruling): every artefact
+# extracted over one tree, so a user unpacks one file and has everything
+# installed at once. It is not an archive of archives. sources.tar.bz2
+# joins the union safely because it unpacks under its own
+# clautolisp-<ver>/ prefix, alongside — not into — bin/, lib/, libexec/
+# and share/; the Windows zip likewise carries its own single top-level
+# directory. sources.zip is deliberately left out: same content as the
+# tarball, so including it would duplicate the source tree.
 COLLECT_IN  ?= $(DIST)
 COLLECT_OUT ?= $(DIST)/combined
 collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the combined release set in COLLECT_OUT.
@@ -328,9 +413,49 @@ collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the c
 	         "$$in"/clautolisp-$$ver-documentation.tar.bz2; do \
 	  [ -f "$$f" ] && cp "$$f" "$$out"/ && echo "passthrough $$(basename "$$f")"; \
 	done; \
-	for f in "$$in"/*windows*; do \
-	  [ -e "$$f" ] || continue; cp "$$f" "$$out"/ && echo "windows $$(basename "$$f")"; \
+	for f in "$$in"/clautolisp-$$ver-binaries-*.tar.bz2 \
+	         "$$in"/clautolisp-$$ver-libraries-*.tar.bz2 \
+	         "$$in"/clautolisp-$$ver-binaries-windows-*.zip \
+	         "$$in"/clautolisp-$$ver-libraries-windows-*.zip; do \
+	  [ -f "$$f" ] || continue; cp "$$f" "$$out"/ && echo "per-target $$(basename "$$f")"; \
 	done; \
+	astage=$$(mktemp -d); n=0; \
+	for t in "$$in"/clautolisp-$$ver-binaries-*.tar.bz2 \
+	         "$$in"/clautolisp-$$ver-libraries-*.tar.bz2 \
+	         "$$in"/clautolisp-$$ver-documentation.tar.bz2 \
+	         "$$in"/clautolisp-$$ver-sources.tar.bz2; do \
+	  [ -f "$$t" ] || continue; echo "all: union $$(basename "$$t")"; \
+	  tar -C "$$astage" -xjf "$$t"; n=$$((n+1)); \
+	done; \
+	for z in "$$in"/clautolisp-$$ver-binaries-windows-*.zip \
+	         "$$in"/clautolisp-$$ver-libraries-windows-*.zip; do \
+	  [ -f "$$z" ] || continue; \
+	  command -v unzip >/dev/null 2>&1 || { \
+	    echo "ERROR: $$(basename "$$z") is present but unzip is missing;"; \
+	    echo "       the -all union would silently omit Windows. Install unzip."; \
+	    exit 1; }; \
+	  echo "all: union $$(basename "$$z")"; \
+	  unzip -q -o "$$z" -d "$$astage"; n=$$((n+1)); \
+	done; \
+	if [ "$$n" -gt 0 ]; then \
+	  tar -C "$$astage" --exclude='._*' --owner=0 --group=0 --numeric-owner \
+	      -cjf "$$out/clautolisp-$$ver-all.tar.bz2" .; \
+	  echo "wrote $$out/clautolisp-$$ver-all.tar.bz2 (union of $$n artefact(s))"; \
+	  command -v zip >/dev/null 2>&1 || { \
+	    echo "ERROR: zip is missing, so the -all.zip our Windows users need"; \
+	    echo "       would be skipped without failing. Install zip."; \
+	    exit 1; }; \
+	  ( cd "$$astage" && zip -qr "$$out/clautolisp-$$ver-all.zip" . ); \
+	  echo "wrote $$out/clautolisp-$$ver-all.zip (same union, for Windows)"; \
+	else echo "WARNING: nothing to union into the -all artefact"; fi; \
+	rm -rf "$$astage"; \
+	targets=$$(ls "$$in" 2>/dev/null \
+	           | sed -n "s/^clautolisp-$$ver-binaries-\(.*\)\.tar\.bz2$$/\1/p" \
+	           | sort -u | tr '\n' ' '); \
+	echo "--- targets whose binaries reached this collect: $${targets:-(none)}"; \
+	echo "    a platform missing from that list built nothing, or its job"; \
+	echo "    is not in collect:release's needs — the release set is then"; \
+	echo "    smaller than specified, and that is not visible from ls alone."; \
 	echo "--- combined release set ($$out) ---"; ls -l "$$out"
 
 clean:: clean-pdf
