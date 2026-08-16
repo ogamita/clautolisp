@@ -158,6 +158,18 @@ cad_arg_path() {
   printf '(princ "\\ncad-probe: wrapper returned\\n")\n'
 } > "$script_file"
 
+# A CAD script is read LINE BY LINE by the engine's script reader, and on
+# Windows that reader expects CRLF. Written from MSYS2 the file is LF-only
+# -- verified on the 2026-08-16 run, od showed no \r anywhere -- and the
+# engine then advances its prompts without evaluating anything: script
+# consumed, nothing run, exit 0.
+#
+# Only the .scr needs this. The .lsp it loads is read by the AutoLISP
+# READER, which does not care about line endings.
+if command -v cygpath >/dev/null 2>&1; then
+    sed -i 's/$/\r/' "$script_file"
+fi
+
 write_metadata() {
   cat > "$metadata_file" <<EOF
 {
