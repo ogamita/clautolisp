@@ -31,12 +31,37 @@ stages:
 #          (allow_failure:false), as before.
 # *-soft : jobs that were never release-blocking (conformance:*, encoding:*,
 #          pathname:*) -> allow_failure everywhere.
+# A RELEASE IS NEVER HOSTAGE TO AN ABSENT MACHINE (pjb, 2026-08-16):
+# "si on lance une release sans un runner, ca passe sans ses produits. Mais
+# si le runner est disponible ses produits doivent etre inclus".
+#
+# So on a release tag the platform gate is decided by RUNNER AVAILABILITY,
+# which detect:runners publishes as MACOS_RUNNER / WINDOWS_RUNNER:
+#
+#   tag + runner online  -> runs, and BLOCKS the release if it fails. The
+#                           machine is there, so its products belong in the
+#                           release and a failure is a real failure.
+#   tag + runner offline -> does not run at all. The release ships without
+#                           that platform's products rather than waiting on
+#                           a laptop that is switched off.
+#
+# The order matters: the online case must be tested FIRST, because GitLab
+# takes the first matching rule. The previous shape had the bare tag rule
+# first, which made every release mandatory-on-Windows whatever the runner
+# was doing -- that is how release-1.8.42 came to be blocked by a machine
+# whose network was failing.
+#
+# detect:runners is fail-safe (any API error yields `offline'), so the
+# failure mode is a release missing a platform's artefacts, never a release
+# blocked on a machine nobody can reach.
 .gate-macos-hard:
   tags: [macos, arm64, shell]
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $MACOS_RUNNER == "online"'
       when: on_success
       allow_failure: false
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+      when: never
     - if: '$MACOS_RUNNER == "online"'
       when: on_success
       allow_failure: true
@@ -46,9 +71,11 @@ stages:
 .gate-windows-hard:
   tags: [windows, amd64, shell]
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $WINDOWS_RUNNER == "online"'
       when: on_success
       allow_failure: false
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+      when: never
     - if: '$WINDOWS_RUNNER == "online"'
       when: on_success
       allow_failure: true

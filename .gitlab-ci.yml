@@ -89,6 +89,27 @@ stages:
   when: on_success
   allow_failure: true
 
+# Platform-bound release jobs follow runner AVAILABILITY on a tag (pjb,
+# 2026-08-16): present machine -> its products are mandatory; absent machine
+# -> the job is skipped and the release ships without them, rather than
+# waiting on a laptop that is off. Same shape as .gate-*-hard in
+# .gitlab/native.yml; the online case must be first, since GitLab takes the
+# first matching rule.
+.on-release-windows: &on-release-windows
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $WINDOWS_RUNNER == "online"'
+  when: on_success
+  allow_failure: false
+.on-release-windows-absent: &on-release-windows-absent
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+  when: never
+.on-release-macos: &on-release-macos
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $MACOS_RUNNER == "online"'
+  when: on_success
+  allow_failure: false
+.on-release-macos-absent: &on-release-macos-absent
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+  when: never
+
 # --- Windows shell-runner hygiene -------------------------------------------
 #
 # The runner's default `git clean -ffdx' also removes IGNORED files, i.e. the
@@ -608,6 +629,11 @@ release:linux:arm32:
 release:darwin:arm64:
   extends: .release-common
   tags: [macos, arm64, shell]     # thalassa (intermittent): native macOS arm64 build
+  rules:
+    - *on-release-macos
+    - *on-release-macos-absent
+    - when: manual
+      allow_failure: true
   before_script:
     # The workstation provides the toolchain (MacPorts: sbcl, cmake; cc
     # via Xcode) and Quicklisp at ~/quicklisp/. SBCL-only on arm64.
@@ -654,6 +680,11 @@ release:darwin:arm64:
 release:windows:x86-64:
   extends: .release-common
   tags: [windows, amd64, shell]   # windows PC (intermittent): GUI bricscad/autocad host
+  rules:
+    - *on-release-windows
+    - *on-release-windows-absent
+    - when: manual
+      allow_failure: true
   variables:
     <<: *windows-clean
     MSYS2_ROOT: 'C:\msys64'
@@ -931,12 +962,22 @@ collect:release:
   # release:linux:arm32). `needs:' cannot be a glob, so
   # scripts/check-release-collect-needs.sh makes the omission fail the
   # pipeline instead — add a platform, and it tells you to wire it here.
+  # The intermittent platforms are `optional': their job is SKIPPED on a
+  # release tag when the runner is offline (see .on-release-windows /
+  # .on-release-macos), and a non-optional `needs' on a skipped job would
+  # fail this one -- turning "the laptop was off" into "the release
+  # produced nothing at all", which is precisely the outcome pjb ruled
+  # against: a release without a runner ships without that runner's
+  # products.
+  #
+  # collect-artefacts prints which targets actually reached it, so a short
+  # set is visible in the log instead of being silently smaller.
   needs:
     - { job: "release:linux:x86-64", artifacts: true }
     - { job: "release:linux:arm64",  artifacts: true }
     - { job: "release:linux:arm32",  artifacts: true }
-    - { job: "release:darwin:arm64", artifacts: true }
-    - { job: "release:windows:x86-64", artifacts: true }
+    - { job: "release:darwin:arm64", artifacts: true, optional: true }
+    - { job: "release:windows:x86-64", artifacts: true, optional: true }
     - { job: "release:documentation", artifacts: true }
   rules:
     - *on-release-mandatory
