@@ -217,6 +217,18 @@ check-versions:  ## Audit the release tags / version-* pointers against the shar
 check-user-visible-documentation:  ## Fail if a user-visible surface (CLI option, CLAL- builtin) is missing from the manuals.
 	python3 scripts/check-user-visible-documentation.py
 
+# The release set was found incomplete by RUNNING collect-artefacts, not
+# by reading it (release-artefact-set-incomplete.issue): 7 of the 10
+# specified artefacts were missing. These two keep it that way only if
+# someone re-breaks it deliberately. Neither needs a build.
+check-release-artefact-set:  ## Fail unless collect-artefacts produces the specified release artefact set (incl. the -all union).
+	sh scripts/check-release-artefact-set.sh
+
+check-release-collect-needs:  ## Fail if a release:* job's artefacts never reach collect:release.
+	sh scripts/check-release-collect-needs.sh
+
+check-release: check-release-artefact-set check-release-collect-needs  ## Every release-packaging check.
+
 release: release-sources release-documentation release-programs release-libraries  ## Produce every release artefact for this host.
 
 release-sources:  ## Produce the source tarball + zip (tracked files incl. submodules).
@@ -299,8 +311,24 @@ release-libraries:  ## Package this host's per-target libraries artefact (ASDF s
 # COLLECT_OUT. Pure repackaging — no build, no rebuild. The combined
 # binaries/libraries tarballs merge each target's libexec/<os>/<arch>/
 # and lib/<os>/<arch>/ subtrees (the shared bin/, lisp sources, include/
-# overwrite identically); sources + documentation pass through once;
-# the Windows artefact is kept as-is.
+# overwrite identically); sources + documentation pass through once.
+#
+# Every per-target artefact ALSO passes through unchanged, by glob rather
+# than by a list of platforms: a release publishes both the merged
+# multi-platform pair and one tarball per target, and a new runner's
+# artefact joins the set with no edit here (pjb, 2026-08-16 — "et tout
+# autre binaires que nous pourrions builder a l'avenir avec des runners
+# supplementaires"). The former special case that copied `*windows*'
+# through is gone, subsumed by that glob; it also used to copy the
+# Windows lane's STUB .txt into the release set.
+#
+# The -all artefact is the UNPACKED UNION (pjb's ruling): every artefact
+# extracted over one tree, so a user unpacks one file and has everything
+# installed at once. It is not an archive of archives. sources.tar.bz2
+# joins the union safely because it unpacks under its own
+# clautolisp-<ver>/ prefix, alongside — not into — bin/, lib/, libexec/
+# and share/. sources.zip is deliberately left out: same content as the
+# tarball, so including it would duplicate the source tree.
 COLLECT_IN  ?= $(DIST)
 COLLECT_OUT ?= $(DIST)/combined
 collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the combined release set in COLLECT_OUT.
@@ -328,9 +356,31 @@ collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the c
 	         "$$in"/clautolisp-$$ver-documentation.tar.bz2; do \
 	  [ -f "$$f" ] && cp "$$f" "$$out"/ && echo "passthrough $$(basename "$$f")"; \
 	done; \
-	for f in "$$in"/*windows*; do \
-	  [ -e "$$f" ] || continue; cp "$$f" "$$out"/ && echo "windows $$(basename "$$f")"; \
+	for f in "$$in"/clautolisp-$$ver-binaries-*.tar.bz2 \
+	         "$$in"/clautolisp-$$ver-libraries-*.tar.bz2; do \
+	  [ -f "$$f" ] || continue; cp "$$f" "$$out"/ && echo "per-target $$(basename "$$f")"; \
 	done; \
+	astage=$$(mktemp -d); n=0; \
+	for t in "$$in"/clautolisp-$$ver-binaries-*.tar.bz2 \
+	         "$$in"/clautolisp-$$ver-libraries-*.tar.bz2 \
+	         "$$in"/clautolisp-$$ver-documentation.tar.bz2 \
+	         "$$in"/clautolisp-$$ver-sources.tar.bz2; do \
+	  [ -f "$$t" ] || continue; echo "all: union $$(basename "$$t")"; \
+	  tar -C "$$astage" -xjf "$$t"; n=$$((n+1)); \
+	done; \
+	if [ "$$n" -gt 0 ]; then \
+	  tar -C "$$astage" --exclude='._*' --owner=0 --group=0 --numeric-owner \
+	      -cjf "$$out/clautolisp-$$ver-all.tar.bz2" .; \
+	  echo "wrote $$out/clautolisp-$$ver-all.tar.bz2 (union of $$n artefact(s))"; \
+	else echo "WARNING: nothing to union into the -all artefact"; fi; \
+	rm -rf "$$astage"; \
+	targets=$$(ls "$$in" 2>/dev/null \
+	           | sed -n "s/^clautolisp-$$ver-binaries-\(.*\)\.tar\.bz2$$/\1/p" \
+	           | sort -u | tr '\n' ' '); \
+	echo "--- targets whose binaries reached this collect: $${targets:-(none)}"; \
+	echo "    a platform missing from that list built nothing, or its job"; \
+	echo "    is not in collect:release's needs — the release set is then"; \
+	echo "    smaller than specified, and that is not visible from ls alone."; \
 	echo "--- combined release set ($$out) ---"; ls -l "$$out"
 
 clean:: clean-pdf

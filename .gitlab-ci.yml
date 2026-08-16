@@ -309,6 +309,28 @@ build:alfe:sbcl:
       - autolisp-front-end/tools/alfe/bin/alfe-sbcl
     expire_in: 14 days
 
+# --- release packaging checks -----------------------------------------
+#
+# Deliberately NOT folded into the `documentation' job, which is skipped on
+# tags — precisely the pipeline where a release is being cut. This runs on
+# merge requests, on master AND on tags, in the `test' stage so a tag
+# pipeline fails here rather than after the whole release matrix has built.
+#
+# Cheap: fabricates artefacts and repackages them, no build, no CAD, a
+# couple of seconds. See release-artefact-set-incomplete.issue for what it
+# is defending against — 7 of the 10 specified artefacts were missing, and
+# reading the recipe had not revealed it.
+check:release:
+  stage: test
+  tags: [linux, amd64, docker]        # poseidon (always-on)
+  image: $CLAUTOLISP_CI_LATEST
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  before_script:
+    - pkgs=""; for t in bzip2 tar make; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+  script:
+    - make check-release
+
 # Build the documentation on ordinary pipelines (default branch + merge
 # requests) and publish it as a SHORT-lived job artefact, structured exactly
 # like install-documentation (share/doc/<sub>/…, share/info/…) inside
@@ -839,9 +861,15 @@ collect:release:
   image: $CLAUTOLISP_CI_LATEST
   variables:
     GIT_SUBMODULE_STRATEGY: none
+  # EVERY release:* job belongs here: one omitted costs a full build whose
+  # artefacts are then discarded in silence (which is what happened to
+  # release:linux:arm32). `needs:' cannot be a glob, so
+  # scripts/check-release-collect-needs.sh makes the omission fail the
+  # pipeline instead — add a platform, and it tells you to wire it here.
   needs:
     - { job: "release:linux:x86-64", artifacts: true }
     - { job: "release:linux:arm64",  artifacts: true }
+    - { job: "release:linux:arm32",  artifacts: true }
     - { job: "release:darwin:arm64", artifacts: true }
     - { job: "release:windows:x86-64", artifacts: true }
     - { job: "release:documentation", artifacts: true }

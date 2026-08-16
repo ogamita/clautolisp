@@ -112,6 +112,68 @@ mis-wired, it was never implemented.
    only item here that is real work rather than plumbing, and the one
    that gates two of the ten files.
 
+* RESOLVED except C2 — 2026-08-16
+
+pjb's rulings: add linux-arm32 *and any future runner's binaries*; the
+=-all= artefact is an UNPACKED UNION (one tree that installs everything
+at once); a 1.8.x release is cut today, so prepare the CI.
+
+Done:
+
+- *C1* — =collect-artefacts= now passes every per-target
+  =binaries-<os>-<arch>= / =libraries-<os>-<arch>= through to the
+  combined set, *by glob*, alongside the merged multi-platform pair. A
+  new runner's artefact joins the set with no edit here. The old special
+  case that copied =*windows*= through is gone, subsumed by that glob —
+  it also used to copy the Windows lane's STUB =.txt= into the release.
+- *C3* — =clautolisp-<ver>-all.tar.bz2= is built as the unpacked union
+  of every per-target artefact plus documentation and sources.
+  =sources.tar.bz2= unions safely because it unpacks under its own
+  =clautolisp-<ver>/= prefix, alongside rather than into =bin/=, =lib/=,
+  =libexec/= and =share/=. =sources.zip= is deliberately left out: same
+  content as the tarball, so it would duplicate the source tree.
+- *arm32* — added to =collect:release='s =needs:=, so a full build is no
+  longer discarded in silence.
+- Two checks, both PROVEN to fail before being trusted.
+  =scripts/check-release-artefact-set.sh= fabricates a complete input
+  set, runs the REAL recipe and diffs the produced file list against the
+  specified one — breaking the passthrough made it name the ten lost
+  files and exit 1. =scripts/check-release-collect-needs.sh= fails when
+  a =release:*= job is missing from =collect:release='s =needs:=; it
+  caught arm32 on its first run, before the fix. Wired as
+  =make check-release= and run by a new =check:release= CI job.
+- That job is deliberately NOT folded into =documentation=, which is
+  skipped on tags — exactly the pipeline where a release is cut. It runs
+  in the =test= stage, so a tag pipeline fails before the whole release
+  matrix builds.
+- =collect-artefacts= now prints which targets actually reached it. A
+  short set is then visible in the log instead of being silently
+  smaller.
+
+Still open: *C2, Windows packaging*.
+
+** A specification conflict to settle before C2 is implemented
+
+The artefact list asks for
+=clautolisp-<ver>-binaries-windows-x86-64.tar.bz2= and
+=...-libraries-windows-x86-64.tar.bz2= — the same shape as every other
+target, a =$PREFIX=-shaped =tar.bz2= pair.
+
+=documentation/windows-package-spec.md= specifies a DIFFERENT product:
+=<App>-<version>-win-<arch>.zip=, exactly one top-level =<App>\=
+directory, Windows-native layout (=bin/=, =lib/common-lisp/=, =doc/=),
+app-local CRT, no absolute path anywhere.
+
+Both cannot be the deliverable. Either the Windows lane produces the
+uniform =tar.bz2= pair like every other target (and the zip spec becomes
+a separate end-user installer), or the artefact list gains a
+Windows-shaped entry in place of the two tarballs. That is a product
+decision, so it is not taken here.
+
+Consequence for the 1.8.x release cut today: the Windows lane is still a
+stub, so the set will contain *14 of the 16* artefacts. Every other
+target is complete.
+
 * Acceptance criteria
 
 1. On a =release-*= tag, =collect:release='s artefact contains all ten
