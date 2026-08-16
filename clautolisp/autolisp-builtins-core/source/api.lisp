@@ -1459,11 +1459,20 @@ identical to a plain cwd merge."
   "Map an AutoLISP / Autodesk / BricsCAD encoding name (case-folded
 ASCII, with optional dashes / underscores) to a SBCL- and CCL-
 compatible :external-format keyword."
-  (let ((canonical (with-output-to-string (out)
-                     (loop for c across name
-                           unless (or (char= c #\-) (char= c #\_) (char= c #\Space))
-                             do (write-char (char-upcase c) out)))))
+  (let* ((canonical (clautolisp.autolisp-runtime:squeeze-encoding-name name))
+         ;; Names the two hosts spell differently (Mac Roman: SBCL has
+         ;; MAC-ROMAN and MACINTOSH but not MACROMAN, CCL has all
+         ;; three) resolve to the spelling both accept. Without this
+         ;; the dash/underscore squeezing above turned every reasonable
+         ;; Mac Roman spelling — including the "MAC_ROMAN" that
+         ;; BricsCAD/macOS reports as SYSCODEPAGE — into the one
+         ;; keyword SBCL lacks. macroman-encoding-name.issue.
+         (host-divergent
+          (nth-value 1
+                     (clautolisp.autolisp-runtime:resolve-encoding-spelling-alias
+                      canonical))))
     (cond
+      (host-divergent host-divergent)
       ;; Autodesk's documented short names.
       ((string= canonical "UTF8")     :utf-8)
       ((string= canonical "UTF8BOM")  :utf-8)

@@ -1112,6 +1112,38 @@ measured above. A multi-byte encoding neither the host nor clautolisp
 provides (CP-950, say) still fails, rather than half-working — you get
 an ~enc-unsupported-target~ diagnostic naming it.
 
+*** Encoding names the hosts spell differently
+A codec the host *does* ship can still be out of reach, if the two
+hosts register it under different names. Mac Roman is the case in
+point — and unlike the code pages above it cannot be repaired with a
+codec of our own, because babel (which every table in the built-in
+codec is derived from) ships no Mac Roman mapping at all:
+
+| spelling    | SBCL | CCL | babel |
+|-------------+------+-----+-------|
+| ~MAC-ROMAN~ | yes  | yes | no    |
+| ~MACINTOSH~ | yes  | yes | no    |
+| ~MACROMAN~  | no   | yes | no    |
+
+So — since 1.8.44 — clautolisp normalises the spelling instead, and
+every path that takes an encoding name accepts every spelling in
+circulation: the ~-e~ / ~-E~ options, ~(open path mode ENCODING)~, and
+~(load path [onfailure] ENCODING)~. Case, dashes, underscores and
+spaces are all ignored, so ~"mac-roman"~, ~"MACROMAN"~, ~"Mac Roman"~,
+~"macintosh"~, ~"x-mac-roman"~ and ~"CP-10000"~ all resolve to the
+~:MAC-ROMAN~ external-format both hosts accept.
+
+This matters most on macOS: BricsCAD there reports
+~(getvar "SYSCODEPAGE")~ as ~"MAC_ROMAN"~, so
+
+#+begin_src lisp
+(setq *AUTOLISP-FILE-ENCODING* (getvar "SYSCODEPAGE"))
+#+end_src
+
+is the obvious thing for portable user code to write. Before 1.8.44 it
+resolved to a keyword SBCL does not register, and the next ~LOAD~ died
+with =Undefined external-format: :MACROMAN= — on an SBCL build only.
+
 ** Informational
 - ~--version~            :: Print =clautolisp <version>= on standard
                             output and exit 0. The version is the
