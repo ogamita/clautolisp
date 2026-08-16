@@ -364,6 +364,69 @@ ENCODING on the context's underlying session."
 ;;; messages or honours decimal separators via locale, *those*
 ;;; features will consult their own LC_MESSAGES / LC_NUMERIC.
 
+;;; --- host-divergent encoding spellings ------------------------------
+;;;
+;;; An encoding whose two hosts register it under different names is a
+;;; host artefact leaking into the language, exactly like the missing
+;;; CP-1252 codec that motivated the reader's single-octet fallback —
+;;; except that this one cannot be fixed by supplying a codec, because
+;;; the name never reaches a codec at all.
+;;;
+;;; Mac Roman is the case in point (macroman-encoding-name.issue):
+;;;
+;;;   spelling      SBCL 2.6   CCL 1.13   babel
+;;;   MAC-ROMAN       yes        yes        NO
+;;;   MACINTOSH       yes        yes        NO
+;;;   MACROMAN        NO         yes        NO
+;;;
+;;; and babel ships no Mac Roman table at all, so the single-octet
+;;; fallback in autolisp-reader has nothing to build from — the only
+;;; repair available is to hand the host a spelling it knows. Both
+;;; hosts know MAC-ROMAN, so that is the keyword every spelling
+;;; resolves to.
+;;;
+;;; This matters beyond typo tolerance: BricsCAD/macOS reports
+;;; (getvar "SYSCODEPAGE") as "MAC_ROMAN", so `(setq
+;;; *AUTOLISP-FILE-ENCODING* (getvar "SYSCODEPAGE"))' — the obvious
+;;; thing for user code to write — used to resolve to :MACROMAN and
+;;; fail on an SBCL build while working on a CCL one.
+
+(defparameter *encoding-spelling-aliases*
+  '(("MAC-ROMAN" :mac-roman "MACROMAN" "MACINTOSH" "XMACROMAN" "CP10000"))
+  "Encodings whose spelling differs across the hosts clautolisp supports.
+
+Each row is (CANONICAL-NAME KEYWORD SQUEEZED-SPELLING …): CANONICAL-NAME
+is what the CLI publishes in *AUTOLISP-{FILE,TERMINAL}-ENCODING*, KEYWORD
+is the external-format designator both SBCL and CCL accept, and the
+trailing strings are the accepted spellings in SQUEEZE-ENCODING-NAME form
+\(upper-cased, with dashes / underscores / spaces removed), so
+\"mac_roman\", \"Mac-Roman\" and \"MACROMAN\" all match one entry.
+
+This table is deliberately NOT the general encoding-alias registry — the
+mandatory four live in CLAUTOLISP.AUTOLISP-CLI:*ENCODING-ALIASES*. It
+holds only the names where the hosts disagree with each other, and it is
+consulted by every path that turns a user-supplied encoding name into a
+keyword: LOAD's positional argument, OPEN's third argument, and the
+CLI's -e / -E options.")
+
+(defun squeeze-encoding-name (name)
+  "Fold NAME to the comparison form used by *ENCODING-SPELLING-ALIASES*:
+upper case, with dashes, underscores and spaces removed."
+  (remove-if (lambda (character)
+               (member character '(#\- #\_ #\Space) :test #'char=))
+             (string-upcase name)))
+
+(defun resolve-encoding-spelling-alias (name)
+  "When NAME is one of the host-divergent spellings, return (values
+CANONICAL-NAME KEYWORD); otherwise (values NIL NIL). NAME is matched
+case-insensitively and independently of dashes / underscores / spaces."
+  (when (and name (plusp (length name)))
+    (let ((squeezed (squeeze-encoding-name name)))
+      (loop for (canonical keyword . spellings) in *encoding-spelling-aliases*
+            when (member squeezed spellings :test #'string=)
+              return (values canonical keyword)
+            finally (return (values nil nil))))))
+
 (defun parse-locale-encoding-string (s)
   "Map an encoding suffix (\"UTF-8\", \"utf8\", \"ISO-8859-1\",
 \"latin1\", \"cp1252\", …) to a Lisp external-format keyword, or
@@ -380,10 +443,12 @@ LOCALE-DEFAULT-SOURCE-ENCODING."
                                                                 :windows-1252)
     ((or (string-equal s "ascii") (string-equal s "us-ascii"))  :ascii)
     (t
-     ;; Unknown encodings pass through as upper-cased keywords —
-     ;; the underlying Lisp's OPEN will surface a clear error if
-     ;; it can't honour them.
-     (intern (string-upcase s) :keyword))))
+     ;; A name the hosts spell differently resolves to the spelling
+     ;; they both accept; anything else passes through as an
+     ;; upper-cased keyword — the underlying Lisp's OPEN will surface
+     ;; a clear error if it can't honour it.
+     (or (nth-value 1 (resolve-encoding-spelling-alias s))
+         (intern (string-upcase s) :keyword)))))
 
 (defun parse-posix-locale (value)
   "Extract the encoding suffix of a POSIX locale string such as

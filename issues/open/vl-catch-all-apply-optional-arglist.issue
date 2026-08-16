@@ -1,0 +1,76 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vl-catch-all-apply-optional-arglist — BricsCAD accepts (vl-catch-all-apply 'f) with no argument list, clautolisp requires two arguments
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: fix-vl-catch-all-apply-optional-arglist
+
+* Context
+
+Found 2026-08-16 while verifying =macroman-encoding-name= end to end:
+once the encoding fault was out of the way, BricsCAD V26's own shipped
+=vle-extension.lsp= got further and then failed on ARITY.
+
+The call is the vendor's, not ours —
+=/Applications/BricsCAD V26.app/Contents/MacOS/vle-extension.lsp=,
+offset 4452:
+
+#+begin_example
+(vl-catch-all-apply 'vl-load-com)
+(setq *hasAX* (and vlax-get-acad-object))
+#+end_example
+
+BricsCAD loads this file at startup, so BricsCAD necessarily accepts a
+one-argument =vl-catch-all-apply=.
+
+* Problem
+
+clautolisp requires both arguments in every dialect:
+
+#+begin_example
+$ clautolisp --no-init --dialect bricscad -x '(progn (setq *AUTOLISP-FILE-ENCODING* "mac-roman")
+    (load "/Applications/BricsCAD V26.app/Contents/MacOS/vle-extension.lsp"))'
+clautolisp: runtime error: BUILTIN-ERROR: AutoLISP builtin
+  VL-CATCH-ALL-APPLY signaled an error: invalid number of arguments: 1
+  in SUBR VL-CATCH-ALL-APPLY: (VL-LOAD-COM)
+#+end_example
+
+So no ALPM system that references the installed BricsCAD library can be
+loaded under =--dialect bricscad=: the vendor's own file is rejected by
+the dialect that claims to emulate its engine.
+
+The builtin is =BUILTIN-VL-CATCH-ALL-APPLY=
+(=autolisp-builtins-core/source/api.lisp=, =REQUIRE-PROPER-LIST= on the
+second argument at line 669) and is registered as a fixed-arity SUBR.
+
+* Proposal
+
+Make the argument list optional — =(vl-catch-all-apply FUNCTION
+[ARG-LIST])=, defaulting to =nil=, i.e. call FUNCTION with no arguments
+— and decide the dialect scope. Two questions to settle before coding,
+one of which needs a probe:
+
+1. *Which dialects?* =bricscad-v26= is established by the vendor file
+   above. Whether AutoCAD accepts the one-argument form is NOT known:
+   nothing here has probed it. Do not guess — add it to the probe suite
+   (=probes/sources/=) and let the answer decide between "bricscad +
+   lax + clautolisp" and "every dialect".
+2. *Does =--strict= keep rejecting it?* Consistent with the treatment
+   of other vendor-specific tolerances, =--strict= should stay strict
+   and emit the usual divergence diagnostic rather than silently
+   accepting a form only one engine takes.
+
+* Acceptance criteria
+
+1. [ ] =(vl-catch-all-apply 'f)= behaves as =(vl-catch-all-apply 'f nil)=
+   in whichever dialects the probe establishes.
+2. [ ] A probe records the AutoCAD answer, so the dialect scope rests on
+   a measurement rather than an assumption.
+3. [ ] =(load ".../BricsCAD V26.app/Contents/MacOS/vle-extension.lsp")=
+   completes under =--dialect bricscad= with
+   =*AUTOLISP-FILE-ENCODING*= set to ="mac-roman"=; regression test
+   pinned on the ARITY, not on that specific vendor file (it is not
+   redistributable and is absent on non-macOS hosts).
+4. [ ] Spec entry for =vl-catch-all-apply= updated with the optional
+   argument and the per-vendor divergence.

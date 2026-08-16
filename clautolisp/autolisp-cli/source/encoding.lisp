@@ -129,6 +129,10 @@ Resolution order:
      and recombine.
   2. Match the (suffix-less) name against *ENCODING-ALIASES* —
      mandatory four with their CLI-accepted aliases.
+  2b. Match it against CLAUTOLISP.AUTOLISP-RUNTIME:*ENCODING-SPELLING-
+     ALIASES* — the encodings whose spelling differs between SBCL and
+     CCL, where the name the user typed must be translated to the one
+     the running host registers (macroman-encoding-name.issue).
   3. Pass an alphabetically-plausible name to the impl's
      external-format registry (SBCL: sb-impl::get-external-
      format). Accept if known.
@@ -146,21 +150,30 @@ Resolution order:
        ;; call VALUES from the outer scope.
        (let ((row (find-if (lambda (r) (%encoding-alias-match-p name (cddr r)))
                            *encoding-aliases*)))
-         (cond
-           (row
-            (values (first row) (second row)))
-           ((%plausible-encoding-name-p name)
-            (let ((up (string-upcase name)))
-              (values up (intern up :keyword))))
-           (t
-            (error 'cli-usage-error
-                   :option option
-                   :message
-                   (format nil "Unknown encoding ~S. Expected one of: ~
+         (multiple-value-bind (divergent-canonical divergent-keyword)
+             (clautolisp.autolisp-runtime:resolve-encoding-spelling-alias name)
+           (cond
+             (row
+              (values (first row) (second row)))
+             ;; An encoding the two hosts spell differently: accept
+             ;; every spelling and hand the impl the one it knows, so
+             ;; `-e macroman' behaves like the `(open … "macroman")' it
+             ;; parallels rather than dying as a usage error on SBCL
+             ;; while working on CCL. macroman-encoding-name.issue.
+             (divergent-keyword
+              (values divergent-canonical divergent-keyword))
+             ((%plausible-encoding-name-p name)
+              (let ((up (string-upcase name)))
+                (values up (intern up :keyword))))
+             (t
+              (error 'cli-usage-error
+                     :option option
+                     :message
+                     (format nil "Unknown encoding ~S. Expected one of: ~
 ~{~A~^, ~} (with the usual aliases; append -mac / -dos / -unix / ~
 -lf / -cr / -crlf to force a line-ending variant)."
-                           name
-                           (mapcar #'first *encoding-aliases*))))))))))
+                             name
+                             (mapcar #'first *encoding-aliases*)))))))))))
 
 (defun encoding-keyword (name &optional option)
   "Return the CL external-format keyword for NAME — the second value

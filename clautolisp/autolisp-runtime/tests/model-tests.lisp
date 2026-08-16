@@ -764,6 +764,50 @@ external-format."
   (is (null             (clautolisp.autolisp-runtime:parse-locale-encoding-string nil)))
   (is (null             (clautolisp.autolisp-runtime:parse-locale-encoding-string ""))))
 
+;;; --- host-divergent encoding spellings (macroman-encoding-name.issue)
+
+(test resolve-encoding-spelling-alias-folds-mac-roman-spellings
+  "Every Mac Roman spelling in circulation — the CL ones, Python's
+`mac_roman', BricsCAD/macOS's SYSCODEPAGE value `MAC_ROMAN', and the
+CP-10000 number — resolves to :MAC-ROMAN, the one keyword BOTH hosts
+accept (SBCL has no :MACROMAN; CCL has all three spellings)."
+  (dolist (spelling '("mac-roman" "MAC-ROMAN" "macroman" "MACROMAN"
+                      "mac_roman" "MAC_ROMAN" "Mac Roman"
+                      "macintosh" "MACINTOSH" "x-mac-roman" "cp10000"))
+    (multiple-value-bind (canonical keyword)
+        (clautolisp.autolisp-runtime:resolve-encoding-spelling-alias spelling)
+      (is (string= "MAC-ROMAN" canonical)
+          "RESOLVE-ENCODING-SPELLING-ALIAS(~S) canonical name" spelling)
+      (is (eq :mac-roman keyword)
+          "RESOLVE-ENCODING-SPELLING-ALIAS(~S) keyword" spelling)))
+  ;; A name the hosts agree on is none of this function's business.
+  (is (null (clautolisp.autolisp-runtime:resolve-encoding-spelling-alias "utf-8")))
+  (is (null (clautolisp.autolisp-runtime:resolve-encoding-spelling-alias "cp1252")))
+  (is (null (clautolisp.autolisp-runtime:resolve-encoding-spelling-alias "")))
+  (is (null (clautolisp.autolisp-runtime:resolve-encoding-spelling-alias nil))))
+
+(test parse-locale-encoding-string-maps-mac-roman-to-the-portable-spelling
+  "LOAD's positional [encoding] argument goes through
+PARSE-LOCALE-ENCODING-STRING, so `(load f \"macroman\")' — what ALPM's
+generated CAD-vendor systems ask for — must not intern the :MACROMAN
+keyword SBCL rejects."
+  (dolist (spelling '("macroman" "mac-roman" "MAC_ROMAN" "macintosh"))
+    (is (eq :mac-roman
+            (clautolisp.autolisp-runtime:parse-locale-encoding-string spelling))
+        "PARSE-LOCALE-ENCODING-STRING(~S)" spelling))
+  ;; The pass-through for genuinely unknown names is unchanged.
+  (is (eq :not-an-encoding
+          (clautolisp.autolisp-runtime:parse-locale-encoding-string
+           "not-an-encoding"))))
+
+(test mac-roman-external-format-is-available-on-this-host
+  "The keyword the alias table emits must be one the running CL can
+actually open a stream in. babel ships no Mac Roman table, so the
+single-octet fallback cannot cover a host that lacks the codec — the
+alias is the whole repair, and this test is what notices if a host ever
+drops the spelling."
+  (is (clautolisp.autolisp-reader:external-format-available-p :mac-roman)))
+
 (test parse-posix-locale-extracts-encoding-suffix
   "PARSE-POSIX-LOCALE pulls the .ENCODING suffix out of a full
 POSIX locale string, ignores @modifier tails, and returns NIL when

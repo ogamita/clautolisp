@@ -357,6 +357,10 @@
    #:locale-default-source-encoding
    #:parse-posix-locale
    #:parse-locale-encoding-string
+   ;; Encoding spellings the hosts disagree on (macroman-encoding-name.issue).
+   #:*encoding-spelling-aliases*
+   #:squeeze-encoding-name
+   #:resolve-encoding-spelling-alias
    #:lookup-autolisp-file-encoding
    ;; Encoding-dispatch diagnostics (encoding-dispatch.issue Phase 4).
    #:*enc-diagnostic-stream*

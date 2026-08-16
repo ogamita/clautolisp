@@ -5320,6 +5320,26 @@ attempts the I/O."
         (is (eq expected (funcall parse spelling))
             "PARSE-OPEN-EXTERNAL-FORMAT(~S) expected ~S" spelling expected)))))
 
+(test parse-open-external-format-handles-mac-roman-spellings
+  ;; NORMALIZE-ENCODING-NAME squeezes dashes and underscores out before
+  ;; interning, which used to turn every Mac Roman spelling into
+  ;; :MACROMAN — the one keyword SBCL does not register (CCL does), so
+  ;; (open f "r" "mac-roman") worked on a CCL build and failed on an
+  ;; SBCL one. "MAC_ROMAN" is not hypothetical: it is what BricsCAD on
+  ;; macOS returns for (getvar "SYSCODEPAGE").
+  ;; macroman-encoding-name.issue.
+  (let ((parse (find-symbol "PARSE-OPEN-EXTERNAL-FORMAT"
+                            :clautolisp.autolisp-builtins-core)))
+    (dolist (spelling '("mac-roman" "MAC-ROMAN" "macroman" "MACROMAN"
+                        "mac_roman" "MAC_ROMAN" "macintosh" "MACINTOSH"
+                        "x-mac-roman" "CP-10000" "r,ccs=MAC_ROMAN"))
+      (is (eq :mac-roman (funcall parse spelling))
+          "PARSE-OPEN-EXTERNAL-FORMAT(~S) expected :MAC-ROMAN" spelling))
+    ;; And the keyword is one the running host can actually open with —
+    ;; babel has no Mac Roman table, so the single-octet fallback cannot
+    ;; stand in for a host that lacks the codec.
+    (is (clautolisp.autolisp-reader:external-format-available-p :mac-roman))))
+
 (test parse-open-external-format-handles-windows-aliases
   ;; WINDOWS-NNNN is the clautolisp encoding-alias spelling — must
   ;; map to the same :cpNNNN as the CP-NNNN form.
