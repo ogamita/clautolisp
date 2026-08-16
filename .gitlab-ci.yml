@@ -89,6 +89,30 @@ stages:
   when: on_success
   allow_failure: true
 
+# --- Windows shell-runner hygiene -------------------------------------------
+#
+# The runner's default `git clean -ffdx' also removes IGNORED files, i.e. the
+# build output under dist/ and build/. On POSIX that is harmless: an open file
+# can still be unlinked. On Windows it CANNOT -- a process holding a handle
+# makes the delete fail, git clean returns non-zero, and the job dies in
+# get_sources before a single line of its own script runs.
+#
+# That is not hypothetical. On the release-1.8.41 tag, two accoreconsole
+# processes outliving their vendor-probe job kept
+# dist/vendor-probes/autocad/drawing-data.log open, and EVERY Windows job of
+# the pipeline failed on it -- release and both benchmarks -- with a message
+# that names a log file and says nothing about a stale CAD process.
+#
+# So: on Windows the runner stops cleaning ignored files, and each job owns
+# the output directory it writes. A job that cannot clear its own dist/ must
+# say why (see scripts/release-windows.sh), because a release quietly built
+# on top of a previous run's leftovers is worse than one that fails.
+#
+# Deliberately NOT applied to the Linux/macOS runners: there the -ffdx clean
+# works and catches stale-artefact bugs, which is worth keeping.
+.windows-clean: &windows-clean
+  GIT_CLEAN_FLAGS: -ffd
+
 # Build the CI image with kaniko — NO Docker daemon, NO privileged, NO
 # socket exposure. The poseidon group runner is rootless docker
 # (privileged=false), so a docker:dind service cannot start (it would fail
@@ -631,6 +655,7 @@ release:windows:x86-64:
   extends: .release-common
   tags: [windows, amd64, shell]   # windows PC (intermittent): GUI bricscad/autocad host
   variables:
+    <<: *windows-clean
     MSYS2_ROOT: 'C:\msys64'
     RELEASE_LISPS: "sbcl"
   script:
@@ -808,6 +833,8 @@ benchmark:clautolisp:macos:
 benchmark:clautolisp:windows:
   extends: .benchmark
   tags: [windows, amd64, shell]
+  variables:
+    <<: *windows-clean
   script:
     - make build-programs
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
@@ -840,6 +867,7 @@ benchmark:bricscad:windows:
   extends: .benchmark-cad
   tags: [windows, amd64, shell, cad]
   variables:
+    <<: *windows-clean
     AUTOLISP_BRICSCAD_PROFILE: '<<Profil sans nom>>'
   script:
     - make -C autolisp-front-end build-alfe-sbcl
@@ -850,6 +878,8 @@ benchmark:bricscad:windows:
 benchmark:autocad:windows:
   extends: .benchmark-cad
   tags: [windows, amd64, shell, cad]
+  variables:
+    <<: *windows-clean
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
