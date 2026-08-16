@@ -1,0 +1,97 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: ci-cache-tool-builds — cache the tool builds (clautolisp, alfe, read-autolisp, libredwg) across pipelines
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: feat-ci-cache-tool-builds
+
+* Context
+
+pjb, 2026-08-16: « Un jour on voudrait cacher ces builds. »
+
+Every pipeline rebuilds every tool from scratch, on every runner. Nothing
+is reused between pipelines: a one-line documentation change re-links the
+SBCL images and recompiles the vendored LibreDWG on each platform that
+runs.
+
+The cost is not theoretical. On the =release-1.8.42= tag the Windows job
+spent its time compiling LibreDWG, and that build is what exhausted the
+machine's memory (=cc1.exe: out of memory=, see
+build-tool-paths-unquoted.issue and the =-j2= cap now in
+=build-libredwg.sh=). A build that did not need to happen cannot fail.
+
+* Problem
+
+What is rebuilt every time, per platform:
+
+- the SBCL/CCL images for =clautolisp=, =alfe=, =read-autolisp= —
+  minutes each, and the dominant cost on the intermittent laptops;
+- the vendored *LibreDWG* + the CFFI shim — a full C build of a large
+  third-party library, whose inputs change only when the submodule
+  pointer or the compiler does;
+- the Quicklisp dependency tree, re-resolved per job.
+
+Two of those have inputs that change RARELY and are cheap to name
+exactly, which is what makes caching tractable rather than a gamble.
+
+* Proposal
+
+Not a single switch — three separable pieces, in increasing risk:
+
+** 1. LibreDWG + shim (the clear win)
+
+Key the cache on what actually determines the output:
+
+  - the libredwg submodule commit,
+  - the compiler identity (=$CC -dumpmachine= + version),
+  - =<os>/<arch>=,
+  - the build flags in =build-libredwg.sh=.
+
+Any of those changing must miss the cache. =build-libredwg.sh= already
+detects a compiler change and resets the CMake state, so the failure mode
+of a wrong key is a rebuild, not a corrupt artefact.
+
+** 2. Quicklisp / ASDF fasl cache
+
+=XDG_CACHE_HOME= already points at a per-build cache directory. Keying it
+on the Lisp implementation + version + the =.asd= files is standard, and
+a stale fasl surfaces as a compile error rather than a silent wrong
+binary.
+
+** 3. The tool images themselves (the one to be careful with)
+
+Caching a saved SBCL image means a pipeline can SHIP something it did not
+build. A stale image here does not fail loudly — it produces a release
+that claims a version it does not contain.
+
+So: *the release jobs must never consume a build cache*, or the key must
+include the exact source tree hash of everything linked into the image.
+The =check-user-visible-documentation= / =check-release-artefact-set=
+checks would not catch a stale image; nothing would.
+
+* Notes
+
+- On SHELL runners (macOS, Windows) the GitLab cache is stored on the
+  runner's own disk, so it costs no network. That matters here: uploading
+  13 MB from the Windows box fails reproducibly (a middlebox cutting long
+  transfers, see the artefact removal in build:alfe:windows), so a cache
+  is strictly better than an artefact on that machine.
+- On the DOCKER runner each job starts from a fresh container, so the
+  cache is the only mechanism available at all.
+- Caching interacts with =GIT_CLEAN_FLAGS: -ffd= on Windows (build output
+  now survives between jobs there). Decide deliberately whether the cache
+  or the surviving working tree is the source of reuse — having both,
+  unstated, is how a stale build gets shipped.
+
+* Acceptance criteria
+
+1. A pipeline that changes only documentation reuses the previous
+   LibreDWG build on every platform, and says so in the log.
+2. Changing the libredwg submodule pointer, or the compiler, misses the
+   cache — demonstrated, not assumed.
+3. No =release:*= job produces a binary from a cache whose key does not
+   pin every source input, and the choice is written down where the next
+   reader meets it.
+4. Measured before/after on at least the Windows lane, since that is the
+   machine the cost falls on.
