@@ -471,7 +471,18 @@ why `release-1.6.0` is followed by `release-1.6.11`.
 Each shipped program keeps its own version (clautolisp's
 `version.lisp`, alfe, read-autolisp, autolisp-spec, …); a program
 changed within a series must have `A.B = M.m`, and a program that has
-not changed may stay at an older `A.B` and still ship. Programs are
+not changed may stay at an older `A.B` and still ship.
+
+**A changed library is a changed program** (pjb, 2026-08-16). "Changed"
+means *what the user runs* changed, not that the program's own directory
+received a commit. A binary that is a thin CLI over a library — as
+`read-autolisp` is over `autolisp-reader` — must be bumped when that
+library changes, even with zero commits under its `tools/` directory.
+Measuring only the program directory is what left `read-autolisp` at
+`1.6.0` through the whole 1.8 series while the reader underneath gained
+a new codec and the dialect platform/version axis. The programs this
+repository ships are the three named by `scripts/manifest-versions.sh`;
+that file is the list to check against before a release. Programs are
 **not** tagged separately: the `clautolisp-v*`, `alfe-*` and `alref-v*`
 tag formats are **deprecated**. The existing tags stay (they are
 published immutable refs), but no new ones are created — a program
