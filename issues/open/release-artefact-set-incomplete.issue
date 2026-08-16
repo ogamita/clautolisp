@@ -1,0 +1,124 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: release-artefact-set-incomplete — the published release set is missing 7 of the 10 required artefacts
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-release-artefact-set
+
+* Context
+
+pjb, 2026-08-16, named the artefact set a release must publish:
+
+#+begin_example
+clautolisp-${release}-binaries-linux-x86-64.tar.bz2
+clautolisp-${release}-libraries-linux-x86-64.tar.bz2
+clautolisp-${release}-binaries-darwin-arm64.tar.bz2
+clautolisp-${release}-libraries-darwin-arm64.tar.bz2
+clautolisp-${release}-binaries-windows-x86-64.tar.bz2
+clautolisp-${release}-libraries-windows-x86-64.tar.bz2
+clautolisp-${release}-documentation.tar.bz2
+clautolisp-${release}-sources.tar.bz2
+clautolisp-${release}-sources.zip
+clautolisp-${release}-all.tar.bz2      -- includes the contents of all the above
+#+end_example
+
+This blocks =release-1.9.0=: cutting the tag today publishes an
+incomplete set.
+
+* Problem
+
+Verified by RUNNING the real =collect-artefacts= over a fabricated
+complete set of per-target inputs, not by reading the recipe. Given all
+nine per-target artefacts plus sources and documentation, the combined
+set it writes is:
+
+#+begin_example
+clautolisp-1.8.40-binaries.tar.bz2                    <- merged, multi-platform
+clautolisp-1.8.40-binaries-windows-x86-64.tar.bz2
+clautolisp-1.8.40-documentation.tar.bz2
+clautolisp-1.8.40-libraries.tar.bz2                   <- merged, multi-platform
+clautolisp-1.8.40-libraries-windows-x86-64.tar.bz2
+clautolisp-1.8.40-sources.tar.bz2
+clautolisp-1.8.40-sources.zip
+#+end_example
+
+Three independent causes, worth separating because they need different
+fixes:
+
+** C1 — the per-platform unix artefacts are merged away (4 files)
+
+=collect-artefacts= UNIONS every =binaries-*= into one
+=clautolisp-<ver>-binaries.tar.bz2= and every =libraries-*= into one
+=clautolisp-<ver>-libraries.tar.bz2=, then passes through only
+sources, documentation and =*windows*=. So
+=binaries-linux-x86-64=, =libraries-linux-x86-64=,
+=binaries-darwin-arm64= and =libraries-darwin-arm64= exist as
+per-JOB artefacts but never reach the combined set.
+
+The merge itself is correct — verified that the union really is a union
+(each target's marker survives), not a last-writer-wins overwrite. The
+defect is that the per-target inputs are consumed rather than also
+published.
+
+** C2 — the Windows lane is a STUB (2 files)
+
+=release:windows:x86-64= (.gitlab-ci.yml) does not package anything: it
+probes the toolchain and writes =dist/windows-x86-64-STUB.txt=. So
+=binaries-windows-x86-64= and =libraries-windows-x86-64= cannot be
+produced at all today. The =*windows*= passthrough in
+=collect-artefacts= is ready for them; there is simply nothing to pass.
+The intended work is =documentation/windows-package-spec.md=.
+
+The GitHub lane has the same stub (=.github/workflows/release.yml=,
+"Build + package (Windows)").
+
+** C3 — the =-all= bundle does not exist (1 file)
+
+Nothing anywhere writes =clautolisp-<ver>-all.tar.bz2=. Confirmed by
+grep over the root Makefile, =.gitlab-ci.yml=, =scripts/= and
+=.github/workflows/=: zero matches for =all.tar.bz2=. It is not
+mis-wired, it was never implemented.
+
+* Two further findings, same audit
+
+- *arm32 is built and silently dropped.* =release:linux:arm32= produces
+  per-target artefacts, but =collect:release='s =needs:= lists only
+  linux:x86-64, linux:arm64, darwin:arm64, windows:x86-64 and
+  documentation. The arm32 artefact therefore never reaches the collect
+  job. Either add it to =needs:= or stop building it — today the
+  pipeline pays for a build whose output is discarded without a word.
+
+- *GitHub's collect job is an explicit TODO.* It unions nothing; it
+  downloads every artefact and attaches them as-is. So the two forges
+  publish DIFFERENT sets from the same tag. Per AGENTS.md, GitLab is the
+  source of truth, but the divergence should be deliberate rather than
+  accidental.
+
+* Proposal
+
+1. =collect-artefacts=: pass the per-target =binaries-<os>-<arch>= and
+   =libraries-<os>-<arch>= through to =COLLECT_OUT= in addition to
+   writing the merged pair. Cheap: they are already in =COLLECT_IN=.
+2. Add =release:linux:arm32= to =collect:release='s =needs:= (or drop
+   the lane), so nothing is built and discarded.
+3. Implement =clautolisp-<ver>-all.tar.bz2= in =collect-artefacts=,
+   containing every other artefact of the set. Decide first WHAT it
+   contains: the artefact FILES verbatim (an archive of archives —
+   simple, verifiable, what "includes the contents of all the above"
+   most directly means), or their unpacked union (one tree that installs
+   everything at once). These are different products; pjb to arbitrate.
+4. Windows packaging per =documentation/windows-package-spec.md= — the
+   only item here that is real work rather than plumbing, and the one
+   that gates two of the ten files.
+
+* Acceptance criteria
+
+1. On a =release-*= tag, =collect:release='s artefact contains all ten
+   files named above, with the version substituted.
+2. Verified the way this issue was: run =collect-artefacts= over a
+   complete input set and DIFF the produced file list against the ten
+   names — a check that can fail, not an eyeball.
+3. Nothing is built by the release pipeline whose output does not reach
+   the collect job.
+4. =make check-versions= still passes.
