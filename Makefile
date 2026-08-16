@@ -267,6 +267,19 @@ check-release-collect-needs:  ## Fail if a release:* job's artefacts never reach
 
 check-release: check-release-artefact-set check-release-collect-needs  ## Every release-packaging check.
 
+# avec-bash.ps1 drives the Windows release lane and cannot run on this host
+# (no PowerShell, pjb 2026-08-16: do not install it). A container gives the
+# only off-Windows coverage there is -- syntax, argument passing, and the
+# EXIT-CODE PROPAGATION that is the launcher's whole reason to exist. It is
+# NOT part of check-release: that one must stay dependency-free so the CI
+# documentation lane can run it; this needs a docker daemon.
+POWERSHELL_IMAGE ?= mcr.microsoft.com/powershell:debian-12
+check-avec-bash:  ## Test scripts/avec-bash.ps1 in a PowerShell container (needs docker).
+	@command -v docker >/dev/null 2>&1 || { \
+	  echo "docker is required: this test runs pwsh in $(POWERSHELL_IMAGE)"; exit 1; }
+	docker run --rm -v "$(CURDIR):/w" -w /w $(POWERSHELL_IMAGE) \
+	       pwsh -NoProfile -File scripts/tests/test-avec-bash.ps1
+
 release: release-sources release-documentation release-programs release-libraries  ## Produce every release artefact for this host.
 
 release-sources:  ## Produce the source tarball + zip (tracked files incl. submodules).

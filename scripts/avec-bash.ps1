@@ -15,9 +15,19 @@
 
 $ErrorActionPreference = 'Stop'
 
+# Errors are reported on stderr and followed by an explicit `exit', NOT by
+# Write-Error: with $ErrorActionPreference = 'Stop' above, Write-Error THROWS,
+# so the exit code that follows is never reached and the caller gets
+# PowerShell's generic failure instead of the documented one. Measured in a
+# container (scripts/tests/test-avec-bash.ps1). The same pattern is in
+# run-forest-run's original -- worth fixing there too.
+function Echouer($message, $code) {
+    [Console]::Error.WriteLine($message)
+    exit $code
+}
+
 if ($args.Count -lt 1) {
-    Write-Error "usage: avec-bash.ps1 <script.sh> [arguments...]"
-    exit 2
+    Echouer "usage: avec-bash.ps1 <script.sh> [arguments...]" 2
 }
 
 function Trouver-Bash {
@@ -48,8 +58,7 @@ function Trouver-Bash {
 
 $bash = Trouver-Bash
 if (-not $bash) {
-    Write-Error "bash not found. Install MSYS2 (or Git for Windows), or set the AVEC_BASH variable to the bash.exe to use."
-    exit 127
+    Echouer "bash not found. Install MSYS2 (or Git for Windows), or set the AVEC_BASH variable to the bash.exe to use." 127
 }
 Write-Host "avec-bash: $bash"
 
