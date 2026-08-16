@@ -39,6 +39,10 @@ root="${CI_PROJECT_DIR:-$(pwd)}"
 # NOT CAD-valid, so we don't ship one; pass --dwg a real CAD-made file if a
 # specific drawing is needed. The probe self-cleans at seed time regardless.
 alfe="$root/autolisp-front-end/tools/alfe/bin/alfe-sbcl"
+# The Windows build produces alfe-sbcl.exe (pjb, 2026-08-16). MSYS2 resolves
+# the suffix when EXECUTING a bare name, but `test -x' is not execution and
+# must be given the real file, so prefer the .exe when it is there.
+[ -x "$alfe.exe" ] && alfe="$alfe.exe"
 probe_dir="$root/autolisp-front-end/tests/scenarios/entities"
 out_dir="$root/dist/vendor-probes/$backend"
 mkdir -p "$out_dir"

@@ -47,7 +47,12 @@ case "$product" in
     bin="${CLAUTOLISP_BIN:-}"
     if [[ -z "$bin" ]]; then
       root="$(cd "$(dirname "$0")/../.." && pwd)"
+      # .exe first: the Windows build produces clautolisp-sbcl.exe (pjb,
+      # 2026-08-16), and the `-x' test below is not execution, so it will
+      # not resolve the suffix on its own.
       bin="$(first_glob \
+        "$root/clautolisp/tools/clautolisp/bin/clautolisp-sbcl.exe" \
+        "$root/clautolisp/tools/clautolisp/bin/clautolisp-ccl.exe" \
         "$root/clautolisp/tools/clautolisp/bin/clautolisp-sbcl" \
         "$root/clautolisp/tools/clautolisp/bin/clautolisp-ccl" \
         || true)"

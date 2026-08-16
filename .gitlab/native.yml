@@ -496,4 +496,6 @@ build:alfe:windows:
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     # Prove the binary exists and answers, since no artefact records it.
-    - autolisp-front-end/tools/alfe/bin/alfe-sbcl --version
+    # .exe: on Windows the build now produces alfe-sbcl.exe (pjb,
+    # 2026-08-16). This job is Windows-only, so the suffix is certain.
+    - autolisp-front-end/tools/alfe/bin/alfe-sbcl.exe --version

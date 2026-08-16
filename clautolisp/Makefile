@@ -92,16 +92,31 @@ case "$(HOST_OS)" in MINGW*|MSYS*|CYGWIN*) :;; *) \
 esac
 endef
 
+# Executable suffix, applied AT BUILD TIME (pjb, 2026-08-16: "On
+# MS-Windows, we should generate all the executables with .exe
+# extension"). Empty on POSIX.
+#
+# It used to be applied only when INSTALLING, so `make build-*' left
+# extensionless files in tools/*/bin/ on Windows. The MSYS2 shell runs
+# those happily, which is why it went unnoticed -- but PowerShell does
+# not, and the CI jobs run under PowerShell. Anything using a built
+# binary in place (a CI step, a test target, the release packaging) had
+# to know the name might lack its extension.
+#
+# Defined here rather than beside the install rules because the build
+# variables below need it.
+EXE := $(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),.exe,)
+
 TEST_SYSTEM ?= clautolisp
 EXECUTABLE ?= bin/clautolisp
 READ_AUTOLISP_TOOL_DIR := autolisp-reader/tools/read-autolisp
 READ_AUTOLISP_BIN_DIR := $(READ_AUTOLISP_TOOL_DIR)/bin
-READ_AUTOLISP_SBCL := $(READ_AUTOLISP_BIN_DIR)/read-autolisp-sbcl
-READ_AUTOLISP_CCL := $(READ_AUTOLISP_BIN_DIR)/read-autolisp-ccl
+READ_AUTOLISP_SBCL := $(READ_AUTOLISP_BIN_DIR)/read-autolisp-sbcl$(EXE)
+READ_AUTOLISP_CCL := $(READ_AUTOLISP_BIN_DIR)/read-autolisp-ccl$(EXE)
 CLAUTOLISP_TOOL_DIR := tools/clautolisp
 CLAUTOLISP_BIN_DIR := $(CLAUTOLISP_TOOL_DIR)/bin
-CLAUTOLISP_SBCL := $(CLAUTOLISP_BIN_DIR)/clautolisp-sbcl
-CLAUTOLISP_CCL := $(CLAUTOLISP_BIN_DIR)/clautolisp-ccl
+CLAUTOLISP_SBCL := $(CLAUTOLISP_BIN_DIR)/clautolisp-sbcl$(EXE)
+CLAUTOLISP_CCL := $(CLAUTOLISP_BIN_DIR)/clautolisp-ccl$(EXE)
 RUN_FILE_COMPAT := autolisp-file-compat/tools/run-file-compat/run-file-compat
 FILE_COMPAT_SCENARIOS ?= autolisp-file-compat/scenarios
 FILE_COMPAT_ARGS ?=
@@ -490,11 +505,11 @@ clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt:
 
 BIN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/bin
 LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
-# Executable suffix. On Windows, PowerShell (and cmd) require the .exe
-# extension to run a program from $(PREFIX)/bin or libexec even though the
-# MSYS2 shell runs it without one; empty on POSIX. Appended to every
-# executable installed into bin/ and libexec/ below.
-EXE := $(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),.exe,)
+# EXE (the .exe suffix on Windows) is defined near the build variables
+# above, since those need it too: the extension is applied when the
+# binary is BUILT, not only when it is installed. The install rules below
+# still guard with `case "$dest" in *.exe) ;;' so a name that already
+# carries it is not given a second one.
 DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
 INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
 MAN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/man/man1

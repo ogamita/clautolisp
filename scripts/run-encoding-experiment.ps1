@@ -28,7 +28,16 @@ $alfe = if ($env:ALFE_BIN) { $env:ALFE_BIN } else { Join-Path $root "autolisp-fr
 # an existing .exe, else copy the extension-less PE to one. (Mirrors
 # run-vendor-probes.ps1; make-driven targets run the bare name fine because
 # they go through sh/cmd, not PowerShell.)
-if (Test-Path "$alfe.exe") {
+# Since 2026-08-16 the build produces alfe-sbcl.exe, so the first branch
+# takes it and the copy below no longer fires. The -like guard is for an
+# ALFE_BIN that already names the .exe: without it this looks for
+# alfe-sbcl.exe.exe, misses, and copies a large image onto that name.
+if ($alfe -like '*.exe') {
+  if (-not (Test-Path $alfe)) {
+    Write-Host "alfe binary not found at $alfe (build it: make -C autolisp-front-end build-alfe-sbcl)"
+    exit 2
+  }
+} elseif (Test-Path "$alfe.exe") {
   $alfe = "$alfe.exe"
 } elseif (Test-Path $alfe) {
   Copy-Item -Force $alfe "$alfe.exe"
