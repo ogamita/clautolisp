@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.8.41 / alfe 1.8.4 /
+master at the top of the file (clautolisp 1.8.42 / alfe 1.8.4 /
 read-autolisp 1.8.0). For the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
@@ -970,6 +970,17 @@ file or COM), and forwards the workload.
 | autolisp-benchmark | libexec/autolisp-benchmark/{harness,benchmarks}        | share/doc/autolisp-benchmark/     |
 
 Override ~$PREFIX~ on the make line (default ~/opt/local~) to relocate.
+
+** On release-1.8.41
+
+The =release-1.8.41= tag exists but publishes NOTHING: its pipeline
+never produced the artefacts, so no GitLab Release was created for it.
+Two faults on the Windows runner, both fixed in 1.8.42 — stale CAD
+processes holding a file open, which killed every Windows job before its
+script ran, and libredwg's parallel build exhausting the machine's
+memory. A tag never moves and is never deleted, so 1.8.41 stays as the
+record of that attempt; *1.8.42 is the first published release of the
+series since 1.8.0*.
 
 ** What a release publishes
 
