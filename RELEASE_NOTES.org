@@ -225,6 +225,14 @@ separate binary for tool integrators.
   ~--list-encodings~ names them in a /Provided by clautolisp/ section
   (absent on a host that needs no help). See § /Which encodings you
   actually get/.
+- Encoding names the hosts spell differently are normalised, so the
+  spelling you type no longer decides whether the call works. Every
+  Mac Roman spelling — ~"mac-roman"~, ~"MACROMAN"~, ~"mac_roman"~,
+  ~"macintosh"~, ~"x-mac-roman"~, ~"CP-10000"~ — resolves to the
+  external format both hosts accept, on ~-e~ / ~-E~, ~OPEN~ and
+  ~LOAD~ alike. This makes ~(setq *AUTOLISP-FILE-ENCODING* (getvar
+  "SYSCODEPAGE"))~ work on macOS, where BricsCAD reports
+  ~"MAC_ROMAN"~. See § /Encoding names the hosts spell differently/.
 
 ** clautolisp-only helpers (CLAL-* prefix)
 

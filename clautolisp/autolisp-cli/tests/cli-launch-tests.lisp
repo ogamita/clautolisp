@@ -137,3 +137,28 @@ sexp file (UNIX backend), so registry reads/writes stay hermetic."
   (signals cli-usage-error (parse-timeout "0" "--timeout"))
   (signals cli-usage-error (parse-timeout "-5" "--timeout"))
   (signals cli-usage-error (parse-timeout "abc" "--timeout")))
+
+;;; --- encoding-name resolution -----------------------------------
+
+(test resolve-encoding-name-accepts-every-mac-roman-spelling
+  ;; -e / -E must accept the same spellings the language accepts on
+  ;; (open … "macroman") and (load … "macroman"), and must hand the
+  ;; implementation the keyword it registers — SBCL knows :MAC-ROMAN
+  ;; but not :MACROMAN, CCL knows both. Before macroman-encoding-name
+  ;; `-e macroman' was a usage error on SBCL and fine on CCL.
+  (dolist (spelling '("mac-roman" "MACROMAN" "mac_roman" "MAC_ROMAN"
+                      "macintosh" "cp10000"))
+    (multiple-value-bind (canonical keyword)
+        (clautolisp.autolisp-cli:resolve-encoding-name spelling "-e")
+      (is (string= "MAC-ROMAN" canonical)
+          "RESOLVE-ENCODING-NAME(~S) canonical name" spelling)
+      (is (eq :mac-roman keyword)
+          "RESOLVE-ENCODING-NAME(~S) keyword" spelling)))
+  ;; The line-terminator suffix still composes with it.
+  (multiple-value-bind (canonical keyword)
+      (clautolisp.autolisp-cli:resolve-encoding-name "macroman-mac" "-e")
+    (is (string= "MAC-ROMAN-mac" canonical))
+    (is (equal '(:mac-roman :newline :cr) keyword)))
+  ;; …and a genuine typo is still a usage error.
+  (signals cli-usage-error
+    (clautolisp.autolisp-cli:resolve-encoding-name "mac-romain" "-e")))
