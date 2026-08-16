@@ -150,7 +150,42 @@ Done:
   short set is then visible in the log instead of being silently
   smaller.
 
-Still open: *C2, Windows packaging*.
+*C2 — IMPLEMENTED 2026-08-16, shakedown pending.* pjb: « J'ai construit
+les zip windows avec make release sur windows sans probleme (a partir
+d'un bash msys2) », so the lane runs the ordinary Makefile from bash
+instead of reimplementing packaging in PowerShell.
+
+- =pack-release-artefact= chooses the CONTAINER by target: =.zip= for
+  windows, =.tar.bz2= elsewhere. So =make release-programs= produces the
+  right artefact on the box with no Windows-specific recipe.
+- The zip branch would otherwise ship having NEVER RUN anywhere but
+  Windows, so =scripts/tests/test-pack-release-artefact.sh= forces the
+  target OS and drives BOTH branches on a Unix host. A typo in the zip
+  branch now fails on Linux, not on the release runner.
+- =scripts/release-windows.sh= does the build+package and ASSERTS the two
+  expected zips exist before exiting, so a build that produced nothing
+  fails in the lane that owns it rather than in collect.
+- The PowerShell → MSYS2 handoff follows run-forest-run
+  (=poseidon:/home/pjb/src/fabrik=, pointed at by pjb):
+  =scripts/avec-bash.ps1= + =scripts/environnement-windows.sh= are adapted
+  from it. Reading it corrected a real defect in my first draft — I had
+  defaulted =MSYSTEM= to UCRT64 because that is what the reference box
+  has installed, whereas =build-libredwg.sh= REFUSES UCRT64 and CLANG64
+  for the native codec. Details in build-tool-paths-unquoted.issue.
+- Two silent-failure modes closed: PowerShell does not fail a step on a
+  native program's non-zero exit (the job checks =$LASTEXITCODE=, without
+  which a failed build would go GREEN and the release would come up two
+  artefacts short), and =git-bash.exe= is avoided — it is a GRAPHICAL
+  launcher that detaches and returns at once.
+
+SHAKEDOWN PENDING: like the vendor probes before it, the lane needs its
+first run on the real runner to settle. =avec-bash.ps1= could not be
+executed here (no PowerShell on poseidon); =environnement-windows.sh= WAS
+executed, and its non-Windows paths behave.
+
+Still open on C2: nothing in code, only the first real run — plus the
+=build-libredwg.sh= guard noted in build-tool-paths-unquoted.issue, which
+protects any caller that does NOT go through these scripts.
 
 ** Windows format and -all containers — SETTLED 2026-08-16 (pjb)
 
