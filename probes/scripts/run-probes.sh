@@ -96,6 +96,13 @@ cad_path() {
   printf '(setq cad-probe-platform "%s")\n'      "$(lisp_escape "$platform")"
   printf '(setq cad-probe-product "%s")\n'       "$(lisp_escape "$product")"
   printf '(setq cad-probe-run-directory "%s")\n' "$(lisp_escape "$(cad_path "$run_dir")")"
+  # Write a marker BEFORE anything else can fail, so an empty result file
+  # and a wrapper that started are distinguishable. Without it, "the load
+  # failed" and "a suite died on its first form" look identical from
+  # here: both leave nothing behind.
+  printf '(setq cad-probe--out (open "%s" "w"))\n' \
+         "$(lisp_escape "$(cad_path "$result_file")")"
+  printf '(if cad-probe--out (progn (write-line "((KIND . \\"wrapper-start\\"))" cad-probe--out) (close cad-probe--out)))\n'
   printf '(load "%s")\n' "$(lisp_escape "$(cad_path "$sources_dir/probe-core.lsp")")"
   # Load every suite file from the manifest.
   while read -r src fn _rest; do
@@ -114,7 +121,21 @@ cad_path() {
 # --- generate the CAD script (.scr) that loads the wrapper -----------
 # A CAD command script evaluates a leading-paren line as AutoLISP.
 {
+  # The two princ lines are INSTRUMENTATION, and they earn their place.
+  #
+  # A CAD script that loads nothing looks exactly like one that loads
+  # everything: accoreconsole prints its banner, shows a few `Commande:'
+  # prompts, and quits 0 either way. The 2026-08-16 AutoCAD runs produced
+  # an empty result file twice, and the console gave no way to tell
+  # whether the (load …) had even been reached.
+  #
+  # So the script now says so itself. In the console trace:
+  #   neither line          -> the .scr was not executed as AutoLISP
+  #   only "loading"        -> the wrapper was reached and the load failed
+  #   both lines            -> the wrapper ran; look at the result file
+  printf '(princ "\\ncad-probe: loading wrapper\\n")\n'
   printf '(load "%s")\n' "$(lisp_escape "$(cad_path "$wrapper_file")")"
+  printf '(princ "\\ncad-probe: wrapper returned\\n")\n'
 } > "$script_file"
 
 write_metadata() {
@@ -133,9 +154,23 @@ EOF
 
 write_metadata "prepared" 0
 
+# The engine is a NATIVE program, so the file it is pointed at must be
+# named in ITS path form -- and MSYS2 will not do this one for us.
+#
+# Its argument converter treats an argument that starts with `/' followed
+# by a letter as a WINDOWS SWITCH, not a path. So `/c/Users/...' is passed
+# through untouched, accoreconsole receives something it cannot read as a
+# script, PRINTS ITS USAGE TEXT, opens a default drawing and exits 0.
+# That is precisely what the 2026-08-16 AutoCAD runs did, and the usage
+# banner in the console was the tell -- it is not printed on a good run.
+#
+# The paths written INSIDE the generated files needed the same treatment
+# for a different reason (MSYS2 cannot convert file contents at all), and
+# fixing only those left this one, which is why the second attempt failed
+# the same way as the first.
 cmd="$runner_template"
-cmd="${cmd//__PROBE_FILE__/$wrapper_file}"
-cmd="${cmd//__SCRIPT_FILE__/$script_file}"
+cmd="${cmd//__PROBE_FILE__/$(cad_path "$wrapper_file")}"
+cmd="${cmd//__SCRIPT_FILE__/$(cad_path "$script_file")}"
 
 echo "run-probes: $product on $platform" >&2
 echo "  runner : $cmd" >&2
@@ -146,8 +181,18 @@ bash -lc "$cmd"
 exit_code=$?
 set -e
 
-if [[ $exit_code -eq 0 && -s "$result_file" ]]; then
+# A run is COMPLETE only if it reached its end record. Non-empty is not
+# enough: the wrapper writes a `wrapper-start' marker before anything can
+# fail, so a suite that dies on its first form still leaves a file behind.
+# Checking for run-end is what tells "it ran" from "it started".
+if [[ $exit_code -eq 0 && -s "$result_file" ]] && grep -q 'run-end' "$result_file"; then
   write_metadata "completed" "$exit_code"
+elif [[ $exit_code -eq 0 && -s "$result_file" ]]; then
+  write_metadata "incomplete" "$exit_code"
+  echo "run-probes: ERROR — the wrapper started but never reached its end record." >&2
+  echo "  A suite raised and stopped the run. The partial results are kept:" >&2
+  echo "    $result_file" >&2
+  exit 1
 else
   write_metadata "failed" "$exit_code"
   # An EMPTY result file after a CLEAN exit is the failure mode worth
