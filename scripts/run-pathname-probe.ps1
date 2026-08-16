@@ -17,10 +17,24 @@ $ErrorActionPreference = "Continue"
 $root = if ($env:CI_PROJECT_DIR) { $env:CI_PROJECT_DIR } else { (Get-Location).Path }
 $alfe = if ($env:ALFE_BIN) { $env:ALFE_BIN } else { Join-Path $root "autolisp-front-end/tools/alfe/bin/alfe-sbcl" }
 
-# PowerShell's & only runs files whose extension is in $PATHEXT; the image is
-# saved extension-less, so ensure a .exe copy exists (mirrors the other .ps1
-# drivers).
-if (Test-Path "$alfe.exe") {
+# PowerShell's & only runs files whose extension is in $PATHEXT.
+#
+# Since 2026-08-16 the Windows build PRODUCES alfe-sbcl.exe (pjb: "on
+# MS-Windows, we should generate all the executables with .exe extension"),
+# so the first branch takes it and the Copy-Item below no longer fires. The
+# copy is kept for a binary built before that change, or by a hand-run
+# save-lisp-and-die; it duplicates a large image, so finding the .exe first
+# is not merely tidier.
+#
+# The -like guard matters: ALFE_BIN may already name the .exe, and without
+# it this would look for alfe-sbcl.exe.exe, miss, and copy the image onto
+# that absurd name rather than just running it.
+if ($alfe -like '*.exe') {
+  if (-not (Test-Path $alfe)) {
+    Write-Host "alfe binary not found at $alfe (build it: make -C autolisp-front-end build-alfe-sbcl)"
+    exit 2
+  }
+} elseif (Test-Path "$alfe.exe") {
   $alfe = "$alfe.exe"
 } elseif (Test-Path $alfe) {
   Copy-Item -Force $alfe "$alfe.exe"

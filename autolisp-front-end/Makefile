@@ -31,10 +31,25 @@ else
 CLAUTOLISP_ASD_NATIVE := $(CLAUTOLISP_ASD)
 ALFE_ASD_NATIVE       := $(ALFE_ASD)
 endif
+# Executable suffix, applied AT BUILD TIME (pjb, 2026-08-16: "On
+# MS-Windows, we should generate all the executables with .exe
+# extension"). Empty on POSIX.
+#
+# alfe had no such notion at all: `make build-alfe-sbcl' produced an
+# extensionless tools/alfe/bin/alfe-sbcl even on Windows. The MSYS2 shell
+# runs that, PowerShell does not -- and the CI jobs are PowerShell.
+#
+# Defined here, ahead of the variables that use it. HOST_UNAME is a `?='
+# so the Windows branch can be exercised from a POSIX host --
+#   make -n HOST_UNAME=MINGW64_NT-10.0
+# -- which is the only way to check it without the machine.
+HOST_UNAME ?= $(shell uname -s)
+EXE := $(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_UNAME)),.exe,)
+
 ALFE_TOOL_DIR := tools/alfe
 ALFE_BIN_DIR := $(ALFE_TOOL_DIR)/bin
-ALFE_SBCL := $(ALFE_BIN_DIR)/alfe-sbcl
-ALFE_CCL  := $(ALFE_BIN_DIR)/alfe-ccl
+ALFE_SBCL := $(ALFE_BIN_DIR)/alfe-sbcl$(EXE)
+ALFE_CCL  := $(ALFE_BIN_DIR)/alfe-ccl$(EXE)
 # The build script lives under tools/alfe/ alongside source/ and bin/.
 ALFE_GENERATE := $(ALFE_TOOL_DIR)/generate-alfe.lisp
 # Honour the parent project's shared cache so ASDF reuses fasls
@@ -403,11 +418,12 @@ $(ALFE_CCL):
 
 BIN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/bin
 LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
-# Executable suffix. On Windows, PowerShell (and cmd) require the .exe
-# extension to run a program from $(PREFIX)/bin or libexec even though the
-# MSYS2 shell runs it without one; empty on POSIX. Appended to every
-# executable installed into bin/ and libexec/ below.
-EXE := $(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),.exe,)
+# EXE (the .exe suffix on Windows) is defined near ALFE_SBCL above, since
+# the build variables need it too -- the extension is applied when the
+# binary is BUILT, not only when it is installed. It was defined twice
+# for a moment; one definition is enough, and it has to come first.
+# The install rules below still guard with `case "$dest" in *.exe) ;;'
+# so a name that already carries it is not given a second one.
 DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
 INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
 MAN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/man/man1
