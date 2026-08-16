@@ -98,6 +98,44 @@ REL_ARCH := $(shell uname -m | tr 'A-Z' 'a-z' | sed -e 's/^x86_64$$/x86-64/' -e 
 # (x86-64 -> "sbcl ccl"); the default keeps everything else SBCL-only.
 RELEASE_LISPS ?= sbcl
 
+# Pack a staged tree into this target's per-target artefact, choosing the
+# container by PLATFORM: Windows ships .zip, every other target .tar.bz2
+# (pjb, 2026-08-16 — "fetch .zip from windows, not tar.bz2"). A Windows
+# user should not need a tar that Explorer cannot open, and the Windows
+# package has its own layout anyway (documentation/windows-package-spec.md).
+#
+# $(1) staged tree  $(2) kind (binaries|libraries)  $(3) version
+# $(4) os           $(5) arch
+#
+# Both branches archive the tree's CONTENTS (cd + `.'), never a wrapper
+# directory, so the artefact unpacks straight into $PREFIX.
+# Test hook: pack an arbitrary staged tree, so the Windows branch can be
+# exercised on a Unix developer machine instead of shipping unexecuted
+# (scripts/tests/test-pack-release-artefact.sh). Not part of a release.
+PACK_STAGE ?=
+PACK_KIND  ?= binaries
+PACK_VER   ?= 0.0.0
+PACK_OS    ?= $(REL_OS)
+PACK_ARCH  ?= $(REL_ARCH)
+release-libraries-pack-only:  ## (test hook) Pack PACK_STAGE as PACK_KIND for PACK_OS/PACK_ARCH; exercises the Windows .zip branch off Windows.
+	@test -n "$(PACK_STAGE)" || { echo "PACK_STAGE is required"; exit 1; }
+	@mkdir -p "$(DIST)"
+	@$(call pack-release-artefact,$(PACK_STAGE),$(PACK_KIND),$(PACK_VER),$(PACK_OS),$(PACK_ARCH))
+
+define pack-release-artefact
+	if [ "$(4)" = windows ]; then \
+	  command -v zip >/dev/null 2>&1 || { \
+	    echo "ERROR: zip is required to package the Windows artefact"; exit 1; }; \
+	  out="$(DIST)/clautolisp-$(3)-$(2)-$(4)-$(5).zip"; \
+	  rm -f "$$out"; \
+	  ( cd "$(1)" && zip -qr "$$out" . ); \
+	else \
+	  out="$(DIST)/clautolisp-$(3)-$(2)-$(4)-$(5).tar.bz2"; \
+	  tar -C "$(1)" -cjf "$$out" .; \
+	fi; \
+	echo "wrote $$out"
+endef
+
 help:  ## Show this message (list available targets and their purpose).
 	@awk 'BEGIN { \
 	    FS = ":.*?## "; \
@@ -290,9 +328,8 @@ release-programs: build-programs  ## Build programs and package this host's per-
 	done; \
 	mkdir -p "$$stage/$(MANIFEST_DIR)"; \
 	sh scripts/make-manifest.sh programs > "$$stage/$(MANIFEST_DIR)/manifest-programs.txt"; \
-	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2" .; \
-	rm -rf "$$stage"; \
-	echo "wrote $(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2"
+	$(call pack-release-artefact,$$stage,binaries,$$ver,$$os,$$arch); \
+	rm -rf "$$stage"
 
 # REQUIRE_NATIVE_LIBRARIES=1: a published artefact must be complete, so a
 # missing LibreDWG codec is an error here, even though it is only a
@@ -303,8 +340,7 @@ release-libraries:  ## Package this host's per-target libraries artefact (ASDF s
 	"$(MAKE)" stage-libraries REQUIRE_NATIVE_LIBRARIES=1
 	@mkdir -p "$(DIST)"
 	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
-	tar -C "$(STAGE_LIBRARIES)" -cjf "$(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2" .; \
-	echo "wrote $(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2"
+	$(call pack-release-artefact,$(STAGE_LIBRARIES),libraries,$$ver,$$os,$$arch)
 
 # CI collect phase: union the per-target artefacts (gathered by the
 # pipeline into COLLECT_IN) into the final combined release set in
