@@ -26,6 +26,22 @@ cd "$(dirname "$0")/.."
 # "C:/msys64/..." and CMake truncates it at the colon (see the file).
 . "$(dirname "$0")/environnement-windows.sh"
 
+# dist/ is OURS to clear, because the runner no longer does it: on Windows
+# `git clean -ffdx' fails outright when any file under dist/ is held open by
+# a process, and takes the whole job down in get_sources (GIT_CLEAN_FLAGS in
+# .gitlab-ci.yml). Publishing on top of a previous run's leftovers would be
+# worse than failing, so this is an error, not a warning -- and it names the
+# real cause, which the runner's own message never does.
+if [ -e dist ] && ! rm -rf dist; then
+    echo "ERROR: cannot clear dist/ -- a process is holding a file open."
+    echo "       On this runner that is almost always a CAD engine that"
+    echo "       outlived its job (accoreconsole/acad/bricscad). Check with:"
+    echo "         Get-Process acad,accoreconsole,bricscad -ErrorAction SilentlyContinue"
+    echo "       and stop it before retrying. See"
+    echo "       issues/open/cad-runner-wedged-by-modal-dialog.issue"
+    exit 1
+fi
+
 echo "--- environment"
 uname -a
 echo "MSYSTEM=${MSYSTEM:-<unset>}  CC=${CC:-<unset>}"
