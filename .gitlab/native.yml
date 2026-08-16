@@ -372,6 +372,33 @@ vendor:probes:autocad:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad -Dwg $env:PROBE_DWG -KeepWorkdir $env:PROBE_KEEP_WORKDIR
 
+# The probes/ SUITE (probes/sources/manifest.txt), as opposed to the alfe
+# scenario probes above. It had no CI job at all: `make probe-autocad' was
+# a manual ritual on someone's machine, which is why questions it answers
+# stayed open.
+#
+# SOFT on purpose, on a tag as everywhere else: a probe MEASURES an engine,
+# it does not gate a release. Its answer changes what clautolisp claims,
+# and that is a decision, not a build failure.
+#
+# PROBE_NO_COMMIT: the runner script normally git-commits its results so
+# they can be handed back; in CI the checkout is detached and committing
+# there would be pointless, so the results travel as an artefact instead.
+probe:suite:autocad:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make probe-autocad
+  artifacts:
+    when: always
+    name: "probe-suite-autocad-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
 vendor:probes:bricscad:macos:
   extends: [.gate-macos-cad-hard, .vendor-probe-artifacts]
   stage: test
