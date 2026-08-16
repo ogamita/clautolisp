@@ -265,7 +265,10 @@ check-release-artefact-set:  ## Fail unless collect-artefacts produces the speci
 check-release-collect-needs:  ## Fail if a release:* job's artefacts never reach collect:release.
 	sh scripts/check-release-collect-needs.sh
 
-check-release: check-release-artefact-set check-release-collect-needs  ## Every release-packaging check.
+check-ci-dotenv-rules:  ## Fail if a parent-pipeline job is gated on a dotenv variable (never true at rules time).
+	sh scripts/check-ci-dotenv-rules.sh
+
+check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
 # (no PowerShell, pjb 2026-08-16: do not install it). A container gives the
