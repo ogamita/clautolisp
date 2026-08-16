@@ -192,6 +192,30 @@ however green its tests are — the code half of the work is not the whole
 of it. Design specs (`documentation/*-spec.org`) do **not** discharge
 this: they address the implementer, not the user.
 
+**Which book** (pjb, 2026-08-16):
+
+- **System variables and AutoLISP operators** are documented in
+  `autolisp-spec`, *not* in a program's user manual: they are language
+  surface, not tool surface. The `CLAL-` namespace is the exception —
+  it has no vendor counterpart and exists only here.
+- **Environment variables and configuration settings** belong to the
+  documentation of the program that reads them.
+- **alfe does not repeat clautolisp's documentation.** For alfe,
+  clautolisp is a CAD like AutoCAD and BricsCAD, and each engine's own
+  surface belongs to that engine's manual. But every option alfe takes
+  into account and **transmits**, one way or another, to clautolisp or
+  AutoCAD or BricsCAD **must be documented for alfe** — including what
+  alfe imposes on the engine without being asked (it passes `--no-init`
+  and `--quiet` to a spawned clautolisp, so the engine's init files do
+  not run: exactly the kind of thing a user must not have to discover
+  from the source).
+
+`make check-user-visible-documentation` enforces the mechanical half of
+this — CLI options, `CLAL-` builtins, environment variables, settings,
+and the tokens alfe puts on an engine's command line. It is wired into
+the CI documentation lane. It checks that a name is *mentioned*; whether
+the prose is correct remains a review matter.
+
 **The synchronisation rule.** Any change to one track requires
 matching changes in the others:
 

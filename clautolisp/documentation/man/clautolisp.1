@@ -223,6 +223,45 @@ Disable ANSI colour output (https://no-color.org).
 Equivalent to
 .BR \-norc .
 .TP
+.B CLAUTOLISP_GUI
+DCL GUI driver command, used when
+.B \-\-gui
+is omitted.
+.TP
+.B CLAUTOLISP_DCL_DEBUG
+When set and non-empty, trace the DCL subprocess renderer on standard
+error, each line prefixed
+.BR [dcl-debug] .
+.TP
+.B CLAUTOLISP_BACKGROUND
+.BR dark " or " light :
+override the detected terminal background.
+.B COLORFGBG
+and
+.B TMUX
+are consulted next when it is unset.
+.TP
+.B CLAUTOLISP_DWG_LIBDIR
+Directory holding the DWG codec shared library, searched before the
+development tree and the installed layout.
+.TP
+.B CLAUTOLISP_PREFIX
+.B $PREFIX
+used to build the trusted search path; omitted when unset.
+.TP
+.B XDG_CONFIG_HOME\fR, \fBXDG_CONFIG_DIRS
+Where
+.IR lisp.conf " and " aldo.conf
+are read and written.
+.TP
+.B XDG_DATA_HOME
+Contributes
+.I $XDG_DATA_HOME/autolisp/
+to the trusted search path.
+.TP
+.B XDG_STATE_HOME
+Where the default dribble log is written.
+.TP
 .B CLAUTOLISP_DEBUG_PATHMAP
 When set to any value, dump the recorded build frame and the detected
 run frame of the path-mapping layer to standard error at startup.

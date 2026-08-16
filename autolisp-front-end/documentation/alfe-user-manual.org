@@ -396,6 +396,22 @@ The init file runs under the selected dialect and backend; it's a
 natural place to put =alref-set-root= calls, custom helpers, REPL
 preferences, etc.
 
+*The engine's own init files do not run.* When alfe drives clautolisp as
+a subprocess it passes =--no-init= (and =--quiet=) to it, so your
+=~/.autolisp=, =~/.clautolisp= and the XDG init files are *not* loaded
+by the engine. This is deliberate: the front end owns bootstrap policy,
+and loading the spawned engine's rc files would make a subprocess run
+behave differently from the in-process =:direct= one and let a personal
+init file leak into test results. What you want in an alfe session
+belongs in *alfe's* init file above, which does run.
+
+The CAD backends are a different matter: AutoCAD and BricsCAD load
+their own startup files, and alfe does not suppress them wholesale — but
+it is not neutral either. A BricsCAD profile named with
+=$AUTOLISP_BRICSCAD_PROFILE= changes what the engine auto-loads, and a
+*clean* profile is precisely how you keep a vertical application out of
+a pure-CAD run. See /Environment variables/ above.
+
 * The *AUTOLISP-…* globals
 
 User AutoLISP code can read these globals to branch on session
@@ -467,6 +483,70 @@ exits 2 with a usage error rather than printing nothing.
 
 It is distinct from =--dry-run=, which resolves nothing, touches no
 disk and just prints the action plan.
+
+* Environment variables
+
+Every variable alfe reads is listed here. This does *not* include the
+variables of the engines alfe drives: for alfe, clautolisp is a CAD like
+AutoCAD and BricsCAD, and each engine's own environment belongs to that
+engine's documentation. What does belong here is anything alfe itself
+consults, including what it *passes on* to an engine.
+
+** Option defaults
+Each supplies the default for the option beside it; the explicit option
+always wins.
+
+| Variable                     | Option              |
+|------------------------------+---------------------|
+| =$AUTOLISP_BACKEND=, =$ALFE_BACKEND_OVERRIDE= | backend selection |
+| =$AUTOLISP_MODE=             | =--mode=            |
+| =$AUTOLISP_DWG=              | =--dwg=             |
+| =$AUTOLISP_EPURE=            | =--epure=           |
+| =$AUTOLISP_WORKDIR=          | =--workdir=         |
+| =$AUTOLISP_KEEP_WORKDIR=     | =--keep-workdir=    |
+| =$AUTOLISP_WRITE_WORKDIR_PATH= | =--write-workdir-path= |
+| =$AUTOLISP_BOOTSTRAP_PHASE=  | =--bootstrap-phase= |
+| =$AUTOLISP_WAIT_SECS=        | =--timeout=         |
+| =$AUTOLISP_NO_INIT=          | =--no-init=         |
+
+** Engine location and launch
+- =$ALFE_CLAUTOLISP_BIN= :: the =clautolisp= executable the clautolisp
+  backend runs as a subprocess. Set it to test a build that is not the
+  installed one.
+- =$AUTOCAD_EXE=, =$AUTOCAD_ACCORECONSOLE=, =$BRICSCAD_EXE= :: explicit
+  engine binaries, bypassing detection.
+- =$AUTOCAD_COM_MODE=, =$BRICSCAD_COM_MODE= :: =auto= (default) or
+  =off=. =off= is the batch path, without COM.
+- =$AUTOLISP_BRICSCAD_PROFILE=, =$BRICSCAD_PROFILE= :: the BricsCAD
+  profile to launch under; the first takes precedence. Unset means the
+  engine's own default profile.
+- =$ALFE_BRICSCAD_STARTUP_DELAY= :: overrides the =STARTUPWAIT= given to
+  BricsCAD — the grace period before alfe expects the engine to answer.
+- =$ALFE_NO_CUI_REPAIR= :: when set and non-empty, do *not* quarantine a
+  corrupt per-user =default.cui=. alfe normally renames one aside (never
+  deletes) so BricsCAD regenerates it, because the alternative is a
+  startup dialog that stalls a batch launch with nobody to dismiss it.
+
+** Encoding
+- =$ALFE_AUTOCAD_CONSOLE_ENCODING= :: the AutoCAD console encoding used
+  when =-Ecadstdio= is not given, before falling back to the robust
+  =ISO-8859-1= default. See /Encoding/ above.
+
+** Conformance corpus
+Both gate scenarios that a plain =make test= must never run, so the unit
+lane stays green on a machine with no CAD at all.
+
+- =$ALFE_VENDOR_CONFORMANCE= :: set to a non-empty value to actually
+  drive the vendor CAD through the corpus. Without it the
+  =:bricscad-only= and =:autocad-only= scenarios are skipped rather than
+  attempted.
+- =$AUTOLISP_LEGACY= :: a *path* to a legacy engine the runner can
+  spawn — not a flag. The =:parity= scenarios run only when it names a
+  file that exists.
+
+** Consulted, not configured
+=$HOME=, =$PATH=, =$TMPDIR=, =$TEMP=, =$TMP= and =$APPDATA= are read for
+the usual platform locations, and =$NO_COLOR= disables ANSI colour.
 
 * Troubleshooting
 
