@@ -322,12 +322,20 @@ release-libraries:  ## Package this host's per-target libraries artefact (ASDF s
 # through is gone, subsumed by that glob; it also used to copy the
 # Windows lane's STUB .txt into the release set.
 #
+# WINDOWS SHIPS .zip, NOT .tar.bz2 (pjb, 2026-08-16). Its per-target
+# artefacts pass through and join the -all union like any other, but they
+# are NOT fed to the merged multi-platform binaries/libraries tarballs:
+# those are a $PREFIX-shaped unix tree, and the Windows package has its
+# own layout (documentation/windows-package-spec.md). Keeping it out is
+# the point, not an oversight.
+#
 # The -all artefact is the UNPACKED UNION (pjb's ruling): every artefact
 # extracted over one tree, so a user unpacks one file and has everything
 # installed at once. It is not an archive of archives. sources.tar.bz2
 # joins the union safely because it unpacks under its own
 # clautolisp-<ver>/ prefix, alongside — not into — bin/, lib/, libexec/
-# and share/. sources.zip is deliberately left out: same content as the
+# and share/; the Windows zip likewise carries its own single top-level
+# directory. sources.zip is deliberately left out: same content as the
 # tarball, so including it would duplicate the source tree.
 COLLECT_IN  ?= $(DIST)
 COLLECT_OUT ?= $(DIST)/combined
@@ -357,7 +365,9 @@ collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the c
 	  [ -f "$$f" ] && cp "$$f" "$$out"/ && echo "passthrough $$(basename "$$f")"; \
 	done; \
 	for f in "$$in"/clautolisp-$$ver-binaries-*.tar.bz2 \
-	         "$$in"/clautolisp-$$ver-libraries-*.tar.bz2; do \
+	         "$$in"/clautolisp-$$ver-libraries-*.tar.bz2 \
+	         "$$in"/clautolisp-$$ver-binaries-windows-*.zip \
+	         "$$in"/clautolisp-$$ver-libraries-windows-*.zip; do \
 	  [ -f "$$f" ] || continue; cp "$$f" "$$out"/ && echo "per-target $$(basename "$$f")"; \
 	done; \
 	astage=$$(mktemp -d); n=0; \
@@ -368,10 +378,26 @@ collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the c
 	  [ -f "$$t" ] || continue; echo "all: union $$(basename "$$t")"; \
 	  tar -C "$$astage" -xjf "$$t"; n=$$((n+1)); \
 	done; \
+	for z in "$$in"/clautolisp-$$ver-binaries-windows-*.zip \
+	         "$$in"/clautolisp-$$ver-libraries-windows-*.zip; do \
+	  [ -f "$$z" ] || continue; \
+	  command -v unzip >/dev/null 2>&1 || { \
+	    echo "ERROR: $$(basename "$$z") is present but unzip is missing;"; \
+	    echo "       the -all union would silently omit Windows. Install unzip."; \
+	    exit 1; }; \
+	  echo "all: union $$(basename "$$z")"; \
+	  unzip -q -o "$$z" -d "$$astage"; n=$$((n+1)); \
+	done; \
 	if [ "$$n" -gt 0 ]; then \
 	  tar -C "$$astage" --exclude='._*' --owner=0 --group=0 --numeric-owner \
 	      -cjf "$$out/clautolisp-$$ver-all.tar.bz2" .; \
 	  echo "wrote $$out/clautolisp-$$ver-all.tar.bz2 (union of $$n artefact(s))"; \
+	  command -v zip >/dev/null 2>&1 || { \
+	    echo "ERROR: zip is missing, so the -all.zip our Windows users need"; \
+	    echo "       would be skipped without failing. Install zip."; \
+	    exit 1; }; \
+	  ( cd "$$astage" && zip -qr "$$out/clautolisp-$$ver-all.zip" . ); \
+	  echo "wrote $$out/clautolisp-$$ver-all.zip (same union, for Windows)"; \
 	else echo "WARNING: nothing to union into the -all artefact"; fi; \
 	rm -rf "$$astage"; \
 	targets=$$(ls "$$in" 2>/dev/null \

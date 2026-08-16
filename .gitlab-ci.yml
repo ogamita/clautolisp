@@ -327,7 +327,10 @@ check:release:
   variables:
     GIT_SUBMODULE_STRATEGY: none
   before_script:
-    - pkgs=""; for t in bzip2 tar make; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+    # zip/unzip are needed for the Windows .zip artefacts and the -all.zip
+    # (pjb, 2026-08-16). collect-artefacts ERRORS rather than skipping when
+    # they are missing, so a release cannot quietly ship without them.
+    - pkgs=""; for t in bzip2 tar make zip unzip; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
   script:
     - make check-release
 
@@ -880,7 +883,10 @@ collect:release:
   before_script:
     # tar/make are in the CI image; install bzip2 if the image lacks it
     # (mirrors release:linux:x86-64's package-guard).
-    - pkgs=""; for t in bzip2 tar make; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+    # zip/unzip are needed for the Windows .zip artefacts and the -all.zip
+    # (pjb, 2026-08-16). collect-artefacts ERRORS rather than skipping when
+    # they are missing, so a release cannot quietly ship without them.
+    - pkgs=""; for t in bzip2 tar make zip unzip; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
   script:
     - make collect-artefacts COLLECT_IN=dist COLLECT_OUT=dist/combined
   artifacts:

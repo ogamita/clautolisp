@@ -27,19 +27,34 @@ mkdir -p "$in"
 # what makes forgetting that a failure rather than a silence.
 TARGETS="linux-x86-64 linux-arm64 linux-arm32 darwin-arm64 windows-x86-64"
 
+# Windows ships .zip, not .tar.bz2 (pjb, 2026-08-16): its package has its
+# own layout, per documentation/windows-package-spec.md. Every other
+# target ships the $PREFIX-shaped tar.bz2 pair.
+target_extension () {
+    case "$1" in
+        windows-*) echo zip ;;
+        *)         echo tar.bz2 ;;
+    esac
+}
+
 expected="$work/expected"
 : > "$expected"
 
 for t in $TARGETS; do
+    ext=$(target_extension "$t")
     for kind in binaries libraries; do
         d="$in/stage"
         mkdir -p "$d/marker"
         # A payload unique per (kind,target): the union must keep them all,
         # so an overwrite instead of a union shows up as a missing marker.
         echo "$kind-$t" > "$d/marker/$kind-$t"
-        tar -C "$d" -cjf "$in/clautolisp-$ver-$kind-$t.tar.bz2" .
+        if [ "$ext" = zip ]; then
+            ( cd "$d" && zip -qr "$in/clautolisp-$ver-$kind-$t.zip" . )
+        else
+            tar -C "$d" -cjf "$in/clautolisp-$ver-$kind-$t.tar.bz2" .
+        fi
         rm -rf "$d"
-        echo "clautolisp-$ver-$kind-$t.tar.bz2" >> "$expected"
+        echo "clautolisp-$ver-$kind-$t.$ext" >> "$expected"
     done
 done
 
@@ -55,7 +70,10 @@ rm -rf "$d"
 echo zip > "$in/clautolisp-$ver-sources.zip"
 
 {
+    # -all in BOTH formats: the tarball, and the zip Windows users need
+    # (pjb, 2026-08-16). Same union, two containers.
     echo "clautolisp-$ver-all.tar.bz2"
+    echo "clautolisp-$ver-all.zip"
     echo "clautolisp-$ver-binaries.tar.bz2"
     echo "clautolisp-$ver-documentation.tar.bz2"
     echo "clautolisp-$ver-libraries.tar.bz2"
@@ -83,22 +101,37 @@ fi
 # The -all artefact is an UNPACKED UNION, so every target's marker must be
 # present in it. A merge that overwrote instead of unioning would still
 # produce a file of the right NAME, and the name check above would pass.
-if [ -f "$out/clautolisp-$ver-all.tar.bz2" ]; then
-    tar -tjf "$out/clautolisp-$ver-all.tar.bz2" > "$work/all-list"
+check_all_union () {   # $1 = label, $2 = listing file
     missing=""
     for t in $TARGETS; do
         for kind in binaries libraries; do
-            grep -q "marker/$kind-$t\$" "$work/all-list" || missing="$missing $kind-$t"
+            grep -q "marker/$kind-$t\$" "$2" || missing="$missing $kind-$t"
         done
     done
-    grep -q "share/doc/manual\$" "$work/all-list" || missing="$missing documentation"
-    grep -q "clautolisp-$ver/Makefile\$" "$work/all-list" || missing="$missing sources"
+    grep -q "share/doc/manual\$" "$2" || missing="$missing documentation"
+    grep -q "clautolisp-$ver/Makefile\$" "$2" || missing="$missing sources"
     if [ -n "$missing" ]; then
-        echo "FAIL: -all is not a complete union; missing:$missing"
-        status=1
-    else
-        echo "ok  -all is the unpacked union of every artefact"
+        echo "FAIL: $1 is not a complete union; missing:$missing"
+        return 1
     fi
+    echo "ok  $1 is the unpacked union of every artefact"
+    return 0
+}
+
+# BOTH -all containers are checked. Checking only the tarball would let a
+# half-built zip ship to the very users it exists for.
+if [ -f "$out/clautolisp-$ver-all.tar.bz2" ]; then
+    tar -tjf "$out/clautolisp-$ver-all.tar.bz2" > "$work/all-list"
+    check_all_union "-all.tar.bz2" "$work/all-list" || status=1
+else
+    echo "FAIL: -all.tar.bz2 was not produced"; status=1
+fi
+
+if [ -f "$out/clautolisp-$ver-all.zip" ]; then
+    unzip -Z1 "$out/clautolisp-$ver-all.zip" > "$work/all-zip-list"
+    check_all_union "-all.zip" "$work/all-zip-list" || status=1
+else
+    echo "FAIL: -all.zip was not produced"; status=1
 fi
 
 exit $status

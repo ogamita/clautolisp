@@ -152,6 +152,32 @@ Done:
 
 Still open: *C2, Windows packaging*.
 
+** Windows format and -all containers — SETTLED 2026-08-16 (pjb)
+
+*Windows ships =.zip=, not =.tar.bz2=.* The conflict below is therefore
+resolved in favour of the Windows-native format. The collect side is
+already wired for it: =clautolisp-<ver>-{binaries,libraries}-windows-*.zip=
+pass through and join the =-all= union, but are deliberately NOT fed to
+the merged multi-platform =binaries.tar.bz2= / =libraries.tar.bz2= —
+those are a =$PREFIX=-shaped unix tree, and the Windows package has its
+own layout. Keeping it out is the point, not an oversight.
+
+*=-all= ships in BOTH containers*: =clautolisp-<ver>-all.tar.bz2= and
+=clautolisp-<ver>-all.zip=, "pour nos amis windowsiens". Same union
+tree, two containers. The check verifies BOTH are complete unions —
+checking only the tarball would let a half-built zip reach the very
+users it exists for.
+
+=collect-artefacts= ERRORS when =zip= or =unzip= is missing while a
+Windows artefact is present, instead of skipping: a release must not
+quietly ship without the artefacts a whole platform depends on. Both CI
+jobs' package guards now install them.
+
+The expected set is therefore *17* artefacts: 8 unix per-target
+(4 targets x binaries/libraries), 2 Windows zips, the 2 merged unix
+tarballs, documentation, sources.tar.bz2, sources.zip, and the 2 =-all=
+containers.
+
 ** A specification conflict to settle before C2 is implemented
 
 The artefact list asks for
@@ -164,11 +190,16 @@ target, a =$PREFIX=-shaped =tar.bz2= pair.
 directory, Windows-native layout (=bin/=, =lib/common-lisp/=, =doc/=),
 app-local CRT, no absolute path anywhere.
 
-Both cannot be the deliverable. Either the Windows lane produces the
-uniform =tar.bz2= pair like every other target (and the zip spec becomes
-a separate end-user installer), or the artefact list gains a
-Windows-shaped entry in place of the two tarballs. That is a product
-decision, so it is not taken here.
+SETTLED above: pjb chose =.zip=. What remains of C2 is the packaging
+work itself — producing those two zips on the Windows runner per
+=windows-package-spec.md=. One question survives for whoever does it:
+the spec describes ONE application zip
+(=<App>-<version>-win-<arch>.zip=, single top-level =<App>\=), while the
+artefact list keeps the binaries/libraries SPLIT that every other target
+has. The collect side currently expects the split
+(=...-binaries-windows-x86-64.zip= + =...-libraries-windows-x86-64.zip=);
+if the single app zip is wanted instead, say so and the expected set
+changes by one line in =check-release-artefact-set.sh=.
 
 Consequence for the 1.8.x release cut today: the Windows lane is still a
 stub, so the set will contain *14 of the 16* artefacts. Every other
