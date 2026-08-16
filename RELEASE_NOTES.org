@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.8.0 / alfe 1.8.0). For the
+master at the top of the file (clautolisp 1.8.41 / alfe 1.8.4). For the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
 
@@ -64,9 +64,19 @@ separate binary for tool integrators.
   ~*CLAL-DRIBBLE-INTERACTORS*~ widen the set. Default file:
   =$XDG_STATE_HOME/clautolisp/dribbles/YYYYMMDDTHHMMSS.log=. See
   § /Modes of Operation / Interactive REPL / Recording the session/.
+- A line whose *first* character is ~!~ sends the rest to your ~$SHELL~
+  with stdin/stdout/stderr *inherited*, so an interactive command can
+  prompt, page or draw — which ~startapp~ cannot do. Nothing may precede
+  the ~!~; a trailing ~&~ gets ~echo $!~ appended so the PID is printed;
+  a trailing backslash continues the command on the next line. The
+  character is the ~shell-escape-character~ setting of ~lisp.conf~ and
+  is in force in the debugger and the editors too. See § /Modes of
+  Operation / Interactive REPL / Running a shell command/.
 - Five dialects selectable via ~--strict~ / ~--autocad~ /
   ~--bricscad~ / ~--clautolisp~ / ~--lax~. The ~lax~ dialect silences
-  every encoding-dispatch diagnostic globally. See § /Options /
+  every encoding-dispatch diagnostic globally. ~--list-dialects~ prints
+  every accepted name, strict first and lax last, so the versioned
+  vendor spellings need not be guessed. See § /Options /
   Dialect selection/.
 - ~(setq *AUTOLISP-DIALECT* 'DIALECT)~ switches the dialect live: the
   REPL reader and the debugger's / inspector's form reads consult the
@@ -231,6 +241,17 @@ separate binary for tool integrators.
 - ~clal-file-encoding PATH~ — sniff the BOM, return one of
   ~"UTF-8-BOM"~ / ~"UTF-16-LE"~ / ~"UTF-16-BE"~ / ~"UTF-32-LE"~ /
   ~"UTF-32-BE"~ / ~"ANSI"~. See § /clautolisp Extensions/.
+- ~clal-common-lisp~ / ~clal-back~ — drop into a live Common Lisp REPL
+  inside the running image, and return from it. Unavailable until the
+  ~CLAUTOLISPDROP~ sysvar is set non-zero, so a program cannot fall into
+  it by accident. ~*clal-on-error*~ chooses what an unhandled CL error
+  does. See § /clautolisp Extensions/.
+- ~clal-optimize~ / ~clal-optimization~ — read and set the optimization
+  qualities. ~DEBUG~ above 0 is what makes breakpoints and stepping
+  possible; ~SPEED~ is pinned at 0 until the compiler tier exists.
+- ~clal-compile~, ~clal-module-extension~ — compile a lambda form, and
+  ask which file extension this host uses for a packaged artefact
+  (~.lap~ / the OS shared-library suffix) instead of guessing.
 
 ** sedit — structural editor + clipboard (=clautolisp/documentation/clautolisp-sedit-spec.org=)
 
@@ -948,6 +969,22 @@ file or COM), and forwards the workload.
 | autolisp-benchmark | libexec/autolisp-benchmark/{harness,benchmarks}        | share/doc/autolisp-benchmark/     |
 
 Override ~$PREFIX~ on the make line (default ~/opt/local~) to relocate.
+
+** What a release publishes
+
+Every release publishes, per target, a =binaries-<os>-<arch>= and a
+=libraries-<os>-<arch>= artefact — =.tar.bz2= everywhere, =.zip= for
+Windows, whose package has its own layout — plus the merged
+multi-platform =binaries= / =libraries= tarballs, the documentation
+tarball, and the sources as both =.tar.bz2= and =.zip=.
+
+=clautolisp-<version>-all.tar.bz2= and =clautolisp-<version>-all.zip=
+are the *unpacked union* of all of the above: one archive to extract and
+everything is in place at once, rather than an archive of archives. The
+two containers ship the same tree, the =.zip= being there for Windows
+users. The source tree inside it sits alongside =bin/=, =lib/= and
+=share/= under its own =clautolisp-<version>/= directory, so unpacking
+=-all= over a prefix does not scatter sources into it.
 
 ** Installing never builds as root
 
