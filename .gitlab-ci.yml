@@ -89,21 +89,40 @@ stages:
   when: on_success
   allow_failure: true
 
-# Platform-bound release jobs follow runner AVAILABILITY on a tag (pjb,
-# 2026-08-16): present machine -> its products are mandatory; absent machine
-# -> the job is skipped and the release ships without them, rather than
-# waiting on a laptop that is off. Same shape as .gate-*-hard in
-# .gitlab/native.yml; the online case must be first, since GitLab takes the
-# first matching rule.
+# Platform-bound release jobs: mandatory on a tag, unless the person cutting
+# the release says the machine is not there.
+#
+# The obvious form -- gate on $WINDOWS_RUNNER == "online" from
+# detect:runners -- DOES NOT WORK IN THE PARENT, and failed silently when
+# tried on release-1.8.43: GitLab evaluates `rules:' at PIPELINE CREATION,
+# before any job has run, so a variable published by detect:runners as a
+# DOTENV ARTIFACT does not exist yet. The condition was never true, the
+# `when: never' fallback won, and release:windows:x86-64 /
+# release:darwin:arm64 were never created at all -- a release quietly
+# missing two platforms WHILE BOTH MACHINES WERE ONLINE (detect:runners
+# reported exactly that in the same pipeline). Worse than the blocking it
+# replaced, and invisible.
+#
+# The child pipeline can do it because the parent passes those values as
+# TRIGGER VARIABLES, which are known when the child is created. The parent
+# cannot, so the intent is expressed explicitly instead: cutting a release
+# with a machine switched off means saying so.
+#
+#   git tag ... && git push          -> Windows/macOS products expected
+#   SKIP_WINDOWS_RELEASE=1 (CI var)  -> cut without the Windows products
+#   SKIP_MACOS_RELEASE=1             -> likewise for macOS
+#
+# Explicit beats automatic here: the failure mode of the automatic version
+# was a release that looked complete and was not.
 .on-release-windows: &on-release-windows
-  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $WINDOWS_RUNNER == "online"'
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $SKIP_WINDOWS_RELEASE != "1"'
   when: on_success
   allow_failure: false
 .on-release-windows-absent: &on-release-windows-absent
   if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
   when: never
 .on-release-macos: &on-release-macos
-  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $MACOS_RUNNER == "online"'
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $SKIP_MACOS_RELEASE != "1"'
   when: on_success
   allow_failure: false
 .on-release-macos-absent: &on-release-macos-absent
