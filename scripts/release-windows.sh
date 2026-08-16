@@ -21,9 +21,14 @@ set -e
 # a login shell (-l) sources profiles that may cd elsewhere.
 cd "$(dirname "$0")/.."
 
+# The machine's PATH and the C compiler, in POSIX form. This must be SOURCED
+# on the bash side: CC set from PowerShell comes through converted to
+# "C:/msys64/..." and CMake truncates it at the colon (see the file).
+. "$(dirname "$0")/environnement-windows.sh"
+
 echo "--- environment"
 uname -a
-echo "MSYSTEM=${MSYSTEM:-<unset>}"
+echo "MSYSTEM=${MSYSTEM:-<unset>}  CC=${CC:-<unset>}"
 command -v sbcl >/dev/null 2>&1 && sbcl --version || echo "sbcl: NOT FOUND"
 command -v cc   >/dev/null 2>&1 && cc --version | head -1 || echo "cc: NOT FOUND"
 command -v cmake >/dev/null 2>&1 && cmake --version | head -1 || echo "cmake: NOT FOUND"

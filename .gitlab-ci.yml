@@ -602,43 +602,46 @@ release:darwin:arm64:
 #
 # pjb built the Windows zips with `make release' from an MSYS2 bash with no
 # trouble, so this lane does the same rather than reimplementing packaging
-# in PowerShell. The runner's shell executor IS PowerShell, so every step
-# hands the work to MSYS2 bash:
+# in PowerShell.
 #
-#   - MSYS2_ROOT / MSYS2_SHELL locate bash (overridable as CI/CD variables
-#     if the box moves it from C:\msys64);
-#   - MSYSTEM picks the SUBSYSTEM. This is not cosmetic: the compiler that
-#     ends up as CC differs per subsystem (MSYS / MINGW64 / UCRT64 /
-#     CLANG64), and choosing it wrongly is what
-#     build-tool-paths-unquoted.issue is actually about;
-#   - `-l' gives a login shell so the subsystem's PATH is set up, and the
-#     working directory is translated with cygpath because $CI_PROJECT_DIR
-#     arrives in Windows form (C:\...), which bash cannot cd into.
+# The PowerShell -> MSYS2 handoff follows run-forest-run, which pjb pointed
+# at as the place where it is normalised; scripts/avec-bash.ps1 and
+# scripts/environnement-windows.sh are adapted from it (see their headers).
+# The three findings that make the difference, each learned the hard way
+# there rather than here:
+#
+#   - MSYS2_PATH_TYPE=inherit, or the login profile REPLACES the Windows
+#     PATH and sbcl disappears;
+#   - MINGW64 before UCRT64, because build-libredwg.sh refuses UCRT64 and
+#     CLANG64 for the native codec (they import private UCRT API sets that
+#     native SBCL lacks). Picking "whatever is installed" is taking the
+#     observation for a criterion;
+#   - CC set on the BASH side in POSIX form: from PowerShell it arrives as
+#     "C:/msys64/..." and CMake truncates it at the colon, which is the
+#     real content of build-tool-paths-unquoted.issue.
 #
 # The artefacts are .zip here and .tar.bz2 everywhere else: the Makefile's
 # pack-release-artefact branches on the target OS (pjb, 2026-08-16). No
 # PowerShell packaging code exists, so there is nothing to keep in step.
 #
 # SHAKEDOWN PENDING: like the vendor probes before it, this needs its first
-# run on the real runner to settle. Expect iteration on MSYSTEM and on
-# which Lisps are present (RELEASE_LISPS below is sbcl-only until a CCL
-# build is confirmed on that box).
+# run on the real runner to settle. RELEASE_LISPS is sbcl-only until a CCL
+# build is confirmed on that box.
 release:windows:x86-64:
   extends: .release-common
   tags: [windows, amd64, shell]   # windows PC (intermittent): GUI bricscad/autocad host
   variables:
     MSYS2_ROOT: 'C:\msys64'
-    MSYSTEM: UCRT64
     RELEASE_LISPS: "sbcl"
   script:
-    - '$bash = Join-Path $env:MSYS2_ROOT "usr\bin\bash.exe"'
-    - 'if (-not (Test-Path $bash)) { throw "MSYS2 bash not found at $bash -- set the MSYS2_ROOT CI/CD variable to the MSYS2 install root" }'
-    # The shell work lives in scripts/release-windows.sh, NOT inline: a
-    # PowerShell double-quoted string expands $(...) itself, so an inline
-    # `$(cygpath ...)' would be evaluated by PowerShell (which has no
-    # cygpath) instead of by bash. The command below deliberately contains
-    # no $ for PowerShell to touch.
-    - '& $bash -lc "sh scripts/release-windows.sh"'
+    # scripts/avec-bash.ps1 owns the PowerShell -> MSYS2 handoff: it picks
+    # MSYS2's bash over Git's, sets MSYS2_PATH_TYPE=inherit so the login
+    # profile does not wipe the Windows PATH (sbcl lives there), and selects
+    # the subsystem with MINGW64 FIRST -- the DWG codec refuses UCRT64 and
+    # CLANG64. It deliberately does not set CC; the bash side does, because
+    # a CC crossing the PowerShell boundary comes out as "C:/..." and CMake
+    # truncates it at the colon.
+    - '& scripts/avec-bash.ps1 scripts/release-windows.sh'
     # PowerShell does NOT fail a step on a native program's non-zero exit,
     # so without this check the job would go green over a failed build and
     # the release would come up two artefacts short.
