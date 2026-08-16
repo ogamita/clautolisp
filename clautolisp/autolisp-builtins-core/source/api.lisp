@@ -665,7 +665,57 @@ TRUSTEDPATHS to trust it."
                    (apply #'call-autolisp-function function arguments)))))
         (set-autolisp-symbol-function symbol stub)))))
 
-(defun builtin-vl-catch-all-apply (function-designator arg-list)
+(defun %vl-catch-all-apply-one-argument-established-p ()
+  "True under the dialects where a one-argument (vl-catch-all-apply f) is
+ESTABLISHED, i.e. measured on the engine rather than assumed.
+
+BricsCAD is established by its own shipped vle-extension.lsp, which the
+engine loads at startup and which calls (vl-catch-all-apply 'vl-load-com)
+with no argument list.  AutoCAD is NOT established: nothing has probed it
+(probes/sources/vl-catch-all-apply-arity-probe.lsp asks the question), so
+it stays out of this list until the answer is measured.  Adding it on the
+strength of `both engines are probably alike' is exactly the guess this
+project keeps paying for."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         ;; The PRODUCT, not the name: dialect names are versioned
+         ;; (:bricscad-v26, :bricscad-v25, …), so testing the name would
+         ;; have silenced nothing -- `--dialect bricscad' resolves to
+         ;; :bricscad-v26 and warned about itself. Measured, not assumed:
+         ;; the first run of this predicate did exactly that.
+         (product (and dialect
+                       (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))
+         (name (and dialect
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+    (and (or (member product '(:bricscad :clautolisp))
+             (member name '(:lax :clautolisp)))
+         t)))
+
+(defun emit-vl-catch-all-apply-arity-warning ()
+  "Advisory to *ERROR-OUTPUT*: a one-argument VL-CATCH-ALL-APPLY was used
+under a dialect that does not establish it.  The call still takes effect
+-- a dialect problem is flagged, never raised, as everywhere else here --
+so a vendor file can still be loaded and read under --strict."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (name (and dialect
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+    (format *error-output*
+            "~&[vl-catch-all-apply-arity] (vl-catch-all-apply f) with no ~
+argument list is a BricsCAD tolerance; the spec and --dialect ~(~A~) ~
+require (vl-catch-all-apply f arg-list). Treated as an empty list. Use ~
+--dialect bricscad to silence.~%"
+            (or name "default"))))
+
+(defun builtin-vl-catch-all-apply (function-designator
+                                   &optional (arg-list nil arg-list-supplied-p))
+  ;; The argument list is OPTIONAL because BricsCAD accepts it omitted:
+  ;; its own vle-extension.lsp, loaded by the engine at startup, calls
+  ;; (vl-catch-all-apply 'vl-load-com).  Requiring it made --dialect
+  ;; bricscad reject the vendor's own file -- the dialect that claims to
+  ;; emulate that engine refusing what the engine ships
+  ;; (vl-catch-all-apply-optional-arglist.issue).
+  (unless arg-list-supplied-p
+    (unless (%vl-catch-all-apply-one-argument-established-p)
+      (emit-vl-catch-all-apply-arity-warning)))
   (require-proper-list arg-list "VL-CATCH-ALL-APPLY")
   (let* ((function (resolve-autolisp-function-designator function-designator))
          ;; Record this catch on the per-thread catch stack so the

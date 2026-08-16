@@ -430,6 +430,37 @@
     (is (null lowercase)
         "the source token nil reads as CL nil")))
 
+(test vl-catch-all-apply-accepts-an-omitted-argument-list
+  ;; BricsCAD accepts (vl-catch-all-apply f) with no argument list, and
+  ;; its own shipped vle-extension.lsp relies on it -- so requiring both
+  ;; arguments made --dialect bricscad reject the vendor's own file
+  ;; (vl-catch-all-apply-optional-arglist.issue).
+  ;;
+  ;; PINNED ON THE ARITY, not on that file: it is not redistributable and
+  ;; is absent from every non-macOS host, so a test that loaded it would
+  ;; pass by being skipped exactly where it matters.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (install-core-builtins)
+  (let ((context (clautolisp.autolisp-runtime:current-evaluation-context)))
+    (flet ((eval-source (source)
+             (clautolisp.autolisp-runtime:autolisp-eval-progn
+              (clautolisp.autolisp-runtime:read-runtime-from-string source)
+              context)))
+      (eval-source "(defun answer () 42)")
+      (is (eql 42 (eval-source "(vl-catch-all-apply 'answer)"))
+          "(vl-catch-all-apply f) calls f with no arguments and returns its value")
+      (is (eql 42 (eval-source "(vl-catch-all-apply 'answer nil)"))
+          "(vl-catch-all-apply f nil) is unchanged by the optional argument")
+      (is (null (eval-source "(vl-catch-all-error-p (vl-catch-all-apply 'answer))"))
+          "the one-argument form is not reported as a catch-all error")
+      ;; Making the argument OPTIONAL must not make it UNTYPED: a non-list
+      ;; argument list still raises, exactly as before this change.
+      (is (not (null (nth-value 1 (ignore-errors
+                                    (eval-source "(vl-catch-all-apply 'answer \"no\")")))))
+          "a non-list argument list still raises, rather than being taken as empty"))))
+
 (test vl-catch-all-apply-traps-nested-quit-from-thunk
   ;; Regression for the test-unitaire.lsp pattern: t:fail does (quit)
   ;; from inside the thunk t:run-test wraps in

@@ -170,6 +170,15 @@ separate binary for tool integrators.
   ~lambda~ ~&rest~ parameter (a BricsCAD extension AutoCAD does not
   support) — silent under ~--bricscad~ / ~--clautolisp~ / ~--lax~,
   warns under ~--strict~ / ~--autocad~.
+- ~(vl-catch-all-apply f)~ — the argument list may be OMITTED, and is
+  then taken as empty. BricsCAD accepts this and relies on it: the
+  ~vle-extension.lsp~ shipped inside BricsCAD V26 and loaded by the
+  engine at startup calls ~(vl-catch-all-apply 'vl-load-com)~, so
+  requiring both arguments made ~--dialect bricscad~ reject the vendor's
+  own file. Silent under ~--bricscad~ / ~--lax~ / ~--clautolisp~;
+  elsewhere it emits ~[vl-catch-all-apply-arity]~ and still runs.
+  AutoCAD's behaviour is not claimed either way — nothing has probed it,
+  and a probe now asks. Portable code passes the list explicitly.
 - Once per occurrence: each source site warns at most once per run, on
   its first evaluation — a loop around the same ~defun~ warns once, a
   guarded/never-evaluated ~defun~ never warns, and a *different* ~defun~

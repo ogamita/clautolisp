@@ -17,3 +17,4 @@
 probe-sysvars.lsp      cad-probe-run-sysvar-probes
 probe-rtos.lsp         cad-probe-run-rtos-probes
 probe-secureload.lsp   cad-probe-run-secureload-probes
+probe-vl-catch-all-apply.lsp  cad-probe-run-vl-catch-all-apply-probes

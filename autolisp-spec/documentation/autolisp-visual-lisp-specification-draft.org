@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.9.5
+#+VERSION: 0.9.6
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.9.2*.
+The current document version is *0.9.6*.
 
 Any modification of this document must increment its version number.
 
@@ -68507,6 +68507,32 @@ Visual LISP Function
 *** Arguments and Values
 - `function`: function designator
 - `arg-list`: list of arguments
+
+*** Vendor divergence — the argument list
+AutoCAD's documentation and this specification give `arg-list` as
+REQUIRED.
+
+BricsCAD accepts it OMITTED, and depends on doing so: the
+`vle-extension.lsp` that ships inside BricsCAD V26 and is loaded by the
+engine at startup calls `(vl-catch-all-apply 'vl-load-com)`.
+
+Whether AutoCAD's engine rejects the one-argument form is NOT
+established: its documentation requiring the argument is not evidence
+about what the engine does, and nothing here has probed it. The
+question is open, and asked by
+`probes/sources/probe-vl-catch-all-apply.lsp`.
+
+Portable code passes the list explicitly — `(vl-catch-all-apply 'f nil)`
+means the same thing on every engine.
+
+**** clautolisp
+clautolisp accepts the one-argument form in every dialect, treating the
+missing list as empty: a dialect claiming to emulate BricsCAD cannot
+reject the file BricsCAD itself ships. Outside the dialects where the
+tolerance is established (`bricscad`, `lax`, `clautolisp`) it emits the
+`[vl-catch-all-apply-arity]` portability diagnostic — the call still
+takes effect, so a vendor file remains loadable and readable under
+`--strict`.
 
 *** Description
 Calls `function` with `arg-list`, trapping errors and returning a catch-all error object instead of unwinding directly into the caller.

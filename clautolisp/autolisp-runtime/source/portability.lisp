@@ -352,6 +352,40 @@ from ENTMAKE with no other sign. Adding the markers works on both."
    ("clautolisp: divergence register" . "issues/open/vendor-probe-autocad-bricscad-divergences.issue")))
 
 (register-dialect-warning
+ :tag "vl-catch-all-apply-arity"
+ :title "VL-CATCH-ALL-APPLY called without an argument list"
+ :kind :vendor-divergence
+ :message "(vl-catch-all-apply f) with no argument list is a BricsCAD tolerance; the spec and --dialect ~A require (vl-catch-all-apply f arg-list). Treated as an empty list."
+ :arguments "the active dialect name"
+ :example ": [vl-catch-all-apply-arity] in LOAD-VLE: (vl-catch-all-apply f) with no argument list is a BricsCAD tolerance; the spec and --dialect strict require (vl-catch-all-apply f arg-list). Treated as an empty list."
+ :dialects
+ "The autolisp-spec entry gives the syntax as
+ (vl-catch-all-apply function arg-list), both arguments required, and
+AutoCAD's documentation agrees.
+
+BricsCAD accepts the argument list omitted, and relies on it: the
+vle-extension.lsp that ships inside BricsCAD V26 and is loaded by the
+engine at startup calls (vl-catch-all-apply 'vl-load-com). A dialect
+claiming to emulate that engine cannot reject the file the engine
+ships, so clautolisp accepts the one-argument form in every dialect and
+treats the missing list as empty.
+
+AutoCAD's behaviour is NOT established here. Nothing has probed it, so
+it is not claimed either way; probes/sources/vl-catch-all-apply-arity-probe.lsp
+asks the question, and the dialect list moves only when the probe
+answers. Silent under --dialect bricscad, lax and clautolisp; flagged
+elsewhere."
+ :rationale
+ "Writing the one-argument form makes code that runs on BricsCAD and may
+not run on AutoCAD, with nothing at the call site to say so. Passing an
+explicit nil -- (vl-catch-all-apply 'f nil) -- means the same thing on
+every engine and costs four characters."
+ :references
+ '(("clautolisp: emitted by" . "clautolisp/autolisp-builtins-core/source/api.lisp, EMIT-VL-CATCH-ALL-APPLY-ARITY-WARNING")
+   ("clautolisp: issue" . "issues/open/vl-catch-all-apply-optional-arglist.issue")
+   ("BricsCAD: the vendor file that requires it" . "BricsCAD V26.app/Contents/MacOS/vle-extension.lsp")))
+
+(register-dialect-warning
  :tag "entmod-nongraphical"
  :title "ENTMOD on a non-graphical object"
  :kind :vendor-divergence

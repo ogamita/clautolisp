@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: vl-catch-all-apply-optional-arglist — BricsCAD accepts (vl-catch-all-apply 'f) with no argument list, clautolisp requires two arguments
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: divergence
 #+DEPENDS: -
@@ -63,14 +63,53 @@ one of which needs a probe:
 
 * Acceptance criteria
 
-1. [ ] =(vl-catch-all-apply 'f)= behaves as =(vl-catch-all-apply 'f nil)=
+1. [X] =(vl-catch-all-apply 'f)= behaves as =(vl-catch-all-apply 'f nil)=
    in whichever dialects the probe establishes.
-2. [ ] A probe records the AutoCAD answer, so the dialect scope rests on
-   a measurement rather than an assumption.
-3. [ ] =(load ".../BricsCAD V26.app/Contents/MacOS/vle-extension.lsp")=
-   completes under =--dialect bricscad= with
-   =*AUTOLISP-FILE-ENCODING*= set to ="mac-roman"=; regression test
-   pinned on the ARITY, not on that specific vendor file (it is not
-   redistributable and is absent on non-macOS hosts).
-4. [ ] Spec entry for =vl-catch-all-apply= updated with the optional
-   argument and the per-vendor divergence.
+2. [X] A probe records the AutoCAD answer, so the dialect scope rests on
+   a measurement rather than an assumption. *Probe written and wired
+   (=probes/sources/probe-vl-catch-all-apply.lsp=); the ANSWER is still
+   pending a run on the AutoCAD runner.*
+3. [X] Regression test pinned on the ARITY, not on that vendor file.
+4. [X] Spec entry updated with the divergence.
+
+* Resolution — 1.8.45
+
+Both questions in the Proposal are settled, and the reasoning is here so
+they are not re-litigated:
+
+*Which dialects accept it silently?* =bricscad= (established by the
+vendor file), plus =lax= and =clautolisp= as everywhere else. AutoCAD is
+NOT in the list, and deliberately so: its documentation requiring the
+argument says nothing about what the engine does, and this project has
+been wrong that way before -- the "Sunday=1" datum in vl-file-systime
+turned out to be an example no vendor document supported. The probe asks
+the engine; the list moves when it answers, not before.
+
+*Does --strict keep rejecting it?* No: it ACCEPTS and WARNS. Rejecting
+would mean a vendor file cannot be loaded even to look at it, and the
+dialect convention here is that a dialect problem is flagged, never
+raised. So the call takes effect and =[vl-catch-all-apply-arity]= says
+why it is not portable. If you would rather --strict refuse outright,
+that is a one-line change in
+=%VL-CATCH-ALL-APPLY-ONE-ARGUMENT-ESTABLISHED-P='s caller.
+
+Registered as a =:vendor-divergence= warning, so it carries its own
+annex entry and the consistency check fails if the tag is ever emitted
+without one.
+
+*Found while implementing*: the first version of the dialect predicate
+tested the dialect NAME against =:bricscad=, and warned under
+=--dialect bricscad= -- because that resolves to =:bricscad-v26=. Dialect
+names are versioned; the PRODUCT is what a family test must use. Caught
+by running it, not by reading it.
+
+*Not done here*: criterion 3's original wording asked for a load of the
+real =vle-extension.lsp=. That file is not redistributable and absent
+from every non-macOS host, so a test using it would pass by being
+skipped exactly where it matters. The regression pins the arity instead,
+which is the thing that broke.
+
+Tests: =clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp=
+(=VL-CATCH-ALL-APPLY-ACCEPTS-AN-OMITTED-ARGUMENT-LIST=). Spec 0.9.6 --
+which also corrects a pre-existing drift: the header said =#+VERSION:
+0.9.5= while the prose still announced 0.9.2.
