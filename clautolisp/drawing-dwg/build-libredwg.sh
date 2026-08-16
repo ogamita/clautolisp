@@ -115,8 +115,25 @@ cmake -S "$lr" -B "$build" \
       -DCMAKE_C_COMPILER="$compiler_path" \
       -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DDISABLE_WERROR=ON \
       -DCMAKE_C_FLAGS="-w -Wno-unused-command-line-argument -D_DARWIN_C_SOURCE"
-cmake --build "$build" --target redwg \
-      -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+# Build parallelism is capped on Windows, and that is about MEMORY, not
+# speed. libredwg's generated sources (in_dxf.c, decode.c, encode2.c) are
+# enormous, and one cc1 on them can take well over a gigabyte; -j<ncores>
+# on a laptop runs that many at once. On the release-1.8.41 tag it exhausted
+# the Windows box -- four files failed within the same second with
+# "cc1.exe: out of memory allocating ... bytes", which is what a parallel
+# build looks like when it runs out, not a compiler bug.
+#
+# LIBREDWG_BUILD_JOBS overrides both defaults, for a machine with more (or
+# less) headroom than assumed.
+jobs=${LIBREDWG_BUILD_JOBS:-}
+if [ -z "$jobs" ]; then
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) jobs=2 ;;
+        *) jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4) ;;
+    esac
+fi
+echo "building libredwg with -j$jobs"
+cmake --build "$build" --target redwg -j"$jobs"
 
 # Compile the shim, linked against libredwg. Two rpaths so the SAME
 # binary works both in the dev tree (libredwg in $build) and when
