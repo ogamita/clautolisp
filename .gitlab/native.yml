@@ -448,6 +448,19 @@ build:alfe:macos:
     paths: [autolisp-front-end/tools/alfe/bin/]
     expire_in: 1 day
 
+# NO artifacts, deliberately. This job's value is proving that alfe BUILDS
+# on Windows, which the build itself establishes; the binary it produced was
+# uploaded for nobody. Verified before removing: no job `needs' it, nothing
+# downloads it, and the CAD jobs on the same runner rebuild alfe themselves.
+#
+# It was not merely waste. On a release tag this job is allow_failure: false
+# (.gate-windows-hard), and on release-1.8.42 the ~13 MB upload died three
+# times mid-POST -- "use of closed network connection" -- so a release was
+# blocked by an artefact with no consumer. Every Windows job that uploads
+# 0.0-0.5 MB succeeds on that machine while this one does not, which points
+# at a middlebox (firewall/DPI/antivirus) cutting long transfers rather than
+# at anything CI can fix. The right answer is not to make the upload more
+# robust: it is not to make it.
 build:alfe:windows:
   extends: .gate-windows-hard
   stage: test
@@ -455,7 +468,5 @@ build:alfe:windows:
     GIT_SUBMODULE_STRATEGY: none
   script:
     - make -C autolisp-front-end build-alfe-sbcl
-  artifacts:
-    name: "alfe-$CI_COMMIT_SHORT_SHA"
-    paths: [autolisp-front-end/tools/alfe/bin/]
-    expire_in: 1 day
+    # Prove the binary exists and answers, since no artefact records it.
+    - autolisp-front-end/tools/alfe/bin/alfe-sbcl --version
