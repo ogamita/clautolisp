@@ -68,8 +68,31 @@ stages:
     - when: manual
       allow_failure: true
 
+# Windows shell-runner hygiene, repeated here because A CHILD PIPELINE
+# DOES NOT INHERIT THE PARENT'S ANCHORS. The same variable is set on the
+# parent's Windows jobs (.windows-clean in .gitlab-ci.yml); applying it
+# there only was an incomplete fix, and it showed: on MR!99 the child's
+# probe:suite:autocad:windows, vendor:probes:* and pathname:probe:* all
+# died in get_sources on
+#
+#   failed to remove dist/vendor-probes/autocad/drawing-data.log:
+#   Device or resource busy
+#
+# -- a CAD process outliving its job and holding a file open, which the
+# runner's default `git clean -ffdx' cannot delete on Windows (POSIX can
+# unlink an open file; Windows cannot). The job then dies before its own
+# script runs.
+#
+# Put on the GATE TEMPLATES rather than per job, so every Windows job in
+# this file is covered, including ones added later. `extends' deep-merges
+# variables, so a job with its own variables: block keeps both.
+.windows-clean-vars: &windows-clean-vars
+  GIT_CLEAN_FLAGS: -ffd
+
 .gate-windows-hard:
   tags: [windows, amd64, shell]
+  variables:
+    <<: *windows-clean-vars
   rules:
     - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $WINDOWS_RUNNER == "online"'
       when: on_success
@@ -93,6 +116,8 @@ stages:
 
 .gate-windows-soft:
   tags: [windows, amd64, shell]
+  variables:
+    <<: *windows-clean-vars
   rules:
     - if: '$WINDOWS_RUNNER == "online"'
       when: on_success
@@ -249,8 +274,16 @@ verify:bricscad-hidden-ui:windows:
 # MANUAL-ONLY (not auto-gated): --mode automation on macOS is not yet
 # validated — BricsCAD launches but the osascript/AppleScript path does not
 # drive it (it sits interactive), so an auto-run would just hang the serial
-# macOS runner. Kept clickable, pending the alfe-bricscad-automation-macos
-# decision (batch works; automation is the open question).
+# macOS runner. Kept clickable, but EXPECT IT TO FAIL, and not because
+# anything regressed: the alfe-bricscad-automation-macos decision was
+# taken in 1.8.34 (pjb chose option A), and `--mode automation' is now
+# WINDOWS-ONLY -- alfe refuses it on macOS with [NO-AUTOMATION], which is
+# exactly what this job then reports.
+#
+# It survives as the investigation tool for option B (driving the
+# launcher by hand in front of the machine), which the issue left open.
+# Manual-only, so it costs nothing until someone clicks it; a red run
+# here is the designed refusal, not a fault to chase.
 verify:bricscad-automation:macos:
   extends: .gate-macos-cad-manual
   stage: test
