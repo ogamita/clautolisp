@@ -2,6 +2,15 @@
 #
 # run-probes.sh PRODUCT
 #
+# READ FIRST if anything here misbehaves against a real CAD:
+#   documentation/accoreconsole-headless-autolisp.org
+#
+# It documents the traps this script exists inside -- MSYS2 rewriting the
+# /s switch, the CRLF requirement, SECURELOAD, the mandatory ._QUIT, and
+# why results must come from a FILE rather than stdout or an exit code.
+# Five consecutive failures here were three of those, each invisible
+# until the previous one was fixed.
+#
 # Run the probe suite (probes/sources/manifest.txt) inside PRODUCT
 # (autocad | bricscad | clautolisp), writing one record per line to a
 # committed results file:

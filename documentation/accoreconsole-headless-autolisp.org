@@ -1,0 +1,199 @@
+#+TITLE: accoreconsole — exécuter AutoLISP en headless
+#+AUTHOR: Pascal J. Bourguignon
+#+OPTIONS: toc:2 num:t
+
+* Provenance
+
+Notes de travail de pjb, rassemblées à l'occasion de la migration des
+tests CAD de SCHMS+ (branche =feat-eamoa-24679-pb-tests-cad-migration-sigfic=),
+versées ici le 2026-08-17.
+
+Elles sont dans le dépôt pour une raison précise : la suite
+=probes/scripts/run-probes.sh= a échoué **cinq fois de suite** contre un
+AutoCAD réel, sur cinq défauts distincts — et **trois** d'entre eux sont
+documentés noir sur blanc ci-dessous, au §2 et au §4. Chaque échec n'était
+visible qu'après correction du précédent. Ce texte aurait épargné la
+série ; c'est la définition d'un document qui a sa place dans le dépôt
+plutôt que dans un répertoire personnel.
+
+Les renvois à =src/schms/= désignent un dépôt CLIENT, non public. Les
+équivalents de ce dépôt-ci sont donnés au § /Références/.
+
+* 1 Ce que c'est
+
+=accoreconsole.exe= est le /core console/ d'AutoCAD : le moteur AutoCAD
+(base de données d'entités + interpréteur AutoLISP) sans aucune interface
+graphique. Livré avec AutoCAD depuis la 2013, dans le répertoire
+d'installation, à côté de =acad.exe= :
+
+: C:\Program Files\Autodesk\AutoCAD 2022\accoreconsole.exe
+
+Il n'existe *que sous Windows*. Ni AutoCAD for Mac ni BricsCAD
+macOS/Linux n'ont d'équivalent.
+
+Son unique moyen d'entrée est un *fichier script =.scr=* : pas de
+clavier, pas de dialogue, pas d'invite interactive.
+
+* 2 Ligne de commande
+
+: accoreconsole.exe /i <dessin.dwg> /s <script.scr> [/l <langue>] [/isolate <user> <dossier>]
+
+| Option     | Rôle                                                                              |
+|------------+-----------------------------------------------------------------------------------|
+| =/i=       | dessin d'entrée (=.dwg= ou =.dwt=). Sans lui, un dessin vide basé sur le gabarit par défaut. |
+| =/s=       | script à exécuter.                                                                |
+| =/l=       | code langue (=en-US=, =fr-FR=) quand plusieurs packs sont installés.              |
+| =/isolate= | profil / dossier de données utilisateur isolé, utile en CI pour ne pas polluer le profil courant. |
+
+Attention : c'est =/s= pour le script, alors que le =acad.exe= complet
+utilise =/b=. Les deux ne sont pas interchangeables.
+
+** Piège MSYS2 / Git-Bash
+
+Sous MSYS2, bash convertit =/i= et =/s= en chemins Windows (=I:\=, =S:\=)
+avant de les passer à l'exécutable. Il faut désarmer la conversion :
+
+#+begin_src sh
+MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 accoreconsole.exe /i "$dwg" /s "$scr"
+#+end_src
+
+Et convertir soi-même les chemins passés en arguments : =cygpath -w= pour
+les arguments de l'exécutable, =cygpath -m= (slashs) pour les chemins
+écrits dans les formes AutoLISP du script.
+
+* 3 Format du fichier =.scr=
+
+Un =.scr= rejoue exactement ce qu'un opérateur taperait à l'invite
+=Command:=. D'où toutes les règles ci-dessous.
+
+| Point        | Règle                                                                                     |
+|--------------+-------------------------------------------------------------------------------------------|
+| Fin de ligne | =\r\n= (CRLF). *Chaque fin de ligne vaut un appui sur ENTRÉE*, donc elle valide la ligne. |
+| Espace       | Équivalent à ENTRÉE. Un espace parasite valide prématurément.                             |
+| Ligne vide   | ENTRÉE supplémentaire → rejoue la commande précédente. Aucune ligne vide involontaire.    |
+| Encodage     | ANSI / codepage système (cp1252 en France). *Pas de BOM, pas d'UTF-8.*                    |
+| Commentaire  | Ligne commençant par =;=.                                                                 |
+| Commande     | Préfixe =_= = forme indépendante de la langue ; préfixe =.= court-circuite une redéfinition. D'où =._QUIT=. |
+| AutoLISP     | Une expression *complète et parenthésée par ligne*. La fin de ligne coupe la lecture.     |
+| Chemins      | Dans une chaîne AutoLISP : slashs, guillemets, espaces autorisés. Hors chaîne : *pas d'espace*. |
+
+Exemple minimal :
+
+#+begin_example
+; charge le point d'entrée puis lance les tests un par un
+(load "D:/travail/tests/.workdir/cad/test-cad-run.lsp")
+(C:RUN-NAMED "sigfic-cad" "migration-v1-vers-v5")
+(C:WRITE-SUMMARY)
+._QUIT _Y
+#+end_example
+
+** Terminer explicitement
+
+Sans =._QUIT _Y= en dernière ligne, le processus reste sur l'invite au
+lieu de rendre la main : il faut alors un timeout côté appelant. Le =_Y=
+répond à l'éventuelle demande d'enregistrement du dessin modifié.
+
+* 4 Ce qui ne marche pas en headless
+
+Pas de système graphique, donc : aucune boîte de dialogue (DCL hors jeu ;
+utiliser les variantes ligne de commande =-INSERT=, =-PLOT=, =-LAYER=,
+=-PURGE=, avec =FILEDIA= / =CMDDIA= à 0), aucune saisie interactive
+(=getpoint=, =getstring=, =entsel=, =ssget= sans argument, =getkword=),
+aucun rendu.
+
+** SECURELOAD
+
+Depuis AutoCAD 2014, =SECURELOAD= vaut 1 par défaut et bloque =(load)=
+d'un fichier hors des =TRUSTEDPATHS=. En test on le neutralise dès la
+première ligne :
+
+#+begin_src lisp
+(vl-catch-all-apply 'setvar (list "SECURELOAD" 0))
+#+end_src
+
+Le =vl-catch-all-apply= protège du cas où la variable n'existe pas (autre
+moteur, autre version).
+
+** Suite de démarrage
+
+Ne pas compter sur le chargement automatique du profil, de la suite
+APPLOAD ou du =.mnl= d'un menu : en headless, on charge *tout*
+explicitement depuis le script.
+
+** Ressources absentes du dessin
+
+Une CAO nue n'a que ce que contient le =.dwg= / =.dwt= d'entrée. Un style
+de texte, un calque ou un bloc attendu mais absent fait renvoyer =nil= à
+=tblsearch= et casse l'arithmétique plus loin.
+
+* 5 Récupérer les résultats
+
+*Ne pas se fier à stdout* : accoreconsole y mélange sa propre verbosité,
+et le flux contient des octets NUL (filtrer avec =tr -d '\000'=). Ne pas
+se fier non plus au *code de retour*, peu informatif.
+
+La méthode qui marche : le script Lisp écrit lui-même dans des fichiers
+convenus, et l'appelant les lit. Un fichier de statut initialisé à =99=
+par l'appelant, réécrit par le Lisp en fin de campagne, permet un timeout
+propre : dès qu'il n'est plus à =99=, la campagne est finie, même si le
+processus traîne.
+
+Cas particulier : =(vl-bt)= écrit sur la console. Sous accoreconsole la
+console est redirigée, donc le backtrace y atterrit naturellement ; sous
+BricsCAD =-B= elle ne l'est pas, il faut =LOGFILEMODE= / =LOGFILENAME=.
+
+* 6 Robustesse : une ligne par unité de travail
+
+Le script énumère *un appel par test* plutôt qu'une boucle Lisp interne.
+Un plantage franc du moteur pendant un test n'emporte alors que ce test :
+le script reprend à la ligne suivante. Une boucle Lisp, elle, disparaît
+tout entière avec le processus.
+
+Corollaire : la liste des unités de travail doit être énumérée *avant* le
+lancement de la CAO, côté shell.
+
+* 7 Choisir son moteur
+
+| Voie                                    | Plateforme   | Remarques                                                                 |
+|-----------------------------------------+--------------+---------------------------------------------------------------------------|
+| =accoreconsole.exe /i dwg /s scr=       | Windows      | Headless vrai, le plus rapide. Pas de GUI ⇒ pas de DCL.                  |
+| =acad.exe /nologo dwg /b scr=           | Windows      | AutoCAD complet piloté par script. Plus lent, ouvre une fenêtre. Noter =/b= et non =/s=. |
+| =bricscad.exe /B scr= / =bricscad -B scr= | les trois  | Sous Windows =/B=, ailleurs =-B= : avec =/B=, BricsCAD macOS/Linux croit à un dessin et échoue sur « Impossible to open /B.dwg ». |
+| =alfe --bricscad\vert{}--autocad=       | les trois    | *Obligatoire hors Windows* : BricsCAD lancé en =-B= n'y rend pas la main. Toujours =--no-init=. |
+| =clautolisp --dialect bricscad-v26=     | partout      | Pour les suites purement AutoLISP, sans CAO.                             |
+
+* 8 Catalogue des pièges
+
+- =.scr= en UTF-8 ou avec BOM → accents cassés, voire première ligne ignorée. Écrire en cp1252.
+- =.scr= en LF seul → comportement non garanti ; générer du CRLF.
+- Ligne vide en fin de fichier → rejoue la dernière commande.
+- Espace dans un chemin passé nu à une commande native → validation prématurée.
+- Expression Lisp sur plusieurs lignes → lecture tronquée.
+- Oubli de =._QUIT _Y= → le processus ne rend jamais la main.
+- =/b= au lieu de =/s= selon qu'on vise =acad.exe= ou =accoreconsole.exe=.
+- Conversion de chemins MSYS2 sur =/i= et =/s=.
+- Octets NUL dans la sortie console.
+- =SECURELOAD= à 1 → =(load)= refusé silencieusement ou en erreur.
+- Ressource absente du dessin d'entrée → =nil= puis arithmétique cassée.
+- Se fier au code de retour plutôt qu'à un fichier de statut écrit par le Lisp.
+
+* Références
+
+** Dans ce dépôt
+
+- =probes/scripts/run-probes.sh= — le harnais de sondes, qui applique le
+  §2 (désarmement MSYS2, =cygpath -w= / =-m=), le §3 (CRLF, =._QUIT _Y=)
+  et le §4 (=SECURELOAD=), et qui lit ses résultats dans un fichier
+  plutôt que sur stdout comme le §5 l'exige.
+- =probes/scripts/detect-cad.sh= — choix du moteur, §7.
+- =probes/sources/= — les suites elles-mêmes.
+- =scripts/run-vendor-probes.sh= / =.ps1= — l'autre famille de sondes,
+  qui passe par alfe.
+
+** Dans le dépôt client (non public)
+
+=src/schms/Makefile= (=PREPARE_TEST_SCRIPT=, =CHECK_TEST_RESULT=),
+=src/schms/tests/test-runner-commun.lsp= (=C:RUN-NAMED=,
+=C:WRITE-SUMMARY=, capture de =(vl-bt)=), =src/schms/tests/test-cad.lsp=,
+=src/schms/tests/bouchons-epure.lsp=,
+=src/schms/dev/scripts/build/list-tests.sh=.
