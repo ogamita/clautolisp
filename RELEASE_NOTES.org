@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.8.43 / alfe 1.8.4 /
+master at the top of the file (clautolisp 1.8.46 / alfe 1.8.4 /
 read-autolisp 1.8.0). For the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
@@ -990,16 +990,25 @@ file or COM), and forwards the workload.
 
 Override ~$PREFIX~ on the make line (default ~/opt/local~) to relocate.
 
-** On release-1.8.41 and release-1.8.42
+** On release-1.8.41, 1.8.42 and 1.8.43
 
-Both tags exist and publish NOTHING: neither pipeline produced the
-artefacts, and no GitLab Release was created for either. A tag never
-moves and is never deleted, so both stay as the record of the attempts.
-*1.8.43 is the first published release of the series since 1.8.0.*
+All three tags exist and publish NOTHING: no pipeline produced the
+artefacts, and no GitLab Release was created for any of them. A tag never
+moves and is never deleted, so the three stay as the record of the
+attempts. *1.8.46 is the first published release of the series since
+1.8.0.*
 
-Each attempt failed on the Windows runner, on a different fault, and
-each fault is fixed in the release that follows it — which is why they
-had to be separate tags rather than one retried:
+The third one is the instructive failure. Its pipeline went GREEN and
+still produced nothing: =collect:release= was SKIPPED, because it
+required =release:linux:arm32=, whose only rule is =when: manual= — an
+experimental qemu lane that never starts on a tag. A needs entry that
+cannot be satisfied makes GitLab skip the job rather than fail it, so
+nothing was red anywhere. Fixed in 1.8.46, together with a check that
+refuses that combination.
+
+Each attempt failed on a different fault, and each fault is fixed in the
+release that follows it — which is why they had to be separate tags
+rather than one retried:
 
 - *1.8.41* — stale =accoreconsole= processes held a file under =dist/=
   open, so the runner's =git clean= failed and every Windows job died
@@ -1009,11 +1018,23 @@ had to be separate tags rather than one retried:
   (the connection was cut mid-POST), and that job was release-blocking.
   The artefact had no consumer at all, so 1.8.43 stops producing it.
 
-The deeper fix is also in 1.8.43, and it is the one that matters beyond
-these two: *a release is no longer hostage to an absent machine*. On a
-release tag a platform's jobs are mandatory when its runner is online —
-so its products are in the release — and skipped when it is offline, so
-the release ships without them instead of waiting.
+- *1.8.43* — =collect:release= required a job that never runs, so it was
+  skipped and the pipeline was green with nothing to show. Fixed in
+  1.8.46.
+
+The deeper fix arrived with 1.8.43, and it is the one that matters beyond
+these three: *a release is no longer hostage to an absent machine*. On a
+release tag a platform's jobs run and are mandatory unless the person
+cutting the release declares the machine absent
+(=SKIP_WINDOWS_RELEASE=1= / =SKIP_MACOS_RELEASE=1=), in which case the
+release ships without that platform's products instead of waiting.
+
+The first attempt at that read runner availability automatically, from
+=detect:runners=. It could not work: GitLab evaluates =rules:= at
+pipeline creation, before any job has run, so a variable published as a
+dotenv artefact does not exist yet — and the jobs were silently not
+created at all. Declaring the absence explicitly is less clever and
+cannot fail that way.
 
 ** What a release publishes
 
