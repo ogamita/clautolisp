@@ -54,5 +54,37 @@ for n in $needs; do
     }
 done
 
+# A job that cannot start BY ITSELF must be declared `optional' in the
+# needs, or it makes collect:release unsatisfiable and GitLab silently
+# SKIPS it -- the release then produces no artefact set at all, with
+# nothing red anywhere. That is what release-1.8.43 did: arm32 is a
+# deliberate `when: manual' experiment, it was required rather than
+# optional, and the whole collect vanished.
+#
+# "Cannot start by itself" is read narrowly and syntactically: a job whose
+# ONLY rule is `when: manual'. Anything subtler belongs to a human.
+for j in $jobs; do
+    body=$(sed -n "/^$j:[[:space:]]*$/,/^[A-Za-z]/p" "$ci")
+    rules=$(printf '%s' "$body" | sed -n '/^[[:space:]]*rules:/,$p' \
+            | grep -c 'when:' || true)
+    manual=$(printf '%s' "$body" | sed -n '/^[[:space:]]*rules:/,$p' \
+             | grep -c 'when:[[:space:]]*manual' || true)
+    [ "$rules" -gt 0 ] || continue
+    [ "$rules" = "$manual" ] || continue          # can start on its own
+    # Manual-only: the corresponding need must say optional.
+    # `job:' restricts this to real need ENTRIES: the block also carries
+    # comments that name the jobs they explain, and matching those made
+    # this check fail on a line it had just been taught to accept.
+    if printf '%s' "$(sed -n '/^collect:release:[[:space:]]*$/,/^[A-Za-z]/p' "$ci")" \
+        | grep 'job:' | grep -F "$j" | grep -qv 'optional'; then
+        echo "FAIL: $j is manual-only, so collect:release must need it with"
+        echo "      optional: true -- otherwise the collect is unsatisfiable"
+        echo "      and GitLab SKIPS it, producing no release artefacts."
+        status=1
+    else
+        echo "ok  $j is manual-only and needed optionally"
+    fi
+done
+
 [ $status -eq 0 ] && echo "release collection: every release:* job is collected"
 exit $status

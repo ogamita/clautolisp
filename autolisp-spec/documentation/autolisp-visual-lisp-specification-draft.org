@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.9.5
+#+VERSION: 0.9.7
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.9.2*.
+The current document version is *0.9.7*.
 
 Any modification of this document must increment its version number.
 
@@ -68507,6 +68507,44 @@ Visual LISP Function
 *** Arguments and Values
 - `function`: function designator
 - `arg-list`: list of arguments
+
+*** The argument list is optional in practice
+Autodesk's documentation gives `arg-list` as required. *Both engines
+accept it omitted*, and treat the missing list as an empty one. This is
+a documentation error, not a vendor divergence.
+
+Measured, not inferred:
+
+- *BricsCAD V26* — the `vle-extension.lsp` that ships inside the
+  application and is loaded by the engine at startup calls
+  `(vl-catch-all-apply 'vl-load-com)`. An engine that rejected the form
+  could not load its own file.
+- *AutoCAD 2022* — probe run `20260817T070448Z`, a real
+  `accoreconsole.exe` on MS-Windows:
+  `(vl-catch-all-apply (lambda () 42))` returned `42`, while the same
+  call on a function that requires an argument produced the engine's own
+  arity error (`"nombre d'arguments insuffisants"`), which is what an
+  EMPTY argument list produces.
+
+The probe is `probes/sources/probe-vl-catch-all-apply.lsp`; it carries a
+two-argument control case, so a future answer cannot be read as evidence
+unless the control also passes.
+
+Writing `(vl-catch-all-apply 'f nil)` remains clearer, and is what this
+specification's own examples use — but the one-argument form is not a
+portability hazard.
+
+**** clautolisp
+Accepts the one-argument form in every dialect, treating the missing
+list as empty.
+
+Under `--strict` it emits `[vl-catch-all-apply-arity]`. Not because the
+engines disagree — they do not — but because *neither documents the
+tolerance*, and `--strict` means the documented portable subset. Two
+engines accepting a form today is not a promise that a future version
+will. `--autocad` and `--bricscad` ask for a specific engine's measured
+behaviour and stay silent; `--clautolisp` and `--lax` silence it as they
+do every diagnostic of this kind.
 
 *** Description
 Calls `function` with `arg-list`, trapping errors and returning a catch-all error object instead of unwinding directly into the caller.

@@ -1,0 +1,133 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vl-catch-all-apply-optional-arglist — BricsCAD accepts (vl-catch-all-apply 'f) with no argument list, clautolisp requires two arguments
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: fix-vl-catch-all-apply-optional-arglist
+
+* Context
+
+Found 2026-08-16 while verifying =macroman-encoding-name= end to end:
+once the encoding fault was out of the way, BricsCAD V26's own shipped
+=vle-extension.lsp= got further and then failed on ARITY.
+
+The call is the vendor's, not ours —
+=/Applications/BricsCAD V26.app/Contents/MacOS/vle-extension.lsp=,
+offset 4452:
+
+#+begin_example
+(vl-catch-all-apply 'vl-load-com)
+(setq *hasAX* (and vlax-get-acad-object))
+#+end_example
+
+BricsCAD loads this file at startup, so BricsCAD necessarily accepts a
+one-argument =vl-catch-all-apply=.
+
+* Problem
+
+clautolisp requires both arguments in every dialect:
+
+#+begin_example
+$ clautolisp --no-init --dialect bricscad -x '(progn (setq *AUTOLISP-FILE-ENCODING* "mac-roman")
+    (load "/Applications/BricsCAD V26.app/Contents/MacOS/vle-extension.lsp"))'
+clautolisp: runtime error: BUILTIN-ERROR: AutoLISP builtin
+  VL-CATCH-ALL-APPLY signaled an error: invalid number of arguments: 1
+  in SUBR VL-CATCH-ALL-APPLY: (VL-LOAD-COM)
+#+end_example
+
+So no ALPM system that references the installed BricsCAD library can be
+loaded under =--dialect bricscad=: the vendor's own file is rejected by
+the dialect that claims to emulate its engine.
+
+The builtin is =BUILTIN-VL-CATCH-ALL-APPLY=
+(=autolisp-builtins-core/source/api.lisp=, =REQUIRE-PROPER-LIST= on the
+second argument at line 669) and is registered as a fixed-arity SUBR.
+
+* Proposal
+
+Make the argument list optional — =(vl-catch-all-apply FUNCTION
+[ARG-LIST])=, defaulting to =nil=, i.e. call FUNCTION with no arguments
+— and decide the dialect scope. Two questions to settle before coding,
+one of which needs a probe:
+
+1. *Which dialects?* =bricscad-v26= is established by the vendor file
+   above. Whether AutoCAD accepts the one-argument form is NOT known:
+   nothing here has probed it. Do not guess — add it to the probe suite
+   (=probes/sources/=) and let the answer decide between "bricscad +
+   lax + clautolisp" and "every dialect".
+2. *Does =--strict= keep rejecting it?* Consistent with the treatment
+   of other vendor-specific tolerances, =--strict= should stay strict
+   and emit the usual divergence diagnostic rather than silently
+   accepting a form only one engine takes.
+
+* Acceptance criteria
+
+1. [X] =(vl-catch-all-apply 'f)= behaves as =(vl-catch-all-apply 'f nil)=
+   in whichever dialects the probe establishes.
+2. [X] A probe records the AutoCAD answer, so the dialect scope rests on
+   a measurement rather than an assumption. *ANSWERED 2026-08-17, run
+   =20260817T070448Z= on a real accoreconsole (AutoCAD 2022, Windows):*
+
+   | case                                     | AutoCAD 2022                    |
+   |------------------------------------------+---------------------------------|
+   | control, =(vl-catch-all-apply f nil)=    | ok, 42                          |
+   | argument list omitted                    | *ok, 42*                        |
+   | omitted, function requires an argument   | error, "nombre d'arguments insuffisants" |
+
+   So AutoCAD ACCEPTS it, and treats the missing list as EMPTY -- the
+   same as BricsCAD and as clautolisp. The third case is the
+   discriminating one; the French wording is the engine's own, which is
+   also what proves the run came from AutoCAD and not from our baseline.
+3. [X] Regression test pinned on the ARITY, not on that vendor file.
+4. [X] Spec entry updated with the divergence.
+
+* Resolution — 1.8.45
+
+Both questions in the Proposal are settled, and the reasoning is here so
+they are not re-litigated:
+
+*Which dialects accept it silently?* SETTLED BY THE PROBE, and the answer
+overturned the shipped design. Both engines accept it, so there is no
+vendor divergence at all: =autocad=, =bricscad=, =clautolisp= and =lax=
+are silent. Only =strict= warns, and for a different reason than the one
+first implemented -- see below.
+
+The first implementation had it backwards, warning under =--autocad= on
+the strength of Autodesk's documentation. Documentation is not evidence
+about an engine. That is exactly why the probe was written BEFORE the
+dialect scope was decided, and it is the one part of this issue's
+handling that worked as intended.
+
+*Does --strict keep rejecting it?* It never rejects -- it accepts and
+WARNS, because a dialect problem is flagged here, never raised, and
+refusing would mean a vendor file cannot be loaded even to read it.
+
+But the REASON for that warning changed after the measurement (pjb,
+2026-08-17: "il y aura donc un nouveau warning dialect sur cette
+forme"). It is no longer a =:vendor-divergence= -- the engines agree --
+but a =:portability= hazard of a different kind: the tolerance is
+UNDOCUMENTED by both vendors, and =--strict= is precisely the dialect
+that asks for the documented subset. Two engines accepting a form today
+is not a promise about tomorrow.
+
+Registered as a =:vendor-divergence= warning, so it carries its own
+annex entry and the consistency check fails if the tag is ever emitted
+without one.
+
+*Found while implementing*: the first version of the dialect predicate
+tested the dialect NAME against =:bricscad=, and warned under
+=--dialect bricscad= -- because that resolves to =:bricscad-v26=. Dialect
+names are versioned; the PRODUCT is what a family test must use. Caught
+by running it, not by reading it.
+
+*Not done here*: criterion 3's original wording asked for a load of the
+real =vle-extension.lsp=. That file is not redistributable and absent
+from every non-macOS host, so a test using it would pass by being
+skipped exactly where it matters. The regression pins the arity instead,
+which is the thing that broke.
+
+Tests: =clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp=
+(=VL-CATCH-ALL-APPLY-ACCEPTS-AN-OMITTED-ARGUMENT-LIST=). Spec 0.9.6 --
+which also corrects a pre-existing drift: the header said =#+VERSION:
+0.9.5= while the prose still announced 0.9.2.

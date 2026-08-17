@@ -665,7 +665,55 @@ TRUSTEDPATHS to trust it."
                    (apply #'call-autolisp-function function arguments)))))
         (set-autolisp-symbol-function symbol stub)))))
 
-(defun builtin-vl-catch-all-apply (function-designator arg-list)
+(defun %vl-catch-all-apply-documented-arity-required-p ()
+  "True under the dialect that asks for the DOCUMENTED contract.
+
+Both engines accept the one-argument form -- measured, see the builtin
+below -- so this is not a vendor divergence and the vendor dialects stay
+silent about it. But no vendor DOCUMENTS it, and pjb's call (2026-08-17)
+is that relying on an undocumented tolerance deserves a warning: what two
+engines happen to accept today is not what they promise tomorrow.
+
+--strict is exactly the dialect that means \"the documented portable
+subset\", so it is where the warning belongs. --autocad / --bricscad ask
+for a specific engine's real behaviour, which is measured and fine;
+--clautolisp and --lax silence everything of this kind anyway."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (name (and dialect
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+    (eq name :strict)))
+
+(defun emit-vl-catch-all-apply-arity-warning ()
+  "Advisory to *ERROR-OUTPUT*: (vl-catch-all-apply f) without an argument
+list, under --strict. The call takes effect -- both engines accept it --
+so this flags a documentation risk, not a failure."
+  (format *error-output*
+          "~&[vl-catch-all-apply-arity] (vl-catch-all-apply f) without an ~
+argument list works on AutoCAD and BricsCAD but is documented by ~
+neither; --dialect strict asks for the documented subset. Pass nil ~
+explicitly.~%"))
+
+(defun builtin-vl-catch-all-apply (function-designator
+                                   &optional (arg-list nil arg-list-supplied-p))
+  ;; The argument list is OPTIONAL because both engines were MEASURED and
+  ;; both accept it (vl-catch-all-apply-optional-arglist.issue):
+  ;;
+  ;;   BricsCAD V26 : established by its own vle-extension.lsp, which the
+  ;;                  engine loads at startup and which calls
+  ;;                  (vl-catch-all-apply 'vl-load-com).
+  ;;   AutoCAD 2022 : probe run 20260817T070448Z on a real accoreconsole
+  ;;                  -- (vl-catch-all-apply (lambda () 42)) returned 42,
+  ;;                  and calling a function that needs an argument gave
+  ;;                  the engine's own "nombre d'arguments insuffisants",
+  ;;                  so the missing list is an EMPTY list there too.
+  ;;
+  ;; So it is NOT a vendor divergence, and the vendor dialects say
+  ;; nothing about it. It is an UNDOCUMENTED tolerance, which is a
+  ;; different hazard and warned about under --strict alone: two engines
+  ;; agreeing today is not a promise (pjb, 2026-08-17).
+  (unless arg-list-supplied-p
+    (when (%vl-catch-all-apply-documented-arity-required-p)
+      (emit-vl-catch-all-apply-arity-warning)))
   (require-proper-list arg-list "VL-CATCH-ALL-APPLY")
   (let* ((function (resolve-autolisp-function-designator function-designator))
          ;; Record this catch on the per-thread catch stack so the

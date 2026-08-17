@@ -352,6 +352,52 @@ from ENTMAKE with no other sign. Adding the markers works on both."
    ("clautolisp: divergence register" . "issues/open/vendor-probe-autocad-bricscad-divergences.issue")))
 
 (register-dialect-warning
+ :tag "vl-catch-all-apply-arity"
+ :title "VL-CATCH-ALL-APPLY called without an argument list"
+ :kind :portability
+ :message "(vl-catch-all-apply f) without an argument list works on AutoCAD and BricsCAD but is documented by neither; --dialect strict asks for the documented subset. Pass nil explicitly."
+ :arguments "none"
+ :example ": [vl-catch-all-apply-arity] in LOAD-VLE: (vl-catch-all-apply f) without an argument list works on AutoCAD and BricsCAD but is documented by neither; --dialect strict asks for the documented subset. Pass nil explicitly."
+ :dialects
+ "Autodesk's documentation gives arg-list as REQUIRED, and this
+specification followed it. BOTH ENGINES ACCEPT IT OMITTED, and both
+treat the missing list as empty -- measured, not inferred:
+
+  BricsCAD V26 -- the vle-extension.lsp shipped inside the application
+  and loaded by the engine at startup calls (vl-catch-all-apply
+  'vl-load-com). An engine rejecting the form could not load its own
+  file.
+
+  AutoCAD 2022 -- probe run 20260817T070448Z on a real accoreconsole:
+  (vl-catch-all-apply (lambda () 42)) returned 42, and the same call on
+  a function requiring an argument produced the engine's own arity error
+  (\"nombre d'arguments insuffisants\"), which is what an EMPTY list
+  produces.
+
+So this is NOT a vendor divergence -- there is nothing for one engine to
+do differently from the other. It is an UNDOCUMENTED tolerance, and that
+is a different hazard: --strict means the documented portable subset, so
+it warns; --autocad and --bricscad ask for a specific engine's measured
+behaviour and stay silent; --clautolisp and --lax silence it as they do
+everything of this kind."
+ :rationale
+ "Two engines agreeing today is not a promise for tomorrow. Nothing in
+either vendor's documentation obliges them to keep accepting the
+one-argument form, and code that relies on it has no contract to point
+at when a future version tightens the check. Passing nil explicitly
+costs four characters and means the same thing everywhere.
+
+The warning briefly said the opposite -- that BricsCAD tolerated what
+AutoCAD refused -- on the strength of the documentation alone. The probe
+that settled it is kept in the tree precisely so the claim rests on a
+measurement."
+ :references
+ '(("clautolisp: emitted by" . "clautolisp/autolisp-builtins-core/source/api.lisp, EMIT-VL-CATCH-ALL-APPLY-ARITY-WARNING")
+   ("clautolisp: the probe that measured both engines" . "probes/sources/probe-vl-catch-all-apply.lsp")
+   ("clautolisp: issue" . "issues/closed/vl-catch-all-apply-optional-arglist.issue")
+   ("BricsCAD: the vendor file that uses it" . "BricsCAD V26.app/Contents/MacOS/vle-extension.lsp")))
+
+(register-dialect-warning
  :tag "entmod-nongraphical"
  :title "ENTMOD on a non-graphical object"
  :kind :vendor-divergence

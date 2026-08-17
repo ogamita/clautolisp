@@ -994,7 +994,14 @@ collect:release:
   needs:
     - { job: "release:linux:x86-64", artifacts: true }
     - { job: "release:linux:arm64",  artifacts: true }
-    - { job: "release:linux:arm32",  artifacts: true }
+    # arm32 is OPTIONAL because its own rules are `when: manual' only --
+    # a deliberate choice (an experimental qemu/armhf lane), so it never
+    # runs on a tag unless someone clicks it. Requiring it made this job
+    # unsatisfiable: on release-1.8.43 collect:release was SKIPPED and the
+    # release produced no artefact set at all. Adding the job to these
+    # needs without checking that it can actually run was my error, and
+    # check-release-collect-needs.sh now refuses that combination.
+    - { job: "release:linux:arm32",  artifacts: true, optional: true }
     - { job: "release:darwin:arm64", artifacts: true, optional: true }
     - { job: "release:windows:x86-64", artifacts: true, optional: true }
     - { job: "release:documentation", artifacts: true }
