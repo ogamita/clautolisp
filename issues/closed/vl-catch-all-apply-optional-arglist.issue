@@ -66,9 +66,19 @@ one of which needs a probe:
 1. [X] =(vl-catch-all-apply 'f)= behaves as =(vl-catch-all-apply 'f nil)=
    in whichever dialects the probe establishes.
 2. [X] A probe records the AutoCAD answer, so the dialect scope rests on
-   a measurement rather than an assumption. *Probe written and wired
-   (=probes/sources/probe-vl-catch-all-apply.lsp=); the ANSWER is still
-   pending a run on the AutoCAD runner.*
+   a measurement rather than an assumption. *ANSWERED 2026-08-17, run
+   =20260817T070448Z= on a real accoreconsole (AutoCAD 2022, Windows):*
+
+   | case                                     | AutoCAD 2022                    |
+   |------------------------------------------+---------------------------------|
+   | control, =(vl-catch-all-apply f nil)=    | ok, 42                          |
+   | argument list omitted                    | *ok, 42*                        |
+   | omitted, function requires an argument   | error, "nombre d'arguments insuffisants" |
+
+   So AutoCAD ACCEPTS it, and treats the missing list as EMPTY -- the
+   same as BricsCAD and as clautolisp. The third case is the
+   discriminating one; the French wording is the engine's own, which is
+   also what proves the run came from AutoCAD and not from our baseline.
 3. [X] Regression test pinned on the ARITY, not on that vendor file.
 4. [X] Spec entry updated with the divergence.
 
@@ -77,21 +87,29 @@ one of which needs a probe:
 Both questions in the Proposal are settled, and the reasoning is here so
 they are not re-litigated:
 
-*Which dialects accept it silently?* =bricscad= (established by the
-vendor file), plus =lax= and =clautolisp= as everywhere else. AutoCAD is
-NOT in the list, and deliberately so: its documentation requiring the
-argument says nothing about what the engine does, and this project has
-been wrong that way before -- the "Sunday=1" datum in vl-file-systime
-turned out to be an example no vendor document supported. The probe asks
-the engine; the list moves when it answers, not before.
+*Which dialects accept it silently?* SETTLED BY THE PROBE, and the answer
+overturned the shipped design. Both engines accept it, so there is no
+vendor divergence at all: =autocad=, =bricscad=, =clautolisp= and =lax=
+are silent. Only =strict= warns, and for a different reason than the one
+first implemented -- see below.
 
-*Does --strict keep rejecting it?* No: it ACCEPTS and WARNS. Rejecting
-would mean a vendor file cannot be loaded even to look at it, and the
-dialect convention here is that a dialect problem is flagged, never
-raised. So the call takes effect and =[vl-catch-all-apply-arity]= says
-why it is not portable. If you would rather --strict refuse outright,
-that is a one-line change in
-=%VL-CATCH-ALL-APPLY-ONE-ARGUMENT-ESTABLISHED-P='s caller.
+The first implementation had it backwards, warning under =--autocad= on
+the strength of Autodesk's documentation. Documentation is not evidence
+about an engine. That is exactly why the probe was written BEFORE the
+dialect scope was decided, and it is the one part of this issue's
+handling that worked as intended.
+
+*Does --strict keep rejecting it?* It never rejects -- it accepts and
+WARNS, because a dialect problem is flagged here, never raised, and
+refusing would mean a vendor file cannot be loaded even to read it.
+
+But the REASON for that warning changed after the measurement (pjb,
+2026-08-17: "il y aura donc un nouveau warning dialect sur cette
+forme"). It is no longer a =:vendor-divergence= -- the engines agree --
+but a =:portability= hazard of a different kind: the tolerance is
+UNDOCUMENTED by both vendors, and =--strict= is precisely the dialect
+that asks for the documented subset. Two engines accepting a form today
+is not a promise about tomorrow.
 
 Registered as a =:vendor-divergence= warning, so it carries its own
 annex entry and the consistency check fails if the tag is ever emitted

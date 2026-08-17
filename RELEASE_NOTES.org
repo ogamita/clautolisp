@@ -171,14 +171,16 @@ separate binary for tool integrators.
   support) — silent under ~--bricscad~ / ~--clautolisp~ / ~--lax~,
   warns under ~--strict~ / ~--autocad~.
 - ~(vl-catch-all-apply f)~ — the argument list may be OMITTED, and is
-  then taken as empty. BricsCAD accepts this and relies on it: the
-  ~vle-extension.lsp~ shipped inside BricsCAD V26 and loaded by the
-  engine at startup calls ~(vl-catch-all-apply 'vl-load-com)~, so
-  requiring both arguments made ~--dialect bricscad~ reject the vendor's
-  own file. Silent under ~--bricscad~ / ~--lax~ / ~--clautolisp~;
-  elsewhere it emits ~[vl-catch-all-apply-arity]~ and still runs.
-  AutoCAD's behaviour is not claimed either way — nothing has probed it,
-  and a probe now asks. Portable code passes the list explicitly.
+  then taken as empty. *Both engines accept it*, measured rather than
+  assumed: BricsCAD V26 relies on it in its own shipped
+  ~vle-extension.lsp~, and an AutoCAD 2022 probe run returned the value,
+  giving the engine's own arity error when the called function needed an
+  argument. Autodesk's documentation calls the argument required — the
+  documentation is what was wrong.
+  ~--strict~ still emits ~[vl-catch-all-apply-arity]~: not because the
+  engines disagree, but because neither /documents/ the tolerance, and
+  strict means the documented subset. Silent under ~--autocad~,
+  ~--bricscad~, ~--clautolisp~ and ~--lax~.
 - Once per occurrence: each source site warns at most once per run, on
   its first evaluation — a loop around the same ~defun~ warns once, a
   guarded/never-evaluated ~defun~ never warns, and a *different* ~defun~
