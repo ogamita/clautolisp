@@ -153,9 +153,19 @@ cad_arg_path() {
   #   neither line          -> the .scr was not executed as AutoLISP
   #   only "loading"        -> the wrapper was reached and the load failed
   #   both lines            -> the wrapper ran; look at the result file
+  # SECURELOAD has been 1 by default since AutoCAD 2014 and refuses
+  # (load) of a file outside TRUSTEDPATHS -- a repository checkout never
+  # is one. Wrapped in vl-catch-all-apply because an engine without that
+  # sysvar must not die here.
+  printf "(vl-catch-all-apply 'setvar (list \"SECURELOAD\" 0))\n"
   printf '(princ "\\ncad-probe: loading wrapper\\n")\n'
   printf '(load "%s")\n' "$(lisp_escape "$(cad_path "$wrapper_file")")"
   printf '(princ "\\ncad-probe: wrapper returned\\n")\n'
+  # Without an explicit quit the engine sits on its prompt and the caller
+  # has to time it out. `._QUIT': `.' bypasses any redefinition, `_' is
+  # the language-independent form -- this machine runs a French AutoCAD.
+  # `_Y' answers the save-the-drawing question that follows.
+  printf '._QUIT _Y\n'
 } > "$script_file"
 
 # A CAD script is read LINE BY LINE by the engine's script reader, and on
@@ -209,7 +219,19 @@ echo "  runner : $cmd" >&2
 echo "  output : $run_rel/results.sexp" >&2
 
 set +e
-bash -lc "$cmd"
+# MSYS2 rewrites the SWITCHES, not just the paths: `/s' is handed to the
+# engine as `S:\' and `/i' as `I:\', so accoreconsole receives arguments
+# it cannot parse and answers by printing its usage. That is the real
+# reason every AutoCAD attempt printed the usage banner -- and it is a
+# documented MSYS2 behaviour, not something to be deduced from a trace.
+#
+# Disarming the conversion is what makes /s reach the engine as /s. The
+# paths still have to be converted by hand, which is what cad_path (mixed
+# form, inside Lisp) and cad_arg_path (native form, on the command line)
+# do above.
+#
+# Harmless off MSYS2: both variables are simply unread there.
+MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 bash -lc "$cmd"
 exit_code=$?
 set -e
 
