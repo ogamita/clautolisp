@@ -1,0 +1,91 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: release-arm32-thread-less-sbcl — the armv7 release lane cannot build: Debian's armhf SBCL has no threads
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+
+* Context
+
+pjb, 2026-08-18: « fix arm32 so it's not manual on release tags ». Done —
+=release:linux:arm32= now carries =*on-release-arm32= and is scheduled
+automatically on every =release-*= tag, with a =SKIP_ARM32_RELEASE=1=
+opt-out like the two intermittent platforms.
+
+Making it run revealed that it cannot succeed. Every earlier "success" of
+this lane was an illusion: a guard in its =before_script= did =exit 0=,
+which ended the whole job green in 35 seconds without building anything
+(fixed in 1.8.47). The first real attempt, on the =release-1.8.47= tag,
+ran for *44 minutes* and then failed.
+
+* Problem
+
+#+begin_example
+Unhandled LOAD-SYSTEM-DEFINITION-ERROR: Error while trying to load
+definition for system bordeaux-threads from pathname
+/root/quicklisp/dists/quicklisp/software/bordeaux-threads-v0.9.4/bordeaux-threads.asd:
+This implementation is unsupported.
+#+end_example
+
+Debian's armhf SBCL is built *without threads*. bordeaux-threads v0.9.4
+refuses to load on a thread-less implementation outright — not a runtime
+degradation, a load-time error — so nothing that depends on it can be
+built, and clautolisp does.
+
+The lane's own comment already anticipated the thread-less runtime:
+
+#+begin_quote
+SBCL only: armhf SBCL is thread-less (Debian), which clautolisp
+tolerates — the default debugger is synchronous in-image; only the
+threaded aldb session mode would error if used.
+#+end_quote
+
+That is true of clautolisp itself and false of its dependency graph: the
+build never gets far enough to care what clautolisp tolerates.
+
+CCL is not an alternative here — =armcl= faults under qemu-user on
+poseidon, which is why =RELEASE_LISPS= is sbcl-only on this lane.
+
+* Consequences
+
+=.on-release-arm32= sets =allow_failure: true=, unlike the Windows and
+macOS anchors which set it to =false=. Those two platforms are
+*intermittent* — the machine is either there or the person cutting the
+release declares it absent — so a failure is a real failure. This lane is
+*blocked*, and a mandatory arm32 would block every release for a reason no
+CI setting can fix.
+
+So the release set is 15 of 17 artefacts whenever this is unresolved: the
+=binaries-linux-arm32= / =libraries-linux-arm32= pair is missing, the
+collect logs which targets actually reached it, and the release ships.
+
+* Options
+
+1. *Native armv7 hardware* (a Raspberry Pi runner). The lane's =tags:=
+   comment already invites it: "native Pi welcome later". Does not by
+   itself fix the threads question — Debian's armhf SBCL is thread-less on
+   real hardware too.
+2. *A threaded armhf SBCL*: build SBCL from source with
+   =:sb-thread= on armv7. Whether upstream supports it on 32-bit ARM needs
+   checking before any work is planned.
+3. *Drop the bordeaux-threads dependency on thread-less builds.* Find what
+   pulls it in and whether it is conditional. If clautolisp genuinely
+   tolerates a thread-less runtime, the dependency ought to be
+   conditional too — this is the option that also helps any other
+   thread-less platform.
+4. *Retire the lane.* If armv7 has no user, the honest move is to delete
+   the job rather than ship a permanently red one.
+
+Option 3 is worth investigating first: it is the only one that costs no
+hardware and would tell us something true about the dependency graph.
+
+* Not to be confused with
+
+The lane's *other* two faults, both already fixed in 1.8.47:
+
+- the =exit 0= guard that ended the job green without building
+  (=before_script= and =script= share one shell);
+- =collect:release= skipping itself because this job was manual and
+  unplayed — =optional: true= covers a need that is ABSENT, not one that
+  is present but unplayed.

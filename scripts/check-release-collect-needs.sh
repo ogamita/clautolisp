@@ -13,6 +13,9 @@
 # omission LOUD instead: a new release job that is not collected fails
 # the pipeline that introduces it.
 #
+# It checks a second thing, learned the hard way (see below): every job
+# the collect needs must be scheduled AUTOMATICALLY on a release tag.
+#
 #   sh scripts/check-release-collect-needs.sh
 #   make check-release-collect-needs
 set -e
@@ -54,35 +57,39 @@ for n in $needs; do
     }
 done
 
-# A job that cannot start BY ITSELF must be declared `optional' in the
-# needs, or it makes collect:release unsatisfiable and GitLab silently
-# SKIPS it -- the release then produces no artefact set at all, with
-# nothing red anywhere. That is what release-1.8.43 did: arm32 is a
-# deliberate `when: manual' experiment, it was required rather than
-# optional, and the whole collect vanished.
+# Every job collect:release needs must START BY ITSELF on a release tag.
 #
-# "Cannot start by itself" is read narrowly and syntactically: a job whose
-# ONLY rule is `when: manual'. Anything subtler belongs to a human.
+# `optional: true' does NOT make a manual job safe to need. GitLab SKIPS
+# the dependent job when one of its needs is a manual job that nobody
+# played: `optional' covers a need that is ABSENT from the pipeline, not
+# one that is PRESENT BUT UNPLAYED. That distinction cost two releases --
+# 1.8.43 published nothing, and 1.8.47's collect was skipped until the
+# arm32 job was played by hand -- because the earlier version of this
+# check asserted the opposite and passed.
+#
+# So the rule is now the direct one: a release job must carry a
+# release-tag rule (one of the *on-release-* anchors), which schedules it
+# automatically on a tag. A lane that is only ever manual has no business
+# being a need of the collect.
 for j in $jobs; do
     body=$(sed -n "/^$j:[[:space:]]*$/,/^[A-Za-z]/p" "$ci")
-    rules=$(printf '%s' "$body" | sed -n '/^[[:space:]]*rules:/,$p' \
-            | grep -c 'when:' || true)
-    manual=$(printf '%s' "$body" | sed -n '/^[[:space:]]*rules:/,$p' \
-             | grep -c 'when:[[:space:]]*manual' || true)
-    [ "$rules" -gt 0 ] || continue
-    [ "$rules" = "$manual" ] || continue          # can start on its own
-    # Manual-only: the corresponding need must say optional.
-    # `job:' restricts this to real need ENTRIES: the block also carries
-    # comments that name the jobs they explain, and matching those made
-    # this check fail on a line it had just been taught to accept.
-    if printf '%s' "$(sed -n '/^collect:release:[[:space:]]*$/,/^[A-Za-z]/p' "$ci")" \
-        | grep 'job:' | grep -F "$j" | grep -qv 'optional'; then
-        echo "FAIL: $j is manual-only, so collect:release must need it with"
-        echo "      optional: true -- otherwise the collect is unsatisfiable"
-        echo "      and GitLab SKIPS it, producing no release artefacts."
-        status=1
+    rules=$(printf '%s' "$body" | sed -n '/^[[:space:]]*rules:/,$p')
+
+    if [ -z "$rules" ]; then
+        echo "ok  $j has no rules -- it runs on every pipeline"
+        continue
+    fi
+
+    if printf '%s' "$rules" | grep -q '\*on-release'; then
+        echo "ok  $j starts by itself on a release tag"
     else
-        echo "ok  $j is manual-only and needed optionally"
+        echo "FAIL: $j has no release-tag rule, so on a tag it is manual-only."
+        echo "      collect:release needs it, and GitLab SKIPS a job whose need"
+        echo "      is an unplayed manual job -- optional: true does NOT help,"
+        echo "      it only covers a need that is absent from the pipeline."
+        echo "      Give it an *on-release-* rule (with a SKIP_<PLATFORM>_RELEASE"
+        echo "      opt-out if its runner is intermittent)."
+        status=1
     fi
 done
 

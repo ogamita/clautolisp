@@ -499,6 +499,36 @@ version is read from its source.
    version;
 6. `glab release create release-M.m.d`.
 
+**Cutting a release without a platform.** Every platform lane is
+scheduled automatically on a `release-*` tag; a release does not wait for
+a machine, and it does not silently drop one either. When a machine is
+switched off, say so when cutting the release, as a CI variable:
+
+| variable | effect |
+|---|---|
+| `SKIP_WINDOWS_RELEASE=1` | cut without the Windows products |
+| `SKIP_MACOS_RELEASE=1` | cut without the macOS products |
+| `SKIP_ARM32_RELEASE=1` | cut without the qemu armv7 products |
+
+Without one of these, the lane runs and its artefacts are expected —
+which is the point: *if the runner is available, its products belong in
+the release* (pjb). Gating this on detected runner availability instead
+was tried and cannot work: GitLab evaluates `rules:` at pipeline
+creation, so a variable published by an earlier job as a dotenv artefact
+does not exist yet, and the jobs were never created at all.
+
+Two things that are **not** interchangeable with these switches:
+
+- `optional: true` on a `needs:` entry covers a job that is **absent**
+  from the pipeline — which is what these switches produce. It does
+  **not** cover a job that is present but unplayed: GitLab skips the
+  dependent job outright. That is why no release lane may be manual-only;
+  `make check-release` enforces it.
+- `allow_failure: true` does not help a job that never starts. A lane
+  waiting for a runner that never picks it up stalls its whole stage, and
+  every later stage with it.
+
+
 **Build, install and release structure.** The Makefile phases
 (`programs` / `libraries` / `documentation`), the four verbs over them,
 why `install` never compiles, and the provenance manifest every staged
