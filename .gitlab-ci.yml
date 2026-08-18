@@ -516,6 +516,9 @@ release:linux:x86-64:
     - make build-libraries
     - make release-programs
     - make release-libraries
+    # Refuse to hand up an empty dist/: a lane that built nothing must
+    # not look like a lane that built everything (see the Makefile).
+    - make verify-release-artefacts
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-linux-x86-64"
     paths: [dist/]
@@ -579,6 +582,9 @@ release:linux:arm64:
     - make build-programs           # SBCL arm64 images (no CCL on arm64)
     - make release-programs
     - make release-libraries
+    # Refuse to hand up an empty dist/: a lane that built nothing must
+    # not look like a lane that built everything (see the Makefile).
+    - make verify-release-artefacts
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-linux-arm64"
     paths: [dist/]
@@ -625,14 +631,26 @@ release:linux:arm32:
     # CCL v1.13 32-bit ARM: the linuxarm tarball holds armcl/armcl.image at its
     # ROOT (no ccl/ prefix), so extract INTO /opt/ccl; `ccl` wrapper on PATH.
     - |
-      case " $RELEASE_LISPS " in *" ccl "*) ;; *) echo "ccl not in RELEASE_LISPS — skipping CCL install"; exit 0;; esac
-      curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 \
-           -o /tmp/linuxarm.tar.gz \
-           https://github.com/Clozure/ccl/releases/download/v1.13/linuxarm.tar.gz
-      mkdir -p /opt/ccl && tar -xzf /tmp/linuxarm.tar.gz -C /opt/ccl
-      printf '%s\n' '#!/bin/sh' 'exec /opt/ccl/armcl "$@"' > /usr/local/bin/ccl
-      chmod +x /usr/local/bin/ccl
-      ccl --no-init --eval '(progn (format t "CCL ~a on ~a~%" (lisp-implementation-version) (machine-type)) (ccl:quit))'
+      # Skip THIS STEP when ccl is not wanted -- never `exit 0'. GitLab
+      # concatenates before_script and script into one shell, so an exit
+      # here ends the whole job, and ends it GREEN: the runner uploads an
+      # empty dist/ and the release quietly loses this platform. That is
+      # exactly how release-1.8.46 shipped without its linux-arm32
+      # artefacts, with a successful 35-second job as the only trace.
+      case " $RELEASE_LISPS " in
+        *" ccl "*)
+          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 \
+               -o /tmp/linuxarm.tar.gz \
+               https://github.com/Clozure/ccl/releases/download/v1.13/linuxarm.tar.gz
+          mkdir -p /opt/ccl && tar -xzf /tmp/linuxarm.tar.gz -C /opt/ccl
+          printf '%s\n' '#!/bin/sh' 'exec /opt/ccl/armcl "$@"' > /usr/local/bin/ccl
+          chmod +x /usr/local/bin/ccl
+          ccl --no-init --eval '(progn (format t "CCL ~a on ~a~%" (lisp-implementation-version) (machine-type)) (ccl:quit))'
+          ;;
+        *)
+          echo "ccl not in RELEASE_LISPS — skipping CCL install"
+          ;;
+      esac
     - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
     - sbcl --non-interactive --load /tmp/ql.lisp --eval '(quicklisp-quickstart:install)'
   script:
@@ -640,6 +658,9 @@ release:linux:arm32:
     - make build-programs           # loops RELEASE_LISPS -> build-sbcl + build-ccl
     - make release-programs
     - make release-libraries
+    # Refuse to hand up an empty dist/: a lane that built nothing must
+    # not look like a lane that built everything (see the Makefile).
+    - make verify-release-artefacts
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-linux-arm32"
     paths: [dist/]
@@ -662,6 +683,9 @@ release:darwin:arm64:
     - make build-programs           # SBCL arm64 images
     - make release-programs
     - make release-libraries
+    # Refuse to hand up an empty dist/: a lane that built nothing must
+    # not look like a lane that built everything (see the Makefile).
+    - make verify-release-artefacts
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-darwin-arm64"
     paths: [dist/]

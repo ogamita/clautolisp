@@ -1036,6 +1036,38 @@ dotenv artefact does not exist yet — and the jobs were silently not
 created at all. Declaring the absence explicitly is less clever and
 cannot fail that way.
 
+** What release-1.8.46 actually shipped
+
+1.8.46 is published, and it is the first tag of the series to publish
+anything at all — including the two Windows =.zip= files, the platform
+the three previous attempts never reached. It shipped *14 of the 17*
+artefacts. Three are missing, for two independent reasons, both fixed in
+1.8.47:
+
+- =clautolisp-1.8.46-all.zip= was never written. The =-all= union is
+  archived from *inside* the staging tree, and the CI passes a RELATIVE
+  =COLLECT_OUT=dist/combined=, so =zip= resolved its output path against
+  that staging tree instead. The log still said "wrote ... all.zip".
+  =collect-artefacts= now resolves its paths to absolute before packing
+  anything. The check that exists to guard the artefact set had been
+  passing over this bug for one reason: it invoked the recipe with
+  ABSOLUTE paths. It now uses relative ones, the way the CI does, and
+  fails without the fix.
+
+- =clautolisp-1.8.46-binaries-linux-arm32.tar.bz2= and its =libraries=
+  counterpart do not exist. =release:linux:arm32= went green in 35
+  seconds having built nothing: its optional CCL install was guarded by
+  =exit 0=, and GitLab concatenates =before_script= and =script= into a
+  single shell — so the guard ended the whole job, ended it
+  successfully, and the runner uploaded an empty =dist/=.
+
+The second failure is the one worth generalising, because *green plus
+empty* is indistinguishable from *green plus complete* to everything
+downstream. Every per-target lane now ends with =make
+verify-release-artefacts=, which fails unless this target's two artefacts
+exist and are not husks; =make check-release= enforces both that every
+lane runs it and that no =before_script= contains an =exit=.
+
 ** What a release publishes
 
 Every release publishes, per target, a =binaries-<os>-<arch>= and a

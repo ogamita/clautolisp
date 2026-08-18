@@ -16,8 +16,21 @@
 set -e
 
 ver=0.0.0-check
-work=$(mktemp -d)
+
+# RELATIVE paths, deliberately, and under the repo rather than in
+# /tmp. The CI invokes the recipe as
+#     make collect-artefacts COLLECT_IN=dist COLLECT_OUT=dist/combined
+# -- both relative -- and this check exists to run what the CI runs. When
+# it used an absolute mktemp -d instead, it passed while the real release
+# silently dropped clautolisp-1.8.46-all.zip: the zip branch archives from
+# inside a `cd', so a relative output path resolved against the staging
+# directory. An absolute path hid the one bug the check was there to
+# catch. Keep these relative.
+root=$(cd "$(dirname "$0")/.." && pwd)
+rel="dist/.check-artefact-set"
+work="$root/$rel"
 trap 'rm -rf "$work"' EXIT INT TERM
+rm -rf "$work"
 in="$work/in"
 out="$work/out"
 mkdir -p "$in"
@@ -81,7 +94,8 @@ echo zip > "$in/clautolisp-$ver-sources.zip"
     echo "clautolisp-$ver-sources.zip"
 } >> "$expected"
 
-make collect-artefacts VERSION="$ver" COLLECT_IN="$in" COLLECT_OUT="$out" \
+make -C "$root" collect-artefacts VERSION="$ver" \
+    COLLECT_IN="$rel/in" COLLECT_OUT="$rel/out" \
     > "$work/collect.log" 2>&1 || {
         echo "FAIL: collect-artefacts errored:"; cat "$work/collect.log"; exit 1; }
 

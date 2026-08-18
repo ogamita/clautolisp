@@ -64,15 +64,8 @@ make release-programs release-libraries
 echo "--- produced"
 ls -l dist
 
-# Name the artefacts the collect phase expects, and fail here rather than
-# letting the release set come up short two files with a green job.
-missing=""
-for kind in binaries libraries; do
-    ls dist/clautolisp-*-$kind-windows-*.zip >/dev/null 2>&1 || missing="$missing $kind"
-done
-if [ -n "$missing" ]; then
-    echo "ERROR: no Windows .zip produced for:$missing"
-    echo "       collect:release expects clautolisp-<ver>-<kind>-windows-<arch>.zip"
-    exit 1
-fi
-echo "ok: Windows binaries + libraries zips produced"
+# Fail here rather than letting the release set come up short two files
+# with a green job. The rule is shared with every other release lane --
+# one definition, in the Makefile -- so Windows cannot drift from the
+# others, and it checks the artefacts are non-empty, not merely present.
+make verify-release-artefacts
