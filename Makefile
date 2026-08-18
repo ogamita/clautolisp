@@ -74,6 +74,7 @@ DEFAULT_LISP ?=
         submodules build-documentation build-programs build-libraries \
         stage stage-programs stage-libraries stage-documentation clean-stage \
         release release-sources release-documentation release-programs release-libraries \
+        verify-release-artefacts \
         probe probe-autocad probe-bricscad probe-clautolisp
 
 # --- Release artefacts (see issues/open/release-artefacts.issue) -------
@@ -268,7 +269,10 @@ check-release-collect-needs:  ## Fail if a release:* job's artefacts never reach
 check-ci-dotenv-rules:  ## Fail if a parent-pipeline job is gated on a dotenv variable (never true at rules time).
 	sh scripts/check-ci-dotenv-rules.sh
 
-check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules  ## Every release-packaging check.
+check-release-lane-integrity:  ## Fail if a release lane could go green without producing its artefacts.
+	python3 scripts/check-release-lane-integrity.py
+
+check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
 # (no PowerShell, pjb 2026-08-16: do not install it). A container gives the
@@ -391,8 +395,49 @@ release-libraries:  ## Package this host's per-target libraries artefact (ASDF s
 # tarball, so including it would duplicate the source tree.
 COLLECT_IN  ?= $(DIST)
 COLLECT_OUT ?= $(DIST)/combined
+# A release job that builds nothing must not pass for a job that built
+# everything. GitLab uploads whatever `paths:' matches -- an empty dist/
+# included -- and reports success, so a build that never ran looks exactly
+# like a build that worked, until the collected release set turns out to
+# be short a platform. release-1.8.46 lost its linux-arm32 artefacts that
+# way: a guard in before_script did `exit 0', which ended the whole job
+# green in 35 seconds.
+#
+# So every per-target release lane asserts, as its last step, that this
+# target's two artefacts exist and are not husks. The size floor is
+# deliberately low -- it is there to catch "empty", not to police size.
+verify-release-artefacts:  ## Fail unless this target's binaries+libraries artefacts were really written into DIST.
+	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
+	if [ "$$os" = windows ]; then ext=zip; else ext=tar.bz2; fi; \
+	status=0; \
+	for kind in binaries libraries; do \
+	  f="$(DIST)/clautolisp-$$ver-$$kind-$$os-$$arch.$$ext"; \
+	  if [ ! -f "$$f" ]; then \
+	    echo "FAIL: $$f was not produced -- this lane built nothing."; \
+	    status=1; \
+	  else \
+	    sz=$$(wc -c < "$$f"); \
+	    if [ "$$sz" -lt 10000 ]; then \
+	      echo "FAIL: $$f is only $$sz bytes -- an empty artefact."; \
+	      status=1; \
+	    else \
+	      echo "ok  $$(basename "$$f") ($$sz bytes)"; \
+	    fi; \
+	  fi; \
+	done; \
+	exit $$status
+
+# COLLECT_IN/COLLECT_OUT are resolved to ABSOLUTE paths before anything
+# else. The -all.zip branch archives from inside a `cd' into the staging
+# tree, so a relative output path would resolve against that tree and the
+# archive would land where nobody looks -- while the log still says
+# "wrote ... all.zip". That is precisely how release 1.8.46 shipped
+# without clautolisp-1.8.46-all.zip: CI passes COLLECT_OUT=dist/combined,
+# relative. The tar branch escapes it only because `tar -C' does not move
+# the shell's own working directory.
 collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the combined release set in COLLECT_OUT.
 	@ver="$(VERSION)"; in="$(COLLECT_IN)"; out="$(COLLECT_OUT)"; mkdir -p "$$out"; \
+	out=$$(cd "$$out" && pwd); in=$$(cd "$$in" && pwd); \
 	bstage=$$(mktemp -d); n=0; \
 	for t in "$$in"/clautolisp-$$ver-binaries-*.tar.bz2; do \
 	  [ -f "$$t" ] || continue; echo "merge $$(basename "$$t")"; tar -C "$$bstage" -xjf "$$t"; n=$$((n+1)); \
