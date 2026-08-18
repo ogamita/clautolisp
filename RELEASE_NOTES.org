@@ -1080,9 +1080,15 @@ tarball, and the sources as both =.tar.bz2= and =.zip=.
 are the *unpacked union* of all of the above: one archive to extract and
 everything is in place at once, rather than an archive of archives. The
 two containers ship the same tree, the =.zip= being there for Windows
-users. The source tree inside it sits alongside =bin/=, =lib/= and
-=share/= under its own =clautolisp-<version>/= directory, so unpacking
-=-all= over a prefix does not scatter sources into it.
+users.
+
+The sources sit under =src/clautolisp-<version>/= — in their own
+artefacts and inside =-all= alike (pjb, 2026-08-18; before that they
+were at the top, as =clautolisp-<version>/=). Every other artefact
+unpacks into =$PREFIX=, so in the union a bare =clautolisp-<version>/=
+stood as a sibling of =bin/=, =lib/= and =share/= with nothing to mark
+it as a source tree. =src/= marks it, and unpacking =-all= over a
+prefix still does not scatter sources into it.
 
 ** Installing never builds as root
 

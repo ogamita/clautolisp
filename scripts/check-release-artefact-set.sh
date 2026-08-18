@@ -76,8 +76,14 @@ echo doc > "$d/share/doc/manual"
 tar -C "$d" -cjf "$in/clautolisp-$ver-documentation.tar.bz2" .
 rm -rf "$d"
 
-d="$in/stage"; mkdir -p "$d/clautolisp-$ver"
-echo src > "$d/clautolisp-$ver/Makefile"
+# The sources artefact carries its tree under src/<prefix>/, not at the
+# top (pjb, 2026-08-18): in the -all union every other artefact unpacks
+# into $PREFIX -- bin/, lib/, share/ -- and a bare clautolisp-<ver>/ sat
+# among them with nothing to say it was a source tree. The union
+# assertion below checks the prefix survives collection, so the layout
+# cannot be lost silently the way three files were in 1.8.46.
+d="$in/stage"; mkdir -p "$d/src/clautolisp-$ver"
+echo src > "$d/src/clautolisp-$ver/Makefile"
 tar -C "$d" -cjf "$in/clautolisp-$ver-sources.tar.bz2" .
 rm -rf "$d"
 echo zip > "$in/clautolisp-$ver-sources.zip"
@@ -123,7 +129,9 @@ check_all_union () {   # $1 = label, $2 = listing file
         done
     done
     grep -q "share/doc/manual\$" "$2" || missing="$missing documentation"
-    grep -q "clautolisp-$ver/Makefile\$" "$2" || missing="$missing sources"
+    # Under src/, and nowhere else: a match on the bare prefix would keep
+    # passing if the src/ level were dropped.
+    grep -q "src/clautolisp-$ver/Makefile\$" "$2" || missing="$missing sources"
     if [ -n "$missing" ]; then
         echo "FAIL: $1 is not a complete union; missing:$missing"
         return 1
