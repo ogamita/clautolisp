@@ -190,6 +190,43 @@ works on every target.
 - clautolisp: the platform axis: issues/open/dialect-platform-version-axis.issue
 - clautolisp: pathname mapping spec: clautolisp/documentation/clautolisp-windows-pathname-mapping-spec.org
 
+** =[path-case]= --- Path found only by folding case
+
+*** Message
+
+: [path-case] sigfic.lsp:12 in LOAD-DIAL: LOAD "dial/sigfic.lsp": found as "DIAL/SIGFIC.LSP" -- the case differs, and only a case-insensitive filesystem forgives it
+
+The part after the location is built from the template
+=~A ~S: found as ~S -- the case differs, and only a case-insensitive filesystem forgives it=, whose arguments are: WHO (the builtin name, e.g. "LOAD"), the path as written, the real name.
+
+*** How the dialects diverge
+
+This one is about the FILESYSTEM, not the dialect, so it warns
+wherever the fold actually happened. It is emitted only when
+CLAUTOLISPCASEINSENSITIVEPATHS is 1 and a path was located under a name
+that differs from the one written -- never on an exact match, which is
+the common case and costs nothing.
+
+Windows and macOS filesystems are case-insensitive by default, so a
+program developed there never learns that its path spellings disagree
+with the disk. Linux tells it, by failing. The sysvar exists so such a
+corpus can run unmodified; the warning exists so that running it is not
+the same as pretending the problem is gone.
+
+*** Why it matters
+
+A strict engine is the only one that VALIDATES the case of a path.
+Silently folding would trade one lost signal for another: the program
+would work here and keep the latent defect for the next strict system.
+Warning keeps both -- the run proceeds, and the developer learns which
+spelling is wrong and what the real name is. Without it the sysvar would
+merely sweep the problem under the carpet.
+
+*** References
+
+- clautolisp: the request and its incident: issues/open/case-insensitive-pathname-resolution.issue
+- clautolisp: the `..' warning this is modelled on: issues/closed/cad-path-dotdot-resolution.issue
+
 ** =[vl-catch-all-apply-arity]= --- VL-CATCH-ALL-APPLY called without an argument list
 
 *** Message
