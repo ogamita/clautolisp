@@ -1,10 +1,10 @@
 # -*- mode:org;coding:utf-8 -*-
 #+TITLE: release-asset-links-use-artifacts-file — les liens de release rendent du HTML, pas les archives
-#+STATUS: OPEN
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: fix-release-links-and-macos-metadata
 
 release-asset-links-use-artifacts-file
 ======================================
@@ -90,3 +90,63 @@ intégralement sans CAO propriétaire — et doit donc compiler faute de
 release correspondante. Publier une release pour 1.8.49 ou au-delà
 suffirait à basculer ce pipeline sur le téléchargement, sans rien
 changer d'autre.
+
+* Résolution (2026-08-19, clautolisp 1.8.51)
+
+Le diagnostic du ticket était exact, y compris sur ce qui rend le défaut
+coûteux. Trois choses ont été faites, et une quatrième qui ne figurait
+pas dans le ticket mais qui aurait tué le correctif en un mois.
+
+** Les deux releases publiées sont réparées, maintenant
+
+=release-1.8.47= et =release-1.8.49= ont leurs quinze liens réécrits en
+=/artifacts/raw/=. Vérifié de bout en bout, en anonyme, sur le lien tel
+qu'il est publié : =curl= rapporte 246 338 243 octets, =file= dit /bzip2
+compressed data/, et =tar= ouvre l'archive. Le contournement de
+=run-forest-run/scripts/lib-releases.sh= n'a plus de raison d'être.
+
+*Remarque annexe traitée aussi* : =release-1.8.49= EXISTE — elle a été
+publiée le 2026-08-19, avec quinze artefacts (armv7 manque, cause
+distincte et documentée dans =release-arm32-thread-less-sbcl=). Le
+ticket a été écrit avant. SCHMS+ peut donc basculer sur le
+téléchargement sans attendre une release de plus.
+
+** L'émission est encodée, plus improvisée
+
+=scripts/make-gitlab-release.py= est désormais l'étape 6 de la
+procédure de release (AGENTS.md), à la place d'un =glab release create=
+tapé à la main. Il n'émet que du =raw=, et surtout il *récupère chaque
+lien avant de créer la release* : un lien qui répond du =text/html=
+avorte la publication au lieu de la décorer. C'est la leçon du ticket
+prise au sérieux — le défaut ne s'annonçait pas, donc le correctif ne
+peut pas être « faire attention ».
+
+La liste des assets vient de =manifest-release-assets.txt=, que
+=collect-artefacts= écrit à partir du répertoire qu'il vient de remplir.
+Elle n'est plus retapée par release : une plateforme nouvelle rejoint la
+release publiée sans modification nulle part, et une plateforme absente
+se voit comme un manifeste court.
+
+** L'expiration, qui n'était pas dans le ticket
+
+Le ticket suggérait les uploads de projet /parce qu'ils n'expirent pas/.
+La cause exacte était là : =collect:release= portait =expire_in: 30
+days=. Les liens réparés ci-dessus seraient donc morts vers le
+2026-09-17, et toute release aurait pourri seule un mois après que
+quelqu'un l'ait regardée pour la dernière fois. Le job porte maintenant
+=expire_in: never=, et l'expiration a été levée sur les artefacts des
+deux jobs déjà exécutés (=artifacts_expire_at= est =None= pour les
+deux).
+
+Les uploads de projet n'ont pas été retenus : =clautolisp-1.8.49-all.zip=
+pèse 278 Mo, très au-delà de ce qu'un upload accepte. Le registre de
+paquets génériques serait la maison permanente propre si l'on veut aller
+plus loin ; =expire_in: never= règle le problème posé, en une ligne.
+
+** Garde-fous
+
+=scripts/check-release-lane-integrity.py= refuse maintenant (a) un
+=collect:release= dont les artefacts expirent, et (b) un émetteur de
+liens qui construit du =/artifacts/file/=. Les deux ont été vérifiés en
+échec en réintroduisant chaque défaut : sortie 1, message nommant la
+ligne fautive. =make check-release= les exécute.

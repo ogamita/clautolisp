@@ -61,6 +61,18 @@ for t in $TARGETS; do
         # A payload unique per (kind,target): the union must keep them all,
         # so an overwrite instead of a union shows up as a missing marker.
         echo "$kind-$t" > "$d/marker/$kind-$t"
+        # The darwin inputs carry macOS metadata, because the real ones do:
+        # bsdtar stores extended attributes as AppleDouble `._NAME' members,
+        # and 23 of them reached clautolisp-1.8.49-binaries-darwin-arm64
+        # and from there the -all.zip. Fabricating them here is what makes
+        # the exclusions below testable -- a check fed only clean input
+        # cannot tell an exclusion that works from one that was deleted.
+        case "$t" in
+            darwin-*)
+                printf 'Mac OS X\0\0\0' > "$d/marker/._$kind-$t"
+                printf 'Mac OS X\0\0\0' > "$d/._marker"
+                ;;
+        esac
         if [ "$ext" = zip ]; then
             ( cd "$d" && zip -qr "$in/clautolisp-$ver-$kind-$t.zip" . )
         else
@@ -98,6 +110,9 @@ echo zip > "$in/clautolisp-$ver-sources.zip"
     echo "clautolisp-$ver-libraries.tar.bz2"
     echo "clautolisp-$ver-sources.tar.bz2"
     echo "clautolisp-$ver-sources.zip"
+    # The collected set names itself: scripts/make-gitlab-release.py reads
+    # this to know what to attach, instead of a list kept in step by hand.
+    echo "manifest-release-assets.txt"
 } >> "$expected"
 
 make -C "$root" collect-artefacts VERSION="$ver" \
@@ -140,11 +155,29 @@ check_all_union () {   # $1 = label, $2 = listing file
     return 0
 }
 
+# macOS metadata must not survive collection, in EITHER container. The
+# tar branches have excluded `._*' all along; the zip branch did not, so
+# clautolisp-1.8.49-all.zip shipped a ._bin, ._etc, ._lib ... beside every
+# top-level directory while the .tar.bz2 of the same union was clean. Two
+# containers of one union that unpack to different trees defeat the only
+# thing an -all artefact is for.
+check_no_appledouble () {   # $1 = label, $2 = listing file
+    junk=$(grep -E '(^|/)\._' "$2" | head -3)
+    if [ -n "$junk" ]; then
+        echo "FAIL: $1 carries macOS metadata that the union must drop:"
+        printf '        %s\n' $junk
+        return 1
+    fi
+    echo "ok  $1 carries no macOS metadata"
+    return 0
+}
+
 # BOTH -all containers are checked. Checking only the tarball would let a
 # half-built zip ship to the very users it exists for.
 if [ -f "$out/clautolisp-$ver-all.tar.bz2" ]; then
     tar -tjf "$out/clautolisp-$ver-all.tar.bz2" > "$work/all-list"
     check_all_union "-all.tar.bz2" "$work/all-list" || status=1
+    check_no_appledouble "-all.tar.bz2" "$work/all-list" || status=1
 else
     echo "FAIL: -all.tar.bz2 was not produced"; status=1
 fi
@@ -152,6 +185,7 @@ fi
 if [ -f "$out/clautolisp-$ver-all.zip" ]; then
     unzip -Z1 "$out/clautolisp-$ver-all.zip" > "$work/all-zip-list"
     check_all_union "-all.zip" "$work/all-zip-list" || status=1
+    check_no_appledouble "-all.zip" "$work/all-zip-list" || status=1
 else
     echo "FAIL: -all.zip was not produced"; status=1
 fi

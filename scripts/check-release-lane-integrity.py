@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Fail if a release lane can go green without producing its artefacts.
+"""Fail if a release can look published without being usable.
 
-Two failure modes, both seen for real in release-1.8.46, both silent:
+Four failure modes, every one of them seen for real, every one silent --
+the release went green, and the defect surfaced somewhere else, later,
+as something that did not look like a release problem at all.
+
+The first two cost release-1.8.46 its contents:
 
   1. `exit' inside a before_script. GitLab concatenates before_script and
      script into ONE shell, so an exit there ends the whole job -- and
@@ -15,7 +19,22 @@ Two failure modes, both seen for real in release-1.8.46, both silent:
      success. Every release:<os>:<arch> lane must therefore end by running
      `make verify-release-artefacts'.
 
-Neither is a hypothetical: both cost a published release its contents.
+The next two cost 1.8.47 and 1.8.49 their usability, and were reported
+from outside -- by the SCHMS+ CI, which could not install a release and
+had to carry a workaround (release-asset-links-use-artifacts-file.issue):
+
+  3. An expiry on collect:release's artefacts. The published release
+     LINKS AT those artefacts, so a 30-day expiry turned every release
+     older than a month into a catalogue of dead links, while the release
+     page went on looking perfectly published.
+
+  4. Asset links built through `/artifacts/file/', which is the artefact
+     BROWSING page and serves HTML; `/artifacts/raw/' serves the file.
+     Both answer 200, so a consumer writes 40 KB of HTML to disk under
+     the archive's name and only fails at extraction, with a message
+     about archive format rather than about the link.
+
+None is a hypothetical: each one shipped.
 
     python3 scripts/check-release-lane-integrity.py
     make check-release-lane-integrity
@@ -118,6 +137,54 @@ def main():
         print("FAIL: no per-target release lanes matched -- the parser needs "
               "updating")
         status = 1
+
+    # (3) a published release LINKS AT collect:release's artefacts, so an
+    #     expiry on them is an expiry on the release. With the default
+    #     30 days, every release older than a month turned into a catalogue
+    #     of dead links while still looking published
+    #     (release-asset-links-use-artifacts-file.issue).
+    bodies = dict(found)
+    collect = bodies.get("collect:release:")
+    if collect is None:
+        print("FAIL: collect:release not found -- the parser needs updating")
+        status = 1
+    elif re.search(r"expire_in:\s*never", block(collect, "artifacts")):
+        print("ok  collect:release keeps its artefacts (the release links "
+              "point at them)")
+    else:
+        print("FAIL: collect:release lets its artefacts expire, and the")
+        print("      published release links AT those artefacts -- so the")
+        print("      release becomes dead links on expiry. Use `expire_in:")
+        print("      never'; a release is permanent, its assets must be too.")
+        status = 1
+
+    # (4) `/artifacts/file/' is the artefact BROWSING page and serves HTML;
+    #     `/artifacts/raw/' serves the file. Both answer 200, so a `file'
+    #     link fails only at extraction, in the consumer, with a message
+    #     about archive format. Releases 1.8.47 and 1.8.49 shipped that way.
+    emitters = ["scripts/make-gitlab-release.py"]
+    for path in emitters:
+        try:
+            with open(path, encoding="utf-8") as stream:
+                source = stream.read()
+        except OSError:
+            print("FAIL: %s is missing -- it is what publishes a release" % path)
+            status = 1
+            continue
+        offenders = [ln.strip() for ln in source.splitlines()
+                     if "artifacts/file/" in ln and not ln.strip().startswith("#")
+                     and "`/artifacts/file/" not in ln]
+        if offenders:
+            print("FAIL: %s builds a link through the browsing page:" % path)
+            for line in offenders:
+                print("        %s" % line)
+            print("      Use /artifacts/raw/ -- /artifacts/file/ serves HTML.")
+            status = 1
+        elif "artifacts/raw/" in source:
+            print("ok  %s emits raw artefact links" % path)
+        else:
+            print("FAIL: %s emits no artefact link at all" % path)
+            status = 1
 
     if status == 0:
         print("release lanes: %d per-target lanes assert their artefacts; "

@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.8.49 / alfe 1.8.4 /
+master at the top of the file (clautolisp 1.8.51 / alfe 1.8.4 /
 read-autolisp 1.8.0). For the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
@@ -1089,6 +1089,24 @@ unpacks into =$PREFIX=, so in the union a bare =clautolisp-<version>/=
 stood as a sibling of =bin/=, =lib/= and =share/= with nothing to mark
 it as a source tree. =src/= marks it, and unpacking =-all= over a
 prefix still does not scatter sources into it.
+
+The published release links now *download*. A GitLab release attaches
+its archives from the collect job, and those links used the artefact
+*browsing* URL, which serves HTML: both forms answer =200=, so a script
+following one wrote 40 KB of HTML to disk under the archive's name and
+failed later, at extraction, complaining about the archive format rather
+than about the link. The releases of 1.8.47 and 1.8.49 have been
+repaired in place, and the artefacts they point at no longer expire — a
+release is permanent, so its assets must be too, and a 30-day expiry
+turned every release older than a month into dead links while the page
+went on looking published.
+
+The artefacts carry no macOS metadata. Packing on macOS used to store
+extended attributes as AppleDouble =._NAME= members, which reached the
+darwin artefact and, from there, =-all.zip= — where they extracted as
+junk beside every directory, while the =.tar.bz2= of the same union was
+clean. Two containers of one union now unpack to the same tree, which is
+the property =-all= exists to provide.
 
 ** Installing never builds as root
 

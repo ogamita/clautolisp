@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: release-all-zip-appledouble-entries — the -all.zip ships macOS AppleDouble ._* files
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: infra
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: fix-release-links-and-macos-metadata
 
 * Context
 
@@ -77,3 +77,47 @@ and the =-all= recipes: after writing the zip, fail if any entry matches
 =._*=. That turns this from a thing someone notices into a thing the build
 refuses to ship, which is the pattern 1.8.47 and 1.8.49 established for
 release artefacts.
+
+* Resolution (2026-08-19, clautolisp 1.8.51)
+
+Fixed at both ends, because the two ends fail differently.
+
+*At the source.* =pack-release-artefact= now packs with
+=COPYFILE_DISABLE=1=, =--exclude= on =._*= and =--no-xattrs=, so the
+darwin artefact stops carrying macOS metadata at all. That also removes
+the =LIBARCHIVE.xattr.com.apple.provenance= pax headers, which made GNU
+tar print /Ignoring unknown extended header keyword/ 23 times on every
+extraction of =clautolisp-1.8.49-binaries-darwin-arm64.tar.bz2=
+elsewhere — the same defect in its quieter form, and the reason to fix
+this at the source rather than only filter it later. =--no-xattrs= is
+PROBED (=tar --no-xattrs --version=) rather than assumed: GNU tar and
+bsdtar spell their options differently, and a tar that rejected the flag
+would have taken the darwin release lane down with it. =COPYFILE_DISABLE=
+and =--exclude= already do the visible half of the job on any tar.
+
+*At the packaging.* The =-all.zip= and the per-target Windows =.zip= now
+carry the same exclusion the tar branches always had — that asymmetry
+was the whole bug. The recipe then RE-READS the zip it just wrote and
+fails if any =._= entry survived.
+
+* Verification
+
+Both directions, which is the only thing that makes a guard worth having:
+
+- =scripts/check-release-artefact-set.sh= now fabricates its darwin
+  inputs *with* AppleDouble members, because the real ones have them: a
+  check fed only clean input cannot tell an exclusion that works from one
+  that was deleted. It then asserts that neither =-all= container carries
+  any.
+- removing the zip exclusion makes =collect-artefacts= itself abort:
+  /ERROR: clautolisp-0.0.0-check-all.zip carries the macOS metadata file
+  'marker/._binaries-darwin-arm64'/.
+- removing the in-recipe assertion as well makes the script-level check
+  fail instead: /FAIL: -all.zip carries macOS metadata that the union must
+  drop/.
+
+* Not done
+
+The artefacts of 1.8.47 and 1.8.49 are not rebuilt: they are published
+and immutable, and the junk is inert on extraction. The fix applies from
+the next release on.
