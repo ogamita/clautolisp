@@ -80,6 +80,16 @@ stages:
 # tag, jobs keep their normal rules (manual for the intermittent CAD lanes,
 # automatic for the poseidon test lanes). These anchors are spliced as the
 # FIRST rule of a job so the release tag wins over the manual fallback.
+.not-on-schedule: &not-on-schedule
+  # The nightly schedule exists for ONE job: sweep:stale-child-pipelines.
+  # Everything else stays off it. Without this, a scheduled pipeline on
+  # master runs the whole test matrix at 03:00Z -- and native:pipeline
+  # with it, which would create one more never-completing child every
+  # night, feeding the very leak the sweep is there to drain
+  # (ci-native-child-pipeline-creation-fails.issue).
+  if: '$CI_PIPELINE_SOURCE == "schedule"'
+  when: never
+
 .on-release-mandatory: &on-release-mandatory
   if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
   when: on_success
@@ -187,6 +197,7 @@ build:clautolisp-ci-image:
   # not fail a whole pipeline run.
   retry: 2
   rules:
+    - *not-on-schedule
     # Never rebuild the image on a release tag: use the already-published
     # :latest. (Otherwise a flaky image build blocks the release stage.)
     - if: '$CI_COMMIT_TAG'
@@ -233,18 +244,27 @@ build:clautolisp-ci-image:
         -e '(ccl:quit)'
 
 test:clautolisp:sbcl:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - *pre-warm-quicklisp-sbcl
     - make -C clautolisp test-sbcl
 
 test:clautolisp:ccl:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - *pre-warm-quicklisp-ccl
     - make -C clautolisp test-ccl
 
 test:clautolisp:file-compat:sbcl:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - mkdir -p clautolisp/.artifacts
@@ -256,6 +276,9 @@ test:clautolisp:file-compat:sbcl:
       - clautolisp/.artifacts/file-compat-sbcl.json
 
 test:clautolisp:file-compat:ccl:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - mkdir -p clautolisp/.artifacts
@@ -276,26 +299,41 @@ test:clautolisp:file-compat:ccl:
 # here keeps both CIs symmetrical.
 
 test:autolisp-test:sbcl:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - make -C autolisp-test test
 
 test:alfe:sbcl:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - make -C autolisp-front-end test-sbcl
 
 test:alfe:ccl:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - make -C autolisp-front-end test-ccl
 
 test:alfe:conformance:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - make -C autolisp-front-end conformance
 
 test:alfe:spec-coverage:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - make -C autolisp-front-end check-spec-coverage
@@ -332,6 +370,7 @@ test:cad:schms:linux:
     GIT_SUBMODULE_STRATEGY: none
     SCHMS_DIR: "$CI_PROJECT_DIR/../schms"
   rules:
+    - *not-on-schedule
     # No credentials configured => the job does not exist at all.
     - if: '$SCHMS_REPO_URL == null || $SCHMS_REPO_URL == ""'
       when: never
@@ -369,6 +408,9 @@ test:cad:schms:linux:
 # user / system init-file output so the captured stdout is just
 # the (princ) value.
 build:alfe:sbcl:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   # A build: job belongs in the build stage (issues/open/release-ci.issue) so
   # it runs before the test lanes that `needs:` its artifact.
   stage: build
@@ -404,6 +446,9 @@ build:alfe:sbcl:
 # is defending against — 7 of the 10 specified artefacts were missing, and
 # reading the recipe had not revealed it.
 check:release:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   tags: [linux, amd64, docker]        # poseidon (always-on)
   image: $CLAUTOLISP_CI_LATEST
@@ -433,6 +478,7 @@ documentation:
   variables:
     GIT_SUBMODULE_STRATEGY: none      # docs need no native submodule
   rules:
+    - *not-on-schedule
     - if: '$CI_COMMIT_TAG'            # tags: release:documentation handles it
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -521,6 +567,7 @@ documentation:
   variables:
     GIT_SUBMODULE_STRATEGY: recursive   # libredwg (+ jsmn) needed by build-libraries
   rules:
+    - *not-on-schedule
     - *on-release-mandatory
     - when: manual
       allow_failure: true
@@ -839,12 +886,54 @@ release:windows:x86-64:
 #
 # FAIL-SAFE: no RUNNER_STATUS_TOKEN (api scope) or any API error => offline =>
 # the child's native jobs are manual (today's behaviour). Never a false online.
+# --- nightly hygiene ---------------------------------------------------
+#
+# The native child pipeline never completes on its own: its jobs are
+# `manual' whenever their runner is offline, so the child stays ACTIVE and
+# its jobs keep counting against the project's jobs-in-active-pipelines
+# cap. One immortal pipeline per push. That cap was reached on 2026-08-19
+# -- 17 children still `running', the oldest seven hours old -- and no new
+# child could be created, which turned every pipeline in the project red
+# with zero failed jobs (ci-native-child-pipeline-creation-fails.issue).
+#
+# `default: interruptible: true' in .gitlab/native.yml lets GitLab
+# auto-cancel a child once a NEWER pipeline supersedes it. That covers a
+# branch pushed repeatedly, and only that: a ref pushed once and then
+# abandoned -- a merge request merged from its last push, the normal case
+# -- has nothing to supersede it. This drains those.
+#
+# It is a broom, not a fix, and it is scheduled rather than reactive for
+# exactly that reason. SWEEP_MAX_AGE_HOURS tunes it without touching code.
+sweep:stale-child-pipelines:
+  stage: .pre
+  tags: [linux, amd64, docker]
+  image: $CLAUTOLISP_CI_LATEST
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    # At 03:00Z this clears everything from before 15:00Z the day before,
+    # leaving the previous evening's children still clickable in the
+    # morning -- the manual jobs exist to be played when a laptop comes
+    # back online, and a sweep that removed them the same night would take
+    # that away.
+    SWEEP_MAX_AGE_HOURS: "12"
+  rules:
+    # The nightly schedule runs this and nothing else: every other job
+    # carries *not-on-schedule.
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: on_success
+    # And by hand, from any pipeline, for the day the bucket fills early.
+    - when: manual
+      allow_failure: true
+  script:
+    - python3 scripts/cancel-stale-child-pipelines.py
+
 detect:runners:
   stage: .pre
   tags: [linux, amd64, docker]
   variables:
     GIT_SUBMODULE_STRATEGY: none
   rules:
+    - *not-on-schedule
     - if: '$CI_COMMIT_TAG'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -865,6 +954,7 @@ native:pipeline:
     MACOS_RUNNER: "$MACOS_RUNNER"
     WINDOWS_RUNNER: "$WINDOWS_RUNNER"
   rules:
+    - *not-on-schedule
     - if: '$CI_COMMIT_TAG'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -887,6 +977,7 @@ native:pipeline:
     GIT_SUBMODULE_STRATEGY: none
   interruptible: true
   rules:
+    - *not-on-schedule
     - when: on_success
       allow_failure: true
   artifacts:
@@ -921,6 +1012,9 @@ encoding:experiment:clautolisp:linux:
     expire_in: 30 days
 
 pathname:probe:clautolisp:linux:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   extends: .pathname-probe
   tags: [linux, amd64, docker]
   image: $CLAUTOLISP_CI_LATEST
@@ -946,6 +1040,7 @@ pathname:probe:clautolisp:linux:
     GIT_SUBMODULE_STRATEGY: none
     BENCH_SECONDS: '3.0'
   rules:
+    - *not-on-schedule
     - *on-release-benchmark
     - when: manual
       allow_failure: true
@@ -1056,6 +1151,7 @@ pages:
     - { job: "benchmark:bricscad:windows",   artifacts: true, optional: true }
     - { job: "benchmark:autocad:windows",    artifacts: true, optional: true }
   rules:
+    - *not-on-schedule
     - *on-release-mandatory
     - when: manual
       allow_failure: true
@@ -1116,6 +1212,7 @@ collect:release:
     - { job: "release:windows:x86-64", artifacts: true, optional: true }
     - { job: "release:documentation", artifacts: true }
   rules:
+    - *not-on-schedule
     - *on-release-mandatory
     - when: manual
       allow_failure: true
@@ -1186,6 +1283,7 @@ deploy:documentation:
   needs:
     - { job: "release:documentation", artifacts: true }
   rules:
+    - *not-on-schedule
     - *on-release-mandatory
     - when: manual
       allow_failure: true
