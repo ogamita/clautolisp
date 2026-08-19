@@ -452,8 +452,13 @@ documentation:
   before_script:
     # doc tooling is baked into the CI image; install only what's missing
     # (a fallback for a stale :latest right after the Dockerfile change).
-    - pkgs=""; command -v emacs >/dev/null || pkgs="$pkgs emacs-nox"; command -v xelatex >/dev/null || pkgs="$pkgs texlive texlive-latex-extra texlive-xetex texlive-plain-generic"; command -v makeinfo >/dev/null || pkgs="$pkgs texinfo"; command -v dot >/dev/null || pkgs="$pkgs graphviz"; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
-    - command -v emacs makeinfo xelatex dot >/dev/null
+    - pkgs=""; command -v emacs >/dev/null || pkgs="$pkgs emacs-nox"; command -v xelatex >/dev/null || pkgs="$pkgs texlive texlive-latex-extra texlive-xetex texlive-plain-generic"; command -v makeinfo >/dev/null || pkgs="$pkgs texinfo"; command -v dot >/dev/null || pkgs="$pkgs graphviz"; command -v fc-list >/dev/null || pkgs="$pkgs fontconfig"; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+    # The doc fonts are NOT optional decoration: the preamble maps glyphs onto
+    # them, and every fallback is guarded, so a missing font degrades to a
+    # dropped glyph in a PDF that still builds. Install them, and let
+    # check-doc-glyph-coverage below verify the result rather than trust it.
+    - 'fonts=""; have() { fc-list --format "%{family}\n" 2>/dev/null | grep -q "$1"; }; have "DejaVu Serif" || fonts="$fonts fonts-dejavu"; have "Symbola" || fonts="$fonts fonts-symbola"; have "Noto Sans CJK" || fonts="$fonts fonts-noto-cjk"; [ -z "$fonts" ] || { apt-get update && apt-get install -y $fonts; }'
+    - command -v emacs makeinfo xelatex dot fc-list >/dev/null
   script:
     # The dialect-warnings annex is generated from the register in
     # autolisp-runtime/source/portability.lisp and TRACKED, so it can go
@@ -466,6 +471,12 @@ documentation:
     # and the point is to fail on the documentation gap rather than after
     # several minutes of LaTeX.
     - make check-user-visible-documentation
+    # XeLaTeX has NO font fallback: a glyph the body face lacks is dropped,
+    # the PDF is produced successfully, and the character is simply gone.
+    # Cheap and BEFORE the build, for the same reason as the check above --
+    # and it needs fontconfig + the doc fonts to answer, which is why the
+    # before_script installs them (tex-pdf-characters.issue).
+    - make check-doc-glyph-coverage
     - make release-documentation      # build-documentation + package the share/doc tarball
   artifacts:
     name: "clautolisp-documentation-$CI_COMMIT_SHORT_SHA"

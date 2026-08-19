@@ -70,6 +70,10 @@
 %% mathematical angle brackets
 \newunicodechar{⟨}{{\claltext ⟨}}
 \newunicodechar{⟩}{{\claltext ⟩}}
+%% ⟺ is in DejaVu SERIF but NOT in DejaVu Sans MONO, and org renders =code=
+%% and verbatim through the mono face — so it rendered in prose and vanished
+%% inside a code span, in the same document. A map applies in both.
+\newunicodechar{⟺}{{\claltext ⟺}}
 %% media controls
 \newunicodechar{⏯}{{\clalsym ⏯}}
 \newunicodechar{⏵}{{\clalsym ⏵}}
@@ -77,6 +81,11 @@
 %% dingbats
 \newunicodechar{✔}{{\clalsym ✔}}
 \newunicodechar{✦}{{\clalsym ✦}}
+%% miscellaneous symbols — ⚘ is in DejaVu SANS and Symbola but not in DejaVu
+%% SERIF, which is the body font, so it was dropped from the sedit spec's PDF
+%% without a word. Found by scripts/check-doc-glyph-coverage.py, which exists
+%% so the NEXT such character is a build failure rather than a silent hole.
+\newunicodechar{⚘}{{\clalsym ⚘}}
 %% circled numbers 1..20 (enclosed alphanumerics)
 \newunicodechar{①}{{\clalsym ①}}
 \newunicodechar{②}{{\clalsym ②}}

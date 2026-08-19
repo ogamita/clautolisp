@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.8.53 / alfe 1.8.4 /
+master at the top of the file (clautolisp 1.8.54 / alfe 1.8.4 /
 read-autolisp 1.8.0). For the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
@@ -37,6 +37,14 @@ separate binary for tool integrators.
   Windows-compatible Kpathsea paths. They also translate Windows-form
   temporary-directory variables before starting POSIX Emacs, allowing
   ~make documentation~ to run from plain MSYS and Emacs shells.
+- The published PDFs no longer drop characters. XeLaTeX has no automatic
+  font fallback, so a glyph the body face lacks is simply omitted from a
+  PDF that still builds successfully — two characters were being lost
+  from the sedit specification that way, one of them only inside code
+  spans, because ~=code=~ is rendered through the mono face. Both are
+  mapped now, and ~make check-doc-glyph-coverage~ fails the build when a
+  documentation source uses a glyph the PDF would drop, so the next one
+  is caught before it is published rather than after.
 - On Windows, ~make install~ now appends ~.exe~ to every executable it
   places under =$PREFIX/bin= and =$PREFIX/libexec= (clautolisp,
   read-autolisp, alfe, the Qt GUI, run-file-compat), and ships the

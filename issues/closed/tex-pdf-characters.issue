@@ -1,0 +1,100 @@
+Some document need more characters:
+
+emacs --batch \
+	    --eval "(setq org-confirm-babel-evaluate nil)" \
+	    --eval "(setq org-export-with-broken-links t)" \
+	    --eval "(setq org-latex-pdf-process '(\"xelatex -interaction=nonstopmode -output-directory=%o %f\" \"xelatex -interaction=nonstopmode -output-directory=%o %f\"))" \
+	    "documentation/alfe--specifications.org" \
+	    --funcall org-latex-export-to-pdf
+Processing LaTeX file alfe--specifications.tex...
+Warning (ox-latex): PDF file produced with warnings: [undefined reference] [Missing character(s): please load an appropriate font with the fontspec package]
+
+Find the font and unicode characters that we need to install.
+
+
+DONE — 2026-08-19 (clautolisp 1.8.54)
+=====================================
+
+The characters and the fonts, found — and then the thing that matters
+more than either: a check, so the NEXT such character is a build failure
+instead of a hole in a published PDF.
+
+What was actually missing
+-------------------------
+
+Two codepoints, both in `clautolisp/documentation/clautolisp-sedit-spec.org`:
+
+  U+2698  ⚘  FLOWER                    -- in DejaVu SANS and Symbola,
+                                          absent from DejaVu SERIF, which
+                                          is the body font
+  U+27FA  ⟺  LONG LEFT RIGHT DOUBLE    -- in DejaVu SERIF, absent from
+          ARROW                           DejaVu Sans MONO
+
+The second one is the instructive one. Org renders `=code=` and verbatim
+through the MONO face, so that arrow rendered perfectly in prose and
+vanished inside a code span, in the same document, from the same font
+family. A check that only looks at the body font does not see it.
+
+Both are now mapped in clautolisp-doc-preamble.sty, and the sedit spec
+recompiles with ZERO "Missing character" lines (it had two).
+
+No new font needs installing: DejaVu, Symbola and Noto Sans CJK -- the
+three families the preamble already names -- cover every codepoint the
+documentation uses. What was missing was not a font but a MAP: XeLaTeX
+does not fall back on its own, so a glyph some installed font has is
+still dropped unless something says which font to take it from.
+
+The trap underneath: five copies of the preamble
+-------------------------------------------------
+
+`clautolisp-doc-preamble.sty` exists FIVE times, once per subproject, and
+each documentation build loads the copy beside its own sources. Nothing
+kept them in step.
+
+This bit during the fix, exactly as it would bite anyone else: the ⚘
+mapping was added to the alfe copy, the clautolisp document went on
+losing the character, and the build stayed green. The check below now
+fails when the copies differ, which is the only reason that class of
+mistake stops being invisible.
+
+The check
+---------
+
+`scripts/check-doc-glyph-coverage.py`, wired as `make
+check-doc-glyph-coverage` and run by the CI documentation job BEFORE the
+build (it is seconds; the LaTeX build is minutes).
+
+It reads the sources and the preamble and asks fontconfig which families
+actually have each codepoint, rather than compiling every PDF -- which
+would be slow AND would only prove something about the fonts on the
+machine that ran it. Three outcomes: covered by a body face, mapped, or
+reported. It also requires every codepoint to be in BOTH the serif and
+the mono face, or mapped, which is what catches the U+27FA class.
+
+Today: 52 distinct non-ASCII codepoints across 63 documentation sources,
+every one covered or mapped, five preamble copies identical.
+
+The CI job now also INSTALLS the doc fonts (fonts-dejavu, fonts-symbola,
+fonts-noto-cjk) and fontconfig, instead of hoping the image has them.
+Every fallback in the preamble is guarded by \IfFontExistsTF, so a
+missing font degrades to a dropped glyph in a PDF that still builds --
+the same silent failure by another route. Installing them and then
+CHECKING the result beats trusting either.
+
+Verified in both directions
+---------------------------
+
+- with the two mappings, the sedit spec compiles with no missing
+  characters; before them, xelatex reported exactly the two above;
+- removing a mapping makes the check exit 1 naming the codepoint, the
+  file that uses it, and the families that have it;
+- de-syncing one copy of the preamble makes it exit 1 naming which copies
+  disagree.
+
+Note on the reported warning
+----------------------------
+
+The command in this issue also reported `[undefined reference]`, and
+that half is NOT addressed here: it is broken cross-references in the org
+source, a different defect with a different cause. Said rather than left
+to look fixed.
