@@ -287,6 +287,18 @@ check-ci-dotenv-rules:  ## Fail if a parent-pipeline job is gated on a dotenv va
 check-release-lane-integrity:  ## Fail if a release lane could go green without producing its artefacts.
 	python3 scripts/check-release-lane-integrity.py
 
+# Needs fontconfig (fc-list) to ask which families actually have a glyph.
+# Where fc-list is absent the check reports every codepoint as unavailable,
+# which would be a false alarm, so it skips instead -- with a word, never
+# silently: a check that says nothing is indistinguishable from one that
+# passed, and that is the exact failure mode this check exists to remove.
+check-doc-glyph-coverage:  ## Fail if a documentation source uses a glyph the PDF build would silently drop.
+	@command -v fc-list >/dev/null 2>&1 || { \
+	  echo "skip: fc-list (fontconfig) is not installed, so glyph coverage"; \
+	  echo "      cannot be checked on this host -- install fontconfig to"; \
+	  echo "      run it."; exit 0; }; \
+	python3 scripts/check-doc-glyph-coverage.py
+
 check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
