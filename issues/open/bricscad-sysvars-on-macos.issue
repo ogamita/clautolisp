@@ -293,3 +293,141 @@ que relever les VALEURS des 57 sur les deux moteurs, relever POUR
 CHAQUE FONCTION que clautolisp implémente les sysvars qu'elle consulte
 sur un vrai CAO. C'est la même mécanique (`vendor:probes:*`), c'est
 beaucoup plus petit, et cela répond à la question qui décide vraiment.
+
+
+-------------------------------------------------------------------------
+TABLE DES 38 — description éditeur et usage plausible ici (2026-08-19)
+-------------------------------------------------------------------------
+
+pjb : « most of these look like they could have a value and a use in
+clautolisp. Add a table to the issue with a summary of their description
+for each. »
+
+Correction de ma part avant la table : j'avais conclu « 52 sans
+consommateur, donc les laisser vides ». « Aucun consommateur AUJOURD'HUI »
+n'est pas « aucun usage possible », et la règle était posée trop
+fermement. En lisant les descriptions une par une, ces 38 ne forment pas
+un bloc : trois groupes ont un usage réel dans un moteur sans interface,
+un quatrième n'en a pas. Le classement est ce qui rend la table
+décisionnelle plutôt que descriptive.
+
+Colonnes : éditeur ; RO = lecture seule ; description (résumé de la
+documentation éditeur, via :summary de l'inventaire).
+
+GROUPE 1 — FAITS D'ENVIRONNEMENT, en lecture seule
+   clautolisp peut y répondre JUSTE, aujourd'hui, sans rien inventer :
+   ce sont des propriétés du processus et de l'utilisateur, pas des
+   ressources d'une installation CAO. Ce sont les gains les plus francs.
+
+| sysvar             | éditeur | RO | description                                                              |
+|--------------------+---------+----+--------------------------------------------------------------------------|
+| WORKINGFOLDER      | autocad | T  | répertoire de travail du processus (« of interest to developers »)       |
+| STARTINFOLDER      | autocad | T  | répertoire depuis lequel le produit a été démarré                        |
+| MYDOCUMENTSPREFIX  | les 2   | T  | chemin complet du dossier Mes documents de l'utilisateur connecté        |
+| LOCALROOTPREFIX    | les 2   | T  | racine où sont installés les fichiers personnalisables LOCAUX            |
+| ROAMABLEROOTPREFIX | les 2   | T  | racine des fichiers personnalisables ITINÉRANTS de l'utilisateur         |
+
+   Proposition : WORKINGFOLDER = le cwd (clautolisp le connaît déjà, et
+   vl-getcurrentdir l'expose) ; STARTINFOLDER = le cwd au lancement ;
+   MYDOCUMENTSPREFIX = $HOME/Documents ; LOCALROOTPREFIX = $PREFIX/share/
+   clautolisp ; ROAMABLEROOTPREFIX = $XDG_CONFIG_HOME/clautolisp. Aucun de
+   ces cinq ne dépend d'une fonctionnalité absente.
+
+GROUPE 2 — CHEMINS DE RECHERCHE DE RESSOURCES
+   Là où un moteur RÉSOUT un fichier. clautolisp a déjà la notion —
+   CLAUTOLISPSUPPORTFILESEARCHPATH et la marche du support-path — donc
+   ces sysvars ont un analogue direct, et SRCHPATH est le cas central.
+
+| sysvar                    | éditeur  | RO | description                                                     |
+|---------------------------+----------+----+-----------------------------------------------------------------|
+| SRCHPATH                  | bricscad | .  | chemin de recherche des fichiers de support : polices, fichiers de personnalisation, plugins, dessins à insérer, types de ligne, motifs de hachures — hors dossier courant ; séparés par des `;` |
+| TEMPLATEPATH              | bricscad | .  | dossier des gabarits                                            |
+| SHEETSETTEMPLATEPATH      | les 2    | .  | dossier des gabarits de jeux de feuilles                        |
+| BMFORMTEMPLATEPATH        | bricscad | .  | fichier gabarit par défaut de la commande BMFORM                |
+| COLORBOOKPATH             | bricscad | .  | nuanciers (color books) ; plusieurs chemins séparés par `;`     |
+| COMPONENTSPATH            | bricscad | .  | composants créés par l'utilisateur ; plusieurs chemins          |
+| DETAILSPATH               | bricscad | .  | fichiers de détails créés par l'utilisateur ; plusieurs chemins |
+| PARAMETRICBLOCKS2DPATH    | bricscad | .  | blocs paramétriques 2D de l'utilisateur ; plusieurs chemins     |
+| RENDERMATERIALSPATH       | bricscad | .  | matériaux de rendu de l'utilisateur ; plusieurs chemins         |
+| TEXTUREMAPPATH            | bricscad | .  | textures                                                        |
+| SECTIONSETTINGSSEARCHPATH | bricscad | .  | styles de coupe BIM, styles d'étiquettes, personnalisations     |
+| TOOLPALETTEPATH           | les 2    | .  | palettes d'outils                                               |
+| _TOOLPALETTEPATH          | autocad  | .  | idem, variante AutoCAD                                          |
+| PLOTCFGPATH               | bricscad | .  | configurations de traceur (détermine les formats de papier)     |
+| PLOTSTYLEPATH             | bricscad | .  | styles de tracé                                                 |
+| DGNMAPPINGPATH            | autocad  | T  | emplacement de dgnsetups.ini (correspondances DGN)              |
+
+   Proposition : SRCHPATH d'abord, et le traiter comme un ALIAS de
+   CLAUTOLISPSUPPORTFILESEARCHPATH plutôt que comme un chemin nouveau —
+   sa définition éditeur EST celle de notre support-path, et un corpus
+   qui fait (setvar "SRCHPATH" …) attend qu'il agisse. Les autres :
+   $XDG_DATA_HOME/clautolisp/<ressource> avec repli sur
+   $PREFIX/share/clautolisp/<ressource>, et vides tant que clautolisp ne
+   fournit ni ne lit la ressource — un nuancier ou un gabarit BIM n'a de
+   sens que si quelque chose les charge.
+
+GROUPE 3 — DESTINATIONS D'ÉCRITURE
+   Là où un moteur PRODUIT quelque chose. Une exécution sans interface
+   produit réellement des journaux, des sauvegardes, des sorties.
+
+| sysvar                     | éditeur  | RO | description                                                      |
+|----------------------------+----------+----+------------------------------------------------------------------|
+| LOGFILEPATH                | les 2    | .  | dossier des journaux d'historique de commandes de la session     |
+| SAVEFILEPATH               | les 2    | .  | dossier des fichiers de sauvegarde automatique de la session     |
+| PLOTOUTPUTPATH             | bricscad | .  | dossier par défaut des fichiers de tracé produits                |
+| XLOADPATH                  | les 2    | .  | copies temporaires des xrefs chargées à la demande               |
+| XCOMPAREBAKPATH            | autocad  | .  | sauvegarde du fichier xref de comparaison                        |
+| ACTRECPATH                 | autocad  | .  | dossier où sont enregistrées les nouvelles macros d'action       |
+| FBXEXPORTTEXTURESPATH      | bricscad | .  | textures à l'export FBX (seulement si FBXEXPORTTEXTURES = 2)     |
+| CVERSIONCONTROLPATH        | bricscad | .  | projet de gestion de versions courant                            |
+| VERSIONCONTROLCONFIGPATH   | bricscad | .  | réglages de gestion de versions                                  |
+| VERSIONCONTROLDOWNLOADPATH | bricscad | .  | projets de gestion de versions téléchargés                       |
+
+   Proposition : LOGFILEPATH et SAVEFILEPATH d'abord — ce sont les deux
+   qu'une exécution sans interface produit vraiment, et LOGFILEPATH est
+   DÉJÀ posé par alfe sur les hôtes réels (le seul sysvar de log
+   accessible en écriture là-bas), donc son comportement ici doit suivre.
+   Défaut : $XDG_STATE_HOME/clautolisp/logs et .../autosave. Les autres
+   restent vides tant que la fonctionnalité correspondante n'existe pas
+   (traçage, xrefs, macros d'action, FBX, gestion de versions).
+
+GROUPE 4 — COMMODITÉS D'INTERFACE GRAPHIQUE
+   Décrivent une position dans une boîte de dialogue ou un historique
+   d'interface. Sans interface, il n'y a rien à décrire.
+
+| sysvar             | éditeur  | RO | description                                                                    |
+|--------------------+----------+----+--------------------------------------------------------------------------------|
+| BLOCKSPATH         | bricscad | .  | CINQUIÈME dossier du volet gauche de la boîte « Select Drawing File » (INSERT)  |
+| DRAWINGPATH        | bricscad | .  | idem pour OPEN / SAVEAS / INSERT — et « Windows only » dans la doc              |
+| RECENTPATH         | bricscad | .  | dernier chemin utilisé                                                          |
+| BLOCKSRECENTFOLDER | autocad  | .  | où sont rangés les blocs récemment insérés ou créés                             |
+| BLOCKSYNCFOLDER    | autocad  | .  | où sont rangés les blocs récents et favoris                                     |
+| HELPPREFIX         | autocad  | .  | chemin du système d'aide                                                        |
+| COMMUNICATORPATH   | bricscad | .  | chemin d'installation du Communicator (Mac & Linux)                             |
+
+   Proposition : rester vides. « Le cinquième dossier du volet gauche
+   d'une boîte de dialogue » n'a pas de traduction dans un moteur sans
+   boîte de dialogue, et DRAWINGPATH est même documenté « Windows only ».
+   HELPPREFIX et COMMUNICATORPATH désignent des installations qui
+   n'existent pas ici.
+
+CE QUE LA TABLE CHANGE
+----------------------
+
+L'ordre de travail devient évident, et il ne suit pas l'ordre
+alphabétique :
+
+1. groupe 1 (5 sysvars) — répondables JUSTE aujourd'hui, sans dépendre
+   d'aucune fonctionnalité à écrire. C'est le lot à faire en premier ;
+2. SRCHPATH seul — parce qu'il a un analogue exact déjà implémenté, et
+   qu'un corpus qui le pose attend qu'il agisse ;
+3. LOGFILEPATH et SAVEFILEPATH — les deux sorties qu'une exécution sans
+   interface produit réellement ;
+4. le reste des groupes 2 et 3 — le jour où la ressource ou la
+   fonctionnalité existe, pas avant ;
+5. groupe 4 — vides, et documentés comme tels.
+
+La colonne « valeur dans autocad / dans bricscad » de la demande
+initiale reste non remplie, et pour la même raison qu'avant : elle
+demande une sonde sur les deux moteurs. Elle est maintenant plus facile
+à cibler — le groupe 1 suffirait à commencer, cinq lectures.
