@@ -1,0 +1,92 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: release-asset-links-use-artifacts-file — les liens de release rendent du HTML, pas les archives
+#+STATUS: OPEN
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+
+release-asset-links-use-artifacts-file
+======================================
+
+Rapporté depuis la CI de SCHMS+, en implémentant l'installation d'une
+release publiée à la place d'une recompilation. 2026-08-19.
+
+Symptôme
+--------
+
+Les liens d'archives attachés aux releases GitLab de clautolisp
+renvoient la **page de navigation HTML** des artefacts, et non le
+fichier :
+
+    $ curl -sL -o a.tar.bz2 \
+      'https://gitlab.com/ogamita/clautolisp/-/jobs/15958070775/artifacts/file/dist/combined/clautolisp-1.8.47-libraries-darwin-arm64.tar.bz2'
+    $ file a.tar.bz2
+    a.tar.bz2: HTML document, Unicode text, UTF-8 text
+    $ grep -o '<title>[^<]*</title>' a.tar.bz2
+    <title>Artifacts · collect:release (#15958070775) · Jobs · Ogamita / clautolisp · GitLab</title>
+
+Ce qui rend le défaut coûteux, c'est qu'il ne s'annonce pas :
+
+    file : HTTP 200  text/html                 40491 octets
+    raw  : HTTP 200  application/octet-stream  4449971 octets
+
+Un consommateur qui suit le lien reçoit un 200, écrit 40 Ko sur disque,
+et n'échoue qu'à l'extraction — avec un message qui parle de format
+d'archive, non de lien.
+
+Cause
+-----
+
+L'URL emploie le segment `/artifacts/file/`, qui est la vue de
+NAVIGATION. Le segment qui sert le contenu est `/artifacts/raw/`.
+
+    .../-/jobs/<id>/artifacts/file/<chemin>   page HTML
+    .../-/jobs/<id>/artifacts/raw/<chemin>    le fichier
+
+Les quatorze liens de la release `release-1.8.47` sont concernés :
+sources, documentation, binaries et libraries, pour les quatre
+plateformes.
+
+Correctif demandé
+-----------------
+
+Dans le job qui crée la release, émettre les liens en `raw`.
+
+À considérer aussi : outils-autolisp attache ses archives comme
+**uploads** de projet —
+`https://gitlab.com/-/project/<id>/uploads/<hash>/<nom>` — et celles-là
+se téléchargent sans difficulté. Les uploads ont un autre avantage sur
+les artefacts de job : ils ne sont pas soumis à l'expiration des
+artefacts. Un lien de release qui pointe sur un artefact de job cesse de
+fonctionner le jour où celui-ci expire, et la release devient un
+catalogue de liens morts.
+
+Contournement en place
+----------------------
+
+`run-forest-run/scripts/lib-releases.sh` réécrit `/artifacts/file/` en
+`/artifacts/raw/` à la volée, et refuse toute réponse dont `file(1)` dit
+qu'elle est du texte plutôt qu'une archive. Cela fonctionne, mais c'est
+un correctif chez le consommateur pour un défaut de l'émetteur, et tout
+autre consommateur retombera dedans.
+
+Pourquoi cela compte
+--------------------
+
+Sans archives téléchargeables, chaque pipeline recompile clautolisp
+depuis les sources — plusieurs minutes par job, sur chaque plateforme, à
+chaque exécution. Avec elles, l'installation prend quelques secondes :
+mesuré sur darwin-arm64, `clautolisp 1.8.47` et `alfe 1.8.4` s'exécutent
+depuis les archives sans une seconde de compilation.
+
+Remarque annexe
+---------------
+
+La dernière release publiée est `release-1.8.47`, alors que les tags
+git vont plus loin (`release-1.8.49`, développement en 1.8.50). SCHMS+
+a besoin de 1.8.49 — c'est la première version où son corpus CAD passe
+intégralement sans CAO propriétaire — et doit donc compiler faute de
+release correspondante. Publier une release pour 1.8.49 ou au-delà
+suffirait à basculer ce pipeline sur le téléchargement, sans rien
+changer d'autre.
