@@ -112,3 +112,22 @@ puis, avec `(open "/Volumes/CaseTest/dir/fichier.lsp" "r")` :
 
     CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp --dialect clautolisp …   OUVERT
     CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp --dialect bricscad   …   nil
+
+DECISION
+--------
+
+La sysvar CLAUTOLISPCASEINSENSITIVEPATHS doit être disponible dans
+tous les dialects sauf strict.
+
+Sa valeur par défaut reste 0.
+
+
+Raison: je ne crois pas que Bricscad sur Linux implémente une
+case-insensitivity sur les file-system linux qui sont case-sensitive.
+
+Donc cette alternative doit rester exceptionnelle et à la demande
+express de l'utilisateur.
+
+D'autre part, je pense qu'on peut laisser la sysvar en RW même sur les
+autres dialects que clautolisp. Il y a déjà des différences dans les
+listes de sysvar entre autocad et bricscad.
