@@ -74,6 +74,16 @@ same interactor."
 this stack — user dictionaries before system dictionaries at each level — so
 user commands shadow system commands and inner loops shadow outer loops.")
 
+(defvar *writing-prompt* nil
+  "True while INTERACTOR-LOOP is writing a turn's prompt.
+
+Whether a character belongs to a prompt is knowledge only this loop has:
+downstream, a prompt is just output with no trailing newline, exactly
+like a (princ \"...\") that ends a program. Consumers that must tell them
+apart — the dribble, which omits prompts but must keep unterminated real
+output — cannot infer it once the characters have gone by, so the loop
+says it while it writes (dribble-eof-prompt-recorded.issue).")
+
 (defun push-interactor (interactor &optional state)
   "Enter INTERACTOR with this activation's STATE: subsequent turns of the
 running INTERACTOR-LOOP read its prompt and dictionaries. Returns the
@@ -391,8 +401,10 @@ outer one within the same loop), or with INTERACTOR-RETURN's value."
                 (error (err)
                   (format error-output "~&~A while printing ~A status~%"
                           err (interactor-name top))))))
-          ;; prompt
-          (let ((prompt (interactor-prompt top)))
+          ;; prompt -- announced as such, because nothing downstream can
+          ;; tell prompt text from unterminated output once written.
+          (let ((prompt (interactor-prompt top))
+                (*writing-prompt* t))
             (etypecase prompt
               (null   (format output "~&~A> " (interactor-name top)))
               (string (format output "~&~A" prompt))

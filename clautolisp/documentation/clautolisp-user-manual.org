@@ -1031,6 +1031,28 @@ no probing:
                              match what you actually emit. Same ENC
                              vocabulary as ~-e~.
 
+*** Writing sources that load on every engine
+If your sources are going to be loaded by a CAD host as well as by
+clautolisp, write them as *UTF-8 with a byte-order mark*. That is the
+one spelling every post-2021 engine identifies without guessing.
+
+The reason is a rule of the CAD engines, not of clautolisp, and it is
+worth knowing because it fails silently. ~open~ gained an encoding
+argument in AutoCAD 2021 and BricsCAD V21 (~"utf8"~, ~"utf8-bom"~,
+~"utf16-bom"~), but ~load~ never did: the encoding of a source file is
+decided by its first bytes alone. With no BOM the host system codepage
+decides — and as Bricsys puts it, "UTF-8 without BOM can not be
+distinguished from normal ANSI".
+
+So a source written as UTF-8 without a mark loads correctly wherever the
+host codepage happens to match the author's, and wrongly elsewhere: on
+macOS, where ~SYSCODEPAGE~ is MAC_ROMAN, the same bytes decode to
+different characters. Nothing raises an error — the file reads, the
+program runs, and the strings are wrong. A BOM removes the guess.
+
+The full rules, with the vendor sources, are in the ~open~ and ~load~
+entries of the AutoLISP specification.
+
 *** Launch-chain resolution and the degenerate case
 At startup the runtime resolves the file encoding via
 ~or-else(LC_ALL, LANG, LC_CTYPE, -e flag)~ and pushes the result

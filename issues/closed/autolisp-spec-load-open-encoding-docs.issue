@@ -2,6 +2,7 @@ autolisp-spec-load-open-encoding-docs — document load/open file-encoding behav
 ==============================================================================================================
 
 Type: documentation
+Status: DONE
 Reported from: SCHMS+ integration (alfe --bricscad on macOS), 2026-07-30
 
 Summary
@@ -98,3 +99,62 @@ Cross-references
   UTF-8+BOM measurements)
 - cad-load-encoding-macos.issue     (encoding-flag handling)
 - autolisp-spec-questions.issue     (open general spec questions)
+
+
+DONE — 2026-08-19 (clautolisp 1.8.53)
+=====================================
+
+Documented where the ticket asked, with the vendor pages cited.
+
+autolisp-spec, `open`
+---------------------
+
+A *File encoding* section giving the three documented values
+("utf8" / "utf8-bom" / "utf16-bom"), version-qualified (AutoCAD 2021,
+BricsCAD V21, absent before), the SYSCODEPAGE fallback, and the
+text-vs-binary mode distinction. Plus the *Consistency required of any
+implementation* rule the ticket asks to assert: a decoded non-ASCII
+character must equal (chr N) for the same character, whatever the file
+encoding — which is the contract alfe honours by transcoding to
+UTF-8+BOM, and where BricsCAD's native `chr` diverges. Source Notes cite
+the DevRef page.
+
+autolisp-spec, `load`
+---------------------
+
+The asymmetry stated first, because it is what surprises people: `open`
+gained an encoding argument in 2021, `load` did NOT — a source file's
+encoding is decided by its first bytes alone. Then the BricsCAD V20
+Unicode support, the little-endian requirement, "the BOM is absolutely
+required", and the consequence spelled out: a non-BOM cp1252 source
+cannot be portably loaded, and on macOS (SYSCODEPAGE = MAC_ROMAN) it
+mis-decodes with no error raised anywhere — the file reads, the program
+runs, the strings are wrong. Also records that BricsCAD's extension
+search is name.des then name.lsp, where Autodesk documents .vlx/.fas/.lsp.
+
+autolisp-spec, *Pre-Unicode and Post-Unicode Semantics*
+-------------------------------------------------------
+
+Expanded as asked, with a table contrasting the two entry points — what
+selects the encoding, and since when — and the one Bricsys sentence that
+explains the entire macOS story: "UTF-8 without BOM can not be
+distinguished from normal ANSI."
+
+clautolisp user manual
+----------------------
+
+A new *Writing sources that load on every engine* subsection under
+/Source-file and terminal encoding/: write UTF-8 WITH a BOM, and why —
+the rule belongs to the CAD engines, not to clautolisp, and it fails
+silently, which is exactly why a user needs to be told rather than left
+to discover it.
+
+Not done
+--------
+
+The two secondary alignments the ticket lists — file-compat usage.org
+and the runtime specifications — are untouched. They describe
+clautolisp's own behaviour, which this ticket did not find wrong; what
+was missing was the VENDOR rules, and those now live in the spec and the
+manual where a reader looks for them. Said here rather than left as a
+silent partial.

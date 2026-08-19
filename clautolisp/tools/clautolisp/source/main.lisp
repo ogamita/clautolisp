@@ -313,6 +313,17 @@ explicit --debugger-ui overrides for this run only."
         (lambda ()
           (or (ignore-errors (clautolisp.debug.ui:lisp-setting :sedit-on-quit))
               :ask)))
+  ;; Make (clal-save-aldo-configuration) write the SAME self-documenting
+  ;; aldo.conf that `,settings save' writes. The builtin cannot call the
+  ;; debug UI's writer itself — the dependency runs the other way — so the
+  ;; wiring lives here, where both sides are visible, and it serialises the
+  ;; AUTOLISP variable (through the existing bridge) rather than the UI's
+  ;; own store, so saving from AutoLISP still saves what AutoLISP holds
+  ;; (clal-save-aldo-configuration-undocumented-file.issue).
+  (setf clautolisp.autolisp-builtins-core::*aldo-configuration-writer*
+        (lambda (stream)
+          (clautolisp.debug.ui:write-aldo-configuration
+           stream (clautolisp.debug.ui:read-config-variable))))
   ;; Shell escape (bang.issue). Two hooks for one feature, because the
   ;; interactor system is deliberately dependency-free: it can neither read
   ;; the configuration (which lives above it) nor spawn a process (which
@@ -523,7 +534,13 @@ the accumulated source string (with embedded newlines) or nil when
 STREAM signalled end-of-file before any input was given."
   (let ((accumulated nil))
     (loop
-      (write-string (if accumulated continuation-prompt prompt))
+      ;; The dribble omits prompts. It normally infers that from an input
+      ;; line completing, but at end of input nothing completes, so the
+      ;; prompt has to say what it is -- otherwise the pending partial
+      ;; was recorded as ";; O: _$" at the end of every dribble file
+      ;; (dribble-eof-prompt-recorded.issue).
+      (with-dribble-prompt
+        (write-string (if accumulated continuation-prompt prompt)))
       (finish-output)
       (let ((line (read-line stream nil :eof)))
         (cond

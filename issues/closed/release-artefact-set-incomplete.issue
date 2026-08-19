@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: release-artefact-set-incomplete — the published release set is missing 7 of the 10 required artefacts
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: infra
 #+DEPENDS: -
@@ -250,3 +250,67 @@ target is complete.
 3. Nothing is built by the release pipeline whose output does not reach
    the collect job.
 4. =make check-versions= still passes.
+
+* DONE — 2026-08-19 (clautolisp 1.8.53)
+
+Every acceptance criterion above now holds, and each was checked by
+running something rather than by reading the recipe — which is how this
+issue was found in the first place.
+
+** C1, C3 and the arm32 finding — done 2026-08-16, shipped since
+
+The per-target artefacts pass through to =COLLECT_OUT= by GLOB, so a
+future runner's artefacts join the set with no edit (pjb's ruling: "et
+tout autre binaires que nous pourrions builder a l'avenir"). The =-all=
+artefact exists as the UNPACKED UNION pjb arbitrated for, in both
+containers. =release:linux:arm32= is in =collect:release='s =needs:=,
+so nothing is built and discarded.
+
+** C2 — the Windows lane is no longer a stub
+
+This was the one item left open when the issue was last touched. It is
+closed: =release:windows:x86-64= does real packaging via
+=scripts/release-windows.sh=, and =release-1.8.49= published
+=clautolisp-1.8.49-binaries-windows-x86-64.zip= and its =libraries=
+counterpart — downloaded and opened, not merely listed.
+
+Note the artefact set moved since this issue named it: Windows ships
+=.zip=, not =.tar.bz2= (pjb, 2026-08-16 — its package has its own
+layout). The ten names at the top of this issue therefore read
+=binaries-windows-x86-64.zip= today.
+
+** The published set, measured
+
+=release-1.8.49= published 15 artefacts: binaries and libraries for
+linux-x86-64, linux-arm64, darwin-arm64 and windows-x86-64, their merged
+pairs, the documentation, the sources in both formats, and =-all= in
+both formats. armv7 is absent for a separate, documented and unrelated
+cause (=release-arm32-thread-less-sbcl=): a thread-less armhf SBCL, on
+which =bordeaux-threads= refuses to load.
+
+=scripts/check-release-artefact-set.sh= is the check criterion 2 asked
+for: it fabricates a complete input set, runs the REAL recipe over it,
+and diffs the produced list against the expected one — 18 entries today
+ (the specified set plus the per-target passthroughs and the assets
+manifest). It fails, and has been made to fail deliberately more than
+once since.
+
+** The GitHub divergence — made deliberate, which is what was asked
+
+The remaining finding was that "the two forges publish DIFFERENT sets
+from the same tag" and that the divergence "should be deliberate rather
+than accidental". It was still accidental, and still live:
+=.github/workflows/release.yml= fired on every =release-*= tag, and
+attached to a GitHub release of the SAME NAME a set that had no union
+ (its collect step still carries the TODO) and no Windows package (its
+Windows lane is still a stub).
+
+That is worse than not publishing: whoever downloaded the short set had
+nothing telling them it was short. So the automatic tag trigger is
+removed and the "attach to release" step with it; only
+=workflow_dispatch= remains, and its =permissions= drop to
+=contents: read= since it no longer writes anything. Running it is now a
+deliberate build of the artefacts, not a publication. GitLab is the
+source of truth for releases (AGENTS.md), and the file now says so at
+its head, together with what would have to be closed — the union and
+Windows packaging — before the tag trigger could come back.
