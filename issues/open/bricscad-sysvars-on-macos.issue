@@ -179,3 +179,117 @@ Traiter la classe A seule d'abord : 6 sysvars, une correction visible,
 aucune décision de conception en suspens — un chemin Windows sur macOS
 est faux quoi qu'on décide ensuite. La classe B demande d'abord la sonde
 ci-dessus, sans quoi les propositions ne seraient que des paris.
+
+
+-------------------------------------------------------------------------
+QUI LES UTILISE — la méthode de pjb, appliquée (2026-08-19)
+-------------------------------------------------------------------------
+
+pjb : « identifier les fonctions ou commandes qui les utilisent […] alors
+leur traduction sur clautolisp pourrait être informée par
+l'implémentation de ces fonctions dans clautolisp. »
+
+C'est le bon critère, et il renverse la priorité de l'analyse
+ci-dessus : la valeur qu'un sysvar doit avoir est décidée par son
+CONSOMMATEUR, et s'il n'y en a pas, la question ne se pose pas.
+
+Ce que l'inventaire pouvait répondre, et ce qu'il ne pouvait pas
+-----------------------------------------------------------------
+
+Le champ `:coupled` de `system-variables-inventory.sexp` est fait pour
+ça — mais il est VIDE pour 1791 des 1836 records, et pour les six de la
+classe A sans exception. Il ne répond donc pas.
+
+Le champ `:summary`, lui, répond, parce qu'il nomme la fonctionnalité :
+
+| sysvar                | fonctionnalité qui le lit, selon l'éditeur          |
+|-----------------------+-----------------------------------------------------|
+| ACTIVITYINSIGHTSPATH  | Activity Insights — la télémétrie d'AutoCAD         |
+| BMTOOLPATH            | Assembly Inspect — outils BIM de BricsCAD           |
+| POINTCLOUDCACHEFOLDER | cache des nuages de points                          |
+| CLOUDDOWNLOADPATH     | panneau Bricsys 24/7                                |
+| CLOUDTEMPFOLDER       | panneau Bricsys 24/7 (temporaires)                  |
+| IMAGECACHEFOLDER      | cache image, couplé à IMAGEDISKCACHE                |
+
+*Aucune de ces six fonctionnalités n'existe dans clautolisp* : ni
+télémétrie, ni BIM, ni nuages de points, ni panneau cloud, ni cache
+d'images. Un moteur AutoLISP sans interface graphique n'en a aucune.
+
+Ce que le dépôt répond, et qui est vérifiable ici
+--------------------------------------------------
+
+Recherche des 57 noms dans le code de clautolisp et d'alfe, en excluant
+les fichiers qui ne font que les ÉNUMÉRER (le catalogue, l'inventaire,
+l'overlay bricscad, la spec) — énumérer n'est pas consommer :
+
+*CINQ sur cinquante-sept apparaissent*, et il faut encore les départager :
+
+| sysvar      | où                                        | est-ce un consommateur ?                         |
+|-------------+-------------------------------------------+--------------------------------------------------|
+| ACADPREFIX  | tests seulement                           | non                                              |
+| DWGPREFIX   | cador/source/sysvars.lisp                 | non — une DÉCLARATION de défaut du mock host     |
+| LOGFILEPATH | alfe, autolisp-bootstrap.lsp              | OUI, et c'est alfe qui l'ÉCRIT sur l'hôte CAO    |
+| SRCHPATH    | alfe, autolisp-bootstrap.lsp              | vestigial — voir plus bas                        |
+| TEMPPREFIX  | autolisp-cli/source/transmit.lisp         | OUI — le seul que clautolisp résout pour lui-même |
+
+Donc *cinquante-deux des cinquante-sept n'ont aucun consommateur*, nulle
+part. Pour ceux-là, « quelle valeur devraient-ils avoir » n'a pas de
+réponse utile : leur donner un chemin XDG serait remplacer une fiction
+Windows par une fiction POSIX. Rester vides est le comportement juste
+tant qu'aucune fonction ne les lit.
+
+Le cas LOGFILEPATH est instructif, et il illustre exactement le point de
+pjb : il compte non pas parce que clautolisp le LIT, mais parce qu'alfe
+le POSE sur un vrai CAO — c'est « le seul sysvar de log accessible en
+écriture sur les hôtes réels », LOGFILENAME étant en lecture seule là-bas.
+Ce qui importe donc pour lui n'est pas sa valeur par défaut mais que
+`setvar` fonctionne.
+
+Ce que cela change à la recommandation
+---------------------------------------
+
+Elle se resserre :
+
+1. *classe A (6)* — à corriger, parce qu'un chemin Windows sur macOS est
+   faux quelle que soit la suite. Mais la correction n'est PAS un chemin
+   XDG « équivalent » : aucune fonctionnalité derrière eux n'existe ici,
+   donc la valeur honnête est vide, ou une convention explicitement
+   offerte au code utilisateur — ce que pjb envisageait déjà en écrivant
+   « it could be a user custom setting if we can make use of these
+   paths » ;
+2. *TEMPPREFIX* — déjà fait, et c'est le patron ;
+3. *LOGFILEPATH, SRCHPATH* — doivent rester ACCESSIBLES EN ÉCRITURE, ce
+   qui est déjà le cas ; leur défaut importe peu ;
+4. *les 48 autres* — laisser vides, et n'en peupler un que le jour où
+   une fonction clautolisp le lit. La règle devient : on donne une
+   valeur à un sysvar de chemin quand on écrit son consommateur, pas
+   avant.
+
+Cela évite aussi un piège : peupler ces 48 cellules créerait 48
+promesses que rien ne tient, dans un produit dont le reste des
+diagnostics vise précisément l'inverse.
+
+CONSTAT ACCESSOIRE — la restauration de SRCHPATH ne s'exécute jamais
+---------------------------------------------------------------------
+
+`autolisp-bootstrap.lsp:210` restaure SRCHPATH depuis
+`_autolisp_old_srchpath`, que la spec d'alfe déclare comme global injecté
+initialisé à `nil` (`alfe--specifications.org:266`) — et *rien, dans tout
+le dépôt, ne lui assigne jamais de valeur*. Le `if` est donc toujours
+faux et le `setvar` ne s'exécute pas.
+
+Ce n'est PAS un bug vivant : alfe ne modifie pas SRCHPATH non plus, donc
+il n'y a rien à restaurer et rien n'est laissé sale. C'est du vestige de
+l'ancien wrapper bash. Signalé parce que du code qui promet une
+restauration sans jamais l'exécuter se lit comme une garantie, et que le
+jour où quelqu'un ajoutera un `setvar "SRCHPATH"` en début de session, il
+croira la restauration acquise.
+
+PROCHAIN PAS SUGGÉRÉ
+--------------------
+
+La sonde évoquée plus haut reste utile, mais son objet change : plutôt
+que relever les VALEURS des 57 sur les deux moteurs, relever POUR
+CHAQUE FONCTION que clautolisp implémente les sysvars qu'elle consulte
+sur un vrai CAO. C'est la même mécanique (`vendor:probes:*`), c'est
+beaucoup plus petit, et cela répond à la question qui décide vraiment.
