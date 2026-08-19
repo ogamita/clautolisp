@@ -1,0 +1,125 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: doc-build-info-export-quadratic — the Info export of the spec is quadratic: 51 minutes of a 55-minute documentation job
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+
+* Context
+
+pjb, 2026-08-19, after two merge requests each spent about an hour in the
+=documentation= job: cache the Info export separately from the HTML split
+— "mais il faut vérifier. Je pense que ce qui est lent, c'est le split du
+gros .org". He proposed a reorganisation: one =.org= per dictionary entry,
+so that editing one page regenerates one =.info= and one =.html= and the
+rest is essentially =cat *.org > big.org=, which is fast.
+
+This issue records the measurements he asked for, because the first half
+of that guess turns out to be wrong and the conclusion right anyway.
+
+* Where the time actually goes — measured, not estimated
+
+From the trace of job 15981142889 (=documentation=, MR !105, 60.2 min,
+SUCCESS — it was slow, not stuck):
+
+| step                          | duration    | volume     |
+|-------------------------------+-------------+------------|
+| =build-paged-spec= (text)     | *1.9 s*     | 3022 pages |
+| =build-paged-spec= (org)      | *3.1 s*     | 3022 pages |
+| =build-paged-html=            | *2 min 38 s*| 3022 pages |
+| =build-paged-info= (texi)     | *51 min 19 s* | 1 file   |
+
+*The split is not the slow part.* It costs five seconds for both formats
+together. The single =org-texinfo-export-to-texinfo= call on the whole
+95 000-line spec is 94% of the job.
+
+Worth stating plainly because it changes what to fix: caching the Info
+export separately from the split would help — but only by skipping a step
+that is already nearly free to redo, while leaving the 51 minutes intact
+whenever the spec IS edited, which is exactly when the cache misses.
+
+* Why it is 51 minutes: the export is super-linear
+
+Exporting prefixes of the same spec to texi, one Emacs run each:
+
+| input            | lines  | sections | time |
+|------------------+--------+----------+------|
+| 1/40 of the spec |  2 378 |      536 |  1 s |
+| 1/20             |  4 757 |    1 155 |  2 s |
+| 1/10             |  9 514 |    2 212 |  6 s |
+| 1/5              | 19 029 |    4 963 | 27 s |
+
+Doubling the input roughly quadruples the time at the larger sizes. The
+whole file is five times the last row and takes 51 minutes, so the growth
+is at least quadratic over the range that matters.
+
+That is the finding: the cost is not in *how many* pages there are, it is
+in *how big one export is*.
+
+* The reorganisation, tested
+
+pjb's proposal was measured directly. The per-entry =.org= files already
+exist — =build-paged-spec= emits them in 3.1 s — so the question is only
+what it costs to export them individually instead of all at once:
+
+: split:      3022 page .org files          (3.1 s, already a build step)
+: individual: 100 pages exported in 2 s
+: extrapolated to 3022 pages:  about 60 s
+
+*51 minutes becomes about one minute* for a full rebuild, and for the
+case pjb actually cares about — one page edited — it becomes one page's
+export (~20 ms) plus a concatenation.
+
+So the reorganisation is worth doing, for a better reason than the one it
+was proposed for: not because the split is expensive (it is not), but
+because N small exports of a quadratic algorithm beat one large one by
+the square of the ratio.
+
+* What still has to be verified before implementing
+
+The measurement above exports 3022 INDEPENDENT texi files. A reader wants
+ONE Info manual with working cross-references and menus, and that is the
+part this issue has *not* proved:
+
+1. each page exports as a standalone manual (=@setfilename=, its own node
+   hierarchy). Assembling them means stripping those headers and
+   splicing the bodies under a generated top-level node + =@menu=, or
+   emitting =@include= files and letting =makeinfo= assemble;
+2. cross-references between entries currently resolve because everything
+   is in one export. Per-page exports must keep =@ref= targets valid
+   across files -- texinfo supports it, org's exporter has to be made to
+   emit it;
+3. the same question applies to the HTML side, which already splits into
+   3022 pages (2 min 38 s) and could be made incremental the same way,
+   for a smaller but real gain.
+
+Until 1 and 2 are settled, the 60 s figure is the cost of the exports
+alone, not of a finished manual. It is a strong enough signal to justify
+the work; it is not yet a promise of a 50x build.
+
+* A cheaper first step, if the reorganisation is not taken now
+
+The =documentation= job's cache is keyed on the spec org file, so ANY
+merge request that edits the spec pays the full 51 minutes -- and the two
+that did (!104, !105) each did. Two mitigations, independent of the
+redesign:
+
+- give =build-paged-info= its own cache entry, keyed on the spec, so a
+  branch that edits the spec pays once and re-runs of the same pipeline
+  do not. It does not help the first run, which is the expensive one.
+- or run the Info export only where the Info manual is actually
+  published (the release lane), not on every MR. The HTML and the PDFs
+  are what a merge request needs to have checked; the Info manual is a
+  release product. This is the one-line change and takes the 51 minutes
+  off the MR path entirely.
+
+* Notes
+
+Found 2026-08-19 while waiting for MR !104 / !105. The job LOOKS hung --
+=org-texinfo-export-to-texinfo= writes nothing for the whole 51 minutes,
+so the trace stops dead after "exporting … -> .texi" and the only way to
+tell a slow export from a wedged one is to wait or to check a previous
+job's duration. Whatever is done about the speed, that silence is worth
+removing: a progress line per N sections would make the difference
+visible from outside.
