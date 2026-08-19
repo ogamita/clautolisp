@@ -1,0 +1,79 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: release-all-zip-appledouble-entries — the -all.zip ships macOS AppleDouble ._* files
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+
+* Context
+
+Found while verifying the artefacts of =release-1.8.49= (the release that
+moved the sources under =src/=). The layout check itself passed; this is a
+separate defect the listing made visible.
+
+* Problem
+
+=clautolisp-1.8.49-all.zip= carries an AppleDouble sidecar next to every
+top-level directory:
+
+#+begin_example
+$ unzip -Z1 clautolisp-1.8.49-all.zip | sed 's|/.*||' | sort -u
+._.
+._bin
+._etc
+._include
+._lib
+._libexec
+._share
+bin
+etc
+include
+lib
+libexec
+share
+src
+#+end_example
+
+The =.tar.bz2= union of the same tree is clean — it has exactly the eight
+real top levels and nothing else — so this is specific to the zip
+container.
+
+=._NAME= files are how macOS stores extended attributes and resource forks
+on filesystems that have none. They appear when a tree carrying macOS
+xattrs is archived by a tool that preserves them. The darwin-arm64 lane's
+artefacts are part of the union, which is the likely source.
+
+* Why it matters
+
+They are not merely cosmetic:
+
+- on Linux and Windows they extract as visible junk beside every directory,
+  so the first thing a user sees after unzipping a release is seven files
+  that are not part of the product;
+- they are not in the =tar.bz2=, so the two containers of the *same* union
+  do not unpack to the same tree — the property a =-all= artefact exists to
+  provide;
+- =manifest-*.txt= does not list them, so the archive contains files the
+  provenance manifest does not account for.
+
+* Options
+
+1. =zip -X= (or =--no-extra=) when building the union, which drops extra
+   file attributes.
+2. Strip the xattrs from the staged tree before archiving
+   (=xattr -cr= on macOS, or exclude =._*= at archive time: =zip -x '._*' -x '*/._*'=).
+3. Stop the darwin lane from producing them in the first place
+   (=COPYFILE_DISABLE=1= in its packaging step).
+
+Option 3 is the cleanest — it prevents them rather than deleting them
+afterwards — but option 1 also protects against any future macOS-authored
+input. Doing both is cheap.
+
+* Verification
+
+The check belongs with the layout assertion already in =release-sources=
+and the =-all= recipes: after writing the zip, fail if any entry matches
+=._*=. That turns this from a thing someone notices into a thing the build
+refuses to ship, which is the pattern 1.8.47 and 1.8.49 established for
+release artefacts.

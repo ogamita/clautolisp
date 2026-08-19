@@ -1,0 +1,77 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: benchmark-autocad-windows-hangs-and-blocks-release — a silent 2-hour job sits in front of every release stage
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+
+* Context
+
+Observed while cutting =release-1.8.49=. The tag pipeline reached the
+=benchmark= stage, and =benchmark:autocad:windows= then held the Windows
+runner — which has concurrency 1 — for two hours, until the project job
+timeout killed it. Only then did =release:windows:x86-64= start.
+
+The same job stalled =release-1.8.47=; it was cancelled by hand that time.
+Twice now it has been the single thing standing between a green tag and its
+artefacts.
+
+* Problem, part 1: it hangs
+
+The job has never succeeded. Its siblings on the same machine finish in
+about a minute and a half:
+
+| job                        | duration |
+|----------------------------+----------|
+| =benchmark:bricscad:windows=  | 1m37     |
+| =benchmark:clautolisp:windows= | 1m16     |
+| =benchmark:bricscad:macos=     | 1m00     |
+| =benchmark:autocad:windows=    | killed at the 120 min timeout |
+
+This is consistent with the known accoreconsole failure mode (see
+=accoreconsole-deported-load-highbyte.issue= and the stranded-process
+incident that killed =release-1.8.41=): AutoCAD starts and never returns.
+
+* Problem, part 2: the hang is invisible
+
+Even granting that it hangs, nothing in the job log says so. The script is
+
+#+begin_src yaml
+- make -C autolisp-benchmark run-autocad-windows *>&1 | Out-File -Encoding utf8 dist/bench/autocad-windows.txt
+- Get-Content dist/bench/autocad-windows.txt
+#+end_src
+
+Every byte of output goes into a file, and the file is only printed by the
+*next* step. So while the benchmark runs, the trace shows the =make= command
+and then nothing at all — and if the job never finishes, the =Get-Content=
+never runs and the output is *never* shown. A job that hangs produces
+exactly the same trace as a job that is working: the log ends at the same
+line either way. There is no way to tell them apart from outside.
+
+That is the more serious half. The hang costs two hours; the silence is
+what makes an operator sit and wait through them, unable to decide.
+
+* Why it matters for releases
+
+=benchmark= is a stage in front of =release=, so this job gates the release
+lanes even though its results are not release products. =allow_failure: true=
+saves the pipeline — the release stage does start once the job dies — but
+not the two hours.
+
+* Options
+
+1. Give the CAD benchmark jobs a short =timeout:= of their own (5–10 min).
+   A benchmark whose siblings take 90 seconds does not need 120 minutes, and
+   this alone caps the damage without deciding anything about AutoCAD.
+2. =tee= instead of =Out-File= so the trace shows progress live, the way
+   =benchmark:bricscad:macos= already does with =2>&1 | tee=. The Windows
+   equivalent is =| Tee-Object=. This makes a hang diagnosable.
+3. Move =benchmark= after =collect=, or off the release-tag path entirely,
+   so no benchmark can ever gate an artefact.
+4. Fix or disable the AutoCAD benchmark itself — the underlying accoreconsole
+   problem is tracked separately.
+
+Options 1 and 2 are independent of the AutoCAD question and worth doing on
+their own: together they turn a two-hour silent block into a ten-minute
+failure with a readable log.
