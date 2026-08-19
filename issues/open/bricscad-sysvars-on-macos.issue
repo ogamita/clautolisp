@@ -1,0 +1,55 @@
+Here are a couple of sysvar in clautolisp on macOS:
+
+ACTIVITYINSIGHTSPATH	Sysvar	"C:\\Users\\{username}\\AppData\\Local\\Autodesk\\ActivityInsights\\Common"
+BMTOOLPATH	Sysvar	"C:\\Program Files\\Bricsys\\BricsCAD V26 en_US\\UserDataCache\\Support\\en_US\\DesignLibrary\\Tools\\"
+_$ !uname -a 
+Darwin thalassa 25.5.0 Darwin Kernel Version 25.5.0: Mon Apr 27 20:41:06 PDT 2026; root:xnu-12377.121.6~2/RELEASE_ARM64_T6030 arm64 arm Darwin
+
+Some of these variables could perhaps contain macOS paths taken from autocad or bricscad:
+
+    ACTIVITYINSIGHTSPATH -> /Users/{username}/Library/Application Support/Autodesk/ActivityInsights/Common
+    eg                      /Users/pjb/Library/Application Support/Autodesk/ActivityInsights/Common
+    but clautolisp cannot create these directory and their contents, so it could be a user custom setting
+    if we can make use of these paths.
+
+    BMTOOLPATH          -> '/Applications/BricsCAD V26.app/Contents/Resources/UserDataCache/Support/fr_FR/DesignLibrary'
+    but clautolisp cannot create these directory and their contents, so it could be a user custom setting
+    if we can make use of these paths.
+    
+or better, clautolisp paths, such as:
+
+   ACTIVITYINSIGHTSPATH - $XDG_STATE_HOME/clautolisp/ActivityInsights/Common
+   (in this case it looks like a state, the file in Common contains a AcitvityInsight ID).
+
+   BMTOOLPATH - $(first-of $XDG_DATA_DIRS clautolisp/design-library)
+                (eg. /opt/local/share/clautolisp/design-library
+                if/when we had/'ll have such design examples to provide)
+                
+XDG_CONFIG_HOME	$HOME/.config
+XDG_DATA_HOME	$HOME/.local/share
+XDG_STATE_HOME	$HOME/.local/state
+XDG_CACHE_HOME  $HOME/.cache
+
+
+
+1- find all the sysvars that contain paths, along with their category
+   and meaning (what path should they contain).
+   - paths to directories into the CAD application/installation
+     (resources, examples, templates).
+   - paths to user directories (documents, examples, configurations,
+     states, caches).
+   - paths to user documents or lisp sources.
+   - etc?
+   
+2- for each of these sysvars, determine whether they should be bound
+   to the same path as the cad implementation of the current dialect, or
+   if we need to define a different path.
+   Most probably we need to provide a clautolisp specific paths in
+   each occurence, but we should document them (with the original
+   values) and let the user choose to set them as they were on the
+   dialect they use.
+   
+3- Make a table listing all these sysvars, whether they're specific to
+   autocad or bricscad or if they're generic, the value they have in
+   autocad and in bricscad (if applicable),  a short description, and
+   a suggestion for clautolisp path.
