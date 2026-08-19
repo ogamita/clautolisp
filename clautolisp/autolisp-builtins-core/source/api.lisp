@@ -5130,16 +5130,43 @@ $XDG_CONFIG_DIRS, or NIL."
       (clautolisp.autolisp-runtime:set-variable (aldo-config-symbol) value)
       value)))
 
+(defvar *aldo-configuration-writer* nil
+  "NIL, or a function of one argument (an output STREAM) writing
+*CLAL-ALDO-CONFIGURATION* in the self-documenting form — the header, the
+settings actually set, then every other known setting commented out at
+its default with the values it accepts.
+
+Why a hook rather than a call. Two commands write the same aldo.conf:
+`,settings save' at DBG>, through the debug UI's writer, which has the
+defaults and the per-key specs to document from; and
+ (clal-save-aldo-configuration) from AutoLISP, here. Calling the first
+from the second would be a layering violation — this system does not
+depend on clautolisp/autolisp-debug-ui, and the dependency runs the other
+way. So the layer that HAS both (the clautolisp tool, at start-up) sets
+this, and saving from AutoLISP stops silently stripping the
+documentation out of a file the user may be editing by hand
+ (clal-save-aldo-configuration-undocumented-file.issue).
+
+NIL keeps the bare sexp, which is what a build without the debugger UI
+gets — and it still reads back identically, since the documentation is
+comments.")
+
 (defun save-aldo-configuration-to (path)
   "Write *CLAL-ALDO-CONFIGURATION* to PATH as an AutoLISP sexp (UTF-8); return
 the path string (an AutoLISP string). PRIN1 semantics (PRINCP nil): the file
 must READ back — a princ'd string glyph like ^ or [ is not a string when
-re-read (aldo-conf-princ-serialisation bug)."
+re-read (aldo-conf-princ-serialisation bug).
+
+Written in the self-documenting form when *ALDO-CONFIGURATION-WRITER* is
+set; both forms read back as the same configuration."
   (ensure-directories-exist path)
   (with-open-file (out path :direction :output :if-exists :supersede
                             :if-does-not-exist :create :external-format :utf-8)
-    (write-string (autolisp-value->string (aldo-configuration-value) nil) out)
-    (terpri out))
+    (if *aldo-configuration-writer*
+        (funcall *aldo-configuration-writer* out)
+        (progn
+          (write-string (autolisp-value->string (aldo-configuration-value) nil) out)
+          (terpri out))))
   (make-autolisp-string (namestring path)))
 
 (defun builtin-clal-load-aldo-configuration ()

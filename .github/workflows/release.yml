@@ -6,14 +6,33 @@ name: Release
 # failures do not fail the run) until their runners/toolchains are
 # tuned. Windows packaging follows documentation/windows-package-spec.md
 # and is still a stub.
+#
+# THIS WORKFLOW DOES NOT PUBLISH A RELEASE BY ITSELF, AND THAT IS
+# DELIBERATE (release-artefact-set-incomplete.issue, closed 2026-08-19).
+#
+# GitLab is the source of truth for releases (AGENTS.md): its
+# collect:release unions every target into the ten-artefact set pjb
+# specified, and scripts/make-gitlab-release.py publishes it with
+# verified links. This workflow does neither — its collect step never
+# unions (the TODO below), and its Windows lane is a stub — so firing it
+# on a `release-*` tag attached a DIFFERENT, SMALLER set to a GitHub
+# release of the SAME NAME as the GitLab one. Two forges disagreeing
+# about what a given release contains is worse than one forge not
+# publishing at all: whoever downloads the short set has no way to know
+# it is short.
+#
+# So the automatic tag trigger is gone and only `workflow_dispatch`
+# remains: running it is now a deliberate act, and what it produces is a
+# build of the artefacts, not a published release. To make GitHub a real
+# publisher instead, the two gaps above have to be closed first — union
+# the per-target artefacts, and implement Windows packaging — at which
+# point the tag trigger can come back.
 
 on:
-  push:
-    tags: ['release-[0-9]*']
   workflow_dispatch:
 
 permissions:
-  contents: write          # attach artefacts to the GitHub release
+  contents: read           # nothing is published from here any more
 
 jobs:
   # --- layout-independent artefacts ------------------------------------
@@ -116,8 +135,8 @@ jobs:
       # keep the Windows zips per-arch.
       - name: List collected artefacts
         run: find incoming -type f | sort
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: incoming/**/*
+      # No "attach to release" step: see the header. Publishing from here
+      # produced a GitHub release that was smaller than the GitLab one of
+      # the same name, with nothing to say so. The artefacts stay
+      # available as workflow artefacts, which is what this workflow is
+      # for until the union and the Windows lane exist here too.

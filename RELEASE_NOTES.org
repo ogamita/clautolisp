@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.8.52 / alfe 1.8.4 /
+master at the top of the file (clautolisp 1.8.53 / alfe 1.8.4 /
 read-autolisp 1.8.0). For the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
@@ -83,6 +83,17 @@ separate binary for tool integrators.
   ~*CLAL-DRIBBLE-INTERACTORS*~ widen the set. Default file:
   =$XDG_STATE_HOME/clautolisp/dribbles/YYYYMMDDTHHMMSS.log=. See
   § /Modes of Operation / Interactive REPL / Recording the session/.
+  Prompts are never recorded, including the one left pending when the
+  session ends — dribble files no longer finish with a stray =;; O: _$=.
+  Output that genuinely ends without a newline (a closing ~princ~) is
+  still recorded: the two are told apart because the interactor loop
+  says which it is writing, not by guessing after the fact.
+- ~(clal-save-aldo-configuration)~ writes the same self-documenting
+  =aldo.conf= that ~,settings save~ writes at =DBG>= — the header, the
+  settings you set, then every other setting commented out at its
+  default with the values it accepts. Saving from AutoLISP used to strip
+  that documentation out of a file you may have been editing by hand.
+  It still saves what the AutoLISP variable holds; only the form changed.
 - A line whose *first* character is ~!~ sends the rest to your ~$SHELL~
   with stdin/stdout/stderr *inherited*, so an interactive command can
   prompt, page or draw — which ~startapp~ cannot do. Nothing may precede

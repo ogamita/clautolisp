@@ -4974,6 +4974,31 @@ This suggests that:
 - BricsCAD should not be modeled purely as a pre-Unicode AutoLISP environment,
 - text and encoding behavior must remain part of the dialect/environment profile.
 
+*** What the file-level rules actually are
+The two file entry points did *not* gain the same thing, and the
+asymmetry is the source of most of the confusion in this area:
+
+| entry point | encoding selected by                    | since        |
+|-------------+-----------------------------------------+--------------|
+| ~open~      | an optional third argument —            | AutoCAD 2021 |
+|             | ~"utf8"~, ~"utf8-bom"~, ~"utf16-bom"~   | BricsCAD V21 |
+| ~load~      | the file's BOM alone; no argument       | BricsCAD V20 |
+|             | exists                                  |              |
+
+In both cases, *absent a BOM the host system codepage
+(~SYSCODEPAGE~) decides*, and Bricsys states plainly why nothing better
+is possible: "UTF-8 without BOM can not be distinguished from normal
+ANSI."
+
+That single sentence is the whole of the macOS mis-decoding story. A
+source written as UTF-8 without a mark loads correctly wherever the host
+codepage happens to match the author's, and silently wrong elsewhere —
+on macOS, where ~SYSCODEPAGE~ is MAC_ROMAN. No error is raised at any
+point: the file reads, the program runs, the strings are wrong.
+
+The portable form is UTF-8 with a BOM. See the ~open~ and ~load~
+function entries for the per-function detail and the vendor sources.
+
 *** clautolisp dispatch for ~LISPSYS~
 clautolisp accepts ~(getvar "LISPSYS")~ and ~(setvar "LISPSYS" n)~
 under every dialect — extensions are always available, the dialect
@@ -7272,10 +7297,52 @@ Function
 *** Arguments and Values
 - `filename`: string
 - `mode`: string designating read, write, or append
-- `encoding`: optional encoding designator in newer Autodesk versions
+- `encoding`: optional encoding designator; see *File encoding* below
 
 *** Description
 Opens a file and returns a file descriptor.
+
+*** File encoding
+The optional third argument is *version-qualified*: pre-2021 ~open~ has
+no encoding argument at all. It was introduced by AutoCAD 2021 and is
+supported in BricsCAD V21 and higher.
+
+The values the vendors document are:
+
+| value        | meaning                       |
+|--------------+-------------------------------|
+| ~"utf8"~     | UTF-8, no byte-order mark     |
+| ~"utf8-bom"~ | UTF-8 preceded by a BOM       |
+| ~"utf16-bom"~| UTF-16 preceded by a BOM      |
+
+With no encoding argument the file is read and written in the host's
+system codepage (~SYSCODEPAGE~).
+
+The reason the list stops there is stated by Bricsys and is worth
+repeating, because it is the whole difficulty: *"UTF-8 without BOM can
+not be distinguished from normal ANSI."* There is no byte sequence that
+tells the two apart, so a file written as UTF-8 without a mark is
+indistinguishable from one written in the host codepage — and on a host
+whose codepage is not cp1252 (macOS, where ~SYSCODEPAGE~ is
+MAC_ROMAN) it is decoded wrongly, silently. This is the mechanism behind
+the observed macOS mis-decoding, not a separate bug.
+
+Modes ~"r"~, ~"w"~ and ~"a"~ are text; ~"rb"~, ~"wb"~ and ~"ab"~ are
+binary, where no decoding applies and the encoding argument is
+meaningless.
+
+*** Consistency required of any implementation
+Whatever the file encoding, a decoded non-ASCII character must satisfy
+
+: (= (chr N) <the same character decoded from a file>)
+
+— one canonical internal representation per character, however it
+entered the image. BricsCAD's native ~chr~ diverges from this today
+(see =cad-chr-vs-loaded-encoding.issue= for the measurements);
+clautolisp satisfies it. Stating the rule here is what gives alfe a
+contract to honour when it hands sources to a CAD host: transcode to
+UTF-8 with a BOM, which is the one form every post-2021 engine reads
+unambiguously.
 
 *** Return Values
 Returns a `FILE` descriptor or `nil` on failure, depending on host behavior and context.
@@ -7295,8 +7362,17 @@ Errors are reported for invalid paths, modes, or inaccessible files.
 - `(open "foo.txt" "r")`
 
 *** Compatibility
-- older Autodesk forms lacked explicit encoding
+- older Autodesk forms lacked explicit encoding: the argument is an
+  AutoCAD 2021 feature, mirrored by BricsCAD from V21
 - BricsCAD documents richer text mode handling
+
+*** Source Notes
+- Bricsys, /BricsCAD Developer Reference/ V25, ~open~ —
+  https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/open.htm
+  (the encoding values and the "cannot be distinguished from normal
+  ANSI" statement are verbatim from that page).
+- The AutoCAD 2021 Unicode changes are the same feature under
+  ~LISPSYS~; the two vendors agree on the argument.
 
 *** Notes
 `clautolisp` should decouple path semantics from native OS via environment profiles.
@@ -9073,6 +9149,35 @@ Function
 *** Description
 Loads an AutoLISP or compatible file into the current environment.
 
+*** File encoding
+~load~ has *no encoding parameter*, and this is the asymmetry to
+remember: ~open~ gained one in 2021, ~load~ did not. The encoding of a
+source file is therefore decided entirely by its first bytes.
+
+Since BricsCAD V20, ~load~ accepts source files stored as Unicode:
+
+- UTF-8, little-endian byte order;
+- UTF-16, little-endian byte order.
+
+For both, Bricsys states that *the byte-order mark is absolutely
+required*, and that UTF-8 without a BOM "might fail".
+
+With no BOM the file is decoded with the host system codepage
+(~SYSCODEPAGE~). The consequence is worth spelling out, because it looks
+like a bug in the program rather than in the file: *a non-BOM cp1252
+source cannot be portably loaded*. On Windows it happens to work, since
+the host codepage matches what the author used; on macOS
+~SYSCODEPAGE~ is MAC_ROMAN and the same bytes decode to different
+characters, with no error raised at any point. The file is read, the
+program runs, and the strings are wrong.
+
+The portable form is therefore UTF-8 *with* a BOM — the one spelling
+every post-V20/2021 engine identifies without guessing.
+
+Note also that the extension search order differs by vendor: BricsCAD's
+~load~ tries ~name.des~ then ~name.lsp~, where Autodesk documents
+~.vlx~, ~.fas~, ~.lsp~ (below).
+
 *** Return Values
 If loading succeeds, Autodesk documents the return value as unspecified.
 
@@ -9113,6 +9218,15 @@ recognised by being *found* under the search order above, not by any
 rejection of unfamiliar extensions; an explicit extension bypasses the
 search entirely. Applications may therefore choose their own source
 extension freely.
+
+*** Source Notes
+- Bricsys, /BricsCAD Developer Reference/ V25, ~load~ —
+  https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/load.htm
+  (the V20 Unicode support, the little-endian requirement and "the BOM
+  is absolutely required" are verbatim from that page).
+- The same rules explain =cad-load-encoding-macos.issue= and
+  =cad-chr-vs-loaded-encoding.issue=: neither is a separate defect, both
+  are this one encoding rule observed from two angles.
 
 *** Notes
 Autodesk also documents that VLX support is Windows-only.

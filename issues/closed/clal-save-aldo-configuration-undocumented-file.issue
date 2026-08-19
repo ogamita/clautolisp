@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: clal-save-aldo-configuration-undocumented-file — saving aldo.conf from AutoLISP drops the self-documentation the debugger writes
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
@@ -76,3 +76,40 @@ pattern in the tree and does not move the tables.
 Found 2026-08-14 while implementing the self-documenting conf files
 (pjb's request on =lisp-configuration=, shipped in 1.8.30). Deliberately not
 folded into that change, which stops at the layer that owns the settings.
+
+* DONE — 2026-08-19 (clautolisp 1.8.53), option 2
+
+Option 2 as recommended: =*ALDO-CONFIGURATION-WRITER*= in
+=autolisp-builtins-core= — NIL, or a function of one stream —
+consulted by =SAVE-ALDO-CONFIGURATION-TO=, and set at start-up by the
+clautolisp tool, the layer that sees both sides. No new dependency: the
+builtins system still knows nothing of =autolisp-debug-ui=.
+
+** The semantic gap closed rather than papered over
+
+The issue warned that the two sides hold DIFFERENT stores, so delegating
+naively would save the debugger's settings instead of the AutoLISP
+variable the user just assigned. The hook therefore serialises
+=(clautolisp.debug.ui:read-config-variable)= — the AUTOLISP variable,
+read through the bridge that already exists (=autolisp->cl-config=) —
+and not =*aldo-configuration*=. Saving from AutoLISP still saves what
+AutoLISP holds; only the FORM changes.
+
+The documented defaults come from the UI's tables, which is the only
+place they exist. A user who put arbitrary keys in the variable gets
+them written as live data, above the commented defaults.
+
+** Verification (4 tests, tool suite green at 100 checks)
+
+- the header and the commented defaults are present, with the accepted
+  values shown — that last one is what makes the file editable without
+  the manual open beside it, so it is asserted rather than assumed;
+- a setting that WAS set is written as live data and not as one more
+  comment (the documentation must not cost the data);
+- the file reads back as exactly the configuration it was saved from —
+  one entry, not fifteen: the documented defaults stay comments and do
+  not become explicit settings, which is what keeps aldo.conf a diff
+  against the defaults;
+- with the hook unset — a build without the debugger UI — the bare form
+  is still written and still reads back. The fallback is a fallback, not
+  a failure.

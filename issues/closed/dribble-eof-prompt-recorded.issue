@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: dribble-eof-prompt-recorded — the prompt pending at EOF lands in the dribble as ";; O: _$"
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
@@ -65,3 +65,58 @@ an unnoticed bug.
 * Notes
 
 Found 2026-08-11 while verifying dribble.issue end-to-end for closure.
+
+* DONE — 2026-08-19 (clautolisp 1.8.53)
+
+Done as the Proposal describes: the writer says what it is writing, so
+the two rules stop being in conflict.
+
+** The mechanism
+
+=CLAUTOLISP.INTERACTOR:*WRITING-PROMPT*= is bound by INTERACTOR-LOOP
+around the prompt it prints, and by =WITH-DRIBBLE-PROMPT= around the
+REPL reader's own prompt writes. The tee tracks whether the open line is
+PURELY prompt text — one non-prompt character clears it, because a line
+that is partly real output is real output.
+
+The variable lives in the interactor package, not in the dribble: which
+characters are a prompt is knowledge only the loop has. Downstream a
+prompt is indistinguishable from a =princ= that ends a program without a
+newline. The dribble is one consumer of that fact, not its owner.
+
+** What the first attempt got wrong, and what it cost
+
+The obvious placement — discard the pending partial at =DRIBBLE-STOP=,
+now that it is known to be a prompt — DOES NOT WORK, and the repro above
+still printed the trailing prompt line after it. Instrumenting
+=DRIBBLE-STOP= showed why: by then there is no open line at all. The
+prompt line had already been emitted, terminated by the INTERLEAVING
+rule when another stream wrote. Deciding at stop time was deciding too
+late.
+
+So the decision sits in =%TEE-EMIT-BUFFERED-LINE=, the one place every
+termination path passes through. That is also the more faithful reading
+of the format rule: prompts are not recorded WHEREVER the line ends, not
+only where the input echo happens to notice.
+
+Worth recording, because the reasoning that produced the wrong placement
+was sound and the code still failed. Only running this ticket's own
+repro against a real built binary caught it.
+
+** Verification — this ticket's repro, against a built binary
+
+: ;; H: clautolisp 1.8.51
+: (+ 1 1)
+: ;; O: 2
+
+No trailing prompt line. And the conservative half the ticket insists
+on, preserved — the same session ending with an unterminated =princ=:
+
+: ;; H: clautolisp 1.8.51
+: (princ "no trailing newline")
+: ;; O: no trailing newline"no trailing newline"
+
+Four tests (92 checks green in the tool suite): the pending prompt
+dropped, unterminated real output kept, a line that starts as a prompt
+and continues as output kept, and — the regression guard for the wrong
+placement above — a prompt terminated by an interleaved write dropped.

@@ -45,6 +45,32 @@ buffer holds a partial line), or NIL. The interleaving rule
 while a line is open, the open line is terminated first — its partial
 content is emitted as a complete prefixed line.")
 
+
+;;; Prompt discrimination (dribble-eof-prompt-recorded.issue).
+;;;
+;;; The format omits prompts. Everywhere else that is decided by
+;;; EVIDENCE: the input echo drops a pending partial line because an
+;;; input line COMPLETED, which proves the partial was a prompt. At end
+;;; of input there is no such proof -- nothing completes -- and a program
+;;; ending with (princ "no trailing newline") leaves a pending partial
+;;; that is genuine output and must be kept. Both rules are right; they
+;;; only conflict because, once written, a prompt and an unterminated
+;;; line of output are the same characters.
+;;;
+;;; So the writer says which it is. CLAUTOLISP.INTERACTOR:*WRITING-PROMPT*
+;;; is bound by INTERACTOR-LOOP around the prompt it prints, and by
+;;; WITH-DRIBBLE-PROMPT around the REPL reader's own prompt writes.
+
+(defvar *dribble-open-line-prompt-p* nil
+  "True when every character of the currently open dribble line was
+written as prompt text. A single non-prompt character clears it: a line
+that is partly real output is real output.")
+
+(defmacro with-dribble-prompt (&body body)
+  "Mark what BODY writes as prompt text, so a partial line left pending
+by it can be dropped at DRIBBLE-STOP rather than recorded."
+  `(let ((clautolisp.interactor:*writing-prompt* t)) ,@body))
+
 ;;; --- filtering ---------------------------------------------------------
 
 (defun %dribble-current-interactor-names ()
@@ -103,9 +129,21 @@ TAG (`O' for standard output, `E' for error output)."))
 
 (defun %tee-emit-buffered-line (tee)
   "Emit TEE's buffered (partial or complete) line as one prefixed
-dribble line and reset the buffer."
-  (%dribble-write-tagged-line (tee-tag tee) (tee-buffer tee))
-  (setf (fill-pointer (tee-buffer tee)) 0)
+dribble line and reset the buffer -- unless the line is prompt text,
+which the format omits WHEREVER it is terminated, not only where the
+input echo happens to notice it.
+
+This is the single place every termination path passes through, which is
+why the test lives here: at end of input the open prompt line was
+already emitted before DRIBBLE-STOP ever ran (the interleaving rule had
+terminated it), so deciding at stop time was deciding too late
+ (dribble-eof-prompt-recorded.issue)."
+  (if *dribble-open-line-prompt-p*
+      (setf (fill-pointer (tee-buffer tee)) 0)
+      (progn
+        (%dribble-write-tagged-line (tee-tag tee) (tee-buffer tee))
+        (setf (fill-pointer (tee-buffer tee)) 0)))
+  (setf *dribble-open-line-prompt-p* nil)
   (when (eq *dribble-open-tee* tee)
     (setf *dribble-open-tee* nil)))
 
@@ -118,6 +156,7 @@ input line completes is prompt text, which the dribble format omits)."
     (when tee
       (if (or discard (zerop (fill-pointer (tee-buffer tee))))
           (progn (setf (fill-pointer (tee-buffer tee)) 0)
+                 (setf *dribble-open-line-prompt-p* nil)
                  (setf *dribble-open-tee* nil))
           (%tee-emit-buffered-line tee)))))
 
@@ -139,6 +178,14 @@ input line completes is prompt text, which the dribble format omits)."
           ;; open line terminates that line first.
           (unless (eq *dribble-open-tee* tee)
             (%dribble-terminate-open-line))
+          ;; Track whether this open line is PURELY prompt text, so
+          ;; DRIBBLE-STOP can drop it without dropping genuine output
+          ;; that simply lacked a trailing newline.
+          (if (eq *dribble-open-tee* tee)
+              (unless clautolisp.interactor:*writing-prompt*
+                (setf *dribble-open-line-prompt-p* nil))
+              (setf *dribble-open-line-prompt-p*
+                    clautolisp.interactor:*writing-prompt*))
           (setf *dribble-open-tee* tee)
           (vector-push-extend character (tee-buffer tee)))))
   character)
@@ -302,6 +349,8 @@ namestring of the opened file."
   "Flush any pending partial output line, close the dribble file, and
 reset the dribble state. Returns NIL."
   (when *dribble-stream*
+    ;; Unterminated genuine output is still recorded; a pending PROMPT is
+    ;; dropped by %TEE-EMIT-BUFFERED-LINE, which every path goes through.
     (%dribble-terminate-open-line)
     (close *dribble-stream*)
     (setf *dribble-stream* nil

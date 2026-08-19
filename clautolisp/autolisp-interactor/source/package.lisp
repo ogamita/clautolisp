@@ -74,6 +74,10 @@ implementations, not here.")
    #:*command-interactor* #:*command-activation*
    #:*command-line* #:*command-arguments-text*
    #:*interactor-stack*
+   ;; True while the loop writes a prompt: the dribble omits prompt text
+   ;; but must keep unterminated real output, and only the loop knows
+   ;; which is which (dribble-eof-prompt-recorded.issue).
+   #:*writing-prompt*
    #:push-interactor #:pop-interactor
    #:find-interactor #:find-activation
    ;; the registry: registration + listing, never routing (D7/D8)
