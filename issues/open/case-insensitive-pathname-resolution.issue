@@ -1,0 +1,171 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: case-insensitive-pathname-resolution — résoudre les chemins sans égard à la casse, et les normaliser
+#+STATUS: OPEN
+#+PRIORITY: P2
+#+TYPE: enhancement
+#+DEPENDS: -
+#+BRANCH: -
+
+case-insensitive-pathname-resolution
+====================================
+
+Demandé depuis SCHMS+, après un échec qui n'apparaissait que sous Linux.
+2026-08-19.
+
+Le problème
+-----------
+
+L'AutoLISP existant a été écrit sur Windows et sur macOS, dont les
+systèmes de fichiers sont insensibles à la casse. La casse des chemins y
+est donc, en pratique, une donnée non contrainte : personne ne la vérifie
+parce que rien ne la sanctionne. Un même programme écrit `DIAL/SIGFIC.LSP`
+à un endroit et `dial/sigfic.LSP` à un autre, et fonctionne.
+
+Sous clautolisp sur Linux, ce même programme échoue :
+
+    Erreur: LOAD could not locate /…/schms/dial/sigfic.LSP
+
+alors que le fichier existe, sous le nom `DIAL/SIGFIC.LSP`.
+
+Ce n'est pas un cas de figure théorique. Dans l'incident qui motive ce
+ticket, le chemin ne venait même pas d'une chaîne littérale : il était
+dérivé d'un NOM DE CLASSE, `/es/schms/dial/sigfic`, dont la casse est une
+convention de nommage sans rapport avec celle du disque. Aucune relecture
+du code n'aurait signalé quoi que ce soit.
+
+Demande
+-------
+
+Une extension clautolisp où les fonctions prenant un chemin le résolvent
+sans égard à la casse, en le NORMALISANT sur le nom réel du système de
+fichiers. Sur Linux, `"/ETC/PASSWD"` serait résolu en `"/etc/passwd"` et
+deviendrait lisible.
+
+La normalisation compte autant que la résolution : ce qui est rendu à
+l'appelant — par `findfile`, par exemple — doit être le nom réel, sinon
+un chemin résolu puis stocké puis réutilisé échouerait au tour suivant.
+
+Portée : toutes les API entrant un chemin
+------------------------------------------
+
+`open`, `load`, `findfile` sont les plus visibles, mais le traitement doit
+être uniforme, sans quoi le comportement dépendrait de la fonction :
+
+    open  load  findfile
+    vl-file-size  vl-file-systime  vl-file-directory-p
+    vl-file-copy  vl-file-rename   vl-file-delete
+    vl-directory-files
+    (command "_.open" …) et les commandes prenant un fichier
+    getfiled, si son argument de répertoire par défaut est honoré
+
+Distinguer LECTURE et CRÉATION
+------------------------------
+
+Le point le plus délicat, et celui qu'il ne faut pas trancher à la
+légère.
+
+Pour une lecture, résoudre est sans danger : le fichier existe, on le
+retrouve sous son vrai nom.
+
+Pour une **création**, il ne faut PAS normaliser : `(open "Rapport.txt" "w")`
+doit créer `Rapport.txt`, et non se rabattre sur un `RAPPORT.TXT`
+préexistant — sinon on écrase un fichier que l'auteur ne visait pas. La
+règle raisonnable : résoudre à la casse près quand le fichier doit exister,
+prendre le nom tel quel quand on le crée. `open` en mode `"a"` est le cas
+mixte, à décider explicitement.
+
+Ambiguïté
+---------
+
+Sur un système sensible à la casse, `dial/` et `DIAL/` peuvent coexister.
+La résolution doit donc être déterministe et diagnosticable :
+
+1. correspondance exacte : elle gagne toujours, sans même lister le
+   répertoire ;
+2. sinon, correspondance unique à la casse près : elle est retenue ;
+3. sinon, plusieurs candidats : erreur qui les NOMME, plutôt qu'un choix
+   arbitraire.
+
+Le troisième cas est rare mais réel, et un choix silencieux y serait pire
+que l'échec actuel.
+
+Un avertissement, sur le modèle de `[path-dotdot]`
+---------------------------------------------------
+
+clautolisp émet déjà, et c'est précieux :
+
+    [path-dotdot] in TU:FIND-FIRST-FILE: FINDFILE "/…/schms/../outils-autolisp/…":
+      `..' resolves differently on POSIX and Windows
+
+Le même dispositif conviendrait ici. Un `[path-case]` disant qu'un chemin
+n'a été trouvé qu'en pliant la casse rendrait le service double :
+l'exécution passe, ET le développeur sait qu'il a écrit un chemin qui
+n'aurait pas fonctionné sur un système strict. C'est ce qui transforme la
+compatibilité en outil de correction, au lieu d'un tapis sous lequel
+glisser le problème.
+
+Activation
+----------
+
+À rendre gouvernable plutôt qu'imposé, la casse stricte restant le
+comportement conforme :
+
+    *AUTOLISP-PATHNAME-CASE*  = 'strict       (défaut : comme aujourd'hui)
+                              | 'insensitive  (résout et normalise)
+                              | 'warn         (résout, normalise, et avertit)
+
+Le nom suit la convention du projet : `*AUTOLISP-…*` pour ce qui relève du
+protocole AutoLISP, `*clal-…*` étant réservé aux variables proprement
+internes à clautolisp.
+
+Un mode `warn` par défaut sur les dialectes `lax`/`bricscad`/`autocad` —
+ceux qui émulent une CAO, donc un monde insensible à la casse — et
+`strict` sur le dialecte `clautolisp`, serait cohérent avec la manière
+dont les autres écarts sont traités.
+
+Coût
+----
+
+Chaque composant non trouvé exactement demande une lecture de répertoire.
+C'est acceptable si, et seulement si, la correspondance exacte court-
+circuite tout — ce qui est le cas courant — et si le résultat est mis en
+cache par répertoire. Sans cache, un `load` en boucle sur un arbre profond
+deviendrait sensible.
+
+Remarque de sûreté
+------------------
+
+L'exemple `/ETC/PASSWD` de la demande est aussi un avertissement : cette
+extension rend accessibles des fichiers qu'une orthographe exacte
+n'atteignait pas. Un programme qui construit un chemin à partir d'une
+saisie utilisateur voit donc sa surface s'élargir. Ce n'est pas une raison
+de renoncer — c'en est une pour que le mode soit explicite, et pour que
+`strict` reste le défaut hors dialectes d'émulation.
+
+Tests suggérés
+--------------
+
+Sur un système sensible à la casse, ce qui exclut de valider la
+fonctionnalité sur macOS ou Windows :
+
+    (load "DIAL/SIGFIC.LSP")   ; fichier réel
+    (load "dial/sigfic.lsp")   ; doit réussir en mode insensitive
+    (findfile "dial/sigfic.lsp")
+      ; doit rendre le nom RÉEL, pas celui demandé
+    (open "Rapport.txt" "w")   ; ne doit PAS écraser un RAPPORT.TXT existant
+    ; deux fichiers ne différant que par la casse : erreur nommant les deux
+    ; chemin à plusieurs composants mal casés : a/B/c contre A/b/C
+
+Pourquoi cela compte
+--------------------
+
+C'est ce qui décide si un corpus AutoLISP écrit sous Windows peut tourner
+sous Linux sans être relu ligne à ligne. Dans l'incident d'origine, le
+défaut a survécu à toute la chaîne — développement macOS, exécution
+BricsCAD, exécution AutoCAD — parce que ces trois environnements sont
+insensibles à la casse. Seule la voie Linux l'a révélé.
+
+Ce qui se retourne d'ailleurs en argument : un moteur strict est le seul
+qui VALIDE la casse des chemins. D'où l'intérêt du mode `warn`, qui
+laisse passer tout en signalant, plutôt que du seul choix binaire entre
+tolérer et échouer.
