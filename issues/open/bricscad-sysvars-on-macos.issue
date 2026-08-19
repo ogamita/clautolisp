@@ -53,3 +53,129 @@ XDG_CACHE_HOME  $HOME/.cache
    autocad or bricscad or if they're generic, the value they have in
    autocad and in bricscad (if applicable),  a short description, and
    a suggestion for clautolisp path.
+
+
+=========================================================================
+ANALYSE — 2026-08-19 (clautolisp 1.8.56)
+=========================================================================
+
+Réponse aux trois points, faite en interrogeant le catalogue lui-même
+plutôt qu'en recopiant à la main : 1836 sysvars, dont 57 portent un
+chemin par la valeur ou par le nom. Ils ne sont pas tous dans le même
+état, et la distinction commande la suite.
+
+1 — Inventaire : trois classes, pas une
+----------------------------------------
+
+CLASSE A — 6 sysvars ACTIVEMENT FAUX
+   Leur valeur par défaut est un chemin Windows littéral, ou une
+   disposition Windows déguisée. C'est ce que tu as vu, et c'est le seul
+   groupe où clautolisp AFFIRME quelque chose de faux.
+
+CLASSE B — 43 sysvars DÉRIVÉS DE L'HÔTE, laissés vides
+   Nom en PATH/DIR/FOLDER/PREFIX, valeur `""`, marqués host-derived.
+   Ils ne mentent pas : ils se taisent. La question les concernant n'est
+   pas « corriger » mais « faut-il les peupler ».
+
+CLASSE C — 8 littéraux qui ne sont pas des chemins absolus
+   `CENTERLTYPEFILE` = "acad.lin", `PDFIMPORTIMAGEPATH` = "PDF Images",
+   `PRINTFILE` = ".", `BIMDEFAULTPROPERTIESPATH` = une liste de noms
+   XML, `INETLOCATION` = une URL, `CPROFILE` = un nom de profil,
+   `ACTPATH`, `IFCEXPORTMAPPINGPATH` = " ". Des noms relatifs ou des
+   non-chemins. Rien à faire, sinon ne pas les confondre avec la classe A
+   sur la foi de leur nom.
+
+2 — Chemin CAO ou chemin clautolisp ?
+--------------------------------------
+
+Ta suggestion (valeurs XDG) est la bonne, et il existe déjà un
+PRÉCÉDENT dans l'arbre : `TEMPPREFIX` est peuplé au lancement par
+`autolisp-cli/source/transmit.lisp`, parce que le catalogue le donnait
+vide et que `(getvar "TEMPPREFIX")` rendait "". C'est exactement le
+traitement que tu décris, déjà appliqué une fois. Il donne le patron :
+une préférence adossée au registre côté CAO, résolue côté clautolisp
+depuis l'environnement, et laissée intacte sur un vrai CAO.
+
+Sur le fond, reproduire le chemin de la CAO serait un contresens : ces
+répertoires n'existent pas sous clautolisp, et clautolisp ne peut ni les
+créer ni les peupler (ton propre constat). Un chemin qui pointe vers un
+répertoire absent n'est pas plus utile qu'une chaîne vide — il est
+seulement plus trompeur. Donc : chemin clautolisp, documenté avec la
+valeur d'origine, et l'utilisateur reste libre de remettre celle de son
+dialecte.
+
+3 — La table
+------------
+
+CLASSE A — à corriger. `{XDG}` abrège la variable XDG correspondante.
+
+| sysvar                | éditeur   | valeur actuelle (fausse hors Windows)        | ce que c'est            | proposition clautolisp                        |
+|-----------------------+-----------+----------------------------------------------+-------------------------+-----------------------------------------------|
+| ACTIVITYINSIGHTSPATH  | AutoCAD   | C:\Users\{username}\AppData\Local\Autodesk\… | état (un identifiant)   | $XDG_STATE_HOME/clautolisp/ActivityInsights/Common |
+| BMTOOLPATH            | BricsCAD  | C:\Program Files\Bricsys\BricsCAD V26 …       | ressource d'installation| $XDG_DATA_DIRS premier/clautolisp/design-library   |
+| POINTCLOUDCACHEFOLDER | BricsCAD  | C:\Users\%username%\AppData\Roaming\Bricsys\…| cache                   | $XDG_CACHE_HOME/clautolisp/pointcloud              |
+| CLOUDDOWNLOADPATH     | BricsCAD  | {User}Documents/Bricsys247                   | documents utilisateur   | $HOME/Documents (ou $XDG_DOCUMENTS_DIR si défini)  |
+| CLOUDTEMPFOLDER       | BricsCAD  | {User}AppData/Local/Temp/Bricsys_24_7        | temporaire              | TEMPPREFIX/bricsys247 (réutiliser le précédent)    |
+| IMAGECACHEFOLDER      | BricsCAD  | {User}AppData/Local/Temp/ImageCache          | cache                   | $XDG_CACHE_HOME/clautolisp/images                  |
+
+`ACTIVITYINSIGHTSPATH` est ABSENT de BricsCAD (il figure dans
+*bricscad-absent-sysvars*), donc sous `--dialect bricscad` il ne se pose
+pas ; il se pose sous le dialecte par défaut et sous autocad. Les cinq
+autres sont des noms BricsCAD.
+
+CLASSE B — 43, tous `""` et host-derived. Par catégorie, avec la
+question à trancher pour chacune :
+
+  installation / ressources CAO — n'existent pas ici :
+    BMFORMTEMPLATEPATH, COLORBOOKPATH, COMMUNICATORPATH, COMPONENTSPATH,
+    DETAILSPATH, HELPPREFIX, LOCALROOTPREFIX, PARAMETRICBLOCKS2DPATH,
+    RENDERMATERIALSPATH, ROAMABLEROOTPREFIX, SHEETSETTEMPLATEPATH,
+    TEMPLATEPATH, TEXTUREMAPPATH, TOOLPALETTEPATH, _TOOLPALETTEPATH,
+    PLOTCFGPATH, PLOTSTYLEPATH, DGNMAPPINGPATH, SECTIONSETTINGSSEARCHPATH
+    -> proposition : rester VIDES tant que clautolisp ne fournit pas la
+       ressource. Les peupler vers un répertoire inexistant serait
+       remplacer un silence par un mensonge.
+
+  espace utilisateur (documents, sorties, journaux, sauvegardes) :
+    BLOCKSPATH, BLOCKSRECENTFOLDER, BLOCKSYNCFOLDER, DRAWINGPATH,
+    LOGFILEPATH, MYDOCUMENTSPREFIX, PLOTOUTPUTPATH, RECENTPATH,
+    SAVEFILEPATH, SRCHPATH, STARTINFOLDER, WORKINGFOLDER, XLOADPATH,
+    XCOMPAREBAKPATH, FBXEXPORTTEXTURESPATH, CVERSIONCONTROLPATH,
+    VERSIONCONTROLCONFIGPATH, VERSIONCONTROLDOWNLOADPATH, ACTRECPATH
+    -> proposition : peupler ceux qu'un programme LIT pour décider où
+       écrire (LOGFILEPATH, PLOTOUTPUTPATH, SAVEFILEPATH, WORKINGFOLDER),
+       vers $XDG_STATE_HOME/clautolisp/… ou le cwd ; laisser vides ceux
+       qui ne décrivent qu'une commodité d'interface (RECENTPATH,
+       BLOCKSRECENTFOLDER).
+
+  état du dessin courant, calculés et non configurés :
+    ACADPREFIX, DWGPREFIX, SAVEFILE, BASEFILE
+    -> rien à décider : ils dépendent du dessin ouvert, pas de
+       l'installation. Vides tant qu'aucun dessin n'est ouvert est le
+       comportement juste.
+
+  déjà traité, et c'est le patron :
+    TEMPPREFIX -> peuplé au lancement (transmit.lisp), registre/TMPDIR/
+    plateforme.
+
+CE QUE CETTE ANALYSE N'ÉTABLIT PAS
+-----------------------------------
+
+Les valeurs RÉELLES d'AutoCAD et de BricsCAD pour la classe B. Le
+catalogue les donne host-derived, donc `""` — ce qui veut dire que
+personne ne les a mesurées, pas qu'elles sont vides sur un vrai CAO. La
+colonne « valeur dans autocad / dans bricscad » de ta demande ne peut
+donc pas être remplie honnêtement d'ici : elle demande une sonde sur les
+deux moteurs, du type de celles que font déjà les jobs `vendor:probes:*`.
+C'est le prochain pas naturel, et il est mécanisable — une sonde qui
+lit ces 57 noms sur chaque moteur et publie la table.
+
+Je préfère le dire que produire une colonne plausible et fausse.
+
+RECOMMANDATION
+--------------
+
+Traiter la classe A seule d'abord : 6 sysvars, une correction visible,
+aucune décision de conception en suspens — un chemin Windows sur macOS
+est faux quoi qu'on décide ensuite. La classe B demande d'abord la sonde
+ci-dessus, sans quoi les propositions ne seraient que des paris.
