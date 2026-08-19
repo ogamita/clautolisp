@@ -1,0 +1,84 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: ci-native-child-pipeline-creation-fails — native:pipeline cannot create its child, so every pipeline is red with zero failed jobs
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+
+* Symptom
+
+Since about 16:49 UTC on 2026-08-19, every pipeline — merge requests AND
+master — finishes RED while *no job has failed*:
+
+: 15 success, 0 failed, 15 skipped, 1 manual
+
+The red comes from the =native:pipeline= bridge alone:
+
+: bridge: failed   failure_reason: downstream_pipeline_creation_failed
+: child pipeline:  failed, 0 jobs, created_at == updated_at
+
+The child is created and dies in the same second, with no jobs at all.
+
+This matters beyond cosmetics: a red master makes every later merge
+request look red too, and =glab mr merge= REFUSES to merge on a failed
+pipeline (the project itself allows it —
+=only_allow_merge_if_pipeline_succeeds= is false — so the API still
+works, but the normal path is blocked).
+
+* What has been ruled out
+
+Checked before concluding, because the obvious suspect was the branch
+that first showed it (MR !107):
+
+- *not the branch's content.* MR !107 changes six files: two =script=
+  blocks in =documentation= / =release:documentation=, a Makefile
+  variable, a version stamp, and two documentation files. Nothing that
+  can affect child-pipeline creation.
+- *not the child config.* =.gitlab/native.yml= is byte-identical to
+  master, and =POST /projects/:id/ci/lint= on its content answers
+  =valid: true=, no errors, no warnings.
+- *not the parent config.* =glab ci lint= passes.
+- *not runner availability.* =detect:runners= reported
+  =MACOS_RUNNER=online= and =WINDOWS_RUNNER=online= in the very pipeline
+  whose child failed. The child's gate rules end in =when: manual=
+  anyway, so an offline runner yields manual jobs, never zero jobs.
+- *not transient.* Retrying the bridge produced another empty child;
+  re-creating the whole pipeline from a fresh commit produced a third.
+- *not caused by the merge.* Master pipeline 2773471716 (54b44c6, before
+  the window) SUCCEEDED with the same configuration; 2773597223
+  (90fd7ed, after) fails the same way. Nothing between them touches the
+  native pipeline.
+- *not a runner/quota starvation of the obvious kind.* No pipelines were
+  running at the time of the check, and shared runners are disabled
+  (self-hosted only), so CI-minutes quota does not apply.
+
+* What has NOT been established
+
+The reason GitLab refuses to create the child. =failure_reason= is the
+generic =downstream_pipeline_creation_failed=; the specific message is
+shown on the BRIDGE JOB PAGE IN THE WEB UI and is not exposed by the
+API — =GET /projects/:id/jobs/<bridge-id>/trace= answers 404 for a
+bridge.
+
+*So the next step is one look at the web UI*:
+https://gitlab.com/ogamita/clautolisp/-/pipelines/2773597223 → the
+=native:pipeline= job → the error line under the downstream pipeline.
+That names the cause directly and saves further guessing from outside.
+
+Candidates worth having in mind while reading it: a limit on
+child/downstream pipelines, a change in how the local =include=
+resolves, or a project/group setting changed around that time.
+
+* Affected merge requests
+
+MR !107 was merged through the API rather than =glab= for this reason,
+with every one of its 15 real jobs green. That is recorded here so the
+decision is visible rather than buried in a merge commit.
+
+* Notes
+
+Found 2026-08-19 while landing MR !104-!107. Filed rather than mentioned
+in passing, because a red master is exactly the kind of thing that
+becomes normal if nobody writes it down — and it sits directly on the
+path to =release-1.9.0=, where a red pipeline is not a cosmetic problem.
