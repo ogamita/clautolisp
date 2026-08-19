@@ -1,0 +1,114 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: case-insensitive-paths-ignored-in-cad-dialects — le sysvar n'agit que sous le dialecte clautolisp
+#+STATUS: OPEN
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: case-insensitive-pathname-resolution
+#+BRANCH: -
+
+case-insensitive-paths-ignored-in-cad-dialects
+==============================================
+
+Suite de `case-insensitive-pathname-resolution`, close en 1.8.55. La
+fonctionnalité marche — mais pas là où elle sert.
+
+Constat
+-------
+
+Mesuré sur un volume RÉELLEMENT sensible à la casse (image APFS
+« Case-sensitive » montée sur macOS), avec clautolisp 1.8.55 :
+
+    fichier réel : /Volumes/CaseTest/DIR/Fichier.lsp
+    demandé      : /Volumes/CaseTest/dir/fichier.lsp
+
+    dialecte     sysvar=0    sysvar=1
+    clautolisp   nil         OUVERT
+    bricscad     nil         nil
+
+Le sysvar lui-même n'est d'ailleurs pas visible hors du dialecte
+clautolisp :
+
+    (getvar "CLAUTOLISPCASEINSENSITIVEPATHS")
+      dialecte clautolisp -> 1
+      dialecte lax        -> nil
+      dialecte strict     -> nil
+      dialecte bricscad   -> nil
+      dialecte autocad    -> nil
+
+`CLAUTOLISPCASEINSENSITIVEPATHS=1` dans l'environnement ne change rien
+sous `bricscad` : ni la valeur lue, ni le comportement.
+
+Pourquoi c'est l'inverse de ce qu'il faudrait
+----------------------------------------------
+
+On peut défendre que les dialectes d'émulation n'exposent pas un sysvar
+propre à clautolisp — `getvar` doit répondre comme la CAO émulée, qui ne
+connaît pas ce nom. C'est cohérent, et ce n'est pas ce que conteste ce
+ticket.
+
+Mais le COMPORTEMENT devrait suivre, et il devrait le suivre d'autant
+plus sous ces dialectes-là :
+
+- un dialecte `bricscad` ou `autocad` émule un environnement Windows,
+  c'est-à-dire un système de fichiers INSENSIBLE à la casse. Plier la
+  casse y est donc la fidélité, pas l'écart ;
+- ces dialectes servent précisément à exécuter des corpus écrits pour
+  Windows — ceux dont la casse des chemins n'a jamais été vérifiée par
+  personne. C'est là que le besoin est né.
+
+En l'état, le seul dialecte qui bénéficie de la fonctionnalité est celui
+qui en a le moins besoin.
+
+Incident
+--------
+
+SCHMS+ exécute ses suites avec `--dialect bricscad-v26`, pour tester le
+code tel qu'il tournera. Un chemin dérivé d'un nom de classe cherchait
+`dial/sigfic.LSP` là où le fichier s'appelle `DIAL/SIGFIC.LSP` ; le
+sysvar a été posé à 1 et n'a rien changé. Le blocage suivant est de la
+même famille : `bibepure/index.lsp` contre `BIBEPURE/index.lsp`.
+
+Demandé
+-------
+
+Que `CLAUTOLISPCASEINSENSITIVEPATHS`, posé par l'environnement ou par
+`setvar` sous le dialecte clautolisp, gouverne la résolution des chemins
+sous TOUS les dialectes.
+
+Deux variantes acceptables :
+
+1. le réglage est global au processus, quel que soit le dialecte courant,
+   et seule sa LECTURE par `getvar` reste réservée au dialecte
+   clautolisp ;
+2. ou bien la valeur par défaut devient 1 sous les dialectes d'émulation
+   — c'est là le comportement fidèle — et 0 sous `clautolisp` et
+   `strict`.
+
+La seconde a ma préférence : elle rend l'émulation juste par défaut, et
+laisse au mode strict le soin de signaler les écarts.
+
+L'avertissement `[path-case]` doit rester émis dans les deux cas ; c'est
+lui qui empêche la tolérance de devenir un silence.
+
+Contournement
+-------------
+
+Aucun côté appelant : ni la variable d'environnement ni `setvar` n'ont
+prise sous le dialecte visé. Basculer les tests sur `--dialect
+clautolisp` fonctionnerait, mais reviendrait à ne plus tester le dialecte
+qu'on veut valider.
+
+Reproduction
+------------
+
+Sur un volume sensible à la casse — sur macOS, une image suffit :
+
+    hdiutil create -size 10m -fs "Case-sensitive APFS" -volname CaseTest c.dmg
+    hdiutil attach c.dmg
+    mkdir -p /Volumes/CaseTest/DIR
+    echo '(princ "ok")' > /Volumes/CaseTest/DIR/Fichier.lsp
+
+puis, avec `(open "/Volumes/CaseTest/dir/fichier.lsp" "r")` :
+
+    CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp --dialect clautolisp …   OUVERT
+    CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp --dialect bricscad   …   nil
