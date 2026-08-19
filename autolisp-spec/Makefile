@@ -106,7 +106,24 @@ $(INFO_DIR)/autolisp-spec.info: $(INFO_DIR)/autolisp-spec.texi
 	# (',*'), which org's parser unescapes at export time.
 	$(MAKEINFO) --no-split $< -o $@
 
-paged: pages html info  ## Build every paged derivative (pages + html + info).
+# Which paged derivatives `paged' builds. The default is all three; the
+# point of the knob is the ONE that costs an hour.
+#
+# Measured on a real documentation job (doc-build-info-export-quadratic):
+# the per-section split is 5 s for 3022 pages, the HTML render 2 min 38,
+# and the Info export FIFTY-ONE MINUTES -- 94% of the job -- because
+# org-texinfo-export-to-texinfo is super-linear in the size of one file
+# and the spec is 95 000 lines. Every merge request that edits the spec
+# pays that hour, because the cache is keyed on the spec.
+#
+# So the merge-request lane builds `pages html' and the RELEASE lane keeps
+# the default: the Info manual is a release product, while the HTML and
+# the PDFs are what a merge request needs to have checked. This is a
+# scheduling change, not a reduction -- nothing stops being built, it
+# stops being rebuilt on a path where nobody reads it.
+SPEC_PAGED_TARGETS ?= pages html info
+
+paged: $(SPEC_PAGED_TARGETS)  ## Build the paged derivatives named by SPEC_PAGED_TARGETS (default: pages + html + info).
 
 # Intermediate: emit the per-section .org pages that HTML and Info
 # both consume. The stamp file pegs the rebuild trigger to the spec

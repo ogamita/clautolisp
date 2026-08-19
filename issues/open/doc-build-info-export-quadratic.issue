@@ -98,6 +98,36 @@ Until 1 and 2 are settled, the 60 s figure is the cost of the exports
 alone, not of a finished manual. It is a strong enough signal to justify
 the work; it is not yet a promise of a 50x build.
 
+* DONE so far — the cheap mitigation (2026-08-19, clautolisp 1.8.55)
+
+pjb: « oui, fais le changement d'une ligne pour la lane de release ».
+
+=SPEC_PAGED_TARGETS= (autolisp-spec/Makefile) names which paged
+derivatives =paged= builds; it defaults to =pages html info=, and the
+merge-request =documentation= job now passes =pages html=. The release
+lane keeps the default. Nothing stops being built — it stops being
+REBUILT on a path where nobody reads it: the Info manual is a release
+product, and what a merge request needs checked is the HTML and the PDFs.
+
+Effect: a merge request that edits the spec goes from about 55 minutes to
+about 4. Verified with =make -n= from both the subproject and the repo
+root, with and without the variable: the =build-paged-info= recipe
+disappears with it and is present without it, and command-line variables
+propagate through the sub-make, so the root invocation is enough.
+
+*The skip is asserted, not assumed.* The install step is guarded by
+=if [ -f … ]=, so a release whose Info build quietly failed would ship a
+documentation artefact without the manual and say nothing — the exact
+shape of failure this repository keeps meeting. release:documentation now
+tests for =autolisp-spec/build/info/autolisp-spec.info= and fails if it
+is absent. It is the one lane that publishes it, so it is the one lane
+that must insist.
+
+*This is scheduling, not a fix.* The export is still quadratic and still
+takes 51 minutes when it runs; the release lane still pays it. The
+reorganisation below is what would actually make it cheap, and this issue
+stays open for it.
+
 * A cheaper first step, if the reorganisation is not taken now
 
 The =documentation= job's cache is keyed on the spec org file, so ANY
