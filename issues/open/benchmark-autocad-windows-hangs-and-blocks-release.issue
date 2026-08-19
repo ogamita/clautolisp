@@ -75,3 +75,33 @@ not the two hours.
 Options 1 and 2 are independent of the AutoCAD question and worth doing on
 their own: together they turn a two-hour silent block into a ten-minute
 failure with a readable log.
+
+* Done (2026-08-19, clautolisp 1.8.51) — options 1 and 2
+
+pjb: « Fixe le timeout et le Tee-Object sur les benchmarks CAD ».
+
+- =.benchmark= carries =timeout: 15 minutes=. The jobs it covers finish in
+  about 90 seconds, so this is an order of magnitude of headroom and still
+  caps the damage at a tenth of the project default. The timeout is on the
+  base template, not on the CAD jobs alone: a benchmark is a measurement,
+  never a release product, and none of them may hold a runner for two
+  hours in front of the release stage.
+- The three Windows benchmark jobs pipe through =Tee-Object -Variable=
+  and write the captured output afterwards, instead of sending everything
+  to a file and printing it in the *next* step. The trace is now live, so
+  the last line before a stall is visible. =Tee-Object -FilePath= alone
+  would have restored the live trace but writes UTF-16LE under PowerShell
+  5.1, which is exactly the encoding the Pages parser was taught to cope
+  with; capturing and writing explicitly keeps the artifact UTF-8.
+
+The fix is deliberately not limited to the CAD jobs:
+=benchmark:clautolisp:windows= had the identical silent-trace pattern, and
+leaving it would have kept one job that cannot be diagnosed.
+
+* Still open — the hang itself
+
+=benchmark:autocad:windows= still does not work; it will now fail in 15
+minutes with a readable log instead of blocking for 120 with none. That is
+a better failure, not a fix. Options 3 (move =benchmark= off the release
+path) and 4 (fix or disable the AutoCAD benchmark) remain, and the
+underlying accoreconsole problem is tracked separately.

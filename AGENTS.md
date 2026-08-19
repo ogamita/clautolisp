@@ -497,7 +497,31 @@ version is read from its source.
 4. push the tag and both pointers to `origin`;
 5. post-release bump on master, so no untagged commit claims a released
    version;
-6. `glab release create release-M.m.d`.
+6. `python3 scripts/make-gitlab-release.py release-M.m.d`.
+
+**Publishing the release (step 6).** Use the script, not `glab release
+create` by hand. It reads `manifest-release-assets.txt` — which
+`collect-artefacts` writes from the directory it just filled — so the
+release attaches exactly what the pipeline collected, and it **fetches
+every link before creating the release**, refusing to publish one that
+does not serve its file. Both halves are there because the hand-made
+version shipped broken twice:
+
+- links must use `/artifacts/raw/<path>`, never `/artifacts/file/<path>`.
+  The `file` form is the artefact *browsing page* and serves HTML. Both
+  answer `200`, so a consumer writes 40 KB of HTML to disk under the
+  archive's name and only fails later, at extraction, with a message
+  about archive format rather than about the link. Releases 1.8.47 and
+  1.8.49 shipped that way, and it was reported from another project's CI,
+  not noticed here.
+- `collect:release` keeps its artefacts (`expire_in: never`), because the
+  release links *at* them. With an expiry, a release turns into dead
+  links on its own, some weeks after anyone last looked at it.
+
+`make check-release` enforces both.
+
+Use `--dry-run` to verify the links without publishing, and `--update` to
+repair an already-published release.
 
 **Cutting a release without a platform.** Every platform lane is
 scheduled automatically on a `release-*` tag; a release does not wait for

@@ -904,6 +904,18 @@ pathname:probe:clautolisp:linux:
 
 .benchmark:
   stage: benchmark
+  # A benchmark may not hold a runner for the project default (120 min).
+  # `benchmark' is a stage IN FRONT OF `release', and the Windows runner has
+  # concurrency 1, so a benchmark that hangs there gates every release lane
+  # behind it: release-1.8.47 was stalled that way and cancelled by hand,
+  # release-1.8.49 waited the full two hours for the timeout to fire.
+  # These jobs measure a warm build and finish in about 90 seconds
+  # (bricscad:windows 1m37, clautolisp:windows 1m16, bricscad:macos 1m00),
+  # so 15 minutes is an order of magnitude of headroom and still turns a
+  # hung CAD into a ten-minute failure instead of a two-hour block.
+  # allow_failure is already true here: a benchmark is a measurement, never
+  # a release product, and it must not be able to cost one.
+  timeout: 15 minutes
   variables:
     GIT_SUBMODULE_STRATEGY: none
     BENCH_SECONDS: '3.0'
@@ -943,12 +955,20 @@ benchmark:clautolisp:windows:
   script:
     - make build-programs
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
-    # Merge all streams (*>&1) then write UTF-8. PowerShell's bare `*>`
-    # redirection defaults to UTF-16LE, which the Pages report parser used
-    # to read as UTF-8 garbage (empty column); the parser now sniffs the
-    # BOM, but UTF-8 keeps the raw artifact human-readable too.
-    - make -C autolisp-benchmark run-clautolisp-sbcl *>&1 | Out-File -Encoding utf8 dist/bench/clautolisp-windows.txt
-    - Get-Content dist/bench/clautolisp-windows.txt
+    # Merge all streams (*>&1), show them as they arrive, and keep UTF-8.
+    #
+    # Tee-Object -Variable, not Out-File: sending the run's output straight
+    # to a file makes the job trace silent for its whole duration, so a job
+    # that hangs and a job that works produce the same log -- and if it
+    # never finishes, the output is never shown at all. That is what made
+    # benchmark:autocad:windows undiagnosable from outside.
+    # Tee-Object -FilePath would restore the live trace but writes UTF-16LE
+    # under PowerShell 5.1; PowerShell's bare `*>' does the same, which the
+    # Pages report parser used to read as UTF-8 garbage (empty column). It
+    # sniffs the BOM now, but UTF-8 keeps the raw artifact readable, so the
+    # output is captured in a variable and written explicitly.
+    - make -C autolisp-benchmark run-clautolisp-sbcl *>&1 | Tee-Object -Variable benchOut
+    - $benchOut | Out-File -Encoding utf8 dist/bench/clautolisp-windows.txt
 
 # --- CAD: alfe drives the real CAD to run the same suite ---
 # SHAKEDOWN PENDING: like the vendor probes, the CAD path needs a first run on
@@ -977,8 +997,9 @@ benchmark:bricscad:windows:
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
-    - make -C autolisp-benchmark run-bricscad-windows *>&1 | Out-File -Encoding utf8 dist/bench/bricscad-windows.txt
-    - Get-Content dist/bench/bricscad-windows.txt
+    # Live trace + UTF-8 artifact -- see benchmark:clautolisp:windows.
+    - make -C autolisp-benchmark run-bricscad-windows *>&1 | Tee-Object -Variable benchOut
+    - $benchOut | Out-File -Encoding utf8 dist/bench/bricscad-windows.txt
 
 benchmark:autocad:windows:
   extends: .benchmark-cad
@@ -988,8 +1009,11 @@ benchmark:autocad:windows:
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
-    - make -C autolisp-benchmark run-autocad-windows *>&1 | Out-File -Encoding utf8 dist/bench/autocad-windows.txt
-    - Get-Content dist/bench/autocad-windows.txt
+    # Live trace + UTF-8 artifact -- see benchmark:clautolisp:windows. This
+    # is the job whose silence hid a two-hour hang twice; with the tee, the
+    # last line it printed before stalling is visible in the trace.
+    - make -C autolisp-benchmark run-autocad-windows *>&1 | Tee-Object -Variable benchOut
+    - $benchOut | Out-File -Encoding utf8 dist/bench/autocad-windows.txt
 
 # --- publish: aggregate whatever ran into one table on GitLab Pages ---
 pages:
@@ -1081,7 +1105,12 @@ collect:release:
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-release"
     paths: [dist/combined/]
-    expire_in: 30 days
+    # NEVER, because the published release links AT these artefacts. This
+    # job only runs on a release tag, and its output is the release: with
+    # a 30-day expiry, every release older than a month became a catalogue
+    # of dead links, which is the opposite of what publishing one is for.
+    # A release is permanent, so its assets must be too.
+    expire_in: never
 
 # --- deploy: publish the spec HTML manual to the poseidon web site -----
 #

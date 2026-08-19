@@ -123,16 +123,31 @@ release-libraries-pack-only:  ## (test hook) Pack PACK_STAGE as PACK_KIND for PA
 	@mkdir -p "$(DIST)"
 	@$(call pack-release-artefact,$(PACK_STAGE),$(PACK_KIND),$(PACK_VER),$(PACK_OS),$(PACK_ARCH))
 
+# COPYFILE_DISABLE=1 / --no-xattrs / --exclude='._*': keep macOS metadata
+# out of the artefacts. On macOS, bsdtar stores a file's extended
+# attributes as an AppleDouble `._NAME' member plus LIBARCHIVE.xattr.*
+# pax headers, so the darwin artefact shipped 23 `._*' files and made GNU
+# tar print "Ignoring unknown extended header keyword" on every extraction
+# elsewhere. They are not part of the product, no manifest accounts for
+# them, and they reached the -all.zip (whose zip branch, unlike every tar
+# branch here, had no exclusion). The variable is inert on Linux and
+# Windows, so this is one rule for every platform rather than a macOS
+# special case. --no-xattrs is PROBED rather than assumed: it is what
+# suppresses the pax headers, GNU tar and bsdtar spell their options
+# differently, and a tar that rejected it would take the darwin release
+# lane down with it -- COPYFILE_DISABLE and --exclude already do the
+# visible half of the job on any tar.
 define pack-release-artefact
 	if [ "$(4)" = windows ]; then \
 	  command -v zip >/dev/null 2>&1 || { \
 	    echo "ERROR: zip is required to package the Windows artefact"; exit 1; }; \
 	  out="$(DIST)/clautolisp-$(3)-$(2)-$(4)-$(5).zip"; \
 	  rm -f "$$out"; \
-	  ( cd "$(1)" && zip -qr "$$out" . ); \
+	  ( cd "$(1)" && zip -qr "$$out" . -x '._*' '*/._*' ); \
 	else \
 	  out="$(DIST)/clautolisp-$(3)-$(2)-$(4)-$(5).tar.bz2"; \
-	  tar -C "$(1)" -cjf "$$out" .; \
+	  xattrs=""; tar --no-xattrs --version >/dev/null 2>&1 && xattrs="--no-xattrs"; \
+	  COPYFILE_DISABLE=1 tar -C "$(1)" $$xattrs --exclude='._*' -cjf "$$out" .; \
 	fi; \
 	echo "wrote $$out"
 endef
@@ -305,7 +320,7 @@ release-sources:  ## Produce the source tarball + zip (tracked files incl. submo
 	git ls-files --recurse-submodules -z | tar -cf - --null -T - | tar -C "$$dest" -xf -; \
 	sh scripts/make-manifest.sh sources > "$$dest/manifest-sources.txt"; \
 	tar -C "$$stage" -cjf "$(DIST)/$$prefix-sources.tar.bz2" src; \
-	( cd "$$stage" && zip -qr "$(DIST)/$$prefix-sources.zip" src ); \
+	( cd "$$stage" && zip -qr "$(DIST)/$$prefix-sources.zip" src -x '._*' '*/._*' ); \
 	rm -rf "$$stage"; \
 	stray=$$(tar -tjf "$(DIST)/$$prefix-sources.tar.bz2" | grep -v '^src/' | head -1); \
 	if [ -n "$$stray" ]; then \
@@ -512,10 +527,31 @@ collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the c
 	    echo "ERROR: zip is missing, so the -all.zip our Windows users need"; \
 	    echo "       would be skipped without failing. Install zip."; \
 	    exit 1; }; \
-	  ( cd "$$astage" && zip -qr "$$out/clautolisp-$$ver-all.zip" . ); \
+	  ( cd "$$astage" && zip -qr "$$out/clautolisp-$$ver-all.zip" . -x '._*' '*/._*' ); \
 	  echo "wrote $$out/clautolisp-$$ver-all.zip (same union, for Windows)"; \
+	  if command -v unzip >/dev/null 2>&1; then \
+	    junk=$$(unzip -Z1 "$$out/clautolisp-$$ver-all.zip" \
+	            | grep -E '(^|/)\._' | head -1); \
+	    if [ -n "$$junk" ]; then \
+	      echo "ERROR: clautolisp-$$ver-all.zip carries the macOS metadata file '$$junk'."; \
+	      echo "       The .tar.bz2 of this same union excludes it, so the two"; \
+	      echo "       containers would not unpack to the same tree -- which is"; \
+	      echo "       the one property an -all artefact exists to provide."; \
+	      exit 1; \
+	    fi; \
+	  fi; \
 	else echo "WARNING: nothing to union into the -all artefact"; fi; \
 	rm -rf "$$astage"; \
+	: ; \
+	: "The collected set names itself, so publishing the release does not"; \
+	: "have to guess it. scripts/make-gitlab-release.py reads this one"; \
+	: "small file over the raw artefact URL and attaches exactly what was"; \
+	: "collected -- a new platform therefore joins the published release"; \
+	: "with no edit anywhere, and a missing one is visible as a short"; \
+	: "manifest rather than as a link nobody thought to add."; \
+	( cd "$$out" && ls -1 | grep -v '^manifest-release-assets.txt$$' ) \
+	  > "$$out/manifest-release-assets.txt"; \
+	echo "wrote $$out/manifest-release-assets.txt ($$(wc -l < "$$out/manifest-release-assets.txt" | tr -d ' ') asset(s))"; \
 	targets=$$(ls "$$in" 2>/dev/null \
 	           | sed -n "s/^clautolisp-$$ver-binaries-\(.*\)\.tar\.bz2$$/\1/p" \
 	           | sort -u | tr '\n' ' '); \
