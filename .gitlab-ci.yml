@@ -111,6 +111,7 @@ stages:
 #   git tag ... && git push          -> Windows/macOS products expected
 #   SKIP_WINDOWS_RELEASE=1 (CI var)  -> cut without the Windows products
 #   SKIP_MACOS_RELEASE=1             -> likewise for macOS
+#   SKIP_ARM32_RELEASE=1             -> likewise for the qemu armv7 lane
 #
 # Explicit beats automatic here: the failure mode of the automatic version
 # was a release that looked complete and was not.
@@ -126,6 +127,24 @@ stages:
   when: on_success
   allow_failure: false
 .on-release-macos-absent: &on-release-macos-absent
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+  when: never
+# arm32 differs from the two anchors above in ONE way: allow_failure is
+# TRUE. Windows and macOS are intermittent -- the machine is either there
+# or it is declared absent -- so a failure there is a real failure. The
+# armv7 lane is not intermittent, it is BLOCKED: Debian's armhf SBCL is
+# built without threads, and bordeaux-threads refuses to load on a
+# thread-less implementation ("This implementation is unsupported"), which
+# is where release-1.8.47 died after 44 minutes of emulated build. Until
+# that is solved (native hardware, or a threaded armhf SBCL), a mandatory
+# arm32 would block every single release for a reason no CI setting can
+# fix. So it runs on every tag and contributes when it can, without
+# holding the release hostage. See issues/open/release-arm32-thread-less-sbcl.issue.
+.on-release-arm32: &on-release-arm32
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $SKIP_ARM32_RELEASE != "1"'
+  when: on_success
+  allow_failure: true
+.on-release-arm32-absent: &on-release-arm32-absent
   if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
   when: never
 
@@ -613,7 +632,19 @@ release:linux:arm32:
     # under qemu-user (tested on poseidon), so it stays off this lane.
     RELEASE_LISPS: "sbcl"
   rules:
-    - when: manual                # manual + never block: first qemu/sbcl try is an experiment
+    # Automatic on a release tag, like every other platform lane. It used
+    # to be manual-only, and that quietly cost two releases their arm32
+    # products: collect:release needs this job, and GitLab SKIPS a job
+    # whose need is an unplayed manual one. `optional: true' does NOT
+    # rescue that -- optional only covers a job that is ABSENT from the
+    # pipeline, and a manual job is present, merely unplayed. 1.8.43
+    # published nothing for this reason; 1.8.46 escaped it only because
+    # the job happened to be played by hand.
+    #
+    # Off a release tag it stays an opt-in experiment.
+    - *on-release-arm32
+    - *on-release-arm32-absent
+    - when: manual
       allow_failure: true
   # Cache the libredwg cmake build dir (see arm64 lane) — the emulated armv7
   # C compile is the slowest step; reusing objects across runs is the (b)
@@ -1018,13 +1049,18 @@ collect:release:
   needs:
     - { job: "release:linux:x86-64", artifacts: true }
     - { job: "release:linux:arm64",  artifacts: true }
-    # arm32 is OPTIONAL because its own rules are `when: manual' only --
-    # a deliberate choice (an experimental qemu/armhf lane), so it never
-    # runs on a tag unless someone clicks it. Requiring it made this job
-    # unsatisfiable: on release-1.8.43 collect:release was SKIPPED and the
-    # release produced no artefact set at all. Adding the job to these
-    # needs without checking that it can actually run was my error, and
-    # check-release-collect-needs.sh now refuses that combination.
+    # arm32 is OPTIONAL for the same reason as the two intermittent
+    # platforms below: it is ABSENT from the pipeline when the release is
+    # cut with SKIP_ARM32_RELEASE=1, and `optional' is what lets this job
+    # proceed without it.
+    #
+    # `optional' is NOT what makes a manual job safe to need -- that was
+    # my error, and it cost two releases. GitLab SKIPS a job whose need is
+    # an unplayed manual job, optional or not: optional covers ABSENT, not
+    # PRESENT-BUT-UNPLAYED. release-1.8.43 published nothing that way, and
+    # release-1.8.47 was skipped again until the arm32 job was played by
+    # hand. Every job needed here is therefore automatic on a release tag;
+    # check-release-collect-needs.sh enforces exactly that.
     - { job: "release:linux:arm32",  artifacts: true, optional: true }
     - { job: "release:darwin:arm64", artifacts: true, optional: true }
     - { job: "release:windows:x86-64", artifacts: true, optional: true }

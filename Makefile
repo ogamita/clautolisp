@@ -289,17 +289,36 @@ check-avec-bash:  ## Test scripts/avec-bash.ps1 in a PowerShell container (needs
 
 release: release-sources release-documentation release-programs release-libraries  ## Produce every release artefact for this host.
 
+# The sources unpack under src/clautolisp-<ver>/, not clautolisp-<ver>/
+# (pjb, 2026-08-18). Every other artefact unpacks into $PREFIX -- bin/,
+# lib/, share/ -- and the -all union puts them all in one tree, where a
+# bare clautolisp-<ver>/ sat as a sibling of the install directories with
+# nothing to say it was a source tree. src/ says it.
+#
+# The layout IS part of the artefact, so the recipe checks it: nothing may
+# fall outside src/. An archive nobody looks inside is how this release
+# series lost three files without a single red job.
 release-sources:  ## Produce the source tarball + zip (tracked files incl. submodules).
 	@mkdir -p "$(DIST)"
 	@prefix=clautolisp-$(VERSION); \
-	stage=$$(mktemp -d); dest="$$stage/$$prefix"; mkdir -p "$$dest"; \
+	stage=$$(mktemp -d); dest="$$stage/src/$$prefix"; mkdir -p "$$dest"; \
 	git ls-files --recurse-submodules -z | tar -cf - --null -T - | tar -C "$$dest" -xf -; \
 	sh scripts/make-manifest.sh sources > "$$dest/manifest-sources.txt"; \
-	tar -C "$$stage" -cjf "$(DIST)/$$prefix-sources.tar.bz2" "$$prefix"; \
-	( cd "$$stage" && zip -qr "$(DIST)/$$prefix-sources.zip" "$$prefix" ); \
+	tar -C "$$stage" -cjf "$(DIST)/$$prefix-sources.tar.bz2" src; \
+	( cd "$$stage" && zip -qr "$(DIST)/$$prefix-sources.zip" src ); \
 	rm -rf "$$stage"; \
-	echo "wrote $(DIST)/$$prefix-sources.tar.bz2"; \
-	echo "wrote $(DIST)/$$prefix-sources.zip"
+	stray=$$(tar -tjf "$(DIST)/$$prefix-sources.tar.bz2" | grep -v '^src/' | head -1); \
+	if [ -n "$$stray" ]; then \
+	  echo "ERROR: $$prefix-sources.tar.bz2 has '$$stray' outside src/"; exit 1; \
+	fi; \
+	if command -v unzip >/dev/null 2>&1; then \
+	  stray=$$(unzip -Z1 "$(DIST)/$$prefix-sources.zip" | grep -v '^src/' | head -1); \
+	  if [ -n "$$stray" ]; then \
+	    echo "ERROR: $$prefix-sources.zip has '$$stray' outside src/"; exit 1; \
+	  fi; \
+	fi; \
+	echo "wrote $(DIST)/$$prefix-sources.tar.bz2 (src/$$prefix/)"; \
+	echo "wrote $(DIST)/$$prefix-sources.zip (src/$$prefix/)"
 
 release-documentation: stage-documentation  ## Package the documentation artefact for EVERY subproject (pdf/org/info + the spec's paged HTML/info/pages + alref), from the same $(STAGE)/documentation tree install-documentation installs. Unpacks into $PREFIX.
 	@mkdir -p "$(DIST)"
