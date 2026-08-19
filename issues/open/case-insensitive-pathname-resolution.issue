@@ -107,21 +107,26 @@ glisser le problème.
 Activation
 ----------
 
-À rendre gouvernable plutôt qu'imposé, la casse stricte restant le
-comportement conforme :
+Par une VARIABLE SYSTÈME, et non par une variable dynamique — c'est la
+voie AutoLISP native, celle que `getvar` / `setvar` exposent déjà au code
+existant :
 
-    *AUTOLISP-PATHNAME-CASE*  = 'strict       (défaut : comme aujourd'hui)
-                              | 'insensitive  (résout et normalise)
-                              | 'warn         (résout, normalise, et avertit)
+    CLAUTOLISPCASEINSENSITIVEPATHS = 0   comportement actuel (défaut)
+                                   = 1   tous les chemins sont validés
+                                         contre le système de fichiers,
+                                         et normalisés
 
-Le nom suit la convention du projet : `*AUTOLISP-…*` pour ce qui relève du
-protocole AutoLISP, `*clal-…*` étant réservé aux variables proprement
-internes à clautolisp.
+À 1, la validation ne se limite donc pas aux chemins qui ont échoué : tout
+chemin entrant est confronté au système de fichiers et rendu sous son nom
+réel. C'est plus fort que de simplement rattraper les échecs, et c'est ce
+qui donne la propriété utile — un chemin obtenu de clautolisp est
+toujours un chemin qui existe tel qu'écrit.
 
-Un mode `warn` par défaut sur les dialectes `lax`/`bricscad`/`autocad` —
-ceux qui émulent une CAO, donc un monde insensible à la casse — et
-`strict` sur le dialecte `clautolisp`, serait cohérent avec la manière
-dont les autres écarts sont traités.
+Un programme peut donc l'activer pour lui-même :
+
+    (setvar "CLAUTOLISPCASEINSENSITIVEPATHS" 1)
+
+et un harnais de test l'activer pour tout un corpus sans le modifier.
 
 Coût
 ----
@@ -139,8 +144,9 @@ L'exemple `/ETC/PASSWD` de la demande est aussi un avertissement : cette
 extension rend accessibles des fichiers qu'une orthographe exacte
 n'atteignait pas. Un programme qui construit un chemin à partir d'une
 saisie utilisateur voit donc sa surface s'élargir. Ce n'est pas une raison
-de renoncer — c'en est une pour que le mode soit explicite, et pour que
-`strict` reste le défaut hors dialectes d'émulation.
+de renoncer — c'en est une pour que le sysvar vaille 0 par défaut, et
+pour que son passage à 1 soit un acte délibéré du programme ou du
+harnais.
 
 Tests suggérés
 --------------
@@ -166,6 +172,9 @@ BricsCAD, exécution AutoCAD — parce que ces trois environnements sont
 insensibles à la casse. Seule la voie Linux l'a révélé.
 
 Ce qui se retourne d'ailleurs en argument : un moteur strict est le seul
-qui VALIDE la casse des chemins. D'où l'intérêt du mode `warn`, qui
-laisse passer tout en signalant, plutôt que du seul choix binaire entre
-tolérer et échouer.
+qui VALIDE la casse des chemins. D'où l'intérêt de l'avertissement
+`[path-case]` décrit plus haut, qui reste souhaitable même à
+CLAUTOLISPCASEINSENSITIVEPATHS=1 : l'exécution passe, et le développeur
+apprend qu'il a écrit un chemin qui n'aurait pas fonctionné sur un
+système strict. Sans lui, le sysvar ne ferait que glisser le problème
+sous le tapis.
