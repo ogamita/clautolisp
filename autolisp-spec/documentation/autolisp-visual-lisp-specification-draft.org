@@ -59945,6 +59945,82 @@ Full rules: *Normative Rules: Secure File Loading and Trust Model*
 
 #+LATEX: \newpage
 
+** System Variable Entry: CLAUTOLISPCASEINSENSITIVEPATHS
+*** Name
+CLAUTOLISPCASEINSENSITIVEPATHS
+
+*** Type
+integer
+
+*** Default
+~0~
+
+*** Read-Only
+no
+
+*** Scope
+session
+
+*** Description
+clautolisp-only. At ~0~ (the default) paths are used exactly as written.
+At ~1~ every incoming path is validated against the filesystem *without
+regard to case* and returned under its real name.
+
+Resolution is per component, and deterministic:
+
+1. an exact match wins, without even listing the directory — the common
+   case, and it costs nothing;
+2. otherwise a *unique* case-insensitive match is taken;
+3. otherwise — several entries differing only by case, which a
+   case-sensitive filesystem permits — it is an error *naming the
+   candidates*, never an arbitrary choice.
+
+Normalising matters as much as finding: what ~findfile~ returns is
+stored by the caller and used again later, so the real name is what is
+handed back.
+
+Reading and creating are treated differently, and deliberately so. For a
+path that must exist, the whole path is resolved. For a path being
+*created*, the last component is taken *as written* — ~(open
+"Rapport.txt" "w")~ creates ~Rapport.txt~ and does not fall back onto a
+pre-existing ~RAPPORT.TXT~, which would overwrite a file the author
+never named — while the directories leading to it are still resolved.
+Mode ~"a"~ is the mixed case: an existing file is appended to under its
+real name, a new one is created under the name as written.
+
+Whenever a path is located only because the case was folded, a
+~[path-case]~ diagnostic names the real spelling. The run proceeds *and*
+the developer learns of a path that would fail on a strict filesystem;
+without it the sysvar would only hide the problem.
+
+*** Read/Written By
+- findfile
+- load
+- open
+- vl-file-copy, vl-file-delete, vl-file-directory-p, vl-file-rename,
+  vl-file-size, vl-file-systime
+- vl-directory-files, vl-mkdir
+
+*** Compatibility
+clautolisp extension; absent on AutoCAD and BricsCAD, where the question
+does not arise — their filesystems fold case already, which is precisely
+why a corpus developed there arrives with its path spellings unchecked.
+Seedable from the environment variable of the same name (precedence
+~setvar~ > env > default), so a whole corpus or a CI job can be treated
+without editing a line of it.
+
+The default is ~0~ for a security reason, not out of caution: at ~1~ a
+program reaches files an exact spelling would not have reached, so a
+program building a path from user input has a wider surface. Switching it
+on is a deliberate act of the program or of the test harness.
+
+*** Source Notes
+- No vendor reference. Requested from SCHMS+ after a failure that
+  appeared only under Linux; specified and implemented per
+  ~issues/open/case-insensitive-pathname-resolution.issue~ in 1.8.52.
+
+#+LATEX: \newpage
+
 ** System Variable Entry: CLAUTOLISPSUPPORTFILESEARCHPATH
 *** Name
 CLAUTOLISPSUPPORTFILESEARCHPATH

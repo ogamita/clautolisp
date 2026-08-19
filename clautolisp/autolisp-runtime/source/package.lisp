@@ -268,6 +268,10 @@
    ;; back-slash `\...' spelling of the `...' wildcard.
    #:emit-forward-slash-ellipsis-portability-warning
    #:autolisp-path-has-forward-slash-ellipsis-p
+   ;; `[path-case]' (case-insensitive-pathname-resolution): emitted by the
+   ;; case-folding resolver when a path was found only under a different
+   ;; case, so the run proceeds AND the wrong spelling is named.
+   #:emit-path-case-portability-warning
    ;; The dialect-portability knowledge base (autolisp-spec ch.25 "one
    ;; knowledge base"): the catalogue the run-time emitters consult, and
    ;; the query surface a static linter consumes without a runtime.

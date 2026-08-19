@@ -2277,6 +2277,62 @@ otherwise; warnings go to *ERROR-OUTPUT*."
           (unless (%forward-slash-ellipsis-warning-seen-p path)
             (format *error-output* "~&~A~%" message)))))))
 
+(defun %path-case-warning-seen-p (path)
+  "Dedup for the `[path-case]' warning, keyed by the path STRING in the
+session's DOTDOT-PATH-WARNINGS-SEEN table under a distinct `case:'
+namespace (the same table-sharing convention the `fse:' dedup uses).
+Once-per-distinct-path per run; skipped (always emit) when no session is
+reachable."
+  (let* ((context (ignore-errors (current-evaluation-context)))
+         (session (and context
+                       (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                        context)))
+         (table   (and session
+                       (clautolisp.autolisp-runtime.internal::runtime-session-dotdot-path-warnings-seen
+                        session)))
+         (key     (concatenate 'string "case:" path)))
+    (cond
+      ((null table) nil)
+      ((gethash key table) t)
+      (t (setf (gethash key table) t) nil))))
+
+(defun emit-path-case-portability-warning (path real who)
+  "Emit a `[path-case]' warning: PATH was located only because the case
+was folded, and its real name on disk is REAL. WHO is the builtin name
+for the diagnostic prefix (e.g. \"LOAD\").
+
+Called ONLY from the case-folding resolver, and only when a fold
+actually happened — an exact match never warns, which is both the common
+case and the one that costs nothing to check. The caller decides that;
+this function does not re-examine the filesystem.
+
+Unlike the `..' and `/...' warnings, this one does not vary by dialect:
+the mismatch is between the program and the DISK, and it is equally
+wrong under every dialect. It fires wherever CLAUTOLISPCASEINSENSITIVEPATHS
+is 1 and a fold occurred, including under --lax, because the sysvar is
+already an explicit opt-in and silencing the diagnostic too would leave
+the user with no way to learn what the real names are.
+
+This is the whole point of the feature not being a carpet to sweep
+under: the run proceeds AND the developer is told which spelling would
+fail on a strict filesystem. Deduped once per distinct PATH per run.
+Honours the dialect's PORTABILITY-WARNING-MODE: `:error' escalates to a
+runtime error. Warnings go to *ERROR-OUTPUT*."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (mode (or (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                          dialect)))
+                   :warn))
+         (message (%portability-diagnostic
+                   "path-case"
+                   (%portability-warning-location nil)
+                   who path real)))
+    (when (eq mode :error)
+      (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+    (unless (%path-case-warning-seen-p path)
+      (format *error-output* "~&~A~%" message))))
+
 (defun split-usubr-lambda-list (lambda-list)
   "Walk LAMBDA-LIST and split it into the three positional groups
 clautolisp's `defun' / `lambda' recognises:

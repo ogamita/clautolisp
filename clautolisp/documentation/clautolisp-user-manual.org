@@ -1189,6 +1189,13 @@ correct a wrong guess — but it is not its purpose.
 - ~$CLAUTOLISP_PREFIX~ :: the ~$PREFIX~ used to build the trusted
   search path for ~findtrustedfile~ and secure loading; omitted from
   the path when unset.
+- ~$CLAUTOLISPCASEINSENSITIVEPATHS~ :: initial value of the system
+  variable of the same name; ~1~ resolves every path against the
+  filesystem without regard to case, and returns real names. See /Paths
+  whose case does not match the disk/. It carries the sysvar's exact
+  name, with no underscores — that is how the variables that seed a
+  system variable are spelled here, as against clautolisp's own
+  ~$CLAUTOLISP_*~ knobs.
 - ~$AUTOLISP_NO_INIT~, ~$CLAUTOLISP_NO_INIT~ :: equivalent to
   ~-norc~ / ~--no-init~.
 - ~$NO_COLOR~ :: disable ANSI colour ([[https://no-color.org][no-color.org]]).
@@ -1387,6 +1394,92 @@ narrower than it looks: codes 0, 1 and 2 are stable *when clautolisp
 itself decides them*. A script that calls ~quit~ with its own status
 owns the meaning of that code, and a shell caller cannot tell the two
 apart from the exit status alone.
+
+* Paths whose case does not match the disk
+A corpus written on Windows or macOS has never had its path spellings
+checked. Those filesystems fold case, so nothing there sanctions a
+mismatch: a program can write ~DIAL/SIGFIC.LSP~ in one place and
+~dial/sigfic.LSP~ in another and work. Bring it to Linux and it fails:
+
+#+begin_example
+Erreur: LOAD could not locate /…/schms/dial/sigfic.LSP
+#+end_example
+
+— while the file is there, named ~DIAL/SIGFIC.LSP~.
+
+Reading the code does not help. In the incident this feature comes from,
+the path was not a literal at all: it was derived from a class name,
+~/es/schms/dial/sigfic~, whose case is a naming convention with no
+relation to the disk.
+
+** Turning it on
+Set the system variable ~CLAUTOLISPCASEINSENSITIVEPATHS~ to ~1~ and every
+path clautolisp receives is validated against the filesystem without
+regard to case, and returned under its real name:
+
+#+begin_example
+_$ (setvar "CLAUTOLISPCASEINSENSITIVEPATHS" 1)
+1
+_$ (findfile "dial/sigfic.lsp")
+: [path-case]: FINDFILE "dial/sigfic.lsp": found as "DIAL/SIGFIC.LSP" -- the case differs, and only a case-insensitive filesystem forgives it
+"/…/schms/DIAL/SIGFIC.LSP"
+#+end_example
+
+A program can therefore switch it on for itself. To treat a whole corpus
+— a batch of inherited files, a CI job — without editing any of it, use
+the environment variable of the same name:
+
+#+begin_example
+$ CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp run.lsp
+#+end_example
+
+It applies everywhere a path goes in: ~load~, ~open~, ~findfile~, the
+~vl-file-*~ functions, ~vl-directory-files~ and ~vl-mkdir~. A uniform
+rule, so behaviour does not depend on which function you happened to
+call.
+
+** What it returns is the real name
+~findfile~ hands back the name *on disk*, not the one you asked with.
+This is not a detail: a resolved path is typically stored and used again,
+and returning your spelling would work once and fail on the next round.
+
+** Creating is not resolving
+The two are treated differently, deliberately. For a file that must
+exist, the whole path is resolved. For a file being *created*, the last
+component is taken exactly as you wrote it:
+
+#+begin_example
+_$ (open "Rapport.txt" "w")     ; creates Rapport.txt
+#+end_example
+
+even when a ~RAPPORT.TXT~ is sitting next to it — otherwise you would
+silently overwrite a file you never named. The directories leading to it
+are still resolved, so writing into ~dial/~ works when the disk says
+~DIAL/~. Mode ~"a"~ is the mixed case: an existing file is appended to
+under its real name; a new one is created under the name as written.
+
+** Two entries differing only by case
+On a case-sensitive filesystem ~dial/~ and ~DIAL/~ can both exist. An
+exact match always wins, without ambiguity. Failing that, a single
+case-insensitive match is taken. When several match, clautolisp *refuses
+to choose* and reports an error naming them: reading a file nobody asked
+for would be worse than the failure this feature removes.
+
+** Why it still warns
+The ~[path-case]~ diagnostic is the point, not a nuisance. A strict
+filesystem is the only one that *validates* the case of your paths — in
+the original incident the defect survived macOS development, BricsCAD and
+AutoCAD, because all three fold case, and only the Linux run revealed it.
+The warning keeps both halves: your program runs, and you learn which
+spelling is wrong and what the real name is. Without it the sysvar would
+merely sweep the problem under the carpet.
+
+** Why it is off by default
+The default is ~0~, and not out of timidity. At ~1~ a program reaches
+files an exact spelling would not have reached — ~"/ETC/PASSWD"~ becomes
+readable — so a program building paths from user input has a wider
+surface. Switching it on is a deliberate act of the program or of the
+test harness.
 
 * Paths on Windows
 On macOS and Linux this section does not apply: the mapping layer

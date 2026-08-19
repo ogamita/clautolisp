@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.8.51 / alfe 1.8.4 /
+master at the top of the file (clautolisp 1.8.52 / alfe 1.8.4 /
 read-autolisp 1.8.0). For the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
@@ -44,6 +44,24 @@ separate binary for tool integrators.
   rather than an MSYS symlink — so the installed programs run from
   PowerShell and cmd, not only from the MSYS2 shell. POSIX installs are
   unchanged (no suffix, relative symlinks).
+
+- Paths whose case does not match the disk can be resolved and
+  normalised. ~(setvar "CLAUTOLISPCASEINSENSITIVEPATHS" 1)~ — or the
+  environment variable of the same name, for a whole corpus — makes
+  ~load~, ~open~, ~findfile~, the ~vl-file-*~ functions,
+  ~vl-directory-files~ and ~vl-mkdir~ validate every incoming path
+  against the filesystem without regard to case, and return real names.
+  This is what lets an AutoLISP corpus developed on Windows or macOS run
+  on Linux unmodified: those filesystems fold case, so such a corpus
+  arrives with its path spellings never once checked. Creating is not
+  resolving — the last component of a file being created is taken as
+  written, so ~(open "Rapport.txt" "w")~ never lands on a pre-existing
+  ~RAPPORT.TXT~ — and two entries differing only by case are an error
+  naming both, not an arbitrary pick. A ~[path-case]~ diagnostic names
+  the real spelling whenever one was folded, so the run proceeds *and*
+  the wrong path is reported rather than hidden. Off by default: at 1 a
+  program reaches files an exact spelling would not have.
+  See § /Paths whose case does not match the disk/.
 
 ** Standalone CLI (clautolisp-sbcl / clautolisp-ccl)
 
