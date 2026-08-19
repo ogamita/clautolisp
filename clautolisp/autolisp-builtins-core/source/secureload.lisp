@@ -307,8 +307,11 @@ PATHS environment variable (applied by the caller, higher precedence)."
 Precedence is setvar > env var > dialect default (spec
 § 'Environment-variable initialisation'). SECURELOAD and
 CLAUTOLISPCASEINSENSITIVEPATHS parse as integers; the rest are strings.
-The CLAUTOLISP* entries are seeded only under the clautolisp dialect,
-where the cells exist.
+An entry is seeded only where its sysvar EXISTS, or the seeding would
+write a cell nothing reads: the CLAUTOLISP* trust pair under the
+clautolisp dialect, and CLAUTOLISPCASEINSENSITIVEPATHS under every
+dialect but --strict
+(case-insensitive-paths-ignored-in-cad-dialects.issue).
 
 The name matches the sysvar exactly, with no underscores. That is the
 convention for every sysvar-seeding variable here, and it is what
@@ -359,19 +362,49 @@ spec §§ 'Dialect-dependent defaults', 'New clautolisp system variables',
                   (default-implicitly-trusted-paths :getenv getenv :getcwd getcwd)
                   nil)
           ;; CL drop: gate on CLAL-COMMON-LISP availability (cl-debugging.issue).
-          (define "CLAUTOLISPDROP" :integer 0 nil)
-          ;; Case-insensitive path resolution, OFF by default
-          ;; (case-insensitive-pathname-resolution.issue). The default is
-          ;; not timidity: at 1 a program reaches files an exact spelling
-          ;; would not have reached, so turning it on has to be a
-          ;; deliberate act of the program or of the test harness.
+          (define "CLAUTOLISPDROP" :integer 0 nil))
+        ;; 2b. Case-insensitive path resolution: EVERY dialect but --strict
+        ;; (pjb's ruling, case-insensitive-paths-ignored-in-cad-dialects).
+        ;;
+        ;; It was clautolisp-only, which put it exactly where it was least
+        ;; needed: a --bricscad / --autocad run is how a corpus WRITTEN FOR
+        ;; WINDOWS is exercised, and that is the corpus whose path spellings
+        ;; nobody ever checked. Under those dialects the sysvar did not
+        ;; exist, so neither setvar nor the environment had any purchase --
+        ;; SCHMS+ set it to 1 under --dialect bricscad-v26 and nothing
+        ;; changed.
+        ;;
+        ;; The DEFAULT stays 0 there, and that is the ruling too, not an
+        ;; oversight: BricsCAD on Linux is not believed to fold case on a
+        ;; case-sensitive filesystem, so folding it here would be OUR
+        ;; invention rather than fidelity to the emulated engine. It stays
+        ;; an explicit request.
+        ;;
+        ;; --strict is the exception: its whole job is to report what a
+        ;; portable engine would refuse, and a path whose case does not
+        ;; match the disk is precisely that.
+        ;;
+        ;; Read/write in the emulation dialects, deliberately: getvar there
+        ;; answers for a sysvar the emulated CAD does not know, and that is
+        ;; accepted -- the vendors' own sysvar lists already differ from
+        ;; each other (pjb).
+        (unless (eq dk :strict)
           (define "CLAUTOLISPCASEINSENSITIVEPATHS" :integer 0 nil))
         ;; 3. environment-variable overrides (env > dialect default).
         (dolist (entry *clautolisp-trust-env-sysvars*)
           (let ((name (car entry)) (kind (cdr entry)))
+            ;; A variable may only seed a sysvar that EXISTS under this
+            ;; dialect, or the seeding would write a cell nothing reads.
+            ;; CLAUTOLISPCASEINSENSITIVEPATHS exists everywhere but
+            ;; --strict, which is what makes
+            ;;   CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp --dialect bricscad …
+            ;; work -- the exact invocation that did nothing before
+            ;; (case-insensitive-paths-ignored-in-cad-dialects).
             (when (or clautolisp-p
                       (member name '("SECURELOAD" "TRUSTEDPATHS")
-                              :test #'string=))
+                              :test #'string=)
+                      (and (not (eq dk :strict))
+                           (string= name "CLAUTOLISPCASEINSENSITIVEPATHS")))
               (let ((raw (%env getenv name)))
                 (when raw
                   (let ((value (%coerce-env-sysvar-value kind raw)))
