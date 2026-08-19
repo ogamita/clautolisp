@@ -25,6 +25,30 @@
 stages:
   - test
 
+# EVERY job here is interruptible, so a superseded child pipeline can be
+# auto-cancelled instead of living for ever
+# (ci-native-child-pipeline-creation-fails.issue).
+#
+# The jobs of this child are `manual' whenever their runner is offline, so
+# the child NEVER completes on its own: it stays ACTIVE, and its jobs keep
+# counting against the project's jobs-in-active-pipelines cap. One immortal
+# pipeline per push. On 2026-08-19 that cap was reached -- 17 children still
+# `running', the oldest seven hours old -- and NO new child could be created,
+# which made every pipeline red with zero failed jobs.
+#
+# GitLab only auto-cancels a superseded pipeline when its pending/running
+# jobs are ALL interruptible; a single job without it pins the pipeline.
+# Three jobs below already declared it individually, which is exactly the
+# half-measure that does nothing: the other twenty-three held the pipeline
+# open. Declared here so it applies to every job, including the ones added
+# next.
+#
+# On a release tag this changes nothing in practice: auto-cancel only fires
+# when a NEWER pipeline supersedes one on the same ref, and a release tag is
+# not re-pushed.
+default:
+  interruptible: true
+
 # --- gate templates --------------------------------------------------------
 # *-hard : jobs that were release-mandatory (test:*, verify:*) -> on a
 #          release tag they are on_success and BLOCK the release

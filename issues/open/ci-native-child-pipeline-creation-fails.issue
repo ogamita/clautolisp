@@ -128,6 +128,53 @@ keyword, and it makes the common case (a branch pushed repeatedly)
 self-cleaning. Option 2 alongside it would cover the abandoned refs that
 option 1 misses.
 
+* DONE — option 1 (2026-08-19, clautolisp 1.8.56)
+
+pjb: « Implémente l'option 1. »
+
+*The project setting was already =enabled=.* =auto_cancel_pending_pipelines=
+has been on all along — including through the whole day the 17 children
+accumulated. So the setting was never the missing half, and saying "turn
+on auto-cancel" would have changed nothing.
+
+What was missing is the other half, and it explains why the setting was
+inert: *GitLab auto-cancels a superseded pipeline only when ALL its
+pending/running jobs are interruptible*, and a single job without the
+keyword pins the whole pipeline. Three of the child's twenty-six jobs
+declared =interruptible: true= individually — which is the exact shape of
+half-measure that achieves nothing, because the other twenty-three held
+the pipeline open regardless.
+
+=.gitlab/native.yml= now declares it once, for every job:
+
+: default:
+:   interruptible: true
+
+Both configs re-validated through =POST /ci/lint= (the child as a
+standalone config) and =glab ci lint= (the parent).
+
+On a release tag this changes nothing in practice: auto-cancel fires only
+when a NEWER pipeline supersedes one on the same ref, and a release tag
+is not re-pushed.
+
+** What this does not cover, and how it will be known
+
+Auto-cancel needs a SUPERSEDING pipeline. A ref pushed once and then
+abandoned — a branch whose merge request is merged from the last push,
+say — leaves its child with nothing to supersede it, and that child still
+lives for ever. That is the gap option 2 (a scheduled sweep) exists for,
+and it is not implemented here.
+
+And the mechanism itself is only verifiable by watching: the next few
+pushes to a branch should leave exactly ONE active child per ref instead
+of one per push. Worth checking with
+
+: GET /projects/:id/pipelines?source=parent_pipeline
+
+— which is the query that matters, and the one that misled the first
+diagnosis: the plain pipelines listing EXCLUDES child pipelines, so
+"0 running pipelines" was reported while seventeen children were running.
+
 * Affected merge requests
 
 MR !107 was merged through the API rather than =glab= for this reason,
