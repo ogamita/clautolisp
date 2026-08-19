@@ -477,7 +477,15 @@ documentation:
     # and it needs fontconfig + the doc fonts to answer, which is why the
     # before_script installs them (tex-pdf-characters.issue).
     - make check-doc-glyph-coverage
-    - make release-documentation      # build-documentation + package the share/doc tarball
+    # SPEC_PAGED_TARGETS omits `info' HERE ONLY. The spec's Info export
+    # is 51 minutes of this job -- 94% of it -- because ox-texinfo is
+    # super-linear in the size of one file and the spec is 95000 lines,
+    # and every merge request that edits the spec pays it, the cache
+    # being keyed on the spec (doc-build-info-export-quadratic.issue).
+    # The Info manual is a RELEASE product; what a merge request needs
+    # checked is the HTML and the PDFs, both still built here.
+    # release:documentation keeps the default and builds it.
+    - make release-documentation SPEC_PAGED_TARGETS="pages html"
   artifacts:
     name: "clautolisp-documentation-$CI_COMMIT_SHORT_SHA"
     paths: [dist/]
@@ -577,6 +585,13 @@ release:documentation:
     - command -v emacs makeinfo xelatex dot >/dev/null
   script:
     - make release-documentation
+    # The Info manual is built HERE and nowhere else: the
+    # merge-request lane skips it (see the documentation job). Its
+    # install step is guarded by `if [ -f ]', so a build that quietly
+    # failed to produce it would ship a documentation artefact without
+    # it and say nothing. This is the lane that publishes it, so it
+    # asserts instead of hoping.
+    - 'test -f autolisp-spec/build/info/autolisp-spec.info || { echo "ERROR - the Info manual was not built, and this is the lane that publishes it."; exit 1; }'
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-documentation"
     paths: [dist/]
