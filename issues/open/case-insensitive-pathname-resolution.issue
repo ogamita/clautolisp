@@ -128,6 +128,25 @@ Un programme peut donc l'activer pour lui-même :
 
 et un harnais de test l'activer pour tout un corpus sans le modifier.
 
+Initialisation depuis l'environnement
+--------------------------------------
+
+Une variable d'environnement donne sa valeur initiale au sysvar, 0 à
+défaut :
+
+    CLAUTOLISP_CASE_INSENSITIVE_PATHS=1 clautolisp …
+
+C'est ce qui permet de traiter un corpus entier sans y toucher — un job
+de CI, un lot de fichiers hérités — là où le `setvar` demande d'avoir la
+main sur le code chargé.
+
+NOTE DE NOMMAGE, à trancher avant l'implémentation : la demande écrivait
+`CLAUTOLISP_CASE_INSENSITVE_PATHS`, sans le second « i » d'INSENSITIVE.
+Le nom retenu ci-dessus est l'orthographe complète, cohérente avec le
+sysvar `CLAUTOLISPCASEINSENSITIVEPATHS`. Un nom d'interface se corrige mal
+une fois publié : mieux vaut acter le choix ici que le découvrir plus
+tard dans deux graphies.
+
 Coût
 ----
 
