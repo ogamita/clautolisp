@@ -60116,22 +60116,47 @@ without it the sysvar would only hide the problem.
 - vl-directory-files, vl-mkdir
 
 *** Compatibility
-clautolisp extension; absent on AutoCAD and BricsCAD, where the question
-does not arise — their filesystems fold case already, which is precisely
-why a corpus developed there arrives with its path spellings unchecked.
+clautolisp extension; the vendors have no such system variable.
+
+*Present under every dialect except ~--strict~*, and read/write in all of
+them. That includes the emulation dialects, where a vendor's ~getvar~
+would not know the name — accepted deliberately, since the vendors' own
+system-variable lists already differ from one another. It matters because
+a ~--bricscad~ / ~--autocad~ run is how a corpus WRITTEN FOR WINDOWS is
+exercised, and that corpus is the one whose path spellings nobody ever
+checked: registering the variable only under ~--clautolisp~ put it
+exactly where it was least needed, and left ~setvar~ and the environment
+with no purchase where the need actually arises.
+
+~--strict~ is the exception, and for its own reason: its job is to report
+what a portable engine would refuse, and a path whose case does not match
+the disk is precisely that.
+
 Seedable from the environment variable of the same name (precedence
 ~setvar~ > env > default), so a whole corpus or a CI job can be treated
-without editing a line of it.
+without editing a line of it — including under an emulation dialect:
 
-The default is ~0~ for a security reason, not out of caution: at ~1~ a
-program reaches files an exact spelling would not have reached, so a
-program building a path from user input has a wider surface. Switching it
-on is a deliberate act of the program or of the test harness.
+: CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp --dialect bricscad-v26 …
+
+The default is ~0~ EVERYWHERE, emulation dialects included, and that is a
+decision rather than an omission. One could argue that a dialect emulating
+Windows should fold case by default, since Windows filesystems do — but
+BricsCAD on Linux is not believed to fold case on a case-sensitive
+filesystem, so folding by default would be clautolisp's own invention
+rather than fidelity to the emulated engine. It stays an explicit request.
+
+There is also a security reason for the default, independent of dialect:
+at ~1~ a program reaches files an exact spelling would not have reached,
+so a program building a path from user input has a wider surface.
 
 *** Source Notes
 - No vendor reference. Requested from SCHMS+ after a failure that
   appeared only under Linux; specified and implemented per
   ~issues/open/case-insensitive-pathname-resolution.issue~ in 1.8.52.
+- Widened to every dialect but ~--strict~ in 1.8.56, per
+  ~issues/closed/case-insensitive-paths-ignored-in-cad-dialects.issue~:
+  SCHMS+ runs its suites under ~--dialect bricscad-v26~, to exercise the
+  code as it will run, and there the variable did not exist at all.
 
 #+LATEX: \newpage
 

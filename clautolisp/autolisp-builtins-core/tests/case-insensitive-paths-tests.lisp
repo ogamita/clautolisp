@@ -274,3 +274,88 @@ would prove nothing here")))
         (format s "later~%"))
       (is (%findfile (concatenate 'string dir "later.txt"))
           "a file created after the directory was cached must still be found"))))
+
+;;; --- which dialects carry the sysvar ---------------------------------
+;;;
+;;; case-insensitive-paths-ignored-in-cad-dialects.issue. The feature was
+;;; registered under the clautolisp dialect only, which put it exactly
+;;; where it was LEAST needed: a --bricscad / --autocad run is how a
+;;; corpus written for Windows is exercised, and that corpus is the one
+;;; whose path spellings nobody ever checked. Under those dialects the
+;;; sysvar did not exist, so neither setvar nor the environment had any
+;;; purchase -- SCHMS+ set it to 1 under --dialect bricscad-v26 and
+;;; nothing changed.
+
+(defun %dialect-host (dialect &optional getenv)
+  "A fresh MockHost with DIALECT's sysvar defaults applied."
+  (let ((mock (clautolisp.cador:make-cador)))
+    (if getenv
+        (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
+         mock dialect :getenv getenv)
+        (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
+         mock dialect))
+    mock))
+
+(defun %case-sysvar-present-p (host)
+  (not (null (ignore-errors
+              (clautolisp.autolisp-host:host-getvar
+               host "CLAUTOLISPCASEINSENSITIVEPATHS")))))
+
+(test case-insensitive-paths-sysvar-exists-in-every-dialect-but-strict
+  "The emulation dialects are where the need arises, so the cell has to be
+there for setvar and the environment to reach."
+  (dolist (dialect '(:clautolisp :lax :autocad-2026 :bricscad-v26))
+    (is (%case-sysvar-present-p (%dialect-host dialect))
+        "CLAUTOLISPCASEINSENSITIVEPATHS should exist under ~S" dialect)))
+
+(test case-insensitive-paths-sysvar-absent-in-strict
+  "--strict exists to report what a portable engine would refuse, and a
+path whose case does not match the disk is exactly that."
+  (is (not (%case-sysvar-present-p (%dialect-host :strict)))))
+
+(test case-insensitive-paths-default-stays-off-in-cad-dialects
+  "pjb's ruling, and not an oversight: BricsCAD on Linux is not believed
+to fold case on a case-sensitive filesystem, so folding by default would
+be OUR invention rather than fidelity to the emulated engine."
+  (dolist (dialect '(:autocad-2026 :bricscad-v26 :lax))
+    (is (eql 0 (clautolisp.autolisp-builtins-core::%host-sysvar-integer
+                (%dialect-host dialect) "CLAUTOLISPCASEINSENSITIVEPATHS"))
+        "~S should default to 0" dialect)))
+
+(test case-insensitive-paths-environment-reaches-the-cad-dialects
+  "The exact invocation from the incident:
+   CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp --dialect bricscad-v26"
+  (dolist (dialect '(:bricscad-v26 :autocad-2026 :lax))
+    (let ((host (%dialect-host
+                 dialect
+                 (lambda (name)
+                   (when (string= name "CLAUTOLISPCASEINSENSITIVEPATHS")
+                     "1")))))
+      (is (eql 1 (clautolisp.autolisp-builtins-core::%host-sysvar-integer
+                  host "CLAUTOLISPCASEINSENSITIVEPATHS"))
+          "the environment should reach ~S" dialect))))
+
+(test case-insensitive-paths-environment-does-not-reach-strict
+  (let ((host (%dialect-host
+               :strict
+               (lambda (name)
+                 (when (string= name "CLAUTOLISPCASEINSENSITIVEPATHS") "1")))))
+    (is (not (%case-sysvar-present-p host)))))
+
+(test case-insensitive-paths-resolution-works-under-a-cad-dialect
+  "The behaviour, not just the cell: the resolver reads the sysvar off the
+host, so a bricscad-dialect session with it set must fold the case -- the
+thing the issue reported as not happening."
+  (let ((dir (%case-tree)))
+    (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+    (let* ((session (clautolisp.autolisp-runtime:evaluation-context-session
+                     (clautolisp.autolisp-runtime:current-evaluation-context)))
+           (mock (%dialect-host :bricscad-v26)))
+      (clautolisp.autolisp-host:host-setvar
+       mock "CLAUTOLISPCASEINSENSITIVEPATHS" 1)
+      (setf (clautolisp.autolisp-runtime.internal::runtime-session-host session)
+            mock)
+      (clautolisp.autolisp-builtins-core::clear-path-case-directory-cache))
+    (%when-case-sensitive (dir)
+      (is (%findfile (concatenate 'string dir "dial/sigfic.lsp"))
+          "a bricscad-dialect session with the sysvar at 1 must fold"))))

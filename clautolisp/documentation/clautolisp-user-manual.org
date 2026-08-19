@@ -1217,7 +1217,8 @@ correct a wrong guess — but it is not its purpose.
   whose case does not match the disk/. It carries the sysvar's exact
   name, with no underscores — that is how the variables that seed a
   system variable are spelled here, as against clautolisp's own
-  ~$CLAUTOLISP_*~ knobs.
+  ~$CLAUTOLISP_*~ knobs. Honoured under every dialect but ~--strict~,
+  the CAD emulation dialects included.
 - ~$AUTOLISP_NO_INIT~, ~$CLAUTOLISP_NO_INIT~ :: equivalent to
   ~-norc~ / ~--no-init~.
 - ~$NO_COLOR~ :: disable ANSI colour ([[https://no-color.org][no-color.org]]).
@@ -1459,6 +1460,32 @@ It applies everywhere a path goes in: ~load~, ~open~, ~findfile~, the
 ~vl-file-*~ functions, ~vl-directory-files~ and ~vl-mkdir~. A uniform
 rule, so behaviour does not depend on which function you happened to
 call.
+
+** It works under the CAD dialects too
+The system variable exists under *every dialect except ~--strict~*, so
+this works:
+
+#+begin_example
+$ CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp --dialect bricscad-v26 run.lsp
+#+end_example
+
+That is the case that matters most, and it is why the variable is not
+reserved to ~--clautolisp~: you run a corpus under ~--bricscad~ or
+~--autocad~ to exercise it as it will actually run, and a corpus written
+for Windows is exactly the one whose path spellings have never been
+checked by anything.
+
+~--strict~ is the exception. It exists to report what a portable engine
+would refuse, and a path whose case does not match the disk is precisely
+that — so there, the variable does not exist and nothing is folded.
+
+*The default stays ~0~ under the CAD dialects as well*, and that is
+deliberate. One could argue that emulating Windows should mean folding
+case by default, since Windows filesystems do; but BricsCAD on Linux is
+not believed to fold case on a case-sensitive filesystem, so folding by
+default would be clautolisp inventing behaviour rather than reproducing
+the engine it emulates. You ask for it, explicitly, or it does not
+happen.
 
 ** What it returns is the real name
 ~findfile~ hands back the name *on disk*, not the one you asked with.

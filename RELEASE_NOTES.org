@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.8.55 / alfe 1.8.4 /
+master at the top of the file (clautolisp 1.8.56 / alfe 1.8.4 /
 read-autolisp 1.8.0). For the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
@@ -69,6 +69,15 @@ separate binary for tool integrators.
   the real spelling whenever one was folded, so the run proceeds *and*
   the wrong path is reported rather than hidden. Off by default: at 1 a
   program reaches files an exact spelling would not have.
+  It works under the CAD dialects too: the system variable exists under
+  every dialect but ~--strict~, which is what makes
+  ~CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp --dialect bricscad-v26~
+  effective — and that is the case that matters, since a corpus is run
+  under an emulation dialect precisely to exercise it as it will run.
+  The default stays ~0~ there too: BricsCAD on Linux is not believed to
+  fold case on a case-sensitive filesystem, so folding by default would
+  be clautolisp inventing behaviour rather than reproducing the engine it
+  emulates.
   See § /Paths whose case does not match the disk/.
 
 ** Standalone CLI (clautolisp-sbcl / clautolisp-ccl)

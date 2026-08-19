@@ -1,10 +1,10 @@
 # -*- mode:org;coding:utf-8 -*-
 #+TITLE: case-insensitive-paths-ignored-in-cad-dialects — le sysvar n'agit que sous le dialecte clautolisp
-#+STATUS: OPEN
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: case-insensitive-pathname-resolution
-#+BRANCH: -
+#+BRANCH: fix-case-paths-all-dialects
 
 case-insensitive-paths-ignored-in-cad-dialects
 ==============================================
@@ -131,3 +131,65 @@ express de l'utilisateur.
 D'autre part, je pense qu'on peut laisser la sysvar en RW même sur les
 autres dialects que clautolisp. Il y a déjà des différences dans les
 listes de sysvar entre autocad et bricscad.
+
+
+DONE — 2026-08-19 (clautolisp 1.8.56)
+=====================================
+
+Implemented as DECIDED above, not as either variant of the request: the
+sysvar exists under EVERY dialect but `strict`, its default stays 0
+everywhere, and it is read/write in all of them.
+
+Ce qui a change
+---------------
+
+`apply-dialect-trust-sysvar-defaults` enregistrait
+CLAUTOLISPCASEINSENSITIVEPATHS sous le seul dialecte clautolisp. Il le
+fait maintenant sauf sous `strict`, et l'amorcage par la variable
+d'environnement suit la meme regle — une variable ne peut semer que dans
+un sysvar qui EXISTE, sinon elle ecrirait une cellule que personne ne
+lit. C'est precisement ce qui se passait :
+
+    CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp --dialect bricscad-v26 …
+
+n'avait aucune prise. Elle en a maintenant.
+
+Le comportement suit sans autre changement : le resolveur lit le sysvar
+sur l'hote a chaque appel, donc des que la cellule existe et vaut 1, le
+pliage s'applique. L'avertissement `[path-case]` est emis comme ailleurs
+— le test l'observe sous le dialecte bricscad, ce qui verifie la
+condition que le ticket posait : la tolerance ne devient pas un silence.
+
+Le defaut reste 0, y compris sous les dialectes d'emulation
+------------------------------------------------------------
+
+C'est la partie qui merite d'etre relue plus tard, parce qu'elle
+contredit l'intuition du ticket lui-meme (« plier la casse y est la
+fidelite »). La raison, ta decision : BricsCAD sous Linux n'est pas
+repute plier la casse sur un systeme de fichiers sensible a la casse.
+Plier par defaut serait donc une invention de clautolisp plutot qu'une
+fidelite au moteur emule. L'utilisateur demande, ou rien ne se produit.
+
+`strict` est la seule exception, et pour sa propre raison : son role est
+de signaler ce qu'un moteur portable refuserait, et un chemin dont la
+casse ne correspond pas au disque en fait partie.
+
+Verification
+------------
+
+Six tests, dont un qui exerce le COMPORTEMENT et pas seulement la
+presence de la cellule : une session en dialecte bricscad-v26, sysvar a
+1, retrouve `dial/sigfic.lsp` sous `DIAL/SIGFIC.LSP` et emet
+`[path-case]`. Les autres couvrent la presence sous clautolisp / lax /
+autocad / bricscad, l'absence sous strict, le defaut a 0 dans les
+dialectes CAO, l'amorcage par l'environnement dans ces memes dialectes,
+et son inefficacite sous strict.
+
+Verifie dans les deux sens : en remettant l'ancien gardien
+(`when clautolisp-p`), quatre de ces tests echouent. Suite complete
+verte (1948 verifications).
+
+Documentation : l'entree de sysvar de la spec disait « Honoured only
+under the :clautolisp dialect » — corrige, avec la raison du defaut a 0 ;
+le manuel utilisateur gagne une section « It works under the CAD dialects
+too » avec l'invocation exacte de l'incident.
