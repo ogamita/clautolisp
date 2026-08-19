@@ -343,20 +343,27 @@ disrupting the value-returning shape of the call site."
                 '(".vlx" ".fas" ".lsp")))))
 
 (defun resolve-load-pathname (filename)
+  ;; The extension candidates and the support-path walk are unchanged;
+  ;; each candidate is simply resolved through the case-folding walk
+  ;; first, which is the identity when CLAUTOLISPCASEINSENSITIVEPATHS is
+  ;; 0 and, when it is 1, is what lets a corpus written on a
+  ;; case-insensitive filesystem load here at all
+  ;; (case-insensitive-pathname-resolution.issue).
   (let ((normalized (normalize-path-string filename)))
     (cond
       ((directory-prefix-p normalized)
        (dolist (candidate (load-candidate-paths normalized) nil)
-         (let ((resolved (resolve-open-pathname candidate)))
+         (let ((resolved (resolve-open-pathname candidate "LOAD")))
            (when (probe-file resolved)
              (return resolved)))))
       (t
        (dolist (candidate (load-candidate-paths normalized) nil)
-         (let ((direct (probe-file (resolve-open-pathname candidate))))
+         (let ((direct (probe-file (resolve-open-pathname candidate "LOAD"))))
            (when direct
              (return direct)))
          (let ((located (search-path-list-for-file candidate
-                                                   (%effective-support-dirs))))
+                                                   (%effective-support-dirs)
+                                                   "LOAD")))
            (when located
              (return (pathname located)))))))))
 
@@ -1353,52 +1360,298 @@ when no debug session is active (the hook declines)."
   (handler-case (clautolisp.pathname-mapping:map-out-namestring string)
     (clautolisp.pathname-mapping:unmappable-path () string)))
 
-(defun resolve-open-pathname (string)
+;;; --- Case-insensitive path resolution ------------------------------
+;;;
+;;; case-insensitive-pathname-resolution.issue. An AutoLISP corpus
+;;; written on Windows and macOS has never had its path spellings
+;;; checked, because those filesystems are case-insensitive and nothing
+;;; there sanctions a mismatch. The same corpus fails on Linux, and the
+;;; failure can come from a path nobody wrote as a literal -- in the
+;;; incident behind this feature the path was derived from a CLASS NAME,
+;;; whose case is a naming convention unrelated to the disk. No code
+;;; review would have caught it.
+;;;
+;;; With CLAUTOLISPCASEINSENSITIVEPATHS at 1, every incoming path is
+;;; walked against the filesystem and returned under its REAL name.
+;;; Normalising matters as much as finding: what FINDFILE hands back is
+;;; stored and reused, so returning the name as written would fail on the
+;;; next round.
+;;;
+;;; Default 0. This widens what a program can reach -- the request's own
+;;; "/ETC/PASSWD" example is also its warning -- so switching it on is a
+;;; deliberate act by the program or the harness, never the default.
+
+(defvar *path-case-directory-cache* (make-hash-table :test #'equal)
+  "Directory listing cache for the case-folding walk, keyed by directory
+namestring. Without it, a LOAD loop over a deep tree would re-read every
+parent directory for every component. Populated only on a miss -- an
+exact match short-circuits and never lists anything, which is the common
+case -- and self-healing: %PATH-CASE-MATCH re-reads a directory once
+before concluding a component is absent, so a file created earlier in the
+same run cannot be hidden by a stale entry.")
+
+(defun clear-path-case-directory-cache ()
+  "Forget every cached directory listing. For tests, and for a caller
+that has just changed a tree out from under the cache."
+  (clrhash *path-case-directory-cache*)
+  nil)
+
+(defun %case-insensitive-paths-enabled-p ()
+  "True when CLAUTOLISPCASEINSENSITIVEPATHS is non-zero. Reads the sysvar
+on every call, so (setvar \"CLAUTOLISPCASEINSENSITIVEPATHS\" 1) takes
+effect immediately, as a sysvar should. 0 in a host-less context."
+  (plusp (%host-sysvar-integer (ignore-errors (current-evaluation-host))
+                               "CLAUTOLISPCASEINSENSITIVEPATHS" 0)))
+
+(defun %path-case-entry-names (directory)
+  "The names of the entries directly under DIRECTORY, files and
+subdirectories alike. NIL when it cannot be read -- an unreadable
+directory makes the walk fail to find, never signal."
+  (handler-case
+      (append
+       (mapcar #'file-namestring (uiop:directory-files directory))
+       (mapcar (lambda (sub)
+                 (let ((last (car (last (pathname-directory
+                                         (uiop:ensure-directory-pathname sub))))))
+                   (if (stringp last) last (string last))))
+               (uiop:subdirectories directory)))
+    (error () nil)))
+
+(defun %path-case-directory-entries (directory &key refresh)
+  "%PATH-CASE-ENTRY-NAMES through *PATH-CASE-DIRECTORY-CACHE*."
+  (let ((key (namestring (uiop:ensure-directory-pathname directory))))
+    (when refresh (remhash key *path-case-directory-cache*))
+    (multiple-value-bind (cached hit) (gethash key *path-case-directory-cache*)
+      (if hit
+          cached
+          (setf (gethash key *path-case-directory-cache*)
+                (%path-case-entry-names
+                 (uiop:ensure-directory-pathname directory)))))))
+
+(defun %signal-ambiguous-path-case (who written directory candidates)
+  "Refuse to choose between several entries of DIRECTORY that differ from
+the written component only by case.
+
+The request asks for this explicitly, and it is right: on a
+case-sensitive filesystem `dial/' and `DIAL/' can coexist, so picking one
+silently would be worse than the failure this feature exists to remove --
+the program would read a file nobody named. The error NAMES the
+candidates, because the only useful thing to say here is which spellings
+exist."
+  (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+   :ambiguous-path-case
+   "~A ~S: ~D entries of ~S differ only by case (~{~S~^, ~}); ~
+CLAUTOLISPCASEINSENSITIVEPATHS will not choose between them."
+   (or who "path resolution") written (length candidates)
+   (namestring directory) candidates))
+
+(defun %path-case-match (directory component who written)
+  "The one entry of DIRECTORY equal to COMPONENT ignoring case, or NIL
+when there is none. Signals when more than one matches. Never called for
+a component that matched exactly -- an exact match wins before any
+directory is listed."
+  (flet ((matching (entries)
+           (remove-if-not (lambda (entry) (string-equal entry component))
+                          entries)))
+    (let ((found (matching (%path-case-directory-entries directory))))
+      (when (null found)
+        ;; A miss can be a stale listing -- a file this same run created
+        ;; after the directory was cached. Re-read once before concluding.
+        (setf found (matching (%path-case-directory-entries directory
+                                                            :refresh t))))
+      (cond
+        ((null found) nil)
+        ((null (cdr found)) (first found))
+        (t (%signal-ambiguous-path-case who written directory
+                                        (sort (copy-list found) #'string<)))))))
+
+(defun %path-case-root-and-components (namestring)
+  "Split an absolute normalized NAMESTRING into its root prefix (which is
+never folded) and the components to walk."
+  (flet ((parts (string)
+           (remove "" (uiop:split-string string :separator "/")
+                   :test #'string=)))
+    (if (and (>= (length namestring) 3)
+             (alpha-char-p (char namestring 0))
+             (char= #\: (char namestring 1))
+             (char= #\/ (char namestring 2)))
+        (values (subseq namestring 0 3) (parts (subseq namestring 3)))
+        (values "/" (parts namestring)))))
+
+(defun %path-case-exists-p (namestring)
+  (or (uiop:file-exists-p namestring)
+      (uiop:directory-exists-p (uiop:ensure-directory-pathname namestring))))
+
+(defun %resolve-path-case (namestring who leaf)
+  "Walk the absolute NAMESTRING component by component against the
+filesystem, returning (VALUES REAL-NAMESTRING FOLDED-P), or (VALUES NIL
+NIL) when some component has no match at all.
+
+Per component, in the order the request specifies:
+  1. an exact match wins, without listing the directory at all;
+  2. otherwise a UNIQUE case-insensitive match is taken;
+  3. otherwise the ambiguity is an error naming the candidates.
+
+LEAF says what to do with the LAST component, which is the delicate part:
+
+  :must-exist     resolve it like any other -- the file has to be there.
+  :as-written     take it verbatim. This is CREATION: (open \"Rapport.txt\"
+                  \"w\") must create Rapport.txt and must NOT fall back
+                  onto a pre-existing RAPPORT.TXT, which would overwrite a
+                  file the author never named. The DIRECTORIES leading to
+                  it are still folded, so creating into DIAL/ when the disk
+                  says dial/ works.
+  :prefer-existing  fold if it resolves, take it as written if not. This
+                  is APPEND, the mixed case the request asks to decide
+                  explicitly: \"a\" means add to that file if it is there,
+                  create it otherwise, so it reads like a read when the
+                  file exists and like a creation when it does not."
+  (multiple-value-bind (root components)
+      (%path-case-root-and-components namestring)
+    (let ((current root)
+          (folded nil)
+          (count (length components)))
+      (loop for component in components
+            for index from 1
+            for lastp = (= index count)
+            do (let ((candidate (concatenate 'string current component)))
+                 (cond
+                   ((and lastp (eq leaf :as-written))
+                    (setf current candidate))
+                   ((%path-case-exists-p candidate)
+                    (setf current candidate))
+                   (t
+                    (let ((match (%path-case-match current component who
+                                                   namestring)))
+                      (cond
+                        (match
+                         (setf current (concatenate 'string current match)
+                               folded t))
+                        ((and lastp (eq leaf :prefer-existing))
+                         (setf current candidate))
+                        (t
+                         (return-from %resolve-path-case (values nil nil)))))))
+                 (unless lastp
+                   (setf current (concatenate 'string current "/")))))
+      (values current folded))))
+
+(defun %fold-path-case (namestring who &optional (leaf :must-exist))
+  "NAMESTRING resolved against the filesystem without regard to case, or
+NAMESTRING itself when the sysvar is off or nothing matches.
+
+Returning the input unchanged on a miss is deliberate: the caller then
+fails exactly as it did before, with its own diagnostic. This function
+adds a way to succeed; it never changes how things fail.
+
+Emits `[path-case]' when — and only when — a fold actually happened."
+  (if (not (%case-insensitive-paths-enabled-p))
+      namestring
+      (multiple-value-bind (resolved folded)
+          (%resolve-path-case namestring who leaf)
+        (cond
+          ((null resolved) namestring)
+          (folded
+           (clautolisp.autolisp-runtime:emit-path-case-portability-warning
+            namestring resolved (or who "PATH"))
+           resolved)
+          (t resolved)))))
+
+(defun %fold-pathname-case (pathname who &optional (leaf :must-exist))
+  "%FOLD-PATH-CASE over a PATHNAME, returning a pathname. The walk needs
+an absolute namestring, so a pathname that is not absolute is handed back
+untouched -- every caller here has already merged with the current
+directory."
+  (if (and (%case-insensitive-paths-enabled-p)
+           (uiop:absolute-pathname-p pathname))
+      (let* ((directoryp (null (pathname-name pathname)))
+             (string (namestring pathname))
+             (trimmed (if (and directoryp (> (length string) 1)
+                               (char= #\/ (char string (1- (length string)))))
+                          (subseq string 0 (1- (length string)))
+                          string))
+             (folded (%fold-path-case trimmed who leaf)))
+        (if (eq folded trimmed)
+            pathname
+            (if directoryp
+                (uiop:ensure-directory-pathname folded)
+                (pathname folded))))
+      pathname))
+
+(defun resolve-open-pathname (string &optional who (leaf :must-exist))
   ;; MAP-IN the user/run-frame string to the physical string the host CL
   ;; can open (clautolisp-windows-pathname-mapping spec §4.3).  On
   ;; macOS/Linux this is the identity mapping, so NORMALIZED is unchanged.
+  ;;
+  ;; LEAF is passed through to the case-folding walk: the builtins that
+  ;; CREATE through this function (vl-mkdir, the destination of
+  ;; vl-file-copy, the new name of vl-file-rename) pass :as-written so the
+  ;; name they were given is the name that appears on disk.
   (let ((normalized (%map-in-safe (normalize-path-string string))))
-    (if (absolute-path-string-p normalized)
-        (pathname normalized)
-        (merge-pathnames normalized
-                         (pathname (autolisp-current-directory))))))
+    (%fold-pathname-case
+     (if (absolute-path-string-p normalized)
+         (pathname normalized)
+         (merge-pathnames normalized
+                          (pathname (autolisp-current-directory))))
+     who leaf)))
 
-(defun resolve-open-search-pathname (string)
+(defun resolve-open-search-pathname (string &optional who (leaf :must-exist))
   "Resolve STRING for OPEN. An absolute name is used directly. A relative
 name is first searched through the effective support dirs (so OPEN
 honours the support search path like LOAD); when no existing file
 matches — e.g. creating a new file for write — it falls back to the
 current directory. With the default support path (the cwd) this is
-identical to a plain cwd merge."
+identical to a plain cwd merge.
+
+LEAF carries OPEN's mode into the case-folding walk: \"r\" resolves the
+leaf, \"w\" takes it as written, \"a\" prefers an existing one. See
+%RESOLVE-PATH-CASE."
   (let ((normalized (normalize-path-string string)))
     (cond
-      ((absolute-path-string-p normalized) (pathname normalized))
+      ((absolute-path-string-p normalized)
+       (%fold-pathname-case (pathname normalized) who leaf))
       (t
        (let ((located (search-path-list-for-file normalized
-                                                 (%effective-support-dirs))))
+                                                 (%effective-support-dirs)
+                                                 who)))
          (if located
              (pathname located)
-             (merge-pathnames normalized
-                              (pathname (autolisp-current-directory)))))))))
+             (%fold-pathname-case
+              (merge-pathnames normalized
+                               (pathname (autolisp-current-directory)))
+              who leaf)))))))
 
-(defun search-path-list-for-file (filename directories)
+(defun search-path-list-for-file (filename directories &optional who)
+  ;; Each support directory is tried exactly as before; the case-folding
+  ;; walk only runs on the ones a strict probe missed, so a corpus whose
+  ;; spellings are right pays nothing and the search order is unchanged.
   (let ((normalized (normalize-path-string filename)))
     (unless (directory-prefix-p normalized)
       (dolist (directory directories nil)
         (let* ((base (pathname directory))
                (candidate (merge-pathnames normalized base))
                (located (probe-file candidate)))
+          (when (and (null located) (%case-insensitive-paths-enabled-p))
+            (let ((folded (%fold-pathname-case candidate who :must-exist)))
+              (unless (equal folded candidate)
+                (setf located (probe-file folded)))))
           (when located
             (return (namestring located))))))))
 
-(defun resolve-directory-pathname (directory-string operator-name)
+(defun resolve-directory-pathname (directory-string operator-name
+                                   &optional (leaf :must-exist))
+  ;; LEAF is :as-written for VL-MKDIR: (vl-mkdir "newdir") beside an
+  ;; existing NEWDIR must create newdir, not quietly resolve onto the
+  ;; other one and report success for a directory it did not make.
   (let ((normalized (normalize-path-string directory-string)))
     (handler-case
-        (uiop:ensure-directory-pathname
-         (if (absolute-path-string-p normalized)
-             (pathname normalized)
-             (merge-pathnames normalized
-                              (pathname (autolisp-current-directory)))))
+        (%fold-pathname-case
+         (uiop:ensure-directory-pathname
+          (if (absolute-path-string-p normalized)
+              (pathname normalized)
+              (merge-pathnames normalized
+                               (pathname (autolisp-current-directory)))))
+         operator-name
+         leaf)
       (error ()
         (signal-builtin-argument-error
          :invalid-directory-argument
@@ -2226,6 +2479,19 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
            (:ccs-suffix            (extension "bricscad-ccs"))))
         (t nil)))))
 
+(defun %open-mode-leaf-policy (raw-mode-string)
+  "The %RESOLVE-PATH-CASE leaf policy for an OPEN mode string: :must-exist
+for read, :as-written for write, :prefer-existing for append. An
+unrecognised mode is treated as read, which is the conservative choice --
+it never creates under a folded name."
+  (let ((c (and (stringp raw-mode-string)
+                (plusp (length raw-mode-string))
+                (char-downcase (char raw-mode-string 0)))))
+    (case c
+      (#\w :as-written)
+      (#\a :prefer-existing)
+      (t    :must-exist))))
+
 (defun builtin-open (filename mode &optional encoding)
   ;; Documented to set ERRNO on failure (autolisp-spec §16 ERRNO
   ;; :coupled). Autodesk's enumerated code-set has no dedicated
@@ -2243,7 +2509,15 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
   ;; the encoding (user code stays runnable across dialects).
   (let* ((path-string (autolisp-string-value (require-string filename "OPEN")))
          (raw-mode-string (autolisp-string-value (require-string mode "OPEN")))
-         (path (resolve-open-search-pathname path-string))
+         ;; The mode decides how the case-folding walk treats the LAST
+         ;; component: "r" must find an existing file, "w" CREATES and so
+         ;; takes the name as written -- (open "Rapport.txt" "w") must not
+         ;; land on a pre-existing RAPPORT.TXT and overwrite a file the
+         ;; author never named -- and "a" is the mixed case the request
+         ;; asked to decide explicitly: append to that file if it is
+         ;; there, create it under the given name if it is not.
+         (path (resolve-open-search-pathname
+                path-string "OPEN" (%open-mode-leaf-policy raw-mode-string)))
          (encoding-string (when encoding
                             (autolisp-string-value
                              (require-string encoding "OPEN"))))
@@ -2319,6 +2593,12 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
   ;; and relative paths. Absolute paths are looked up directly via
   ;; probe-file; relative paths walk the configured support / trusted
   ;; path list.
+  ;; What FINDFILE returns is stored by the caller and used again later,
+  ;; so the case-folding walk has to NORMALISE, not merely locate: handing
+  ;; back the name as written would resolve once and fail on the next
+  ;; round (case-insensitive-pathname-resolution.issue). PROBE-FILE
+  ;; already returns the real name, so the fold only has to get us to a
+  ;; path that probes.
   (let ((normalized (%map-in-safe (normalize-path-string filename))))
     (cond
       ((directory-prefix-p normalized)
@@ -2327,9 +2607,13 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
                         (merge-pathnames normalized
                                          (pathname (autolisp-current-directory)))))
               (located (probe-file path)))
+         (when (and (null located) (%case-insensitive-paths-enabled-p))
+           (let ((folded (%fold-pathname-case path "FINDFILE" :must-exist)))
+             (unless (equal folded path)
+               (setf located (probe-file folded)))))
          (and located (namestring located))))
       (t
-       (search-path-list-for-file filename support-paths)))))
+       (search-path-list-for-file filename support-paths "FINDFILE")))))
 
 (defun builtin-findfile (filename)
   ;; FINDFILE searches the UNION of the support path and the trusted
@@ -2386,7 +2670,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
 (defun builtin-vl-file-directory-p (filename)
   (let* ((value (autolisp-string-value
                  (require-string filename "VL-FILE-DIRECTORY-P")))
-         (resolved (resolve-open-pathname value)))
+         (resolved (resolve-open-pathname value "VL-FILE-DIRECTORY-P")))
     (if (uiop:directory-exists-p resolved)
         (intern-autolisp-symbol "T")
         nil)))
@@ -2423,7 +2707,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
 (defun builtin-vl-file-delete (filename)
   (let* ((value (autolisp-string-value
                  (require-string filename "VL-FILE-DELETE")))
-         (resolved (resolve-open-pathname value)))
+         (resolved (resolve-open-pathname value "VL-FILE-DELETE")))
     (handler-case
         (progn
           (delete-file resolved)
@@ -2436,8 +2720,12 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
                      (require-string old-filename "VL-FILE-RENAME")))
          (new-value (autolisp-string-value
                      (require-string new-filename "VL-FILE-RENAME")))
-         (old-path (resolve-open-pathname old-value))
-         (new-path (resolve-open-pathname new-value)))
+         (old-path (resolve-open-pathname old-value "VL-FILE-RENAME"))
+         ;; The NEW name is taken as written: renaming onto a
+         ;; pre-existing entry that differs only by case would clobber a
+         ;; file the caller never named.
+         (new-path (resolve-open-pathname new-value "VL-FILE-RENAME"
+                                          :as-written)))
     (handler-case
         (if (probe-file new-path)
             nil
@@ -2450,7 +2738,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
 (defun builtin-vl-file-size (filename)
   (let* ((value (autolisp-string-value
                  (require-string filename "VL-FILE-SIZE")))
-         (resolved (resolve-open-pathname value)))
+         (resolved (resolve-open-pathname value "VL-FILE-SIZE")))
     (cond
       ((uiop:directory-exists-p resolved)
        0)
@@ -2525,7 +2813,7 @@ return ends in 0 -- and which is what pjb licensed for the shape fix.
   ;; the engines agree with each other, so the engines win.
   (let* ((value (autolisp-string-value
                  (require-string filename "VL-FILE-SYSTIME")))
-         (resolved (resolve-open-pathname value))
+         (resolved (resolve-open-pathname value "VL-FILE-SYSTIME"))
          (write-date (ignore-errors (file-write-date resolved)))
          (dialect-name (ignore-errors
                         (clautolisp.autolisp-reader:autolisp-dialect-name
@@ -2553,8 +2841,11 @@ return ends in 0 -- and which is what pjb licensed for the shape fix.
                         (require-string source-filename "VL-FILE-COPY")))
          (destination-value (autolisp-string-value
                              (require-string destination-filename "VL-FILE-COPY")))
-         (source-path (resolve-open-pathname source-value))
-         (destination-path (resolve-open-pathname destination-value)))
+         (source-path (resolve-open-pathname source-value "VL-FILE-COPY"))
+         ;; Destination as written, for the same reason as VL-FILE-RENAME.
+         (destination-path (resolve-open-pathname destination-value
+                                                  "VL-FILE-COPY"
+                                                  :as-written)))
     (cond
       ((or (uiop:directory-exists-p source-path)
            (not (probe-file source-path)))
@@ -2624,7 +2915,7 @@ return ends in 0 -- and which is what pjb licensed for the shape fix.
 (defun builtin-vl-mkdir (directoryname)
   (let* ((value (autolisp-string-value
                  (require-string directoryname "VL-MKDIR")))
-         (resolved (resolve-directory-pathname value "VL-MKDIR")))
+         (resolved (resolve-directory-pathname value "VL-MKDIR" :as-written)))
     (if (uiop:directory-exists-p resolved)
         nil
         (handler-case

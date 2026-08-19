@@ -1,10 +1,10 @@
 # -*- mode:org;coding:utf-8 -*-
 #+TITLE: case-insensitive-pathname-resolution — résoudre les chemins sans égard à la casse, et les normaliser
-#+STATUS: OPEN
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: enhancement
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: feature-case-insensitive-paths
 
 case-insensitive-pathname-resolution
 ====================================
@@ -197,3 +197,98 @@ CLAUTOLISPCASEINSENSITIVEPATHS=1 : l'exécution passe, et le développeur
 apprend qu'il a écrit un chemin qui n'aurait pas fonctionné sur un
 système strict. Sans lui, le sysvar ne ferait que glisser le problème
 sous le tapis.
+
+* Résolution (2026-08-19, clautolisp 1.8.52)
+
+Implémenté tel que spécifié. Les points que le ticket demandait de
+trancher l'ont été explicitement, et sont ci-dessous.
+
+** Ce qui a été fait
+
+Le sysvar =CLAUTOLISPCASEINSENSITIVEPATHS= (entier, défaut 0, dialecte
+clautolisp) est lu À CHAQUE APPEL, donc un =(setvar ... 1)= prend effet
+immédiatement, comme un sysvar le doit. Il est amorçable par la variable
+d'environnement de même nom.
+
+La marche se fait composant par composant, dans l'ordre du ticket :
+exacte d'abord — et elle ne liste MÊME PAS le répertoire, ce qui est la
+condition de coût que le ticket posait — puis unique à la casse près,
+puis erreur nommant les candidats. Le cache est par répertoire, comme
+demandé.
+
+Branché sur =load=, =open=, =findfile=, =findtrustedfile=, la marche du
+support-path, =vl-file-copy/delete/rename/size/systime=,
+=vl-file-directory-p=, =vl-directory-files= et =vl-mkdir=. =findfile=
+rend le nom RÉEL, et le test vérifie que ce nom se re-résout — c'est la
+propriété « stocké puis réutilisé » dont dépend l'usage réel.
+
+** LECTURE contre CRÉATION, et le cas mixte tranché
+
+Trois politiques de feuille, pas deux :
+
+- =:must-exist= — le chemin entier est résolu ;
+- =:as-written= — la feuille est prise telle quelle. C'est la CRÉATION.
+  Les répertoires qui y mènent restent résolus, donc écrire dans =dial/=
+  fonctionne quand le disque dit =DIAL/=, sans jamais écraser un
+  =RAPPORT.TXT= préexistant ;
+- =:prefer-existing= — replie si ça résout, prend tel quel sinon.
+
+Le mode ="a"= reçoit =:prefer-existing=, et voici le raisonnement, que le
+ticket demandait explicite : « ajouter » signifie /à ce fichier s'il
+existe, sinon le créer/. Il se lit donc comme une lecture quand le
+fichier est là et comme une création quand il ne l'est pas — c'est la
+seule politique qui honore les deux moitiés du sens de ="a"=. Un mode
+non reconnu retombe sur =:must-exist=, le choix conservateur : il ne crée
+jamais sous un nom replié.
+
+=vl-mkdir=, la destination de =vl-file-copy= et le nouveau nom de
+=vl-file-rename= passent également en =:as-written= — ce sont des
+créations, et s'y rabattre sur une entrée qui ne diffère que par la casse
+écraserait un fichier que l'appelant n'a pas nommé.
+
+** Le nom de la variable d'environnement
+
+Le ticket proposait =CLAUTOLISP_CASE_INSENSITIVE_PATHS=. Retenu :
+=CLAUTOLISPCASEINSENSITIVEPATHS=, sans soulignés (pjb, 2026-08-19).
+
+Le dépôt a DEUX familles, et la distinction est utile plutôt
+qu'accidentelle : les réglages propres au programme sont soulignés
+ (=CLAUTOLISP_ROOT=, =CLAUTOLISP_PREFIX=, =CLAUTOLISP_GUI=), tandis que
+les variables qui AMORCENT UN SYSVAR portent exactement le nom du sysvar
+ (=SECURELOAD=, =TRUSTEDPATHS=, =CLAUTOLISPSUPPORTFILESEARCHPATH=). Celle-ci
+amorce un sysvar : voir son nom, c'est savoir quel sysvar portera la
+valeur. Aucun mécanisme nouveau n'a donc été nécessaire — elle rejoint la
+table d'amorçage existante.
+
+** Hors portée, et pourquoi
+
+=(command "_.open" …)= et =getfiled= figuraient dans la liste du ticket et
+ne sont PAS traités : le premier passe par la couche commande de l'hôte
+CAO, le second par un sélecteur de fichiers, et aucun des deux ne passe
+par les résolveurs de chemin branchés ici. Les traiter demanderait
+d'entrer dans ces deux couches, ce qui est un travail distinct — signalé
+plutôt que passé sous silence.
+
+** Vérification
+
+12 tests, tous verts, dans la suite =autolisp-builtins-core= (1935
+vérifications à 100 %, aucune régression sur la suite complète).
+
+Le harnais DEMANDE AU SYSTÈME DE FICHIERS s'il distingue la casse, par
+répertoire de test, au lieu de nommer des systèmes d'exploitation : le
+ticket dit à juste titre que la fonctionnalité ne se valide pas sur macOS
+ni Windows, mais macOS peut être formaté sensible et un Linux peut monter
+l'inverse. Là où le système replie déjà, « trouvé sous une autre
+orthographe » est indiscernable de « trouvé », et le test passerait sans
+rien prouver — il assère alors la prémisse, de sorte qu'un test sauté dit
+POURQUOI il l'a été.
+
+Sont couverts : le défaut à 0, l'amorçage par l'environnement, le
+=setvar= à chaud, le fait qu'à 0 le chemin mal casé reste introuvable
+ (le comportement actuel ne change pas), le pliage multi-composants
+ (=a/B/c/DEEP.TXT= → =A/b/C/deep.txt=), le fait que la correspondance
+exacte n'émet rien, l'avertissement qui nomme l'orthographe réelle,
+l'ambiguïté qui nomme les deux candidats, la création qui préserve le nom
+écrit ET laisse intact le fichier préexistant, la création qui replie
+quand même les répertoires, et le cache qui ne cache pas un fichier créé
+dans la même exécution.

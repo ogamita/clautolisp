@@ -301,12 +301,21 @@ PATHS environment variable (applied by the caller, higher precedence)."
   '(("SECURELOAD" . :integer)
     ("TRUSTEDPATHS" . :string)
     ("CLAUTOLISPSUPPORTFILESEARCHPATH" . :string)
-    ("CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS" . :string))
-  "Trust-model sysvars seedable from an identically-named environment
-variable. Precedence is setvar > env var > dialect default (spec
-§ 'Environment-variable initialisation'). SECURELOAD parses as an
-integer; the rest are strings. The CLAUTOLISP* pair is seeded only
-under the clautolisp dialect, where the cells exist.")
+    ("CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS" . :string)
+    ("CLAUTOLISPCASEINSENSITIVEPATHS" . :integer))
+  "Sysvars seedable from an IDENTICALLY-NAMED environment variable.
+Precedence is setvar > env var > dialect default (spec
+§ 'Environment-variable initialisation'). SECURELOAD and
+CLAUTOLISPCASEINSENSITIVEPATHS parse as integers; the rest are strings.
+The CLAUTOLISP* entries are seeded only under the clautolisp dialect,
+where the cells exist.
+
+The name matches the sysvar exactly, with no underscores. That is the
+convention for every sysvar-seeding variable here, and it is what
+distinguishes them from clautolisp's own program-level variables
+ (CLAUTOLISP_ROOT, CLAUTOLISP_PREFIX, ...), which are underscored: seeing
+CLAUTOLISPCASEINSENSITIVEPATHS tells you a sysvar of that exact name is
+what will hold the value (pjb, 2026-08-19).")
 
 (defun %coerce-env-sysvar-value (kind raw)
   "Coerce a raw environment string RAW to the sysvar KIND, or NIL when
@@ -350,7 +359,13 @@ spec §§ 'Dialect-dependent defaults', 'New clautolisp system variables',
                   (default-implicitly-trusted-paths :getenv getenv :getcwd getcwd)
                   nil)
           ;; CL drop: gate on CLAL-COMMON-LISP availability (cl-debugging.issue).
-          (define "CLAUTOLISPDROP" :integer 0 nil))
+          (define "CLAUTOLISPDROP" :integer 0 nil)
+          ;; Case-insensitive path resolution, OFF by default
+          ;; (case-insensitive-pathname-resolution.issue). The default is
+          ;; not timidity: at 1 a program reaches files an exact spelling
+          ;; would not have reached, so turning it on has to be a
+          ;; deliberate act of the program or of the test harness.
+          (define "CLAUTOLISPCASEINSENSITIVEPATHS" :integer 0 nil))
         ;; 3. environment-variable overrides (env > dialect default).
         (dolist (entry *clautolisp-trust-env-sysvars*)
           (let ((name (car entry)) (kind (cdr entry)))
