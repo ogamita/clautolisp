@@ -53,22 +53,80 @@ that first showed it (MR !107):
   running at the time of the check, and shared runners are disabled
   (self-hosted only), so CI-minutes quota does not apply.
 
-* What has NOT been established
+* The cause — a quota, and we fill it ourselves
 
-The reason GitLab refuses to create the child. =failure_reason= is the
-generic =downstream_pipeline_creation_failed=; the specific message is
-shown on the BRIDGE JOB PAGE IN THE WEB UI and is not exposed by the
-API — =GET /projects/:id/jobs/<bridge-id>/trace= answers 404 for a
-bridge.
+pjb read the message off the bridge job page (it is not exposed by the
+API; =GET /projects/:id/jobs/<bridge-id>/trace= answers 404 for a
+bridge):
 
-*So the next step is one look at the web UI*:
-https://gitlab.com/ogamita/clautolisp/-/pipelines/2773597223 → the
-=native:pipeline= job → the error line under the downstream pipeline.
-That names the cause directly and saves further guessing from outside.
+: Project exceeded the allowed number of jobs in active pipelines. Retry later.
 
-Candidates worth having in mind while reading it: a limit on
-child/downstream pipelines, a change in how the local =include=
-resolves, or a project/group setting changed around that time.
+So it is a LIMIT, not a fault — and what fills it is our own design.
+
+*Child pipelines here never complete, on purpose.* The parent says so:
+
+#+begin_quote
+NB: no =strategy: depend= — when the runner is offline the child's jobs
+are =manual= and the child pipeline never "completes", so depending on
+it would hang this parent job.
+#+end_quote
+
+That comment anticipated the child never completing. What it did not
+anticipate is that a child which never completes stays *ACTIVE* for
+ever, and its jobs keep counting against the project's
+jobs-in-active-pipelines cap. Every push adds one more immortal child.
+
+Measured when the limit bit: *17 child pipelines in `running`*, the
+oldest created at 10:08 that morning, still "running" at 17:50 — one per
+pipeline of the day, none of which could ever finish because their jobs
+are =manual= and nobody plays them.
+
+The reason it surfaced TODAY is simply volume: four merge requests, each
+re-pipelined several times through rebases. The design has been leaking
+one immortal pipeline per push all along; today it crossed the cap.
+
+Note this also explains why the earlier evidence looked contradictory:
+the same configuration succeeded before ~16:49 and failed after, on both
+master and the merge requests, with nothing in between touching the
+native pipeline. It was never about the content — it was a counter
+filling up.
+
+* Unblocked (2026-08-19 ~17:50)
+
+15 stale child pipelines cancelled — every never-completing one except
+the child of the merge request being tested at that moment. The bridge
+was then retried on master's pipeline: the child was created, the bridge
+went green, and *master's pipeline 2773597223 is now =success=*.
+
+That is a broom, not a fix. The next few days of pushes will fill the
+cap again.
+
+* The actual fix, to decide
+
+The child's gate ends in =when: manual, allow_failure: true= — the
+"clickable, non-blocking fallback" for an offline runner. That fallback
+is what never terminates. Candidates:
+
+1. *Auto-cancel redundant pipelines* + =interruptible: true= on the
+   child's jobs. A new push then cancels the superseded child for that
+   ref automatically. Smallest change, keeps the fallback, and kills the
+   accumulation at its source for every ref that gets pushed again.
+   Does nothing for a ref pushed once and left.
+2. *A scheduled sweep*: a cron job cancelling child pipelines still
+   active after N hours. Reliable, but it is the broom above, automated
+   — it treats the symptom for ever.
+3. *Drop the manual fallback when the runner is offline* (=when: never=).
+   The child then completes... except when EVERY job is skipped, which
+   makes an empty child, which is the same red we started from. So this
+   one needs a keep-alive job to be viable.
+4. *Do not use a child pipeline for the offline case at all* — the
+   heaviest change, and the only one that removes the mechanism rather
+   than managing it.
+
+Option 1 is the recommendation: it is a project setting plus one
+keyword, and it makes the common case (a branch pushed repeatedly)
+self-cleaning. Option 2 alongside it would cover the abandoned refs that
+option 1 misses.
 
 * Affected merge requests
 
