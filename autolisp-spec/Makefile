@@ -50,7 +50,8 @@ DESTDIR ?=
 SUBPROJECT_NAME := autolisp-spec
 
 .PHONY: all build documentation clean-pdf probe-autocad probe-bricscad probes \
-        pages html info paged install uninstall clean-build
+        pages html info paged install uninstall clean-build \
+        check-info-export-equivalence
 
 all: documentation
 
@@ -93,6 +94,16 @@ $(HTML_DIR)/.stamp: $(BUILD_DIR)/.org-stamp scripts/build-paged-html.el
 
 info: $(INFO_DIR)/autolisp-spec.info  ## Build the .info manual from the spec.
 
+# How much of the spec the equivalence check exports. Node naming is a
+# per-node property, so a few thousand nodes exercise it exactly as well as
+# forty thousand -- and the whole file, exported by the STOCK code the check
+# has to run for comparison, is the 51 minutes the override exists to avoid.
+EQUIV_LINES ?= 6000
+
+check-info-export-equivalence:  ## Fail unless the fast node index exports byte-identical texi.
+	sh ../scripts/run-emacs.sh "$(EMACS)" --batch --script \
+		scripts/check-info-export-equivalence.el $(SPEC_ORG) $(EQUIV_LINES)
+
 $(INFO_DIR)/autolisp-spec.texi: $(SPEC_ORG) scripts/build-paged-info.el
 	sh ../scripts/run-emacs.sh "$(EMACS)" --batch --script scripts/build-paged-info.el \
 		$(SPEC_ORG) $(BUILD_DIR)
@@ -106,21 +117,24 @@ $(INFO_DIR)/autolisp-spec.info: $(INFO_DIR)/autolisp-spec.texi
 	# (',*'), which org's parser unescapes at export time.
 	$(MAKEINFO) --no-split $< -o $@
 
-# Which paged derivatives `paged' builds. The default is all three; the
-# point of the knob is the ONE that costs an hour.
+# Which paged derivatives `paged' builds. All three by default, and every
+# lane now uses the default -- the knob is kept for a caller who wants one
+# derivative, not as a workaround.
 #
-# Measured on a real documentation job (doc-build-info-export-quadratic):
-# the per-section split is 5 s for 3022 pages, the HTML render 2 min 38,
-# and the Info export FIFTY-ONE MINUTES -- 94% of the job -- because
-# org-texinfo-export-to-texinfo is super-linear in the size of one file
-# and the spec is 95 000 lines. Every merge request that edits the spec
-# pays that hour, because the cache is keyed on the spec.
+# It WAS a workaround. Measured on a real documentation job
+# (doc-build-info-export-quadratic): the per-section split is 5 s for 3022
+# pages, the HTML render 2 min 38, and the Info export was FIFTY-ONE
+# MINUTES -- 94% of the job -- so the merge-request lane passed
+# `pages html' and left the manual to the release lane.
 #
-# So the merge-request lane builds `pages html' and the RELEASE lane keeps
-# the default: the Info manual is a release product, while the HTML and
-# the PDFs are what a merge request needs to have checked. This is a
-# scheduling change, not a reduction -- nothing stops being built, it
-# stops being rebuilt on a path where nobody reads it.
+# The cause was not the size of the spec but ox-texinfo naming its nodes
+# against a growing alist, which is quadratic in the number of nodes;
+# scripts/spec-texinfo-fast-node.el replaces that lookup and the export
+# takes 60 s. With the hour gone the workaround is gone with it, and every
+# lane builds the manual again -- which also restores something the
+# workaround had quietly cost: while only the release lane built it, a
+# spec edit that broke the Info build could only be discovered ON a
+# release.
 SPEC_PAGED_TARGETS ?= pages html info
 
 paged: $(SPEC_PAGED_TARGETS)  ## Build the paged derivatives named by SPEC_PAGED_TARGETS (default: pages + html + info).

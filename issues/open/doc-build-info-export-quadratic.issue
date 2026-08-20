@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: doc-build-info-export-quadratic — the Info export of the spec is quadratic: 51 minutes of a 55-minute documentation job
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: infra
 #+DEPENDS: -
@@ -144,6 +144,182 @@ redesign:
   release product. This is the one-line change and takes the 51 minutes
   off the MR path entirely.
 
+
+* DONE (2026-08-20, clautolisp 1.8.61) — la cause trouvée, et ce n'était pas la taille
+
+pjb, avant 1.9.0 : « ok faisons ces trois petits avant 1.9.0 ».
+
+Ce ticket concluait qu'il fallait réorganiser le manuel en 3022 exports
+séparés, parce que « N petits exports d'un algorithme quadratique battent
+un grand export par le carré du rapport ». Le raisonnement était juste
+mais il traitait le symptôme : personne n'avait demandé POURQUOI l'export
+est quadratique.
+
+Il l'est pour une raison précise, et locale.
+
+** La mesure
+
+Le profileur d'échantillonnage d'Emacs ne collecte RIEN sous =--batch=
+(l'échantillonneur par signal ne se déclenche pas) — =TOTAL-SAMPLES=0=.
+Il a donc fallu instrumenter : chaque fonction suspecte conseillée
+(=advice-add=) pour compter ses appels et son temps propre, à DEUX
+tailles d'entrée. Une seule taille ne distingue pas une grosse constante
+d'un mauvais exposant ; c'est la fonction dont la PART grandit qui est
+coupable.
+
+| headlines | total    | =org-texinfo--get-node= |
+|-----------+----------+-------------------------|
+|     2 190 |  4,13 s  | 2,20 s (53 %)           |
+|     4 931 | 29,34 s  | 24,07 s (82 %)          |
+
+2,25× les nœuds → 10,9× le temps dans cette fonction, et sa part passe de
+53 % à 82 %. Il n'y a pas d'ambiguïté.
+
+** La cause, lisible dans ox-texinfo.el
+
+=org-texinfo--get-node= garde toutes les paires (datum . nom-de-nœud)
+dans UNE LISTE D'ASSOCIATION et, pour chaque nouveau nœud, la parcourt
+deux fois :
+
+: (cdr (assq datum cache))              ; recherche linéaire
+: (while (or ... (rassoc name cache))   ; balayage linéaire d'unicité
+
+Les deux sont O(N) par nœud, donc l'export est O(N²) en nœuds — et pire
+quand des noms se collisionnent, puisque chaque tentative de salage
+rebalaie. Un fichier org ordinaire ne s'en aperçoit jamais ; une
+spécification à plusieurs dizaines de milliers de nœuds s'en aperçoit
+pendant 51 minutes.
+
+*Ce n'est donc pas « le spec est trop gros ».* C'est une structure de
+données linéaire là où il faut une table de hachage, et la taille du spec
+ne fait que rendre le défaut visible.
+
+** Le correctif
+
+=autolisp-spec/scripts/spec-texinfo-fast-node.el= remplace cette seule
+fonction. Il garde l'algorithme et — c'est le point qui compte — l'ORDRE
+DE SALAGE identique ; il n'échange que les deux balayages linéaires
+contre des accès de hachage, et continue d'entretenir la liste
+d'association d'origine pour tout ce qui consulterait
+=:texinfo-node-cache=.
+
+*Les chiffres, machine par machine* — et il faut les séparer, parce que
+les deux évidents ne viennent pas du même ordinateur et que les comparer
+embellirait le résultat :
+
+| machine                | export du spec complet en .texi | job =documentation= entier |
+|------------------------+---------------------------------+----------------------------|
+| runner CI (avant)      | 51 min 19 s                     | 60,2 min (job 15981142889) |
+| runner CI (après)      | *3 min 38 s*                    | *7 min 36 s* (job 16016817963) |
+| poste de dév. (avant)  | 65 min 59 s (mesuré, pas déduit) | —                          |
+| poste de dév. (après)  | *59,75 s*                       | =make info= 1 min 14 s (makeinfo compris) |
+
+*C'est le chiffre CI qui compte pour la pipeline, et c'est le plus
+modeste des deux* : 14× et non 50×, ce runner étant plus lent et son org
+plus ancien. Le job entier passe de 60,2 min à 7 min 36 — et il construit
+désormais le manuel Info EN PLUS, que la mitigation de 1.8.55 lui faisait
+sauter.
+
+=makeinfo= accepte la sortie sous le build STRICT (ni =--force= ni
+=--no-validate=), et produit les 3024 nœuds attendus.
+
+** La sortie est identique, et c'est vérifié plutôt qu'affirmé
+
+Un correctif de performance sur un exportateur ne vaut que s'il ne change
+pas le document.
+
+*Sur le FICHIER COMPLET, et c'est la vérification qui compte* : l'export
+stock du spec entier a été relancé exprès, il a duré *65 min 59 s* — la
+patience étant le prix de la seule comparaison qui ne laisse aucun doute
+— et les deux =.texi= sont *identiques octet pour octet* :
+
+: 8217942d59bf6c86399ca799988d18bc  stock  (3 639 665 octets, 3 958,98 s)
+: 8217942d59bf6c86399ca799988d18bc  fast   (3 639 665 octets,    59,75 s)
+
+soit *66×* sur cette machine, pour un fichier identique au bit près. Les
+préfixes avaient déjà donné le même verdict, et ils gardent leur intérêt
+parce qu'ils montrent l'écart CROÎTRE avec la taille, ce qui est la
+signature d'un terme quadratique retiré :
+
+: 9 514 lignes  (2 190 headlines) : 3,60 s -> 1,95 s  (1,8x), .texi IDENTIQUE
+: 19 029 lignes (4 931 headlines) : 23,68 s -> 4,18 s (5,7x), .texi IDENTIQUE
+: fichier entier                   : 3 959 s -> 59,75 s (66x), .texi IDENTIQUE
+
+Dit autrement : la comparaison partielle qui figurait ici d'abord —
+« le corps du build réel est identique au prototype » — n'était qu'un
+faisceau d'indices. Celle-ci est une preuve.
+
+** Le risque, nommé — et le contrôle qui le tient
+
+C'est la surcharge d'une fonction INTERNE d'un autre paquet. Elle est
+donc épinglée à une forme de =org-texinfo--get-node= qu'une version
+future d'org peut changer, et une divergence silencieuse donnerait au
+manuel d'autres noms de nœuds — ce qui ne se manifeste pas comme une
+erreur de build mais, bien plus tard, comme un renvoi mort.
+
+=make -C autolisp-spec check-info-export-equivalence= exporte donc un
+préfixe du VRAI spec dans les deux modes et échoue si les deux .texi ne
+sont pas identiques octet pour octet. Trois secondes, exécuté avant le
+build dans le job =documentation=.
+
+Vérifié dans les deux sens : il passe sur le code actuel, et sur une
+surcharge délibérément faussée (=" (%d)"= changé en =" <%d>"=) il sort 1
+en citant la première ligne divergente. Un contrôle qu'on n'a pas vu
+échouer ne prouve rien.
+
+*Et il a servi dès sa première exécution en CI*, ce qui est le meilleur
+argument qu'on puisse produire pour lui. Le job =documentation= est passé
+rouge — non pas sur une différence entre les deux exports, mais sur la
+passe rapide qui plantait : =(wrong-type-argument listp headline)=.
+L'image de build embarque un org plus ancien que le poste où la surcharge
+a été écrite, et les deux diffèrent sur deux points :
+=org-element-lineage= y veut une LISTE de types (le nouvel org accepte un
+symbole nu par commodité), et le test du nom réservé compare ="Top"=
+littéralement là où le nouveau compare la version capitalisée. Corrigé en
+1.8.63 : forme liste, qui est juste des deux côtés, et comparaison
+capitalisée, qui est la plus stricte — sur l'org ancien elle ne peut que
+réserver DAVANTAGE de noms, et seulement un nœud d'un seul mot « top ».
+Ce point n'est pas tranché depuis un numéro de version : le contrôle
+compare les deux exports dans l'environnement qui tourne, et il répond
+=ok  the fast node index produces byte-identical texi= sur l'org ancien
+comme sur le récent.
+
+Autrement dit, le mode de panne décrit plus haut — « un org qui ne
+correspond plus à la surcharge » — s'est produit dans les heures qui ont
+suivi, et il a été trouvé par un contrôle de trois secondes sur une
+merge request au lieu de l'être par un lecteur tombant sur un renvoi mort
+dans un manuel publié.
+
+** La mitigation de 1.8.55 est retirée, et c'est un gain de couverture
+
+Le job =documentation= passait =SPEC_PAGED_TARGETS="pages html"= pour
+sauter l'heure d'export. Avec 60 secondes, le contournement n'a plus
+d'objet — et le retirer répare quelque chose qu'il coûtait en silence :
+tant que seule la lane de release construisait le manuel Info, une
+modification du spec qui cassait ce build ne pouvait être découverte
+QUE sur une release.
+
+Les commentaires qui décrivaient les 51 minutes (dans le Makefile du
+sous-projet et dans =.gitlab-ci.yml=) ont été récrits plutôt que laissés :
+ils affirmaient des faits devenus faux.
+
+** Ce qui n'est plus nécessaire
+
+La réorganisation en 3022 fichiers .org exportés séparément — et avec
+elle les deux questions ouvertes qui la bloquaient (assembler 3022
+manuels autonomes en un seul, et faire survivre les renvois croisés entre
+fichiers). Elles n'ont plus d'objet : le manuel reste un seul export, et
+il coûte une minute. La proposition valait la peine d'être mesurée ; ce
+que la mesure a montré, c'est qu'il y avait moins cher.
+
+Reste, si on veut : rendre le rendu HTML (2 min 38) incrémental de la
+même façon. C'est un gain plus petit et sans rapport avec ce défaut-ci.
+
+** Note sur le silence
+
+Le point des Notes ci-dessous — l'export n'écrit rien pendant toute sa
+durée, donc un export lent est indiscernable d'un export bloqué —
+disparaît de fait : une minute ne se confond pas avec un blocage.
 * Notes
 
 Found 2026-08-19 while waiting for MR !104 / !105. The job LOOKS hung --

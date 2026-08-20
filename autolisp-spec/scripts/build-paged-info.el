@@ -23,6 +23,20 @@
 (require 'ox-texinfo)
 (require 'subr-x)
 
+;; The spec's texi export is quadratic in ox-texinfo's stock node naming --
+;; 51 minutes for the whole file. spec-texinfo-fast-node.el replaces one
+;; internal function with an O(1)-uniqueness equivalent (60 s, byte-identical
+;; output); the reasoning, the measurements and the risk are documented
+;; there, and `make check-info-export-equivalence' is what keeps it honest.
+;;
+;; Loaded by path rather than `require' because this runs as
+;; `emacs --batch --script', which has no load-path pointing here.
+(load (expand-file-name "spec-texinfo-fast-node.el"
+                        (file-name-directory
+                         (or load-file-name buffer-file-name default-directory)))
+      nil t)
+(alref-info/enable-fast-node)
+
 (defun alref-info/argv ()
   (or command-line-args-left
       (error "build-paged-info.el: missing SPEC.org BUILD-DIR arguments")))
