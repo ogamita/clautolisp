@@ -35,8 +35,18 @@
 ;;; scans for hash lookups, and still maintains the stock alist, so
 ;;; anything else consulting :texinfo-node-cache sees what it expects.
 ;;;
-;;; Full spec: 51 min -> 60 s, output byte-identical, and `makeinfo'
-;;; accepts it under the strict build (no --force, no --no-validate).
+;;; Full spec, and MEASURED ON THE SAME MACHINE EACH TIME, because the
+;;; two obvious numbers come from different boxes and comparing them
+;;; would flatter the result:
+;;;
+;;;   CI runner:        51 min  ->  3 min 38   (job 16016817963)
+;;;   development box:  ~51 min ->  60 s
+;;;
+;;; The CI figure is the one that matters for the pipeline, and it is the
+;;; smaller win of the two -- 14x rather than 50x -- because that runner
+;;; is slower and its org is older. Output byte-identical on both, and
+;;; `makeinfo' accepts it under the strict build (no --force, no
+;;; --no-validate).
 ;;;
 ;;; THE RISK, NAMED
 ;;;

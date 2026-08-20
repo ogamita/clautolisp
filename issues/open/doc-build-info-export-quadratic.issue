@@ -203,10 +203,21 @@ contre des accès de hachage, et continue d'entretenir la liste
 d'association d'origine pour tout ce qui consulterait
 =:texinfo-node-cache=.
 
-| étape                                    | avant     | après   |
-|------------------------------------------+-----------+---------|
-| export du spec complet en .texi          | 51 min    | *60 s*  |
-| =make -C autolisp-spec info= (makeinfo compris) | ~51 min | *1 min 14 s* |
+*Les chiffres, machine par machine* — et il faut les séparer, parce que
+les deux évidents ne viennent pas du même ordinateur et que les comparer
+embellirait le résultat :
+
+| machine                | export du spec complet en .texi | job =documentation= entier |
+|------------------------+---------------------------------+----------------------------|
+| runner CI (avant)      | 51 min 19 s                     | 60,2 min (job 15981142889) |
+| runner CI (après)      | *3 min 38 s*                    | *7 min 36 s* (job 16016817963) |
+| poste de développement | 51 min → *60 s*                 | =make info= 1 min 14 s (makeinfo compris) |
+
+*C'est le chiffre CI qui compte pour la pipeline, et c'est le plus
+modeste des deux* : 14× et non 50×, ce runner étant plus lent et son org
+plus ancien. Le job entier passe de 60,2 min à 7 min 36 — et il construit
+désormais le manuel Info EN PLUS, que la mitigation de 1.8.55 lui faisait
+sauter.
 
 =makeinfo= accepte la sortie sous le build STRICT (ni =--force= ni
 =--no-validate=), et produit les 3024 nœuds attendus.
@@ -240,6 +251,29 @@ Vérifié dans les deux sens : il passe sur le code actuel, et sur une
 surcharge délibérément faussée (=" (%d)"= changé en =" <%d>"=) il sort 1
 en citant la première ligne divergente. Un contrôle qu'on n'a pas vu
 échouer ne prouve rien.
+
+*Et il a servi dès sa première exécution en CI*, ce qui est le meilleur
+argument qu'on puisse produire pour lui. Le job =documentation= est passé
+rouge — non pas sur une différence entre les deux exports, mais sur la
+passe rapide qui plantait : =(wrong-type-argument listp headline)=.
+L'image de build embarque un org plus ancien que le poste où la surcharge
+a été écrite, et les deux diffèrent sur deux points :
+=org-element-lineage= y veut une LISTE de types (le nouvel org accepte un
+symbole nu par commodité), et le test du nom réservé compare ="Top"=
+littéralement là où le nouveau compare la version capitalisée. Corrigé en
+1.8.63 : forme liste, qui est juste des deux côtés, et comparaison
+capitalisée, qui est la plus stricte — sur l'org ancien elle ne peut que
+réserver DAVANTAGE de noms, et seulement un nœud d'un seul mot « top ».
+Ce point n'est pas tranché depuis un numéro de version : le contrôle
+compare les deux exports dans l'environnement qui tourne, et il répond
+=ok  the fast node index produces byte-identical texi= sur l'org ancien
+comme sur le récent.
+
+Autrement dit, le mode de panne décrit plus haut — « un org qui ne
+correspond plus à la surcharge » — s'est produit dans les heures qui ont
+suivi, et il a été trouvé par un contrôle de trois secondes sur une
+merge request au lieu de l'être par un lecteur tombant sur un renvoi mort
+dans un manuel publié.
 
 ** La mitigation de 1.8.55 est retirée, et c'est un gain de couverture
 
