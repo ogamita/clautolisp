@@ -104,6 +104,23 @@ WARNING was signalled."
                (asdf:load-system system-name)))
       (report-warning-tally system-name))))
 
+(defun executable-program-name (program-name)
+  "Return PROGRAM-NAME with a platform-appropriate executable suffix.
+
+On Windows, SAVE-LISP-AND-DIE :EXECUTABLE T does NOT reliably append
+.exe itself -- confirmed on the GitLab Windows runner, 2026-08-20:
+build-alfe-sbcl wrote a plain, extension-less `alfe-sbcl' image (56 MB,
+so the build itself was fine) despite :EXECUTABLE T, which then made
+every downstream reference to `alfe-sbcl.exe' (the CI --version probe,
+and presumably any user expecting a double-clickable / PATH-resolved
+binary) fail with a plain \"file not found\", not a build error. Do not
+trust the implementation to add the suffix; ask for it explicitly."
+  (if (and (uiop:os-windows-p)
+           (not (string-equal ".exe" program-name
+                               :start2 (max 0 (- (length program-name) 4)))))
+      (concatenate 'string program-name ".exe")
+      program-name))
+
 (defun generate-program (&key program-name main-function system-name source-directory
                            asdf-directories release-directory asd-file)
   (declare (ignore source-directory))
@@ -120,24 +137,25 @@ WARNING was signalled."
   ;; would otherwise error with "no such file or directory" /
   ;; SB-IMPL::SAVE-ERROR.
   (ensure-directories-exist release-directory)
-  #+ccl
-  (ccl:save-application
-   (merge-pathnames program-name release-directory nil)
-   :toplevel-function (make-toplevel-function main-function)
-   :mode #o755
-   :prepend-kernel t
-   :error-handler t)
-  #+sbcl
-  ;; :COMPRESSION is only accepted when the running SBCL was built with
-  ;; core compression support (feature :SB-CORE-COMPRESSION, which in
-  ;; turn requires libzstd at build time). On platforms where zstd is
-  ;; unavailable SBCL ships without that feature and passing :COMPRESSION
-  ;; signals an error, so we gate the keyword on the feature and fall
-  ;; back to an uncompressed (larger) executable image.
-  (apply #'sb-ext:save-lisp-and-die
-         (namestring (merge-pathnames program-name release-directory nil))
-         :executable t
-         :save-runtime-options t
-         :toplevel (make-toplevel-function main-function)
-         #+sb-core-compression (list :compression 9)
-         #-sb-core-compression '()))
+  (let ((program-name (executable-program-name program-name)))
+    #+ccl
+    (ccl:save-application
+     (merge-pathnames program-name release-directory nil)
+     :toplevel-function (make-toplevel-function main-function)
+     :mode #o755
+     :prepend-kernel t
+     :error-handler t)
+    #+sbcl
+    ;; :COMPRESSION is only accepted when the running SBCL was built with
+    ;; core compression support (feature :SB-CORE-COMPRESSION, which in
+    ;; turn requires libzstd at build time). On platforms where zstd is
+    ;; unavailable SBCL ships without that feature and passing :COMPRESSION
+    ;; signals an error, so we gate the keyword on the feature and fall
+    ;; back to an uncompressed (larger) executable image.
+    (apply #'sb-ext:save-lisp-and-die
+           (namestring (merge-pathnames program-name release-directory nil))
+           :executable t
+           :save-runtime-options t
+           :toplevel (make-toplevel-function main-function)
+           #+sb-core-compression (list :compression 9)
+           #-sb-core-compression '())))

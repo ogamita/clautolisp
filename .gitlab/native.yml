@@ -579,7 +579,34 @@ build:alfe:windows:
     GIT_SUBMODULE_STRATEGY: none
   script:
     - make -C autolisp-front-end build-alfe-sbcl
+    # PowerShell does NOT fail a step on a native program's non-zero exit
+    # (see release:windows:x86-64 in .gitlab-ci.yml for the same lesson) --
+    # without this check a broken build would sail straight into the
+    # --version probe below and surface as a confusing "not recognized"
+    # error instead of the real build failure.
+    - 'if ($LASTEXITCODE -ne 0) { throw "build-alfe-sbcl failed ($LASTEXITCODE)" }'
+    # Sanity check, kept permanently (mirrors `Get-ChildItem dist` in
+    # release:windows:x86-64): shows what build-alfe-sbcl actually produced
+    # before the --version probe below trusts a specific filename. This is
+    # what caught alfe-sbcl-windows-build-missing-exe-suffix.issue -- SBCL's
+    # SAVE-LISP-AND-DIE :EXECUTABLE T was silently writing a plain,
+    # extension-less `alfe-sbcl' image on this runner, so every downstream
+    # reference to `alfe-sbcl.exe' failed with a bare "file not found",
+    # nothing pointing at the real cause. Fixed at the source in
+    # clautolisp/autolisp-reader/tools/read-autolisp/generate.lisp
+    # (EXECUTABLE-PROGRAM-NAME), which now appends .exe itself on Windows
+    # rather than trusting the implementation to do it.
+    - 'Get-ChildItem "$env:CI_PROJECT_DIR\autolisp-front-end\tools\alfe\bin" -ErrorAction SilentlyContinue | Format-Table -AutoSize | Out-String | Write-Host'
     # Prove the binary exists and answers, since no artefact records it.
-    # .exe: on Windows the build now produces alfe-sbcl.exe (pjb,
-    # 2026-08-16). This job is Windows-only, so the suffix is certain.
-    - autolisp-front-end/tools/alfe/bin/alfe-sbcl.exe --version
+    #
+    # An ABSOLUTE path is required, via $env:CI_PROJECT_DIR. PowerShell only
+    # auto-executes a path when it is QUALIFIED -- absolute, a drive letter,
+    # or explicitly relative (.\, ..\) -- or found on PATH; a bare
+    # "dir/exe.exe" is parsed as a command NAME rather than a path and gives
+    # CommandNotFoundException even when the file exists (job 16000852460).
+    # The `&' call operator alone does NOT fix this: `&' only forces
+    # PowerShell to invoke its argument as a command, it does not change how
+    # that argument is resolved, so `& "dir/exe.exe"' hits the exact same
+    # CommandNotFoundException (confirmed on MR !111).
+    - '& "$env:CI_PROJECT_DIR\autolisp-front-end\tools\alfe\bin\alfe-sbcl.exe" --version'
+    - 'if ($LASTEXITCODE -ne 0) { throw "alfe-sbcl.exe --version failed ($LASTEXITCODE)" }'
