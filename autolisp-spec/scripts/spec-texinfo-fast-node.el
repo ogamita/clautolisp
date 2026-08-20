@@ -39,8 +39,12 @@
 ;;; two obvious numbers come from different boxes and comparing them
 ;;; would flatter the result:
 ;;;
-;;;   CI runner:        51 min  ->  3 min 38   (job 16016817963)
-;;;   development box:  ~51 min ->  60 s
+;;;   CI runner:        51 min 19 s  ->  3 min 38   (job 16016817963)
+;;;   development box:  65 min 59 s  ->  59.75 s    (both measured)
+;;;
+;;; On the development box the two full-file exports were compared byte
+;;; for byte -- same md5, same 3 639 665 bytes -- which is why the stock
+;;; run was sat through rather than extrapolated from a prefix.
 ;;;
 ;;; The CI figure is the one that matters for the pipeline, and it is the
 ;;; smaller win of the two -- 14x rather than 50x -- because that runner

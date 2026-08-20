@@ -211,7 +211,8 @@ embellirait le résultat :
 |------------------------+---------------------------------+----------------------------|
 | runner CI (avant)      | 51 min 19 s                     | 60,2 min (job 15981142889) |
 | runner CI (après)      | *3 min 38 s*                    | *7 min 36 s* (job 16016817963) |
-| poste de développement | 51 min → *60 s*                 | =make info= 1 min 14 s (makeinfo compris) |
+| poste de dév. (avant)  | 65 min 59 s (mesuré, pas déduit) | —                          |
+| poste de dév. (après)  | *59,75 s*                       | =make info= 1 min 14 s (makeinfo compris) |
 
 *C'est le chiffre CI qui compte pour la pipeline, et c'est le plus
 modeste des deux* : 14× et non 50×, ce runner étant plus lent et son org
@@ -225,14 +226,28 @@ sauter.
 ** La sortie est identique, et c'est vérifié plutôt qu'affirmé
 
 Un correctif de performance sur un exportateur ne vaut que s'il ne change
-pas le document. Comparé octet pour octet sur des préfixes réels du spec :
+pas le document.
 
-: 9 514 lignes  (2 190 headlines) : 3,60 s -> 1,95 s, .texi IDENTIQUE
-: 19 029 lignes (4 931 headlines) : 23,68 s -> 4,18 s, .texi IDENTIQUE
+*Sur le FICHIER COMPLET, et c'est la vérification qui compte* : l'export
+stock du spec entier a été relancé exprès, il a duré *65 min 59 s* — la
+patience étant le prix de la seule comparaison qui ne laisse aucun doute
+— et les deux =.texi= sont *identiques octet pour octet* :
 
-et sur le fichier complet, le corps produit par le build réel est
-identique au prototype (seul l'entête de 13 lignes diffère, ce qui est
-exactement l'effet des directives =#+TEXINFO_*= injectées).
+: 8217942d59bf6c86399ca799988d18bc  stock  (3 639 665 octets, 3 958,98 s)
+: 8217942d59bf6c86399ca799988d18bc  fast   (3 639 665 octets,    59,75 s)
+
+soit *66×* sur cette machine, pour un fichier identique au bit près. Les
+préfixes avaient déjà donné le même verdict, et ils gardent leur intérêt
+parce qu'ils montrent l'écart CROÎTRE avec la taille, ce qui est la
+signature d'un terme quadratique retiré :
+
+: 9 514 lignes  (2 190 headlines) : 3,60 s -> 1,95 s  (1,8x), .texi IDENTIQUE
+: 19 029 lignes (4 931 headlines) : 23,68 s -> 4,18 s (5,7x), .texi IDENTIQUE
+: fichier entier                   : 3 959 s -> 59,75 s (66x), .texi IDENTIQUE
+
+Dit autrement : la comparaison partielle qui figurait ici d'abord —
+« le corps du build réel est identique au prototype » — n'était qu'un
+faisceau d'indices. Celle-ci est une preuve.
 
 ** Le risque, nommé — et le contrôle qui le tient
 
