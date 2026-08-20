@@ -544,15 +544,26 @@ documentation:
     # and it needs fontconfig + the doc fonts to answer, which is why the
     # before_script installs them (tex-pdf-characters.issue).
     - make check-doc-glyph-coverage
-    # SPEC_PAGED_TARGETS omits `info' HERE ONLY. The spec's Info export
-    # is 51 minutes of this job -- 94% of it -- because ox-texinfo is
-    # super-linear in the size of one file and the spec is 95000 lines,
-    # and every merge request that edits the spec pays it, the cache
-    # being keyed on the spec (doc-build-info-export-quadratic.issue).
-    # The Info manual is a RELEASE product; what a merge request needs
-    # checked is the HTML and the PDFs, both still built here.
-    # release:documentation keeps the default and builds it.
-    - make release-documentation SPEC_PAGED_TARGETS="pages html"
+    # The Info export used to be 51 minutes of this job -- 94% of it -- so
+    # the job skipped it with SPEC_PAGED_TARGETS="pages html" and left the
+    # manual to release:documentation. The cost was ox-texinfo naming nodes
+    # against a growing ALIST, which is quadratic in the number of nodes;
+    # autolisp-spec/scripts/spec-texinfo-fast-node.el replaces that lookup
+    # and the export now takes 60 seconds
+    # (doc-build-info-export-quadratic.issue).
+    #
+    # So the skip is GONE and merge requests build the Info manual again.
+    # That matters beyond the minutes: while it was skipped, the only lane
+    # that built the manual was the release lane, so a spec edit that broke
+    # the Info build could only be found ON a release.
+    #
+    # This runs first, and it is three seconds: it exports a prefix of the
+    # real spec with and without the override and fails unless the two are
+    # byte-identical. The override is pinned to an INTERNAL org function, so
+    # an org upgrade could change node names under us; without this check
+    # that drift would surface much later, as dead cross-references.
+    - make -C autolisp-spec check-info-export-equivalence
+    - make release-documentation
   artifacts:
     name: "clautolisp-documentation-$CI_COMMIT_SHORT_SHA"
     paths: [dist/]
