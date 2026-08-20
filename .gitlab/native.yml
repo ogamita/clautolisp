@@ -585,6 +585,13 @@ build:alfe:windows:
     # --version probe below and surface as a confusing "not recognized"
     # error instead of the real build failure.
     - 'if ($LASTEXITCODE -ne 0) { throw "build-alfe-sbcl failed ($LASTEXITCODE)" }'
+    # DIAGNOSTIC (temporary): an absolute, fully-qualified path to
+    # alfe-sbcl.exe STILL hit CommandNotFoundException on MR !111 -- for a
+    # qualified path that error means the file genuinely is not there, not
+    # a PowerShell syntax issue. List the directory make just claimed to
+    # have populated so the next pipeline shows what build-alfe-sbcl
+    # actually produced (empty dir? wrong name? nothing at all?).
+    - 'Get-ChildItem "$env:CI_PROJECT_DIR\autolisp-front-end\tools\alfe\bin" -ErrorAction SilentlyContinue | Format-Table -AutoSize | Out-String | Write-Host'
     # Prove the binary exists and answers, since no artefact records it.
     # .exe: on Windows the build now produces alfe-sbcl.exe (pjb,
     # 2026-08-16). This job is Windows-only, so the suffix is certain.
