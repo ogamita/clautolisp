@@ -299,7 +299,10 @@ check-doc-glyph-coverage:  ## Fail if a documentation source uses a glyph the PD
 	  echo "      run it."; exit 0; }; \
 	python3 scripts/check-doc-glyph-coverage.py
 
-check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity  ## Every release-packaging check.
+check-nightly-sweep-isolation:  ## Fail if a scheduled pipeline would contain anything but the nightly sweep.
+	python3 scripts/check-nightly-sweep-isolation.py
+
+check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
 # (no PowerShell, pjb 2026-08-16: do not install it). A container gives the

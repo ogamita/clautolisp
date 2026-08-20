@@ -1,0 +1,189 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: ci-native-child-pipeline-creation-fails — native:pipeline cannot create its child, so every pipeline is red with zero failed jobs
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+
+* Symptom
+
+Since about 16:49 UTC on 2026-08-19, every pipeline — merge requests AND
+master — finishes RED while *no job has failed*:
+
+: 15 success, 0 failed, 15 skipped, 1 manual
+
+The red comes from the =native:pipeline= bridge alone:
+
+: bridge: failed   failure_reason: downstream_pipeline_creation_failed
+: child pipeline:  failed, 0 jobs, created_at == updated_at
+
+The child is created and dies in the same second, with no jobs at all.
+
+This matters beyond cosmetics: a red master makes every later merge
+request look red too, and =glab mr merge= REFUSES to merge on a failed
+pipeline (the project itself allows it —
+=only_allow_merge_if_pipeline_succeeds= is false — so the API still
+works, but the normal path is blocked).
+
+* What has been ruled out
+
+Checked before concluding, because the obvious suspect was the branch
+that first showed it (MR !107):
+
+- *not the branch's content.* MR !107 changes six files: two =script=
+  blocks in =documentation= / =release:documentation=, a Makefile
+  variable, a version stamp, and two documentation files. Nothing that
+  can affect child-pipeline creation.
+- *not the child config.* =.gitlab/native.yml= is byte-identical to
+  master, and =POST /projects/:id/ci/lint= on its content answers
+  =valid: true=, no errors, no warnings.
+- *not the parent config.* =glab ci lint= passes.
+- *not runner availability.* =detect:runners= reported
+  =MACOS_RUNNER=online= and =WINDOWS_RUNNER=online= in the very pipeline
+  whose child failed. The child's gate rules end in =when: manual=
+  anyway, so an offline runner yields manual jobs, never zero jobs.
+- *not transient.* Retrying the bridge produced another empty child;
+  re-creating the whole pipeline from a fresh commit produced a third.
+- *not caused by the merge.* Master pipeline 2773471716 (54b44c6, before
+  the window) SUCCEEDED with the same configuration; 2773597223
+  (90fd7ed, after) fails the same way. Nothing between them touches the
+  native pipeline.
+- *not a runner/quota starvation of the obvious kind.* No pipelines were
+  running at the time of the check, and shared runners are disabled
+  (self-hosted only), so CI-minutes quota does not apply.
+
+* The cause — a quota, and we fill it ourselves
+
+pjb read the message off the bridge job page (it is not exposed by the
+API; =GET /projects/:id/jobs/<bridge-id>/trace= answers 404 for a
+bridge):
+
+: Project exceeded the allowed number of jobs in active pipelines. Retry later.
+
+So it is a LIMIT, not a fault — and what fills it is our own design.
+
+*Child pipelines here never complete, on purpose.* The parent says so:
+
+#+begin_quote
+NB: no =strategy: depend= — when the runner is offline the child's jobs
+are =manual= and the child pipeline never "completes", so depending on
+it would hang this parent job.
+#+end_quote
+
+That comment anticipated the child never completing. What it did not
+anticipate is that a child which never completes stays *ACTIVE* for
+ever, and its jobs keep counting against the project's
+jobs-in-active-pipelines cap. Every push adds one more immortal child.
+
+Measured when the limit bit: *17 child pipelines in `running`*, the
+oldest created at 10:08 that morning, still "running" at 17:50 — one per
+pipeline of the day, none of which could ever finish because their jobs
+are =manual= and nobody plays them.
+
+The reason it surfaced TODAY is simply volume: four merge requests, each
+re-pipelined several times through rebases. The design has been leaking
+one immortal pipeline per push all along; today it crossed the cap.
+
+Note this also explains why the earlier evidence looked contradictory:
+the same configuration succeeded before ~16:49 and failed after, on both
+master and the merge requests, with nothing in between touching the
+native pipeline. It was never about the content — it was a counter
+filling up.
+
+* Unblocked (2026-08-19 ~17:50)
+
+15 stale child pipelines cancelled — every never-completing one except
+the child of the merge request being tested at that moment. The bridge
+was then retried on master's pipeline: the child was created, the bridge
+went green, and *master's pipeline 2773597223 is now =success=*.
+
+That is a broom, not a fix. The next few days of pushes will fill the
+cap again.
+
+* The actual fix, to decide
+
+The child's gate ends in =when: manual, allow_failure: true= — the
+"clickable, non-blocking fallback" for an offline runner. That fallback
+is what never terminates. Candidates:
+
+1. *Auto-cancel redundant pipelines* + =interruptible: true= on the
+   child's jobs. A new push then cancels the superseded child for that
+   ref automatically. Smallest change, keeps the fallback, and kills the
+   accumulation at its source for every ref that gets pushed again.
+   Does nothing for a ref pushed once and left.
+2. *A scheduled sweep*: a cron job cancelling child pipelines still
+   active after N hours. Reliable, but it is the broom above, automated
+   — it treats the symptom for ever.
+3. *Drop the manual fallback when the runner is offline* (=when: never=).
+   The child then completes... except when EVERY job is skipped, which
+   makes an empty child, which is the same red we started from. So this
+   one needs a keep-alive job to be viable.
+4. *Do not use a child pipeline for the offline case at all* — the
+   heaviest change, and the only one that removes the mechanism rather
+   than managing it.
+
+Option 1 is the recommendation: it is a project setting plus one
+keyword, and it makes the common case (a branch pushed repeatedly)
+self-cleaning. Option 2 alongside it would cover the abandoned refs that
+option 1 misses.
+
+* DONE — option 1 (2026-08-19, clautolisp 1.8.56)
+
+pjb: « Implémente l'option 1. »
+
+*The project setting was already =enabled=.* =auto_cancel_pending_pipelines=
+has been on all along — including through the whole day the 17 children
+accumulated. So the setting was never the missing half, and saying "turn
+on auto-cancel" would have changed nothing.
+
+What was missing is the other half, and it explains why the setting was
+inert: *GitLab auto-cancels a superseded pipeline only when ALL its
+pending/running jobs are interruptible*, and a single job without the
+keyword pins the whole pipeline. Three of the child's twenty-six jobs
+declared =interruptible: true= individually — which is the exact shape of
+half-measure that achieves nothing, because the other twenty-three held
+the pipeline open regardless.
+
+=.gitlab/native.yml= now declares it once, for every job:
+
+: default:
+:   interruptible: true
+
+Both configs re-validated through =POST /ci/lint= (the child as a
+standalone config) and =glab ci lint= (the parent).
+
+On a release tag this changes nothing in practice: auto-cancel fires only
+when a NEWER pipeline supersedes one on the same ref, and a release tag
+is not re-pushed.
+
+** What this does not cover, and how it will be known
+
+Auto-cancel needs a SUPERSEDING pipeline. A ref pushed once and then
+abandoned — a branch whose merge request is merged from the last push,
+say — leaves its child with nothing to supersede it, and that child still
+lives for ever. That is the gap option 2 (a scheduled sweep) exists for,
+and it is not implemented here.
+
+And the mechanism itself is only verifiable by watching: the next few
+pushes to a branch should leave exactly ONE active child per ref instead
+of one per push. Worth checking with
+
+: GET /projects/:id/pipelines?source=parent_pipeline
+
+— which is the query that matters, and the one that misled the first
+diagnosis: the plain pipelines listing EXCLUDES child pipelines, so
+"0 running pipelines" was reported while seventeen children were running.
+
+* Affected merge requests
+
+MR !107 was merged through the API rather than =glab= for this reason,
+with every one of its 15 real jobs green. That is recorded here so the
+decision is visible rather than buried in a merge commit.
+
+* Notes
+
+Found 2026-08-19 while landing MR !104-!107. Filed rather than mentioned
+in passing, because a red master is exactly the kind of thing that
+becomes normal if nobody writes it down — and it sits directly on the
+path to =release-1.9.0=, where a red pipeline is not a cosmetic problem.
