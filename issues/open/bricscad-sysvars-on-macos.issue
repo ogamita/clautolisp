@@ -1,3 +1,15 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: bricscad-sysvars-on-macos — les sysvars porteurs de chemins : ce qu'ils valent vraiment, et ce que clautolisp devrait y mettre
+#+STATUS: DRAFT
+#+PRIORITY: P2
+#+TYPE: enhancement
+#+DEPENDS: -
+#+BRANCH: path-sysvars-real-values
+
+DRAFT : la moitié des mesures est faite (BricsCAD sur macOS), la moitié
+Windows est en file, et AUCUNE décision n'est prise. Ce fichier est un
+dossier d'instruction, pas une spécification.
+
 Here are a couple of sysvar in clautolisp on macOS:
 
 ACTIVITYINSIGHTSPATH	Sysvar	"C:\\Users\\{username}\\AppData\\Local\\Autodesk\\ActivityInsights\\Common"
@@ -431,3 +443,132 @@ La colonne « valeur dans autocad / dans bricscad » de la demande
 initiale reste non remplie, et pour la même raison qu'avant : elle
 demande une sonde sur les deux moteurs. Elle est maintenant plus facile
 à cibler — le groupe 1 suffirait à commencer, cinq lectures.
+
+
+-------------------------------------------------------------------------
+MESURÉ — BricsCAD V26 sur macOS (2026-08-20)
+-------------------------------------------------------------------------
+
+La colonne « valeur réelle » que la demande initiale réclamait, et que
+j'avais dite non remplissable sans sonder : la voici pour un moteur.
+Relevé sur thalassa par le job harvest:sysvars:bricscad:macos, à travers
+alfe, sur les 1836 sysvars ; ci-dessous les 57 porteurs de chemins.
+`~` abrège /Users/pjb et `$TMPDIR` le dossier temporaire de la session.
+
+Sur 57 sysvars : *37 ONT UNE VALEUR*, 13 sont ABSENTS (BricsCAD ne les
+définit pas) et 7 sont définis mais vides.
+
+| ACADPREFIX                  | VALUE  | ~/Library/Application Support/Bricsys/BricsCAD/V26x64/fr_FR/Support/;/Applications/BricsCAD V... |
+| ACTIVITYINSIGHTSPATH        | ABSENT |  |
+| ACTPATH                     | ABSENT |  |
+| ACTRECPATH                  | ABSENT |  |
+| BASEFILE                    | VALUE  | Default-m.dwt |
+| BIMDEFAULTPROPERTIESPATH    | ABSENT |  |
+| BLOCKSPATH                  | VALUE  | ~/Documents/ |
+| BLOCKSRECENTFOLDER          | ABSENT |  |
+| BLOCKSYNCFOLDER             | ABSENT |  |
+| BMFORMTEMPLATEPATH          | EMPTY  |  |
+| BMTOOLPATH                  | VALUE  | /Applications/BricsCAD V26.app/Contents/MacOS/UserDataCache/Support/fr_FR/DesignLibrary/Tools/ |
+| CENTERLTYPEFILE             | VALUE  | iso.lin |
+| CLOUDDOWNLOADPATH           | VALUE  | ~/Documents/Bricsys247/ |
+| CLOUDTEMPFOLDER             | VALUE  | $TMPDIR/BricsCAD/Bricsys_24_7/ |
+| COLORBOOKPATH               | VALUE  | ~/Library/Application Support/Bricsys/BricsCAD/V26x64/fr_FR/Support/ |
+| COMMUNICATORPATH            | VALUE  | /Library/Application Support/BricsCAD Communicator V26.app/ |
+| COMPONENTSPATH              | VALUE  | /var/bricsys/Components/ |
+| CPROFILE                    | VALUE  | <<Profil sans nom>> |
+| CVERSIONCONTROLPATH         | EMPTY  |  |
+| DETAILSPATH                 | EMPTY  |  |
+| DGNMAPPINGPATH              | ABSENT |  |
+| DRAWINGPATH                 | VALUE  | ~/Documents/ |
+| DWGPREFIX                   | VALUE  | ~/.gitlab-runner/builds/bg-C2jc-y/0/ogamita/clautolisp/ |
+| FBXEXPORTTEXTURESPATH       | VALUE  | ~/Documents/ |
+| HELPPREFIX                  | ABSENT |  |
+| IFCEXPORTMAPPINGPATH        | ABSENT |  |
+| IMAGECACHEFOLDER            | VALUE  | $TMPDIR/BricsCAD/ImageCache/ |
+| INETLOCATION                | VALUE  | http://www.bricsys.com |
+| LOCALROOTPREFIX             | VALUE  | ~/Library/Application Support/Bricsys/BricsCAD/V26x64/fr_FR/ |
+| LOGFILEPATH                 | VALUE  | $TMPDIR/alfe-bricscad-89553-b8b47s/logs/ |
+| MYDOCUMENTSPREFIX           | VALUE  | ~/Documents/ |
+| PARAMETRICBLOCKS2DPATH      | EMPTY  |  |
+| PDFIMPORTIMAGEPATH          | VALUE  | PDF Images |
+| PLOTCFGPATH                 | VALUE  | ~/Library/Application Support/Bricsys/BricsCAD/V26x64/fr_FR/PlotConfig/ |
+| PLOTOUTPUTPATH              | VALUE  | ~/Documents/ |
+| PLOTSTYLEPATH               | VALUE  | ~/Library/Application Support/Bricsys/BricsCAD/V26x64/fr_FR/PlotStyles/ |
+| POINTCLOUDCACHEFOLDER       | VALUE  | ~/Library/Application Support/Bricsys/BricsCAD/V26x64/fr_FR/PointCloudCache/ |
+| PRINTFILE                   | VALUE  | . |
+| RECENTPATH                  | VALUE  | ~/Documents/ |
+| RENDERMATERIALSPATH         | VALUE  | /var/bricsys/RenderMaterials/UserMaterials/ |
+| ROAMABLEROOTPREFIX          | VALUE  | ~/Library/Application Support/Bricsys/BricsCAD/V26x64/fr_FR/ |
+| SAVEFILE                    | EMPTY  |  |
+| SAVEFILEPATH                | VALUE  | $TMPDIR/BricsCAD/ |
+| SECTIONSETTINGSSEARCHPATH   | ABSENT |  |
+| SHEETSETTEMPLATEPATH        | VALUE  | ~/Library/Application Support/Bricsys/BricsCAD/V26x64/fr_FR/Templates/ |
+| SRCHPATH                    | VALUE  | ~/Library/Application Support/Bricsys/BricsCAD/V26x64/fr_FR/Support/;/Applications/BricsCAD V... |
+| STARTINFOLDER               | ABSENT |  |
+| TEMPLATEPATH                | VALUE  | ~/Library/Application Support/Bricsys/BricsCAD/V26x64/fr_FR/Templates/ |
+| TEMPPREFIX                  | VALUE  | $TMPDIR/BricsCAD/ |
+| TEXTUREMAPPATH              | VALUE  | /Applications/BricsCAD V26.app/Contents/MacOS/Textures/1/ |
+| TOOLPALETTEPATH             | VALUE  | ~/Library/Application Support/Bricsys/BricsCAD/V26x64/fr_FR/Support/ToolPalettes/ |
+| VERSIONCONTROLCONFIGPATH    | EMPTY  |  |
+| VERSIONCONTROLDOWNLOADPATH  | EMPTY  |  |
+| WORKINGFOLDER               | ABSENT |  |
+| XCOMPAREBAKPATH             | ABSENT |  |
+| XLOADPATH                   | VALUE  | ~/Documents/ |
+| _TOOLPALETTEPATH            | VALUE  | ~/Library/Application Support/Bricsys/BricsCAD/V26x64/fr_FR/Support/ToolPalettes/ |
+
+CE QUE CELA CORRIGE DANS MON ANALYSE
+-------------------------------------
+
+Deux conclusions que j'avais tirées sont fausses, et la mesure les
+renverse :
+
+1. *« 43 sont host-derived et vides, les laisser vides. »* Non : 37 des 57
+   portent une vraie valeur sur un moteur réel. Le `""` du catalogue
+   voulait bien dire « personne ne l'a mesuré » — je l'avais écrit — mais
+   j'en ai quand même tiré une recommandation comme s'il voulait dire
+   « vide ». La mesure était la seule façon de trancher, et elle tranche
+   contre moi.
+
+2. *« Leur donner des chemins XDG remplacerait une fiction Windows par une
+   fiction POSIX. »* Non plus. BricsCAD sur macOS LOCALISE tout :
+   ~/Library/Application Support/Bricsys/… pour la configuration,
+   /Applications/BricsCAD V26.app/… pour les ressources d'installation,
+   $TMPDIR/BricsCAD/… pour les temporaires, ~/Documents pour l'espace
+   utilisateur. Ce n'est pas une fiction, c'est la convention de la
+   plateforme — et donner à clautolisp les équivalents XDG serait donc
+   la MÊME démarche, pas une invention. Ton intuition de départ était la
+   bonne.
+
+Trois observations qui portent des décisions
+---------------------------------------------
+
+- *BMTOOLPATH vaut exactement ce que tu avais deviné* dans le ticket :
+  /Applications/BricsCAD V26.app/Contents/MacOS/UserDataCache/Support/…/
+  DesignLibrary/Tools/. La classe A n'était donc pas « une fonctionnalité
+  absente, laisser vide » : le moteur émulé la remplit, et la valeur
+  Windows que clautolisp affichait était simplement la mauvaise
+  plateforme.
+
+- *LOCALROOTPREFIX et ROAMABLEROOTPREFIX sont IDENTIQUES ici* — le même
+  ~/Library/Application Support/…. La distinction local/itinérant est une
+  notion Windows que BricsCAD n'a pas transposée sur macOS. clautolisp
+  n'a donc pas à inventer deux emplacements distincts : un seul, avec les
+  deux sysvars pointant dessus, EST le comportement fidèle.
+
+- *LOGFILEPATH pointe sur le workdir d'alfe* ($TMPDIR/alfe-bricscad-…/logs/)
+  parce qu'alfe l'a POSÉ, ce que la lecture du code avait annoncé. La
+  mesure et le code se confirment l'un l'autre.
+
+Encore à venir
+--------------
+
+Les trois moteurs Windows — BricsCAD, AutoCAD en GUI et AcCoreConsole en
+headless — sont en file sur le runner CAO (concurrence 1). C'est la
+comparaison GUI/headless que tu voulais, et elle n'est pas encore
+mesurée. Le job path-sysvars:probe:* la produira ; il distingue ABSENT /
+EMPTY / VALUE comme ci-dessus, précisément pour que « AutoCAD ne connaît
+pas ce nom » et « AutoCAD le connaît et le laisse vide » ne soient pas
+confondus.
+
+Ce ticket reste donc en DRAFT : la moitié des mesures est là, les
+décisions ne sont pas prises, et la moitié Windows arrive.
