@@ -1,0 +1,130 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: sysvar-table-ignores-runtime-dialect-change — (setq *autolisp-dialect* …) change le dialecte mais pas la table des sysvars
+#+STATUS: OPEN
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: case-insensitive-paths-ignored-in-cad-dialects
+#+BRANCH: -
+
+* Constat (pjb, 2026-08-20, clautolisp 1.8.59)
+
+=(setq *AUTOLISP-DIALECT* …)= change bien le dialecte actif — c'est
+documenté et voulu — mais la TABLE DES SYSVARS de l'hôte ne suit pas.
+
+#+begin_example
+$ CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp
+AUTOLISP REPL (STRICT dialect, cador host)
+_$ (getenv "CLAUTOLISPCASEINSENSITIVEPATHS")
+"1"
+_$ (getvar "CLAUTOLISPCASEINSENSITIVEPATHS")
+nil
+_$ (setq *autolisp-dialect* 'bricscad)
+BRICSCAD
+_$ (getvar "CLAUTOLISPCASEINSENSITIVEPATHS")
+nil    ; <-- devrait valoir 1 : le dialecte n'est plus strict,
+       ;     et la variable d'environnement vaut 1
+_$ (setvar "CLAUTOLISPCASEINSENSITIVEPATHS" 1)
+Error: MockHost has no system variable named CLAUTOLISPCASEINSENSITIVEPATHS.
+#+end_example
+
+* Le défaut est SYMÉTRIQUE, et plus large que ce sysvar
+
+Vérifié sur la même version, dans l'autre sens :
+
+#+begin_example
+_$ (getvar "ACTIVITYINSIGHTSPATH")
+"C:\\Users\\{username}\\AppData\\Local\\Autodesk\\ActivityInsights\\Common"
+_$ (setq *autolisp-dialect* 'bricscad)
+BRICSCAD
+_$ (getvar "ACTIVITYINSIGHTSPATH")
+"C:\\Users\\{username}\\AppData\\Local\\Autodesk\\ActivityInsights\\Common"
+#+end_example
+
+ACTIVITYINSIGHTSPATH est dans =*bricscad-absent-sysvars*=, et la mesure
+sur un BricsCAD V26 réel le donne =nil= (bricscad-sysvars-on-macos). Sous
+dialecte bricscad il ne devrait donc pas répondre du tout.
+
+Autrement dit : la bascule de dialecte ne RÉVÈLE pas les sysvars propres
+à clautolisp, et ne MASQUE pas ceux propres à AutoCAD. La table ne suit
+pas le dialecte, dans aucun sens.
+
+* Cause
+
+Deux notions de « dialecte » coexistent, et une seule est dynamique.
+
+1. =CURRENT-EVALUATION-DIALECT= (autolisp-runtime/source/api.lisp)
+   consulte =*AUTOLISP-DIALECT*= *à chaque appel* — c'est ce qui fait que
+   les avertissements de portabilité, les options du lecteur et le
+   résolveur de casse suivent la bascule immédiatement.
+
+2. La table des sysvars appartient à l'HÔTE et n'est peuplée qu'UNE FOIS,
+   à l'installation des variables de transmission
+   (autolisp-cli/source/transmit.lisp) :
+
+   - =APPLY-DIALECT-TRUST-DEFAULTS= -> =apply-dialect-trust-sysvar-defaults=
+     (les défauts SECURELOAD / TRUSTEDPATHS, leur lecture-seule, les
+     sysvars clautolisp, et l'amorçage par l'environnement) ;
+   - =APPLY-DIALECT-SYSVAR-DEFAULTS= -> =apply-bricscad-dialect-sysvars=
+     (le retrait des sysvars que BricsCAD ne définit pas).
+
+   Les deux reçoivent =(transmit-dialect-keyword bindings)=, c'est-à-dire
+   le dialecte de LANCEMENT, lu une fois. Rien ne les rejoue.
+
+Ce ne sont donc pas quelques cellules oubliées : *tout ce qui dépend du
+dialecte dans la table est figé au lancement* — l'existence des sysvars
+clautolisp, l'existence des sysvars absents de BricsCAD, la
+lecture-seule de SECURELOAD/TRUSTEDPATHS sous bricscad, et l'amorçage
+par les variables d'environnement.
+
+* Comportement demandé (pjb)
+
+- on doit pouvoir POSER le sysvar dès que le dialecte n'est pas strict ;
+- en revenant à strict, il redevient nil, MASQUÉ — mais sa dernière
+  valeur est CONSERVÉE, pour être restaurée si le dialecte redevient
+  non-strict.
+
+Le masquage-avec-mémoire est le point de conception intéressant : il dit
+que passer par strict ne doit pas DÉTRUIRE un réglage, seulement le
+rendre invisible le temps qu'on y est. Un aller-retour
+non-strict -> strict -> non-strict doit rendre la valeur qu'on avait
+posée.
+
+* Questions à trancher avant d'implémenter
+
+1. *Restaurer la valeur sauvée, ou ré-amorcer depuis l'environnement ?*
+   Si l'utilisateur a fait =(setvar … 0)= sous bricscad puis est passé par
+   strict, le retour doit-il rendre 0 (sa valeur) ou 1 (l'environnement) ?
+   « Conserver sa dernière valeur » dit 0, et c'est cohérent avec la
+   précédence =setvar > env > défaut= déjà spécifiée.
+
+2. *Et au PREMIER dévoilement ?* Dans le cas du constat, aucune valeur
+   n'a jamais été posée : la première révélation doit donc appliquer la
+   précédence complète, donc lire l'environnement — sinon la trace
+   ci-dessus resterait fausse.
+
+3. *La symétrie s'applique-t-elle aux sysvars absents de BricsCAD ?* Le
+   même raisonnement voudrait qu'une bascule vers bricscad les masque, et
+   qu'un retour les restaure. C'est le même mécanisme ; le ticket
+   recommande de le traiter d'un seul tenant plutôt que d'ajouter un cas
+   particulier pour un sysvar.
+
+4. *Où brancher ?* Rejouer les overlays à chaque =getvar= serait coûteux
+   et fragile. Deux pistes : rendre la lecture du sysvar consciente du
+   dialecte courant (une vue plutôt qu'une table figée), ou détecter le
+   changement de =*AUTOLISP-DIALECT*= et rejouer les overlays à ce
+   moment-là. La première évite le problème de « qui remarque le
+   changement » ; la seconde garde le coût au moment rare.
+
+* Portée
+
+Ce ticket est la suite directe de
+=case-insensitive-paths-ignored-in-cad-dialects= (1.8.56), qui a rendu
+CLAUTOLISPCASEINSENSITIVEPATHS présent sous tous les dialectes sauf
+strict — mais uniquement selon le dialecte de LANCEMENT. Le constat de
+pjb est ce que cette correction laisse encore ouvert.
+
+* Contournement
+
+Lancer avec le dialecte voulu (=--dialect bricscad=) plutôt que de
+basculer à chaud : la table est alors correcte pour ce dialecte, et
+l'amorçage par l'environnement fonctionne.
