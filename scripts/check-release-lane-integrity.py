@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Fail if a release can look published without being usable.
 
-Four failure modes, every one of them seen for real, every one silent --
-the release went green, and the defect surfaced somewhere else, later,
-as something that did not look like a release problem at all.
+Five failure modes, every one of them seen for real, and the first four
+silent -- the release went green, and the defect surfaced somewhere else,
+later, as something that did not look like a release problem at all.
 
 The first two cost release-1.8.46 its contents:
 
@@ -33,6 +33,18 @@ had to carry a workaround (release-asset-links-use-artifacts-file.issue):
      Both answer 200, so a consumer writes 40 KB of HTML to disk under
      the archive's name and only fails at extraction, with a message
      about archive format rather than about the link.
+
+The fifth is the loud one, and it cost two releases their schedule
+rather than their contents:
+
+  5. A `benchmark' stage ordered in front of a `release' stage. No release
+     job declares `needs:', so it waits for the whole preceding stage --
+     and benchmark:autocad:windows shares the concurrency-1 Windows runner
+     with release:windows:x86-64. release-1.8.47 was cancelled by hand;
+     release-1.8.49 waited out a two-hour timeout before its artefacts
+     could start. A measurement must never be able to gate a product, so
+     the ordering itself is checked: reordering the stages back would
+     otherwise restore the fault with nothing to say so.
 
 None is a hypothetical: each one shipped.
 
@@ -186,9 +198,46 @@ def main():
             print("FAIL: %s emits no artefact link at all" % path)
             status = 1
 
+    # (5) a measurement may not gate a product. Release jobs carry no
+    #     `needs:', so stage order alone decides what waits for what, and
+    #     the CAD benchmark shares the concurrency-1 Windows runner with
+    #     the Windows release lane
+    #     (benchmark-autocad-windows-hangs-and-blocks-release.issue).
+    stages = []
+    in_stages = False
+    for line in text.splitlines():
+        if re.match(r"^stages:\s*$", line):
+            in_stages = True
+            continue
+        if in_stages:
+            item = re.match(r"^\s+-\s+(\S+)\s*$", line)
+            if item:
+                stages.append(item.group(1))
+            elif line.strip() and not line.lstrip().startswith("#"):
+                break
+    if not stages:
+        print("FAIL: no stages: list parsed -- the parser needs updating")
+        status = 1
+    elif "benchmark" not in stages or "release" not in stages:
+        print("ok  no benchmark/release stage pair to order")
+    elif stages.index("benchmark") < stages.index("release"):
+        print("FAIL: the `benchmark' stage runs BEFORE `release':")
+        print("        %s" % " -> ".join(stages))
+        print("      Release jobs declare no `needs:', so they wait for the")
+        print("      whole benchmark stage -- and the CAD benchmark shares the")
+        print("      concurrency-1 Windows runner with release:windows:x86-64.")
+        print("      That ordering cost release-1.8.47 and release-1.8.49.")
+        print("      A measurement may not gate a product: put `benchmark'")
+        print("      after `collect'.")
+        status = 1
+    else:
+        print("ok  benchmark runs after release (no measurement gates an "
+              "artefact)")
+
     if status == 0:
         print("release lanes: %d per-target lanes assert their artefacts; "
-              "no before_script exits" % lanes)
+              "no before_script exits; benchmark is off the release path"
+              % lanes)
     return status
 
 

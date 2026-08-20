@@ -62,12 +62,33 @@ workflow:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'     # master (development)
     - when: never                                       # no work-branch / version-* pipelines
 
+# BENCHMARK COMES AFTER COLLECT, and that order is the fix for
+# benchmark-autocad-windows-hangs-and-blocks-release, not a tidying.
+#
+# `benchmark' used to sit between `test' and `release'. None of the release
+# jobs declare `needs:', so they waited for the whole benchmark stage by
+# stage order alone -- and benchmark:autocad:windows shares the Windows
+# runner, which has concurrency 1, with release:windows:x86-64. A benchmark
+# that hangs there therefore held the release lane behind it twice:
+# release-1.8.47 was cancelled by hand, release-1.8.49 waited out the full
+# two-hour timeout before its artefacts could even start.
+#
+# Capping the job (timeout: 15 minutes, 1.8.51) shortened that block; it did
+# not remove it, because the ordering is what creates it. Putting the stage
+# last does remove it: a benchmark is a measurement, never a release
+# product, so nothing that ships may ever queue behind one.
+#
+# The measurement is NOT dropped from release pipelines -- it still runs on
+# the tag, just after the artefacts are built and collected, so it keeps its
+# value as a record and loses its power to cost a release. `pages' (the
+# benchmark report, stage deploy) stays after it and still gets its inputs,
+# which is why the stage goes here and not at the very end.
 stages:
   - build
   - test
-  - benchmark
   - release
   - collect
+  - benchmark
   - deploy
 
 # --- Release-ref rule fragments (issues/closed/release-ci.issue) -------------
@@ -1025,16 +1046,20 @@ pathname:probe:clautolisp:linux:
 .benchmark:
   stage: benchmark
   # A benchmark may not hold a runner for the project default (120 min).
-  # `benchmark' is a stage IN FRONT OF `release', and the Windows runner has
-  # concurrency 1, so a benchmark that hangs there gates every release lane
-  # behind it: release-1.8.47 was stalled that way and cancelled by hand,
-  # release-1.8.49 waited the full two hours for the timeout to fire.
   # These jobs measure a warm build and finish in about 90 seconds
   # (bricscad:windows 1m37, clautolisp:windows 1m16, bricscad:macos 1m00),
   # so 15 minutes is an order of magnitude of headroom and still turns a
-  # hung CAD into a ten-minute failure instead of a two-hour block.
+  # hung CAD into a ten-minute failure instead of an unbounded one.
   # allow_failure is already true here: a benchmark is a measurement, never
   # a release product, and it must not be able to cost one.
+  #
+  # This cap was written (1.8.51) while `benchmark' still ran IN FRONT OF
+  # `release', where a hang gated every release lane -- release-1.8.47 was
+  # cancelled by hand, release-1.8.49 waited the full two hours. The stage
+  # now runs after `collect' (see the stages: list), so that particular
+  # damage is gone by construction. The timeout stays: it is what keeps a
+  # wedged CAD from holding the concurrency-1 Windows runner against every
+  # OTHER pipeline, which reordering does nothing about.
   timeout: 15 minutes
   variables:
     GIT_SUBMODULE_STRATEGY: none

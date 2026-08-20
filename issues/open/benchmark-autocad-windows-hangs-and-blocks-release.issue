@@ -98,10 +98,72 @@ The fix is deliberately not limited to the CAD jobs:
 =benchmark:clautolisp:windows= had the identical silent-trace pattern, and
 leaving it would have kept one job that cannot be diagnosed.
 
-* Still open — the hang itself
 
-=benchmark:autocad:windows= still does not work; it will now fail in 15
-minutes with a readable log instead of blocking for 120 with none. That is
-a better failure, not a fix. Options 3 (move =benchmark= off the release
-path) and 4 (fix or disable the AutoCAD benchmark) remain, and the
-underlying accoreconsole problem is tracked separately.
+* DONE (2026-08-20, clautolisp 1.8.60) — option 3, la seule qui retire le mal
+
+pjb, en préparant 1.9.0 : « ok faisons ces trois petits avant 1.9.0 ».
+
+Ce qui rendait ce job capable de coûter une release n'est pas le job :
+c'est l'ORDRE. =benchmark= était un stage placé entre =test= et
+=release=, aucun job =release:*= ne déclare =needs:=, donc ils
+attendaient tout le stage =benchmark= par le seul jeu de l'ordre des
+stages — et =benchmark:autocad:windows= partage avec
+=release:windows:x86-64= le runner Windows, qui est à concurrence 1.
+
+Le stage passe donc après =collect= :
+
+: build -> test -> release -> collect -> benchmark -> deploy
+
+Conséquences, et elles se lisent dans cet ordre :
+
+- plus aucun artefact ne peut faire la queue derrière une mesure : le
+  blocage de 1.8.47 (annulé à la main) et de 1.8.49 (deux heures
+  d'attente) devient structurellement impossible, pas seulement plus
+  court ;
+- la mesure n'est PAS retirée des pipelines de release. Elle tourne
+  toujours sur le tag, après que les artefacts sont construits et
+  réunis. Elle garde sa valeur d'enregistrement et perd son pouvoir de
+  coûter une release — c'est exactement ce qu'on veut d'un benchmark ;
+- =pages=, qui EST le rapport de benchmark et le =needs:=, reste en
+  =deploy=, après =benchmark=. C'est pourquoi le stage va là et non tout
+  à la fin : le mettre après =deploy= aurait privé le rapport de ses
+  entrées.
+
+** Le timeout de 15 minutes reste, et ce n'est pas une redondance
+
+Le plafond posé en 1.8.51 avait été écrit contre CE blocage-là, qui
+n'existe plus. Il sert maintenant à autre chose, et c'est la raison de le
+garder : un benchmark CAO coincé tient le runner Windows à concurrence 1
+contre TOUTES les autres pipelines, ce que le réordonnancement ne touche
+pas. Le commentaire du template =.benchmark= a été récrit en
+conséquence — il affirmait « =benchmark= is a stage IN FRONT OF
+=release= », ce qui est désormais faux, et un commentaire faux dans un
+fichier CI est pire que pas de commentaire.
+
+** Verrouillé par un contrôle, parce que l'ordre se défait sans bruit
+
+Rien dans GitLab ne signale qu'on a remis un stage au mauvais endroit :
+la pipeline reste verte, et le défaut ne se manifeste qu'au tag suivant,
+sous la forme d'une release en retard. =scripts/check-release-lane-integrity.py=
+gagne donc un cinquième contrôle : =benchmark= ne doit pas précéder
+=release=. Il est câblé dans =make check-release=.
+
+Vérifié dans les deux sens, ce qui est le minimum pour un contrôle de ce
+genre : il passe sur l'ordre actuel, et il ÉCHOUE (sortie 1, avec la
+chaîne des stages imprimée) sur une copie du fichier remise dans
+l'ancien ordre. Un contrôle qu'on n'a pas vu échouer ne prouve rien.
+
+* Toujours ouvert — le hang lui-même
+
+=benchmark:autocad:windows= ne fonctionne toujours pas. Il échoue
+maintenant en 15 minutes avec une trace lisible, et il n'est plus devant
+quoi que ce soit qui compte. Reste l'option 4 : réparer ou désactiver le
+benchmark AutoCAD.
+
+Le STATUS reste donc TODO, délibérément. La note de 1.8.51 disait que
+« le problème accoreconsole sous-jacent est suivi séparément » ; vérifié
+le 2026-08-20, c'est vrai du problème accoreconsole et FAUX du benchmark
+lui-même — aucun autre ticket ouvert ne mentionne
+=benchmark:autocad:windows=. Le fermer maintenant perdrait l'option 4,
+qui ne vit qu'ici. Ce qui est levé, et c'est ce que le titre décrivait,
+c'est le risque pour les releases.
