@@ -49,6 +49,13 @@
 ;;; acquiring different node names, which is the kind of drift nobody
 ;;; notices until a cross-reference is dead.
 ;;;
+;;; That guard is not hypothetical: its FIRST CI run caught this override
+;;; failing on the older org in the build image -- org 9.5 wants
+;;; `org-element-lineage' to be given a LIST of types and answers
+;;; (wrong-type-argument listp headline) for a bare symbol. The two
+;;; versions also differ on the reserved-name test. Both are handled
+;;; below, and both were found by the check rather than by a user.
+;;;
 ;;; Upstream is the right home for the fix; the build cannot wait for a
 ;;; released one.
 
@@ -90,9 +97,23 @@ Same names, same salting order, same alist side effect."
           ;; must be given its node first or the child would take the
           ;; shorter name. This recursion must stay BEFORE the uniqueness
           ;; loop: moving it would change which name gets salted.
-          (let ((parent (org-element-lineage datum 'headline)))
+          ;; `'(headline)' and not `'headline': org 9.7 accepts either,
+          ;; org 9.5 -- what the CI image ships -- accepts only the list
+          ;; and answers (wrong-type-argument listp headline) otherwise.
+          ;; The list form is right on both.
+          (let ((parent (org-element-lineage datum '(headline))))
             (when (and parent (not (gethash parent by-datum)))
               (org-texinfo--get-node parent info)))
+          ;; The reserved-name test is the CAPITALISED comparison, which
+          ;; is what newer org does; older org compared the name
+          ;; literally. The capitalised test is the stricter of the two,
+          ;; so on older org this can only reserve MORE names -- and only
+          ;; a single-word "top"/"TOP" node, since capitalize works
+          ;; word by word. Whether that costs anything on the actual
+          ;; document is not argued here: check-info-export-equivalence
+          ;; compares the two exports IN THE ENVIRONMENT THAT RUNS, so
+          ;; the answer is measured per Emacs rather than assumed from a
+          ;; version number.
           (while (or (string-equal "Top" (capitalize name))
                      (gethash name by-name))
             (setq name (concat basename (format " (%d)" (cl-incf salt)))))
