@@ -175,6 +175,61 @@ of one per push. Worth checking with
 diagnosis: the plain pipelines listing EXCLUDES child pipelines, so
 "0 running pipelines" was reported while seventeen children were running.
 
+
+* DONE — option 2, le balayage nocturne (2026-08-20, clautolisp 1.8.58)
+
+pjb : « Ça me semble bien, de faire un option 2 en nightly. Vers 03:00Z »
+
+C'est la moitié que l'option 1 laissait ouverte, et elle est nommée plus
+haut : l'auto-annulation exige une pipeline QUI EN REMPLACE une autre,
+donc une ref poussée une fois puis abandonnée — typiquement la branche
+d'une MR fusionnée depuis sa dernière poussée — laisse un enfant que
+rien ne viendra jamais remplacer. C'est précisément la population qui
+avait rempli le quota.
+
+- =scripts/cancel-stale-child-pipelines.py= annule les pipelines enfants
+  encore actives au-delà de =SWEEP_MAX_AGE_HOURS= (12 par défaut) ;
+- le job =sweep:stale-child-pipelines= le lance, et il ne tourne QUE sur
+  une pipeline planifiée ;
+- l'inverse est vrai aussi, et c'est l'erreur qu'il fallait éviter : les
+  13 jobs et 3 templates qui n'ont rien à faire dans un balayage portent
+  désormais l'ancre =.not-on-schedule=, pour qu'une pipeline nocturne ne
+  rejoue pas la CI complète chaque nuit. =make check-nightly-sweep-isolation=
+  vérifie cette séparation dans les deux sens, donc elle ne peut pas se
+  défaire en silence.
+
+Deux pièges rencontrés en l'écrivant, consignés parce qu'ils ne se
+devinent pas :
+
+- la requête qui compte est =pipelines?source=parent_pipeline= — le
+  listing ordinaire EXCLUT les pipelines enfants, ce qui avait déjà
+  égaré le premier diagnostic (« 0 running » pendant que dix-sept
+  enfants tournaient) ;
+- le script échoue bruyamment si une annulation est refusée, plutôt que
+  de compter un succès : un balai qui balaie zéro pipeline en silence
+  serait exactement le mode de panne que ce ticket décrit.
+
+** Planification activée le 2026-08-20
+
+Le schedule 4397979 (=0 3 * * *=, UTC, ref master) existait mais était
+INACTIF tant que la MR n'était pas fusionnée — un schedule actif pointant
+sur un job inexistant n'aurait rien balayé. Il est activé depuis que
+!108 est dans master ; premier déclenchement le 2026-08-21 à 03:00Z.
+
+** Ce qui reste à observer avant de considérer le sujet clos
+
+Rien à écrire, seulement à regarder — et c'est pour cela que le STATUS
+reste TODO :
+
+1. après le passage du 2026-08-21 03:00Z, vérifier que le job a tourné,
+   qu'il a annulé les enfants abandonnés et lui seul (aucun job de CI
+   ordinaire dans cette pipeline planifiée) ;
+2. sur quelques jours, vérifier via =pipelines?source=parent_pipeline=
+   qu'il reste UNE seule pipeline enfant active par ref au lieu d'une
+   par poussée.
+
+Les deux ensemble ferment le ticket. Tant qu'ils ne sont pas constatés,
+la mécanique est écrite et fusionnée, pas prouvée.
 * Affected merge requests
 
 MR !107 was merged through the API rather than =glab= for this reason,

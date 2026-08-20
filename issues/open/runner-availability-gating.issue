@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: runner-availability-gating — auto-start native (macOS/Windows) jobs only when their runner is online
-#+STATUS: BLOCKED
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: infra
 #+DEPENDS: RUNNER_STATUS_TOKEN (a CI/CD variable pjb must add)
@@ -120,3 +120,52 @@ RUNNER_STATUS_TOKEN (portée api) tout reste `manual`, c'est-à-dire le
 comportement d'avant — jamais un faux "online". Le statut passe de TODO
 à BLOCKED sur cette variable, que pjb doit ajouter dans les CI/CD
 settings du projet.
+
+
+* DONE 2026-08-20 — la variable a été ajoutée, et le mécanisme est OBSERVÉ
+
+Le ticket était BLOCKED en attente de =RUNNER_STATUS_TOKEN=. La variable
+existe désormais, et le comportement n'est plus déduit du code : il est
+mesuré sur une pipeline réelle, la 2777241866 de master (2026-08-20
+18:58 UTC), qui a eu la bonne fortune de tomber sur un runner en ligne
+et un runner hors ligne EN MÊME TEMPS — c'est-à-dire exactement le cas
+que les critères d'acceptation demandent de distinguer.
+
+=detect:runners= a publié :
+
+: MACOS_RUNNER=online
+: WINDOWS_RUNNER=offline
+
+et dans le pipeline enfant, sans intervention :
+
+| runner  | état    | jobs natifs                                        |
+|---------+---------+----------------------------------------------------|
+| macOS   | online  | =pending= — démarrés tout seuls (build:alfe:macos, test:*:macos, harvest:sysvars, vendor:probes, pathname:probe, path-sysvars:probe, encoding:experiment, verify:vl-registry, conformance:pathname-mapping) |
+| Windows | offline | =manual= — repli, aucun job coincé en pending       |
+
+Les trois critères d'acceptation sont donc satisfaits, et chacun par une
+observation plutôt que par lecture du YAML :
+
+- les jobs manuels dont le runner est en ligne démarrent seuls : OUI,
+  les macOS sont partis sans que personne ne clique ;
+- ceux dont le runner est hors ligne restent manuels : OUI, les trois
+  sondes Windows ;
+- la pipeline ne rougit pas et ne s'empile pas à cause d'un portable
+  éteint : OUI — aucun =stuck_pending= dans cette pipeline.
+
+** Ce que la journée a appris en plus, et qui n'est pas dans les critères
+
+Le repli =manual= ne protège que les pipelines créées PENDANT que le
+runner est hors ligne. Un runner qui s'éteint PENDANT un job donne autre
+chose : dans la pipeline précédente (2776267840, 13:17), Windows était
+en ligne à la création, =path-sysvars:probe:bricscad:windows= a donc
+démarré, puis la machine a disparu — le job est mort en
+=server_timeout_running= au bout de 1800 s exactement, avec une trace
+VIDE, et les deux sondes AutoCAD qui attendaient le runner à
+concurrence 1 sont mortes en =stuck_pending_no_matching_runners=.
+
+Ce n'est pas un défaut de la porte : à la création, la décision prise
+était juste. Mais cela veut dire qu'un portable qui s'éteint au mauvais
+moment coûte encore trois jobs et une demi-heure de runner exclusif, et
+c'est =cad-runner-wedged-by-modal-dialog= qui porte ce sujet, pas
+celui-ci.
