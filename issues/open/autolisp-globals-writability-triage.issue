@@ -1,0 +1,132 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: autolisp-globals-writability-triage — quelles variables *AUTOLISP-…* méritent d'être RO avec une fonction de réglage
+#+STATUS: DRAFT
+#+PRIORITY: P3
+#+TYPE: design
+#+DEPENDS: sysvar-table-ignores-runtime-dialect-change
+#+BRANCH: -
+
+* Question (pjb, 2026-08-20)
+
+Suite de =sysvar-table-ignores-runtime-dialect-change=. D'autres
+variables =*AUTOLISP-…*= changent peut-être le comportement
+dynamiquement ; si elles souffrent du même mal que =*AUTOLISP-DIALECT*=,
+faut-il les passer en lecture seule et fournir une fonction de réglage,
+qui ferait les initialisations nécessaires ? L'alternative — surveiller
+les affectations et déclencher sur certaines — coûterait sur CHAQUE
+affectation de variable.
+
+Le tri demandé, fait en cherchant qui LIT chaque variable après le
+lancement : une variable que rien ne relit ne peut rien déclencher,
+quoi qu'en dise le manuel.
+
+* Réponse courte
+
+*Une seule variable a besoin du traitement : =*AUTOLISP-DIALECT*=.*
+
+L'alternative coûteuse (instrumenter toutes les affectations) est donc
+hors de proportion : elle paierait sur chaque =setq= du langage pour un
+seul cas.
+
+* Le tri — 31 variables, quatre classes
+
+** A. Assignation à effet, mais l'effet ne suit pas — LE cas (1)
+
+| variable            | lue par                          | problème                                        |
+|---------------------+----------------------------------+-------------------------------------------------|
+| =*AUTOLISP-DIALECT*=| autolisp-runtime/source/api.lisp | consultée À CHAQUE APPEL pour le comportement (avertissements, lecteur, résolveur de casse) — mais la table des sysvars, elle, est figée au lancement |
+
+C'est la seule variable où l'affectation DOIT déclencher une
+initialisation. Le détail du défaut est dans le ticket dont celui-ci
+dépend.
+
+** B. Assignation qui marche déjà — ne rien changer (1)
+
+| variable                   | pourquoi c'est correct                                  |
+|----------------------------+---------------------------------------------------------|
+| =*AUTOLISP-FILE-ENCODING*= | relue à CHAQUE ouverture/chargement, via LOOKUP-AUTOLISP-FILE-ENCODING ; documentée « settable at runtime », et elle l'est vraiment |
+
+Elle montre au passage à quoi ressemble une variable dynamique bien
+faite : le consommateur la relit au moment de s'en servir, donc il n'y a
+aucune initialisation à déclencher.
+
+** C. Déclaratives par conception — l'affectation ne PEUT rien faire (1)
+
+| variable                       | ce qu'elle est                                       |
+|--------------------------------+------------------------------------------------------|
+| =*AUTOLISP-TERMINAL-ENCODING*= | déclare l'encodage du terminal pour que le code qui émet des octets bruts s'adapte ; « No stream rebinding is performed at the CL level », dit son propre texte d'aide |
+
+Elle n'est pas cassée : elle annonce, elle ne pilote pas. La passer en RO
+serait défendable pour empêcher un malentendu, mais elle ne demande
+aucune fonction de réglage — il n'y a rien à initialiser.
+
+** D. Faits de lancement — rien ne les relit dans clautolisp (28)
+
+Les autres décrivent comment le processus a été lancé, et sont publiées
+pour l'introspection. Recherche faite : hors de =transmit.lisp= (qui les
+DÉCLARE, ce qui n'est pas une lecture) et des tests, rien dans clautolisp
+ne les relit. Les affecter ne change donc rien, aujourd'hui.
+
+Les lecteurs qui apparaissent pour beaucoup d'entre elles sont dans
+=alfe=, et c'est l'inverse d'une lecture : alfe les INJECTE dans le
+moteur CAO distant. Confondre les deux ferait conclure à tort qu'elles
+sont actives ici.
+
+: *AUTOLISP-ACTIONS*   *AUTOLISP-BACKEND*   *AUTOLISP-CAD-LOAD-ENCODING*
+: *AUTOLISP-DEBUG*     *AUTOLISP-DRAWING*   *AUTOLISP-DRY-RUN*
+: *AUTOLISP-EXPRESSION* *AUTOLISP-FRONTEND* *AUTOLISP-GUI-COMMAND*
+: *AUTOLISP-HELP*      *AUTOLISP-HOST*      *AUTOLISP-INTERACTIVE*
+: *AUTOLISP-KEEP-WORKDIR* *AUTOLISP-LOAD-PATHNAME* *AUTOLISP-MAIN*
+: *AUTOLISP-MOCK-INPUT* *AUTOLISP-MODE*     *AUTOLISP-NO-COLOR*
+: *AUTOLISP-NO-INIT*   *AUTOLISP-PLUGIN-OPTIONS* *AUTOLISP-PROCESS*
+: *AUTOLISP-QUIET*     *AUTOLISP-TIMEOUT*   *AUTOLISP-TRACE*
+: *AUTOLISP-VERBOSE*   *AUTOLISP-VERSION*   *AUTOLISP-WILL-QUIT*
+: *AUTOLISP-WORKDIR*
+
+Note sur =*AUTOLISP-LOAD-PATHNAME*= : le manuel la classe « dynamique »,
+mais au sens où le système la LIE pendant l'action, pas au sens où
+l'utilisateur l'affecte utilement.
+
+* La décision de conception, et une réserve
+
+Le tri rend la question de pjb beaucoup plus petite qu'elle n'en avait
+l'air : *un seul cas*. Deux voies, et elles ne coûtent pas la même chose.
+
+1. *RO + fonction de réglage* (=clal-set-dialect=, par exemple). Avantage :
+   l'initialisation est évidente et se fait au seul endroit qui la
+   connaît.
+
+   *Réserve, et elle est sérieuse* : =(setq *AUTOLISP-DIALECT* 'lax)= est
+   une interface DOCUMENTÉE — le manuel la donne comme *writable*, et
+   c'est un point explicite d'alfe-clautolisp-dialect. La passer en RO
+   casse du code utilisateur existant. Si cette voie est retenue, il faut
+   ou bien garder l'affectation en fonctionnement (avec avertissement de
+   dépréciation), ou bien assumer la rupture — pas la découvrir.
+
+2. *Rendre la LECTURE consciente du dialecte* : la table des sysvars
+   devient une vue calculée à partir du dialecte courant, plutôt qu'une
+   table estampillée au lancement. Alors aucune fonction de réglage n'est
+   nécessaire, la variable reste modifiable, l'interface documentée est
+   préservée, et le problème disparaît pour les DEUX sens du défaut
+   (révéler les sysvars clautolisp, masquer ceux d'AutoCAD).
+
+La voie 2 a ma préférence : elle traite la cause plutôt que d'ajouter une
+porte, et elle ne casse rien. La voie 1 devient intéressante le jour où
+une SECONDE variable rejoint la classe A — c'est-à-dire quand une
+affectation devra déclencher un travail qu'aucune lecture paresseuse ne
+peut faire.
+
+Quant à la troisième voie envisagée par pjb — instrumenter les
+affectations — le tri la disqualifie : elle imposerait un coût à chaque
+=setq= du langage pour surveiller une seule variable.
+
+* À vérifier si la classe D bouge
+
+Le tri est un instantané. Une variable de la classe D qui gagnerait un
+lecteur dans clautolisp changerait de classe, et le tri devrait être
+refait. Les candidates naturelles sont celles qui doublent un état
+interne : =*AUTOLISP-NO-COLOR*=, =*AUTOLISP-QUIET*=, =*AUTOLISP-VERBOSE*=,
+=*AUTOLISP-TRACE*=, =*AUTOLISP-DEBUG*=. Le jour où l'une d'elles est
+consultée pour décider quelque chose, il faudra choisir : la relire au
+point d'usage (classe B, rien à faire) ou la relier à l'état interne
+(classe A, il faut une fonction).
