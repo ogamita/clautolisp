@@ -53,3 +53,381 @@ XDG_CACHE_HOME  $HOME/.cache
    autocad or bricscad or if they're generic, the value they have in
    autocad and in bricscad (if applicable),  a short description, and
    a suggestion for clautolisp path.
+
+
+=========================================================================
+ANALYSE — 2026-08-19 (clautolisp 1.8.56)
+=========================================================================
+
+Réponse aux trois points, faite en interrogeant le catalogue lui-même
+plutôt qu'en recopiant à la main : 1836 sysvars, dont 57 portent un
+chemin par la valeur ou par le nom. Ils ne sont pas tous dans le même
+état, et la distinction commande la suite.
+
+1 — Inventaire : trois classes, pas une
+----------------------------------------
+
+CLASSE A — 6 sysvars ACTIVEMENT FAUX
+   Leur valeur par défaut est un chemin Windows littéral, ou une
+   disposition Windows déguisée. C'est ce que tu as vu, et c'est le seul
+   groupe où clautolisp AFFIRME quelque chose de faux.
+
+CLASSE B — 43 sysvars DÉRIVÉS DE L'HÔTE, laissés vides
+   Nom en PATH/DIR/FOLDER/PREFIX, valeur `""`, marqués host-derived.
+   Ils ne mentent pas : ils se taisent. La question les concernant n'est
+   pas « corriger » mais « faut-il les peupler ».
+
+CLASSE C — 8 littéraux qui ne sont pas des chemins absolus
+   `CENTERLTYPEFILE` = "acad.lin", `PDFIMPORTIMAGEPATH` = "PDF Images",
+   `PRINTFILE` = ".", `BIMDEFAULTPROPERTIESPATH` = une liste de noms
+   XML, `INETLOCATION` = une URL, `CPROFILE` = un nom de profil,
+   `ACTPATH`, `IFCEXPORTMAPPINGPATH` = " ". Des noms relatifs ou des
+   non-chemins. Rien à faire, sinon ne pas les confondre avec la classe A
+   sur la foi de leur nom.
+
+2 — Chemin CAO ou chemin clautolisp ?
+--------------------------------------
+
+Ta suggestion (valeurs XDG) est la bonne, et il existe déjà un
+PRÉCÉDENT dans l'arbre : `TEMPPREFIX` est peuplé au lancement par
+`autolisp-cli/source/transmit.lisp`, parce que le catalogue le donnait
+vide et que `(getvar "TEMPPREFIX")` rendait "". C'est exactement le
+traitement que tu décris, déjà appliqué une fois. Il donne le patron :
+une préférence adossée au registre côté CAO, résolue côté clautolisp
+depuis l'environnement, et laissée intacte sur un vrai CAO.
+
+Sur le fond, reproduire le chemin de la CAO serait un contresens : ces
+répertoires n'existent pas sous clautolisp, et clautolisp ne peut ni les
+créer ni les peupler (ton propre constat). Un chemin qui pointe vers un
+répertoire absent n'est pas plus utile qu'une chaîne vide — il est
+seulement plus trompeur. Donc : chemin clautolisp, documenté avec la
+valeur d'origine, et l'utilisateur reste libre de remettre celle de son
+dialecte.
+
+3 — La table
+------------
+
+CLASSE A — à corriger. `{XDG}` abrège la variable XDG correspondante.
+
+| sysvar                | éditeur   | valeur actuelle (fausse hors Windows)        | ce que c'est            | proposition clautolisp                        |
+|-----------------------+-----------+----------------------------------------------+-------------------------+-----------------------------------------------|
+| ACTIVITYINSIGHTSPATH  | AutoCAD   | C:\Users\{username}\AppData\Local\Autodesk\… | état (un identifiant)   | $XDG_STATE_HOME/clautolisp/ActivityInsights/Common |
+| BMTOOLPATH            | BricsCAD  | C:\Program Files\Bricsys\BricsCAD V26 …       | ressource d'installation| $XDG_DATA_DIRS premier/clautolisp/design-library   |
+| POINTCLOUDCACHEFOLDER | BricsCAD  | C:\Users\%username%\AppData\Roaming\Bricsys\…| cache                   | $XDG_CACHE_HOME/clautolisp/pointcloud              |
+| CLOUDDOWNLOADPATH     | BricsCAD  | {User}Documents/Bricsys247                   | documents utilisateur   | $HOME/Documents (ou $XDG_DOCUMENTS_DIR si défini)  |
+| CLOUDTEMPFOLDER       | BricsCAD  | {User}AppData/Local/Temp/Bricsys_24_7        | temporaire              | TEMPPREFIX/bricsys247 (réutiliser le précédent)    |
+| IMAGECACHEFOLDER      | BricsCAD  | {User}AppData/Local/Temp/ImageCache          | cache                   | $XDG_CACHE_HOME/clautolisp/images                  |
+
+`ACTIVITYINSIGHTSPATH` est ABSENT de BricsCAD (il figure dans
+*bricscad-absent-sysvars*), donc sous `--dialect bricscad` il ne se pose
+pas ; il se pose sous le dialecte par défaut et sous autocad. Les cinq
+autres sont des noms BricsCAD.
+
+CLASSE B — 43, tous `""` et host-derived. Par catégorie, avec la
+question à trancher pour chacune :
+
+  installation / ressources CAO — n'existent pas ici :
+    BMFORMTEMPLATEPATH, COLORBOOKPATH, COMMUNICATORPATH, COMPONENTSPATH,
+    DETAILSPATH, HELPPREFIX, LOCALROOTPREFIX, PARAMETRICBLOCKS2DPATH,
+    RENDERMATERIALSPATH, ROAMABLEROOTPREFIX, SHEETSETTEMPLATEPATH,
+    TEMPLATEPATH, TEXTUREMAPPATH, TOOLPALETTEPATH, _TOOLPALETTEPATH,
+    PLOTCFGPATH, PLOTSTYLEPATH, DGNMAPPINGPATH, SECTIONSETTINGSSEARCHPATH
+    -> proposition : rester VIDES tant que clautolisp ne fournit pas la
+       ressource. Les peupler vers un répertoire inexistant serait
+       remplacer un silence par un mensonge.
+
+  espace utilisateur (documents, sorties, journaux, sauvegardes) :
+    BLOCKSPATH, BLOCKSRECENTFOLDER, BLOCKSYNCFOLDER, DRAWINGPATH,
+    LOGFILEPATH, MYDOCUMENTSPREFIX, PLOTOUTPUTPATH, RECENTPATH,
+    SAVEFILEPATH, SRCHPATH, STARTINFOLDER, WORKINGFOLDER, XLOADPATH,
+    XCOMPAREBAKPATH, FBXEXPORTTEXTURESPATH, CVERSIONCONTROLPATH,
+    VERSIONCONTROLCONFIGPATH, VERSIONCONTROLDOWNLOADPATH, ACTRECPATH
+    -> proposition : peupler ceux qu'un programme LIT pour décider où
+       écrire (LOGFILEPATH, PLOTOUTPUTPATH, SAVEFILEPATH, WORKINGFOLDER),
+       vers $XDG_STATE_HOME/clautolisp/… ou le cwd ; laisser vides ceux
+       qui ne décrivent qu'une commodité d'interface (RECENTPATH,
+       BLOCKSRECENTFOLDER).
+
+  état du dessin courant, calculés et non configurés :
+    ACADPREFIX, DWGPREFIX, SAVEFILE, BASEFILE
+    -> rien à décider : ils dépendent du dessin ouvert, pas de
+       l'installation. Vides tant qu'aucun dessin n'est ouvert est le
+       comportement juste.
+
+  déjà traité, et c'est le patron :
+    TEMPPREFIX -> peuplé au lancement (transmit.lisp), registre/TMPDIR/
+    plateforme.
+
+CE QUE CETTE ANALYSE N'ÉTABLIT PAS
+-----------------------------------
+
+Les valeurs RÉELLES d'AutoCAD et de BricsCAD pour la classe B. Le
+catalogue les donne host-derived, donc `""` — ce qui veut dire que
+personne ne les a mesurées, pas qu'elles sont vides sur un vrai CAO. La
+colonne « valeur dans autocad / dans bricscad » de ta demande ne peut
+donc pas être remplie honnêtement d'ici : elle demande une sonde sur les
+deux moteurs, du type de celles que font déjà les jobs `vendor:probes:*`.
+C'est le prochain pas naturel, et il est mécanisable — une sonde qui
+lit ces 57 noms sur chaque moteur et publie la table.
+
+Je préfère le dire que produire une colonne plausible et fausse.
+
+RECOMMANDATION
+--------------
+
+Traiter la classe A seule d'abord : 6 sysvars, une correction visible,
+aucune décision de conception en suspens — un chemin Windows sur macOS
+est faux quoi qu'on décide ensuite. La classe B demande d'abord la sonde
+ci-dessus, sans quoi les propositions ne seraient que des paris.
+
+
+-------------------------------------------------------------------------
+QUI LES UTILISE — la méthode de pjb, appliquée (2026-08-19)
+-------------------------------------------------------------------------
+
+pjb : « identifier les fonctions ou commandes qui les utilisent […] alors
+leur traduction sur clautolisp pourrait être informée par
+l'implémentation de ces fonctions dans clautolisp. »
+
+C'est le bon critère, et il renverse la priorité de l'analyse
+ci-dessus : la valeur qu'un sysvar doit avoir est décidée par son
+CONSOMMATEUR, et s'il n'y en a pas, la question ne se pose pas.
+
+Ce que l'inventaire pouvait répondre, et ce qu'il ne pouvait pas
+-----------------------------------------------------------------
+
+Le champ `:coupled` de `system-variables-inventory.sexp` est fait pour
+ça — mais il est VIDE pour 1791 des 1836 records, et pour les six de la
+classe A sans exception. Il ne répond donc pas.
+
+Le champ `:summary`, lui, répond, parce qu'il nomme la fonctionnalité :
+
+| sysvar                | fonctionnalité qui le lit, selon l'éditeur          |
+|-----------------------+-----------------------------------------------------|
+| ACTIVITYINSIGHTSPATH  | Activity Insights — la télémétrie d'AutoCAD         |
+| BMTOOLPATH            | Assembly Inspect — outils BIM de BricsCAD           |
+| POINTCLOUDCACHEFOLDER | cache des nuages de points                          |
+| CLOUDDOWNLOADPATH     | panneau Bricsys 24/7                                |
+| CLOUDTEMPFOLDER       | panneau Bricsys 24/7 (temporaires)                  |
+| IMAGECACHEFOLDER      | cache image, couplé à IMAGEDISKCACHE                |
+
+*Aucune de ces six fonctionnalités n'existe dans clautolisp* : ni
+télémétrie, ni BIM, ni nuages de points, ni panneau cloud, ni cache
+d'images. Un moteur AutoLISP sans interface graphique n'en a aucune.
+
+Ce que le dépôt répond, et qui est vérifiable ici
+--------------------------------------------------
+
+Recherche des 57 noms dans le code de clautolisp et d'alfe, en excluant
+les fichiers qui ne font que les ÉNUMÉRER (le catalogue, l'inventaire,
+l'overlay bricscad, la spec) — énumérer n'est pas consommer :
+
+*CINQ sur cinquante-sept apparaissent*, et il faut encore les départager :
+
+| sysvar      | où                                        | est-ce un consommateur ?                         |
+|-------------+-------------------------------------------+--------------------------------------------------|
+| ACADPREFIX  | tests seulement                           | non                                              |
+| DWGPREFIX   | cador/source/sysvars.lisp                 | non — une DÉCLARATION de défaut du mock host     |
+| LOGFILEPATH | alfe, autolisp-bootstrap.lsp              | OUI, et c'est alfe qui l'ÉCRIT sur l'hôte CAO    |
+| SRCHPATH    | alfe, autolisp-bootstrap.lsp              | vestigial — voir plus bas                        |
+| TEMPPREFIX  | autolisp-cli/source/transmit.lisp         | OUI — le seul que clautolisp résout pour lui-même |
+
+Donc *cinquante-deux des cinquante-sept n'ont aucun consommateur*, nulle
+part. Pour ceux-là, « quelle valeur devraient-ils avoir » n'a pas de
+réponse utile : leur donner un chemin XDG serait remplacer une fiction
+Windows par une fiction POSIX. Rester vides est le comportement juste
+tant qu'aucune fonction ne les lit.
+
+Le cas LOGFILEPATH est instructif, et il illustre exactement le point de
+pjb : il compte non pas parce que clautolisp le LIT, mais parce qu'alfe
+le POSE sur un vrai CAO — c'est « le seul sysvar de log accessible en
+écriture sur les hôtes réels », LOGFILENAME étant en lecture seule là-bas.
+Ce qui importe donc pour lui n'est pas sa valeur par défaut mais que
+`setvar` fonctionne.
+
+Ce que cela change à la recommandation
+---------------------------------------
+
+Elle se resserre :
+
+1. *classe A (6)* — à corriger, parce qu'un chemin Windows sur macOS est
+   faux quelle que soit la suite. Mais la correction n'est PAS un chemin
+   XDG « équivalent » : aucune fonctionnalité derrière eux n'existe ici,
+   donc la valeur honnête est vide, ou une convention explicitement
+   offerte au code utilisateur — ce que pjb envisageait déjà en écrivant
+   « it could be a user custom setting if we can make use of these
+   paths » ;
+2. *TEMPPREFIX* — déjà fait, et c'est le patron ;
+3. *LOGFILEPATH, SRCHPATH* — doivent rester ACCESSIBLES EN ÉCRITURE, ce
+   qui est déjà le cas ; leur défaut importe peu ;
+4. *les 48 autres* — laisser vides, et n'en peupler un que le jour où
+   une fonction clautolisp le lit. La règle devient : on donne une
+   valeur à un sysvar de chemin quand on écrit son consommateur, pas
+   avant.
+
+Cela évite aussi un piège : peupler ces 48 cellules créerait 48
+promesses que rien ne tient, dans un produit dont le reste des
+diagnostics vise précisément l'inverse.
+
+CONSTAT ACCESSOIRE — la restauration de SRCHPATH ne s'exécute jamais
+---------------------------------------------------------------------
+
+`autolisp-bootstrap.lsp:210` restaure SRCHPATH depuis
+`_autolisp_old_srchpath`, que la spec d'alfe déclare comme global injecté
+initialisé à `nil` (`alfe--specifications.org:266`) — et *rien, dans tout
+le dépôt, ne lui assigne jamais de valeur*. Le `if` est donc toujours
+faux et le `setvar` ne s'exécute pas.
+
+Ce n'est PAS un bug vivant : alfe ne modifie pas SRCHPATH non plus, donc
+il n'y a rien à restaurer et rien n'est laissé sale. C'est du vestige de
+l'ancien wrapper bash. Signalé parce que du code qui promet une
+restauration sans jamais l'exécuter se lit comme une garantie, et que le
+jour où quelqu'un ajoutera un `setvar "SRCHPATH"` en début de session, il
+croira la restauration acquise.
+
+PROCHAIN PAS SUGGÉRÉ
+--------------------
+
+La sonde évoquée plus haut reste utile, mais son objet change : plutôt
+que relever les VALEURS des 57 sur les deux moteurs, relever POUR
+CHAQUE FONCTION que clautolisp implémente les sysvars qu'elle consulte
+sur un vrai CAO. C'est la même mécanique (`vendor:probes:*`), c'est
+beaucoup plus petit, et cela répond à la question qui décide vraiment.
+
+
+-------------------------------------------------------------------------
+TABLE DES 38 — description éditeur et usage plausible ici (2026-08-19)
+-------------------------------------------------------------------------
+
+pjb : « most of these look like they could have a value and a use in
+clautolisp. Add a table to the issue with a summary of their description
+for each. »
+
+Correction de ma part avant la table : j'avais conclu « 52 sans
+consommateur, donc les laisser vides ». « Aucun consommateur AUJOURD'HUI »
+n'est pas « aucun usage possible », et la règle était posée trop
+fermement. En lisant les descriptions une par une, ces 38 ne forment pas
+un bloc : trois groupes ont un usage réel dans un moteur sans interface,
+un quatrième n'en a pas. Le classement est ce qui rend la table
+décisionnelle plutôt que descriptive.
+
+Colonnes : éditeur ; RO = lecture seule ; description (résumé de la
+documentation éditeur, via :summary de l'inventaire).
+
+GROUPE 1 — FAITS D'ENVIRONNEMENT, en lecture seule
+   clautolisp peut y répondre JUSTE, aujourd'hui, sans rien inventer :
+   ce sont des propriétés du processus et de l'utilisateur, pas des
+   ressources d'une installation CAO. Ce sont les gains les plus francs.
+
+| sysvar             | éditeur | RO | description                                                              |
+|--------------------+---------+----+--------------------------------------------------------------------------|
+| WORKINGFOLDER      | autocad | T  | répertoire de travail du processus (« of interest to developers »)       |
+| STARTINFOLDER      | autocad | T  | répertoire depuis lequel le produit a été démarré                        |
+| MYDOCUMENTSPREFIX  | les 2   | T  | chemin complet du dossier Mes documents de l'utilisateur connecté        |
+| LOCALROOTPREFIX    | les 2   | T  | racine où sont installés les fichiers personnalisables LOCAUX            |
+| ROAMABLEROOTPREFIX | les 2   | T  | racine des fichiers personnalisables ITINÉRANTS de l'utilisateur         |
+
+   Proposition : WORKINGFOLDER = le cwd (clautolisp le connaît déjà, et
+   vl-getcurrentdir l'expose) ; STARTINFOLDER = le cwd au lancement ;
+   MYDOCUMENTSPREFIX = $HOME/Documents ; LOCALROOTPREFIX = $PREFIX/share/
+   clautolisp ; ROAMABLEROOTPREFIX = $XDG_CONFIG_HOME/clautolisp. Aucun de
+   ces cinq ne dépend d'une fonctionnalité absente.
+
+GROUPE 2 — CHEMINS DE RECHERCHE DE RESSOURCES
+   Là où un moteur RÉSOUT un fichier. clautolisp a déjà la notion —
+   CLAUTOLISPSUPPORTFILESEARCHPATH et la marche du support-path — donc
+   ces sysvars ont un analogue direct, et SRCHPATH est le cas central.
+
+| sysvar                    | éditeur  | RO | description                                                     |
+|---------------------------+----------+----+-----------------------------------------------------------------|
+| SRCHPATH                  | bricscad | .  | chemin de recherche des fichiers de support : polices, fichiers de personnalisation, plugins, dessins à insérer, types de ligne, motifs de hachures — hors dossier courant ; séparés par des `;` |
+| TEMPLATEPATH              | bricscad | .  | dossier des gabarits                                            |
+| SHEETSETTEMPLATEPATH      | les 2    | .  | dossier des gabarits de jeux de feuilles                        |
+| BMFORMTEMPLATEPATH        | bricscad | .  | fichier gabarit par défaut de la commande BMFORM                |
+| COLORBOOKPATH             | bricscad | .  | nuanciers (color books) ; plusieurs chemins séparés par `;`     |
+| COMPONENTSPATH            | bricscad | .  | composants créés par l'utilisateur ; plusieurs chemins          |
+| DETAILSPATH               | bricscad | .  | fichiers de détails créés par l'utilisateur ; plusieurs chemins |
+| PARAMETRICBLOCKS2DPATH    | bricscad | .  | blocs paramétriques 2D de l'utilisateur ; plusieurs chemins     |
+| RENDERMATERIALSPATH       | bricscad | .  | matériaux de rendu de l'utilisateur ; plusieurs chemins         |
+| TEXTUREMAPPATH            | bricscad | .  | textures                                                        |
+| SECTIONSETTINGSSEARCHPATH | bricscad | .  | styles de coupe BIM, styles d'étiquettes, personnalisations     |
+| TOOLPALETTEPATH           | les 2    | .  | palettes d'outils                                               |
+| _TOOLPALETTEPATH          | autocad  | .  | idem, variante AutoCAD                                          |
+| PLOTCFGPATH               | bricscad | .  | configurations de traceur (détermine les formats de papier)     |
+| PLOTSTYLEPATH             | bricscad | .  | styles de tracé                                                 |
+| DGNMAPPINGPATH            | autocad  | T  | emplacement de dgnsetups.ini (correspondances DGN)              |
+
+   Proposition : SRCHPATH d'abord, et le traiter comme un ALIAS de
+   CLAUTOLISPSUPPORTFILESEARCHPATH plutôt que comme un chemin nouveau —
+   sa définition éditeur EST celle de notre support-path, et un corpus
+   qui fait (setvar "SRCHPATH" …) attend qu'il agisse. Les autres :
+   $XDG_DATA_HOME/clautolisp/<ressource> avec repli sur
+   $PREFIX/share/clautolisp/<ressource>, et vides tant que clautolisp ne
+   fournit ni ne lit la ressource — un nuancier ou un gabarit BIM n'a de
+   sens que si quelque chose les charge.
+
+GROUPE 3 — DESTINATIONS D'ÉCRITURE
+   Là où un moteur PRODUIT quelque chose. Une exécution sans interface
+   produit réellement des journaux, des sauvegardes, des sorties.
+
+| sysvar                     | éditeur  | RO | description                                                      |
+|----------------------------+----------+----+------------------------------------------------------------------|
+| LOGFILEPATH                | les 2    | .  | dossier des journaux d'historique de commandes de la session     |
+| SAVEFILEPATH               | les 2    | .  | dossier des fichiers de sauvegarde automatique de la session     |
+| PLOTOUTPUTPATH             | bricscad | .  | dossier par défaut des fichiers de tracé produits                |
+| XLOADPATH                  | les 2    | .  | copies temporaires des xrefs chargées à la demande               |
+| XCOMPAREBAKPATH            | autocad  | .  | sauvegarde du fichier xref de comparaison                        |
+| ACTRECPATH                 | autocad  | .  | dossier où sont enregistrées les nouvelles macros d'action       |
+| FBXEXPORTTEXTURESPATH      | bricscad | .  | textures à l'export FBX (seulement si FBXEXPORTTEXTURES = 2)     |
+| CVERSIONCONTROLPATH        | bricscad | .  | projet de gestion de versions courant                            |
+| VERSIONCONTROLCONFIGPATH   | bricscad | .  | réglages de gestion de versions                                  |
+| VERSIONCONTROLDOWNLOADPATH | bricscad | .  | projets de gestion de versions téléchargés                       |
+
+   Proposition : LOGFILEPATH et SAVEFILEPATH d'abord — ce sont les deux
+   qu'une exécution sans interface produit vraiment, et LOGFILEPATH est
+   DÉJÀ posé par alfe sur les hôtes réels (le seul sysvar de log
+   accessible en écriture là-bas), donc son comportement ici doit suivre.
+   Défaut : $XDG_STATE_HOME/clautolisp/logs et .../autosave. Les autres
+   restent vides tant que la fonctionnalité correspondante n'existe pas
+   (traçage, xrefs, macros d'action, FBX, gestion de versions).
+
+GROUPE 4 — COMMODITÉS D'INTERFACE GRAPHIQUE
+   Décrivent une position dans une boîte de dialogue ou un historique
+   d'interface. Sans interface, il n'y a rien à décrire.
+
+| sysvar             | éditeur  | RO | description                                                                    |
+|--------------------+----------+----+--------------------------------------------------------------------------------|
+| BLOCKSPATH         | bricscad | .  | CINQUIÈME dossier du volet gauche de la boîte « Select Drawing File » (INSERT)  |
+| DRAWINGPATH        | bricscad | .  | idem pour OPEN / SAVEAS / INSERT — et « Windows only » dans la doc              |
+| RECENTPATH         | bricscad | .  | dernier chemin utilisé                                                          |
+| BLOCKSRECENTFOLDER | autocad  | .  | où sont rangés les blocs récemment insérés ou créés                             |
+| BLOCKSYNCFOLDER    | autocad  | .  | où sont rangés les blocs récents et favoris                                     |
+| HELPPREFIX         | autocad  | .  | chemin du système d'aide                                                        |
+| COMMUNICATORPATH   | bricscad | .  | chemin d'installation du Communicator (Mac & Linux)                             |
+
+   Proposition : rester vides. « Le cinquième dossier du volet gauche
+   d'une boîte de dialogue » n'a pas de traduction dans un moteur sans
+   boîte de dialogue, et DRAWINGPATH est même documenté « Windows only ».
+   HELPPREFIX et COMMUNICATORPATH désignent des installations qui
+   n'existent pas ici.
+
+CE QUE LA TABLE CHANGE
+----------------------
+
+L'ordre de travail devient évident, et il ne suit pas l'ordre
+alphabétique :
+
+1. groupe 1 (5 sysvars) — répondables JUSTE aujourd'hui, sans dépendre
+   d'aucune fonctionnalité à écrire. C'est le lot à faire en premier ;
+2. SRCHPATH seul — parce qu'il a un analogue exact déjà implémenté, et
+   qu'un corpus qui le pose attend qu'il agisse ;
+3. LOGFILEPATH et SAVEFILEPATH — les deux sorties qu'une exécution sans
+   interface produit réellement ;
+4. le reste des groupes 2 et 3 — le jour où la ressource ou la
+   fonctionnalité existe, pas avant ;
+5. groupe 4 — vides, et documentés comme tels.
+
+La colonne « valeur dans autocad / dans bricscad » de la demande
+initiale reste non remplie, et pour la même raison qu'avant : elle
+demande une sonde sur les deux moteurs. Elle est maintenant plus facile
+à cibler — le groupe 1 suffirait à commencer, cinq lectures.

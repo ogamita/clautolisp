@@ -360,6 +360,62 @@ encoding:experiment:autocad:windows:
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad -Dwg $env:PROBE_DWG
 
 # --- pathname "." / ".." probe (self-contained) ----------------------------
+# --- path-carrying system variables: what a real engine actually holds ------
+#
+# bricscad-sysvars-on-macos.issue. The inventory marks most of these
+# :host-specific, so the generated catalogue carries "" -- which means NOBODY
+# MEASURED THEM, not that a real CAD leaves them empty. Every proposal about
+# what clautolisp should put in them is a guess until these have run.
+#
+# FOUR jobs for THREE engines, and the fourth is the point: AutoCAD is probed
+# twice, once through the GUI engine (--mode automation -> acad) and once
+# headless (--mode batch -> AcCoreConsole). Whether the two populate the same
+# variables is one of the questions being asked (pjb) -- a variable only the
+# GUI fills is one clautolisp has no reason to imitate, and finding that out
+# by reading documentation is exactly what this avoids.
+.path-sysvars-artifacts:
+  artifacts:
+    name: "path-sysvars-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/path-sysvars/]
+    expire_in: 30 days
+
+path-sysvars:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .path-sysvars-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-path-sysvars-probe.sh --backend bricscad
+
+path-sysvars:probe:bricscad:windows:
+  extends: [.gate-windows-cad-soft, .path-sysvars-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-path-sysvars-probe.ps1 -Backend bricscad
+
+path-sysvars:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .path-sysvars-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-path-sysvars-probe.ps1 -Backend autocad
+
+path-sysvars:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .path-sysvars-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-path-sysvars-probe.ps1 -Backend accoreconsole
+
 .pathname-artifacts:
   interruptible: true
   artifacts:
