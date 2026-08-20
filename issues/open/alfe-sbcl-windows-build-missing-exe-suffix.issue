@@ -1,0 +1,80 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-sbcl-windows-build-missing-exe-suffix — SAVE-LISP-AND-DIE :EXECUTABLE T does not append .exe on the Windows runner
+#+STATUS: OPEN
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: claude/ci-script-powershell-sf2s1g
+
+* Context
+
+build:alfe:windows (job 16000852460, and reproduced on MR !111) died on:
+
+    autolisp-front-end/tools/alfe/bin/alfe-sbcl.exe : Le terme
+    ...alfe-sbcl.exe... n'est pas reconnu comme nom d'applet de
+    commande, fonction, fichier de script ou programme executable.
+
+That is PowerShell's CommandNotFoundException. Two rounds of "fix the
+PowerShell invocation" (adding the `&' call operator, then switching to a
+fully-qualified absolute path via $env:CI_PROJECT_DIR) were each pushed to
+MR !111 and each reproduced the EXACT SAME error -- which is the tell:
+CommandNotFoundException on a fully-qualified absolute path cannot be a
+PowerShell syntax/quoting issue, because a qualified path bypasses
+PowerShell's command-name search entirely and goes straight to a file
+existence check. The file was genuinely not there.
+
+Added a diagnostic `Get-ChildItem` of tools/alfe/bin/ right after
+`make -C autolisp-front-end build-alfe-sbcl` to confirm. It showed:
+
+    Mode          LastWriteTime   Length Name
+    ----          -------------   ------ ----
+    -a---- 20/08/2026     10:44 56237024 alfe-sbcl
+
+56 MB, the right ballpark for an SBCL core -- the build itself is fine.
+The file is simply named `alfe-sbcl', with NO `.exe' suffix.
+
+* Problem
+
+tools/alfe/generate-alfe.lisp (and the shared generator it delegates to,
+clautolisp/autolisp-reader/tools/read-autolisp/generate.lisp, used
+identically by read-autolisp and clautolisp) calls:
+
+    (apply #'sb-ext:save-lisp-and-die
+           (namestring (merge-pathnames program-name release-directory nil))
+           :executable t ...)
+
+with PROGRAM-NAME = "alfe-sbcl" -- no extension. The assumption, visible
+in the .gitlab-ci.yml comment this ticket's fix removes ("on Windows the
+build now produces alfe-sbcl.exe (pjb, 2026-08-16)"), was that SBCL's
+SAVE-LISP-AND-DIE appends .exe itself on Windows when :EXECUTABLE T is
+given a name that lacks it. Measured on the real Windows CI runner, this
+SBCL does NOT do that: it writes exactly the namestring it is given.
+
+Since generate.lisp is shared, this affects read-autolisp and clautolisp
+on Windows identically, not just alfe -- it happened to surface here
+first because build:alfe:windows is the only Windows CI job that names
+the .exe suffix explicitly and checks it.
+
+* Fix
+
+Added EXECUTABLE-PROGRAM-NAME to generate.lisp: on
+(uiop:os-windows-p), append ".exe" to PROGRAM-NAME unless it is already
+present, before merging with RELEASE-DIRECTORY and handing the result to
+SAVE-LISP-AND-DIE / SAVE-APPLICATION. Do not rely on the implementation
+to add the suffix; ask for it explicitly, since that is exactly the
+assumption that silently failed here.
+
+* Acceptance criteria
+
+- build:alfe:windows produces tools/alfe/bin/alfe-sbcl.exe (confirmed by
+  the Get-ChildItem sanity check kept permanently in that job) and the
+  `alfe-sbcl.exe --version' probe succeeds.
+- No regression to the Linux/macOS builds, which do not go through the
+  Windows branch of EXECUTABLE-PROGRAM-NAME.
+
+* Note
+
+Filed while iterating on MR !111 (clautolisp/ogamita, gitlab.com) --
+two prior CI-script-only fixes were pushed to that MR and each was
+falsified by the pipeline itself before this root cause was found and
+fixed at the source instead of patched around in CI.
