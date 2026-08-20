@@ -43,6 +43,50 @@ if [ -z "$compiler_path" ]; then
   echo "error: C compiler '$compiler' was not found" >&2
   exit 1
 fi
+
+# NORMALISE TO THE POSIX FORM UNDER MSYS2, and do it HERE -- at the one
+# point where a Windows-form path can enter -- rather than at each use.
+#
+# `command -v' returns what it was given. Called with a bare name it
+# answers /mingw64/bin/gcc; called with CC=C:/msys64/ucrt64/bin/gcc, as
+# the SCHMS+ CI does, it answers that Windows path verbatim, drive letter
+# and all. Two separate things then go wrong, and only the second was
+# reported (build-tool-paths-unquoted.issue):
+#
+#  1. the UCRT64/Clang rejection below is written as `/ucrt64/*', a POSIX
+#     glob. It cannot match `C:/msys64/ucrt64/bin/gcc', so a Windows-form
+#     path walks straight past the check that exists to stop exactly this
+#     compiler -- the build then fails later, and about something else;
+#  2. the drive letter's colon reaches cmake, which reported
+#     CMAKE_C_COMPILER as `C'.
+#
+# On (2) the issue blamed cmake for treating `:' as a list separator in a
+# -D argument. That is NOT reproducible: cmake 3.31 passes
+# -DFOO=C:/msys64/ucrt64/bin/gcc through intact, typed or untyped. The
+# splitting is more likely MSYS2's own argument conversion, which treats a
+# value containing a colon as a path LIST. Either way the exposure is the
+# drive letter, so removing it at the source settles both -- and unlike
+# -DCMAKE_C_COMPILER:FILEPATH=, it also fixes (1), which no amount of
+# cmake typing would.
+#
+# A POSIX path is what the rest of this script already assumes, and MSYS2
+# converts it back for native cmake unambiguously, because with no colon
+# there is no list to mistake it for.
+case "$host_uname" in
+  MINGW*|MSYS*|CYGWIN*)
+    case "$compiler_path" in
+      ?:[/\\]*)
+        if command -v cygpath >/dev/null 2>&1; then
+          compiler_posix="$(cygpath -u "$compiler_path")"
+          echo "C compiler path normalised: $compiler_path -> $compiler_posix"
+          compiler_path="$compiler_posix"
+        else
+          echo "warning: '$compiler_path' is a Windows-form path and cygpath is" >&2
+          echo "         absent, so it cannot be normalised. The UCRT64 check" >&2
+          echo "         below will not recognise it." >&2
+        fi ;;
+    esac ;;
+esac
 compiler_dir="$(cd "$(dirname "$compiler_path")" && pwd)"
 PATH="$compiler_dir:$PATH"
 export PATH
@@ -111,6 +155,10 @@ fi
 #        job-log cap during the build — hiding any real downstream error.
 #  - -Wno-unused-command-line-argument: clang rejects -fstack-clash-protection.
 #  - -D_DARWIN_C_SOURCE: expose memmem() in <string.h> on macOS (no-op elsewhere).
+#  - the compiler is echoed exactly as cmake receives it: this argument
+#    has been mis-delivered twice, and a run that prints it diagnoses
+#    itself instead of costing another round trip to a Windows machine.
+echo "cmake -DCMAKE_C_COMPILER=[$compiler_path]"
 cmake -S "$lr" -B "$build" \
       -DCMAKE_C_COMPILER="$compiler_path" \
       -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DDISABLE_WERROR=ON \

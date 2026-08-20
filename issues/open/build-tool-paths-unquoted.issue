@@ -1,6 +1,6 @@
 # -*- mode:org;coding:utf-8 -*-
 #+TITLE: build-tool-paths-unquoted — variables holding a program or file path are not quoted
-#+STATUS: OPEN
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
@@ -456,3 +456,91 @@ plutôt que le comportement actuel. pjb : « laissons le comme ça, on verra
 sur windows ». Ni ce test ni `scripts/tests/run-emacs-msys2-test.sh` ne
 sont câblés dans un Makefile ou un job CI, donc rien ne les exécute
 aujourd'hui.
+
+
+DONE 2026-08-20 (clautolisp 1.8.62) — la cause corrigée là où elle naît
+-----------------------------------------------------------------------
+
+pjb, avant 1.9.0 : « ok faisons ces trois petits avant 1.9.0 ».
+
+Ce qui gardait ce ticket ouvert est écrit juste au-dessus : « `build-libredwg.sh`
+lui-même n'est PAS corrigé : son garde-fou reste POSIX-seul, et un
+appelant qui ne passerait pas par ces scripts retomberait dans le même
+trou ». C'est fait, et en le faisant on trouve que le trou était plus
+grand que décrit.
+
+**La cause écrite dans ce ticket est fausse, et c'est vérifié.**
+
+Le ticket accusait CMake de traiter `:` comme séparateur de liste dans un
+argument `-D`, et proposait `-DCMAKE_C_COMPILER:FILEPATH=`. Reproduit ici
+sur CMake 3.31.6, avec un projet minimal qui réimprime la valeur reçue :
+
+    cmake -DFOO=C:/msys64/ucrt64/bin/gcc -DBAR:FILEPATH=C:/msys64/ucrt64/bin/gcc
+    -- FOO=[C:/msys64/ucrt64/bin/gcc]
+    -- BAR=[C:/msys64/ucrt64/bin/gcc]
+
+Les deux passent **intacts**, typés ou non. Le découpage vient donc
+d'ailleurs — très probablement de la conversion d'arguments de MSYS2, qui
+traite une valeur contenant un deux-points comme une LISTE de chemins.
+Corriger sur la foi de la cause supposée aurait livré un `:FILEPATH` qui
+ne répare rien, et fermé le ticket sur une illusion.
+
+**Le second défaut, que personne n'avait vu.**
+
+`command -v` rend ce qu'on lui donne. Appelé avec un nom nu il répond
+`/mingw64/bin/gcc` ; appelé avec `CC=C:/msys64/ucrt64/bin/gcc` — ce que
+fait la CI de SCHMS+ — il répond ce chemin Windows tel quel. Or le
+garde-fou qui doit refuser les compilateurs UCRT64/Clang est écrit en
+glob POSIX :
+
+    case "$compiler_path" in
+      /ucrt64/*|/clang64/*|/clangarm64/*) ... refus ...
+
+Vérifié : `C:/msys64/ucrt64/bin/gcc` **ne correspond pas**. Un chemin en
+forme Windows passe donc devant le contrôle qui existe précisément pour
+arrêter ce compilateur-là, et le build échoue plus loin, sur autre chose.
+C'est exactement le cas signalé : SCHMS+ passait un compilateur UCRT64,
+et le script aurait dû le refuser d'emblée avec le message prévu.
+
+**Le correctif : normaliser à l'entrée, pas à chaque usage.**
+
+`build-libredwg.sh` convertit désormais le chemin en forme POSIX
+(`cygpath -u`) juste après `command -v`, au seul point par lequel une
+forme Windows peut entrer, et uniquement sous MSYS2/Cygwin. Une seule
+correction, deux défauts couverts :
+
+- le garde-fou UCRT64 voit enfin ce qu'il doit voir ;
+- plus aucun deux-points n'atteint cmake, donc la question de savoir qui
+  le découpait — CMake ou MSYS2 — cesse de se poser. C'est ce que
+  `:FILEPATH` n'aurait PAS donné : il n'aurait rien fait pour le premier
+  point.
+
+Le reste du script suppose déjà la forme POSIX, et MSYS2 la reconvertit
+sans ambiguïté pour cmake natif, puisque sans deux-points il n'y a plus
+de liste à confondre.
+
+Ajouté aussi, et c'est le vrai remède aux allers-retours : le script
+imprime l'argument tel que cmake le reçoit
+(`cmake -DCMAKE_C_COMPILER=[...]`). Cet argument a été mal livré deux
+fois ; un run qui l'affiche se diagnostique lui-même au lieu de coûter un
+nouvel aller-retour vers une machine Windows.
+
+**Testé ici, sur les quatre cas, avec un `cygpath` bouchon** — la machine
+Windows étant hors ligne, c'est le test que l'on peut faire, et il porte
+sur la logique qui était fausse :
+
+| entrée                          | résultat                                    |
+|---------------------------------|---------------------------------------------|
+| `C:/msys64/ucrt64/bin/gcc`      | normalisé → **le garde-fou UCRT64 se déclenche** (il le manquait) |
+| `/ucrt64/bin/gcc`               | se déclenche, comme avant                   |
+| `/mingw64/bin/gcc`              | accepté, comme avant                        |
+| Linux, `/usr/bin/gcc`           | bloc inerte                                 |
+
+Le motif `?:[/\\]*` est vérifié dans les deux sens : il reconnaît `C:/` et
+`C:\`, et ne mord pas sur un chemin POSIX.
+
+Ce qui reste non vérifié, et il faut le dire : le build Windows réel de
+bout en bout, qui demande le runner Windows — hors ligne au moment où
+ceci est écrit. Ce qui est établi ici, c'est que la logique corrigée se
+comporte comme voulu sur les quatre entrées, et que la cause écrite dans
+le ticket ne tenait pas.
