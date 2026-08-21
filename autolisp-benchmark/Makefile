@@ -44,8 +44,30 @@ ROOT_DIR_NATIVE := $(shell cygpath -m "$(ROOT_DIR)" 2>/dev/null || echo "$(ROOT_
 endif
 
 ALFE_ROOT := $(ROOT_DIR)/../autolisp-front-end
-ALFE_SBCL := $(ALFE_ROOT)/tools/alfe/bin/alfe-sbcl
-ALFE_CCL  := $(ALFE_ROOT)/tools/alfe/bin/alfe-ccl
+# .exe ON WINDOWS, and this is not cosmetic.
+#
+# alfe used to produce an extensionless tools/alfe/bin/alfe-sbcl even on
+# Windows; since alfe-sbcl-windows-build-missing-exe-suffix.issue it asks
+# save-lisp-and-die for the suffix explicitly, so the file there is named
+# alfe-sbcl.exe. This Makefile still spelled the extensionless name, and
+# a name with no extension is not executable on Windows -- which is how
+# the release-1.9.0 tag pipeline had both Windows CAD benchmarks die on
+#
+#   /bin/sh: .../tools/alfe/bin/alfe-sbcl: cannot execute binary file:
+#   Exec format error
+#
+# The producer was fixed and its CALLERS were not swept, which is the
+# shape of defect that only shows up on the one platform nobody runs
+# locally. autolisp-front-end/Makefile already carries this exact
+# mechanism; it is copied rather than invented, so the two agree.
+#
+# HOST_UNAME is a `?=' so the Windows branch can be exercised from a
+# POSIX host -- make -n HOST_UNAME=MINGW64_NT-10.0 -- which is the only
+# way to check it without the machine.
+HOST_UNAME ?= $(shell uname -s)
+EXE := $(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_UNAME)),.exe,)
+ALFE_SBCL := $(ALFE_ROOT)/tools/alfe/bin/alfe-sbcl$(EXE)
+ALFE_CCL  := $(ALFE_ROOT)/tools/alfe/bin/alfe-ccl$(EXE)
 CLAUTOLISP_ROOT := $(ROOT_DIR)/../clautolisp
 CLAUTOLISP_SBCL := $(CLAUTOLISP_ROOT)/tools/clautolisp/bin/clautolisp-sbcl
 CLAUTOLISP_CCL  := $(CLAUTOLISP_ROOT)/tools/clautolisp/bin/clautolisp-ccl

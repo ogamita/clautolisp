@@ -1,0 +1,106 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: windows-exe-suffix-callers-not-swept — the producer gained .exe, its callers did not
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: alfe-sbcl-windows-build-missing-exe-suffix
+#+BRANCH: disable-arm32-release
+
+* Symptom
+
+Both Windows CAD benchmarks failed on the =release-1.9.0= tag pipeline
+(jobs 16026668742 and 16026668743):
+
+#+begin_example
+/bin/sh: .../autolisp-front-end/tools/alfe/bin/alfe-sbcl:
+cannot execute binary file: Exec format error
+make: *** [Makefile:207: run-bricscad-windows] Error 126
+#+end_example
+
+Not a CAD problem, not a benchmark problem: the file that name refers to
+does not exist under that name any more.
+
+* Cause — a fix whose consumers were never swept
+
+=alfe-sbcl-windows-build-missing-exe-suffix= fixed the PRODUCER:
+=generate.lisp= now asks =save-lisp-and-die= for the =.exe= suffix
+explicitly on Windows, instead of trusting the implementation to add it.
+Correct, and it is why =build:alfe:windows= works.
+
+But renaming what a build produces breaks every caller that spells the
+old name, and nobody went looking for those. =autolisp-benchmark/Makefile=
+spelled the extension-less name:
+
+: ALFE_SBCL := $(ALFE_ROOT)/tools/alfe/bin/alfe-sbcl
+
+On POSIX that is the file. On Windows it is nothing — and an
+extension-less name is not executable there at all, which is what
+=Exec format error= is saying.
+
+This is the shape of defect that only appears on the one platform nobody
+runs locally, and it appeared on a RELEASE tag rather than on a merge
+request, because the Windows benchmarks are the last jobs to run.
+
+* Fixed here
+
+=autolisp-benchmark/Makefile= gains the same =EXE= mechanism
+=autolisp-front-end/Makefile= already carries — copied rather than
+reinvented, so the two agree:
+
+: HOST_UNAME ?= $(shell uname -s)
+: EXE := $(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_UNAME)),.exe,)
+: ALFE_SBCL := $(ALFE_ROOT)/tools/alfe/bin/alfe-sbcl$(EXE)
+: ALFE_CCL  := $(ALFE_ROOT)/tools/alfe/bin/alfe-ccl$(EXE)
+
+=HOST_UNAME= is a =?== on purpose: it is what lets the Windows branch be
+checked from a POSIX host, which is the only way to check it without the
+machine. Verified both ways:
+
+: make -C autolisp-benchmark -n run-bricscad-windows HOST_UNAME=MINGW64_NT-10.0
+:   -> alfe-sbcl.exe
+: make -C autolisp-benchmark -n run-bricscad-macos
+:   -> alfe-sbcl
+
+* Not verified
+
+That the benchmarks then SUCCEED on Windows. This corrects the name they
+invoke; whether =benchmark:autocad:windows= has a further problem is the
+open half of =benchmark-autocad-windows-hangs-and-blocks-release= (it has
+never succeeded, and option 4 there is still open).
+=benchmark:bricscad:windows= used to finish in 1 m 37 s, so that one is
+expected to come back.
+
+* The general point, worth keeping
+
+A build that changes the NAME of what it produces has to be followed by a
+sweep of who says that name. Two callers were already correct because
+they were written after the rename — =scripts/run-pathname-probe.ps1= and
+=scripts/run-path-sysvars-probe.ps1= both copy to =.exe= when the file
+lacks it — which is precisely why the survivor was easy to miss: the
+places a person looked at recently were fine, and the one nobody had
+touched in months was not.
+
+*The sweep found a SECOND caller, and my first reading of it was wrong.*
+I wrote that =.gitlab/native.yml= passes =ALFE_BIN= extension-less in two
+places but that both hand it to =run-*.ps1= scripts which do the =.exe=
+dance themselves. Only one does. =harvest:sysvars:bricscad:windows=
+passes it straight to =make save-sysvars ALFE="$env:ALFE_BIN"=, so
+nothing downstream repairs the name, and it would fail exactly like the
+benchmarks. Fixed here too: that job now names =alfe-sbcl.exe=. The
+macOS twin keeps the extension-less name, which is right there.
+
+Swept after that correction: no other Makefile or script spells
+=bin/alfe-sbcl= without either =$(EXE)=, an explicit =.exe=, or a
+copy-to-=.exe= step. =scripts/run-pathname-probe.ps1= and
+=scripts/run-path-sysvars-probe.ps1= are the two that do the dance.
+
+That near-miss is the argument for writing this ticket rather than just
+fixing the Makefile: the first caller was found by a failing job, the
+second only by looking, and a claim that the sweep was complete is worth
+nothing until the sweep has actually been run.
+
+* Acceptance criteria
+
+- =benchmark:bricscad:windows= runs the benchmark instead of dying on
+  =Exec format error= (it is the one with a known-good baseline).
+- No change to POSIX behaviour, which the =make -n= check above asserts.

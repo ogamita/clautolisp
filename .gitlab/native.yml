@@ -581,7 +581,15 @@ harvest:sysvars:bricscad:windows:
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
-    ALFE_BIN: '$CI_PROJECT_DIR/autolisp-front-end/tools/alfe/bin/alfe-sbcl'
+    # .exe, unlike the macOS twin below: since
+    # alfe-sbcl-windows-build-missing-exe-suffix the Windows build produces
+    # alfe-sbcl.exe, and an extension-less name is not executable on
+    # Windows at all -- `cannot execute binary file: Exec format error',
+    # which is how both Windows benchmarks died on the release-1.9.0 tag.
+    # This job hands ALFE_BIN straight to make, so nothing downstream
+    # repairs the name for it, unlike the run-*.ps1 probes which copy to
+    # .exe themselves (windows-exe-suffix-callers-not-swept.issue).
+    ALFE_BIN: '$CI_PROJECT_DIR/autolisp-front-end/tools/alfe/bin/alfe-sbcl.exe'
     # These were `export' lines copied from the macOS twin below. `export' is
     # a POSIX builtin and this job's shell is PowerShell, where it is not a
     # command at all: the job died with CommandNotFoundException on the first
