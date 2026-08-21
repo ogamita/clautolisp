@@ -13,12 +13,13 @@ name: CI
 # re-sync this file with the common lanes of .gitlab-ci.yml. See
 # .github/workflows/README.md for the job-by-job mapping and the rule.
 
+# POLICY (release-pipeline.md §2): non-regression / validation runs on GitLab
+# (Linux-on-poseidon baseline + best-effort native macOS/Windows), NOT on
+# GitHub — no point burning our monthly GitHub minutes for push/MR tests. This
+# mirror is therefore MANUAL-ONLY now: dispatch it by hand when you specifically
+# want a second opinion on a clean ubuntu-latest. The parity mapping below is
+# kept for that manual use. (Windows *release* builds live in release.yml.)
 on:
-  push:
-    branches: [master, alfe-development]
-    tags: ['*']
-  pull_request:
-    branches: [master]
   workflow_dispatch:
 
 # Cancel in-progress runs on the same ref when a new push lands. Tag builds

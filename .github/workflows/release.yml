@@ -1,11 +1,17 @@
-name: Release
+name: Release (Windows package)
 
-# Produce the release artefacts (see issues/open/release-artefacts.issue)
-# on a version tag. Scaffolds all six SBCL targets; only the
-# Linux x86-64 lane is required — the others are `experimental` (their
-# failures do not fail the run) until their runners/toolchains are
-# tuned. Windows packaging follows documentation/windows-package-spec.md
-# and is still a stub.
+# GitHub is the ALWAYS-AVAILABLE Windows release builder, and ONLY that
+# (release-pipeline.md §3/§5). The only Windows deps are SBCL + compiling
+# libredwg, so a GitHub-hosted windows-latest runner produces the native
+# Windows package (documentation/windows-package-spec.md) and uploads it as the
+# `clautolisp-<ver>-win-<arch>` workflow artifact. poseidon's GitLab
+# `collect:release` job pulls it with `gh run download` and folds it into the
+# combined release set. GitHub does NOT publish a Release here — sources,
+# documentation, the linux/macOS binaries+libraries, assembly and publishing
+# all happen on poseidon/GitLab.
+#
+# Non-Windows platforms and the non-regression test pipelines stay on GitLab
+# (never burn GitHub minutes for those). This workflow builds ONLY Windows.
 
 on:
   push:
@@ -13,111 +19,64 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write          # attach artefacts to the GitHub release
+  contents: read          # builder-only: no Release is created from GitHub
 
 jobs:
-  # --- layout-independent artefacts ------------------------------------
-  sources:
-    name: sources
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: recursive }
-      - run: make release-sources
-      - uses: actions/upload-artifact@v4
-        with: { name: sources, path: dist/* }
-
-  documentation:
-    name: documentation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: recursive }
-      # Doc build needs Emacs (the autolisp-spec paged split), TeX (PDFs,
-      # via xelatex => texlive-xetex) and makeinfo (Info). Keep this list
-      # identical to the GitLab release:documentation job (both forges
-      # must build the same docs).
-      - run: sudo apt-get update && sudo apt-get install -y emacs-nox texlive texlive-latex-extra texlive-xetex texlive-plain-generic texinfo
-      # Cache the slow per-section split (3026 sections -> html/info/pages);
-      # invalidated only when the spec org or the split scripts change.
-      - name: Cache autolisp-spec paged build
-        uses: actions/cache@v4
-        with:
-          path: autolisp-spec/build
-          key: spec-paged-${{ hashFiles('autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org', 'autolisp-spec/scripts/build-paged-*.el') }}
-      - run: make release-documentation
-      - uses: actions/upload-artifact@v4
-        with: { name: documentation, path: dist/* }
-
-  # --- per-target programs + libraries ---------------------------------
-  binaries:
-    name: ${{ matrix.t.os }}-${{ matrix.t.arch }}
-    runs-on: ${{ matrix.t.runner }}
-    continue-on-error: ${{ matrix.t.experimental }}
+  windows:
+    name: windows-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
-        t:
-          - { os: linux,   arch: x86-64, runner: ubuntu-latest,    experimental: false }
-          - { os: linux,   arch: arm64,  runner: ubuntu-24.04-arm, experimental: true  }
-          - { os: darwin,  arch: x86-64, runner: macos-13,         experimental: true  }
-          - { os: darwin,  arch: arm64,  runner: macos-14,         experimental: true  }
-          - { os: windows, arch: x86-64, runner: windows-latest,   experimental: true  }
-          - { os: windows, arch: arm64,  runner: windows-11-arm,   experimental: true  }
+        include:
+          # x64 is the shipped Windows target. (windows-11-arm can be added as
+          # an experimental row once the toolchain is proven.)
+          - { arch: x64, runner: windows-latest, experimental: false }
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
 
-      # Toolchain: SBCL + cmake + a C compiler + Quicklisp.
-      - name: Install toolchain (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y sbcl cmake build-essential
-      - name: Install toolchain (macOS)
-        if: runner.os == 'macOS'
-        run: brew install sbcl cmake
-      - name: Bootstrap Quicklisp (Unix)
-        if: runner.os != 'Windows'
+      - name: Read version
+        id: ver
+        shell: bash
         run: |
-          curl -fsSL https://beta.quicklisp.org/quicklisp.lisp -o /tmp/ql.lisp
-          sbcl --non-interactive --load /tmp/ql.lisp \
+          v="$(sed -n 's/.*\*version\* *"\([0-9.]*\)".*/\1/p' \
+               clautolisp/tools/clautolisp/source/version.lisp)"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "clautolisp version: $v"
+
+      - name: Install toolchain (SBCL, make, zip)
+        shell: pwsh
+        run: |
+          # cmake + the MSVC C toolchain are preinstalled on the windows-latest
+          # image; add SBCL and the Unix-ish packaging tools the Makefile needs.
+          choco install -y --no-progress sbcl make zip
+
+      - name: Bootstrap Quicklisp
+        shell: bash
+        run: |
+          curl -fsSL https://beta.quicklisp.org/quicklisp.lisp -o "$RUNNER_TEMP/ql.lisp"
+          sbcl --non-interactive --load "$RUNNER_TEMP/ql.lisp" \
                --eval '(quicklisp-quickstart:install)'
 
-      # Build + package (Unix). Windows uses the windows-package-spec
-      # path, still a stub.
-      - name: Build + package (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          make build-libraries        # builds vendored libdwg + shim
-          make release-programs
-          make release-libraries
-      - name: Build + package (Windows)
-        if: runner.os == 'Windows'
+      - name: Build libdwg.dll + programs, stage libraries
         shell: bash
-        run: echo "TODO Windows packaging per documentation/windows-package-spec.md (stub)"
+        run: |
+          set -euo pipefail
+          make build-libraries      # vendored libredwg -> libdwg.dll (+ CFFI shim)
+          make build-programs       # SBCL .exe images
+          make stage-libraries      # ASDF systems + native libs into the stage tree
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: binaries-${{ matrix.t.os }}-${{ matrix.t.arch }}
-          path: dist/*
-          if-no-files-found: warn
+      - name: Package native-Windows zip
+        shell: bash
+        run: make release-windows-zip WIN_ARCH=${{ matrix.arch }}
 
-  # --- collect + attach to the release ---------------------------------
-  collect:
-    name: collect + publish
-    needs: [sources, documentation, binaries]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with: { path: incoming }
-      # TODO (release-artefacts.issue): union the per-target unix
-      # binaries/libraries into the combined clautolisp-<ver>-binaries.tar.bz2
-      # / -libraries.tar.bz2 (merge libexec/<os>/<arch>/ + lib/<os>/<arch>/);
-      # keep the Windows zips per-arch.
-      - name: List collected artefacts
-        run: find incoming -type f | sort
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
         with:
-          files: incoming/**/*
+          # Name MUST match the `gh run download -p 'clautolisp-*-win-*'` glob
+          # the GitLab collect:release job uses.
+          name: clautolisp-${{ steps.ver.outputs.version }}-win-${{ matrix.arch }}
+          path: dist/clautolisp-*-win-*.zip
+          if-no-files-found: error

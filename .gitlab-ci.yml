@@ -502,27 +502,15 @@ release:darwin:arm64:
     paths: [dist/]
     expire_in: 30 days
 
-# Windows x86-64 — STUB for now (real packaging follows
-# documentation/windows-package-spec.md: SBCL/CCL images, libdwg.dll,
-# and a zip into the Windows install root). This job only confirms the
-# self-hosted Windows runner is reachable and reports its toolchain.
-# Shell executor = PowerShell. No submodules needed for the stub.
-release:windows:x86-64:
-  extends: .release-common
-  tags: [windows, amd64, shell]   # windows PC (intermittent): GUI bricscad/autocad host
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
-  script:
-    - 'Write-Host "clautolisp $env:CI_COMMIT_TAG -- windows/x86-64 lane (STUB)"'
-    - 'Write-Host "Toolchain probe:"'
-    - 'foreach ($t in @("sbcl","cmake","git","cl","gcc")) { $c = Get-Command $t -ErrorAction SilentlyContinue; if ($c) { Write-Host ("  {0}: {1}" -f $t, $c.Source) } else { Write-Host ("  {0}: NOT FOUND" -f $t) } }'
-    - 'New-Item -ItemType Directory -Force -Path dist | Out-Null'
-    - '"clautolisp $env:CI_COMMIT_TAG windows/x86-64 packaging is a STUB. See documentation/windows-package-spec.md." | Set-Content -Encoding utf8 dist/windows-x86-64-STUB.txt'
-    - 'Get-Content dist/windows-x86-64-STUB.txt'
-  artifacts:
-    name: "clautolisp-$CI_COMMIT_TAG-windows-x86-64-stub"
-    paths: [dist/]
-    expire_in: 30 days
+# Windows x86-64 release build lives on GitHub Actions
+# (.github/workflows/release.yml), NOT here: a GitHub-hosted windows-latest
+# runner is always available, whereas the self-hosted Windows PC is temporary/
+# intermittent. The only Windows deps are SBCL + compiling libredwg, so GitHub
+# builds the native-Windows package (documentation/windows-package-spec.md) and
+# uploads it as the `clautolisp-<ver>-win-x64.zip` workflow artifact; the
+# assemble job below pulls it with `gh run download`. See release-pipeline.md §3.
+# (The intermittent Windows runner still serves reason-2 non-regression tests
+# via the .gitlab/native.yml child pipeline.)
 
 # --- platform verification: the vl-registry backends (vl-registry.issue) ---
 #
@@ -602,8 +590,10 @@ native:pipeline:
   variables:
     GIT_SUBMODULE_STRATEGY: none
   interruptible: true
+  # MANUAL: a dev-time exploratory experiment (release-pipeline.md §4), not a
+  # gate. Run on demand; never fires automatically on push/MR/tag.
   rules:
-    - when: on_success
+    - when: manual
       allow_failure: true
   artifacts:
     name: "encoding-$CI_COMMIT_SHORT_SHA"
@@ -649,8 +639,10 @@ pathname:probe:clautolisp:linux:
   variables:
     GIT_SUBMODULE_STRATEGY: none
     BENCH_SECONDS: '3.0'
+  # MANUAL: benchmarks/probes are reason-1 jobs (release-pipeline.md §1/§4) —
+  # one-shot, on-demand. A release must NOT depend on a benchmark having run, so
+  # the on-release-benchmark auto-trigger is intentionally gone.
   rules:
-    - *on-release-benchmark
     - when: manual
       allow_failure: true
   artifacts:
@@ -742,8 +734,10 @@ pages:
     - { job: "benchmark:bricscad:macos",     artifacts: true, optional: true }
     - { job: "benchmark:bricscad:windows",   artifacts: true, optional: true }
     - { job: "benchmark:autocad:windows",    artifacts: true, optional: true }
+  # MANUAL: the benchmark report only has meaning once a benchmark was
+  # deliberately run (release-pipeline.md §4); it is not part of the automatic
+  # release. Run it on demand after playing the benchmark job(s) you want.
   rules:
-    - *on-release-mandatory
     - when: manual
       allow_failure: true
   script:
@@ -768,26 +762,139 @@ collect:release:
   image: $CLAUTOLISP_CI_LATEST
   variables:
     GIT_SUBMODULE_STRATEGY: none
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    # GitHub handoff (release-pipeline.md §5). GH_REPO/GH_WORKFLOW are plain;
+    # GH_TOKEN is a masked CI/CD variable with `actions:read` on the repo.
+    GH_REPO: "ogamita/clautolisp"
+    GH_WORKFLOW: "release.yml"
   needs:
     - { job: "release:linux:x86-64", artifacts: true }
     - { job: "release:linux:arm64",  artifacts: true }
-    - { job: "release:darwin:arm64", artifacts: true }
-    - { job: "release:windows:x86-64", artifacts: true }
+    - { job: "release:darwin:arm64", artifacts: true, optional: true }
     - { job: "release:documentation", artifacts: true }
   rules:
     - *on-release-mandatory
     - when: manual
       allow_failure: true
   before_script:
-    # tar/make are in the CI image; install bzip2 if the image lacks it
+    # tar/make are in the CI image; install bzip2/zip if the image lacks them
     # (mirrors release:linux:x86-64's package-guard).
-    - pkgs=""; for t in bzip2 tar make; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+    - pkgs=""; for t in bzip2 zip tar make; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
   script:
+    # 1. Pull the Windows package GitHub Actions built for this tag. Best-effort:
+    #    if GitHub hasn't finished yet (mirror lag) the release still assembles
+    #    WITHOUT the Windows zip — just re-run this job later to pick it up.
+    #    Requires `gh` in the image (TODO: bake it in) + GH_TOKEN. See §5.
+    - |
+      if command -v gh >/dev/null 2>&1 && [ -n "${GH_TOKEN:-}" ]; then
+        tag="${CI_COMMIT_TAG:-}"
+        echo "== gh: locating completed '$GH_WORKFLOW' run for $tag on $GH_REPO =="
+        rid="$(gh run list -R "$GH_REPO" --workflow "$GH_WORKFLOW" --branch "$tag" \
+                 --json databaseId,status --jq \
+                 'map(select(.status=="completed"))|.[0].databaseId' 2>/dev/null || true)"
+        if [ -n "$rid" ]; then
+          gh run download "$rid" -R "$GH_REPO" -p 'clautolisp-*-win-*' -D dist \
+            && echo "fetched Windows package(s):" && ls dist/clautolisp-*-win-*.zip 2>/dev/null \
+            || echo "WARN: gh run download failed; assembling WITHOUT the Windows zip"
+        else
+          echo "WARN: no completed GitHub run for $tag yet; assembling WITHOUT the Windows zip"
+        fi
+      else
+        echo "WARN: gh unavailable or GH_TOKEN unset; assembling WITHOUT the Windows zip"
+      fi
+    # gh downloads each artifact into its own subdir — flatten the win zips into dist/.
+    - find dist -mindepth 2 -name 'clautolisp-*-win-*.zip' -exec cp {} dist/ \; 2>/dev/null || true
+    # 2. Union linux/macOS binaries+libraries, pass through docs/sources (both
+    #    formats) + the Windows zip, and build clautolisp-<ver>-all.{tar.bz2,zip}.
     - make collect-artefacts COLLECT_IN=dist COLLECT_OUT=dist/combined
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-release"
     paths: [dist/combined/]
     expire_in: 30 days
+
+# --- publish: GitLab Release + poseidon web download area --------------------
+#
+# Deliberately SEPARATE and MANUAL (release-pipeline.md §3): publishing happens
+# AFTER a human has tested collect:release's artefacts. Uploads each combined
+# artefact to the project's generic Package Registry (CI_JOB_TOKEN), creates a
+# GitLab Release on the tag linking them, and (optionally) mirrors the set into
+# the poseidon web download area over the same rrsync-restricted deploy account
+# pattern as deploy:documentation.
+#
+# CI/CD variables (Settings > CI/CD > Variables):
+#   GH_TOKEN               (used by collect:release) actions:read on the repo.
+#   DEPLOY_SSH_PRIVATE_KEY / DEPLOY_KNOWN_HOSTS   base64, as deploy:documentation
+#   DOWNLOAD_DEPLOY_USER   rrsync account for the download area (e.g. clautolisp-dl);
+#                          unset => the web mirror step is skipped (Release still made).
+publish:release:
+  stage: deploy
+  image: $CLAUTOLISP_CI_LATEST
+  tags: [linux, amd64, docker]        # poseidon (always-on)
+  variables:
+    GIT_STRATEGY: none                # only the collected artefacts are needed
+    DEPLOY_HOST: poseidon.informatimago.com
+  needs:
+    - { job: "collect:release", artifacts: true }
+  rules:
+    - when: manual
+      allow_failure: true
+  before_script:
+    - need=""; for t in curl rsync ssh python3; do command -v $t >/dev/null 2>&1 || need="$need $t"; done; [ -z "$need" ] || { apt-get update && apt-get install -y --no-install-recommends curl rsync openssh-client python3; }
+  script:
+    - set -eu
+    - 'ver="${CI_COMMIT_TAG#release-}"'
+    - 'base="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/clautolisp/${ver}"'
+    # 1. Upload every combined artefact to the generic Package Registry.
+    - |
+      : > dist/asset-urls.txt
+      for f in dist/combined/clautolisp-${ver}-*; do
+        [ -f "$f" ] || continue
+        fn="$(basename "$f")"
+        echo "uploading $fn"
+        curl -fsS --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$f" "${base}/${fn}"
+        echo "${base}/${fn}" >> dist/asset-urls.txt
+      done
+    # 2. Create the GitLab Release on the tag, linking the uploaded assets.
+    - |
+      python3 - "$CI_COMMIT_TAG" "$ver" < dist/asset-urls.txt <<'PY'
+      import json, os, sys, urllib.request, urllib.error
+      tag, ver = sys.argv[1], sys.argv[2]
+      urls  = [l.strip() for l in sys.stdin if l.strip()]
+      links = [{"name": u.rsplit('/', 1)[1], "url": u, "link_type": "package"} for u in urls]
+      payload = {"name": f"clautolisp {ver}", "tag_name": tag,
+                 "description": f"clautolisp {ver} release artefacts "
+                                f"(sources, documentation, binaries, libraries, all; "
+                                f"see documentation/release-pipeline.md).",
+                 "assets": {"links": links}}
+      api, pid = os.environ["CI_API_V4_URL"], os.environ["CI_PROJECT_ID"]
+      req = urllib.request.Request(f"{api}/projects/{pid}/releases",
+              data=json.dumps(payload).encode(),
+              headers={"JOB-TOKEN": os.environ["CI_JOB_TOKEN"],
+                       "Content-Type": "application/json"})
+      try:
+          with urllib.request.urlopen(req) as r:
+              print("release created:", r.status)
+      except urllib.error.HTTPError as e:
+          body = e.read().decode()
+          if e.code == 409 or "already exists" in body:
+              print("release already exists; leaving as-is")
+          else:
+              print("release API error", e.code, body); sys.exit(1)
+      PY
+    # 3. Optional: mirror the set into the poseidon web download area.
+    - |
+      if [ -n "${DEPLOY_SSH_PRIVATE_KEY:-}" ] && [ -n "${DOWNLOAD_DEPLOY_USER:-}" ]; then
+        install -d -m 700 ~/.ssh
+        if [ -f "$DEPLOY_SSH_PRIVATE_KEY" ]; then base64 -d "$DEPLOY_SSH_PRIVATE_KEY"; else printf '%s' "$DEPLOY_SSH_PRIVATE_KEY" | base64 -d; fi > ~/.ssh/id_deploy
+        if [ -f "${DEPLOY_KNOWN_HOSTS:-}" ]; then base64 -d "$DEPLOY_KNOWN_HOSTS"; else printf '%s' "${DEPLOY_KNOWN_HOSTS:-}" | base64 -d; fi > ~/.ssh/known_hosts
+        chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
+        SSH="ssh -i $HOME/.ssh/id_deploy -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o IdentitiesOnly=yes"
+        rsync -rlptz -e "$SSH" dist/combined/ "${DOWNLOAD_DEPLOY_USER}@${DEPLOY_HOST}:${ver}/"
+        echo "mirrored to poseidon download area (${ver}/)"
+      else
+        echo "poseidon download-area mirror skipped (DEPLOY_* / DOWNLOAD_DEPLOY_USER unset)"
+      fi
 
 # --- deploy: publish the spec HTML manual to the poseidon web site -----
 #

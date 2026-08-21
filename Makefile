@@ -223,11 +223,13 @@ release-sources:  ## Produce the source tarball + zip (tracked files incl. submo
 	echo "wrote $(DIST)/$$prefix-sources.tar.bz2"; \
 	echo "wrote $(DIST)/$$prefix-sources.zip"
 
-release-documentation: stage-documentation  ## Package the documentation artefact for EVERY subproject (pdf/org/info + the spec's paged HTML/info/pages + alref), from the same $(STAGE)/documentation tree install-documentation installs. Unpacks into $PREFIX.
+release-documentation: stage-documentation  ## Package the documentation artefact for EVERY subproject (pdf/org/info + the spec's paged HTML/info/pages + alref), from the same $(STAGE)/documentation tree install-documentation installs. Unpacks into $PREFIX. Emitted in BOTH .tar.bz2 and .zip (release-pipeline.md format matrix).
 	@mkdir -p "$(DIST)"
 	@ver="$(VERSION)"; \
 	tar -C "$(STAGE_DOCUMENTATION)" -cjf "$(DIST)/clautolisp-$$ver-documentation.tar.bz2" .; \
-	echo "wrote $(DIST)/clautolisp-$$ver-documentation.tar.bz2"
+	( cd "$(STAGE_DOCUMENTATION)" && zip -qr "$(DIST)/clautolisp-$$ver-documentation.zip" . ); \
+	echo "wrote $(DIST)/clautolisp-$$ver-documentation.tar.bz2"; \
+	echo "wrote $(DIST)/clautolisp-$$ver-documentation.zip"
 
 # The one artefact whose layout is NOT the install tree: the binaries
 # tarball ships a bin/ of dispatch.sh wrappers over
@@ -280,6 +282,47 @@ release-libraries: stage-libraries  ## Package this host's per-target libraries 
 	tar -C "$(STAGE_LIBRARIES)" -cjf "$(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2" .; \
 	echo "wrote $(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2"
 
+# --- Windows native package (documentation/windows-package-spec.md) ----------
+# Runs ON a Windows host (GitHub Actions windows-latest, Git-Bash shell) — see
+# release-pipeline.md §3. Produces ONE relocatable archive
+# clautolisp-<ver>-win-<arch>.zip with a single top-level clautolisp/ dir:
+#   bin/            every .exe + the DLLs they load (libdwg + CFFI shim), adjacent
+#   lib/common-lisp/  the ASDF systems, discovered as a :tree at startup
+#   doc/            README + LICENSE (+ any prebuilt manuals staged with libs)
+#   VERSION         the version string
+# NB: recipe lines are one joined shell command — no inline '#' comments (they
+# would swallow the rest of the line); keep commentary in this preamble.
+WIN_ARCH ?= x64
+release-windows-zip: build-programs stage-libraries  ## Package the native-Windows distribution zip (windows-package-spec.md). Windows host only; produces clautolisp-<ver>-win-<arch>.zip.
+	@mkdir -p "$(DIST)"
+	@ver="$(VERSION)"; app=clautolisp; stage=$$(mktemp -d); root="$$stage/$$app"; \
+	mkdir -p "$$root/bin" "$$root/lib/common-lisp" "$$root/doc"; \
+	for l in $(RELEASE_LISPS); do \
+	  for b in clautolisp/tools/clautolisp/bin/clautolisp-$$l \
+	           clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-$$l \
+	           autolisp-front-end/tools/alfe/bin/alfe-$$l; do \
+	    if [ -f "$$b.exe" ]; then cp "$$b.exe" "$$root/bin/"; \
+	    elif [ -f "$$b" ]; then cp "$$b" "$$root/bin/$$(basename "$$b").exe"; fi; \
+	  done; \
+	done; \
+	find "$(STAGE_LIBRARIES)" -name '*.dll' -exec cp {} "$$root/bin/" \; 2>/dev/null || true; \
+	if [ -d "$(STAGE_LIBRARIES)/share/common-lisp" ]; then \
+	  cp -R "$(STAGE_LIBRARIES)/share/common-lisp/." "$$root/lib/common-lisp/"; \
+	fi; \
+	for d in README README.md README.txt LICENSE LICENSE.txt COPYING; do \
+	  [ -f "$$d" ] && cp "$$d" "$$root/doc/" || true; \
+	done; \
+	find "$(STAGE_LIBRARIES)/share/doc" -maxdepth 3 -type f \
+	     \( -name '*.pdf' -o -name '*.html' -o -name 'LICENSE*' \) \
+	     -exec cp {} "$$root/doc/" \; 2>/dev/null || true; \
+	printf '%s\n' "$$ver" > "$$root/VERSION"; \
+	if ! ls "$$root/bin/"*.exe >/dev/null 2>&1; then \
+	  echo "ERROR: no .exe in bin/ — build-programs produced no Windows executables" >&2; \
+	  rm -rf "$$stage"; exit 1; fi; \
+	( cd "$$stage" && zip -qr "$(DIST)/clautolisp-$$ver-win-$(WIN_ARCH).zip" "$$app" ); \
+	rm -rf "$$stage"; \
+	echo "wrote $(DIST)/clautolisp-$$ver-win-$(WIN_ARCH).zip"
+
 # CI collect phase: union the per-target artefacts (gathered by the
 # pipeline into COLLECT_IN) into the final combined release set in
 # COLLECT_OUT. Pure repackaging — no build, no rebuild. The combined
@@ -311,12 +354,26 @@ collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the c
 	rm -rf "$$lstage"; \
 	for f in "$$in"/clautolisp-$$ver-sources.tar.bz2 \
 	         "$$in"/clautolisp-$$ver-sources.zip \
-	         "$$in"/clautolisp-$$ver-documentation.tar.bz2; do \
+	         "$$in"/clautolisp-$$ver-documentation.tar.bz2 \
+	         "$$in"/clautolisp-$$ver-documentation.zip; do \
 	  [ -f "$$f" ] && cp "$$f" "$$out"/ && echo "passthrough $$(basename "$$f")"; \
 	done; \
-	for f in "$$in"/*windows*; do \
+	for f in "$$in"/clautolisp-$$ver-win-*.zip "$$in"/*windows*; do \
 	  [ -e "$$f" ] || continue; cp "$$f" "$$out"/ && echo "windows $$(basename "$$f")"; \
 	done; \
+	astage=$$(mktemp -d); adir="$$astage/clautolisp-$$ver"; mkdir -p "$$adir"; \
+	an=0; for f in "$$out"/clautolisp-$$ver-*; do \
+	  case "$$f" in *clautolisp-$$ver-all.*) continue ;; esac; \
+	  [ -f "$$f" ] || continue; cp "$$f" "$$adir"/; an=$$((an+1)); \
+	done; \
+	if [ "$$an" -gt 0 ]; then \
+	  ( cd "$$adir" && ls -1 > CONTENTS.txt ); \
+	  tar -C "$$astage" --owner=0 --group=0 --numeric-owner -cjf "$$out/clautolisp-$$ver-all.tar.bz2" "clautolisp-$$ver"; \
+	  ( cd "$$astage" && zip -qr "$$out/clautolisp-$$ver-all.zip" "clautolisp-$$ver" ); \
+	  echo "wrote $$out/clautolisp-$$ver-all.tar.bz2 (bundling $$an component archive(s))"; \
+	  echo "wrote $$out/clautolisp-$$ver-all.zip"; \
+	else echo "WARNING: no component archives to bundle into all.*"; fi; \
+	rm -rf "$$astage"; \
 	echo "--- combined release set ($$out) ---"; ls -l "$$out"
 
 clean:: clean-pdf
