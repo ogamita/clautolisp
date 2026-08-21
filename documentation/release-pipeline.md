@@ -184,9 +184,13 @@ currently a **stub** on both forges — this is net-new work per
   usable as an offline dep cache and as the proven package set for the
   *self-hosted* Windows runner (reason-2 non-regression tests). `release.yml`
   now uses `msys2/setup-msys2` (MINGW64) with `gcc/cmake/make/zip/sbcl` in one
-  shell, so the Unix Makefile + libredwg build run as on Linux. Open: confirm
-  `mingw-w64-x86_64-sbcl` is present/usable and that the libredwg cmake build
-  picks the MinGW generator; iterate against the first CI run.
+  shell, so the Unix Makefile + libredwg build run as on Linux.
+  RESOLVED (2026-08-21 shakedown): `mingw-w64-x86_64-sbcl` works; libredwg builds
+  (Ninja) after two fixes in `build-libredwg.sh` — (1) hand cmake a mixed path
+  with `.exe` (MSYS mangles `/mingw64/bin/gcc`), (2) patch libredwg's CMakeLists
+  to strip `LIBREDWG_SO_VERSION` (perl's trailing newline broke `config.h`).
+  The `win-x64.zip` was verified against `windows-package-spec.md` (bin/ exes +
+  libredwg/clal DLLs, lib/common-lisp :tree, VERSION).
 - `.github/workflows/ci.yml` is now **workflow_dispatch-only** (was push/PR/tag):
   non-regression runs on GitLab (§2), so GitHub minutes are spent only on the
   Windows release build. Update the github/gitlab-parity note accordingly.
