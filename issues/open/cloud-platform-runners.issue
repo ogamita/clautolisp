@@ -100,8 +100,33 @@ The open question is *delivery*, not building. GitLab's =collect:release=
 unions the per-target =dist/= directories, and a GitHub-built archive has to
 reach it: either the GitLab job downloads the GitHub artefact (a token, and a
 release that depends on a second forge), or the Windows products are attached
-to the release from the GitHub side. That decision is the only real objection
-to an otherwise free answer.
+to the release from the GitHub side.
+
+*That objection is weaker than it first looked* (checked against the Releases
+API on 2026-08-21, after pjb asked whether assets can be added after the
+fact). A GitLab release asset is *always a link* — GitLab never stores a file
+for a release — and links can be added, repointed and removed at any time
+after publication:
+
+: POST   /projects/:id/releases/:tag/assets/links              (name + url)
+: PUT    /projects/:id/releases/:tag/assets/links/:link_id     (name and/or url)
+: DELETE /projects/:id/releases/:tag/assets/links/:link_id
+
+(Names and URLs must be unique within a release, so a duplicate POST fails;
+=make-gitlab-release.py --replace= already does DELETE-all-then-POST.)
+
+So a release can be published with what exists and *gain* its Windows
+products afterwards. Nothing has to be downloaded into a GitLab job: the
+archive only needs a stable URL, wherever it lives.
+
+And =direct_asset_path= is the piece that makes this tidy. It gives a link a
+permanent GitLab-served address, =/releases/<tag>/downloads/<path>=, which
+redirects to whatever the link currently points at. Our links are pinned to a
+JOB ID today (=/-/jobs/<id>/artifacts/raw/…=), so re-running =collect:release=
+strands them and the advertised URL changes; a =direct_asset_path= URL stays
+put and is repointed underneath. Worth adopting whether or not the Windows
+build ever moves to GitHub — see release-asset-links-use-artifacts-file.issue
+for why the link form was already once the thing that broke releases.
 
 ** Recommendation
 
