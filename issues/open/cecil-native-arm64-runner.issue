@@ -30,6 +30,17 @@ It is a desk machine, but that buys no availability yet — pjb, 2026-08-21:
 So cecil is as intermittent as thalassa and the windows PC, and everything
 this ticket says about intermittency applies to it in full.
 
+*What cecil is actually for* (pjb, same day). For arm64 work it is a bigger
+second machine, not a unique one: likely faster than thalassa and, above
+all, with far more memory, so it can run *more jobs in parallel*. Capacity,
+not architecture, is the gain — which is another reason the release path is
+the wrong place to spend it, since that lane is one job.
+
+Its one unique capability is the *GPU*: it carries the =nvidia= tag, and the
+expected use is *LLM work (ollama)*, which we will need to test and debug and
+which poseidon can only do on CPU. There is no such job in this project yet;
+=nvidia= exists so that the first one has a way to ask.
+
 (The =linux,arm64,docker= tag set now matches BOTH cecil and thalassa, which
 is fine: both are native, and whichever is awake takes the job.)
 

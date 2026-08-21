@@ -16,6 +16,10 @@ beside an AutoCAD either. Per-vendor tags would have created two pools that
 can each run one job — that is, two CADs at once, the situation this exists
 to prevent. The vendor a job targets is visible in the job's own name.
 
+**`nvidia` is the other capability tag.** It marks a runner with a usable
+GPU — today only cecil — and is how an LLM/ollama job asks for one. Unlike
+`cad` it implies no mutex: nothing about a GPU job requires serialising it.
+
 - **poseidon** (`poseidon.informatimago.com`) — a Debian server running
   `gitlab-runner` (under the unprivileged `runners` user, rootless docker)
   with a group runner **per group**. clautolisp is in the **ogamita**
@@ -29,13 +33,21 @@ to prevent. The vendor a job targets is visible in the job's own name.
 - **cecil** — an NVIDIA DGX Spark running Ubuntu on arm64, added
   2026-08-21, with two runners: a shell one (`linux,arm64,shell,nvidia`) and
   a docker one (`linux,arm64,docker,nvidia`). Both also accept **untagged**
-  jobs. It is the fleet's first arm64 machine running Linux *natively*
-  (thalassa's Docker engine already runs `linux/arm64` containers, but
-  inside a VM on macOS). Either beats what `release:linux:arm64` uses today,
-  which is qemu-user emulation on poseidon. It is a desk machine, but that
-  buys no extra availability for now: pjb, 2026-08-21 — "pour le moment elle
-  se comporte comme un laptop, avec horaires de bureaux". Treat it as just
-  as intermittent as the two laptops.
+  jobs. It is a desk machine, but that buys no extra availability for now:
+  pjb, 2026-08-21 — "pour le moment elle se comporte comme un laptop, avec
+  horaires de bureaux". Treat it as just as intermittent as the two laptops.
+
+  **What cecil is for.** It is the fleet's first arm64 machine running Linux
+  *natively* — thalassa's Docker engine already runs `linux/arm64`
+  containers, but inside a VM on macOS — and it is likely faster and, above
+  all, has far more memory, so it can run **more jobs in parallel** than
+  thalassa. That capacity, not the architecture, is the point: for arm64
+  work it is a bigger second machine, not a unique one.
+
+  Its one genuinely unique capability is the **GPU**. It carries the
+  `nvidia` capability tag so that a job needing one can ask for it, and the
+  expected use is **LLM work (ollama)** — which we will need to test and
+  debug, and which poseidon can only do on CPU.
 
 thalassa, the windows PC and cecil are **intermittent** — two laptops and a
 desk machine that keeps office hours — so their tagged jobs simply queue
