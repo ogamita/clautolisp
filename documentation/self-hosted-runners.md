@@ -31,13 +31,17 @@ to prevent. The vendor a job targets is visible in the job's own name.
   a docker one (`linux,arm64,docker,nvidia`). Both also accept **untagged**
   jobs. It is the fleet's first arm64 machine running Linux *natively*
   (thalassa's Docker engine already runs `linux/arm64` containers, but
-  inside a VM on macOS), and unlike thalassa it is a desk machine rather
-  than a laptop. Either beats what `release:linux:arm64` uses today, which
-  is qemu-user emulation on poseidon.
+  inside a VM on macOS). Either beats what `release:linux:arm64` uses today,
+  which is qemu-user emulation on poseidon. It is a desk machine, but that
+  buys no extra availability for now: pjb, 2026-08-21 — "pour le moment elle
+  se comporte comme un laptop, avec horaires de bureaux". Treat it as just
+  as intermittent as the two laptops.
 
-thalassa, the windows PC and cecil are **intermittent** (laptops and a desk
-machine, not always on), so their tagged jobs simply queue until the host is
-online — expected when a branch is pushed for validation.
+thalassa, the windows PC and cecil are **intermittent** — two laptops and a
+desk machine that keeps office hours — so their tagged jobs simply queue
+until the host is online, expected when a branch is pushed for validation.
+poseidon is the only machine that is always on, which is why every lane that
+must run whenever a tag is pushed lives there.
 
 > cecil's two runners follow the `<os>,<arch>,<executor>` convention, so the
 > existing configuration can dispatch to them as it stands — but *nothing does

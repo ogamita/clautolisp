@@ -21,9 +21,14 @@ response to this ticket.)
 cecil is the fleet's first arm64 machine running Linux *natively*. thalassa
 already offers native arm64 Docker — an Apple-Silicon laptop whose engine
 runs =linux/arm64= containers, inside a VM — so cecil is not the only native
-arm64 host, but it is the first that is Linux to the metal and the first
-that is not a laptop. Either beats what =release:linux:arm64= actually uses,
-which is *qemu-user emulation* on poseidon, the slowest lane the project has.
+arm64 host, only the first that is Linux to the metal. Either beats what
+=release:linux:arm64= actually uses, which is *qemu-user emulation* on
+poseidon, the slowest lane the project has.
+
+It is a desk machine, but that buys no availability yet — pjb, 2026-08-21:
+"pour le moment elle se comporte comme un laptop, avec horaires de bureaux".
+So cecil is as intermittent as thalassa and the windows PC, and everything
+this ticket says about intermittency applies to it in full.
 
 (The =linux,arm64,docker= tag set now matches BOTH cecil and thalassa, which
 is fine: both are native, and whichever is awake takes the job.)
@@ -63,8 +68,18 @@ evaluates =rules:= at pipeline creation, before =detect:runners= has run
 (the lesson of release-1.8.43, recorded at the top of =.gitlab-ci.yml=).
 So the choice must be explicit, in the established style of
 =SKIP_WINDOWS_RELEASE= / =ARM32_RELEASE=: keep qemu-on-poseidon as the
-always-on default, and let a CI variable send the lane to cecil. Flip the
-default the day cecil has proved itself over a few releases.
+always-on default, and let a CI variable send the lane to cecil when someone
+knows cecil is up.
+
+*And the default should stay on poseidon* even once cecil has proved itself,
+as long as cecil keeps office hours. A release tag is pushed when the release
+is ready, not when a machine is awake; a lane whose host is asleep either
+queues the release overnight or — worse, and this is what the =rules:= would
+actually do — ships without arm64 and says nothing. Emulated-but-always-there
+beats native-but-sometimes for the release path. The place native cecil pays
+off with no such risk is the non-release arm64 work: validation builds and
+the arm64 half of =ci-cache-tool-builds=, where a job that waits until
+morning costs nobody anything.
 
 Worth measuring before and after: the emulated lane's duration is the whole
 justification.
