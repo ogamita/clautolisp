@@ -79,6 +79,38 @@ and it is a cheap one to make: create the free VM, run the release build
 once, and see. Worth twenty minutes before dismissing it, because if it fits
 it is free for a year.
 
+*Which OS image* (pjb offers Windows 11 Pro, or Server 2025 Datacenter in
+null / Azure edition / Server Core, x64 Gen 2, and suggests Windows 11 Pro).
+Two things push the other way:
+
+- *RAM.* Windows 11's stated minimum is 4 GB and 64 GB of storage; the free
+  B1s has 1 GiB. Windows Server 2025 asks 512 MB, 2 GB with the Desktop
+  Experience — so on the free tier *Server Core is the only variant that
+  fits at all*, and the build in 1 GiB remains the open question either way.
+- *Licence.* Windows Server's licence is included in the VM price. Windows
+  client images on Azure require BYOL under multi-tenant hosting rights,
+  which are granted by Windows *Enterprise* E3/E5 per-user or Azure Virtual
+  Desktop — *not* by Windows 11 Pro. Trial and student accounts may deploy
+  Windows 11 images for development and testing only. So a client image
+  works while it is a trial and becomes a licensing problem the day it
+  becomes a permanent build machine.
+
+There is also a consistency argument: GitHub's =windows-latest= *is* Windows
+Server 2025 (=windows-2025=, =windows-2025-vs2026=), so a build that ever
+moves there lands on Server anyway.
+
+Recommendation: *Windows Server 2025 Datacenter*, the plain "null" variant
+with the Desktop Experience if memory allows — the GUI is useless to the
+build but makes provisioning MSYS2 / SBCL / CCL far less painful — and Server
+Core if memory is tight. "Azure edition" (hotpatching, Azure-only) buys
+nothing here.
+
+Where a *client* Windows genuinely matters is the platform TEST lanes —
+=test:clautolisp:windows=, =verify:vl-registry:windows=, the pathname and
+encoding probes — which check what a user sees on client Windows: registry
+layout, console code page. Those stay on the physical PC. Build on Server,
+test on client, is a coherent split.
+
 ** GitHub-hosted windows-latest — free, unmetered, 4 vCPU / 16 GB, half built
 
 The cheapest by a wide margin, and it needs no machine, no licence and no
@@ -128,13 +160,47 @@ put and is repointed underneath. Worth adopting whether or not the Windows
 build ever moves to GitHub — see release-asset-links-use-artifacts-file.issue
 for why the link form was already once the thing that broke releases.
 
-** Recommendation
+** Decision (pjb, 2026-08-21): try both Azure and GitHub
+
+"I think that we can try both azure and github. Once the release artefacts
+are built, they can be fetched and put on gitlab release page."
+
+So the plan is settled: build Windows off the physical PC, on whichever of
+the two proves itself, and attach the products to the GitLab release.
+
+One correction to carry into the implementation: *nothing is "put on" a
+GitLab release page*. A release asset is a link (see the delivery section
+above), so "fetched and put on" resolves to one of three things, and they
+differ in what they cost us:
+
+1. *Link straight at the GitHub release asset.* Costs GitLab *nothing* —
+   which matters, because the namespace quota is what stopped the CI today
+   (namespace-storage-blocks-ci.issue). The release then depends on GitHub
+   staying up and the asset staying put.
+2. *Fetch it into =collect:release='s =dist/=.* A download step in the
+   existing job, after which every link is a GitLab artefact link and the
+   machinery is unchanged. Costs the archive's size against the quota, for
+   ever, on top of the ~950 MB each release already keeps.
+3. *Push it to the GitLab generic Package Registry.* A stable URL,
+   independent of job ids — and the same permanent storage cost as (2)
+   (=packages_size= is 0 today).
+
+(2) is the least new machinery, (1) the least storage. Worth deciding
+deliberately rather than by default, and =direct_asset_path= makes the choice
+reversible: the advertised URL stays put while the target moves.
+
+** Recommendation for the order of work
 
 Fill in the GitHub =windows-latest= stub first: it costs nothing, the runner
-is bigger than anything else on this list, and the scaffolding exists. Keep
-KVM-on-poseidon as the fallback for the day the two-forge dependency becomes
-uncomfortable — the hardware and the hypervisor are already there; only a
-licence and a day of provisioning are missing.
+is bigger than anything else on this list, the scaffolding exists — and it is
+the only CI in this project that a GitLab storage quota cannot stop. Azure in
+parallel answers a different question (a machine we control, sized as we
+like), and its free tier answers whether 1 GiB is enough, which nothing else
+will tell us.
+
+Keep KVM-on-poseidon as the fallback for the day the two-forge dependency
+becomes uncomfortable — the hardware and the hypervisor are already there;
+only a licence and a day of provisioning are missing.
 
 Either way the physical Windows PC stays: it is the CAD host, and nothing
 here replaces that.
