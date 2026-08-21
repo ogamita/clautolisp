@@ -25,3 +25,91 @@ Survey cloud runner options usable on demand from gitlab.com CI:
 
 When one is adopted, consider promoting the platform lanes from
 allow_failure to blocking on release tags.
+
+* Survey — a CAD-free Windows BUILD host (pjb, 2026-08-21)
+
+pjb: "pour builder une release de clautolisp […] on a besoin de le compiler
+sur une machine windows, mais on n'a pas besoin de cad sur cette machine.
+Alors on peut envisager une machine windows en docker ou qemu ou virtualbox."
+
+That splits the Windows runner in two, and the split is the useful part: the
+*CAD* lanes need the licensed GUI applications and therefore the physical PC;
+the *build* lane needs only MSYS2 bash, SBCL, CCL and cmake — see
+=scripts/release-windows.sh=, which is the whole of it. Only the second is on
+the release path. Four ways to get one, measured rather than assumed:
+
+** Windows containers on a Linux host — impossible
+
+Windows containers need a Windows kernel; no Linux host runs them. What is
+sold as "Windows in Docker" (=dockurr/windows= and kin) is a QEMU/KVM virtual
+machine wrapped in a container — useful packaging, but it is the next option,
+not this one.
+
+** A KVM guest on poseidon — available TODAY, and the tooling is already there
+
+Checked on poseidon on 2026-08-21:
+
+: Intel(R) Core(TM) i9-9900K, 16 threads, vmx on all of them
+: /dev/kvm            crw-rw-rw-      kvm_intel module loaded
+: 125 GB RAM, 717 GB free on /
+: qemu-system-x86_64, virsh, virt-install, docker — all installed
+
+So the hypervisor question is settled: nothing needs installing. VirtualBox
+would do the same job worse on a headless server; KVM is the right one here.
+
+The cost is not the machine, it is the *licence*. Windows Server 2025
+Evaluation runs 180 days, must be activated over the internet within 10 days
+or it shuts down, and =slmgr /rearm= resets the 180 days up to six times —
+call it three years of legitimate evaluation use, after which the VM is
+rebuilt or licensed. A bought licence removes the question.
+
+Second cost: provisioning. MSYS2 + SBCL + CCL + cmake + quicklisp, plus a
+=gitlab-runner= service. A day's work, and *ours to maintain* thereafter.
+
+** Azure free account — real, but the VM is too small
+
+pjb's link, and the 750 h/month is genuine: it covers a single instance
+running continuously. The catch is the size. The free tier's three VM sizes
+are B1s, B2pts v2 and B2ats v2, all with *1 GiB of RAM*, and the offer lasts
+*12 months*, after which it is billable.
+
+One gibibyte to run MSYS2, compile libredwg with cmake and dump SBCL images
+is almost certainly not enough — but that is reasoning, not a measurement,
+and it is a cheap one to make: create the free VM, run the release build
+once, and see. Worth twenty minutes before dismissing it, because if it fits
+it is free for a year.
+
+** GitHub-hosted windows-latest — free, unmetered, 4 vCPU / 16 GB, half built
+
+The cheapest by a wide margin, and it needs no machine, no licence and no
+provisioning:
+
+- =ogamita/clautolisp= on GitHub is *public*, and GitHub's standard hosted
+  runners are free and unlimited on public repositories.
+- On a public repository =windows-latest= is *4 vCPU / 16 GB* (2/8 on private
+  ones) — four times the Azure free VM's cores and sixteen times its memory,
+  at no cost and with no expiry.
+- =.github/workflows/release.yml= *already* carries the matrix entry
+  =windows/x86-64 → windows-latest=. Its build step is a stub that echoes
+  "TODO Windows packaging per documentation/windows-package-spec.md".
+
+So the work is not "find a Windows machine", it is "fill in that stub", and
+=scripts/release-windows.sh= is the script it would run.
+
+The open question is *delivery*, not building. GitLab's =collect:release=
+unions the per-target =dist/= directories, and a GitHub-built archive has to
+reach it: either the GitLab job downloads the GitHub artefact (a token, and a
+release that depends on a second forge), or the Windows products are attached
+to the release from the GitHub side. That decision is the only real objection
+to an otherwise free answer.
+
+** Recommendation
+
+Fill in the GitHub =windows-latest= stub first: it costs nothing, the runner
+is bigger than anything else on this list, and the scaffolding exists. Keep
+KVM-on-poseidon as the fallback for the day the two-forge dependency becomes
+uncomfortable — the hardware and the hypervisor are already there; only a
+licence and a day of provisioning are missing.
+
+Either way the physical Windows PC stays: it is the CAD host, and nothing
+here replaces that.
