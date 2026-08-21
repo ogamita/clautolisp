@@ -66,7 +66,20 @@ rebuilt or licensed. A bought licence removes the question.
 Second cost: provisioning. MSYS2 + SBCL + CCL + cmake + quicklisp, plus a
 =gitlab-runner= service. A day's work, and *ours to maintain* thereafter.
 
-** Azure free account — real, but the VM is too small
+** Azure — DECLINED 2026-08-21: $140/month for a usable machine
+
+pjb, having priced it: "minimum configuration is $140 /month. Let's just do
+github for now."
+
+That settles it, and it settles it on the number rather than on the free
+tier's shortcomings: the free VM was never the interesting question once a
+usable one costs $1700 a year to do what a public repository gets for
+nothing. The analysis below is kept because it is what the price has to be
+compared against, and because the day GitHub stops being free — or the
+two-forge dependency becomes intolerable — this is the file that says what
+the alternatives cost.
+
+*** Azure free account — real, but the VM is too small
 
 pjb's link, and the 750 h/month is genuine: it covers a single instance
 running continuously. The catch is the size. The free tier's three VM sizes
@@ -160,13 +173,14 @@ put and is repointed underneath. Worth adopting whether or not the Windows
 build ever moves to GitHub — see release-asset-links-use-artifacts-file.issue
 for why the link form was already once the thing that broke releases.
 
-** Decision (pjb, 2026-08-21): try both Azure and GitHub
+** Decision (pjb, 2026-08-21): GitHub, and the artefacts come back to GitLab
 
-"I think that we can try both azure and github. Once the release artefacts
-are built, they can be fetched and put on gitlab release page."
+First "I think that we can try both azure and github. Once the release
+artefacts are built, they can be fetched and put on gitlab release page",
+then, having priced Azure at $140/month, "Let's just do github for now".
 
-So the plan is settled: build Windows off the physical PC, on whichever of
-the two proves itself, and attach the products to the GitLab release.
+So the plan is settled: build Windows off the physical PC, on GitHub's free
+hosted runner, and attach the products to the GitLab release.
 
 One correction to carry into the implementation: *nothing is "put on" a
 GitLab release page*. A release asset is a link (see the delivery section
@@ -189,14 +203,36 @@ differ in what they cost us:
 deliberately rather than by default, and =direct_asset_path= makes the choice
 reversible: the advertised URL stays put while the target moves.
 
-** Recommendation for the order of work
+** Status of the GitHub lane
 
-Fill in the GitHub =windows-latest= stub first: it costs nothing, the runner
-is bigger than anything else on this list, the scaffolding exists — and it is
-the only CI in this project that a GitLab storage quota cannot stop. Azure in
-parallel answers a different question (a machine we control, sized as we
-like), and its free tier answers whether 1 GiB is enough, which nothing else
-will tell us.
+It is *written* (=.github/workflows/release.yml=, 2026-08-21) and
+*unproven*. It sets MSYS2 up for MINGW64, installs SBCL from Chocolatey, and
+runs =scripts/release-windows.sh= — the same script the GitLab lane runs, so
+there is one Windows recipe and not two. It was written against the published
+contents of the =windows-2025= image (MSYS2 at =C:\msys64= but not on PATH,
+gcc 15.2.0, cmake 3.31.6, Chocolatey 2.7.3, and no Lisp of any kind), which
+is informed guessing, not a green run. The lane stays =experimental= and the
+tag trigger stays off until it has one.
+
+*To iterate on it, a GitHub token is needed.* Anonymous access to the public
+repository gives run and per-step conclusions, but =actions/runs/:id/logs=
+returns *403* — so one can see WHICH step failed and never WHY, which is not
+enough to bring up a Windows toolchain. The workflow also has only a
+=workflow_dispatch= trigger, which cannot be fired without auth either.
+Either a token with Actions read (plus =workflow= to dispatch), or
+=gh auth login= run in the session.
+
+Noted in passing, measured the same day: GitHub's CI ran green on the
+=release-1.9.2= tag at 14:34 UTC while every GitLab job was failing to clone.
+The second forge is not only cheaper here, it is independently available.
+
+** Remaining work before GitHub can be trusted with this
+
+- prove the Windows lane on a real run;
+- the =collect= job still never unions the per-target artefacts (its own
+  TODO), which is the other half of why the tag trigger was removed;
+- decide how the Windows archive reaches the GitLab release — the three
+  options above, differing mainly in what they cost the storage quota.
 
 Keep KVM-on-poseidon as the fallback for the day the two-forge dependency
 becomes uncomfortable — the hardware and the hypervisor are already there;

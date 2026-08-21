@@ -4,8 +4,21 @@ name: Release
 # on a version tag. Scaffolds all six SBCL targets; only the
 # Linux x86-64 lane is required — the others are `experimental` (their
 # failures do not fail the run) until their runners/toolchains are
-# tuned. Windows packaging follows documentation/windows-package-spec.md
-# and is still a stub.
+# tuned.
+#
+# WINDOWS IS NO LONGER A STUB, and it is not proven either. It runs
+# scripts/release-windows.sh — the same script the GitLab lane runs, so
+# there is one Windows recipe and not two — on a runner that carries
+# MSYS2, gcc and cmake but no Lisp, so the lane sets MSYS2 up for MINGW64
+# and installs SBCL from Chocolatey. Written 2026-08-21 against the
+# published contents of the windows-2025 image; every line of it wants a
+# real run before anyone relies on it, which is why the lane stays
+# `experimental` and the tag trigger stays off (see below).
+#
+# Why here at all: on a public repository GitHub's standard hosted runners
+# are free and unmetered, and windows-latest is 4 vCPU / 16 GB — bigger
+# than any Windows machine we own or could rent free. See the survey in
+# issues/open/cloud-platform-runners.issue.
 #
 # THIS WORKFLOW DOES NOT PUBLISH A RELEASE BY ITSELF, AND THAT IS
 # DELIBERATE (release-artefact-set-incomplete.issue, closed 2026-08-19).
@@ -94,6 +107,47 @@ jobs:
       - name: Install toolchain (macOS)
         if: runner.os == 'macOS'
         run: brew install sbcl cmake
+
+      # Windows. The image carries MSYS2 at C:\msys64 (NOT on PATH), gcc,
+      # cmake and Chocolatey, but no Common Lisp -- so MSYS2 is set up
+      # properly for MINGW64 and SBCL comes from choco.
+      #
+      # MINGW64 and not UCRT64/CLANG64: the DWG codec refuses those, which
+      # import private UCRT API sets the native SBCL does not have. The
+      # reasoning lives in scripts/environnement-windows.sh, which this lane
+      # sources exactly like the GitLab one.
+      - name: Install toolchain (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            make zip unzip diffutils
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+      - name: Install SBCL (Windows)
+        if: runner.os == 'Windows'
+        run: choco install sbcl --no-progress -y
+      - name: Bootstrap Quicklisp (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          . scripts/environnement-windows.sh
+          # environnement-windows.sh adds the MSI's directory to PATH if it
+          # exists; say so plainly when it does not, rather than failing
+          # later inside the build with a confusing message.
+          if ! command -v sbcl >/dev/null 2>&1; then
+            echo "sbcl not on PATH after choco install; looking for it:"
+            ls -d "/c/Program Files/Steel Bank Common Lisp" 2>&1 || true
+            ls -d /c/ProgramData/chocolatey/lib/sbcl* 2>&1 || true
+            exit 1
+          fi
+          sbcl --version
+          curl -fsSL https://beta.quicklisp.org/quicklisp.lisp -o ql.lisp
+          sbcl --non-interactive --load ql.lisp \
+               --eval '(quicklisp-quickstart:install)'
+
       - name: Bootstrap Quicklisp (Unix)
         if: runner.os != 'Windows'
         run: |
@@ -109,10 +163,18 @@ jobs:
           make build-libraries        # builds vendored libdwg + shim
           make release-programs
           make release-libraries
+      # The SAME script the GitLab lane runs -- one Windows recipe, not two.
+      # It sources scripts/environnement-windows.sh itself, clears dist/ and
+      # the fasl caches (a surviving cache once shipped 1.9.0's Windows
+      # binaries reporting 1.8.56), builds, packages, and asserts the
+      # artefacts are present and non-empty.
+      #
+      # RELEASE_LISPS is left at the Makefile default, sbcl, which is what
+      # the GitLab Windows lane uses: there is no CCL on this lane.
       - name: Build + package (Windows)
         if: runner.os == 'Windows'
-        shell: bash
-        run: echo "TODO Windows packaging per documentation/windows-package-spec.md (stub)"
+        shell: msys2 {0}
+        run: sh scripts/release-windows.sh
 
       - uses: actions/upload-artifact@v4
         with:
