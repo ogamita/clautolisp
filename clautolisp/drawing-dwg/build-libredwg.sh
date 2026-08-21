@@ -111,8 +111,20 @@ fi
 #        job-log cap during the build — hiding any real downstream error.
 #  - -Wno-unused-command-line-argument: clang rejects -fstack-clash-protection.
 #  - -D_DARWIN_C_SOURCE: expose memmem() in <string.h> on macOS (no-op elsewhere).
+# The value handed to a NATIVE cmake must be a path it can stat. On MSYS2/MinGW
+# the POSIX $compiler_path (/mingw64/bin/gcc) is mangled to C:/msys64/mingw64/
+# bin/gcc (no .exe) when it crosses into native cmake, which then rejects it as
+# "not a full path to an existing compiler tool". Convert to a mixed path and
+# ensure the .exe suffix there; elsewhere pass $compiler_path unchanged.
+cmake_compiler="$compiler_path"
+case "$host_uname" in
+  MINGW*|MSYS*|CYGWIN*)
+    cmake_compiler="$(cygpath -m "$compiler_path" 2>/dev/null || echo "$compiler_path")"
+    case "$cmake_compiler" in *.exe) ;; *) cmake_compiler="$cmake_compiler.exe" ;; esac
+    ;;
+esac
 cmake -S "$lr" -B "$build" \
-      -DCMAKE_C_COMPILER="$compiler_path" \
+      -DCMAKE_C_COMPILER="$cmake_compiler" \
       -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DDISABLE_WERROR=ON \
       -DCMAKE_C_FLAGS="-w -Wno-unused-command-line-argument -D_DARWIN_C_SOURCE"
 cmake --build "$build" --target redwg \
