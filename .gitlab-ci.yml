@@ -142,7 +142,9 @@ stages:
 #   git tag ... && git push          -> Windows/macOS products expected
 #   SKIP_WINDOWS_RELEASE=1 (CI var)  -> cut without the Windows products
 #   SKIP_MACOS_RELEASE=1             -> likewise for macOS
-#   SKIP_ARM32_RELEASE=1             -> likewise for the qemu armv7 lane
+#   ARM32_RELEASE=1                  -> ADD the qemu armv7 lane, which is
+#                                       off by default because it is
+#                                       blocked, not intermittent
 #
 # Explicit beats automatic here: the failure mode of the automatic version
 # was a release that looked complete and was not.
@@ -160,19 +162,36 @@ stages:
 .on-release-macos-absent: &on-release-macos-absent
   if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
   when: never
-# arm32 differs from the two anchors above in ONE way: allow_failure is
-# TRUE. Windows and macOS are intermittent -- the machine is either there
-# or it is declared absent -- so a failure there is a real failure. The
-# armv7 lane is not intermittent, it is BLOCKED: Debian's armhf SBCL is
-# built without threads, and bordeaux-threads refuses to load on a
-# thread-less implementation ("This implementation is unsupported"), which
-# is where release-1.8.47 died after 44 minutes of emulated build. Until
-# that is solved (native hardware, or a threaded armhf SBCL), a mandatory
-# arm32 would block every single release for a reason no CI setting can
-# fix. So it runs on every tag and contributes when it can, without
-# holding the release hostage. See issues/open/release-arm32-thread-less-sbcl.issue.
+# arm32 is OPT-IN, and it is the only lane that is. The other two are
+# opt-out because they are INTERMITTENT -- the machine is either there or
+# it is declared absent with SKIP_*_RELEASE, and a failure means something
+# went wrong. The armv7 lane is not intermittent, it is BLOCKED: Debian's
+# armhf SBCL is built without threads, and bordeaux-threads 0.9 refuses to
+# load on a thread-less implementation ("This implementation is
+# unsupported"), so the build dies before it can produce anything.
+#
+# It ran anyway until 1.9.0, on allow_failure, on the reasoning that it
+# "contributes when it can". Three tags say otherwise: release-1.8.47 died
+# that way after 44 minutes, release-1.9.0 after 48 (job 16026668734), and
+# it has never once succeeded. A lane that cannot succeed does not
+# contribute -- it spends the better part of an hour of an emulated runner
+# and holds `collect' behind it, on every release.
+#
+# pjb, cutting 1.9.0: "we'll have to disable arm32 release for now."
+#
+# So the default is now OFF and the switch is positive: ARM32_RELEASE=1
+# turns the lane back on, which is what to set the day the thread-less
+# question is answered (native hardware, or a threaded armhf SBCL, or a
+# bordeaux-threads that loads) -- and turning it on is then how you TEST
+# that answer. SKIP_ARM32_RELEASE is deliberately not kept as an alias: a
+# skip variable for a lane that no longer runs by default would only be
+# read as evidence that it does. See
+# issues/open/release-arm32-thread-less-sbcl.issue.
+#
+# allow_failure stays TRUE for the opt-in run, so re-enabling it to try a
+# fix cannot block a release either.
 .on-release-arm32: &on-release-arm32
-  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $SKIP_ARM32_RELEASE != "1"'
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $ARM32_RELEASE == "1"'
   when: on_success
   allow_failure: true
 .on-release-arm32-absent: &on-release-arm32-absent
@@ -1231,10 +1250,10 @@ collect:release:
   needs:
     - { job: "release:linux:x86-64", artifacts: true }
     - { job: "release:linux:arm64",  artifacts: true }
-    # arm32 is OPTIONAL for the same reason as the two intermittent
-    # platforms below: it is ABSENT from the pipeline when the release is
-    # cut with SKIP_ARM32_RELEASE=1, and `optional' is what lets this job
-    # proceed without it.
+    # arm32 is OPTIONAL, and since 1.9.0 that is the NORMAL case rather
+    # than a switched-off one: the lane is off by default (it is blocked,
+    # see .on-release-arm32), so it is simply ABSENT from a release
+    # pipeline, and `optional' is what lets this job proceed without it.
     #
     # `optional' is NOT what makes a manual job safe to need -- that was
     # my error, and it cost two releases. GitLab SKIPS a job whose need is

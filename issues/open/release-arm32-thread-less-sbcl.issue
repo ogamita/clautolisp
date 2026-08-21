@@ -13,6 +13,10 @@ pjb, 2026-08-18: « fix arm32 so it's not manual on release tags ». Done —
 automatically on every =release-*= tag, with a =SKIP_ARM32_RELEASE=1=
 opt-out like the two intermittent platforms.
 
+(Historique : ce paragraphe décrit l'état du 2026-08-18. Depuis le
+2026-08-21 la lane est OPT-IN et =SKIP_ARM32_RELEASE= n'existe plus —
+voir la section « DÉSACTIVÉE » plus bas.)
+
 Making it run revealed that it cannot succeed. Every earlier "success" of
 this lane was an illusion: a guard in its =before_script= did =exit 0=,
 which ended the whole job green in 35 seconds without building anything
@@ -133,6 +137,54 @@ d'une contrainte de version dans la distribution Quicklisp, ce qui a ses
 propres ennuis (voir clautolisp-quicklisp-ci-deps). À mesurer sur une
 armhf avant d'y croire : personne ici n'a de SBCL sans threads sous la
 main, et ce paragraphe est une hypothèse, pas un résultat.
+
+* DÉSACTIVÉE (2026-08-21, en coupant 1.9.0) — la lane est opt-in
+
+pjb, pendant la pipeline du tag release-1.9.0 : « I think we'll have to
+disable arm32 release for now », avec l'erreur exacte que ce ticket
+décrit — =LOAD-SYSTEM-DEFINITION-ERROR= sur =bordeaux-threads=, « This
+implementation is unsupported », job 16026668734.
+
+*Deux tags mesurés disent la même chose.* La lane tournait sur chaque tag en
+=allow_failure=, au motif qu'elle « contribue quand elle peut ». Elle n'a
+jamais abouti une seule fois :
+
+| tag             | durée avant l'échec |
+|-----------------+---------------------|
+| release-1.8.47  | 44 min              |
+| release-1.9.0   | 48 min (2 908 s)    |
+
+Une lane qui ne peut pas aboutir ne contribue pas : elle dépense
+trois quarts d'heure de runner émulé et tient =collect= derrière elle, à
+chaque release.
+
+*Le sens du commutateur est inversé, et c'est le point.* Windows et macOS
+sont opt-OUT parce qu'elles sont INTERMITTENTES — la machine est là, ou
+bien on la déclare absente, et un échec y est un vrai échec. armv7 n'est
+pas intermittente, elle est BLOQUÉE. Son défaut par défaut est donc
+maintenant OFF, et le commutateur est positif :
+
+: ARM32_RELEASE=1   rallume la lane
+
+=SKIP_ARM32_RELEASE= n'est délibérément PAS conservé comme alias : une
+variable « ne saute pas cette lane » pour une lane qui ne tourne plus par
+défaut se lirait comme la preuve qu'elle tourne encore.
+
+=allow_failure= reste vrai pour l'exécution opt-in, de sorte que
+rallumer la lane pour essayer un correctif ne puisse pas bloquer une
+release non plus. C'est d'ailleurs à cela qu'elle servira : le jour où
+l'une des pistes aboutit — matériel natif, SBCL armhf threadé, ou
+bordeaux-threads 0.8.x épinglée — =ARM32_RELEASE=1= est la manière de le
+VÉRIFIER.
+
+*Ce que cela change pour une release* : elle ne porte simplement pas de
+produits armv7, et le dit, au lieu de faire mine d'avoir essayé.
+release-1.9.0 porte 15 artefacts sur 17 — toutes les autres plateformes
+ont livré, Windows compris.
+
+Le ticket reste OUVERT : c'est la lane qui est désactivée, pas la
+question. Les quatre options tiennent toujours, et l'analyse de l'option
+3 ci-dessus reste le meilleur point de départ.
 * Not to be confused with
 
 The lane's *other* two faults, both already fixed in 1.8.47:
