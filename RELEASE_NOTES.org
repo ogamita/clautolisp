@@ -11,8 +11,9 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.9.0 / alfe 1.9.0 /
-read-autolisp 1.9.0). For the
+master at the top of the file (clautolisp 1.9.1 / alfe 1.9.0 /
+read-autolisp 1.9.0 — alfe and read-autolisp did not change since 1.9.0,
+and version-rules lets an unchanged program keep its stamp). For the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
 
@@ -30,6 +31,23 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *The Windows products of a release now run, and are what the release
+  says they are.* This is the whole subject of 1.9.1: the Windows archive
+  of 1.9.0 could not be used. Three separate defects, found by looking
+  inside the published file:
+  - its binaries were named without ~.exe~, while both shipped launchers
+    open ~<prog>-<lisp>.exe~ — so ~clautolisp~ answered "no binary for
+    windows/x86-64" and exited 127;
+  - ~alfe-sbcl~ was a *Linux* ELF, because the release job inherited the
+    artifacts of every earlier job and one of them publishes a Linux alfe
+    at exactly that path;
+  - the images had been dumped from a compilation cache left by an
+    earlier pipeline, so they reported clautolisp 1.8.56 and
+    read-autolisp 1.8.0 from inside an archive named 1.9.0.
+  Each is fixed at its cause. The release lane now also opens its own
+  archive and *runs* each binary, requiring it to report the version its
+  source declares — because a well-formed archive of correctly named
+  files can still contain the wrong program.
 - Native Windows LibreDWG builds select the MSYS2 MINGW64 compiler,
   expose its runtime directory to compiler subprocesses, reject private
   UCRT dependencies, and install the exact DLL imported by the CFFI shim.
