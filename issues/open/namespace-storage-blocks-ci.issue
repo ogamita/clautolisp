@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
-#+TITLE: namespace-storage-blocks-ci — the release lanes cannot clone, because keeping release artefacts for ever filled a free namespace
+#+TITLE: namespace-storage-blocks-ci — the CI cannot clone, because one artefact nobody reads fills a free namespace every fortnight
 #+STATUS: TODO
 #+PRIORITY: P1
 #+TYPE: infra
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: issue-namespace-storage
 
 * Symptom
 
@@ -24,76 +24,101 @@ not the release, and not a =.gitlab-ci.yml= change.
 
 * Cause — the namespace is over its storage limit
 
-: namespace  ogamita        plan: free
-: project    clautolisp     job_artifacts_size  23.14 GB
-:                           storage_size        23.18 GB
+: namespace  ogamita        plan: free  (10 GB)
+: project    clautolisp     job_artifacts_size  23.10 GB
 
-A free GitLab.com namespace includes *10 GB*. Over the limit, GitLab
-refuses git operations — which is exactly a 403 on the fetch, with no
-message about storage anywhere in the job log. That silence is why this
-looked for a while like a CI-token or configuration fault.
+Over the limit, GitLab refuses git operations — which is exactly a 403 on
+the fetch, with no message about storage anywhere in the job log. That
+silence is why this looked for a while like a CI-token or configuration
+fault.
 
-*It is not today's doing alone.* Of those 23 GB, only *3.26 GB* is in the
-last 1500 jobs; the rest is older history. Today's release attempts were
-the last straw, not the cause.
+* What is actually in the 23 GB — measured, not guessed
 
-* The design tension, which is the real subject
+A first pass over the most recent 1500 jobs suggested the bulk was old
+history, and this ticket said so. *That was wrong*, and it pointed at the
+wrong fix. A full walk of all 32 578 jobs on 2026-08-21 says:
 
-The single heaviest object in the project is
+| job                    | jobs | artefacts |
+|------------------------+------+-----------|
+| =documentation=        |  552 |   9.70 GB |
+| =collect:release=      |    8 |   3.95 GB |
+| =build:alfe:sbcl=      |  925 |   3.35 GB |
+| =release:linux:x86-64= |   32 |   1.99 GB |
+| =release:linux:arm64=  |   30 |   0.79 GB |
+| =release:darwin:arm64= |   26 |   0.69 GB |
+| everything else        |    — |   2.63 GB |
 
-: 952 MB   collect:release   release-1.9.0
+Expiry *does* work: sampled jobs older than about a fortnight hold only
+their trace, no archive. So this is not accumulated history at all — it is
+roughly *twelve days of production*. Over the twelve days the API still had
+archives for:
 
-and it is *supposed* to be there for ever. =collect:release= carries
-=expire_in: never= deliberately, because a published Release LINKS AT its
-artefacts: with an expiry, every release turns into dead links some weeks
-later (release-asset-links-use-artifacts-file.issue, and
-=make check-release= enforces the =never=).
+: documentation      175 runs   8.99 GB    51 MB each
+: build:alfe:sbcl    207 runs   2.74 GB    13 MB each
 
-So the rule that keeps releases usable also means *every release costs
-about a gigabyte, permanently*. On a 10 GB namespace that is a budget of
-roughly ten releases before git itself stops working — and 1.9.0, 1.9.1
-and 1.9.2 spent three of them in one day.
+=documentation= alone is 39% of the total, and *nothing consumes it*:
+=deploy:documentation= needs the tag lane's =release:documentation=, and
+=pages= needs the benchmarks. Its dist/ exists so a human can look at the
+rendered manuals after a doc change. It kept them a week, at 51 MB per
+merge-request and per master pipeline.
 
-The two rules are individually right and jointly unsustainable. That is
-the thing to fix, not the symptom.
+* The permanent cost, which is real but is NOT what filled the disk
 
-* What can be freed, and what must not be
+=collect:release= carries =expire_in: never= deliberately, because a
+published Release LINKS AT its artefacts: with an expiry, every release
+turns into dead links some weeks later
+(release-asset-links-use-artifacts-file.issue, and =make check-release=
+enforces the =never=). So every release costs about a gigabyte for ever:
 
-| artefact | may be deleted? |
-|----------+-----------------|
-| =documentation= (1.04 GB across ~20 jobs, 52 MB each, one per pipeline) | YES — no consumer after the job |
-| =build:alfe:*=, =test:*=, probes | YES — 14-day expiry anyway |
-| per-target =release:*= of superseded tags | YES — collect has already unioned them |
-| =collect:release= of a PUBLISHED release | *NO* — the Release page links straight at it |
+: 954 MB  release-1.8.49      (published, permanent)
+: 954 MB  release-1.8.47      (published, permanent)
+: 952 MB  release-1.9.0       (published, permanent)
+: 683 MB  release-1.8.46      (expires 2026-09-17)
+: 410 MB  two master runs     (expiring today)
 
-=collect:release= for =release-1.9.0= is the awkward one: it is 952 MB,
-it belongs to a release whose Windows products do not work and which
-1.9.2 supersedes, and deleting it would turn that release's 15 asset
-links into 404s. Whether a superseded, broken release keeps its assets is
-a judgement for pjb, not a cleanup script.
+That is 2.86 GB of genuinely permanent storage — about a tenth of the
+allowance per release, which is worth designing for, but it is *not* what
+took the namespace down. Three releases in one day looked like the culprit
+and were not.
 
-* Options, none chosen
+* Fix
 
-1. *Purge old job artefacts* (everything but published =collect:release=).
-   Frees most of the ~20 GB of history immediately and unblocks CI. Costs
-   nothing that has a consumer; irreversible without re-running pipelines.
-2. *Stop shipping the combined =-all.zip= / =-all.tar.bz2=.* They are 276 MB
-   and 246 MB of the 952 MB, and they duplicate the per-target archives
-   byte for byte. Halves the permanent cost of every future release.
-3. *Publish release assets outside job artefacts* — the GitLab Package
-   Registry, or a release-assets project. Removes the expiry problem at
-   the root, and is the only option that scales past ten releases; also
-   the most work.
-4. *Raise the namespace allowance.* Money instead of engineering, and
-   legitimate, but it defers rather than answers.
+1. *Shorten the two expiries that dominate* — done in this branch:
+   =documentation= 1 week → *1 day* (no consumer at all), =build:alfe:sbcl=
+   14 days → *3 days* (its consumers =needs:= it inside the same pipeline).
+   Together those are 11.7 GB of the 23 GB; at the new expiries they settle
+   at roughly 1.3 GB and 0.6 GB. This is the change that stops it recurring:
+   without it the namespace refills in a fortnight whatever is deleted today.
 
-Option 1 is the emergency; option 2 is the cheapest real reduction;
-option 3 is the answer if releases are to keep being cut at this rate.
+2. *Purge the existing job artefacts, keeping every =collect:release=* —
+   *needs pjb's word, and this is the only open question in this ticket.*
+   Frees *19.15 GB*, leaving *3.98 GB* of the 10 GB allowed. Every object it
+   removes already carries an expiry of 14–90 days and has no consumer: it
+   brings forward what GitLab will do anyway. Script:
+   =/home/claude/.claude/jobs/2b87a7b6/tmp/purge-artifacts.py= (dry-run by
+   default, =--apply= to delete, =KEEP_NAMES = {"collect:release"}=).
+
+   *This is enough on its own.* An earlier draft of this ticket asked
+   whether release-1.9.0's 952 MB should be sacrificed — it is superseded,
+   its Windows products do not work, and deleting it would turn its 15 asset
+   links into 404s. With (2) landing at 3.98 GB, that question does not
+   arise. Leave the published releases alone.
+
+3. *Longer term, if releases keep being cut at this rate*: the combined
+   =-all.zip= / =-all.tar.bz2= are 276 MB and 246 MB of each 952 MB and
+   duplicate the per-target archives byte for byte — dropping them halves
+   the permanent cost per release, but pjb named the ten artefacts a release
+   must publish (release-artefact-set-incomplete.issue), so that is his call
+   too. The root fix is publishing release assets outside job artefacts (the
+   Package Registry, or a release-assets project), which removes the expiry
+   tension entirely.
 
 * Note
 
-Found while cutting release-1.9.2, by measuring rather than guessing: the
-job log says only "403", the project statistics say 23.14 GB, and the
-namespace says "free". Worth writing down because the next person to meet
-this will see a 403 on a git fetch and go looking at tokens, which is
-where the first hour went here.
+The job log says only "403"; the project statistics say 23.10 GB; the
+namespace says "free". Nothing connects them. Worth writing down because the
+next person to meet this will see a 403 on a git fetch and go looking at
+tokens, which is where the first hour went here — and because the first
+measurement, taken over a 1500-job window that happened to cut across the
+expiry horizon, gave a confidently wrong answer that would have led to
+deleting a published release's assets for nothing.
