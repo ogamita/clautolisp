@@ -918,9 +918,35 @@ release:windows:x86-64:
     # the release would come up two artefacts short.
     - 'if ($LASTEXITCODE -ne 0) { throw "Windows release packaging failed ($LASTEXITCODE)" }'
     - 'Get-ChildItem dist'
+  # UPLOAD THE TWO ZIPS, NOT THE WHOLE dist/, because the whole dist/
+  # cannot be uploaded from this machine at all.
+  #
+  # On the release-1.9.1 tag this job built correctly, passed every
+  # artefact check, and then died three times on
+  #
+  #   dist/: found 362 matching artifact files and directories
+  #   ERROR: Uploading artifacts as "archive" to coordinator... error
+  #   WARNING: Retrying...  context=artifacts-uploader  error=invalid argument
+  #
+  # A full retry from scratch (job 16032976102, 20 minutes of cold build)
+  # reproduced it exactly, so it is DETERMINISTIC, not a flake -- which is
+  # what rules out simply retrying until green.
+  #
+  # Two zips are all `collect:release' takes from this lane anyway; the
+  # other 360 entries are staging left in dist/ by the packaging step and
+  # have no consumer. Narrowing removes whatever the uploader objects to
+  # -- the count, or a path in that staging tree (Windows MAX_PATH is a
+  # standing suspect) -- without needing to know which, and it is the
+  # cheapest of the four options in
+  # windows-artifact-upload-fails-on-release.issue.
+  #
+  # If it still fails, the failure has been narrowed to two files, which
+  # is itself the next piece of evidence.
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-windows-x86-64"
-    paths: [dist/]
+    paths:
+      - dist/clautolisp-*-binaries-windows-x86-64.zip
+      - dist/clautolisp-*-libraries-windows-x86-64.zip
     expire_in: 30 days
 
 # --- platform verification: the vl-registry backends (vl-registry.issue) ---

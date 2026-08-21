@@ -54,12 +54,48 @@ Sizes involved here: =dist/= is 362 files, the two published zips are
   probably not a simple threshold);
 - whether =invalid argument= is the middlebox or the runner's own
   uploader (GitLab runner 19.0.1 on windows/amd64);
-- whether a retry succeeds. *A retry was started* (job 16032976102) and
-  its outcome is the first thing to record here. A build that takes
-  twenty minutes to retry is an expensive coin-flip, but it is the
-  cheapest experiment available.
+- whether =invalid argument= is the middlebox or the runner's own
+  uploader (GitLab runner 19.0.1 on windows/amd64). Still unknown.
 
-* Options, none yet chosen
+* The retry answered: NOT A FLAKE
+
+Job 16032976102 re-ran the lane from scratch — twenty minutes of cold
+build, LibreDWG and all — and failed *identically*:
+
+: dist/: found 362 matching artifact files and directories
+: ERROR: Uploading artifacts as "archive" to coordinator... error
+: WARNING: Retrying...  context=artifacts-uploader  error=invalid argument
+:   (three times)
+: ERROR: Job failed: exit status 1
+
+Same file count, same error, same three attempts. So it is
+*deterministic*, and retrying until green is not a strategy — which is
+worth knowing before spending another twenty-minute build on it.
+
+* Fixed here — option 1
+
+=release:windows:x86-64= now uploads
+
+: dist/clautolisp-*-binaries-windows-x86-64.zip
+: dist/clautolisp-*-libraries-windows-x86-64.zip
+
+instead of =dist/=. Those two zips are all =collect:release= takes from
+this lane; the other ~360 entries are staging the packaging step leaves
+behind and have no consumer at all.
+
+This removes whatever the uploader objects to without first establishing
+WHICH thing it objects to — the entry count, or a particular path in that
+staging tree. *Windows MAX_PATH is the standing suspect*: =dist/= holds
+an unpacked tree under
+=libexec/clautolisp/binaries/windows/x86-64/=, and =invalid argument= is
+what an over-long path tends to produce. Not proven, and it does not need
+to be for this fix; it is recorded because it is the first thing to test
+if the narrowed upload fails too.
+
+And if it does fail, the failure will have been narrowed from 362 files
+to 2, which is itself the next piece of evidence.
+
+* Options, the rest not needed if option 1 holds
 
 1. =artifacts:= with a narrower =paths:= — dist/ currently matches 362
    files, and only the two zips are wanted. Fewer, larger files may fare
@@ -71,8 +107,9 @@ Sizes involved here: =dist/= is 362 files, the two published zips are
 4. =retry:= on the job, so the lane retries itself instead of needing a
    human. Cheap, and does nothing if the failure is deterministic.
 
-Option 1 first, since it is one line and the current =paths: [dist/]=
-uploads 362 files where 2 are wanted.
+Option 1 is done. Options 2-4 stay on the shelf, and option 4 (=retry:=
+on the job) is now known to be useless on its own: the failure is
+deterministic.
 
 * Note
 
