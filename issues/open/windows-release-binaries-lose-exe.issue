@@ -143,9 +143,18 @@ pjb: « clautolisp-1.9.0-all.zip contient un clautolisp version 1.8.56 » and
 « read-autolisp est une version 1.8.0 ». Both are versions from days before
 the tag, inside an archive named 1.9.0.
 
-*The tell is in the log*: the whole image build took *three seconds*, and
-the trace contains *not one* =; compiling= line. Nothing was compiled.
-The images were dumped straight from fasls.
+*The tell is the DURATION*: the whole image build took *three seconds*.
+With the cache cleared, the same build on the same machine takes *twenty
+minutes* (release-1.9.1, job 16032119087). Three seconds cannot compile
+those systems; it can only dump an image from fasls that were already
+there.
+
+I first wrote that the absence of =; compiling= lines was the tell. *That
+is wrong, and worth correcting rather than quietly dropping*: the 1.9.1
+build compiles for twenty minutes and prints no such line either — ASDF
+is silent at this verbosity. Anyone re-reading the original claim would
+have been given a test that cannot distinguish the two cases. Only the
+duration does.
 
 *Cause*: =XDG_CACHE_HOME= points at =clautolisp/.cache=, which lives
 INSIDE the workspace and is gitignored — and the Windows runner cleans

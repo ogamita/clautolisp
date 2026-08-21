@@ -1,0 +1,118 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: windows-artifact-upload-fails-on-release — the Windows lane builds correctly and then cannot upload what it built
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-compiling-tell
+
+* Symptom
+
+On the =release-1.9.1= tag, =release:windows:x86-64= (job 16032119087)
+did everything right and failed anyway:
+
+#+begin_example
+ok  clautolisp-sbcl.exe is where the launcher opens it
+ok  clautolisp-sbcl.exe reports 1.9.1
+...
+Saving cache for successful job
+dist/: found 362 matching artifact files and directories
+ERROR: Uploading artifacts as "archive" to coordinator... error
+WARNING: Retrying...   context=artifacts-uploader  error=invalid argument
+ERROR: Uploading artifacts as "archive" to coordinator... error
+WARNING: Retrying...   context=artifacts-uploader  error=invalid argument
+ERROR: Uploading artifacts as "archive" to coordinator... error
+ERROR: Job failed: exit status 1
+#+end_example
+
+The build succeeded, the new artefact checks all passed, and then the
+transport lost it. Three attempts, the same =invalid argument= each time.
+
+* Why it matters more than a flake
+
+=release:windows:x86-64= is MANDATORY on a release tag
+(=allow_failure: false=, and rightly: Windows is intermittent, so a
+failure there is a real failure). =collect:release= therefore cannot
+proceed, and the release is blocked — not because anything is wrong with
+what was built, but because it could not be handed over.
+
+* This machine has form
+
+The same shape is already recorded in =ci-cache-tool-builds.issue=:
+"uploading 13 MB from the Windows box fails reproducibly (a middlebox
+cutting long transfers), see the artefact removal in
+=build:alfe:windows=". That job stopped producing its artefact for this
+reason. So the workaround so far has been *do not upload from Windows*,
+which is not available to a release lane: the artefact IS the deliverable.
+
+Sizes involved here: =dist/= is 362 files, the two published zips are
+44 MB (binaries) and 7.9 MB (libraries).
+
+* What is NOT known yet
+
+- whether it is size-dependent (=build:alfe:windows= failed at 13 MB, so
+  probably not a simple threshold);
+- whether =invalid argument= is the middlebox or the runner's own
+  uploader (GitLab runner 19.0.1 on windows/amd64);
+- whether =invalid argument= is the middlebox or the runner's own
+  uploader (GitLab runner 19.0.1 on windows/amd64). Still unknown.
+
+* The retry answered: NOT A FLAKE
+
+Job 16032976102 re-ran the lane from scratch — twenty minutes of cold
+build, LibreDWG and all — and failed *identically*:
+
+: dist/: found 362 matching artifact files and directories
+: ERROR: Uploading artifacts as "archive" to coordinator... error
+: WARNING: Retrying...  context=artifacts-uploader  error=invalid argument
+:   (three times)
+: ERROR: Job failed: exit status 1
+
+Same file count, same error, same three attempts. So it is
+*deterministic*, and retrying until green is not a strategy — which is
+worth knowing before spending another twenty-minute build on it.
+
+* Fixed here — option 1
+
+=release:windows:x86-64= now uploads
+
+: dist/clautolisp-*-binaries-windows-x86-64.zip
+: dist/clautolisp-*-libraries-windows-x86-64.zip
+
+instead of =dist/=. Those two zips are all =collect:release= takes from
+this lane; the other ~360 entries are staging the packaging step leaves
+behind and have no consumer at all.
+
+This removes whatever the uploader objects to without first establishing
+WHICH thing it objects to — the entry count, or a particular path in that
+staging tree. *Windows MAX_PATH is the standing suspect*: =dist/= holds
+an unpacked tree under
+=libexec/clautolisp/binaries/windows/x86-64/=, and =invalid argument= is
+what an over-long path tends to produce. Not proven, and it does not need
+to be for this fix; it is recorded because it is the first thing to test
+if the narrowed upload fails too.
+
+And if it does fail, the failure will have been narrowed from 362 files
+to 2, which is itself the next piece of evidence.
+
+* Options, the rest not needed if option 1 holds
+
+1. =artifacts:= with a narrower =paths:= — dist/ currently matches 362
+   files, and only the two zips are wanted. Fewer, larger files may fare
+   better than many, and it is a one-line change worth trying first.
+2. Split the upload: publish the binaries and libraries zips as two
+   artefacts rather than one =dist/= tree.
+3. Upload from elsewhere: have the Windows lane leave its zips somewhere
+   the Linux runner can fetch. Heavier, and needs a shared location.
+4. =retry:= on the job, so the lane retries itself instead of needing a
+   human. Cheap, and does nothing if the failure is deterministic.
+
+Option 1 is done. Options 2-4 stay on the shelf, and option 4 (=retry:=
+on the job) is now known to be useless on its own: the failure is
+deterministic.
+
+* Note
+
+Filed while cutting release-1.9.1. Worth writing down rather than
+retrying until it works, because "the release lane fails at random" is
+exactly the kind of thing that becomes normal.

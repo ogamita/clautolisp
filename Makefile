@@ -490,10 +490,10 @@ COLLECT_OUT ?= $(DIST)/combined
 # THEN IT ASKS THE BINARIES WHAT THEY ARE, because a correct name is not a
 # correct build. On the same tag the Windows images were dumped from an
 # ASDF fasl cache that had survived the runner's clean, so nothing
-# recompiled -- the whole build took three seconds and the log holds not
-# one `; compiling' line -- and the published binaries reported clautolisp
-# 1.8.56 and read-autolisp 1.8.0 from inside an archive named 1.9.0. No
-# check on names or sizes can see that. Running the program can.
+# recompiled -- the whole build took THREE SECONDS, against twenty minutes
+# once the cache was cleared -- and the published binaries reported
+# clautolisp 1.8.56 and read-autolisp 1.8.0 from inside an archive named
+# 1.9.0. No check on names or sizes can see that. Running the program can.
 #
 # Each binary is compared with ITS OWN version.lisp, not with the release
 # VERSION, and that distinction is not pedantry: version-rules lets a
