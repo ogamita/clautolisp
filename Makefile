@@ -494,6 +494,14 @@ COLLECT_OUT ?= $(DIST)/combined
 # one `; compiling' line -- and the published binaries reported clautolisp
 # 1.8.56 and read-autolisp 1.8.0 from inside an archive named 1.9.0. No
 # check on names or sizes can see that. Running the program can.
+#
+# Each binary is compared with ITS OWN version.lisp, not with the release
+# VERSION, and that distinction is not pedantry: version-rules lets a
+# program that has not changed keep an older stamp and still ship. alfe
+# and read-autolisp did not change between 1.9.0 and 1.9.1, so they
+# legitimately still say 1.9.0 in a 1.9.1 release -- and comparing them
+# against the release number would have failed that release for being
+# correct.
 verify-release-artefacts:  ## Fail unless this target's binaries+libraries artefacts were really written into DIST, and the binaries carry the names the launchers open.
 	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
 	if [ "$$os" = windows ]; then ext=zip; else ext=tar.bz2; fi; \
@@ -540,20 +548,27 @@ verify-release-artefacts:  ## Fail unless this target's binaries+libraries artef
 	  done; \
 	fi; \
 	for l in $(RELEASE_LISPS); do \
-	  for b in clautolisp/tools/clautolisp/bin/clautolisp-$$l \
-	           clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-$$l \
-	           autolisp-front-end/tools/alfe/bin/alfe-$$l; do \
+	  for pair in \
+	    clautolisp/tools/clautolisp/bin/clautolisp:clautolisp/tools/clautolisp/source/version.lisp \
+	    clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp:clautolisp/autolisp-reader/tools/read-autolisp/source/version.lisp \
+	    autolisp-front-end/tools/alfe/bin/alfe:autolisp-front-end/tools/alfe/source/version.lisp; do \
+	    b="$${pair%%:*}-$$l"; stamp="$${pair#*:}"; \
+	    want=$$(sed -n 's/.*\*version\* *"\([0-9.]*\)".*/\1/p' "$$stamp" | head -1); \
+	    if [ -z "$$want" ]; then \
+	      echo "FAIL: no version stamp in $$stamp"; status=1; continue; \
+	    fi; \
 	    x="$$b"; [ -f "$$x.exe" ] && x="$$x.exe"; \
 	    if [ ! -f "$$x" ]; then \
 	      echo "FAIL: $$b was never built -- nothing to verify."; status=1; continue; \
 	    fi; \
 	    got=$$("$$x" --version 2>&1 | head -1 || true); \
 	    case "$$got" in \
-	      *"$$ver"*) echo "ok  $$(basename "$$x") reports $$ver" ;; \
-	      *) echo "FAIL: $$(basename "$$x") reports [$$got], not $$ver."; \
-	         echo "      The image was dumped from another commit's fasls, so"; \
-	         echo "      this release would ship a binary that is not its own"; \
-	         echo "      source. Clear the ASDF cache and rebuild."; \
+	      *"$$want"*) echo "ok  $$(basename "$$x") reports $$want" ;; \
+	      *) echo "FAIL: $$(basename "$$x") reports [$$got], not $$want."; \
+	         echo "      $$stamp says $$want, so the image was dumped from"; \
+	         echo "      another commit's fasls and this release would ship a"; \
+	         echo "      binary that is not its own source. Clear the ASDF"; \
+	         echo "      cache and rebuild."; \
 	         status=1 ;; \
 	    esac; \
 	  done; \
