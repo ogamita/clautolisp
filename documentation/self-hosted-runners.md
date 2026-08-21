@@ -26,9 +26,9 @@ to prevent. The vendor a job targets is visible in the job's own name.
 - **thalassa** — an Apple-Silicon laptop (`macos,arm64`) serving the macOS
   build + the native `linux,arm64` docker lane.
 - **windows PC** — a `windows,amd64` laptop with GUI BricsCAD + AutoCAD.
-- **cecil** — an NVIDIA DGX Spark running Ubuntu on **aarch64**, added
-  2026-08-21, with two runners: a shell one (`linux,aarch64,nvidia`) and a
-  docker one (`linux,aarch64,nvidia,docker`). Both also accept **untagged**
+- **cecil** — an NVIDIA DGX Spark running Ubuntu on arm64, added
+  2026-08-21, with two runners: a shell one (`linux,arm64,shell,nvidia`) and
+  a docker one (`linux,arm64,docker,nvidia`). Both also accept **untagged**
   jobs. It is the only *native* Linux arm64 machine in the fleet, so it is
   the natural host for `release:linux:arm64` — which poseidon builds under
   qemu-user emulation today.
@@ -37,15 +37,13 @@ thalassa, the windows PC and cecil are **intermittent** (laptops and a desk
 machine, not always on), so their tagged jobs simply queue until the host is
 online — expected when a branch is pushed for validation.
 
-> **cecil's tags do not follow the `<os>,<arch>,<executor>` convention** used
-> by every job in `.gitlab-ci.yml`: it says `aarch64` where the project says
-> `arm64`, and the shell runner carries no executor tag. Nothing dispatches to
-> it as a result — every job here names its tags explicitly, and none of them
-> match. That is also why cecil accepting untagged jobs is harmless: there is
-> no untagged job to mis-route to the wrong architecture. Retagging the two
-> runners `linux,arm64,shell` and `linux,arm64,docker` (keeping `nvidia` as a
-> capability tag) would make cecil usable by the existing configuration with
-> no change to it at all. See `issues/open/cecil-native-arm64-runner.issue`.
+> cecil's two runners follow the `<os>,<arch>,<executor>` convention, so the
+> existing configuration can dispatch to them as it stands — but *nothing does
+> yet*: the arm64 release lane asks for `linux,arm64,qemu` (poseidon's emulated
+> lane), and no job asks for `linux,arm64,docker`. Sending that lane to cecil is
+> a one-line change, complicated only by cecil being intermittent while the
+> parent pipeline cannot gate on runner availability. See
+> `issues/open/cecil-native-arm64-runner.issue`.
 
 | Job                    | tags                  | runner               | what it builds              |
 |------------------------|-----------------------|----------------------|-----------------------------|

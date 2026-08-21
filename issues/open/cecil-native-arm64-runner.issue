@@ -1,18 +1,22 @@
 # -*- mode:org; coding:utf-8 -*-
-#+TITLE: cecil-native-arm64-runner — a native arm64 machine joined the fleet, and nothing can dispatch to it
+#+TITLE: cecil-native-arm64-runner — a native arm64 machine joined the fleet, and no job asks for it
 #+STATUS: TODO
 #+PRIORITY: P3
 #+TYPE: infra
-#+DEPENDS: -
+#+DEPENDS: namespace-storage-blocks-ci
 #+BRANCH: -
 
 * What happened
 
 On 2026-08-21 pjb registered two runners on *cecil*, an NVIDIA DGX Spark
-running Ubuntu on aarch64:
+running Ubuntu on arm64:
 
-: 55390921  cecil shell    tags: linux, aarch64, nvidia            run_untagged=true
-: 55390973  cecil docker   tags: linux, aarch64, nvidia, docker    run_untagged=true
+: 55390921  cecil shell    tags: linux, arm64, shell, nvidia     run_untagged=true
+: 55390973  cecil docker   tags: linux, arm64, docker, nvidia    run_untagged=true
+
+(As first registered they were tagged =aarch64=, and the shell one carried
+no executor tag; pjb retagged both to the convention the same afternoon, in
+response to this ticket.)
 
 cecil is the fleet's first *native Linux arm64* machine. =release:linux:arm64=
 is built on poseidon under *qemu-user emulation* today, which is the slowest
@@ -21,33 +25,30 @@ lane the project has.
 * Why nothing runs on it yet
 
 Runners are selected by =<os>,<arch>,<executor>= tags, and every job in
-=.gitlab-ci.yml= names its tags explicitly. cecil says =aarch64= where the
-project says =arm64=, and the shell runner carries no executor tag, so *no
-job's tag set matches either runner*. cecil is online and idle.
+=.gitlab-ci.yml= names its tags explicitly. cecil's tags now match the
+convention, so the configuration *could* dispatch to it — but nothing asks
+for it: =release:linux:arm64= requests =linux,arm64,qemu= (poseidon's
+emulated lane), and no job in the project requests =linux,arm64,docker= or
+=linux,arm64,shell=. cecil is online and idle.
 
-That both runners accept untagged jobs is harmless for the same reason:
-there is no untagged job in this project to mis-route onto the wrong
-architecture. (It would stop being harmless the day someone adds a job that
-overrides =tags:= with an empty list — the =default:= block otherwise supplies
-=tags: [linux, amd64, docker]=.)
+That both runners accept untagged jobs is harmless: there is no untagged job
+in this project to mis-route onto the wrong architecture. (It would stop
+being harmless the day someone adds a job that overrides =tags:= with an
+empty list — the =default:= block otherwise supplies =linux,amd64,docker=.)
 
-* The fix, in order of preference
+* Step 1 — DONE 2026-08-21: the runners were retagged
 
-1. *Retag the two runners to the convention* — =linux,arm64,shell= and
-   =linux,arm64,docker=, keeping =nvidia= as a capability tag beside them
-   (like =cad= / =gui=). cecil then serves the existing =linux,arm64,docker=
-   configuration with *no change to =.gitlab-ci.yml= at all*. One edit in the
-   GitLab UI. This is a decision for pjb, who owns the machine.
+pjb retagged both to =linux,arm64,{shell,docker}= (=nvidia= kept beside them
+as a capability tag, like =cad= / =gui=), so nothing in this repository has
+to learn a second spelling for the same architecture. The alternative would
+have been a second lane plus a switch — tag sets are AND-ed, there is no
+"either tag" operator — i.e. carrying the deviation forever in the file that
+documents the convention.
 
-2. Failing that, teach the config the second spelling. There is no "either
-   tag" operator — tag sets are AND-ed — so this means a second lane and a
-   switch to choose between them, i.e. carrying the deviation forever in the
-   file that documents the convention.
+* Step 2 — move release:linux:arm64 off qemu
 
-* Then: move release:linux:arm64 off qemu
-
-Once (1) is done, =release:linux:arm64= can prefer cecil. The job body needs
-*no change*: it already pulls =$ARM64_BASE=, the digest-pinned arm64
+=release:linux:arm64= can now be pointed at cecil. The job body needs *no
+change*: it already pulls =$ARM64_BASE=, the digest-pinned arm64
 =buildpack-deps=, which is a native pull on cecil rather than a binfmt one.
 
 The obstacle is that cecil is *intermittent*, like thalassa and the windows
@@ -61,6 +62,14 @@ default the day cecil has proved itself over a few releases.
 
 Worth measuring before and after: the emulated lane's duration is the whole
 justification.
+
+*Not done yet, deliberately.* GitLab expands variables inside =tags:=, so the
+switch is a one-line change — and that one line is on the RELEASE path, which
+cannot be exercised at all while the namespace is over quota
+(namespace-storage-blocks-ci.issue). A mis-expanded tag would leave the lane
+matching no runner and silently drop arm64 from a release: the exact shape of
+the three faults that made 1.9.0's Windows products unusable. It goes in when
+a pipeline can run it.
 
 * What cecil does NOT solve
 
