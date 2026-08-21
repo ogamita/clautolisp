@@ -615,6 +615,23 @@ documentation:
 
 .release-common:
   stage: release
+  # DOWNLOAD NOTHING. Without this, GitLab's default applies -- a job with
+  # no `needs:' receives the artifacts of EVERY job in every earlier stage
+  # -- and build:alfe:sbcl publishes exactly
+  # autolisp-front-end/tools/alfe/bin/alfe-sbcl, built on LINUX.
+  #
+  # On the release-1.9.0 tag that Linux ELF landed at that path in the
+  # WINDOWS lane's workspace, where the Windows build then wrote its own
+  # alfe-sbcl.exe beside it. The packaging loop tested the bare name first,
+  # found the ELF, and shipped a Linux binary as the Windows alfe. macOS
+  # escaped only by luck: there the built name IS the bare name, so the
+  # build overwrote the download.
+  #
+  # `dependencies: []' and not `needs: []': needs would also detach the job
+  # from stage ordering and let a release start before the tests, which is
+  # not the intent. dependencies only says "fetch no artifacts".
+  # See windows-release-binaries-lose-exe.issue.
+  dependencies: []
   variables:
     GIT_SUBMODULE_STRATEGY: recursive   # libredwg (+ jsmn) needed by build-libraries
   rules:
