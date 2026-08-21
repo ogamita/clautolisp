@@ -6,9 +6,13 @@ name: Release (Windows package)
 # Windows package (documentation/windows-package-spec.md) and uploads it as the
 # `clautolisp-<ver>-win-<arch>` workflow artifact. poseidon's GitLab
 # `collect:release` job pulls it with `gh run download` and folds it into the
-# combined release set. GitHub does NOT publish a Release here — sources,
-# documentation, the linux/macOS binaries+libraries, assembly and publishing
-# all happen on poseidon/GitLab.
+# combined release set. GitHub does NOT publish a Release here.
+#
+# Toolchain: a single MSYS2 / MINGW64 environment provides gcc + cmake + make +
+# zip + SBCL, so the Unix-shaped Makefile and the libredwg C build run exactly
+# as they do on Linux — far more reliable than choco+MSVC for libdwg. (pjb has
+# the same msys2 dependency set pre-archived for the self-hosted Windows runner
+# at pfenny:c:\staging\run-forest-run\artefacts.)
 #
 # Non-Windows platforms and the non-regression test pipelines stay on GitLab
 # (never burn GitHub minutes for those). This workflow builds ONLY Windows.
@@ -30,38 +34,49 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # x64 is the shipped Windows target. (windows-11-arm can be added as
-          # an experimental row once the toolchain is proven.)
-          - { arch: x64, runner: windows-latest, experimental: false }
+          # x64 is the shipped Windows target. (An arm64 row can be added once
+          # the MINGW-ARM64 toolchain + a windows-11-arm runner are proven.)
+          - { arch: x64, runner: windows-latest, msystem: MINGW64, prefix: mingw-w64-x86_64, experimental: false }
+    defaults:
+      run:
+        shell: msys2 {0}      # every `run:` below executes in the MSYS2 shell
     steps:
-      - uses: actions/checkout@v4
+      # checkout runs in the default runner shell (it's a `uses:` step).
+      - name: Checkout
+        uses: actions/checkout@v4
         with: { submodules: recursive }
+
+      - name: Set up MSYS2 (${{ matrix.msystem }})
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          release: false        # use the base install; just add packages
+          update: true
+          install: >-
+            git make zip m4 curl
+            ${{ matrix.prefix }}-gcc
+            ${{ matrix.prefix }}-cmake
+            ${{ matrix.prefix }}-pkgconf
+            ${{ matrix.prefix }}-sbcl
 
       - name: Read version
         id: ver
-        shell: bash
         run: |
           v="$(sed -n 's/.*\*version\* *"\([0-9.]*\)".*/\1/p' \
                clautolisp/tools/clautolisp/source/version.lisp)"
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "clautolisp version: $v"
-
-      - name: Install toolchain (SBCL, make, zip)
-        shell: pwsh
-        run: |
-          # cmake + the MSVC C toolchain are preinstalled on the windows-latest
-          # image; add SBCL and the Unix-ish packaging tools the Makefile needs.
-          choco install -y --no-progress sbcl make zip
+          sbcl --version
+          gcc --version | head -1
+          cmake --version | head -1
 
       - name: Bootstrap Quicklisp
-        shell: bash
         run: |
-          curl -fsSL https://beta.quicklisp.org/quicklisp.lisp -o "$RUNNER_TEMP/ql.lisp"
-          sbcl --non-interactive --load "$RUNNER_TEMP/ql.lisp" \
+          curl -fsSL https://beta.quicklisp.org/quicklisp.lisp -o "$HOME/ql.lisp"
+          sbcl --non-interactive --load "$HOME/ql.lisp" \
                --eval '(quicklisp-quickstart:install)'
 
       - name: Build libdwg.dll + programs, stage libraries
-        shell: bash
         run: |
           set -euo pipefail
           make build-libraries      # vendored libredwg -> libdwg.dll (+ CFFI shim)
@@ -69,7 +84,6 @@ jobs:
           make stage-libraries      # ASDF systems + native libs into the stage tree
 
       - name: Package native-Windows zip
-        shell: bash
         run: make release-windows-zip WIN_ARCH=${{ matrix.arch }}
 
       - name: Upload Windows package

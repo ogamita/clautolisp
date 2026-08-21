@@ -182,9 +182,11 @@ currently a **stub** on both forges — this is net-new work per
   `msys2/setup-msys2`). pjb has pre-archived the Windows runner deps incl. msys2
   at `pfenny:c:\staging\run-forest-run\artefacts` (to be copied to poseidon) —
   usable as an offline dep cache and as the proven package set for the
-  *self-hosted* Windows runner (reason-2 non-regression tests). The current
-  `release.yml` uses choco (sbcl/make/zip) as a first cut; switch to msys2 if
-  the MSVC/choco build of libredwg needs it.
+  *self-hosted* Windows runner (reason-2 non-regression tests). `release.yml`
+  now uses `msys2/setup-msys2` (MINGW64) with `gcc/cmake/make/zip/sbcl` in one
+  shell, so the Unix Makefile + libredwg build run as on Linux. Open: confirm
+  `mingw-w64-x86_64-sbcl` is present/usable and that the libredwg cmake build
+  picks the MinGW generator; iterate against the first CI run.
 - `.github/workflows/ci.yml` is now **workflow_dispatch-only** (was push/PR/tag):
   non-regression runs on GitLab (§2), so GitHub minutes are spent only on the
   Windows release build. Update the github/gitlab-parity note accordingly.
