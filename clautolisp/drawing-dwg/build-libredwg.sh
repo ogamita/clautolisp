@@ -111,6 +111,19 @@ fi
 #        job-log cap during the build — hiding any real downstream error.
 #  - -Wno-unused-command-line-argument: clang rejects -fstack-clash-protection.
 #  - -D_DARWIN_C_SOURCE: expose memmem() in <string.h> on macOS (no-op elsewhere).
+# libredwg captures LIBREDWG_SO_VERSION via execute_process(perl …) WITHOUT
+# OUTPUT_STRIP_TRAILING_WHITESPACE, so perl's trailing newline is substituted
+# INTO the generated src/config.h define:
+#     #define LIBREDWG_SO_VERSION "0:14:0
+#     "
+# which gcc rejects as "missing terminating \" character". It only bites where
+# perl exists (MSYS2); the Linux CI image has no perl so the var keeps its clean
+# default. Add the strip to the vendored CMakeLists (idempotent; harmless
+# everywhere) before configuring.
+if [ -f "$lr/CMakeLists.txt" ]; then
+  sed -i 's/OUTPUT_VARIABLE LIBREDWG_SO_VERSION)/OUTPUT_VARIABLE LIBREDWG_SO_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)/' "$lr/CMakeLists.txt"
+fi
+
 # The value handed to a NATIVE cmake must be a path it can stat. On MSYS2/MinGW
 # the POSIX $compiler_path (/mingw64/bin/gcc) is mangled to C:/msys64/mingw64/
 # bin/gcc (no .exe) when it crosses into native cmake, which then rejects it as
