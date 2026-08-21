@@ -391,6 +391,10 @@ release:documentation:
 
 release:linux:arm64:
   extends: .release-common
+  # Best-effort platform (release-pipeline.md §2/§3): a qemu/emulation hiccup
+  # must NOT fail the pipeline or skip collect:release. Linux x86-64 is the sole
+  # guaranteed baseline; arm64/macOS/windows are folded in when they succeed.
+  allow_failure: true
   # poseidon (always-on) builds arm64 under qemu-user emulation. The base
   # image is pinned to its arm64 manifest digest ($ARM64_BASE) so the daemon
   # pulls the arm64 image (the runner `platform` key is ignored by
@@ -487,6 +491,7 @@ release:linux:arm32:
 
 release:darwin:arm64:
   extends: .release-common
+  allow_failure: true             # best-effort: an intermittent Mac must not block the release (release-pipeline.md §2/§3)
   tags: [macos, arm64, shell]     # thalassa (intermittent): native macOS arm64 build
   before_script:
     # The workstation provides the toolchain (MacPorts: sbcl, cmake; cc
@@ -770,7 +775,7 @@ collect:release:
     GH_WORKFLOW: "release.yml"
   needs:
     - { job: "release:linux:x86-64", artifacts: true }
-    - { job: "release:linux:arm64",  artifacts: true }
+    - { job: "release:linux:arm64",  artifacts: true, optional: true }
     - { job: "release:darwin:arm64", artifacts: true, optional: true }
     - { job: "release:documentation", artifacts: true }
   rules:

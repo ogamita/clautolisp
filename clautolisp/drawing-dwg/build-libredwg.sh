@@ -121,7 +121,11 @@ fi
 # default. Add the strip to the vendored CMakeLists (idempotent; harmless
 # everywhere) before configuring.
 if [ -f "$lr/CMakeLists.txt" ]; then
-  sed -i 's/OUTPUT_VARIABLE LIBREDWG_SO_VERSION)/OUTPUT_VARIABLE LIBREDWG_SO_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)/' "$lr/CMakeLists.txt"
+  # Portable in-place edit: `sed -i` differs between GNU (no suffix arg) and
+  # BSD/macOS (requires a suffix), so avoid -i entirely and rewrite via a temp.
+  sed 's/OUTPUT_VARIABLE LIBREDWG_SO_VERSION)/OUTPUT_VARIABLE LIBREDWG_SO_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)/' \
+      "$lr/CMakeLists.txt" > "$lr/CMakeLists.txt.tmp.$$" \
+    && mv "$lr/CMakeLists.txt.tmp.$$" "$lr/CMakeLists.txt"
 fi
 
 # The value handed to a NATIVE cmake must be a path it can stat. On MSYS2/MinGW
