@@ -126,9 +126,31 @@ jobs:
             make zip unzip diffutils
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-cmake
+      # The choco `sbcl' package installs the official MSI into
+      # C:\Program Files\Steel Bank Common Lisp -- which is exactly the
+      # directory scripts/environnement-windows.sh already puts on PATH --
+      # and shims sbcl into C:\ProgramData\chocolatey\bin.
+      #
+      # But it sets SBCL_HOME as a MACHINE variable, and a machine variable
+      # set DURING a run is never seen by the runner process, which started
+      # before it. So publish it for the following steps ourselves, in
+      # Windows form: sbcl.exe is a native program and cannot read /c/... .
+      # (The GitLab lane never needed this: there the MSI was installed long
+      # before the runner service started.)
       - name: Install SBCL (Windows)
         if: runner.os == 'Windows'
-        run: choco install sbcl --no-progress -y
+        run: |
+          choco install sbcl --no-progress -y
+          $home_ = "C:\Program Files\Steel Bank Common Lisp"
+          if (-not (Test-Path "$home_\sbcl.exe")) {
+            Get-ChildItem "C:\Program Files" -Filter "*Bank*" | Out-String | Write-Host
+            throw "sbcl.exe is not where the package says it is: $home_"
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "SBCL_HOME=$home_"
+          # Keep MSYS2 from rewriting that value on its way back out to the
+          # native sbcl.exe, the same guard environnement-windows.sh applies
+          # to CC and for the same reason.
+          Add-Content -Path $env:GITHUB_ENV -Value "MSYS2_ENV_CONV_EXCL=SBCL_HOME;CC"
       - name: Bootstrap Quicklisp (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
