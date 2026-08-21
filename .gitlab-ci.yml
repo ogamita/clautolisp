@@ -778,9 +778,20 @@ collect:release:
     - when: manual
       allow_failure: true
   before_script:
-    # tar/make are in the CI image; install bzip2/zip if the image lacks them
-    # (mirrors release:linux:x86-64's package-guard).
-    - pkgs=""; for t in bzip2 zip tar make; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+    # tar/make are in the CI image; install bzip2/zip/curl if the image lacks
+    # them (mirrors release:linux:x86-64's package-guard).
+    - pkgs=""; for t in bzip2 zip tar make curl; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+    # `gh` reads $GH_TOKEN from the environment automatically. Install it self-
+    # contained (no apt repo) if the image lacks it (TODO: bake gh into the image).
+    - |
+      if ! command -v gh >/dev/null 2>&1; then
+        GH_VER=2.62.0
+        echo "installing gh $GH_VER (not in CI image)"
+        curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" -o /tmp/gh.tgz
+        tar -xzf /tmp/gh.tgz -C /tmp
+        install -m0755 "/tmp/gh_${GH_VER}_linux_amd64/bin/gh" /usr/local/bin/gh
+      fi
+      gh --version | head -1
   script:
     # 1. Pull the Windows package GitHub Actions built for this tag. Best-effort:
     #    if GitHub hasn't finished yet (mirror lag) the release still assembles
