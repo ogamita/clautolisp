@@ -360,6 +360,24 @@ release-documentation: stage-documentation  ## Package the documentation artefac
 # tarball ships a bin/ of dispatch.sh wrappers over
 # libexec/clautolisp/binaries/<os>/<arch>/, so CI can union several
 # targets into one multi-platform archive (see collect-artefacts).
+#
+# THE COPY TESTS .exe FIRST AND NAMES ITS DESTINATION, and both halves are
+# load-bearing on Windows.
+#
+# The obvious order -- test the bare name, fall back to .exe -- is a trap
+# under MSYS2, whose POSIX layer opens `foo' when only `foo.exe' exists.
+# `[ -f "$b" ]' is therefore TRUE for a file that is only there as .exe,
+# the first branch wins, and `cp "$b" "$bindir"/' writes the DESTINATION
+# under the bare name: the .exe branch below it is dead code on the one
+# platform it was written for. release-1.9.0 shipped that way -- its
+# archive holds libexec/.../windows/x86-64/clautolisp-sbcl with no
+# extension, while both launchers open <prog>-<lisp>.exe (dispatch.cmd
+# refuses with "no binary for windows/..." and exit 127). So the Windows
+# products did not run. See windows-release-binaries-lose-exe.issue.
+#
+# Naming the destination explicitly is the belt to that braces: it does
+# not matter what name the source resolved through, the file lands as
+# <prog>-<lisp>.exe.
 # `make install-programs' installs this host's binaries directly into
 # bin/ instead, along with the pieces no end-user tarball carries (the
 # test/benchmark harnesses, run-file-compat, the GUI). Hence its own
@@ -373,8 +391,9 @@ release-programs: build-programs  ## Build programs and package this host's per-
 	  for b in clautolisp/tools/clautolisp/bin/clautolisp-$$l \
 	           clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-$$l \
 	           autolisp-front-end/tools/alfe/bin/alfe-$$l; do \
-	    if [ -f "$$b" ]; then cp "$$b" "$$bindir"/; \
-	    elif [ -f "$$b.exe" ]; then cp "$$b.exe" "$$bindir"/; fi; \
+	    n=$$(basename "$$b"); \
+	    if [ -f "$$b.exe" ]; then cp "$$b.exe" "$$bindir/$$n.exe"; \
+	    elif [ -f "$$b" ]; then cp "$$b" "$$bindir/$$n"; fi; \
 	  done; \
 	done; \
 	mkdir -p "$$stage/bin"; \
@@ -455,7 +474,27 @@ COLLECT_OUT ?= $(DIST)/combined
 # So every per-target release lane asserts, as its last step, that this
 # target's two artefacts exist and are not husks. The size floor is
 # deliberately low -- it is there to catch "empty", not to police size.
-verify-release-artefacts:  ## Fail unless this target's binaries+libraries artefacts were really written into DIST.
+# Checking the artefact EXISTS is not checking it works, and this target
+# used to do only the first: a file over 10 000 bytes passed. That is how
+# release-1.9.0 shipped Windows binaries the shipped launcher cannot open
+# -- libexec/.../windows/x86-64/clautolisp-sbcl, with no .exe, while both
+# dispatch.cmd and dispatch.sh append .exe on windows. The archive was
+# 42 MB and perfectly well-formed; only its NAMES were wrong, and nothing
+# looked at them (windows-release-binaries-lose-exe.issue).
+#
+# So the artefact is now opened and the entries the launcher will actually
+# reach for are required to be there. It reads the archive rather than the
+# staging directory on purpose: what ships is what was packed, and the
+# 1.9.0 defect happened during the packing.
+#
+# THEN IT ASKS THE BINARIES WHAT THEY ARE, because a correct name is not a
+# correct build. On the same tag the Windows images were dumped from an
+# ASDF fasl cache that had survived the runner's clean, so nothing
+# recompiled -- the whole build took three seconds and the log holds not
+# one `; compiling' line -- and the published binaries reported clautolisp
+# 1.8.56 and read-autolisp 1.8.0 from inside an archive named 1.9.0. No
+# check on names or sizes can see that. Running the program can.
+verify-release-artefacts:  ## Fail unless this target's binaries+libraries artefacts were really written into DIST, and the binaries carry the names the launchers open.
 	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
 	if [ "$$os" = windows ]; then ext=zip; else ext=tar.bz2; fi; \
 	status=0; \
@@ -473,6 +512,51 @@ verify-release-artefacts:  ## Fail unless this target's binaries+libraries artef
 	      echo "ok  $$(basename "$$f") ($$sz bytes)"; \
 	    fi; \
 	  fi; \
+	done; \
+	f="$(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.$$ext"; \
+	if [ -f "$$f" ]; then \
+	  if [ "$$ext" = zip ]; then names=$$(unzip -Z1 "$$f"); \
+	  else names=$$(tar -tjf "$$f"); fi; \
+	  if [ "$$os" = windows ]; then suffix=.exe; else suffix=; fi; \
+	  for l in $(RELEASE_LISPS); do \
+	    for p in clautolisp read-autolisp alfe; do \
+	      want="libexec/clautolisp/binaries/$$os/$$arch/$$p-$$l$$suffix"; \
+	      if printf '%s\n' "$$names" | grep -qxF "$$want" || \
+	         printf '%s\n' "$$names" | grep -qxF "./$$want"; then \
+	        echo "ok  $$p-$$l$$suffix is where the launcher opens it"; \
+	      else \
+	        echo "FAIL: the artefact has no $$want"; \
+	        got=$$(printf '%s\n' "$$names" | grep "binaries/$$os/$$arch/$$p-$$l" || true); \
+	        if [ -n "$$got" ]; then \
+	          echo "      it holds this instead:"; \
+	          printf '        %s\n' $$got; \
+	          echo "      which neither launcher will open: dispatch.cmd and"; \
+	          echo "      dispatch.sh both append .exe on windows, so the"; \
+	          echo "      release installs and then refuses to run (exit 127)."; \
+	        fi; \
+	        status=1; \
+	      fi; \
+	    done; \
+	  done; \
+	fi; \
+	for l in $(RELEASE_LISPS); do \
+	  for b in clautolisp/tools/clautolisp/bin/clautolisp-$$l \
+	           clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-$$l \
+	           autolisp-front-end/tools/alfe/bin/alfe-$$l; do \
+	    x="$$b"; [ -f "$$x.exe" ] && x="$$x.exe"; \
+	    if [ ! -f "$$x" ]; then \
+	      echo "FAIL: $$b was never built -- nothing to verify."; status=1; continue; \
+	    fi; \
+	    got=$$("$$x" --version 2>&1 | head -1 || true); \
+	    case "$$got" in \
+	      *"$$ver"*) echo "ok  $$(basename "$$x") reports $$ver" ;; \
+	      *) echo "FAIL: $$(basename "$$x") reports [$$got], not $$ver."; \
+	         echo "      The image was dumped from another commit's fasls, so"; \
+	         echo "      this release would ship a binary that is not its own"; \
+	         echo "      source. Clear the ASDF cache and rebuild."; \
+	         status=1 ;; \
+	    esac; \
+	  done; \
 	done; \
 	exit $$status
 

@@ -42,6 +42,38 @@ if [ -e dist ] && ! rm -rf dist; then
     exit 1
 fi
 
+# THE FASL CACHE IS OURS TO CLEAR TOO, and this one shipped wrong binaries.
+#
+# clautolisp/.cache is the ASDF output cache (XDG_CACHE_HOME points at it).
+# It lives INSIDE the workspace and is gitignored -- and the Windows runner
+# cleans with `-ffd', not `-ffdx', so ignored files survive between
+# pipelines on purpose (a held-open file under dist/ used to kill every
+# Windows job; see .windows-clean in .gitlab-ci.yml).
+#
+# The consequence nobody had drawn: a surviving fasl cache means the image
+# build recompiles NOTHING and dumps an image out of fasls compiled from an
+# OLDER checkout. On the release-1.9.0 tag the whole build took three
+# seconds and the log contains not one `; compiling' line, so the published
+# Windows binaries reported clautolisp 1.8.56 and read-autolisp 1.8.0 --
+# versions from days earlier -- inside an archive named 1.9.0.
+#
+# A release that ships a binary built from other source than the tag is the
+# worst failure this lane can have, and it is silent: the job is green, the
+# archive is well-formed, and only running the binary tells you.
+#
+# So the cache goes before the build. It costs a cold compile (minutes) on
+# the release lane only, which is exactly where correctness beats speed.
+# See windows-release-binaries-lose-exe.issue.
+for c in clautolisp/.cache autolisp-front-end/.cache; do
+    if [ -e "$c" ] && ! rm -rf "$c"; then
+        echo "ERROR: cannot clear $c -- a process is holding a file open."
+        echo "       Refusing to build: the images would be dumped from"
+        echo "       another commit's fasls, and the release would claim a"
+        echo "       version it does not contain."
+        exit 1
+    fi
+done
+
 echo "--- environment"
 uname -a
 echo "MSYSTEM=${MSYSTEM:-<unset>}  CC=${CC:-<unset>}"

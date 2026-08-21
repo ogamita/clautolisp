@@ -532,7 +532,6 @@ switched off, say so when cutting the release, as a CI variable:
 |---|---|
 | `SKIP_WINDOWS_RELEASE=1` | cut without the Windows products |
 | `SKIP_MACOS_RELEASE=1` | cut without the macOS products |
-| `SKIP_ARM32_RELEASE=1` | cut without the qemu armv7 products |
 
 Without one of these, the lane runs and its artefacts are expected —
 which is the point: *if the runner is available, its products belong in
@@ -540,6 +539,27 @@ the release* (pjb). Gating this on detected runner availability instead
 was tried and cannot work: GitLab evaluates `rules:` at pipeline
 creation, so a variable published by an earlier job as a dotenv artefact
 does not exist yet, and the jobs were never created at all.
+
+**armv7 is the exception, and its switch points the other way.** Those
+two lanes are opt-*out* because the machine is INTERMITTENT — present, or
+declared absent. armv7 is not intermittent, it is BLOCKED: Debian's armhf
+SBCL has no threads and bordeaux-threads 0.9 will not load on such an
+implementation, so the build cannot produce anything. It nevertheless ran
+on every tag until 1.9.0, on `allow_failure`, and never once succeeded —
+spending 44 minutes on release-1.8.47 and 48 on release-1.9.0, with
+`collect` waiting behind it each time.
+
+| variable | effect |
+|---|---|
+| `ARM32_RELEASE=1` | ADD the qemu armv7 lane, off by default |
+
+So a release simply carries no armv7 products, and says so rather than
+appearing to have tried. Set `ARM32_RELEASE=1` the day the thread-less
+question is answered — native hardware, a threaded armhf SBCL, or a
+bordeaux-threads that loads — since turning it on is also how that answer
+gets tested. `SKIP_ARM32_RELEASE` is gone rather than kept as an alias: a
+skip variable for a lane that no longer runs by default would be read as
+evidence that it does.
 
 Two things that are **not** interchangeable with these switches:
 

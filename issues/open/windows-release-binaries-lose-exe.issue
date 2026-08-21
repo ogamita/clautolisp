@@ -1,0 +1,197 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: windows-release-binaries-lose-exe — the Windows release shipped unrunnable names, a Linux binary, and images built from another commit
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: alfe-sbcl-windows-build-missing-exe-suffix
+#+BRANCH: disable-arm32-release
+
+* Symptom
+
+pjb, 2026-08-21: « les executables dans
+libexec/clautolisp/binaries/windows/x86-64/ n'ont pas l'extension .exe ;
+revoir le makefile. »
+
+Confirmed on the PUBLISHED release-1.9.0 asset rather than on a local
+build — downloaded =clautolisp-1.9.0-binaries-windows-x86-64.zip= from
+the release and listed it:
+
+#+begin_example
+ 13608760  libexec/clautolisp/binaries/windows/x86-64/alfe-sbcl
+ 57023592  libexec/clautolisp/binaries/windows/x86-64/clautolisp-sbcl
+ 49158336  libexec/clautolisp/binaries/windows/x86-64/read-autolisp-sbcl
+#+end_example
+
+* Why this is worse than a naming quibble
+
+*Both shipped launchers open =<prog>-<lisp>.exe=.* They are the only
+supported way to start these programs, and they are in the same archive.
+
+=clautolisp/tools/packaging/dispatch.cmd=:
+
+: set "_BIN=%~dp0..\libexec\clautolisp\binaries\windows\%_A%\%~n0-%_L%.exe"
+: if not exist "%_BIN%" (
+:   echo %~n0: no binary for windows/%_A% with lisp=%_L% 1>&2
+:   exit /b 127 )
+
+=clautolisp/tools/packaging/dispatch.sh=:
+
+: bin="$prefix/libexec/clautolisp/binaries/$os/$arch/$prog-$lisp"
+: [ "$os" = windows ] && bin="$bin.exe"   # Windows executables keep .exe
+
+So a user who installs release-1.9.0 on Windows and runs =clautolisp= is
+told « no binary for windows/x86-64 with lisp=sbcl » and gets exit 127.
+*The Windows products of release-1.9.0 do not start.* The archive is
+42 MB, perfectly well-formed, and complete apart from three names.
+
+* Cause — an MSYS2 courtesy turning the fallback into dead code
+
+=release-programs= copied each binary with:
+
+: if [ -f "$b" ]; then cp "$b" "$bindir"/; \
+: elif [ -f "$b.exe" ]; then cp "$b.exe" "$bindir"/; fi;
+
+which reads as "take the bare one, else the .exe" — correct-looking, and
+wrong on Windows in a way that cannot be seen by reading it on Linux.
+
+MSYS2's POSIX layer *opens =foo= when only =foo.exe= exists*. So
+=[ -f "$b" ]= is TRUE for a file that is only present as =.exe=, the
+first branch always wins, and =cp "$b" "$bindir"/= names the destination
+after the path it was given — without the extension. The =elif= exists
+precisely for Windows and never runs there.
+
+The evidence is in the artefact itself: the copied files have the sizes
+of the real =.exe= binaries, so the source WAS the =.exe=; only the
+destination name lost it.
+
+* Fixed
+
+Two changes in =release-programs=, both load-bearing:
+
+1. *test =.exe= FIRST.* Under MSYS2 the bare test is ambiguous and the
+   =.exe= test is not, so the unambiguous one has to be asked first.
+2. *name the destination explicitly* (=cp "$b.exe" "$bindir/$n.exe"=)
+   rather than copying into a directory. Then it does not matter what
+   name the source resolved through.
+
+* And the check that should have caught it
+
+=make verify-release-artefacts= is what every release lane runs to assert
+it produced something. It only checked that the file exists and is over
+10 000 bytes — so a 42 MB archive whose contents no launcher can open
+passed, which is exactly the "looks complete and is not" failure this
+repository keeps meeting.
+
+It now OPENS the binaries artefact and requires the entries the launcher
+will actually reach for: =<prog>-<lisp>.exe= on Windows,
+=<prog>-<lisp>= elsewhere. It reads the ARCHIVE, not the staging
+directory, because what ships is what was packed and the defect happened
+during packing.
+
+*Verified in three directions*, on this Linux box, by building the
+artefacts by hand (=REL_OS=windows= is overridable, which is what makes
+the Windows branch testable without the machine):
+
+| fixture                                    | result |
+|--------------------------------------------+--------|
+| the shape release-1.9.0 actually shipped   | FAILS, naming what it holds instead and what that costs |
+| the same with =.exe=                         | passes |
+| POSIX =tar.bz2= with bare names              | passes — no regression |
+
+A check nobody has watched fail proves nothing, which is why the first
+row exists.
+
+* Two worse defects behind the same symptom
+
+pjb looked further into the same archive and found two things that the
+missing =.exe= was only the surface of. Both are established from the job
+log of =release:windows:x86-64= (16026668736), not inferred.
+
+** =alfe-sbcl= is a LINUX ELF, not a Windows program
+
+: $ file libexec/clautolisp/binaries/windows/x86-64/alfe-sbcl
+: ELF 64-bit LSB pie executable, x86-64, ... for GNU/Linux 3.2.0, stripped
+
+The other two are genuine =PE32+ executable for MS Windows=. Only alfe is
+foreign.
+
+*Cause*: =.release-common= declared no =needs:=, so GitLab's default
+applied — a job with no =needs:= receives the artifacts of EVERY job in
+every earlier stage. The log shows it plainly:
+
+: Downloading artifacts for build:alfe:sbcl (16026668717)...
+
+and =build:alfe:sbcl= is a LINUX docker job publishing exactly
+
+: autolisp-front-end/tools/alfe/bin/alfe-sbcl
+
+So the Linux ELF was written into the Windows workspace at that path. The
+Windows build then produced =alfe-sbcl.exe= BESIDE it, and the packaging
+loop — testing the bare name first — took the ELF.
+
+macOS escaped only by luck: there the built name IS the bare name, so the
+build overwrote the download instead of sitting next to it.
+
+*Fixed*: =dependencies: []= on =.release-common=. A release lane builds
+from source and must inherit nothing. =dependencies= rather than =needs:
+[]= on purpose — =needs= would also detach the job from stage ordering and
+let a release start before the tests run.
+
+** The images were dumped from ANOTHER COMMIT's fasls
+
+pjb: « clautolisp-1.9.0-all.zip contient un clautolisp version 1.8.56 » and
+« read-autolisp est une version 1.8.0 ». Both are versions from days before
+the tag, inside an archive named 1.9.0.
+
+*The tell is in the log*: the whole image build took *three seconds*, and
+the trace contains *not one* =; compiling= line. Nothing was compiled.
+The images were dumped straight from fasls.
+
+*Cause*: =XDG_CACHE_HOME= points at =clautolisp/.cache=, which lives
+INSIDE the workspace and is gitignored — and the Windows runner cleans
+with =-ffd=, not =-ffdx=, so ignored files survive between pipelines. That
+policy exists for a good reason (a held-open file under =dist/= used to
+kill every Windows job, see =.windows-clean=), and its own comment even
+warns that "a release quietly built on top of a previous run's leftovers
+is worse than one that fails". The consequence for the FASL CACHE had not
+been drawn: surviving fasls mean the release image is compiled from an
+older checkout.
+
+This is the worst failure this lane can have — a binary that is not its
+own source — and it is completely silent: green job, well-formed archive,
+correct file names. Only running the program tells you.
+
+*Fixed*: =scripts/release-windows.sh= now clears the fasl cache before
+building, the same way and for the same reason it already clears =dist/=,
+and refuses to build if it cannot. It costs a cold compile on the release
+lane, which is where correctness beats speed.
+
+** And the check that sees it
+
+Names and sizes cannot detect a stale image. =verify-release-artefacts=
+therefore also *runs each binary* and requires =--version= to report the
+version being released. Verified both ways with stand-in binaries:
+
+| fixture                                        | result |
+|------------------------------------------------+--------|
+| reporting 1.8.56 / 1.8.0 (the 1.9.0 shape)     | FAILS, quoting what each one reports |
+| all three reporting the released version       | passes |
+
+* Consequences for release-1.9.0, to decide
+
+The published release cannot be repaired in place. Its Windows asset
+holds the wrong names, and =make-gitlab-release.py --update= only rewrites
+LINKS — it cannot change what a pipeline already packed. Repairing it
+means a new tag whose pipeline packs correctly, i.e. *release-1.9.1*.
+
+The other platforms name their binaries correctly (no =.exe= is expected
+there) and build on runners that clean with =-ffdx=, so their fasl caches
+do not survive — but *that has not been verified by running them*, and
+after three defects found by looking inside one archive, "unaffected"
+should not be asserted from reasoning alone. The version check added here
+is what will answer it on the next tag, for every platform at once.
+
+* Note
+
+Found because pjb looked inside the archive. Nothing in the pipeline did
+— which is the point of the check added here.
