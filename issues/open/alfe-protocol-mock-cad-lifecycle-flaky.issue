@@ -1,0 +1,55 @@
+alfe: PROTOCOL-MOCK-CAD-FULL-LIFECYCLE flakes on a too-tight 2s wait timeout
+
+== Symptom ==
+
+`test:alfe:sbcl` (autolisp-front-end/tests, FiveAM) intermittently fails the
+single test PROTOCOL-MOCK-CAD-FULL-LIFECYCLE — 5 of its checks, out of 584 total
+in the suite (99% pass). Observed on the release-1.8.100 tag pipeline
+(gitlab.com/ogamita/clautolisp pipeline 2780812581, runner on poseidon); the
+adjacent release-1.8.99 pipeline (same relevant code) passed it.
+
+Failure details (FiveAM):
+
+    PROTOCOL-MOCK-CAD-FULL-LIFECYCLE ... .ffff.f.
+    (ALFE.PROTOCOL.FILE:WAIT-FOR-STATUS-PREFIX SESSION "RUNNING" :TIMEOUT 2)
+      was NIL.
+    (ALFE.PROTOCOL.FILE:WAIT-FOR-STATUS-PREFIX SESSION "DONE" :TIMEOUT 2)
+      was NIL.
+    ... (the later transition assertions cascade off the first miss)
+
+The test drives a mock CAD state machine in a background thread and waits for
+each transition with the documented poll primitives, each with `:timeout 2`.
+When the first "RUNNING" transition is not observed within 2 s, every
+downstream assertion fails too.
+
+== Context / likely cause ==
+
+Timing flake, not a logic regression: the 2-second timeout is too tight when the
+poseidon runner is loaded (many concurrent CI jobs share the box), so the
+background thread + filesystem-status handshake occasionally does not reach
+"RUNNING" within 2 s. It passed on the immediately-preceding tag with identical
+protocol code; the only changes on 1.8.100 were the Windows C-build
+(build-libredwg.sh) and the version bump, neither of which touches this path.
+
+This matters because it gates releases: a flake here fails `test:alfe:sbcl`,
+which skips the whole release stage (release:*, collect:release, publish:release
+all skipped). For now the workaround is to retry the job.
+
+== Suggested fix ==
+
+Make the lifecycle test robust to a loaded runner, e.g.:
+ - raise the poll timeout (2 s -> ~10 s), or make it configurable via an env var
+   the CI sets higher, and/or
+ - back the wait with a deadline-relative poll that tolerates scheduler jitter,
+   and/or
+ - mark the test `interruptible`/retryable, or split the timing-sensitive
+   transitions from the pure-logic assertions.
+
+== Repro ==
+
+    make -C autolisp-front-end test-sbcl
+    # under artificial load (e.g. `stress-ng --cpu N` or many parallel CI jobs)
+    # PROTOCOL-MOCK-CAD-FULL-LIFECYCLE fails ~intermittently on WAIT-FOR-STATUS.
+
+Found during the release-pipeline shakedown (documentation/release-pipeline.md);
+does not block the pipeline design — retrying the job clears it.
