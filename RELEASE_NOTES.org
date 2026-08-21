@@ -11,8 +11,8 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.8.59 / alfe 1.8.4 /
-read-autolisp 1.8.0). For the
+master at the top of the file (clautolisp 1.9.0 / alfe 1.9.0 /
+read-autolisp 1.9.0). For the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
 
@@ -33,6 +33,26 @@ separate binary for tool integrators.
 - Native Windows LibreDWG builds select the MSYS2 MINGW64 compiler,
   expose its runtime directory to compiler subprocesses, reject private
   UCRT dependencies, and install the exact DLL imported by the CFFI shim.
+- A Windows-form ~CC~ no longer defeats that compiler check. ~command -v~
+  returns what it is given, so ~CC=C:/msys64/ucrt64/bin/gcc~ arrived as a
+  Windows path with a drive letter, which the POSIX glob guarding against
+  UCRT64/Clang could not match: the very compiler the check exists to
+  refuse walked past it, and the build failed later and about something
+  else. The path is now normalised where it enters, which also keeps the
+  drive letter's colon away from CMake — the argument had been arriving
+  truncated to ~C~.
+- Building the documentation is *forty times faster*. Exporting the
+  language specification to Info took 51 minutes, and the cause was not
+  the size of the specification: Org's texinfo exporter names its nodes
+  against a growing association list, scanning it twice per node, which
+  is quadratic in the number of nodes. An ordinary Org file never
+  notices; a reference with tens of thousands of nodes notices for the
+  better part of an hour. The export is now 3 min 38 s on the same
+  machine, byte-for-byte identical output, and ~make -C autolisp-spec
+  check-info-export-equivalence~ keeps it that way by exporting both ways
+  and refusing any difference. The Info manual is consequently built and
+  checked everywhere again, instead of only on the lane that publishes
+  it.
 - Documentation builds now locate MSYS2 UCRT64 TeX/Graphviz tools and use
   Windows-compatible Kpathsea paths. They also translate Windows-form
   temporary-directory variables before starting POSIX Emacs, allowing

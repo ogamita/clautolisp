@@ -18,4 +18,4 @@
 ;;;; 1.6.0 across the whole 1.8 series -- 1.8.0 here is the first version
 ;;;; that carries the codec and dialect work the library gained.
 
-(defparameter *version* "1.8.0")
+(defparameter *version* "1.9.0")
