@@ -29,9 +29,11 @@ to prevent. The vendor a job targets is visible in the job's own name.
 - **cecil** — an NVIDIA DGX Spark running Ubuntu on arm64, added
   2026-08-21, with two runners: a shell one (`linux,arm64,shell,nvidia`) and
   a docker one (`linux,arm64,docker,nvidia`). Both also accept **untagged**
-  jobs. It is the only *native* Linux arm64 machine in the fleet, so it is
-  the natural host for `release:linux:arm64` — which poseidon builds under
-  qemu-user emulation today.
+  jobs. It is the fleet's first arm64 machine running Linux *natively*
+  (thalassa's Docker engine already runs `linux/arm64` containers, but
+  inside a VM on macOS), and unlike thalassa it is a desk machine rather
+  than a laptop. Either beats what `release:linux:arm64` uses today, which
+  is qemu-user emulation on poseidon.
 
 thalassa, the windows PC and cecil are **intermittent** (laptops and a desk
 machine, not always on), so their tagged jobs simply queue until the host is

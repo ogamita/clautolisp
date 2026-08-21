@@ -18,9 +18,15 @@ running Ubuntu on arm64:
 no executor tag; pjb retagged both to the convention the same afternoon, in
 response to this ticket.)
 
-cecil is the fleet's first *native Linux arm64* machine. =release:linux:arm64=
-is built on poseidon under *qemu-user emulation* today, which is the slowest
-lane the project has.
+cecil is the fleet's first arm64 machine running Linux *natively*. thalassa
+already offers native arm64 Docker — an Apple-Silicon laptop whose engine
+runs =linux/arm64= containers, inside a VM — so cecil is not the only native
+arm64 host, but it is the first that is Linux to the metal and the first
+that is not a laptop. Either beats what =release:linux:arm64= actually uses,
+which is *qemu-user emulation* on poseidon, the slowest lane the project has.
+
+(The =linux,arm64,docker= tag set now matches BOTH cecil and thalassa, which
+is fine: both are native, and whichever is awake takes the job.)
 
 * Why nothing runs on it yet
 
