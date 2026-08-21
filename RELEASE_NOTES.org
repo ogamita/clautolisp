@@ -11,9 +11,10 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.9.1 / alfe 1.9.0 /
-read-autolisp 1.9.0 — alfe and read-autolisp did not change since 1.9.0,
-and version-rules lets an unchanged program keep its stamp). For the
+master at the top of the file (clautolisp 1.9.2 / alfe 1.9.0 /
+read-autolisp 1.9.0 — alfe and read-autolisp have not changed since
+1.9.0, and version-rules lets an unchanged program keep its stamp). For
+the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
 
@@ -31,9 +32,14 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
-- *The Windows products of a release now run, and are what the release
-  says they are.* This is the whole subject of 1.9.1: the Windows archive
-  of 1.9.0 could not be used. Three separate defects, found by looking
+- *The Windows products of a release now run, are what the release says
+  they are, and reach the release at all.* 1.9.1 fixed the first two and
+  could not be published: its Windows lane built and verified correctly,
+  then failed three times UPLOADING what it had built, deterministically,
+  because it was sending 362 files — the packaging staging tree — where
+  two zips were wanted. 1.9.2 sends the two, and is the first release of
+  this series a Windows user can actually install. The archive of 1.9.0
+  could not be used at all. Three separate defects, found by looking
   inside the published file:
   - its binaries were named without ~.exe~, while both shipped launchers
     open ~<prog>-<lisp>.exe~ — so ~clautolisp~ answered "no binary for
