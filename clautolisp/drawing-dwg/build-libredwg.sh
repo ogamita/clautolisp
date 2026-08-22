@@ -158,9 +158,34 @@ fi
 #  - the compiler is echoed exactly as cmake receives it: this argument
 #    has been mis-delivered twice, and a run that prints it diagnoses
 #    itself instead of costing another round trip to a Windows machine.
-echo "cmake -DCMAKE_C_COMPILER=[$compiler_path]"
+# libredwg captures LIBREDWG_SO_VERSION via execute_process(perl …) WITHOUT
+# OUTPUT_STRIP_TRAILING_WHITESPACE, so perl's trailing newline is substituted
+# into the generated src/config.h ( #define LIBREDWG_SO_VERSION "0:14:0<NL>" ),
+# which gcc rejects as "missing terminating character". It only bites where perl
+# exists (GitHub's MSYS2 has it; the Linux CI image does not). Add the strip to
+# the vendored CMakeLists (idempotent; portable sed — no -i, works on BSD too).
+if [ -f "$lr/CMakeLists.txt" ]; then
+  sed 's/OUTPUT_VARIABLE LIBREDWG_SO_VERSION)/OUTPUT_VARIABLE LIBREDWG_SO_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)/' \
+      "$lr/CMakeLists.txt" > "$lr/CMakeLists.txt.tmp.$$" \
+    && mv "$lr/CMakeLists.txt.tmp.$$" "$lr/CMakeLists.txt"
+fi
+
+# The value handed to cmake. On MSYS2/MinGW pass the BASENAME, not the absolute
+# POSIX path: MSYS2 converts a path-shaped argument to Windows form
+# (/mingw64/bin/gcc -> C:/msys64/mingw64/bin/gcc) at the process boundary, and
+# cmake >= 4 then rejects it as "not a full path to an existing compiler tool"
+# (it lacks the .exe and cmake does not re-resolve a full path). The compiler's
+# own directory is already at the FRONT of PATH (above), so the basename
+# resolves to exactly this gcc — the pinning the absolute path intended, with no
+# drive-letter colon to be mistaken for a list separator. Older self-hosted
+# cmake tolerated the converted path; GitHub's cmake 4.x does not.
+cmake_cc="$compiler_path"
+case "$host_uname" in
+  MINGW*|MSYS*|CYGWIN*) cmake_cc="$(basename "$compiler_path")" ;;
+esac
+echo "cmake -DCMAKE_C_COMPILER=[$cmake_cc]"
 cmake -S "$lr" -B "$build" \
-      -DCMAKE_C_COMPILER="$compiler_path" \
+      -DCMAKE_C_COMPILER="$cmake_cc" \
       -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DDISABLE_WERROR=ON \
       -DCMAKE_C_FLAGS="-w -Wno-unused-command-line-argument -D_DARWIN_C_SOURCE"
 # Build parallelism is capped on Windows, and that is about MEMORY, not
