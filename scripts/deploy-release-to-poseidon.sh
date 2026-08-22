@@ -15,7 +15,7 @@ WEBROOT="${WEBROOT:-/var/www/poseidon/public_html/ogamita/clautolisp/releases}"
 GEN="$(cd "$(dirname "$0")" && pwd)/gen-release-index.py"
 T="${GITLAB_TOKEN:-$(awk '{p=pw="";for(i=1;i<=NF;i++){if($i=="port")p=$(i+1);if($i=="password")pw=$(i+1)} if(p=="claude")print pw}' ~claude/.authinfo 2>/dev/null || true)}"
 [ -n "$T" ] || { echo "no GITLAB_TOKEN"; exit 1; }
-gl(){ curl -fsS --header "PRIVATE-TOKEN: $T" "$@"; }
+gl(){ curl -fsSL --header "PRIVATE-TOKEN: $T" "$@"; }  # -L: the artefacts endpoint 302s to the CDN
 
 plid=$(gl "$API/projects/$PID/pipelines?ref=$TAG&per_page=1" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d[0]["id"] if d else "")')
 [ -n "$plid" ] || { echo "no pipeline for $TAG"; exit 1; }
