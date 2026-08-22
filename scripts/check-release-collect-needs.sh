@@ -30,6 +30,15 @@ jobs=$(sed -n 's/^\(release:[A-Za-z0-9:_-]*\):[[:space:]]*$/\1/p' "$ci" | sort -
 
 [ -n "$jobs" ] || { echo "FAIL: no release:* jobs found in $ci -- the parser needs updating, not deleting"; exit 1; }
 
+# Jobs whose artefacts reach collect:release OUT OF BAND -- not through a
+# GitLab `needs:'. release:windows:x86-64 is built on GitHub Actions (the
+# CAD-free Windows build host, windows-build-host.issue / !129) and pulled by
+# collect:release with `gh run download'; the GitLab job of that name is only a
+# 100%-manual fallback on the self-hosted PC. So it is intentionally NOT a need,
+# and intentionally NOT automatic on a tag -- both checks below skip it.
+collected_offband="release:windows:x86-64"
+is_offband() { echo "$collected_offband" | tr ' ' '\n' | grep -qx "$1"; }
+
 # collect:release's needs block: from the job header to the next
 # top-level key, keeping the job names it mentions.
 needs=$(sed -n '/^collect:release:[[:space:]]*$/,/^[A-Za-z]/p' "$ci" \
@@ -38,6 +47,10 @@ needs=$(sed -n '/^collect:release:[[:space:]]*$/,/^[A-Za-z]/p' "$ci" \
 
 status=0
 for j in $jobs; do
+    if is_offband "$j"; then
+        echo "ok  $j is collected out-of-band (GitHub Actions -> gh run download)"
+        continue
+    fi
     if echo "$needs" | grep -qx "$j"; then
         echo "ok  $j is collected"
     else
@@ -72,6 +85,10 @@ done
 # automatically on a tag. A lane that is only ever manual has no business
 # being a need of the collect.
 for j in $jobs; do
+    if is_offband "$j"; then
+        echo "ok  $j is manual-only by design (GitHub builds the release Windows set)"
+        continue
+    fi
     body=$(sed -n "/^$j:[[:space:]]*$/,/^[A-Za-z]/p" "$ci")
     rules=$(printf '%s' "$body" | sed -n '/^[[:space:]]*rules:/,$p')
 

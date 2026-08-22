@@ -13,12 +13,12 @@ name: CI
 # re-sync this file with the common lanes of .gitlab-ci.yml. See
 # .github/workflows/README.md for the job-by-job mapping and the rule.
 
+# POLICY: non-regression / validation runs on GitLab (Linux-on-poseidon baseline
+# + best-effort native), NOT on GitHub — no point burning our monthly GitHub
+# minutes on push/MR tests. This mirror is MANUAL-ONLY: dispatch it by hand when
+# you want a second opinion on a clean ubuntu-latest. GitHub's release-path role
+# is the Windows builder (release.yml), nothing else.
 on:
-  push:
-    branches: [master, alfe-development]
-    tags: ['*']
-  pull_request:
-    branches: [master]
   workflow_dispatch:
 
 # Cancel in-progress runs on the same ref when a new push lands. Tag builds

@@ -1,144 +1,84 @@
-name: Release
+name: Release (Windows builder)
 
-# Produce the release artefacts (see issues/open/release-artefacts.issue)
-# on a version tag. Scaffolds all six SBCL targets; only the
-# Linux x86-64 lane is required — the others are `experimental` (their
-# failures do not fail the run) until their runners/toolchains are
-# tuned.
+# GitHub is the ALWAYS-AVAILABLE, CAD-free Windows build host for releases
+# (issues/open/windows-build-host.issue / !129). It runs master's own
+# scripts/release-windows.sh on a GitHub windows-latest MSYS2 runner — the
+# SAME Makefile packaging every other platform uses — and uploads the per-target
+# Windows zips as workflow artifacts. GitLab's collect:release pulls them with
+# `gh run download` and unions them into the release set.
 #
-# WINDOWS IS NO LONGER A STUB, and it is not proven either. It runs
-# scripts/release-windows.sh — the same script the GitLab lane runs, so
-# there is one Windows recipe and not two — on a runner that carries
-# MSYS2, gcc and cmake but no Lisp, so the lane sets MSYS2 up for MINGW64
-# and installs SBCL from Chocolatey. Written 2026-08-21 against the
-# published contents of the windows-2025 image; every line of it wants a
-# real run before anyone relies on it, which is why the lane stays
-# `experimental` and the tag trigger stays off (see below).
+# BUILDER-ONLY, no publish: GitLab remains the sole release publisher
+# (scripts/make-gitlab-release.py). GitHub attaching a divergent set to a
+# same-named release is exactly what master's design forbids, so nothing is
+# published here.
 #
-# Why here at all: on a public repository GitHub's standard hosted runners
-# are free and unmetered, and windows-latest is 4 vCPU / 16 GB — bigger
-# than any Windows machine we own or could rent free. See the survey in
-# issues/open/cloud-platform-runners.issue.
+# The self-hosted Windows PC keeps a 100%-manual release:windows:x86-64 fallback
+# on GitLab (and all the CAD lanes); this workflow is the primary Windows path.
 #
-# THIS WORKFLOW DOES NOT PUBLISH A RELEASE BY ITSELF, AND THAT IS
-# DELIBERATE (release-artefact-set-incomplete.issue, closed 2026-08-19).
-#
-# GitLab is the source of truth for releases (AGENTS.md): its
-# collect:release unions every target into the ten-artefact set pjb
-# specified, and scripts/make-gitlab-release.py publishes it with
-# verified links. This workflow does neither — its collect step never
-# unions (the TODO below), and its Windows lane is a stub — so firing it
-# on a `release-*` tag attached a DIFFERENT, SMALLER set to a GitHub
-# release of the SAME NAME as the GitLab one. Two forges disagreeing
-# about what a given release contains is worse than one forge not
-# publishing at all: whoever downloads the short set has no way to know
-# it is short.
-#
-# So the automatic tag trigger is gone and only `workflow_dispatch`
-# remains: running it is now a deliberate act, and what it produces is a
-# build of the artefacts, not a published release. To make GitHub a real
-# publisher instead, the two gaps above have to be closed first — union
-# the per-target artefacts, and implement Windows packaging — at which
-# point the tag trigger can come back.
+# SBCL SOURCE is selectable, so the two approaches trialled in parallel coexist:
+#   - `mingw' (DEFAULT): mingw-w64-x86_64-sbcl via pacman — proven green.
+#   - `choco':          the official SBCL MSI via Chocolatey (+ SBCL_HOME shim).
+# Choose per-run with the workflow_dispatch input, or repo-wide with the
+# `SBCL_SOURCE' repository variable (Settings > Secrets and variables > Actions
+# > Variables). Precedence: dispatch input > repo variable > `mingw'.
 
 on:
+  push:
+    tags: ['release-[0-9]*']
   workflow_dispatch:
+    inputs:
+      sbcl_source:
+        description: 'SBCL source'
+        type: choice
+        options: [mingw, choco]
+        default: mingw
 
 permissions:
-  contents: read           # nothing is published from here any more
+  contents: read           # builder-only: no Release is created from GitHub
 
 jobs:
-  # --- layout-independent artefacts ------------------------------------
-  sources:
-    name: sources
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: recursive }
-      - run: make release-sources
-      - uses: actions/upload-artifact@v4
-        with: { name: sources, path: dist/* }
-
-  documentation:
-    name: documentation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: recursive }
-      # Doc build needs Emacs (the autolisp-spec paged split), TeX (PDFs,
-      # via xelatex => texlive-xetex) and makeinfo (Info). Keep this list
-      # identical to the GitLab release:documentation job (both forges
-      # must build the same docs).
-      - run: sudo apt-get update && sudo apt-get install -y emacs-nox texlive texlive-latex-extra texlive-xetex texlive-plain-generic texinfo
-      # Cache the slow per-section split (3026 sections -> html/info/pages);
-      # invalidated only when the spec org or the split scripts change.
-      - name: Cache autolisp-spec paged build
-        uses: actions/cache@v4
-        with:
-          path: autolisp-spec/build
-          key: spec-paged-${{ hashFiles('autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org', 'autolisp-spec/scripts/build-paged-*.el') }}
-      - run: make release-documentation
-      - uses: actions/upload-artifact@v4
-        with: { name: documentation, path: dist/* }
-
-  # --- per-target programs + libraries ---------------------------------
-  binaries:
-    name: ${{ matrix.t.os }}-${{ matrix.t.arch }}
-    runs-on: ${{ matrix.t.runner }}
-    continue-on-error: ${{ matrix.t.experimental }}
+  windows:
+    name: windows-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
-        t:
-          - { os: linux,   arch: x86-64, runner: ubuntu-latest,    experimental: false }
-          - { os: linux,   arch: arm64,  runner: ubuntu-24.04-arm, experimental: true  }
-          - { os: darwin,  arch: x86-64, runner: macos-13,         experimental: true  }
-          - { os: darwin,  arch: arm64,  runner: macos-14,         experimental: true  }
-          - { os: windows, arch: x86-64, runner: windows-latest,   experimental: true  }
-          - { os: windows, arch: arm64,  runner: windows-11-arm,   experimental: true  }
+        include:
+          - { arch: x86-64, runner: windows-latest, msystem: MINGW64, prefix: mingw-w64-x86_64, experimental: false }
+    env:
+      # Precedence: dispatch input > repo variable SBCL_SOURCE > mingw.
+      SBCL_SOURCE: ${{ github.event.inputs.sbcl_source || vars.SBCL_SOURCE || 'mingw' }}
+    defaults:
+      run:
+        shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with: { submodules: recursive }
 
-      # Toolchain: SBCL + cmake + a C compiler + Quicklisp.
-      - name: Install toolchain (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y sbcl cmake build-essential
-      - name: Install toolchain (macOS)
-        if: runner.os == 'macOS'
-        run: brew install sbcl cmake
-
-      # Windows. The image carries MSYS2 at C:\msys64 (NOT on PATH), gcc,
-      # cmake and Chocolatey, but no Common Lisp -- so MSYS2 is set up
-      # properly for MINGW64 and SBCL comes from choco.
-      #
-      # MINGW64 and not UCRT64/CLANG64: the DWG codec refuses those, which
-      # import private UCRT API sets the native SBCL does not have. The
-      # reasoning lives in scripts/environnement-windows.sh, which this lane
-      # sources exactly like the GitLab one.
-      - name: Install toolchain (Windows)
-        if: runner.os == 'Windows'
+      - name: Set up MSYS2 (${{ matrix.msystem }})
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
-          update: false
+          msystem: ${{ matrix.msystem }}
+          release: false
+          update: true
+          # Toolchain only — SBCL is installed by the selectable step below.
           install: >-
-            make zip unzip diffutils
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-cmake
-      # The choco `sbcl' package installs the official MSI into
-      # C:\Program Files\Steel Bank Common Lisp -- which is exactly the
-      # directory scripts/environnement-windows.sh already puts on PATH --
-      # and shims sbcl into C:\ProgramData\chocolatey\bin.
-      #
-      # But it sets SBCL_HOME as a MACHINE variable, and a machine variable
-      # set DURING a run is never seen by the runner process, which started
-      # before it. So publish it for the following steps ourselves, in
-      # Windows form: sbcl.exe is a native program and cannot read /c/... .
-      # (The GitLab lane never needed this: there the MSI was installed long
-      # before the runner service started.)
-      - name: Install SBCL (Windows)
-        if: runner.os == 'Windows'
+            git make zip unzip m4 curl diffutils
+            ${{ matrix.prefix }}-gcc
+            ${{ matrix.prefix }}-cmake
+            ${{ matrix.prefix }}-pkgconf
+
+      - name: Install SBCL (mingw — pacman)
+        if: env.SBCL_SOURCE != 'choco'
+        run: |
+          pacman -S --noconfirm --needed ${{ matrix.prefix }}-sbcl
+          sbcl --version
+
+      - name: Install SBCL (choco — official MSI)
+        if: env.SBCL_SOURCE == 'choco'
+        shell: pwsh
         run: |
           choco install sbcl --no-progress -y
           $home_ = "C:\Program Files\Steel Bank Common Lisp"
@@ -146,81 +86,47 @@ jobs:
             Get-ChildItem "C:\Program Files" -Filter "*Bank*" | Out-String | Write-Host
             throw "sbcl.exe is not where the package says it is: $home_"
           }
+          # SBCL_HOME is set as a MACHINE var during the run, which the runner
+          # process (started earlier) never sees; publish it (Windows form —
+          # sbcl.exe is native and cannot read /c/...), and keep MSYS2 from
+          # rewriting it at the boundary, like environnement-windows.sh does CC.
           Add-Content -Path $env:GITHUB_ENV -Value "SBCL_HOME=$home_"
-          # Keep MSYS2 from rewriting that value on its way back out to the
-          # native sbcl.exe, the same guard environnement-windows.sh applies
-          # to CC and for the same reason.
           Add-Content -Path $env:GITHUB_ENV -Value "MSYS2_ENV_CONV_EXCL=SBCL_HOME;CC"
-      - name: Bootstrap Quicklisp (Windows)
-        if: runner.os == 'Windows'
-        shell: msys2 {0}
+
+      - name: Read version
+        id: ver
         run: |
+          v="$(sed -n 's/.*\*version\* *"\([0-9.]*\)".*/\1/p' \
+               clautolisp/tools/clautolisp/source/version.lisp)"
+          echo "version=$v" >> "$GITHUB_OUTPUT"; echo "version: $v (SBCL_SOURCE=$SBCL_SOURCE)"
+
+      - name: Bootstrap Quicklisp
+        run: |
+          # Source environnement-windows.sh so choco's SBCL dir lands on PATH
+          # (mingw's /mingw64/bin is already there); harmless for the mingw case.
           . scripts/environnement-windows.sh
-          # environnement-windows.sh adds the MSI's directory to PATH if it
-          # exists; say so plainly when it does not, rather than failing
-          # later inside the build with a confusing message.
-          if ! command -v sbcl >/dev/null 2>&1; then
-            echo "sbcl not on PATH after choco install; looking for it:"
-            ls -d "/c/Program Files/Steel Bank Common Lisp" 2>&1 || true
-            ls -d /c/ProgramData/chocolatey/lib/sbcl* 2>&1 || true
-            exit 1
-          fi
+          command -v sbcl >/dev/null 2>&1 || { echo "sbcl not on PATH"; exit 1; }
           sbcl --version
-          curl -fsSL https://beta.quicklisp.org/quicklisp.lisp -o ql.lisp
-          sbcl --non-interactive --load ql.lisp \
+          curl -fsSL https://beta.quicklisp.org/quicklisp.lisp -o "$HOME/ql.lisp"
+          sbcl --non-interactive --load "$HOME/ql.lisp" \
                --eval '(quicklisp-quickstart:install)'
 
-      - name: Bootstrap Quicklisp (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          curl -fsSL https://beta.quicklisp.org/quicklisp.lisp -o /tmp/ql.lisp
-          sbcl --non-interactive --load /tmp/ql.lisp \
-               --eval '(quicklisp-quickstart:install)'
-
-      # Build + package (Unix). Windows uses the windows-package-spec
-      # path, still a stub.
-      - name: Build + package (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          make build-libraries        # builds vendored libdwg + shim
-          make release-programs
-          make release-libraries
-      # The SAME script the GitLab lane runs -- one Windows recipe, not two.
-      # It sources scripts/environnement-windows.sh itself, clears dist/ and
-      # the fasl caches (a surviving cache once shipped 1.9.0's Windows
-      # binaries reporting 1.8.56), builds, packages, and asserts the
-      # artefacts are present and non-empty.
-      #
-      # RELEASE_LISPS is left at the Makefile default, sbcl, which is what
-      # the GitLab Windows lane uses: there is no CCL on this lane.
-      - name: Build + package (Windows)
-        if: runner.os == 'Windows'
-        shell: msys2 {0}
+      # Master's own Windows release script: sources environnement-windows.sh
+      # (picks CC=/mingw64/bin/gcc under MINGW64; its self-hosted-only PATH
+      # entries are [ -d ]-guarded, so they no-op here) then runs the ordinary
+      # Makefile packaging (build-libraries, build-programs, release-programs,
+      # release-libraries, verify-release-artefacts).
+      - name: Build the Windows release artefacts
         run: sh scripts/release-windows.sh
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: binaries-${{ matrix.t.os }}-${{ matrix.t.arch }}
-          path: dist/*
-          if-no-files-found: warn
+      - name: List artefacts
+        run: ls -l dist
 
-  # --- collect + attach to the release ---------------------------------
-  collect:
-    name: collect + publish
-    needs: [sources, documentation, binaries]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with: { path: incoming }
-      # TODO (release-artefacts.issue): union the per-target unix
-      # binaries/libraries into the combined clautolisp-<ver>-binaries.tar.bz2
-      # / -libraries.tar.bz2 (merge libexec/<os>/<arch>/ + lib/<os>/<arch>/);
-      # keep the Windows zips per-arch.
-      - name: List collected artefacts
-        run: find incoming -type f | sort
-      # No "attach to release" step: see the header. Publishing from here
-      # produced a GitHub release that was smaller than the GitLab one of
-      # the same name, with nothing to say so. The artefacts stay
-      # available as workflow artefacts, which is what this workflow is
-      # for until the union and the Windows lane exist here too.
+      - name: Upload Windows artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          # Name matches the `gh run download -p 'clautolisp-*-windows-*'` glob
+          # the GitLab collect:release job uses.
+          name: clautolisp-${{ steps.ver.outputs.version }}-windows-${{ matrix.arch }}
+          path: dist/clautolisp-*-windows-*.zip
+          if-no-files-found: error

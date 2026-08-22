@@ -915,9 +915,13 @@ release:darwin:arm64:
 release:windows:x86-64:
   extends: .release-common
   tags: [windows, amd64, shell]   # windows PC (intermittent): GUI bricscad/autocad host
+  # 100%-MANUAL FALLBACK. The PRIMARY release Windows build is GitHub Actions
+  # (.github/workflows/release.yml — the CAD-free always-available host,
+  # windows-build-host.issue / !129); collect:release pulls that artefact via
+  # `gh run download`. This self-hosted lane stays only as an on-demand native
+  # build/check, so it is NOT auto-scheduled on a tag and NOT a collect need
+  # (check-release-collect-needs.sh exempts it as collected out-of-band).
   rules:
-    - *on-release-windows
-    - *on-release-windows-absent
     - when: manual
       allow_failure: true
   variables:
@@ -1090,9 +1094,10 @@ native:pipeline:
   variables:
     GIT_SUBMODULE_STRATEGY: none
   interruptible: true
+  # MANUAL: a dev-time exploratory experiment (reason-1), not a gate.
   rules:
     - *not-on-schedule
-    - when: on_success
+    - when: manual
       allow_failure: true
   artifacts:
     name: "encoding-$CI_COMMIT_SHORT_SHA"
@@ -1126,9 +1131,12 @@ encoding:experiment:clautolisp:linux:
     expire_in: 30 days
 
 pathname:probe:clautolisp:linux:
+  # MANUAL: a reason-1 probe (on-demand), like the benchmarks/CAD lanes. This
+  # per-job rules override otherwise beats .pathname-probe's manual default.
   rules:
     - *not-on-schedule
-    - when: on_success
+    - when: manual
+      allow_failure: true
   extends: .pathname-probe
   tags: [linux, amd64, docker]
   image: $CLAUTOLISP_CI_LATEST
@@ -1157,9 +1165,11 @@ pathname:probe:clautolisp:linux:
   variables:
     GIT_SUBMODULE_STRATEGY: none
     BENCH_SECONDS: '3.0'
+  # MANUAL: benchmarks/probes are reason-1 jobs (one-shot, on-demand); a release
+  # must not depend on a benchmark having run. Covers benchmark:* and, via
+  # .benchmark-cad, the CAD archival lanes.
   rules:
     - *not-on-schedule
-    - *on-release-benchmark
     - when: manual
       allow_failure: true
   artifacts:
@@ -1295,6 +1305,11 @@ collect:release:
   image: $CLAUTOLISP_CI_LATEST
   variables:
     GIT_SUBMODULE_STRATEGY: none
+    # GitHub handoff for the Windows set (windows-build-host.issue / !129).
+    # GH_REPO/GH_WORKFLOW are plain; GH_TOKEN is a masked CI/CD variable with
+    # actions:read on the repo.
+    GH_REPO: "ogamita/clautolisp"
+    GH_WORKFLOW: "release.yml"
   # EVERY release:* job belongs here: one omitted costs a full build whose
   # artefacts are then discarded in silence (which is what happened to
   # release:linux:arm32). `needs:' cannot be a glob, so
@@ -1327,7 +1342,10 @@ collect:release:
     # check-release-collect-needs.sh enforces exactly that.
     - { job: "release:linux:arm32",  artifacts: true, optional: true }
     - { job: "release:darwin:arm64", artifacts: true, optional: true }
-    - { job: "release:windows:x86-64", artifacts: true, optional: true }
+    # release:windows:x86-64 is intentionally NOT here: the release Windows set
+    # is built on GitHub Actions and fetched below with `gh run download`
+    # (windows-build-host.issue / !129). check-release-collect-needs.sh exempts
+    # it as collected out-of-band; the GitLab job is a manual PC fallback only.
     - { job: "release:documentation", artifacts: true }
   rules:
     - *not-on-schedule
@@ -1340,8 +1358,41 @@ collect:release:
     # zip/unzip are needed for the Windows .zip artefacts and the -all.zip
     # (pjb, 2026-08-16). collect-artefacts ERRORS rather than skipping when
     # they are missing, so a release cannot quietly ship without them.
-    - pkgs=""; for t in bzip2 tar make zip unzip; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+    - pkgs=""; for t in bzip2 tar make zip unzip curl; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+    # gh reads $GH_TOKEN from the environment; install it self-contained if the
+    # CI image lacks it (TODO: bake gh into the image).
+    - |
+      if ! command -v gh >/dev/null 2>&1; then
+        GH_VER=2.62.0
+        curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" -o /tmp/gh.tgz
+        tar -xzf /tmp/gh.tgz -C /tmp
+        install -m0755 "/tmp/gh_${GH_VER}_linux_amd64/bin/gh" /usr/local/bin/gh
+      fi
+      gh --version | head -1
   script:
+    # Pull the Windows release set GitHub Actions built for this tag. Best-effort
+    # (windows-build-host.issue / !129): if GitHub has not finished (mirror lag)
+    # or GH_TOKEN is unset, the set still assembles WITHOUT Windows and the log
+    # says so — re-run this job later to fold it in. verify-release-artefacts /
+    # check-release-artefact-set flag a short set downstream.
+    - |
+      if command -v gh >/dev/null 2>&1 && [ -n "${GH_TOKEN:-}" ]; then
+        tag="${CI_COMMIT_TAG:-}"
+        rid="$(gh run list -R "$GH_REPO" --workflow "$GH_WORKFLOW" --branch "$tag" \
+                 --json databaseId,status --jq \
+                 'map(select(.status=="completed"))|.[0].databaseId' 2>/dev/null || true)"
+        if [ -n "$rid" ]; then
+          gh run download "$rid" -R "$GH_REPO" -p 'clautolisp-*-windows-*' -D dist \
+            && echo "fetched Windows set:" && find dist -name 'clautolisp-*-windows-*.zip' \
+            || echo "WARN: gh run download failed; assembling WITHOUT the Windows set"
+        else
+          echo "WARN: no completed GitHub run for $tag yet; assembling WITHOUT the Windows set"
+        fi
+      else
+        echo "WARN: gh unavailable or GH_TOKEN unset; assembling WITHOUT the Windows set"
+      fi
+    # gh nests each artifact under dist/<name>/ — flatten the win zips into dist/.
+    - find dist -mindepth 2 -name 'clautolisp-*-windows-*.zip' -exec cp {} dist/ \; 2>/dev/null || true
     - make collect-artefacts COLLECT_IN=dist COLLECT_OUT=dist/combined
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-release"
