@@ -1,0 +1,114 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cecil-native-arm64-runner — a native arm64 machine joined the fleet, and no job asks for it
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: namespace-storage-blocks-ci
+#+BRANCH: -
+
+* What happened
+
+On 2026-08-21 pjb registered two runners on *cecil*, an NVIDIA DGX Spark
+running Ubuntu on arm64:
+
+: 55390921  cecil shell    tags: linux, arm64, shell, nvidia     run_untagged=true
+: 55390973  cecil docker   tags: linux, arm64, docker, nvidia    run_untagged=true
+
+(As first registered they were tagged =aarch64=, and the shell one carried
+no executor tag; pjb retagged both to the convention the same afternoon, in
+response to this ticket.)
+
+cecil is the fleet's first arm64 machine running Linux *natively*. thalassa
+already offers native arm64 Docker — an Apple-Silicon laptop whose engine
+runs =linux/arm64= containers, inside a VM — so cecil is not the only native
+arm64 host, only the first that is Linux to the metal. Either beats what
+=release:linux:arm64= actually uses, which is *qemu-user emulation* on
+poseidon, the slowest lane the project has.
+
+It is a desk machine, but that buys no availability yet — pjb, 2026-08-21:
+"pour le moment elle se comporte comme un laptop, avec horaires de bureaux".
+So cecil is as intermittent as thalassa and the windows PC, and everything
+this ticket says about intermittency applies to it in full.
+
+*What cecil is actually for* (pjb, same day). For arm64 work it is a bigger
+second machine, not a unique one: likely faster than thalassa and, above
+all, with far more memory, so it can run *more jobs in parallel*. Capacity,
+not architecture, is the gain — which is another reason the release path is
+the wrong place to spend it, since that lane is one job.
+
+Its one unique capability is the *GPU*: it carries the =nvidia= tag, and the
+expected use is *LLM work (ollama)*, which we will need to test and debug and
+which poseidon can only do on CPU. There is no such job in this project yet;
+=nvidia= exists so that the first one has a way to ask.
+
+(The =linux,arm64,docker= tag set now matches BOTH cecil and thalassa, which
+is fine: both are native, and whichever is awake takes the job.)
+
+* Why nothing runs on it yet
+
+Runners are selected by =<os>,<arch>,<executor>= tags, and every job in
+=.gitlab-ci.yml= names its tags explicitly. cecil's tags now match the
+convention, so the configuration *could* dispatch to it — but nothing asks
+for it: =release:linux:arm64= requests =linux,arm64,qemu= (poseidon's
+emulated lane), and no job in the project requests =linux,arm64,docker= or
+=linux,arm64,shell=. cecil is online and idle.
+
+That both runners accept untagged jobs is harmless: there is no untagged job
+in this project to mis-route onto the wrong architecture. (It would stop
+being harmless the day someone adds a job that overrides =tags:= with an
+empty list — the =default:= block otherwise supplies =linux,amd64,docker=.)
+
+* Step 1 — DONE 2026-08-21: the runners were retagged
+
+pjb retagged both to =linux,arm64,{shell,docker}= (=nvidia= kept beside them
+as a capability tag, like =cad= / =gui=), so nothing in this repository has
+to learn a second spelling for the same architecture. The alternative would
+have been a second lane plus a switch — tag sets are AND-ed, there is no
+"either tag" operator — i.e. carrying the deviation forever in the file that
+documents the convention.
+
+* Step 2 — move release:linux:arm64 off qemu
+
+=release:linux:arm64= can now be pointed at cecil. The job body needs *no
+change*: it already pulls =$ARM64_BASE=, the digest-pinned arm64
+=buildpack-deps=, which is a native pull on cecil rather than a binfmt one.
+
+The obstacle is that cecil is *intermittent*, like thalassa and the windows
+PC, and the parent pipeline *cannot* gate on runner availability — GitLab
+evaluates =rules:= at pipeline creation, before =detect:runners= has run
+(the lesson of release-1.8.43, recorded at the top of =.gitlab-ci.yml=).
+So the choice must be explicit, in the established style of
+=SKIP_WINDOWS_RELEASE= / =ARM32_RELEASE=: keep qemu-on-poseidon as the
+always-on default, and let a CI variable send the lane to cecil when someone
+knows cecil is up.
+
+*And the default should stay on poseidon* even once cecil has proved itself,
+as long as cecil keeps office hours. A release tag is pushed when the release
+is ready, not when a machine is awake; a lane whose host is asleep either
+queues the release overnight or — worse, and this is what the =rules:= would
+actually do — ships without arm64 and says nothing. Emulated-but-always-there
+beats native-but-sometimes for the release path. The place native cecil pays
+off with no such risk is the non-release arm64 work: validation builds and
+the arm64 half of =ci-cache-tool-builds=, where a job that waits until
+morning costs nobody anything.
+
+Worth measuring before and after: the emulated lane's duration is the whole
+justification.
+
+*Not done yet, deliberately.* GitLab expands variables inside =tags:=, so the
+switch is a one-line change — and that one line is on the RELEASE path, which
+cannot be exercised at all while the namespace is over quota
+(namespace-storage-blocks-ci.issue). A mis-expanded tag would leave the lane
+matching no runner and silently drop arm64 from a release: the exact shape of
+the three faults that made 1.9.0's Windows products unusable. It goes in when
+a pipeline can run it.
+
+* What cecil does NOT solve
+
+*arm32.* The DGX Spark's Grace cores are AArch64-only — the Cortex-X925 /
+A725 generation dropped AArch32 at EL0 — so cecil cannot run armv7 code
+natively any more than poseidon can. =release-arm32-thread-less-sbcl.issue=
+still needs real 32-bit hardware (a Pi), or a threaded armhf SBCL.
+This is reasoning from the CPU generation, not a probe: confirm it on the
+machine (=cat /proc/cpuinfo=; try a =linux/arm/v7= container) before acting
+on it either way.
