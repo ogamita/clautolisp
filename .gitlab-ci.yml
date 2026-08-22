@@ -472,7 +472,14 @@ build:alfe:sbcl:
     when: always
     paths:
       - autolisp-front-end/tools/alfe/bin/alfe-sbcl
-    expire_in: 14 days
+    # Second-biggest consumer of the namespace after `documentation': 207
+    # runs holding 2.74 GB over the same twelve days (13 MB each). Its real
+    # consumers are the test lanes, which `needs:' it inside the SAME
+    # pipeline, so they never see an expired copy whatever this says. Three
+    # days keeps it downloadable for a couple of working days after a run --
+    # the reason the comment above gives for publishing it at all -- without
+    # keeping a fortnight of them.
+    expire_in: 3 days
 
 # --- release packaging checks -----------------------------------------
 #
@@ -586,7 +593,20 @@ documentation:
   artifacts:
     name: "clautolisp-documentation-$CI_COMMIT_SHORT_SHA"
     paths: [dist/]
-    expire_in: 1 week
+    # ONE DAY, and this is the single most expensive line in the file.
+    #
+    # This job runs on every merge-request and every master pipeline, and
+    # its dist/ is 51 MB. Measured on 2026-08-21, over the twelve days the
+    # jobs API still had artefacts for: 175 runs, 8.99 GB -- 39% of the
+    # 23.10 GB that took the namespace over its 10 GB allowance and made
+    # every CI job fail to clone (namespace-storage-blocks-ci.issue).
+    #
+    # NOTHING CONSUMES IT. `deploy:documentation' needs the tag lane's
+    # `release:documentation', not this; `pages' needs the benchmarks. The
+    # artefact exists so a human can download the rendered manuals after a
+    # doc change and look at them. A day is long enough for that, and the
+    # week it used to keep cost eight gigabytes to serve the same purpose.
+    expire_in: 1 day
 
 # --- Release artefacts (see issues/open/release-artefacts.issue) -------
 #
