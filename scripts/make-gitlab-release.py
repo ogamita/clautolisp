@@ -100,7 +100,19 @@ def assets(job_id, tag):
             json.loads(existing.stdout)["assets"]["links"]]
 
 
-def link_for(job_id, name):
+# The durable download area on poseidon. GitLab job-artefact links live on a
+# namespace that is over its storage limit (namespace-storage.issue) and DIE if
+# the artefacts are ever purged to get back under it -- a release of dead links,
+# the very failure this script exists to prevent, but at the storage layer.
+# scripts/deploy-release-to-poseidon.sh mirrors the collect:release set here
+# BEFORE this script runs; verify() then fetches each poseidon URL, so a missing
+# mirror aborts the publish instead of shipping dead links.
+POSEIDON = "https://poseidon.informatimago.com/ogamita/clautolisp/releases"
+
+
+def link_for(name, version, job_id, source):
+    if source == "poseidon":
+        return f"{POSEIDON}/{version}/{name}"
     # raw, never file: see the module docstring.
     return f"{WEB}/-/jobs/{job_id}/artifacts/raw/{ARTEFACT_DIR}/{name}"
 
@@ -133,6 +145,10 @@ def main():
                     help="replace the assets of an existing release")
     ap.add_argument("--description-file",
                     help="file holding the release description (markdown)")
+    ap.add_argument("--links", choices=["poseidon", "gitlab"], default="poseidon",
+                    help="where asset links point: the poseidon mirror (default, "
+                         "durable) or the GitLab job artefacts (quota-bound). "
+                         "For poseidon, run deploy-release-to-poseidon.sh first.")
     args = ap.parse_args()
 
     tag = args.tag
@@ -146,9 +162,10 @@ def main():
     names = assets(job_id, tag)
     print(f"{len(names)} asset(s) to attach")
 
+    print(f"asset links point at: {args.links}")
     links, bad = [], []
     for name in names:
-        url = link_for(job_id, name)
+        url = link_for(name, version, job_id, args.links)
         ok, detail = verify(url)
         print(f"  {'ok  ' if ok else 'FAIL'} {name}: {detail}")
         if ok:
