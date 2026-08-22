@@ -876,10 +876,12 @@ publish:release:
       done
     # 2. Create the GitLab Release on the tag, linking the uploaded assets.
     - |
-      python3 - "$CI_COMMIT_TAG" "$ver" < dist/asset-urls.txt <<'PY'
+      python3 - "$CI_COMMIT_TAG" "$ver" dist/asset-urls.txt <<'PY'
       import json, os, sys, urllib.request, urllib.error
-      tag, ver = sys.argv[1], sys.argv[2]
-      urls  = [l.strip() for l in sys.stdin if l.strip()]
+      tag, ver, urlfile = sys.argv[1], sys.argv[2], sys.argv[3]
+      # Read the URLs from the FILE arg, NOT stdin: `python3 -` already consumes
+      # stdin for the program (the heredoc), so a `< file` would be ignored.
+      urls  = [l.strip() for l in open(urlfile) if l.strip()]
       links = [{"name": u.rsplit('/', 1)[1], "url": u, "link_type": "package"} for u in urls]
       payload = {"name": f"clautolisp {ver}", "tag_name": tag,
                  "description": f"clautolisp {ver} release artefacts "
