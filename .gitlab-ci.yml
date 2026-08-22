@@ -810,9 +810,12 @@ collect:release:
                  --json databaseId,status --jq \
                  'map(select(.status=="completed"))|.[0].databaseId' 2>/dev/null || true)"
         if [ -n "$rid" ]; then
-          gh run download "$rid" -R "$GH_REPO" -p 'clautolisp-*-win-*' -D dist \
-            && echo "fetched Windows package(s):" && ls dist/clautolisp-*-win-*.zip 2>/dev/null \
-            || echo "WARN: gh run download failed; assembling WITHOUT the Windows zip"
+          # gh drops each artifact into dist/<artifact-name>/, so check recursively.
+          if gh run download "$rid" -R "$GH_REPO" -p 'clautolisp-*-win-*' -D dist; then
+            echo "fetched Windows package(s):"; find dist -name 'clautolisp-*-win-*.zip'
+          else
+            echo "WARN: gh run download failed; assembling WITHOUT the Windows zip"
+          fi
         else
           echo "WARN: no completed GitHub run for $tag yet; assembling WITHOUT the Windows zip"
         fi

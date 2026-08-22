@@ -368,8 +368,9 @@ collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the c
 	done; \
 	if [ "$$an" -gt 0 ]; then \
 	  ( cd "$$adir" && ls -1 > CONTENTS.txt ); \
-	  tar -C "$$astage" --owner=0 --group=0 --numeric-owner -cjf "$$out/clautolisp-$$ver-all.tar.bz2" "clautolisp-$$ver"; \
-	  ( cd "$$astage" && zip -qr "$$out/clautolisp-$$ver-all.zip" "clautolisp-$$ver" ); \
+	  outabs=$$(cd "$$out" && pwd); \
+	  tar -C "$$astage" --owner=0 --group=0 --numeric-owner -cjf "$$outabs/clautolisp-$$ver-all.tar.bz2" "clautolisp-$$ver"; \
+	  ( cd "$$astage" && zip -qr "$$outabs/clautolisp-$$ver-all.zip" "clautolisp-$$ver" ); \
 	  echo "wrote $$out/clautolisp-$$ver-all.tar.bz2 (bundling $$an component archive(s))"; \
 	  echo "wrote $$out/clautolisp-$$ver-all.zip"; \
 	else echo "WARNING: no component archives to bundle into all.*"; fi; \
