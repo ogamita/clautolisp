@@ -14,14 +14,27 @@ name: Release (Windows builder)
 #
 # The self-hosted Windows PC keeps a 100%-manual release:windows:x86-64 fallback
 # on GitLab (and all the CAD lanes); this workflow is the primary Windows path.
+#
+# SBCL SOURCE is selectable, so the two approaches trialled in parallel coexist:
+#   - `mingw' (DEFAULT): mingw-w64-x86_64-sbcl via pacman — proven green.
+#   - `choco':          the official SBCL MSI via Chocolatey (+ SBCL_HOME shim).
+# Choose per-run with the workflow_dispatch input, or repo-wide with the
+# `SBCL_SOURCE' repository variable (Settings > Secrets and variables > Actions
+# > Variables). Precedence: dispatch input > repo variable > `mingw'.
 
 on:
   push:
     tags: ['release-[0-9]*']
   workflow_dispatch:
+    inputs:
+      sbcl_source:
+        description: 'SBCL source'
+        type: choice
+        options: [mingw, choco]
+        default: mingw
 
 permissions:
-  contents: read
+  contents: read           # builder-only: no Release is created from GitHub
 
 jobs:
   windows:
@@ -33,6 +46,9 @@ jobs:
       matrix:
         include:
           - { arch: x86-64, runner: windows-latest, msystem: MINGW64, prefix: mingw-w64-x86_64, experimental: false }
+    env:
+      # Precedence: dispatch input > repo variable SBCL_SOURCE > mingw.
+      SBCL_SOURCE: ${{ github.event.inputs.sbcl_source || vars.SBCL_SOURCE || 'mingw' }}
     defaults:
       run:
         shell: msys2 {0}
@@ -47,22 +63,50 @@ jobs:
           msystem: ${{ matrix.msystem }}
           release: false
           update: true
+          # Toolchain only — SBCL is installed by the selectable step below.
           install: >-
-            git make zip m4 curl
+            git make zip unzip m4 curl diffutils
             ${{ matrix.prefix }}-gcc
             ${{ matrix.prefix }}-cmake
             ${{ matrix.prefix }}-pkgconf
-            ${{ matrix.prefix }}-sbcl
+
+      - name: Install SBCL (mingw — pacman)
+        if: env.SBCL_SOURCE != 'choco'
+        run: |
+          pacman -S --noconfirm --needed ${{ matrix.prefix }}-sbcl
+          sbcl --version
+
+      - name: Install SBCL (choco — official MSI)
+        if: env.SBCL_SOURCE == 'choco'
+        shell: pwsh
+        run: |
+          choco install sbcl --no-progress -y
+          $home_ = "C:\Program Files\Steel Bank Common Lisp"
+          if (-not (Test-Path "$home_\sbcl.exe")) {
+            Get-ChildItem "C:\Program Files" -Filter "*Bank*" | Out-String | Write-Host
+            throw "sbcl.exe is not where the package says it is: $home_"
+          }
+          # SBCL_HOME is set as a MACHINE var during the run, which the runner
+          # process (started earlier) never sees; publish it (Windows form —
+          # sbcl.exe is native and cannot read /c/...), and keep MSYS2 from
+          # rewriting it at the boundary, like environnement-windows.sh does CC.
+          Add-Content -Path $env:GITHUB_ENV -Value "SBCL_HOME=$home_"
+          Add-Content -Path $env:GITHUB_ENV -Value "MSYS2_ENV_CONV_EXCL=SBCL_HOME;CC"
 
       - name: Read version
         id: ver
         run: |
           v="$(sed -n 's/.*\*version\* *"\([0-9.]*\)".*/\1/p' \
                clautolisp/tools/clautolisp/source/version.lisp)"
-          echo "version=$v" >> "$GITHUB_OUTPUT"; echo "version: $v"
+          echo "version=$v" >> "$GITHUB_OUTPUT"; echo "version: $v (SBCL_SOURCE=$SBCL_SOURCE)"
 
       - name: Bootstrap Quicklisp
         run: |
+          # Source environnement-windows.sh so choco's SBCL dir lands on PATH
+          # (mingw's /mingw64/bin is already there); harmless for the mingw case.
+          . scripts/environnement-windows.sh
+          command -v sbcl >/dev/null 2>&1 || { echo "sbcl not on PATH"; exit 1; }
+          sbcl --version
           curl -fsSL https://beta.quicklisp.org/quicklisp.lisp -o "$HOME/ql.lisp"
           sbcl --non-interactive --load "$HOME/ql.lisp" \
                --eval '(quicklisp-quickstart:install)'
