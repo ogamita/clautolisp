@@ -1111,9 +1111,12 @@ encoding:experiment:clautolisp:linux:
     expire_in: 30 days
 
 pathname:probe:clautolisp:linux:
+  # MANUAL: a reason-1 probe (on-demand), like the benchmarks/CAD lanes. This
+  # per-job rules override otherwise beats .pathname-probe's manual default.
   rules:
     - *not-on-schedule
-    - when: on_success
+    - when: manual
+      allow_failure: true
   extends: .pathname-probe
   tags: [linux, amd64, docker]
   image: $CLAUTOLISP_CI_LATEST
