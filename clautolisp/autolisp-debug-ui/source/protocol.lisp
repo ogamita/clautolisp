@@ -61,6 +61,24 @@ clautolisp.debug:*pending-nav-request*) outside a stop. Returns NIL.")
 return a resume directive. Default: continue immediately.")
   (:method (ui session hit) (declare (ignore ui session hit)) :continue))
 
+;;; Establish the stop's interactor activation around the WHOLE stop.
+;;; SESSION-STOP wraps the announcement, the source display AND the command
+;;; loop in this, so a UI that owns an interactor activation (e.g. the dumb
+;;; UI's ALDO) can push it before the first line is printed — otherwise the
+;;; "Break at ..." announcement is emitted while the interactor stack top is
+;;; still AUTOLISP and leaks into an active dribble
+;;; (dribble-stop-announcement-interactor.issue). The activation types live in
+;;; the concrete UI, so this is a CALL-WITH-* seam: the UI-agnostic layer never
+;;; names them. Default: run THUNK with no activation change.
+(defgeneric call-with-stop-interactor (ui session hit thunk)
+  (:documentation
+   "Call THUNK (a thunk of no arguments) with the UI's stop interactor
+activation established for the whole stop, and return its value. Default:
+just call THUNK.")
+  (:method (ui session hit thunk)
+    (declare (ignore ui session hit))
+    (funcall thunk)))
+
 ;;; --- the UI registry (spec §21 :ui keyword → constructor) ----------
 
 (defparameter *ui-constructors* (make-hash-table :test 'eq)

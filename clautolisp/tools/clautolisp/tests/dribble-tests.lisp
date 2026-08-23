@@ -323,3 +323,38 @@ this is what proves it."
                (terpri e))))))
     (is (string= (format nil ";; E: oops~%") dribbled)
         "the prompt must not survive an interleaved write; got ~S" dribbled)))
+
+(test dribble-omits-debugger-stop-announcement
+  "dribble-stop-announcement-interactor.issue: with a dribble capturing the
+default AUTOLISP set, a debugger stop's `Break at ...' announcement must NOT be
+recorded. The stop's ALDO activation is now established (by
+CALL-WITH-STOP-INTERACTOR in SESSION-STOP) around the WHOLE stop — the
+announcement included — so the filter sees ALDO, not AUTOLISP, from the first
+line. Before the fix the announcement was printed before the push and leaked."
+  (let* ((context (progn
+                    (clautolisp.debug:reset-function-id-registry)
+                    (clautolisp.debug:clear-virtual-breakpoints)
+                    (clautolisp.source:clear-source-positions)
+                    (clautolisp.autolisp-runtime:make-default-runtime-context)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (dribbled
+           (call-with-dribble-to-string
+            nil                         ; default captured set = AUTOLISP; stack '() = AUTOLISP
+            (lambda ()
+              ;; The stop UI writes through a dribble O-tee, exactly as the REPL
+              ;; wires *standard-output* — so what the stop prints is subject to
+              ;; the interactor filter. `c' resumes the programmatic break.
+              (let* ((tee (clautolisp.tools.clautolisp::make-dribble-output-tee
+                           (make-broadcast-stream) "O"))
+                     (ui (clautolisp.ui.dumb:make-dumb-ui
+                          :input (make-string-input-stream (format nil "c~%"))
+                          :output tee)))
+                (clautolisp.debug.ui:call-with-session
+                 ui
+                 (lambda () (clautolisp.debug:invoke-debugger-break "halt here"))
+                 :thread-info ti :context context))))))
+    ;; The announcement (and its message) belong to the stop, filtered as ALDO.
+    (is (null (search "Break" dribbled))
+        "the stop announcement leaked into the dribble: ~S" dribbled)
+    (is (null (search "halt here" dribbled))
+        "the stop message leaked into the dribble: ~S" dribbled)))

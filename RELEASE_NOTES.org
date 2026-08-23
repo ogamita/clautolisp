@@ -158,6 +158,9 @@ separate binary for tool integrators.
   § /Modes of Operation / Interactive REPL / Recording the session/.
   Prompts are never recorded, including the one left pending when the
   session ends — dribble files no longer finish with a stray =;; O: _$=.
+  A debugger stop now pauses the recording completely: the =Break at ...=
+  announcement that opens a stop is filtered like the rest of the stop,
+  instead of being the one line that leaked into an AUTOLISP dribble.
   Output that genuinely ends without a newline (a closing ~princ~) is
   still recorded: the two are told apart because the interactor loop
   says which it is writing, not by guessing after the fact.

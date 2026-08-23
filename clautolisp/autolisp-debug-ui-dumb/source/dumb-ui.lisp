@@ -360,19 +360,28 @@ frame and echoes with the DBG> prefix."
     (eval-and-print (aldo-state-ui state) (aldo-state-session state)
                     (second input))))
 
+(defmethod call-with-stop-interactor ((ui dumb-ui) session hit thunk)
+  ;; Push the stop's ALDO activation for the WHOLE stop — announcement, source
+  ;; display and command loop — so that with a dribble active the "Break at ..."
+  ;; announcement is filtered as ALDO rather than leaking as AUTOLISP
+  ;; (dribble-stop-announcement-interactor.issue). UI-AWAIT-COMMAND runs inside
+  ;; THUNK and inherits this binding rather than pushing its own. The activation
+  ;; stacks OVER whatever was active — the REPL's AUTOLISP bottom interactor, a
+  ;; suspended navigator of an outer stop — so the whole stack stays reachable.
+  (let ((*interactor-stack*
+          (cons (make-activation *aldo* (make-aldo-state :ui ui :session session
+                                                         :hit hit))
+                *interactor-stack*)))
+    (funcall thunk)))
+
 (defmethod ui-await-command ((ui dumb-ui) session hit)
   (record-navigation-state ui)
-  ;; The stop's ALDO activation stacks OVER whatever was active — the REPL's
-  ;; AUTOLISP bottom interactor, a suspended navigator of an outer stop — so
-  ;; the whole stack stays reachable (stacked dispatch, and D6: a user
-  ;; command on AUTOLISP is reachable everywhere). FLOOR is the depth WITH
-  ;; this ALDO: an inner navigator can pop back to DBG> within the same
-  ;; loop, but leaving ALDO itself is a resume directive, never a pop (T4).
-  (let* ((*interactor-stack*
-           (cons (make-activation *aldo* (make-aldo-state :ui ui :session session
-                                                          :hit hit))
-                 *interactor-stack*))
-         (floor (length *interactor-stack*))
+  ;; The stop's ALDO activation was pushed by CALL-WITH-STOP-INTERACTOR around
+  ;; the whole stop, so it is already the top of *INTERACTOR-STACK* here. FLOOR
+  ;; is that depth WITH the ALDO: an inner navigator can pop back to DBG> within
+  ;; the same loop, but leaving ALDO itself is a resume directive, never a pop
+  ;; (T4).
+  (let* ((floor (length *interactor-stack*))
          (*debugger-ui* ui) (*debugger-session* session) (*debugger-hit* hit))
     ;; CLAL-NAV-* requested a stop to open a navigator (a function's source, a
     ;; file's forms, or a directory): open it on top of the stop's stack
