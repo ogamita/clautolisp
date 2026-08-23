@@ -21,10 +21,10 @@ diagrams: $(SVGS) $(PNGS)
 documentation: diagrams
 
 %.svg: %.dot
-	dot -Tsvg $< -o $@
+	dot -Tsvg "$<" -o "$@"
 
 %.png: %.dot
-	dot -Tpng -Gdpi=110 $< -o $@
+	dot -Tpng -Gdpi=110 "$<" -o "$@"
 
 clean: clean-pdf clean-html  ## Remove the rendered diagrams + demo artefacts (keeps the sources).
 	rm -f $(SVGS) $(PNGS)

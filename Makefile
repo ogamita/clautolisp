@@ -728,8 +728,8 @@ STAGE_DOCUMENTATION := $(STAGE)/documentation
 # staging: nothing bakes it into installed content, and the stage is
 # a $PREFIX-rooted tree of its own.
 LISP_VARS := $(if $(DEFAULT_LISP),DEFAULT_LISP=$(DEFAULT_LISP))
-INSTALL_VARS := PREFIX=$(PREFIX) DESTDIR=$(DESTDIR) $(LISP_VARS)
-STAGE_VARS := STAGE=$(STAGE) RELEASE_LISPS='$(RELEASE_LISPS)' $(LISP_VARS)
+INSTALL_VARS := PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" $(LISP_VARS)
+STAGE_VARS := STAGE="$(STAGE)" RELEASE_LISPS='$(RELEASE_LISPS)' $(LISP_VARS)
 
 # Run a staging target unprivileged. Under sudo we know who to drop to
 # ($SUDO_USER); -H so the build's caches (ASDF fasls under
@@ -739,15 +739,15 @@ STAGE_VARS := STAGE=$(STAGE) RELEASE_LISPS='$(RELEASE_LISPS)' $(LISP_VARS)
 # and carry on rather than refuse.
 define stage-as-user
 if [ "$$(id -u)" != 0 ]; then \
-  $(MAKE) $(1) $(STAGE_VARS) ; \
+  "$(MAKE)" $(1) $(STAGE_VARS) ; \
 elif [ -n "$(SUDO_USER)" ] && [ "$(SUDO_USER)" != root ]; then \
   echo "==> staging as $(SUDO_USER) (dropping root for the build half)" ; \
-  sudo -H -u "$(SUDO_USER)" $(MAKE) $(1) $(STAGE_VARS) ; \
+  sudo -H -u "$(SUDO_USER)" "$(MAKE)" $(1) $(STAGE_VARS) ; \
 else \
   echo "WARNING: running as root with no SUDO_USER; $(1) will build with root" ; \
   echo "         privileges and leave root-owned artefacts in the source tree." ; \
   echo "         In a working checkout, run 'make $(1)' as yourself first." ; \
-  $(MAKE) $(1) $(STAGE_VARS) ; \
+  "$(MAKE)" $(1) $(STAGE_VARS) ; \
 fi
 endef
 
@@ -790,29 +790,29 @@ stage: stage-programs stage-libraries stage-documentation  ## Build + stage ever
 stage-programs: build-programs  ## Build the programs and stage them (bin/, libexec/, the harnesses and the alref libs) under $(STAGE)/programs.
 	rm -rf "$(STAGE_PROGRAMS)"
 	install -d "$(STAGE_PROGRAMS)"
-	"$(MAKE)" -C autolisp-spec      install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
-	"$(MAKE)" -C clautolisp         install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
-	"$(MAKE)" -C autolisp-test      install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
-	"$(MAKE)" -C autolisp-front-end install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
-	"$(MAKE)" -C autolisp-benchmark install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
+	"$(MAKE)" -C autolisp-spec      install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
+	"$(MAKE)" -C clautolisp         install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
+	"$(MAKE)" -C autolisp-test      install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
+	"$(MAKE)" -C autolisp-front-end install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
+	"$(MAKE)" -C autolisp-benchmark install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
 	@$(call stage-manifest,$(STAGE_PROGRAMS),programs)
 	@echo "staged: $(STAGE_PROGRAMS)"
 
 stage-libraries: build-libraries  ## Build the native libraries and stage them with the ASDF systems + header under $(STAGE)/libraries.
 	rm -rf "$(STAGE_LIBRARIES)"
 	install -d "$(STAGE_LIBRARIES)"
-	"$(MAKE)" -C clautolisp         install-libraries PREFIX= DESTDIR=$(STAGE_LIBRARIES) $(LISP_VARS)
+	"$(MAKE)" -C clautolisp         install-libraries PREFIX= DESTDIR="$(STAGE_LIBRARIES)" $(LISP_VARS)
 	@$(call stage-manifest,$(STAGE_LIBRARIES),libraries)
 	@echo "staged: $(STAGE_LIBRARIES)"
 
 stage-documentation: build-documentation  ## Render the documentation and stage it (share/doc, share/info, share/man, the spec's HTML/pages) under $(STAGE)/documentation.
 	rm -rf "$(STAGE_DOCUMENTATION)"
 	install -d "$(STAGE_DOCUMENTATION)"
-	"$(MAKE)" -C autolisp-spec      install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
-	"$(MAKE)" -C clautolisp         install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
-	"$(MAKE)" -C autolisp-test      install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
-	"$(MAKE)" -C autolisp-front-end install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
-	"$(MAKE)" -C autolisp-benchmark install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
+	"$(MAKE)" -C autolisp-spec      install-documentation PREFIX= DESTDIR="$(STAGE_DOCUMENTATION)" $(LISP_VARS)
+	"$(MAKE)" -C clautolisp         install-documentation PREFIX= DESTDIR="$(STAGE_DOCUMENTATION)" $(LISP_VARS)
+	"$(MAKE)" -C autolisp-test      install-documentation PREFIX= DESTDIR="$(STAGE_DOCUMENTATION)" $(LISP_VARS)
+	"$(MAKE)" -C autolisp-front-end install-documentation PREFIX= DESTDIR="$(STAGE_DOCUMENTATION)" $(LISP_VARS)
+	"$(MAKE)" -C autolisp-benchmark install-documentation PREFIX= DESTDIR="$(STAGE_DOCUMENTATION)" $(LISP_VARS)
 	@$(call stage-manifest,$(STAGE_DOCUMENTATION),documentation)
 	@echo "staged: $(STAGE_DOCUMENTATION)"
 
@@ -845,7 +845,7 @@ install-documentation:  ## Install only the documentation (the slow phase: PDFs 
 	@for f in "$(STAGE_DOCUMENTATION)"/share/info/*.info; do \
 	  [ -f "$$f" ] || continue ; \
 	  installed="$(DESTDIR)$(PREFIX)/share/info/$$(basename "$$f")" ; \
-	  $(INSTALL_INFO) --info-dir="$(DESTDIR)$(PREFIX)/share/info" "$$installed" 2>/dev/null \
+	  "$(INSTALL_INFO)" --info-dir="$(DESTDIR)$(PREFIX)/share/info" "$$installed" 2>/dev/null \
 	    || echo "[skip] install-info dir update for $$installed" ; \
 	done
 
@@ -911,7 +911,7 @@ ALFE_FORWARDED := \
 # $(MAKE) call.
 define forward-target-to
 $(1):
-	$"$(MAKE)" -C $(2) $$@
+	"$(MAKE)" -C "$(2)" $$@
 endef
 
 $(foreach t,$(AUTOLISP_TEST_FORWARDED), \
