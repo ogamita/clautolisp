@@ -67,10 +67,14 @@ is why only AutoCAD was affected.
 - [X] Building autolisp-front-end no longer warns about undefined
   ALFE.BACKEND.AUTOCAD::PROBE / ALFE.ERROR:BACKEND-ERROR.
 - [X] Full autolisp-front-end suite green.
-- [ ] A regression test for the AutoCAD automation *staging* path
-  (print-command-plan --autocad --mode automation) under a mocked Windows
-  environment, asserting it captures a launch command / signals a proper
-  backend condition rather than UNDEFINED-FUNCTION. Tracked as the "missing
-  tests" note in [[alfe-release-ships-stale-image]] (whose stale-image
-  hypothesis this bug supersedes — the crash is a source defect, not an old
-  image; a fresh 1.9.3 build crashes the same way).
+- [X] A regression test for the AutoCAD automation *staging* path, run on any
+  host by forcing *HOST-OS-OVERRIDE* to :windows:
+  =autocad-automation-start-engine-runs-without-probe-undefined= in
+  backend-cad-tests.lisp drives START-ENGINE in :automation mode with a
+  capturing launcher and :wait-for-ready nil, and asserts it returns a session
+  and hands a cscript argv to the launcher instead of signalling
+  UNDEFINED-FUNCTION. Verified to have teeth: reverting the paren makes exactly
+  this test fail with "The function ALFE.BACKEND.AUTOCAD::PROBE is undefined".
+  (Supersedes the "missing tests" note in [[alfe-release-ships-stale-image]],
+  whose stale-image hypothesis this bug also supersedes — the crash is a source
+  defect, not an old image; a fresh 1.9.3 build crashes the same way.)

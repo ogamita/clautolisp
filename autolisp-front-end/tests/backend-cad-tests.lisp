@@ -995,6 +995,48 @@ READY timeout."
         (uiop:delete-directory-tree workdir :validate t
                                             :if-does-not-exist :ignore)))))
 
+(test autocad-automation-start-engine-runs-without-probe-undefined
+  "Regression for alfe-autocad-start-engine-malformed-handler-case: a missing
+paren once turned %START-ENGINE's HANDLER-CASE clauses into trailing body
+forms, so the AutoCAD backend evaluated (probe) — a call to the undefined
+function ALFE.BACKEND.AUTOCAD::PROBE — the moment the automation body ran to
+completion, crashing even --print-command (which spawns nothing). The existing
+start-engine tests never caught it: the batch one is guarded by WINDOWS-P (so it
+is skipped off Windows) and exercises the early-EXIT error path, which unwinds
+before reaching the trailing forms. Here we force :windows via
+*HOST-OS-OVERRIDE* so the Windows-only path runs on any host, stage with a
+capturing launcher and :WAIT-FOR-READY NIL (no AutoCAD spawned, no READY
+awaited), and assert START-ENGINE returns a session and hands a cscript launch
+argv to the launcher instead of signalling UNDEFINED-FUNCTION."
+  (let ((alfe.backend.cad-common:*host-os-override* :windows)
+        (workdir (uiop:ensure-directory-pathname
+                  (merge-pathnames
+                   (format nil "alfe-test-acad-auto-~D/" (random 999999))
+                   (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist workdir)
+          (let* ((backend (alfe.backend.autocad:make-autocad-backend))
+                 (captured nil)
+                 (session (alfe.backend:start-engine
+                           backend workdir
+                           :dialect :strict :host :mock :mock-input nil
+                           :bootstrap-phase :full :interactive-p nil
+                           :mode :automation
+                           :dwg (namestring
+                                 (touch-file (merge-pathnames "d.dwg" workdir)))
+                           :wait-for-ready nil
+                           :launcher (lambda (argv &rest ignored)
+                                       (declare (ignore ignored))
+                                       (setf captured argv)
+                                       nil))))
+            (is (not (null session)))
+            (is (probe-file (merge-pathnames "bridge-autocad.vbs" workdir)))
+            (is (and (consp captured)
+                     (search "cscript"
+                             (string-downcase (princ-to-string (first captured))))))))
+      (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))
+
 (test autocad-accoreconsole-prefers-real-autocad-over-dwg-trueview
   ;; Only full AutoCAD can mutate entities; the read-only DWG TrueView
   ;; viewer also ships accoreconsole.exe and must rank AFTER real AutoCAD
