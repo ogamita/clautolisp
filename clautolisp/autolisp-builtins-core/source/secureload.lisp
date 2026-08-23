@@ -411,3 +411,125 @@ spec §§ 'Dialect-dependent defaults', 'New clautolisp system variables',
                     (when value
                       (define name kind value (read-only-for name))))))))))
     host)))
+
+
+;;;; --- The sysvar table follows the dialect ---------------------------
+;;;;
+;;;; sysvar-table-ignores-runtime-dialect-change.issue.
+;;;;
+;;;; Two notions of "dialect" coexisted, and only one was dynamic.
+;;;; CURRENT-EVALUATION-DIALECT consults *AUTOLISP-DIALECT* on EVERY
+;;;; call, which is what makes (setq *autolisp-dialect* 'bricscad) move
+;;;; the portability warnings, the reader options and the case resolver
+;;;; at once. The sysvar table belongs to the HOST and was populated
+;;;; ONCE, at launch, from the launch dialect -- so everything
+;;;; dialect-dependent in it was frozen: which clautolisp sysvars exist,
+;;;; which AutoCAD ones BricsCAD hides, whether SECURELOAD is read-only,
+;;;; and the seeding from the environment.
+;;;;
+;;;; The fix is a BASE + OVERLAY view, replayed lazily:
+;;;;
+;;;;   base     a snapshot of the table taken at launch BEFORE any
+;;;;            dialect overlay -- the dialect-independent catalogue;
+;;;;   overlay  the launch-time functions, re-run for the new dialect;
+;;;;   memory   the values SETVAR has been given, re-applied on top.
+;;;;
+;;;; Rebuilding from the base is what makes the overlay reversible: a
+;;;; dialect overlay REMOVES cells (BricsCAD does not define them), and
+;;;; there is no way to un-remove a cell except to start again from a
+;;;; table that still had it.
+;;;;
+;;;; "Masking with memory" (pjb's ruling): passing through a dialect
+;;;; that hides a sysvar must not DESTROY the setting, only make it
+;;;; invisible while we are there. So SETVAR's values are remembered
+;;;; independently of the table and re-applied after every rebuild --
+;;;; a non-strict -> strict -> non-strict round trip gives back the
+;;;; value that was set, not the environment's.
+;;;;
+;;;; Re-applied THROUGH SETVAR, deliberately: a remembered value lands
+;;;; only where a setvar would be accepted now. Under a dialect that
+;;;; hides the sysvar, or makes it read-only, the value stays
+;;;; remembered and unapplied rather than being forced into a cell the
+;;;; emulated engine would not have. Forcing it would invent an engine
+;;;; state, which is the thing this project's dialect work refuses to
+;;;; do.
+
+(defstruct (sysvar-dialect-controller (:conc-name sdc-))
+  "Everything needed to rebuild the sysvar table for a new dialect."
+  host
+  base
+  applied-dialect
+  (user-values '())
+  (syncing nil)
+  apply-overlays)
+
+(defvar *sysvar-dialect-controller* nil
+  "The active SYSVAR-DIALECT-CONTROLLER, or NIL when the table is not
+dialect-tracked (a host with no sysvar table, or a unit-test context
+that never installed one). NIL means every entry point below is a
+no-op, which is the pre-1.9.9 behaviour.")
+
+(defun install-sysvar-dialect-controller (host dialect-keyword apply-overlays)
+  "Take HOST's dialect-independent base snapshot and register
+APPLY-OVERLAYS, a function of (HOST DIALECT-KEYWORD) that applies every
+dialect-dependent sysvar overlay. MUST be called BEFORE the launch
+overlays run, since the snapshot is what they are applied on top of.
+Returns the controller, or NIL when HOST has no sysvar table."
+  (let ((base (and host (host-snapshot-sysvars host))))
+    (setf *sysvar-dialect-controller*
+          (and base
+               (make-sysvar-dialect-controller
+                :host host
+                :base base
+                :applied-dialect dialect-keyword
+                :apply-overlays apply-overlays)))))
+
+(defun forget-sysvar-dialect-controller ()
+  "Drop the controller. For tests, and for a session teardown that
+leaves no stale host behind."
+  (setf *sysvar-dialect-controller* nil))
+
+(defun note-sysvar-user-value (name value)
+  "Remember that SETVAR gave NAME the value VALUE, so a dialect that
+hides NAME masks the setting rather than destroying it. Only user-level
+SETVAR records here: host-derived and launch-time writes are part of the
+overlay and are reproduced by replaying it."
+  (let ((c *sysvar-dialect-controller*))
+    (when (and c (not (sdc-syncing c)))
+      (let ((entry (assoc name (sdc-user-values c) :test #'string-equal)))
+        (if entry
+            (setf (cdr entry) value)
+            (push (cons name value) (sdc-user-values c))))))
+  value)
+
+(defun %sync-sysvar-table-to-dialect (c dialect-keyword)
+  (setf (sdc-syncing c) t)
+  (unwind-protect
+       (let ((host (sdc-host c)))
+         (host-restore-sysvars host (sdc-base c))
+         (funcall (sdc-apply-overlays c) host dialect-keyword)
+         ;; Oldest first: the alist is pushed onto, so a name set twice
+         ;; appears once, already carrying its latest value.
+         (dolist (entry (reverse (sdc-user-values c)))
+           ;; A value that no longer fits (hidden or read-only sysvar)
+           ;; stays remembered and unapplied -- see the header.
+           (ignore-errors
+            (clautolisp.autolisp-host:host-setvar host (car entry) (cdr entry))))
+         (setf (sdc-applied-dialect c) dialect-keyword))
+    (setf (sdc-syncing c) nil))
+  c)
+
+(defun ensure-sysvar-table-matches-dialect (host dialect-keyword)
+  "Rebuild HOST's sysvar table when DIALECT-KEYWORD is no longer the one
+the table reflects. Cheap on the common path: one EQ against the
+last-applied dialect. Called from every sysvar read and write, which is
+what makes `(setq *autolisp-dialect* …)' visible to GETVAR immediately
+without anyone having to notice the assignment."
+  (let ((c *sysvar-dialect-controller*))
+    (when (and c
+               dialect-keyword
+               (not (sdc-syncing c))
+               (eq host (sdc-host c))
+               (not (eq dialect-keyword (sdc-applied-dialect c))))
+      (%sync-sysvar-table-to-dialect c dialect-keyword)))
+  host)
