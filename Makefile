@@ -382,42 +382,20 @@ release-documentation: stage-documentation  ## Package the documentation artefac
 # bin/ instead, along with the pieces no end-user tarball carries (the
 # test/benchmark harnesses, run-file-compat, the GUI). Hence its own
 # staging, kept here rather than under $(STAGE).
-release-programs: build-programs  ## Build programs and package this host's per-target binaries artefact (dispatch-wrapper layout, unpacks into $PREFIX). CI unions the unix targets.
+release-programs:  ## Package this host's per-target binaries artefact from the SAME $(STAGE_PROGRAMS) tree install-programs installs (dispatch layout, install-release-staging-divergence.issue). CI unions the targets.
+	"$(MAKE)" stage-programs
 	@mkdir -p "$(DIST)"
 	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
-	stage=$$(mktemp -d); \
-	bindir="$$stage/libexec/clautolisp/binaries/$$os/$$arch"; mkdir -p "$$bindir"; \
-	for l in $(RELEASE_LISPS); do \
-	  for b in clautolisp/tools/clautolisp/bin/clautolisp-$$l \
-	           clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-$$l \
-	           autolisp-front-end/tools/alfe/bin/alfe-$$l; do \
-	    n=$$(basename "$$b"); \
-	    if [ -f "$$b.exe" ]; then cp "$$b.exe" "$$bindir/$$n.exe"; \
-	    elif [ -f "$$b" ]; then cp "$$b" "$$bindir/$$n"; fi; \
-	  done; \
-	done; \
-	mkdir -p "$$stage/bin"; \
-	for p in clautolisp alfe read-autolisp; do \
-	  cp clautolisp/tools/packaging/dispatch.sh "$$stage/bin/$$p"; chmod +x "$$stage/bin/$$p"; \
-	done; \
-	if [ "$$os" = windows ]; then \
-	  for p in clautolisp alfe read-autolisp; do \
-	    sed 's/\r*$$/\r/' clautolisp/tools/packaging/dispatch.cmd > "$$stage/bin/$$p.cmd"; \
-	  done; \
-	fi; \
-	mandir="$$stage/share/man/man1"; mkdir -p "$$mandir"; \
+	mandir="$(STAGE_PROGRAMS)/share/man/man1"; mkdir -p "$$mandir"; \
 	find clautolisp autolisp-front-end -path '*/documentation/man/*.1' -exec cp {} "$$mandir"/ \; 2>/dev/null || true; \
-	docdir="$$stage/share/doc/clautolisp"; mkdir -p "$$docdir"; \
+	docdir="$(STAGE_PROGRAMS)/share/doc/clautolisp"; mkdir -p "$$docdir"; \
 	for d in clautolisp/build/documentation/clautolisp-user-manual.info \
 	         clautolisp/build/documentation/clautolisp-user-manual.pdf \
 	         autolisp-front-end/build/documentation/alfe-user-manual.info \
 	         autolisp-front-end/build/documentation/alfe-user-manual.pdf; do \
 	  if [ -f "$$d" ]; then cp "$$d" "$$docdir"/; fi; \
 	done; \
-	mkdir -p "$$stage/$(MANIFEST_DIR)"; \
-	sh scripts/make-manifest.sh programs > "$$stage/$(MANIFEST_DIR)/manifest-programs.txt"; \
-	$(call pack-release-artefact,$$stage,binaries,$$ver,$$os,$$arch); \
-	rm -rf "$$stage"
+	$(call pack-release-artefact,$(STAGE_PROGRAMS),binaries,$$ver,$$os,$$arch)
 
 # REQUIRE_NATIVE_LIBRARIES=1: a published artefact must be complete, so a
 # missing LibreDWG codec is an error here, even though it is only a
@@ -785,6 +763,40 @@ sh scripts/make-manifest.sh $(2) > "$(1)/$(MANIFEST_DIR)/manifest-$(2).txt" ; \
 echo "staged: $(1)/$(MANIFEST_DIR)/manifest-$(2).txt"
 endef
 
+# Rearrange a staged program tree ($(1)) into the <os>/<arch> dispatch
+# hierarchy that dispatch.sh expects and the CI collect phase unions across
+# hosts (install-release-staging-divergence.issue). The per-Lisp images of the
+# three dispatchable programs move under
+# libexec/clautolisp/binaries/<os>/<arch>/, and each bare launcher becomes a
+# copy of dispatch.sh (+ dispatch.cmd on Windows) that resolves the right image
+# at run time. Auxiliary components (alref libs, run-file-compat,
+# run-alfe-conformance, the test harness, benchmark, the Qt GUI) are left in
+# place. Applied by stage-programs, so install (copy-stage), release (pack) and
+# the collect union all see one hierarchy. The `sed .../\r/' idiom matches
+# release-libraries / the former release-programs dispatch staging.
+define dispatch-layout
+bindir="$(1)/libexec/clautolisp/binaries/$(REL_OS)/$(REL_ARCH)" ; \
+mkdir -p "$$bindir" ; \
+for stem in clautolisp read-autolisp alfe ; do \
+  for lisp in sbcl ccl ; do \
+    for ext in "" .exe ; do \
+      img="$(1)/bin/$$stem-$$lisp$$ext" ; \
+      if [ -e "$$img" ] ; then \
+        mv "$$img" "$$bindir/" ; \
+        echo "dispatch: $$stem-$$lisp$$ext -> libexec/clautolisp/binaries/$(REL_OS)/$(REL_ARCH)/" ; \
+      fi ; \
+    done ; \
+  done ; \
+  rm -f "$(1)/bin/$$stem" "$(1)/bin/$$stem.exe" "$(1)/bin/$$stem.cmd" ; \
+  cp clautolisp/tools/packaging/dispatch.sh "$(1)/bin/$$stem" ; \
+  chmod +x "$(1)/bin/$$stem" ; \
+  if [ "$(REL_OS)" = windows ] ; then \
+    sed 's/\r*$$/\r/' clautolisp/tools/packaging/dispatch.cmd > "$(1)/bin/$$stem.cmd" ; \
+  fi ; \
+  echo "dispatch: bin/$$stem -> dispatch.sh launcher" ; \
+done
+endef
+
 stage: stage-programs stage-libraries stage-documentation  ## Build + stage everything under $(STAGE)/ (unprivileged; this is the half that compiles).
 
 stage-programs: build-programs  ## Build the programs and stage them (bin/, libexec/, the harnesses and the alref libs) under $(STAGE)/programs.
@@ -795,6 +807,7 @@ stage-programs: build-programs  ## Build the programs and stage them (bin/, libe
 	"$(MAKE)" -C autolisp-test      install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
 	"$(MAKE)" -C autolisp-front-end install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
 	"$(MAKE)" -C autolisp-benchmark install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
+	@$(call dispatch-layout,$(STAGE_PROGRAMS))
 	@$(call stage-manifest,$(STAGE_PROGRAMS),programs)
 	@echo "staged: $(STAGE_PROGRAMS)"
 
