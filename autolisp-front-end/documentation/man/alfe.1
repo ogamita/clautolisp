@@ -155,6 +155,21 @@ Suppress non-error output.
 .BR \-d ", " \-\-debug
 Debug traces (implies
 .BR \-\-verbose ).
+.TP
+.BI \-\-on-error " POLICY"
+How an unexpected Lisp condition escaping alfe itself is reported:
+.B quit
+(default \(em the terse
+.RB \(lq "alfe: <error>" \(rq
+line, then exit) or
+.BR debug / ignore ,
+which additionally dump the Common\-Lisp backtrace, captured before the stack
+unwinds.
+alfe has no debugger of its own, so
+.B debug
+and
+.B ignore
+behave the same here.
 .SS Informational
 .TP
 .BR \-h ", " \-\-help
