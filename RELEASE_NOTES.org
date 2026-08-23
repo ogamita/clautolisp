@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.9.7 / alfe 1.9.7 /
+master at the top of the file (clautolisp 1.9.9 / alfe 1.9.8 /
 read-autolisp 1.9.0). alfe tracks clautolisp's version: because
 =alfe --clautolisp= embeds essentially the whole clautolisp engine, a
 change to clautolisp's sources bumps alfe too — and alfe's own changes
@@ -34,6 +34,17 @@ refactors with no user-visible effect do not require an entry.
 clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
+
+- *The system-variable table now follows a runtime dialect change.*
+  =(setq *AUTOLISP-DIALECT* 'bricscad)= already moved the portability
+  diagnostics, the reader options and the case resolver at once; the
+  sysvar table did not, because it belongs to the host and was built
+  once, at launch. So =CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp=
+  followed by a switch out of =--strict= left the variable invisible,
+  and the sysvars BricsCAD does not define kept answering under
+  =--bricscad=. Both directions now follow the dialect. A value you have
+  set is *masked, not destroyed*, by a dialect that hides its variable:
+  going out and coming back gives you your value, not the environment's.
 
 - *The Windows products of a release now run, are what the release says
   they are, and reach the release at all.* 1.9.1 fixed the first two and

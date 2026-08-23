@@ -1479,6 +1479,49 @@ checked by anything.
 would refuse, and a path whose case does not match the disk is precisely
 that — so there, the variable does not exist and nothing is folded.
 
+*** Switching dialect at runtime moves the sysvar table with it
+
+~(setq *AUTOLISP-DIALECT* …)~ changes the dialect for everything that
+follows, and *the system-variable table follows too*: leaving ~--strict~
+reveals the clautolisp system variables, and entering the ~bricscad~
+dialect hides the ones BricsCAD does not define. Both directions.
+
+#+begin_example
+$ CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp
+_$ (getvar "CLAUTOLISPCASEINSENSITIVEPATHS")   ; strict: not there
+nil
+_$ (setq *autolisp-dialect* 'bricscad)
+BRICSCAD
+_$ (getvar "CLAUTOLISPCASEINSENSITIVEPATHS")   ; revealed, and seeded
+1                                              ;   from the environment
+#+end_example
+
+The first time a variable is revealed it is initialised by the full
+precedence — ~setvar~ over the environment over the dialect default — so
+the environment reaches it, exactly as it would have at launch.
+
+*A value you have set is masked, not destroyed.* Passing through a
+dialect that hides the variable makes it invisible for as long as you
+are there; coming back gives you *your* value, not the environment's:
+
+#+begin_example
+_$ (setvar "CLAUTOLISPCASEINSENSITIVEPATHS" 0)
+0
+_$ (setq *autolisp-dialect* 'strict)
+STRICT
+_$ (getvar "CLAUTOLISPCASEINSENSITIVEPATHS")   ; masked
+nil
+_$ (setq *autolisp-dialect* 'bricscad)
+BRICSCAD
+_$ (getvar "CLAUTOLISPCASEINSENSITIVEPATHS")   ; your 0, not the env's 1
+0
+#+end_example
+
+A remembered value is re-applied *as a ~setvar~ would be*: under a
+dialect where the variable is absent or read-only it stays remembered
+and unapplied, rather than being forced into a cell the emulated engine
+would not have.
+
 *The default stays ~0~ under the CAD dialects as well*, and that is
 deliberate. One could argue that emulating Windows should mean folding
 case by default, since Windows filesystems do; but BricsCAD on Linux is
