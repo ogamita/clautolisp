@@ -427,6 +427,14 @@ LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
 DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
 INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
 MAN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/man/man1
+# CAD-side runtime assets. The automation/batch backends stage
+# autolisp-bootstrap.lsp + autolisp-remote-io.lsp into the engine workdir;
+# DISCOVER-{BOOTSTRAP,RUNTIME}-LSP (backend-cad-common.lisp) look for them
+# under $(PREFIX)/share/alfe/runtime/ once $ALFE_*_LSP is unset and the
+# vendored copy is unavailable (a dumped image has no source tree beside it).
+# The path is share/alfe/runtime (not share/$(SUBPROJECT_NAME)) to match the
+# *-lsp-fallback-paths* the code consults.
+RUNTIME_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/alfe/runtime
 
 INSTALL_BINARIES_sbcl := $(ALFE_SBCL)
 INSTALL_BINARIES_ccl  := $(ALFE_CCL)
@@ -470,6 +478,20 @@ install-programs:  ## Install just the alfe executables (no docs).
 	else \
 	  echo "[skip]     bare alfe symlink (DEFAULT_LISP is empty)" ; \
 	fi
+	@# CAD-side runtime assets — required for the AutoCAD/BricsCAD automation
+	@# and batch backends to bootstrap the engine. Without these, an installed
+	@# alfe (env vars unset, dumped image = no vendored copy beside the code)
+	@# cannot locate autolisp-bootstrap.lsp / autolisp-remote-io.lsp and the
+	@# backend fails at start ("no bootstrap/runtime LSP found").
+	install -d "$(RUNTIME_INSTALL_DIR)"
+	@for f in source/runtime/autolisp-bootstrap.lsp source/runtime/autolisp-remote-io.lsp; do \
+	  if [ -f "$$f" ]; then \
+	    install -m 0644 "$$f" "$(RUNTIME_INSTALL_DIR)/" ; \
+	    echo "installed: $$f -> $(RUNTIME_INSTALL_DIR)/" ; \
+	  else \
+	    echo "[skip]     $$f (missing)" ; \
+	  fi ; \
+	done
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 install-documentation:  ## Install just the alfe documentation (org/pdf/info/man). PDFs/Info come from build/.
@@ -507,4 +529,5 @@ uninstall:  ## Remove the alfe install from $$PREFIX.
 	@for f in documentation/man/*.1 tools/*/documentation/man/*.1; do \
 	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename "$$f")" ; fi ; \
 	done
-	rm -rf "$(LIBEXEC_INSTALL_DIR)" "$(DOC_INSTALL_DIR)"
+	rm -f "$(RUNTIME_INSTALL_DIR)/autolisp-bootstrap.lsp" "$(RUNTIME_INSTALL_DIR)/autolisp-remote-io.lsp"
+	rm -rf "$(LIBEXEC_INSTALL_DIR)" "$(DOC_INSTALL_DIR)" "$(RUNTIME_INSTALL_DIR)"

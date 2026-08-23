@@ -1,0 +1,67 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-release-ships-stale-image — the 1.9.3 -all.zip ships an alfe image older than its source
+#+STATUS: OPEN
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+
+* Symptom
+
+A clean install of =clautolisp-1.9.3-all.zip= on a Windows + AutoCAD 2022 host
+crashes the AutoCAD automation backend with an UNDEFINED-FUNCTION error:
+
+#+begin_example
+$ alfe -norc --autocad --cad acad-2022 --mode automation --dwg empty.dwg --print-command
+alfe: The function ALFE.BACKEND.AUTOCAD::PROBE is undefined.
+#+end_example
+
+It persists after exporting =$ALFE_BOOTSTRAP_LSP= / =$ALFE_RUNTIME_LSP=, so it
+is NOT the missing-asset bug ([[alfe-install-missing-cad-runtime-lsp]]) — that
+one only removes the two preceding "no bootstrap/runtime LSP found" warnings.
+
+* Why it is a STALE IMAGE, not a source bug
+
+The clautolisp binary in the same install reports *1.9.3*, but the alfe binary
+reports *alfe 1.9.0* and =alfe-sbcl.exe= is dated *2026-08-15* — older than the
+1.9.3 source shipped beside it. And the source has NO offending call:
+
+- current master AND the =src/clautolisp-1.9.3/= tree on the host both show
+  =backend-autocad.lisp= with only =(alfe.error:backend-error (probe) …)= /
+  =(error (probe) …)= handler-case clauses — =probe= is the *condition
+  variable*, never a function called as =(probe …)=;
+- =git log -S '(probe)'= on that file shows only the commit that first added
+  the backends — no later removal of a =(probe)= call, i.e. the source never
+  had one;
+- the whole tree has no =(probe …)= call, no =#'probe=, no =defun/defgeneric
+  probe= (only PROBE-FILE and test-scenario PROBE-GRAPHICAL).
+
+So the ALFE.BACKEND.AUTOCAD::PROBE call lives in the shipped *image*, built from
+an earlier revision, not in the source the release carries. Same class as the
+already-recorded 1.9.0 / 1.9.2 stale-image releases (the archive "reported
+clautolisp 1.8.56 and read-autolisp 1.8.0 from inside an archive named 1.9.0").
+
+* What to fix
+
+1. The release lane must dump the alfe image from the RELEASE SOURCE, not reuse
+   a compilation-cache image from an earlier pipeline. The release already
+   runs each *clautolisp* binary and asserts it reports the source version;
+   extend that self-check to *alfe* — run =alfe --version= (and ideally a
+   =--print-command --autocad --mode automation= smoke that does not launch a
+   CAD) from inside the opened archive and fail the release if the image is
+   older than / disagrees with the source.
+2. MISSING TESTS (flagged by pjb): there is no headless test for the AutoCAD
+   automation *staging* path. =print-command-plan --autocad --mode automation=
+   drives START-ENGINE with a mock =:launcher= and =:wait-for-ready nil=, so it
+   stages the bridge WITHOUT launching AutoCAD — but the OS gate makes it
+   signal :unsupported-os off Windows, so the test must mock the Windows
+   environment the way =autocad-discover-windows-*= tests already do. Such a
+   test would have caught a PROBE-undefined regression at build time on any host.
+
+* Next step to confirm
+
+Rebuild alfe from the 1.9.3 / master source on the host
+(=make -C autolisp-front-end build-alfe-sbcl=, in an environment whose
+quicklisp loads — the CI runner's, not the broken =PPBN02261= account) and
+re-run the command: a freshly-built alfe is expected to get past the PROBE
+error. That confirms the image, not the source, carries the bug.

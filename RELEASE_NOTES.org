@@ -108,6 +108,14 @@ separate binary for tool integrators.
   named ~"~ and emitted the broken command ~make"~ for every forwarded
   autolisp-test / alfe target. POSIX builds under space-free paths are
   unaffected.
+- An installed alfe can now find the CAD-side runtime it needs to drive
+  AutoCAD or BricsCAD. ~make install~ places ~autolisp-bootstrap.lsp~ and
+  ~autolisp-remote-io.lsp~ under ~$PREFIX/share/alfe/runtime/~ — the very
+  location the backend already falls back to when ~$ALFE_BOOTSTRAP_LSP~ /
+  ~$ALFE_RUNTIME_LSP~ are unset and no source tree sits beside the dumped
+  image. Before this they shipped only inside the installed source copy,
+  off the search path, so the automation and batch backends failed at
+  start with "no bootstrap/runtime LSP found" on every installed system.
 
 - Paths whose case does not match the disk can be resolved and
   normalised. ~(setvar "CLAUTOLISPCASEINSENSITIVEPATHS" 1)~ — or the
