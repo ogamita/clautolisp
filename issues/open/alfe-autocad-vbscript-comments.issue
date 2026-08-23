@@ -154,8 +154,35 @@ them off in order:
   property of how the RECEIVING tool parses the file, invisible from the
   Lisp side.
 
+** Status 2026-08-23 — criterion-2 run reached the bridge; next blocker fixed (alfe 1.9.8)
+
+The first real automation run on the Windows/AutoCAD-2022 host (alfe 1.9.7,
+=--mode automation --cad acad-2022=) got PAST bridge compilation — the =;;=
+and PROBE crashes are gone — and died inside the emitted VBScript:
+
+: bridge-autocad.vbs(72, 1) Microsoft VBScript: Objet requis (err 424)
+: AutoCAD process exited before READY (exit 0)  [PROCESS-EXITED-BEFORE-READY]
+
+Emitted line 72 = =backend-autocad.lisp= ~=If app Is Nothing Then=. Cause:
+=app= is Dim'd but never initialised. =commode= defaults to ="auto"=, so the
+GetObject attach block runs; with no AutoCAD already open, =Set app =
+GetObject(...)= fails under =On Error Resume Next= and leaves =app= *Empty*
+(not an object). The following =If app Is Nothing= is outside the
+error-suppression scope, and =Empty Is Nothing= raises err 424 — so the
+script dies instead of falling through to =CreateObject=. BricsCAD carried
+the identical trap (=backend-bricscad.lisp=). Fixed by initialising =Set app
+= Nothing= / =Set doc = Nothing= up front in BOTH templates, with a
+regression test (emitted VBS must init =app= before its first =Is Nothing=).
+Fix in alfe 1.9.8.
+
+Criterion 2 STILL OPEN: this removes the current wall but only a real-AutoCAD
+run can confirm =READY= (there may be further steps after =CreateObject=).
+
 ** Next step
 
-Schedule =encoding:experiment:autocad:windows= and the AutoCAD probes on the
-now-reachable =cad= runner, and confirm the bridge compiles and reaches
-READY. That closes criterion 2, and the ticket.
+On alfe 1.9.8, re-run =alfe --autocad --cad acad-2022 --mode automation
+--dwg ... --keep-workdir --on-error debug= on the =cad= runner: it should now
+launch AutoCAD via =CreateObject= and progress toward READY. If a later step
+fails, =--on-error debug= gives the backtrace and =--keep-workdir= the
+emitted bridge. A confirmed READY + =--eval= round-trip closes criterion 2
+and the ticket.

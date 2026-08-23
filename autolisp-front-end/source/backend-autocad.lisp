@@ -279,6 +279,13 @@ waitSecs    = ${WAIT_SECS}
 attached    = False
 created     = False
 statusReadyFlag = False
+' app/doc MUST be object references before any `Is Nothing` test: an
+' unassigned Dim variable is Empty, and `Empty Is Nothing` raises the
+' runtime error 424 \"Object required\". A failed GetObject leaves app
+' unassigned, so without this the attach-miss path dies at `If app Is
+' Nothing` instead of falling through to CreateObject.
+Set app = Nothing
+Set doc = Nothing
 
 Sub AppendLine(path, text)
   Dim f
