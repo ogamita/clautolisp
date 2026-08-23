@@ -1,0 +1,74 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: libredwg-msys2-compiler-path-lacks-exe — a cold libredwg configure cannot start under MSYS2, and the GitLab runner hides it
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-libredwg-msys2-exe
+
+* Symptom
+
+On a *cold* build directory under MSYS2, =make build-libredwg= dies in
+=cmake= configuration:
+
+#+begin_example
+C compiler: /mingw64/bin/gcc
+compiler target: x86_64-w64-mingw32
+cmake -DCMAKE_C_COMPILER=[/mingw64/bin/gcc]
+-- Building for: Ninja
+-- The C compiler identification is GNU 16.1.0
+CMake Error at CMakeLists.txt:2 (project):
+  The CMAKE_C_COMPILER:
+    D:/a/_temp/msys64/mingw64/bin/gcc
+  is not a full path to an existing compiler tool.
+#+end_example
+
+The message is hard to read because cmake *identified the compiler
+successfully two lines earlier*. It found it; it cannot name the file.
+
+Found on GitHub's =windows-2025= runner on 2026-08-23, the first cold
+Windows build this project has ever done (job 97270577419).
+
+* Cause — the =.exe= that MSYS2 supplies and Windows does not
+
+MSYS2's POSIX layer opens =gcc= when only =gcc.exe= exists. So
+=command -v gcc= answers =/mingw64/bin/gcc=, =[ -x ]= on it is true, and
+=$compiler_path -dumpmachine= runs: *every check in build-libredwg.sh
+passes*. cmake is a NATIVE program and does no such fallback — it converts
+the argument to =<msys-root>/mingw64/bin/gcc=, tests =EXISTS=, and finds
+nothing, because the file is =gcc.exe=.
+
+This is the *same trap* that once shipped the Windows release binaries
+without their extension (windows-release-binaries-lose-exe.issue): a name
+MSYS2 resolves and Windows does not. It is worth naming as a class rather
+than a coincidence — under MSYS2, a path that a shell test accepts is not
+therefore a path a native tool accepts.
+
+* Why nobody had seen it
+
+The GitLab Windows runner cleans the workspace with =git clean -ffd=, not
+=-ffdx= (deliberately: =-ffdx= dies outright when a CAD process holds a file
+under =dist/= open — see .windows-clean in .gitlab-ci.yml). Ignored and
+untracked files therefore survive between pipelines, including
+=third-party/libredwg/build/= with its configured =CMakeCache.txt=. cmake is
+never asked to configure again, so it is never asked the question that fails.
+
+A hosted runner starts from nothing every time, which is how this surfaced.
+It would equally have surfaced on the day someone cleared that build
+directory on the Windows PC.
+
+* Fix
+
+=clautolisp/drawing-dwg/build-libredwg.sh=: after resolving the compiler and
+normalising it to POSIX form, append =.exe= when the resolved path has no
+extension and =$compiler_path.exe= exists. Guarded on =$host_uname= being
+MINGW/MSYS/CYGWIN, and a no-op wherever the resolved path already exists as
+named, so no other platform and no working setup is affected.
+
+* Note
+
+The POSIX normalisation immediately above the fix carries a long comment
+about a drive letter's colon reaching cmake. That analysis stands (and
+already records that cmake does *not* split =-D= on =:=, which the original
+ticket wrongly claimed). The two are independent: one strips a prefix cmake
+cannot use, the other supplies a suffix Windows requires.
