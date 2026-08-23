@@ -56,6 +56,20 @@ the bare launcher differs (POSIX symlink vs Windows =.exe=). So the dispatch /
 =libexec/<os>/<arch>/= layout is REQUIRED for the multi-platform release and
 cannot simply be replaced by the =bin/= layout.
 
+* Architectural ruling (pjb, 2026-08-23)
+
+=make install= only ever installs the COMPILATION HOST's binaries, and
+=make release= only tarballs the compilation host's binaries. Accumulating
+several hosts' binaries into the multi-platform =-all= (and the per-target set)
+is the job of the CI COLLECT phase, which unions the per-host artefacts. Exactly
+because collect must union them, install, release AND staging must all use the
+SAME hierarchical structure — the =<os>/<arch>=-partitioned dispatch layout
+(=libexec/clautolisp/binaries/<os>/<arch>/= + =bin/= dispatch launchers), which
+unions cleanly. The current =bin/=-images install layout is the defect: it
+cannot be unioned (extensionless Linux/macOS images collide), so install must
+adopt the dispatch layout too. This settles the LAYOUT axis: dispatch layout
+everywhere, one host per install/release, collect does the union.
+
 * Proposed fix — one staging, mirroring the libraries phase
 
 Make the dispatch layout canonical and single-sourced, exactly as
@@ -73,19 +87,26 @@ Make the dispatch layout canonical and single-sourced, exactly as
 4. collect / =-all= keep working unchanged: they already expect the
    =libexec/<os>/<arch>/= subtree the new =stage-programs= produces.
 
-Two DECISIONS to settle before implementing (why this is filed, not just
+LAYOUT axis: settled by the ruling above — dispatch layout everywhere.
+
+One DECISION still to settle before implementing (why this is filed, not just
 patched blind — it changes =make install= for every user and touches the
 release, which has a history of breakage):
 
 - *Content reconciliation*: =stage-programs= currently also stages the test
   harness, alref reference libs, autolisp-benchmark and the =run-*= libexec
-  helpers, which the release's programs artefact does NOT ship. Decide whether
-  the unified staging keeps them (install-only extras, guarded so the release
-  pack excludes them) or drops them. A naïve swap either bloats the release with
-  test harnesses or strips them from =make install=.
-- *dispatch launcher on a single-platform install*: confirm =dispatch.sh= /
-  =dispatch.cmd= resolve the sole =<os>/<arch>= subtree correctly for a plain
-  one-platform =make install= (they were written for the multi-platform union).
+  helpers, which the release's programs artefact does NOT ship. Since install
+  and release now share one staging, decide whether that staging keeps them
+  (so =make install= does not regress — the alref libs and run-file-compat are
+  load-time/functional, not just test scaffolding) and the release simply
+  carries them too, or whether the shared staging is the main-3 set and the
+  extras move to a separate install step. Default recommendation: KEEP them in
+  the shared staging (no install regression); trim the release later if desired.
+
+Verify while implementing: =dispatch.sh= / =dispatch.cmd= resolve the sole
+=<os>/<arch>= subtree correctly for a one-host =make install= (they were written
+for the multi-host union) — the per-target release tarball already exercises the
+single-host case, so this should hold.
 
 * Acceptance criteria
 
