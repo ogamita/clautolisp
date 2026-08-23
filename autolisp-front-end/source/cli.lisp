@@ -185,6 +185,17 @@
 
 (in-package #:alfe.cli)
 
+(defvar *on-error* :quit
+  "The --on-error policy in force for the current RUN. alfe has no
+interactive debugger of its own (the CAD backends run no aldo), so the
+policy governs how an unexpected Lisp condition escaping the run is
+reported: :QUIT prints the one-line `alfe: <condition>' and exits (the
+default, unchanged); :DEBUG and :IGNORE additionally dump the CL
+backtrace at the point of the error — the intact stack, captured with
+HANDLER-BIND before the outer HANDLER-CASE unwinds — so a crash inside
+alfe itself (as opposed to the user's AutoLISP) can be diagnosed without
+a rebuild. Bound per RUN and set by the --on-error option handler.")
+
 ;;; --- options record --------------------------------------------------
 ;;;
 ;;; The CLI-OPTIONS struct lives in clautolisp.autolisp-cli (the
@@ -322,6 +333,12 @@ Diagnostics:
                          commutative: among --quiet/--verbose/--debug,
                          the most verbose request wins regardless of
                          CLI argument order.
+      --on-error POLICY  How an unexpected Lisp condition escaping alfe
+                         itself is reported: quit (default — the terse
+                         `alfe: <error>' line, then exit) or debug|ignore
+                         (additionally dump the CL backtrace, captured
+                         before the stack unwinds). alfe has no aldo, so
+                         debug and ignore behave the same here.
 
 Informational:
   -h, --help             Show this help and exit.
@@ -518,6 +535,16 @@ error rather than silently last-winning."
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-print-command-p opts) t)))
+   ;; --on-error quit|debug|ignore: how an unexpected Lisp condition
+   ;; escaping the run is reported. alfe has no aldo of its own, so DEBUG
+   ;; and IGNORE both dump the CL backtrace (captured with the stack still
+   ;; intact); QUIT keeps the terse one-line message (the default).
+   (make-option-spec
+    :longs '("--on-error") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf *on-error*
+                     (setf (clautolisp.autolisp-cli:cli-options-on-error opts)
+                           (clautolisp.autolisp-cli:parse-on-error value name)))))
    (make-option-spec
     :longs '("--keep-workdir") :takes-arg-p nil
     :handler (lambda (opts value name)
@@ -1014,6 +1041,18 @@ denotation that matches nothing is a usage error listing the way to see them."
                             (setf (uiop:getenv "BRICSCAD_EXE") path))
             (:clautolisp    (%set-backend-checked options :clautolisp "--cad"))))))))
 
+(defun %print-alfe-backtrace (condition stream)
+  "Dump CONDITION and the live CL backtrace to STREAM. Used by the
+--on-error debug|ignore policies; portable across SBCL and CCL, and a
+no-op note elsewhere."
+  (format stream "~&alfe[on-error]: ~A~%~%Backtrace:~%" condition)
+  (ignore-errors
+   #+sbcl (sb-debug:print-backtrace :stream stream :count 200)
+   #+ccl  (ccl:print-call-history :stream stream :detailed-p nil)
+   #-(or sbcl ccl)
+   (format stream "  (no backtrace: unsupported CL implementation)~%"))
+  (finish-output stream))
+
 (defun run (argv &key version)
   "alfe entry point. ARGV is the argument list *without* the program
 name; VERSION is the version string printed by --version. Returns an
@@ -1027,7 +1066,12 @@ The handler chain matches alfe-cli.issue's exit-code table:
   3 — BACKEND-NOT-AVAILABLE
   4 — BACKEND-BOOTSTRAP-ERROR / BACKEND-PROTOCOL-ERROR"
   (handler-case
-      (let ((options (parse-arguments argv)))
+      (let ((*on-error* :quit))
+        (handler-bind
+            ((error (lambda (condition)
+                      (when (member *on-error* '(:debug :ignore))
+                        (%print-alfe-backtrace condition *error-output*)))))
+        (let ((options (parse-arguments argv)))
         (cond
           ((cli-options-help-p options)
            (print-usage)
@@ -1113,7 +1157,7 @@ The handler chain matches alfe-cli.issue's exit-code table:
                    ((cli-options-print-command-p options)
                     (print-command-plan options backend :version-text version))
                    (t
-                    (run-plan options backend :version-text version)))))))))
+                    (run-plan options backend :version-text version)))))))))))
     (cli-usage-error (condition)
       (format *error-output* "~&alfe: ~A~%" condition)
       2)

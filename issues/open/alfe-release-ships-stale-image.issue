@@ -1,10 +1,30 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-release-ships-stale-image — the 1.9.3 -all.zip ships an alfe image older than its source
-#+STATUS: OPEN
+#+STATUS: WONTFIX
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
 #+BRANCH: -
+
+* CORRECTION (clautolisp 1.9.7): the hypothesis below is WRONG
+
+The PROBE crash is NOT a stale image — it is a source defect, now fixed in
+[[alfe-autocad-start-engine-malformed-handler-case]]. My reasoning "the source
+has no (probe) call" was mistaken: START-ENGINE's handler-case was missing one
+closing paren, so its two handler CLAUSES were read as body FORMS and =(probe)=
+(the intended condition-variable binding) was evaluated as a call to the
+undefined function PROBE. A freshly-built 1.9.3 crashes identically — the image's
+age was a coincidence. Compiling the tree emits the exact warning
+(undefined function ALFE.BACKEND.AUTOCAD::PROBE); it had simply never been read.
+
+The ONE thing worth keeping from this ticket is the MISSING TEST, carried into
+the handler-case issue's acceptance criteria: there is no headless regression
+test for the AutoCAD automation *staging* path (print-command-plan --autocad
+--mode automation, OS-gated to Windows so it needs the Windows-env mock the
+autocad-discover-windows-* tests use). Marked WONTFIX; the substance moved to
+[[alfe-autocad-start-engine-malformed-handler-case]].
+
+The original (incorrect) analysis follows, kept for the record.
 
 * Symptom
 
