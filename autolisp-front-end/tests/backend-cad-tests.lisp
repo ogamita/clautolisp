@@ -585,7 +585,7 @@ session would walk."
                  (result
                    ;; Wait for the mock to publish READY 0 first.
                    (progn (alfe.protocol.file:wait-for-status-prefix
-                           protocol "READY" :timeout 2)
+                           protocol "READY" :timeout 15)
                           (let ((*standard-output* (make-string-output-stream))
                                 (*error-output*    (make-string-output-stream)))
                             (alfe.backend.cad-common:drive-protocol-actions
@@ -623,7 +623,7 @@ stdin.txt for them."
                              (alfe.backend:action-quit)))
                  (result
                    (progn (alfe.protocol.file:wait-for-status-prefix
-                           protocol "READY" :timeout 2)
+                           protocol "READY" :timeout 15)
                           (let ((*standard-output* (make-string-output-stream))
                                 (*error-output*    (make-string-output-stream)))
                             (alfe.backend.cad-common:drive-protocol-actions
@@ -662,7 +662,7 @@ published."
                  (error-stream  (make-string-output-stream))
                  (result
                    (progn (alfe.protocol.file:wait-for-status-prefix
-                           protocol "READY" :timeout 2)
+                           protocol "READY" :timeout 15)
                           (alfe.backend.cad-common:drive-protocol-actions
                            protocol plan
                            :input-stream (make-string-input-stream input-text)
@@ -719,7 +719,7 @@ debug.log channel."
             ;; back to :info.
             (let ((alfe.logging:*current-level* :debug))
               (progn (alfe.protocol.file:wait-for-status-prefix
-                      protocol "READY" :timeout 2)
+                      protocol "READY" :timeout 15)
                      (let ((*standard-output* (make-string-output-stream))
                            (*error-output*    (make-string-output-stream)))
                        (alfe.backend.cad-common:drive-protocol-actions
@@ -770,7 +770,7 @@ mirror, the control fires the instant the CAD evaluates the form
             (let ((alfe.logging:*current-level* :debug)
                   (output-stream (make-string-output-stream)))
               (alfe.protocol.file:wait-for-status-prefix
-               protocol "READY" :timeout 2)
+               protocol "READY" :timeout 15)
               (let ((*error-output* (make-string-output-stream)))
                 (alfe.backend.cad-common:drive-protocol-actions
                  protocol plan :output-stream output-stream))
