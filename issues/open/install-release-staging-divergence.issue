@@ -1,0 +1,107 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: install-release-staging-divergence — `make install` and the release tarball produce different program layouts
+#+STATUS: OPEN
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+
+* Symptom (pjb, 2026-08-23)
+
+Building master, then =make install= on MS-Windows, put =alfe-sbcl.exe= and
+=alfe.exe= in =/opt/local/bin=, whereas the release tarball places the per-Lisp
+images under a =libexec= subtree. The two SHOULD be the same tree — a release is
+just a packaged install — so this divergence is a bug.
+
+* Root cause — programs are staged two different ways
+
+The LIBRARIES phase is already unified, and is the model to copy:
+
+- =install-libraries= = =stage-libraries= + =copy-stage $(STAGE_LIBRARIES)=
+- =release-libraries= = =stage-libraries= + =pack $(STAGE_LIBRARIES)=
+
+Both consume the SAME =stage-libraries= tree. Good.
+
+The PROGRAMS phase is NOT unified:
+
+- =install-programs= (top Makefile) = =stage-programs= + =copy-stage
+  $(STAGE_PROGRAMS)=. =stage-programs= runs each subproject's own
+  =install-programs= into =$(STAGE_PROGRAMS)=, which installs the per-Lisp
+  images DIRECTLY INTO =bin/= (clautolisp/Makefile, autolisp-front-end/Makefile:
+  =BIN_INSTALL_DIR=), plus the bare launcher, the test harness, the alref
+  reference libs, autolisp-benchmark, and =run-file-compat= /
+  =run-alfe-conformance= under =libexec/<subproject>/=.
+- =release-programs= (top Makefile) is a SEPARATE hand-rolled recipe that does
+  NOT call =stage-programs=. It writes a *dispatch-wrapper* layout: the three
+  main images (=clautolisp-<l>=, =read-autolisp-<l>=, =alfe-<l>=) go under
+  =libexec/clautolisp/binaries/<os>/<arch>/=, and =bin/{clautolisp,alfe,
+  read-autolisp}= are copies of =tools/packaging/dispatch.sh= (+ =.cmd= on
+  Windows) that pick the right image at run time.
+
+So the two diverge on TWO axes, not one:
+
+1. *Layout*: images in =bin/= (install) vs =libexec/clautolisp/binaries/<os>/<arch>/=
+   + a dispatch launcher (release).
+2. *Content*: full set — harness, alref libs, benchmark, run-file-compat
+   (install) vs the three main binaries only (release).
+
+* Constraint that forces the dispatch layout
+
+The =-all= artefact is the UNPACKED UNION of every per-target binaries tarball
+(collect phase). It merges each target's =libexec/.../ <os>/<arch>/= subtree so
+all platforms' binaries coexist under one tree with a single dispatch launcher.
+The plain =bin/= install layout cannot union across platforms: extensionless
+Linux and macOS images collide (=bin/clautolisp-sbcl= from two OSes/arches), and
+the bare launcher differs (POSIX symlink vs Windows =.exe=). So the dispatch /
+=libexec/<os>/<arch>/= layout is REQUIRED for the multi-platform release and
+cannot simply be replaced by the =bin/= layout.
+
+* Proposed fix — one staging, mirroring the libraries phase
+
+Make the dispatch layout canonical and single-sourced, exactly as
+=stage-libraries= already is:
+
+1. Move =release-programs='s hand-rolled staging body INTO =stage-programs=, so
+   =stage-programs= writes the dispatch layout (=libexec/clautolisp/binaries/
+   <os>/<arch>/= + =bin/= dispatch wrappers) into =$(STAGE_PROGRAMS)=.
+2. =release-programs= becomes =stage-programs= + =pack $(STAGE_PROGRAMS)= (one
+   line, like release-libraries). No more bespoke layout.
+3. =install-programs= is already =stage-programs= + =copy-stage=, so it then
+   installs the SAME dispatch tree — matching the tarball. =make install= gives
+   =bin/{clautolisp,alfe,read-autolisp}= dispatch launchers + images under
+   =libexec/...=.
+4. collect / =-all= keep working unchanged: they already expect the
+   =libexec/<os>/<arch>/= subtree the new =stage-programs= produces.
+
+Two DECISIONS to settle before implementing (why this is filed, not just
+patched blind — it changes =make install= for every user and touches the
+release, which has a history of breakage):
+
+- *Content reconciliation*: =stage-programs= currently also stages the test
+  harness, alref reference libs, autolisp-benchmark and the =run-*= libexec
+  helpers, which the release's programs artefact does NOT ship. Decide whether
+  the unified staging keeps them (install-only extras, guarded so the release
+  pack excludes them) or drops them. A naïve swap either bloats the release with
+  test harnesses or strips them from =make install=.
+- *dispatch launcher on a single-platform install*: confirm =dispatch.sh= /
+  =dispatch.cmd= resolve the sole =<os>/<arch>= subtree correctly for a plain
+  one-platform =make install= (they were written for the multi-platform union).
+
+* Acceptance criteria
+
+- =make install= and the per-target release binaries artefact unpack to the
+  identical program tree for a given os/arch (same paths, same launchers).
+- The =-all= multi-platform union still works (each platform's
+  =libexec/<os>/<arch>/= coexists under one dispatch launcher).
+- A test asserts the two trees match (e.g. stage-programs then diff its layout
+  against the release pack's), so they cannot silently drift again.
+- No regression in what =make install= delivers (or a deliberate, documented
+  content change).
+
+* Notes
+
+- Subproject-level =make -C <subproject> install= may keep its own =bin/=
+  layout as a dev convenience; the divergence that matters is the TOP-LEVEL
+  install vs the release, which this unifies.
+- Model to copy verbatim: =install-libraries= / =release-libraries= /
+  =stage-libraries= in the top Makefile.
