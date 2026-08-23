@@ -728,7 +728,7 @@ pipe read, so the default stays the robust total decoder (G2)."
                   (ignore-errors
                    (log-warn "backend AUTOCAD: start aborted; terminating spawned engine (pid ~A)"
                              (ignore-errors (uiop:process-info-pid process-info))))
-                  (kill-engine-process process-info))))))
+                  (kill-engine-process process-info)))))))
     (alfe.error:backend-error (probe)
       (error probe))
     (error (probe)
@@ -736,7 +736,7 @@ pipe read, so the default stays the robust total decoder (G2)."
              :backend :autocad
              :code :bootstrap-failed
              :message (format nil "AutoCAD start-engine failed: ~A" probe)
-             :details (list :origin probe))))))
+             :details (list :origin probe)))))
 
 (defun %autocad-await-ready (session protocol process-info workdir
                              ready-timeout wait-for-ready)

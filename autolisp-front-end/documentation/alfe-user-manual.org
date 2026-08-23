@@ -241,6 +241,7 @@ REPL with =-i=).
 | =--quit=               | Force engine shutdown after the queue.          |
 | =--dry-run=            | Print the resolved plan; don't run anything.    |
 | =--print-command=      | Stage the workdir for real, print the CAD command line that would be launched, launch nothing. CAD backends only. |
+| =--on-error POLICY=    | How an unexpected Lisp condition escaping alfe itself is reported: =quit= (default — the terse =alfe: <error>= line, then exit) or =debug= / =ignore=, which additionally dump the Common-Lisp backtrace (captured before the stack unwinds). alfe has no debugger of its own, so =debug= and =ignore= behave the same. |
 
 Examples:
 

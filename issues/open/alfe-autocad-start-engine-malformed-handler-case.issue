@@ -1,0 +1,80 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-autocad-start-engine-malformed-handler-case — AutoCAD start-engine crashes with "ALFE.BACKEND.AUTOCAD::PROBE is undefined"
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: feature-alfe-on-error
+
+* Symptom
+
+Driving the AutoCAD backend in automation mode — even just staging it with
+--print-command, which launches no CAD — crashes:
+
+#+begin_example
+$ alfe -norc --autocad --cad acad-2022 --mode automation --dwg empty.dwg --print-command
+alfe: The function ALFE.BACKEND.AUTOCAD::PROBE is undefined.
+#+end_example
+
+Reproduced on a real Windows + AutoCAD 2022 host (clautolisp-1.9.3). It is NOT
+the missing-asset bug ([[alfe-install-missing-cad-runtime-lsp]]): it persists
+with $ALFE_BOOTSTRAP_LSP / $ALFE_RUNTIME_LSP exported.
+
+* Cause — a malformed HANDLER-CASE in START-ENGINE
+
+=backend-autocad.lisp='s =%start-engine= wraps its body in
+
+: (handler-case (let* (…) …)
+:   (alfe.error:backend-error (probe) (error probe))
+:   (error (probe) (error 'backend-bootstrap-error … probe …)))
+
+but the =let*= body was missing ONE closing paren (introduced when the
+=started-ok= / =unwind-protect= engine-reaping guard was copied over from the
+BricsCAD backend — "The BricsCAD backend has had this guard; AutoCAD had not").
+So the two intended handler CLAUSES were read as the last two FORMS of the
+=let*= body instead. At that point =(alfe.error:backend-error (probe) …)= is a
+function call, =(probe)= calls the (undefined) function PROBE, and
+=alfe.error:backend-error= / the bound condition variable =probe= are undefined
+too.
+
+The compiler said so all along — building the system emits:
+
+: undefined variable: ALFE.BACKEND.AUTOCAD::PROBE   (at (ERROR PROBE))
+: undefined function: ALFE.BACKEND.AUTOCAD::PROBE   (at (PROBE))
+: Undefined functions: ALFE.ERROR:BACKEND-ERROR, ALFE.BACKEND.AUTOCAD::PROBE
+
+— warnings nobody had been reading, because no test exercises the AutoCAD
+start-engine / automation-staging path (the OS gate makes it signal
+:unsupported-os off Windows, so a test must mock the Windows environment the
+=autocad-discover-windows-*= tests already do).
+
+The BricsCAD backend's identical handler-case is correctly parenthesised, which
+is why only AutoCAD was affected.
+
+* Fix (clautolisp 1.9.6, branch feature-alfe-on-error)
+
+- backend-autocad.lisp: add the missing =)= that closes the =let*= body before
+  the handler clauses, and drop the compensating extra =)= at the end of the
+  defun. Verified structurally (the two clauses now sit at handler-case
+  clause depth) and by rebuild: the ALFE.BACKEND.AUTOCAD::PROBE and
+  ALFE.ERROR:BACKEND-ERROR undefined warnings are gone; autolisp-front-end
+  test suite 620/620 green.
+- The bug surfaced while adding =--on-error= to alfe (that RUN change forced a
+  recompile whose warnings exposed it).
+
+* Acceptance criteria
+
+- [X] Building autolisp-front-end no longer warns about undefined
+  ALFE.BACKEND.AUTOCAD::PROBE / ALFE.ERROR:BACKEND-ERROR.
+- [X] Full autolisp-front-end suite green.
+- [X] A regression test for the AutoCAD automation *staging* path, run on any
+  host by forcing *HOST-OS-OVERRIDE* to :windows:
+  =autocad-automation-start-engine-runs-without-probe-undefined= in
+  backend-cad-tests.lisp drives START-ENGINE in :automation mode with a
+  capturing launcher and :wait-for-ready nil, and asserts it returns a session
+  and hands a cscript argv to the launcher instead of signalling
+  UNDEFINED-FUNCTION. Verified to have teeth: reverting the paren makes exactly
+  this test fail with "The function ALFE.BACKEND.AUTOCAD::PROBE is undefined".
+  (Supersedes the "missing tests" note in [[alfe-release-ships-stale-image]],
+  whose stale-image hypothesis this bug also supersedes — the crash is a source
+  defect, not an old image; a fresh 1.9.3 build crashes the same way.)

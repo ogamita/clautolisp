@@ -116,6 +116,18 @@ separate binary for tool integrators.
   image. Before this they shipped only inside the installed source copy,
   off the search path, so the automation and batch backends failed at
   start with "no bootstrap/runtime LSP found" on every installed system.
+- Driving AutoCAD in automation mode no longer crashes on start with "The
+  function ALFE.BACKEND.AUTOCAD::PROBE is undefined." A missing parenthesis
+  had turned the AutoCAD ~start-engine~ error handler inside out — its two
+  ~handler-case~ clauses were being run as ordinary body forms, so the
+  backend called an undefined function the moment it was reached (even under
+  ~--print-command~, which launches nothing). The BricsCAD backend was never
+  affected. Fixed at the paren, verified by rebuild.
+- New ~alfe --on-error quit|debug|ignore~. alfe has no debugger of its own, so
+  ~debug~ / ~ignore~ dump the Common-Lisp backtrace of a condition that escapes
+  alfe itself — captured before the stack unwinds — rather than only the terse
+  ~alfe: <error>~ line; ~quit~ (the default) is unchanged. It is how the
+  handler-case defect above was pinned down.
 
 - Paths whose case does not match the disk can be resolved and
   normalised. ~(setvar "CLAUTOLISPCASEINSENSITIVEPATHS" 1)~ — or the
