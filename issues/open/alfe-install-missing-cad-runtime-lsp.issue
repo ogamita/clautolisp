@@ -1,0 +1,73 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-install-missing-cad-runtime-lsp — installed alfe cannot find its CAD runtime LSP assets
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-alfe-install-cad-runtime-lsp
+
+* Context
+
+The alfe AutoCAD/BricsCAD backends stage two runtime assets into the engine
+workdir before launching the CAD engine:
+
+- =autolisp-bootstrap.lsp= — defines the autolisp-* helpers the runtime
+  server loop calls;
+- =autolisp-remote-io.lsp= — the CAD-side runtime the bridge loads.
+
+=DISCOVER-BOOTSTRAP-LSP= / =DISCOVER-RUNTIME-LSP= (backend-cad-common.lisp)
+resolve them in this order:
+
+1. =$ALFE_BOOTSTRAP_LSP= / =$ALFE_RUNTIME_LSP= (when set and the file exists);
+2. the *vendored* copy under =source/runtime/= next to the code;
+3. the fallback search list — first entry =$PREFIX/share/alfe/runtime/=.
+
+* Problem
+
+On an *installed* system all three fail:
+
+- the env vars are unset;
+- a dumped SBCL image (=alfe-sbcl.exe=) has no source tree beside it, so the
+  vendored copy resolves to nothing;
+- =autolisp-front-end/Makefile='s =install= / =install-programs= only ever
+  installed =bin/=, =libexec/= and =share/{doc,info,man}= — it NEVER installed
+  the two assets to =$PREFIX/share/alfe/runtime/=, the very location the
+  fallback list points at.
+
+Reproduced on a real Windows + AutoCAD 2022 host with a clean
+=clautolisp-1.9.3-all.zip= install (Aug 2026):
+
+#+begin_example
+$ alfe -norc --autocad --cad acad-2022 --mode automation --dwg empty.dwg \
+       --keep-workdir --print-command
+alfe[warn]: backend AUTOCAD: no bootstrap LSP found; set $ALFE_BOOTSTRAP_LSP or install autolisp-bootstrap.lsp
+alfe[warn]: backend AUTOCAD: no runtime LSP found; set $ALFE_RUNTIME_LSP or install autolisp-remote-io.lsp
+#+end_example
+
+The assets shipped ONLY inside the source copy the release also installs
+(=$PREFIX/src/clautolisp-<v>/autolisp-front-end/source/runtime/=), which is
+not on the search path. So the AutoCAD/BricsCAD automation and batch backends
+cannot bootstrap on any installed system — the reason the CAD automation path
+had never run end to end from an install.
+
+* Fix (clautolisp 1.9.6)
+
+=autolisp-front-end/Makefile=: =install-programs= now installs both assets to
+=$(PREFIX)/share/alfe/runtime/= (a new =RUNTIME_INSTALL_DIR=), and =uninstall=
+removes them. The path is =share/alfe/runtime= (not =share/autolisp-front-end=)
+to match =*bootstrap-lsp-fallback-paths*= / =*runtime-lsp-fallback-paths*=
+exactly.
+
+Verified: =make -C autolisp-front-end install-programs DESTDIR=… PREFIX=/opt/local=
+lands both files under =…/opt/local/share/alfe/runtime/=.
+
+* Acceptance criteria
+
+- [X] An installed alfe (env vars unset, dumped image) resolves both runtime
+  assets via the =$PREFIX/share/alfe/runtime/= fallback — no "no bootstrap/
+  runtime LSP found" warnings.
+- [X] =uninstall= removes them.
+- [ ] End-to-end AutoCAD automation reaching READY on the Windows runner —
+  tracked separately, and additionally blocked by
+  [[alfe-release-ships-stale-image]] (the 1.9.3-all.zip shipped a stale alfe
+  image that also crashes on ALFE.BACKEND.AUTOCAD::PROBE).
