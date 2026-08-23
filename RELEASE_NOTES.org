@@ -11,12 +11,15 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.9.2 / alfe 1.9.0 /
-read-autolisp 1.9.0 — alfe and read-autolisp have not changed since
-1.9.0, and version-rules lets an unchanged program keep its stamp). For
-the
-chronology and the issue-by-issue history, see ~git log~ on master and
-the issues under ~issues/closed/~.
+master at the top of the file (clautolisp 1.9.7 / alfe 1.9.7 /
+read-autolisp 1.9.0). alfe tracks clautolisp's version: because
+=alfe --clautolisp= embeds essentially the whole clautolisp engine, a
+change to clautolisp's sources bumps alfe too — and alfe's own changes
+(the AutoCAD start-engine PROBE fix, =--on-error=) bump it independently.
+read-autolisp has not changed since 1.9.0, and version-rules lets an
+unchanged program keep its stamp. For the chronology and the
+issue-by-issue history, see ~git log~ on master and the issues under
+~issues/closed/~.
 
 A standing rule lives in ~AGENTS.md~ § /Release notes/: this file
 *must* be updated in the same commit as any user-visible feature
