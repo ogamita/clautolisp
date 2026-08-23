@@ -184,10 +184,10 @@ harness-self-test: $(CLAUTOLISP_SBCL)  ## Harness regression tests (detection + 
 # a runtime fix.
 
 $(CLAUTOLISP_SBCL): $(CLAUTOLISP_SOURCES)
-	"$(MAKE)" -C $(CLAUTOLISP_ROOT) build-clautolisp-sbcl
+	"$(MAKE)" -C "$(CLAUTOLISP_ROOT)" build-clautolisp-sbcl
 
 $(CLAUTOLISP_CCL): $(CLAUTOLISP_SOURCES)
-	"$(MAKE)" -C $(CLAUTOLISP_ROOT) build-clautolisp-ccl
+	"$(MAKE)" -C "$(CLAUTOLISP_ROOT)" build-clautolisp-ccl
 
 build-clautolisp-sbcl: $(CLAUTOLISP_SBCL)
 build-clautolisp-ccl:  $(CLAUTOLISP_CCL)
@@ -272,7 +272,7 @@ export TEXMFVAR := $(TEXFMT_CACHE)
 ifeq ($(LATEX_COMPILER),xelatex)
 TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
 $(TEX_FMT_DEP): $(TEX_WEB2C)/texmf.cnf
-	@mkdir -p $(TEXFMT_CACHE)
+	@mkdir -p "$(TEXFMT_CACHE)"
 	fmtutil -user --byfmt xelatex
 else
 TEX_FMT_DEP :=
@@ -285,7 +285,7 @@ endif
 # org export writes next to the .org; we move the result under build/ (mirroring
 # the source path) and delete the intermediate .tex so the source tree stays clean.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
-	@mkdir -p $(@D)
+	@mkdir -p "$(@D)"
 	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
@@ -294,7 +294,7 @@ $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@rm -f "$(<:.org=.tex)"
 
 clean-pdf:
-	rm -rf $(BUILD_DIR)
+	rm -rf "$(BUILD_DIR)"
 
 # ---------------------------------------------------------------------
 # autolisp-test × clautolisp × dialect matrix
@@ -443,11 +443,11 @@ install: build  ## Install harness + tests + docs into $$PREFIX (build first; su
 	"$(MAKE)" install-documentation
 
 install-programs:  ## Install just the autolisp-test harness + tests (no docs).
-	install -d $(LIBEXEC_INSTALL_DIR)/harness
-	install -d $(LIBEXEC_INSTALL_DIR)/tests
+	install -d "$(LIBEXEC_INSTALL_DIR)/harness"
+	install -d "$(LIBEXEC_INSTALL_DIR)/tests"
 	@if [ -d harness ]; then \
 	  for f in harness/*.lsp; do \
-	    [ -f "$$f" ] && install -m 0644 "$$f" $(LIBEXEC_INSTALL_DIR)/harness/ ; \
+	    [ -f "$$f" ] && install -m 0644 "$$f" "$(LIBEXEC_INSTALL_DIR)/harness/" ; \
 	  done ; \
 	fi
 	@if [ -d tests ]; then \
@@ -462,27 +462,27 @@ install-programs:  ## Install just the autolisp-test harness + tests (no docs).
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 install-documentation:  ## Install just the autolisp-test documentation.
-	install -d $(DOC_INSTALL_DIR)
+	install -d "$(DOC_INSTALL_DIR)"
 	@for f in documentation/*.org $(BUILD_DIR)/documentation/*.pdf; do \
-	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
+	  if [ -f "$$f" ]; then install -m 0644 "$$f" "$(DOC_INSTALL_DIR)/" ; fi ; \
 	done
-	install -d $(INFO_INSTALL_DIR)
+	install -d "$(INFO_INSTALL_DIR)"
 	@for f in $(BUILD_DIR)/documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
-	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
-	    installed="$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
-	    $(INSTALL_INFO) --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
+	    install -m 0644 "$$f" "$(INFO_INSTALL_DIR)/" ; \
+	    installed="$(INFO_INSTALL_DIR)/$$(basename "$$f")" ; \
+	    "$(INSTALL_INFO)" --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
 	      || echo "[skip] install-info dir update for $$installed" ; \
 	  fi ; \
 	done
 	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 uninstall:  ## Remove the autolisp-test install from $$PREFIX.
-	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)
+	rm -rf "$(LIBEXEC_INSTALL_DIR)" "$(DOC_INSTALL_DIR)"
 	@for f in documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
-	    $(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" "$$f" 2>/dev/null \
+	    "$(INSTALL_INFO)" --remove --info-dir="$(INFO_INSTALL_DIR)" "$$f" 2>/dev/null \
 	      || true ; \
-	    rm -f "$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
+	    rm -f "$(INFO_INSTALL_DIR)/$$(basename "$$f")" ; \
 	  fi ; \
 	done

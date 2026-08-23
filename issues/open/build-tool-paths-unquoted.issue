@@ -544,3 +544,45 @@ bout en bout, qui demande le runner Windows — hors ligne au moment où
 ceci est écrit. Ce qui est établi ici, c'est que la logique corrigée se
 comporte comme voulu sur les quatre entrées, et que la cause écrite dans
 le ticket ne tenait pas.
+
+
+LA BORNE HAUTE, FAITE — 2026-08-23 (clautolisp 1.9.4)
+-----------------------------------------------------
+
+Le volet quotage (1.8.27) avait laissé DÉLIBÉRÉMENT « NON FAIT » la
+« borne haute » : les chemins côté cible/prérequis — `PREFIX`,
+`DESTDIR`, les `*_INSTALL_DIR`, les auto-variables employées comme
+chemins — au motif que distinguer chemin et liste « mérite sa propre
+passe relue ». C'est cette passe.
+
+Portée de 1.9.4 (162 lignes, les sept Makefiles) : `install -d` /
+`install -m` sur `"$(BIN_INSTALL_DIR)"`, `"$(LIBEXEC_INSTALL_DIR)"`,
+`"$(DOC/INFO/MAN_INSTALL_DIR)"` et consorts, les répertoires de
+`"$(MAKE)" -C "$dir"`, `"$@"` / `"$<"` / `"$(@D)"`, `"$(BUILD_DIR)"` /
+`"$(TEXFMT_CACHE)"`, les cibles/noms de `ln -sf`, les listes de `rm`, et
+les affectations de valeur des bundles passés aux sous-make
+(`DESTDIR="$(STAGE_...)"`). Conséquence concrète que 1.8.27 ne couvrait
+pas : `make install PREFIX="/opt/mes outils"` et un checkout sous un
+répertoire à espace ne se découpent plus. Laissé splittable à dessein :
+les en-têtes de `for` sur des listes de modules / noms de fichiers /
+globs, et les bundles d'arguments eux-mêmes.
+
+Un vrai défaut résiduel, trouvé par la passe et corrigé ici : le define
+`forward-target-to` du Makefile racine exécutait `$"$(MAKE)" -C $(2)`.
+Le `$` parasite fait développer `$"` comme la variable (vide) nommée
+`"`, si bien que la recette émettait la commande cassée `make"` — à
+guillemet non fermé — pour CHAQUE cible autolisp-test / alfe forwardée.
+Corrigé en `"$(MAKE)" -C "$(2)"`.
+
+Les 21 scripts shell de `scripts/` ont été relus dans la même passe :
+déjà entièrement quotés, aucune modification. Les scripts PowerShell
+(`.ps1`) sont laissés à une passe séparée — leur découpage de mots
+diffère de POSIX `sh`, et la panne d'origine est `sh`.
+
+Vérifié sous Linux avec le test du ticket, un outil sous chemin espacé :
+
+    ln -s "$(command -v sbcl)" "/…/faux outils/sbcl"
+    make build-programs SBCL="/…/faux outils/sbcl"
+
+construit propre (exit 0) de bout en bout ; les sept Makefiles
+re-parsent (`make -np`).

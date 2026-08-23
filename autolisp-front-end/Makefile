@@ -204,7 +204,7 @@ export TEXMFVAR := $(TEXFMT_CACHE)
 ifeq ($(LATEX_COMPILER),xelatex)
 TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
 $(TEX_FMT_DEP): $(TEX_WEB2C)/texmf.cnf
-	@mkdir -p $(TEXFMT_CACHE)
+	@mkdir -p "$(TEXFMT_CACHE)"
 	fmtutil -user --byfmt xelatex
 else
 TEX_FMT_DEP :=
@@ -216,7 +216,7 @@ endif
 # org export writes next to the .org; we move the result under build/ (mirroring
 # the source path) and delete the intermediate .tex so the source tree stays clean.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
-	@mkdir -p $(@D)
+	@mkdir -p "$(@D)"
 	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 	    --eval "(setq org-confirm-babel-evaluate nil)" \
 	    --eval "(setq org-export-with-broken-links t)" \
@@ -230,7 +230,7 @@ $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@rm -f "$(<:.org=.tex)"
 
 $(BUILD_DIR)/%.texi: %.org
-	@mkdir -p $(@D)
+	@mkdir -p "$(@D)"
 	sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 	    --eval '(progn (require (quote ox-texinfo)) (setq org-export-with-broken-links t))' \
 	    --visit "$<" \
@@ -238,10 +238,10 @@ $(BUILD_DIR)/%.texi: %.org
 	@mv -f "$(<:.org=.texi)" "$@"
 
 $(BUILD_DIR)/%.info: $(BUILD_DIR)/%.texi
-	$(MAKEINFO) --no-split -o $@ $<
+	"$(MAKEINFO)" --no-split -o "$@" "$<"
 
 clean-pdf:  ## Remove every generated PDF / .info / .texi under build/ (keeps .org sources).
-	rm -rf $(BUILD_DIR)
+	rm -rf "$(BUILD_DIR)"
 
 # ---------------------------------------------------------------------
 # Test targets — mirror clautolisp/Makefile so both subprojects share
@@ -336,7 +336,7 @@ check-spec-coverage:  ## Assert every CLI option in the spec is covered by ≥1 
 		--load scripts/check-spec-coverage.lisp
 
 clean: clean-pdf  ## Remove built executables and generated PDFs.
-	rm -f $(ALFE_SBCL) $(ALFE_CCL)
+	rm -f "$(ALFE_SBCL)" "$(ALFE_CCL)"
 
 # ---------------------------------------------------------------------
 # Per-backend smoke tests for the built alfe binaries.
@@ -439,8 +439,8 @@ install: build  ## Install built alfe binaries + docs into $$PREFIX (build first
 	"$(MAKE)" install-documentation
 
 install-programs:  ## Install just the alfe executables (no docs).
-	install -d $(BIN_INSTALL_DIR)
-	install -d $(LIBEXEC_INSTALL_DIR)
+	install -d "$(BIN_INSTALL_DIR)"
+	install -d "$(LIBEXEC_INSTALL_DIR)"
 	@for exe in $(INSTALL_BINARIES); do \
 	  if [ -x "$$exe" ]; then \
 	    dest="$$(basename "$$exe")" ; case "$$dest" in *.exe) ;; *) dest="$$dest$(EXE)" ;; esac ; \
@@ -473,38 +473,38 @@ install-programs:  ## Install just the alfe executables (no docs).
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 install-documentation:  ## Install just the alfe documentation (org/pdf/info/man). PDFs/Info come from build/.
-	install -d $(DOC_INSTALL_DIR)
+	install -d "$(DOC_INSTALL_DIR)"
 	@for f in documentation/*.org $(BUILD_DIR)/documentation/*.pdf; do \
-	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
+	  if [ -f "$$f" ]; then install -m 0644 "$$f" "$(DOC_INSTALL_DIR)/" ; fi ; \
 	done
-	install -d $(INFO_INSTALL_DIR)
+	install -d "$(INFO_INSTALL_DIR)"
 	@for f in $(BUILD_DIR)/documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
-	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
+	    install -m 0644 "$$f" "$(INFO_INSTALL_DIR)/" ; \
 	    echo "installed: $$f -> $(INFO_INSTALL_DIR)/" ; \
-	    installed="$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
-	    $(INSTALL_INFO) --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
+	    installed="$(INFO_INSTALL_DIR)/$$(basename "$$f")" ; \
+	    "$(INSTALL_INFO)" --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
 	      || echo "[skip] install-info dir update for $$installed" ; \
 	  fi ; \
 	done
-	install -d $(MAN_INSTALL_DIR)
+	install -d "$(MAN_INSTALL_DIR)"
 	@for f in documentation/man/*.1 tools/*/documentation/man/*.1; do \
 	  if [ -f "$$f" ]; then \
-	    install -m 0644 "$$f" $(MAN_INSTALL_DIR)/ ; \
+	    install -m 0644 "$$f" "$(MAN_INSTALL_DIR)/" ; \
 	    echo "installed: $$f -> $(MAN_INSTALL_DIR)/" ; \
 	  fi ; \
 	done
 	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 uninstall:  ## Remove the alfe install from $$PREFIX.
-	rm -f $(BIN_INSTALL_DIR)/alfe $(BIN_INSTALL_DIR)/alfe-sbcl $(BIN_INSTALL_DIR)/alfe-ccl
+	rm -f "$(BIN_INSTALL_DIR)/alfe" "$(BIN_INSTALL_DIR)/alfe-sbcl" "$(BIN_INSTALL_DIR)/alfe-ccl"
 	@for f in $(INFO_FILES); do \
-	  base="$$(basename $$f)" ; \
-	  $(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" "$$base" 2>/dev/null \
+	  base="$$(basename "$$f")" ; \
+	  "$(INSTALL_INFO)" --remove --info-dir="$(INFO_INSTALL_DIR)" "$$base" 2>/dev/null \
 	    || true ; \
 	  rm -f "$(INFO_INSTALL_DIR)/$$base" ; \
 	done
 	@for f in documentation/man/*.1 tools/*/documentation/man/*.1; do \
-	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename $$f)" ; fi ; \
+	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename "$$f")" ; fi ; \
 	done
-	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)
+	rm -rf "$(LIBEXEC_INSTALL_DIR)" "$(DOC_INSTALL_DIR)"

@@ -96,6 +96,18 @@ separate binary for tool integrators.
   rather than an MSYS symlink — so the installed programs run from
   PowerShell and cmd, not only from the MSYS2 shell. POSIX installs are
   unchanged (no suffix, relative symlinks).
+- Installing and building from a directory whose path contains a space
+  now works. 1.9.2 already quoted the tool-invocation sites, so a spaced
+  ~SBCL=~ override built; this completes the sweep to the install,
+  uninstall and documentation recipes — ~"$(PREFIX)"~, ~"$(DESTDIR)"~,
+  every ~*_INSTALL_DIR~, the ~"$(MAKE)" -C "$dir"~ recursions and the
+  path-valued auto-variables — so ~make install PREFIX="/opt/mes outils"~
+  and a checkout under a directory with a space no longer word-split.
+  It also fixes a real residual defect it surfaced: the forwarded-target
+  rule ran ~$"$(MAKE)"~, whose stray ~$~ expanded to the empty variable
+  named ~"~ and emitted the broken command ~make"~ for every forwarded
+  autolisp-test / alfe target. POSIX builds under space-free paths are
+  unaffected.
 
 - Paths whose case does not match the disk can be resolved and
   normalised. ~(setvar "CLAUTOLISPCASEINSENSITIVEPATHS" 1)~ — or the

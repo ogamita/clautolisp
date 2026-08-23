@@ -301,22 +301,22 @@ $(READ_AUTOLISP_CCL):
 run-file-compat: run-file-compat-sbcl
 
 run-file-compat-sbcl:
-	$(RUN_FILE_COMPAT) --sbcl $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	"$(RUN_FILE_COMPAT)" --sbcl $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 run-file-compat-ccl:
-	$(RUN_FILE_COMPAT) --ccl $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	"$(RUN_FILE_COMPAT)" --ccl $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 run-file-compat-autocad:
-	$(RUN_FILE_COMPAT) --autocad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	"$(RUN_FILE_COMPAT)" --autocad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 run-file-compat-bricscad:
-	$(RUN_FILE_COMPAT) --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	"$(RUN_FILE_COMPAT)" --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 audit-file-compat-autocad:
-	$(RUN_FILE_COMPAT) --autocad --report-format json $(FILE_COMPAT_ARGS) $(FILE_COMPAT_PRODUCT_SCENARIOS)
+	"$(RUN_FILE_COMPAT)" --autocad --report-format json $(FILE_COMPAT_ARGS) $(FILE_COMPAT_PRODUCT_SCENARIOS)
 
 audit-file-compat-bricscad:
-	$(RUN_FILE_COMPAT) --bricscad --report-format json $(FILE_COMPAT_ARGS) $(FILE_COMPAT_PRODUCT_SCENARIOS)
+	"$(RUN_FILE_COMPAT)" --bricscad --report-format json $(FILE_COMPAT_ARGS) $(FILE_COMPAT_PRODUCT_SCENARIOS)
 
 # ---------------------------------------------------------------------
 # Per-platform run-file-compat targets.
@@ -330,15 +330,15 @@ audit-file-compat-bricscad:
 
 run-file-compat-bricscad-macos:
 	@$(call require-os-darwin,$@); \
-	 $(RUN_FILE_COMPAT) --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	 "$(RUN_FILE_COMPAT)" --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 run-file-compat-bricscad-windows:
 	@$(call require-os-windows,$@); \
-	 $(RUN_FILE_COMPAT) --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	 "$(RUN_FILE_COMPAT)" --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 run-file-compat-autocad-windows:
 	@$(call require-os-windows,$@); \
-	 $(RUN_FILE_COMPAT) --autocad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	 "$(RUN_FILE_COMPAT)" --autocad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 
 documentation: $(PDF_FILES) $(INFO_FILES) $(BUILD_DIR)/documentation/RELEASE_NOTES.pdf
@@ -355,12 +355,12 @@ specifications: $(BUILD_DIR)/documentation/clautolisp-specifications.pdf $(BUILD
 DIALECT_WARNINGS_ANNEX := documentation/clautolisp-dialect-warnings.org
 
 dialect-warnings-annex:  ## Regenerate the manual's dialect-warnings annex from the register.
-	$(SBCL) --non-interactive --disable-debugger \
+	"$(SBCL)" --non-interactive --disable-debugger \
 	        --load tools/generate-dialect-warnings-annex.lisp
 
 check-dialect-warnings-annex:  ## Fail if the tracked annex is stale w.r.t. the register.
 	@tmp=$$(mktemp -t dialect-warnings-XXXXXX.org); \
-	 $(SBCL) --non-interactive --disable-debugger \
+	 "$(SBCL)" --non-interactive --disable-debugger \
 	         --load tools/generate-dialect-warnings-annex.lisp "$$tmp" >/dev/null; \
 	 if diff -u "$(DIALECT_WARNINGS_ANNEX)" "$$tmp"; then \
 	   rm -f "$$tmp"; \
@@ -381,7 +381,7 @@ check-dialect-warnings-annex:  ## Fail if the tracked annex is stale w.r.t. the 
 # both the mirrored .org and the resulting .pdf out of the repo.
 documentation/RELEASE_NOTES.org: ../RELEASE_NOTES.org
 	@mkdir -p documentation
-	cp $< $@
+	cp "$<" "$@"
 
 # Large org documents (notably the ~4600-page visual-lisp spec in autolisp-spec)
 # exceed TeX's default main_memory and abort with "TeX capacity exceeded". We
@@ -406,7 +406,7 @@ export TEXMFVAR := $(TEXFMT_CACHE)
 ifeq ($(LATEX_COMPILER),xelatex)
 TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
 $(TEX_FMT_DEP): $(TEX_WEB2C)/texmf.cnf
-	@mkdir -p $(TEXFMT_CACHE)
+	@mkdir -p "$(TEXFMT_CACHE)"
 	fmtutil -user --byfmt xelatex
 else
 TEX_FMT_DEP :=
@@ -423,7 +423,7 @@ endif
 # the source tree stays clean. $(@D) is build/<dir>; $(patsubst …) recovers the
 # in-place output org-export produced from the source.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
-	@mkdir -p $(@D)
+	@mkdir -p "$(@D)"
 	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
@@ -439,7 +439,7 @@ $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 # directives; the stub generator (documentation-synchronisation.issue)
 # emits them in the standard place at the top.
 $(BUILD_DIR)/%.texi: %.org
-	@mkdir -p $(@D)
+	@mkdir -p "$(@D)"
 	sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 		--eval '(progn (require (quote ox-texinfo)) (setq org-export-with-broken-links t))' \
 		--visit "$<" \
@@ -447,10 +447,10 @@ $(BUILD_DIR)/%.texi: %.org
 	@mv -f "$(<:.org=.texi)" "$@"
 
 $(BUILD_DIR)/%.info: $(BUILD_DIR)/%.texi
-	$(MAKEINFO) --no-split -o $@ $<
+	"$(MAKEINFO)" --no-split -o "$@" "$<"
 
 clean-pdf:
-	rm -rf $(BUILD_DIR)
+	rm -rf "$(BUILD_DIR)"
 	rm -f documentation/RELEASE_NOTES.org
 
 builtins-coverage:
@@ -586,8 +586,8 @@ install: build  ## Install built executables + docs + Lisp sources/systems (+ na
 	"$(MAKE)" install-documentation
 
 install-programs:  ## Install just the clautolisp/read-autolisp/gui/run-file-compat executables (no docs) -- the CI-friendly fast path.
-	install -d $(BIN_INSTALL_DIR)
-	install -d $(LIBEXEC_INSTALL_DIR)
+	install -d "$(BIN_INSTALL_DIR)"
+	install -d "$(LIBEXEC_INSTALL_DIR)"
 	@for exe in $(INSTALL_BINARIES); do \
 	  if [ -x "$$exe" ]; then \
 	    dest="$$(basename "$$exe")" ; case "$$dest" in *.exe) ;; *) dest="$$dest$(EXE)" ;; esac ; \
@@ -634,41 +634,41 @@ install-programs:  ## Install just the clautolisp/read-autolisp/gui/run-file-com
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 install-documentation:  ## Install just the clautolisp documentation (org/pdf/info/man). PDFs/Info come from build/.
-	install -d $(DOC_INSTALL_DIR)
+	install -d "$(DOC_INSTALL_DIR)"
 	@for f in documentation/*.org $(BUILD_DIR)/documentation/*.pdf; do \
-	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
+	  if [ -f "$$f" ]; then install -m 0644 "$$f" "$(DOC_INSTALL_DIR)/" ; fi ; \
 	done
 	@# .info files install under share/info per the FHS convention.
 	@# install-info wires each into the top-level dir node so
 	@# `info <doc>` finds them. The directory itself is created
 	@# lazily — distros routinely pre-create it.
-	install -d $(INFO_INSTALL_DIR)
+	install -d "$(INFO_INSTALL_DIR)"
 	@for f in $(BUILD_DIR)/documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
-	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
+	    install -m 0644 "$$f" "$(INFO_INSTALL_DIR)/" ; \
 	    echo "installed: $$f -> $(INFO_INSTALL_DIR)/" ; \
-	    installed="$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
-	    $(INSTALL_INFO) --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
+	    installed="$(INFO_INSTALL_DIR)/$$(basename "$$f")" ; \
+	    "$(INSTALL_INFO)" --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
 	      || echo "[skip] install-info dir update for $$installed" ; \
 	  fi ; \
 	done
 	@# Man pages under share/man/man1.
-	install -d $(MAN_INSTALL_DIR)
+	install -d "$(MAN_INSTALL_DIR)"
 	@for f in documentation/man/*.1; do \
 	  if [ -f "$$f" ]; then \
-	    install -m 0644 "$$f" $(MAN_INSTALL_DIR)/ ; \
+	    install -m 0644 "$$f" "$(MAN_INSTALL_DIR)/" ; \
 	    echo "installed: $$f -> $(MAN_INSTALL_DIR)/" ; \
 	  fi ; \
 	done
 	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 install-libraries: install-lisp-systems  ## Install everything the release-libraries artefact ships: the ASDF systems (share/common-lisp), the native DWG codec libraries (lib/), the libredwg header (include/), and the drawing spec + libredwg licence (share/doc).
-	install -d $(LIB_INSTALL_DIR)
+	install -d "$(LIB_INSTALL_DIR)"
 	@runtime_manifest=third-party/libredwg/build/clautolisp-runtime-library; \
 	runtime=; \
 	if [ -s "$$runtime_manifest" ]; then runtime=$$(cat "$$runtime_manifest"); fi; \
 	if [ -n "$$runtime" ] && [ -f "$$runtime" ]; then \
-	  install -m 0755 "$$runtime" $(LIB_INSTALL_DIR)/; \
+	  install -m 0755 "$$runtime" "$(LIB_INSTALL_DIR)/"; \
 	  echo "installed: $$runtime -> $(LIB_INSTALL_DIR)/"; \
 	elif [ "$(REQUIRE_NATIVE_LIBRARIES)" = "1" ]; then \
 	  if [ -z "$$runtime" ]; then \
@@ -689,15 +689,15 @@ install-libraries: install-lisp-systems  ## Install everything the release-libra
 	          drawing-dwg/source/clal_dwg.dylib \
 	          drawing-dwg/source/clal_dwg.dll; do \
 	  if [ -f "$$f" ]; then \
-	    install -m 0755 "$$f" $(LIB_INSTALL_DIR)/ ; \
+	    install -m 0755 "$$f" "$(LIB_INSTALL_DIR)/" ; \
 	    echo "installed: $$f -> $(LIB_INSTALL_DIR)/" ; \
 	  fi ; \
 	done
 	@# The libredwg public header, for consumers that link the codec
 	@# directly rather than through the Lisp shim.
-	install -d $(INCLUDE_INSTALL_DIR)
+	install -d "$(INCLUDE_INSTALL_DIR)"
 	@if [ -f "$(LIBREDWG_HEADER)" ]; then \
-	  install -m 0644 "$(LIBREDWG_HEADER)" $(INCLUDE_INSTALL_DIR)/ ; \
+	  install -m 0644 "$(LIBREDWG_HEADER)" "$(INCLUDE_INSTALL_DIR)/" ; \
 	  echo "installed: $(LIBREDWG_HEADER) -> $(INCLUDE_INSTALL_DIR)/" ; \
 	else \
 	  echo "[skip]     $(LIBREDWG_HEADER) (libredwg not checked out)" ; \
@@ -706,20 +706,20 @@ install-libraries: install-lisp-systems  ## Install everything the release-libra
 	@# install-documentation: the drawing-subsystem specification (it
 	@# lives outside the documentation/ trees that phase globs) and
 	@# libredwg's licence, which ships with the binaries linking it.
-	install -d $(DOC_INSTALL_DIR)
+	install -d "$(DOC_INSTALL_DIR)"
 	@if [ -f "$(DRAWING_SPEC_ORG)" ]; then \
-	  install -m 0644 "$(DRAWING_SPEC_ORG)" $(DOC_INSTALL_DIR)/ ; \
+	  install -m 0644 "$(DRAWING_SPEC_ORG)" "$(DOC_INSTALL_DIR)/" ; \
 	  echo "installed: $(DRAWING_SPEC_ORG) -> $(DOC_INSTALL_DIR)/" ; \
 	fi
 	@if [ -f "$(LIBREDWG_COPYING)" ]; then \
-	  install -m 0644 "$(LIBREDWG_COPYING)" $(DOC_INSTALL_DIR)/libredwg-COPYING ; \
+	  install -m 0644 "$(LIBREDWG_COPYING)" "$(DOC_INSTALL_DIR)/libredwg-COPYING" ; \
 	  echo "installed: $(LIBREDWG_COPYING) -> $(DOC_INSTALL_DIR)/libredwg-COPYING" ; \
 	fi
 	@echo "libraries installed: $(LIB_INSTALL_DIR)"
 
 install-lisp-systems:  ## Install just the ASDF systems (every .lisp + .asd, in tree layout) under $$PREFIX/share/common-lisp/{source,systems}.
-	install -d $(CL_SOURCE_INSTALL_DIR)
-	install -d $(CL_SYSTEMS_INSTALL_DIR)
+	install -d "$(CL_SOURCE_INSTALL_DIR)"
+	install -d "$(CL_SYSTEMS_INSTALL_DIR)"
 	@# Copied file-by-file (not `tar -T -') so the mode is normalised
 	@# to 0644 whatever the checkout's umask, and so directories are
 	@# created by install(1) — `install -D' is GNU-only, hence the
@@ -736,38 +736,38 @@ install-lisp-systems:  ## Install just the ASDF systems (every .lisp + .asd, in 
 	@# source-registry scans share/common-lisp/systems/ for .asd files,
 	@# which is what makes (asdf:load-system "clautolisp") work with no
 	@# per-user configuration.
-	ln -sf ../source/$(SUBPROJECT_NAME)/$(SUBPROJECT_NAME).asd \
-	       $(CL_SYSTEMS_INSTALL_DIR)/$(SUBPROJECT_NAME).asd
+	ln -sf "../source/$(SUBPROJECT_NAME)/$(SUBPROJECT_NAME).asd" \
+	       "$(CL_SYSTEMS_INSTALL_DIR)/$(SUBPROJECT_NAME).asd"
 	@echo "linked:    $(CL_SYSTEMS_INSTALL_DIR)/$(SUBPROJECT_NAME).asd"
 	@# The conf.d fragment reaches Lisp images whose source-registry
 	@# does not already cover $(PREFIX) — see the file's own header for
 	@# the XDG_CONFIG_DIRS it needs, and for the user configurations
 	@# that (deliberately) shadow it.
-	install -d $(CL_CONFD_INSTALL_DIR)
-	install -m 0644 $(CL_CONFD_FILE) $(CL_CONFD_INSTALL_DIR)/$(CL_CONFD_NAME)
+	install -d "$(CL_CONFD_INSTALL_DIR)"
+	install -m 0644 "$(CL_CONFD_FILE)" "$(CL_CONFD_INSTALL_DIR)/$(CL_CONFD_NAME)"
 	@echo "installed: $(CL_CONFD_FILE) -> $(CL_CONFD_INSTALL_DIR)/$(CL_CONFD_NAME)"
 
 uninstall:  ## Remove the clautolisp install from $$PREFIX.
-	rm -rf $(CL_SOURCE_INSTALL_DIR)
-	rm -f $(CL_SYSTEMS_INSTALL_DIR)/$(SUBPROJECT_NAME).asd
-	rm -f $(CL_CONFD_INSTALL_DIR)/$(CL_CONFD_NAME)
-	rm -f $(BIN_INSTALL_DIR)/clautolisp $(BIN_INSTALL_DIR)/read-autolisp \
-	      $(BIN_INSTALL_DIR)/clautolisp-sbcl $(BIN_INSTALL_DIR)/clautolisp-ccl \
-	      $(BIN_INSTALL_DIR)/read-autolisp-sbcl $(BIN_INSTALL_DIR)/read-autolisp-ccl \
-	      $(BIN_INSTALL_DIR)/clautolisp-gui-qt
+	rm -rf "$(CL_SOURCE_INSTALL_DIR)"
+	rm -f "$(CL_SYSTEMS_INSTALL_DIR)/$(SUBPROJECT_NAME).asd"
+	rm -f "$(CL_CONFD_INSTALL_DIR)/$(CL_CONFD_NAME)"
+	rm -f "$(BIN_INSTALL_DIR)/clautolisp" "$(BIN_INSTALL_DIR)/read-autolisp" \
+	      "$(BIN_INSTALL_DIR)/clautolisp-sbcl" "$(BIN_INSTALL_DIR)/clautolisp-ccl" \
+	      "$(BIN_INSTALL_DIR)/read-autolisp-sbcl" "$(BIN_INSTALL_DIR)/read-autolisp-ccl" \
+	      "$(BIN_INSTALL_DIR)/clautolisp-gui-qt"
 	@# Remove .info entries from the dir node before deleting the files.
 	@# Derived from the source .org list (the generated .info live under build/).
 	@for f in $(INFO_FILES); do \
-	  base="$$(basename $$f)" ; \
-	  $(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" "$$base" 2>/dev/null \
+	  base="$$(basename "$$f")" ; \
+	  "$(INSTALL_INFO)" --remove --info-dir="$(INFO_INSTALL_DIR)" "$$base" 2>/dev/null \
 	    || true ; \
 	  rm -f "$(INFO_INSTALL_DIR)/$$base" ; \
 	done
 	@for f in documentation/man/*.1; do \
-	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename $$f)" ; fi ; \
+	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename "$$f")" ; fi ; \
 	done
 	@# The rest of install-libraries: the native codec libs and the
 	@# header both live in directories that are ours alone. (The two
 	@# documents it installs go with $(DOC_INSTALL_DIR) below.)
-	rm -rf $(LIB_INSTALL_DIR) $(INCLUDE_INSTALL_DIR)
-	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)
+	rm -rf "$(LIB_INSTALL_DIR)" "$(INCLUDE_INSTALL_DIR)"
+	rm -rf "$(LIBEXEC_INSTALL_DIR)" "$(DOC_INSTALL_DIR)"
