@@ -71,7 +71,11 @@ function Run-Knob {
   ("########## KNOB: {0} ##########" -f $Label) | Tee-Object -FilePath $report -Append
   $saved = $null
   if ($EnvName) { $saved = [Environment]::GetEnvironmentVariable($EnvName); Set-Item -Path "Env:$EnvName" -Value $EnvValue }
-  if ($CodePage -gt 0) { cmd /c "chcp $CodePage" | Out-Null }
+  # Invoke the real Windows cmd.exe by its absolute path ($env:ComSpec): a bare
+  # `cmd' resolves against PATH, and on an MSYS2 runner that finds
+  # C:\msys64\usr\bin\cmd (a symlink/document, not the console interpreter),
+  # which PowerShell refuses mid-pipeline ("CantActivateDocumentInPipeline").
+  if ($CodePage -gt 0) { & "$env:ComSpec" /c "chcp $CodePage" | Out-Null }
   try {
     (& $alfe @bargs 2>&1) |
       Where-Object { "$_" -match '^ENC |ENC-PROBE DONE|BOOTSTRAP-FAILED|FAILED' } |
