@@ -134,6 +134,17 @@ it on first reference."
       (setf (sysvar-cell-value cell) value)
       value)))
 
+(defun cador-copy-sysvar-table (table)
+  "An independent copy of a sysvar TABLE: a fresh hash-table holding
+fresh cells. Sharing a cell would make a `snapshot' a live view, and the
+whole point of one is that restoring it undoes every intervening
+define / undefine / setvar."
+  (let ((copy (make-hash-table :test #'equalp :size (hash-table-count table))))
+    (maphash (lambda (name cell)
+               (setf (gethash name copy) (copy-sysvar-cell cell)))
+             table)
+    copy))
+
 (defun cador-remove-sysvar (mock name)
   "Drop the sysvar cell NAME from MOCK. After this, getvar returns nil
 \(unknown name) and setvar signals unknown-sysvar — the behaviour of a

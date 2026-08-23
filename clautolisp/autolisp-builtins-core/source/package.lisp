@@ -165,6 +165,8 @@
                 #:host-regapp
                 #:host-getvar
                 #:host-setvar
+                #:host-snapshot-sysvars
+                #:host-restore-sysvars
                 #:host-sysvar-names
                 #:host-command-log
                 #:host-registry-read #:host-registry-write
@@ -208,4 +210,7 @@
    #:install-core-builtins
    #:autolisp-value->string
    #:live-event-policy
-   #:apply-dialect-trust-sysvar-defaults))
+   #:apply-dialect-trust-sysvar-defaults
+   #:install-sysvar-dialect-controller
+   #:forget-sysvar-dialect-controller
+   #:ensure-sysvar-table-matches-dialect))

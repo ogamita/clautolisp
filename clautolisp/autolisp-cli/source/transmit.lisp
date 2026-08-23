@@ -382,8 +382,35 @@ Side effects:
                        (second entry))))))
     (apply-clautolisp-host-identity context version frontend)
     (apply-tempprefix-default context)
+    ;; The base snapshot must be taken BEFORE the two overlays below,
+    ;; because it is the dialect-INDEPENDENT table they are applied on
+    ;; top of, and the one a later dialect switch rebuilds from. A
+    ;; dialect overlay removes cells; nothing can un-remove them except
+    ;; starting again from a table that still had them
+    ;; (sysvar-table-ignores-runtime-dialect-change.issue).
+    (install-runtime-dialect-sysvar-tracking
+     context (transmit-dialect-keyword bindings))
     (apply-dialect-trust-defaults context (transmit-dialect-keyword bindings))
     (apply-dialect-sysvar-defaults context (transmit-dialect-keyword bindings))))
+
+(defun install-runtime-dialect-sysvar-tracking (context dialect-keyword)
+  "Make the host's sysvar table follow `(setq *AUTOLISP-DIALECT* …)'.
+
+This layer is the only one that can see BOTH dialect-dependent sysvar
+overlays — the trust overlay in autolisp-builtins-core and the bricscad
+existence overlay in cador — so it is the one that hands the runtime a
+closure re-applying both. Everything else about the mechanism lives with
+the controller in autolisp-builtins-core/source/secureload.lisp."
+  (when context
+    (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
+      (when host
+        (clautolisp.autolisp-builtins-core:install-sysvar-dialect-controller
+         host dialect-keyword
+         (lambda (host dialect-keyword)
+           (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
+            host dialect-keyword)
+           (when (eq dialect-keyword :bricscad-v26)
+             (clautolisp.cador:apply-bricscad-dialect-sysvars host))))))))
 
 (defun transmit-dialect-keyword (bindings)
   "Recover the dialect keyword (:strict / :autocad-2026 / :bricscad-v26

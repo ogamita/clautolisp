@@ -496,6 +496,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-builtins-core/tests/exit-status-tests")
    (:file "autolisp-builtins-core/tests/clal-extensions-tests")
    (:file "autolisp-builtins-core/tests/secureload-dialect-tests")
+   (:file "autolisp-builtins-core/tests/sysvar-dialect-tracking-tests")
    (:file "autolisp-builtins-core/tests/encoding-roundtrip-tests")
    (:file "autolisp-builtins-core/tests/path-dotdot-tests")
    (:file "autolisp-builtins-core/tests/case-insensitive-paths-tests")
