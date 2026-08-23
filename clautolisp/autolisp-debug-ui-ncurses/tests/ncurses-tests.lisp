@@ -133,6 +133,39 @@
       (declare (ignore result screen))
       (is (search "set at line 3" (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
 
+(test structural-nav-forward-moves-selection-to-next-form
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    (with-open-file (out "two.lsp" :direction :output :if-exists :supersede)
+      (write-string +two-source+ out))
+    (unwind-protect
+         ;; The stop re-anchors on the innermost poll point (id x) on line 3;
+         ;; 'u' ascends to the (setq …) statement and '>' selects its next
+         ;; sibling — (id z) on line 4 — so the >> gutter follows there.
+         (multiple-value-bind (result ui screen)
+             (run-ncurses (list #\u #\> #\a) :context context :thread-info ti
+                          :thunk (lambda () (call-two context)))
+           (declare (ignore result ui))
+           (let ((row (clautolisp.ui.tui:mock-find-line screen "(id z)")))
+             (is (integerp row))
+             (is (search ">>" (nth row (clautolisp.ui.tui:mock-grid-lines screen))))))
+      (ignore-errors (delete-file "two.lsp")))))
+
+(test breakpoint-at-navigated-selection
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; Stop at line 3 (cursor on the inner (id x)); 'u' then '>' moves the
+    ;; structural cursor onto the (id z) form (line 4), then 'b' breaks at
+    ;; the SELECTED form's line — the cursor-based location rule (cmd-ref §0),
+    ;; not the stop line.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list #\u #\> #\b #\c) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (search "set at line 4" (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
+
 (test eval-line-shows-result-in-repl
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))

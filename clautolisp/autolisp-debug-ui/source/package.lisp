@@ -21,6 +21,9 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
                 #:autolisp-symbol
                 #:autolisp-symbol-name
                 #:intern-autolisp-symbol
+                #:autolisp-usubr-name
+                #:autolisp-usubr-lambda-list
+                #:autolisp-usubr-body
                 #:read-runtime-from-string
                 #:make-default-runtime-context
                 #:current-evaluation-context)
@@ -40,6 +43,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
                 #:poll-point-at
                 #:metadata-for-function-id
                 #:function-debug-metadata-function-id
+                #:function-debug-metadata-usubr
                 #:find-form-id-at-line
                 #:hit-snapshot #:hit-stop-reason #:hit-source-position
                 #:hit-error-message #:hit-fid #:hit-form-id #:hit-when #:hit-breakpoint
@@ -139,6 +143,10 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:sync-config-from-variable #:sync-config-to-variable
    ;; structural sexp navigator (command reference §3)
    #:make-navigator #:navigator-root #:navigator-path #:nav-selected
+   ;; SOURCE-FORM-OF-METADATA is intentionally NOT exported: the dumb UI
+   ;; defines its own same-named function, and :use-ing an exported one here
+   ;; would collide. Only the higher-level builder is shared.
+   #:navigator-for-metadata
    #:nav-parent #:nav-index
    #:nav-down #:nav-up #:nav-forward #:nav-backward #:nav-first #:nav-last
    #:nav-skip #:nav-render #:nav-source-listing #:nav-selected-position

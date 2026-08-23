@@ -12,6 +12,7 @@
    (source-cursor :initform nil :accessor ncurses-ui-source-cursor)  ; line in shown file
    (message :initform "" :accessor ncurses-ui-message)               ; interactor line
    (repl-lines :initform '() :accessor ncurses-ui-repl-lines)        ; newest last
+   (navigator :initform nil :accessor ncurses-ui-navigator)          ; source selection
    (inspector-cursor :initform 0 :accessor ncurses-ui-inspector-cursor)))
 
 (defun make-ncurses-ui (&rest initargs)
@@ -59,7 +60,25 @@
   (let ((snapshot (current-snapshot session)))
     (setf (ncurses-ui-source-cursor ui)
           (let ((position (and snapshot (snapshot-source-position snapshot))))
-            (and (source-position-p position) (source-position-start-line position))))))
+            (and (source-position-p position) (source-position-start-line position)))))
+  (rebuild-navigator ui session))
+
+(defun rebuild-navigator (ui session)
+  "Build the source navigator for the selected frame, its selection
+re-anchored to that frame's stopping position (§19.1 source pane). Stores NIL
+when the frame has no reconstructable source form (e.g. a builtin)."
+  (let* ((frame (selected-frame-of ui session))
+         (fid (and frame (stack-frame-fid frame)))
+         (metadata (and fid (metadata-for-function-id fid)))
+         (position (and frame (stack-frame-source-position frame))))
+    (setf (ncurses-ui-navigator ui)
+          (and metadata (navigator-for-metadata metadata position)))))
+
+(defun selection-line-of (ui)
+  "The source line of the navigator's current selection (the cursor), or NIL."
+  (let* ((nav (ncurses-ui-navigator ui))
+         (position (and nav (nav-selected-position nav))))
+    (and (source-position-p position) (source-position-start-line position))))
 
 ;;;; --- rendering -----------------------------------------------------
 
@@ -106,9 +125,10 @@
         "-")))
 
 (defun render-source (ui session pane)
-  "Source pane (spec §19.1): show the selected frame's source with
-markers — current line :yellow, a breakpointed poll point :red, a plain
-poll point :blue."
+  "Source pane (spec §19.1): show the selected frame's source with markers —
+current stopping line :yellow, a breakpointed poll point :red, a plain poll
+point :blue. The =>>= gutter follows the structural navigator's selection (the
+cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
   (let* ((screen (ncurses-ui-screen ui))
          (frame (selected-frame-of ui session))
          (fid (and frame (stack-frame-fid frame)))
@@ -116,13 +136,14 @@ poll point :blue."
          (position (and frame (stack-frame-source-position frame)))
          (file (and (source-position-p position) (source-position-file position)))
          (current-line (and (source-position-p position) (source-position-start-line position)))
+         (selection-line (or (selection-line-of ui) current-line))
          (lines (and file (ignore-errors (lines-of file))))
          (poll-lines (and metadata (poll-point-lines metadata)))
          (bp-lines (breakpoint-lines session fid))
          (height (pane-interior-height pane)))
     (cond
       ((and lines (plusp (length lines)))
-       (let* ((center (or current-line 1))
+       (let* ((center (or selection-line current-line 1))
               (start (max 1 (- center (floor height 2)))))
          (loop for row from 0 below height
                for n = (+ start row)
@@ -130,7 +151,7 @@ poll point :blue."
                do (pane-put-line
                    screen pane row
                    (format nil "~A~3D: ~A"
-                           (if (eql n current-line) ">>" "  ") n (aref lines (1- n)))
+                           (if (eql n selection-line) ">>" "  ") n (aref lines (1- n)))
                    :attr (cond ((eql n current-line) :yellow)
                                ((member n bp-lines) :red)
                                ((member n poll-lines) :blue)
@@ -163,7 +184,7 @@ poll point :blue."
   (let ((screen (ncurses-ui-screen ui)))
     (pane-put-line screen pane 0 (format nil "DBG> ~A" (ncurses-ui-message ui)))
     (pane-put-line screen pane 2 "c continue  s step  i in  o out  f finish")
-    (pane-put-line screen pane 3 "b bkpt  e eval  x inspect  ^/v frame  q quit  h help")))
+    (pane-put-line screen pane 3 "d u > < nav  b bkpt  e eval  x inspect  ^/v frame  q quit")))
 
 (defun render-repl (ui pane)
   (let* ((screen (ncurses-ui-screen ui))
@@ -196,11 +217,26 @@ poll point :blue."
     ((key-char-p key #\r) (return-value ui session hit) )
     ((eq key :up) (move-frame ui session -1) nil)
     ((eq key :down) (move-frame ui session +1) nil)
+    ;; structural navigation of the source form (spec §19.1 / cmd-ref §3):
+    ;; d down, u up, > next sibling, < previous sibling. The selection is the
+    ;; cursor location-taking commands (b) act on (cursor-based, cmd-ref §0).
+    ((key-char-p key #\d) (nav-move ui #'nav-code-down) nil)
+    ((key-char-p key #\u) (nav-move ui #'nav-up) nil)
+    ((key-char-p key #\>) (nav-move ui #'nav-code-forward) nil)
+    ((key-char-p key #\<) (nav-move ui #'nav-code-backward) nil)
     ((key-char-p key #\b) (toggle-breakpoint ui session) nil)
     ((key-char-p key #\e) (eval-line ui session) nil)
     ((key-char-p key #\x) (inspect-loop ui session) nil)
-    ((key-char-p key #\h) (set-message ui "keys: c s i o f | b e x | up/down frame | a abort r return q quit") nil)
+    ((key-char-p key #\h) (set-message ui "keys: c s i o f | d u > < nav | b e x | up/down frame | a abort r return q quit") nil)
     (t nil)))
+
+(defun nav-move (ui motion)
+  "Apply MOTION to the source navigator and echo the newly-selected subform
+into the interactor line (so the selection is visible across the panes)."
+  (let ((nav (ncurses-ui-navigator ui)))
+    (when nav
+      (funcall motion nav)
+      (set-message ui "sel: ~A" (nav-render nav)))))
 
 (defun move-frame (ui session delta)
   (let* ((frames (snapshot-call-stack (current-snapshot session)))
@@ -210,7 +246,8 @@ poll point :blue."
     (cmd-select-frame session new)
     (let ((position (stack-frame-source-position (nth new frames))))
       (when (source-position-p position)
-        (setf (ncurses-ui-source-cursor ui) (source-position-start-line position))))))
+        (setf (ncurses-ui-source-cursor ui) (source-position-start-line position))))
+    (rebuild-navigator ui session)))
 
 (defun toggle-breakpoint (ui session)
   "Toggle a breakpoint at the source cursor line of the selected frame's
@@ -218,7 +255,7 @@ function (spec §19.1: b at the line)."
   (let* ((frame (selected-frame-of ui session))
          (fid (and frame (stack-frame-fid frame)))
          (metadata (and fid (metadata-for-function-id fid)))
-         (line (ncurses-ui-source-cursor ui)))
+         (line (or (selection-line-of ui) (ncurses-ui-source-cursor ui))))
     (cond
       ((not (and metadata line)) (set-message ui "no source line to break on"))
       (t (let ((form-id (find-form-id-at-line metadata line)))
