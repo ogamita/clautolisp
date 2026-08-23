@@ -316,12 +316,22 @@ resume directive."
         (debugger-session-nav-target session) nil)
   (let ((ui (debugger-session-ui session))
         (reason (hit-stop-reason hit)))
-    (case reason
-      (:unhandled-error (ui-thread-unhandled-error ui session hit))
-      (:caught-error (ui-thread-caught-error ui session hit))
-      (t (ui-thread-hit ui session hit)))
-    (when (and (hit-source-position hit)
-               (ui-show-stop-source-p ui))
-      (ui-show-source ui (hit-source-position hit)))
-    (prog1 (ui-await-command ui session hit)
+    ;; Establish the stop's interactor activation (the dumb UI's ALDO) around
+    ;; the WHOLE stop — announcement included — so that with a dribble active
+    ;; the "Break at ..." announcement is filtered as ALDO, not leaked as
+    ;; AUTOLISP (dribble-stop-announcement-interactor.issue). Non-interactor
+    ;; UIs run the body unchanged. UI-THREAD-RESUMED stays outside, after the
+    ;; activation is torn down, matching the pre-fix ordering.
+    (prog1
+        (call-with-stop-interactor
+         ui session hit
+         (lambda ()
+           (case reason
+             (:unhandled-error (ui-thread-unhandled-error ui session hit))
+             (:caught-error (ui-thread-caught-error ui session hit))
+             (t (ui-thread-hit ui session hit)))
+           (when (and (hit-source-position hit)
+                      (ui-show-stop-source-p ui))
+             (ui-show-source ui (hit-source-position hit)))
+           (ui-await-command ui session hit)))
       (ui-thread-resumed ui session))))

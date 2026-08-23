@@ -78,6 +78,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:ui-breakpoint-added #:ui-breakpoint-removed
    #:ui-show-source #:ui-show-stop-source-p #:ui-show-message
    #:ui-await-command
+   #:call-with-stop-interactor
    #:ui-open-navigation-request
    #:ui-run-command
    ;; session object

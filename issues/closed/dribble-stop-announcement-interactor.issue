@@ -41,3 +41,30 @@ included — e.g. push it (dynamically) in SESSION-STOP before the
 UI-THREAD-* notification, or have the dumb UI announce from inside
 UI-AWAIT-COMMAND after the push. Needs care: SESSION-STOP is the
 UI-agnostic layer; the activation state types live in the dumb UI.
+
+** RESOLVED (clautolisp 1.9.5)
+
+Fixed via a CALL-WITH-* protocol seam, so the UI-agnostic layer never
+names the dumb-UI activation types (the "needs care" above):
+
+- New generic CALL-WITH-STOP-INTERACTOR (ui session hit thunk) in
+  autolisp-debug-ui/source/protocol.lisp, default method just funcalls
+  THUNK (a UI with no interactor activation is unaffected).
+- SESSION-STOP (autolisp-debug-ui/source/session.lisp) now runs the
+  announcement, the source display AND the command loop inside
+  CALL-WITH-STOP-INTERACTOR. UI-THREAD-RESUMED stays outside, after the
+  activation is torn down, matching the pre-fix ordering.
+- The dumb UI method (autolisp-debug-ui-dumb/source/dumb-ui.lisp) pushes
+  the stop's ALDO activation onto *INTERACTOR-STACK* for the whole stop;
+  the push moved OUT of UI-AWAIT-COMMAND, which now inherits the binding
+  (FLOOR is unchanged — it is still the ALDO-inclusive depth).
+
+So the "Break at ..." announcement is emitted with ALDO on top of the
+interactor stack and the dribble filter skips it, exactly as it already
+skipped the DBG>/NAV> interaction.
+
+Regression test: DRIBBLE-OMITS-DEBUGGER-STOP-ANNOUNCEMENT in
+clautolisp/tools/clautolisp/tests/dribble-tests.lisp drives a real
+programmatic stop through a dribble O-tee and asserts neither "Break" nor
+the stop message is recorded. Verified it has teeth (fails when the push
+is disabled). Suites green: dumb-ui 525/525, clautolisp-tool 102/102.
