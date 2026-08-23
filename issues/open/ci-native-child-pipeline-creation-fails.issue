@@ -242,3 +242,57 @@ Found 2026-08-19 while landing MR !104-!107. Filed rather than mentioned
 in passing, because a red master is exactly the kind of thing that
 becomes normal if nobody writes it down — and it sits directly on the
 path to =release-1.9.0=, where a red pipeline is not a cosmetic problem.
+
+* RECURRED on release-1.9.3 (2026-08-22) — a SECOND trigger, and the fix that ends both
+
+The sweep (option 2) manages the active-jobs cap. It does nothing for a
+DIFFERENT way the same bridge blocks a release, and that second way killed
+=release-1.9.2= and very nearly =release-1.9.3=:
+
+- Symptom this time: =native:pipeline= stuck *=pending=* (not =failed=), with
+  *child = none* — the child was never even created — for 40+ minutes, holding
+  the whole =release= stage in =created=. All 12 test jobs were green; the
+  pipeline simply could not advance.
+- Trigger: the *namespace was over its 10 GB storage limit* (~18.5 GB). GitLab
+  refuses to CREATE pipelines while a namespace is over quota, so the bridge
+  cannot create its downstream and hangs =pending=. Already-scheduled jobs
+  finish; anything that needs a NEW pipeline (a child) cannot start. This is
+  the storage-quota variant, distinct from the active-jobs cap above — see
+  =namespace-storage-blocks-ci.issue=. It is also exactly how =release-1.9.2=
+  died ("could not be published").
+- Unblocked: bulk =DELETE /projects/:id/artifacts= (=keep_latest_artifact=True=
+  preserves every release tag) took storage 18.5 → 7.2 GB; the stuck bridge
+  could not be cancelled (=POST /jobs/<bridge>/cancel= → 404 for a bridge) nor
+  revived by a pipeline retry, so: cancel the whole pipeline, then
+  =POST /projects/:id/pipeline?ref=release-1.9.3= for a fresh one. Its
+  =native:pipeline= created the child in seconds and =release-1.9.3= shipped.
+
+So there are now TWO independent triggers that make this one bridge block a
+release, and the release path has hit BOTH:
+  (a) too many jobs in active pipelines (immortal children) — managed by
+      options 1+2 above;
+  (b) namespace over the storage quota — NOT covered by anything here.
+
+** The durable fix, to decide (recommendation)
+
+Managing every possible reason the child cannot be created is a losing game;
+the release must not DEPEND on it in the first place. The child's own jobs are
+already =allow_failure= ("clickable, non-blocking fallback"), and the parent's
+whole point is that native tests are best-effort. So:
+
+1. *=native:pipeline: allow_failure: true=* (+ keep it out of =collect='s
+   =needs=, which it already is). A bridge that cannot create its child then
+   fails softly and the =release= stage proceeds regardless of WHY — cap,
+   quota, or a future third reason. Native validation stays available; it just
+   can no longer hold a release hostage. This is the one change that closes
+   this ticket's release-impact for good.
+2. *Storage half (so it stops recurring at the source):* an artefact
+   expiry/retention policy — short =expire_in= on test/build job artefacts, so
+   the namespace stays under 10 GB without a manual bulk purge every fortnight.
+   Release =collect= artefacts stay =expire_in: never= but are now MIRRORED to
+   the durable poseidon area (=make-gitlab-release.py --links poseidon=), so
+   even purging them does not break a published release. Tracked jointly with
+   =namespace-storage-blocks-ci.issue=.
+
+Filed 2026-08-22 after driving =release-1.9.3= through by hand. (1) is small and
+ends the release-blocking symptom; (2) removes the pressure that produces it.
