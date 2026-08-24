@@ -8,6 +8,19 @@ calls CMD-* to drive the session. This layer is UI-agnostic — concrete
 UIs (dumb terminal, ncurses, Emacs) build on it. In-image terminal UIs
 run synchronously: at a stopping point the engine's *debug-hit-handler*
 calls UI-AWAIT-COMMAND, which returns a resume directive.")
+  ;; Configuration-file resolution, moved to CLAUTOLISP.CONFIGURATION so
+  ;; that autolisp-builtins-core -- which sits BELOW this system and could
+  ;; not depend on it -- stops carrying a second copy of the same rule
+  ;; (aldo-config-path-implemented-twice.issue). Imported and re-exported,
+  ;; so callers and tests that say clautolisp.debug.ui:xdg-config-dirs keep
+  ;; working, on the very same symbol.
+  (:import-from #:clautolisp.configuration
+                #:config-getenv
+                #:xdg-config-home
+                #:xdg-config-dirs
+                #:config-relative-path
+                #:config-save-path
+                #:config-load-path)
   ;; the generic command/dictionary machinery, moved to the interactor
   ;; framework; re-exported below so debugger-UI users keep one package.
   (:import-from #:clautolisp.interactor
