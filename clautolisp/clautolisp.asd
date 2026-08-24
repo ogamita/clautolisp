@@ -68,6 +68,21 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/configuration"
+  :description "Where clautolisp's configuration files live (XDG resolution)."
+  :author "Claude"
+  :license "AGPL-3.0"
+  :depends-on ("uiop")
+  :serial t
+  :components
+  ((:file "configuration/source/package")
+   (:file "configuration/source/xdg"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/configuration/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
 (asdf:defsystem "clautolisp/autolisp-compiler"
   :description "AutoLISP-to-Common-Lisp transpiler (compiler.issue, Tier 2)."
   :author "Claude"
@@ -226,7 +241,7 @@
   :description "Initial core builtin registry for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-runtime"
+  :depends-on ("clautolisp/configuration" "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-sedit"
@@ -473,6 +488,24 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (uiop:symbol-call :clautolisp.autolisp-dcl.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/configuration/tests"
+  :description "Tests for the configuration-file resolution module."
+  :author "Claude"
+  :license "AGPL-3.0"
+  ;; Depends on the debug UI on purpose: the property under test is that
+  ;; the UI re-exports THIS module's symbols rather than defining its own.
+  :depends-on ("clautolisp/configuration" "clautolisp/autolisp-debug-ui" "fiveam")
+  :serial t
+  :components
+  ((:file "configuration/tests/package")
+   (:file "configuration/tests/test-harness")
+   (:file "configuration/tests/xdg-tests")
+   (:file "configuration/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.configuration.tests
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/autolisp-compiler/tests"
@@ -726,7 +759,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :description "Debugger UI protocol + session lifecycle (debugger §17, §21–§24)."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-runtime"
+  :depends-on ("clautolisp/configuration" "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-debug"
                "clautolisp/autolisp-inspect"
                "clautolisp/autolisp-interactor"
@@ -921,6 +954,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
                "clautolisp/autolisp-dcl/tests"
                "clautolisp/autolisp-builtins-core/tests"
                "clautolisp/autolisp-compiler/tests"
+               "clautolisp/configuration/tests"
                "clautolisp/autolisp-cli/tests"
                "clautolisp/autolisp-file-compat/tests"
                "clautolisp/autolisp-init-files/tests"
@@ -951,6 +985,8 @@ identity / TEMPPREFIX stamping, option value parsers)."
                            (uiop:symbol-call :clautolisp.autolisp-builtins-core.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-compiler.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.configuration.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-cli.tests
                                              :run-all-tests)

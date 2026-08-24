@@ -5110,36 +5110,14 @@ default when the variable is unbound."
           (clautolisp.autolisp-runtime:set-variable sym default)
           default))))
 
-(defun %aldo-getenv (name)
-  (let ((v (uiop:getenv name))) (if (and v (plusp (length v))) v nil)))
-
-(defun aldo-xdg-config-home ()
-  (or (%aldo-getenv "XDG_CONFIG_HOME")
-      (namestring (merge-pathnames ".config/" (user-homedir-pathname)))))
-
-(defun aldo-xdg-config-dirs ()
-  (loop :for part :in (uiop:split-string (or (%aldo-getenv "XDG_CONFIG_DIRS") "/etc/xdg")
-                                         :separator ":")
-        :when (plusp (length part)) :collect part))
-
-(defun aldo-config-relative-path ()
-  (make-pathname :directory '(:relative "clautolisp") :name "aldo" :type "conf"))
-
-(defun aldo-config-save-path ()
-  (merge-pathnames (aldo-config-relative-path)
-                   (uiop:ensure-directory-pathname (aldo-xdg-config-home))))
-
-(defun aldo-config-load-path ()
-  "The save path if it exists, else the first clautolisp/aldo.conf along
-$XDG_CONFIG_DIRS, or NIL."
-  (let ((home (aldo-config-save-path)))
-    (if (probe-file home)
-        home
-        (loop :for dir :in (aldo-xdg-config-dirs)
-              :for path := (merge-pathnames (aldo-config-relative-path)
-                                            (uiop:ensure-directory-pathname dir))
-              :when (probe-file path) :return path))))
-
+;;; Where aldo.conf lives is CLAUTOLISP.CONFIGURATION's answer now.
+;;;
+;;; It used to be answered here TOO -- a full second implementation, XDG
+;;; logic included, agreeing with the debug UI's line for line. Not
+;;; carelessness: this system sits BELOW autolisp-debug-ui and cannot
+;;; depend on it, so the builtin that needed the path had no access to the
+;;; implementation that already existed. The rule moved down to a layer
+;;; both can see instead (aldo-config-path-implemented-twice.issue).
 (defun load-aldo-configuration-from (path)
   "Read the configuration from PATH (an AutoLISP sexp) and set
 *CLAL-ALDO-CONFIGURATION*; return the new value, or nil if PATH is missing."
@@ -5192,12 +5170,12 @@ set; both forms read back as the same configuration."
 (defun builtin-clal-load-aldo-configuration ()
   "Read *CLAL-ALDO-CONFIGURATION* from the available XDG aldo.conf and set the
 variable; return the new value, or nil if no configuration file was found."
-  (load-aldo-configuration-from (aldo-config-load-path)))
+  (load-aldo-configuration-from (clautolisp.configuration:config-load-path "aldo")))
 
 (defun builtin-clal-save-aldo-configuration ()
   "Write *CLAL-ALDO-CONFIGURATION* to $XDG_CONFIG_HOME/clautolisp/aldo.conf as
 an AutoLISP sexp (UTF-8); return the path string."
-  (save-aldo-configuration-to (aldo-config-save-path)))
+  (save-aldo-configuration-to (clautolisp.configuration:config-save-path "aldo")))
 
 (defun builtin-clal-break ()
   "Drop into the aldo debugger at the current poll point when a debug session is

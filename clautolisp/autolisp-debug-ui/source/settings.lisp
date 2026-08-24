@@ -382,39 +382,14 @@ the debugger."
 ;;; ---------------------------------------------------------------------------
 ;;; XDG path resolution (command reference §8 — Loading)
 
-(defun %getenv (name)
-  (let ((v (uiop:getenv name)))
-    (if (and v (plusp (length v))) v nil)))
-
-(defun xdg-config-home ()
-  "$XDG_CONFIG_HOME, defaulting to ~/.config."
-  (or (%getenv "XDG_CONFIG_HOME")
-      (namestring (merge-pathnames ".config/" (user-homedir-pathname)))))
-
-(defun xdg-config-dirs ()
-  "The list of $XDG_CONFIG_DIRS entries (defaulting to /etc/xdg)."
-  (let ((v (or (%getenv "XDG_CONFIG_DIRS") "/etc/xdg")))
-    (loop :for part :in (uiop:split-string v :separator ":")
-          :when (plusp (length part)) :collect part)))
-
-(defun config-relative-path (&optional (name "aldo"))
-  (make-pathname :directory '(:relative "clautolisp") :name name :type "conf"))
-
-(defun config-save-path (&optional (name "aldo"))
-  "Where SAVE writes: $XDG_CONFIG_HOME/clautolisp/NAME.conf."
-  (merge-pathnames (config-relative-path name)
-                   (uiop:ensure-directory-pathname (xdg-config-home))))
-
-(defun config-load-path (&optional (name "aldo"))
-  "Where LOAD reads from: the save path if it exists, else the first
-clautolisp/NAME.conf found along $XDG_CONFIG_DIRS; NIL if none."
-  (let ((home (config-save-path name)))
-    (if (probe-file home)
-        home
-        (loop :for dir :in (xdg-config-dirs)
-              :for path := (merge-pathnames (config-relative-path name)
-                                            (uiop:ensure-directory-pathname dir))
-              :when (probe-file path) :return path))))
+;;; These live in CLAUTOLISP.CONFIGURATION now, and are IMPORTED here (see
+;;; the package definition) rather than defined twice. They used to be
+;;; defined here and, independently, in autolisp-builtins-core, which sits
+;;; below this system and could not reach them
+;;; (aldo-config-path-implemented-twice.issue). The names below stay
+;;; exported from this package, so every caller and test is unaffected --
+;;; they are now the SAME symbols the configuration module exports, which is
+;;; the whole point.
 
 (defun aldo-config-relative-path () (config-relative-path "aldo"))
 (defun aldo-config-save-path () (config-save-path "aldo"))

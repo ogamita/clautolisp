@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: aldo-config-path-implemented-twice — deux implémentations de « où vit aldo.conf », dans deux paquets qui ne se voient pas
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: implement-compiler
 
 * Constat
 
@@ -87,6 +87,69 @@ comme symbole EXTERNE, alors qu'il est interne dans cette version. Charger
 =tools/symbol.lisp= seul, avec =cl-ppcre= et =com.informatimago.common-lisp.cesarum=,
 suffit pour =check-duplicate-symbols=.
 
+
+* RÉSOLU en 2.0.1 — un module =clautolisp/configuration=
+
+Fait comme pjb l'a demandé : la duplication est éliminée en introduisant le
+module de configuration, sans attendre le rassemblement avec les options
+qu'il dit non urgent.
+
+** Le module
+
+=clautolisp/configuration=, au bas de la pile, ne dépendant que d'UIOP —
+c'est ce qui permet à =autolisp-builtins-core= ET à =autolisp-debug-ui= de
+le voir, ce qu'aucune des deux ne pouvait faire de l'autre.
+
+L'implémentation est celle du debug-UI, *déplacée sans modification* : elle
+était la canonique (paramétrée par nom, servant déjà =aldo.conf= et
+=lisp.conf=), et celle de builtins-core en était la réécriture
+aldo-seulement. Déplacer plutôt que fusionner garantit que ce commit ne
+change *où* qui que ce soit trouve sa configuration.
+
+Le module DÉCLARE la structure, comme demandé : =*configuration-names*= vaut
+=("aldo" "lisp")=, documenté — le premier étant l'interactor du débogueur
+(partagé entre les builtins AutoLISP et l'UI), le second les réglages côté
+Common Lisp. Ajouter une configuration devient une modification dans ce
+fichier plutôt qu'une chaîne apparaissant quelque part de nouveau.
+
+** Les deux côtés
+
+- =CLAUTOLISP.DEBUG.UI= IMPORTE puis ré-exporte les cinq noms :
+  =clautolisp.debug.ui:xdg-config-dirs= continue de fonctionner pour ses
+  appelants et ses tests, mais c'est désormais LE MÊME SYMBOLE.
+- =autolisp-builtins-core= perd les 1 222 caractères de sa copie ; ses deux
+  builtins appellent =clautolisp.configuration:config-{load,save}-path "aldo"=.
+
+** Le test qui compte
+
+Il n'affirme PAS que les chemins sont corrects — les deux copies calculaient
+des chemins corrects, identiquement, pendant des mois, et un test comparant
+les résultats serait resté vert pendant toute la durée de la duplication.
+Il affirme l'IDENTITÉ DES SYMBOLES :
+
+: (is (eq (find-symbol "XDG-CONFIG-HOME" "CLAUTOLISP.CONFIGURATION")
+:         (find-symbol "XDG-CONFIG-HOME" "CLAUTOLISP.DEBUG.UI")))
+
+Une redéfinition locale rendrait les deux symboles distincts et échouerait
+aussitôt. C'est la version ciblée du filtre construit au-dessus de l'outil
+de pjb : utile sur les cinq noms qui comptent, sans les 519 lignes de bruit.
+
+Quatre autres tests épinglent le comportement, dont celui de la variable
+d'environnement exportée mais VIDE, qui doit compter comme non définie —
+sans quoi toute configuration se résoudrait depuis la racine du système de
+fichiers.
+
+Le système de tests dépend volontairement du debug-UI, ce qui est inhabituel
+pour un module de bas de pile : c'est précisément la propriété testée.
+
+** Ce qui n'est PAS fait
+
+Le rassemblement avec les options et leur mécanique =getenv= / valeurs par
+défaut, que pjb dit non urgent. Seul =config-getenv= est remonté ici, avec
+la raison pour laquelle le cas vide compte. C'est le point d'ancrage naturel
+le jour où les options rejoindront ce module.
+
+* Note de pjb
 
 PJB: Effectivement, il faut reconcilier les deux; on peut considerer
 que ca fait partir d'un module configuration qui connait la structure
