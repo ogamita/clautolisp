@@ -1081,28 +1081,31 @@ is handled separately by the REPL wrapper in RUN-WITH-INPUT."
 
 (defun ncurses-terminal-screen ()
   "Return a real terminal screen for the ncurses debugger UI, or NIL (after a
-warning) when the optional cl-charms backend is not present in this image.
+warning) when no curses backend is present in this image.
 
-The backend — the system clautolisp/autolisp-debug-ui-tui-charms, package
-clautolisp.ui.tui.charms — is deliberately NOT part of the clautolisp
-aggregate: it depends on cl-charms / libncurses and needs a real terminal, so
-it must never be a build- or CI-time dependency (clautolisp-charms.asd). It is
-used here only when it has already been loaded into the image — from a build
-that includes it, or an init file that loads it. When it is absent we return
-NIL and the caller falls back to the terminal (tui) UI, rather than crashing on
-an unbound screen slot."
-  (let ((maker (and (find-package '#:clautolisp.ui.tui.charms)
-                    (find-symbol (string '#:make-charms-screen)
-                                 '#:clautolisp.ui.tui.charms))))
-    (if (and maker (fboundp maker))
-        (funcall maker)
-        (progn
-          (format *error-output*
-                  "~&clautolisp: --debugger-ui ncurses needs the cl-charms ~
-terminal backend (system clautolisp/autolisp-debug-ui-tui-charms), not loaded ~
-in this image; using the terminal (tui) UI instead. Load that system (it ~
-depends on cl-charms) to enable the ncurses UI.~%")
-          nil))))
+Preferred backend: the no-grovel CFFI ncurses backend (package
+clautolisp.ui.tui.curses, system clautolisp-tui-curses) — its CL code carries
+no build-time dependency on ncurses and opens libncurses on demand. The retired
+cl-charms backend (clautolisp.ui.tui.charms) is accepted as a fallback if still
+loaded. Either must be present in the image (a build that includes it, or an
+init file that loads it); when neither is, we return NIL and the caller falls
+back to the terminal (tui) UI rather than crashing on an unbound screen slot."
+  (flet ((backend-maker (package name)
+           (let ((sym (and (find-package package)
+                           (find-symbol (string name) package))))
+             (and sym (fboundp sym) sym))))
+    (let ((maker (or ;; the no-grovel CFFI backend (libncurses on demand)
+                     (backend-maker '#:clautolisp.ui.tui.curses '#:make-curses-screen)
+                     ;; the retired cl-charms backend, if still loaded
+                     (backend-maker '#:clautolisp.ui.tui.charms '#:make-charms-screen))))
+      (if maker
+          (funcall maker)
+          (progn
+            (format *error-output*
+                    "~&clautolisp: --debugger-ui ncurses needs a curses backend ~
+(package clautolisp.ui.tui.curses, system clautolisp-tui-curses), not loaded in ~
+this image; using the terminal (tui) UI instead.~%")
+            nil)))))
 
 (defun start-debug-session (debug-ui context)
   "Start the debugger session for DEBUG-UI. For :ncurses, load the cl-charms
