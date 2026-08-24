@@ -1,0 +1,88 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: aldo-config-path-implemented-twice — deux implémentations de « où vit aldo.conf », dans deux paquets qui ne se voient pas
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+
+* Constat
+
+=ALDO-CONFIG-RELATIVE-PATH=, =ALDO-CONFIG-SAVE-PATH= et
+=ALDO-CONFIG-LOAD-PATH= existent *deux fois*, comme trois paires de
+symboles distincts dans deux paquets :
+
+| paquet | fichier | statut |
+|--------+---------+--------|
+| =CLAUTOLISP.DEBUG.UI= | =autolisp-debug-ui/source/settings.lisp:419-421= | *exportées* |
+| =CLAUTOLISP.AUTOLISP-BUILTINS-CORE= | =autolisp-builtins-core/source/api.lisp:5125-5140= | internes |
+
+Et avec elles la logique XDG dont elles dépendent : =xdg-config-home= /
+=xdg-config-dirs= d'un côté, =aldo-xdg-config-home= / =aldo-xdg-config-dirs=
+de l'autre.
+
+* Elles s'accordent AUJOURD'HUI
+
+Comparées ligne à ligne : mêmes variables d'environnement
+(=XDG_CONFIG_HOME=, =XDG_CONFIG_DIRS=), mêmes défauts (=~/.config=,
+=/etc/xdg=), même chemin relatif =clautolisp/aldo.conf=, même règle de
+lecture (le chemin de sauvegarde s'il existe, sinon le premier trouvé le
+long de =XDG_CONFIG_DIRS=).
+
+Ce n'est donc pas un défaut observable. C'est une *duplication*, et le
+défaut est latent : le jour où l'une des deux apprend quelque chose — une
+variable d'override de plus, un changement de nom de répertoire, une règle
+de repli — l'autre ne l'apprend pas, et le chemin où le débogueur SAUVE
+cesse d'être celui que le builtin LIT. Une désynchronisation qui ne se
+manifeste que par un fichier de configuration qu'on ne retrouve plus.
+
+* Pourquoi c'est arrivé, et pourquoi ce n'est pas de l'étourderie
+
+C'est *structurel*. =autolisp-builtins-core= est sous
+=autolisp-debug-ui= dans l'empilement : il ne peut pas en dépendre. Le
+builtin qui a besoin du chemin de configuration d'aldo n'avait donc pas
+accès à l'implémentation existante, et l'a réécrite.
+
+Le correctif n'est pas « supprimer l'une des deux » mais déplacer la règle
+dans une couche que les deux voient — la logique XDG n'a rien de propre au
+débogueur ni aux builtins — puis faire des deux façades des appels à cette
+couche. C'est de la chirurgie d'empilement, pas une correction locale, ce
+qui est la raison pour laquelle ce ticket existe au lieu d'un commit.
+
+* Comment ça a été trouvé — et ce que ça suggère de faire
+
+Avec l'outil de pjb :
+
+: (ql:quickload :com.informatimago.tools)
+: (com.informatimago.tools.symbol:check-duplicate-symbols :packages … :exported …)
+
+Brut, il rend 519 lignes sur les 22 paquets de clautolisp, dont l'immense
+majorité est du bruit légitime : noms de paramètres et de variables
+locales (=A=, =ARGS=, =ARGUMENTS=…), et les paires =X= / =X.INTERNAL= qui
+sont la scission interne/externe voulue du lecteur et du runtime.
+
+Le signal apparaît en filtrant sur ce qui *nomme une fonction* dans
+plusieurs paquets. Deux filtres, écrits au-dessus de l'outil :
+
+1. *deux fonctions génériques homonymes* — la signature exacte d'un
+   =defmethod= écrit sans importer le symbole du protocole, qui définit
+   silencieusement une NOUVELLE générique dans le paquet de l'auteur
+   (le bogue de sysvar-table-ignores-runtime-dialect-change). *Zéro
+   résultat* : cet incident-là n'a pas d'autre occurrence.
+2. *un nom exporté comme fonction par un paquet et redéfini en interne par
+   un autre*. 103 résultats, dont 101 sont la scission =X= / =X.INTERNAL=
+   du lecteur et du runtime. Les deux qui restent sont ce ticket.
+
+Ce ratio est l'argument pour faire du contrôle un script du dépôt plutôt
+qu'un geste manuel : sans les deux filtres il est illisible, avec eux il
+tient en trois lignes de sortie. Le piège qu'il attrape n'est pas
+rattrapable à la relecture — il se manifeste comme « rien ne change » —
+et un contrôle mécanique est la seule défense qui tienne.
+
+* Note d'outillage
+
+=com.informatimago.tools= entier ne se charge pas contre l'UIOP installé
+ici : =tools/manifest.lisp= lit =uiop/lisp-build:get-optimization-settings=
+comme symbole EXTERNE, alors qu'il est interne dans cette version. Charger
+=tools/symbol.lisp= seul, avec =cl-ppcre= et =com.informatimago.common-lisp.cesarum=,
+suffit pour =check-duplicate-symbols=.
