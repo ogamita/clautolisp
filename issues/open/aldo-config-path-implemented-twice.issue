@@ -86,3 +86,13 @@ ici : =tools/manifest.lisp= lit =uiop/lisp-build:get-optimization-settings=
 comme symbole EXTERNE, alors qu'il est interne dans cette version. Charger
 =tools/symbol.lisp= seul, avec =cl-ppcre= et =com.informatimago.common-lisp.cesarum=,
 suffit pour =check-duplicate-symbols=.
+
+
+PJB: Effectivement, il faut reconcilier les deux; on peut considerer
+que ca fait partir d'un module configuration qui connait la structure
+des interactors, et qui est commun aux autres modules. (on peut migrer
+la configuration de lisp dans ce module de configuration generale).
+C'est aussi assez lié aux options, (avec toute la mécanique des getenv
+et autres valeurs par défaut); peut-être peut on les rassembler ? Mais
+ce n'est pas urgent, ce qui est urgent c'est d'éliminer cette
+duplication en introduisant ce module configuration.
