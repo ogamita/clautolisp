@@ -234,7 +234,7 @@ cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
     (win-put-line screen rect 0 (format nil "DBG> ~A" (ncurses-ui-message ui)))
     (win-put-line screen rect 2 "c continue  s step  i in  o out  f finish")
     (win-put-line screen rect 3 "d u > < nav  b bkpt  e eval  x inspect  ^/v frame")
-    (win-put-line screen rect 4 "C-w n/p window  q quit")))
+    (win-put-line screen rect 4 "C-w n/p sel >/</u/d swap 2/3 split 4 reset +/-/= size  q quit")))
 
 (defun render-repl (ui rect)
   (let* ((screen (ncurses-ui-screen ui))
@@ -292,6 +292,9 @@ into the interactor line (so the selection is visible across the panes)."
 
 ;;;; --- window commands (C-w prefix; ncurses-windows.issue) -----------
 
+(defparameter +window-resize-step+ 1/16
+  "Ratio change per C-w + / C-w - (a C-u prefix for larger steps is TODO).")
+
 (defun window-select (ui delta)
   "Move the active window DELTA steps in reading order (C-w n / C-w p)."
   (setf (ncurses-ui-active-window ui)
@@ -299,14 +302,70 @@ into the interactor line (so the selection is visible across the panes)."
   (set-message ui "active window: ~A"
                (window-title (ncurses-ui-active-window ui))))
 
+(defun window-swap (ui direction)
+  "Swap the active window with its neighbour in DIRECTION (with wrap-around),
+exchanging their leaf positions in the layout tree."
+  (multiple-value-bind (rows cols) (tui-size (ncurses-ui-screen ui))
+    (multiple-value-bind (rects vlines)
+        (layout-rects (ncurses-ui-layout ui) 0 0 (max 1 (1- rows)) cols)
+      (declare (ignore vlines))
+      (let* ((active (ncurses-ui-active-window ui))
+             (neighbor (window-neighbor rects active direction)))
+        (if (and neighbor (not (eq neighbor active)))
+            (progn
+              (setf (ncurses-ui-layout ui)
+                    (tree-swap-leaves (ncurses-ui-layout ui) active neighbor))
+              (set-message ui "swap ~A ~(~A~)" (window-title active) direction))
+            (set-message ui "no window ~(~A~)" direction))))))
+
+(defun window-resize (ui delta)
+  "Grow (DELTA>0) or shrink the active window within its enclosing split."
+  (setf (ncurses-ui-layout ui)
+        (tree-resize (ncurses-ui-layout ui) (ncurses-ui-active-window ui) delta))
+  (set-message ui "resize ~A" (window-title (ncurses-ui-active-window ui))))
+
+(defun window-balance (ui)
+  "Even out the split enclosing the active window (C-w =)."
+  (setf (ncurses-ui-layout ui)
+        (tree-balance (ncurses-ui-layout ui) (ncurses-ui-active-window ui)))
+  (set-message ui "balanced ~A" (window-title (ncurses-ui-active-window ui))))
+
+(defun window-reset-square (ui)
+  "Revert to the canonical 2x2 layout (C-w 4)."
+  (setf (ncurses-ui-layout ui) (default-layout))
+  (set-message ui "layout reset (2x2)"))
+
+(defun window-split (ui split-type)
+  "Split the active window (C-w 2 = below/:horizontal, C-w 3 = right/:vertical),
+re-homing the next window into the new split so four windows remain."
+  (let* ((active (ncurses-ui-active-window ui))
+         (next (window-cycle (ncurses-ui-layout ui) active +1)))
+    (if (eq next active)
+        (set-message ui "cannot split")
+        (progn
+          (setf (ncurses-ui-layout ui)
+                (tree-split-active (ncurses-ui-layout ui) active next split-type))
+          (set-message ui "split ~A ~A" (window-title active)
+                       (if (eq split-type :horizontal) "below" "right"))))))
+
 (defun handle-window-command (ui)
-  "Read the key following a C-w prefix and run the window command. 4a covers
-window selection; swap / split / resize / layout save-load follow."
+  "Read the key following a C-w prefix and run the window command
+(ncurses-windows.issue). Split (C-w 2/3), layout save-load and M-x follow."
   (let ((k (tui-read-key (ncurses-ui-screen ui))))
     (cond
       ((key-char-p k #\n) (window-select ui +1))
       ((key-char-p k #\p) (window-select ui -1))
-      (t (set-message ui "C-w ? — n next window, p previous")))))
+      ((key-char-p k #\>) (window-swap ui :right))
+      ((key-char-p k #\<) (window-swap ui :left))
+      ((key-char-p k #\u) (window-swap ui :above))
+      ((key-char-p k #\d) (window-swap ui :below))
+      ((key-char-p k #\2) (window-split ui :horizontal))
+      ((key-char-p k #\3) (window-split ui :vertical))
+      ((key-char-p k #\4) (window-reset-square ui))
+      ((key-char-p k #\+) (window-resize ui +window-resize-step+))
+      ((key-char-p k #\-) (window-resize ui (- +window-resize-step+)))
+      ((key-char-p k #\=) (window-balance ui))
+      (t (set-message ui "C-w: n/p select  >/</u/d swap  2/3 split  4 reset  +/-/= size")))))
 
 (defun move-frame (ui session delta)
   (let* ((frames (snapshot-call-stack (current-snapshot session)))

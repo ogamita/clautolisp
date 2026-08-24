@@ -75,3 +75,104 @@ on the \"|\" separator."
                             (rec a top left ah width alist vlines)
                           (rec b (+ top ah) left bh width al vl)))))))))
     (rec tree top left height width '() '())))
+
+;;;; --- window moves: swap, reset, resize (ncurses-windows.issue) ------
+
+(defun rect-top (r) (first r))
+(defun rect-left (r) (second r))
+(defun rect-bottom (r) (+ (first r) (third r)))
+(defun rect-right (r) (+ (second r) (fourth r)))
+
+(defun rects-row-overlap-p (a b)   ; share a row (vertical spans overlap)
+  (and (< (rect-top a) (rect-bottom b)) (< (rect-top b) (rect-bottom a))))
+(defun rects-col-overlap-p (a b)   ; share a column (horizontal spans overlap)
+  (and (< (rect-left a) (rect-right b)) (< (rect-left b) (rect-right a))))
+
+(defun %extreme (entries key test)
+  (when entries
+    (reduce (lambda (x y) (if (funcall test (funcall key x) (funcall key y)) x y))
+            entries)))
+
+(defun window-neighbor (rects active direction)
+  "The window id next to ACTIVE in DIRECTION (:right :left :above :below), with
+wrap-around within ACTIVE's row/column (ncurses-windows.issue), or NIL when
+ACTIVE has no row/column mate."
+  (let* ((ar (cdr (assoc active rects)))
+         (others (remove active rects :key #'car))
+         (r (lambda (e) (cdr e))))
+    (flet ((mates (overlap) (remove-if-not (lambda (e) (funcall overlap ar (funcall r e))) others)))
+      (let* ((pick
+              (ecase direction
+                (:right (let ((m (mates #'rects-row-overlap-p)))
+                          (or (%extreme (remove-if-not (lambda (e) (>= (rect-left (funcall r e)) (rect-right ar))) m)
+                                        (lambda (e) (rect-left (funcall r e))) #'<)
+                              (%extreme m (lambda (e) (rect-left (funcall r e))) #'<))))
+                (:left  (let ((m (mates #'rects-row-overlap-p)))
+                          (or (%extreme (remove-if-not (lambda (e) (<= (rect-right (funcall r e)) (rect-left ar))) m)
+                                        (lambda (e) (rect-right (funcall r e))) #'>)
+                              (%extreme m (lambda (e) (rect-right (funcall r e))) #'>))))
+                (:below (let ((m (mates #'rects-col-overlap-p)))
+                          (or (%extreme (remove-if-not (lambda (e) (>= (rect-top (funcall r e)) (rect-bottom ar))) m)
+                                        (lambda (e) (rect-top (funcall r e))) #'<)
+                              (%extreme m (lambda (e) (rect-top (funcall r e))) #'<))))
+                (:above (let ((m (mates #'rects-col-overlap-p)))
+                          (or (%extreme (remove-if-not (lambda (e) (<= (rect-bottom (funcall r e)) (rect-top ar))) m)
+                                        (lambda (e) (rect-bottom (funcall r e))) #'>)
+                              (%extreme m (lambda (e) (rect-bottom (funcall r e))) #'>)))))))
+        (and pick (car pick))))))
+
+(defun tree-swap-leaves (tree a b)
+  "Exchange the two leaf window ids A and B in TREE."
+  (cond ((eq tree a) b)
+        ((eq tree b) a)
+        ((keywordp tree) tree)
+        (t (destructuring-bind (split ratio x y) tree
+             (list split ratio (tree-swap-leaves x a b) (tree-swap-leaves y a b))))))
+
+(defun clamp-ratio (r) (max 1/8 (min 7/8 r)))
+
+(defun tree-resize (tree active delta)
+  "Adjust the ratio of the split directly enclosing leaf ACTIVE by DELTA
+(positive grows ACTIVE), clamped. Returns a new tree; no cascade to outer
+splits yet."
+  (labels ((rec (node)
+             (if (keywordp node)
+                 node
+                 (destructuring-bind (split ratio a b) node
+                   (cond ((eq a active) (list split (clamp-ratio (+ ratio delta)) a b))
+                         ((eq b active) (list split (clamp-ratio (- ratio delta)) a b))
+                         (t (list split ratio (rec a) (rec b))))))))
+    (rec tree)))
+
+(defun tree-balance (tree active)
+  "Set the split directly enclosing ACTIVE back to an even 1/2, leaving the
+other splits' ratios untouched."
+  (labels ((rec (node)
+             (if (keywordp node)
+                 node
+                 (destructuring-bind (split ratio a b) node
+                   (if (or (eq a active) (eq b active))
+                       (list split 1/2 a b)
+                       (list split ratio (rec a) (rec b)))))))
+    (rec tree)))
+
+(defun tree-remove-leaf (tree leaf)
+  "Remove LEAF, collapsing its parent split into LEAF's sibling."
+  (if (keywordp tree)
+      tree
+      (destructuring-bind (split ratio a b) tree
+        (cond ((eq a leaf) b)
+              ((eq b leaf) a)
+              (t (list split ratio (tree-remove-leaf a leaf) (tree-remove-leaf b leaf)))))))
+
+(defun tree-split-active (tree active next split-type)
+  "Replace ACTIVE's leaf with (SPLIT-TYPE 1/2 ACTIVE NEXT) after removing NEXT
+from elsewhere, so the window count stays four (ncurses-windows.issue: C-w 2 /
+C-w 3 open a split and re-home the next window into it)."
+  (let ((pruned (tree-remove-leaf tree next)))
+    (labels ((rec (node)
+               (cond ((eq node active) (list split-type 1/2 active next))
+                     ((keywordp node) node)
+                     (t (destructuring-bind (s r a b) node
+                          (list s r (rec a) (rec b)))))))
+      (rec pruned))))

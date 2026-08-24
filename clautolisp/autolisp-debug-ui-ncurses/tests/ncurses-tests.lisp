@@ -248,6 +248,68 @@
       (declare (ignore result screen))
       (is (eq :repl (clautolisp.ui.ncurses::ncurses-ui-active-window ui))))))
 
+(test window-swap-right-moves-active-to-the-right
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; default active = interactor (bottom-left); C-w > swaps it with repl
+    ;; (its right neighbour), so interactor ends up on the right.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 23) #\> #\c) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (multiple-value-bind (rects vl)
+          (clautolisp.ui.ncurses::layout-rects
+           (clautolisp.ui.ncurses::ncurses-ui-layout ui) 0 0 23 80)
+        (declare (ignore vl))
+        (is (> (clautolisp.ui.ncurses::rect-left (cdr (assoc :interactor rects)))
+               (clautolisp.ui.ncurses::rect-left (cdr (assoc :repl rects)))))))))
+
+(test window-reset-square-restores-canonical
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 23) #\> (code-char 23) #\4 #\c)
+                     :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (equal (clautolisp.ui.ncurses::ncurses-ui-layout ui)
+                 (clautolisp.ui.ncurses::default-layout))))))
+
+(test window-resize-grows-active-window
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; active = interactor, the first child of the bottom split; C-w + raises
+    ;; that split's ratio above 1/2.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 23) #\+ #\c) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (> (second (fourth (clautolisp.ui.ncurses::ncurses-ui-layout ui))) 1/2)))))
+
+(test window-split-below-stacks-active-over-next
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; active = interactor, next = repl; C-w 2 puts them in a :horizontal
+    ;; (stacked) split — interactor above repl, same column.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 23) #\2 #\c) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (multiple-value-bind (rects vl)
+          (clautolisp.ui.ncurses::layout-rects
+           (clautolisp.ui.ncurses::ncurses-ui-layout ui) 0 0 23 80)
+        (declare (ignore vl))
+        (let ((ir (cdr (assoc :interactor rects)))
+              (rr (cdr (assoc :repl rects))))
+          (is (< (clautolisp.ui.ncurses::rect-top ir)
+                 (clautolisp.ui.ncurses::rect-top rr)))
+          (is (= (clautolisp.ui.ncurses::rect-left ir)
+                 (clautolisp.ui.ncurses::rect-left rr))))))))
+
 (test eof-continues
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
