@@ -200,6 +200,54 @@
       (is (some (lambda (l) (search "(CAR L)" l))
                 (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui))))))
 
+(test windowed-layout-uses-single-separators-not-boxes
+  ;; ncurses-windows.issue "display": single "|" separators + status lines,
+  ;; no full boxes (which duplicated borders down the middle).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list #\c) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result ui))
+      (let ((lines (clautolisp.ui.tui:mock-grid-lines screen)))
+        ;; no box corners anywhere
+        (is (notany (lambda (l) (find #\+ l)) lines))
+        ;; a single vertical separator column is present
+        (is (some (lambda (l) (find #\| l)) lines))))))
+
+(test status-line-marks-active-and-inactive-windows
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list #\c) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result ui))
+      ;; default active window is the interactor: its status line inverts;
+      ;; the stack window's status line is underlined.
+      (let ((irow (clautolisp.ui.tui:mock-find-line screen "interactor"))
+            (srow (clautolisp.ui.tui:mock-find-line screen "stack")))
+        (is (integerp irow))
+        (is (integerp srow))
+        (let ((icol (search "interactor" (nth irow (clautolisp.ui.tui:mock-grid-lines screen))))
+              (scol (search "stack" (nth srow (clautolisp.ui.tui:mock-grid-lines screen)))))
+          (is (eq :invert (clautolisp.ui.tui:mock-attr-at screen irow icol)))
+          (is (eq :underline (clautolisp.ui.tui:mock-attr-at screen srow scol))))))))
+
+(test window-select-next-moves-active-window
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; C-w n cycles the active window in reading order
+    ;; (stack source interactor repl); from the default (interactor) the
+    ;; next is repl.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 23) #\n #\c) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (eq :repl (clautolisp.ui.ncurses::ncurses-ui-active-window ui))))))
+
 (test eof-continues
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))

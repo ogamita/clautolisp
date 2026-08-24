@@ -16,7 +16,7 @@ future backend behind the same protocol.")
    ;; panes + layout
    #:pane #:make-pane #:pane-title #:pane-top #:pane-left #:pane-height #:pane-width
    #:draw-box #:pane-put-line #:pane-clear #:pane-interior-height #:pane-interior-width
-   #:four-pane-layout
+   #:four-pane-layout #:truncate-string #:pad-string
    ;; mock backend
    #:mock-screen #:make-mock-screen
    #:mock-screen-rows #:mock-screen-cols

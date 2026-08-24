@@ -13,6 +13,8 @@
    (message :initform "" :accessor ncurses-ui-message)               ; interactor line
    (repl-lines :initform '() :accessor ncurses-ui-repl-lines)        ; newest last
    (navigator :initform nil :accessor ncurses-ui-navigator)          ; source selection
+   (layout :initform (default-layout) :accessor ncurses-ui-layout)   ; window tree
+   (active-window :initform :interactor :accessor ncurses-ui-active-window)
    (inspector-cursor :initform 0 :accessor ncurses-ui-inspector-cursor)))
 
 (defun make-ncurses-ui (&rest initargs)
@@ -94,31 +96,71 @@ when the frame has no reconstructable source form (e.g. a builtin)."
                      (snapshot-call-stack (current-snapshot session)))))
     (and frames (nth (min (ncurses-ui-selected-frame ui) (1- (length frames))) frames))))
 
+;;;; --- window rendering (ncurses-windows.issue) ----------------------
+;;;; Each window is a rectangle (TOP LEFT HEIGHT WIDTH). Its bottom row is a
+;;;; status line (title; active window INVERTed, others UNDERLINEd — the
+;;;; horizontal separator between stacked windows). Vertical neighbours are
+;;;; parted by a single "|" column. The last screen row is the minibuffer.
+
+(defun win-content-height (rect) (max 0 (1- (third rect))))
+(defun win-width (rect) (fourth rect))
+
+(defun win-put-line (screen rect row text &key attr)
+  "Write TEXT on content ROW (0-based) of RECT, padded/clipped to its width.
+Rows are clipped to the window's content area (its last row is the status
+line, written by WIN-STATUS)."
+  (destructuring-bind (top left height width) rect
+    (when (< -1 row (1- height))
+      (tui-put screen (+ top row) left
+               (pad-string (truncate-string text width) width) :attr attr))))
+
+(defun win-status (screen rect title active-p)
+  "Draw RECT's status line (its bottom row): the window TITLE across the full
+width, INVERTed when active, UNDERLINEd otherwise."
+  (destructuring-bind (top left height width) rect
+    (tui-put screen (+ top height -1) left
+             (pad-string (truncate-string (format nil " ~A " title) width) width)
+             :attr (if active-p :invert :underline))))
+
+(defun draw-vline (screen col top height)
+  (loop for r from top below (+ top height) do (tui-put screen r col "|")))
+
+(defun render-window (ui session id rect)
+  (ecase id
+    (:stack      (render-stack ui session rect))
+    (:source     (render-source ui session rect))
+    (:interactor (render-interactor ui rect))
+    (:repl       (render-repl ui rect))))
+
 (defun render-debugger (ui session)
-  "Draw the four panes for the current stopping point."
-  (let* ((screen (ncurses-ui-screen ui)))
+  "Draw the four windows for the current stopping point per the current
+layout tree: content + a status line per window, single \"|\" separators, and
+the reserved minibuffer row."
+  (let ((screen (ncurses-ui-screen ui)))
     (tui-clear screen)
     (multiple-value-bind (rows cols) (tui-size screen)
-      (destructuring-bind (stack-pane source-pane interactor-pane repl-pane)
-          (four-pane-layout rows cols)
-        (draw-box screen stack-pane)
-        (draw-box screen source-pane)
-        (draw-box screen interactor-pane)
-        (draw-box screen repl-pane)
-        (render-stack ui session stack-pane)
-        (render-source ui session source-pane)
-        (render-interactor ui interactor-pane)
-        (render-repl ui repl-pane)
-        (tui-refresh screen)))))
+      (let ((window-rows (max 1 (1- rows))))     ; last row = minibuffer
+        (multiple-value-bind (rects vlines)
+            (layout-rects (ncurses-ui-layout ui) 0 0 window-rows cols)
+          (dolist (id +window-ids+)
+            (let ((rect (cdr (assoc id rects))))
+              (when rect
+                (render-window ui session id rect)
+                (win-status screen rect (window-title id)
+                            (eq id (ncurses-ui-active-window ui))))))
+          (dolist (v vlines)
+            (destructuring-bind (col top height) v (draw-vline screen col top height)))
+          (tui-put screen (1- rows) 0 (pad-string "" cols))   ; minibuffer
+          (tui-refresh screen))))))
 
-(defun render-stack (ui session pane)
+(defun render-stack (ui session rect)
   (let ((frames (and (current-snapshot session)
                      (snapshot-call-stack (current-snapshot session))))
         (screen (ncurses-ui-screen ui)))
     (loop for frame in frames
-          for i from 0
-          do (pane-put-line
-              screen pane i
+          for i from 0 below (win-content-height rect)
+          do (win-put-line
+              screen rect i
               (format nil "~A ~A  ~A"
                       (if (= i (ncurses-ui-selected-frame ui)) ">" " ")
                       (or (stack-frame-function-name frame) "?")
@@ -131,8 +173,8 @@ when the frame has no reconstructable source form (e.g. a builtin)."
         (format nil "line ~D" (source-position-start-line position))
         "-")))
 
-(defun render-source (ui session pane)
-  "Source pane (spec §19.1): show the selected frame's source with markers —
+(defun render-source (ui session rect)
+  "Source window (spec §19.1): show the selected frame's source with markers —
 current stopping line :yellow, a breakpointed poll point :red, a plain poll
 point :blue. The =>>= gutter follows the structural navigator's selection (the
 cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
@@ -147,7 +189,7 @@ cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
          (lines (and file (ignore-errors (lines-of file))))
          (poll-lines (and metadata (poll-point-lines metadata)))
          (bp-lines (breakpoint-lines session fid))
-         (height (pane-interior-height pane)))
+         (height (win-content-height rect)))
     (cond
       ((and lines (plusp (length lines)))
        (let* ((center (or selection-line current-line 1))
@@ -155,8 +197,8 @@ cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
          (loop for row from 0 below height
                for n = (+ start row)
                while (<= n (length lines))
-               do (pane-put-line
-                   screen pane row
+               do (win-put-line
+                   screen rect row
                    (format nil "~A~3D: ~A"
                            (if (eql n selection-line) ">>" "  ") n (aref lines (1- n)))
                    :attr (cond ((eql n current-line) :yellow)
@@ -164,9 +206,9 @@ cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
                                ((member n poll-lines) :blue)
                                (t :normal))))))
       (t
-       (pane-put-line screen pane 0
-                      (format nil "~A:~@[~D~] (source unavailable)"
-                              (or file "?") current-line))))))
+       (win-put-line screen rect 0
+                     (format nil "~A:~@[~D~] (source unavailable)"
+                             (or file "?") current-line))))))
 
 (defun poll-point-lines (metadata)
   (let ((positions (function-debug-metadata-form-id->position metadata)) (lines '()))
@@ -187,19 +229,20 @@ cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
               (push (source-position-start-line position) lines))))))
     lines))
 
-(defun render-interactor (ui pane)
+(defun render-interactor (ui rect)
   (let ((screen (ncurses-ui-screen ui)))
-    (pane-put-line screen pane 0 (format nil "DBG> ~A" (ncurses-ui-message ui)))
-    (pane-put-line screen pane 2 "c continue  s step  i in  o out  f finish")
-    (pane-put-line screen pane 3 "d u > < nav  b bkpt  e eval  x inspect  ^/v frame  q quit")))
+    (win-put-line screen rect 0 (format nil "DBG> ~A" (ncurses-ui-message ui)))
+    (win-put-line screen rect 2 "c continue  s step  i in  o out  f finish")
+    (win-put-line screen rect 3 "d u > < nav  b bkpt  e eval  x inspect  ^/v frame")
+    (win-put-line screen rect 4 "C-w n/p window  q quit")))
 
-(defun render-repl (ui pane)
+(defun render-repl (ui rect)
   (let* ((screen (ncurses-ui-screen ui))
-         (height (pane-interior-height pane))
+         (height (win-content-height rect))
          (lines (last (ncurses-ui-repl-lines ui) height)))
     (loop for line in lines
           for row from 0
-          do (pane-put-line screen pane row line))))
+          do (win-put-line screen rect row line))))
 
 ;;;; --- the event loop (spec §19.1) -----------------------------------
 
@@ -222,6 +265,8 @@ cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
     ((key-char-p key #\a) (cmd-abort session))
     ((key-char-p key #\q) (cmd-abort session))
     ((key-char-p key #\r) (return-value ui session hit) )
+    ;; C-w prefix: window-manipulation commands (ncurses-windows.issue).
+    ((and (characterp key) (= (char-code key) 23)) (handle-window-command ui) nil)
     ((eq key :up) (move-frame ui session -1) nil)
     ((eq key :down) (move-frame ui session +1) nil)
     ;; structural navigation of the source form (spec §19.1 / cmd-ref §3):
@@ -244,6 +289,24 @@ into the interactor line (so the selection is visible across the panes)."
     (when nav
       (funcall motion nav)
       (set-message ui "sel: ~A" (nav-render nav)))))
+
+;;;; --- window commands (C-w prefix; ncurses-windows.issue) -----------
+
+(defun window-select (ui delta)
+  "Move the active window DELTA steps in reading order (C-w n / C-w p)."
+  (setf (ncurses-ui-active-window ui)
+        (window-cycle (ncurses-ui-layout ui) (ncurses-ui-active-window ui) delta))
+  (set-message ui "active window: ~A"
+               (window-title (ncurses-ui-active-window ui))))
+
+(defun handle-window-command (ui)
+  "Read the key following a C-w prefix and run the window command. 4a covers
+window selection; swap / split / resize / layout save-load follow."
+  (let ((k (tui-read-key (ncurses-ui-screen ui))))
+    (cond
+      ((key-char-p k #\n) (window-select ui +1))
+      ((key-char-p k #\p) (window-select ui -1))
+      (t (set-message ui "C-w ? — n next window, p previous")))))
 
 (defun move-frame (ui session delta)
   (let* ((frames (snapshot-call-stack (current-snapshot session)))
@@ -335,39 +398,46 @@ the inspector pane (Enter/d descend, BS/u up, p path, b bind, q close)."
     (push-repl ui "path: ~A~A" (preview expr) (if (eq kind :partial) " …(opaque)" ""))))
 
 (defun render-inspector (ui session)
-  "Replace the source pane with the inspector page (spec §19.2)."
+  "Replace the source window with the inspector page (spec §19.2), keeping the
+windowed layout (status lines + separators + minibuffer)."
   (let* ((screen (ncurses-ui-screen ui))
          (inspector (session-inspector session))
          (page (session-page inspector)))
     (tui-clear screen)
     (multiple-value-bind (rows cols) (tui-size screen)
-      (destructuring-bind (stack-pane source-pane interactor-pane repl-pane)
-          (four-pane-layout rows cols)
-        (draw-box screen stack-pane)
-        (setf (pane-title source-pane) "inspect")
-        (draw-box screen source-pane)
-        (draw-box screen interactor-pane)
-        (draw-box screen repl-pane)
-        (render-stack ui session stack-pane)
-        (pane-put-line screen source-pane 0
-                       (format nil "~A → ~A"
-                               (preview (session-origin inspector))
-                               (preview (path-string session))))
-        (pane-put-line screen source-pane 1
-                       (format nil "#<~A> ~A"
-                               (inspect-page-type-name page) (inspect-page-header page)))
-        (loop for component in (inspect-page-components page)
-              for i from 0
-              do (pane-put-line screen source-pane (+ i 3)
-                                (format nil "~A ~A  ~A"
-                                        (if (= i (ncurses-ui-inspector-cursor ui)) ">" " ")
-                                        (inspect-component-label component)
-                                        (preview (inspect-component-preview component)))
-                                :attr (if (= i (ncurses-ui-inspector-cursor ui)) :bold :normal)))
-        (pane-put-line screen interactor-pane 0
-                       "INSPECT: up/down move  Enter/d descend  BS/u up  p path  b bind  q close")
-        (render-repl ui repl-pane)
-        (tui-refresh screen)))))
+      (let ((window-rows (max 1 (1- rows))))
+        (multiple-value-bind (rects vlines)
+            (layout-rects (ncurses-ui-layout ui) 0 0 window-rows cols)
+          (flet ((rect (id) (cdr (assoc id rects))))
+            (render-stack ui session (rect :stack))
+            (let ((src (rect :source)))
+              (win-put-line screen src 0
+                            (format nil "~A → ~A"
+                                    (preview (session-origin inspector))
+                                    (preview (path-string session))))
+              (win-put-line screen src 1
+                            (format nil "#<~A> ~A"
+                                    (inspect-page-type-name page) (inspect-page-header page)))
+              (loop for component in (inspect-page-components page)
+                    for i from 0
+                    do (win-put-line screen src (+ i 3)
+                                     (format nil "~A ~A  ~A"
+                                             (if (= i (ncurses-ui-inspector-cursor ui)) ">" " ")
+                                             (inspect-component-label component)
+                                             (preview (inspect-component-preview component)))
+                                     :attr (if (= i (ncurses-ui-inspector-cursor ui)) :bold :normal))))
+            (win-put-line screen (rect :interactor) 0
+                          "INSPECT: up/down move  Enter/d descend  BS/u up  p path  b bind  q close")
+            (render-repl ui (rect :repl))
+            ;; status lines (source window is the inspector now) + separators
+            (dolist (id +window-ids+)
+              (win-status screen (rect id)
+                          (if (eq id :source) "inspect" (window-title id))
+                          (eq id (ncurses-ui-active-window ui))))
+            (dolist (v vlines)
+              (destructuring-bind (col top height) v (draw-vline screen col top height)))
+            (tui-put screen (1- rows) 0 (pad-string "" cols))
+            (tui-refresh screen)))))))
 
 (defun path-string (session)
   (multiple-value-bind (expr kind) (cmd-inspector-path-expression session)

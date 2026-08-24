@@ -68,6 +68,8 @@ fall-back to the tui UI."
 ;;; --- constants (ncurses ABI, Linux/macOS) -----------------------------
 
 (defparameter +a-bold+       #x00200000 "ncurses A_BOLD.")
+(defparameter +a-underline+  #x00020000 "ncurses A_UNDERLINE.")
+(defparameter +a-reverse+    #x00040000 "ncurses A_REVERSE (inverse video).")
 (defparameter +a-color-mask+ #x0000ff00 "ncurses A_COLOR.")
 
 (defun color-pair (n)
@@ -131,6 +133,8 @@ fall-back to the tui UI."
          (pair (gethash attr (curses-color-pairs screen)))
          (bits (cond (pair (color-pair pair))
                      ((eq attr :bold) +a-bold+)
+                     ((eq attr :invert) +a-reverse+)
+                     ((eq attr :underline) +a-underline+)
                      (t 0))))
     (when (/= bits 0) (%wattron win bits))
     (%mvwaddstr win row col string)
