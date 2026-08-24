@@ -68,6 +68,21 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/autolisp-compiler"
+  :description "AutoLISP-to-Common-Lisp transpiler (compiler.issue, Tier 2)."
+  :author "Claude"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime")
+  :serial t
+  :components
+  ((:file "autolisp-compiler/source/package")
+   (:file "autolisp-compiler/source/transpile"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-compiler/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
 (asdf:defsystem "clautolisp/autolisp-runtime"
   :description "Core AutoLISP runtime object model for clautolisp."
   :author "Codex"
@@ -458,6 +473,22 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (uiop:symbol-call :clautolisp.autolisp-dcl.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/autolisp-compiler/tests"
+  :description "Tests for the AutoLISP-to-Common-Lisp transpiler."
+  :author "Claude"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-compiler" "clautolisp/autolisp-builtins-core" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-compiler/tests/package")
+   (:file "autolisp-compiler/tests/test-harness")
+   (:file "autolisp-compiler/tests/equivalence-tests")
+   (:file "autolisp-compiler/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.autolisp-compiler.tests
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/autolisp-runtime/tests"
@@ -889,6 +920,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
                "clautolisp/cador/tests"
                "clautolisp/autolisp-dcl/tests"
                "clautolisp/autolisp-builtins-core/tests"
+               "clautolisp/autolisp-compiler/tests"
                "clautolisp/autolisp-cli/tests"
                "clautolisp/autolisp-file-compat/tests"
                "clautolisp/autolisp-init-files/tests"
@@ -917,6 +949,8 @@ identity / TEMPPREFIX stamping, option value parsers)."
                            (uiop:symbol-call :clautolisp.autolisp-dcl.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-builtins-core.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.autolisp-compiler.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-cli.tests
                                              :run-all-tests)
