@@ -7,7 +7,7 @@
 ;;;; without scraping the screen grid.
 
 (defclass ncurses-ui ()
-  ((screen :initarg :screen :accessor ncurses-ui-screen)
+  ((screen :initarg :screen :initform nil :accessor ncurses-ui-screen)
    (selected-frame :initform 0 :accessor ncurses-ui-selected-frame)
    (source-cursor :initform nil :accessor ncurses-ui-source-cursor)  ; line in shown file
    (message :initform "" :accessor ncurses-ui-message)               ; interactor line
@@ -32,6 +32,13 @@
 
 (defmethod ui-attached ((ui ncurses-ui) session)
   (declare (ignore session))
+  ;; The screen is supplied by the caller (a cl-charms terminal screen on the
+  ;; CLI path, a mock screen in tests). Fail with an actionable message rather
+  ;; than an unbound-slot error when no backend was wired.
+  (unless (ncurses-ui-screen ui)
+    (error "The ncurses debugger UI has no terminal screen: the cl-charms ~
+backend (clautolisp/autolisp-debug-ui-tui-charms — needs cl-charms and a real ~
+terminal) is not loaded. Use --debugger-ui tui, or install cl-charms."))
   (tui-start (ncurses-ui-screen ui))
   (set-message ui "clautolisp debugger — h for help"))
 

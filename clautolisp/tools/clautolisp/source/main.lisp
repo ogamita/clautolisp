@@ -1079,6 +1079,44 @@ is handled separately by the REPL wrapper in RUN-WITH-INPUT."
     (:ncurses :ncurses)
     (:aldb :aldb)))
 
+(defun ncurses-terminal-screen ()
+  "Return a real terminal screen for the ncurses debugger UI, or NIL (after a
+warning) when the optional cl-charms backend is not present in this image.
+
+The backend — the system clautolisp/autolisp-debug-ui-tui-charms, package
+clautolisp.ui.tui.charms — is deliberately NOT part of the clautolisp
+aggregate: it depends on cl-charms / libncurses and needs a real terminal, so
+it must never be a build- or CI-time dependency (clautolisp-charms.asd). It is
+used here only when it has already been loaded into the image — from a build
+that includes it, or an init file that loads it. When it is absent we return
+NIL and the caller falls back to the terminal (tui) UI, rather than crashing on
+an unbound screen slot."
+  (let ((maker (and (find-package '#:clautolisp.ui.tui.charms)
+                    (find-symbol (string '#:make-charms-screen)
+                                 '#:clautolisp.ui.tui.charms))))
+    (if (and maker (fboundp maker))
+        (funcall maker)
+        (progn
+          (format *error-output*
+                  "~&clautolisp: --debugger-ui ncurses needs the cl-charms ~
+terminal backend (system clautolisp/autolisp-debug-ui-tui-charms), not loaded ~
+in this image; using the terminal (tui) UI instead. Load that system (it ~
+depends on cl-charms) to enable the ncurses UI.~%")
+          nil))))
+
+(defun start-debug-session (debug-ui context)
+  "Start the debugger session for DEBUG-UI. For :ncurses, load the cl-charms
+backend on demand and hand the UI a real terminal screen; when that backend is
+unavailable, fall back cleanly to the terminal (tui) UI rather than crashing on
+an unbound screen."
+  (let* ((screen (when (eq debug-ui :ncurses) (ncurses-terminal-screen)))
+         (designator (if (and (eq debug-ui :ncurses) (null screen))
+                         :terminal
+                         (debug-ui-designator debug-ui))))
+    (clautolisp.debug.ui:start-session
+     :ui designator :context context
+     :ui-initargs (when screen (list :screen screen)))))
+
 ;;; --- SIGINT / --on-interrupt (debugger-public-interface-and-on-error
 ;;; Part B) -------------------------------------------------------------
 
@@ -1244,9 +1282,7 @@ machinery, not user intent)."
           ;;    which debugs each turn (so `clautolisp` + (/ 0) breaks in).
           ;; *break-on-error* is off under --on-error ignore.
           (let ((break (and debug-ui (not (eq on-error-policy :ignore))))
-                (session (and debug-ui
-                              (clautolisp.debug.ui:start-session
-                               :ui (debug-ui-designator debug-ui) :context context))))
+                (session (and debug-ui (start-debug-session debug-ui context))))
             (unwind-protect
                  (progn
                    (if (and session (not interactive-p))
