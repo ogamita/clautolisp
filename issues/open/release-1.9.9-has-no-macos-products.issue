@@ -1,0 +1,66 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: release-1.9.9-has-no-macos-products — thalassa slept through the tag, and the release says so rather than waiting
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+
+* Fait
+
+=release-1.9.9=, publiée le 2026-08-24 vers 01:30, porte 13 assets et
+*aucun produit macOS*. Les douze autres sont là, Windows compris.
+
+La lane =release:darwin:arm64= de la première pipeline du tag (2783718368)
+est morte en =stuck_pending_no_matching_runners= : thalassa était EN LIGNE
+quand j'ai vérifié les runners, quelques minutes avant de poser le tag, et
+HORS LIGNE quand le job a été distribué. Le portable s'était endormi entre
+les deux. =collect:release= dépendant de darwin, il a été sauté et rien
+n'a pu être publié.
+
+La release a donc été coupée une seconde fois avec =SKIP_MACOS_RELEASE=1=
+(pipeline 2783845497), ce que la procédure prévoit explicitement : « une
+release n'attend pas une machine, et elle n'en laisse pas tomber une en
+silence non plus » — quand une machine est éteinte, on le DIT.
+
+* Ce que ça vaut la peine de retenir
+
+Le contrôle de disponibilité et la distribution du job sont *deux instants
+différents*, et sur une machine intermittente quelques minutes suffisent à
+les séparer. Vérifier que le runner est en ligne avant de taguer ne garantit
+rien ; c'est au mieux un indice.
+
+C'est la même leçon que =runner-availability-gating= tire déjà pour la
+pipeline enfant, et elle vaut aussi pour l'humain (ou l'agent) qui coupe la
+release.
+
+* Pour ajouter macOS après coup
+
+Rien n'est perdu : un asset de release GitLab est un LIEN, et les liens
+s'ajoutent après publication (cf. le relevé dans
+cloud-platform-runners.issue). Quand thalassa est réveillée :
+
+1. rejouer la pipeline du tag sans =SKIP_MACOS_RELEASE=, ou rejouer la
+   seule lane =release:darwin:arm64= puis =collect:release= ;
+2. =bash scripts/deploy-release-to-poseidon.sh release-1.9.9= (sur
+   poseidon) pour re-miroiter le jeu complet ;
+3. =python3 scripts/make-gitlab-release.py release-1.9.9 --update=.
+
+L'option =--update= existe précisément pour réparer une release déjà
+publiée.
+
+* Note sur le pipeline de release, qui a failli me piéger
+
+=make-gitlab-release.py= sur master fait pointer les liens vers *poseidon*
+et non vers les artefacts de jobs, mais AUCUN job de la pipeline ne dépose
+quoi que ce soit là-bas : c'est =scripts/deploy-release-to-poseidon.sh=,
+lancé À LA MAIN sur poseidon, qui le fait. La première vérification a donc
+rendu treize liens en 404, et le publieur a refusé de publier — exactement
+ce pour quoi cette garde a été écrite.
+
+Ce n'est pas un défaut du script, c'est une étape de la procédure qui n'est
+écrite nulle part dans =AGENTS.md= § /Cutting a release/, dont la liste en
+six points s'arrête à « =make-gitlab-release.py= ». Le dépôt sur poseidon
+devrait y figurer comme étape 5b, ou devenir un job de la pipeline. À
+trancher par pjb : un job le rendrait automatique, mais il faudrait donner
+au runner un accès en écriture à l'arborescence web.
