@@ -497,26 +497,48 @@ version is read from its source.
 4. push the tag and both pointers to `origin`;
 5. post-release bump on master, so no untagged commit claims a released
    version;
-6. `python3 scripts/make-gitlab-release.py release-M.m.d`.
+6. mirror the collected artefacts to the poseidon download area (on poseidon):
+   `GITLAB_TOKEN=<api> bash scripts/deploy-release-to-poseidon.sh release-M.m.d`;
+7. publish: `python3 scripts/make-gitlab-release.py release-M.m.d`.
 
-**Publishing the release (step 6).** Use the script, not `glab release
+**Mirroring to poseidon (step 6).** Release archives are hosted on a
+**durable poseidon web area**, not on GitLab job artefacts. The `ogamita`
+namespace is on the free 10 GB plan; when it fills, git operations are
+refused (`namespace-storage-blocks-ci.issue`) and, worse, any purge to get
+back under the limit kills every GitLab-artefact link a release points at.
+So the published release must not depend on GitLab storage surviving.
+
+`scripts/deploy-release-to-poseidon.sh release-M.m.d`, run **on poseidon**
+(it needs `sudo` to the web tree and a `GITLAB_TOKEN` with `api`), downloads
+that tag's `collect:release` set, rsyncs it to
+`https://poseidon.informatimago.com/ogamita/clautolisp/releases/<ver>/`, and
+regenerates the index pages (`scripts/gen-release-index.py`). See
+`~/admin.org` on poseidon for the web layout. Do this **before** step 7 —
+`make-gitlab-release.py` fetches every link first and aborts if the mirror
+is not up yet.
+
+**Publishing the release (step 7).** Use the script, not `glab release
 create` by hand. It reads `manifest-release-assets.txt` — which
 `collect-artefacts` writes from the directory it just filled — so the
 release attaches exactly what the pipeline collected, and it **fetches
 every link before creating the release**, refusing to publish one that
-does not serve its file. Both halves are there because the hand-made
-version shipped broken twice:
+does not serve its file.
 
-- links must use `/artifacts/raw/<path>`, never `/artifacts/file/<path>`.
-  The `file` form is the artefact *browsing page* and serves HTML. Both
-  answer `200`, so a consumer writes 40 KB of HTML to disk under the
-  archive's name and only fails later, at extraction, with a message
-  about archive format rather than about the link. Releases 1.8.47 and
-  1.8.49 shipped that way, and it was reported from another project's CI,
-  not noticed here.
-- `collect:release` keeps its artefacts (`expire_in: never`), because the
-  release links *at* them. With an expiry, a release turns into dead
-  links on its own, some weeks after anyone last looked at it.
+- It **defaults to `--links poseidon`**: the Release links point at the
+  poseidon mirror above (quota-independent, permanent). `--links gitlab`
+  is the fallback, pointing at the `collect:release` job artefacts.
+- For the `gitlab` fallback, links must use `/artifacts/raw/<path>`, never
+  `/artifacts/file/<path>`. The `file` form is the artefact *browsing page*
+  and serves HTML; both answer `200`, so a consumer writes 40 KB of HTML to
+  disk under the archive's name and only fails at extraction. Releases
+  1.8.47 and 1.8.49 shipped that way, reported from another project's CI.
+- `collect:release` keeps its artefacts (`expire_in: never`) so a release
+  can always be re-mirrored, but the *published* links no longer depend on
+  them — purge them for storage and the poseidon-hosted release still works.
+  To move an older release off GitLab artefacts: mirror it, then
+  `make-gitlab-release.py release-M.m.d --update --links poseidon`, then the
+  GitLab job artefacts are free to delete (1.8.49, 1.8.103 were moved this
+  way).
 
 `make check-release` enforces both.
 
