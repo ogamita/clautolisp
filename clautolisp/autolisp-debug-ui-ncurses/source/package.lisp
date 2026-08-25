@@ -25,6 +25,9 @@ markers (top-right), interactor (bottom-left), repl (bottom-right).")
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-symbol-name #:read-runtime-from-string
                 #:intern-autolisp-symbol)
+  ;; ,<line> minibuffer commands are routed through the shared ALDO vocabulary
+  ;; using a dumb-ui whose output is captured into a pane (ui-run-command).
+  (:import-from #:clautolisp.ui.dumb #:make-dumb-ui)
   (:import-from #:clautolisp.inspect
                 #:session-page #:session-origin
                 #:inspect-page-type-name #:inspect-page-header #:inspect-page-components

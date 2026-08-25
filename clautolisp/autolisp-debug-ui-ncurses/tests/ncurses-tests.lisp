@@ -352,16 +352,31 @@
       (declare (ignore result screen))
       (is (eq :repl (clautolisp.ui.ncurses::ncurses-ui-active-window ui))))))
 
-(test comma-unknown-command-reports
+(test comma-routes-line-through-aldo-vocabulary
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
          (ti (break-at context metas 3)))
+    ;; , h  is not an ncurses built-in name, so it is routed through the shared
+    ;; ALDO vocabulary; its printed output is captured into the repl pane.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (append (list #\,) (coerce "h" 'list) (list :enter #\c))
+                     :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (plusp (length (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui)))))))
+
+(test comma-unknown-command-routes-and-reports
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; An unknown name is routed to ALDO, which reports it into the pane.
     (multiple-value-bind (result ui screen)
         (run-ncurses (append (list #\,) (coerce "nosuchcmd" 'list) (list :enter #\c))
                      :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
-      (is (search "no command" (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
+      (is (some (lambda (l) (search "unknown" l))
+                (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui))))))
 
 (test eof-continues
   (let* ((context (fresh-context))

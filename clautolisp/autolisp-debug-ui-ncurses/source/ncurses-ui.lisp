@@ -434,12 +434,36 @@ Full aldo / sedit / navi line commands need the per-window interactor stacks
 (a later slice); they are not registered here yet.")
 
 (defun run-named-command (ui session hit name arg)
-  "Run the command NAME (from *NCURSES-COMMANDS*) with ARG; return its resume
-directive or NIL. Unknown names report into the interactor line."
+  "Run the command NAME with ARG; return its resume directive or NIL. A name in
+*NCURSES-COMMANDS* (window + core debugger commands) runs directly; any other
+name is routed as a command line through the shared ALDO vocabulary, so the
+full break / trace / watch / settings / … vocabulary is reachable from `,'
+and M-x."
   (let ((entry (assoc name *ncurses-commands* :test #'string-equal)))
     (if entry
         (funcall (cdr entry) ui session hit arg)
-        (progn (set-message ui "no command: ~A" name) nil))))
+        (run-aldo-line ui session
+                       (format nil "~A~@[ ~A~]"
+                               name (and (plusp (length arg)) arg))))))
+
+(defun %split-lines (text)
+  (loop with start = 0
+        for nl = (position #\Newline text :start start)
+        collect (string-right-trim '(#\Return #\Space)
+                                   (subseq text start (or nl (length text))))
+        while nl do (setf start (1+ nl))))
+
+(defun run-aldo-line (ui session line)
+  "Route LINE through the shared ALDO command vocabulary (ncurses-key-bindings.issue
+option b): dispatch it with a throwaway dumb-ui whose output is captured into
+the repl pane, and return the command's resume directive. HIT is NIL here, so
+frame-relative commands degrade gracefully; carrying the current hit is part of
+the per-window interactor-stack work."
+  (let* ((out (make-string-output-stream))
+         (dumb (make-dumb-ui :output out :input (make-string-input-stream ""))))
+    (prog1 (ui-run-command dumb session line)
+      (dolist (l (%split-lines (get-output-stream-string out)))
+        (when (plusp (length l)) (push-repl ui "~A" l))))))
 
 (defun mx-command (ui session hit)
   "M-x: read a command NAME in the minibuffer and run it."

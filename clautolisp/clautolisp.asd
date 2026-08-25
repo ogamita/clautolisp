@@ -813,7 +813,11 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-debug-ui"
-               "clautolisp/autolisp-debug-ui-tui")
+               "clautolisp/autolisp-debug-ui-tui"
+               ;; the ncurses UI routes ,<line> minibuffer commands through the
+               ;; shared ALDO command vocabulary (dumb UI-RUN-COMMAND with its
+               ;; output redirected into a pane); reuse rather than reimplement.
+               "clautolisp/autolisp-debug-ui-dumb")
   :serial t
   :components
   ((:file "autolisp-debug-ui-ncurses/source/package")
