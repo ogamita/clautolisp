@@ -89,6 +89,7 @@ fall-back to the tui UI."
 
 (defclass curses-screen ()
   ((window :initform nil :accessor curses-window)
+   (started :initform nil :accessor curses-started)   ; initscr done once/session
    (color-pairs :initform (make-hash-table :test 'eq) :accessor curses-color-pairs)))
 
 (defun make-curses-screen () (make-instance 'curses-screen))
@@ -98,26 +99,39 @@ fall-back to the tui UI."
     (:blue . 4) (:magenta . 5) (:cyan . 6) (:white . 7)))
 
 (defmethod tui-start ((screen curses-screen))
+  "Enter (or resume) curses full-screen mode. initscr runs once per session;
+later calls — a new debugger stop after a TUI-STOP (endwin) — just re-apply the
+input modes and refresh, so stdscr and its state survive across the stops."
   (ensure-curses-loaded)
-  (let ((win (%initscr)))
-    (setf (curses-window screen) win)
-    (%cbreak)
-    (%noecho)
-    (%keypad win 1)                     ; deliver arrow / function keys
-    (ignore-errors (%curs-set 0))       ; hide the hardware cursor
-    (when (/= 0 (%has-colors))
-      (%start-color)
-      (loop for (name . fg) in +color-names+
-            for pair from 1
-            do (%init-pair pair fg 0)   ; foreground FG on COLOR_BLACK (0)
-               (setf (gethash name (curses-color-pairs screen)) pair)))
-    (%wclear win)
-    (%wrefresh win)))
+  (cond
+    ((curses-started screen)
+     ;; resume after endwin
+     (let ((win (curses-window screen)))
+       (%cbreak) (%noecho) (%keypad win 1) (ignore-errors (%curs-set 0))
+       (%wrefresh win)))
+    (t
+     (let ((win (%initscr)))
+       (setf (curses-window screen) win
+             (curses-started screen) t)
+       (%cbreak)
+       (%noecho)
+       (%keypad win 1)                  ; deliver arrow / function keys
+       (ignore-errors (%curs-set 0))    ; hide the hardware cursor
+       (when (/= 0 (%has-colors))
+         (%start-color)
+         (loop for (name . fg) in +color-names+
+               for pair from 1
+               do (%init-pair pair fg 0) ; foreground FG on COLOR_BLACK (0)
+                  (setf (gethash name (curses-color-pairs screen)) pair)))
+       (%wclear win)
+       (%wrefresh win)))))
 
 (defmethod tui-stop ((screen curses-screen))
-  (when (curses-window screen)
-    (%endwin)
-    (setf (curses-window screen) nil)))
+  "Suspend curses, restoring the ordinary cooked terminal (echo on) for the
+REPL between stops. stdscr is kept so the next TUI-START resumes it; endwin is
+harmless if already suspended."
+  (when (curses-started screen)
+    (%endwin)))
 
 (defmethod tui-size ((screen curses-screen))
   ;; getmaxy/getmaxx return the row and column COUNTS (ncurses adds 1 to the

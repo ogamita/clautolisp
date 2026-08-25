@@ -310,6 +310,23 @@
           (is (= (clautolisp.ui.ncurses::rect-left ir)
                  (clautolisp.ui.ncurses::rect-left rr))))))))
 
+(test layout-persists-across-stops-in-a-session
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (id (second metas))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    ;; ID is entered twice (TWO calls id twice) → two stops. Swap windows at
+    ;; the first stop; the layout must still be swapped at the second — the
+    ;; UI instance (and its layout) persists across the curses enter/exit
+    ;; cycles of one session.
+    (clautolisp.debug:add-breakpoint ti (fid-of id) 0 :when :before)
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 23) #\> #\c #\c) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (not (equal (clautolisp.ui.ncurses::ncurses-ui-layout ui)
+                      (clautolisp.ui.ncurses::default-layout)))))))
+
 (test eof-continues
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))

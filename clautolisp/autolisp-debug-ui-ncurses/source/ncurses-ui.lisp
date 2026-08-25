@@ -34,17 +34,22 @@
 
 (defmethod ui-attached ((ui ncurses-ui) session)
   (declare (ignore session))
-  ;; The screen is supplied by the caller (a cl-charms terminal screen on the
-  ;; CLI path, a mock screen in tests). Fail with an actionable message rather
-  ;; than an unbound-slot error when no backend was wired.
+  ;; The screen is supplied by the caller (a real curses screen on the CLI
+  ;; path, a mock screen in tests). Fail with an actionable message rather than
+  ;; an unbound-slot error when no backend was wired.
+  ;;
+  ;; NOTE: we do NOT enter full-screen (curses) mode here. The debugger session
+  ;; is attached for the whole program, but the REPL between stops must run as
+  ;; an ordinary line-disciplined terminal — echo on, cooked mode — not under
+  ;; curses. So curses is entered only while actually stopped in the debugger
+  ;; (UI-AWAIT-COMMAND) and left on resume.
   (unless (ncurses-ui-screen ui)
-    (error "The ncurses debugger UI has no terminal screen: the cl-charms ~
-backend (clautolisp/autolisp-debug-ui-tui-charms — needs cl-charms and a real ~
-terminal) is not loaded. Use --debugger-ui tui, or install cl-charms."))
-  (tui-start (ncurses-ui-screen ui))
+    (error "The ncurses debugger UI has no terminal screen: no curses backend ~
+(clautolisp.ui.tui.curses) is loaded. Use --debugger-ui tui."))
   (set-message ui "clautolisp debugger — h for help"))
 
 (defmethod ui-detached ((ui ncurses-ui))
+  ;; Safety: leave curses if a stop was interrupted without resuming.
   (tui-stop (ncurses-ui-screen ui)))
 
 (defmethod ui-show-message ((ui ncurses-ui) level control &rest args)
@@ -247,12 +252,19 @@ cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
 ;;;; --- the event loop (spec §19.1) -----------------------------------
 
 (defmethod ui-await-command ((ui ncurses-ui) session hit)
-  (loop
-    (render-debugger ui session)
-    (let* ((key (tui-read-key (ncurses-ui-screen ui)))
-           (directive (handle-key ui session hit key)))
-      (when (eq key :eof) (return :continue))
-      (when directive (return directive)))))
+  ;; Enter curses only for the duration of this stop; leave it (restoring the
+  ;; ordinary line-disciplined terminal) on resume, so the REPL between stops
+  ;; behaves as a dumb terminal. The layout/active-window live in the UI
+  ;; instance and so persist across the enter/exit cycles of one session.
+  (tui-start (ncurses-ui-screen ui))
+  (unwind-protect
+       (loop
+         (render-debugger ui session)
+         (let* ((key (tui-read-key (ncurses-ui-screen ui)))
+                (directive (handle-key ui session hit key)))
+           (when (eq key :eof) (return :continue))
+           (when directive (return directive))))
+    (tui-stop (ncurses-ui-screen ui))))
 
 (defun handle-key (ui session hit key)
   "Dispatch one command-mode key; return a resume directive or NIL."
