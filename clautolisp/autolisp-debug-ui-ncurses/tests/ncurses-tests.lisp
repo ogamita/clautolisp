@@ -327,6 +327,42 @@
       (is (not (equal (clautolisp.ui.ncurses::ncurses-ui-layout ui)
                       (clautolisp.ui.ncurses::default-layout)))))))
 
+(test mx-runs-named-command-continue
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; Esc x  M-x, then the command name "continue" + RET → resumes.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (append (list :escape #\x) (coerce "continue" 'list) (list :enter))
+                     :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore ui screen))
+      (is (eql 7 result)))))
+
+(test comma-runs-named-window-command
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; , window-select-next RET moves the active window (interactor -> repl);
+    ;; then c continues.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (append (list #\,) (coerce "window-select-next" 'list) (list :enter #\c))
+                     :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (eq :repl (clautolisp.ui.ncurses::ncurses-ui-active-window ui))))))
+
+(test comma-unknown-command-reports
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (append (list #\,) (coerce "nosuchcmd" 'list) (list :enter #\c))
+                     :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (search "no command" (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
+
 (test eof-continues
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))

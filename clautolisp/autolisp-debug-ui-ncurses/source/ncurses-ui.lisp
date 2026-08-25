@@ -15,6 +15,7 @@
    (navigator :initform nil :accessor ncurses-ui-navigator)          ; source selection
    (layout :initform (default-layout) :accessor ncurses-ui-layout)   ; window tree
    (active-window :initform :interactor :accessor ncurses-ui-active-window)
+   (minibuffer :initform "" :accessor ncurses-ui-minibuffer)         ; last-row I/O
    (inspector-cursor :initform 0 :accessor ncurses-ui-inspector-cursor)))
 
 (defun make-ncurses-ui (&rest initargs)
@@ -155,8 +156,12 @@ the reserved minibuffer row."
                             (eq id (ncurses-ui-active-window ui))))))
           (dolist (v vlines)
             (destructuring-bind (col top height) v (draw-vline screen col top height)))
-          (tui-put screen (1- rows) 0 (pad-string "" cols))   ; minibuffer
+          (render-minibuffer ui (1- rows) cols)
           (tui-refresh screen))))))
+
+(defun render-minibuffer (ui row cols)
+  (tui-put (ncurses-ui-screen ui) row 0
+           (pad-string (truncate-string (ncurses-ui-minibuffer ui) cols) cols)))
 
 (defun render-stack (ui session rect)
   (let ((frames (and (current-snapshot session)
@@ -291,7 +296,10 @@ cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
     ((key-char-p key #\b) (toggle-breakpoint ui session) nil)
     ((key-char-p key #\e) (eval-line ui session) nil)
     ((key-char-p key #\x) (inspect-loop ui session) nil)
-    ((key-char-p key #\h) (set-message ui "keys: c s i o f | d u > < nav | b e x | up/down frame | a abort r return q quit") nil)
+    ;; minibuffer command entry: `,' reads a command line, Esc-x is M-x.
+    ((key-char-p key #\,) (comma-command ui session hit))
+    ((eq key :escape) (meta-command ui session hit))
+    ((key-char-p key #\h) (set-message ui "keys: c s i o f | d u > < nav | b e x | ^/v frame | , cmd  M-x name | a r q") nil)
     (t nil)))
 
 (defun nav-move (ui motion)
@@ -378,6 +386,84 @@ re-homing the next window into the new split so four windows remain."
       ((key-char-p k #\-) (window-resize ui (- +window-resize-step+)))
       ((key-char-p k #\=) (window-balance ui))
       (t (set-message ui "C-w: n/p select  >/</u/d swap  2/3 split  4 reset  +/-/= size")))))
+
+;;;; --- minibuffer: M-x and , (ncurses-windows.issue) -----------------
+
+(defun read-minibuffer (ui prompt)
+  "Read a line in the minibuffer (last screen row), echoing PROMPT + input.
+RET returns the string, Esc cancels (returns NIL), Backspace deletes."
+  (let ((chars '()))
+    (loop
+      (setf (ncurses-ui-minibuffer ui)
+            (concatenate 'string prompt (coerce (reverse chars) 'string)))
+      (render-debugger ui (current-session-of ui))
+      (let ((key (tui-read-key (ncurses-ui-screen ui))))
+        (cond
+          ((or (eq key :enter) (eq key :eof))
+           (setf (ncurses-ui-minibuffer ui) "")
+           (return (coerce (nreverse chars) 'string)))
+          ((eq key :escape) (setf (ncurses-ui-minibuffer ui) "") (return nil))
+          ((eq key :backspace) (when chars (pop chars)))
+          ((characterp key) (push key chars))
+          (t nil))))))
+
+(defparameter *ncurses-commands*
+  (list
+   (cons "continue"  (lambda (ui s h a) (declare (ignore ui h a)) (cmd-continue s)))
+   (cons "step"      (lambda (ui s h a) (declare (ignore ui h a)) (cmd-step s :over)))
+   (cons "step-into" (lambda (ui s h a) (declare (ignore ui h a)) (cmd-step s :into)))
+   (cons "step-out"  (lambda (ui s h a) (declare (ignore ui h a)) (cmd-step s :out)))
+   (cons "finish"    (lambda (ui s h a) (declare (ignore ui h a)) (cmd-step s :finish)))
+   (cons "abort"     (lambda (ui s h a) (declare (ignore ui h a)) (cmd-abort s)))
+   (cons "window-select-next"     (lambda (ui s h a) (declare (ignore s h a)) (window-select ui +1) nil))
+   (cons "window-select-previous" (lambda (ui s h a) (declare (ignore s h a)) (window-select ui -1) nil))
+   (cons "window-swap-right"  (lambda (ui s h a) (declare (ignore s h a)) (window-swap ui :right) nil))
+   (cons "window-swap-left"   (lambda (ui s h a) (declare (ignore s h a)) (window-swap ui :left) nil))
+   (cons "window-swap-above"  (lambda (ui s h a) (declare (ignore s h a)) (window-swap ui :above) nil))
+   (cons "window-swap-below"  (lambda (ui s h a) (declare (ignore s h a)) (window-swap ui :below) nil))
+   (cons "window-split-below" (lambda (ui s h a) (declare (ignore s h a)) (window-split ui :horizontal) nil))
+   (cons "window-split-right" (lambda (ui s h a) (declare (ignore s h a)) (window-split ui :vertical) nil))
+   (cons "windows-split-square" (lambda (ui s h a) (declare (ignore s h a)) (window-reset-square ui) nil))
+   (cons "window-size-increment" (lambda (ui s h a) (declare (ignore s h a)) (window-resize ui +window-resize-step+) nil))
+   (cons "window-size-decrement" (lambda (ui s h a) (declare (ignore s h a)) (window-resize ui (- +window-resize-step+)) nil))
+   (cons "window-size-balance"   (lambda (ui s h a) (declare (ignore s h a)) (window-balance ui) nil)))
+  "Named debugger / window commands reachable through M-x and `,'. Maps a
+command NAME to (lambda (ui session hit arg) -> resume-directive-or-nil). This
+registry is the seed of the user-binding API — see ncurses-key-bindings.issue.
+Full aldo / sedit / navi line commands need the per-window interactor stacks
+(a later slice); they are not registered here yet.")
+
+(defun run-named-command (ui session hit name arg)
+  "Run the command NAME (from *NCURSES-COMMANDS*) with ARG; return its resume
+directive or NIL. Unknown names report into the interactor line."
+  (let ((entry (assoc name *ncurses-commands* :test #'string-equal)))
+    (if entry
+        (funcall (cdr entry) ui session hit arg)
+        (progn (set-message ui "no command: ~A" name) nil))))
+
+(defun mx-command (ui session hit)
+  "M-x: read a command NAME in the minibuffer and run it."
+  (let ((name (read-minibuffer ui "M-x ")))
+    (when (and name (plusp (length (string-trim " " name))))
+      (run-named-command ui session hit (string-trim " " name) ""))))
+
+(defun comma-command (ui session hit)
+  "`,': read a full command line (NAME ARGS...) in the minibuffer and run it."
+  (let ((line (read-minibuffer ui ",")))
+    (when (and line (plusp (length (string-trim " " line))))
+      (let* ((trimmed (string-left-trim " " line))
+             (sp (position #\Space trimmed))
+             (name (if sp (subseq trimmed 0 sp) trimmed))
+             (arg  (if sp (string-left-trim " " (subseq trimmed sp)) "")))
+        (run-named-command ui session hit name arg)))))
+
+(defun meta-command (ui session hit)
+  "Esc as a Meta prefix: Esc-x runs M-x. Other Esc-<key> are unbound for now."
+  (let ((k (tui-read-key (ncurses-ui-screen ui))))
+    (if (key-char-p k #\x)
+        (mx-command ui session hit)
+        (progn (set-message ui "M-~A unbound"
+                            (if (characterp k) k "key")) nil))))
 
 (defun move-frame (ui session delta)
   (let* ((frames (snapshot-call-stack (current-snapshot session)))
@@ -507,7 +593,7 @@ windowed layout (status lines + separators + minibuffer)."
                           (eq id (ncurses-ui-active-window ui))))
             (dolist (v vlines)
               (destructuring-bind (col top height) v (draw-vline screen col top height)))
-            (tui-put screen (1- rows) 0 (pad-string "" cols))
+            (render-minibuffer ui (1- rows) cols)
             (tui-refresh screen)))))))
 
 (defun path-string (session)
