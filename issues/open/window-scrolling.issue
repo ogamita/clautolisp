@@ -29,3 +29,20 @@ Let's add a key / command to display the key bindings:
 | key   | description              | command           |
 |-------+--------------------------+-------------------|
 | C-h m | Display key binding help | help-key-bindings |
+
+Note: for window commands, let's add:
+
+| key   | alt key | description                            | command      |
+|-------+---------+----------------------------------------+--------------|
+| C-w o | C-x o   | swap active window between two windows | window-other |
+
+window-other uses a saved active window initialized to nil
+
+When the saved active window is nil, then save the current active
+window, and activates the next-window.
+
+When the saved active window is not nil, then activates the saved
+active window, and reset it to nil.
+
+
+For other window commands, with a C-w something key binding, let's add a C-x something key binding.
