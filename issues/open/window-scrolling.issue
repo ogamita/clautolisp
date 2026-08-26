@@ -1,0 +1,31 @@
+In ncurses windows,
+
+There should be a backend buffer containing the text displayed (containing the decorations (ansi codes, etc)).
+
+This buffer has L lines and C columns (maximum length of line).
+
+The window in which it's displayed has H lines and W columns.
+
+When L>H or C>W to see the whole buffer we must scroll.
+
+There's a scrolling point (Sl Sc) which indicates the first line and first columns displayed in the topleft corner of the windows.
+
+These commands apply only on the active windows.
+
+| key   | alt key | alt key 2  | description   | command             |
+|-------+---------+------------+---------------+---------------------|
+| C-w > | C-x >   | C-<prior>  | increments Sc | window-scroll-right |
+| C-w > | C-x <   | C-<next>   | decrements Sc | window-scroll-left  |
+| C-w v | C-v     | <kp-next>  | increments Sl | window-scroll-up    |
+| C-w ^ | M-v     | <kp-prior> | decrement Sl  | window-scroll-down  |
+
+Prefix C-u N let us specify the number of lines or columns to increment or decrement.
+Otherwise some default value is used.
+Scrolling is bound to the current backend text size minus the current window size.
+If one or the other changes, the next scrolling command may skip to adjust Sl or Sc.
+
+Let's add a key / command to display the key bindings:
+
+| key   | description              | command           |
+|-------+--------------------------+-------------------|
+| C-h m | Display key binding help | help-key-bindings |
