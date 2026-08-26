@@ -63,8 +63,17 @@ than asserted.")
 
 (defun %operator-name (form)
   "The operator name of FORM as an upper-case string, or NIL when FORM is
-not a call with a symbol in operator position."
-  (and (consp form) (%symbol-name-of (first form))))
+not a call with a symbol in operator position.
+
+Upper-cased because that is what SPECIAL-OPERATOR-NAME does. The reader
+interns names upper-case, so this changes nothing for source that was
+read; but a symbol interned directly need not be, and dispatching on the
+raw name would then disagree with the interpreter about what is a special
+operator. Harmless while everything fell back; not harmless now that
+calls compile."
+  (and (consp form)
+       (let ((name (%symbol-name-of (first form))))
+         (and name (string-upcase name)))))
 
 (defun %note-fallback (name)
   (push (or name "<not-a-symbol-call>") *transpiler-fallbacks*)
@@ -74,12 +83,6 @@ not a call with a symbol in operator position."
   "Compile FORM by handing it back to the interpreter."
   (%note-fallback (%operator-name form))
   `(autolisp-eval ',form ,context-var))
-
-(defun %self-evaluating-p (form)
-  (or (null form)
-      (numberp form)
-      (typep form 'autolisp-string)
-      (and (not (consp form)) (not (typep form 'autolisp-symbol)))))
 
 (defun transpile-body (forms context-var)
   "Translate FORMS as an implicit PROGN, yielding the last value — nil
@@ -94,7 +97,23 @@ the evaluation context held by the variable CONTEXT-VAR.
 
 Never fails: an unhandled form becomes an interpreter call on itself."
   (cond
-    ((%self-evaluating-p form) `',form)
+    ;; SELF-EVALUATING-RUNTIME-VALUE-P is the interpreter's own answer,
+    ;; asked rather than restated here: the compiler must not carry a
+    ;; second opinion about which values evaluate to themselves. The
+    ;; local predicate this replaces was a SUPERSET -- it called every
+    ;; non-cons non-symbol object self-evaluating, where the interpreter
+    ;; signals :invalid-form -- so compiled code returned a value where
+    ;; interpreted code raised an error.
+    ((self-evaluating-runtime-value-p form) `',form)
+
+    ;; T evaluates to ITSELF, whatever it is bound to. Not a special case
+    ;; worth arguing with: without it (cond (T ...)) falls through to nil
+    ;; in every dialect whose unbound-variable mode is :silent-nil, which
+    ;; is every product profile, and silently -- the failure this branch
+    ;; exists to prevent (transpiler-t-is-not-self-evaluating.issue).
+    ((and (typep form 'autolisp-symbol)
+          (string= "T" (autolisp-symbol-name form)))
+     `',form)
 
     ;; A bare symbol is a variable reference. LOOKUP-VARIABLE returns the
     ;; value as its primary value; the interpreter's own unbound-variable
@@ -103,7 +122,10 @@ Never fails: an unhandled form becomes an interpreter call on itself."
     ((typep form 'autolisp-symbol)
      `(lookup-variable ',form ,context-var))
 
-    ((not (consp form)) `',form)
+    ;; Neither self-evaluating, nor a symbol, nor a call: the interpreter
+    ;; signals :invalid-form here. Hand the form to it rather than invent
+    ;; a second diagnostic -- or, worse, quietly return the object.
+    ((not (consp form)) (%fallback form context-var))
 
     (t
      (let ((name (%operator-name form))
@@ -195,9 +217,49 @@ Never fails: an unhandled form becomes an interpreter call on itself."
                 arguments)
              nil))
 
-         ;; Everything else -- including every function call, which is the
-         ;; next slice's subject -- goes to the interpreter.
-         (t (%fallback form context-var)))))))
+         ;; A form whose operator names a special operator has UNEVALUATED
+         ;; operands -- (defun f (x) ...) -- so it must never reach the
+         ;; call branch below, where those operands would be evaluated as
+         ;; arguments. KNOWN-SPECIAL-OPERATOR-P is the runtime's own
+         ;; answer, and it is the same question the debugger's
+         ;; instrumenter asks (spec 5.3); asking it beats keeping a list
+         ;; here that would drift the first time an operator is added.
+         ;;
+         ;; The table IS extensible at run time -- REGISTER-SPECIAL-OPERATOR
+         ;; is how the debugger installs its poll point -- so this reads
+         ;; the table as it stands at transpile time. Registration happens
+         ;; when a system loads, long before user code is compiled, so
+         ;; that is sound; an operator registered AFTER a form was
+         ;; compiled would not be seen by that form.
+         ((known-special-operator-p name) (%fallback form context-var))
+
+         (t
+          ;; THE CALL.
+          ;;
+          ;; Order: the interpreter resolves the function FIRST and
+          ;; evaluates the arguments AFTER (LOOKUP-FUNCTION, then a MAPCAR
+          ;; over the arguments), so an undefined function is signalled
+          ;; before any argument's side effects happen. Common Lisp's
+          ;; left-to-right argument evaluation reproduces that order
+          ;; exactly -- provided the resolution stays in the first
+          ;; argument position, which is why it is written inline here
+          ;; rather than hoisted into a LET.
+          ;;
+          ;; Entry point: CALL-AUTOLISP-FUNCTION-IN-CONTEXT, not FUNCALL.
+          ;; It is the interpreter's own, so TRACE, the :subr/:usubr call
+          ;; stack frames, the debugger's two-bodies dispatch and the
+          ;; host-error wrapping all keep working through compiled code
+          ;; with no second implementation of any of them. What compiled
+          ;; code drops is the per-form (:eval . form) frame AUTOLISP-EVAL
+          ;; pushes -- that cons per evaluated form is precisely the cost
+          ;; being removed -- so backtraces through compiled code show
+          ;; function frames but not intermediate form frames. Restoring
+          ;; them is the instrumented variant's job, not this one's.
+          `(call-autolisp-function-in-context
+            (resolve-autolisp-function-designator ',(first form) ,context-var)
+            ,context-var
+            ,@(mapcar (lambda (argument) (transpile-form argument context-var))
+                      arguments))))))))
 
 (defun compile-autolisp-form (form)
   "Compile FORM into a function of one argument (the evaluation context)

@@ -19,9 +19,11 @@
                 #:install-core-builtins)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-eval
+                #:autolisp-runtime-error
                 #:autolisp-string
                 #:autolisp-string-value
                 #:default-evaluation-context
+                #:lookup-variable
                 #:read-runtime-from-string
                 #:reset-default-evaluation-context)
   (:export #:run-all-tests))

@@ -94,17 +94,44 @@ with = only within the same class, because AutoLISP distinguishes 1 from
     "(progn (setq a 5) (cond ((> a 10) \"big\") ((> a 3) \"mid\") (t \"small\")))"
     ;; a test-only clause yields the TEST's value
     "(cond (7))"
+    ;; T is self-evaluating REGARDLESS of its binding. The two cases above
+    ;; both have an earlier clause that fires, so the t clause is present
+    ;; but never TAKEN -- which is how the compiler shipped treating T as
+    ;; an ordinary variable. These take it, and the (setq t nil) pair is
+    ;; the case the interpreter's own guard exists for.
+    "(cond (nil 1) (t 2))"
+    "(progn (setq t nil) (cond (t 42)))"
+    "(progn (setq t nil) (if t 1 2))"
+    "(progn (setq t nil) (and t))"
     ;; while yields nil in this engine, not the last body value
     "(progn (setq i 0) (while (< i 3) (setq i (+ i 1))))"
     "(progn (setq i 0) (while (< i 3) (setq i (+ i 1))) i)"
-    ;; function calls -- these fall back today, and must still agree
+    ;; function calls
     "(+ 1 2)"
     "(car '(1 2 3))"
     "(cdr '(1 2 3))"
     "(list 1 2 3)"
     "(strcat \"a\" \"b\")"
-    ;; nesting, so the fallback boundary is crossed in both directions
-    "(progn (setq a 2) (if (and (> a 1) (< a 10)) (+ a 40) 0))")
+    ;; nested calls: the value of one call is an argument of the next, and
+    ;; integers stay integers while reals stay reals across the boundary
+    "(+ (* 2 3) (- 10 4))"
+    "(car (cdr (list 1 2 3)))"
+    "(list 1 2.0 \"three\" 'four)"
+    "(strcat (strcat \"a\" \"b\") \"c\")"
+    ;; arguments evaluate LEFT TO RIGHT, and their side effects are
+    ;; visible in that order -- pinned by reading the variable back
+    "(progn (setq a 0) (list (setq a 1) (setq a 2) a))"
+    ;; a call whose arguments are themselves compiled special forms, and
+    ;; the reverse -- the two halves must compose in both directions
+    "(progn (setq a 2) (if (and (> a 1) (< a 10)) (+ a 40) 0))"
+    "(+ (if nil 1 2) (cond (nil 10) (t 20)))"
+    "(progn (setq i 0) (while (< i 4) (setq i (+ i 1))) (* i i))"
+    ;; user-defined functions: DEFUN itself still falls back, the CALL of
+    ;; the resulting function does not, so this crosses the boundary the
+    ;; way real code does
+    "(progn (defun double (x) (* 2 x)) (double 21))"
+    "(progn (defun add3 (a b c) (+ a (+ b c))) (add3 1 2 3))"
+    "(progn (defun fact (n) (if (< n 2) 1 (* n (fact (- n 1))))) (fact 6))")
   "AutoLISP source strings that must evaluate identically compiled and
 interpreted. Cases are added here as coverage grows; a case is never
 removed, so a form that once agreed keeps having to.")
@@ -122,10 +149,10 @@ compiler's whole contract; everything else in this suite is detail."
   "A form the transpiler knows nothing about still compiles, and still
 gives the interpreter's answer. That is what makes the compiler safe to
 grow: it is correct before it is complete."
-  (is (%same-value-p (%interpreted "(strcat \"a\" \"b\")")
-                     (%compiled "(strcat \"a\" \"b\")")))
+  (is (%same-value-p (%interpreted "(foreach x '(1 2 3) x)")
+                     (%compiled "(foreach x '(1 2 3) x)")))
   ;; and it reports itself as a fallback rather than pretending coverage
-  (is (member "STRCAT" (transpiler-coverage (%read-one "(strcat \"a\" \"b\")"))
+  (is (member "FOREACH" (transpiler-coverage (%read-one "(foreach x '(1 2 3) x)"))
               :test #'equal)))
 
 (test coverage-is-reported-not-assumed
@@ -134,8 +161,69 @@ measurement. A form built only from handled operators reports nothing."
   (is (null (transpiler-coverage (%read-one "(if 1 2 3)"))))
   (is (null (transpiler-coverage (%read-one "(progn (setq a 1) a)"))))
   (is (null (transpiler-coverage (%read-one "(cond (nil 1) (2 3))"))))
-  ;; a call falls back, and says which operator did
-  (is (equal '("FOO") (transpiler-coverage (%read-one "(foo 1)")))))
+  ;; calls are compiled now, arguments included, so nothing is reported
+  ;; even for a function that does not exist -- coverage is about what the
+  ;; TRANSPILER handles, not about what is defined
+  (is (null (transpiler-coverage (%read-one "(foo 1)"))))
+  (is (null (transpiler-coverage (%read-one "(+ (car x) (cdr y))"))))
+  ;; a special operator not yet open-coded still reports itself, and only
+  ;; it: the arguments around it are compiled
+  (is (equal '("REPEAT") (transpiler-coverage (%read-one "(+ 1 (repeat 2 3))")))))
+
+(test special-operators-are-never-compiled-as-calls
+  "A special operator has UNEVALUATED operands. Compiling (defun f (x) …)
+as a call would evaluate its lambda list and body as arguments, so the
+call branch must be behind the runtime's own KNOWN-SPECIAL-OPERATOR-P
+rather than behind a list kept here."
+  ;; DEFUN's operands must survive unevaluated -- (X) is not a call to X
+  (is (%same-value-p (%interpreted "(progn (defun f (x) (* x x)) (f 5))")
+                     (%compiled "(progn (defun f (x) (* x x)) (f 5))")))
+  (is (eql 25 (%compiled "(progn (defun f (x) (* x x)) (f 5))")))
+  ;; Every special operator this slice does not open-code must report
+  ;; itself as a fallback -- i.e. must NOT have been compiled as a call.
+  ;; Listed by name so that adding an operator to the runtime without
+  ;; teaching the compiler about it shows up here as a gap rather than as
+  ;; evaluated operands.
+  (dolist (case '(("(set 'a 1)"        . "SET")
+                  ("(repeat 2 1)"      . "REPEAT")
+                  ("(foreach x '(1) x)" . "FOREACH")
+                  ("(let ((x 1)) x)"   . "LET")
+                  ("(lambda (x) x)"    . "LAMBDA")
+                  ("(function car)"    . "FUNCTION")
+                  ("(defun g (x) x)"   . "DEFUN")
+                  ("(defun-q h (x) x)" . "DEFUN-Q")))
+    (destructuring-bind (text . name) case
+      (is (member name (transpiler-coverage (%read-one text)) :test #'equal)
+          "~S was not reported as a fallback on ~A -- was it compiled as a ~
+           call, evaluating operands the interpreter leaves alone?" text name))))
+
+(test a-call-resolves-its-function-before-evaluating-arguments
+  "The interpreter looks the function up FIRST, so an undefined function
+is signalled before any argument's side effects happen. A compiler that
+evaluated arguments first would leave the variable modified after the
+error -- a difference nothing would notice until it did."
+  (let ((context (%fresh-context))
+        (function (compile-autolisp-form (%read-one "(nosuchfunction (setq a 1))"))))
+    (autolisp-eval (%read-one "(setq a 0)") context)
+    (handler-case (progn (funcall function context)
+                         (is nil "calling an undefined function did not signal"))
+      (autolisp-runtime-error ()
+        ;; the argument's SETQ must NOT have run
+        (is (eql 0 (lookup-variable (%read-one "a") context)))))))
+
+(test calls-go-through-the-interpreters-own-entry-point
+  "Compiled calls use CALL-AUTOLISP-FUNCTION-IN-CONTEXT, which is what
+keeps TRACE, the call-stack frames and the debugger's dispatch working
+through compiled code. Pinned here as behaviour: a function defined by
+interpreted code is callable from compiled code and vice versa, which is
+only true because both go through the same door."
+  (let ((context (%fresh-context)))
+    (autolisp-eval (%read-one "(defun triple (x) (* 3 x))") context)
+    ;; compiled code calls the interpreted definition
+    (is (eql 21 (funcall (compile-autolisp-form (%read-one "(triple 7)")) context)))
+    ;; and interpreted code calls a function whose body ran compiled
+    (funcall (compile-autolisp-form (%read-one "(setq n (triple 4))")) context)
+    (is (eql 12 (autolisp-eval (%read-one "n") context)))))
 
 (test setq-yields-its-last-assignment
   "Pinned separately because it is the one place the emitted code keeps
