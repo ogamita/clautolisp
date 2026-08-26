@@ -1,0 +1,309 @@
+#+TITLE: TUI module specification — frames, windows, interactor stacks
+#+AUTHOR: clautolisp
+#+STARTUP: showall
+
+* 1. Purpose and scope
+
+A single, *clautolisp-independent* terminal-UI module that provides:
+
+- =tty-frame= — dumb line-discipline terminals (one implicit window + implicit
+  minibuffer), and
+- =vdt-frame= — 2D cursor-addressable terminals via ncurses (Unix) or PDCurses
+  (Windows), with several windows laid out in the frame,
+
+on top of one *per-window interactor stack* model and one *single-threaded,
+cooperative* input-multiplexing mechanism. The same module implements the user
+interface of the Lisp REPL, the value inspector, the stack browser, the source
+navigator (navi) and editor (sedit), the debugger (aldo), and — reused by
+cadtui — the CAD interface and its console (itself a REPL).
+
+The module is a "mini emacs": it provides mechanisms + built-in commands
+(written in Common Lisp) and lets the user define commands (written in
+AutoLISP) bound to keys (vdt) or invoked by name/abbreviation (tty). It does NOT
+reimplement emacs; it reuses the existing pieces below.
+
+Reconciles: =issues/open/ncurses-misc.issue= (frames/windows API),
+=issues/open/ncurses-windows.issue= (window commands, layout tree),
+=issues/open/ncurses-key-bindings.issue= (binding API), and
+=cadtui/documentation/cadtui-specifications.org= (single-thread multiplexing,
+the console-as-interactor, the text/curses backend split).
+
+** 1.1 It already mostly exists — this spec unifies it
+
+- =clautolisp/autolisp-interactor= (package =clautolisp.interactor=) has ZERO
+  dependencies and is "reusable outside the debugger": INTERACTOR-LOOP,
+  =*interactor-stack*=, the =interactor= singleton (name/status/prompt/*reader*/
+  evaluator/two command dictionaries) and per-entry =activation= state,
+  push/pop/return, recursive/nestable loops. *This is the interactor kernel of
+  this module.*
+- =clautolisp.ui.tui= (in =autolisp-debug-ui-tui=) is a thin screen protocol
+  (=tui-start/stop/size/clear/put/refresh/read-key=) + panes + a mock backend,
+  with concrete backends =autolisp-debug-ui-tui-curses= (no-grovel CFFI
+  ncurses, libncurses on demand) and =-tui-charms=. *This is the vdt rendering
+  substrate.* Its hardcoded =four-pane-layout= is replaced here by a window
+  *layout tree* (already prototyped in
+  =autolisp-debug-ui-ncurses/source/layout.lisp=).
+- The four-pane ncurses UI already implements per-window interactor stacks with
+  a =:window-manager= interactor on top of the active window's stack
+  (=autolisp-debug-ui-ncurses/source/ncurses-ui.lisp=). *This spec generalises
+  that prototype into the module.*
+
+* 2. Layered architecture
+
+#+begin_example
+  L4  Applications = command dictionaries (interactors):
+        lisp-repl · aldo · navi · sedit · inspect · stack-browser · cadtui-console
+  L3  Interactor kernel (clautolisp.interactor): per-window stacks, INTERACTOR-LOOP,
+        the READER hook (the single multiplexing point), window/frame-manager interactor
+  L2  Windows: layout tree, minibuffer, status line, faces, window API
+  L1  Frames: tty-frame / vdt-frame, frame API, select-frame (tty<->vdt), SIGWINCH
+  L0  Screen protocol + backends: tty (line discipline) · mock · ncurses · PDCurses
+#+end_example
+
+L0–L3 are the *module* (clautolisp-independent). L4 built-ins are Common Lisp;
+their AutoLISP-visible entry points and user commands (prefixed =clal-=) are a
+thin layer that lives in clautolisp / cadtui, not in the module.
+
+* 3. The single-thread multiplexing model (the load-bearing invariant)
+
+There are NO OS threads. "One active context at a time; the rest are suspended
+(frozen), not killed" (cadtui spec). This is a *cooperative suspend/resume
+scheduler realised by the interactor stack*, not preemptive threads.
+
+*The reader slot is the single point where a turn is taken.* Per
+INTERACTOR-LOOP turn: print status → print prompt → call the top interactor's
+=reader= → dispatch to a command dictionary (=find-and-run-command=) or to the
+=evaluator= for a bare sexp. The UI gets the CPU exactly when a
+READ-LINE/READ-CHAR happens, because *that read call is the reader hook*:
+
+- *tty-frame* — the reader classifies a physical line by its first character
+  (line discipline forces in-band escaping): a meta/UI line is executed now and
+  never delivered to any AutoLISP read; a pass-through line goes to the target
+  context (or is queued: a per-console type-ahead =lignes-en-attente= queue when
+  the target is not currently blocked in a read). Reader variants already exist:
+  =comma-command-read= (REPL), =command-read= (aldo/navi/sedit); cadtui adds the
+  =/,/!/=/CAD first-char classifier as a fourth variant. Same extension point,
+  not three loops.
+- *vdt-frame* — the reader pumps =tui-read-key= (key at a time) and may take UI
+  turns out of band (function keys, arrows, mouse → the same commands), which
+  the cadtui spec explicitly authorises for a backend "with finer terminal
+  control". Window commands (the =:window-manager= interactor) are handled here.
+
+Consequence: the SAME INTERACTOR-LOOP drives both the line-discipline console
+and the 2D frame; "suspend/resume the other contexts" is the interactor stack,
+not threads. A built-in that wants to run while letting the user reach the
+underlying REPL (e.g. sedit) MUST explicitly push its interactor onto the
+window's stack and loop, so the lower interactors stay reachable — there is no
+thread to do it implicitly.
+
+* 4. Frames (L1)
+
+A *frame* is a set of windows shown in one GUI unit (what a GUI calls a window).
+
+| type           | device | windows                    |
+|----------------+--------+----------------------------|
+| tty-frame      | tty    | 1 implicit window, implicit minibuffer (line discipline) |
+| ncurses-frame  | vdt    | many, optional *minibuffer* (1 bottom line) |
+| PDCurses-frame | vdt    | many, optional *minibuffer* |
+| vdt-frame      | vdt    | abstract super of the two curses frames |
+
+Startup: one =tty-frame= named "autolisp" over stdin/stdout is the initial,
+selected frame. clautolisp starts in the dumb REPL. New frames are made on
+demand; a =vdt-frame= is entered *temporarily* in the middle of a dumb session
+(sedit, or aldo under =--debugger-ui ncurses/pdcurses=) and left on resume.
+
+** 4.1 Frame API (opaque =frame=; =clal-=-prefixed in AutoLISP)
+
+- =(frame-list)= → list of frames.
+- =(selected-frame)= → the active frame.
+- =(make-frame options)= — options alist: =name=, =width=, =height=,
+  =(minibuffer . t|nil)=, =(device . tty|vdt)=.
+- accessors: =frame-name= / =set-frame-name=, =frame-width= / =set-frame-width=,
+  =frame-height= / =set-frame-height=, =frame-minibuffer= (nil or the minibuffer
+  window), =frame-device= (=tty= | =vdt=).
+- =(delete-frame frame)= — remove from the list and delete; deletes its windows.
+- =(select-frame frame)=:
+  - selecting a *tty-frame* returns the terminal to the initial page, normal tty
+    settings and line discipline;
+  - selecting a *vdt-frame* enters 2D curses mode; if the frame is smaller than
+    the terminal a centred border may be drawn (background unchanged), else the
+    whole terminal is used (frame size updated). On SIGWINCH the frame size is
+    updated (and, in the module, a =:resize= key surfaces through the reader).
+- =(terminal-device-supports-vdt-p)= → whether a vdt-frame can be created
+  (delegates to the screen backend: libncurses / PDCurses loadable on demand,
+  isatty, TERM).
+
+Selecting a vdt-frame redisplays the screen; reselecting a tty-frame swaps the
+terminal back to the tty page (curses =endwin=; the current ncurses UI already
+does exactly this suspend/resume across debugger stops).
+
+* 5. Windows (L2)
+
+Frames contain one or more windows that tile the whole frame. One window may be
+the =*minibuffer*= (vdt only, always a single bottom line; tty-frames have an
+implicit minibuffer via line discipline). Windows carry a *status line* at the
+bottom (title + status; the active window's status line uses a distinct face).
+
+** 5.1 Layout tree
+
+A binary tree of splits over the windows (already implemented in
+=layout.lisp=): a leaf is a window; =(:horizontal RATIO ABOVE BELOW)= stacks
+(the separator is ABOVE's status line — no spent row); =(:vertical RATIO LEFT
+RIGHT)= sits side by side with a single "|" separator column. The minibuffer,
+when present, is always the last split: =(:horizontal … *minibuffer*)=. make/
+delete-window reorganise the tree per ncurses-misc §windows. Scrolling: each
+window renders into a *buffer* (list of (string . face) lines) shown through a
+per-window scroll point (Sl, Sc), auto-following its point — already
+implemented.
+
+** 5.2 Window API (opaque =window=)
+
+- =(make-window options)= — =(name . STRING)=; created in the selected frame,
+  layout updated per the tree rules above.
+- =window-name= / =set-window-name=.
+- =(window-list frame minibufp)= — frame nil = all frames; minibufp includes
+  minibuffers.
+- =(delete-window window)= — reorganises the layout.
+- =(selected-window)= → the active window of the selected frame.
+- =(select-window window)= — makes its frame selected and it the frame's
+  selected window; this MOVES the =:window-manager= interactor onto the new
+  window's stack (see §6).
+
+** 5.3 Faces
+
+A *face* is a set of display parameters — bold, underline, italic, blinking,
+inverted, foreground colour, background colour — and is configurable (a named
+table). Faces map to the screen protocol's per-cell =attr= (today: =:normal
+:bold :invert :underline= + colour names; extend to a face object). The active
+window's status line, breakpoints, the current stop line, poll points, the
+selection gutter are named faces.
+
+* 6. Per-window interactor stacks + the window/frame manager (L3)
+
+Each window owns an *interactor stack* (a list of =activation=s, innermost
+last). The window's base interactor handles the window's own keys/commands:
+
+| window        | base interactor | keys / commands                                  |
+|---------------+-----------------+--------------------------------------------------|
+| repl / console| lisp / cadtui   | eval / CAD commands (reader-classified)          |
+| source        | navi ↔ sedit    | structural motion + edit; a command swaps the two |
+| stack         | stack-browser   | frame navigation, details, eval-in-frame (§8)    |
+| interactor    | aldo            | resume/step/return/abort + the debugger vocabulary |
+| inspector     | inspect         | descend/ascend/path/bind                          |
+
+The =:window-manager= (a.k.a. window/frame manager) interactor rides on TOP of
+the *active* window's stack: it owns the window commands (the C-w/C-x prefix:
+select/other/swap/split/resize/scroll), the minibuffer =,= command line and
+=M-x=, and =C-h= help; and the *frame* commands (make/select/delete frame). On
+=select-window= it is popped off the old active window's stack and pushed onto
+the new active window's stack, which becomes the active interactor stack — this
+is the described mechanic and is already implemented for the four windows.
+
+Keys are dispatched through the active window's stack, top to bottom; the first
+interactor that handles the key wins and returns its resume directive or NIL. A
+window's keys therefore act only when that window is active; the window manager
+(and =,<line>= into the shared vocabulary) works from any active window.
+
+** 6.1 Bindings (see ncurses-key-bindings.issue)
+
+Built-in commands are named; a *keymap* (prefix tree) maps key sequences to
+command names / functions, one built-in map + one user map layered over it. The
+AutoLISP API — =clal-binding=, =clal-remove-binding=, =clal-map-bindings=,
+=clal-define-ui-command= — edits the user map; user bindings shadow built-ins;
+prefix chains ("C-x C-f") work. Bindings persist per interactor in the
+configuration (aldo.conf), stacked like =lisp.conf=.
+
+* 7. Output seam
+
+Debugger/console command output flows through a UI-neutral seam
+(=*debugger-output*=, already in place for =out=, the pager and the nav/sedit
+sub-loops): a window's interactor binds it to that window's pane stream, so a
+command's text lands in the right window regardless of which UI object issued
+it. This is what lets one command vocabulary serve tty and every vdt window.
+
+* 8. The stack-browser interactor (new, per ncurses-misc §stack)
+
+Beyond function name + call line, a call frame shows its *arguments* (PRIN1'd
+with configurable =*print-length*= ≈3 / =*print-level*= ≈1). Navigating a frame
+can *open* it to show its local bindings (and close it). Eval happens in the
+*selected frame's* scope. Deep recursion is capped at a configurable number of
+frames; actioning the last line appends more (show the total count). SLDB-
+inspired keys, to inform aldo/aldb too:
+
+- examine: =t= toggle details (locals, catch tags), =v= view source in the
+  source window, =e= eval in frame, =d= eval + pretty-print, =D= disassemble,
+  =i= inspect;
+- restarts (pass through to the underlying aldo interactor): =q= quit, =a=
+  abort, =c= continue, =0=–=9= restart shortcuts, =I= by name;
+- navigate: =n= down, =p= up, =M-n=/=M-p= with details, =<= start, =>= end (of
+  the displayed backtrace; RET expands when more frames are below).
+
+Also planned: user commands to change the current frame or create frames.
+
+* 9. Source window
+
+Setting =navigator = sexp= already selects a structural source view. Under aldo,
+the source window's interactor is simply *configured* to be =navi= or =sedit=
+(with a command to swap them, as in the tty), rather than an ad-hoc renderer.
+The current stack-frame → source-line tracking is kept.
+
+* 10. Independence and packaging
+
+The module must not depend on clautolisp semantics. Concretely:
+
+- *Interactor kernel*: keep =clautolisp/autolisp-interactor= as-is (already
+  dependency-free). It is the stack/loop/reader kernel.
+- *Screen + frames + windows*: hoist =clautolisp.ui.tui='s screen protocol +
+  panes into a standalone system (e.g. =tui-core=), add the frame/window/layout/
+  face layer (generalising =four-pane-layout= into the layout tree from
+  =layout.lisp=). The curses/PDCurses backends target this protocol; libncurses/
+  PDCurses load on demand (no build-time C dependency — the no-grovel CFFI
+  backend already does this).
+- *AutoLISP surface*: the =clal-*= frame/window/binding/inspect/sedit wrappers
+  live in clautolisp (they need the AutoLISP reader/eval), NOT in =tui-core=.
+- *cadtui*: its presentation layer 3 becomes =tui-core= (instead of a parallel
+  abstraction); its console becomes a =tui-core= interactor whose reader is the
+  =(/,/!/=/CAD first-char classifier; the CAD "inspector" stays the UI-tree
+  =dump-node= model. Escape char / locale / pagination are per-interactor
+  stacked settings, not globals.
+
+Kept inside the clautolisp repo for now, but built as its own system(s) with no
+clautolisp dependency, so cadtui and the debugger UIs share exactly one module.
+
+* 11. Implementation plan (phased; reuse first)
+
+1. *Extract tui-core*: move the screen protocol + panes + mock into a standalone
+   system; add the layout-tree, face, frame and window structures (porting the
+   working code from =autolisp-debug-ui-ncurses/{layout,ncurses-ui}.lisp=). No
+   behaviour change for the debugger; the ncurses UI becomes a thin consumer.
+2. *Frames*: implement tty-frame + vdt-frame + the frame API + select-frame
+   (tty↔vdt suspend/resume — the ncurses UI already brackets initscr/endwin per
+   stop; generalise to select-frame), + terminal-device-supports-vdt-p +
+   SIGWINCH → :resize.
+3. *Windows API*: make/select/delete-window over the layout tree, the minibuffer
+   window, faces, window-list; keep per-window scroll.
+4. *Per-window interactor stacks*: generalise the current four fixed windows to
+   the API; the =:window-manager= mechanic already matches. Configure the source
+   window's interactor as navi/sedit with a swap command; make the stack window
+   the new stack-browser interactor (§8); carry the current hit into the stacked
+   interactors (removing the =,=-routing =hit=NIL= limitation).
+5. *Bindings API* (ncurses-key-bindings.issue): keymap prefix tree + the
+   =clal-binding= family + persistence.
+6. *AutoLISP surface*: =clal-inspect=, =clal-sedit=, =call-with-temp-window= /
+   =with-temp-window=, the frame/window =clal-= wrappers.
+7. *cadtui adoption*: cadtui phase-2 interpreter becomes a =tui-core= interactor;
+   phase-8 curses backend is =tui-core='s vdt backend (already realised).
+
+Each phase lands with FiveAM tests over the mock screen (headless), keeping
+=asdf:test-system "clautolisp"= green.
+
+* 12. Open questions
+
+- Exact face object vs the current keyword attrs (colour depth, blink support
+  across ncurses/PDCurses).
+- Whether tty-frames ever coexist meaningfully (§ncurses-misc: same terminal
+  flow) or stay a single logical context.
+- The mouse → meta-command mapping for the vdt reader (OSC / SGR mouse; PDCurses
+  parity).
+- cadtui's per-drawing Lisp-namespace isolation vs the single clautolisp image
+  (out of scope for tui-core; a cadtui concern).
