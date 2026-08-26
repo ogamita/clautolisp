@@ -1265,3 +1265,70 @@ is deliberately empty because their text varies by call site."
     (dolist (tag (dialect-warning-tags))
       (is (search (format nil "=[~A]=" tag) annex)
           "~A is missing from the generated annex" tag))))
+
+
+;;;; Dynamic frames: bindings live in an ALIST until a frame outgrows it,
+;;;; then the frame promotes itself to a hash table. It used to be a hash
+;;;; table always -- one allocated per function call, to hold typically a
+;;;; single parameter. These tests pin the BEHAVIOUR the representation
+;;;; must preserve, so that the representation stays free to change.
+;;;;
+;;;; They deliberately use only special operators (DEFUN, SETQ, PROGN):
+;;;; this suite runs without the core builtins installed, so `+' and
+;;;; `list' are not available to write them with.
+
+(test a-frame-keeps-every-local-across-the-alist-to-table-promotion
+  "A function with more locals than a frame keeps in an alist must still
+bind every one of them -- including the FIRST, which was bound while the
+frame was still an alist and had to survive being copied into the table.
+Dropping the early entries is the way this optimisation would fail, and
+it would fail silently: the local would simply read as nil."
+  (reset-autolisp-symbol-table)
+  ;; 16 locals, against an alist limit of 12, so the promotion happens
+  ;; part-way through and the first locals predate it.
+  (let ((source "(defun f (/ a b c d e g h i j k l m n o p q)
+                    (setq a 1) (setq b 2) (setq c 3) (setq d 4)
+                    (setq e 5) (setq g 6) (setq h 7) (setq i 8)
+                    (setq j 9) (setq k 10) (setq l 11) (setq m 12)
+                    (setq n 13) (setq o 14) (setq p 15) (setq q 16)
+                    ~A)"))
+    ;; the first local, bound long before the promotion
+    (is (eql 1 (%run-under-dialect :clautolisp
+                                   (format nil "~A (f)" (format nil source "a")))))
+    ;; one bound exactly around the boundary
+    (is (eql 12 (%run-under-dialect :clautolisp
+                                    (format nil "~A (f)" (format nil source "m")))))
+    ;; and the last, bound when the frame was already a table
+    (is (eql 16 (%run-under-dialect :clautolisp
+                                    (format nil "~A (f)" (format nil source "q")))))))
+
+(test a-local-shadows-a-global-and-restores-it
+  "The whole point of a frame: `/'-locals shadow, and the shadow is gone
+when the call returns. Pinned across the representation change because a
+frame that lost or leaked a binding would break exactly here."
+  (reset-autolisp-symbol-table)
+  (is (eql 1 (%run-under-dialect :clautolisp
+                                 "(setq x 99) (defun f (/ x) (setq x 1) x) (f)")))
+  (is (eql 99 (%run-under-dialect :clautolisp
+                                  "(setq x 99) (defun f (/ x) (setq x 1) x) (f) x"))))
+
+(test nested-frames-shadow-independently
+  "Two frames binding the same name must not share storage: the inner
+call's shadow must not survive into the outer one. A frame that appended
+to a shared list instead of owning its own bindings would pass the single
+-call test above and fail this one."
+  (reset-autolisp-symbol-table)
+  (is (eql 2 (%run-under-dialect
+              :clautolisp
+              "(defun inner (/ x) (setq x 3) x)
+               (defun outer (/ x) (setq x 2) (inner) x)
+               (outer)"))))
+
+(test rebinding-a-name-in-one-frame-does-not-duplicate-it
+  "A frame holds at most one binding per symbol. Setting a local twice
+must replace, not accumulate -- otherwise the frame grows on every
+assignment and promotes itself for no reason."
+  (reset-autolisp-symbol-table)
+  (is (eql 7 (%run-under-dialect
+              :clautolisp
+              "(defun f (/ a) (setq a 1) (setq a 2) (setq a 7) a) (f)"))))
