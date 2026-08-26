@@ -414,9 +414,75 @@ proves nothing if nothing was compiled -- the same failure mode as a
 test file that loads without running, which is the worst kind since it
 presents as a pass.
 
-STILL OPEN after slice 3
+Slice 4 -- 2.0.4: the call protocol
+-----------------------------------
+Slice 3's 1.14x on a call-dominated workload said the bottleneck had
+moved out of body evaluation and into the CALL PROTOCOL. Profiled it
+(sb-sprof, a tiny function called 2,000,000 times) rather than guessing,
+and the profile named three costs that were pure repeated work:
+
+  1. SPLIT-USUBR-LAMBDA-LIST ran on EVERY call -- two POSITION-IFs, up to
+     three SUBSEQs and the whole validation -- to re-derive an answer
+     fixed when the function object was made. 7% of the profile as
+     POSITION-IF. Now memoised on the usubr (USUBR-LAMBDA-LIST-SPLIT).
+     Only SUCCESSFUL splits are remembered: a malformed lambda list must
+     keep signalling on every call, and computing it eagerly in the
+     constructor would move the diagnostic from the call to the DEFUN.
+
+  2. AUTOLISP-FUNCTION-TRACE-P hashed a name STRING in an EQUAL table on
+     every call, to discover that nothing is traced. The empty-table test
+     now comes first: HASH-TABLE-COUNT is a slot read, and an empty table
+     can only answer NIL. This is where GETHASH/EQUAL, SXHASH-STRING and
+     STRING= in the profile came from.
+
+  3. A DYNAMIC-FRAME allocated a HASH TABLE in its initform -- one per
+     function call, to hold typically a single parameter. Bindings are
+     now an alist, promoted to a hash table past
+     *DYNAMIC-FRAME-ALIST-LIMIT* (12) so a function with a hundred locals
+     does not degrade lookup along the frame chain. Six call sites read
+     the slot directly with GETHASH; they now go through FRAME-BINDING /
+     (SETF FRAME-BINDING) / FRAME-BOUND-SYMBOLS, so the representation is
+     decided in ONE place -- six identical GETHASHes is how two
+     representations start disagreeing.
+
+After: POSITION-IF, GETHASH/EQUAL, the string hashing, %MAKE-HASH-TABLE,
+%ALLOC-HASH-TABLE, GROW-HASH-TABLE and MAKE-DYNAMIC-FRAME are all gone
+from the top of the profile.
+
+MEASURED A/B (min of 5 runs each, the same tree with only these three
+changes reverted for the baseline -- NOT inferred from profiler sample
+counts, which I first misread off truncated output):
+
+  fib 21, recursive ......... compiled 0.036s -> 0.028s  (~22% faster)
+  loop calling a function ... compiled 0.456s -> 0.440s  (~4%)
+  loop inside a body ........ compiled 0.156s -> 0.148s  (~5%)
+
+The gain lands on RECURSION and on call-heavy code, which is what it
+should: it is per-call overhead that was removed. It benefits the
+INTERPRETER equally -- these are shared costs -- so the compiled/
+interpreted RATIO barely moves (1.19x on the call-dominated loop). The
+ratio is the wrong instrument for this change; absolute time is the
+right one.
+
+What still dominates a call-dominated profile:
+CALL-AUTOLISP-FUNCTION-IN-CONTEXT itself (17% self) and LOOKUP-FUNCTION
+(20% cumulative) -- the function is re-resolved from the symbol on every
+call. Caching that at the call site is the obvious next move and the
+delicate one, because AutoLISP functions can be redefined at any moment:
+the cache would have to key on the binding CELL, not the function value.
+
+Behaviour pinned by four new runtime tests (evaluator-tests.lisp), which
+assert what the frame must DO rather than how it stores it: every local
+survives the alist-to-table promotion (including the first, bound before
+it), locals shadow and restore globals, nested frames shadow
+independently, and re-assigning a local replaces rather than accumulates.
+They use only special operators, since that suite runs without builtins.
+
+STILL OPEN after slice 4
 ------------------------
-  - the call protocol (see the 1.14x above) -- next.
+  - the per-call function lookup (LOOKUP-FUNCTION, 20% of a
+    call-dominated profile). Caching at the call site must key on the
+    binding CELL, not the value: AutoLISP functions are redefinable.
   - the INSTRUMENTED transpiler variant pjb asked for; the seam is the
     dropped (:eval . form) frames.
   - open-coding hot operators as inline CL, which the Tier-2 probe says

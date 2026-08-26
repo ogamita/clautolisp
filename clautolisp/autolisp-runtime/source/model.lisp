@@ -84,7 +84,18 @@ clautolisp-secureload-trust-model spec.")
   (doc nil :type list))
 
 (defstruct dynamic-frame
-  (bindings (make-hash-table :test #'eq))
+  ;; BINDINGS is either an ALIST of (symbol . dynamic-binding) — the
+  ;; ordinary case — or an EQ hash table, once the frame holds more
+  ;; entries than an alist searches cheaply. See FRAME-BINDING in
+  ;; api.lisp, which is the only thing that should read this slot.
+  ;;
+  ;; It used to be a hash table always, allocated in this initform, i.e.
+  ;; ONE HASH TABLE PER FUNCTION CALL — to hold, typically, a single
+  ;; parameter. It showed up in a call-dominated profile as
+  ;; %MAKE-HASH-TABLE + %ALLOC-HASH-TABLE + GROW-HASH-TABLE together
+  ;; costing more than the lookups they served, plus the garbage they
+  ;; made. An empty list allocates nothing.
+  (bindings '())
   parent)
 
 (defstruct runtime-session
@@ -224,7 +235,19 @@ clautolisp-secureload-trust-model spec.")
   ;; not pay for a compilation it will never amortise, so the fork is
   ;; woven lazily, on the call that crosses the threshold.
   (compiled-body nil)
-  (call-count 0 :type fixnum))
+  (call-count 0 :type fixnum)
+  ;; Memoised result of SPLIT-USUBR-LAMBDA-LIST: (REQUIRED REST-PARAM
+  ;; LOCALS), or NIL when it has not been computed yet. A lambda list
+  ;; never changes after the function object is made, yet binding a frame
+  ;; re-walked it on EVERY call — two POSITION-IFs, up to three SUBSEQs
+  ;; and the whole validation, per call, to reach the same answer.
+  ;;
+  ;; Filled lazily, and only on SUCCESS. That is deliberate: a malformed
+  ;; lambda list must keep signalling on every call, exactly as it did
+  ;; before, rather than signalling once at definition time — computing
+  ;; it eagerly in the constructor would move the error from the call to
+  ;; the DEFUN, which is a behaviour change and not this slot's business.
+  (lambda-list-split nil :type list))
 
 (defstruct autolisp-catch-all-error
   (message "" :type string)

@@ -969,10 +969,65 @@ CONTEXT's session. Returns VALUE."
             (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)))
     frame))
 
+(defparameter *dynamic-frame-alist-limit* 12
+  "How many bindings a dynamic frame keeps in an alist before switching to
+a hash table.
+
+A frame holds one function call's parameters and `/'-locals, which is a
+handful — searching a short alist with EQ is cheaper than hashing, and
+costs no allocation at all, where a hash table costs one per call. The
+limit exists only so a pathological function with a hundred locals does
+not degrade lookup along the whole frame chain: past it, the frame
+promotes itself and behaves as before.")
+
+;;; The three operations every reader of a frame's bindings needs. They
+;;; exist so that the alist/hash-table duality is decided in ONE place:
+;;; before them, six call sites did GETHASH on the slot directly, and
+;;; changing the representation would have meant changing all six
+;;; identically — which is how two representations start disagreeing.
+
+(defun frame-binding (frame symbol)
+  "SYMBOL's binding in FRAME itself, or NIL."
+  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
+    (if (listp bindings)
+        (cdr (assoc symbol bindings :test #'eq))
+        (gethash symbol bindings))))
+
+(defun (setf frame-binding) (binding frame symbol)
+  "Install BINDING for SYMBOL in FRAME, replacing any binding FRAME
+already had for it — a frame holds at most one binding per symbol, which
+is what makes DYNAMIC-FRAME-SYMBOLS a set."
+  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
+    (cond
+      ((not (listp bindings))
+       (setf (gethash symbol bindings) binding))
+      ((assoc symbol bindings :test #'eq)
+       (setf (cdr (assoc symbol bindings :test #'eq)) binding))
+      ((< (length bindings) *dynamic-frame-alist-limit*)
+       (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
+             (acons symbol binding bindings)))
+      (t
+       ;; Promote: this frame has outgrown a linear search.
+       (let ((table (make-hash-table :test #'eq
+                                     :size (* 2 *dynamic-frame-alist-limit*))))
+         (dolist (entry bindings)
+           (setf (gethash (car entry) table) (cdr entry)))
+         (setf (gethash symbol table) binding)
+         (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
+               table))))
+    binding))
+
+(defun frame-bound-symbols (frame)
+  "The symbols FRAME binds directly, in no particular order."
+  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
+    (if (listp bindings)
+        (mapcar #'car bindings)
+        (loop for symbol being the hash-keys of bindings collect symbol))))
+
 (defun bind-dynamic-variable (symbol value &optional (context (current-evaluation-context)))
   (let ((frame (or (evaluation-context-dynamic-frame context)
                    (push-dynamic-frame context))))
-    (setf (gethash symbol (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))
+    (setf (frame-binding frame symbol)
           (clautolisp.autolisp-runtime.internal::make-dynamic-binding
            :symbol symbol
            :value value
@@ -982,7 +1037,7 @@ CONTEXT's session. Returns VALUE."
 (defun find-dynamic-binding (symbol frame)
   (loop for current = frame then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent current)
         while current
-        for binding = (gethash symbol (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings current))
+        for binding = (frame-binding current symbol)
         when binding
           do (return binding)))
 
@@ -1001,15 +1056,12 @@ CONTEXT's session. Returns VALUE."
 (defun dynamic-frame-symbols (frame)
   "List of AutoLISP symbols bound *directly* in FRAME (not its parents),
 i.e. the shadowings this frame introduced."
-  (loop for symbol being the hash-keys
-          of (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
-        collect symbol))
+  (frame-bound-symbols frame))
 
 (defun dynamic-frame-binding-value (frame symbol)
   "Read SYMBOL's binding in FRAME only. Returns (values value bound-p);
 bound-p is NIL when FRAME has no binding for SYMBOL."
-  (let ((binding (gethash symbol
-                          (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))))
+  (let ((binding (frame-binding frame symbol)))
     (if binding
         (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)
                 (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding))
@@ -1019,8 +1071,7 @@ bound-p is NIL when FRAME has no binding for SYMBOL."
   "Write SYMBOL's binding in FRAME only (the debugger's shadowed-binding
 write, §9.4). Signals if FRAME has no binding for SYMBOL — the debugger
 must not create a new frame-local binding mid-execution (§16.1)."
-  (let ((binding (gethash symbol
-                          (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))))
+  (let ((binding (frame-binding frame symbol)))
     (unless binding
       (signal-autolisp-runtime-error
        :no-such-frame-binding
@@ -1152,9 +1203,7 @@ when it actually invokes the binding."
   (loop for frame = (evaluation-context-dynamic-frame context)
                 then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)
         while frame
-        for binding = (gethash symbol
-                               (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings
-                                frame))
+        for binding = (frame-binding frame symbol)
         when (and binding
                   (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding)
                   (callable-value-p
@@ -2451,9 +2500,33 @@ every existing AutoLISP defun."
               (when amp-pos (first rest-slice))
               locals))))
 
+(defun usubr-lambda-list-split (function)
+  "SPLIT-USUBR-LAMBDA-LIST for FUNCTION, computed once and remembered.
+
+Returns the same three values as SPLIT-USUBR-LAMBDA-LIST. A lambda list
+does not change after the function object exists, so re-walking it on
+every call — two POSITION-IFs, up to three SUBSEQs and the validation —
+was work repeated to reach an answer already known. It showed up as
+POSITION-IF at 7% of a call-dominated profile.
+
+Only successful splits are remembered. A malformed lambda list keeps
+signalling on every call, exactly as before: memoising the failure, or
+computing this eagerly in the constructor, would move the diagnostic from
+the call to the definition, which is a behaviour change."
+  (let ((split (clautolisp.autolisp-runtime.internal::autolisp-usubr-lambda-list-split
+                function)))
+    (if split
+        (values (first split) (second split) (third split))
+        (multiple-value-bind (required rest-param locals)
+            (split-usubr-lambda-list (autolisp-usubr-lambda-list function))
+          (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-lambda-list-split
+                 function)
+                (list required rest-param locals))
+          (values required rest-param locals)))))
+
 (defun bind-usubr-frame (function arguments context)
   (multiple-value-bind (required rest-param locals)
-      (split-usubr-lambda-list (autolisp-usubr-lambda-list function))
+      (usubr-lambda-list-split function)
     (let ((req-count (length required))
           (arg-count (length arguments)))
       (cond
@@ -2528,11 +2601,17 @@ a name that's been registered via the TRACE special operator.
 Anonymous lambdas (no name) fall through to the session-wide
 flag only."
   (or *autolisp-trace-p*
-      (let ((name (cond ((typep function 'autolisp-subr)
-                         (autolisp-subr-name function))
-                        ((typep function 'autolisp-usubr)
-                         (autolisp-usubr-name function)))))
-        (and name (gethash name *autolisp-traced-symbols*)))))
+      ;; The empty-table test comes FIRST and is the point of it. Nothing
+      ;; is traced in the overwhelmingly common case, yet this ran an
+      ;; EQUAL hash — i.e. hashed a name STRING — on every single call to
+      ;; learn that. HASH-TABLE-COUNT is a slot read, and an empty table
+      ;; can only answer NIL, so the two are equivalent.
+      (and (plusp (hash-table-count *autolisp-traced-symbols*))
+           (let ((name (cond ((typep function 'autolisp-subr)
+                              (autolisp-subr-name function))
+                             ((typep function 'autolisp-usubr)
+                              (autolisp-usubr-name function)))))
+             (and name (gethash name *autolisp-traced-symbols*))))))
 
 (defun autolisp-format-trace-value (value)
   ;; Compact one-line printer for trace-value display. Strings keep
