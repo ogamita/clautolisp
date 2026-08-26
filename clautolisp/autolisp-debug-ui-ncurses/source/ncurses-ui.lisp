@@ -15,6 +15,8 @@
    (navigator :initform nil :accessor ncurses-ui-navigator)          ; source selection
    (layout :initform (default-layout) :accessor ncurses-ui-layout)   ; window tree
    (active-window :initform :interactor :accessor ncurses-ui-active-window)
+   (saved-active :initform nil :accessor ncurses-ui-saved-active)    ; for window-other
+   (scroll :initform (make-hash-table :test 'eq) :accessor ncurses-ui-scroll) ; id -> (sl . sc)
    (minibuffer :initform "" :accessor ncurses-ui-minibuffer)         ; last-row I/O
    (inspector-cursor :initform 0 :accessor ncurses-ui-inspector-cursor)))
 
@@ -131,17 +133,71 @@ width, INVERTed when active, UNDERLINEd otherwise."
 (defun draw-vline (screen col top height)
   (loop for r from top below (+ top height) do (tui-put screen r col "|")))
 
-(defun render-window (ui session id rect)
+;;;; --- scroll state (window-scrolling.issue) -------------------------
+;;;; Each window renders its content into a BUFFER (a list of (STRING . ATTR)
+;;;; lines); the window shows a viewport of it at the scroll point (Sl, Sc) —
+;;;; Sl the first buffer line, Sc the first column. Scrolling moves (Sl, Sc);
+;;;; auto-follow keeps the source selection (and the repl tail) in view.
+
+(defun window-scroll (ui id)
+  "The (values SL SC) scroll point of window ID (default 0 0)."
+  (let ((cell (gethash id (ncurses-ui-scroll ui))))
+    (if cell (values (car cell) (cdr cell)) (values 0 0))))
+
+(defun set-window-scroll (ui id sl sc)
+  (setf (gethash id (ncurses-ui-scroll ui)) (cons (max 0 sl) (max 0 sc))))
+
+(defun buffer-max-width (buffer)
+  (reduce #'max buffer :key (lambda (c) (length (car c))) :initial-value 0))
+
+(defun draw-window-buffer (screen rect buffer sl sc)
+  "Draw BUFFER into RECT's content area from buffer line SL, column SC; lines
+past the buffer end stay blank."
+  (let ((height (win-content-height rect))
+        (vec (coerce buffer 'vector)))
+    (dotimes (row height)
+      (let* ((idx (+ sl row))
+             (cell (when (< -1 idx (length vec)) (aref vec idx)))
+             (text (if cell (car cell) ""))
+             (attr (if cell (cdr cell) :normal))
+             (shown (cond ((zerop sc) text)
+                          ((< sc (length text)) (subseq text sc))
+                          (t ""))))
+        (win-put-line screen rect row shown :attr attr)))))
+
+(defun clamp-scroll (ui id buffer rect follow-row)
+  "Clamp window ID's scroll point to the buffer and RECT sizes; when FOLLOW-ROW
+falls outside the vertical viewport, re-centre on it (auto-follow). Returns
+(values SL SC)."
+  (multiple-value-bind (sl sc) (window-scroll ui id)
+    (let* ((height (win-content-height rect))
+           (max-sl (max 0 (- (length buffer) height)))
+           (max-sc (max 0 (- (buffer-max-width buffer) (win-width rect)))))
+      (when (and follow-row (or (< follow-row sl) (>= follow-row (+ sl height))))
+        (setf sl (- follow-row (floor height 2))))
+      (setf sl (min (max 0 sl) max-sl)
+            sc (min (max 0 sc) max-sc))
+      (set-window-scroll ui id sl sc)
+      (values sl sc))))
+
+(defun window-buffer (ui session id)
+  "Return (values BUFFER FOLLOW-ROW) for window ID — a list of (STRING . ATTR)
+lines and an optional 0-based row to keep in view."
   (ecase id
-    (:stack      (render-stack ui session rect))
-    (:source     (render-source ui session rect))
-    (:interactor (render-interactor ui rect))
-    (:repl       (render-repl ui rect))))
+    (:stack      (values (stack-buffer ui session) nil))
+    (:source     (source-buffer ui session))
+    (:interactor (values (interactor-buffer ui) nil))
+    (:repl       (let ((buffer (repl-buffer ui)))
+                   (values buffer (and buffer (1- (length buffer)))))))) ; tail-follow
+
+(defun render-window (ui session id rect)
+  (multiple-value-bind (buffer follow-row) (window-buffer ui session id)
+    (multiple-value-bind (sl sc) (clamp-scroll ui id buffer rect follow-row)
+      (draw-window-buffer (ncurses-ui-screen ui) rect buffer sl sc))))
 
 (defun render-debugger (ui session)
-  "Draw the four windows for the current stopping point per the current
-layout tree: content + a status line per window, single \"|\" separators, and
-the reserved minibuffer row."
+  "Draw the four windows: scrollable content buffers + a status line each,
+single \"|\" separators, and the reserved minibuffer row."
   (let ((screen (ncurses-ui-screen ui)))
     (tui-clear screen)
     (multiple-value-bind (rows cols) (tui-size screen)
@@ -163,19 +219,17 @@ the reserved minibuffer row."
   (tui-put (ncurses-ui-screen ui) row 0
            (pad-string (truncate-string (ncurses-ui-minibuffer ui) cols) cols)))
 
-(defun render-stack (ui session rect)
+;;;; --- content buffers ----------------------------------------------
+
+(defun stack-buffer (ui session)
   (let ((frames (and (current-snapshot session)
-                     (snapshot-call-stack (current-snapshot session))))
-        (screen (ncurses-ui-screen ui)))
-    (loop for frame in frames
-          for i from 0 below (win-content-height rect)
-          do (win-put-line
-              screen rect i
-              (format nil "~A ~A  ~A"
-                      (if (= i (ncurses-ui-selected-frame ui)) ">" " ")
-                      (or (stack-frame-function-name frame) "?")
-                      (frame-line-label frame))
-              :attr (if (= i (ncurses-ui-selected-frame ui)) :bold :normal)))))
+                     (snapshot-call-stack (current-snapshot session)))))
+    (loop for frame in frames for i from 0
+          collect (cons (format nil "~A ~A  ~A"
+                                (if (= i (ncurses-ui-selected-frame ui)) ">" " ")
+                                (or (stack-frame-function-name frame) "?")
+                                (frame-line-label frame))
+                        (if (= i (ncurses-ui-selected-frame ui)) :bold :normal)))))
 
 (defun frame-line-label (frame)
   (let ((position (stack-frame-source-position frame)))
@@ -183,13 +237,12 @@ the reserved minibuffer row."
         (format nil "line ~D" (source-position-start-line position))
         "-")))
 
-(defun render-source (ui session rect)
-  "Source window (spec §19.1): show the selected frame's source with markers —
-current stopping line :yellow, a breakpointed poll point :red, a plain poll
-point :blue. The =>>= gutter follows the structural navigator's selection (the
-cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
-  (let* ((screen (ncurses-ui-screen ui))
-         (frame (selected-frame-of ui session))
+(defun source-buffer (ui session)
+  "Return (values BUFFER SELECTION-ROW): the whole function's source as a buffer
+of (line . attr) — current stopping line :yellow, breakpointed poll point :red,
+plain poll point :blue, the navigator selection flagged with a =>>= gutter — and
+the 0-based row of that selection, to keep in view."
+  (let* ((frame (selected-frame-of ui session))
          (fid (and frame (stack-frame-fid frame)))
          (metadata (and fid (metadata-for-function-id fid)))
          (position (and frame (stack-frame-source-position frame)))
@@ -198,27 +251,22 @@ cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
          (selection-line (or (selection-line-of ui) current-line))
          (lines (and file (ignore-errors (lines-of file))))
          (poll-lines (and metadata (poll-point-lines metadata)))
-         (bp-lines (breakpoint-lines session fid))
-         (height (win-content-height rect)))
-    (cond
-      ((and lines (plusp (length lines)))
-       (let* ((center (or selection-line current-line 1))
-              (start (max 1 (- center (floor height 2)))))
-         (loop for row from 0 below height
-               for n = (+ start row)
-               while (<= n (length lines))
-               do (win-put-line
-                   screen rect row
-                   (format nil "~A~3D: ~A"
-                           (if (eql n selection-line) ">>" "  ") n (aref lines (1- n)))
-                   :attr (cond ((eql n current-line) :yellow)
-                               ((member n bp-lines) :red)
-                               ((member n poll-lines) :blue)
-                               (t :normal))))))
-      (t
-       (win-put-line screen rect 0
-                     (format nil "~A:~@[~D~] (source unavailable)"
-                             (or file "?") current-line))))))
+         (bp-lines (breakpoint-lines session fid)))
+    (if (and lines (plusp (length lines)))
+        (values
+         (loop for n from 1 to (length lines)
+               collect (cons (format nil "~A~3D: ~A"
+                                     (if (eql n selection-line) ">>" "  ")
+                                     n (aref lines (1- n)))
+                             (cond ((eql n current-line) :yellow)
+                                   ((member n bp-lines) :red)
+                                   ((member n poll-lines) :blue)
+                                   (t :normal))))
+         (and selection-line (1- selection-line)))
+        (values (list (cons (format nil "~A:~@[~D~] (source unavailable)"
+                                    (or file "?") current-line)
+                            :normal))
+                nil))))
 
 (defun poll-point-lines (metadata)
   (let ((positions (function-debug-metadata-form-id->position metadata)) (lines '()))
@@ -239,20 +287,16 @@ cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
               (push (source-position-start-line position) lines))))))
     lines))
 
-(defun render-interactor (ui rect)
-  (let ((screen (ncurses-ui-screen ui)))
-    (win-put-line screen rect 0 (format nil "DBG> ~A" (ncurses-ui-message ui)))
-    (win-put-line screen rect 2 "c continue  s step  i in  o out  f finish")
-    (win-put-line screen rect 3 "d u > < nav  b bkpt  e eval  x inspect  ^/v frame")
-    (win-put-line screen rect 4 "C-w n/p sel >/</u/d swap 2/3 split 4 reset +/-/= size  q quit")))
+(defun interactor-buffer (ui)
+  (mapcar (lambda (s) (cons s :normal))
+          (list (format nil "DBG> ~A" (ncurses-ui-message ui))
+                ""
+                "c continue  s step  i in  o out  f finish"
+                "d u > < nav  b bkpt  e eval  x inspect  ^/v frame"
+                ", cmd   M-x name   C-w/C-x window ops   C-h m help   q quit")))
 
-(defun render-repl (ui rect)
-  (let* ((screen (ncurses-ui-screen ui))
-         (height (win-content-height rect))
-         (lines (last (ncurses-ui-repl-lines ui) height)))
-    (loop for line in lines
-          for row from 0
-          do (win-put-line screen rect row line))))
+(defun repl-buffer (ui)
+  (mapcar (lambda (s) (cons s :normal)) (ncurses-ui-repl-lines ui)))
 
 ;;;; --- the event loop (spec §19.1) -----------------------------------
 
@@ -283,7 +327,10 @@ cursor moved by d/u/&gt;/&lt;), and the window scrolls to keep it in view."
     ((key-char-p key #\q) (cmd-abort session))
     ((key-char-p key #\r) (return-value ui session hit) )
     ;; C-w prefix: window-manipulation commands (ncurses-windows.issue).
-    ((and (characterp key) (= (char-code key) 23)) (handle-window-command ui) nil)
+    ((and (characterp key) (member (char-code key) '(23 24)))  ; C-w / C-x prefix
+     (handle-window-command ui) nil)
+    ;; C-h (= Backspace in most terminals) is a help prefix: C-h m lists keys.
+    ((eq key :backspace) (help-prefix ui) nil)
     ((eq key :up) (move-frame ui session -1) nil)
     ((eq key :down) (move-frame ui session +1) nil)
     ;; structural navigation of the source form (spec §19.1 / cmd-ref §3):
@@ -368,15 +415,60 @@ re-homing the next window into the new split so four windows remain."
           (set-message ui "split ~A ~A" (window-title active)
                        (if (eq split-type :horizontal) "below" "right"))))))
 
+(defparameter +window-scroll-step+ 3
+  "Default lines/columns per scroll (a C-u N count prefix is TODO).")
+
+(defun window-scroll-by (ui dl dc)
+  "Scroll the active window by DL lines / DC columns (clamped at next render)."
+  (multiple-value-bind (sl sc) (window-scroll ui (ncurses-ui-active-window ui))
+    (set-window-scroll ui (ncurses-ui-active-window ui) (+ sl dl) (+ sc dc))
+    (set-message ui "scroll ~A" (window-title (ncurses-ui-active-window ui)))))
+
+(defun window-other (ui)
+  "C-w o: toggle the active window with a saved one. First use saves the active
+window and moves to the next; the second returns to the saved one and clears
+the save (window-scrolling.issue)."
+  (if (ncurses-ui-saved-active ui)
+      (progn (setf (ncurses-ui-active-window ui) (ncurses-ui-saved-active ui)
+                   (ncurses-ui-saved-active ui) nil)
+             (set-message ui "active window: ~A"
+                          (window-title (ncurses-ui-active-window ui))))
+      (progn (setf (ncurses-ui-saved-active ui) (ncurses-ui-active-window ui))
+             (window-select ui +1))))
+
+(defun help-key-bindings (ui)
+  "C-h m: list the key bindings into the repl pane (window-scrolling.issue)."
+  (dolist (line '("keys: c continue  s step  i into  o out  f finish  a abort  r return  q quit"
+                  "  d u > < navigate source form   b breakpoint at selection   e eval   x inspect"
+                  "  up/down select stack frame"
+                  "  , <line> run a command   M-x <name> run a named command   C-h m this help"
+                  "  C-w / C-x prefix: n/p select  o other  u/d swap  2/3 split  4 reset  +/-/= size"
+                  "    > < v ^ scroll the active window"))
+    (push-repl ui "~A" line)))
+
+(defun help-prefix (ui)
+  "C-h prefix (C-h is Backspace in most terminals): C-h m lists key bindings."
+  (let ((k (tui-read-key (ncurses-ui-screen ui))))
+    (if (key-char-p k #\m)
+        (help-key-bindings ui)
+        (set-message ui "C-h m : list key bindings"))))
+
 (defun handle-window-command (ui)
-  "Read the key following a C-w prefix and run the window command
-(ncurses-windows.issue). Split (C-w 2/3), layout save-load and M-x follow."
+  "Read the key after a C-w / C-x prefix and run the window command
+(ncurses-windows.issue + window-scrolling.issue). NOTE: >/</v/^ now SCROLL the
+active window; swap right/left are reachable as the named commands
+window-swap-right/-left (,/M-x), swap above/below stay on u/d."
   (let ((k (tui-read-key (ncurses-ui-screen ui))))
     (cond
       ((key-char-p k #\n) (window-select ui +1))
       ((key-char-p k #\p) (window-select ui -1))
-      ((key-char-p k #\>) (window-swap ui :right))
-      ((key-char-p k #\<) (window-swap ui :left))
+      ((key-char-p k #\o) (window-other ui))
+      ;; scrolling (window-scrolling.issue)
+      ((key-char-p k #\>) (window-scroll-by ui 0 +window-scroll-step+))
+      ((key-char-p k #\<) (window-scroll-by ui 0 (- +window-scroll-step+)))
+      ((key-char-p k #\v) (window-scroll-by ui +window-scroll-step+ 0))
+      ((key-char-p k #\^) (window-scroll-by ui (- +window-scroll-step+) 0))
+      ;; swap above/below (right/left via named commands, keys now scroll)
       ((key-char-p k #\u) (window-swap ui :above))
       ((key-char-p k #\d) (window-swap ui :below))
       ((key-char-p k #\2) (window-split ui :horizontal))
@@ -385,7 +477,7 @@ re-homing the next window into the new split so four windows remain."
       ((key-char-p k #\+) (window-resize ui +window-resize-step+))
       ((key-char-p k #\-) (window-resize ui (- +window-resize-step+)))
       ((key-char-p k #\=) (window-balance ui))
-      (t (set-message ui "C-w: n/p select  >/</u/d swap  2/3 split  4 reset  +/-/= size")))))
+      (t (set-message ui "C-w/C-x: n/p sel  o other  >/</v/^ scroll  u/d swap  2/3 split  4 reset  +/-/= size")))))
 
 ;;;; --- minibuffer: M-x and , (ncurses-windows.issue) -----------------
 
@@ -426,7 +518,13 @@ RET returns the string, Esc cancels (returns NIL), Backspace deletes."
    (cons "windows-split-square" (lambda (ui s h a) (declare (ignore s h a)) (window-reset-square ui) nil))
    (cons "window-size-increment" (lambda (ui s h a) (declare (ignore s h a)) (window-resize ui +window-resize-step+) nil))
    (cons "window-size-decrement" (lambda (ui s h a) (declare (ignore s h a)) (window-resize ui (- +window-resize-step+)) nil))
-   (cons "window-size-balance"   (lambda (ui s h a) (declare (ignore s h a)) (window-balance ui) nil)))
+   (cons "window-size-balance"   (lambda (ui s h a) (declare (ignore s h a)) (window-balance ui) nil))
+   (cons "window-scroll-right" (lambda (ui s h a) (declare (ignore s h a)) (window-scroll-by ui 0 +window-scroll-step+) nil))
+   (cons "window-scroll-left"  (lambda (ui s h a) (declare (ignore s h a)) (window-scroll-by ui 0 (- +window-scroll-step+)) nil))
+   (cons "window-scroll-up"    (lambda (ui s h a) (declare (ignore s h a)) (window-scroll-by ui +window-scroll-step+ 0) nil))
+   (cons "window-scroll-down"  (lambda (ui s h a) (declare (ignore s h a)) (window-scroll-by ui (- +window-scroll-step+) 0) nil))
+   (cons "window-other"        (lambda (ui s h a) (declare (ignore s h a)) (window-other ui) nil))
+   (cons "help-key-bindings"   (lambda (ui s h a) (declare (ignore s h a)) (help-key-bindings ui) nil)))
   "Named debugger / window commands reachable through M-x and `,'. Maps a
 command NAME to (lambda (ui session hit arg) -> resume-directive-or-nil). This
 registry is the seed of the user-binding API — see ncurses-key-bindings.issue.
@@ -593,7 +691,7 @@ windowed layout (status lines + separators + minibuffer)."
         (multiple-value-bind (rects vlines)
             (layout-rects (ncurses-ui-layout ui) 0 0 window-rows cols)
           (flet ((rect (id) (cdr (assoc id rects))))
-            (render-stack ui session (rect :stack))
+            (render-window ui session :stack (rect :stack))
             (let ((src (rect :source)))
               (win-put-line screen src 0
                             (format nil "~A → ~A"
@@ -612,7 +710,7 @@ windowed layout (status lines + separators + minibuffer)."
                                      :attr (if (= i (ncurses-ui-inspector-cursor ui)) :bold :normal))))
             (win-put-line screen (rect :interactor) 0
                           "INSPECT: up/down move  Enter/d descend  BS/u up  p path  b bind  q close")
-            (render-repl ui (rect :repl))
+            (render-window ui session :repl (rect :repl))
             ;; status lines (source window is the inspector now) + separators
             (dolist (id +window-ids+)
               (win-status screen (rect id)

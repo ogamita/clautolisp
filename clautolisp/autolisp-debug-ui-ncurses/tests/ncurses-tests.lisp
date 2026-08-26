@@ -252,10 +252,12 @@
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
          (ti (break-at context metas 3)))
-    ;; default active = interactor (bottom-left); C-w > swaps it with repl
-    ;; (its right neighbour), so interactor ends up on the right.
+    ;; default active = interactor (bottom-left); window-swap-right swaps it
+    ;; with repl (its right neighbour), so interactor ends up on the right.
+    ;; (>/< keys now scroll, so swap is invoked by name.)
     (multiple-value-bind (result ui screen)
-        (run-ncurses (list (code-char 23) #\> #\c) :context context :thread-info ti
+        (run-ncurses (append (list #\,) (coerce "window-swap-right" 'list) (list :enter #\c))
+                     :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
       (multiple-value-bind (rects vl)
@@ -321,7 +323,9 @@
     ;; cycles of one session.
     (clautolisp.debug:add-breakpoint ti (fid-of id) 0 :when :before)
     (multiple-value-bind (result ui screen)
-        (run-ncurses (list (code-char 23) #\> #\c #\c) :context context :thread-info ti
+        (run-ncurses (append (list #\,) (coerce "window-swap-right" 'list)
+                             (list :enter #\c #\c))
+                     :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
       (is (not (equal (clautolisp.ui.ncurses::ncurses-ui-layout ui)
@@ -377,6 +381,39 @@
       (declare (ignore result screen))
       (is (some (lambda (l) (search "unknown" l))
                 (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui))))))
+
+(test window-other-toggles-active-window
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; C-w o from interactor saves it and moves to the next (repl).
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 23) #\o #\c) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (eq :repl (clautolisp.ui.ncurses::ncurses-ui-active-window ui))))))
+
+(test cx-prefix-is-an-alias-for-cw
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; C-x (code 24) is an alias of C-w: C-x n selects the next window.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 24) #\n #\c) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (eq :repl (clautolisp.ui.ncurses::ncurses-ui-active-window ui))))))
+
+(test window-scroll-reports-on-active-window
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; C-w v scrolls the active window (message records it); no crash.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 23) #\v #\c) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (search "scroll" (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
 
 (test eof-continues
   (let* ((context (fresh-context))
