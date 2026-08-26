@@ -413,8 +413,8 @@ frame and echoes with the DBG> prefix."
         (when loc
           (push-interactor *navi* (make-navi-state :ui ui :session session
                                                    :hit hit :loc loc)))))
-    (or (interactor-loop :input (dumb-ui-input ui) :output (dumb-ui-output ui)
-                         :error-output (dumb-ui-output ui) :floor floor)
+    (or (interactor-loop :input (dumb-ui-input ui) :output (%out-stream ui)
+                         :error-output (%out-stream ui) :floor floor)
         :continue)))                                 ; EOF ⇒ continue (CI/pipe)
 
 (defun %command-tokens (arg)
@@ -1533,7 +1533,7 @@ inside (`aldo c', the confirmed quit) is returned to be propagated."
              sedit (if arg (format nil "~A ~A" cmd arg) cmd)))
           (multiple-value-bind (result directive)
               (clautolisp.sedit:sedit-enter
-               sedit :input (dumb-ui-input ui) :output (dumb-ui-output ui)
+               sedit :input (dumb-ui-input ui) :output (%out-stream ui)
                      :debug-hook (lambda (line) (nav-run-debug-line ui session hit line))
                      :eval-print-hook (lambda (node) (nav-eval-node-string session node))
                      ;; the sedit-on-quit guard (design-revision point-6
@@ -1685,8 +1685,8 @@ resume directive a debugger command issued inside carried out."
         (*debugger-ui* ui)
         (*debugger-session* session)
         (*debugger-hit* hit))
-    (interactor-loop :input (dumb-ui-input ui) :output (dumb-ui-output ui)
-                     :error-output (dumb-ui-output ui)
+    (interactor-loop :input (dumb-ui-input ui) :output (%out-stream ui)
+                     :error-output (%out-stream ui)
                      :floor (length *interactor-stack*))))
 
 (defun navi-enter (ui session hit loc)
