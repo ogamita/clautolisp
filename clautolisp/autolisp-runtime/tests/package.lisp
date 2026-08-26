@@ -87,6 +87,10 @@
                 #:lookup-function
                 #:lookup-variable
                 #:make-document-namespace
+                #:make-blackboard-namespace
+                #:namespace-binding-cell
+                #:binding-cell-value
+                #:binding-cell-bound-p
                 #:make-evaluation-context
                 #:make-autolisp-string
                 #:make-autolisp-subr
