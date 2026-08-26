@@ -702,11 +702,15 @@ windowed layout (status lines + separators + minibuffer)."
                                     (inspect-page-type-name page) (inspect-page-header page)))
               (loop for component in (inspect-page-components page)
                     for i from 0
+                    ;; INSPECT-COMPONENT-PREVIEW is already the value's PRIN1
+                    ;; string (inspector-format.issue): show it directly — do
+                    ;; NOT re-run PREVIEW, which would PRIN1 it again and quote
+                    ;; it as a string. A colon separates the slot from the value.
                     do (win-put-line screen src (+ i 3)
-                                     (format nil "~A ~A  ~A"
+                                     (format nil "~A ~A: ~A"
                                              (if (= i (ncurses-ui-inspector-cursor ui)) ">" " ")
                                              (inspect-component-label component)
-                                             (preview (inspect-component-preview component)))
+                                             (inspect-component-preview component))
                                      :attr (if (= i (ncurses-ui-inspector-cursor ui)) :bold :normal))))
             (win-put-line screen (rect :interactor) 0
                           "INSPECT: up/down move  Enter/d descend  BS/u up  p path  b bind  q close")

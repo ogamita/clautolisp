@@ -30,3 +30,18 @@ nth 4: (4 5 6)
 Outside of ncurses (when ncurses windows are not displayed, in the dumb ui REPL), inspect invokes ncurses but doesn't even display an inspector windows.
 I think it would be better to stay with the dumb ui when called from the dumb-iu REPL for now.
 
+* Status 2026-08-26
+
+DONE (clautolisp 1.9.19): the ncurses inspector now shows each component as
+"LABEL: VALUE" and prints the value with its own PRIN1 string
+(INSPECT-COMPONENT-PREVIEW) directly, instead of re-running the ncurses PREVIEW
+helper on it — which PRIN1'd the already-printed string again and wrapped every
+value in quotes.
+
+TODO: routing — when `inspect' is invoked from the dumb-ui REPL (no ncurses
+windows up, not at a debugger stop), keep it in the dumb inspector instead of
+bringing up ncurses. Needs tracing how the REPL's inspect reaches the session
+UI (the session's UI is the ncurses one under `--debugger-ui ncurses'); the fix
+is to pick the inspector surface from the invocation context (REPL vs stop),
+not from the session UI. Deferred for a focused change.
+
