@@ -22,4 +22,6 @@ future backend behind the same protocol.")
    #:mock-screen-rows #:mock-screen-cols
    #:mock-grid-lines #:mock-attr-at #:mock-find-line #:mock-feed-keys
    ;; key helpers
-   #:key-char-p))
+   #:key-char-p
+   ;; faces (TUI module spec §5.3)
+   #:define-face #:face-parameters #:facep #:list-faces #:*faces*))

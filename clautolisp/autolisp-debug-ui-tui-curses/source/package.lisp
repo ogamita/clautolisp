@@ -13,6 +13,7 @@
   (:use #:cl)
   (:import-from #:clautolisp.ui.tui
                 #:tui-start #:tui-stop #:tui-size #:tui-clear #:tui-put
-                #:tui-refresh #:tui-read-key)
+                #:tui-refresh #:tui-read-key
+                #:face-parameters)
   (:export #:curses-screen #:make-curses-screen
            #:ensure-curses-loaded #:curses-available-p))

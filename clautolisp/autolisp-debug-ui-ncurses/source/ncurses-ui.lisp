@@ -161,7 +161,7 @@ width, INVERTed when active, UNDERLINEd otherwise."
   (destructuring-bind (top left height width) rect
     (tui-put screen (+ top height -1) left
              (pad-string (truncate-string (format nil " ~A " title) width) width)
-             :attr (if active-p :invert :underline))))
+             :attr (if active-p :active-status :inactive-status))))
 
 (defun draw-vline (screen col top height)
   (loop for r from top below (+ top height) do (tui-put screen r col "|")))
@@ -291,9 +291,9 @@ the 0-based row of that selection, to keep in view."
                collect (cons (format nil "~A~3D: ~A"
                                      (if (eql n selection-line) ">>" "  ")
                                      n (aref lines (1- n)))
-                             (cond ((eql n current-line) :yellow)
-                                   ((member n bp-lines) :red)
-                                   ((member n poll-lines) :blue)
+                             (cond ((eql n current-line) :current-line)
+                                   ((member n bp-lines) :breakpoint)
+                                   ((member n poll-lines) :poll-point)
                                    (t :normal))))
          (and selection-line (1- selection-line)))
         (values (list (cons (format nil "~A:~@[~D~] (source unavailable)"

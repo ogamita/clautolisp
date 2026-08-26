@@ -49,7 +49,7 @@
              (let* ((line (nth row (clautolisp.ui.tui:mock-grid-lines screen)))
                     (col (search ">>" line)))
                (is (integerp col))
-               (is (eq :yellow (clautolisp.ui.tui:mock-attr-at screen row col))))))
+               (is (eq :current-line (clautolisp.ui.tui:mock-attr-at screen row col))))))
       (ignore-errors (delete-file "two.lsp")))))
 
 (test source-pane-marks-breakpoint-line-red
@@ -81,7 +81,7 @@
              (let ((row (clautolisp.ui.tui:mock-find-line screen "(id z)")))
                (is (integerp row))
                (let ((col (1+ (search ":" (nth row (clautolisp.ui.tui:mock-grid-lines screen))))))
-                 (is (eq :red (clautolisp.ui.tui:mock-attr-at screen row col)))))))
+                 (is (eq :breakpoint (clautolisp.ui.tui:mock-attr-at screen row col)))))))
       (ignore-errors (delete-file "two.lsp")))))
 
 (test step-key-runs-to-completion
@@ -241,8 +241,8 @@
         (is (integerp srow))
         (let ((icol (search "interactor" (nth irow (clautolisp.ui.tui:mock-grid-lines screen))))
               (scol (search "stack" (nth srow (clautolisp.ui.tui:mock-grid-lines screen)))))
-          (is (eq :invert (clautolisp.ui.tui:mock-attr-at screen irow icol)))
-          (is (eq :underline (clautolisp.ui.tui:mock-attr-at screen srow scol))))))))
+          (is (eq :active-status (clautolisp.ui.tui:mock-attr-at screen irow icol)))
+          (is (eq :inactive-status (clautolisp.ui.tui:mock-attr-at screen srow scol))))))))
 
 (test window-select-next-moves-active-window
   (let* ((context (fresh-context))

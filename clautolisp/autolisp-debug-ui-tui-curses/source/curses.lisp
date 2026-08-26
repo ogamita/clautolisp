@@ -143,13 +143,17 @@ harmless if already suspended."
   (%wclear (curses-window screen)))
 
 (defmethod tui-put ((screen curses-screen) row col string &key (attr :normal))
+  ;; ATTR is a face symbol (TUI module spec §5.3); resolve it to ncurses
+  ;; attribute bits — a colour pair for its foreground plus bold / underline /
+  ;; reverse. An unknown symbol resolves to plain text.
   (let* ((win (curses-window screen))
-         (pair (gethash attr (curses-color-pairs screen)))
-         (bits (cond (pair (color-pair pair))
-                     ((eq attr :bold) +a-bold+)
-                     ((eq attr :invert) +a-reverse+)
-                     ((eq attr :underline) +a-underline+)
-                     (t 0))))
+         (params (face-parameters attr))
+         (fg (getf params :fg))
+         (pair (and fg (gethash fg (curses-color-pairs screen))))
+         (bits (logior (if pair (color-pair pair) 0)
+                       (if (getf params :bold) +a-bold+ 0)
+                       (if (getf params :underline) +a-underline+ 0)
+                       (if (getf params :invert) +a-reverse+ 0))))
     (when (/= bits 0) (%wattron win bits))
     (%mvwaddstr win row col string)
     (when (/= bits 0) (%wattroff win bits))))
