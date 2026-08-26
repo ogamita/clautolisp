@@ -224,11 +224,14 @@ it. This is what lets one command vocabulary serve tty and every vdt window.
 * 8. The stack-browser interactor (new, per ncurses-misc §stack)
 
 Beyond function name + call line, a call frame shows its *arguments* (PRIN1'd
-with configurable =*print-length*= ≈3 / =*print-level*= ≈1). Navigating a frame
-can *open* it to show its local bindings (and close it). Eval happens in the
-*selected frame's* scope. Deep recursion is capped at a configurable number of
-frames; actioning the last line appends more (show the total count). SLDB-
-inspired keys, to inform aldo/aldb too:
+with configurable =*print-length*= ≈3 / =*print-level*= ≈1).
+See section 13. Specific IO-syntax.
+
+Navigating a frame can *open* it to show its local bindings (and close
+it). Eval happens in the *selected frame's* scope. Deep recursion is
+capped at a configurable number of frames; actioning the last line
+appends more (show the total count). SLDB- inspired keys, to inform
+aldo/aldb too:
 
 - examine: =t= toggle details (locals, catch tags), =v= view source in the
   source window, =e= eval in frame, =d= eval + pretty-print, =D= disassemble,
@@ -307,3 +310,80 @@ Each phase lands with FiveAM tests over the mock screen (headless), keeping
   parity).
 - cadtui's per-drawing Lisp-namespace isolation vs the single clautolisp image
   (out of scope for tui-core; a cadtui concern).
+
+
+* 13. Specific IO-syntax
+
+The stack browser uses its own set of variables to print stack data
+(arguments, locals).
+
+The debugger uses its own set of variables to print lisp objects
+(print command).
+
+The inspector uses its own set of variables to print lisp objects (the
+entries, the inspector still lists all the slots (or paginates them).
+
+And the REPL uses its own set of variables  (to print the results).
+
+Now however, do not to confuse CL and autolisp. We are considering
+here printing of autolisp objects.  These objects are printed by
+autolisp princ, prin1 and print functions. These functions call the CL
+functions, and set the CL io syntax variables.  These settings are
+specified by autolisp specification IIRC, there's no autolisp
+equivalent of these variables, the settings are fixed.
+
+Nonetheless, we don't want to use the default princ/prin1/print in
+these modules. They must use a specific version of these functions,
+~clal-princ~, ~clal-prin1~, and ~clal-print~ that are parameterized
+with these variables:
+
+| variable              | default value |
+|-----------------------+---------------|
+| ~*clal-print-array*~  | t             |
+| ~*clal-print-case*~   | :upcase       |
+| ~*clal-print-circle*~ | nil           |
+| ~*clal-print-length*~ | nil           |
+| ~*clal-print-level*~  | nil           |
+| ~*clal-print-lines*~  | nil           |
+
+
+Each of these modules has its own set of variables to be customized by
+the user (with different defaults); they're used to bind the above
+variables for ~clal-princ~, ~clal-prin1~ and ~clal-print~.
+
+| variable                      | default value |
+|-------------------------------+---------------|
+| ~*clal-stack-print-array*~    | t             |
+| ~*clal-stack-print-case*~     | :upcase       |
+| ~*clal-stack-print-circle*~   | t             |
+| ~*clal-stack-print-length*~   | 3             |
+| ~*clal-stack-print-level*~    | 2             |
+| ~*clal-stack-print-lines*~    | 1             |
+|-------------------------------+---------------|
+| variable                      | default value |
+|-------------------------------+---------------|
+| ~*clal-inspect-print-array*~  | t             |
+| ~*clal-inspect-print-case*~   | :upcase       |
+| ~*clal-inspect-print-circle*~ | t             |
+| ~*clal-inspect-print-length*~ | 3             |
+| ~*clal-inspect-print-level*~  | 2             |
+| ~*clal-inspect-print-lines*~  | 1             |
+|-------------------------------+---------------|
+| variable                      | default value |
+|-------------------------------+---------------|
+| ~*clal-aldo-print-array*~     | t             |
+| ~*clal-aldo-print-case*~      | :upcase       |
+| ~*clal-aldo-print-circle*~    | t             |
+| ~*clal-aldo-print-length*~    | 3             |
+| ~*clal-aldo-print-level*~     | 2             |
+| ~*clal-aldo-print-lines*~     | 1             |
+|-------------------------------+---------------|
+| variable                      | default value |
+|-------------------------------+---------------|
+| ~*clal-repl-print-array*~     | t             |
+| ~*clal-repl-print-case*~      | :upcase       |
+| ~*clal-repl-print-circle*~    | t             |
+| ~*clal-repl-print-length*~    | nil           |
+| ~*clal-repl-print-level*~     | nil           |
+| ~*clal-repl-print-lines*~     | nil           |
+|-------------------------------+---------------|
