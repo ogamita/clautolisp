@@ -132,7 +132,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:command-lambda-list #:command-docstring #:command-function #:command-arity
    #:dictionary #:dictionary-name #:make-command-dictionary
    #:+debugger-escape-word+
-   #:*debugger-ui* #:*debugger-session* #:*debugger-hit*
+   #:*debugger-ui* #:*debugger-session* #:*debugger-hit* #:*debugger-output*
    #:interactor-user-dictionary
    #:bind-debugger-command #:unbind-debugger-command #:define-debugger-command
    #:register-interactor-command

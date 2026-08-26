@@ -30,6 +30,14 @@ CLAUTOLISP.INTERACTOR:+SYSTEM-COMMAND-WORD+ — `command TOKEN', like bash's
 (defvar *debugger-session* nil "The debugger-session of the current command.")
 (defvar *debugger-hit* nil "The HIT at the current stop, or NIL.")
 
+(defvar *debugger-output* nil
+  "The UI-neutral output seam for debugger command text. When bound to a
+stream, the dumb UI's OUT (and thus every ALDO/NAVI/LAVI command body) writes
+there instead of to the dispatching UI's own stream — so a non-dumb UI
+(ncurses, and the coming per-window interactors) can direct command output
+into whatever pane it wants, without owning a dumb-ui. NIL falls back to the
+dumb UI's stream, so the dumb UI is unaffected.")
+
 ;;; --- registration -----------------------------------------------------
 
 (defun interactor-user-dictionary (interactor-name)

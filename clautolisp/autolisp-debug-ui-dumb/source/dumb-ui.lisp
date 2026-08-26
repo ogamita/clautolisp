@@ -28,9 +28,16 @@
 (register-ui :terminal (lambda (&rest initargs) (apply #'make-dumb-ui initargs)))
 (register-ui :dumb     (lambda (&rest initargs) (apply #'make-dumb-ui initargs)))
 
+(defun %out-stream (ui)
+  "The stream debugger command output goes to: the UI-neutral *DEBUGGER-OUTPUT*
+seam when bound (a non-dumb UI directing output into its own pane), else this
+dumb UI's own stream. See *DEBUGGER-OUTPUT*."
+  (or *debugger-output* (dumb-ui-output ui)))
+
 (defun out (ui control &rest args)
-  (apply #'format (dumb-ui-output ui) control args)
-  (force-output (dumb-ui-output ui)))
+  (let ((stream (%out-stream ui)))
+    (apply #'format stream control args)
+    (force-output stream)))
 
 (defun string-lines (text)
   "TEXT split into a list of lines (a single trailing newline is dropped)."
@@ -62,7 +69,7 @@ PAT (case-insensitive), or NIL."
                      when (search pat (svref lines k) :test #'char-equal)
                        do (return k)))))
       (if (or (not pager-on) (<= n page))
-          (write-string text (dumb-ui-output ui))
+          (write-string text (%out-stream ui))
           (loop with s = 0 with last-pat = nil
                 do (loop for k from s below (min n (+ s page))
                          do (out ui "~A~%" (svref lines k)))

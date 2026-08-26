@@ -460,7 +460,10 @@ the repl pane, and return the command's resume directive. HIT is NIL here, so
 frame-relative commands degrade gracefully; carrying the current hit is part of
 the per-window interactor-stack work."
   (let* ((out (make-string-output-stream))
-         (dumb (make-dumb-ui :output out :input (make-string-input-stream ""))))
+         (dumb (make-dumb-ui :input (make-string-input-stream "")))
+         ;; the generalised output seam: ALDO/NAVI OUT writes here, not to a
+         ;; dumb-ui stream — the dumb-ui is only carried for command state.
+         (*debugger-output* out))
     (prog1 (ui-run-command dumb session line)
       (dolist (l (%split-lines (get-output-stream-string out)))
         (when (plusp (length l)) (push-repl ui "~A" l))))))
