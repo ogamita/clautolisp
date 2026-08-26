@@ -1,0 +1,69 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: transpiler-t-is-not-self-evaluating — le compilateur traite T comme une variable ordinaire
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: implement-compiler
+
+* Constat
+
+Le transpileur compilait toute référence de symbole, y compris =T=, en un
+=LOOKUP-VARIABLE=. L'interpréteur, lui, a un cas explicite avant celui-là :
+=T= s'évalue en lui-même, *quelle que soit* sa liaison.
+
+Reproduit, contexte neuf de chaque côté :
+
+: (progn (setq t nil) (cond (t 42)))    interprété=42   compilé=NIL
+: (progn (setq t nil) (if t 1 2))       interprété=1    compilé=2
+
+* Pourquoi les tests ne l'ont pas vu
+
+Le corpus d'équivalence contenait bien deux =(cond … (t …))=, mais dans les
+deux cas une clause antérieure était vraie : *la clause =t= n'était jamais
+atteinte*. Et dans le contexte par défaut =T= EST lié à lui-même, donc
+=LOOKUP-VARIABLE= rendait la bonne réponse — la divergence n'apparaît
+qu'après un =(setq T …)=, c'est-à-dire exactement le cas pour lequel le
+garde-fou de l'interpréteur existe.
+
+Deux couches de camouflage : une valeur par défaut qui rend juste, et un
+corpus qui n'exécutait pas le chemin. C'est le rappel que le corpus doit
+contenir des cas où la branche testée est *prise*, pas seulement présente.
+
+* Portée réelle
+
+Sévère au-delà de =(setq T nil)= : le commentaire de l'interpréteur le dit,
+sans ce cas =(cond (T …))= tombe silencieusement dans le vide pour tout
+dialecte dont le mode variable-non-liée est =:silent-nil= — c'est-à-dire
+tous les profils produit (autocad, bricscad). Il suffit d'un contexte où
+=T= n'est pas pré-lié pour que la clause par défaut de chaque =COND= compilé
+cesse de se déclencher, sans le moindre message.
+
+* Correctif (2.0.2)
+
+Une branche =T= avant la branche variable, copiée de l'interpréteur au
+prédicat près =(string= "T" (autolisp-symbol-name form))=, qui émet le
+symbole comme constante.
+
+Deux durcissements de la même famille, faits en même temps parce qu'ils
+relèvent de la même erreur — le compilateur qui garde un second avis sur
+une question dont le runtime a déjà la réponse :
+
+- =%SELF-EVALUATING-P= (local, réécrit) remplacé par
+  =SELF-EVALUATING-RUNTIME-VALUE-P= (celui de l'interpréteur, désormais
+  exporté). La copie locale était un sur-ensemble : elle déclarait
+  auto-évaluant *tout* objet non-cons non-symbole, là où l'interpréteur
+  signale =:invalid-form=. Le compilateur rendait donc une valeur là où
+  l'interpréteur lève une erreur.
+- =%OPERATOR-NAME= met désormais le nom en majuscules, comme
+  =SPECIAL-OPERATOR-NAME=. Le lecteur interne les noms en majuscules, mais
+  un symbole interné directement peut ne pas l'être ; dispatcher sur le nom
+  brut divergeait alors de l'interpréteur. Inoffensif tant que tout
+  retombait sur l'interpréteur, dangereux dès l'instant où les appels se
+  compilent.
+
+* Corpus
+
+Ajout des cas où la branche est PRISE, pas seulement présente :
+=(progn (setq t nil) (cond (t 42)))=, =(progn (setq t nil) (if t 1 2))=,
+=(cond (nil 1) (t 2))=.

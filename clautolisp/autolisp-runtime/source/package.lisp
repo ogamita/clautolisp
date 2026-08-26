@@ -190,6 +190,7 @@
    #:register-special-operator
    #:unregister-special-operator
    #:known-special-operator-p
+   #:self-evaluating-runtime-value-p
    #:split-usubr-lambda-list
    #:catch-frame
    #:make-catch-frame
