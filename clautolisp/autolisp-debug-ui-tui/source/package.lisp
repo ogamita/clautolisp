@@ -1,4 +1,9 @@
 (defpackage #:clautolisp.ui.tui
+  ;; TUI module spec: this package IS the tui-core module (screen protocol,
+  ;; panes, faces, and — being extended — frames and windows). It has no
+  ;; clautolisp dependency. The tui-core nickname names it as the module; a
+  ;; later cosmetic step may make tui-core the primary name.
+  (:nicknames #:tui-core)
   (:use #:cl)
   (:documentation
    "Thin terminal-UI abstraction for the ncurses debugger UI
@@ -24,4 +29,20 @@ future backend behind the same protocol.")
    ;; key helpers
    #:key-char-p
    ;; faces (TUI module spec §5.3)
-   #:define-face #:face-parameters #:facep #:list-faces #:*faces*))
+   #:define-face #:face-parameters #:facep #:list-faces #:*faces*
+   ;; frames (spec §4)
+   #:frame #:framep #:make-frame #:frame-list #:selected-frame
+   #:frame-name #:set-frame-name #:frame-width #:set-frame-width
+   #:frame-height #:set-frame-height #:frame-minibuffer #:frame-minibuffer-p
+   #:frame-device #:frame-screen #:frame-windows #:frame-layout
+   #:frame-selected-window
+   #:select-frame #:delete-frame #:terminal-device-supports-vdt-p
+   #:ensure-initial-tty-frame #:reset-frames #:*frames* #:*selected-frame*
+   ;; windows (spec §5)
+   ;; NB: window-buffer / window-scroll / window-rect are intentionally NOT
+   ;; exported — the ncurses UI still defines functions of those names and
+   ;; :use-s this package; they stay internal until that UI is wired onto the
+   ;; window struct.
+   #:window #:windowp #:make-window #:window-name #:set-window-name
+   #:window-role #:window-frame
+   #:window-list #:delete-window #:selected-window #:select-window))

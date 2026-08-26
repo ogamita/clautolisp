@@ -52,3 +52,57 @@
     (clautolisp.ui.tui:pane-put-line screen pane 0 "hi" :attr :yellow)
     (is (string= " hi" (subseq (nth 1 (clautolisp.ui.tui:mock-grid-lines screen)) 0 3)))
     (is (eq :yellow (clautolisp.ui.tui:mock-attr-at screen 1 1)))))
+
+;;;; --- faces (TUI module spec §5.3) ----------------------------------
+
+(test faces-define-and-resolve
+  (is (equal '(:fg :yellow :bg nil :bold nil :underline nil :invert nil)
+             (clautolisp.ui.tui:face-parameters :current-line)))
+  (is (clautolisp.ui.tui:facep :active-status))
+  (is (not (clautolisp.ui.tui:facep :no-such-face)))
+  ;; the tui-core nickname addresses the same package
+  (clautolisp.ui.tui:define-face :test-face :fg :green :bold t)
+  (is (equal '(:fg :green :bg nil :bold t :underline nil :invert nil)
+             (tui-core:face-parameters :test-face))))
+
+;;;; --- frames (TUI module spec §4) -----------------------------------
+
+(test frames-make-select-delete
+  (clautolisp.ui.tui:reset-frames)
+  (let ((tty (clautolisp.ui.tui:ensure-initial-tty-frame)))
+    (is (clautolisp.ui.tui:framep tty))
+    (is (eq :tty (clautolisp.ui.tui:frame-device tty)))
+    (is (eq tty (clautolisp.ui.tui:selected-frame)))
+    (let* ((screen (clautolisp.ui.tui:make-mock-screen :rows 10 :cols 40))
+           (vdt (clautolisp.ui.tui:make-frame
+                 (list (cons :name "temp") (cons :device :vdt)
+                       (cons :minibuffer t) (cons :screen screen)))))
+      (is (eq :vdt (clautolisp.ui.tui:frame-device vdt)))
+      (is (= 10 (clautolisp.ui.tui:frame-height vdt)))   ; from the screen
+      (is (= 40 (clautolisp.ui.tui:frame-width vdt)))
+      (is (= 2 (length (clautolisp.ui.tui:frame-list))))
+      (clautolisp.ui.tui:select-frame vdt)
+      (is (eq vdt (clautolisp.ui.tui:selected-frame)))
+      (clautolisp.ui.tui:delete-frame vdt)
+      (is (eq tty (clautolisp.ui.tui:selected-frame)))   ; falls back
+      (is (= 1 (length (clautolisp.ui.tui:frame-list)))))))
+
+;;;; --- windows (TUI module spec §5) ----------------------------------
+
+(test windows-make-select-list
+  (clautolisp.ui.tui:reset-frames)
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen :rows 10 :cols 40))
+         (frame (clautolisp.ui.tui:make-frame
+                 (list (cons :device :vdt) (cons :screen screen)))))
+    (clautolisp.ui.tui:select-frame frame)
+    (let ((w1 (clautolisp.ui.tui:make-window (list (cons :name "a"))))
+          (w2 (clautolisp.ui.tui:make-window (list (cons :name "b"))))
+          (mb (clautolisp.ui.tui:make-window (list (cons :role :minibuffer)))))
+      (is (eq w1 (clautolisp.ui.tui:frame-selected-window frame))) ; first selected
+      (is (= 2 (length (clautolisp.ui.tui:window-list frame nil))))  ; excludes minibuffer
+      (is (= 3 (length (clautolisp.ui.tui:window-list frame t))))    ; includes it
+      (is (eq mb (clautolisp.ui.tui:frame-minibuffer frame)))
+      (clautolisp.ui.tui:select-window w2)
+      (is (eq w2 (clautolisp.ui.tui:selected-window)))
+      (clautolisp.ui.tui:delete-window w2)
+      (is (= 1 (length (clautolisp.ui.tui:window-list frame nil)))))))

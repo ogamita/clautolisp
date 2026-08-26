@@ -802,7 +802,9 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :components
   ((:file "autolisp-debug-ui-tui/source/package")
    (:file "autolisp-debug-ui-tui/source/faces")
-   (:file "autolisp-debug-ui-tui/source/tui"))
+   (:file "autolisp-debug-ui-tui/source/tui")
+   (:file "autolisp-debug-ui-tui/source/frames")
+   (:file "autolisp-debug-ui-tui/source/windows"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-debug-ui-ncurses/tests")))
   :perform (asdf:test-op (op system)
