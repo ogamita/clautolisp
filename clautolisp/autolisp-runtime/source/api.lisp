@@ -770,10 +770,31 @@ CONTEXT's session. Returns VALUE."
 (defun namespace-function-table (namespace) (namespace-bindings-table namespace))
 
 (defun namespace-binding-cell (namespace symbol &key (createp t))
-  (or (gethash symbol (namespace-bindings-table namespace))
-      (when createp
-        (setf (gethash symbol (namespace-bindings-table namespace))
-              (clautolisp.autolisp-runtime.internal::make-binding-cell)))))
+  ;; The one-entry cache on the symbol (see AUTOLISP-SYMBOL's
+  ;; BINDING-CACHE slot) turns the common case into a slot read and an
+  ;; EQ test, in place of a TYPECASE on the namespace plus an EQ hash
+  ;; lookup. It is sound because a binding cell, once created, is never
+  ;; removed from its namespace, and no namespace's bindings table is
+  ;; ever cleared or replaced — so the symbol-to-cell mapping only ever
+  ;; grows. A redefinition changes the cell's VALUE, which is read
+  ;; through the cell in both paths, so nothing here caches a definition.
+  (let ((cache (and (typep symbol 'autolisp-symbol)
+                    (clautolisp.autolisp-runtime.internal::autolisp-symbol-binding-cache
+                     symbol))))
+    (if (eq namespace (car cache))
+        (cdr cache)
+        (let ((cell (or (gethash symbol (namespace-bindings-table namespace))
+                        (when createp
+                          (setf (gethash symbol (namespace-bindings-table namespace))
+                                (clautolisp.autolisp-runtime.internal::make-binding-cell))))))
+          ;; Only a cell that exists is remembered: a :CREATEP NIL miss
+          ;; must stay a miss, or the next :CREATEP T call would be
+          ;; answered with NIL from the cache instead of creating a cell.
+          (when (and cell (typep symbol 'autolisp-symbol))
+            (setf (clautolisp.autolisp-runtime.internal::autolisp-symbol-binding-cache
+                   symbol)
+                  (cons namespace cell)))
+          cell))))
 
 (defun namespace-value-cell (namespace symbol &key (createp t))
   (namespace-binding-cell namespace symbol :createp createp))

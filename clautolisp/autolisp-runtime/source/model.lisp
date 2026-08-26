@@ -15,7 +15,27 @@ clautolisp-secureload-trust-model spec.")
 (defstruct autolisp-symbol
   (name "" :type string)
   (original-name nil :type (or null string))
-  (plist '() :type list))
+  (plist '() :type list)
+  ;; Last (NAMESPACE . BINDING-CELL) this symbol resolved to, or NIL.
+  ;;
+  ;; Looking a symbol up in a namespace was a TYPECASE on the namespace
+  ;; plus an EQ hash lookup, on every variable read, every assignment and
+  ;; every function call — 13% of a call-dominated profile. A binding
+  ;; cell, once made, is never removed from its namespace and no
+  ;; namespace's table is ever cleared or replaced, so the answer is
+  ;; stable and worth remembering. What changes on a redefinition is the
+  ;; cell's VALUE, which is read through the cell either way — so this
+  ;; caches the lookup without caching the definition.
+  ;;
+  ;; ONE entry, deliberately: a symbol is used in one namespace at a
+  ;; time in any hot loop, and a bigger cache would cost more to consult
+  ;; than the hash lookup it replaces. Alternating namespaces simply miss.
+  ;;
+  ;; Stored as a single CONS so the pair is written in one slot store. A
+  ;; two-slot cache could be read torn — namespace from one writer, cell
+  ;; from another — and hand back a cell belonging to the wrong
+  ;; namespace; a cons is built before it is published and never mutated.
+  (binding-cache nil :type list))
 
 ;;; AutoLISP is a Lisp-1 dialect: a symbol carries a single binding
 ;;; cell that is shared by variable and function uses. SETQ and DEFUN

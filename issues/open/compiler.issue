@@ -478,11 +478,65 @@ it), locals shadow and restore globals, nested frames shadow
 independently, and re-assigning a local replaces rather than accumulates.
 They use only special operators, since that suite runs without builtins.
 
-STILL OPEN after slice 4
+Slice 5 -- 2.0.5: the symbol-to-cell lookup
+-------------------------------------------
+Slice 4 left LOOKUP-FUNCTION at 20% of a call-dominated profile, most of
+it inside NAMESPACE-BINDING-CELL: a TYPECASE on the namespace plus an EQ
+hash lookup, run on every variable read, every assignment and every call.
+
+An AUTOLISP-SYMBOL now remembers the last (NAMESPACE . CELL) it resolved
+to. A hit is a slot read and an EQ test.
+
+WHY IT IS SOUND, checked rather than assumed: no code path removes an
+entry from a namespace's bindings table (no REMHASH anywhere on them),
+none clears a table (the only CLRHASH on a binding table is
+RESET-AUTOLISP-SYMBOL-TABLE, which discards the symbols themselves and
+their caches with them), and no code replaces a table wholesale. So the
+symbol-to-cell mapping only ever grows, and a remembered answer stays
+right. What a redefinition changes is the cell's VALUE, read through the
+cell in both paths -- this caches the LOOKUP, never the DEFINITION.
+
+Two details that are the difference between a cache and a bug:
+  - ONE entry, stored as a single CONS. A two-slot cache could be read
+    torn -- namespace from one writer, cell from another -- and hand back
+    a cell belonging to a different namespace. A cons is built before it
+    is published and never mutated.
+  - A :CREATEP NIL miss is NOT remembered. Caching `no cell' would make
+    the next :CREATEP T call answer NIL from the cache instead of
+    creating the cell, leaving the binding permanently unwritable.
+
+MEASURED A/B, min of 5, back to back (the first attempt compared against
+numbers taken earlier under different machine load and looked like a
+REGRESSION -- it was noise; the back-to-back run settled it):
+
+                             compiled   A -> B     interpreted A -> B
+  fib 21, recursive           0.032 -> 0.028      0.096 -> 0.080
+  loop calling a function     0.468 -> 0.412      0.548 -> 0.480
+  loop inside a body          0.164 -> 0.128      0.572 -> 0.500
+  variable-heavy loop         0.556 -> 0.480      0.560 -> 0.488
+
+12-22% across every workload, compiled AND interpreted, which is what a
+lookup on the common path of the whole engine should give.
+
+Note the variable-heavy row: compiled and interpreted are within 2% of
+each other there. A loop of SETQs and variable reads has almost nothing
+for the transpiler to remove -- it emits the same SET-VARIABLE and
+LOOKUP-VARIABLE calls the interpreter makes. The transpiler's gain is in
+removing DISPATCH, so it shows on control flow and calls, not on variable
+traffic. Worth knowing before promising numbers on real drawings' code.
+
+Four tests pin the cache's two silent failure modes: the same symbol in
+two namespaces must resolve to two different cells (a wrong namespace
+would read another document's variables), alternating namespaces must
+merely miss rather than answer wrongly, a :CREATEP NIL miss must not be
+remembered, and a redefinition must be visible through the cache.
+
+STILL OPEN after slice 5
 ------------------------
-  - the per-call function lookup (LOOKUP-FUNCTION, 20% of a
-    call-dominated profile). Caching at the call site must key on the
-    binding CELL, not the value: AutoLISP functions are redefinable.
+  - the interpreter's SPECIAL-OPERATOR-FUNCTION dispatch: STRING-UPCASE
+    (which allocates) plus an ASSOC with STRING= over 24 entries, on
+    every compound form the interpreter evaluates. Helps the interpreter
+    only, which is still where cold code runs.
   - the INSTRUMENTED transpiler variant pjb asked for; the seam is the
     dropped (:eval . form) frames.
   - open-coding hot operators as inline CL, which the Tier-2 probe says

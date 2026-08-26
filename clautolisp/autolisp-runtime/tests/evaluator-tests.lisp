@@ -1332,3 +1332,79 @@ assignment and promotes itself for no reason."
   (is (eql 7 (%run-under-dialect
               :clautolisp
               "(defun f (/ a) (setq a 1) (setq a 2) (setq a 7) a) (f)"))))
+
+
+;;;; The per-symbol binding-cell cache. A symbol remembers the last
+;;;; (namespace . cell) it resolved to, so that a variable read, an
+;;;; assignment or a call costs a slot read and an EQ test instead of a
+;;;; TYPECASE plus a hash lookup. These tests pin the two properties that
+;;;; make that sound, both of which fail SILENTLY if broken: a wrong
+;;;; namespace would hand back another document's binding, and a cached
+;;;; DEFINITION would make redefinition stop working.
+
+(test the-binding-cache-is-per-namespace-not-per-symbol
+  "The same symbol in two namespaces must resolve to two different cells.
+A cache that ignored the namespace would return whichever was looked up
+first — one drawing reading another drawing's variables, silently."
+  (reset-autolisp-symbol-table)
+  (let* ((symbol (intern-autolisp-symbol "SHARED-NAME"))
+         (one (make-document-namespace :name "ONE"))
+         (two (make-document-namespace :name "TWO"))
+         (cell-one (namespace-binding-cell one symbol))
+         (cell-two (namespace-binding-cell two symbol)))
+    (is (not (eq cell-one cell-two))
+        "the same cell was handed out for two namespaces")
+    ;; and going back must return the FIRST cell, not re-create one
+    (is (eq cell-one (namespace-binding-cell one symbol)))
+    (is (eq cell-two (namespace-binding-cell two symbol)))
+    ;; the cells hold independent values
+    ;; Writing a cell has no public SETF — these tests deliberately reach
+    ;; into the internal accessor, because what they test IS the internal
+    ;; cache in front of it.
+    (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell-one) 1
+          (clautolisp.autolisp-runtime.internal::binding-cell-value cell-two) 2)
+    (is (eql 1 (binding-cell-value (namespace-binding-cell one symbol))))
+    (is (eql 2 (binding-cell-value (namespace-binding-cell two symbol))))))
+
+(test the-binding-cache-survives-alternating-namespaces
+  "The cache holds ONE entry, so alternating namespaces misses on every
+lookup. Missing must be merely slower, never wrong."
+  (reset-autolisp-symbol-table)
+  (let* ((symbol (intern-autolisp-symbol "ALTERNATING"))
+         (one (make-document-namespace :name "ONE"))
+         (two (make-document-namespace :name "TWO")))
+    (setf (clautolisp.autolisp-runtime.internal::binding-cell-value
+           (namespace-binding-cell one symbol)) 10
+          (clautolisp.autolisp-runtime.internal::binding-cell-value
+           (namespace-binding-cell two symbol)) 20)
+    (dotimes (i 5)
+      (is (eql 10 (binding-cell-value (namespace-binding-cell one symbol))))
+      (is (eql 20 (binding-cell-value (namespace-binding-cell two symbol)))))))
+
+(test a-createp-nil-miss-is-not-remembered-as-an-answer
+  "Asking with :CREATEP NIL for a symbol that has no cell must not record
+`no cell\' in the cache — the next :CREATEP T call has to create one.
+Caching the miss would make the binding permanently unwritable."
+  (reset-autolisp-symbol-table)
+  (let* ((symbol (intern-autolisp-symbol "NOT-YET-BOUND"))
+         (namespace (make-document-namespace :name "NS")))
+    (is (null (namespace-binding-cell namespace symbol :createp nil)))
+    (let ((cell (namespace-binding-cell namespace symbol)))
+      (is (not (null cell)) "no cell was created after a :CREATEP NIL miss")
+      (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) 42)
+      (is (eql 42 (binding-cell-value
+                   (namespace-binding-cell namespace symbol :createp nil)))))))
+
+(test redefinition-is-visible-through-the-cache
+  "The cache remembers where a binding LIVES, never what it holds. A
+function redefined after its first call must run the new definition —
+the failure this would cause is a program that silently keeps running
+the code you just replaced."
+  (reset-autolisp-symbol-table)
+  (is (eql 2 (%run-under-dialect
+              :clautolisp
+              "(defun f () 1) (f) (defun f () 2) (f)")))
+  (reset-autolisp-symbol-table)
+  (is (eql 7 (%run-under-dialect
+              :clautolisp
+              "(setq a 1) a (setq a 7) a"))))
