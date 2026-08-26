@@ -97,6 +97,11 @@
    #:autolisp-usubr-instrumented-body
    #:autolisp-usubr-debug-metadata
    #:autolisp-usubr-instrumentation-failed
+   #:autolisp-usubr-compiled-body
+   #:autolisp-usubr-call-count
+   #:*compile-usubr-hook*
+   #:*autolisp-compilation-enabled*
+   #:*autolisp-compilation-threshold*
    #:autolisp-catch-all-error
    #:make-autolisp-catch-all-error
    #:autolisp-catch-all-error-message

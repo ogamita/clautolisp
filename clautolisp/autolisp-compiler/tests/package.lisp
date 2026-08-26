@@ -9,7 +9,9 @@
                 #:results-status
                 #:test)
   (:import-from #:clautolisp.autolisp-compiler
+                #:autolisp-function-compiled-p
                 #:compile-autolisp-form
+                #:compile-autolisp-function
                 #:transpiler-coverage)
   (:import-from #:clautolisp.autolisp-builtins-core
                 ;; The fallback path calls real builtins (+, CAR, STRCAT …),
@@ -25,5 +27,9 @@
                 #:default-evaluation-context
                 #:lookup-variable
                 #:read-runtime-from-string
-                #:reset-default-evaluation-context)
+                #:reset-default-evaluation-context
+                #:resolve-autolisp-function-designator
+                #:*autolisp-compilation-enabled*
+                #:*autolisp-compilation-threshold*
+                #:*compile-usubr-hook*)
   (:export #:run-all-tests))

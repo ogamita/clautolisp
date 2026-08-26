@@ -8,7 +8,10 @@
                 #:autolisp-string
                 #:autolisp-symbol
                 #:autolisp-symbol-name
+                #:autolisp-usubr-body
+                #:autolisp-usubr-compiled-body
                 #:call-autolisp-function-in-context
+                #:*compile-usubr-hook*
                 #:current-evaluation-context
                 #:intern-autolisp-symbol
                 #:known-special-operator-p
@@ -19,5 +22,8 @@
   (:export #:transpile-form
            #:transpile-body
            #:compile-autolisp-form
+           #:compile-usubr
+           #:compile-autolisp-function
+           #:autolisp-function-compiled-p
            #:*transpiler-fallbacks*
            #:transpiler-coverage))

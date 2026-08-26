@@ -214,7 +214,23 @@ clautolisp-secureload-trust-model spec.")
   ;; re-attempts the failing weave on every call nor re-warns; the function
   ;; then runs its plain body (no poll points → no stack frames for it). See
   ;; INSTRUMENT-USUBR-IF-POSSIBLE in api.lisp.
-  (instrumentation-failed nil))
+  (instrumentation-failed nil)
+  ;; Compiler support (compiler.issue, Tier 2). COMPILED-BODY, when it
+  ;; holds a function, is a Common Lisp function of one argument (the
+  ;; evaluation context) evaluating BODY — the transpiler's fork, a THIRD
+  ;; body alongside the plain and the instrumented one. The evaluator
+  ;; runs it in place of BODY, except while a debug session is active:
+  ;; there an instrumented body wins, so stepping and breakpoints keep
+  ;; working exactly as before. It also holds :FAILED after a compilation
+  ;; that errored, which is not the same as NIL — NIL means "not tried
+  ;; yet" and would be retried on every call.
+  ;;
+  ;; CALL-COUNT is what decides when compiling is worth its own cost. A
+  ;; function called once — which is most of a freshly loaded file — must
+  ;; not pay for a compilation it will never amortise, so the fork is
+  ;; woven lazily, on the call that crosses the threshold.
+  (compiled-body nil)
+  (call-count 0 :type fixnum))
 
 (defstruct autolisp-catch-all-error
   (message "" :type string)

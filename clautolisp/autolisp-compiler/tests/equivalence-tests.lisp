@@ -203,13 +203,18 @@ is signalled before any argument's side effects happen. A compiler that
 evaluated arguments first would leave the variable modified after the
 error -- a difference nothing would notice until it did."
   (let ((context (%fresh-context))
-        (function (compile-autolisp-form (%read-one "(nosuchfunction (setq a 1))"))))
+        (function (compile-autolisp-form (%read-one "(nosuchfunction (setq a 1))")))
+        (signalled nil))
     (autolisp-eval (%read-one "(setq a 0)") context)
-    (handler-case (progn (funcall function context)
-                         (is nil "calling an undefined function did not signal"))
-      (autolisp-runtime-error ()
-        ;; the argument's SETQ must NOT have run
-        (is (eql 0 (lookup-variable (%read-one "a") context)))))))
+    ;; The outcome is captured and asserted afterwards rather than
+    ;; asserted inside the branches: FiveAM's IS wants a LIST, so (is nil)
+    ;; is a compile-time error SBCL defers to run time -- a landmine that
+    ;; only fires on the branch one expects never to take.
+    (handler-case (funcall function context)
+      (autolisp-runtime-error () (setf signalled t)))
+    (is (eq t signalled) "calling an undefined function did not signal")
+    ;; and the argument's SETQ must NOT have run
+    (is (eql 0 (lookup-variable (%read-one "a") context)))))
 
 (test calls-go-through-the-interpreters-own-entry-point
   "Compiled calls use CALL-AUTOLISP-FUNCTION-IN-CONTEXT, which is what
