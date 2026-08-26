@@ -16,12 +16,45 @@
    (layout :initform (default-layout) :accessor ncurses-ui-layout)   ; window tree
    (active-window :initform :interactor :accessor ncurses-ui-active-window)
    (saved-active :initform nil :accessor ncurses-ui-saved-active)    ; for window-other
+   ;; one interactor stack per window (ncurses-windows.issue architecture):
+   ;; id -> list of interactor keywords, innermost last. The :window-manager
+   ;; interactor sits on top of the ACTIVE window's stack.
+   (window-stacks :initform (make-hash-table :test 'eq) :accessor ncurses-ui-window-stacks)
    (scroll :initform (make-hash-table :test 'eq) :accessor ncurses-ui-scroll) ; id -> (sl . sc)
    (minibuffer :initform "" :accessor ncurses-ui-minibuffer)         ; last-row I/O
    (inspector-cursor :initform 0 :accessor ncurses-ui-inspector-cursor)))
 
 (defun make-ncurses-ui (&rest initargs)
   (apply #'make-instance 'ncurses-ui initargs))
+
+;;;; --- per-window interactor stacks (ncurses-windows.issue) ----------
+;;;; Each window owns an interactor stack; its base interactor handles the
+;;;; window's own keys — source→NAVI, interactor→ALDO, stack→FRAMENAV, repl→
+;;;; REPL. The :WINDOW-MANAGER interactor (window commands, the C-w/C-x prefix,
+;;;; the minibuffer , and M-x) sits on TOP of the ACTIVE window's stack. Keys
+;;;; are dispatched through the active window's stack, top to bottom.
+
+(defparameter +window-base-interactor+
+  '((:stack . :framenav) (:source . :navi)
+    (:interactor . :aldo) (:repl . :repl)))
+
+(defmethod initialize-instance :after ((ui ncurses-ui) &key)
+  (let ((stacks (ncurses-ui-window-stacks ui)))
+    (dolist (entry +window-base-interactor+)
+      (setf (gethash (car entry) stacks) (list (cdr entry))))
+    ;; the window manager rides on top of the active window's stack
+    (push :window-manager (gethash (ncurses-ui-active-window ui) stacks))))
+
+(defun activate-window (ui new)
+  "Make NEW the active window: pop the :WINDOW-MANAGER interactor from the old
+active window's stack and push it onto NEW's stack (which becomes the active
+interactor stack)."
+  (let ((stacks (ncurses-ui-window-stacks ui))
+        (old (ncurses-ui-active-window ui)))
+    (unless (eq old new)
+      (setf (gethash old stacks) (remove :window-manager (gethash old stacks)))
+      (setf (ncurses-ui-active-window ui) new)
+      (pushnew :window-manager (gethash new stacks)))))
 
 (register-ui :ncurses (lambda (&rest initargs) (apply #'make-ncurses-ui initargs)))
 (register-ui :tui     (lambda (&rest initargs) (apply #'make-ncurses-ui initargs)))
@@ -316,38 +349,70 @@ the 0-based row of that selection, to keep in view."
     (tui-stop (ncurses-ui-screen ui))))
 
 (defun handle-key (ui session hit key)
-  "Dispatch one command-mode key; return a resume directive or NIL."
+  "Dispatch one key through the ACTIVE window's interactor stack (the
+:WINDOW-MANAGER on top, then the window's own interactor). The first interactor
+that handles the key wins; return its resume directive or NIL."
+  (dolist (interactor (gethash (ncurses-ui-active-window ui)
+                               (ncurses-ui-window-stacks ui))
+                       nil)
+    (multiple-value-bind (handled directive)
+        (interactor-key interactor ui session hit key)
+      (when handled (return directive)))))
+
+(defun interactor-key (interactor ui session hit key)
+  "Try to handle KEY in INTERACTOR; return (values HANDLED-P DIRECTIVE)."
+  (ecase interactor
+    (:window-manager (window-manager-key ui session hit key))
+    (:aldo           (aldo-key ui session hit key))
+    (:navi           (navi-key ui session hit key))
+    (:framenav       (framenav-key ui session key))
+    (:repl           (values nil nil))))
+
+(defun window-manager-key (ui session hit key)
+  "The umbrella interactor on the active window: the C-w/C-x window-command
+prefix, the minibuffer , command line, Esc-x (M-x) and C-h help."
   (cond
-    ((key-char-p key #\c) (cmd-continue session))
-    ((or (key-char-p key #\s) (key-char-p key #\n)) (cmd-step session :over))
-    ((key-char-p key #\i) (cmd-step session :into))
-    ((key-char-p key #\o) (cmd-step session :out))
-    ((key-char-p key #\f) (cmd-step session :finish))
-    ((key-char-p key #\a) (cmd-abort session))
-    ((key-char-p key #\q) (cmd-abort session))
-    ((key-char-p key #\r) (return-value ui session hit) )
-    ;; C-w prefix: window-manipulation commands (ncurses-windows.issue).
-    ((and (characterp key) (member (char-code key) '(23 24)))  ; C-w / C-x prefix
-     (handle-window-command ui) nil)
-    ;; C-h (= Backspace in most terminals) is a help prefix: C-h m lists keys.
-    ((eq key :backspace) (help-prefix ui) nil)
-    ((eq key :up) (move-frame ui session -1) nil)
-    ((eq key :down) (move-frame ui session +1) nil)
-    ;; structural navigation of the source form (spec §19.1 / cmd-ref §3):
-    ;; d down, u up, > next sibling, < previous sibling. The selection is the
-    ;; cursor location-taking commands (b) act on (cursor-based, cmd-ref §0).
-    ((key-char-p key #\d) (nav-move ui #'nav-code-down) nil)
-    ((key-char-p key #\u) (nav-move ui #'nav-up) nil)
-    ((key-char-p key #\>) (nav-move ui #'nav-code-forward) nil)
-    ((key-char-p key #\<) (nav-move ui #'nav-code-backward) nil)
-    ((key-char-p key #\b) (toggle-breakpoint ui session) nil)
-    ((key-char-p key #\e) (eval-line ui session) nil)
-    ((key-char-p key #\x) (inspect-loop ui session) nil)
-    ;; minibuffer command entry: `,' reads a command line, Esc-x is M-x.
-    ((key-char-p key #\,) (comma-command ui session hit))
-    ((eq key :escape) (meta-command ui session hit))
-    ((key-char-p key #\h) (set-message ui "keys: c s i o f | d u > < nav | b e x | ^/v frame | , cmd  M-x name | a r q") nil)
-    (t nil)))
+    ((and (characterp key) (member (char-code key) '(23 24)))   ; C-w / C-x
+     (handle-window-command ui) (values t nil))
+    ((key-char-p key #\,) (values t (comma-command ui session hit)))
+    ((eq key :escape) (values t (meta-command ui session hit)))
+    ((eq key :backspace) (help-prefix ui) (values t nil))       ; C-h m
+    (t (values nil nil))))
+
+(defun aldo-key (ui session hit key)
+  "The debugger interactor (the `interactor' window): resume/step, eval,
+inspect, return, quit."
+  (cond
+    ((key-char-p key #\c) (values t (cmd-continue session)))
+    ((or (key-char-p key #\s) (key-char-p key #\n)) (values t (cmd-step session :over)))
+    ((key-char-p key #\i) (values t (cmd-step session :into)))
+    ((key-char-p key #\o) (values t (cmd-step session :out)))
+    ((key-char-p key #\f) (values t (cmd-step session :finish)))
+    ((or (key-char-p key #\a) (key-char-p key #\q)) (values t (cmd-abort session)))
+    ((key-char-p key #\r) (values t (return-value ui session hit)))
+    ((key-char-p key #\e) (eval-line ui session) (values t nil))
+    ((key-char-p key #\x) (inspect-loop ui session) (values t nil))
+    ((key-char-p key #\h) (set-message ui "aldo: c s i o f | e eval x inspect r return | a abort q quit") (values t nil))
+    (t (values nil nil))))
+
+(defun navi-key (ui session hit key)
+  "The source navigator interactor (the `source' window): structural motion
+d/u/>/< and a breakpoint at the selection."
+  (declare (ignore hit))
+  (cond
+    ((key-char-p key #\d) (nav-move ui #'nav-code-down) (values t nil))
+    ((key-char-p key #\u) (nav-move ui #'nav-up) (values t nil))
+    ((key-char-p key #\>) (nav-move ui #'nav-code-forward) (values t nil))
+    ((key-char-p key #\<) (nav-move ui #'nav-code-backward) (values t nil))
+    ((key-char-p key #\b) (toggle-breakpoint ui session) (values t nil))
+    (t (values nil nil))))
+
+(defun framenav-key (ui session key)
+  "The stack navigator interactor (the `stack' window): up/down select a frame."
+  (cond
+    ((eq key :up) (move-frame ui session -1) (values t nil))
+    ((eq key :down) (move-frame ui session +1) (values t nil))
+    (t (values nil nil))))
 
 (defun nav-move (ui motion)
   "Apply MOTION to the source navigator and echo the newly-selected subform
@@ -363,9 +428,10 @@ into the interactor line (so the selection is visible across the panes)."
   "Ratio change per C-w + / C-w - (a C-u prefix for larger steps is TODO).")
 
 (defun window-select (ui delta)
-  "Move the active window DELTA steps in reading order (C-w n / C-w p)."
-  (setf (ncurses-ui-active-window ui)
-        (window-cycle (ncurses-ui-layout ui) (ncurses-ui-active-window ui) delta))
+  "Move the active window DELTA steps in reading order (C-w n / C-w p), moving
+the :WINDOW-MANAGER interactor onto the new active window's stack."
+  (activate-window ui (window-cycle (ncurses-ui-layout ui)
+                                    (ncurses-ui-active-window ui) delta))
   (set-message ui "active window: ~A"
                (window-title (ncurses-ui-active-window ui))))
 
@@ -429,10 +495,11 @@ re-homing the next window into the new split so four windows remain."
 window and moves to the next; the second returns to the saved one and clears
 the save (window-scrolling.issue)."
   (if (ncurses-ui-saved-active ui)
-      (progn (setf (ncurses-ui-active-window ui) (ncurses-ui-saved-active ui)
-                   (ncurses-ui-saved-active ui) nil)
-             (set-message ui "active window: ~A"
-                          (window-title (ncurses-ui-active-window ui))))
+      (let ((saved (ncurses-ui-saved-active ui)))
+        (setf (ncurses-ui-saved-active ui) nil)
+        (activate-window ui saved)
+        (set-message ui "active window: ~A"
+                     (window-title (ncurses-ui-active-window ui))))
       (progn (setf (ncurses-ui-saved-active ui) (ncurses-ui-active-window ui))
              (window-select ui +1))))
 

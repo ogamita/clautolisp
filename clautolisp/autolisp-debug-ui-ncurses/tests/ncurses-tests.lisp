@@ -104,8 +104,13 @@
     ;; plain continue would stop at ID's entry again and reset the selected
     ;; frame to 0 — abort takes the reading at the first stop.)
     (clautolisp.debug:add-breakpoint ti (fid-of id) 0 :when :before)
+    ;; Activate the stack window (C-w p C-w p: interactor -> source -> stack),
+    ;; whose interactor moves frames; Down selects the outer frame, then
+    ;; ,abort ends before the second stop resets the selection.
     (multiple-value-bind (result ui screen)
-        (run-ncurses (list :down #\a) :context context :thread-info ti
+        (run-ncurses (append (list (code-char 23) #\p (code-char 23) #\p :down #\,)
+                             (coerce "abort" 'list) (list :enter))
+                     :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
       (is (= 1 (clautolisp.ui.ncurses:ncurses-ui-selected-frame ui))))))
@@ -128,7 +133,7 @@
     ;; the last toggle direction. (The session's teardown clears the table,
     ;; so we assert on the message, not a post-session count.)
     (multiple-value-bind (result ui screen)
-        (run-ncurses (list #\b #\b #\c) :context context :thread-info ti
+        (run-ncurses (list (code-char 23) #\p #\b #\b) :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
       (is (search "set at line 3" (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
@@ -140,11 +145,14 @@
     (with-open-file (out "two.lsp" :direction :output :if-exists :supersede)
       (write-string +two-source+ out))
     (unwind-protect
-         ;; The stop re-anchors on the innermost poll point (id x) on line 3;
-         ;; 'u' ascends to the (setq …) statement and '>' selects its next
-         ;; sibling — (id z) on line 4 — so the >> gutter follows there.
+         ;; Activate the source window (C-w p), whose interactor is the
+         ;; navigator; the stop re-anchors on the innermost poll point (id x)
+         ;; on line 3, 'u' ascends to the (setq …) statement and '>' selects
+         ;; its next sibling — (id z) on line 4 — so the >> gutter follows.
+         ;; (Keys exhaust -> EOF -> continue.)
          (multiple-value-bind (result ui screen)
-             (run-ncurses (list #\u #\> #\a) :context context :thread-info ti
+             (run-ncurses (list (code-char 23) #\p #\u #\>)
+                          :context context :thread-info ti
                           :thunk (lambda () (call-two context)))
            (declare (ignore result ui))
            (let ((row (clautolisp.ui.tui:mock-find-line screen "(id z)")))
@@ -156,12 +164,13 @@
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
          (ti (break-at context metas 3)))
-    ;; Stop at line 3 (cursor on the inner (id x)); 'u' then '>' moves the
-    ;; structural cursor onto the (id z) form (line 4), then 'b' breaks at
-    ;; the SELECTED form's line — the cursor-based location rule (cmd-ref §0),
-    ;; not the stop line.
+    ;; Activate the source window (C-w p); 'u' then '>' move the structural
+    ;; cursor onto the (id z) form (line 4), then 'b' breaks at the SELECTED
+    ;; form's line — the cursor-based location rule (cmd-ref §0), not the stop
+    ;; line.
     (multiple-value-bind (result ui screen)
-        (run-ncurses (list #\u #\> #\b #\c) :context context :thread-info ti
+        (run-ncurses (list (code-char 23) #\p #\u #\> #\b)
+                     :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
       (is (search "set at line 4" (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
@@ -414,6 +423,22 @@
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
       (is (search "scroll" (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
+
+(test window-manager-rides-on-the-active-window-stack
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; C-w p activates the source window: the :window-manager interactor moves
+    ;; onto the source window's stack (on top, over its :navi base) and off the
+    ;; interactor window's stack.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 23) #\p) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (let ((stacks (clautolisp.ui.ncurses::ncurses-ui-window-stacks ui)))
+        (is (eq :window-manager (first (gethash :source stacks))))
+        (is (equal '(:window-manager :navi) (gethash :source stacks)))
+        (is (not (member :window-manager (gethash :interactor stacks))))))))
 
 (test eof-continues
   (let* ((context (fresh-context))
