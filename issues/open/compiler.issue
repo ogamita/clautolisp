@@ -328,3 +328,104 @@ alfe-request-timeout-aborts-long-eval fixed first):
     interpreter baseline in benchmark-results.org.
   - benchmark suite version bumped if any workload changes; record
     before/after tables in benchmark-results.org.
+
+
+================================================================
+IMPLEMENTATION LOG (Claude, branch implement-compiler, 2.0.x)
+================================================================
+
+Slice 1 -- 2.0.0/2.0.1: the transpiler skeleton
+-----------------------------------------------
+clautolisp/autolisp-compiler, one design decision: anything the
+transpiler cannot translate compiles to (autolisp-eval '<form> context).
+The compiler is therefore CORRECT FROM ITS FIRST LINE and gets faster as
+coverage grows, instead of being wrong until complete. Constants, symbol
+references, QUOTE, PROGN, IF, SETQ, AND, OR, COND, WHILE open-coded;
+everything else fell back. Equivalence corpus: compiled and interpreted
+evaluation must AGREE (not "the compiler handles these forms").
+
+Slice 2 -- 2.0.2: function calls
+--------------------------------
+A call compiles to CALL-AUTOLISP-FUNCTION-IN-CONTEXT with the callee
+resolved by RESOLVE-AUTOLISP-FUNCTION-DESIGNATOR. Using the interpreter's
+OWN entry point is the point: TRACE, the :subr/:usubr call-stack frames,
+the debugger's two-bodies dispatch and the subr host-error wrapping keep
+working with no second implementation of any of them.
+
+Dropped deliberately: the per-form (:eval . form) frame AUTOLISP-EVAL
+pushes. That cons per evaluated form IS the cost being removed, so
+backtraces through compiled code show function frames but not
+intermediate form frames. Restoring them is the INSTRUMENTED variant's
+job (pjb asked for both), and this is the seam where the two will differ.
+
+The call branch sits behind the runtime's KNOWN-SPECIAL-OPERATOR-P --
+the same question the debugger's instrumenter asks -- because a special
+operator has unevaluated operands and compiling (defun f (x) ...) as a
+call would evaluate its lambda list and body as arguments.
+
+MEASURED: 3.4x-4.2x on fully-compiled loops; 2.3x when the callee is a
+user function whose body still runs interpreted.
+
+Bug found and fixed while writing it:
+transpiler-t-is-not-self-evaluating (issues/closed/).
+
+Slice 3 -- 2.0.3: compiled function BODIES
+------------------------------------------
+An AUTOLISP-USUBR now carries a COMPILED-BODY beside its plain and
+instrumented ones -- a THIRD fork -- and CALL-AUTOLISP-FUNCTION-IN-CONTEXT
+runs it inside the frame BIND-USUBR-FRAME already pushes. Compiling the
+body changes how the body is evaluated, not what it is evaluated in.
+
+Weaving is the compiler's, installed through *COMPILE-USUBR-HOOK*: the
+same dependency inversion as *INSTRUMENT-USUBR-HOOK*, so an image built
+without the compiler behaves exactly as it did before it existed.
+
+LAZY, AT A THRESHOLD (*AUTOLISP-COMPILATION-THRESHOLD*, default 16).
+Weaving runs the host CL compiler, which costs far more than
+interpreting a short body once, and most functions in a freshly loaded
+file are called once or never. A failed compilation stores :FAILED, not
+NIL, so it is attempted once and never retried -- NIL means "not tried".
+
+An instrumented body WINS under a debug session: the one place the two
+forks compete, and debuggability wins it.
+
+MEASURED (same machine, fresh contexts, values compared):
+  fib 21, recursive .............................. 3.00x
+  a loop inside one function body ................ 3.37x
+  a loop calling a small function 50000 times .... 1.14x   <-- the finding
+
+THAT 1.14x IS THE MOST USEFUL NUMBER IN THIS LOG. A call-dominated
+workload barely moves, because what dominates is no longer body
+evaluation but the CALL PROTOCOL itself: the trace check, the call-stack
+cons, BIND-USUBR-FRAME, the unwind-protect and POP-DYNAMIC-FRAME, none of
+which compiling a body touches. Open-coding more operators would not
+help that workload at all. So the next slice is the call protocol -- and
+this is exactly the "measure, then open-code" order the transpiler's
+header argues for: without the measurement the obvious next move
+(open-coding + - * / car cdr) would have been the wrong one.
+
+VERIFICATION -- and this matters more than the corpus. `make
+test-compiler-equivalence` runs the ENTIRE project corpus (31 suites)
+with the threshold at 1, so every AutoLISP function the tests exercise
+runs COMPILED, and every existing assertion must still hold. Result: 83
+function bodies compiled, zero failures. The script COUNTS the bodies it
+compiled and exits non-zero if the count is zero, because a green run
+proves nothing if nothing was compiled -- the same failure mode as a
+test file that loads without running, which is the worst kind since it
+presents as a pass.
+
+STILL OPEN after slice 3
+------------------------
+  - the call protocol (see the 1.14x above) -- next.
+  - the INSTRUMENTED transpiler variant pjb asked for; the seam is the
+    dropped (:eval . form) frames.
+  - open-coding hot operators as inline CL, which the Tier-2 probe says
+    is where the margin against LispEx is; deliberately NOT done yet, so
+    that no operator has a second implementation that can disagree with
+    the first.
+  - a user-reachable surface (no option turns the compiler on or off
+    from the command line yet). Release notes + user manual entries are
+    due WITH that surface, not before -- AGENTS.md excludes internals.
+  - compiling to a FASL: the emitted code quotes AUTOLISP-SYMBOL structs
+    as literals, which is fine for COMPILE but will need MAKE-LOAD-FORM
+    (or re-interning by name) for COMPILE-FILE.

@@ -91,7 +91,8 @@
   :serial t
   :components
   ((:file "autolisp-compiler/source/package")
-   (:file "autolisp-compiler/source/transpile"))
+   (:file "autolisp-compiler/source/transpile")
+   (:file "autolisp-compiler/source/compile-function"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-compiler/tests")))
   :perform (asdf:test-op (op system)
@@ -518,6 +519,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   ((:file "autolisp-compiler/tests/package")
    (:file "autolisp-compiler/tests/test-harness")
    (:file "autolisp-compiler/tests/equivalence-tests")
+   (:file "autolisp-compiler/tests/function-body-tests")
    (:file "autolisp-compiler/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

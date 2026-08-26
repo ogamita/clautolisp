@@ -1341,6 +1341,20 @@ binding. A no-op when SYMBOL has no namespace cell yet."
   (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-instrumented-body object)
         value))
 
+(defun autolisp-usubr-compiled-body (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-compiled-body object))
+
+(defun (setf autolisp-usubr-compiled-body) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-compiled-body object)
+        value))
+
+(defun autolisp-usubr-call-count (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-call-count object))
+
+(defun (setf autolisp-usubr-call-count) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-call-count object)
+        value))
+
 (defun autolisp-usubr-debug-metadata (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-debug-metadata object))
 
@@ -1575,6 +1589,54 @@ CLAL-OPTIMIZATION DEBUG level (CLAL-OPTIMIZE sets it: T when DEBUG>0, NIL under
 SPACE / DEBUG 0). When NIL, debugged code runs its plain body — no poll points,
 no stepping — trading debuggability for speed/size (the fork matrix's DEBUG-0
 rows). T by default, so a debug session instruments what it runs.")
+
+(defparameter *compile-usubr-hook* nil
+  "When non-nil, a function (USUBR) that transpiles USUBR's body to Common Lisp
+and stores the result in its COMPILED-BODY slot
+(clautolisp.autolisp-compiler:compile-usubr). The compiler installs it when its
+system loads; NIL when the compiler is absent. Same dependency-inversion as
+*INSTRUMENT-USUBR-HOOK* and for the same reason: the runtime must be able to run
+compiled function bodies without depending on the compiler layer.")
+
+(defparameter *autolisp-compilation-enabled* t
+  "Whether the runtime weaves compiled forks for AutoLISP functions. T by
+default, but that is only half the switch — with no compiler loaded
+*COMPILE-USUBR-HOOK* is NIL and nothing is compiled, so an image built without
+the compiler behaves exactly as it did before it existed. Bind this to NIL to
+force everything through the interpreter, which is the first thing to try when
+compiled and interpreted results are suspected of disagreeing.")
+
+(defparameter *autolisp-compilation-threshold* 16
+  "How many times a function must be called before its body is compiled.
+
+Not a tuning knob so much as a statement about what compilation costs: weaving
+a fork runs the host Common Lisp compiler, which is expensive next to
+interpreting a short body once. Most functions in a freshly loaded file are
+called once or never, and compiling those would make loading slower for no
+return. A function that has been called sixteen times is doing work, and pays
+the compilation back quickly. 1 means compile on first call — what the test
+suite uses, so that every function it exercises runs compiled.")
+
+(defun maybe-compile-usubr (function)
+  "Weave FUNCTION's compiled fork when it has earned one, and return it.
+
+Returns the compiled body (a function) or NIL, in which case the caller runs the
+plain body. A compilation that errors stores :FAILED rather than NIL, so it is
+attempted once and never retried: NIL means `not tried yet', and a body that
+cannot be compiled must not run the compiler again on every call."
+  (let ((compiled (autolisp-usubr-compiled-body function)))
+    (cond
+      ((functionp compiled) compiled)
+      ((eq :failed compiled) nil)
+      ((not (and *autolisp-compilation-enabled* *compile-usubr-hook*)) nil)
+      ((< (incf (autolisp-usubr-call-count function))
+          *autolisp-compilation-threshold*)
+       nil)
+      (t
+       (handler-case (funcall *compile-usubr-hook* function)
+         (error () (setf (autolisp-usubr-compiled-body function) :failed)))
+       (let ((result (autolisp-usubr-compiled-body function)))
+         (and (functionp result) result))))))
 
 (defun maybe-instrument-usubr (function)
   "Lazily weave FUNCTION's instrumented fork on its first call under a debug
@@ -2572,7 +2634,16 @@ flag only."
                ;; — and an uninstrumented function always runs plain. With
                ;; no session active *DEBUGGING* is NIL and this reduces to
                ;; the original plain-body path at no cost.
-               (let ((selected-body
+               (let* (;; The COMPILED fork, when this function has earned
+                      ;; one. Asked for only when NOT debugging: an
+                      ;; instrumented body must win under a debug session
+                      ;; or stepping and breakpoints would stop working
+                      ;; on any function hot enough to have been
+                      ;; compiled — the one place the two forks compete,
+                      ;; and debuggability wins it.
+                      (compiled-body (and (not *debugging*)
+                                          (maybe-compile-usubr function)))
+                      (selected-body
                        (if *debugging*
                            (or (autolisp-usubr-instrumented-body function)
                                ;; Lazily weave the instrumented fork on this
@@ -2602,7 +2673,16 @@ flag only."
                    ;; frame provably exists and the pop pairs with it.
                    (bind-usubr-frame function arguments context)
                    (unwind-protect
-                        (autolisp-eval-progn selected-body context)
+                        ;; The compiled fork runs HERE and nowhere else:
+                        ;; inside the frame BIND-USUBR-FRAME just pushed
+                        ;; and inside the same unwind-protect, so it sees
+                        ;; the parameters bound exactly as the plain body
+                        ;; does and unwinds the same way. Compiling the
+                        ;; body changes how the body is evaluated, not
+                        ;; what it is evaluated in.
+                        (if compiled-body
+                            (funcall compiled-body context)
+                            (autolisp-eval-progn selected-body context))
                      (pop-dynamic-frame context)))))
               (t
                (signal-autolisp-runtime-error

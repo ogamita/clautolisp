@@ -142,7 +142,8 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard autolisp-*/documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
 
-.PHONY: all test test-sbcl test-ccl build build-sbcl build-ccl probe-check \
+.PHONY: all test test-sbcl test-ccl test-compiler-equivalence \
+        build build-sbcl build-ccl probe-check \
         submodules build-libredwg test-libredwg-compiler-path \
         build-read-autolisp-sbcl build-read-autolisp-ccl \
         build-clautolisp-sbcl build-clautolisp-ccl \
@@ -239,6 +240,11 @@ test-sbcl:
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)'
+
+test-compiler-equivalence:  ## Run the whole test corpus with every AutoLISP function body compiled.
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
+		--load autolisp-compiler/tests/whole-suite-compiled.lisp
 
 test-ccl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
