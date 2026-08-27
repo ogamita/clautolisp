@@ -20,6 +20,11 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
                 #:split-usubr-lambda-list
                 #:register-special-operator
                 #:known-special-operator-p
+                ;; The poll-point protocol's shared name and seam. Both
+                ;; live in the runtime because three layers speak it; see
+                ;; the docstring on +POLL-OPERATOR-NAME+.
+                #:+poll-operator-name+
+                #:*compiled-poll-hook*
                 #:autolisp-eval
                 #:*debugging*
                 #:current-evaluation-context

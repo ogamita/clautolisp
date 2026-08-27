@@ -143,6 +143,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
 
 .PHONY: all test test-sbcl test-ccl test-compiler-equivalence \
+        test-debug-compiled \
         build build-sbcl build-ccl probe-check \
         submodules build-libredwg test-libredwg-compiler-path \
         build-read-autolisp-sbcl build-read-autolisp-ccl \
@@ -245,6 +246,11 @@ test-compiler-equivalence:  ## Run the whole test corpus with every AutoLISP fun
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
 	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--load autolisp-compiler/tests/whole-suite-compiled.lisp
+
+test-debug-compiled:  ## Run the whole test corpus with every INSTRUMENTED body compiled.
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
+		--load autolisp-compiler/tests/debug-suite-compiled.lisp
 
 test-ccl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \

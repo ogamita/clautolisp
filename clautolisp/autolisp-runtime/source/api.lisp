@@ -1418,6 +1418,15 @@ binding. A no-op when SYMBOL has no namespace cell yet."
   (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-compiled-body object)
         value))
 
+(defun autolisp-usubr-compiled-instrumented-body (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-compiled-instrumented-body
+   object))
+
+(defun (setf autolisp-usubr-compiled-instrumented-body) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-compiled-instrumented-body
+         object)
+        value))
+
 (defun autolisp-usubr-call-count (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-call-count object))
 
@@ -1653,6 +1662,43 @@ runtime instrument functions for stepping/breakpoints — lazily, on a function'
 first call under a debug session — without the runtime depending on the debugger
 layer (the same dependency-inversion as *debug-break-hook*).")
 
+(defparameter +poll-operator-name+ "%CLAL-POLL"
+  "Name of the special operator the debugger weaves around every
+instrumentable form of a function it instruments.
+
+It lives HERE, in the runtime, rather than in the debugger that weaves it,
+because it names a protocol with THREE participants, not two: the debugger
+emits the node, the interpreter dispatches it (through
+REGISTER-SPECIAL-OPERATOR), and the compiler has to recognise it in order to
+translate an instrumented body instead of handing it straight back to the
+interpreter. A name each of them spelled separately would be three chances
+to disagree.")
+
+(defparameter *compiled-poll-hook* nil
+  "When non-nil, a function (FID FORM-ID CONTEXT THUNK) running THUNK under
+the debugger's poll protocol: the shadow stack, the :BEFORE / :AFTER poll
+points, form-level jumps and the CLAL-POLL-RETURN restart. The debug system
+installs it (clautolisp.debug:call-with-poll-point) when it loads; NIL when
+the debugger is absent.
+
+The same dependency-inversion as *INSTRUMENT-USUBR-HOOK*, and it exists for
+one reason: compiled instrumented code must reach the poll protocol as the
+INTERPRETER'S OWN, not through a second copy of it. EVAL-POLL-FORM supplies
+the inner form as (lambda () (autolisp-eval inner context)); compiled code
+supplies it as the transpiled inner form. Same protocol, two ways of
+producing the value inside it.")
+
+(defun call-with-compiled-poll-point (fid form-id context thunk)
+  "Run THUNK as the body of poll point FORM-ID of function FID.
+
+What compiled instrumented code emits for a %CLAL-POLL node. With no
+debugger loaded there is no protocol to run, so THUNK is simply called --
+which is also what EVAL-POLL-FORM does on a thread that is not being
+debugged."
+  (if *compiled-poll-hook*
+      (funcall *compiled-poll-hook* fid form-id context thunk)
+      (funcall thunk)))
+
 (defparameter *debug-instrumentation-enabled* t
   "Whether the runtime weaves instrumented forks while debugging. Reflects the
 CLAL-OPTIMIZATION DEBUG level (CLAL-OPTIMIZE sets it: T when DEBUG>0, NIL under
@@ -1706,6 +1752,42 @@ cannot be compiled must not run the compiler again on every call."
        (handler-case (funcall *compile-usubr-hook* function)
          (error () (setf (autolisp-usubr-compiled-body function) :failed)))
        (let ((result (autolisp-usubr-compiled-body function)))
+         (and (functionp result) result))))))
+
+(defparameter *compile-instrumented-usubr-hook* nil
+  "When non-nil, a function (USUBR) that transpiles USUBR's INSTRUMENTED
+body and stores the result in COMPILED-INSTRUMENTED-BODY
+(clautolisp.autolisp-compiler:compile-instrumented-usubr). NIL when the
+compiler is absent, in which case debugged code runs interpreted exactly as
+it did before the compiler existed.")
+
+(defun maybe-compile-instrumented-usubr (function)
+  "Weave FUNCTION's COMPILED INSTRUMENTED fork when it has earned one.
+
+The instrumented body must already exist: this compiles what the
+instrumenter produced, it does not instrument. Returns the compiled function
+or NIL, in which case the caller interprets the instrumented body.
+
+Shares CALL-COUNT and the threshold with the plain compiled fork, because
+they are answering the same question -- is this function hot enough to be
+worth compiling. A function that was already hot before the debugger
+attached therefore compiles its instrumented fork at once, which is the case
+that matters: running to a breakpoint deep inside a loop."
+  (let ((compiled (autolisp-usubr-compiled-instrumented-body function)))
+    (cond
+      ((functionp compiled) compiled)
+      ((eq :failed compiled) nil)
+      ((not (and *autolisp-compilation-enabled* *compile-instrumented-usubr-hook*))
+       nil)
+      ((null (autolisp-usubr-instrumented-body function)) nil)
+      ((< (incf (autolisp-usubr-call-count function))
+          *autolisp-compilation-threshold*)
+       nil)
+      (t
+       (handler-case (funcall *compile-instrumented-usubr-hook* function)
+         (error () (setf (autolisp-usubr-compiled-instrumented-body function)
+                         :failed)))
+       (let ((result (autolisp-usubr-compiled-instrumented-body function)))
          (and (functionp result) result))))))
 
 (defun maybe-instrument-usubr (function)
@@ -2734,26 +2816,39 @@ flag only."
                ;; — and an uninstrumented function always runs plain. With
                ;; no session active *DEBUGGING* is NIL and this reduces to
                ;; the original plain-body path at no cost.
-               (let* (;; The COMPILED fork, when this function has earned
-                      ;; one. Asked for only when NOT debugging: an
-                      ;; instrumented body must win under a debug session
-                      ;; or stepping and breakpoints would stop working
-                      ;; on any function hot enough to have been
-                      ;; compiled — the one place the two forks compete,
-                      ;; and debuggability wins it.
-                      (compiled-body (and (not *debugging*)
-                                          (maybe-compile-usubr function)))
+               (let* (;; Which of the four bodies runs.
+                      ;;
+                      ;; Debuggability still wins over speed where the
+                      ;; two compete -- an instrumented body must run
+                      ;; under a debug session or stepping and
+                      ;; breakpoints would stop working on any function
+                      ;; hot enough to have been compiled. What changed
+                      ;; is that this is no longer a choice between
+                      ;; debuggable and compiled: the transpiler can
+                      ;; compile an INSTRUMENTED body too, so a debug
+                      ;; session gets both. The order is therefore
+                      ;; instrumented-and-compiled, then instrumented,
+                      ;; then compiled, then plain.
+                      (instrumented-body
+                       (and *debugging*
+                            (or (autolisp-usubr-instrumented-body function)
+                                (maybe-instrument-usubr function))))
+                      (compiled-body
+                       (if instrumented-body
+                           (maybe-compile-instrumented-usubr function)
+                           (and (not *debugging*)
+                                (maybe-compile-usubr function))))
                       (selected-body
                        (if *debugging*
-                           (or (autolisp-usubr-instrumented-body function)
-                               ;; Lazily weave the instrumented fork on this
-                               ;; function's first call under a debug session
-                               ;; (compiled-eval model): stepping/breakpoints
-                               ;; then ride on it, and code defined before the
-                               ;; session becomes debuggable without a separate
+                           (or instrumented-body
+                               ;; The instrumented fork is woven lazily on
+                               ;; this function's first call under a debug
+                               ;; session (compiled-eval model), just above:
+                               ;; stepping/breakpoints ride on it, and code
+                               ;; defined before the session becomes
+                               ;; debuggable without a separate
                                ;; instrument-on-defun pass. No cost when not
                                ;; debugging (*DEBUGGING* NIL short-circuits).
-                               (maybe-instrument-usubr function)
                                (autolisp-usubr-body function))
                            (autolisp-usubr-body function))))
                  (let ((*autolisp-call-stack*

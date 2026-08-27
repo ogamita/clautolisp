@@ -10,8 +10,13 @@
                 #:autolisp-symbol-name
                 #:autolisp-usubr-body
                 #:autolisp-usubr-compiled-body
+                #:autolisp-usubr-instrumented-body
+                #:autolisp-usubr-compiled-instrumented-body
                 #:call-autolisp-function-in-context
+                #:call-with-compiled-poll-point
+                #:+poll-operator-name+
                 #:*compile-usubr-hook*
+                #:*compile-instrumented-usubr-hook*
                 #:current-evaluation-context
                 #:intern-autolisp-symbol
                 #:known-special-operator-p
@@ -23,7 +28,9 @@
            #:transpile-body
            #:compile-autolisp-form
            #:compile-usubr
+           #:compile-instrumented-usubr
            #:compile-autolisp-function
            #:autolisp-function-compiled-p
+           #:autolisp-function-instrumented-compiled-p
            #:*transpiler-fallbacks*
            #:transpiler-coverage))

@@ -275,7 +275,16 @@ clautolisp-secureload-trust-model spec.")
   ;; function called once — which is most of a freshly loaded file — must
   ;; not pay for a compilation it will never amortise, so the fork is
   ;; woven lazily, on the call that crosses the threshold.
+  ;;
+  ;; COMPILED-INSTRUMENTED-BODY is the FOURTH body: the transpiler's fork
+  ;; of INSTRUMENTED-BODY. Without it a debug session forces everything
+  ;; back through the interpreter, because compiling was skipped whenever
+  ;; *DEBUGGING* was set. That is the right answer only if instrumented
+  ;; code cannot be compiled -- and it can, once the transpiler open-codes
+  ;; the %CLAL-POLL node instead of handing it back to the interpreter.
+  ;; Same :FAILED convention as COMPILED-BODY.
   (compiled-body nil)
+  (compiled-instrumented-body nil)
   (call-count 0 :type fixnum)
   ;; Memoised result of SPLIT-USUBR-LAMBDA-LIST: (REQUIRED REST-PARAM
   ;; LOCALS), or NIL when it has not been computed yet. A lambda list

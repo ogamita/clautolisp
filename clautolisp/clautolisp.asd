@@ -513,13 +513,21 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :description "Tests for the AutoLISP-to-Common-Lisp transpiler."
   :author "Claude"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-compiler" "clautolisp/autolisp-builtins-core" "fiveam")
+  ;; The debug system is a TEST-only dependency, and only for the
+  ;; instrumented transpiler variant: producing an instrumented body is
+  ;; the debugger's job, so testing that the compiler translates one
+  ;; requires the debugger to weave it first. The compiler itself does
+  ;; NOT depend on the debugger -- they meet in the runtime, through
+  ;; *COMPILED-POLL-HOOK*.
+  :depends-on ("clautolisp/autolisp-compiler" "clautolisp/autolisp-builtins-core"
+               "clautolisp/autolisp-debug" "fiveam")
   :serial t
   :components
   ((:file "autolisp-compiler/tests/package")
    (:file "autolisp-compiler/tests/test-harness")
    (:file "autolisp-compiler/tests/equivalence-tests")
    (:file "autolisp-compiler/tests/function-body-tests")
+   (:file "autolisp-compiler/tests/instrumented-tests")
    (:file "autolisp-compiler/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
