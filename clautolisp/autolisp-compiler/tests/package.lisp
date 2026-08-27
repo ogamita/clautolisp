@@ -40,6 +40,7 @@
                 #:resolve-autolisp-function-designator
                 #:*autolisp-compilation-enabled*
                 #:*autolisp-compilation-threshold*
+                #:*autolisp-speed-level*
                 #:*compile-usubr-hook*
                 #:*compile-instrumented-usubr-hook*
                 #:*compiled-poll-hook*

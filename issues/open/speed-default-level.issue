@@ -1,0 +1,66 @@
+# speed-default-level — what SPEED should default to now that it works
+
+STATUS: open (a decision for pjb; implemented with the answer I judged
+most probable, and easy to change — one number in one place)
+
+## The question
+
+The debugger-public-interface issue gives the default qualities as
+
+    ((DEBUG 3) (SPACE 0) (SPEED 0))
+
+and notes, right above the fork matrix: "until we have a compiler, SPEED
+is always at level 0". That parenthetical is the whole difficulty. The
+0 was not a considered default for a working SPEED — it was a statement
+that SPEED had nothing to reach.
+
+Now it has. So the documented default has to be re-decided rather than
+copied.
+
+## What I chose, and why
+
+    ((DEBUG 3) (SPACE 0) (SPEED 2))
+
+Two reasons.
+
+It is the setting that reproduces the behaviour the engine already had
+while SPEED was pinned. Since 2.0.3 functions compile once hot, and
+since 2.0.7 their instrumented forks do too. Under the new algebra that
+is exactly SPEED 2. Shipping SPEED 0 as the default would have turned
+the compiler off for everyone as a side effect of giving it a switch —
+a performance regression wearing spec-compliance as a disguise, and the
+kind of change nobody would think to look for.
+
+And it reads correctly as a statement of priorities, which is what the
+levels are for: debugging matters most (DEBUG 3), speed next (SPEED 2),
+size not at all (SPACE 0). That is clautolisp's posture.
+
+## What pjb might prefer instead
+
+  - SPEED 0, taking the issue's default literally. Then compilation is
+    opt-in, and the first thing every user does is turn it on. Argues
+    for it: the compiler is new, and a default that never compiles is
+    the conservative one while it settles.
+
+  - SPEED 3, compiling everything at load. Argues for it: it is the
+    setting under which file-wide optimizations happen, so it is what
+    the compiler is eventually FOR. Argues against it: it makes loading
+    a file pay to compile functions that may never be called, which is
+    precisely the cost the hotness threshold exists to avoid.
+
+  - Different defaults for the interactive REPL and for -Efile / batch
+    runs. A REPL wants fast startup; a batch run wants fast code. This
+    is the answer I would reach for if the single default proves wrong
+    in either direction, and it needs no change to the algebra — only a
+    different CLAL-OPTIMIZE at start-up per mode.
+
+## Where to change it
+
+One place: *CLAL-OPTIMIZATION*'s initial value in
+clautolisp/autolisp-builtins-core/source/api.lisp. The runtime picks it
+up through APPLY-CLAL-OPTIMIZATION, which INSTALL-CORE-BUILTINS calls, so
+there is no second default to keep in step.
+
+The documented default appears in three places that must move with it:
+the CLAL-OPTIMIZATION spec entry, the user manual section, and the
+release-notes entry.
