@@ -138,3 +138,70 @@ operators fall back rather than fail."
         (is (eql 12 (autolisp-eval (%read-one "(f 4)") context)))))
     (is (= 1 attempts)
         "a failing compilation was retried ~D times instead of once" attempts)))
+
+;;;; SPEED, end to end.
+;;;;
+;;;; The gates themselves are tested in the builtins suite, where
+;;;; CLAL-OPTIMIZE lives. What is tested here is that they reach the
+;;;; compiler: a level is only meaningful if a function's actual fork
+;;;; changes because of it.
+
+(test speed-zero-turns-the-compiler-off
+  "SPEED 0 means interpreted. The switch has to be observable in the
+function object, not merely in the variable that was set."
+  (let ((*autolisp-speed-level* 0)
+        (*autolisp-compilation-threshold* 1)
+        (context (%fresh-context)))
+    (autolisp-eval (%read-one "(defun f (x) (* x x))") context)
+    (dotimes (i 5) (autolisp-eval (%read-one "(f 2)") context))
+    (let ((usubr (resolve-autolisp-function-designator (%read-one "f") context)))
+      (is (not (autolisp-function-compiled-p usubr))
+          "a function compiled at SPEED 0"))))
+
+(test speed-three-compiles-at-definition-not-once-hot
+  "The difference between SPEED 2 and SPEED 3 is WHEN. At 2 a function is
+compiled on the call that makes it hot; at 3 it is compiled by DEFUN, so
+that a whole file can eventually be compiled in one unit and optimized
+across function boundaries. Pinned at the observable end: after DEFUN and
+before any call, is there a compiled body?"
+  (let ((*autolisp-speed-level* 2)
+        (*autolisp-compilation-threshold* 16)
+        (context (%fresh-context)))
+    (autolisp-eval (%read-one "(defun f (x) (* x x))") context)
+    (is (not (autolisp-function-compiled-p
+              (resolve-autolisp-function-designator (%read-one "f") context)))
+        "SPEED 2 compiled a function that had never been called"))
+  (let ((*autolisp-speed-level* 3)
+        (*autolisp-compilation-threshold* 16)
+        (context (%fresh-context)))
+    (autolisp-eval (%read-one "(defun g (x) (* x x))") context)
+    (is (autolisp-function-compiled-p
+         (resolve-autolisp-function-designator (%read-one "g") context))
+        "SPEED 3 did not compile at definition")))
+
+(test eager-compilation-of-an-uncompilable-body-still-defines-it
+  "SPEED 3 must not become a correctness setting. A body the compiler
+chokes on has to be DEFINED anyway and run interpreted -- a DEFUN that
+signalled because compiling failed would turn an optimization request
+into a load failure."
+  (let ((*autolisp-speed-level* 3)
+        (*autolisp-compilation-threshold* 1)
+        (*compile-usubr-hook* (lambda (usubr)
+                                (declare (ignore usubr))
+                                (error "compiler exploded")))
+        (context (%fresh-context)))
+    (autolisp-eval (%read-one "(defun f (x) (* x x))") context)
+    (is (eql 9 (autolisp-eval (%read-one "(f 3)") context))
+        "a function whose eager compilation failed did not run interpreted")))
+
+(test a-self-recursive-function-can-be-compiled-eagerly
+  "Eager compilation happens inside DEFUN, so the order matters: the
+function has to be bound to its name BEFORE it is compiled, or a
+recursive call in its own body would compile against an undefined name."
+  (let ((*autolisp-speed-level* 3)
+        (*autolisp-compilation-threshold* 1)
+        (context (%fresh-context)))
+    (autolisp-eval
+     (%read-one "(defun fact (n) (if (< n 2) 1 (* n (fact (- n 1)))))")
+     context)
+    (is (eql 120 (autolisp-eval (%read-one "(fact 5)") context)))))

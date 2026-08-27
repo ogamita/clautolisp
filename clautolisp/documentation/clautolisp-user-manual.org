@@ -2227,18 +2227,44 @@ and returns the new set. Each element of ~QUALITIES~ is either a bare
 quality symbol — which means level 3 — or a ~(SYMBOL LEVEL)~ pair, and
 any quality you do not mention keeps its current level.
 
-~DEBUG~ is the one with an observable effect today: above 0 the runtime
-weaves the instrumented fork of a function, which is what makes
-breakpoints and stepping possible; at 0 functions run plain and the
-debugger cannot stop inside them. ~SPEED~ is *pinned at 0* and setting
-it is silently ineffective — it is reserved for the compiler-to-CL tier,
-which does not exist yet. It is documented here so that reading back a
-~SPEED~ of 0 you did not ask for is not mistaken for a bug.
+A function has two forks, and the levels decide which of them exist and
+which are compiled. What matters is not each quality on its own but the
+levels, and — for the instrumented fork — how ~DEBUG~ and ~SPACE~ compare:
+
+| fork                            | present when       | compiled when |
+|---------------------------------+--------------------+---------------|
+| the ordinary one                | always             | ~SPEED~ >= 1  |
+| the instrumented one (debugging)| ~DEBUG~ >= ~SPACE~ | ~SPEED~ >= 2  |
+
+So ~SPACE~ is not a switch you turn on; it is what you weigh ~DEBUG~
+against. ~(DEBUG 3) (SPACE 3)~ says the two matter equally and keeps the
+instrumented fork, which is what breakpoints and stepping ride on;
+~(DEBUG 0) (SPACE 3)~ says size wins and drops it, and the debugger can
+then no longer stop inside your functions.
+
+~SPEED~ has one more step. At 1 and 2 a function is compiled once it has
+proved *hot* — called enough times to earn the compilation — so you pay
+nothing for functions that a file defines and never calls. At 3 it is
+compiled at *definition* instead. That is not just sooner: compiling a
+whole file as one unit is what allows optimizations across function
+boundaries, which compiling one function at a time cannot do.
+
+The default is ~((DEBUG 3) (SPACE 0) (SPEED 2))~ — debugging matters
+most, speed next, size not at all.
 
 #+BEGIN_SRC autolisp
 _$ (clal-optimize '((debug 0) (space 3)))   ; run plain, no instrumentation
+((DEBUG 0) (SPACE 3) (SPEED 2))
+_$ (clal-optimize '((speed 3)))             ; and compile at load time
+((DEBUG 0) (SPACE 3) (SPEED 3))
+_$ (clal-optimize '((speed 0)))             ; interpret everything
 ((DEBUG 0) (SPACE 3) (SPEED 0))
 #+END_SRC
+
+Before release 2.0.8 ~SPEED~ was pinned at 0 and setting it was silently
+ineffective, because there was no compiler for it to reach. If you have
+code that reads ~(clal-optimization)~ back and expects a ~SPEED~ of 0,
+that expectation no longer holds.
 
 *** ~CLAL-COMPILE~ -- build an applicable function object
 ~(clal-compile NAME LAMBDA-EXPRESSION)~ compiles a

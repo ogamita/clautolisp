@@ -684,3 +684,140 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
                (clautolisp.autolisp-runtime:autolisp-string-value
                 (clautolisp.autolisp-runtime:autolisp-symbol-value
                  (clautolisp.autolisp-runtime:intern-autolisp-symbol "*CLAL-CLIPBOARD*")))))))
+
+;;; --- clal-optimize / clal-optimization ------------------------------
+;;;
+;;; The optimization qualities are the AutoLISP-facing surface of the
+;;; compiler and the debugger's instrumentation, so what is tested here
+;;; is the ALGEBRA -- which levels, in which relation, produce which
+;;; forks -- not the wording of the list that comes back.
+;;;
+;;;   non-instrumented fork   always present; compiled iff SPEED >= 1
+;;;   instrumented fork       present iff DEBUG >= SPACE; compiled iff SPEED >= 2
+;;;   eager (at definition)   iff SPEED >= 3
+;;;
+;;; Until 2.0.8 SPEED was pinned at 0 and none of this existed to test.
+
+(defun %optimize (text)
+  "Set qualities from an AutoLISP source list, return the resulting alist
+of QUALITY -> level."
+  (clautolisp.autolisp-builtins-core::builtin-clal-optimize
+   (first (clautolisp.autolisp-runtime:read-runtime-from-string text)))
+  (mapcar (lambda (quality)
+            (cons quality
+                  (clautolisp.autolisp-builtins-core::clal-optimization-level
+                   quality)))
+          '(:debug :space :speed)))
+
+(defun %signals-runtime-error-p (thunk)
+  "True iff THUNK signals an AutoLISP runtime error. Written as a
+predicate rather than with FiveAM's SIGNALS because this suite imports
+IS and not SIGNALS, and an unimported FiveAM macro fails at RUN time on
+the branch you expect never to take."
+  (handler-case (progn (funcall thunk) nil)
+    (autolisp-runtime-error () t)))
+
+(defun %reset-optimization ()
+  (setf clautolisp.autolisp-builtins-core::*clal-optimization*
+        (list (cons :debug 3) (cons :space 0) (cons :speed 2)))
+  (clautolisp.autolisp-builtins-core::apply-clal-optimization))
+
+(test clal-optimize-no-longer-pins-speed-to-zero
+  "The regression test for unpinning SPEED. It was forced back to 0 on
+every call, so that asking for it was silently ineffective -- documented
+as such, because there was no compiler for it to reach. There is now."
+  (%reset-optimization)
+  (unwind-protect
+       (let ((levels (%optimize "((speed 3))")))
+         (is (eql 3 (cdr (assoc :speed levels)))))
+    (%reset-optimization)))
+
+(test speed-decides-which-forks-compile
+  "SPEED 1 compiles the plain fork; the instrumented fork needs SPEED 2.
+Different levels on purpose: compiling the instrumented fork costs a
+second compilation of every function and buys less."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (%optimize "((speed 0))")
+         (is (not (clautolisp.autolisp-runtime:autolisp-compile-plain-fork-p)))
+         (is (not (clautolisp.autolisp-runtime:autolisp-compile-instrumented-fork-p)))
+         (%optimize "((speed 1))")
+         (is (clautolisp.autolisp-runtime:autolisp-compile-plain-fork-p))
+         (is (not (clautolisp.autolisp-runtime:autolisp-compile-instrumented-fork-p)))
+         (%optimize "((speed 2))")
+         (is (clautolisp.autolisp-runtime:autolisp-compile-plain-fork-p))
+         (is (clautolisp.autolisp-runtime:autolisp-compile-instrumented-fork-p))
+         (is (not (clautolisp.autolisp-runtime:autolisp-compile-eagerly-p)))
+         (%optimize "((speed 3))")
+         (is (clautolisp.autolisp-runtime:autolisp-compile-eagerly-p)))
+    (%reset-optimization)))
+
+(test the-instrumented-fork-is-kept-when-debug-is-at-least-space
+  "SPACE is not a switch of its own: it is what DEBUG is weighed against.
+The EQUAL case is the boundary worth pinning -- (DEBUG 3) (SPACE 3) says
+the two matter equally, and the fork is kept."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (%optimize "((debug 3) (space 0))")
+         (is (not (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*)))
+         (%optimize "((debug 3) (space 3))")
+         (is (not (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*))
+             "DEBUG = SPACE dropped the instrumented fork")
+         (%optimize "((debug 0) (space 3))")
+         (is (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*))
+         (%optimize "((debug 0) (space 0))")
+         (is (not (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*))
+             "DEBUG 0 with SPACE 0 asked for no size saving, so the fork stays"))
+    (%reset-optimization)))
+
+(test a-bare-quality-symbol-means-level-three
+  (%reset-optimization)
+  (unwind-protect
+       (let ((levels (%optimize "(speed)")))
+         (is (eql 3 (cdr (assoc :speed levels)))))
+    (%reset-optimization)))
+
+(test unmentioned-qualities-keep-their-level
+  (%reset-optimization)
+  (unwind-protect
+       (let ((levels (%optimize "((speed 1))")))
+         (is (eql 3 (cdr (assoc :debug levels))))
+         (is (eql 0 (cdr (assoc :space levels))))
+         (is (eql 1 (cdr (assoc :speed levels)))))
+    (%reset-optimization)))
+
+(test clal-optimization-reports-what-the-engine-is-actually-doing
+  "Reading back a setting must describe the engine's real configuration.
+While SPEED was pinned this was the documented trap -- you asked for 3
+and read back 0 -- and it is worth a test now that the answer is honest."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (%optimize "((speed 1))")
+         (let ((reported
+                 (clautolisp.autolisp-builtins-core::builtin-clal-optimization)))
+           (is (= 3 (length reported)))
+           (is (equal '("DEBUG" "SPACE" "SPEED")
+                      (mapcar (lambda (entry)
+                                (clautolisp.autolisp-runtime:autolisp-symbol-name
+                                 (first entry)))
+                              reported)))
+           (is (equal '(3 0 1) (mapcar #'second reported)))
+           (is (eql 1 clautolisp.autolisp-runtime:*autolisp-speed-level*))))
+    (%reset-optimization)))
+
+(test clal-optimize-rejects-nonsense
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (is (%signals-runtime-error-p (lambda () (%optimize "((debug 4))")))
+             "a level above 3 was accepted")
+         (is (%signals-runtime-error-p (lambda () (%optimize "((debug -1))")))
+             "a negative level was accepted")
+         (is (%signals-runtime-error-p (lambda () (%optimize "((quickness 3))")))
+             "an unknown quality was accepted")
+         (is (%signals-runtime-error-p (lambda () (%optimize "(42)")))
+             "a non-symbol element was accepted"))
+    (%reset-optimization)))

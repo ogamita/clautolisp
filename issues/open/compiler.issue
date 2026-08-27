@@ -668,10 +668,76 @@ pointless. Verified as a real control: with the %CLAL-POLL branch
 disabled, the equivalence cases still all pass and only that one test
 fails.
 
-STILL OPEN after slice 7
+Slice 8 (2.0.8) -- SPEED is unpinned, and the qualities become an algebra
+--------------------------------------------------------------------------
+
+The compiler had no user-reachable surface. It turned out it had had one
+all along: CLAL-OPTIMIZE / CLAL-OPTIMIZATION are specified (two spec
+entries, a user-manual section, the fork matrix in the
+debugger-public-interface issue), shipped, and SPEED -- "code is
+compiled to a faster binary" -- was hard-pinned to 0 with the comment
+`pinned until Tier 2'. Tier 2 is slices 1-7. The pin is gone.
+
+WHAT pjb CORRECTED. I had reported SPACE as "reads back but drives
+nothing", and treated the matrix as four fixed rows. It is not a table
+of rows: it is an algebra over the levels, and SPACE is not a switch of
+its own but what DEBUG is WEIGHED AGAINST.
+
+  non-instrumented fork   always present; compiled iff SPEED >= 1
+  instrumented fork       present iff DEBUG >= SPACE; compiled iff SPEED >= 2
+  eager, at definition    iff SPEED >= 3
+
+That reading gives the intermediate levels something to mean, which four
+fixed rows never did. (DEBUG 3) (SPACE 3) says the two matter equally
+and KEEPS the instrumented fork -- the >= boundary, and the case most
+likely to be got wrong, so it has its own test.
+
+The two forks compiling at different SPEED levels is deliberate and
+measured: SPEED 1 is "make my code fast", SPEED 2 is "and while I am
+debugging it too", which is a further step because it costs a second
+compilation of every function and buys less -- slice 7 measured the poll
+protocol, not interpretation, as what makes debugging slow.
+
+SPEED 3 means compile EAGERLY. Sooner is the small part. The point is
+that a whole file compiled in ONE with-compilation-unit admits file-wide
+optimizations -- literal coalescing, direct function linking instead of
+going through the symbol binding -- that compiling one function at a
+time, on the call that happened to make it hot, can never do. This slice
+implements eager-at-DEFUN; the file-wide unit needs CLAL-COMPILE-FILE
+and is the next slice.
+
+THE DEFAULT. ((DEBUG 3) (SPACE 0) (SPEED 2)), not the issue's (SPEED 0).
+Taking the 0 literally would have shipped a compiler that is off unless
+asked for -- a regression dressed as spec-compliance -- because SPEED 2
+is exactly the behaviour the engine already had while the pin was in.
+Written up for pjb to revise in speed-default-level.issue; it is one
+number in one place.
+
+WHAT WAS NOT TESTED BEFORE. Nothing. There was not a single test for
+CLAL-OPTIMIZE or CLAL-OPTIMIZATION anywhere in the tree -- an
+AutoLISP-facing builtin, fully specified, with a documented trap in it
+(SPEED silently ignored), and no test. Seven now cover the algebra and
+the argument errors; four more in the compiler suite cover SPEED end to
+end, including that eager compilation of a body the compiler chokes on
+must still DEFINE the function and run it interpreted. SPEED 3 must not
+become a correctness setting.
+
+STILL OPEN after slice 8
 ------------------------
-  - poll points are now what makes debugging slow (see the measurement
-    above), not interpretation. That is where debugging speed is left.
+  - CLAL-COMPILE-FILE, VLISP-COMPILE-FILE (same thing, different API)
+    and CLAL-COMPILE-SYSTEM (output-file source-file-list), which pjb
+    specified in this conversation. The shape:
+        SPEED 3, per file:   (with-compilation-unit (:override t)
+                                <compile each transformed defun>)
+        SPEED 3, per system: (with-compilation-unit (:override nil)
+                                <clal-compile-file each>)
+        below SPEED 3:       compile each defun with no unit at all,
+                             so that no global optimization happens
+    with-compilation-unit also DEFERS undefined-function warnings, which
+    is what makes forward references across files work.
+  - poll points are now what makes debugging slow (see slice 7's
+    measurement), not interpretation. That is where debugging speed is
+    left.
   - open-coding hot operators as inline CL, which the Tier-2 probe says
     is where the margin against LispEx is; deliberately NOT done yet, so
     that no operator has a second implementation that can disagree with

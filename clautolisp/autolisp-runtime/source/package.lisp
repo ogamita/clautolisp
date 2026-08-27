@@ -106,6 +106,10 @@
    #:call-with-compiled-poll-point
    #:*autolisp-compilation-enabled*
    #:*autolisp-compilation-threshold*
+   #:*autolisp-speed-level*
+   #:autolisp-compile-plain-fork-p
+   #:autolisp-compile-instrumented-fork-p
+   #:autolisp-compile-eagerly-p
    #:autolisp-catch-all-error
    #:make-autolisp-catch-all-error
    #:autolisp-catch-all-error-message

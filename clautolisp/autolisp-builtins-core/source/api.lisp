@@ -5506,19 +5506,46 @@ are empty."
 ;;; --- CLAL-OPTIMIZE / CLAL-OPTIMIZATION -------------------------------
 ;;;
 ;;; The optimization qualities (debugger-public-interface issue Part A) gate
-;;; how EVAL and CLAL-COMPILE build a function's forks: DEBUG > 0 weaves the
-;;; instrumented fork (the poll points that stepping and breakpoints ride on),
-;;; SPACE trades that fork away for size, and SPEED would compile to CL — Tier 2,
-;;; pinned at 0 until the compiler-to-CL lands. Levels are 0..3 (SPEED aside,
-;;; the interpreter treats any non-zero DEBUG as "instrument", 3=2=1).
+;;; how LOAD, EVAL and CLAL-COMPILE build a function's forks. Levels are 0..3.
+;;;
+;;; WHAT DECIDES IS THE LEVELS, AND FOR THE INSTRUMENTED FORK THEIR RELATIVE
+;;; ORDER -- not one boolean per quality:
+;;;
+;;;   non-instrumented fork   always present; compiled iff SPEED >= 1
+;;;   instrumented fork       present iff DEBUG >= SPACE; compiled iff SPEED >= 2
+;;;
+;;; So SPACE is not a switch of its own: it is what DEBUG is weighed against.
+;;; Asking for (DEBUG 3) (SPACE 3) says the two matter equally, and DEBUG >=
+;;; SPACE keeps the instrumented fork; (DEBUG 0) (SPACE 3) says size wins and
+;;; the fork goes. That is what "the relative quality values stress the
+;;; priority of qualities" means in the issue, applied rather than restated.
+;;;
+;;; The two forks compile at different SPEED levels deliberately. SPEED 1 is
+;;; `make my code fast'; SPEED 2 is `and while I am debugging it too', which
+;;; is a further step because it costs a second compilation of every function
+;;; and buys less (measured: the poll protocol, not interpretation, is what
+;;; makes debugging slow).
+;;;
+;;; SPEED 3 additionally compiles EAGERLY, at definition rather than once a
+;;; function is hot. Sooner is the small part; the point is that a whole file
+;;; compiled in one unit admits file-wide optimizations that compiling one
+;;; function at a time, on the call that happened to make it hot, never can.
 
 (defparameter *clal-optimization-qualities* '(:debug :space :speed)
   "The optimization qualities, in canonical print order.")
 
 (defparameter *clal-optimization*
-  (list (cons :debug 3) (cons :space 0) (cons :speed 0))
+  (list (cons :debug 3) (cons :space 0) (cons :speed 2))
   "Current optimization qualities as an alist QUALITY -> level (0..3). Read by
-EVAL / CLAL-COMPILE to choose the fork(s) to build; set by CLAL-OPTIMIZE.")
+LOAD / EVAL / CLAL-COMPILE to choose the fork(s) to build; set by CLAL-OPTIMIZE.
+
+The default reads as: debugging matters most, speed next, size not at all --
+which is clautolisp's posture, and is also the setting that reproduces the
+behaviour the engine had while SPEED was pinned. DEBUG 3 >= SPACE 0 keeps the
+instrumented fork; SPEED 2 compiles both forks once a function is hot. The
+issue's example default of (SPEED 0) was written while there was no compiler
+to ask for; taking it literally now would ship a compiler that is off unless
+asked for, which is a regression dressed as spec-compliance.")
 
 (defun clal-optimization-level (quality)
   "The current level (0..3) of QUALITY (:debug / :space / :speed)."
@@ -5567,19 +5594,34 @@ or a list (SYMBOL LEVEL). Signals on an unknown quality or an out-of-range level
          (autolisp-symbol-name symbol)))
       (setf (cdr (assoc quality *clal-optimization*)) level))))
 
+(defun apply-clal-optimization ()
+  "Push the current qualities into the runtime's gates.
+
+The single place the algebra above is turned into mechanism, so that
+CLAL-OPTIMIZE and start-up cannot disagree about what a given set of levels
+means. INSTALL-CORE-BUILTINS calls it too: without that, the runtime's
+defaults and *CLAL-OPTIMIZATION*'s would be two independent claims about the
+same thing, and reading (clal-optimization) would describe a configuration the
+engine was not actually in."
+  (setf clautolisp.autolisp-runtime:*debug-instrumentation-enabled*
+        (>= (clal-optimization-level :debug)
+            (clal-optimization-level :space)))
+  (setf clautolisp.autolisp-runtime:*autolisp-speed-level*
+        (clal-optimization-level :speed))
+  (%clal-optimization->autolisp))
+
 (defun builtin-clal-optimize (qualities)
   "Set the optimization qualities (debugger-public-interface issue Part A).
 QUALITIES is an AutoLISP list; each element is a bare quality symbol (= level 3)
-or (SYMBOL LEVEL). Unmentioned qualities keep their current level. SPEED is
-pinned at 0 (Tier 2, no compiler-to-CL yet). Returns the new qualities."
+or (SYMBOL LEVEL). Unmentioned qualities keep their current level. Returns the
+new qualities.
+
+SPEED is no longer pinned: the compiler-to-CL it was reserved for exists, and
+this is the surface the specification always intended for it."
   (require-proper-list qualities "CLAL-OPTIMIZE")
   (dolist (element qualities)
     (%clal-parse-optimize-element element))
-  (setf (cdr (assoc :speed *clal-optimization*)) 0) ; pinned until Tier 2
-  ;; Reflect DEBUG into the runtime instrumentation gate: DEBUG>0 weaves
-  ;; instrumented forks under a session, DEBUG 0 (SPACE mode) runs plain.
-  (setf clautolisp.autolisp-runtime:*debug-instrumentation-enabled*
-        (plusp (clal-optimization-level :debug)))
+  (apply-clal-optimization)
   (%clal-optimization->autolisp))
 
 (defun builtin-clal-compile (name lambda-expression)
@@ -10558,6 +10600,9 @@ variable convention below."
       (set-autolisp-symbol-function symbol builtin)))
   (install-predefined-variables)
   (install-clal-extension-variables)
+  ;; Make the runtime's gates agree with *CLAL-OPTIMIZATION* from the
+  ;; start, rather than only from the first CLAL-OPTIMIZE call.
+  (apply-clal-optimization)
   ;; Fresh builtin world: COM is not loaded yet, and the runtime's
   ;; unbound-function hook resolves the dynamic vla-* accessor façade.
   (setf *com-loaded-p* nil)

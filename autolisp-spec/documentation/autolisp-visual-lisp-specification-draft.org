@@ -12810,14 +12810,28 @@ No arguments.
 *** Description
 Return the current optimization qualities as an AutoLISP list
 ~((DEBUG n) (SPACE n) (SPEED n))~ (debugger public interface, Part
-A). These qualities gate how EVAL and ~clal-compile~ build a
-function's forks: ~DEBUG~ > 0 weaves the instrumented fork that
-stepping and breakpoints ride on; ~SPACE~ trades it away for size.
-~SPEED~ is pinned at ~0~ until the compiler-to-CL (Tier 2) lands.
+A). These qualities gate how ~load~, ~eval~ and ~clal-compile~ build
+a function's two forks. What decides is the levels, and for the
+instrumented fork their level *relative to one another*:
+
+| fork              | present when   | compiled when |
+|-------------------+----------------+---------------|
+| non-instrumented  | always         | ~SPEED~ >= 1  |
+| instrumented      | ~DEBUG~ >= ~SPACE~ | ~SPEED~ >= 2  |
+
+~SPACE~ is therefore not a switch of its own: it is what ~DEBUG~ is
+weighed against. Asking for ~(DEBUG 3) (SPACE 3)~ says the two
+matter equally and keeps the instrumented fork; ~(DEBUG 0) (SPACE
+3)~ says size wins and drops it.
+
+~SPEED~ 3 further means *eager* compilation — at definition rather
+than once a function has proved hot — which is what allows a whole
+file to be compiled as one unit and optimized across function
+boundaries.
 
 *** Return Values
 A three-element list ~((DEBUG n) (SPACE n) (SPEED n))~, each ~n~ an
-integer 0..3.
+integer 0..3. The default is ~((DEBUG 3) (SPACE 0) (SPEED 2))~.
 
 *** Side Effects
 None.
@@ -12831,7 +12845,7 @@ None.
 *** Examples
 #+begin_example
 (clal-optimization)
-=> ((DEBUG 3) (SPACE 0) (SPEED 0))
+=> ((DEBUG 3) (SPACE 0) (SPEED 2))
 #+end_example
 
 *** Availability
@@ -12864,17 +12878,22 @@ clautolisp Extension Function
 
 *** Description
 Set the optimization qualities (debugger public interface, Part
-A). Unmentioned qualities keep their current level. ~SPEED~ is
-always forced to ~0~ (Tier 2, no compiler-to-CL yet). Setting
-~DEBUG~ also drives the runtime instrumentation gate: ~DEBUG~ > 0
-weaves instrumented forks under a session, ~DEBUG~ 0 runs plain.
+A). Unmentioned qualities keep their current level.
+
+The levels take effect as described under ~clal-optimization~: the
+instrumented fork is kept while ~DEBUG~ >= ~SPACE~, the
+non-instrumented fork is compiled from ~SPEED~ 1, the instrumented
+fork from ~SPEED~ 2, and ~SPEED~ 3 compiles eagerly at definition.
+
+~SPEED~ was pinned at ~0~ in releases before 2.0.8, when there was
+no compiler for it to reach; it is now honoured.
 
 *** Return Values
 The new qualities as ~((DEBUG n) (SPACE n) (SPEED n))~.
 
 *** Side Effects
-Updates the process-wide optimization alist and the runtime
-instrumentation-enabled flag.
+Updates the process-wide optimization alist, the runtime
+instrumentation-enabled flag and the runtime compilation level.
 
 *** Affected By
 - The previous ~clal-optimize~ setting (unmentioned qualities are
@@ -12889,7 +12908,11 @@ level outside 0..3. Signals from ~require-proper-list~ when
 *** Examples
 #+begin_example
 (clal-optimize '((debug 0) space))
-=> ((DEBUG 0) (SPACE 3) (SPEED 0))
+=> ((DEBUG 0) (SPACE 3) (SPEED 2))
+
+;; run everything compiled, and compile it at load time
+(clal-optimize '((speed 3)))
+=> ((DEBUG 0) (SPACE 3) (SPEED 3))
 #+end_example
 
 *** Availability

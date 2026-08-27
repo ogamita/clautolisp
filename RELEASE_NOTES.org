@@ -406,8 +406,17 @@ separate binary for tool integrators.
   it by accident. ~*clal-on-error*~ chooses what an unhandled CL error
   does. See § /clautolisp Extensions/.
 - ~clal-optimize~ / ~clal-optimization~ — read and set the optimization
-  qualities. ~DEBUG~ above 0 is what makes breakpoints and stepping
-  possible; ~SPEED~ is pinned at 0 until the compiler tier exists.
+  qualities. A function has two forks, and the levels decide which exist
+  and which are compiled: the ordinary fork is always present and is
+  compiled from ~SPEED~ 1, the instrumented fork (what breakpoints and
+  stepping ride on) is kept while ~DEBUG~ >= ~SPACE~ and is compiled from
+  ~SPEED~ 2. ~SPEED~ 3 compiles at definition rather than once a function
+  is hot. Default ~((DEBUG 3) (SPACE 0) (SPEED 2))~.
+- *~SPEED~ is no longer pinned at 0.* It was silently ineffective while
+  there was no compiler to reach; the AutoLISP-to-Common-Lisp compiler
+  now exists, and ~SPEED~ is its switch. Code that read
+  ~(clal-optimization)~ back expecting a ~SPEED~ of 0 will now see what
+  it asked for. See § /clautolisp Extensions/.
 - ~clal-compile~, ~clal-module-extension~ — compile a lambda form, and
   ask which file extension this host uses for a packaged artefact
   (~.lap~ / the OS shared-library suffix) instead of guessing.

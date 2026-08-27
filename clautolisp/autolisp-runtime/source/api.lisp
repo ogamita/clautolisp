@@ -1722,6 +1722,41 @@ the compiler behaves exactly as it did before it existed. Bind this to NIL to
 force everything through the interpreter, which is the first thing to try when
 compiled and interpreted results are suspected of disagreeing.")
 
+(defparameter *autolisp-speed-level* 2
+  "The SPEED optimization quality, 0..3, as the runtime sees it.
+
+THE ALGEBRA (debugger-public-interface issue, Part A). The optimization
+qualities do not each own a switch; what matters is their level, and for the
+instrumented fork their level RELATIVE to one another:
+
+  non-instrumented fork   always present; compiled iff SPEED >= 1
+  instrumented fork       present iff DEBUG >= SPACE; compiled iff SPEED >= 2
+
+So the two forks compile at different levels ON PURPOSE. SPEED 1 says `make
+my code fast'; SPEED 2 says `and make it fast while I am debugging it too',
+which is a further step because a compiled instrumented fork is worth less
+(the poll protocol, not interpretation, is what makes debugging slow) and
+costs a second compilation of the same function.
+
+SPEED 3 says compile EAGERLY, at definition, rather than once a function is
+hot. That is not merely sooner: compiling a whole file in one unit is what
+makes file-wide optimizations possible at all, where compiling one function
+at a time on the call that made it hot can only ever optimize that function.
+
+Set by CLAL-OPTIMIZE. Bound directly only by tests.")
+
+(defun autolisp-compile-plain-fork-p ()
+  "Whether a function's non-instrumented fork should be compiled."
+  (and *autolisp-compilation-enabled* (>= *autolisp-speed-level* 1)))
+
+(defun autolisp-compile-instrumented-fork-p ()
+  "Whether a function's instrumented fork should be compiled."
+  (and *autolisp-compilation-enabled* (>= *autolisp-speed-level* 2)))
+
+(defun autolisp-compile-eagerly-p ()
+  "Whether functions are compiled at definition rather than once hot."
+  (and *autolisp-compilation-enabled* (>= *autolisp-speed-level* 3)))
+
 (defparameter *autolisp-compilation-threshold* 16
   "How many times a function must be called before its body is compiled.
 
@@ -1731,7 +1766,10 @@ interpreting a short body once. Most functions in a freshly loaded file are
 called once or never, and compiling those would make loading slower for no
 return. A function that has been called sixteen times is doing work, and pays
 the compilation back quickly. 1 means compile on first call — what the test
-suite uses, so that every function it exercises runs compiled.")
+suite uses, so that every function it exercises runs compiled.
+
+Consulted at SPEED 1 and 2 only. SPEED 3 compiles at definition and never
+reaches the threshold; SPEED 0 never compiles at all.")
 
 (defun maybe-compile-usubr (function)
   "Weave FUNCTION's compiled fork when it has earned one, and return it.
@@ -1744,7 +1782,7 @@ cannot be compiled must not run the compiler again on every call."
     (cond
       ((functionp compiled) compiled)
       ((eq :failed compiled) nil)
-      ((not (and *autolisp-compilation-enabled* *compile-usubr-hook*)) nil)
+      ((not (and (autolisp-compile-plain-fork-p) *compile-usubr-hook*)) nil)
       ((< (incf (autolisp-usubr-call-count function))
           *autolisp-compilation-threshold*)
        nil)
@@ -1753,6 +1791,29 @@ cannot be compiled must not run the compiler again on every call."
          (error () (setf (autolisp-usubr-compiled-body function) :failed)))
        (let ((result (autolisp-usubr-compiled-body function)))
          (and (functionp result) result))))))
+
+(defun compile-usubr-if-eager (function)
+  "Compile FUNCTION now, if SPEED asks for eager compilation.
+
+At SPEED 3 a function is compiled when it is DEFINED rather than when it turns
+out to be hot. Called from DEFUN, so it never affects a function that is only
+being interpreted at a lower level.
+
+Only the PLAIN fork. An instrumented fork does not exist yet at definition
+time -- the debugger weaves one on a function's first call under a session,
+deliberately, so that code defined before the session is debuggable without a
+separate instrument-on-defun pass. Eagerly instrumenting every DEFUN to have
+something to compile would make loading a file pay for a debug session that
+may never start.
+
+Errors are swallowed the same way MAYBE-COMPILE-USUBR swallows them, into
+:FAILED: a function whose body the compiler chokes on must still be DEFINED,
+and must still run interpreted. A DEFUN that signalled because compilation
+failed would make SPEED 3 a correctness setting, which it is not."
+  (when (and (autolisp-compile-eagerly-p) *compile-usubr-hook*)
+    (handler-case (funcall *compile-usubr-hook* function)
+      (error () (setf (autolisp-usubr-compiled-body function) :failed))))
+  function)
 
 (defparameter *compile-instrumented-usubr-hook* nil
   "When non-nil, a function (USUBR) that transpiles USUBR's INSTRUMENTED
@@ -1777,7 +1838,8 @@ that matters: running to a breakpoint deep inside a loop."
     (cond
       ((functionp compiled) compiled)
       ((eq :failed compiled) nil)
-      ((not (and *autolisp-compilation-enabled* *compile-instrumented-usubr-hook*))
+      ((not (and (autolisp-compile-instrumented-fork-p)
+                 *compile-instrumented-usubr-hook*))
        nil)
       ((null (autolisp-usubr-instrumented-body function)) nil)
       ((< (incf (autolisp-usubr-call-count function))
@@ -3520,6 +3582,10 @@ name; a LAMBDA has none and passes NIL."
                                          body
                                          context)))
       (set-function name function context)
+      ;; SPEED 3: compile now rather than once hot. Deliberately AFTER
+      ;; SET-FUNCTION, so a self-recursive function resolves its own name
+      ;; while being compiled exactly as it would at run time.
+      (compile-usubr-if-eager function)
       ;; Source-aware-defun-documentation: DEFUN always rewrites the
       ;; binding cell's doc slot. With a preceding ;|…|; block the
       ;; new doc is (:function "TEXT"); without one it is nil. Every
