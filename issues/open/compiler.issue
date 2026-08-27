@@ -531,12 +531,74 @@ would read another document's variables), alternating namespaces must
 merely miss rather than answer wrongly, a :CREATEP NIL miss must not be
 remembered, and a redefinition must be visible through the cache.
 
-STILL OPEN after slice 5
+Slice 6 (2.0.6) -- a symbol remembers whether it is a special operator
+----------------------------------------------------------------------
+
+The item at the head of slice 5's STILL OPEN list, done. On every
+compound form it evaluates, the interpreter asked "is this operator a
+special operator?", and the answer cost a STRING-UPCASE -- which
+allocates a fresh string -- followed by an ASSOC with STRING= over the
+24-entry dispatch table. For an ordinary function call, the common case,
+that scan ran to the end and failed every single time. The answer is now
+memoised on the AUTOLISP-SYMBOL itself.
+
+Unlike the binding cache of slice 5, this answer CAN go stale: the table
+is runtime-mutable, because the debugger registers its %CLAL-POLL poll
+operator into it. So the entry is stamped with
+*SPECIAL-OPERATOR-GENERATION*, which REGISTER-SPECIAL-OPERATOR and
+UNREGISTER-SPECIAL-OPERATOR both bump; a stale stamp is simply a miss.
+Invalidating a whole generation at once costs nothing and never walks
+the symbol table.
+
+Two details are the difference between a cache and a bug:
+
+  - A NIL handler is a VALUABLE answer, not a missing one -- it is the
+    common case. So the cache entry is a CONS whose CAR is the
+    generation: the cons being present is what separates "not a special
+    operator" from "not asked yet". Storing the handler alone would have
+    disabled the cache for exactly the case it exists to serve.
+  - The counter is a DEFVAR, not a DEFPARAMETER, and the file bumps it
+    at load time. Reloading api.lisp rebuilds the dispatch table and
+    drops anything registered into it at runtime; a counter that reset
+    to 0 alongside it would let stale caches match again.
+
+Only a symbol can name a special operator, so a non-symbol operator now
+answers NIL without touching the table. Previously a lambda form's
+operator went through ASSOC with STRING= and was compared, as a string
+designator, against all 24 names -- correct by accident, and 24 string
+compares per call.
+
+MEASURED, back to back, minimum of 5 (2.0.5 -> 2.0.6):
+
+  workload                    compiled          interpreted
+  fib 24, recursive           0.124 -> 0.120    0.360 -> 0.168
+  loop calling a function     0.588 -> 0.276    0.688 -> 0.284
+  loop inside a body          0.096 -> 0.092    0.364 -> 0.168
+  variable-heavy loop         0.524 -> 0.240    0.516 -> 0.240
+
+The interpreter is 2.1x-2.4x faster on every workload. This is the
+largest single win of the six slices, and it is worth understanding why
+a dispatch lookup dominated: the forms in a hot AutoLISP loop are tiny,
+so a per-form allocation plus a 24-entry string scan was not overhead
+around the work, it WAS the work.
+
+Read the compiled column carefully -- it does not say the compiler got
+faster. Compiled code never calls SPECIAL-OPERATOR-FUNCTION at run time;
+the transpiler resolved that question at compile time. Rows 1 and 3 (a
+compiled body) are unchanged, as they must be. Rows 2 and 4 move because
+their WHILE loop is top-level code, which is interpreted in both
+columns. That the two unchanged rows are exactly the two that should be
+unchanged is the check that these numbers mean what they claim.
+
+Five tests pin the invalidation, every failure of which is silent: a
+non-operator stays a non-operator across repeated asks, registering an
+operator is visible to a symbol that already cached NIL, unregistering
+is too, re-registering replaces the handler, a registered operator still
+receives its arguments UNEVALUATED end to end, and a lambda-form
+operator answers NIL without reaching the table.
+
+STILL OPEN after slice 6
 ------------------------
-  - the interpreter's SPECIAL-OPERATOR-FUNCTION dispatch: STRING-UPCASE
-    (which allocates) plus an ASSOC with STRING= over 24 entries, on
-    every compound form the interpreter evaluates. Helps the interpreter
-    only, which is still where cold code runs.
   - the INSTRUMENTED transpiler variant pjb asked for; the seam is the
     dropped (:eval . form) frames.
   - open-coding hot operators as inline CL, which the Tier-2 probe says

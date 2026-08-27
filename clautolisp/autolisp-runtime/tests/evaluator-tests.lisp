@@ -1408,3 +1408,97 @@ the code you just replaced."
   (is (eql 7 (%run-under-dialect
               :clautolisp
               "(setq a 1) a (setq a 7) a"))))
+
+;;;; The special-operator cache.
+;;;;
+;;;; SPECIAL-OPERATOR-FUNCTION memoises its answer on the symbol,
+;;;; stamped with a generation counter that every mutation of the
+;;;; dispatch table bumps. Unlike the binding cache, this answer CAN go
+;;;; stale — the debugger installs %CLAL-POLL into the table at runtime
+;;;; — so the invalidation is the part worth pinning. Every failure
+;;;; below is silent: a stale cache does not signal, it just keeps
+;;;; dispatching yesterday's handler.
+
+(test a-symbol-that-is-not-a-special-operator-stays-that-way
+  "NIL is a real answer here, not a missing one: the cache must record
+`this is an ordinary function name\' rather than re-scanning the table.
+Pinned because storing NIL as `not asked yet\' would silently disable
+the cache for exactly the common case it exists to serve."
+  (reset-autolisp-symbol-table)
+  (let ((symbol (intern-autolisp-symbol "AN-ORDINARY-NAME")))
+    (dotimes (i 3)
+      (is (null (clautolisp.autolisp-runtime::special-operator-function symbol))))
+    ;; and a genuine operator still resolves
+    (is (not (null (clautolisp.autolisp-runtime::special-operator-function
+                    (intern-autolisp-symbol "IF")))))))
+
+(test registering-an-operator-invalidates-what-symbols-already-cached
+  "A symbol asked about BEFORE an operator of that name is registered
+must see the new handler afterwards. Without the generation bump the
+debugger could install %CLAL-POLL and have it ignored in exactly the
+code that had already run once — which is all the code a debugger is
+ever attached to."
+  (reset-autolisp-symbol-table)
+  (let ((symbol (intern-autolisp-symbol "LATE-OPERATOR"))
+        (handler (lambda (arguments context)
+                   (declare (ignore arguments context))
+                   :from-the-late-operator)))
+    (is (null (clautolisp.autolisp-runtime::special-operator-function symbol)))
+    (unwind-protect
+         (progn
+           (register-special-operator "LATE-OPERATOR" handler)
+           (is (eq handler (clautolisp.autolisp-runtime::special-operator-function
+                            symbol))))
+      (unregister-special-operator "LATE-OPERATOR"))
+    ;; and unregistering must be visible through the cache too
+    (is (null (clautolisp.autolisp-runtime::special-operator-function symbol)))))
+
+(test re-registering-a-name-replaces-the-cached-handler
+  "Re-registering is the documented way to replace a handler. A cache
+that kept the first one would run the old code with no diagnostic."
+  (reset-autolisp-symbol-table)
+  (let ((symbol (intern-autolisp-symbol "REPLACED-OPERATOR"))
+        (first (lambda (arguments context)
+                 (declare (ignore arguments context)) :first))
+        (second (lambda (arguments context)
+                  (declare (ignore arguments context)) :second)))
+    (unwind-protect
+         (progn
+           (register-special-operator "REPLACED-OPERATOR" first)
+           (is (eq first (clautolisp.autolisp-runtime::special-operator-function
+                          symbol)))
+           (register-special-operator "REPLACED-OPERATOR" second)
+           (is (eq second (clautolisp.autolisp-runtime::special-operator-function
+                           symbol))))
+      (unregister-special-operator "REPLACED-OPERATOR"))))
+
+(test a-registered-operator-is-dispatched-by-the-evaluator
+  "The end of the chain: a runtime-registered operator receives its
+arguments UNEVALUATED, like every other special operator. This is what
+the debugger's poll operator depends on."
+  (reset-autolisp-symbol-table)
+  (let ((seen nil))
+    (unwind-protect
+         (progn
+           (register-special-operator
+            "CAPTURE-RAW"
+            (lambda (arguments context)
+              (declare (ignore context))
+              (setf seen arguments)
+              :captured))
+           (let ((result (%run-under-dialect
+                          :clautolisp "(capture-raw undefined-variable)")))
+             (is (eq :captured result))
+             (is (= 1 (length seen)))
+             (is (string= "UNDEFINED-VARIABLE"
+                          (autolisp-symbol-name (first seen))))))
+      (unregister-special-operator "CAPTURE-RAW"))))
+
+(test a-lambda-form-operator-is-never-a-special-operator
+  "The operator of ((lambda ...) args) is a CONS, not a symbol. It must
+answer NIL without consulting the table at all — and, more to the point,
+without being handed to STRING= as a string designator."
+  (reset-autolisp-symbol-table)
+  (is (null (clautolisp.autolisp-runtime::special-operator-function
+             (list (intern-autolisp-symbol "LAMBDA") nil))))
+  (is (eql 3 (%run-under-dialect :clautolisp "((lambda (x) x) 3)"))))

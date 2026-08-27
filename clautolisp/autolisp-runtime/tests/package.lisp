@@ -83,6 +83,8 @@
                 #:find-runtime-session-document
                 #:function-cell-function
                 #:intern-autolisp-symbol
+                #:register-special-operator
+                #:unregister-special-operator
                 #:lookup-documentation
                 #:lookup-function
                 #:lookup-variable

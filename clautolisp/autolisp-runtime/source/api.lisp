@@ -3438,6 +3438,15 @@ name; a LAMBDA has none and passes NIL."
                        context)
       name)))
 
+(defvar *special-operator-generation* 0
+  "Bumped by every mutation of *SPECIAL-OPERATOR-DISPATCH*.
+
+Each AUTOLISP-SYMBOL caches the handler it last resolved to, stamped
+with this counter; a bump invalidates every cached answer at once
+without walking the symbol table. A DEFVAR, not a DEFPARAMETER, so
+that reloading this file bumps the counter (see below) instead of
+resetting it to a value that stale caches would still match.")
+
 (defparameter *special-operator-dispatch*
   (list (cons "QUOTE" #'eval-quote-form)
         (cons "SETQ" #'eval-setq-form)
@@ -3466,10 +3475,31 @@ name; a LAMBDA has none and passes NIL."
         (cons "COMMAND" #'eval-command-form)
         (cons "COMMAND-S" #'eval-command-s-form)))
 
+;;; Reloading this file rebuilds the table above and drops anything
+;;; registered into it at runtime; bump the generation so no symbol
+;;; keeps pointing at a handler this image no longer dispatches.
+(incf *special-operator-generation*)
+
 (defun special-operator-function (operator)
-  (cdr (assoc (special-operator-name operator)
-              *special-operator-dispatch*
-              :test #'string=)))
+  "The handler for OPERATOR, or NIL if it names no special operator.
+
+Called on the operator of every compound form the interpreter
+evaluates, so the answer is memoised on the symbol itself; see the
+SPECIAL-OPERATOR-CACHE slot of AUTOLISP-SYMBOL. Only a symbol can name
+a special operator, so anything else is NIL without consulting the
+table at all."
+  (when (typep operator 'autolisp-symbol)
+    (let ((cache (clautolisp.autolisp-runtime.internal::autolisp-symbol-special-operator-cache
+                  operator)))
+      (if (eql (car cache) *special-operator-generation*)
+          (cdr cache)
+          (let ((handler (cdr (assoc (special-operator-name operator)
+                                     *special-operator-dispatch*
+                                     :test #'string=))))
+            (setf (clautolisp.autolisp-runtime.internal::autolisp-symbol-special-operator-cache
+                   operator)
+                  (cons *special-operator-generation* handler))
+            handler)))))
 
 (defun register-special-operator (name function)
   "Install FUNCTION as the handler for the special operator named NAME
@@ -3482,6 +3512,7 @@ debug system. Re-registering a name replaces the previous handler."
     (if entry
         (setf (cdr entry) function)
         (push (cons name function) *special-operator-dispatch*)))
+  (incf *special-operator-generation*)
   name)
 
 (defun unregister-special-operator (name)
@@ -3491,6 +3522,7 @@ register-special-operator. Returns T if an entry was removed."
     (setf *special-operator-dispatch*
           (remove name *special-operator-dispatch*
                   :key #'car :test #'string=))
+    (incf *special-operator-generation*)
     (and present t)))
 
 (defun known-special-operator-p (name)

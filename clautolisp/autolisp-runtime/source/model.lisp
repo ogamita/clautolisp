@@ -35,7 +35,28 @@ clautolisp-secureload-trust-model spec.")
   ;; two-slot cache could be read torn — namespace from one writer, cell
   ;; from another — and hand back a cell belonging to the wrong
   ;; namespace; a cons is built before it is published and never mutated.
-  (binding-cache nil :type list))
+  (binding-cache nil :type list)
+  ;; Last (GENERATION . HANDLER) answer to "is this symbol a special
+  ;; operator?", or NIL for never asked.
+  ;;
+  ;; The interpreter asks that question about the operator of EVERY
+  ;; compound form it evaluates, and the answer cost a STRING-UPCASE
+  ;; (which allocates a fresh string each time) followed by an ASSOC
+  ;; with STRING= over the whole dispatch table. For an ordinary
+  ;; function call — the common case — that scan runs to the end and
+  ;; fails, every single time.
+  ;;
+  ;; A NIL handler is a valuable answer, not a missing one, so the
+  ;; entry is a CONS whose CAR is the generation: the cons being
+  ;; present is what distinguishes "not a special operator" from "not
+  ;; asked yet".
+  ;;
+  ;; The table is runtime-mutable (the debugger registers %CLAL-POLL),
+  ;; so unlike BINDING-CACHE this answer can go stale. It is stamped
+  ;; with *SPECIAL-OPERATOR-GENERATION*, which every mutation of the
+  ;; table bumps; a stale stamp is simply a miss. Stored as a single
+  ;; CONS for the same torn-read reason as BINDING-CACHE.
+  (special-operator-cache nil :type list))
 
 ;;; AutoLISP is a Lisp-1 dialect: a symbol carries a single binding
 ;;; cell that is shared by variable and function uses. SETQ and DEFUN
