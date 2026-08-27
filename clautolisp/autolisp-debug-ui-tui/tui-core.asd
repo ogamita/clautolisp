@@ -24,4 +24,5 @@
    (:file "source/layout")
    (:file "source/frames")
    (:file "source/windows")
+   (:file "source/window-ops")
    (:file "source/keymap")))

@@ -597,6 +597,24 @@ value."
     (:list-faces (mapcar (lambda (s) (clautolisp.autolisp-runtime:make-autolisp-string
                                       (string-downcase (symbol-name s))))
                          (list-faces)))
+    (:clear-window
+     (%wrap-window (if (first args)
+                       (clear-window (%unwrap (first args) "WINDOW" "CLAL-CLEAR-WINDOW"))
+                       (clear-window))))
+    (:move-cursor-to
+     (destructuring-bind (row col &optional window) args
+       (%wrap-window
+        (if window
+            (move-cursor-to row col (%unwrap window "WINDOW" "CLAL-MOVE-CURSOR-TO"))
+            (move-cursor-to row col)))))
+    (:window-put
+     (destructuring-bind (row col string &optional face window) args
+       (window-put row col (%al-value->cl string)
+                   :face (if face (%face-name->symbol face) :normal)
+                   :window (if window
+                               (%unwrap window "WINDOW" "CLAL-WINDOW-PUT")
+                               (selected-window)))
+       nil))
     (:with-temp-window
      (destructuring-bind (options function) args
        (call-with-temp-window

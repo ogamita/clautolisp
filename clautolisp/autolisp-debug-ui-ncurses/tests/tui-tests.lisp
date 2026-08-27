@@ -179,3 +179,37 @@
     ;; unbind reverts, pruning the emptied prefix node
     (is (clautolisp.ui.tui:keymap-unbind map (clautolisp.ui.tui:parse-key-sequence "C-x C-f")))
     (is (eq :none (clautolisp.ui.tui:keymap-step map (code-char 24))))))
+
+;;;; --- window drawing operations (tty-safe) --------------------------
+
+(test window-ops-draw-on-a-vdt-window
+  (clautolisp.ui.tui:reset-frames)
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen :rows 10 :cols 20))
+         (frame (clautolisp.ui.tui:make-frame
+                 (list (cons :device :vdt) (cons :screen screen)))))
+    (clautolisp.ui.tui:select-frame frame)
+    (let ((w (clautolisp.ui.tui:make-window (list (cons :name "w")))))
+      (setf (clautolisp.ui.tui:window-rect w) (list 1 2 4 10))  ; top1 left2 h4 w10
+      (clautolisp.ui.tui:window-put 0 0 "hello" :window w)
+      (is (search "hello" (nth 1 (clautolisp.ui.tui:mock-grid-lines screen))))
+      ;; move-cursor-to records window-relative + moves the hardware cursor
+      (clautolisp.ui.tui:move-cursor-to 2 3 w)
+      (is (equal (cons 2 3) (clautolisp.ui.tui:window-cursor w)))
+      (is (equal (cons 3 5) (clautolisp.ui.tui:mock-cursor screen)))   ; +top +left
+      ;; clear-window blanks the rect
+      (clautolisp.ui.tui:clear-window w)
+      (is (not (search "hello" (nth 1 (clautolisp.ui.tui:mock-grid-lines screen))))))))
+
+(test window-ops-are-no-ops-on-a-tty-frame
+  (clautolisp.ui.tui:reset-frames)
+  (let* ((frame (clautolisp.ui.tui:make-frame (list (cons :device :tty)))))
+    (clautolisp.ui.tui:select-frame frame)
+    (let ((w (clautolisp.ui.tui:make-window (list (cons :name "w")))))
+      (setf (clautolisp.ui.tui:window-rect w) (list 0 0 3 5))
+      (is (not (clautolisp.ui.tui:window-vdt-p w)))
+      ;; no screen: the ops do not error and have no vdt effect...
+      (clautolisp.ui.tui:window-put 0 0 "x" :window w)
+      (clautolisp.ui.tui:clear-window w)
+      ;; ...but the logical cursor is still recorded
+      (clautolisp.ui.tui:move-cursor-to 1 2 w)
+      (is (equal (cons 1 2) (clautolisp.ui.tui:window-cursor w))))))

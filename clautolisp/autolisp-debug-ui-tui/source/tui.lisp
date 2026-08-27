@@ -20,6 +20,10 @@
   (:method (screen) (declare (ignore screen)) nil))
 (defgeneric tui-read-key (screen)
   (:documentation "Read one key; return a character or a key keyword."))
+(defgeneric tui-move-cursor (screen row col)
+  (:documentation "Place the hardware cursor at (ROW, COL). A no-op on backends
+without an addressable cursor (the default, and a tty page).")
+  (:method (screen row col) (declare (ignore screen row col)) nil))
 
 (defun key-char-p (key char)
   "True iff KEY is the character CHAR (case-insensitive)."
@@ -102,6 +106,7 @@
    (cols :initarg :cols :initform 80 :reader mock-screen-cols)
    (grid :accessor mock-grid)
    (attrs :accessor mock-attrs)
+   (cursor :initform (cons 0 0) :accessor mock-cursor)   ; (ROW . COL) last moved to
    (keys :initarg :keys :initform '() :accessor mock-keys)))
 
 (defmethod initialize-instance :after ((screen mock-screen) &key)
@@ -134,6 +139,9 @@
 
 (defmethod tui-read-key ((screen mock-screen))
   (if (mock-keys screen) (pop (mock-keys screen)) :eof))
+
+(defmethod tui-move-cursor ((screen mock-screen) row col)
+  (setf (mock-cursor screen) (cons row col)))
 
 (defun mock-feed-keys (screen keys)
   "Append KEYS (a list) to the mock's scripted key queue."

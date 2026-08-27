@@ -18,6 +18,10 @@ future backend behind the same protocol.")
    ;; screen protocol
    #:tui-screen
    #:tui-start #:tui-stop #:tui-size #:tui-clear #:tui-put #:tui-refresh #:tui-read-key
+   #:tui-move-cursor
+   ;; window drawing operations (tty-safe)
+   #:window-cursor #:window-screen #:window-vdt-p
+   #:clear-window #:move-cursor-to #:window-put
    ;; panes + layout
    #:pane #:make-pane #:pane-title #:pane-top #:pane-left #:pane-height #:pane-width
    #:draw-box #:pane-put-line #:pane-clear #:pane-interior-height #:pane-interior-width
@@ -25,7 +29,7 @@ future backend behind the same protocol.")
    ;; mock backend
    #:mock-screen #:make-mock-screen
    #:mock-screen-rows #:mock-screen-cols
-   #:mock-grid-lines #:mock-attr-at #:mock-find-line #:mock-feed-keys
+   #:mock-grid-lines #:mock-attr-at #:mock-find-line #:mock-feed-keys #:mock-cursor
    ;; key helpers
    #:key-char-p
    ;; faces (TUI module spec §5.3)
