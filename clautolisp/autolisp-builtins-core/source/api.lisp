@@ -5372,6 +5372,14 @@ AutoLISP FUNCTION (applied to the command's argument string), usable from M-x,
 (%define-clal-ui-object-builtin clal-face-parameters :face-parameters (name))
 (%define-clal-ui-object-builtin clal-list-faces      :list-faces      ())
 
+(defun builtin-clal-call-with-temp-window (options function)
+  "Create a temporary window per OPTIONS, apply FUNCTION to its handle, and
+delete the window afterwards (even on non-local exit). Returns FUNCTION's value.
+A no-op (nil) unless the debugger UI is loaded."
+  (when clautolisp.autolisp-runtime:*ui-object-hook*
+    (funcall clautolisp.autolisp-runtime:*ui-object-hook*
+             :with-temp-window options function)))
+
 (defun %clal-dribble-interactors (interactors)
   "Convert the CLAL-DRIBBLE INTERACTORS argument to what the dribble hook
 expects: NIL -> NIL (consult *CLAL-DRIBBLE-INTERACTORS*); the symbol T ->
@@ -9993,6 +10001,7 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-DEFINE-FACE"      #'builtin-clal-define-face)
    (make-core-builtin-subr "CLAL-FACE-PARAMETERS"  #'builtin-clal-face-parameters)
    (make-core-builtin-subr "CLAL-LIST-FACES"       #'builtin-clal-list-faces)
+   (make-core-builtin-subr "CLAL-CALL-WITH-TEMP-WINDOW" #'builtin-clal-call-with-temp-window)
    (make-core-builtin-subr "CLAL-LIST-INTERACTOR-NAMES" #'builtin-clal-list-interactor-names)
    (make-core-builtin-subr "CLAL-DRIBBLE"          #'builtin-clal-dribble)
    (make-core-builtin-subr "CLAL-NAV-FUNCTION"     #'builtin-clal-nav-function)

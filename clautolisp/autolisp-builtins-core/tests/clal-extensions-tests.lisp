@@ -752,3 +752,11 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
   (let ((clautolisp.autolisp-runtime:*ui-object-hook* nil))
     (is (null (clautolisp.autolisp-builtins-core::builtin-clal-make-window nil)))
     (is (null (clautolisp.autolisp-builtins-core::builtin-clal-frame-list)))))
+
+(test clal-call-with-temp-window-forwards-to-hook
+  (let ((calls '()))
+    (let ((clautolisp.autolisp-runtime:*ui-object-hook*
+            (lambda (op &rest args) (push (cons op args) calls) :ok)))
+      (is (eq :ok (clautolisp.autolisp-builtins-core::builtin-clal-call-with-temp-window
+                   nil (clautolisp.autolisp-runtime:make-autolisp-string "fn")))))
+    (is (eq :with-temp-window (car (first calls))))))

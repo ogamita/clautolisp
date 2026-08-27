@@ -679,3 +679,19 @@
                    params))
       (is (member "warn" (mapcar #'clautolisp.autolisp-runtime:autolisp-string-value
                                  (funcall hook :list-faces)) :test #'string=)))))
+
+(test call-with-temp-window-creates-then-deletes
+  (clautolisp.ui.tui:reset-frames)
+  (let ((frame (clautolisp.ui.tui:make-frame (list (cons :device :tty))))
+        (seen nil) (alive-in-body nil))
+    (clautolisp.ui.tui:select-frame frame)
+    (let ((ret (clautolisp.ui.ncurses::call-with-temp-window
+                (list (cons :name "temp"))
+                (lambda (w)
+                  (setf seen w
+                        alive-in-body (and (member w (clautolisp.ui.tui:window-list frame)) t))
+                  :done))))
+      (is (eq :done ret))                                       ; returns the body value
+      (is (eq t alive-in-body))                                 ; window alive in the body
+      (is (not (null seen)))
+      (is (not (member seen (clautolisp.ui.tui:window-list frame)))))))  ; gone after

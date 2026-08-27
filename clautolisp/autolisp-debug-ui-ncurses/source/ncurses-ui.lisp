@@ -560,6 +560,14 @@ of (\"fg\" . \"RED\") / (\"bold\" . T) pairs."
                                           (string-upcase (symbol-name v))))
                             (t v)))))
 
+(defun call-with-temp-window (options thunk)
+  "Create a temporary window per OPTIONS in the selected frame, call THUNK with
+it, and delete the window afterwards (even on non-local exit). Returns THUNK's
+value."
+  (let ((window (make-window options)))
+    (unwind-protect (funcall thunk window)
+      (delete-window window))))
+
 (defun %ui-object-dispatch (op &rest args)
   "The *ui-object-hook* implementation: marshal AutoLISP <-> tui-core objects."
   (ecase op
@@ -588,7 +596,15 @@ of (\"fg\" . \"RED\") / (\"bold\" . T) pairs."
     (:face-parameters (%face-parameters->al (face-parameters (%face-name->symbol (first args)))))
     (:list-faces (mapcar (lambda (s) (clautolisp.autolisp-runtime:make-autolisp-string
                                       (string-downcase (symbol-name s))))
-                         (list-faces)))))
+                         (list-faces)))
+    (:with-temp-window
+     (destructuring-bind (options function) args
+       (call-with-temp-window
+        (%al-options->alist options)
+        (lambda (window)
+          (clautolisp.autolisp-runtime:call-autolisp-function
+           (clautolisp.autolisp-runtime:resolve-autolisp-function-designator function)
+           (%wrap-window window))))))))
 
 (setf clautolisp.autolisp-runtime:*ui-object-hook* #'%ui-object-dispatch)
 
