@@ -491,6 +491,107 @@ name/line STRING passes through; an AutoLISP function designator becomes a
 ;; builtins when the debugger UI is absent).
 (setf clautolisp.autolisp-runtime:*ui-binding-hook* #'%ui-binding-dispatch)
 
+;;;; --- the clal frame / window / face surface (step 6) ---------------
+;;;; The CLAL-MAKE-FRAME / -MAKE-WINDOW / -DEFINE-FACE family reaches tui-core
+;;;; through clautolisp.autolisp-runtime:*ui-object-hook*, installed below.
+;;;; Frames and windows cross into AutoLISP as opaque, EQ-stable lisp-object
+;;;; handles (#<WINDOW "name" …>, (type …) -> WINDOW); the marshalling of
+;;;; AutoLISP values <-> tui-core objects (which needs the runtime + tui-core)
+;;;; lives here, keeping the builtins UI-agnostic.
+
+(defun %al-value->cl (value &optional keywordp)
+  "Convert one AutoLISP option VALUE to a CL value: a string becomes a CL string
+(or, when KEYWORDP, an upcased keyword); the AutoLISP truth symbol T becomes T;
+numbers pass through; nil stays nil."
+  (cond
+    ((null value) nil)
+    ((typep value 'clautolisp.autolisp-runtime:autolisp-string)
+     (let ((s (clautolisp.autolisp-runtime:autolisp-string-value value)))
+       (if keywordp (intern (string-upcase s) :keyword) s)))
+    ((typep value 'clautolisp.autolisp-runtime:autolisp-symbol)
+     (if (string-equal "T" (clautolisp.autolisp-runtime:autolisp-symbol-name value)) t nil))
+    (t value)))
+
+(defparameter +ui-keyword-option-keys+ '(:device :role)
+  "Option keys whose values are tui-core keywords (interned from strings).")
+
+(defun %al-options->alist (al-options)
+  "Convert an AutoLISP option list — a list of (KEY . VALUE) conses, KEY a
+string — into a tui-core option alist (KEYWORD . CL-VALUE)."
+  (loop for entry in al-options
+        when (consp entry)
+          collect (let ((key (intern (string-upcase
+                                      (%al-value->cl (car entry))) :keyword)))
+                    (cons key (%al-value->cl (cdr entry)
+                                             (member key +ui-keyword-option-keys+))))))
+
+(defun %frame-type-name (frame)
+  (if (eq (frame-device frame) :vdt) "VDT-FRAME" "TTY-FRAME"))
+
+(defun %wrap-frame (frame)
+  (and frame (clautolisp.autolisp-runtime:wrap-lisp-object
+              frame (%frame-type-name frame) (lambda () (frame-name frame)))))
+
+(defun %wrap-window (window)
+  (and window (clautolisp.autolisp-runtime:wrap-lisp-object
+               window "WINDOW" (lambda () (window-name window)))))
+
+(defun %unwrap (object type-name who)
+  (clautolisp.autolisp-runtime:unwrap-lisp-object object type-name who))
+
+(defun %unwrap-frame (object who)
+  ;; either a TTY-FRAME or a VDT-FRAME handle
+  (if (clautolisp.autolisp-runtime:lisp-object-p object "VDT-FRAME")
+      (%unwrap object "VDT-FRAME" who)
+      (%unwrap object "TTY-FRAME" who)))
+
+(defun %face-name->symbol (name)
+  (intern (string-upcase (%al-value->cl name)) :keyword))
+
+(defun %face-parameters->al (plist)
+  "Marshal a tui-core face plist (:fg :red :bold t …) to an AutoLISP assoc list
+of (\"fg\" . \"RED\") / (\"bold\" . T) pairs."
+  (loop for (k v) on plist by #'cddr
+        collect (cons (clautolisp.autolisp-runtime:make-autolisp-string
+                       (string-downcase (symbol-name k)))
+                      (cond ((null v) nil)
+                            ((eq v t) (clautolisp.autolisp-runtime:intern-autolisp-symbol "T"))
+                            ((symbolp v) (clautolisp.autolisp-runtime:make-autolisp-string
+                                          (string-upcase (symbol-name v))))
+                            (t v)))))
+
+(defun %ui-object-dispatch (op &rest args)
+  "The *ui-object-hook* implementation: marshal AutoLISP <-> tui-core objects."
+  (ecase op
+    (:make-frame (%wrap-frame (make-frame (%al-options->alist (first args)))))
+    (:frame-list (mapcar #'%wrap-frame (frame-list)))
+    (:selected-frame (%wrap-frame (selected-frame)))
+    (:select-frame (%wrap-frame (select-frame (%unwrap-frame (first args) "CLAL-SELECT-FRAME"))))
+    (:delete-frame (delete-frame (%unwrap-frame (first args) "CLAL-DELETE-FRAME")) nil)
+    (:frame-name (clautolisp.autolisp-runtime:make-autolisp-string
+                  (frame-name (%unwrap-frame (first args) "CLAL-FRAME-NAME"))))
+    (:make-window (%wrap-window (make-window (%al-options->alist (first args)))))
+    (:window-list (mapcar #'%wrap-window
+                          (window-list (and (first args)
+                                            (%unwrap-frame (first args) "CLAL-WINDOW-LIST")))))
+    (:selected-window (%wrap-window (selected-window)))
+    (:select-window (%wrap-window (select-window (%unwrap (first args) "WINDOW" "CLAL-SELECT-WINDOW"))))
+    (:delete-window (delete-window (%unwrap (first args) "WINDOW" "CLAL-DELETE-WINDOW")) nil)
+    (:window-name (clautolisp.autolisp-runtime:make-autolisp-string
+                   (window-name (%unwrap (first args) "WINDOW" "CLAL-WINDOW-NAME"))))
+    (:define-face (destructuring-bind (name &optional fg bg bold underline invert) args
+                    (define-face (%face-name->symbol name)
+                        :fg (%al-value->cl fg t) :bg (%al-value->cl bg t)
+                        :bold (%al-value->cl bold) :underline (%al-value->cl underline)
+                        :invert (%al-value->cl invert))
+                    name))
+    (:face-parameters (%face-parameters->al (face-parameters (%face-name->symbol (first args)))))
+    (:list-faces (mapcar (lambda (s) (clautolisp.autolisp-runtime:make-autolisp-string
+                                      (string-downcase (symbol-name s))))
+                         (list-faces)))))
+
+(setf clautolisp.autolisp-runtime:*ui-object-hook* #'%ui-object-dispatch)
+
 (defun fire-binding (ui session hit command)
   "Run a bound COMMAND: a STRING is a command name/line (routed through the
 command table, so window + named + aldo commands are reachable); a FUNCTION is

@@ -631,3 +631,51 @@
         (declare (ignore result screen))
         (is (some (lambda (l) (search "noted" l))
                   (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui)))))))
+
+;;;; --- clal frame/window/face object surface (step 6) ----------------
+
+(defun mkstr (s) (clautolisp.autolisp-runtime:make-autolisp-string s))
+
+(test ui-object-hook-is-installed
+  (is (eq #'clautolisp.ui.ncurses::%ui-object-dispatch
+          clautolisp.autolisp-runtime:*ui-object-hook*)))
+
+(test ui-object-frames-and-windows-are-opaque-typed-handles
+  (clautolisp.autolisp-runtime:reset-lisp-object-wrappers)
+  (clautolisp.ui.tui:reset-frames)
+  (let ((hook clautolisp.autolisp-runtime:*ui-object-hook*))
+    ;; (clal-make-frame '(("device" . "vdt") ("name" . "debug")))
+    (let ((frame (funcall hook :make-frame
+                          (list (cons (mkstr "device") (mkstr "vdt"))
+                                (cons (mkstr "name") (mkstr "debug"))))))
+      (is (clautolisp.autolisp-runtime:lisp-object-p frame "VDT-FRAME"))
+      (is (eq (rt-sym "VDT-FRAME") (clautolisp.autolisp-runtime:autolisp-type frame)))
+      (is (equal "debug" (clautolisp.autolisp-runtime:autolisp-string-value
+                          (funcall hook :frame-name frame))))
+      ;; the same underlying frame yields the EQ-stable handle
+      (is (eq frame (first (funcall hook :frame-list))))
+      (funcall hook :select-frame frame)
+      ;; (clal-make-window '(("name" . "sedit")))
+      (let ((w (funcall hook :make-window (list (cons (mkstr "name") (mkstr "sedit"))))))
+        (is (clautolisp.autolisp-runtime:lisp-object-p w "WINDOW"))
+        (is (eq (rt-sym "WINDOW") (clautolisp.autolisp-runtime:autolisp-type w)))
+        (is (equal "sedit" (clautolisp.autolisp-runtime:autolisp-string-value
+                            (funcall hook :window-name w))))
+        (is (member w (funcall hook :window-list frame)))       ; interned handle
+        ;; printed representation is the opaque #<WINDOW "sedit" …>
+        (is (search "#<WINDOW \"sedit\"" (prin1-to-string w)))))))
+
+(test ui-object-define-and-read-face
+  (let ((hook clautolisp.autolisp-runtime:*ui-object-hook*))
+    ;; (clal-define-face "warn" "red" nil T)
+    (funcall hook :define-face (mkstr "warn") (mkstr "red") nil
+             (clautolisp.autolisp-runtime:intern-autolisp-symbol "T"))
+    (is (clautolisp.ui.tui:facep :warn))
+    (let ((params (funcall hook :face-parameters (mkstr "warn"))))
+      (is (find-if (lambda (pair)
+                     (and (string-equal "fg" (clautolisp.autolisp-runtime:autolisp-string-value (car pair)))
+                          (typep (cdr pair) 'clautolisp.autolisp-runtime:autolisp-string)
+                          (string-equal "RED" (clautolisp.autolisp-runtime:autolisp-string-value (cdr pair)))))
+                   params))
+      (is (member "warn" (mapcar #'clautolisp.autolisp-runtime:autolisp-string-value
+                                 (funcall hook :list-faces)) :test #'string=)))))

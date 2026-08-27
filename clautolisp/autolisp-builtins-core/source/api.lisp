@@ -5342,6 +5342,36 @@ AutoLISP FUNCTION (applied to the command's argument string), usable from M-x,
              :define-command (%clal-key-string name "CLAL-DEFINE-UI-COMMAND") function)
     name))
 
+;;; --- frames / windows / faces (opaque handles; TUI module spec) --------
+;;; These reach the debugger UI's tui-core objects through *ui-object-hook*.
+;;; Frames and windows cross into AutoLISP as opaque, type-safe handles
+;;; (#<WINDOW "name" …>, (type …) -> WINDOW); faces are named by strings. All
+;;; are no-ops (nil) unless a debugger UI is loaded.
+
+(defmacro %define-clal-ui-object-builtin (name op lambda-list)
+  "Define BUILTIN-<NAME> forwarding LAMBDA-LIST to *ui-object-hook* under OP."
+  `(defun ,(intern (format nil "BUILTIN-~A" name)) ,lambda-list
+     (when clautolisp.autolisp-runtime:*ui-object-hook*
+       (funcall clautolisp.autolisp-runtime:*ui-object-hook*
+                ,op ,@(remove '&optional lambda-list)))))
+
+(%define-clal-ui-object-builtin clal-make-frame     :make-frame     (&optional options))
+(%define-clal-ui-object-builtin clal-frame-list     :frame-list     ())
+(%define-clal-ui-object-builtin clal-selected-frame :selected-frame ())
+(%define-clal-ui-object-builtin clal-select-frame   :select-frame   (frame))
+(%define-clal-ui-object-builtin clal-delete-frame   :delete-frame   (frame))
+(%define-clal-ui-object-builtin clal-frame-name     :frame-name     (frame))
+(%define-clal-ui-object-builtin clal-make-window     :make-window     (&optional options))
+(%define-clal-ui-object-builtin clal-window-list     :window-list     (&optional frame))
+(%define-clal-ui-object-builtin clal-selected-window :selected-window ())
+(%define-clal-ui-object-builtin clal-select-window   :select-window   (window))
+(%define-clal-ui-object-builtin clal-delete-window   :delete-window   (window))
+(%define-clal-ui-object-builtin clal-window-name     :window-name     (window))
+(%define-clal-ui-object-builtin clal-define-face     :define-face
+                                (name &optional fg bg bold underline invert))
+(%define-clal-ui-object-builtin clal-face-parameters :face-parameters (name))
+(%define-clal-ui-object-builtin clal-list-faces      :list-faces      ())
+
 (defun %clal-dribble-interactors (interactors)
   "Convert the CLAL-DRIBBLE INTERACTORS argument to what the dribble hook
 expects: NIL -> NIL (consult *CLAL-DRIBBLE-INTERACTORS*); the symbol T ->
@@ -9948,6 +9978,21 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-BINDING-LOOKUP"   #'builtin-clal-binding-lookup)
    (make-core-builtin-subr "CLAL-MAP-BINDINGS"     #'builtin-clal-map-bindings)
    (make-core-builtin-subr "CLAL-DEFINE-UI-COMMAND" #'builtin-clal-define-ui-command)
+   (make-core-builtin-subr "CLAL-MAKE-FRAME"       #'builtin-clal-make-frame)
+   (make-core-builtin-subr "CLAL-FRAME-LIST"       #'builtin-clal-frame-list)
+   (make-core-builtin-subr "CLAL-SELECTED-FRAME"   #'builtin-clal-selected-frame)
+   (make-core-builtin-subr "CLAL-SELECT-FRAME"     #'builtin-clal-select-frame)
+   (make-core-builtin-subr "CLAL-DELETE-FRAME"     #'builtin-clal-delete-frame)
+   (make-core-builtin-subr "CLAL-FRAME-NAME"       #'builtin-clal-frame-name)
+   (make-core-builtin-subr "CLAL-MAKE-WINDOW"      #'builtin-clal-make-window)
+   (make-core-builtin-subr "CLAL-WINDOW-LIST"      #'builtin-clal-window-list)
+   (make-core-builtin-subr "CLAL-SELECTED-WINDOW"  #'builtin-clal-selected-window)
+   (make-core-builtin-subr "CLAL-SELECT-WINDOW"    #'builtin-clal-select-window)
+   (make-core-builtin-subr "CLAL-DELETE-WINDOW"    #'builtin-clal-delete-window)
+   (make-core-builtin-subr "CLAL-WINDOW-NAME"      #'builtin-clal-window-name)
+   (make-core-builtin-subr "CLAL-DEFINE-FACE"      #'builtin-clal-define-face)
+   (make-core-builtin-subr "CLAL-FACE-PARAMETERS"  #'builtin-clal-face-parameters)
+   (make-core-builtin-subr "CLAL-LIST-FACES"       #'builtin-clal-list-faces)
    (make-core-builtin-subr "CLAL-LIST-INTERACTOR-NAMES" #'builtin-clal-list-interactor-names)
    (make-core-builtin-subr "CLAL-DRIBBLE"          #'builtin-clal-dribble)
    (make-core-builtin-subr "CLAL-NAV-FUNCTION"     #'builtin-clal-nav-function)

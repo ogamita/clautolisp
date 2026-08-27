@@ -61,6 +61,9 @@
 (deftype autolisp-vla-object ()
   'clautolisp.autolisp-runtime.internal::autolisp-vla-object)
 
+(deftype autolisp-lisp-object ()
+  'clautolisp.autolisp-runtime.internal::autolisp-lisp-object)
+
 ;;; --- AutoLISP call-stack tracking ---------------------------------
 ;;;
 ;;; *autolisp-call-stack* records the chain of forms currently being
@@ -1380,6 +1383,56 @@ error wraps a non-autolisp-runtime condition."
 (defun make-autolisp-vla-object (&key value)
   (clautolisp.autolisp-runtime.internal::make-autolisp-vla-object :value value))
 
+;;; --- opaque AutoLISP handles onto Common Lisp objects ------------------
+;;; Frames / windows / faces and the like cross into AutoLISP as opaque,
+;;; type-safe handles rather than integer indices: (type (clal-make-window …))
+;;; -> WINDOW, and they print as #<WINDOW "name" address>. Wrappers are interned
+;;; per CL object so the same object is EQ-stable across AutoLISP calls.
+
+(defun autolisp-lisp-object-value (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-lisp-object-value object))
+
+(defun autolisp-lisp-object-type-name (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-lisp-object-type-name object))
+
+(defvar *lisp-object-wrappers*
+  (make-hash-table :test 'eq)
+  "CL object -> its interned AUTOLISP-LISP-OBJECT wrapper (EQ-stable identity).")
+
+(defun wrap-lisp-object (value type-name &optional labeler)
+  "Wrap the CL VALUE as an opaque AutoLISP object reporting TYPE-NAME (a string,
+e.g. \"WINDOW\") to (type …); LABELER is an optional thunk returning a fresh
+short label for printing. The same VALUE always yields the same (EQ) wrapper."
+  (or (gethash value *lisp-object-wrappers*)
+      (setf (gethash value *lisp-object-wrappers*)
+            (clautolisp.autolisp-runtime.internal::make-autolisp-lisp-object
+             :value value :type-name type-name :labeler labeler))))
+
+(defun lisp-object-p (object &optional type-name)
+  "True when OBJECT is an opaque AutoLISP lisp-object (of TYPE-NAME, if given)."
+  (and (typep object 'autolisp-lisp-object)
+       (or (null type-name)
+           (string-equal type-name (autolisp-lisp-object-type-name object)))))
+
+(defun unwrap-lisp-object (object &optional type-name who)
+  "The CL object inside an opaque AUTOLISP-LISP-OBJECT; a runtime error if OBJECT
+is not a lisp-object, or (when TYPE-NAME is given) not of that type. WHO names
+the caller for the error message."
+  (unless (typep object 'autolisp-lisp-object)
+    (signal-autolisp-runtime-error
+     :bad-argument "~@[~A: ~]expected an opaque lisp-object, got ~S."
+     who object))
+  (when (and type-name
+             (not (string-equal type-name (autolisp-lisp-object-type-name object))))
+    (signal-autolisp-runtime-error
+     :bad-argument "~@[~A: ~]expected a ~A handle, got a ~A."
+     who type-name (autolisp-lisp-object-type-name object)))
+  (autolisp-lisp-object-value object))
+
+(defun reset-lisp-object-wrappers ()
+  "Drop the interned lisp-object wrappers (a fresh session / tests)."
+  (clrhash *lisp-object-wrappers*))
+
 (defun make-autolisp-safearray (&key value)
   (clautolisp.autolisp-runtime.internal::make-autolisp-safearray :value value))
 
@@ -1529,6 +1582,14 @@ name/line) or an AutoLISP function designator / form; :UNBIND (KEY-STRING);
 :LOOKUP (KEY-STRING); :MAP (AUTOLISP-FUNCTION) — called with (KEY-STRING COMMAND)
 per binding; :DEFINE-COMMAND (NAME-STRING AUTOLISP-FUNCTION). The debugger UI
 installs it; NIL (a no-op) when that layer is absent.")
+
+(defparameter *ui-object-hook* nil
+  "When non-nil, a function (OP &rest ARGS) the CLAL frame / window / face
+builtins call to reach the debugger UI's tui-core objects (TUI module spec). OP
+is a keyword (:MAKE-FRAME :FRAME-LIST :SELECT-FRAME :MAKE-WINDOW :WINDOW-LIST
+:DEFINE-FACE :FACE-PARAMETERS …); the hook marshals AutoLISP values <-> tui-core
+objects (returning opaque lisp-object handles via WRAP-LISP-OBJECT). The debugger
+UI installs it; NIL (a no-op) when that layer is absent.")
 
 (defparameter *debug-break-hook* nil
   "When non-nil, a function of one optional MESSAGE argument that the
@@ -3447,6 +3508,10 @@ forms have unevaluated operands it must not instrument (spec §5.3)."
      (intern-autolisp-symbol "VARIANT"))
     ((typep object 'autolisp-vla-object)
      (intern-autolisp-symbol "VLA-OBJECT"))
+    ((typep object 'autolisp-lisp-object)
+     ;; an opaque handle onto a CL object reports its own type designator,
+     ;; e.g. (type (clal-make-window …)) -> WINDOW
+     (intern-autolisp-symbol (autolisp-lisp-object-type-name object)))
     (t
      (signal-autolisp-runtime-error
       :unknown-runtime-type

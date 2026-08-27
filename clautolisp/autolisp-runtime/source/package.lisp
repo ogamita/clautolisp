@@ -122,6 +122,13 @@
    #:autolisp-vla-object
    #:autolisp-vla-object-value
    #:make-autolisp-vla-object
+   #:autolisp-lisp-object
+   #:autolisp-lisp-object-value
+   #:autolisp-lisp-object-type-name
+   #:wrap-lisp-object
+   #:unwrap-lisp-object
+   #:lisp-object-p
+   #:reset-lisp-object-wrappers
    #:intern-autolisp-symbol
    #:find-autolisp-symbol
    #:reset-autolisp-symbol-table
@@ -202,6 +209,7 @@
    #:*define-interactor-command-hook*
    #:*list-interactor-names-hook*
    #:*ui-binding-hook*
+   #:*ui-object-hook*
    #:*debug-nav-hook*
    #:*debug-select-file-hook*
    #:*debug-command-hook*

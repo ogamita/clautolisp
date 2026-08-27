@@ -223,6 +223,18 @@ clautolisp-secureload-trust-model spec.")
 (defstruct autolisp-vla-object
   value)
 
+;;; An opaque AutoLISP handle onto an arbitrary Common Lisp object (the debugger
+;;; UI's frames / windows / faces, etc.): VALUE is the wrapped CL object,
+;;; TYPE-NAME the AutoLISP type designator string it reports to (type …) (e.g.
+;;; "WINDOW", "VDT-FRAME"), and LABELER an optional thunk returning a fresh short
+;;; label for printing. It prints unreadably as `#<TYPE-NAME "label" address>' so
+;;; it is safe and legible in traces and the debugger. Wrappers are interned per
+;;; CL object (see WRAP-LISP-OBJECT) so the same object is EQ-stable in AutoLISP.
+(defstruct autolisp-lisp-object
+  value
+  (type-name "LISP-OBJECT")
+  (labeler nil))
+
 ;;; ---- PRINT-OBJECT methods for AutoLISP runtime values --------------
 ;;;
 ;;; *COLOR-OUTPUT* lives in terminal-color.lisp, which is loaded AFTER
@@ -337,6 +349,16 @@ because the print-object method lives here."
 (defmethod print-object ((object autolisp-safearray) stream)
   (handler-case
       (format stream "#<SAFEARRAY>")
+    (error ()
+      (call-next-method))))
+
+(defmethod print-object ((object autolisp-lisp-object) stream)
+  (handler-case
+      (print-unreadable-object (object stream :identity t)
+        (let ((label (let ((labeler (autolisp-lisp-object-labeler object)))
+                       (and labeler (ignore-errors (funcall labeler))))))
+          (format stream "~A~@[ ~S~]"
+                  (autolisp-lisp-object-type-name object) label)))
     (error ()
       (call-next-method))))
 

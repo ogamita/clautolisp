@@ -715,3 +715,40 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
                (clautolisp.autolisp-runtime:make-autolisp-string "continue"))))
     (is (null (clautolisp.autolisp-builtins-core::builtin-clal-binding-lookup
                (clautolisp.autolisp-runtime:make-autolisp-string "z"))))))
+
+;;; --- opaque lisp-object handles + clal frame/window/face builtins ------
+
+(test opaque-lisp-object-reports-its-type-and-prints-unreadably
+  (clautolisp.autolisp-runtime:reset-lisp-object-wrappers)
+  (let* ((obj (list :a :b))
+         (w (clautolisp.autolisp-runtime:wrap-lisp-object obj "WINDOW" (lambda () "sedit"))))
+    (is (clautolisp.autolisp-runtime:lisp-object-p w))
+    (is (clautolisp.autolisp-runtime:lisp-object-p w "WINDOW"))
+    (is (not (clautolisp.autolisp-runtime:lisp-object-p w "FRAME")))
+    ;; (type handle) -> WINDOW
+    (is (string= "WINDOW" (clautolisp.autolisp-runtime:autolisp-symbol-name
+                           (clautolisp.autolisp-runtime:autolisp-type w))))
+    (is (search "#<WINDOW \"sedit\"" (prin1-to-string w)))
+    ;; interned: same object -> EQ handle; unwrap round-trips
+    (is (eq w (clautolisp.autolisp-runtime:wrap-lisp-object obj "WINDOW")))
+    (is (eq obj (clautolisp.autolisp-runtime:unwrap-lisp-object w "WINDOW")))))
+
+(test clal-object-builtins-forward-to-the-ui-object-hook
+  (let ((calls '()))
+    (let ((clautolisp.autolisp-runtime:*ui-object-hook*
+            (lambda (op &rest args) (push (cons op args) calls) op)))
+      (clautolisp.autolisp-builtins-core::builtin-clal-make-window
+       (list (cons (clautolisp.autolisp-runtime:make-autolisp-string "name")
+                   (clautolisp.autolisp-runtime:make-autolisp-string "sedit"))))
+      (clautolisp.autolisp-builtins-core::builtin-clal-frame-list)
+      (clautolisp.autolisp-builtins-core::builtin-clal-define-face
+       (clautolisp.autolisp-runtime:make-autolisp-string "warn")))
+    (setf calls (nreverse calls))
+    (is (eq :make-window (first (first calls))))
+    (is (eq :frame-list (first (second calls))))
+    (is (eq :define-face (first (third calls))))))
+
+(test clal-object-builtins-are-no-ops-without-a-ui
+  (let ((clautolisp.autolisp-runtime:*ui-object-hook* nil))
+    (is (null (clautolisp.autolisp-builtins-core::builtin-clal-make-window nil)))
+    (is (null (clautolisp.autolisp-builtins-core::builtin-clal-frame-list)))))
