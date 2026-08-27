@@ -45,4 +45,10 @@ future backend behind the same protocol.")
    ;; window struct.
    #:window #:windowp #:make-window #:window-name #:set-window-name
    #:window-role #:window-frame
-   #:window-list #:delete-window #:selected-window #:select-window))
+   #:window-list #:delete-window #:selected-window #:select-window
+   ;; layout tree (spec §5.1)
+   #:layout-leaves #:window-cycle #:layout-rects
+   #:rect-top #:rect-left #:rect-bottom #:rect-right
+   #:rects-row-overlap-p #:rects-col-overlap-p #:window-neighbor
+   #:tree-swap-leaves #:clamp-ratio #:tree-resize #:tree-balance
+   #:tree-remove-leaf #:tree-split-active))

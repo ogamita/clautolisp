@@ -803,6 +803,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   ((:file "autolisp-debug-ui-tui/source/package")
    (:file "autolisp-debug-ui-tui/source/faces")
    (:file "autolisp-debug-ui-tui/source/tui")
+   (:file "autolisp-debug-ui-tui/source/layout")
    (:file "autolisp-debug-ui-tui/source/frames")
    (:file "autolisp-debug-ui-tui/source/windows"))
   :in-order-to ((asdf:test-op

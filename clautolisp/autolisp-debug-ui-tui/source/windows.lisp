@@ -32,6 +32,18 @@ becomes the frame's selected window."
                                  :frame frame)))
       (when frame
         (setf (frame-windows frame) (append (frame-windows frame) (list window)))
+        (cond
+          ((eq (window-role window) :minibuffer)
+           ;; the minibuffer is not tiled in the layout tree — it is the frame's
+           ;; reserved bottom line.
+           (setf (frame-minibuffer-p frame) t))
+          (t
+           ;; add the window to the layout tree (a fresh window splits the
+           ;; current layout side by side; the debugger UI may re-lay it out).
+           (setf (frame-layout frame)
+                 (if (frame-layout frame)
+                     (list :vertical 1/2 (frame-layout frame) window)
+                     window))))
         (unless (frame-selected-window frame)
           (setf (frame-selected-window frame) window)))
       window)))

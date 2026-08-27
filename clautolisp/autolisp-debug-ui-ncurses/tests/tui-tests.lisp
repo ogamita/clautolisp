@@ -106,3 +106,22 @@
       (is (eq w2 (clautolisp.ui.tui:selected-window)))
       (clautolisp.ui.tui:delete-window w2)
       (is (= 1 (length (clautolisp.ui.tui:window-list frame nil)))))))
+
+(test window-layout-tree-over-objects
+  (clautolisp.ui.tui:reset-frames)
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen :rows 10 :cols 40))
+         (frame (clautolisp.ui.tui:make-frame
+                 (list (cons :device :vdt) (cons :screen screen)))))
+    (clautolisp.ui.tui:select-frame frame)
+    (let ((w1 (clautolisp.ui.tui:make-window (list (cons :name "a"))))
+          (w2 (clautolisp.ui.tui:make-window (list (cons :name "b")))))
+      ;; the generic layout tree tiles window OBJECTS (leaf = any non-split)
+      (is (equal (list w1 w2)
+                 (clautolisp.ui.tui:layout-leaves (clautolisp.ui.tui:frame-layout frame))))
+      (is (eq w2 (clautolisp.ui.tui:window-cycle (clautolisp.ui.tui:frame-layout frame) w1 +1)))
+      (multiple-value-bind (rects vlines)
+          (clautolisp.ui.tui:layout-rects (clautolisp.ui.tui:frame-layout frame) 0 0 9 40)
+        (is (= 2 (length rects)))
+        (is (= 1 (length vlines)))
+        (is (< (clautolisp.ui.tui:rect-left (cdr (assoc w1 rects)))
+               (clautolisp.ui.tui:rect-left (cdr (assoc w2 rects)))))))))
