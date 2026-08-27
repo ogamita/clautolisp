@@ -14,7 +14,7 @@
   :description "cl-charms (ncurses) backend for the clautolisp.ui.tui screen protocol (Unix; not in the aggregate)."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-debug-ui-tui" "cl-charms")
+  :depends-on ("tui-core" "cl-charms")
   :serial t
   :components
   ((:file "source/package")

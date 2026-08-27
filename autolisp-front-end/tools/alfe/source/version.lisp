@@ -16,4 +16,4 @@
 ;;;; 1.9.0 while clautolisp reached 1.9.7 and alfe gained the AutoCAD
 ;;;; start-engine PROBE fix and --on-error; realigned here.)
 
-(defparameter *version* "1.9.25")
+(defparameter *version* "1.9.26")

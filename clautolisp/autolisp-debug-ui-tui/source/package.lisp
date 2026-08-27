@@ -1,9 +1,9 @@
-(defpackage #:clautolisp.ui.tui
+(defpackage #:tui-core
   ;; TUI module spec: this package IS the tui-core module (screen protocol,
-  ;; panes, faces, and — being extended — frames and windows). It has no
-  ;; clautolisp dependency. The tui-core nickname names it as the module; a
-  ;; later cosmetic step may make tui-core the primary name.
-  (:nicknames #:tui-core)
+  ;; panes, faces, frames, windows, layout tree). It has no clautolisp
+  ;; dependency. TUI-CORE is now the primary name; CLAUTOLISP.UI.TUI stays as a
+  ;; nickname so existing clautolisp.ui.tui: references keep resolving.
+  (:nicknames #:clautolisp.ui.tui)
   (:use #:cl)
   (:documentation
    "Thin terminal-UI abstraction for the ncurses debugger UI

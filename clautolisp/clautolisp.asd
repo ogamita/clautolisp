@@ -1,3 +1,11 @@
+;;;; The independent tui-core module (TUI module spec §10) lives in its own
+;;;; standalone .asd. Load it here at read time so that every dependent naming
+;;;; "tui-core" (the umbrella clautolisp system, the ncurses UI, the curses /
+;;;; charms backends) resolves it — in every context that loads clautolisp.asd,
+;;;; with no source-registry configuration required.
+(asdf:load-asd (merge-pathnames "autolisp-debug-ui-tui/tui-core.asd"
+                                (or *load-truename* *default-pathname-defaults*)))
+
 (asdf:defsystem "clautolisp"
   :description "Aggregate clautolisp implementation systems."
   :author "Codex"
@@ -19,7 +27,7 @@
                "clautolisp/autolisp-interactor"
                "clautolisp/autolisp-debug-ui"
                "clautolisp/autolisp-debug-ui-dumb"
-               "clautolisp/autolisp-debug-ui-tui"
+               "tui-core"
                "clautolisp/autolisp-debug-ui-ncurses")
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/tests")))
@@ -793,31 +801,16 @@ identity / TEMPPREFIX stamping, option value parsers)."
                          (uiop:symbol-call :clautolisp.debug.tests
                                            :run-all-tests)))
 
-(asdf:defsystem "clautolisp/autolisp-debug-ui-tui"
-  :description "Thin terminal-UI abstraction + mock backend for the ncurses debugger UI (debugger §19.3)."
-  :author "Codex"
-  :license "AGPL-3.0"
-  :depends-on ()
-  :serial t
-  :components
-  ((:file "autolisp-debug-ui-tui/source/package")
-   (:file "autolisp-debug-ui-tui/source/faces")
-   (:file "autolisp-debug-ui-tui/source/tui")
-   (:file "autolisp-debug-ui-tui/source/layout")
-   (:file "autolisp-debug-ui-tui/source/frames")
-   (:file "autolisp-debug-ui-tui/source/windows"))
-  :in-order-to ((asdf:test-op
-                 (asdf:test-op "clautolisp/autolisp-debug-ui-ncurses/tests")))
-  :perform (asdf:test-op (op system)
-                         (declare (ignore op system))
-                         :success))
+;; The tui-core module lives in its own standalone system (TUI module spec §10);
+;; see autolisp-debug-ui-tui/tui-core.asd, loaded at the top of this file so
+;; dependents that name "tui-core" resolve without source-registry setup.
 
 (asdf:defsystem "clautolisp/autolisp-debug-ui-ncurses"
   :description "Four-pane ncurses debugger UI on the tui abstraction (debugger §19)."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-debug-ui"
-               "clautolisp/autolisp-debug-ui-tui"
+               "tui-core"
                ;; the ncurses UI routes ,<line> minibuffer commands through the
                ;; shared ALDO command vocabulary (dumb UI-RUN-COMMAND with its
                ;; output redirected into a pane); reuse rather than reimplement.

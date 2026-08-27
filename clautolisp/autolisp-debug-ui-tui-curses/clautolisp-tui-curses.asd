@@ -15,7 +15,7 @@
 (asdf:defsystem "clautolisp-tui-curses"
   :description "No-grovel CFFI ncurses backend for clautolisp.ui.tui (Unix/macOS; libncurses loaded on demand)."
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-debug-ui-tui" "cffi")
+  :depends-on ("tui-core" "cffi")
   :serial t
   :components
   ((:file "source/package")
