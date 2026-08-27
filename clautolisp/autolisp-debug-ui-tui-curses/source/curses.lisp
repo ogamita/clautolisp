@@ -147,7 +147,9 @@ harmless if already suspended."
   ;; attribute bits — a colour pair for its foreground plus bold / underline /
   ;; reverse. An unknown symbol resolves to plain text.
   (let* ((win (curses-window screen))
-         (params (face-parameters attr))
+         ;; resolve the face through the active config cascade (pjb: per-config
+         ;; face overrides), falling back to the global registry.
+         (params (clautolisp.ui.tui:resolve-face attr))
          (fg (getf params :fg))
          (pair (and fg (gethash fg (curses-color-pairs screen))))
          (bits (logior (if pair (color-pair pair) 0)

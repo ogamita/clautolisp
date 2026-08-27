@@ -35,13 +35,21 @@
   "Registry: config name (string) -> CONFIG.")
 
 (defun find-config (name)
-  "The registered config named NAME, or NIL."
-  (and name (gethash (string-downcase (string name)) *configs*)))
+  "The registered config named NAME (a name or a CONFIG), or NIL."
+  (cond ((config-p name) name)
+        (name (gethash (string-downcase (string name)) *configs*))))
 
 (defun ensure-config (name &optional parent)
-  "Find or create the config NAME. When creating, set its PARENT (a CONFIG, a
-config name, or NIL); an existing config's parent is left unchanged unless PARENT
-is supplied and differs."
+  "Find or create the config NAME (a name or a CONFIG). When creating, set its
+PARENT (a CONFIG, a config name, or NIL); an existing config's parent is left
+unchanged unless PARENT is supplied and differs."
+  (when (config-p name)
+    (when (and parent (not (eq (config-parent name)
+                               (etypecase parent (null nil) (config parent)
+                                          ((or string symbol) (ensure-config parent))))))
+      (setf (config-parent name)
+            (etypecase parent (config parent) ((or string symbol) (ensure-config parent)))))
+    (return-from ensure-config name))
   (let* ((key (string-downcase (string name)))
          (existing (gethash key *configs*)))
     (flet ((as-config (p) (etypecase p
@@ -100,6 +108,79 @@ dirty. Overrides — but does not change — any inherited value."
 (defun reset-configs ()
   "Drop the whole config registry (tests / a fresh session)."
   (clrhash *configs*))
+
+(defun config-own-value (config key &optional default)
+  "The value of KEY in CONFIG's OWN settings (not inherited), or DEFAULT."
+  (let ((c (if (config-p config) config (find-config config))))
+    (if c
+        (multiple-value-bind (v present) (gethash key (config-settings c))
+          (if present v default))
+        default)))
+
+;;; --- per-config faces and key bindings (resolved through the cascade) --
+;;; The active interactor's config cascade decides a face's look and a key's
+;;; binding: an innermost config's override shadows its parents', and the whole
+;;; cascade shadows the built-in / global default. *ACTIVE-CONFIG* names the
+;;; config in effect (a UI binds it to the active window's config).
+
+(defvar *active-config* nil
+  "The config whose cascade RESOLVE-FACE / EFFECTIVE-KEYMAP use by default
+(a CONFIG, a name, or NIL for the global defaults only).")
+
+(defun set-config-face (config name params)
+  "Override face NAME (a symbol) with PARAMS (a display-parameter plist) in
+CONFIG's own settings. Returns NAME."
+  (let* ((c (ensure-config config))
+         (alist (remove name (config-own-value c :faces) :key #'car)))
+    (config-set-value c :faces (acons name params alist))
+    name))
+
+(defun resolve-face (name &optional (config *active-config*))
+  "The display parameters for face NAME, resolved through CONFIG's cascade
+:FACES overrides (innermost first), falling back to the global face registry
+(FACE-PARAMETERS). CONFIG NIL resolves against the global registry only."
+  (let ((c (and config (if (config-p config) config (find-config config)))))
+    (dolist (cfg (and c (config-cascade c)))
+      (let ((hit (assoc name (config-own-value cfg :faces))))
+        (when hit (return-from resolve-face (cdr hit)))))
+    (face-parameters name)))
+
+(defun config-bind (config key-string command)
+  "Bind KEY-STRING to COMMAND in CONFIG's own :BINDINGS (replacing any binding of
+the same key there). Returns KEY-STRING."
+  (let* ((c (ensure-config config))
+         (alist (remove key-string (config-own-value c :bindings)
+                        :key #'car :test #'string=)))
+    (config-set-value c :bindings (acons key-string command alist))
+    key-string))
+
+(defun config-unbind (config key-string)
+  "Remove KEY-STRING from CONFIG's own :BINDINGS. Returns T if one was removed."
+  (let* ((c (if (config-p config) config (find-config config)))
+         (alist (and c (config-own-value c :bindings))))
+    (when (and c (assoc key-string alist :test #'string=))
+      (config-set-value c :bindings
+                        (remove key-string alist :key #'car :test #'string=))
+      t)))
+
+(defun config-bindings (config)
+  "CONFIG's OWN key bindings as an alist (KEY-STRING . COMMAND)."
+  (config-own-value config :bindings))
+
+(defun effective-keymap (config)
+  "A keymap merging the :BINDINGS of CONFIG's whole cascade, applied root-first so
+an innermost config's binding overrides its parents'."
+  (let ((map (make-keymap)))
+    (dolist (cfg (reverse (config-cascade config)) map)   ; root .. innermost
+      (dolist (pair (config-own-value cfg :bindings))
+        (keymap-bind map (parse-key-sequence (car pair)) (cdr pair))))))
+
+(defun effective-binding (config key-string)
+  "The command bound to KEY-STRING for CONFIG's cascade, or NIL (innermost wins)."
+  (let (found)
+    (dolist (cfg (config-cascade config) found)          ; innermost .. root
+      (let ((hit (assoc key-string (config-own-value cfg :bindings) :test #'string=)))
+        (when hit (return-from effective-binding (cdr hit)))))))
 
 ;;; --- persistence: <name>.conf, cascading like the configs -------------
 

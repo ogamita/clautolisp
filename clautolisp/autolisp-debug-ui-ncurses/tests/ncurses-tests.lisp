@@ -596,9 +596,10 @@
   (with-fresh-bindings
     (funcall clautolisp.autolisp-runtime:*ui-binding-hook*
              :bind "z" "window-select-next")
-    ;; lookup returns the ORIGINAL command
+    ;; lookup returns the ORIGINAL command (a string comes back as an AutoLISP string)
     (is (equal "window-select-next"
-               (funcall clautolisp.autolisp-runtime:*ui-binding-hook* :lookup "z")))
+               (clautolisp.autolisp-runtime:autolisp-string-value
+                (funcall clautolisp.autolisp-runtime:*ui-binding-hook* :lookup "z"))))
     ;; and the key fires the named command in the running UI
     (let* ((context (fresh-context))
            (metas (load-and-instrument context +two-source+ "TWO" "ID"))

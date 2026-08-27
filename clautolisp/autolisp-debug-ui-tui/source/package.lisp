@@ -53,8 +53,12 @@ future backend behind the same protocol.")
    #:config #:config-p #:config-name #:config-parent #:config-dirty
    #:*configs* #:find-config #:ensure-config #:reset-configs
    #:config-value #:config-set-value #:config-unset #:config-cascade
-   #:config-local-keys #:config-settings-alist
+   #:config-local-keys #:config-settings-alist #:config-own-value
    #:read-config #:write-config #:ensure-standard-configs
+   ;; per-config faces + bindings (resolved through the cascade)
+   #:*active-config* #:set-config-face #:resolve-face
+   #:config-bind #:config-unbind #:config-bindings
+   #:effective-keymap #:effective-binding
    ;; keymaps (spec §6 / ncurses-key-bindings.issue)
    #:parse-key-sequence #:unparse-key-sequence
    #:keymap #:keymap-p #:make-keymap #:keymap-bind #:keymap-unbind

@@ -246,3 +246,44 @@
         (is (eq :yellow (clautolisp.ui.tui:config-value dst :face-current-line)))
         (is (eql 4 (clautolisp.ui.tui:config-value dst :tab-width)))
         (is (not (clautolisp.ui.tui:config-dirty dst)))))))
+
+;;;; --- per-config faces + bindings (resolved through the cascade) -----
+
+(test binding-resolves-per-config-cascade
+  (clautolisp.ui.tui:reset-configs)
+  (clautolisp.ui.tui:ensure-standard-configs)
+  (clautolisp.ui.tui:config-bind "aldo" "g" "aldo-cmd")
+  (clautolisp.ui.tui:config-bind "stack" "g" "stack-cmd")
+  ;; stack -> aldo -> lisp: the innermost (stack) override wins
+  (is (equal "stack-cmd" (clautolisp.ui.tui:effective-binding "stack" "g")))
+  ;; navi -> aldo -> lisp: inherits aldo's binding (no stack override)
+  (is (equal "aldo-cmd" (clautolisp.ui.tui:effective-binding "navi" "g")))
+  ;; inspector -> lisp: sees neither
+  (is (null (clautolisp.ui.tui:effective-binding "inspector" "g"))))
+
+(test face-resolves-per-config-cascade
+  (clautolisp.ui.tui:reset-configs)
+  (clautolisp.ui.tui:ensure-standard-configs)
+  (clautolisp.ui.tui:set-config-face "stack" :current-line '(:fg :red))
+  ;; through the stack cascade -> the override
+  (is (equal '(:fg :red)
+             (clautolisp.ui.tui:resolve-face
+              :current-line (clautolisp.ui.tui:find-config "stack"))))
+  ;; through the inspector cascade -> the global default (yellow), not the override
+  (is (eq :yellow (getf (clautolisp.ui.tui:resolve-face
+                         :current-line (clautolisp.ui.tui:find-config "inspector"))
+                        :fg)))
+  ;; no active config -> global default
+  (is (eq :yellow (getf (clautolisp.ui.tui:resolve-face :current-line nil) :fg))))
+
+(test bindings-and-faces-persist-through-config
+  (clautolisp.ui.tui:reset-configs)
+  (let ((c (clautolisp.ui.tui:ensure-config "sedit" "lisp")))
+    (clautolisp.ui.tui:config-bind c "C-x C-s" "save")
+    (clautolisp.ui.tui:set-config-face c :current-line '(:fg :green))
+    (let ((text (with-output-to-string (s) (clautolisp.ui.tui:write-config c s))))
+      (clautolisp.ui.tui:reset-configs)
+      (let ((d (clautolisp.ui.tui:ensure-config "sedit" "lisp")))
+        (with-input-from-string (s text) (clautolisp.ui.tui:read-config d s))
+        (is (equal "save" (clautolisp.ui.tui:effective-binding d "C-x C-s")))
+        (is (equal '(:fg :green) (clautolisp.ui.tui:resolve-face :current-line d)))))))

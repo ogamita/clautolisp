@@ -243,10 +243,13 @@ lines and an optional 0-based row to keep in view. Dispatch on the pane role."
 
 (defun render-window (ui session window rect)
   (setf (window-rect window) rect)
-  (multiple-value-bind (buffer follow-row) (window-content ui session window)
-    (setf (window-buffer window) buffer)
-    (multiple-value-bind (sl sc) (clamp-scroll window buffer rect follow-row)
-      (draw-window-buffer (ncurses-ui-screen ui) rect buffer sl sc))))
+  ;; per-config face resolution: the backend resolves face symbols through this
+  ;; window's config cascade while its content is drawn (pjb).
+  (let ((*active-config* (ensure-config (window-config-name window))))
+    (multiple-value-bind (buffer follow-row) (window-content ui session window)
+      (setf (window-buffer window) buffer)
+      (multiple-value-bind (sl sc) (clamp-scroll window buffer rect follow-row)
+        (draw-window-buffer (ncurses-ui-screen ui) rect buffer sl sc)))))
 
 (defun render-debugger (ui session)
   "Draw the four windows: scrollable content buffers + a status line each,
@@ -378,41 +381,63 @@ the 0-based row of that selection, to keep in view."
 ;;;; prefix. Bindings are session-wide (not per-UI): the clal- AutoLISP surface
 ;;;; and the aldb UI share this one map.
 
-(defvar *user-keymap* (make-keymap)
-  "The user key bindings (a tui-core keymap). Shadows the built-in dispatch.")
+;;;; Bindings live PER-CONFIG (pjb: per-config resolution). Each debugger window
+;;;; maps to a config; the active window's config cascade decides which command a
+;;;; key fires — an innermost config's binding shadows its parents', and the
+;;;; whole cascade shadows the built-ins. clal-binding writes into the config
+;;;; named by *ACTIVE-CONFIG* (default "lisp", so a user init file binds globally,
+;;;; inherited by every window); a bound key is stored as its ORIGINAL command
+;;;; value (a name/line string or an AutoLISP function designator).
+
+(defparameter +window-config-name+
+  '((:stack . "stack") (:source . "navi") (:interactor . "aldo") (:repl . "repl"))
+  "Debugger window role -> the config whose cascade its interactor runs under.")
+
+(defun window-config-name (window)
+  (or (cdr (assoc (window-role window) +window-config-name+)) "lisp"))
+
+(defun active-window-config (ui)
+  "The config for UI's active window (its cascade resolves faces + bindings)."
+  (ensure-config (window-config-name (active-window ui))))
+
 (defvar *user-ui-commands* '()
   "User-registered named commands: NAME -> (lambda (ui session hit arg) -> dir).
-Reached from M-x, `,', and as binding targets; shadow *ncurses-commands*.")
+Reached from M-x, `,', and as binding targets; shadow *ncurses-commands*.
+Global (not per-config): a command NAME resolves the same everywhere.")
 
-(defvar *user-binding-originals* (make-hash-table :test 'equal)
-  "Canonical key string -> the command value as first given to clal-binding, so
-clal-binding-lookup / clal-map-bindings report the AutoLISP value the user bound
-(the keymap stores the wrapped/canonical form).")
+(defun binding-config ()
+  "The config clal-binding writes into: *ACTIVE-CONFIG* (a config or name) or the
+base \"lisp\" config."
+  (let ((a *active-config*))
+    (cond ((null a) (ensure-config "lisp"))
+          ((config-p a) a)
+          (t (ensure-config a)))))
 
 (defun reset-user-bindings ()
-  "Drop all user key bindings and user named commands (fresh session / tests)."
-  (setf *user-keymap* (make-keymap) *user-ui-commands* '())
-  (clrhash *user-binding-originals*))
+  "Drop all user key bindings (across every config) and user named commands."
+  (setf *user-ui-commands* '())
+  (ensure-standard-configs)
+  (maphash (lambda (name config) (declare (ignore name))
+             (config-unset config :bindings))
+           *configs*))
 
-(defun ui-bind (key-sequence command)
-  "Bind KEY-SEQUENCE (an Emacs-style string) to COMMAND — a command name/line
-STRING (routed through the command table) or a FUNCTION (ui session hit) ->
-directive. Returns the canonical key string."
-  (keymap-bind *user-keymap* (parse-key-sequence key-sequence) command)
-  key-sequence)
+(defun ui-bind (key-sequence command &optional (config (binding-config)))
+  "Bind KEY-SEQUENCE (an Emacs-style string) to COMMAND in CONFIG (default the
+active/binding config). Returns the canonical key string."
+  (config-bind config (%canonical-key key-sequence) command))
 
-(defun ui-unbind (key-sequence)
-  "Remove the user binding at KEY-SEQUENCE (revert to the built-in). Returns T
-if one was removed."
-  (keymap-unbind *user-keymap* (parse-key-sequence key-sequence)))
+(defun ui-unbind (key-sequence &optional (config (binding-config)))
+  "Remove KEY-SEQUENCE's binding in CONFIG. Returns T if one was removed."
+  (config-unbind config (%canonical-key key-sequence)))
 
-(defun ui-binding-lookup (key-sequence)
-  "The command bound to KEY-SEQUENCE in the user map, or NIL."
-  (keymap-lookup *user-keymap* (parse-key-sequence key-sequence)))
+(defun ui-binding-lookup (key-sequence &optional (config (binding-config)))
+  "The command bound to KEY-SEQUENCE for CONFIG's cascade, or NIL."
+  (effective-binding config (%canonical-key key-sequence)))
 
-(defun ui-map-bindings (function)
-  "Call FUNCTION with (KEY-STRING COMMAND) for every user binding."
-  (keymap-map *user-keymap* function))
+(defun ui-map-bindings (function &optional (config (binding-config)))
+  "Call FUNCTION with (KEY-STRING COMMAND) for every effective binding of
+CONFIG's cascade."
+  (keymap-map (effective-keymap config) function))
 
 (defun ui-define-command (name function)
   "Register (or replace) a user named command NAME -> FUNCTION (ui session hit
@@ -423,9 +448,7 @@ arg) -> directive, reachable from M-x / `,' and as a binding target."
 
 ;;;; --- the clal-binding AutoLISP surface (step 5c) -------------------
 ;;;; The CLAL-BINDING family (autolisp-builtins-core) reaches here through
-;;;; clautolisp.autolisp-runtime:*ui-binding-hook*, installed below. The builtins
-;;;; stay UI-agnostic; the wrapping of an AutoLISP command value into a firing
-;;;; closure (which needs the runtime) lives here.
+;;;; clautolisp.autolisp-runtime:*ui-binding-hook*, installed below.
 
 (defun %canonical-key (key-string)
   (unparse-key-sequence (parse-key-sequence key-string)))
@@ -439,42 +462,36 @@ no arguments; anything else is reported. Runs with debugging suppressed."
          (clautolisp.autolisp-runtime:resolve-autolisp-function-designator command))
       (error (e) (declare (ignore e)) nil))))
 
-(defun %wrap-binding-command (command)
-  "Turn a clal-binding COMMAND value into what the keymap stores: a command
-name/line STRING passes through; an AutoLISP function designator becomes a
-(ui session hit) closure that runs it in the stopped frame."
-  (cond
-    ((stringp command) command)
-    ((typep command 'clautolisp.autolisp-runtime:autolisp-string)
-     (clautolisp.autolisp-runtime:autolisp-string-value command))
-    (t (lambda (ui session hit)
-         (declare (ignore ui session hit))
-         (%run-autolisp-command command)
-         nil))))
+(defun %binding-command (command)
+  "Normalise a clal-binding COMMAND to what is STORED in a config: an AutoLISP
+string becomes a CL string (a command name/line); anything else (a function
+designator / form) is kept as-is and run via %RUN-AUTOLISP-COMMAND when fired."
+  (if (typep command 'clautolisp.autolisp-runtime:autolisp-string)
+      (clautolisp.autolisp-runtime:autolisp-string-value command)
+      command))
 
 (defun %ui-binding-dispatch (op &rest args)
   "The *ui-binding-hook* implementation for the CLAL-BINDING family."
   (ecase op
     (:bind (destructuring-bind (key-string command) args
-             (let ((canonical (%canonical-key key-string)))
-               (setf (gethash canonical *user-binding-originals*) command)
-               (ui-bind key-string (%wrap-binding-command command))
-               canonical)))
+             (ui-bind key-string (%binding-command command))))
     (:unbind (destructuring-bind (key-string) args
-               (remhash (%canonical-key key-string) *user-binding-originals*)
                (ui-unbind key-string)))
     (:lookup (destructuring-bind (key-string) args
-               (gethash (%canonical-key key-string) *user-binding-originals*)))
+               (let ((command (ui-binding-lookup key-string)))
+                 (if (stringp command)
+                     (clautolisp.autolisp-runtime:make-autolisp-string command)
+                     command))))
     (:map (destructuring-bind (function) args
             (ui-map-bindings
              (lambda (key command)
-               (declare (ignore command))
                (let ((clautolisp.autolisp-runtime:*debugging* nil))
                  (clautolisp.autolisp-runtime:call-autolisp-function
                   (clautolisp.autolisp-runtime:resolve-autolisp-function-designator function)
                   (clautolisp.autolisp-runtime:make-autolisp-string key)
-                  (or (gethash key *user-binding-originals*)
-                      (clautolisp.autolisp-runtime:make-autolisp-string ""))))))
+                  (if (stringp command)
+                      (clautolisp.autolisp-runtime:make-autolisp-string command)
+                      (or command (clautolisp.autolisp-runtime:make-autolisp-string "")))))))
             nil))
     (:define-command (destructuring-bind (name function) args
                        (ui-define-command
@@ -628,8 +645,9 @@ value."
 
 (defun fire-binding (ui session hit command)
   "Run a bound COMMAND: a STRING is a command name/line (routed through the
-command table, so window + named + aldo commands are reachable); a FUNCTION is
-called on (ui session hit). Returns the resume directive or NIL."
+command table, so window + named + aldo commands are reachable); a CL FUNCTION is
+called on (ui session hit); anything else is an AutoLISP function designator /
+form, run in the stopped frame. Returns the resume directive or NIL."
   (typecase command
     (string (let* ((s (string-trim " " command))
                    (sp (position #\Space s))
@@ -637,7 +655,7 @@ called on (ui session hit). Returns the resume directive or NIL."
                    (arg  (if sp (string-left-trim " " (subseq s sp)) "")))
               (run-named-command ui session hit name arg)))
     (function (funcall command ui session hit))
-    (t (set-message ui "unbindable command ~S" command) nil)))
+    (t (%run-autolisp-command command) nil)))
 
 (defun user-prefix-loop (ui session hit node prefix)
   "Read further keys inside a user prefix NODE (PREFIX the tokens already
@@ -662,22 +680,24 @@ chord), else report an undefined key."
     (t (set-message ui "undefined key") (values t nil))))
 
 (defun user-keymap-dispatch (ui session hit key)
-  "Consult the user keymap before the built-in dispatch. Returns (values HANDLED
-DIRECTIVE); HANDLED NIL means the key is unbound by the user — fall through."
-  (if (eq key :escape)
-      ;; Meta chord: Esc then k -> the (:meta . k) token.
-      (let* ((k (tui-read-key (ncurses-ui-screen ui)))
-             (token (cons :meta k)))
-        (multiple-value-bind (kind value) (keymap-step *user-keymap* token)
+  "Consult the ACTIVE window's user keymap (its config cascade — pjb's per-config
+resolution) before the built-in dispatch. Returns (values HANDLED DIRECTIVE);
+HANDLED NIL means the key is unbound by the user — fall through."
+  (let ((map (effective-keymap (active-window-config ui))))
+    (if (eq key :escape)
+        ;; Meta chord: Esc then k -> the (:meta . k) token.
+        (let* ((k (tui-read-key (ncurses-ui-screen ui)))
+               (token (cons :meta k)))
+          (multiple-value-bind (kind value) (keymap-step map token)
+            (case kind
+              (:leaf   (values t (fire-binding ui session hit value)))
+              (:prefix (user-prefix-loop ui session hit value (list token)))
+              (t       (values t (run-meta-command ui session hit k))))))
+        (multiple-value-bind (kind value) (keymap-step map key)
           (case kind
             (:leaf   (values t (fire-binding ui session hit value)))
-            (:prefix (user-prefix-loop ui session hit value (list token)))
-            (t       (values t (run-meta-command ui session hit k))))))
-      (multiple-value-bind (kind value) (keymap-step *user-keymap* key)
-        (case kind
-          (:leaf   (values t (fire-binding ui session hit value)))
-          (:prefix (user-prefix-loop ui session hit value (list key)))
-          (t       (values nil nil))))))
+            (:prefix (user-prefix-loop ui session hit value (list key)))
+            (t       (values nil nil)))))))
 
 (defun handle-key (ui session hit key)
   "Dispatch one key: the user keymap first (shadowing the built-ins), then the
