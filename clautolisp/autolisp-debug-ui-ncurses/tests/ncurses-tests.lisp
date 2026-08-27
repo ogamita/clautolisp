@@ -485,3 +485,99 @@
       (let ((repl (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui)))
         (is (some (lambda (l) (search "backward" l)) repl))
         (is (notany (lambda (l) (search "cross-function" l)) repl))))))
+
+;;;; --- user key bindings (ncurses-key-bindings.issue, step 5) --------
+
+(defmacro with-fresh-bindings (&body body)
+  `(unwind-protect
+        (progn (clautolisp.ui.ncurses::reset-user-bindings) ,@body)
+     (clautolisp.ui.ncurses::reset-user-bindings)))
+
+(test user-binding-map-and-remove
+  (with-fresh-bindings
+    (clautolisp.ui.ncurses::ui-bind "z" "window-select-next")
+    (let ((seen '()))
+      (clautolisp.ui.ncurses::ui-map-bindings (lambda (k c) (push (cons k c) seen)))
+      (is (equal "window-select-next" (cdr (assoc "z" seen :test #'string=)))))
+    (is (equal "window-select-next" (clautolisp.ui.ncurses::ui-binding-lookup "z")))
+    (is (clautolisp.ui.ncurses::ui-unbind "z"))
+    (is (null (clautolisp.ui.ncurses::ui-binding-lookup "z")))))
+
+(test user-binding-shadows-builtin-key
+  (with-fresh-bindings
+    ;; rebind c (built-in continue) to a window command: c must now move the
+    ;; active window, not resume.
+    (clautolisp.ui.ncurses::ui-bind "c" "window-select-next")
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+           (ti (break-at context metas 3)))
+      (multiple-value-bind (result ui screen)
+          (run-ncurses (list #\c) :context context :thread-info ti
+                       :thunk (lambda () (call-two context)))
+        (declare (ignore screen))
+        (is (eq :repl (active-role ui)))     ; c moved the window (shadowed)
+        (is (eql 7 result))))))              ; EOF then resumes
+
+(test user-binding-fires-a-function
+  (with-fresh-bindings
+    (clautolisp.ui.ncurses::ui-bind
+     "z" (lambda (ui session hit)
+           (declare (ignore session hit))
+           (clautolisp.ui.ncurses::push-repl ui "zzz") nil))
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+           (ti (break-at context metas 3)))
+      (multiple-value-bind (result ui screen)
+          (run-ncurses (list #\z #\c) :context context :thread-info ti
+                       :thunk (lambda () (call-two context)))
+        (declare (ignore result screen))
+        (is (some (lambda (l) (search "zzz" l))
+                  (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui)))))))
+
+(test user-binding-command-line-carries-hit
+  (with-fresh-bindings
+    ;; a command-LINE binding routes through the command table WITH the stop's
+    ;; hit — ,jump 3 at the line-4 stop is a within-function backward jump.
+    (clautolisp.ui.ncurses::ui-bind "z" "jump 3")
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+           (ti (break-at context metas 4)))
+      (multiple-value-bind (result ui screen)
+          (run-ncurses (list #\z #\c) :context context :thread-info ti
+                       :thunk (lambda () (call-two context)))
+        (declare (ignore result screen))
+        (is (some (lambda (l) (search "backward" l))
+                  (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui)))))))
+
+(test user-binding-prefix-chain-fires
+  (with-fresh-bindings
+    (clautolisp.ui.ncurses::ui-bind
+     "C-x C-f" (lambda (ui session hit)
+                 (declare (ignore session hit))
+                 (clautolisp.ui.ncurses::push-repl ui "cxcf") nil))
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+           (ti (break-at context metas 3)))
+      (multiple-value-bind (result ui screen)
+          (run-ncurses (list (code-char 24) (code-char 6) #\c)
+                       :context context :thread-info ti
+                       :thunk (lambda () (call-two context)))
+        (declare (ignore result screen))
+        (is (some (lambda (l) (search "cxcf" l))
+                  (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui)))))))
+
+(test user-binding-prefix-fallback-preserves-builtin
+  (with-fresh-bindings
+    ;; C-w becomes a user prefix (C-w >), but C-w n must still run the built-in
+    ;; window-select-next via the fall-back — one bound sub-key never disables
+    ;; the rest of the prefix.
+    (clautolisp.ui.ncurses::ui-bind
+     "C-w >" (lambda (ui session hit) (declare (ignore ui session hit)) nil))
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+           (ti (break-at context metas 3)))
+      (multiple-value-bind (result ui screen)
+          (run-ncurses (list (code-char 23) #\n #\c) :context context :thread-info ti
+                       :thunk (lambda () (call-two context)))
+        (declare (ignore result screen))
+        (is (eq :repl (active-role ui)))))))

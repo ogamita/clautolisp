@@ -369,14 +369,116 @@ the 0-based row of that selection, to keep in view."
            (when directive (return directive))))
     (tui-stop (ncurses-ui-screen ui))))
 
+;;;; --- user key bindings (ncurses-key-bindings.issue, step 5) --------
+;;;; A user KEYMAP (a tui-core prefix tree) is consulted BEFORE the built-in
+;;;; dispatch, so user bindings shadow the built-ins. A key unbound in the user
+;;;; map falls through to the built-in dispatch; a key unbound partway through a
+;;;; built-in prefix (C-w/C-x/Esc) falls back to the built-in command for the
+;;;; key actually read — so binding one sub-key never disables the rest of the
+;;;; prefix. Bindings are session-wide (not per-UI): the clal- AutoLISP surface
+;;;; and the aldb UI share this one map.
+
+(defvar *user-keymap* (make-keymap)
+  "The user key bindings (a tui-core keymap). Shadows the built-in dispatch.")
+(defvar *user-ui-commands* '()
+  "User-registered named commands: NAME -> (lambda (ui session hit arg) -> dir).
+Reached from M-x, `,', and as binding targets; shadow *ncurses-commands*.")
+
+(defun reset-user-bindings ()
+  "Drop all user key bindings and user named commands (fresh session / tests)."
+  (setf *user-keymap* (make-keymap) *user-ui-commands* '()))
+
+(defun ui-bind (key-sequence command)
+  "Bind KEY-SEQUENCE (an Emacs-style string) to COMMAND — a command name/line
+STRING (routed through the command table) or a FUNCTION (ui session hit) ->
+directive. Returns the canonical key string."
+  (keymap-bind *user-keymap* (parse-key-sequence key-sequence) command)
+  key-sequence)
+
+(defun ui-unbind (key-sequence)
+  "Remove the user binding at KEY-SEQUENCE (revert to the built-in). Returns T
+if one was removed."
+  (keymap-unbind *user-keymap* (parse-key-sequence key-sequence)))
+
+(defun ui-binding-lookup (key-sequence)
+  "The command bound to KEY-SEQUENCE in the user map, or NIL."
+  (keymap-lookup *user-keymap* (parse-key-sequence key-sequence)))
+
+(defun ui-map-bindings (function)
+  "Call FUNCTION with (KEY-STRING COMMAND) for every user binding."
+  (keymap-map *user-keymap* function))
+
+(defun ui-define-command (name function)
+  "Register (or replace) a user named command NAME -> FUNCTION (ui session hit
+arg) -> directive, reachable from M-x / `,' and as a binding target."
+  (setf *user-ui-commands* (remove name *user-ui-commands* :key #'car :test #'string-equal))
+  (push (cons name function) *user-ui-commands*)
+  name)
+
+(defun fire-binding (ui session hit command)
+  "Run a bound COMMAND: a STRING is a command name/line (routed through the
+command table, so window + named + aldo commands are reachable); a FUNCTION is
+called on (ui session hit). Returns the resume directive or NIL."
+  (typecase command
+    (string (let* ((s (string-trim " " command))
+                   (sp (position #\Space s))
+                   (name (if sp (subseq s 0 sp) s))
+                   (arg  (if sp (string-left-trim " " (subseq s sp)) "")))
+              (run-named-command ui session hit name arg)))
+    (function (funcall command ui session hit))
+    (t (set-message ui "unbindable command ~S" command) nil)))
+
+(defun user-prefix-loop (ui session hit node prefix)
+  "Read further keys inside a user prefix NODE (PREFIX the tokens already
+consumed). Fire a leaf; recurse into a deeper prefix; on an unbound key fall
+back to the built-in command for the prefix's first token."
+  (let ((k (tui-read-key (ncurses-ui-screen ui))))
+    (multiple-value-bind (kind value) (keymap-step node k)
+      (case kind
+        (:leaf   (values t (fire-binding ui session hit value)))
+        (:prefix (user-prefix-loop ui session hit value (append prefix (list k))))
+        (t       (fallback-builtin ui session hit (first prefix) k))))))
+
+(defun fallback-builtin (ui session hit prefix-token k)
+  "A user prefix bottomed out unbound at K: run the built-in command for the key
+K under the built-in prefix PREFIX-TOKEN (C-w/C-x window commands, or a Meta
+chord), else report an undefined key."
+  (cond
+    ((and (characterp prefix-token) (member (char-code prefix-token) '(23 24)))
+     (run-window-command ui k) (values t nil))
+    ((and (consp prefix-token) (eq (car prefix-token) :meta))
+     (values t (run-meta-command ui session hit k)))
+    (t (set-message ui "undefined key") (values t nil))))
+
+(defun user-keymap-dispatch (ui session hit key)
+  "Consult the user keymap before the built-in dispatch. Returns (values HANDLED
+DIRECTIVE); HANDLED NIL means the key is unbound by the user — fall through."
+  (if (eq key :escape)
+      ;; Meta chord: Esc then k -> the (:meta . k) token.
+      (let* ((k (tui-read-key (ncurses-ui-screen ui)))
+             (token (cons :meta k)))
+        (multiple-value-bind (kind value) (keymap-step *user-keymap* token)
+          (case kind
+            (:leaf   (values t (fire-binding ui session hit value)))
+            (:prefix (user-prefix-loop ui session hit value (list token)))
+            (t       (values t (run-meta-command ui session hit k))))))
+      (multiple-value-bind (kind value) (keymap-step *user-keymap* key)
+        (case kind
+          (:leaf   (values t (fire-binding ui session hit value)))
+          (:prefix (user-prefix-loop ui session hit value (list key)))
+          (t       (values nil nil))))))
+
 (defun handle-key (ui session hit key)
-  "Dispatch one key through the ACTIVE window's interactor stack (the
-:WINDOW-MANAGER on top, then the window's own interactor). The first interactor
-that handles the key wins; return its resume directive or NIL."
-  (dolist (interactor (window-stack (active-window ui)) nil)
-    (multiple-value-bind (handled directive)
-        (interactor-key interactor ui session hit key)
-      (when handled (return directive)))))
+  "Dispatch one key: the user keymap first (shadowing the built-ins), then the
+ACTIVE window's interactor stack (the :WINDOW-MANAGER on top, then the window's
+own interactor). The first handler that claims the key wins; return its resume
+directive or NIL."
+  (multiple-value-bind (handled directive) (user-keymap-dispatch ui session hit key)
+    (if handled
+        directive
+        (dolist (interactor (window-stack (active-window ui)) nil)
+          (multiple-value-bind (h d) (interactor-key interactor ui session hit key)
+            (when h (return d)))))))
 
 (defun interactor-key (interactor ui session hit key)
   "Try to handle KEY in INTERACTOR; return (values HANDLED-P DIRECTIVE)."
@@ -534,11 +636,16 @@ the save (window-scrolling.issue)."
         (set-message ui "C-h m : list key bindings"))))
 
 (defun handle-window-command (ui)
-  "Read the key after a C-w / C-x prefix and run the window command
+  "Read the key after a C-w / C-x prefix and run the built-in window command."
+  (run-window-command ui (tui-read-key (ncurses-ui-screen ui))))
+
+(defun run-window-command (ui k)
+  "Run the built-in window command bound to K after a C-w / C-x prefix
 (ncurses-windows.issue + window-scrolling.issue). NOTE: >/</v/^ now SCROLL the
 active window; swap right/left are reachable as the named commands
-window-swap-right/-left (,/M-x), swap above/below stay on u/d."
-  (let ((k (tui-read-key (ncurses-ui-screen ui))))
+window-swap-right/-left (,/M-x), swap above/below stay on u/d. Split out so an
+already-read K (from a user-keymap fall-through) can be dispatched too."
+  (progn
     (cond
       ((key-char-p k #\n) (window-select ui +1))
       ((key-char-p k #\p) (window-select ui -1))
@@ -617,7 +724,8 @@ Full aldo / sedit / navi line commands need the per-window interactor stacks
 name is routed as a command line through the shared ALDO vocabulary, so the
 full break / trace / watch / settings / … vocabulary is reachable from `,'
 and M-x."
-  (let ((entry (assoc name *ncurses-commands* :test #'string-equal)))
+  (let ((entry (or (assoc name *user-ui-commands* :test #'string-equal)
+                   (assoc name *ncurses-commands* :test #'string-equal))))
     (if entry
         (funcall (cdr entry) ui session hit arg)
         (run-aldo-line ui session hit
@@ -664,11 +772,14 @@ on the real stop rather than degrading."
 
 (defun meta-command (ui session hit)
   "Esc as a Meta prefix: Esc-x runs M-x. Other Esc-<key> are unbound for now."
-  (let ((k (tui-read-key (ncurses-ui-screen ui))))
-    (if (key-char-p k #\x)
-        (mx-command ui session hit)
-        (progn (set-message ui "M-~A unbound"
-                            (if (characterp k) k "key")) nil))))
+  (run-meta-command ui session hit (tui-read-key (ncurses-ui-screen ui))))
+
+(defun run-meta-command (ui session hit k)
+  "Run the built-in Meta command for the key K read after Esc: M-x runs M-x;
+other M-<key> are unbound. Split out so a user-keymap fall-through can reuse it."
+  (if (key-char-p k #\x)
+      (mx-command ui session hit)
+      (progn (set-message ui "M-~A unbound" (if (characterp k) k "key")) nil)))
 
 (defun move-frame (ui session delta)
   (let* ((frames (snapshot-call-stack (current-snapshot session)))
