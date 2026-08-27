@@ -684,3 +684,34 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
                (clautolisp.autolisp-runtime:autolisp-string-value
                 (clautolisp.autolisp-runtime:autolisp-symbol-value
                  (clautolisp.autolisp-runtime:intern-autolisp-symbol "*CLAL-CLIPBOARD*")))))))
+
+;;; --- clal-binding family (ncurses-key-bindings.issue) ------------------
+
+(test clal-binding-builtins-forward-to-the-ui-hook
+  ;; The CLAL-BINDING family converts the key to a CL string and forwards to
+  ;; *ui-binding-hook* (installed by the debugger UI). With no UI loaded the
+  ;; builtins are a no-op; here a stub hook records the calls.
+  (let ((calls '()))
+    (let ((clautolisp.autolisp-runtime:*ui-binding-hook*
+            (lambda (op &rest args) (push (list* op args) calls) "z")))
+      (clautolisp.autolisp-builtins-core::builtin-clal-binding
+       (clautolisp.autolisp-runtime:make-autolisp-string "C-x C-f")
+       (clautolisp.autolisp-runtime:make-autolisp-string "sedit load"))
+      (clautolisp.autolisp-builtins-core::builtin-clal-remove-binding
+       (clautolisp.autolisp-runtime:make-autolisp-string "C-x C-f")))
+    (setf calls (nreverse calls))
+    (is (eq :bind (first (first calls))))
+    (is (equal "C-x C-f" (second (first calls))))            ; key -> CL string
+    (is (equal "sedit load"                                  ; command forwarded
+               (clautolisp.autolisp-runtime:autolisp-string-value (third (first calls)))))
+    (is (eq :unbind (first (second calls))))
+    (is (equal "C-x C-f" (second (second calls))))))
+
+(test clal-binding-is-a-no-op-without-a-ui
+  ;; No debugger UI loaded (hook nil) -> the builtins are harmless no-ops.
+  (let ((clautolisp.autolisp-runtime:*ui-binding-hook* nil))
+    (is (null (clautolisp.autolisp-builtins-core::builtin-clal-binding
+               (clautolisp.autolisp-runtime:make-autolisp-string "z")
+               (clautolisp.autolisp-runtime:make-autolisp-string "continue"))))
+    (is (null (clautolisp.autolisp-builtins-core::builtin-clal-binding-lookup
+               (clautolisp.autolisp-runtime:make-autolisp-string "z"))))))

@@ -5294,6 +5294,54 @@ debugger UI is loaded."
              (and doc (clautolisp.autolisp-runtime:autolisp-string-value doc))))
   nil)
 
+;;; --- user key bindings (ncurses-key-bindings.issue) --------------------
+
+(defun %clal-key-string (key who)
+  (clautolisp.autolisp-runtime:autolisp-string-value key))
+
+(defun builtin-clal-binding (key command)
+  "Bind KEY (an Emacs-style key-sequence string, e.g. \"C-x C-f\") to COMMAND in
+the debugger UI's user keymap (ncurses-key-bindings.issue). COMMAND is a command
+name/line STRING (routed through the command table — window, named, and aldo
+commands), or an AutoLISP function designator / form run when the key fires (in
+the stopped frame). User bindings shadow the built-ins; prefix chains work.
+Returns KEY, or nil when the debugger UI is not loaded."
+  (when clautolisp.autolisp-runtime:*ui-binding-hook*
+    (funcall clautolisp.autolisp-runtime:*ui-binding-hook*
+             :bind (%clal-key-string key "CLAL-BINDING") command)
+    key))
+
+(defun builtin-clal-remove-binding (key)
+  "Remove the user binding at KEY (revert to the built-in, if any). Returns T
+when a binding was removed, else nil."
+  (and clautolisp.autolisp-runtime:*ui-binding-hook*
+       (funcall clautolisp.autolisp-runtime:*ui-binding-hook*
+                :unbind (%clal-key-string key "CLAL-REMOVE-BINDING"))
+       (clautolisp.autolisp-runtime:intern-autolisp-symbol "T")))
+
+(defun builtin-clal-binding-lookup (key)
+  "The command bound to KEY in the user keymap (as originally given to
+CLAL-BINDING), or nil."
+  (when clautolisp.autolisp-runtime:*ui-binding-hook*
+    (funcall clautolisp.autolisp-runtime:*ui-binding-hook*
+             :lookup (%clal-key-string key "CLAL-BINDING-LOOKUP"))))
+
+(defun builtin-clal-map-bindings (function)
+  "Call FUNCTION with (KEY-STRING COMMAND) for every user binding; returns nil.
+A no-op unless the debugger UI is loaded."
+  (when clautolisp.autolisp-runtime:*ui-binding-hook*
+    (funcall clautolisp.autolisp-runtime:*ui-binding-hook* :map function))
+  nil)
+
+(defun builtin-clal-define-ui-command (name function)
+  "Register a debugger-UI named command NAME (a string) implemented by the
+AutoLISP FUNCTION (applied to the command's argument string), usable from M-x,
+`,', and as a CLAL-BINDING target. Returns NAME, or nil when the UI is absent."
+  (when clautolisp.autolisp-runtime:*ui-binding-hook*
+    (funcall clautolisp.autolisp-runtime:*ui-binding-hook*
+             :define-command (%clal-key-string name "CLAL-DEFINE-UI-COMMAND") function)
+    name))
+
 (defun %clal-dribble-interactors (interactors)
   "Convert the CLAL-DRIBBLE INTERACTORS argument to what the dribble hook
 expects: NIL -> NIL (consult *CLAL-DRIBBLE-INTERACTORS*); the symbol T ->
@@ -9895,6 +9943,11 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-COMPILE"          #'builtin-clal-compile)
    (make-core-builtin-subr "CLAL-DEFINE-DEBUGGER-COMMAND" #'builtin-clal-define-debugger-command)
    (make-core-builtin-subr "CLAL-DEFINE-COMMAND" #'builtin-clal-define-command)
+   (make-core-builtin-subr "CLAL-BINDING"          #'builtin-clal-binding)
+   (make-core-builtin-subr "CLAL-REMOVE-BINDING"   #'builtin-clal-remove-binding)
+   (make-core-builtin-subr "CLAL-BINDING-LOOKUP"   #'builtin-clal-binding-lookup)
+   (make-core-builtin-subr "CLAL-MAP-BINDINGS"     #'builtin-clal-map-bindings)
+   (make-core-builtin-subr "CLAL-DEFINE-UI-COMMAND" #'builtin-clal-define-ui-command)
    (make-core-builtin-subr "CLAL-LIST-INTERACTOR-NAMES" #'builtin-clal-list-interactor-names)
    (make-core-builtin-subr "CLAL-DRIBBLE"          #'builtin-clal-dribble)
    (make-core-builtin-subr "CLAL-NAV-FUNCTION"     #'builtin-clal-nav-function)

@@ -384,9 +384,15 @@ the 0-based row of that selection, to keep in view."
   "User-registered named commands: NAME -> (lambda (ui session hit arg) -> dir).
 Reached from M-x, `,', and as binding targets; shadow *ncurses-commands*.")
 
+(defvar *user-binding-originals* (make-hash-table :test 'equal)
+  "Canonical key string -> the command value as first given to clal-binding, so
+clal-binding-lookup / clal-map-bindings report the AutoLISP value the user bound
+(the keymap stores the wrapped/canonical form).")
+
 (defun reset-user-bindings ()
   "Drop all user key bindings and user named commands (fresh session / tests)."
-  (setf *user-keymap* (make-keymap) *user-ui-commands* '()))
+  (setf *user-keymap* (make-keymap) *user-ui-commands* '())
+  (clrhash *user-binding-originals*))
 
 (defun ui-bind (key-sequence command)
   "Bind KEY-SEQUENCE (an Emacs-style string) to COMMAND — a command name/line
@@ -414,6 +420,76 @@ arg) -> directive, reachable from M-x / `,' and as a binding target."
   (setf *user-ui-commands* (remove name *user-ui-commands* :key #'car :test #'string-equal))
   (push (cons name function) *user-ui-commands*)
   name)
+
+;;;; --- the clal-binding AutoLISP surface (step 5c) -------------------
+;;;; The CLAL-BINDING family (autolisp-builtins-core) reaches here through
+;;;; clautolisp.autolisp-runtime:*ui-binding-hook*, installed below. The builtins
+;;;; stay UI-agnostic; the wrapping of an AutoLISP command value into a firing
+;;;; closure (which needs the runtime) lives here.
+
+(defun %canonical-key (key-string)
+  (unparse-key-sequence (parse-key-sequence key-string)))
+
+(defun %run-autolisp-command (command)
+  "Run an AutoLISP COMMAND bound to a key: a function designator is applied with
+no arguments; anything else is reported. Runs with debugging suppressed."
+  (let ((clautolisp.autolisp-runtime:*debugging* nil))
+    (handler-case
+        (clautolisp.autolisp-runtime:call-autolisp-function
+         (clautolisp.autolisp-runtime:resolve-autolisp-function-designator command))
+      (error (e) (declare (ignore e)) nil))))
+
+(defun %wrap-binding-command (command)
+  "Turn a clal-binding COMMAND value into what the keymap stores: a command
+name/line STRING passes through; an AutoLISP function designator becomes a
+(ui session hit) closure that runs it in the stopped frame."
+  (cond
+    ((stringp command) command)
+    ((typep command 'clautolisp.autolisp-runtime:autolisp-string)
+     (clautolisp.autolisp-runtime:autolisp-string-value command))
+    (t (lambda (ui session hit)
+         (declare (ignore ui session hit))
+         (%run-autolisp-command command)
+         nil))))
+
+(defun %ui-binding-dispatch (op &rest args)
+  "The *ui-binding-hook* implementation for the CLAL-BINDING family."
+  (ecase op
+    (:bind (destructuring-bind (key-string command) args
+             (let ((canonical (%canonical-key key-string)))
+               (setf (gethash canonical *user-binding-originals*) command)
+               (ui-bind key-string (%wrap-binding-command command))
+               canonical)))
+    (:unbind (destructuring-bind (key-string) args
+               (remhash (%canonical-key key-string) *user-binding-originals*)
+               (ui-unbind key-string)))
+    (:lookup (destructuring-bind (key-string) args
+               (gethash (%canonical-key key-string) *user-binding-originals*)))
+    (:map (destructuring-bind (function) args
+            (ui-map-bindings
+             (lambda (key command)
+               (declare (ignore command))
+               (let ((clautolisp.autolisp-runtime:*debugging* nil))
+                 (clautolisp.autolisp-runtime:call-autolisp-function
+                  (clautolisp.autolisp-runtime:resolve-autolisp-function-designator function)
+                  (clautolisp.autolisp-runtime:make-autolisp-string key)
+                  (or (gethash key *user-binding-originals*)
+                      (clautolisp.autolisp-runtime:make-autolisp-string ""))))))
+            nil))
+    (:define-command (destructuring-bind (name function) args
+                       (ui-define-command
+                        name
+                        (lambda (ui session hit arg)
+                          (declare (ignore ui session hit))
+                          (let ((clautolisp.autolisp-runtime:*debugging* nil))
+                            (clautolisp.autolisp-runtime:call-autolisp-function
+                             (clautolisp.autolisp-runtime:resolve-autolisp-function-designator function)
+                             (clautolisp.autolisp-runtime:make-autolisp-string (or arg ""))))
+                          nil))))))
+
+;; Install the hook so the CLAL-BINDING builtins reach this UI (a no-op in the
+;; builtins when the debugger UI is absent).
+(setf clautolisp.autolisp-runtime:*ui-binding-hook* #'%ui-binding-dispatch)
 
 (defun fire-binding (ui session hit command)
   "Run a bound COMMAND: a STRING is a command name/line (routed through the

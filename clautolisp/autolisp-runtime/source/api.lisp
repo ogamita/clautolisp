@@ -1521,6 +1521,15 @@ AutoLISP command body, DOC a string or NIL. The debugger UI installs it; NIL
 strings, for the CLAL-LIST-INTERACTOR-NAMES builtin. The debugger UI
 installs it; NIL (an empty list) when that layer is absent.")
 
+(defparameter *ui-binding-hook* nil
+  "When non-nil, a function (OP &rest ARGS) the CLAL-BINDING family of builtins
+call to manage the debugger UI's user key bindings (ncurses-key-bindings.issue).
+OP is a keyword: :BIND (KEY-STRING COMMAND) — COMMAND a CL string (a command
+name/line) or an AutoLISP function designator / form; :UNBIND (KEY-STRING);
+:LOOKUP (KEY-STRING); :MAP (AUTOLISP-FUNCTION) — called with (KEY-STRING COMMAND)
+per binding; :DEFINE-COMMAND (NAME-STRING AUTOLISP-FUNCTION). The debugger UI
+installs it; NIL (a no-op) when that layer is absent.")
+
 (defparameter *debug-break-hook* nil
   "When non-nil, a function of one optional MESSAGE argument that the
 CLAL-BREAK / CLAL-INVOKE-DEBUGGER builtins call to drop into the aldo debugger

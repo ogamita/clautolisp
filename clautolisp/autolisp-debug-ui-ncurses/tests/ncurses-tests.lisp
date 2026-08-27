@@ -581,3 +581,53 @@
                        :thunk (lambda () (call-two context)))
         (declare (ignore result screen))
         (is (eq :repl (active-role ui)))))))
+
+;;;; --- clal-binding AutoLISP surface (step 5c) -----------------------
+
+(test ui-binding-hook-is-installed
+  ;; loading the ncurses UI installs the CLAL-BINDING hook (a no-op in the
+  ;; builtins otherwise).
+  (is (eq #'clautolisp.ui.ncurses::%ui-binding-dispatch
+          clautolisp.autolisp-runtime:*ui-binding-hook*)))
+
+(test ui-binding-hook-bind-lookup-map-unbind
+  ;; drive the hook exactly as builtin-clal-binding & co. do (CL string key +
+  ;; command), then fire in the UI.
+  (with-fresh-bindings
+    (funcall clautolisp.autolisp-runtime:*ui-binding-hook*
+             :bind "z" "window-select-next")
+    ;; lookup returns the ORIGINAL command
+    (is (equal "window-select-next"
+               (funcall clautolisp.autolisp-runtime:*ui-binding-hook* :lookup "z")))
+    ;; and the key fires the named command in the running UI
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+           (ti (break-at context metas 3)))
+      (multiple-value-bind (result ui screen)
+          (run-ncurses (list #\z #\c) :context context :thread-info ti
+                       :thunk (lambda () (call-two context)))
+        (declare (ignore result screen))
+        (is (eq :repl (active-role ui)))))
+    ;; unbind reverts
+    (is (funcall clautolisp.autolisp-runtime:*ui-binding-hook* :unbind "z"))
+    (is (null (clautolisp.ui.ncurses::ui-binding-lookup "z")))))
+
+(test ui-binding-hook-define-command-and-fire-via-comma
+  ;; :define-command registers a named command reachable from `,'; here it is
+  ;; backed by a CL closure (the AutoLISP path is the same call-autolisp-function
+  ;; wrapper, exercised by the builtins-core suite where builtins are installed).
+  (with-fresh-bindings
+    (clautolisp.ui.ncurses::ui-define-command
+     "user-note" (lambda (ui session hit arg)
+                   (declare (ignore session hit arg))
+                   (clautolisp.ui.ncurses::push-repl ui "noted") nil))
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+           (ti (break-at context metas 3)))
+      (multiple-value-bind (result ui screen)
+          (run-ncurses (append (list #\,) (coerce "user-note" 'list) (list :enter #\c))
+                       :context context :thread-info ti
+                       :thunk (lambda () (call-two context)))
+        (declare (ignore result screen))
+        (is (some (lambda (l) (search "noted" l))
+                  (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui)))))))
