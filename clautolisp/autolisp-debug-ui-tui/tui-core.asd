@@ -25,4 +25,5 @@
    (:file "source/frames")
    (:file "source/windows")
    (:file "source/window-ops")
-   (:file "source/keymap")))
+   (:file "source/keymap")
+   (:file "source/config")))

@@ -213,3 +213,36 @@
       ;; ...but the logical cursor is still recorded
       (clautolisp.ui.tui:move-cursor-to 1 2 w)
       (is (equal (cons 1 2) (clautolisp.ui.tui:window-cursor w))))))
+
+;;;; --- configuration cascade (matches the interactor stacks) ---------
+
+(test config-cascade-resolves-through-parents
+  (clautolisp.ui.tui:reset-configs)
+  (clautolisp.ui.tui:ensure-standard-configs)
+  (clautolisp.ui.tui:config-set-value "aldo" :indent 3)
+  ;; stack -> aldo -> lisp inherits aldo's setting; so does navi
+  (is (eql 3 (clautolisp.ui.tui:config-value "stack" :indent)))
+  (is (eql 3 (clautolisp.ui.tui:config-value "navi" :indent)))
+  ;; inspector -> lisp does NOT see aldo
+  (is (eq :none (clautolisp.ui.tui:config-value "inspector" :indent :none)))
+  ;; a local override on stack shadows the inherited value; navi is unaffected
+  (clautolisp.ui.tui:config-set-value "stack" :indent 9)
+  (is (eql 9 (clautolisp.ui.tui:config-value "stack" :indent)))
+  (is (eql 3 (clautolisp.ui.tui:config-value "navi" :indent)))
+  ;; the cascade names match the interactor stack
+  (is (equal '("stack" "aldo" "lisp")
+             (mapcar #'clautolisp.ui.tui:config-name
+                     (clautolisp.ui.tui:config-cascade "stack")))))
+
+(test config-persists-and-reloads
+  (clautolisp.ui.tui:reset-configs)
+  (let ((src (clautolisp.ui.tui:ensure-config "sedit" "lisp")))
+    (clautolisp.ui.tui:config-set-value src :face-current-line :yellow)
+    (clautolisp.ui.tui:config-set-value src :tab-width 4)
+    (let ((text (with-output-to-string (s) (clautolisp.ui.tui:write-config src s))))
+      (clautolisp.ui.tui:reset-configs)                    ; fresh registry
+      (let ((dst (clautolisp.ui.tui:ensure-config "sedit" "lisp")))
+        (with-input-from-string (s text) (clautolisp.ui.tui:read-config dst s))
+        (is (eq :yellow (clautolisp.ui.tui:config-value dst :face-current-line)))
+        (is (eql 4 (clautolisp.ui.tui:config-value dst :tab-width)))
+        (is (not (clautolisp.ui.tui:config-dirty dst)))))))

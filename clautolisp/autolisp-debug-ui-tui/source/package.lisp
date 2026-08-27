@@ -49,6 +49,12 @@ future backend behind the same protocol.")
    #:window-role #:window-frame
    #:window-buffer #:window-scroll #:window-rect #:window-stack
    #:window-list #:delete-window #:selected-window #:select-window
+   ;; configuration cascade (matches the interactor stacks)
+   #:config #:config-p #:config-name #:config-parent #:config-dirty
+   #:*configs* #:find-config #:ensure-config #:reset-configs
+   #:config-value #:config-set-value #:config-unset #:config-cascade
+   #:config-local-keys #:config-settings-alist
+   #:read-config #:write-config #:ensure-standard-configs
    ;; keymaps (spec §6 / ncurses-key-bindings.issue)
    #:parse-key-sequence #:unparse-key-sequence
    #:keymap #:keymap-p #:make-keymap #:keymap-bind #:keymap-unbind
