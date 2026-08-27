@@ -466,3 +466,22 @@
                      :thunk (lambda () (call-two context)))
       (declare (ignore ui screen))
       (is (eql 7 result)))))
+
+(test comma-jump-carries-the-current-hit
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 4)))
+    ;; At the line-4 stop in TWO, route ,jump 3 through the ALDO vocabulary.
+    ;; jump is HIT-relative (cur-fid = (hit-fid hit)): with the stop's hit
+    ;; carried into the , routing, the target resolves to the CURRENT function
+    ;; (TWO) and a backward jump is rejected as "backward jump not supported".
+    ;; Without the hit, cur-fid is NIL and it would misreport a "cross-function"
+    ;; jump — so this asserts the hit is now carried (step 4).
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (append (list #\,) (coerce "jump 3" 'list) (list :enter #\c))
+                     :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (let ((repl (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui)))
+        (is (some (lambda (l) (search "backward" l)) repl))
+        (is (notany (lambda (l) (search "cross-function" l)) repl))))))

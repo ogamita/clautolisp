@@ -223,17 +223,19 @@ navigation-history-max setting (command reference §3)."
               (subseq (cons (copy-list stack) (dumb-ui-navigation-history ui))
                       0 (min (1+ (length (dumb-ui-navigation-history ui))) (max 1 max))))))))
 
-(defmethod ui-run-command ((ui dumb-ui) session command)
-  "Run one debugger command string outside a stop (spec §7): split it into
-verb + argument and dispatch it. HIT is NIL (there is no current stop), so
-meta commands like `help' / `settings' work; frame-relative commands degrade
-gracefully. Returns the resume directive, or NIL."
+(defmethod ui-run-command ((ui dumb-ui) session command &optional hit)
+  "Run one debugger command string (spec §7): split it into verb + argument and
+dispatch it. HIT is the current stop when supplied (the ncurses UI routes its
+,/M-x command line here WITH the stop's hit, so frame-relative commands act on
+it); outside a stop HIT is NIL, so meta commands like `help' / `settings' work
+and frame-relative commands degrade gracefully. Returns the resume directive, or
+NIL."
   (let* ((line (string-trim " 	" (or command "")))
          (sp (position #\Space line))
          (cmd (if sp (subseq line 0 sp) line))
          (arg (and sp (string-trim " " (subseq line sp)))))
     (unless (zerop (length cmd))
-      (run-command ui session nil cmd arg))))
+      (run-command ui session hit cmd arg))))
 
 (defmethod ui-open-navigation-request ((ui dumb-ui) session request)
   "Open the navigator on a queued CLAL-NAV-* REQUEST outside a stop — the

@@ -48,11 +48,14 @@ clautolisp.debug:*pending-nav-request*) outside a stop. Returns NIL.")
 ;;; Run one debugger command from outside the stop loop (spec §7): CLAL-SEDIT's
 ;;; `debug'/`aldo' prefix routes here through *debug-command-hook* so the editor
 ;;; can reach debugger commands (e.g. `aldo help'). Default: no-op.
-(defgeneric ui-run-command (ui session command)
+(defgeneric ui-run-command (ui session command &optional hit)
   (:documentation
    "Run the debugger COMMAND string in SESSION and return its resume directive
-(or NIL). Used outside a stop, so there is no HIT.")
-  (:method (ui session command) (declare (ignore ui session command)) nil))
+(or NIL). HIT is the current stop when the caller has one (e.g. the ncurses UI
+routing a ,/M-x command line at a stop), so frame-relative commands act on it;
+outside a stop HIT is NIL and such commands degrade gracefully.")
+  (:method (ui session command &optional hit)
+    (declare (ignore ui session command hit)) nil))
 
 ;;; The command loop. UI returns a resume directive.
 (defgeneric ui-await-command (ui session hit)

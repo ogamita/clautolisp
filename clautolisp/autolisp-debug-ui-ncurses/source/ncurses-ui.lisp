@@ -620,7 +620,7 @@ and M-x."
   (let ((entry (assoc name *ncurses-commands* :test #'string-equal)))
     (if entry
         (funcall (cdr entry) ui session hit arg)
-        (run-aldo-line ui session
+        (run-aldo-line ui session hit
                        (format nil "~A~@[ ~A~]"
                                name (and (plusp (length arg)) arg))))))
 
@@ -631,18 +631,18 @@ and M-x."
                                    (subseq text start (or nl (length text))))
         while nl do (setf start (1+ nl))))
 
-(defun run-aldo-line (ui session line)
+(defun run-aldo-line (ui session hit line)
   "Route LINE through the shared ALDO command vocabulary (ncurses-key-bindings.issue
 option b): dispatch it with a throwaway dumb-ui whose output is captured into
-the repl pane, and return the command's resume directive. HIT is NIL here, so
-frame-relative commands degrade gracefully; carrying the current hit is part of
-the per-window interactor-stack work."
+the repl pane, and return the command's resume directive. The current stop HIT
+is carried through, so frame-relative commands (up/down, frame, locals, …) act
+on the real stop rather than degrading."
   (let* ((out (make-string-output-stream))
          (dumb (make-dumb-ui :input (make-string-input-stream "")))
          ;; the generalised output seam: ALDO/NAVI OUT writes here, not to a
          ;; dumb-ui stream — the dumb-ui is only carried for command state.
          (*debugger-output* out))
-    (prog1 (ui-run-command dumb session line)
+    (prog1 (ui-run-command dumb session line hit)
       (dolist (l (%split-lines (get-output-stream-string out)))
         (when (plusp (length l)) (push-repl ui "~A" l))))))
 
