@@ -231,6 +231,38 @@ Never fails: an unhandled form becomes an interpreter call on itself."
          ;; when a system loads, long before user code is compiled, so
          ;; that is sound; an operator registered AFTER a form was
          ;; compiled would not be seen by that form.
+         ;; %CLAL-POLL -- the node the debugger weaves around every
+         ;; instrumentable form. THE seam between the two transpiler
+         ;; variants pjb asked for, and the reason there can be two.
+         ;;
+         ;; It is a registered special operator, so without this branch
+         ;; it falls to the one below and hands the interpreter the whole
+         ;; form -- and since the OUTERMOST node of an instrumented body
+         ;; wraps the entire body, compiling an instrumented function
+         ;; would produce a single call to AUTOLISP-EVAL and gain
+         ;; precisely nothing. Compiling instrumented code means
+         ;; open-coding this node; there is no other way in.
+         ;;
+         ;; What is emitted is NOT a reimplementation of the poll
+         ;; protocol. The shadow stack, the :BEFORE/:AFTER poll points,
+         ;; form-level jumps and the CLAL-POLL-RETURN restart stay in the
+         ;; debugger, in the one function EVAL-POLL-FORM also calls; all
+         ;; that changes is how the value inside it is produced --
+         ;; interpreted there, compiled here. A second copy of that
+         ;; protocol would be a debugger that steps differently depending
+         ;; on whether a function happened to be hot.
+         ;;
+         ;; The shape is checked rather than assumed: FID and FORM-ID are
+         ;; host integers written by WRAP-POLL, so anything else is not a
+         ;; woven node and belongs to the interpreter.
+         ((and (string= name +poll-operator-name+)
+               (= 3 (length arguments))
+               (integerp (first arguments))
+               (integerp (second arguments)))
+          `(call-with-compiled-poll-point
+            ,(first arguments) ,(second arguments) ,context-var
+            (lambda () ,(transpile-form (third arguments) context-var))))
+
          ((known-special-operator-p name) (%fallback form context-var))
 
          (t

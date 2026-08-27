@@ -597,10 +597,81 @@ is too, re-registering replaces the handler, a registered operator still
 receives its arguments UNEVALUATED end to end, and a lambda-form
 operator answers NIL without reaching the table.
 
-STILL OPEN after slice 6
+Slice 7 (2.0.7) -- the instrumented transpiler variant
+------------------------------------------------------
+
+The second of the two variants pjb asked for. They are not two
+compilers: they are the same TRANSPILE-FORM given two different bodies.
+The non-instrumented variant compiles a function's plain body; the
+instrumented one compiles the body the DEBUGGER wove, in which every
+instrumentable form is wrapped in a (%CLAL-POLL fid form-id INNER) node.
+
+That node was the entire obstacle. It is a registered special operator,
+so the transpiler fell back on it -- and since the OUTERMOST node wraps
+the whole body, compiling an instrumented function produced one call to
+AUTOLISP-EVAL and gained exactly nothing. Compiling instrumented code
+means open-coding that node; there is no other way in.
+
+WHAT IS NOT DUPLICATED. The emitted code is not a reimplementation of
+the poll protocol. EVAL-POLL-FORM was refactored into
+CALL-WITH-POLL-POINT (fid form-id context THUNK) plus a two-line caller
+that supplies (lambda () (autolisp-eval inner context)); compiled code
+calls the same function with the transpiled inner form as its thunk. The
+shadow stack, the :BEFORE/:AFTER poll points, form-level jumps and the
+CLAL-POLL-RETURN restart are written once. A second copy would be a
+debugger that steps differently on functions that happen to be hot --
+the kind of bug a user would never believe and never reproduce.
+
+LAYERING. The compiler does not depend on the debugger and the debugger
+does not depend on the compiler; they meet in the runtime, through
+*COMPILED-POLL-HOOK* (debug -> runtime) and
+*COMPILE-INSTRUMENTED-USUBR-HOOK* (compiler -> runtime), the same
+dependency inversion as *INSTRUMENT-USUBR-HOOK*. +POLL-OPERATOR-NAME+
+moved into the runtime for the same reason: three layers speak that
+name, and three spellings would be three chances to disagree.
+
+WHAT CHANGED IN THE DISPATCH. The runtime used to ask for a compiled fork
+only when *DEBUGGING* was NIL, because the choice was between a
+debuggable body and a fast one and debuggability had to win. There is no
+longer a choice: the order is now instrumented-and-compiled,
+instrumented, compiled, plain.
+
+MEASURED (fib 24 under a live debug session, debug flag on, no
+breakpoint hit -- the run-to-breakpoint case; minimum of 5, three runs):
+
+  instrumented, interpreted     0.244 - 0.268
+  instrumented, compiled        0.176 - 0.188   =>  1.36x - 1.43x
+  no debug session, compiled    0.120 - 0.136
+
+Read against that third row: debugging a hot function used to cost ~2.0x
+and now costs ~1.5x. The gain is FAR smaller than the 3x the plain
+variant gets, and the reason is worth recording -- the poll protocol
+itself (a shadow-stack push, an UNWIND-PROTECT and a RESTART-CASE per
+poll point, per form) is now the cost. Compiling can only remove the
+interpreter dispatch AROUND that machinery. Making debugging faster from
+here means making poll points cheaper, not compiling harder.
+
+HOW IT IS TESTED. `make test-debug-compiled' runs the ENTIRE corpus with
+every instrumented body compiled and counts them: 394 compiled, all 31
+suites green. That is the real assurance, and it is much stronger than
+any corpus of hand-written cases, because what could break here is not a
+wrong ANSWER -- it is a poll point firing in a different order, a shadow
+stack left unbalanced by a non-local exit, a jump skipping the wrong
+form. Those are invisible to an equivalence corpus and are exactly what
+the stepping / breakpoint / jump suites already look for.
+
+Six unit tests cover what the corpus cannot, of which one carries the
+slice: AN-INSTRUMENTED-BODY-REALLY-COMPILES-RATHER-THAN-FALLING-BACK.
+Every other test would pass unchanged if the compiler still emitted one
+AUTOLISP-EVAL of the whole woven body -- that behaviour is CORRECT, just
+pointless. Verified as a real control: with the %CLAL-POLL branch
+disabled, the equivalence cases still all pass and only that one test
+fails.
+
+STILL OPEN after slice 7
 ------------------------
-  - the INSTRUMENTED transpiler variant pjb asked for; the seam is the
-    dropped (:eval . form) frames.
+  - poll points are now what makes debugging slow (see the measurement
+    above), not interpretation. That is where debugging speed is left.
   - open-coding hot operators as inline CL, which the Tier-2 probe says
     is where the margin against LispEx is; deliberately NOT done yet, so
     that no operator has a second implementation that can disagree with

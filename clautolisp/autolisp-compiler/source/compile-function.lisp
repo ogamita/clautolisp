@@ -48,6 +48,40 @@ by storing :FAILED, so this is free to signal."
                                              '%context))))))
     (setf (autolisp-usubr-compiled-body usubr) compiled)))
 
+(defun compile-instrumented-usubr (usubr)
+  "Transpile USUBR's INSTRUMENTED body and store the result in its
+COMPILED-INSTRUMENTED-BODY slot. The instrumented variant pjb asked for.
+
+Same transpiler, same contract, different input: the body woven by the
+debugger, whose %CLAL-POLL nodes TRANSPILE-FORM open-codes into calls to
+the debugger's own poll protocol. Nothing else about it is special, which
+is the point -- an instrumented body is ordinary AutoLISP with poll nodes
+in it, so the compiler needed one new form to handle, not a second
+compiler.
+
+Before this, a debug session switched the compiler off entirely: the
+runtime asked for a compiled fork only when *DEBUGGING* was NIL, because
+the alternative was choosing between a debuggable body and a fast one.
+Compiling the instrumented body removes the choice. It matters most where
+debugging is slowest and least interactive -- running to a breakpoint
+inside a loop, where every poll point of every iteration was interpreted.
+
+Installed as *COMPILE-INSTRUMENTED-USUBR-HOOK*; as with COMPILE-USUBR the
+runtime handles failure by storing :FAILED, so this is free to signal."
+  (let ((compiled
+          (let ((*transpiler-fallbacks* nil))
+            (compile nil `(lambda (%context)
+                            (declare (ignorable %context))
+                            ,(transpile-body
+                              (autolisp-usubr-instrumented-body usubr)
+                              '%context))))))
+    (setf (autolisp-usubr-compiled-instrumented-body usubr) compiled)))
+
+(defun autolisp-function-instrumented-compiled-p (usubr)
+  "True when USUBR is running a COMPILED INSTRUMENTED body -- debuggable
+and compiled at once."
+  (functionp (autolisp-usubr-compiled-instrumented-body usubr)))
+
 (defun compile-autolisp-function (usubr)
   "Compile USUBR's body now, whatever its call count. The explicit form of
 what the threshold does automatically -- for a caller that knows a
@@ -65,3 +99,4 @@ a call count."
 ;;; image: loading the compiler makes AutoLISP functions compile
 ;;; themselves once they are hot, and loading nothing else changes.
 (setf *compile-usubr-hook* #'compile-usubr)
+(setf *compile-instrumented-usubr-hook* #'compile-instrumented-usubr)

@@ -191,36 +191,47 @@ stop, not just an error stop."
 ;;;; maintains the form-depth and shadow call-stack used by stepping and
 ;;;; the snapshot (stepping.lisp). FID and K are literal integers.
 
-(defparameter +poll-operator-name+ "%CLAL-POLL")
+(defun call-with-poll-point (fid form-id context thunk)
+  "Run THUNK as the body of poll point FORM-ID of function FID.
+
+THE poll protocol, in one place. There are two ways to reach it and they
+must not drift apart: EVAL-POLL-FORM, which evaluates a woven %CLAL-POLL
+node with the interpreter, and compiled instrumented code, which was
+transpiled from the same node and supplies the inner form as already-
+compiled Common Lisp. Both hand the inner value in as a THUNK, so what
+happens AROUND it -- shadow stack, poll points, jumps, the restart -- is
+written once."
+  (let ((ti *thread-debug-info*))
+    (if (and ti (thread-debug-info-debug-flag ti))
+        ;; debugged thread: maintain depths + shadow stack, kept balanced
+        ;; on non-local exit by unwind-protect. The CLAL-POLL-RETURN
+        ;; restart lets the debugger's *error* handler supply a value for
+        ;; the innermost instrumented form (continue-with-return, §10.1).
+        (progn
+          (debug-poll-enter ti fid form-id context)
+          (unwind-protect
+               (restart-case
+                   (progn
+                     (poll-point fid form-id :before)
+                     ;; Form-level jump (§1): skip this form's body entirely
+                     ;; when it is neither the target nor on the path to it.
+                     ;; A skipped form contributes NIL. JUMP-DISPOSITION
+                     ;; clears the jump when this poll point IS the target.
+                     (if (eq (jump-disposition ti fid form-id) :skip)
+                         nil
+                         (prog1 (funcall thunk)
+                           (jump-exit-check ti fid form-id)
+                           (poll-point fid form-id :after))))
+                 (clal-poll-return (value) value))
+            (debug-poll-exit ti form-id)))
+        ;; not a debugged thread (e.g. eval-in-frame with *debugging*
+        ;; rebound, or a stray woven form): just evaluate.
+        (funcall thunk))))
 
 (defun eval-poll-form (arguments context)
   (destructuring-bind (fid form-id inner) arguments
-    (let ((ti *thread-debug-info*))
-      (if (and ti (thread-debug-info-debug-flag ti))
-          ;; debugged thread: maintain depths + shadow stack, kept balanced
-          ;; on non-local exit by unwind-protect. The CLAL-POLL-RETURN
-          ;; restart lets the debugger's *error* handler supply a value for
-          ;; the innermost instrumented form (continue-with-return, §10.1).
-          (progn
-            (debug-poll-enter ti fid form-id context)
-            (unwind-protect
-                 (restart-case
-                     (progn
-                       (poll-point fid form-id :before)
-                       ;; Form-level jump (§1): skip this form's body entirely
-                       ;; when it is neither the target nor on the path to it.
-                       ;; A skipped form contributes NIL. JUMP-DISPOSITION
-                       ;; clears the jump when this poll point IS the target.
-                       (if (eq (jump-disposition ti fid form-id) :skip)
-                           nil
-                           (prog1 (autolisp-eval inner context)
-                             (jump-exit-check ti fid form-id)
-                             (poll-point fid form-id :after))))
-                   (clal-poll-return (value) value))
-              (debug-poll-exit ti form-id)))
-          ;; not a debugged thread (e.g. eval-in-frame with *debugging*
-          ;; rebound, or a stray woven form): just evaluate.
-          (autolisp-eval inner context)))))
+    (call-with-poll-point fid form-id context
+                          (lambda () (autolisp-eval inner context)))))
 
 (defvar *poll-operator-registered* nil)
 
@@ -228,6 +239,10 @@ stop, not just an error stop."
   "Install the %CLAL-POLL special operator (idempotent)."
   (unless *poll-operator-registered*
     (register-special-operator +poll-operator-name+ #'eval-poll-form)
+    ;; Let compiled instrumented code reach the same protocol. The runtime
+    ;; calls this through *COMPILED-POLL-HOOK* rather than naming the debug
+    ;; package, exactly as it does for instrumenting and for compiling.
+    (setf *compiled-poll-hook* #'call-with-poll-point)
     (setf *poll-operator-registered* t)))
 
 (ensure-poll-operator)

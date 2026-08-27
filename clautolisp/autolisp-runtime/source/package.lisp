@@ -98,8 +98,13 @@
    #:autolisp-usubr-debug-metadata
    #:autolisp-usubr-instrumentation-failed
    #:autolisp-usubr-compiled-body
+   #:autolisp-usubr-compiled-instrumented-body
    #:autolisp-usubr-call-count
    #:*compile-usubr-hook*
+   #:*compile-instrumented-usubr-hook*
+   #:+poll-operator-name+
+   #:*compiled-poll-hook*
+   #:call-with-compiled-poll-point
    #:*autolisp-compilation-enabled*
    #:*autolisp-compilation-threshold*
    #:autolisp-catch-all-error
