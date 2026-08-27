@@ -38,13 +38,12 @@ future backend behind the same protocol.")
    #:frame-selected-window
    #:select-frame #:delete-frame #:terminal-device-supports-vdt-p
    #:ensure-initial-tty-frame #:reset-frames #:*frames* #:*selected-frame*
-   ;; windows (spec §5)
-   ;; NB: window-buffer / window-scroll / window-rect are intentionally NOT
-   ;; exported — the ncurses UI still defines functions of those names and
-   ;; :use-s this package; they stay internal until that UI is wired onto the
-   ;; window struct.
+   ;; windows (spec §5) — the ncurses UI is now wired onto the window struct, so
+   ;; its per-window state (buffer / scroll / rect / interactor stack) lives on
+   ;; these exported accessors rather than in ad-hoc UI hash tables.
    #:window #:windowp #:make-window #:window-name #:set-window-name
    #:window-role #:window-frame
+   #:window-buffer #:window-scroll #:window-rect #:window-stack
    #:window-list #:delete-window #:selected-window #:select-window
    ;; layout tree (spec §5.1)
    #:layout-leaves #:window-cycle #:layout-rects

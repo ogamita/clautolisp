@@ -15,7 +15,8 @@
   (frame nil)
   (buffer '())            ; list of (STRING . FACE)
   (scroll (cons 0 0))     ; (SL . SC) scroll point
-  (rect nil))             ; (TOP LEFT HEIGHT WIDTH), set at layout time
+  (rect nil)              ; (TOP LEFT HEIGHT WIDTH), set at layout time
+  (stack '()))            ; the window's interactor stack (spec §6), innermost last
 
 (defmethod print-object ((w window) stream)
   (print-unreadable-object (w stream :type t :identity t)

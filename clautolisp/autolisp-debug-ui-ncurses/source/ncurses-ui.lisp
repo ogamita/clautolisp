@@ -8,53 +8,71 @@
 
 (defclass ncurses-ui ()
   ((screen :initarg :screen :initform nil :accessor ncurses-ui-screen)
-   (selected-frame :initform 0 :accessor ncurses-ui-selected-frame)
+   (selected-frame :initform 0 :accessor ncurses-ui-selected-frame) ; stack-frame index
    (source-cursor :initform nil :accessor ncurses-ui-source-cursor)  ; line in shown file
    (message :initform "" :accessor ncurses-ui-message)               ; interactor line
    (repl-lines :initform '() :accessor ncurses-ui-repl-lines)        ; newest last
    (navigator :initform nil :accessor ncurses-ui-navigator)          ; source selection
-   (layout :initform (default-layout) :accessor ncurses-ui-layout)   ; window tree
-   (active-window :initform :interactor :accessor ncurses-ui-active-window)
-   (saved-active :initform nil :accessor ncurses-ui-saved-active)    ; for window-other
-   ;; one interactor stack per window (ncurses-windows.issue architecture):
-   ;; id -> list of interactor keywords, innermost last. The :window-manager
-   ;; interactor sits on top of the ACTIVE window's stack.
-   (window-stacks :initform (make-hash-table :test 'eq) :accessor ncurses-ui-window-stacks)
-   (scroll :initform (make-hash-table :test 'eq) :accessor ncurses-ui-scroll) ; id -> (sl . sc)
+   ;; The UI runs in a tui-core vdt-frame; its four panes are real tui-core
+   ;; WINDOW objects (roles :stack :source :interactor :repl) tiled by the
+   ;; frame's layout tree. Per-window state (scroll, rect, interactor stack)
+   ;; lives on the window structs — no ad-hoc UI hash tables.
+   (frame :initform nil :accessor ncurses-ui-frame)                  ; the vdt-frame
+   (saved-active :initform nil :accessor ncurses-ui-saved-active)    ; window, for C-w o
    (minibuffer :initform "" :accessor ncurses-ui-minibuffer)         ; last-row I/O
    (inspector-cursor :initform 0 :accessor ncurses-ui-inspector-cursor)))
 
 (defun make-ncurses-ui (&rest initargs)
   (apply #'make-instance 'ncurses-ui initargs))
 
+;;;; --- frame / window access -----------------------------------------
+
+(defun ui-windows (ui) (frame-windows (ncurses-ui-frame ui)))
+(defun ui-window (ui role) (find role (ui-windows ui) :key #'window-role))
+(defun ui-windows-alist (ui)
+  (mapcar (lambda (w) (cons (window-role w) w)) (ui-windows ui)))
+(defun ui-layout (ui) (frame-layout (ncurses-ui-frame ui)))
+(defun (setf ui-layout) (tree ui) (setf (frame-layout (ncurses-ui-frame ui)) tree))
+(defun active-window (ui) (frame-selected-window (ncurses-ui-frame ui)))
+
 ;;;; --- per-window interactor stacks (ncurses-windows.issue) ----------
-;;;; Each window owns an interactor stack; its base interactor handles the
-;;;; window's own keys — source→NAVI, interactor→ALDO, stack→FRAMENAV, repl→
-;;;; REPL. The :WINDOW-MANAGER interactor (window commands, the C-w/C-x prefix,
-;;;; the minibuffer , and M-x) sits on TOP of the ACTIVE window's stack. Keys
-;;;; are dispatched through the active window's stack, top to bottom.
+;;;; Each window owns an interactor stack (its WINDOW-STACK slot); its base
+;;;; interactor handles the window's own keys — source→NAVI, interactor→ALDO,
+;;;; stack→FRAMENAV, repl→REPL. The :WINDOW-MANAGER interactor (window commands,
+;;;; the C-w/C-x prefix, the minibuffer , and M-x) sits on TOP of the ACTIVE
+;;;; window's stack. Keys are dispatched through the active window's stack, top
+;;;; to bottom.
 
 (defparameter +window-base-interactor+
   '((:stack . :framenav) (:source . :navi)
     (:interactor . :aldo) (:repl . :repl)))
 
+(defun base-interactor (window)
+  (cdr (assoc (window-role window) +window-base-interactor+)))
+
 (defmethod initialize-instance :after ((ui ncurses-ui) &key)
-  (let ((stacks (ncurses-ui-window-stacks ui)))
-    (dolist (entry +window-base-interactor+)
-      (setf (gethash (car entry) stacks) (list (cdr entry))))
-    ;; the window manager rides on top of the active window's stack
-    (push :window-manager (gethash (ncurses-ui-active-window ui) stacks))))
+  ;; Build the vdt-frame and its four panes, isolated from the global frame
+  ;; list/selection (the UI owns its frame; entering curses happens later, in
+  ;; UI-AWAIT-COMMAND, not at construction).
+  (let ((*frames* '()) (*selected-frame* nil))
+    (let ((frame (make-frame (list (cons :device :vdt) (cons :name "aldo")
+                                   (cons :screen (ncurses-ui-screen ui))))))
+      (build-debugger-windows frame)
+      (setf (ncurses-ui-frame ui) frame)
+      ;; each window's base interactor; the window manager rides on the active
+      (dolist (w (frame-windows frame))
+        (setf (window-stack w) (list (base-interactor w))))
+      (push :window-manager (window-stack (frame-selected-window frame))))))
 
 (defun activate-window (ui new)
-  "Make NEW the active window: pop the :WINDOW-MANAGER interactor from the old
-active window's stack and push it onto NEW's stack (which becomes the active
+  "Make window NEW the active window: pop the :WINDOW-MANAGER interactor from the
+old active window's stack and push it onto NEW's stack (which becomes the active
 interactor stack)."
-  (let ((stacks (ncurses-ui-window-stacks ui))
-        (old (ncurses-ui-active-window ui)))
+  (let ((old (active-window ui)))
     (unless (eq old new)
-      (setf (gethash old stacks) (remove :window-manager (gethash old stacks)))
-      (setf (ncurses-ui-active-window ui) new)
-      (pushnew :window-manager (gethash new stacks)))))
+      (setf (window-stack old) (remove :window-manager (window-stack old)))
+      (setf (frame-selected-window (ncurses-ui-frame ui)) new)
+      (pushnew :window-manager (window-stack new)))))
 
 (register-ui :ncurses (lambda (&rest initargs) (apply #'make-ncurses-ui initargs)))
 (register-ui :tui     (lambda (&rest initargs) (apply #'make-ncurses-ui initargs)))
@@ -172,13 +190,13 @@ width, INVERTed when active, UNDERLINEd otherwise."
 ;;;; Sl the first buffer line, Sc the first column. Scrolling moves (Sl, Sc);
 ;;;; auto-follow keeps the source selection (and the repl tail) in view.
 
-(defun window-scroll (ui id)
-  "The (values SL SC) scroll point of window ID (default 0 0)."
-  (let ((cell (gethash id (ncurses-ui-scroll ui))))
+(defun win-scroll-values (window)
+  "The (values SL SC) scroll point of WINDOW (its tui-core WINDOW-SCROLL cons)."
+  (let ((cell (window-scroll window)))
     (if cell (values (car cell) (cdr cell)) (values 0 0))))
 
-(defun set-window-scroll (ui id sl sc)
-  (setf (gethash id (ncurses-ui-scroll ui)) (cons (max 0 sl) (max 0 sc))))
+(defun set-win-scroll (window sl sc)
+  (setf (window-scroll window) (cons (max 0 sl) (max 0 sc))))
 
 (defun buffer-max-width (buffer)
   (reduce #'max buffer :key (lambda (c) (length (car c))) :initial-value 0))
@@ -198,11 +216,11 @@ past the buffer end stay blank."
                           (t ""))))
         (win-put-line screen rect row shown :attr attr)))))
 
-(defun clamp-scroll (ui id buffer rect follow-row)
-  "Clamp window ID's scroll point to the buffer and RECT sizes; when FOLLOW-ROW
+(defun clamp-scroll (window buffer rect follow-row)
+  "Clamp WINDOW's scroll point to the buffer and RECT sizes; when FOLLOW-ROW
 falls outside the vertical viewport, re-centre on it (auto-follow). Returns
 (values SL SC)."
-  (multiple-value-bind (sl sc) (window-scroll ui id)
+  (multiple-value-bind (sl sc) (win-scroll-values window)
     (let* ((height (win-content-height rect))
            (max-sl (max 0 (- (length buffer) height)))
            (max-sc (max 0 (- (buffer-max-width buffer) (win-width rect)))))
@@ -210,39 +228,42 @@ falls outside the vertical viewport, re-centre on it (auto-follow). Returns
         (setf sl (- follow-row (floor height 2))))
       (setf sl (min (max 0 sl) max-sl)
             sc (min (max 0 sc) max-sc))
-      (set-window-scroll ui id sl sc)
+      (set-win-scroll window sl sc)
       (values sl sc))))
 
-(defun window-buffer (ui session id)
-  "Return (values BUFFER FOLLOW-ROW) for window ID — a list of (STRING . ATTR)
-lines and an optional 0-based row to keep in view."
-  (ecase id
+(defun window-content (ui session window)
+  "Return (values BUFFER FOLLOW-ROW) for WINDOW — a list of (STRING . ATTR)
+lines and an optional 0-based row to keep in view. Dispatch on the pane role."
+  (ecase (window-role window)
     (:stack      (values (stack-buffer ui session) nil))
     (:source     (source-buffer ui session))
     (:interactor (values (interactor-buffer ui) nil))
     (:repl       (let ((buffer (repl-buffer ui)))
                    (values buffer (and buffer (1- (length buffer)))))))) ; tail-follow
 
-(defun render-window (ui session id rect)
-  (multiple-value-bind (buffer follow-row) (window-buffer ui session id)
-    (multiple-value-bind (sl sc) (clamp-scroll ui id buffer rect follow-row)
+(defun render-window (ui session window rect)
+  (setf (window-rect window) rect)
+  (multiple-value-bind (buffer follow-row) (window-content ui session window)
+    (setf (window-buffer window) buffer)
+    (multiple-value-bind (sl sc) (clamp-scroll window buffer rect follow-row)
       (draw-window-buffer (ncurses-ui-screen ui) rect buffer sl sc))))
 
 (defun render-debugger (ui session)
   "Draw the four windows: scrollable content buffers + a status line each,
 single \"|\" separators, and the reserved minibuffer row."
-  (let ((screen (ncurses-ui-screen ui)))
+  (let ((screen (ncurses-ui-screen ui))
+        (active (active-window ui)))
     (tui-clear screen)
     (multiple-value-bind (rows cols) (tui-size screen)
       (let ((window-rows (max 1 (1- rows))))     ; last row = minibuffer
         (multiple-value-bind (rects vlines)
-            (layout-rects (ncurses-ui-layout ui) 0 0 window-rows cols)
-          (dolist (id +window-ids+)
-            (let ((rect (cdr (assoc id rects))))
+            (layout-rects (ui-layout ui) 0 0 window-rows cols)
+          (dolist (window (ui-windows ui))
+            (let ((rect (cdr (assoc window rects))))
               (when rect
-                (render-window ui session id rect)
-                (win-status screen rect (window-title id)
-                            (eq id (ncurses-ui-active-window ui))))))
+                (render-window ui session window rect)
+                (win-status screen rect (window-name window)
+                            (eq window active)))))
           (dolist (v vlines)
             (destructuring-bind (col top height) v (draw-vline screen col top height)))
           (render-minibuffer ui (1- rows) cols)
@@ -352,9 +373,7 @@ the 0-based row of that selection, to keep in view."
   "Dispatch one key through the ACTIVE window's interactor stack (the
 :WINDOW-MANAGER on top, then the window's own interactor). The first interactor
 that handles the key wins; return its resume directive or NIL."
-  (dolist (interactor (gethash (ncurses-ui-active-window ui)
-                               (ncurses-ui-window-stacks ui))
-                       nil)
+  (dolist (interactor (window-stack (active-window ui)) nil)
     (multiple-value-bind (handled directive)
         (interactor-key interactor ui session hit key)
       (when handled (return directive)))))
@@ -430,55 +449,49 @@ into the interactor line (so the selection is visible across the panes)."
 (defun window-select (ui delta)
   "Move the active window DELTA steps in reading order (C-w n / C-w p), moving
 the :WINDOW-MANAGER interactor onto the new active window's stack."
-  (activate-window ui (window-cycle (ncurses-ui-layout ui)
-                                    (ncurses-ui-active-window ui) delta))
-  (set-message ui "active window: ~A"
-               (window-title (ncurses-ui-active-window ui))))
+  (activate-window ui (window-cycle (ui-layout ui) (active-window ui) delta))
+  (set-message ui "active window: ~A" (window-name (active-window ui))))
 
 (defun window-swap (ui direction)
   "Swap the active window with its neighbour in DIRECTION (with wrap-around),
 exchanging their leaf positions in the layout tree."
   (multiple-value-bind (rows cols) (tui-size (ncurses-ui-screen ui))
     (multiple-value-bind (rects vlines)
-        (layout-rects (ncurses-ui-layout ui) 0 0 (max 1 (1- rows)) cols)
+        (layout-rects (ui-layout ui) 0 0 (max 1 (1- rows)) cols)
       (declare (ignore vlines))
-      (let* ((active (ncurses-ui-active-window ui))
+      (let* ((active (active-window ui))
              (neighbor (window-neighbor rects active direction)))
         (if (and neighbor (not (eq neighbor active)))
             (progn
-              (setf (ncurses-ui-layout ui)
-                    (tree-swap-leaves (ncurses-ui-layout ui) active neighbor))
-              (set-message ui "swap ~A ~(~A~)" (window-title active) direction))
+              (setf (ui-layout ui) (tree-swap-leaves (ui-layout ui) active neighbor))
+              (set-message ui "swap ~A ~(~A~)" (window-name active) direction))
             (set-message ui "no window ~(~A~)" direction))))))
 
 (defun window-resize (ui delta)
   "Grow (DELTA>0) or shrink the active window within its enclosing split."
-  (setf (ncurses-ui-layout ui)
-        (tree-resize (ncurses-ui-layout ui) (ncurses-ui-active-window ui) delta))
-  (set-message ui "resize ~A" (window-title (ncurses-ui-active-window ui))))
+  (setf (ui-layout ui) (tree-resize (ui-layout ui) (active-window ui) delta))
+  (set-message ui "resize ~A" (window-name (active-window ui))))
 
 (defun window-balance (ui)
   "Even out the split enclosing the active window (C-w =)."
-  (setf (ncurses-ui-layout ui)
-        (tree-balance (ncurses-ui-layout ui) (ncurses-ui-active-window ui)))
-  (set-message ui "balanced ~A" (window-title (ncurses-ui-active-window ui))))
+  (setf (ui-layout ui) (tree-balance (ui-layout ui) (active-window ui)))
+  (set-message ui "balanced ~A" (window-name (active-window ui))))
 
 (defun window-reset-square (ui)
   "Revert to the canonical 2x2 layout (C-w 4)."
-  (setf (ncurses-ui-layout ui) (default-layout))
+  (setf (ui-layout ui) (default-layout (ui-windows-alist ui)))
   (set-message ui "layout reset (2x2)"))
 
 (defun window-split (ui split-type)
   "Split the active window (C-w 2 = below/:horizontal, C-w 3 = right/:vertical),
 re-homing the next window into the new split so four windows remain."
-  (let* ((active (ncurses-ui-active-window ui))
-         (next (window-cycle (ncurses-ui-layout ui) active +1)))
+  (let* ((active (active-window ui))
+         (next (window-cycle (ui-layout ui) active +1)))
     (if (eq next active)
         (set-message ui "cannot split")
         (progn
-          (setf (ncurses-ui-layout ui)
-                (tree-split-active (ncurses-ui-layout ui) active next split-type))
-          (set-message ui "split ~A ~A" (window-title active)
+          (setf (ui-layout ui) (tree-split-active (ui-layout ui) active next split-type))
+          (set-message ui "split ~A ~A" (window-name active)
                        (if (eq split-type :horizontal) "below" "right"))))))
 
 (defparameter +window-scroll-step+ 3
@@ -486,9 +499,10 @@ re-homing the next window into the new split so four windows remain."
 
 (defun window-scroll-by (ui dl dc)
   "Scroll the active window by DL lines / DC columns (clamped at next render)."
-  (multiple-value-bind (sl sc) (window-scroll ui (ncurses-ui-active-window ui))
-    (set-window-scroll ui (ncurses-ui-active-window ui) (+ sl dl) (+ sc dc))
-    (set-message ui "scroll ~A" (window-title (ncurses-ui-active-window ui)))))
+  (let ((window (active-window ui)))
+    (multiple-value-bind (sl sc) (win-scroll-values window)
+      (set-win-scroll window (+ sl dl) (+ sc dc))
+      (set-message ui "scroll ~A" (window-name window)))))
 
 (defun window-other (ui)
   "C-w o: toggle the active window with a saved one. First use saves the active
@@ -498,9 +512,8 @@ the save (window-scrolling.issue)."
       (let ((saved (ncurses-ui-saved-active ui)))
         (setf (ncurses-ui-saved-active ui) nil)
         (activate-window ui saved)
-        (set-message ui "active window: ~A"
-                     (window-title (ncurses-ui-active-window ui))))
-      (progn (setf (ncurses-ui-saved-active ui) (ncurses-ui-active-window ui))
+        (set-message ui "active window: ~A" (window-name (active-window ui))))
+      (progn (setf (ncurses-ui-saved-active ui) (active-window ui))
              (window-select ui +1))))
 
 (defun help-key-bindings (ui)
@@ -754,11 +767,12 @@ windowed layout (status lines + separators + minibuffer)."
          (page (session-page inspector)))
     (tui-clear screen)
     (multiple-value-bind (rows cols) (tui-size screen)
-      (let ((window-rows (max 1 (1- rows))))
+      (let ((window-rows (max 1 (1- rows)))
+            (active (active-window ui)))
         (multiple-value-bind (rects vlines)
-            (layout-rects (ncurses-ui-layout ui) 0 0 window-rows cols)
-          (flet ((rect (id) (cdr (assoc id rects))))
-            (render-window ui session :stack (rect :stack))
+            (layout-rects (ui-layout ui) 0 0 window-rows cols)
+          (flet ((rect (role) (cdr (assoc (ui-window ui role) rects))))
+            (render-window ui session (ui-window ui :stack) (rect :stack))
             (let ((src (rect :source)))
               (win-put-line screen src 0
                             (format nil "~A → ~A"
@@ -781,12 +795,13 @@ windowed layout (status lines + separators + minibuffer)."
                                      :attr (if (= i (ncurses-ui-inspector-cursor ui)) :bold :normal))))
             (win-put-line screen (rect :interactor) 0
                           "INSPECT: up/down move  Enter/d descend  BS/u up  p path  b bind  q close")
-            (render-window ui session :repl (rect :repl))
+            (render-window ui session (ui-window ui :repl) (rect :repl))
             ;; status lines (source window is the inspector now) + separators
-            (dolist (id +window-ids+)
-              (win-status screen (rect id)
-                          (if (eq id :source) "inspect" (window-title id))
-                          (eq id (ncurses-ui-active-window ui))))
+            (dolist (window (ui-windows ui))
+              (win-status screen (cdr (assoc window rects))
+                          (if (eq (window-role window) :source) "inspect"
+                              (window-name window))
+                          (eq window active)))
             (dolist (v vlines)
               (destructuring-bind (col top height) v (draw-vline screen col top height)))
             (render-minibuffer ui (1- rows) cols)

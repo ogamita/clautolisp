@@ -18,6 +18,25 @@
 (defun call-two (context)
   (clautolisp.autolisp-runtime:autolisp-eval (list (rt-sym "TWO") 7) context))
 
+;;; The four panes are tui-core WINDOW objects now; a window's id is its ROLE.
+;;; These helpers keep the assertions reading in terms of roles.
+(defun active-role (ui)
+  (clautolisp.ui.tui:window-role (clautolisp.ui.ncurses::active-window ui)))
+(defun win-of (ui role) (clautolisp.ui.ncurses::ui-window ui role))
+(defun rect-of (ui rects role) (cdr (assoc (win-of ui role) rects)))
+(defun window-stack-of (ui role)
+  (clautolisp.ui.tui:window-stack (win-of ui role)))
+(defun ui-layout-roles (ui)
+  "The frame layout projected to window ROLES, so it compares to a role-tree."
+  (labels ((roles (node)
+             (if (and (consp node) (member (first node) '(:horizontal :vertical)))
+                 (destructuring-bind (split ratio a b) node
+                   (list split ratio (roles a) (roles b)))
+                 (clautolisp.ui.tui:window-role node))))
+    (roles (clautolisp.ui.ncurses::ui-layout ui))))
+(defparameter +canonical-role-layout+
+  '(:horizontal 1/2 (:vertical 1/2 :stack :source) (:vertical 1/2 :interactor :repl)))
+
 (test continue-key-resumes-and-draws-panes
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
@@ -255,7 +274,7 @@
         (run-ncurses (list (code-char 23) #\n #\c) :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
-      (is (eq :repl (clautolisp.ui.ncurses::ncurses-ui-active-window ui))))))
+      (is (eq :repl (active-role ui))))))
 
 (test window-swap-right-moves-active-to-the-right
   (let* ((context (fresh-context))
@@ -271,10 +290,10 @@
       (declare (ignore result screen))
       (multiple-value-bind (rects vl)
           (clautolisp.ui.ncurses::layout-rects
-           (clautolisp.ui.ncurses::ncurses-ui-layout ui) 0 0 23 80)
+           (clautolisp.ui.ncurses::ui-layout ui) 0 0 23 80)
         (declare (ignore vl))
-        (is (> (clautolisp.ui.ncurses::rect-left (cdr (assoc :interactor rects)))
-               (clautolisp.ui.ncurses::rect-left (cdr (assoc :repl rects)))))))))
+        (is (> (clautolisp.ui.ncurses::rect-left (rect-of ui rects :interactor))
+               (clautolisp.ui.ncurses::rect-left (rect-of ui rects :repl))))))))
 
 (test window-reset-square-restores-canonical
   (let* ((context (fresh-context))
@@ -285,8 +304,7 @@
                      :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
-      (is (equal (clautolisp.ui.ncurses::ncurses-ui-layout ui)
-                 (clautolisp.ui.ncurses::default-layout))))))
+      (is (equal (ui-layout-roles ui) +canonical-role-layout+)))))
 
 (test window-resize-grows-active-window
   (let* ((context (fresh-context))
@@ -298,7 +316,7 @@
         (run-ncurses (list (code-char 23) #\+ #\c) :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
-      (is (> (second (fourth (clautolisp.ui.ncurses::ncurses-ui-layout ui))) 1/2)))))
+      (is (> (second (fourth (clautolisp.ui.ncurses::ui-layout ui))) 1/2)))))
 
 (test window-split-below-stacks-active-over-next
   (let* ((context (fresh-context))
@@ -312,10 +330,10 @@
       (declare (ignore result screen))
       (multiple-value-bind (rects vl)
           (clautolisp.ui.ncurses::layout-rects
-           (clautolisp.ui.ncurses::ncurses-ui-layout ui) 0 0 23 80)
+           (clautolisp.ui.ncurses::ui-layout ui) 0 0 23 80)
         (declare (ignore vl))
-        (let ((ir (cdr (assoc :interactor rects)))
-              (rr (cdr (assoc :repl rects))))
+        (let ((ir (rect-of ui rects :interactor))
+              (rr (rect-of ui rects :repl)))
           (is (< (clautolisp.ui.ncurses::rect-top ir)
                  (clautolisp.ui.ncurses::rect-top rr)))
           (is (= (clautolisp.ui.ncurses::rect-left ir)
@@ -337,8 +355,7 @@
                      :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
-      (is (not (equal (clautolisp.ui.ncurses::ncurses-ui-layout ui)
-                      (clautolisp.ui.ncurses::default-layout)))))))
+      (is (not (equal (ui-layout-roles ui) +canonical-role-layout+))))))
 
 (test mx-runs-named-command-continue
   (let* ((context (fresh-context))
@@ -363,7 +380,7 @@
                      :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
-      (is (eq :repl (clautolisp.ui.ncurses::ncurses-ui-active-window ui))))))
+      (is (eq :repl (active-role ui))))))
 
 (test comma-routes-line-through-aldo-vocabulary
   (let* ((context (fresh-context))
@@ -400,7 +417,7 @@
         (run-ncurses (list (code-char 23) #\o #\c) :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
-      (is (eq :repl (clautolisp.ui.ncurses::ncurses-ui-active-window ui))))))
+      (is (eq :repl (active-role ui))))))
 
 (test cx-prefix-is-an-alias-for-cw
   (let* ((context (fresh-context))
@@ -411,7 +428,7 @@
         (run-ncurses (list (code-char 24) #\n #\c) :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
-      (is (eq :repl (clautolisp.ui.ncurses::ncurses-ui-active-window ui))))))
+      (is (eq :repl (active-role ui))))))
 
 (test window-scroll-reports-on-active-window
   (let* ((context (fresh-context))
@@ -435,10 +452,10 @@
         (run-ncurses (list (code-char 23) #\p) :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
-      (let ((stacks (clautolisp.ui.ncurses::ncurses-ui-window-stacks ui)))
-        (is (eq :window-manager (first (gethash :source stacks))))
-        (is (equal '(:window-manager :navi) (gethash :source stacks)))
-        (is (not (member :window-manager (gethash :interactor stacks))))))))
+      (progn
+        (is (eq :window-manager (first (window-stack-of ui :source))))
+        (is (equal '(:window-manager :navi) (window-stack-of ui :source)))
+        (is (not (member :window-manager (window-stack-of ui :interactor))))))))
 
 (test eof-continues
   (let* ((context (fresh-context))
