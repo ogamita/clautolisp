@@ -110,6 +110,7 @@
    #:autolisp-compile-plain-fork-p
    #:autolisp-compile-instrumented-fork-p
    #:autolisp-compile-eagerly-p
+   #:call-in-file-compilation-unit
    #:autolisp-catch-all-error
    #:make-autolisp-catch-all-error
    #:autolisp-catch-all-error-message

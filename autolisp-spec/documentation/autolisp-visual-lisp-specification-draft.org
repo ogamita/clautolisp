@@ -12926,6 +12926,131 @@ level outside 0..3. Signals from ~require-proper-list~ when
   issue (Part A).
 
 #+LATEX: \newpage
+** Function Entry: CLAL-COMPILE-FILE
+*** Name
+~clal-compile-file~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-compile-file source-file)
+#+end_example
+
+*** Arguments and Values
+- ~source-file~ — a string naming an AutoLISP source file, resolved
+  the way ~load~ resolves its argument.
+
+*** Description
+Load ~source-file~ under the current optimization qualities, compiling
+it as a single unit.
+
+The qualities govern, not the name of the function. At ~SPEED~ 3 every
+~defun~ in the file is compiled as it is evaluated, inside one host
+compilation unit — which is what makes a file-wide view of the code
+possible. Below ~SPEED~ 3 no unit is opened and functions are compiled
+when they become hot, exactly as an ordinary ~load~ would do; at
+~SPEED~ 0 nothing is compiled. Calling this function is therefore not
+a way to compile past a ~SPEED~ level that asked for less.
+
+Compilation is into the running image. No file is written; see
+~clal-compile-system~ and the ~clal-compiled-artefact~ issue.
+
+*** Return Values
+~T~ on success; ~nil~ when the file could not be located, with ~errno~
+set to 73, matching ~load~ and ~vlisp-compile~.
+
+*** Side Effects
+Defines whatever the file defines; may compile function bodies.
+
+*** Affected By
+- ~clal-optimize~ — ~SPEED~ decides whether and when anything compiles.
+
+*** Exceptional Situations
+Signals from ~require-string~ when ~source-file~ is not a string. A
+missing file is reported by the return value, not by signalling.
+
+*** Examples
+#+begin_example
+(clal-optimize '((speed 3)))
+(clal-compile-file "geometry.lsp")
+=> T
+#+end_example
+
+*** Availability
+- clautolisp: since 2.0.9.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; specified by pjb 2026-08-27. The vendor
+  analogue is ~vlisp-compile~, which writes an artefact.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-COMPILE-SYSTEM
+*** Name
+~clal-compile-system~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-compile-system output-file source-files)
+#+end_example
+
+*** Arguments and Values
+- ~output-file~ — must be ~nil~. Reserved for the packaged artefact
+  (~.lap~), which this release does not write.
+- ~source-files~ — a proper list of strings naming AutoLISP source
+  files, each resolved the way ~load~ resolves its argument.
+
+*** Description
+Compile several files as ONE unit.
+
+What this adds over calling ~clal-compile-file~ in a loop is the single
+enclosing compilation unit: undefined-function warnings are deferred to
+the end of the whole system, so a function defined in a later file and
+called from an earlier one resolves quietly instead of warning at every
+forward reference. Each file's own unit is absorbed into this one.
+
+As with ~clal-compile-file~ the qualities govern: below ~SPEED~ 3 no
+enclosing unit is opened at all, so nothing system-wide happens for a
+caller who did not ask for it.
+
+*** Return Values
+~T~ when every file was compiled; ~nil~ if any could not be located.
+
+*** Side Effects
+Defines whatever the files define; may compile function bodies.
+
+*** Affected By
+- ~clal-optimize~ — ~SPEED~ decides whether and when anything compiles.
+
+*** Exceptional Situations
+Signals ~:unsupported-output-file~ when ~output-file~ is non-~nil~ —
+deliberately, rather than accepting the name of an artefact that would
+never be written. Signals from ~require-proper-list~ when
+~source-files~ is not a proper list.
+
+*** Examples
+#+begin_example
+(clal-optimize '((speed 3)))
+(clal-compile-system nil '("geometry.lsp" "commands.lsp"))
+=> T
+#+end_example
+
+*** Availability
+- clautolisp: since 2.0.9.
+- AutoCAD: NOT present (the analogue is the Make Application wizard,
+  producing ~.vlx~).
+- BricsCAD: NOT present (the analogue is DEScoder, producing ~.des~).
+
+*** Source Notes
+- clautolisp-only extension; specified by pjb 2026-08-27.
+
+#+LATEX: \newpage
 ** Function Entry: CLAL-COMPILE
 *** Name
 ~clal-compile~

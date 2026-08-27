@@ -1,0 +1,72 @@
+# clal-compiled-artefact — writing a .lap, and what VLISP-COMPILE should do
+
+STATUS: open. Blocks CLAL-COMPILE-SYSTEM's OUTPUT-FILE argument and a
+real VLISP-COMPILE. Filed 2026-08-27 while implementing 2.0.9.
+
+## What exists after 2.0.9
+
+CLAL-COMPILE-FILE and CLAL-COMPILE-SYSTEM compile into the RUNNING
+IMAGE. That is genuinely useful — it is what makes a compilation unit,
+and therefore deferred forward references across files, possible — but
+nothing is written to disk. CLAL-COMPILE-SYSTEM's OUTPUT-FILE argument
+is therefore required to be nil and SIGNALS otherwise, rather than
+being accepted and quietly ignored.
+
+## What is in the way
+
+The transpiler emits code that quotes AUTOLISP-SYMBOL (and
+AUTOLISP-STRING) structs as literals. COMPILE accepts that — the
+literal is the very object that already exists in the image. COMPILE-FILE
+does not: it must externalize every literal, and a struct with no
+MAKE-LOAD-FORM method cannot be externalized.
+
+The fix itself is small and is already named in compiler.issue:
+
+    (defmethod make-load-form ((object autolisp-symbol) &optional env)
+      (declare (ignore env))
+      `(intern-autolisp-symbol ,(autolisp-symbol-name object)))
+
+Re-interning by name is the right externalization and not merely the
+easy one: a symbol IS its name in this engine, and reconstructing it
+through INTERN-AUTOLISP-SYMBOL puts the loaded artefact's symbols in
+the loading image's table, which is the only place they could usefully
+live. A structure-copying MAKE-LOAD-FORM would produce symbols EQ to
+nothing, and every EQ test in the runtime would quietly stop matching.
+
+## The part that needs deciding, not just coding
+
+What IS a .lap? The extension is already claimed and documented
+(CLAL-MODULE-EXTENSION "compiled-app" => ".lap", "the clautolisp
+analogue of AutoCAD .vlx / BricsCAD .des"). But an artefact format is a
+compatibility promise, and these questions have to be answered before
+one is written rather than after:
+
+  - Is it a host FASL under another name? Then it is SBCL-version-
+    specific and CCL cannot load it — clautolisp supports both. A .lap
+    that silently fails to load on the other host is worse than none.
+  - Does it contain the transpiled Common Lisp, or the AutoLISP source,
+    or both? BricsCAD's .des is encrypted source; AutoCAD's .fas is
+    compiled. clautolisp does not have to copy either, but it has to
+    CHOOSE, because LOAD must recognise the file and do the right thing.
+  - What happens on version skew — a .lap built by 2.0.9 loaded by a
+    later release? A version stamp in the header and a refusal is the
+    minimum; silently loading a stale artefact is the failure mode that
+    wastes days.
+
+## Then, and only then, VLISP-COMPILE
+
+VLISP-COMPILE is currently a documented no-op returning nil, and that is
+HONEST: it is specified to return T when the output file was created,
+and clautolisp creates none. It should not be made to return T for an
+in-memory compilation — that would claim a file exists.
+
+Once .lap exists, VLISP-COMPILE becomes the vendor-API spelling of
+CLAL-COMPILE-FILE: it takes 'st / 'lsm / 'lsa (which BricsCAD parses and
+ignores, and which clautolisp can map onto SPEED levels — 'st => the
+per-file unit, 'lsm / 'lsa => the system-wide one, which is what those
+mode names mean in the VLISP IDE), writes a .lap next to the source, and
+returns T.
+
+NOTE ON THE NAME: pjb referred to it as "vlisp-compile-file". The
+specified name is VLISP-COMPILE (spec ch. "Function Entry:
+VLISP-COMPILE"); there is no VLISP-COMPILE-FILE in either vendor.

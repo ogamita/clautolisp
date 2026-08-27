@@ -417,6 +417,14 @@ separate binary for tool integrators.
   now exists, and ~SPEED~ is its switch. Code that read
   ~(clal-optimization)~ back expecting a ~SPEED~ of 0 will now see what
   it asked for. See § /clautolisp Extensions/.
+- ~clal-compile-file~ / ~clal-compile-system~ — compile one file, or a
+  list of files, under the current optimization qualities. At ~SPEED~ 3
+  each file is compiled as one unit; the system form puts one unit
+  around *all* the files, so a call from an earlier file to a function
+  defined in a later one no longer warns at every forward reference.
+  Both compile into the running image — no artefact is written yet, and
+  ~clal-compile-system~'s ~OUTPUT-FILE~ must be ~nil~ (any other value
+  signals, rather than being silently ignored).
 - ~clal-compile~, ~clal-module-extension~ — compile a lambda form, and
   ask which file extension this host uses for a packaged artefact
   (~.lap~ / the OS shared-library suffix) instead of guessing.

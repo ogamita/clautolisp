@@ -3863,6 +3863,34 @@ so a value written and read back under the same encoding round-trips."
           (t nil)))
     (error () nil)))
 
+(defun call-in-file-compilation-unit (thunk)
+  "Run THUNK -- the loading of one AutoLISP file -- inside a host
+compilation unit when SPEED asks for eager compilation.
+
+This is where "SPEED 3 compiles the whole file at once" actually happens,
+and it needed no new machinery: at SPEED 3 every DEFUN compiles as it is
+evaluated, so putting the LOAD inside one unit puts every one of that
+file's compilations inside it too.
+
+:OVERRIDE NIL, deliberately, and this is where the design note in
+compiler.issue diverges from pjb's sketch. A nested unit with :OVERRIDE
+T starts a FRESH one instead of joining the enclosing one -- which would
+make CLAL-COMPILE-SYSTEM's system-wide unit inert, since each file it
+loads would open its own. :OVERRIDE NIL is what lets a file's unit be
+absorbed into a system's when there is one, and still create its own when
+there is not.
+
+WHAT THIS BUYS TODAY, precisely: a compilation unit defers
+undefined-function warnings to its end, so a function called before it is
+defined -- across files, in a system -- resolves quietly instead of
+warning at every forward reference. The wider prize pjb named (coalescing
+common literals, linking calls directly instead of through the symbol
+binding) belongs to COMPILE-FILE, not to a run of COMPILE calls, and
+arrives with the artefact writer."
+  (if (autolisp-compile-eagerly-p)
+      (with-compilation-unit (:override nil) (funcall thunk))
+      (funcall thunk)))
+
 (defun autolisp-load-file-in-context (path context &rest read-options)
   ;; Source-file encoding precedence, when the caller did NOT pass
   ;; an explicit :external-format:
@@ -3905,12 +3933,14 @@ so a value written and read back under the same encoding round-trips."
               read-options)))
     (call-with-autolisp-error-handler
      (lambda ()
-       ;; Top-level forms go through the compiled-eval model so a file
-       ;; loaded under a debug session is instrumentable (LOAD → EVAL →
-       ;; clal-compile). Outside a session this is a plain eval-progn.
-       (autolisp-eval-toplevel-progn
-        (apply #'read-runtime-from-file path effective-options)
-        context))
+       (call-in-file-compilation-unit
+        (lambda ()
+          ;; Top-level forms go through the compiled-eval model so a file
+          ;; loaded under a debug session is instrumentable (LOAD → EVAL →
+          ;; clal-compile). Outside a session this is a plain eval-progn.
+          (autolisp-eval-toplevel-progn
+           (apply #'read-runtime-from-file path effective-options)
+           context))))
      context)))
 
 (defun autolisp-load-file (path &rest read-options)

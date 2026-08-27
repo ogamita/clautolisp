@@ -5624,6 +5624,79 @@ this is the surface the specification always intended for it."
   (apply-clal-optimization)
   (%clal-optimization->autolisp))
 
+(defun %clal-load-for-compilation (source-file who)
+  "Resolve and load SOURCE-FILE the way LOAD does, for the CLAL-COMPILE-*
+builtins. Returns T on success, NIL if the file could not be found."
+  (let* ((value (autolisp-string-value (require-string source-file who)))
+         (resolved (resolve-load-pathname value)))
+    (cond
+      ((null resolved)
+       (set-autolisp-errno 73)
+       nil)
+      (t
+       (clautolisp.autolisp-runtime:autolisp-load-file-in-context
+        resolved (clautolisp.autolisp-runtime:current-evaluation-context))
+       (autolisp-true)))))
+
+(defun builtin-clal-compile-file (source-file)
+  "Load SOURCE-FILE under the current optimization qualities, compiling it
+as one unit (debugger-public-interface issue Part A; pjb, 2026-08-27).
+
+THE QUALITIES GOVERN, not the name of this function. At SPEED 3 every
+DEFUN in the file is compiled as it is read, inside a single host
+compilation unit -- which is what makes a file-wide view possible at all.
+Below SPEED 3 there is no unit and functions compile when they turn out
+to be hot, exactly as an ordinary LOAD would; at SPEED 0 nothing is
+compiled. That is deliberate: pjb's specification is explicit that
+calling this at (SPEED 0) must do just the plain per-file work, so that
+no global optimization happens behind a user who asked for none.
+
+Returns T, or nil if the file could not be found (ERRNO 73), matching
+what VLISP-COMPILE returns for the same failure.
+
+This compiles into the RUNNING IMAGE. Writing a loadable artefact (.lap)
+is a separate piece of work -- the transpiler quotes AUTOLISP-SYMBOL
+structs as literals, which COMPILE accepts and COMPILE-FILE does not
+without MAKE-LOAD-FORM. See clal-compiled-artefact.issue."
+  (%clal-load-for-compilation source-file "CLAL-COMPILE-FILE"))
+
+(defun builtin-clal-compile-system (output-file source-files)
+  "Compile a whole SYSTEM -- several files -- as ONE unit.
+
+The point of the system form over calling CLAL-COMPILE-FILE in a loop is
+the single enclosing compilation unit: undefined-function warnings are
+deferred to the end of the whole system, so a function defined in a later
+file and called from an earlier one resolves quietly instead of warning
+at every forward reference. Each file's own unit is absorbed into this
+one (:OVERRIDE NIL), which is why CALL-IN-FILE-COMPILATION-UNIT must not
+use :OVERRIDE T.
+
+As with CLAL-COMPILE-FILE the qualities govern: below SPEED 3 there is no
+enclosing unit at all, so no system-wide effect happens for a caller who
+did not ask for one.
+
+OUTPUT-FILE must be nil for now. A non-nil value signals rather than
+being ignored: silently accepting the name of an artefact this build
+cannot write would be the worst of the three options. See
+clal-compiled-artefact.issue.
+
+Returns T when every file was compiled, nil if any could not be found."
+  (unless (autolisp-false-p output-file)
+    (signal-builtin-argument-error
+     :unsupported-output-file "CLAL-COMPILE-SYSTEM"
+     "CLAL-COMPILE-SYSTEM cannot write a packaged artefact yet; ~
+OUTPUT-FILE must be nil. See clal-compiled-artefact.issue."))
+  (require-proper-list source-files "CLAL-COMPILE-SYSTEM")
+  (let ((ok t))
+    (flet ((compile-them ()
+             (dolist (file source-files)
+               (unless (%clal-load-for-compilation file "CLAL-COMPILE-SYSTEM")
+                 (setf ok nil)))))
+      (if (clautolisp.autolisp-runtime:autolisp-compile-eagerly-p)
+          (with-compilation-unit (:override nil) (compile-them))
+          (compile-them)))
+    (and ok (autolisp-true))))
+
 (defun builtin-clal-compile (name lambda-expression)
   "Compile LAMBDA-EXPRESSION — a (LAMBDA lambda-list . body) form — into an
 applicable function object, weaving its instrumented fork when the current
@@ -9933,6 +10006,8 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-OPTIMIZATION"     #'builtin-clal-optimization)
    (make-core-builtin-subr "CLAL-OPTIMIZE"         #'builtin-clal-optimize)
    (make-core-builtin-subr "CLAL-COMPILE"          #'builtin-clal-compile)
+   (make-core-builtin-subr "CLAL-COMPILE-FILE"     #'builtin-clal-compile-file)
+   (make-core-builtin-subr "CLAL-COMPILE-SYSTEM"   #'builtin-clal-compile-system)
    (make-core-builtin-subr "CLAL-DEFINE-DEBUGGER-COMMAND" #'builtin-clal-define-debugger-command)
    (make-core-builtin-subr "CLAL-DEFINE-COMMAND" #'builtin-clal-define-command)
    (make-core-builtin-subr "CLAL-LIST-INTERACTOR-NAMES" #'builtin-clal-list-interactor-names)

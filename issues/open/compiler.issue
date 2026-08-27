@@ -722,19 +722,75 @@ end, including that eager compilation of a body the compiler chokes on
 must still DEFINE the function and run it interpreted. SPEED 3 must not
 become a correctness setting.
 
-STILL OPEN after slice 8
+Slice 9 (2.0.9) -- CLAL-COMPILE-FILE and CLAL-COMPILE-SYSTEM
+-------------------------------------------------------------
+
+"SPEED 3 compiles the whole file at once during LOAD" needed no new
+machinery, which is the pleasant part. At SPEED 3 every DEFUN compiles
+as it is evaluated (slice 8), so putting LOAD inside one host
+compilation unit puts every one of that file's compilations inside it.
+CALL-IN-FILE-COMPILATION-UNIT wraps the single point where a file's
+forms are evaluated, and the two new builtins are thin on top of it.
+
+ONE CORRECTION TO pjb'S SKETCH, and it matters. The sketch has the
+file-level unit at :OVERRIDE T and the system-level one at :OVERRIDE
+NIL. Those two cannot both hold: :OVERRIDE T starts a FRESH unit
+instead of joining the enclosing one, so with it on the file level
+CLAL-COMPILE-SYSTEM's system-wide unit would be inert -- each file it
+loaded would open its own and the outer one would contain nothing.
+:OVERRIDE NIL on both is what gives the intended semantics: a file's
+unit is absorbed into a system's when there is one, and creates its own
+when there is not. Implemented that way, with the reason at the call
+site so nobody restores the T.
+
+WHAT THE UNIT ACTUALLY BUYS TODAY, stated precisely because the gap
+matters. A compilation unit around a run of COMPILE calls defers
+undefined-function warnings to its end. That is real and it is exactly
+what makes forward references across files work quietly -- the thing pjb
+flagged. The wider prize he named (coalescing common literals, linking
+calls directly instead of through the symbol binding) belongs to
+COMPILE-FILE, not to COMPILE, and arrives with the artefact writer. It
+would be easy and wrong to describe this slice as delivering file-wide
+optimization.
+
+THE QUALITIES GOVERN, NOT THE NAMES. Below SPEED 3 neither builtin
+opens a unit and neither forces compilation; at SPEED 0 they compile
+nothing at all and are simply LOAD. That is pjb's specification applied
+literally -- "if we had (DEBUG 3) (SPEED 0) (SPACE 0) while calling
+clal-compile-system we would have to do just the plain per-file work" --
+and it is the right shape: a function called `compile-file' that
+compiled regardless of the qualities would be the surprise the qualities
+exist to prevent.
+
+OUTPUT-FILE SIGNALS RATHER THAN BEING IGNORED. CLAL-COMPILE-SYSTEM
+takes the (output-file source-file-list) API pjb asked for, but nothing
+is written to disk yet, so a non-nil OUTPUT-FILE signals
+:unsupported-output-file naming the ticket. Of the three ways to handle
+an argument the build cannot honour -- ignore it, pretend, refuse --
+only refusing avoids sending someone to look for a file that was never
+created.
+
+VLISP-COMPILE IS NOT IN THIS SLICE, deliberately. Two reasons. The name
+pjb used, VLISP-COMPILE-FILE, does not exist in either vendor: the
+specified function is VLISP-COMPILE (mode, source, [output]). And it is
+specified to return T when the OUTPUT FILE WAS CREATED. clautolisp
+creates none, so the current no-op returning nil is HONEST; making it
+return T for an in-memory compilation would claim a file exists.
+It becomes real with the artefact, and its 'st / 'lsm / 'lsa modes then
+map naturally onto per-file versus system-wide units -- which is what
+those mode names mean in the VLISP IDE.
+
+Five tests: it defines what it loads, it honours SPEED rather than its
+own name, a missing file returns nil the way LOAD does, a non-nil
+OUTPUT-FILE is refused, and a two-file system with a forward reference
+from the first file to the second resolves and runs.
+
+STILL OPEN after slice 9
 ------------------------
-  - CLAL-COMPILE-FILE, VLISP-COMPILE-FILE (same thing, different API)
-    and CLAL-COMPILE-SYSTEM (output-file source-file-list), which pjb
-    specified in this conversation. The shape:
-        SPEED 3, per file:   (with-compilation-unit (:override t)
-                                <compile each transformed defun>)
-        SPEED 3, per system: (with-compilation-unit (:override nil)
-                                <clal-compile-file each>)
-        below SPEED 3:       compile each defun with no unit at all,
-                             so that no global optimization happens
-    with-compilation-unit also DEFERS undefined-function warnings, which
-    is what makes forward references across files work.
+  - the .lap artefact, and VLISP-COMPILE on top of it. Blocked on a
+    DESIGN decision, not on code: what a .lap contains, and whether it
+    can be host-independent when clautolisp runs on both SBCL and CCL.
+    See clal-compiled-artefact.issue.
   - poll points are now what makes debugging slow (see slice 7's
     measurement), not interpretation. That is where debugging speed is
     left.
@@ -742,9 +798,8 @@ STILL OPEN after slice 8
     is where the margin against LispEx is; deliberately NOT done yet, so
     that no operator has a second implementation that can disagree with
     the first.
-  - a user-reachable surface (no option turns the compiler on or off
-    from the command line yet). Release notes + user manual entries are
-    due WITH that surface, not before -- AGENTS.md excludes internals.
-  - compiling to a FASL: the emitted code quotes AUTOLISP-SYMBOL structs
-    as literals, which is fine for COMPILE but will need MAKE-LOAD-FORM
-    (or re-interning by name) for COMPILE-FILE.
+  - a COMMAND-LINE surface. CLAL-OPTIMIZE is the AutoLISP-facing one and
+    it is done (slice 8), but nothing sets the qualities before the
+    first file is read, which is exactly when SPEED 3 would matter most.
+    An --optimize / -O option, or reading them from the configuration
+    module, is the missing half.
