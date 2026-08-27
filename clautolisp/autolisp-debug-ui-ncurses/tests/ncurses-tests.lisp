@@ -695,3 +695,29 @@
       (is (eq t alive-in-body))                                 ; window alive in the body
       (is (not (null seen)))
       (is (not (member seen (clautolisp.ui.tui:window-list frame)))))))  ; gone after
+
+;;;; --- per-module print IO-syntax (TUI module spec §13) --------------
+
+(test clal-print-base-defaults-print-in-full
+  ;; base defaults: *clal-print-length*/level nil -> the whole object
+  (is (string= "(1 2 3 4 5 6)"
+               (clautolisp.debug.ui:clal-prin1-to-string (list 1 2 3 4 5 6)))))
+
+(test clal-stack-print-syntax-truncates-length-and-level
+  (clautolisp.debug.ui:with-stack-print-syntax
+    (is (string= "(1 2 3 ...)"                       ; *print-length* 3
+                 (clautolisp.debug.ui:clal-prin1-to-string (list 1 2 3 4 5 6))))
+    (is (string= "(1 (2 #))"                          ; *print-level* 2
+                 (clautolisp.debug.ui:clal-prin1-to-string
+                  (list 1 (list 2 (list 3 (list 4)))))))))
+
+(test clal-repl-print-syntax-prints-in-full
+  (clautolisp.debug.ui:with-repl-print-syntax
+    (is (string= "(1 2 3 4 5 6)"                      ; repl length/level nil
+                 (clautolisp.debug.ui:clal-prin1-to-string (list 1 2 3 4 5 6))))))
+
+(test clal-princ-vs-prin1-escaping
+  ;; princ vs prin1 differ on string escaping (AutoLISP surface syntax)
+  (let ((s (clautolisp.autolisp-runtime:make-autolisp-string "hi")))
+    (is (string= "hi"   (clautolisp.debug.ui:clal-princ-to-string s)))
+    (is (string= "\"hi\"" (clautolisp.debug.ui:clal-prin1-to-string s)))))

@@ -710,6 +710,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :serial t
   :components
   ((:file "autolisp-debug-ui/source/package")
+   (:file "autolisp-debug-ui/source/print-syntax")
    (:file "autolisp-debug-ui/source/protocol")
    (:file "autolisp-debug-ui/source/session")
    (:file "autolisp-debug-ui/source/settings")

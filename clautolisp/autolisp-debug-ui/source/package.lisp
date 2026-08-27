@@ -75,6 +75,22 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
                 #:make-workspace #:workspace-list #:workspace-clear
                 #:inspector-session-workspace)
   (:export
+   ;; per-module print IO-syntax (TUI module spec §13)
+   #:clal-princ #:clal-prin1 #:clal-print
+   #:clal-prin1-to-string #:clal-princ-to-string
+   #:call-with-clal-print-syntax #:define-clal-print-module
+   #:*clal-print-array* #:*clal-print-case* #:*clal-print-circle*
+   #:*clal-print-length* #:*clal-print-level* #:*clal-print-lines*
+   #:with-stack-print-syntax #:with-inspect-print-syntax
+   #:with-aldo-print-syntax #:with-repl-print-syntax
+   #:*clal-stack-print-array* #:*clal-stack-print-case* #:*clal-stack-print-circle*
+   #:*clal-stack-print-length* #:*clal-stack-print-level* #:*clal-stack-print-lines*
+   #:*clal-inspect-print-array* #:*clal-inspect-print-case* #:*clal-inspect-print-circle*
+   #:*clal-inspect-print-length* #:*clal-inspect-print-level* #:*clal-inspect-print-lines*
+   #:*clal-aldo-print-array* #:*clal-aldo-print-case* #:*clal-aldo-print-circle*
+   #:*clal-aldo-print-length* #:*clal-aldo-print-level* #:*clal-aldo-print-lines*
+   #:*clal-repl-print-array* #:*clal-repl-print-case* #:*clal-repl-print-circle*
+   #:*clal-repl-print-length* #:*clal-repl-print-level* #:*clal-repl-print-lines*
    ;; UI protocol — debugger → UI (notifications)
    #:ui-attached #:ui-detached
    #:ui-thread-hit #:ui-thread-unhandled-error #:ui-thread-caught-error
