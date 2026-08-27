@@ -45,6 +45,10 @@ future backend behind the same protocol.")
    #:window-role #:window-frame
    #:window-buffer #:window-scroll #:window-rect #:window-stack
    #:window-list #:delete-window #:selected-window #:select-window
+   ;; keymaps (spec §6 / ncurses-key-bindings.issue)
+   #:parse-key-sequence #:unparse-key-sequence
+   #:keymap #:keymap-p #:make-keymap #:keymap-bind #:keymap-unbind
+   #:keymap-step #:keymap-lookup #:keymap-leaves #:keymap-map
    ;; layout tree (spec §5.1)
    #:layout-leaves #:window-cycle #:layout-rects
    #:rect-top #:rect-left #:rect-bottom #:rect-right

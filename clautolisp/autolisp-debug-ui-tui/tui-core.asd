@@ -23,4 +23,5 @@
    (:file "source/tui")
    (:file "source/layout")
    (:file "source/frames")
-   (:file "source/windows")))
+   (:file "source/windows")
+   (:file "source/keymap")))

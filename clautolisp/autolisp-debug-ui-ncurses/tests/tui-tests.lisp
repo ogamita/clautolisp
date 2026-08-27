@@ -125,3 +125,57 @@
         (is (= 1 (length vlines)))
         (is (< (clautolisp.ui.tui:rect-left (cdr (assoc w1 rects)))
                (clautolisp.ui.tui:rect-left (cdr (assoc w2 rects)))))))))
+
+;;;; --- keymaps (ncurses-key-bindings.issue) --------------------------
+
+(test keymap-parse-and-unparse-round-trip
+  (flet ((rt (s) (clautolisp.ui.tui:unparse-key-sequence
+                  (clautolisp.ui.tui:parse-key-sequence s))))
+    (is (equal "b" (rt "b")))
+    (is (equal ">" (rt ">")))
+    (is (equal "C-x C-f" (rt "C-x C-f")))
+    (is (equal "M-x" (rt "M-x")))
+    (is (equal "C-w >" (rt "C-w >")))
+    (is (equal "RET" (rt "RET")))
+    (is (equal "UP" (rt "UP")))))
+
+(test keymap-parses-tokens-to-the-read-key-alphabet
+  ;; C-<c> is the control code character; M-<c> is a (:meta . char) chord;
+  ;; named keys are keywords — the same values a screen's read-key yields.
+  (is (equal (list (code-char 24) (code-char 6))
+             (clautolisp.ui.tui:parse-key-sequence "C-x C-f")))
+  (is (equal (list (cons :meta #\x)) (clautolisp.ui.tui:parse-key-sequence "M-x")))
+  (is (equal (list (code-char 23) #\>) (clautolisp.ui.tui:parse-key-sequence "C-w >")))
+  (is (equal (list :enter) (clautolisp.ui.tui:parse-key-sequence "RET"))))
+
+(test keymap-bind-lookup-shadow-prefix-unbind
+  (let ((map (clautolisp.ui.tui:make-keymap)))
+    (clautolisp.ui.tui:keymap-bind map (clautolisp.ui.tui:parse-key-sequence "b") "toggle")
+    (clautolisp.ui.tui:keymap-bind map (clautolisp.ui.tui:parse-key-sequence "C-x C-f") "sedit load")
+    ;; leaf lookup
+    (is (equal "toggle" (clautolisp.ui.tui:keymap-lookup
+                         map (clautolisp.ui.tui:parse-key-sequence "b"))))
+    ;; prefix chain resolves only when complete
+    (is (equal "sedit load" (clautolisp.ui.tui:keymap-lookup
+                             map (clautolisp.ui.tui:parse-key-sequence "C-x C-f"))))
+    (is (null (clautolisp.ui.tui:keymap-lookup
+               map (clautolisp.ui.tui:parse-key-sequence "C-x"))))       ; bare prefix
+    ;; stepping: C-x is a :prefix, then C-f is a :leaf
+    (multiple-value-bind (kind sub)
+        (clautolisp.ui.tui:keymap-step map (code-char 24))
+      (is (eq :prefix kind))
+      (is (eq :leaf (clautolisp.ui.tui:keymap-step sub (code-char 6)))))
+    ;; shadow a leaf with a prefix (b -> "b n")
+    (clautolisp.ui.tui:keymap-bind map (clautolisp.ui.tui:parse-key-sequence "b n") "new")
+    (is (eq :prefix (clautolisp.ui.tui:keymap-step map #\b)))
+    (is (equal "new" (clautolisp.ui.tui:keymap-lookup
+                      map (clautolisp.ui.tui:parse-key-sequence "b n"))))
+    ;; map lists every binding as canonical key strings
+    (let ((seen (let ((acc '()))
+                  (clautolisp.ui.tui:keymap-map map (lambda (k c) (push (cons k c) acc)))
+                  acc)))
+      (is (equal "sedit load" (cdr (assoc "C-x C-f" seen :test #'string=))))
+      (is (equal "new" (cdr (assoc "b n" seen :test #'string=)))))
+    ;; unbind reverts, pruning the emptied prefix node
+    (is (clautolisp.ui.tui:keymap-unbind map (clautolisp.ui.tui:parse-key-sequence "C-x C-f")))
+    (is (eq :none (clautolisp.ui.tui:keymap-step map (code-char 24))))))
