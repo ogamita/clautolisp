@@ -5534,6 +5534,16 @@ attached, print a note instead of silently doing nothing."
         (finish-output *standard-output*)
         nil)))
 
+;; Install the sedit *window template*'s runtime hooks (windows-and-interactor-
+;; templates.issue): the template (autolisp-sedit) is dependency-free and keeps
+;; these as NIL specials; this system, which owns the AutoLISP coupling, fills
+;; them so a sedit opened in a window evaluates/loads/debugs exactly as
+;; (clal-sedit …) does. Same shape as the *default-on-quit-policy* install.
+(setf clautolisp.sedit:*sedit-eval-hook*       #'%clal-sedit-eval-hook
+      clautolisp.sedit:*sedit-eval-print-hook* #'%clal-sedit-eval-print-hook
+      clautolisp.sedit:*sedit-load-hook*       #'%clal-sedit-load-hook
+      clautolisp.sedit:*sedit-debug-hook*      #'%clal-sedit-debug-hook)
+
 (defun builtin-clal-sedit (&optional object)
   "Edit OBJECT with the sedit structural editor (spec §2): no argument -> a
 stand-alone form starting at nil; a symbol -> recall its recorded definition; a

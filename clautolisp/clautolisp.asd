@@ -657,6 +657,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-sedit/tests/session-tests")
    (:file "autolisp-sedit/tests/modes-tests")
    (:file "autolisp-sedit/tests/clipboard-tests")
+   (:file "autolisp-sedit/tests/template-tests")
    (:file "autolisp-sedit/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

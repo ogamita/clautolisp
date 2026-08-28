@@ -66,6 +66,11 @@ clal-sedit (Phases 4–5), and the clipboard providers (Phase 6) come later.")
    ;; SEDIT as an interactor (interactor-design-revision.issue T2/D9)
    #:*sedit* #:*sedit-commands* #:*sedit-user-commands*
    #:sedit-enter #:sedit-interactor-help #:*default-on-quit-policy*
+   ;; SEDIT as a window interactor template (windows-and-interactor-templates)
+   #:make-sedit-activation
+   #:sedit-interactor-state-p #:sedit-interactor-state-session
+   #:*sedit-eval-hook* #:*sedit-eval-print-hook*
+   #:*sedit-load-hook* #:*sedit-debug-hook*
    ;; --- clipboard (§5.4 + clipboard-interface.org) ---
    #:clipboard-provider #:clipboard-provider-p #:make-clipboard-provider
    #:clipboard-provider-name #:clipboard-provider-available-p

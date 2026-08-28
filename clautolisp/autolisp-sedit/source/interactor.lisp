@@ -353,6 +353,23 @@ call into it. The clautolisp tool, which depends on both, installs the real
 lookup at start-up; until it does, the built-in :ASK applies, which is also
 what a bare library user of the sedit system gets.")
 
+(defun make-sedit-activation (session &key debug-hook eval-hook load-hook
+                                           eval-print-hook save-hook
+                                           (on-quit *default-on-quit-policy*))
+  "Build a SEDIT ACTIVATION over SESSION (an interactor-stack entry pairing the
+*SEDIT* interactor with a fresh SEDIT-INTERACTOR-STATE), without running any
+loop. SEDIT-ENTER pushes and drives one of these; the sedit interactor
+TEMPLATE's constructor returns one for a window (windows-and-interactor-
+templates.issue). The hooks are the runtime coupling (see SEDIT-INTERACTOR-
+STATE)."
+  (clautolisp.interactor:make-activation
+   *sedit*
+   (make-sedit-interactor-state
+    :session session
+    :debug-hook debug-hook :eval-hook eval-hook
+    :load-hook load-hook :eval-print-hook eval-print-hook
+    :save-hook save-hook :on-quit on-quit)))
+
 (defun sedit-enter (session &key debug-hook eval-hook load-hook eval-print-hook
                                  save-hook
                                  (on-quit *default-on-quit-policy*)
@@ -366,17 +383,71 @@ session result when the editor was left normally; on a debugger resume
 issued inside the editor (`aldo c', or the confirmed quit above a stop),
 RESULT is NIL and DIRECTIVE the resume directive, which the caller must
 propagate."
-  (let* ((state (make-sedit-interactor-state
-                 :session session
+  (let ((clautolisp.interactor:*interactor-stack*
+          (cons (make-sedit-activation
+                 session
                  :debug-hook debug-hook :eval-hook eval-hook
                  :load-hook load-hook :eval-print-hook eval-print-hook
-                 :save-hook save-hook :on-quit on-quit))
-         (clautolisp.interactor:*interactor-stack*
-           (cons (clautolisp.interactor:make-activation *sedit* state)
-                 clautolisp.interactor:*interactor-stack*)))
+                 :save-hook save-hook :on-quit on-quit)
+                clautolisp.interactor:*interactor-stack*)))
     (let ((directive (clautolisp.interactor:interactor-loop
                       :input input :output output :error-output error-output
                       :floor (length clautolisp.interactor:*interactor-stack*))))
       (if directive
           (values nil directive)
           (values (session-result session) nil)))))
+
+;;; --- the sedit interactor template (windows-and-interactor-templates.issue)
+
+(defvar *sedit-eval-hook* nil
+  "The sedit template's EVAL/macroexpand hook (a (function (node)) -> node), or
+NIL. Installed from above like *DEFAULT-ON-QUIT-POLICY*: the AutoLISP coupling
+(evaluating an edited form) lives in CLAUTOLISP.AUTOLISP-BUILTINS-CORE, which
+sits above this system, so the clautolisp tool installs the real hook at
+start-up; a bare library user gets NIL (\"no evaluator here\").")
+(defvar *sedit-eval-print-hook* nil
+  "The sedit template's eval-at-the-prompt hook ((function (node)) -> string),
+or NIL. Installed from above (see *SEDIT-EVAL-HOOK*).")
+(defvar *sedit-load-hook* nil
+  "The sedit template's LOAD hook ((function (path))), or NIL. Installed from
+above (see *SEDIT-EVAL-HOOK*).")
+(defvar *sedit-debug-hook* nil
+  "The sedit template's DEBUG/aldo hook ((function (command))), or NIL.
+Installed from above (see *SEDIT-EVAL-HOOK*).")
+
+(defun %sedit-template-session (target)
+  "Resolve a sedit template TARGET to a SESSION: a SEDIT-SESSION is used as is;
+anything else is opened with SEDIT-OPEN (a node / symbol / path / NIL — spec
+§2), recalling recorded definitions through *SEDIT-RECORDING*."
+  (if (sedit-session-p target)
+      target
+      (sedit-open target :recording (sedit-recording))))
+
+(defun %sedit-template-constructor (context)
+  "Build a SEDIT activation for a window from CONTEXT (a
+CLAUTOLISP.INTERACTOR:TEMPLATE-CONTEXT): open its TARGET into a session, wire
+the installed runtime hooks, and route the context's SAVE-CONTINUATION and
+QUIT-CONTINUATION into the session's save-hook / on-result handling (a
+clal-sedit call collecting the edited sexp). Returns the ACTIVATION."
+  (let* ((session (%sedit-template-session
+                   (clautolisp.interactor:template-context-target context)))
+         (save-cont (clautolisp.interactor:template-context-save-continuation context)))
+    (make-sedit-activation
+     session
+     :eval-hook *sedit-eval-hook*
+     :eval-print-hook *sedit-eval-print-hook*
+     :load-hook *sedit-load-hook*
+     :debug-hook *sedit-debug-hook*
+     ;; SAVE-HOOK persists the edited result where no file is the target — the
+     ;; window caller's save continuation (redefine the function, store the
+     ;; sexp). It receives the SESSION; hand the continuation the §2 result.
+     :save-hook (and save-cont
+                     (lambda (session)
+                       (funcall save-cont (session-result session)))))))
+
+(clautolisp.interactor:define-interactor-template "sedit"
+  :display-name "Sedit structure editor"
+  :description "Edit a form, file or object as a structure (motions + editing)"
+  :interactor *sedit*
+  :constructor '%sedit-template-constructor
+  :config-name "sedit")
