@@ -1,0 +1,208 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: windows-and-interactor-templates — variable windows backed by user-chosen interactors
+#+STATUS: DRAFT
+#+TYPE: enhancement
+#+DEPENDS: tui-module-specification.org (§11), interactor-design-revision.issue
+
+DRAFT — needs pjb's specification. This issue frames the generalisation of
+the debugger window layout from the fixed four aldo panes to a variable
+number of windows, each backed by a user-chosen /interactor/. It lists the
+model, the commands, and the open questions; the answers become the spec.
+
+* Motivation
+
+Today the ncurses debugger has exactly four windows with fixed roles
+(=autolisp-debug-ui-ncurses/source/ncurses-ui.lisp=):
+
+: +window-base-interactor+ = ((:stack . :framenav) (:source . :navi)
+:                             (:interactor . :aldo) (:repl . :repl))
+
+=C-w 2= / =C-w 3= (=window-split=) do not really /add/ a window: to keep the
+four-pane aldo layout they split one pane and, in effect, drop another —
+the window count is pinned at four and each window's content is fixed by its
+=window-role=. There is no way for the user to open a fifth window, to close
+one, or to say /what runs/ in a given window.
+
+We want the general case: a *variable number of windows*, and *commands so the
+user chooses what runs in each window*.
+
+* The model: windows backed by interactors
+
+The Emacs analogy is deliberate but partial. In Emacs a window displays a
+/buffer/; a buffer is a text container, and /some/ buffers are attached to a
+process (shell, REPL, comint). Here we have no free-standing text buffers:
+the only things that back a window are *interactors* (aldo, navi, sedit, the
+Lisp REPL, the inspector, the stack browser, …). A file or a data structure
+is not shown as a passive buffer but /through/ an interactor that reads,
+evaluates and prints it (navi/sedit for structure, the inspector for objects).
+
+So the mapping is:
+
+: Emacs window  -> displays a buffer          | our window -> runs an interactor
+: Emacs buffer  -> text, maybe a process       | our backing -> an interactor activation
+: (no analogue) -> pick major-mode / buffer     | pick an *interactor template* to instantiate
+
+An *interactor template* is an interactor /kind/ that can be instantiated in a
+window (aldo, navi, sedit, lisp-repl, inspector, stack-browser, …). Creating
+a window means choosing a template and instantiating it; the UI should
+*present the list of available templates* for the user to choose from.
+
+* Core design tension: singletons vs. per-window activations
+
+The interactor framework (=autolisp-interactor/source/interactor.lisp=) makes
+each interactor a *singleton* (one =*sedit*=, one =*navi*=, …) with a single
+global =*interactor-stack*=; per-entry data lives in the /activation/ (an
+=interactor= + a =state=). A window/interactor world needs:
+
+  1. *Multiple concurrent activations of the same template* — e.g. two navi
+     windows on two different files, or two inspectors on two objects. Each
+     window then owns its own interactor stack (the =windows.lisp= window
+     already carries a =stack= slot; =ncurses-ui.lisp= notes "Full aldo /
+     sedit / navi line commands need the per-window interactor stacks").
+
+  2. A rule for the *global* =*interactor-stack*= vs. the *per-window* stacks:
+     which stack is active is presumably the /selected window/'s stack, and
+     key dispatch / command routing runs against it. This has to be pinned
+     down precisely (see Questions).
+
+  3. *Unify the two "interactor" notions.* Today they are NOT the same object.
+     The §5 framework's =*interactor-stack*= holds =activation= structs
+     wrapping real interactor singletons (=*sedit*=, =*navi*= …). But the
+     ncurses per-window =window-stack= (=windows.lisp= =stack= slot, seeded in
+     =ncurses-ui.lisp= from =+window-base-interactor+=) holds *bare keywords*
+     (=:navi=, =:aldo=, =:framenav=, =:repl=, =:window-manager=) — a parallel,
+     ad-hoc stack unrelated to the framework's activations. The generalisation
+     must make a window's stack a stack of *real activations*, so that
+     selecting a window selects its interactor stack for real command routing
+     and config-cascade resolution.
+
+This is the crux. Everything else (commands, layout, config) follows once the
+"a window owns an interactor stack; a template can be instantiated N times"
+model is fixed.
+
+* Interactor templates (registry)
+
+Introduce a registry of interactor templates. Candidate initial set:
+
+  - =lisp-repl=    the Lisp/AutoLISP read-eval-print
+  - =aldo=         the debugger command interactor
+  - =navi=         structure navigator (poll-point motions)
+  - =sedit=        structure editor (all-subsexp motions, editing)
+  - =inspector=    object inspector (=clal-inspect=)
+  - =stack-browser= the SLDB-style backtrace browser (§8)
+  - (later) a directory/=dired=-like template, a help/apropos template
+
+Each template needs: a display name, a one-line description (shown in the
+picker), a constructor that instantiates an activation over a given target
+(a form / object / file / stack), the config it runs under (its
+=<name>.conf= cascade), and whether it is *single-instance* or
+*multi-instance*.
+
+* Commands (window management)
+
+Extend the =C-w= / =C-x= window-manager interactor
+(=run-window-command=, =ncurses-ui.lisp=):
+
+  - *create a window* choosing a template: split the selected window (or add
+    to the layout) and prompt with the template list — e.g. =C-w c= opens the
+    picker; or =C-w 2= / =C-w 3= keep splitting but the /new/ window then
+    prompts for its template instead of inheriting a fixed role.
+  - *set what runs in the selected window*: replace its backing interactor
+    with a chosen template (=C-w RET= / =C-w m=), like =switch-to-buffer=.
+  - *close* the selected window (=C-w 0=), *close others* (=C-w 1=) — with
+    the window count now free.
+  - *list templates* (the picker itself), reachable on demand.
+  - the existing motions (=C-w n/p/o/=, swap, resize, balance) carry over.
+
+The fixed four-pane aldo layout becomes just the *default layout* the
+debugger opens with (backward compatible), expressed as a saved layout (see
+config), not a hard constraint.
+
+* Relationship to the config cascade (parallel open work)
+
+Per =tui-module-specification.org= §11 and the config work already landed
+(=tui-core= =config.lisp=): each interactor names the config it runs under,
+and the interactor stack's configs form the cascade (faces, key bindings,
+print-syntax, layout). Windows and interactor templates plug straight in: a
+window's selected template sets =*active-config*= to that template's config,
+and its cascade parallels the window's interactor stack. Two questions this
+raises are listed below; they should be answered together with the window
+model since they share the "interactor backs a window" structure.
+
+* Open questions (for pjb to specify)
+
+  1. *Per-window interactor stacks.* Confirm the model: each window owns an
+     interactor stack; the selected window's stack is the active one; the
+     global =*interactor-stack*= becomes (or is replaced by) the selected
+     window's stack. How do the four debugger panes — today one logical aldo
+     session across four views — map onto per-window stacks? Is aldo one
+     activation shared by the stack/source/inspect panes, with each pane a
+     /view/ onto it, while only the =:interactor= pane owns the aldo command
+     stack? Or is each pane its own activation?
+
+  2. *Multi-instance templates.* Which templates may have several live
+     instances (navi, sedit, inspector — surely yes; aldo — surely one per
+     debugged thread)? The singleton =define-interactor= objects stay as the
+     /template/; a window holds an /activation/ of it. Confirm.
+
+  3. *The template picker.* What triggers it (=C-w c=? a menu?), how is the
+     list rendered (a transient window? a minibuffer completion?), and what
+     is the template metadata shown (name + description)?
+
+  4. *Instantiation targets.* When the user picks e.g. =navi= or =inspector=
+     for a new window, where does its target come from — the current
+     selection, a prompt, the value in the REPL, the object under point?
+
+  5. *Layout persistence.* Layouts saved as a =:layout= setting in a config
+     (which one — =aldo.conf= for the debugger's default? a top-level
+     =layout.conf=?). Restore on entry; the fixed 4-pane layout becomes the
+     debugger's default saved layout.
+
+  6. *Config cascade when stacked.* =clal-sedit= from the REPL runs
+     =sedit.conf -> lisp.conf=; sedit entered above a debugger stop runs
+     (per the stack) =sedit.conf -> aldo.conf -> lisp.conf=. The static
+     config parent (=ensure-config "sedit" "lisp"=) gives only the first.
+     Should the cascade be computed *dynamically from the live interactor
+     stack* rather than from the static parent chain, so a template's cascade
+     depends on where it is stacked? (Recommended, but confirm.)
+
+  7. *Config directory / save timing.* The /where/ is already solved: use the
+     existing XDG resolver in =autolisp-debug-ui/source/settings.lisp= —
+     =config-save-path= (=$XDG_CONFIG_HOME/clautolisp/NAME.conf=) and
+     =config-load-path= (save-path if present, else along =$XDG_CONFIG_DIRS=).
+     Open part: *when* to save each =<name>.conf= — on interactor exit, on
+     every change (the config =dirty= flag exists), or only on an explicit
+     save command? And do we save one file per config in the cascade, or only
+     the innermost/changed ones?
+
+  8. *tty frames.* In a tty-frame (no ncurses) the "windows" collapse; the
+     variable-window commands are ncurses-only, but the interactor templates
+     and their config cascades must still work for =clal-sedit= /
+     =clal-inspect= from a plain REPL (they draw line-oriented, window ops are
+     no-ops). Confirm the tty degradation is acceptable as-is.
+
+* Status of the pieces (2026-08, branch debugger-ui-ncurses-aldb)
+
+  - sedit is *already* a full interactor (=*sedit*=, =sedit-enter= over
+    =interactor-loop=); =clal-sedit= and the debugger bridge drive it. What is
+    missing is (a) the config-cascade binding (Q6/Q7) and (b) windowed
+    rendering (it is line-oriented today).
+  - The config cascade, per-config faces and key bindings, window ops
+    (=clear-window= / =move-cursor-to= / =window-put=), opaque object handles,
+    and the §13 print-syntax modules are landed in =tui-core= / the runtime.
+  - The window struct already has a =stack= slot awaiting the per-window
+    interactor stacks; =window-split= still enforces the four-pane layout (it
+    re-homes an existing window rather than adding/removing one).
+  - The tool's integration point is =resolve-default-debugger-ui=
+    (=tools/clautolisp/source/main.lisp:302=), where lower systems already get
+    their upper-layer hooks installed (=*default-on-quit-policy*=,
+    =*aldo-configuration-writer*=, shell-escape). Since =autolisp-sedit= cannot
+    see =tui-core=, any config-cascade binding for sedit is installed here as a
+    hook (the =*default-on-quit-policy*= precedent).
+  - =print-syntax.lisp= (§13) defines print modules for stack / inspect / aldo
+    / repl but *not* sedit; a =with-sedit-print-syntax= would be added if
+    sedit's windowed rendering needs one.
+
+Once Q1–Q8 are answered, the implementation is: a template registry + picker,
+per-window interactor stacks, the =C-w= create/set/close commands, dynamic
+config cascade from the live stack, and layout persistence.
