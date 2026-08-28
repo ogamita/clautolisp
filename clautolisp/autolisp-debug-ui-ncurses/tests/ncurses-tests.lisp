@@ -722,3 +722,37 @@
   (let ((s (clautolisp.autolisp-runtime:make-autolisp-string "hi")))
     (is (string= "hi"   (clautolisp.debug.ui:clal-princ-to-string s)))
     (is (string= "\"hi\"" (clautolisp.debug.ui:clal-prin1-to-string s)))))
+
+;;;; --- sedit running live in a window (windows-and-interactor-templates) ---
+
+(test sedit-runs-live-in-the-source-pane
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen)))
+    ;; M-x sedit on a form: the source pane swaps its navigator for sedit
+    (clautolisp.ui.ncurses::open-sedit-in-source ui nil nil "(+ 1 2)")
+    (let* ((source (clautolisp.ui.ncurses::ui-window ui :source))
+           (act (clautolisp.ui.ncurses::window-sedit-activation source)))
+      (is (not (null act)))
+      ;; the pane now renders the sedit selection (the edited form)
+      (let ((buffer (clautolisp.ui.ncurses::window-content ui nil source)))
+        (is (not (null (some (lambda (line) (search "+" (car line))) buffer)))))
+      ;; a motion keystroke drives the sedit command and moves the selection
+      (let ((before (clautolisp.sedit:sedit-activation-render act)))
+        (clautolisp.ui.ncurses::sedit-window-key act ui #\d)     ; descend
+        (is (not (string= before (clautolisp.sedit:sedit-activation-render act)))))
+      ;; q swaps the navigator back
+      (clautolisp.ui.ncurses::sedit-window-key act ui #\q)
+      (is (null (clautolisp.ui.ncurses::window-sedit-activation source)))
+      (is (not (null (member :navi (clautolisp.ui.tui:window-stack source))))))))
+
+(test sedit-window-key-runs-a-motion-through-the-framework
+  ;; The keystroke driver dispatches through the interactor framework against the
+  ;; activation's own one-entry stack (no interactor-loop): a bare motion command
+  ;; changes the sedit selection.
+  (let* ((act (clautolisp.interactor:instantiate-interactor-template
+               "sedit"
+               (clautolisp.interactor:make-template-context
+                :target (clautolisp.sedit:parse-form "(a (b c) d)"))))
+         (before (clautolisp.sedit:sedit-activation-render act)))
+    (clautolisp.interactor:run-command-line "d" :stack (list act))
+    (is (not (string= before (clautolisp.sedit:sedit-activation-render act))))))

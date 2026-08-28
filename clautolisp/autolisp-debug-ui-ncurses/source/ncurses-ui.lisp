@@ -231,15 +231,35 @@ falls outside the vertical viewport, re-centre on it (auto-follow). Returns
       (set-win-scroll window sl sc)
       (values sl sc))))
 
+(defun window-entry-sedit-p (entry)
+  "True when a window interactor-stack ENTRY is a SEDIT activation (a window
+running sedit live, windows-and-interactor-templates.issue)."
+  (and (clautolisp.interactor:activation-p entry)
+       (eq (clautolisp.interactor:activation-interactor entry)
+           clautolisp.sedit:*sedit*)))
+
+(defun window-sedit-activation (window)
+  "The SEDIT activation on WINDOW's interactor stack, or NIL."
+  (find-if #'window-entry-sedit-p (window-stack window)))
+
+(defun sedit-window-buffer (activation)
+  "Buffer lines (STRING . ATTR) rendering the sedit ACTIVATION's selection."
+  (mapcar (lambda (line) (cons line :normal))
+          (%split-lines (clautolisp.sedit:sedit-activation-render activation))))
+
 (defun window-content (ui session window)
   "Return (values BUFFER FOLLOW-ROW) for WINDOW — a list of (STRING . ATTR)
-lines and an optional 0-based row to keep in view. Dispatch on the pane role."
-  (ecase (window-role window)
-    (:stack      (values (stack-buffer ui session) nil))
-    (:source     (source-buffer ui session))
-    (:interactor (values (interactor-buffer ui) nil))
-    (:repl       (let ((buffer (repl-buffer ui)))
-                   (values buffer (and buffer (1- (length buffer)))))))) ; tail-follow
+lines and an optional 0-based row to keep in view. A window running a SEDIT
+activation renders its selection; otherwise dispatch on the pane role."
+  (let ((sedit (window-sedit-activation window)))
+    (if sedit
+        (values (sedit-window-buffer sedit) nil)
+        (ecase (window-role window)
+          (:stack      (values (stack-buffer ui session) nil))
+          (:source     (source-buffer ui session))
+          (:interactor (values (interactor-buffer ui) nil))
+          (:repl       (let ((buffer (repl-buffer ui)))
+                         (values buffer (and buffer (1- (length buffer)))))))))) ; tail-follow
 
 (defun render-window (ui session window rect)
   (setf (window-rect window) rect)
@@ -394,7 +414,12 @@ the 0-based row of that selection, to keep in view."
   "Debugger window role -> the config whose cascade its interactor runs under.")
 
 (defun window-config-name (window)
-  (or (cdr (assoc (window-role window) +window-config-name+)) "lisp"))
+  ;; A window running sedit resolves faces/bindings through the "sedit" config
+  ;; (cascade sedit -> lisp), whatever pane it borrows (windows-and-interactor-
+  ;; templates.issue). The full dynamic cascade from the live stack (sedit ->
+  ;; aldo -> lisp above a stop) lands with the shared-tail activation stacks.
+  (cond ((window-sedit-activation window) "sedit")
+        (t (or (cdr (assoc (window-role window) +window-config-name+)) "lisp"))))
 
 (defun active-window-config (ui)
   "The config for UI's active window (its cascade resolves faces + bindings)."
@@ -712,13 +737,26 @@ directive or NIL."
             (when h (return d)))))))
 
 (defun interactor-key (interactor ui session hit key)
-  "Try to handle KEY in INTERACTOR; return (values HANDLED-P DIRECTIVE)."
-  (ecase interactor
-    (:window-manager (window-manager-key ui session hit key))
-    (:aldo           (aldo-key ui session hit key))
-    (:navi           (navi-key ui session hit key))
-    (:framenav       (framenav-key ui session key))
-    (:repl           (values nil nil))))
+  "Try to handle KEY in INTERACTOR (a keyword pane interactor, or a real
+interactor ACTIVATION carried by the window); return (values HANDLED-P
+DIRECTIVE)."
+  (if (clautolisp.interactor:activation-p interactor)
+      (activation-key interactor ui session hit key)
+      (ecase interactor
+        (:window-manager (window-manager-key ui session hit key))
+        (:aldo           (aldo-key ui session hit key))
+        (:navi           (navi-key ui session hit key))
+        (:framenav       (framenav-key ui session key))
+        (:repl           (values nil nil)))))
+
+(defun activation-key (activation ui session hit key)
+  "Dispatch KEY to a window's real interactor ACTIVATION (per-window interactor
+stacks, windows-and-interactor-templates.issue). Sedit activations map keys to
+sedit commands; other interactors do not yet handle keystrokes here."
+  (declare (ignore session hit))
+  (if (window-entry-sedit-p activation)
+      (sedit-window-key activation ui key)
+      (values nil nil)))
 
 (defun window-manager-key (ui session hit key)
   "The umbrella interactor on the active window: the C-w/C-x window-command
@@ -866,6 +904,94 @@ the save (window-scrolling.issue)."
         (help-key-bindings ui)
         (set-message ui "C-h m : list key bindings"))))
 
+;;;; --- sedit running live in a window (windows-and-interactor-templates) ---
+;;;; `M-x sedit' swaps the source pane's navigator for a SEDIT activation (issue
+;;;; §C: "pop the navi interactor from the source-window stack and push a new
+;;;; sedit"). The pane then renders the sedit selection (WINDOW-CONTENT) and its
+;;;; keys drive sedit commands, dispatched through the interactor framework
+;;;; against the activation's own one-entry stack. `q' swaps the navigator back.
+
+(defparameter +sedit-window-arg-keys+ '(#\i #\a #\r)
+  "sedit editing keys needing a form/text argument (prompted in the minibuffer).")
+(defparameter +sedit-window-command-keys+ "dufb<>zcxvmeslh"
+  "sedit single-key commands run bare (motions + no-argument edits / eval / save
+/ load / help).")
+
+(defun run-sedit-key-command (activation ui line)
+  "Run sedit command LINE against ACTIVATION's own one-entry stack — the
+framework binds *COMMAND-ACTIVATION* so the sedit command body reaches this
+session — echoing any output to the minibuffer. Returns (values T NIL)."
+  (let ((out (make-string-output-stream)))
+    (let ((*standard-output* out))
+      (handler-case
+          (clautolisp.interactor:run-command-line
+           line :stack (list activation) :output out :error-output out)
+        (error (e) (format out "~A" e))))
+    (let ((text (string-trim '(#\Space #\Tab #\Newline)
+                             (get-output-stream-string out))))
+      (when (plusp (length text))
+        (set-message ui "~A" (first (%split-lines text))))))
+  (values t nil))
+
+(defun sedit-window-key (activation ui key)
+  "Map a keystroke to a sedit command on ACTIVATION. Argument edits (i/a/r)
+prompt the minibuffer; `q' swaps the navigator back; other single-key commands
+run bare; an unhandled key falls through (values NIL NIL)."
+  (cond
+    ((not (characterp key)) (values nil nil))
+    ((char= key #\q) (close-sedit-in-source ui) (values t nil))
+    ((member key +sedit-window-arg-keys+)
+     (let ((arg (read-minibuffer ui (format nil "sedit ~C " key))))
+       (when (and arg (plusp (length (string-trim " " arg))))
+         (run-sedit-key-command activation ui (format nil "~C ~A" key arg))))
+     (values t nil))
+    ((find key +sedit-window-command-keys+)
+     (run-sedit-key-command activation ui (string key)))
+    (t (values nil nil))))
+
+(defun %sedit-target-from-arg (arg ui)
+  "The sedit target for `M-x sedit': ARG parsed as a form when non-empty, else a
+form read from the minibuffer, else NIL (a stand-alone editor). A parse error is
+reported and yields NIL."
+  (let ((text (if (and arg (plusp (length (string-trim " " arg))))
+                  arg
+                  (read-minibuffer ui "sedit form: "))))
+    (if (and text (plusp (length (string-trim " " text))))
+        (handler-case (clautolisp.sedit:parse-form text)
+          (error (e) (set-message ui "sedit: ~A" e) nil))
+        nil)))
+
+(defun open-sedit-in-source (ui session hit arg)
+  "`M-x sedit': open a SEDIT activation over ARG (or a prompted form) in the
+source pane, swapping its navigator out. Selects the source window so its keys
+drive sedit. Returns NIL (no resume)."
+  (declare (ignore session hit))
+  (let* ((target (%sedit-target-from-arg arg ui))
+         (activation (clautolisp.interactor:instantiate-interactor-template
+                      "sedit"
+                      (clautolisp.interactor:make-template-context :target target)))
+         (window (ui-window ui :source)))
+    (when window
+      ;; drop the navigator / any prior sedit, keep :window-manager, push the new
+      (setf (window-stack window)
+            (append (remove-if (lambda (e) (or (eq e :navi) (window-entry-sedit-p e)))
+                               (window-stack window))
+                    (list activation)))
+      (activate-window ui window)
+      (set-message ui "sedit: d u > < move | i a r edit | z c x v | e eval s save | q close")))
+  nil)
+
+(defun close-sedit-in-source (ui)
+  "`q' in a sedit source pane: drop the sedit activation and restore the source
+navigator."
+  (let ((window (ui-window ui :source)))
+    (when window
+      (let ((rest (remove-if #'window-entry-sedit-p (window-stack window))))
+        (setf (window-stack window)
+              (if (member :navi rest) rest (append rest (list :navi)))))))
+  (set-message ui "sedit closed")
+  nil)
+
 (defun handle-window-command (ui)
   "Read the key after a C-w / C-x prefix and run the built-in window command."
   (run-window-command ui (tui-read-key (ncurses-ui-screen ui))))
@@ -942,7 +1068,11 @@ RET returns the string, Esc cancels (returns NIL), Backspace deletes."
    (cons "window-scroll-up"    (lambda (ui s h a) (declare (ignore s h a)) (window-scroll-by ui +window-scroll-step+ 0) nil))
    (cons "window-scroll-down"  (lambda (ui s h a) (declare (ignore s h a)) (window-scroll-by ui (- +window-scroll-step+) 0) nil))
    (cons "window-other"        (lambda (ui s h a) (declare (ignore s h a)) (window-other ui) nil))
-   (cons "help-key-bindings"   (lambda (ui s h a) (declare (ignore s h a)) (help-key-bindings ui) nil)))
+   (cons "help-key-bindings"   (lambda (ui s h a) (declare (ignore s h a)) (help-key-bindings ui) nil))
+   ;; sedit live in the source pane (windows-and-interactor-templates.issue):
+   ;; `make-sedit-window' is the spec name; `sedit' the short alias.
+   (cons "sedit"             #'open-sedit-in-source)
+   (cons "make-sedit-window" #'open-sedit-in-source))
   "Named debugger / window commands reachable through M-x and `,'. Maps a
 command NAME to (lambda (ui session hit arg) -> resume-directive-or-nil). This
 registry is the seed of the user-binding API — see ncurses-key-bindings.issue.

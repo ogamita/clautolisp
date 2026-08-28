@@ -451,3 +451,15 @@ clal-sedit call collecting the edited sexp). Returns the ACTIVATION."
   :interactor *sedit*
   :constructor '%sedit-template-constructor
   :config-name "sedit")
+
+(defun sedit-activation-session (activation)
+  "The sedit SESSION of a SEDIT ACTIVATION (its state's session)."
+  (sedit-interactor-state-session
+   (clautolisp.interactor:activation-state activation)))
+
+(defun sedit-activation-render (activation)
+  "The multi-line display string for a SEDIT ACTIVATION shown in a window: its
+session's current selection marked in context — the same view %SEDIT-STATUS
+prints before the prompt. A UI splits this into buffer lines."
+  (render-selection
+   (sedit-state-loc (sedit-session-state (sedit-activation-session activation)))))

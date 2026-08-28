@@ -818,7 +818,11 @@ identity / TEMPPREFIX stamping, option value parsers)."
                ;; the ncurses UI routes ,<line> minibuffer commands through the
                ;; shared ALDO command vocabulary (dumb UI-RUN-COMMAND with its
                ;; output redirected into a pane); reuse rather than reimplement.
-               "clautolisp/autolisp-debug-ui-dumb")
+               "clautolisp/autolisp-debug-ui-dumb"
+               ;; sedit runs live in a window: instantiate + drive its interactor
+               ;; template (windows-and-interactor-templates.issue).
+               "clautolisp/autolisp-interactor"
+               "clautolisp/autolisp-sedit")
   :serial t
   :components
   ((:file "autolisp-debug-ui-ncurses/source/package")
