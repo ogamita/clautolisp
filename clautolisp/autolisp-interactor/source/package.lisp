@@ -71,6 +71,7 @@ implementations, not here.")
    #:interactor-documentation
    #:activation #:make-activation #:activation-p
    #:activation-interactor #:activation-state
+   #:activation-name #:activation-label #:uniquify-instance-name
    #:*command-interactor* #:*command-activation*
    #:*command-line* #:*command-arguments-text*
    #:*interactor-stack*

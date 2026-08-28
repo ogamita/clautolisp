@@ -113,10 +113,14 @@ case-insensitively; NIL when none."
   "The names of every registered template, registration order."
   (mapcar #'interactor-template-name *interactor-templates*))
 
-(defun instantiate-interactor-template (name context)
+(defun instantiate-interactor-template (name context &key existing-names)
   "Instantiate the template named NAME (a name or an INTERACTOR-TEMPLATE) over
 CONTEXT (a TEMPLATE-CONTEXT): call its constructor and return the fresh
-ACTIVATION. Signals when NAME is unknown or the template has no constructor."
+ACTIVATION. When the constructor left the activation unnamed, give it the
+template's display-name as its instance name, uniquified against EXISTING-NAMES
+(the live instance names the caller — a UI — already has), so several instances
+of one template get distinct names (\"sedit\", \"sedit<2>\"). Signals when NAME
+is unknown or the template has no constructor."
   (let ((template (or (find-interactor-template name)
                       (error "No interactor template named ~S." name))))
     (let ((constructor (interactor-template-constructor template)))
@@ -127,6 +131,10 @@ ACTIVATION. Signals when NAME is unknown or the template has no constructor."
         (unless (activation-p activation)
           (error "The constructor of template ~S returned ~S, not an activation."
                  (interactor-template-name template) activation))
+        (unless (activation-name activation)
+          (setf (activation-name activation)
+                (uniquify-instance-name (interactor-template-display-name template)
+                                        existing-names)))
         activation))))
 
 ;;; --- definition sugar ---------------------------------------------------

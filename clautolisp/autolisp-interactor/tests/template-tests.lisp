@@ -128,3 +128,57 @@ template."
       (is (eq tpl (clautolisp.interactor:find-interactor-template "stack-browser")))
       (is (string= "Browse the backtrace"
                    (clautolisp.interactor:interactor-template-description tpl))))))
+
+;;;; --- activation instance names (windows-and-interactor-templates.issue) ---
+
+(test activation-label-falls-back-to-interactor-name
+  (let* ((it (%make-test-interactor "sedit"))
+         (unnamed (clautolisp.interactor:make-activation it))
+         (named   (clautolisp.interactor:make-activation it nil "sedit<2>")))
+    (is (string= "sedit" (clautolisp.interactor:activation-label unnamed)))
+    (is (null (clautolisp.interactor:activation-name unnamed)))
+    (is (string= "sedit<2>" (clautolisp.interactor:activation-label named)))
+    (is (string= "sedit<2>" (clautolisp.interactor:activation-name named)))))
+
+(test uniquify-instance-name-suffixes
+  (is (string= "lisp repl"
+               (clautolisp.interactor:uniquify-instance-name "lisp repl" '())))
+  (is (string= "lisp repl<2>"
+               (clautolisp.interactor:uniquify-instance-name
+                "lisp repl" '("lisp repl"))))
+  (is (string= "lisp repl<3>"
+               (clautolisp.interactor:uniquify-instance-name
+                "lisp repl" '("lisp repl" "lisp repl<2>"))))
+  ;; a gap is filled by the least free N
+  (is (string= "lisp repl<2>"
+               (clautolisp.interactor:uniquify-instance-name
+                "lisp repl" '("lisp repl" "lisp repl<3>")))))
+
+(test instantiate-assigns-a-unique-instance-name
+  (with-fresh-template-registry
+    (let ((it (%make-test-interactor "sedit")))
+      (clautolisp.interactor:register-interactor-template
+       (clautolisp.interactor:make-interactor-template
+        :name "sedit" :display-name "sedit" :interactor it
+        :constructor (lambda (ctx) (declare (ignore ctx))
+                       (clautolisp.interactor:make-activation it))))
+      (let* ((a (clautolisp.interactor:instantiate-interactor-template
+                 "sedit" (clautolisp.interactor:make-template-context)))
+             (b (clautolisp.interactor:instantiate-interactor-template
+                 "sedit" (clautolisp.interactor:make-template-context)
+                 :existing-names (list (clautolisp.interactor:activation-name a)))))
+        (is (string= "sedit" (clautolisp.interactor:activation-name a)))
+        (is (string= "sedit<2>" (clautolisp.interactor:activation-name b)))))))
+
+(test instantiate-keeps-a-constructor-assigned-name
+  (with-fresh-template-registry
+    (let ((it (%make-test-interactor "aldo")))
+      (clautolisp.interactor:register-interactor-template
+       (clautolisp.interactor:make-interactor-template
+        :name "aldo" :display-name "aldo" :interactor it
+        :constructor (lambda (ctx) (declare (ignore ctx))
+                       (clautolisp.interactor:make-activation it nil "debugging dessin 1"))))
+      (let ((a (clautolisp.interactor:instantiate-interactor-template
+                "aldo" (clautolisp.interactor:make-template-context))))
+        (is (string= "debugging dessin 1"
+                     (clautolisp.interactor:activation-name a)))))))

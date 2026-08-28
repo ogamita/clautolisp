@@ -58,16 +58,41 @@ fresh ones named after it."
                            (make-command-dictionary
                             (concatenate 'string (string name) "-user")))))))
 
-(defstruct (activation (:constructor make-activation (interactor &optional state)))
+(defstruct (activation (:constructor make-activation (interactor &optional state name)))
   "One entry of *INTERACTOR-STACK*: the (singleton) INTERACTOR paired with the
 STATE of this activation of it — like a call frame pairing a function with
 its locals (interactor-design-revision.issue T1). The state is whatever the
 mode needs per entry: the navigator's location and redraw flag, the
 debugger's UI/session/stop. Recursive entries (a nested invoke-debugger
 suspending one navigator under another) each carry their own state over the
-same interactor."
+same interactor.
+
+NAME is this activation's INSTANCE name (windows-and-interactor-templates.issue),
+distinguishing several live instances of one interactor over a shared singleton
+backend — the lisp REPL / aldo debugger UI can be instantiated many times over
+the one evaluator / debugger (\"lisp repl\", \"lisp repl dessin 1#2<2>\"). NIL
+falls back to the interactor's own name (ACTIVATION-LABEL)."
   (interactor nil :type (or null interactor))
-  (state      nil))
+  (state      nil)
+  (name       nil :type (or null string)))
+
+(defun activation-label (activation)
+  "The display / routing name of ACTIVATION: its instance NAME, or the
+interactor's name when none was assigned."
+  (or (activation-name activation)
+      (interactor-name (activation-interactor activation))))
+
+(defun uniquify-instance-name (base existing &key (test #'equal))
+  "BASE when no EXISTING name equals it; otherwise BASE with a =<N>= suffix for
+the least N ≥ 2 that is free — the slime-mrepl scheme for several instances of
+one interactor (windows-and-interactor-templates.issue). EXISTING is a list of
+names."
+  (if (not (member base existing :test test))
+      base
+      (loop for n from 2
+            for candidate = (format nil "~A<~D>" base n)
+            unless (member candidate existing :test test)
+              do (return candidate))))
 
 (defvar *interactor-stack* '()
   "The stack of live ACTIVATIONs, innermost first. Commands are searched down
