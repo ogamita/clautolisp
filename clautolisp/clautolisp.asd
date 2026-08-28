@@ -673,7 +673,8 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-interactor/source/command")
    (:file "autolisp-interactor/source/parse")
    (:file "autolisp-interactor/source/input")
-   (:file "autolisp-interactor/source/interactor"))
+   (:file "autolisp-interactor/source/interactor")
+   (:file "autolisp-interactor/source/template"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-interactor/tests")))
   :perform (asdf:test-op (op system)
@@ -692,6 +693,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-interactor/tests/command-tests")
    (:file "autolisp-interactor/tests/interactor-tests")
    (:file "autolisp-interactor/tests/shell-escape-tests")
+   (:file "autolisp-interactor/tests/template-tests")
    (:file "autolisp-interactor/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
