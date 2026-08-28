@@ -898,6 +898,28 @@ live at each read (CURRENT-EVALUATION-DIALECT, design-revision D2), so a
 mid-session =(setq *AUTOLISP-DIALECT* 'lax)= takes effect immediately."
   context session break-on-error)
 
+;;; --- the lisp REPL as a window interactor template (windows-and-interactor-
+;;; templates.issue). *AUTOLISP* is the singleton REPL PROGRAM; each activation
+;;; multiplexes the ONE evaluation context (the shared evaluator). So the REPL
+;;; is a multi-instance UI over a singleton backend (issue §Core design tension:
+;;; "several lisp interactors … using the same lisp evaluator") — the template
+;;; packages the instantiation, parallel to the sedit / aldo templates. CONTEXT's
+;;; TARGET may name an explicit evaluation context; otherwise the current one is
+;;; shared. (The ncurses REPL pane consuming this lands in a later slice.)
+
+(defun %lisp-template-constructor (context)
+  "Build an AUTOLISP (lisp REPL) activation over the shared evaluation context."
+  (let ((eval-context (or (clautolisp.interactor:template-context-target context)
+                          (clautolisp.autolisp-runtime:current-evaluation-context))))
+    (make-activation *autolisp* (make-repl-state :context eval-context :session nil))))
+
+(clautolisp.interactor:define-interactor-template "lisp"
+  :display-name "Lisp REPL"
+  :description "An AutoLISP read-eval-print instance over the running evaluator"
+  :interactor *autolisp*
+  :constructor '%lisp-template-constructor
+  :config-name "lisp")
+
 (defun %autolisp-reader (input-context)
   "The *AUTOLISP* singleton's reader: a `,command' line dispatches, anything
 else reads as one balanced AutoLISP turn under the dialect in force NOW."

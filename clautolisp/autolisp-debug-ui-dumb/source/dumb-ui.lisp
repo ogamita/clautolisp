@@ -383,6 +383,35 @@ frame and echoes with the DBG> prefix."
                 *interactor-stack*)))
     (funcall thunk)))
 
+;;; --- ALDO as a window interactor template (windows-and-interactor-templates)
+;;; The *ALDO* interactor is a singleton PROGRAM; each activation's ALDO-STATE
+;;; references the ONE shared debugger SESSION/engine. So aldo is already a
+;;; multi-instance UI over a singleton backend (issue §Core design tension) —
+;;; the template just packages the instantiation, parallel to the sedit
+;;; template. The context TARGET carries the stop bundle: a DEBUGGER-SESSION, or
+;;; a plist (:session S :ui U :hit H); NIL yields an unwired activation the
+;;; driver fills. (The ncurses panes consuming this land in a later slice.)
+
+(defun %aldo-template-constructor (context)
+  "Build an ALDO activation over the shared debugger session named by CONTEXT's
+TARGET (a DEBUGGER-SESSION or a (:session :ui :hit) plist)."
+  (let ((target (clautolisp.interactor:template-context-target context)))
+    (multiple-value-bind (session ui hit)
+        (typecase target
+          (null (values nil nil nil))
+          (debugger-session (values target nil nil))
+          (cons (values (getf target :session) (getf target :ui) (getf target :hit)))
+          (t (values target nil nil)))
+      (make-activation *aldo*
+                       (make-aldo-state :ui ui :session session :hit hit)))))
+
+(clautolisp.interactor:define-interactor-template "aldo"
+  :display-name "Aldo debugger"
+  :description "The clautolisp debugger command interactor over the running stop"
+  :interactor *aldo*
+  :constructor '%aldo-template-constructor
+  :config-name "aldo")
+
 (defmethod ui-await-command ((ui dumb-ui) session hit)
   (record-navigation-state ui)
   ;; The stop's ALDO activation was pushed by CALL-WITH-STOP-INTERACTOR around

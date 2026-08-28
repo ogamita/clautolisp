@@ -1442,3 +1442,26 @@
                (is (not (contains out "f1.lsp")))
                (is (not (contains out "f9.lsp"))))))
       (clautolisp.debug.ui:reset-aldo-configuration))))
+
+;;;; --- ALDO as a window interactor template (windows-and-interactor-templates) ---
+
+(test aldo-template-is-registered
+  (let ((tpl (clautolisp.interactor:find-interactor-template "aldo")))
+    (is (not (null tpl)))
+    (is (eq clautolisp.ui.dumb::*aldo*
+            (clautolisp.interactor:interactor-template-interactor tpl)))
+    (is (string= "aldo" (clautolisp.interactor:interactor-template-config-name tpl)))))
+
+(test aldo-template-instantiates-over-a-session-bundle
+  ;; aldo is a multi-instance UI over the ONE shared session: the constructor
+  ;; wires the given session/ui/hit into a fresh ALDO activation.
+  (let* ((ctx (clautolisp.interactor:make-template-context
+               :target (list :session :the-session :ui :the-ui :hit :the-hit)))
+         (act (clautolisp.interactor:instantiate-interactor-template "aldo" ctx))
+         (state (clautolisp.interactor:activation-state act)))
+    (is (eq clautolisp.ui.dumb::*aldo* (clautolisp.interactor:activation-interactor act)))
+    (is (eq :the-session (clautolisp.ui.dumb::aldo-state-session state)))
+    (is (eq :the-ui (clautolisp.ui.dumb::aldo-state-ui state)))
+    (is (eq :the-hit (clautolisp.ui.dumb::aldo-state-hit state)))
+    ;; a fresh instance is named after the template's display-name
+    (is (string= "Aldo debugger" (clautolisp.interactor:activation-name act)))))
