@@ -12935,51 +12935,54 @@ clautolisp Extension Function
 
 *** Syntax
 #+begin_example
-(clal-compile-file source-file)
+(clal-compile-file source-file [output-file])
 #+end_example
 
 *** Arguments and Values
 - ~source-file~ — a string naming an AutoLISP source file, resolved
   the way ~load~ resolves its argument.
+- ~output-file~ (optional) — a string naming the artefact. When
+  omitted, the source name with type ~.lap~, beside the source.
 
 *** Description
-Load ~source-file~ under the current optimization qualities, compiling
-it as a single unit.
+Compile ~source-file~ into a ~.lap~ compiled application.
 
-The qualities govern, not the name of the function. At ~SPEED~ 3 every
-~defun~ in the file is compiled as it is evaluated, inside one host
-compilation unit — which is what makes a file-wide view of the code
-possible. Below ~SPEED~ 3 no unit is opened and functions are compiled
-when they become hot, exactly as an ordinary ~load~ would do; at
-~SPEED~ 0 nothing is compiled. Calling this function is therefore not
-a way to compile past a ~SPEED~ level that asked for less.
+A ~.lap~ is a native host FASL, renamed — the clautolisp analogue of
+AutoCAD ~.fas~ and BricsCAD ~.des~. It loads into a running image
+alongside other applications, which is what an AutoLISP application has
+to be, and it is therefore specific to the host Lisp (SBCL or CCL) and
+to the clautolisp version that built it. Builds that differ are kept in
+different directories, not distinguished by name.
 
-Compilation is into the running image. No file is written; see
-~clal-compile-system~ and the ~clal-compiled-artefact~ issue.
+This compiles; it does not load. That is the division Common Lisp makes
+between ~compile-file~ and ~load~, and the one ~vlisp-compile~ makes.
+
+Unlike the compilation that happens on its own during ~load~, this does
+*not* consult ~SPEED~: the qualities govern what the engine does on its
+own initiative, not what it does when told.
 
 *** Return Values
-~T~ on success; ~nil~ when the file could not be located, with ~errno~
-set to 73, matching ~load~ and ~vlisp-compile~.
+~T~ when the artefact was written; ~nil~ when the source could not be
+located (with ~errno~ 73) or the host compiler failed — the same
+contract ~vlisp-compile~ has.
 
 *** Side Effects
-Defines whatever the file defines; may compile function bodies.
-
-*** Affected By
-- ~clal-optimize~ — ~SPEED~ decides whether and when anything compiles.
+Writes the artefact. Does not define anything in the calling image.
 
 *** Exceptional Situations
-Signals from ~require-string~ when ~source-file~ is not a string. A
-missing file is reported by the return value, not by signalling.
+Signals ~:compiler-not-available~ in a clautolisp built without the
+compiler. Signals from ~require-string~ when ~source-file~ is not a
+string. A missing source is reported by the return value.
 
 *** Examples
 #+begin_example
-(clal-optimize '((speed 3)))
 (clal-compile-file "geometry.lsp")
-=> T
+=> T                                 ; wrote geometry.lap
+(load "geometry.lap")
 #+end_example
 
 *** Availability
-- clautolisp: since 2.0.9.
+- clautolisp: since 2.0.9; writes a ~.lap~ since 2.0.10.
 - AutoCAD: NOT present.
 - BricsCAD: NOT present.
 
@@ -13001,48 +13004,42 @@ clautolisp Extension Function
 #+end_example
 
 *** Arguments and Values
-- ~output-file~ — must be ~nil~. Reserved for the packaged artefact
-  (~.lap~), which this release does not write.
+- ~output-file~ — a string naming the artefact. Required: there is no
+  sensible default name for one built from several sources.
 - ~source-files~ — a proper list of strings naming AutoLISP source
   files, each resolved the way ~load~ resolves its argument.
 
 *** Description
-Compile several files as ONE unit.
+Compile several source files into ONE ~.lap~ application.
 
-What this adds over calling ~clal-compile-file~ in a loop is the single
-enclosing compilation unit: undefined-function warnings are deferred to
-the end of the whole system, so a function defined in a later file and
-called from an earlier one resolves quietly instead of warning at every
-forward reference. Each file's own unit is absorbed into this one.
-
-As with ~clal-compile-file~ the qualities govern: below ~SPEED~ 3 no
-enclosing unit is opened at all, so nothing system-wide happens for a
-caller who did not ask for it.
+What this adds over calling ~clal-compile-file~ on each source is that
+all of them go through a single host compilation: literals can be
+coalesced across the whole system, and a function defined in a later file
+and called from an earlier one resolves without a warning at every
+forward reference. A system that did not share one compilation would be a
+loop the caller could write, so this one always shares it.
 
 *** Return Values
-~T~ when every file was compiled; ~nil~ if any could not be located.
+~T~ when the artefact was written; ~nil~ when a source could not be
+located (with ~errno~ 73) or the host compiler failed.
 
 *** Side Effects
-Defines whatever the files define; may compile function bodies.
-
-*** Affected By
-- ~clal-optimize~ — ~SPEED~ decides whether and when anything compiles.
+Writes the artefact. Does not define anything in the calling image.
 
 *** Exceptional Situations
-Signals ~:unsupported-output-file~ when ~output-file~ is non-~nil~ —
-deliberately, rather than accepting the name of an artefact that would
-never be written. Signals from ~require-proper-list~ when
-~source-files~ is not a proper list.
+Signals ~:bad-argument~ when ~output-file~ is ~nil~ or ~source-files~ is
+empty, ~:compiler-not-available~ in a build without the compiler, and
+from ~require-proper-list~ when ~source-files~ is not a proper list.
 
 *** Examples
 #+begin_example
-(clal-optimize '((speed 3)))
-(clal-compile-system nil '("geometry.lsp" "commands.lsp"))
+(clal-compile-system "myapp.lap" '("geometry.lsp" "commands.lsp"))
 => T
+(load "myapp.lap")
 #+end_example
 
 *** Availability
-- clautolisp: since 2.0.9.
+- clautolisp: since 2.0.9; writes a ~.lap~ since 2.0.10.
 - AutoCAD: NOT present (the analogue is the Make Application wizard,
   producing ~.vlx~).
 - BricsCAD: NOT present (the analogue is DEScoder, producing ~.des~).
@@ -75195,7 +75192,24 @@ Writes the compiled output file to disk.
 *** Availability
 - AutoCAD 2026: documented; produces `.fas` (and `.vlx` archives via auxiliary tooling).
 - BricsCAD V26: documented; produces `.des`; the `mode` argument is parsed but ignored.
+- clautolisp: implemented since 2.0.10; produces `.lap` (a native host
+  FASL, renamed). Like BricsCAD it ignores `mode` — see the clautolisp
+  note below.
 - Status: cross-vendor divergence — see Phase 4 reconciliation in `vendor-inventory-2026.org` §10.
+
+*** clautolisp
+clautolisp produces `.lap`, its own analogue of `.fas` / `.des`, and
+returns `T` when that file was written. Before 2.0.10 it had no compiler
+and this function was a no-op returning `nil`.
+
+`mode` is accepted and ignored, as in BricsCAD, and for a reason worth
+stating: `'st` versus `'lsm` / `'lsa` is single-file versus
+optimize-and-link-*across files*, and a call naming one source has
+nothing to link across. clautolisp already compiles each file as one
+unit; the cross-file form is `clal-compile-system`. An *unknown* mode
+signals rather than being ignored — all three real modes do the same
+thing here, so ignoring `'st` is harmless, but ignoring a misspelling
+would hide a typo in a build script indefinitely.
 
 *** Mode names outside the function
 The three `mode` names are not private to `vlisp-compile`; they are the
