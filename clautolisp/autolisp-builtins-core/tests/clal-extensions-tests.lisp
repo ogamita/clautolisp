@@ -717,6 +717,13 @@ the branch you expect never to take."
   (handler-case (progn (funcall thunk) nil)
     (autolisp-runtime-error () t)))
 
+(defun %signals-error-p (thunk)
+  "True iff THUNK signals a CL ERROR. SET-CLAL-OPTIMIZATION-LEVELS is not an
+AutoLISP builtin -- it is called from the CLI, before any AutoLISP evaluation
+context exists -- so it signals a plain ERROR, not an AUTOLISP-RUNTIME-ERROR."
+  (handler-case (progn (funcall thunk) nil)
+    (error () t)))
+
 (defun %reset-optimization ()
   (setf clautolisp.autolisp-builtins-core::*clal-optimization*
         (list (cons :debug 3) (cons :space 0) (cons :speed 2)))
@@ -820,6 +827,86 @@ and read back 0 -- and it is worth a test now that the answer is honest."
              "an unknown quality was accepted")
          (is (%signals-runtime-error-p (lambda () (%optimize "(42)")))
              "a non-symbol element was accepted"))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-is-the-same-request-by-another-door
+  "SET-CLAL-OPTIMIZATION-LEVELS is what --optimize / -O calls. It takes
+(QUALITY . LEVEL) conses instead of an AutoLISP list, so that the CLI does
+not build a list only for CLAL-OPTIMIZE to take it apart again -- but it must
+land on exactly the same configuration, because both go through
+APPLY-CLAL-OPTIMIZATION. If these two ever disagreed, the same level would
+mean one thing from the command line and another from AutoLISP."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+          '((:speed . 3) (:debug . 0) (:space . 1)))
+         (is (eql 3 (clautolisp.autolisp-builtins-core::clal-optimization-level :speed)))
+         (is (eql 0 (clautolisp.autolisp-builtins-core::clal-optimization-level :debug)))
+         (is (eql 1 (clautolisp.autolisp-builtins-core::clal-optimization-level :space)))
+         ;; The gates, not just the bookkeeping: DEBUG 0 < SPACE 1 drops the
+         ;; instrumented fork, and SPEED 3 is the eager level.
+         (is (eql 3 clautolisp.autolisp-runtime:*autolisp-speed-level*))
+         (is (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*)))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-leaves-unmentioned-qualities-alone
+  "An option that mentions SPEED says nothing about DEBUG or SPACE. This is
+what makes `-O2' safe to type: it must not quietly reset the other two."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+          '((:speed . 0)))
+         (is (eql 0 (clautolisp.autolisp-builtins-core::clal-optimization-level :speed)))
+         (is (eql 3 (clautolisp.autolisp-builtins-core::clal-optimization-level :debug)))
+         (is (eql 0 (clautolisp.autolisp-builtins-core::clal-optimization-level :space))))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-applies-pairs-left-to-right
+  "A repeated quality takes its LAST value, so `-O2 -O3' means 3. The CLI
+accumulates occurrences rather than replacing them, so the list handed here
+really can name one quality twice."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+          '((:speed . 2) (:speed . 3)))
+         (is (eql 3 (clautolisp.autolisp-builtins-core::clal-optimization-level :speed))))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-rejects-nonsense
+  "The same range and vocabulary CLAL-OPTIMIZE enforces. The CLI parser
+rejects these first, but this entry point is exported and must not be a way
+around the check."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (is (%signals-error-p
+              (lambda () (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+                          '((:speed . 4)))))
+             "a level above 3 was accepted")
+         (is (%signals-error-p
+              (lambda () (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+                          '((:quickness . 3)))))
+             "an unknown quality was accepted"))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-is-all-or-nothing
+  "A bad pair half-way through must leave the qualities exactly as they were.
+Applying the good pairs and then signalling would leave a configuration nobody
+asked for, and the caller would never see it -- it only gets the error."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (is (%signals-error-p
+              (lambda () (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+                          '((:speed . 0) (:quickness . 3)))))
+             "the bad pair was accepted")
+         (is (eql 2 (clautolisp.autolisp-builtins-core::clal-optimization-level :speed))
+             "SPEED was changed by a call that signalled")
+         (is (eql 2 clautolisp.autolisp-runtime:*autolisp-speed-level*)
+             "the runtime gate was changed by a call that signalled"))
     (%reset-optimization)))
 
 ;;; --- clal-compile-file / clal-compile-system ------------------------

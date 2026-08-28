@@ -76,7 +76,8 @@
                 #:cador-prompt-stream)
   (:import-from #:clautolisp.autolisp-builtins-core
                 #:autolisp-value->string
-                #:install-core-builtins)
+                #:install-core-builtins
+                #:set-clal-optimization-levels)
   (:import-from #:clautolisp.autolisp-init-files
                 #:*default-clautolisp-stems*
                 #:find-init-files

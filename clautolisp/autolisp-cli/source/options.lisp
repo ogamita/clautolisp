@@ -67,6 +67,10 @@
   (gui              nil)              ; C   --gui CMD          (string)
   (dcl              :auto)            ; C   --dcl tui|gui|auto — DCL renderer selection
   (trace-p          nil)              ; C   --trace
+  ;; --optimize / -O: the accumulated ((QUALITY . LEVEL) …) pairs, in the
+  ;; order written. NIL = the option was never given, which is NOT the same
+  ;; as "all qualities at 0": an absent option must leave every level alone.
+  (optimization     nil)              ; C   --optimize / -O QUALITY=N,…
   ;; Dribble (dribble.issue; clautolisp today, alfe planned)
   (dribble          nil)              ; C   --dribble / --dribble=FILE → t / FILE (string)
   (dribble-interactors nil)           ; C   --dribble-interactors=IS → :all / list of name strings
@@ -292,3 +296,99 @@ is a TTY, otherwise the TUI — so every headless / piped run gets the TUI).
                   :message
                   (format nil "Unknown ~A value ~S (expected tui/ncurses/aldb)"
                           option value)))))
+
+;;; --- --optimize / -O --------------------------------------------------
+;;;
+;;; The CLI spelling of AutoLISP's (CLAL-OPTIMIZE '((SPEED 3) …)).
+;;;
+;;; The option exists because the AutoLISP surface cannot reach the moment
+;;; that matters most. In Common Lisp a DECLAIM in a file changes the
+;;; qualities for the rest of that file, because DECLAIM is a macro with a
+;;; compilation-time side effect. AutoLISP has neither macros nor a
+;;; distinction between compilation-time, load-time and run-time effects, so
+;;; a (CLAL-OPTIMIZE …) at the top of a .lsp takes effect only once that call
+;;; is EVALuated -- by which time the file it was meant to govern has already
+;;; been read and its DEFUNs already built. Nothing inside the language can
+;;; set the qualities BEFORE the first file is loaded; the command line can.
+;;;
+;;; The grammar mirrors CLAL-OPTIMIZE's rather than inventing a second
+;;; vocabulary for the same thing:
+;;;
+;;;   QUALITY=N   set QUALITY (debug/space/speed) to level N (0..3)
+;;;   QUALITY     the quality at level 3   (= CLAL-OPTIMIZE's bare symbol)
+;;;   N           shorthand for speed=N    (`-O2' reads as it does everywhere)
+;;;
+;;; Several specifiers may be comma-separated, and the option may be repeated;
+;;; both accumulate left to right, and a quality never mentioned keeps the
+;;; level it had. So `-O speed=3 -O debug=0' and `-O speed=3,debug=0' are the
+;;; same request, and neither says anything about SPACE.
+;;;
+;;; The result is the pairs, not the effect: this package must not know what a
+;;; level MEANS (that algebra lives in one place, APPLY-CLAL-OPTIMIZATION in
+;;; the builtins), and alfe links against this parser without linking against
+;;; the AutoLISP runtime at all.
+
+(defparameter *optimization-qualities* '(("debug" . :debug)
+                                         ("space" . :space)
+                                         ("speed" . :speed))
+  "The quality names accepted by --optimize, mapped to their keywords. The
+same three CLAL-OPTIMIZE accepts, deliberately: one vocabulary, two spellings.")
+
+(defun %parse-optimization-level (text option specifier)
+  "Parse TEXT as an optimization level 0..3, or signal a CLI-USAGE-ERROR
+naming OPTION and the offending SPECIFIER."
+  (multiple-value-bind (n end) (parse-integer text :junk-allowed t)
+    (unless (and n (= end (length text)) (<= 0 n 3))
+      (error 'cli-usage-error
+             :option option
+             :message (format nil "~A got a bad level in ~S (expected an integer 0..3)"
+                              option specifier)))
+    n))
+
+(defun %parse-optimization-specifier (specifier option)
+  "Parse one --optimize specifier into (QUALITY . LEVEL)."
+  (let* ((equals (position #\= specifier))
+         (name   (string-trim " " (if equals (subseq specifier 0 equals) specifier)))
+         (level  (and equals (string-trim " " (subseq specifier (1+ equals))))))
+    (cond
+      ;; QUALITY=N
+      (equals
+       (let ((quality (cdr (assoc name *optimization-qualities* :test #'string-equal))))
+         (unless quality
+           (error 'cli-usage-error
+                  :option option
+                  :message (format nil "Unknown optimization quality ~S in ~S (expected debug, space or speed)"
+                                   name specifier)))
+         (cons quality (%parse-optimization-level level option specifier))))
+      ;; QUALITY -- level 3, as a bare symbol means in CLAL-OPTIMIZE.
+      ((assoc name *optimization-qualities* :test #'string-equal)
+       (cons (cdr (assoc name *optimization-qualities* :test #'string-equal)) 3))
+      ;; N -- speed=N.
+      ((and (plusp (length name)) (every #'digit-char-p name))
+       (cons :speed (%parse-optimization-level name option specifier)))
+      (t
+       (error 'cli-usage-error
+              :option option
+              :message (format nil "Unknown --optimize specifier ~S (expected QUALITY, QUALITY=N or N)"
+                               specifier))))))
+
+(defun parse-optimize (value option)
+  "The --optimize / -O value: a comma-separated list of specifiers, yielding
+a list of (QUALITY . LEVEL) pairs in the order written."
+  (when (or (null value) (zerop (length (string-trim " " value))))
+    (error 'cli-usage-error
+           :option option
+           :message (format nil "~A needs a value: QUALITY, QUALITY=N or N (0..3)" option)))
+  (let ((pairs '()) (start 0))
+    (loop
+      (let* ((comma (position #\, value :start start))
+             (specifier (string-trim " " (subseq value start comma))))
+        (when (plusp (length specifier))
+          (push (%parse-optimization-specifier specifier option) pairs))
+        (unless comma (return))
+        (setf start (1+ comma))))
+    (unless pairs
+      (error 'cli-usage-error
+             :option option
+             :message (format nil "~A got no specifiers in ~S" option value)))
+    (nreverse pairs)))

@@ -686,6 +686,48 @@ operator under its ~*** clautolisp~ note.
                             list of names (default: ~AUTOLISP~ only).
                             Also sets ~*clal-dribble-interactors*~.
 
+** Optimization
+- ~-O SPEC~, ~--optimize SPEC~ :: Set the optimization qualities
+                            *before anything is loaded*. ~SPEC~ is a
+                            comma-separated list of specifiers, each
+                            one of:
+                            ~QUALITY=N~ (a quality — ~debug~, ~space~
+                            or ~speed~ — at level ~N~, 0..3),
+                            ~QUALITY~ (that quality at level 3), or a
+                            bare ~N~ (shorthand for ~speed=N~).
+                            The option may be repeated; occurrences
+                            accumulate left to right, and a quality you
+                            never mention keeps the level it had.
+- ~-O0~ … ~-O3~          :: Shorthand for ~-O speed=0~ … ~-O speed=3~.
+
+This is the command-line spelling of ~(clal-optimize …)~, and § /The
+clautolisp extensions/ ~CLAL-OPTIMIZE~ explains what the levels mean —
+which of a function's two forks exist and which are compiled. Read the
+result back at any time with ~(clal-optimization)~.
+
+The option exists because ~clal-optimize~ cannot reach the moment that
+matters most. In Common Lisp a ~declaim~ at the top of a file changes
+the qualities for the rest of *that file*, because ~declaim~ has a
+compilation-time effect. AutoLISP has no macros, and no distinction
+between compilation time, load time and run time — so a
+~(clal-optimize '((speed 3)))~ written at the top of a =.lsp= takes
+effect only when that call is *evaluated*, by which time the file it
+was meant to govern has already been read and its ~defun~ s already
+built. Nothing inside the language can set the qualities before the
+first file is loaded. The command line can:
+
+#+BEGIN_SRC sh
+$ clautolisp -O3 -l application.lsp        # compile at definition
+$ clautolisp -O0 -l application.lsp        # interpret everything
+$ clautolisp -O speed=3,debug=0 -l app.lsp # fast, not debuggable
+$ clautolisp -O2 -x '(princ (clal-optimization))'
+((DEBUG 3) (SPACE 0) (SPEED 2))
+#+END_SRC
+
+Note that ~--optimize debug=0~ and ~--debug~ are unrelated: ~--debug~
+is a verbosity flag, while ~debug~ here is an optimization quality —
+whether your functions keep the instrumented fork the debugger needs.
+
 ** Debugger (aldo)
 See § /Debugger/ for the semantics; the options in brief:
 
@@ -2251,6 +2293,13 @@ boundaries, which compiling one function at a time cannot do.
 
 The default is ~((DEBUG 3) (SPACE 0) (SPEED 2))~ — debugging matters
 most, speed next, size not at all.
+
+To choose the qualities *before* the first file is loaded — which is
+when ~SPEED 3~ matters most, since it governs how a file is compiled as
+it is loaded — use the ~-O~ / ~--optimize~ command-line option; see §
+/Options / Optimization/. A ~(clal-optimize …)~ written inside a =.lsp=
+cannot do this, because it takes effect only when it is evaluated, and
+by then the file containing it has already been built.
 
 #+BEGIN_SRC autolisp
 _$ (clal-optimize '((debug 0) (space 3)))   ; run plain, no instrumentation

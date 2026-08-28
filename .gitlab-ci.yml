@@ -301,6 +301,36 @@ test:clautolisp:ccl:
     - *pre-warm-quicklisp-ccl
     - make -C clautolisp test-ccl
 
+test:clautolisp:compiler:sbcl:
+  rules:
+    - *not-on-schedule
+    - when: on_success
+  stage: test
+  script:
+    - *pre-warm-quicklisp-sbcl
+    # The whole corpus, twice over: once with every AutoLISP function body
+    # compiled, once with every INSTRUMENTED body compiled. Both assert that
+    # compiled and interpreted evaluation AGREE -- which is the compiler's
+    # contract -- rather than that the compiler handles a list of forms.
+    - make -C clautolisp test-compiler-equivalence
+    - make -C clautolisp test-debug-compiled
+    # And the question neither of those asks, because both link the compiler
+    # in directly, as a test of the compiler must: does the program that
+    # SHIPS have a compiler in it? Until 2.0.12 it did not.
+    - make -C clautolisp test-shipped-compiler
+
+test:clautolisp:compiler:ccl:
+  rules:
+    - *not-on-schedule
+    - when: on_success
+  stage: test
+  script:
+    - *pre-warm-quicklisp-ccl
+    # A .lap is a native host FASL, so each host ships its own compiler and
+    # each has to be asked separately. 2.0.11 is the standing reason: a lane
+    # that is not run is not evidence.
+    - make -C clautolisp test-shipped-compiler-ccl
+
 test:clautolisp:file-compat:sbcl:
   rules:
     - *not-on-schedule

@@ -347,6 +347,18 @@ identity / TEMPPREFIX stamping, option value parsers)."
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-init-files"
+               ;; The AutoLISP-to-CL compiler (compiler.issue). It has to be
+               ;; listed HERE, and nowhere lower: the runtime and the builtins
+               ;; reach the compiler only through hooks
+               ;; (*COMPILE-USUBR-HOOK* and friends), which is what keeps them
+               ;; from depending on it -- so nothing below pulls it in, and
+               ;; the program that assembles them has to. Without this line
+               ;; the shipped executable had no compiler at all: every hook
+               ;; stayed NIL, which the runtime reads as "interpret", so
+               ;; every SPEED level behaved like SPEED 0 and nothing warned
+               ;; -- while the test systems, which depend on the compiler
+               ;; directly as a test of it must, all passed.
+               "clautolisp/autolisp-compiler"
                ;; REPL comma-commands (interactors): ,date ,uptime ,help ,quit
                "clautolisp/autolisp-interactor"
                ;; aldo debugger: the run loop can start a debug session under
@@ -376,6 +388,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   ((:file "tools/clautolisp/tests/package")
    (:file "tools/clautolisp/tests/dribble-tests")
    (:file "tools/clautolisp/tests/debugger-options-tests")
+   (:file "tools/clautolisp/tests/optimize-option-tests")
    (:file "tools/clautolisp/tests/transmit-tests")
    (:file "tools/clautolisp/tests/aldo-conf-tests")
    (:file "tools/clautolisp/tests/run"))

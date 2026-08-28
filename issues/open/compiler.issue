@@ -848,7 +848,100 @@ checked a file appeared would pass for an empty artefact, and for one
 whose symbols are interned in a table nobody reads -- which is exactly
 the failure the externalizer exists to prevent.
 
-STILL OPEN after slice 10
+Slice 11 (2.0.12) -- the --optimize option, and the compiler that was
+not in the program
+-------------------------------------------------------------------
+
+The option itself is small and does exactly what pjb validated: `-O
+QUALITY=N,...` / `--optimize=...`, plus `-O0`..`-O3`, setting the
+qualities BEFORE the first file is loaded. His reasoning is the whole
+justification and is worth keeping verbatim in the code: in CL a DECLAIM
+governs the rest of its file because DECLAIM is a macro with a
+compilation-time side effect; AutoLISP has neither macros nor a
+compilation-time/load-time/run-time distinction, so a (clal-optimize
+...) at the top of a .lsp takes effect only when it is EVALUATED -- by
+which time the file it was meant to govern has been read and its DEFUNs
+built. Nothing inside the language is early enough.
+
+Decisions worth recording:
+
+  The grammar MIRRORS CLAL-OPTIMIZE rather than inventing a second
+  vocabulary: QUALITY=N, a bare QUALITY meaning level 3 (as a bare
+  quality symbol means there), and a bare N meaning speed=N. One
+  concept, two spellings.
+
+  Occurrences ACCUMULATE. `-O speed=3 -O debug=0` is the same request as
+  `-O speed=3,debug=0`. Replacing would make the second occurrence
+  silently discard the first, which is not what anyone types it for.
+
+  `-O0`..`-O3` are four LITERAL short specs. The shared parser matches
+  short options by exact string and has no attached-value rule; the
+  -E<situation> family is enumerated the same way. Four specs beat a
+  parser change that would affect every option.
+
+  The CLI parses to ((QUALITY . LEVEL) ...) and hands those to
+  SET-CLAL-OPTIMIZATION-LEVELS, which goes through
+  APPLY-CLAL-OPTIMIZATION exactly as CLAL-OPTIMIZE does. The algebra
+  turning levels into mechanism stays in ONE place; a level set from the
+  command line cannot come to mean something different from the same
+  level set from AutoLISP.
+
+  Applied AFTER BUILD-CONTEXT (INSTALL-CORE-BUILTINS re-derives the
+  gates from *CLAL-OPTIMIZATION* and would otherwise undo the request)
+  and BEFORE the first action, including the init files.
+
+THE FINDING, which is much bigger than the option:
+
+The shipped clautolisp executable contained NO COMPILER. Ten slices of
+it, all tested, none of it in the program. `clautolisp/clautolisp-tool`
+did not depend on `clautolisp/autolisp-compiler`, so the compiler was
+never loaded, so its (setf *compile-usubr-hook* ...) toplevel forms
+never ran, so every hook stayed NIL -- and a NIL hook means the
+interpreter runs. By design: that is exactly the configuration in which
+the compiler is absent, so nothing warns.
+
+It was found by MEASURING what the new option did, which was nothing:
+
+    before                after
+      -O0   851 ms          -O0   916 ms
+      -O2   845 ms          -O2   734 ms
+      -O3   858 ms          -O3   747 ms
+      ratio 1.00            ratio 1.24
+
+(fib 27 through the built SBCL image, best of five. The two columns are
+different images; the ratio WITHIN a column is the measurement.)
+
+The dependency inversion that makes the compiler optional is right, and
+its consequence is what was missed: because nothing below pulls the
+compiler in, the program that ASSEMBLES the components has to name it,
+and only the test systems did. Every compiler test system depends on the
+compiler directly -- as a test of the compiler must -- so the hooks were
+always installed in the test image. The tests were true of the test
+image, and were reported as if they were true of the program.
+
+This is the 2.0.11 lesson one level up. There, tests ran on one host and
+were reported as holding for both. Here they ran in one image and were
+reported as holding for the program. The test was not wrong either time;
+the extrapolation was. Recorded as
+issues/closed/compiler-absent-from-shipped-binary.issue.
+
+The same commit adds the gate, because fixing the dependency does not
+stop it recurring: make test-shipped-compiler builds the executable and
+asserts that CLAL-COMPILE-FILE produces an artefact, that the .lap loads
+and runs, and that -O reaches (clal-optimization). The probe is
+CLAL-COMPILE-FILE rather than a timing comparison because it is the one
+surface that distinguishes `no compiler in this build' from every other
+failure -- it signals COMPILER-NOT-AVAILABLE instead of falling back.
+
+The gate was verified RED before being believed: dependency removed,
+executable rebuilt, three checks fail and the output names the missing
+line in clautolisp.asd. A gate never seen red is not a gate -- the same
+mistake in miniature as the one it guards against.
+
+Wired into both CI lanes along with test-compiler-equivalence and
+test-debug-compiled, which had never been in CI either.
+
+STILL OPEN after slice 11
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -860,8 +953,8 @@ STILL OPEN after slice 10
     is where the margin against LispEx is; deliberately NOT done yet, so
     that no operator has a second implementation that can disagree with
     the first.
-  - a COMMAND-LINE surface. CLAL-OPTIMIZE is the AutoLISP-facing one and
-    it is done (slice 8), but nothing sets the qualities before the
-    first file is read, which is exactly when SPEED 3 would matter most.
-    An --optimize / -O option, or reading them from the configuration
-    module, is the missing half.
+  - reading the qualities from the CONFIGURATION MODULE, so a project
+    can set them once rather than on every invocation. The --optimize
+    half is done (slice 11); this is the other half of the same item,
+    and belongs with the deferred "gather options / getenv / defaults
+    into the configuration module" work.

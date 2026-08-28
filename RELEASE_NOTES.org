@@ -412,6 +412,24 @@ separate binary for tool integrators.
   stepping ride on) is kept while ~DEBUG~ >= ~SPACE~ and is compiled from
   ~SPEED~ 2. ~SPEED~ 3 compiles at definition rather than once a function
   is hot. Default ~((DEBUG 3) (SPACE 0) (SPEED 2))~.
+- *~-O~ / ~--optimize~ sets the optimization qualities before anything
+  is loaded.* ~-O speed=3,debug=0~, or the familiar ~-O0~ … ~-O3~
+  (= ~speed=0~ … ~speed=3~); a bare quality name means level 3, the
+  option may be repeated, and a quality you do not mention keeps its
+  level. It is the command-line spelling of ~clal-optimize~, and it
+  exists because ~clal-optimize~ cannot reach the moment that matters:
+  written inside a =.lsp= it takes effect only when it is evaluated,
+  after the file containing it has been read and its ~defun~ s built.
+  ~SPEED~ 3 governs how a file is compiled *as it is loaded*, so only
+  the command line is early enough.
+- *The shipped ~clautolisp~ executable now actually contains the
+  compiler.* It did not: the program was built without the compiler
+  system, so every ~SPEED~ level behaved like ~SPEED~ 0 and asking for
+  optimization changed nothing you could measure. The compiler is
+  reached through hooks — which is what lets the runtime not depend on
+  it — so nothing pulled it into the image, and the test suites, which
+  depend on it directly, could not see the difference.
+
 - *~SPEED~ is no longer pinned at 0.* It was silently ineffective while
   there was no compiler to reach; the AutoLISP-to-Common-Lisp compiler
   now exists, and ~SPEED~ is its switch. Code that read

@@ -45,6 +45,16 @@ jobs:
       - name: clautolisp — FiveAM suite (SBCL)
         run: make -C clautolisp test-sbcl
 
+      # The compiler gates: the whole corpus with every function body
+      # compiled, then with every instrumented body compiled (both assert
+      # that compiled and interpreted evaluation AGREE), then the question
+      # neither asks -- does the program that SHIPS have a compiler in it?
+      - name: clautolisp — compiler gates + shipped-compiler smoke (SBCL)
+        run: |
+          make -C clautolisp test-compiler-equivalence
+          make -C clautolisp test-debug-compiled
+          make -C clautolisp test-shipped-compiler
+
       - name: clautolisp — file-compat report (SBCL)
         run: |
           mkdir -p clautolisp/.artifacts
@@ -80,6 +90,11 @@ jobs:
 
       - name: clautolisp — FiveAM suite (CCL)
         run: make -C clautolisp test-ccl
+
+      # A .lap is a native host FASL, so each host ships its own compiler
+      # and each has to be asked separately (the 2.0.11 lesson).
+      - name: clautolisp — shipped-compiler smoke (CCL)
+        run: make -C clautolisp test-shipped-compiler-ccl
 
       - name: clautolisp — file-compat report (CCL)
         run: |

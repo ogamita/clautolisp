@@ -43,6 +43,21 @@
   (format t "                         headless / piped run gets the command-line form).~%")
   (format t "  --trace                Print every AutoLISP function call (entry args + exit value),~%")
   (format t "                         indented by call depth. Output goes to *trace-output* (stderr).~%")
+  (format t "Optimization:~%")
+  (format t "  -O SPEC, --optimize SPEC   Set the optimization qualities before anything is~%")
+  (format t "                         loaded — the command-line spelling of (clal-optimize '(...)).~%")
+  (format t "                         SPEC is a comma-separated list of: QUALITY=N (debug, space~%")
+  (format t "                         or speed at level N, 0..3), QUALITY (the quality at 3), or~%")
+  (format t "                         a bare N (shorthand for speed=N). Repeating the option~%")
+  (format t "                         accumulates; an unmentioned quality keeps its level.~%")
+  (format t "  -O0 .. -O3             Shorthand for -O speed=0 .. -O speed=3.~%")
+  (format t "                         What the levels mean: the non-instrumented function body is~%")
+  (format t "                         always present and is compiled at speed>=1; the instrumented~%")
+  (format t "                         (debuggable) body is present while debug>=space and is~%")
+  (format t "                         compiled at speed>=2; speed 3 additionally compiles eagerly~%")
+  (format t "                         at definition, so a whole file compiles in one unit.~%")
+  (format t "                         Default: (debug 3) (space 0) (speed 2). Read back at runtime~%")
+  (format t "                         with (clal-optimization).~%")
   (format t "Debugger (aldo):~%")
   (format t "  --on-error POLICY      What to do when an uncaught AutoLISP error reaches the top~%")
   (format t "                         level: quit (report and exit, the default for a batch run),~%")
@@ -216,6 +231,24 @@ front-end."
              :handler (lambda (opts value name)
                         (declare (ignore value name))
                         (setf (clautolisp.autolisp-cli:cli-options-trace-p opts) t)))
+            ;; --- optimization qualities (compiler.issue) ---------------
+            ;; `-O QUALITY=N,…' / `--optimize=…', the CLI spelling of
+            ;; (CLAL-OPTIMIZE '((QUALITY N) …)). It exists because the
+            ;; AutoLISP surface cannot reach the moment that matters most:
+            ;; a (clal-optimize …) inside a .lsp only takes effect when that
+            ;; call is evaluated, which is after the file containing it was
+            ;; read and its DEFUNs built. AutoLISP has no macros and no
+            ;; compilation-time effects, so it has no DECLAIM to borrow.
+            ;;
+            ;; Occurrences ACCUMULATE (append, not setf): `-O speed=3 -O
+            ;; debug=0' is the same request as `-O speed=3,debug=0', and a
+            ;; quality nobody mentioned keeps the level it had.
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--optimize") :shorts '("-O") :takes-arg-p t
+             :handler (lambda (opts value name)
+                        (setf (clautolisp.autolisp-cli:cli-options-optimization opts)
+                              (append (clautolisp.autolisp-cli:cli-options-optimization opts)
+                                      (clautolisp.autolisp-cli:parse-optimize value name)))))
             ;; --- debugger (aldo) options (debugger §10,
             ;; debugger-public-interface-and-on-error.issue Parts B-D) ---
             (clautolisp.autolisp-cli:make-option-spec
@@ -265,7 +298,25 @@ front-end."
              :handler (lambda (opts value name)
                         (setf (clautolisp.autolisp-cli:cli-options-dribble-interactors opts)
                               (clautolisp.autolisp-cli:parse-dribble-interactors
-                               value name))))))))
+                               value name)))))
+           ;; `-O0' … `-O3', the attached-value form everybody types. The
+           ;; shared parser matches short options by exact string and has no
+           ;; attached-value rule, so each of the four is its own spec, named
+           ;; by an exact string -- the same way the -E<situation> family is
+           ;; enumerated from its registry rather than parsed. Generating them
+           ;; here beats a parser change that would affect every option.
+           ;; Each is exactly `-O speed=N'.
+           (loop for level from 0 to 3
+                 collect (let ((level level))
+                           (clautolisp.autolisp-cli:make-option-spec
+                            :longs '() :shorts (list (format nil "-O~D" level))
+                            :takes-arg-p nil
+                            :handler
+                            (lambda (opts value name)
+                              (declare (ignore value name))
+                              (setf (clautolisp.autolisp-cli:cli-options-optimization opts)
+                                    (append (clautolisp.autolisp-cli:cli-options-optimization opts)
+                                            (list (cons :speed level)))))))))))
     (let ((options (clautolisp.autolisp-cli:parse-arguments-with-spec specs arguments)))
       (validate-debugger-options options)
       options)))
@@ -1216,6 +1267,17 @@ machinery, not user intent)."
              (*error-output*    (make-dribble-output-tee *error-output*    "E"))
              (*standard-input*  (make-dribble-input-echo *standard-input*)))
         (clautolisp.autolisp-cli:install-transmit-variables context bindings)
+        ;; --optimize / -O (compiler.issue). Applied HERE for two reasons,
+        ;; both of them the whole reason the option exists:
+        ;;  • AFTER BUILD-CONTEXT, because INSTALL-CORE-BUILTINS re-derives
+        ;;    the runtime gates from *CLAL-OPTIMIZATION* and would otherwise
+        ;;    undo the request;
+        ;;  • BEFORE the first action, because SPEED 3 governs how a file is
+        ;;    compiled AS IT IS LOADED. Set later -- from AutoLISP, say --
+        ;;    and the files it was meant to govern have already been built.
+        (let ((optimization (clautolisp.autolisp-cli:cli-options-optimization cli-options)))
+          (when optimization
+            (set-clal-optimization-levels optimization)))
         ;; Control-C now follows the *CLAL-ON-INTERRUPT* policy
         ;; (--on-interrupt, Part B), read live at each interrupt.
         (install-interrupt-handler)

@@ -5589,8 +5589,7 @@ asked for, which is a regression dressed as spec-compliance.")
 
 (defun builtin-clal-optimization ()
   "Return the current optimization qualities as ((DEBUG n) (SPACE n) (SPEED n))
-(debugger-public-interface issue Part A). SPEED is pinned at 0 until the
-compiler-to-CL (Tier 2)."
+(debugger-public-interface issue Part A)."
   (%clal-optimization->autolisp))
 
 (defun %clal-parse-optimize-element (element)
@@ -5632,6 +5631,37 @@ engine was not actually in."
   (setf clautolisp.autolisp-runtime:*autolisp-speed-level*
         (clal-optimization-level :speed))
   (%clal-optimization->autolisp))
+
+(defun set-clal-optimization-levels (pairs)
+  "Set the optimization qualities from PAIRS, a list of (QUALITY . LEVEL)
+conses with QUALITY a keyword in *CLAL-OPTIMIZATION-QUALITIES* and LEVEL an
+integer 0..3, then push them into the runtime's gates. Qualities absent from
+PAIRS keep their current level; PAIRS is applied left to right, so a repeated
+quality takes its last value. Returns the new qualities as the AutoLISP list.
+
+This is the entry point the command line uses (--optimize / -O). It exists so
+that the CLI does not have to build an AutoLISP list only for CLAL-OPTIMIZE to
+take it apart again, and -- more to the point -- so that the CLI and
+CLAL-OPTIMIZE end up in APPLY-CLAL-OPTIMIZATION together: the algebra turning
+levels into mechanism stays in exactly one place, and a level set from the
+command line cannot come to mean something different from the same level set
+from AutoLISP."
+  ;; Validate EVERY pair before applying ANY of them. A bad pair half-way
+  ;; through would otherwise leave the qualities partly changed and partly
+  ;; not -- a configuration nobody asked for, and one the caller cannot see
+  ;; because it only got the error.
+  (dolist (pair pairs)
+    (let ((quality (car pair))
+          (level   (cdr pair)))
+      (unless (member quality *clal-optimization-qualities*)
+        (error "Unknown optimization quality ~S (expected one of ~S)."
+               quality *clal-optimization-qualities*))
+      (unless (typep level '(integer 0 3))
+        (error "Optimization level for ~S must be an integer 0..3, got ~S."
+               quality level))))
+  (dolist (pair pairs)
+    (setf (cdr (assoc (car pair) *clal-optimization*)) (cdr pair)))
+  (apply-clal-optimization))
 
 (defun builtin-clal-optimize (qualities)
   "Set the optimization qualities (debugger-public-interface issue Part A).

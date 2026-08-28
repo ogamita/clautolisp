@@ -51,6 +51,7 @@
    #:cli-options-gui             ; C — clautolisp DCL subprocess renderer
    #:cli-options-dcl             ; C — clautolisp --dcl tui|gui|auto renderer selection
    #:cli-options-trace-p         ; C — clautolisp --trace
+   #:cli-options-optimization    ; C — clautolisp --optimize / -O
    #:cli-options-on-error        ; C — clautolisp --on-error policy
    #:cli-options-on-interrupt    ; C — clautolisp --on-interrupt policy
    #:cli-options-on-quit         ; C — clautolisp --on-quit policy
@@ -75,6 +76,7 @@
    #:parse-on-quit
    #:parse-user-interface
    #:parse-dcl-mode
+   #:parse-optimize
    #:parse-aldb-listen
    #:parse-dribble-interactors
 
