@@ -1,7 +1,8 @@
 # interactor-trailing-blank-on-ccl — three interactor tests fail on CCL
 
-STATUS: open. Found 2026-08-28 while checking the compiler branch on the
-CCL lane. NOT caused by the compiler work — see "Not from this branch".
+STATUS: DONE in 2.0.11. Found 2026-08-28 while checking the compiler
+branch on the CCL lane; fixed the same day, together with two further
+CCL failures it had been hiding.
 
 ## Symptom
 
@@ -113,3 +114,75 @@ that if CL:READ uses CL:UNREAD-CHAR, we cannot use CL:UNREAD-CHAR
 ourselves, because CL:UNREAD-CHAR has space in the buffer only for one
 character. (we may wrap a string-input-stream with the input stream in
 a concatenated-stream instead).
+
+
+## RESOLVED — 2.0.11
+
+pjb's CLHS quote above is the whole diagnosis. READ discards its
+delimiting character only when that character is WHITESPACE; the
+delimiter of `(+ 1 2)` is the closing paren, which is not, so the newline
+after it stays in the stream. Whether it then survives a
+CONCATENATED-STREAM boundary is where the hosts part company. Measured
+directly, on the exact shape the interactor builds:
+
+    line "(+ 1", rest "   2)\n"
+      SBCL  next read-line => :EOF
+      CCL   next read-line => ""
+
+Neither is wrong. So the fix is not to pick a host but to stop asking the
+question.
+
+READ-SEXP-FROM-INPUT-CONTEXT now accumulates LINES and parses with
+READ-FROM-STRING, which RETURNS the position it stopped at — what remains
+is a fact rather than an inference. Whatever follows the form on its last
+line is pushed back, so `(print x) (print y)` on one line still reads as
+two forms, and nothing manufactures an empty line the user never typed.
+
+pjb's other warning is why the push-back is a CONCATENATED-STREAM and not
+UNREAD-CHAR: the standard guarantees only ONE character of push-back, and
+READ may already have spent it (`preserves the character (using
+unread-char) if it is syntactically meaningful'). That is noted at
+PUSH-BACK-STRING-INTO-INPUT-CONTEXT so it is not undone later.
+
+*READ-SUPPRESS* turned out not to be involved: it is NIL throughout, and
+the divergence reproduces with it untouched.
+
+## WHAT THIS WAS HIDING — the part that matters more
+
+CCL aborts at the FIRST failing suite. With the interactor suite failing,
+the CCL lane never reached the other 18 suites at all. Fixing it revealed
+two further failures, and both were real:
+
+  1. A BROKEN DOCSTRING IN 2.0.9, mine. CALL-IN-FILE-COMPILATION-UNIT's
+     docstring contained an unescaped double quote, so it ended early and
+     left `SPEED 3 compiles the whole file at once' as stray forms in the
+     function body. SBCL DELETES the dead variable read; CCL evaluates it
+     and signals `Unbound variable: SPEED'. Every LOAD failed on CCL.
+     Both behaviours are permitted, which is exactly why one host cannot
+     certify a change.
+     A scan of every .lisp file in the tree for the same defect —
+     docstring closing mid-prose — found this one and no others.
+
+  2. THE ARTEFACT WRITER WAS SBCL-SHAPED, twice.
+     - CCL REFUSES a COMPILE-FILE destination whose type is not its own
+       ("Compile destination ... is not a lx64fsl file!"), so asking for a
+       .lap directly worked on SBCL and failed on CCL. This is pjb's
+       .lx86fas remark arriving as a hard constraint: a host FASL type is
+       the host's business. COMPILE-FILE now names its own output and the
+       result is MOVED to the .lap — which is what "rename the fasl" meant
+       all along.
+     - CL:RENAME-FILE replaces an existing target on SBCL and signals
+       "File exists" on CCL, so recompiling an application succeeded on
+       one host and failed on the other. UIOP:RENAME-FILE-OVERWRITING-
+       TARGET is the portable form.
+     Copy-then-rename rather than a straight rename, too: the host writes
+     its FASL beside the generated source in the temporary directory,
+     frequently a different filesystem from the artefact's destination.
+
+## The lesson recorded
+
+The CCL lane had not been run once across ten slices of compiler work.
+Every one of those slices was reported green on the strength of SBCL
+alone. Two of the three bugs above were introduced by that work and were
+invisible on SBCL by construction — a dead-code deletion and a
+default-output-type. Run both hosts before calling a slice done.

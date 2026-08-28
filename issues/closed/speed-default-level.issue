@@ -1,7 +1,6 @@
 # speed-default-level — what SPEED should default to now that it works
 
-STATUS: open (a decision for pjb; implemented with the answer I judged
-most probable, and easy to change — one number in one place)
+STATUS: DONE — pjb confirmed the implemented default 2026-08-28.
 
 ## The question
 
