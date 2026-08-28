@@ -53,6 +53,7 @@ future backend behind the same protocol.")
    #:config #:config-p #:config-name #:config-parent #:config-dirty
    #:*configs* #:find-config #:ensure-config #:reset-configs
    #:config-value #:config-set-value #:config-unset #:config-cascade
+   #:config-cascade-for-names
    #:config-local-keys #:config-settings-alist #:config-own-value
    #:read-config #:write-config #:ensure-standard-configs
    ;; per-config faces + bindings (resolved through the cascade)

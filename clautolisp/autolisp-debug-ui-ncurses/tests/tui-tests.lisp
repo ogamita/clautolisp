@@ -287,3 +287,50 @@
         (with-input-from-string (s text) (clautolisp.ui.tui:read-config d s))
         (is (equal "save" (clautolisp.ui.tui:effective-binding d "C-x C-s")))
         (is (equal '(:fg :green) (clautolisp.ui.tui:resolve-face :current-line d)))))))
+
+;;;; --- dynamic cascade from the live interactor stack (issue Q6) ------
+;;;; A cascade given as a LIST of config names is the LIVE interactor stack's
+;;;; cascade, independent of the static parent chain: sedit's static parent is
+;;;; lisp (sedit -> lisp), but a sedit stacked above aldo runs
+;;;; sedit -> aldo -> lisp, seeing aldo's bindings/faces the static cascade
+;;;; would miss.
+
+(test config-cascade-for-names-orders-and-ensures
+  (clautolisp.ui.tui:reset-configs)
+  ;; builds (creating as needed) the configs in innermost-first order
+  (is (equal '("sedit" "aldo" "lisp")
+             (mapcar #'clautolisp.ui.tui:config-name
+                     (clautolisp.ui.tui:config-cascade-for-names
+                      '("sedit" "aldo" "lisp"))))))
+
+(test dynamic-binding-follows-the-live-stack
+  (clautolisp.ui.tui:reset-configs)
+  (clautolisp.ui.tui:ensure-standard-configs)
+  (clautolisp.ui.tui:config-bind "aldo" "g" "aldo-cmd")
+  ;; the STATIC sedit cascade (sedit -> lisp) does NOT see aldo
+  (is (null (clautolisp.ui.tui:effective-binding "sedit" "g")))
+  ;; the LIVE-stack cascade (sedit above aldo) DOES
+  (let ((live '("sedit" "aldo" "lisp")))
+    (is (equal "aldo-cmd" (clautolisp.ui.tui:effective-binding live "g")))
+    ;; innermost still wins in the dynamic cascade
+    (clautolisp.ui.tui:config-bind "sedit" "g" "sedit-cmd")
+    (is (equal "sedit-cmd" (clautolisp.ui.tui:effective-binding live "g")))
+    ;; effective-keymap over the live cascade merges the inherited binding in
+    (let ((km (clautolisp.ui.tui:effective-keymap live)))
+      (is (equal "sedit-cmd"
+                 (clautolisp.ui.tui:keymap-lookup
+                  km (clautolisp.ui.tui:parse-key-sequence "g")))))))
+
+(test dynamic-face-follows-the-live-stack
+  (clautolisp.ui.tui:reset-configs)
+  (clautolisp.ui.tui:ensure-standard-configs)
+  (clautolisp.ui.tui:set-config-face "aldo" :current-line '(:fg :red))
+  ;; static sedit cascade -> the global default, not aldo's override
+  (is (not (equal '(:fg :red)
+                  (clautolisp.ui.tui:resolve-face :current-line "sedit"))))
+  ;; live-stack cascade sedit -> aldo -> lisp -> aldo's override
+  (let ((live '("sedit" "aldo" "lisp")))
+    (is (equal '(:fg :red) (clautolisp.ui.tui:resolve-face :current-line live)))
+    ;; *active-config* bound to the live cascade drives the default
+    (let ((clautolisp.ui.tui:*active-config* live))
+      (is (equal '(:fg :red) (clautolisp.ui.tui:resolve-face :current-line))))))

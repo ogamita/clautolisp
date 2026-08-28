@@ -124,8 +124,29 @@ dirty. Overrides — but does not change — any inherited value."
 ;;; config in effect (a UI binds it to the active window's config).
 
 (defvar *active-config* nil
-  "The config whose cascade RESOLVE-FACE / EFFECTIVE-KEYMAP use by default
-(a CONFIG, a name, or NIL for the global defaults only).")
+  "The config whose cascade RESOLVE-FACE / EFFECTIVE-KEYMAP use by default:
+ - a CONFIG or a config name — its static parent chain (CONFIG-CASCADE);
+ - a LIST of CONFIGs and/or names — an explicit cascade, innermost first: the
+   live interactor stack's configs (each activation's template config-name),
+   which the UI binds so a template's cascade follows where it is stacked
+   rather than a fixed parent chain (windows-and-interactor-templates.issue Q6);
+ - NIL — the global defaults only.")
+
+(defun config-cascade-for-names (names)
+  "The cascade — a list of CONFIGs, innermost first — for NAMES (config names
+and/or CONFIGs, innermost first), ensuring each exists. This is the LIVE
+interactor stack's cascade (each activation contributes its template's
+config-name), as opposed to CONFIG-CASCADE's static parent chain."
+  (mapcar #'ensure-config names))
+
+(defun %resolution-cascade (config)
+  "Normalise CONFIG (the RESOLVE-FACE / EFFECTIVE-* argument, or *ACTIVE-CONFIG*)
+to a cascade — a list of CONFIGs, innermost first: NIL is the empty cascade; a
+list is an explicit cascade (CONFIG-CASCADE-FOR-NAMES); a CONFIG or a name is
+its static parent chain."
+  (cond ((null config) '())
+        ((consp config) (config-cascade-for-names config))
+        (t (config-cascade config))))
 
 (defun set-config-face (config name params)
   "Override face NAME (a symbol) with PARAMS (a display-parameter plist) in
@@ -138,12 +159,12 @@ CONFIG's own settings. Returns NAME."
 (defun resolve-face (name &optional (config *active-config*))
   "The display parameters for face NAME, resolved through CONFIG's cascade
 :FACES overrides (innermost first), falling back to the global face registry
-(FACE-PARAMETERS). CONFIG NIL resolves against the global registry only."
-  (let ((c (and config (if (config-p config) config (find-config config)))))
-    (dolist (cfg (and c (config-cascade c)))
-      (let ((hit (assoc name (config-own-value cfg :faces))))
-        (when hit (return-from resolve-face (cdr hit)))))
-    (face-parameters name)))
+(FACE-PARAMETERS). CONFIG may be a CONFIG, a name, a LIST of them (an explicit
+live-stack cascade), or NIL (the global registry only)."
+  (dolist (cfg (%resolution-cascade config))
+    (let ((hit (assoc name (config-own-value cfg :faces))))
+      (when hit (return-from resolve-face (cdr hit)))))
+  (face-parameters name))
 
 (defun config-bind (config key-string command)
   "Bind KEY-STRING to COMMAND in CONFIG's own :BINDINGS (replacing any binding of
@@ -169,16 +190,19 @@ the same key there). Returns KEY-STRING."
 
 (defun effective-keymap (config)
   "A keymap merging the :BINDINGS of CONFIG's whole cascade, applied root-first so
-an innermost config's binding overrides its parents'."
+an innermost config's binding overrides its parents'. CONFIG may be a CONFIG, a
+name, a LIST of them (an explicit live-stack cascade), or NIL."
   (let ((map (make-keymap)))
-    (dolist (cfg (reverse (config-cascade config)) map)   ; root .. innermost
+    (dolist (cfg (reverse (%resolution-cascade config)) map) ; root .. innermost
       (dolist (pair (config-own-value cfg :bindings))
         (keymap-bind map (parse-key-sequence (car pair)) (cdr pair))))))
 
 (defun effective-binding (config key-string)
-  "The command bound to KEY-STRING for CONFIG's cascade, or NIL (innermost wins)."
+  "The command bound to KEY-STRING for CONFIG's cascade, or NIL (innermost wins).
+CONFIG may be a CONFIG, a name, a LIST of them (an explicit live-stack cascade),
+or NIL."
   (let (found)
-    (dolist (cfg (config-cascade config) found)          ; innermost .. root
+    (dolist (cfg (%resolution-cascade config) found)     ; innermost .. root
       (let ((hit (assoc key-string (config-own-value cfg :bindings) :test #'string=)))
         (when hit (return-from effective-binding (cdr hit)))))))
 
