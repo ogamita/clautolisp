@@ -41,6 +41,7 @@ as the start of a Lisp form, pushed back with
 
 which replaces the context's stream by a CONCATENATED-STREAM of
 [the line] + [a newline] + [the rest], and the form is then READ from
+
 that stream.
 
 What differs between the hosts is what is left in the stream after READ
@@ -88,3 +89,27 @@ forms, on every host.
 GitLab CI is the source of truth and the CCL suite is one of its lanes,
 so a red CCL lane blocks merging the compiler branch to master even
 though the compiler is green on both hosts.
+
+PJB:
+clhs read indicates:
+
+    read parses the printed representation of an object from
+    input-stream and builds such an object. 
+
+    read-preserving-whitespace is like read but preserves any
+    whitespace[2] character that delimits the printed representation
+    of the object. read-preserving-whitespace is exactly like read
+    when the recursive-p argument to read-preserving-whitespace is
+    true. 
+
+    When *read-suppress* is false, read throws away the delimiting
+    character required by certain printed representations if it is a
+    whitespace[2] character; but read preserves the character (using
+    unread-char) if it is syntactically meaningful, because it could
+    be the start of the next expression. 
+
+Perhaps the setting of *read-suppress* matters in this case?  Note
+that if CL:READ uses CL:UNREAD-CHAR, we cannot use CL:UNREAD-CHAR
+ourselves, because CL:UNREAD-CHAR has space in the buffer only for one
+character. (we may wrap a string-input-stream with the input stream in
+a concatenated-stream instead).
