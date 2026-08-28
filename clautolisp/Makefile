@@ -143,7 +143,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
 
 .PHONY: all test test-sbcl test-ccl test-compiler-equivalence \
-        test-debug-compiled \
+        test-debug-compiled test-shipped-compiler test-shipped-compiler-ccl \
         build build-sbcl build-ccl probe-check \
         submodules build-libredwg test-libredwg-compiler-path \
         build-read-autolisp-sbcl build-read-autolisp-ccl \
@@ -251,6 +251,12 @@ test-debug-compiled:  ## Run the whole test corpus with every INSTRUMENTED body 
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
 	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--load autolisp-compiler/tests/debug-suite-compiled.lisp
+
+test-shipped-compiler: build-clautolisp-sbcl  ## Assert the BUILT executable has a compiler in it: .lap round-trip + -O. Nothing else in the corpus runs the program that ships.
+	tools/clautolisp/tests/shipped-compiler-test.sh
+
+test-shipped-compiler-ccl: build-clautolisp-ccl  ## Same, against the CCL executable. A .lap is a native host FASL, so each host ships its own compiler and each has to be asked.
+	tools/clautolisp/tests/shipped-compiler-test.sh tools/clautolisp/bin/clautolisp-ccl
 
 test-ccl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
