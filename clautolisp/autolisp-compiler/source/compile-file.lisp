@@ -184,24 +184,40 @@ Returns the artefact's truename, or NIL if the host compiler failed."
         (write-lap-source forms stream)
         :close-stream
       (multiple-value-bind (fasl warningsp failurep)
-          ;; Quiet by default. Compiling an artefact is something the USER
-          ;; asked for, not something to narrate: the host's per-file
-          ;; chatter would bury whatever the AutoLISP program itself
-          ;; prints, and it names a generated temporary file the user has
-          ;; no way to act on.
-          (compile-file generated
-                        :output-file (uiop:tmpize-pathname output-pathname)
-                        :verbose nil
-                        :print nil)
+          ;; NO :OUTPUT-FILE. The host names its own output, and only
+          ;; afterwards is it moved to the .lap.
+          ;;
+          ;; That is not fastidiousness: CCL REFUSES to compile to a
+          ;; destination whose type is not its own -- "Compile destination
+          ;; ... is not a lx64fsl file!" -- so asking COMPILE-FILE for a
+          ;; .lap directly works on SBCL and fails on CCL. Which is the
+          ;; same fact that decided the naming question: a host FASL type
+          ;; is the host's business (.lx64fsl, .dx64fsl, .fasl ...), and a
+          ;; .lap is that file, moved.
+          ;;
+          ;; Quiet by default: compiling an artefact is something the USER
+          ;; asked for, not something to narrate, and the host's chatter
+          ;; would name a generated temporary the user cannot act on.
+          (compile-file generated :verbose nil :print nil)
         (declare (ignore warningsp))
         (cond
           ((or failurep (null fasl)) nil)
           (t
-           ;; The FASL is simply renamed. A .lap IS a host FASL; there is
-           ;; no wrapper, no header of ours, and deliberately no host or
-           ;; version stamp in the name -- builds that differ are kept in
-           ;; different directories, as the binary releases already are.
-           (rename-file fasl output-pathname)
+           ;; Copy-then-rename rather than RENAME-FILE straight to the
+           ;; target: the host writes its FASL beside the generated source
+           ;; in the temporary directory, which is very often a different
+           ;; filesystem from where the user asked for the artefact, and
+           ;; RENAME-FILE across filesystems fails. The final rename is
+           ;; within one directory, so a reader never sees a half-written
+           ;; .lap.
+           (let ((staged (uiop:tmpize-pathname output-pathname)))
+             (uiop:copy-file fasl staged)
+             (delete-file fasl)
+             ;; UIOP's form, not CL:RENAME-FILE: CCL refuses to rename
+             ;; onto an existing file ("File exists") where SBCL replaces
+             ;; it, so recompiling an application would fail on one host
+             ;; and succeed on the other.
+             (uiop:rename-file-overwriting-target staged output-pathname))
            (truename output-pathname)))))))
 
 ;;; Installing the hook is the whole of this file's effect on a running

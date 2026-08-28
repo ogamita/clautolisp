@@ -3895,7 +3895,7 @@ so a value written and read back under the same encoding round-trips."
   "Run THUNK -- the loading of one AutoLISP file -- inside a host
 compilation unit when SPEED asks for eager compilation.
 
-This is where "SPEED 3 compiles the whole file at once" actually happens,
+This is where `SPEED 3 compiles the whole file at once' actually happens,
 and it needed no new machinery: at SPEED 3 every DEFUN compiles as it is
 evaluated, so putting the LOAD inside one unit puts every one of that
 file's compilations inside it too.

@@ -15,9 +15,6 @@
 (defstruct input-context
   (stream nil :type (or null stream)))
 
-(defun read-sexp-from-input-context (input-context)
-  (read (input-context-stream input-context) nil :eof))
-
 (defun read-line-from-input-context (input-context)
   (read-line (input-context-stream input-context) nil :eof))
 
@@ -30,6 +27,51 @@
                                     (input-context-stream input-context)))))
 
 (defparameter *whitespaces* '(#\space #\tab))
+
+(defun read-sexp-from-input-context (input-context)
+  "Read one Lisp form, consuming further lines while the form is
+incomplete. Returns the form, or :EOF at end of input.
+
+READS FROM A STRING, NOT FROM THE STREAM, and that is the whole point.
+What CL:READ leaves behind is not portable. CLHS says it `throws away the
+delimiting character ... if it is a whitespace character\', but the
+delimiter of (+ 1 2) is the closing PAREN, which is not whitespace and is
+therefore not thrown away -- so the newline after it is still in the
+stream. Whether it then survives a CONCATENATED-STREAM boundary differs
+by implementation: CCL leaves it, SBCL does not. The line reader saw one
+extra empty line on CCL and none on SBCL, which is
+interactor-trailing-blank-on-ccl: three tests green on one host and red
+on the other, over a difference neither implementation is wrong about.
+
+READ-FROM-STRING has no such ambiguity -- it RETURNS the position where
+it stopped, so what remains is a fact rather than an inference. Lines are
+accumulated until the form parses, and whatever follows the form on the
+last line is pushed back, which is what keeps `(print x) (print y)\' on
+one line reading as two forms."
+  (let ((text nil))
+    (loop
+      (let ((line (read-line-from-input-context input-context)))
+        (when (eq line :eof)
+          ;; EOF with a partial form is not an error to raise here: the
+          ;; caller\'s loop ends on :EOF, exactly as it did when READ met
+          ;; the end of the stream mid-form.
+          (return :eof))
+        (setf text (if text
+                       (concatenate 'string text (string #\Newline) line)
+                       line))
+        (multiple-value-bind (form position)
+            (handler-case (read-from-string text nil :eof)
+              ;; Not an error -- a form that needs more lines.
+              (end-of-file () (values :incomplete nil)))
+          (unless (eq form :incomplete)
+            (let ((rest (subseq text position)))
+              ;; Push back only real content. Pushing back trailing
+              ;; whitespace would manufacture an empty line the user never
+              ;; typed -- which is the bug this function exists to remove.
+              (unless (zerop (length (string-trim (list* #\Newline *whitespaces*)
+                                                  rest)))
+                (unread-line-from-input-context rest input-context)))
+            (return form)))))))
 
 ;;; --- command input ----------------------------------------------------
 
