@@ -1,0 +1,90 @@
+# interactor-trailing-blank-on-ccl — three interactor tests fail on CCL
+
+STATUS: open. Found 2026-08-28 while checking the compiler branch on the
+CCL lane. NOT caused by the compiler work — see "Not from this branch".
+
+## Symptom
+
+`make test-ccl` fails three tests in INTERACTOR-SUITE, all with the same
+shape: one extra `:BLANK` at the end of the input.
+
+    MULTI-LINE-FORMS-READ-ACROSS-LINES
+      ((+ 1 2) :BLANK) can't be destructured against (FORM):
+      it contains 2 elements, and exactly 1 are expected.
+
+    COMMA-COMMAND-READ-TAKES-SEXPS-EXCEPT-COMMA-LINES
+      ((SETQ X 1) :BLANK #S(INPUT-COMMAND …)) against (SEXP CMD)
+
+    COMMAND-READ-TAKES-LINES-AS-COMMANDS-EXCEPT-FORMS
+      (#S(INPUT-COMMAND …) #S(INPUT-COMMAND …) (PRINT X) :BLANK :BLANK)
+      against (CMD MOTION FORM BLANK)
+
+`make test-sbcl` is green on all three. The whole rest of the corpus is
+green on both.
+
+## Repro
+
+    make test-ccl
+
+Or, smaller — the first failing test is:
+
+    (read-all #'command-read (format nil "(+ 1~%   2)~%"))
+    SBCL => ((+ 1 2))
+    CCL  => ((+ 1 2) :BLANK)
+
+## Where it comes from
+
+All three failures go through the same path: a line is read, recognised
+as the start of a Lisp form, pushed back with
+
+    unread-line-from-input-context   (autolisp-interactor/source/input.lisp:24)
+
+which replaces the context's stream by a CONCATENATED-STREAM of
+[the line] + [a newline] + [the rest], and the form is then READ from
+that stream.
+
+What differs between the hosts is what is left in the stream after READ
+returns, and therefore whether the NEXT `read-line` yields an empty line
+(`:BLANK`) or `:EOF`. CCL leaves a trailing empty line where SBCL does
+not.
+
+That is a host difference in stream/READ behaviour, not a bug in either
+implementation: the standard does not say whether READ consumes the
+whitespace that terminated the object. The interactor's line reader is
+simply written to one host's answer.
+
+## Not from this branch
+
+  - The compiler branch (2.0.1 .. 2.0.10) touches neither
+    `autolisp-interactor/` nor `autolisp-reader/`:
+    `git diff --stat <merge-base>..HEAD -- clautolisp/interactor
+    clautolisp/autolisp-reader` is empty.
+  - `autolisp-interactor/source/input.lisp` and its tests were last
+    touched at 1.8.37, long before 2.0.
+  - Nothing in the failure involves AutoLISP evaluation; it is Common
+    Lisp READ on a string stream.
+
+So this is longstanding, and the question worth answering is why the CCL
+CI lane did not already show it — a different CCL version, or the lane
+not actually running this suite. That is the first thing to check.
+
+## Suggested fix
+
+Do not depend on where READ left the stream. Two candidates:
+
+  - After reading a form through an unread line, consume the rest of the
+    current line explicitly (read to end-of-line and discard it if it is
+    whitespace only). Deliberate rather than incidental, and identical on
+    every host.
+  - Or have the sexp path use a stream position it controls, instead of
+    a CONCATENATED-STREAM whose EOF behaviour is what varies.
+
+Either way the test to keep is the one that already caught it: reading a
+multi-line form from a script ending in a newline must yield exactly the
+forms, on every host.
+
+## Why it matters now
+
+GitLab CI is the source of truth and the CCL suite is one of its lanes,
+so a red CCL lane blocks merging the compiler branch to master even
+though the compiler is green on both hosts.
