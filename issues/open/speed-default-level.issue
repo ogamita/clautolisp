@@ -64,3 +64,7 @@ there is no second default to keep in step.
 The documented default appears in three places that must move with it:
 the CLAL-OPTIMIZATION spec entry, the user manual section, and the
 release-notes entry.
+
+
+DECISION: the implemented default ((DEBUG 3) (SPACE 0) (SPEED 2)) is ok.
+The issue can be closed.
