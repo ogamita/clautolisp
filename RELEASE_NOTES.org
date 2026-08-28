@@ -417,14 +417,21 @@ separate binary for tool integrators.
   now exists, and ~SPEED~ is its switch. Code that read
   ~(clal-optimization)~ back expecting a ~SPEED~ of 0 will now see what
   it asked for. See § /clautolisp Extensions/.
-- ~clal-compile-file~ / ~clal-compile-system~ — compile one file, or a
-  list of files, under the current optimization qualities. At ~SPEED~ 3
-  each file is compiled as one unit; the system form puts one unit
-  around *all* the files, so a call from an earlier file to a function
-  defined in a later one no longer warns at every forward reference.
-  Both compile into the running image — no artefact is written yet, and
-  ~clal-compile-system~'s ~OUTPUT-FILE~ must be ~nil~ (any other value
-  signals, rather than being silently ignored).
+- *Compiled applications: ~.lap~.* ~clal-compile-file~ writes one
+  source file to a ~.lap~; ~clal-compile-system~ writes several to a
+  single ~.lap~, sharing one host compilation so literals are coalesced
+  across the application and forward references between its files
+  resolve. ~load~ loads a ~.lap~. Functions arrive already compiled and
+  keep their source body, so they stay debuggable.
+- *A ~.lap~ is a native host FASL, renamed.* It therefore does *not*
+  move between an SBCL clautolisp and a CCL one, and is not promised to
+  survive a clautolisp version change. Keep builds in different
+  directories, as the binary releases already are; loading a
+  mismatched ~.lap~ reports that reason rather than a read error.
+- ~vlisp-compile~ *now compiles.* It was a no-op returning ~nil~ while
+  there was no compiler; it writes a ~.lap~ where AutoCAD writes ~.fas~
+  and BricsCAD writes ~.des~, and returns ~T~. Its ~mode~ is ignored as
+  in BricsCAD, but an unknown mode signals instead of being absorbed.
 - ~clal-compile~, ~clal-module-extension~ — compile a lambda form, and
   ask which file extension this host uses for a packaged artefact
   (~.lap~ / the OS shared-library suffix) instead of guessing.

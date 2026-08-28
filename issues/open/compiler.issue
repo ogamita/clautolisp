@@ -785,12 +785,74 @@ own name, a missing file returns nil the way LOAD does, a non-nil
 OUTPUT-FILE is refused, and a two-file system with a forward reference
 from the first file to the second resolves and runs.
 
-STILL OPEN after slice 9
-------------------------
-  - the .lap artefact, and VLISP-COMPILE on top of it. Blocked on a
-    DESIGN decision, not on code: what a .lap contains, and whether it
-    can be host-independent when clautolisp runs on both SBCL and CCL.
-    See clal-compiled-artefact.issue.
+Slice 10 (2.0.10) -- the .lap artefact, and VLISP-COMPILE on top of it
+----------------------------------------------------------------------
+
+pjb answered the design question of slice 9, and the answer was to stop
+trying to be clever. An artefact cannot be a Lisp image: AutoCAD and
+BricsCAD load applications INTO a document that already has others
+loaded, in any order, so a .lap has to load into a running image. A
+native host FASL, renamed, is the only thing that does that.
+
+Cross-host and cross-version portability are therefore GIVEN UP
+deliberately, not overlooked. A portable format means a custom byte-code
+FASL and bocl's experience with one was not good on speed. Builds that
+differ are kept in different directories, as the binary releases already
+are; the name carries nothing about the build.
+
+THE PROBLEM WAS NOT THE ONE I HAD WRITTEN DOWN. compiler.issue had said
+this needs MAKE-LOAD-FORM. It does not. COMPILE-FILE is the only door to
+a FASL, so the artefact is GENERATED AS SOURCE and compiled -- which
+makes the problem PRINTING, not externalizing. AUTOLISP-SYMBOL has a
+PRINT-OBJECT method that writes its bare name, so printing one into a
+generated file yields a token that reads back as a COMMON LISP symbol.
+Nothing signals. The artefact is simply wrong, and wrong in a way no
+type error would catch.
+
+EXTERNALIZE-DATUM emits CONSTRUCTOR forms instead --
+(INTERN-AUTOLISP-SYMBOL "FOO") -- which is what "re-interning by name"
+was always for: the symbol lands in the LOADING image's table, the only
+table it could usefully be in. The second reason stands as recorded: a
+struct read back from #S(...) would be EQ to nothing, and every EQ test
+in the runtime would quietly stop matching.
+
+LOAD-TIME-VALUE around every constructed literal, and this one is easy
+to miss. Without it a fallback inside a loop -- a plain (AUTOLISP-EVAL
+'<form> context) -- rebuilds its form on every iteration. Not merely
+slower: source positions are recorded against body conses, so a form
+rebuilt per call is a form the debugger can no longer locate.
+
+A .lap KEEPS EACH FUNCTION'S SOURCE BODY beside its compiled one.
+Dropping it would make artefacts smaller and every function loaded from
+one impossible to instrument, because the debugger weaves its fork FROM
+the body.
+
+CLAL-COMPILE-SYSTEM emits all its sources into ONE generated file, so a
+single COMPILE-FILE covers the whole system. That is a better answer
+than slice 9's WITH-COMPILATION-UNIT: a real single compilation, in
+which literals can genuinely be coalesced across the application, rather
+than only a shared warning context.
+
+VLISP-COMPILE is now the vendor-API spelling of CLAL-COMPILE-FILE. Its
+mode is accepted and ignored as in BricsCAD, and the reason is worth
+keeping: 'st versus 'lsm / 'lsa is single-file versus
+optimize-and-link-ACROSS-files, and a call naming one source has nothing
+to link across -- the cross-file form is CLAL-COMPILE-SYSTEM. An UNKNOWN
+mode signals, though: all three real modes do the same thing here, so
+ignoring 'st is harmless, but ignoring a misspelling would hide a typo
+in a build script indefinitely.
+
+The tests are round trips, not existence checks: compile, then load the
+artefact into a FRESH context and run what it defines. A test that only
+checked a file appeared would pass for an empty artefact, and for one
+whose symbols are interned in a table nobody reads -- which is exactly
+the failure the externalizer exists to prevent.
+
+STILL OPEN after slice 10
+-------------------------
+  - a host-independent .lap. Deferred on purpose (see the closed
+    clal-compiled-artefact.issue); CLISP is the existence proof that it
+    can be done and the reason it costs speed.
   - poll points are now what makes debugging slow (see slice 7's
     measurement), not interpretation. That is where debugging speed is
     left.

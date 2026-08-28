@@ -92,7 +92,8 @@
   :components
   ((:file "autolisp-compiler/source/package")
    (:file "autolisp-compiler/source/transpile")
-   (:file "autolisp-compiler/source/compile-function"))
+   (:file "autolisp-compiler/source/compile-function")
+   (:file "autolisp-compiler/source/compile-file"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-compiler/tests")))
   :perform (asdf:test-op (op system)

@@ -111,6 +111,10 @@
    #:autolisp-compile-instrumented-fork-p
    #:autolisp-compile-eagerly-p
    #:call-in-file-compilation-unit
+   #:+lap-file-type+
+   #:*compile-files-to-artefact-hook*
+   #:default-lap-pathname
+   #:lap-pathname-p
    #:autolisp-catch-all-error
    #:make-autolisp-catch-all-error
    #:autolisp-catch-all-error-message

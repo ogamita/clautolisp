@@ -1792,6 +1792,34 @@ cannot be compiled must not run the compiler again on every call."
        (let ((result (autolisp-usubr-compiled-body function)))
          (and (functionp result) result))))))
 
+(defparameter +lap-file-type+ "lap"
+  "Pathname type of a compiled AutoLISP application.
+
+A .lap is a native host FASL, renamed -- the analogue of AutoCAD .vlx and
+BricsCAD .des. It lives here rather than in the compiler because LOAD has
+to recognise the type whether or not the compiler is present in the
+image: a clautolisp built without the compiler must say `I cannot load
+this\' rather than try to read it as source.")
+
+(defparameter *compile-files-to-artefact-hook* nil
+  "When non-nil, a function (SOURCE-PATHNAMES OUTPUT-PATHNAME) that
+compiles the AutoLISP sources into one .lap and returns its truename, or
+NIL on failure (clautolisp.autolisp-compiler:compile-autolisp-files-to-lap).
+
+Installed by the compiler when it loads; NIL when it is absent. The same
+dependency inversion as *COMPILE-USUBR-HOOK*, and needed for the same
+reason twice over: the runtime must not depend on the compiler, and
+neither must the builtins layer, which is where CLAL-COMPILE-FILE lives
+and which sits below the compiler in the system graph.")
+
+(defun default-lap-pathname (source-pathname)
+  "SOURCE.lsp -> SOURCE.lap, beside the source."
+  (make-pathname :type +lap-file-type+ :defaults source-pathname))
+
+(defun lap-pathname-p (pathname)
+  "True when PATHNAME names a compiled AutoLISP application."
+  (string-equal +lap-file-type+ (or (pathname-type pathname) "")))
+
 (defun compile-usubr-if-eager (function)
   "Compile FUNCTION now, if SPEED asks for eager compilation.
 

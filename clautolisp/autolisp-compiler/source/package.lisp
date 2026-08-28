@@ -8,6 +8,11 @@
                 #:autolisp-string
                 #:autolisp-symbol
                 #:autolisp-symbol-name
+                #:autolisp-string-value
+                #:make-autolisp-string
+                #:make-autolisp-usubr
+                #:set-function
+                #:read-runtime-from-file
                 #:autolisp-usubr-body
                 #:autolisp-usubr-compiled-body
                 #:autolisp-usubr-instrumented-body
@@ -16,6 +21,7 @@
                 #:call-with-compiled-poll-point
                 #:+poll-operator-name+
                 #:*compile-usubr-hook*
+                #:*compile-files-to-artefact-hook*
                 #:*compile-instrumented-usubr-hook*
                 #:current-evaluation-context
                 #:intern-autolisp-symbol
@@ -29,6 +35,9 @@
            #:compile-autolisp-form
            #:compile-usubr
            #:compile-instrumented-usubr
+           #:compile-autolisp-files-to-lap
+           #:load-compiled-defun
+           #:load-compiled-toplevel
            #:compile-autolisp-function
            #:autolisp-function-compiled-p
            #:autolisp-function-instrumented-compiled-p

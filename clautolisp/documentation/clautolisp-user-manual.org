@@ -2266,35 +2266,56 @@ ineffective, because there was no compiler for it to reach. If you have
 code that reads ~(clal-optimization)~ back and expects a ~SPEED~ of 0,
 that expectation no longer holds.
 
-*** ~CLAL-COMPILE-FILE~ / ~CLAL-COMPILE-SYSTEM~ -- compile a file, or several
-~(clal-compile-file SOURCE)~ loads ~SOURCE~ under the current
-optimization qualities. ~(clal-compile-system OUTPUT-FILE SOURCES)~ does
-the same for a list of files.
+*** ~CLAL-COMPILE-FILE~ / ~CLAL-COMPILE-SYSTEM~ -- compile an application
+~(clal-compile-file SOURCE [OUTPUT])~ compiles one AutoLISP source file
+into a ~.lap~ compiled application; ~OUTPUT~ defaults to the source name
+with type ~.lap~, beside the source.
+~(clal-compile-system OUTPUT SOURCES)~ compiles a list of sources into a
+single ~.lap~. Both compile; neither loads. Load the result with ~load~
+like any other file.
 
-The qualities govern, not the names: at ~SPEED~ 3 every function in the
-file is compiled as it is defined, inside one compilation unit; below
-that, functions compile when they turn out to be hot, exactly as an
-ordinary ~load~ would; at ~SPEED~ 0 nothing is compiled at all. Calling
-~clal-compile-file~ is therefore not a way to force compilation past a
-~SPEED~ you set — set the ~SPEED~ you want.
+**** What a ~.lap~ is, and what it is not
+A ~.lap~ is a *native host FASL, renamed*. It loads into a running
+clautolisp alongside other applications, in any order — which is what an
+AutoLISP application has to be, and why it is not a saved Lisp image.
 
-What the system form adds over calling the file form in a loop is a
-single compilation unit around *all* the files, which defers
-undefined-function warnings to the end. That is what lets a function
-defined in a later file be called from an earlier one without a warning
-at each forward reference.
+Two consequences, both deliberate:
 
-Both compile into the running image; neither writes a file yet.
-~OUTPUT-FILE~ must be ~nil~, and any other value signals rather than
-being quietly ignored — accepting the name of an artefact that is never
-written would be worse than refusing.
+- A ~.lap~ built by an SBCL clautolisp will *not* load in a CCL one, or
+  the reverse.
+- A ~.lap~ is not promised to load in a different clautolisp version.
+
+A portable format would mean inventing a byte-code FASL, and that trade
+is not worth making today. Keep builds for different hosts and versions
+in *different directories*, exactly as the binary releases are kept —
+the file name carries nothing about which build made it. Loading a
+~.lap~ that does not match says so, naming the reason.
+
+**** Why the system form exists
+Compiling several sources together puts them through *one* host
+compilation, so literals can be shared across the whole application and a
+function defined in a later source and called from an earlier one
+resolves without a warning at each forward reference. And it ships as one
+file rather than one per source.
 
 #+BEGIN_SRC autolisp
-_$ (clal-optimize '((speed 3)))
-((DEBUG 3) (SPACE 0) (SPEED 3))
-_$ (clal-compile-system nil '("geometry.lsp" "commands.lsp"))
+_$ (clal-compile-file "geometry.lsp")
+T
+_$ (load "geometry.lap")
+
+_$ (clal-compile-system "myapp.lap" '("geometry.lsp" "commands.lsp"))
 T
 #+END_SRC
+
+Functions arriving from a ~.lap~ come already compiled — they never pay
+the hotness threshold again — and they keep their source body, so they
+stay debuggable.
+
+~vlisp-compile~ is the vendor spelling of the same thing: it writes a
+~.lap~ where AutoCAD writes ~.fas~ and BricsCAD writes ~.des~, and
+returns ~T~ when the file was written. Its ~mode~ argument is ignored,
+as in BricsCAD — an *unknown* mode signals, so a typo in a build script
+is not silently absorbed.
 
 *** ~CLAL-COMPILE~ -- build an applicable function object
 ~(clal-compile NAME LAMBDA-EXPRESSION)~ compiles a

@@ -4095,13 +4095,30 @@ Verified by re-querying with VLE-CDRASSOC after the mutation."
            (subr (and sym (autolisp-symbol-function sym))))
       (is (typep subr 'autolisp-subr) "~A should bind to a SUBR" name))))
 
-(test m4-vlisp-compile-returns-nil
-  "(vlisp-compile mode src) is a no-op returning nil."
+(test m4-vlisp-compile-rejects-an-unknown-mode
+  "VLISP-COMPILE was a no-op returning nil until 2.0.10, when .lap gave it
+something to produce. An unknown MODE now signals: all three real modes
+do the same thing in clautolisp, so ignoring \'st is harmless, but
+ignoring a MISSPELLING would hide a typo in a build script forever."
   (reset-autolisp-symbol-table)
-  (is (null (run-autolisp-string "(vlisp-compile 'sym \"foo.lsp\")"
-                                 :setup-fn #'install-core-into)))
-  (is (null (run-autolisp-string "(vlisp-compile 'sym \"foo.lsp\" \"foo.fas\")"
-                                 :setup-fn #'install-core-into))))
+  ;; SIGNALS is not imported into this suite -- only IS is -- and an
+  ;; unimported FiveAM macro fails at RUN time, on the branch you expect
+  ;; never to take. So the outcome is captured and asserted afterwards.
+  (let ((signalled
+          (handler-case
+              (progn (run-autolisp-string "(vlisp-compile 'sym \"foo.lsp\")"
+                                          :setup-fn #'install-core-into)
+                     nil)
+            (autolisp-runtime-error () t))))
+    (is (not (null signalled)) "an unknown VLISP-COMPILE mode was accepted")))
+
+(test m4-vlisp-compile-reports-a-missing-source
+  "A source that cannot be located returns nil, which is what both
+vendors document for a compilation that produced no output file."
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string
+             "(vlisp-compile 'st \"/nonexistent/no-such-file.lsp\")"
+             :setup-fn #'install-core-into))))
 
 (test m4-vlisp-export-symbol-records-and-returns-t
   "VLISP-EXPORT-SYMBOL pushes names into *vlisp-exported-symbols*

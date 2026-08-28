@@ -603,6 +603,29 @@ TRUSTEDPATHS to trust it."
                "LOAD"
                "LOAD could not locate ~A."
                value)))))
+      ;; A .lap is a host FASL: hand it to the host loader rather than to
+      ;; the AutoLISP reader. It must be tried BEFORE the unsupported-type
+      ;; branch below, and it is deliberately NOT listed there: .vlx and
+      ;; .fas are other vendors' artefacts, which clautolisp genuinely
+      ;; cannot read, while .lap is its own.
+      ((clautolisp.autolisp-runtime:lap-pathname-p resolved)
+       (handler-case (progn (load resolved) (set-autolisp-errno 0)
+                            (autolisp-true))
+         (error (condition)
+           (set-autolisp-errno 73)
+           (if onfailure-supplied-p
+               (evaluate-load-onfailure onfailure)
+               (call-with-autolisp-error-handler
+                (lambda ()
+                  (signal-builtin-host-error
+                   :unloadable-application
+                   "LOAD"
+                   ;; The likely causes are worth naming: a .lap is a
+                   ;; native FASL, so one built by the other host Lisp or
+                   ;; by another clautolisp will not load, by design.
+                   "LOAD could not load ~A (~A). A .lap is specific to the ~
+host Lisp and clautolisp version that built it."
+                   (namestring resolved) condition)))))))
       ((member (string-downcase (or (pathname-type resolved) "")) '("vlx" "fas")
                :test #'string=)
        (set-autolisp-errno 73)
@@ -5624,78 +5647,94 @@ this is the surface the specification always intended for it."
   (apply-clal-optimization)
   (%clal-optimization->autolisp))
 
-(defun %clal-load-for-compilation (source-file who)
-  "Resolve and load SOURCE-FILE the way LOAD does, for the CLAL-COMPILE-*
-builtins. Returns T on success, NIL if the file could not be found."
-  (let* ((value (autolisp-string-value (require-string source-file who)))
-         (resolved (resolve-load-pathname value)))
+(defun %clal-resolve-source (source-file who)
+  "Resolve SOURCE-FILE the way LOAD resolves its argument, or NIL."
+  (resolve-load-pathname
+   (autolisp-string-value (require-string source-file who))))
+
+(defun %clal-compile-to-artefact (sources output who)
+  "Compile SOURCES into the artefact OUTPUT. Returns T, or NIL on any
+failure, with ERRNO 73 for a source that could not be located -- the same
+report LOAD and VLISP-COMPILE make for a file they cannot find."
+  (let ((resolved (loop for source in sources
+                        for path = (%clal-resolve-source source who)
+                        do (unless path
+                             (set-autolisp-errno 73)
+                             (return nil))
+                        collect path)))
     (cond
-      ((null resolved)
-       (set-autolisp-errno 73)
+      ((null resolved) nil)
+      ((null clautolisp.autolisp-runtime:*compile-files-to-artefact-hook*)
+       ;; An image built without the compiler. Say so, rather than
+       ;; returning NIL: a NIL here is documented to mean `a source file
+       ;; could not be found', and reusing it for `this build cannot
+       ;; compile at all' would send the caller looking for a typo in a
+       ;; path that was perfectly correct.
+       (signal-builtin-argument-error
+        :compiler-not-available who
+        "~A needs the clautolisp compiler, which this build does not ~
+include." who))
+      ((null (funcall clautolisp.autolisp-runtime:*compile-files-to-artefact-hook*
+                      resolved output))
        nil)
-      (t
-       (clautolisp.autolisp-runtime:autolisp-load-file-in-context
-        resolved (clautolisp.autolisp-runtime:current-evaluation-context))
-       (autolisp-true)))))
+      (t (autolisp-true)))))
 
-(defun builtin-clal-compile-file (source-file)
-  "Load SOURCE-FILE under the current optimization qualities, compiling it
-as one unit (debugger-public-interface issue Part A; pjb, 2026-08-27).
+(defun builtin-clal-compile-file (source-file &optional output-file)
+  "Compile SOURCE-FILE into a .lap artefact (pjb, 2026-08-27/28).
 
-THE QUALITIES GOVERN, not the name of this function. At SPEED 3 every
-DEFUN in the file is compiled as it is read, inside a single host
-compilation unit -- which is what makes a file-wide view possible at all.
-Below SPEED 3 there is no unit and functions compile when they turn out
-to be hot, exactly as an ordinary LOAD would; at SPEED 0 nothing is
-compiled. That is deliberate: pjb's specification is explicit that
-calling this at (SPEED 0) must do just the plain per-file work, so that
-no global optimization happens behind a user who asked for none.
+OUTPUT-FILE defaults to SOURCE-FILE with the type .lap, beside the
+source. The artefact is a native host FASL, renamed: it is loadable into
+a running image alongside other applications, which is what an AutoLISP
+`application\' has to be, and it is therefore specific to the host Lisp
+and to this clautolisp -- see clal-compiled-artefact.issue.
 
-Returns T, or nil if the file could not be found (ERRNO 73), matching
-what VLISP-COMPILE returns for the same failure.
+This COMPILES; it does not load. That is the same division CL makes
+between COMPILE-FILE and LOAD, and the same one VLISP-COMPILE makes.
 
-This compiles into the RUNNING IMAGE. Writing a loadable artefact (.lap)
-is a separate piece of work -- the transpiler quotes AUTOLISP-SYMBOL
-structs as literals, which COMPILE accepts and COMPILE-FILE does not
-without MAKE-LOAD-FORM. See clal-compiled-artefact.issue."
-  (%clal-load-for-compilation source-file "CLAL-COMPILE-FILE"))
+Unlike the implicit compilation that happens during LOAD, this does NOT
+consult SPEED. An explicit request to compile a file to an artefact is
+not a hint that the engine may decline -- the qualities govern what the
+engine does on its OWN initiative, not what it does when told."
+  (let* ((resolved (%clal-resolve-source source-file "CLAL-COMPILE-FILE"))
+         (output (cond
+                   ((autolisp-false-p output-file)
+                    (and resolved
+                         (clautolisp.autolisp-runtime:default-lap-pathname
+                          resolved)))
+                   (t (pathname
+                       (autolisp-string-value
+                        (require-string output-file "CLAL-COMPILE-FILE")))))))
+    (cond
+      ((null resolved) (set-autolisp-errno 73) nil)
+      (t (%clal-compile-to-artefact (list source-file) output
+                                    "CLAL-COMPILE-FILE")))))
 
 (defun builtin-clal-compile-system (output-file source-files)
-  "Compile a whole SYSTEM -- several files -- as ONE unit.
+  "Compile SOURCE-FILES into ONE artefact named OUTPUT-FILE.
 
-The point of the system form over calling CLAL-COMPILE-FILE in a loop is
-the single enclosing compilation unit: undefined-function warnings are
-deferred to the end of the whole system, so a function defined in a later
-file and called from an earlier one resolves quietly instead of warning
-at every forward reference. Each file's own unit is absorbed into this
-one (:OVERRIDE NIL), which is why CALL-IN-FILE-COMPILATION-UNIT must not
-use :OVERRIDE T.
+The difference from calling CLAL-COMPILE-FILE on each source is that all
+of them go through a SINGLE host compilation: literals can be coalesced
+across the whole system, and a function defined in a later file and
+called from an earlier one resolves without a warning at every forward
+reference. A system that did not share one compilation is a loop the
+caller could have written, so this one always shares it.
 
-As with CLAL-COMPILE-FILE the qualities govern: below SPEED 3 there is no
-enclosing unit at all, so no system-wide effect happens for a caller who
-did not ask for one.
-
-OUTPUT-FILE must be nil for now. A non-nil value signals rather than
-being ignored: silently accepting the name of an artefact this build
-cannot write would be the worst of the three options. See
-clal-compiled-artefact.issue.
-
-Returns T when every file was compiled, nil if any could not be found."
-  (unless (autolisp-false-p output-file)
-    (signal-builtin-argument-error
-     :unsupported-output-file "CLAL-COMPILE-SYSTEM"
-     "CLAL-COMPILE-SYSTEM cannot write a packaged artefact yet; ~
-OUTPUT-FILE must be nil. See clal-compiled-artefact.issue."))
+OUTPUT-FILE is required -- there is no sensible default name for an
+artefact built from several sources."
   (require-proper-list source-files "CLAL-COMPILE-SYSTEM")
-  (let ((ok t))
-    (flet ((compile-them ()
-             (dolist (file source-files)
-               (unless (%clal-load-for-compilation file "CLAL-COMPILE-SYSTEM")
-                 (setf ok nil)))))
-      (if (clautolisp.autolisp-runtime:autolisp-compile-eagerly-p)
-          (with-compilation-unit (:override nil) (compile-them))
-          (compile-them)))
-    (and ok (autolisp-true))))
+  (when (autolisp-false-p output-file)
+    (signal-builtin-argument-error
+     :bad-argument "CLAL-COMPILE-SYSTEM"
+     "CLAL-COMPILE-SYSTEM needs an output file name."))
+  (when (null source-files)
+    (signal-builtin-argument-error
+     :bad-argument "CLAL-COMPILE-SYSTEM"
+     "CLAL-COMPILE-SYSTEM needs at least one source file."))
+  (%clal-compile-to-artefact
+   source-files
+   (pathname (autolisp-string-value
+              (require-string output-file "CLAL-COMPILE-SYSTEM")))
+   "CLAL-COMPILE-SYSTEM"))
 
 (defun builtin-clal-compile (name lambda-expression)
   "Compile LAMBDA-EXPRESSION — a (LAMBDA lambda-list . body) form — into an
@@ -9347,9 +9386,41 @@ name strings."
 ;;; STUB: VLISP-COMPILE — no separate compile step in clautolisp;
 ;;; future upgrade could emit FASL via compile-file. See
 ;;; deferred-stubbed-functions.issue § VLISP-* IDE stubs.
+(defparameter +vlisp-compile-modes+ '("ST" "LSM" "LSA")
+  "The build modes VLISP-COMPILE accepts: standard, and the two
+optimize-and-link variants. They are the same setting the VLISP IDE
+stores in its project files, so a call and a .prj can be read against
+each other (autolisp-spec, VLISP-COMPILE, /Mode names outside the
+function/).")
+
 (defun builtin-vlisp-compile (mode source-file &optional out-file)
-  (declare (ignore mode source-file out-file))
-  nil)
+  "Compile SOURCE-FILE into a compiled application, the vendor way.
+
+The clautolisp analogue of AutoCAD .fas and BricsCAD .des is .lap, so
+this is CLAL-COMPILE-FILE under the specified vendor API: it returns T
+when the output file was created and nil otherwise, which is the
+contract both vendors document.
+
+MODE is accepted and ignored, as it is in BricsCAD V26. That is not
+laziness here but a fact about what the modes mean: \'ST versus
+\'LSM / \'LSA is single-file versus optimize-and-link-ACROSS-files, and
+a call that names ONE source has nothing to link across. clautolisp
+already compiles each file as one unit; the cross-file form is
+CLAL-COMPILE-SYSTEM, which is where a linking mode would have anything
+to do.
+
+An unknown mode signals rather than being ignored: ignoring \'st is
+harmless because all three do the same thing here, but ignoring a
+misspelling would hide a typo in a build script forever."
+  (let ((mode-name (and (typep mode 'autolisp-symbol)
+                        (string-upcase (autolisp-symbol-name mode)))))
+    (unless (and mode-name
+                 (member mode-name +vlisp-compile-modes+ :test #'string=))
+      (signal-builtin-argument-error
+       :bad-argument "VLISP-COMPILE"
+       "VLISP-COMPILE mode must be one of ~{~A~^, ~}, got ~S."
+       +vlisp-compile-modes+ mode))
+    (builtin-clal-compile-file source-file out-file)))
 
 ;;; STUB: VLISP-EXPORT-SYMBOL — records names in
 ;;; *vlisp-exported-symbols* (observable from CL) but doesn't

@@ -824,12 +824,14 @@ and read back 0 -- and it is worth a test now that the answer is honest."
 
 ;;; --- clal-compile-file / clal-compile-system ------------------------
 ;;;
-;;; Both compile into the RUNNING IMAGE; neither writes an artefact yet
-;;; (clal-compiled-artefact.issue). What distinguishes them from LOAD is
-;;; the host compilation unit they open at SPEED 3 -- and what
-;;; distinguishes the system form from a loop over the file form is that
-;;; there is ONE unit around all the files, so a forward reference from
-;;; an earlier file to a later one does not warn.
+;;; A .lap is a native host FASL, renamed: loadable into a running image
+;;; alongside other applications, and therefore specific to the host Lisp
+;;; and the clautolisp version that built it (pjb, 2026-08-28).
+;;;
+;;; The test that matters is the ROUND TRIP -- compile to an artefact,
+;;; then load the artefact into a FRESH context and run what it defines.
+;;; Checking only that a file appeared would pass for an artefact that is
+;;; empty, or one whose symbols are interned in a table nobody reads.
 
 (defun %write-lsp (pathname text)
   (with-open-file (out pathname :direction :output
@@ -840,8 +842,8 @@ and read back 0 -- and it is worth a test now that the answer is honest."
 
 (defun %eval-here (text)
   "Evaluate TEXT in the CURRENT context. Not RUN-AUTOLISP-STRING: that
-starts a fresh session, which would discard the very definitions the file
-under test just loaded."
+starts a fresh session, which would discard the definitions a freshly
+loaded artefact just installed."
   (clautolisp.autolisp-runtime:autolisp-eval
    (first (clautolisp.autolisp-runtime:read-runtime-from-string text))
    (clautolisp.autolisp-runtime:current-evaluation-context)))
@@ -849,76 +851,137 @@ under test just loaded."
 (defun %as-autolisp-path (pathname)
   (clautolisp.autolisp-runtime:make-autolisp-string (namestring pathname)))
 
-(test clal-compile-file-defines-the-functions-it-compiles
-  "Whatever else it does, it must LOAD."
+(defun %fresh-builtin-context ()
   (clautolisp.autolisp-runtime:reset-default-evaluation-context)
-  (clautolisp.autolisp-builtins-core:install-core-builtins)
-  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
-    (%write-lsp p "(defun sq (x) (* x x))")
-    (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
-                   (%as-autolisp-path p))))
-      (is (not (null result)) "clal-compile-file reported failure")
-      (is (eql 81 (%eval-here "(sq 9)"))))))
+  (clautolisp.autolisp-builtins-core:install-core-builtins))
 
-(test clal-compile-file-honours-speed-rather-than-its-own-name
-  "pjb's specification is explicit: called at a low SPEED it must do just
-the plain per-file work, so that no compilation happens behind a user who
-asked for none. A function named `compile-file' that compiled regardless
-would be exactly the surprise the qualities exist to prevent."
-  (%reset-optimization)
-  (unwind-protect
-       (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
-         (%write-lsp p "(defun sq2 (x) (* x x))")
-         (%optimize "((speed 0))")
-         (clautolisp.autolisp-runtime:reset-default-evaluation-context)
-         (clautolisp.autolisp-builtins-core:install-core-builtins)
-         (%optimize "((speed 0))")
-         (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
-          (%as-autolisp-path p))
-         (is (null (clautolisp.autolisp-runtime:autolisp-usubr-compiled-body
-                    (clautolisp.autolisp-runtime:lookup-function
-                     (clautolisp.autolisp-runtime:intern-autolisp-symbol "SQ2"))))
-             "SPEED 0 compiled a function anyway"))
-    (%reset-optimization)))
+(defun %load-here (pathname)
+  (clautolisp.autolisp-builtins-core::builtin-load (%as-autolisp-path pathname)))
+
+(test clal-compile-file-writes-an-artefact-that-loads-and-runs
+  "The round trip. The artefact must define its functions in whatever
+image loads it -- which is the claim that a printed AUTOLISP-SYMBOL, or
+one read back as a fresh struct, would silently break."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(defun sq (x) (* x x))
+(defun twice (x) (+ x x))")
+    (let* ((lap (make-pathname :type "lap" :defaults p))
+           (result (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+                    (%as-autolisp-path p))))
+      (unwind-protect
+           (progn
+             (is (not (null result)) "clal-compile-file reported failure")
+             (is (not (null (probe-file lap))) "no .lap was written")
+             ;; A FRESH context: nothing the compilation did in this image
+             ;; may be what makes the next assertions pass.
+             (%fresh-builtin-context)
+             (is (not (null (%load-here lap))) "the .lap did not load")
+             (is (eql 81 (%eval-here "(sq 9)")))
+             (is (eql 14 (%eval-here "(twice 7)"))))
+        (ignore-errors (delete-file lap))))))
+
+(test a-loaded-artefact-brings-its-compiled-bodies-with-it
+  "The point of an artefact over its source: the functions arrive already
+compiled, so they never pay the threshold or the host compiler again."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(defun sq3 (x) (* x x))")
+    (let ((lap (make-pathname :type "lap" :defaults p)))
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+              (%as-autolisp-path p))
+             (%fresh-builtin-context)
+             (%load-here lap)
+             (is (not (null
+                       (clautolisp.autolisp-runtime:autolisp-usubr-compiled-body
+                        (clautolisp.autolisp-runtime:lookup-function
+                         (clautolisp.autolisp-runtime:intern-autolisp-symbol
+                          "SQ3")))))
+                 "a function from a .lap arrived without its compiled body"))
+        (ignore-errors (delete-file lap))))))
+
+(test an-artefact-keeps-the-source-body-so-it-stays-debuggable
+  "Dropping BODY would make artefacts load faster and functions from them
+impossible to instrument. The debugger weaves its fork FROM the body."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(defun sq4 (x) (* x x))")
+    (let ((lap (make-pathname :type "lap" :defaults p)))
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+              (%as-autolisp-path p))
+             (%fresh-builtin-context)
+             (%load-here lap)
+             (is (not (null
+                       (clautolisp.autolisp-runtime:autolisp-usubr-body
+                        (clautolisp.autolisp-runtime:lookup-function
+                         (clautolisp.autolisp-runtime:intern-autolisp-symbol
+                          "SQ4")))))
+                 "a function from a .lap lost its source body"))
+        (ignore-errors (delete-file lap))))))
+
+(test an-artefact-carries-non-defun-top-level-forms-too
+  "A source file is not only DEFUNs. Whatever else it does at top level
+has to happen when the artefact is loaded, in the same order."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(setq greeting \"hello\")
+(defun greet () greeting)")
+    (let ((lap (make-pathname :type "lap" :defaults p)))
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+              (%as-autolisp-path p))
+             (%fresh-builtin-context)
+             (%load-here lap)
+             (is (equal "hello"
+                        (clautolisp.autolisp-runtime:autolisp-string-value
+                         (%eval-here "(greet)")))))
+        (ignore-errors (delete-file lap))))))
 
 (test clal-compile-file-reports-a-missing-file-the-way-load-does
-  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
-  (clautolisp.autolisp-builtins-core:install-core-builtins)
+  (%fresh-builtin-context)
   (is (null (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
              (clautolisp.autolisp-runtime:make-autolisp-string
               "/nonexistent/definitely-not-here.lsp")))))
 
-(test clal-compile-system-refuses-an-output-file-it-cannot-write
-  "The three options for an argument the build cannot honour are: ignore
-it, pretend, or refuse. Silently accepting the name of an artefact that
-is never written is the one that would waste a user's afternoon."
-  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
-  (clautolisp.autolisp-builtins-core:install-core-builtins)
+(test clal-compile-system-needs-an-output-name
+  "There is no sensible default name for an artefact built from several
+sources, so the argument is required rather than guessed at."
+  (%fresh-builtin-context)
   (is (%signals-runtime-error-p
        (lambda ()
          (clautolisp.autolisp-builtins-core::builtin-clal-compile-system
-          (clautolisp.autolisp-runtime:make-autolisp-string "out.lap")
-          nil)))
-      "a packaged-output request was accepted although none is written"))
+          nil (list (clautolisp.autolisp-runtime:make-autolisp-string "a.lsp")))))))
 
-(test clal-compile-system-compiles-several-files-with-forward-references
-  "The reason the system form exists: one unit around every file, so a
-call in an earlier file to a function defined in a later one resolves
-without warning at each forward reference."
-  (%reset-optimization)
-  (unwind-protect
-       (uiop:with-temporary-file (:pathname a :type "lsp" :keep nil)
-         (uiop:with-temporary-file (:pathname b :type "lsp" :keep nil)
-           ;; A calls B's function; B is loaded second.
-           (%write-lsp a "(defun caller (x) (callee x))")
-           (%write-lsp b "(defun callee (x) (* x 3))")
-           (%optimize "((speed 3))")
-           (clautolisp.autolisp-runtime:reset-default-evaluation-context)
-           (clautolisp.autolisp-builtins-core:install-core-builtins)
-           (%optimize "((speed 3))")
-           (let ((result
-                   (clautolisp.autolisp-builtins-core::builtin-clal-compile-system
-                    nil (list (%as-autolisp-path a) (%as-autolisp-path b)))))
-             (is (not (null result)) "clal-compile-system reported failure"))
-           (is (eql 21 (%eval-here "(caller 7)")))))
-    (%reset-optimization)))
+(test clal-compile-system-builds-one-artefact-from-several-sources
+  "The reason the system form exists: one compilation over all the files,
+so a call in an earlier file to a function defined in a later one
+resolves -- and one artefact to ship, not one per source."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname a :type "lsp" :keep nil)
+    (uiop:with-temporary-file (:pathname b :type "lsp" :keep nil)
+      (uiop:with-temporary-file (:pathname out :type "lap" :keep nil)
+        ;; A calls B's function; B is compiled second.
+        (%write-lsp a "(defun caller (x) (callee x))")
+        (%write-lsp b "(defun callee (x) (* x 3))")
+        (let ((result
+                (clautolisp.autolisp-builtins-core::builtin-clal-compile-system
+                 (%as-autolisp-path out)
+                 (list (%as-autolisp-path a) (%as-autolisp-path b)))))
+          (is (not (null result)) "clal-compile-system reported failure"))
+        (%fresh-builtin-context)
+        (is (not (null (%load-here out))) "the system .lap did not load")
+        (is (eql 21 (%eval-here "(caller 7)")))))))
+
+(test loading-a-lap-that-is-not-one-fails-with-its-own-diagnostic
+  "A .lap is host- and version-specific by design, so `this file will not
+load' is a normal outcome and needs a message that says why, rather than
+the reader's confusion at finding a FASL where source was expected."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lap" :keep nil)
+    (%write-lsp p "this is not a fasl")
+    (is (%signals-runtime-error-p (lambda () (%load-here p))))))
