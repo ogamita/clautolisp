@@ -1030,18 +1030,21 @@ fresh list of the keys: this runs on every function return, and a list
 per return is exactly the kind of garbage the frames themselves were
 changed from hash tables to alists to avoid."
   (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
-    (if (listp bindings)
-        (dolist (entry bindings)
-          (let ((symbol (car entry)))
-            (when (typep symbol 'autolisp-symbol)
-              (decf (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
-                     symbol)))))
+    (if (hash-table-p bindings)
         (maphash (lambda (symbol binding)
                    (declare (ignore binding))
                    (when (typep symbol 'autolisp-symbol)
                      (decf (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
                             symbol))))
-                 bindings))))
+                 bindings)
+        (loop for binding = bindings
+                then (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+              while binding
+              do (let ((symbol (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol
+                                binding)))
+                   (when (typep symbol 'autolisp-symbol)
+                     (decf (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+                            symbol))))))))
 
 (defun pop-dynamic-frame (&optional (context (current-evaluation-context)))
   (let ((frame (evaluation-context-dynamic-frame context)))
@@ -1077,9 +1080,14 @@ promotes itself and behaves as before.")
 (defun frame-binding (frame symbol)
   "SYMBOL's binding in FRAME itself, or NIL."
   (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
-    (if (listp bindings)
-        (cdr (assoc symbol bindings :test #'eq))
-        (gethash symbol bindings))))
+    (if (hash-table-p bindings)
+        (gethash symbol bindings)
+        (loop for binding = bindings
+                then (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+              while binding
+              when (eq (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol binding)
+                       symbol)
+                do (return binding)))))
 
 (defun (setf frame-binding) (binding frame symbol)
   "Install BINDING for SYMBOL in FRAME, replacing any binding FRAME
@@ -1092,28 +1100,66 @@ does not, because the frame still binds that symbol exactly once. Getting
 that distinction wrong in the generous direction only costs the walk this
 count exists to skip; getting it wrong the other way would skip a walk
 that was needed."
-  (let* ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))
-         (existing (if (listp bindings)
-                       (assoc symbol bindings :test #'eq)
-                       (nth-value 1 (gethash symbol bindings))))
-         (newp (not existing)))
-    (cond
-      ((not (listp bindings))
-       (setf (gethash symbol bindings) binding))
-      (existing
-       (setf (cdr existing) binding))
-      ((< (length bindings) *dynamic-frame-alist-limit*)
-       (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
-             (acons symbol binding bindings)))
-      (t
-       ;; Promote: this frame has outgrown a linear search.
-       (let ((table (make-hash-table :test #'eq
-                                     :size (* 2 *dynamic-frame-alist-limit*))))
-         (dolist (entry bindings)
-           (setf (gethash (car entry) table) (cdr entry)))
-         (setf (gethash symbol table) binding)
-         (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
-               table))))
+  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))
+        (newp t))
+    (if (hash-table-p bindings)
+        (progn
+          (setf newp (not (nth-value 1 (gethash symbol bindings))))
+          (setf (gethash symbol bindings) binding))
+        ;; The chain. One walk finds the existing entry (with its
+        ;; predecessor, so it can be spliced out) and counts the entries
+        ;; for the promotion test -- the count is only used when no
+        ;; existing entry was found, which is exactly when the walk ran to
+        ;; the end.
+        (let ((previous nil)
+              (existing nil)
+              (count 0))
+          (loop for current = bindings
+                  then (clautolisp.autolisp-runtime.internal::dynamic-binding-next current)
+                while current
+                do (when (eq (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol
+                              current)
+                             symbol)
+                     (setf existing current)
+                     (return))
+                   (incf count)
+                   (setf previous current))
+          (cond
+            (existing
+             ;; Replace: splice the new binding in where the old one was,
+             ;; leaving the old one orphaned -- which is what replacing the
+             ;; CDR of an alist entry did. NEXT is cleared on the way out so
+             ;; a discarded binding does not hold the rest of the chain
+             ;; alive.
+             (setf newp nil)
+             (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+                   (clautolisp.autolisp-runtime.internal::dynamic-binding-next existing))
+             (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-next existing) nil)
+             (if previous
+                 (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-next previous)
+                       binding)
+                 (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
+                       binding)))
+            ((< count *dynamic-frame-alist-limit*)
+             (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+                   bindings)
+             (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
+                   binding))
+            (t
+             ;; Promote: this frame has outgrown a linear search.
+             (let ((table (make-hash-table :test #'eq
+                                           :size (* 2 *dynamic-frame-alist-limit*))))
+               (loop for current = bindings
+                       then (clautolisp.autolisp-runtime.internal::dynamic-binding-next current)
+                     while current
+                     do (setf (gethash
+                               (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol
+                                current)
+                               table)
+                              current))
+               (setf (gethash symbol table) binding)
+               (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
+                     table))))))
     (when (and newp (typep symbol 'autolisp-symbol))
       (incf (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
              symbol)))
@@ -1122,9 +1168,13 @@ that was needed."
 (defun frame-bound-symbols (frame)
   "The symbols FRAME binds directly, in no particular order."
   (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
-    (if (listp bindings)
-        (mapcar #'car bindings)
-        (loop for symbol being the hash-keys of bindings collect symbol))))
+    (if (hash-table-p bindings)
+        (loop for symbol being the hash-keys of bindings collect symbol)
+        (loop for binding = bindings
+                then (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+              while binding
+              collect (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol
+                       binding)))))
 
 (defun bind-dynamic-variable (symbol value &optional (context (current-evaluation-context)))
   (let ((frame (or (evaluation-context-dynamic-frame context)

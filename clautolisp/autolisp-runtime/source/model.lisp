@@ -147,6 +147,21 @@ clautolisp-secureload-trust-model spec.")
   symbol
   (value nil)
   (bound-p nil :type boolean)
+  ;; The next binding in the frame that holds this one, or NIL.
+  ;;
+  ;; A frame's bindings are a CHAIN of these rather than an alist of
+  ;; (symbol . binding), which they were until 2.0.18. The alist cost two
+  ;; conses per binding per call -- and paid them to record a symbol the
+  ;; binding was already carrying in its own SYMBOL slot. Threading the
+  ;; chain through the bindings themselves removes both conses and adds
+  ;; one slot: 24 bytes saved per parameter of every user function call,
+  ;; about an eighth of everything a call allocates.
+  ;;
+  ;; It is sound because a binding belongs to EXACTLY ONE frame: the sole
+  ;; caller of (SETF FRAME-BINDING) is BIND-DYNAMIC-VARIABLE, and it makes
+  ;; a fresh binding every time. A shared binding would need two NEXTs and
+  ;; would corrupt both chains.
+  (next nil)
   ;; See binding-cell's doc slot — same semantics for the dynamic
   ;; shadow that `/'-locals / lambda parameters / foreach iteration
   ;; variables push onto the stack. lookup-documentation walks the
@@ -154,10 +169,17 @@ clautolisp-secureload-trust-model spec.")
   (doc nil :type list))
 
 (defstruct dynamic-frame
-  ;; BINDINGS is either an ALIST of (symbol . dynamic-binding) — the
-  ;; ordinary case — or an EQ hash table, once the frame holds more
-  ;; entries than an alist searches cheaply. See FRAME-BINDING in
-  ;; api.lisp, which is the only thing that should read this slot.
+  ;; BINDINGS is either a CHAIN of dynamic-bindings linked by their NEXT
+  ;; slots — the ordinary case, and NIL when the frame is empty — or an EQ
+  ;; hash table, once the frame holds more entries than a linear walk
+  ;; searches cheaply. See FRAME-BINDING in api.lisp, which is the only
+  ;; thing that should read this slot.
+  ;;
+  ;; It was an ALIST of (symbol . binding) until 2.0.18. The two conses per
+  ;; entry were paying to record a symbol the binding already carried in
+  ;; its own SYMBOL slot; threading the chain through the bindings costs
+  ;; one slot and no conses. Note the discriminator is HASH-TABLE-P and no
+  ;; longer LISTP: a chain head is a STRUCT, not a list.
   ;;
   ;; It used to be a hash table always, allocated in this initform, i.e.
   ;; ONE HASH TABLE PER FUNCTION CALL — to hold, typically, a single

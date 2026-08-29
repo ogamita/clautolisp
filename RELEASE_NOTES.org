@@ -412,6 +412,12 @@ separate binary for tool integrators.
   stepping ride on) is kept while ~DEBUG~ >= ~SPACE~ and is compiled from
   ~SPEED~ 2. ~SPEED~ 3 compiles at definition rather than once a function
   is hot. Default ~((DEBUG 3) (SPACE 0) (SPEED 2))~.
+- *A function call allocates 18% less.* Each parameter and ~/~-local of
+  every call cost two extra conses, spent recording a symbol the binding
+  already knew. The bindings are threaded together directly now. Nothing
+  observable changes; there is simply less for the garbage collector to
+  do, which matters most in the long-running loops CAD code is made of.
+
 - *Everything is faster again: 1.33x compiled, 1.14x interpreted.* A
   dozen one-line functions on the hottest paths — the public names for a
   struct slot, and two-line predicates — were full function calls, each

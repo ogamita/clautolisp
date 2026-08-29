@@ -1292,7 +1292,62 @@ for SETF SYMBOL-FUNCTION / FDEFINITION over the whole tree, including the
 tests. Callers that take #' of them still get the out-of-line definition,
 which SBCL and CCL both still emit.
 
-STILL OPEN after slice 16
+Slice 17 (2.0.18) -- a frame's bindings stop being an alist
+-----------------------------------------------------------
+
+The item slice 16 scoped and did not take. A frame held its bindings as an
+alist of (symbol . binding): two conses per parameter and per `/'-local of
+every call, spent recording a symbol THE BINDING ALREADY CARRIED in its
+own SYMBOL slot. The bindings are now threaded together directly, by a
+NEXT slot on the binding.
+
+    per binding, before:  binding struct + 2 conses
+    per binding, after:   binding struct (one slot wider)
+
+Allocation, the deterministic measurement (fib 22, bytes consed):
+
+                          2.0.17        2.0.18      change
+    plain compiled       10,086,112    8,254,624    -18.2%
+    DEBUGGED compiled    24,402,256   22,859,648     -6.3%
+    DEBUGGED interpreted 71,950,656   70,063,200     -2.6%
+
+Wall clock is unchanged within this benchmark's noise; the win is
+allocation and the collector work behind it, which is what shows up in
+the long-running loops real CAD code is made of rather than in fib.
+
+WHY IT IS SOUND, and both halves were checked before writing a line:
+
+  A binding belongs to EXACTLY ONE frame. The sole caller of (SETF
+  FRAME-BINDING) is BIND-DYNAMIC-VARIABLE and it makes a fresh binding
+  every time. A shared binding would need two NEXTs and would corrupt
+  both chains.
+
+  The representation is read in EXACTLY FOUR PLACES, all in api.lisp, and
+  FRAME-BINDING is not exported -- the debugger reaches bindings through
+  DYNAMIC-FRAME-BINDING-VALUE, which goes through it. The file already
+  said so ("the only thing that should read this slot") and it was true.
+
+ONE TRAP: the alist/hash-table discriminator was (LISTP BINDINGS). A chain
+head is a STRUCT, not a list, so every one of those became HASH-TABLE-P.
+Missing one would have read a binding as an alist -- silently, and only
+for frames that had promoted.
+
+TESTS. The PROMOTION path -- what a frame does once it holds more
+bindings than a linear walk searches cheaply -- had NO TEST AT ALL before
+this, and is not reachable from any ordinary program: it needs more than
+a dozen locals in one function. It now has four, written against the
+representation directly rather than through AutoLISP source, because the
+representation is what changed: binding past the limit and resolving
+every name across the promotion boundary; rebinding a name in one frame
+(legal -- (defun f (a / a) ...)) replacing rather than adding, in BOTH
+representations, since replacement is written twice; and nested frames
+shadowing innermost-first with the live-binding counts following.
+
+Verified load-bearing: disabling the chain's replace detection fails
+REBINDING-A-SYMBOL-IN-ONE-FRAME-REPLACES-RATHER-THAN-ADDS and NOTHING
+ELSE in the whole corpus -- which is the argument for having written it.
+
+STILL OPEN after slice 17
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -1318,16 +1373,14 @@ STILL OPEN after slice 16
     statement of its narrow case -- and note that = and /= are NOT
     numeric-only in AutoLISP, so they need reading before they are
     written.
-  - the per-call ALLOCATION of a usubr frame: a frame struct, a
-    dynamic-binding struct and TWO ALIST CONSES per parameter of every
-    user function call. The conses are removable without touching
-    ownership -- a dynamic-binding already carries its SYMBOL, so the
-    frame could hold a CHAIN of bindings linked by a NEXT slot instead of
-    an alist, saving 24 bytes per binding per call (about 13% of what a
-    call allocates). The representation is read in exactly four places,
-    all in api.lisp, and each binding belongs to exactly one frame --
-    both checked. Not done yet only because slice 16 found a cheaper win
-    first.
+  - what a call still allocates, after slice 17 removed the alist conses:
+    a dynamic-frame struct and a dynamic-binding struct per parameter,
+    plus the &rest list and the three-cons call-stack entry in
+    CALL-AUTOLISP-FUNCTION-IN-CONTEXT. The frame and binding structs
+    cannot simply be pooled -- a closure captures its environment and the
+    debugger's snapshot reaches frames -- so that one needs the ownership
+    rules restated first, exactly like the shadow-frame pool in
+    poll-point-restart-cost.issue.
   - reading the qualities from the CONFIGURATION MODULE, so a project
     can set them once rather than on every invocation. The --optimize
     half is done (slice 11); this is the other half of the same item,

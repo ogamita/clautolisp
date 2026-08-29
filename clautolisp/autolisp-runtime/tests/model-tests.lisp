@@ -1129,3 +1129,110 @@ test runner can't re-enable the probe."
              'clautolisp.autolisp-runtime::probe-terminal-background-via-osc11)
             probe-fn)
       (setf (uiop:getenv "CLAUTOLISP_PROBE_OSC11") env-before))))
+
+;;;; A frame's bindings: the CHAIN, and the hash table it promotes to.
+;;;;
+;;;; A frame's bindings used to be an alist of (symbol . binding). They are
+;;;; a chain of the bindings themselves now, linked by their NEXT slots:
+;;;; the alist's two conses per entry were paying to record a symbol the
+;;;; binding already carried, and removing them took 18% off everything a
+;;;; compiled call allocates.
+;;;;
+;;;; These tests go at the representation directly rather than through
+;;;; AutoLISP source, because that is what changed -- and because the
+;;;; PROMOTION path, which a frame takes once it holds more bindings than a
+;;;; linear walk searches cheaply, had no test at all before this and is
+;;;; not reachable from any ordinary program: it needs more than a dozen
+;;;; locals in one function.
+
+(defun %frame-binding-count (name)
+  (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+   (intern-autolisp-symbol name)))
+
+(defun %local-name (index)
+  (format nil "LOCAL-~2,'0D" index))
+
+(test a-frame-binds-and-resolves-past-the-promotion-limit
+  "Bind more symbols in one frame than the linear-search limit, so the
+frame promotes itself to a hash table half way through, and require every
+one of them -- those bound before the promotion and those after -- to
+resolve to its own value."
+  (reset-autolisp-symbol-table)
+  (let* ((context (default-evaluation-context))
+         (count (* 2 clautolisp.autolisp-runtime::*dynamic-frame-alist-limit*)))
+    (push-dynamic-frame context)
+    (dotimes (index count)
+      (bind-dynamic-variable (intern-autolisp-symbol (%local-name index)) index context))
+    (dotimes (index count)
+      (is (eql index (lookup-variable (intern-autolisp-symbol (%local-name index)) context))
+          "~A resolved wrongly across the promotion boundary" (%local-name index)))
+    ;; the frame knows exactly the symbols it bound, whichever
+    ;; representation it ended up in
+    (let ((symbols (clautolisp.autolisp-runtime::frame-bound-symbols
+                    (evaluation-context-dynamic-frame context))))
+      (is (eql count (length symbols)))
+      (dotimes (index count)
+        (is (not (null (member (intern-autolisp-symbol (%local-name index)) symbols)))
+            "~A is missing from the frame's symbols" (%local-name index))))
+    (pop-dynamic-frame context)
+    ;; and every count is released, from the hash-table representation too
+    (dotimes (index count)
+      (is (zerop (%frame-binding-count (%local-name index)))
+          "~A was still counted after its frame was popped" (%local-name index)))))
+
+(test rebinding-a-symbol-in-one-frame-replaces-rather-than-adds
+  "A frame holds at most one binding per symbol -- (defun f (a / a) ...) is
+legal -- so binding the same name twice must REPLACE. The value must be
+the newest, the frame must list the symbol once, and the live-binding
+count must be one, not two: it is decremented once when the frame is
+popped, and an over-count would leave that symbol walking the frame chain
+for the rest of the session."
+  (reset-autolisp-symbol-table)
+  (let* ((context (default-evaluation-context))
+         (symbol (intern-autolisp-symbol "DUP")))
+    (push-dynamic-frame context)
+    (bind-dynamic-variable symbol 1 context)
+    (bind-dynamic-variable symbol 2 context)
+    (is (eql 2 (lookup-variable symbol context)))
+    (is (eql 1 (%frame-binding-count "DUP")))
+    (is (equal (list symbol)
+               (clautolisp.autolisp-runtime::frame-bound-symbols
+                (evaluation-context-dynamic-frame context))))
+    (pop-dynamic-frame context)
+    (is (zerop (%frame-binding-count "DUP")))))
+
+(test rebinding-past-the-promotion-limit-also-replaces
+  "The same rule in the other representation. Replacement is written twice
+-- once for the chain, once for the hash table -- so it is checked twice."
+  (reset-autolisp-symbol-table)
+  (let* ((context (default-evaluation-context))
+         (count (* 2 clautolisp.autolisp-runtime::*dynamic-frame-alist-limit*))
+         (symbol (intern-autolisp-symbol (%local-name 0))))
+    (push-dynamic-frame context)
+    (dotimes (index count)
+      (bind-dynamic-variable (intern-autolisp-symbol (%local-name index)) index context))
+    (bind-dynamic-variable symbol :replaced context)
+    (is (eq :replaced (lookup-variable symbol context)))
+    (is (eql 1 (%frame-binding-count (%local-name 0))))
+    (is (eql count (length (clautolisp.autolisp-runtime::frame-bound-symbols
+                            (evaluation-context-dynamic-frame context)))))
+    (pop-dynamic-frame context)
+    (is (zerop (%frame-binding-count (%local-name 0))))))
+
+(test bindings-in-nested-frames-shadow-innermost-first
+  "The chain is per frame; the frames are a chain of their own. An inner
+binding must win, and popping must reveal the outer one -- unchanged."
+  (reset-autolisp-symbol-table)
+  (let* ((context (default-evaluation-context))
+         (symbol (intern-autolisp-symbol "SHADOWED")))
+    (push-dynamic-frame context)
+    (bind-dynamic-variable symbol :outer context)
+    (push-dynamic-frame context)
+    (bind-dynamic-variable symbol :inner context)
+    (is (eq :inner (lookup-variable symbol context)))
+    (is (eql 2 (%frame-binding-count "SHADOWED")))
+    (pop-dynamic-frame context)
+    (is (eq :outer (lookup-variable symbol context)))
+    (is (eql 1 (%frame-binding-count "SHADOWED")))
+    (pop-dynamic-frame context)
+    (is (zerop (%frame-binding-count "SHADOWED")))))
