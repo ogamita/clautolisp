@@ -86,12 +86,20 @@ rest to their own <name>.conf. Returns T."
   (dolist (name +cascade-only-config-names+) (save-cascade-config-file name))
   t)
 
+(defun load-cascade-only-configurations ()
+  "Load the cascade-only <name>.conf files (sedit/navi/…). aldo.conf and
+lisp.conf are loaded by the settings loaders, which already absorb their
+cascade via the consume hook — so tool start-up calls this AFTER those two,
+without loading them twice. Returns T."
+  (dolist (name +cascade-only-config-names+) (load-cascade-config-file name))
+  t)
+
 (defun load-all-configurations ()
   "Load every cascade config from its <name>.conf (aldo/lisp via the settings
 loaders + the consume hook; the rest directly). Returns T."
   (clautolisp.debug.ui:load-aldo-configuration)
   (clautolisp.debug.ui:load-lisp-configuration)
-  (dolist (name +cascade-only-config-names+) (load-cascade-config-file name))
+  (load-cascade-only-configurations)
   t)
 
 ;;; --- the M-x commands ---------------------------------------------------

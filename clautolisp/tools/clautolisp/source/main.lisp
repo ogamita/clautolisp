@@ -305,6 +305,10 @@ $XDG_CONFIG_HOME/clautolisp/aldo.conf), :tui when unset — the value an
 explicit --debugger-ui overrides for this run only."
   (ignore-errors (clautolisp.debug.ui:load-aldo-configuration))
   (ignore-errors (clautolisp.debug.ui:load-lisp-configuration))
+  ;; the aldo/lisp cascade (faces/bindings) rides in the two files above via the
+  ;; settings consume hook; load the remaining cascade-only files (sedit/navi/…)
+  ;; here (windows-and-interactor-templates.issue: the cascade shares the files).
+  (ignore-errors (clautolisp.ui.ncurses:load-cascade-only-configurations))
   ;; Route (clal-sedit …) from the REPL through the LISP interactor's own
   ;; configuration. Only lisp.conf is active at the REPL — the debugger side
   ;; has its own bridge and gets the stacked aldo-over-lisp lookup
