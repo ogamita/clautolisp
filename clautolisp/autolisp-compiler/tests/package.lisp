@@ -33,6 +33,7 @@
                 #:autolisp-runtime-error
                 #:autolisp-string
                 #:autolisp-string-value
+                #:autolisp-symbol-name
                 #:default-evaluation-context
                 #:lookup-variable
                 #:read-runtime-from-string

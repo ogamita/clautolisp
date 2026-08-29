@@ -25,6 +25,7 @@
                 #:*compile-instrumented-usubr-hook*
                 #:current-evaluation-context
                 #:intern-autolisp-symbol
+                #:autolisp-true-symbol
                 #:known-special-operator-p
                 #:lookup-variable
                 #:resolve-autolisp-function-designator

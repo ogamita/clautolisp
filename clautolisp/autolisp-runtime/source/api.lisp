@@ -201,8 +201,34 @@ dependency-inversion pattern of *INSTRUMENT-USUBR-HOOK* / *DEBUG-BREAK-HOOK*.")
          :details arguments
          :call-stack (current-autolisp-call-stack)))
 
+(defvar *autolisp-true-symbol* nil
+  "The interned T symbol, remembered.
+
+AutoLISP truth is a SYMBOL, so every predicate, every relational operator
+and every AND / OR has to produce it -- and producing it meant hashing the
+string \"T\" in the symbol table, on every one of those. It showed up in a
+profile of compiled arithmetic as FIND-AUTOLISP-SYMBOL plus STRING=*,
+about 4%, for a value that never changes.
+
+It CAN change, exactly once and in exactly one way: RESET-AUTOLISP-SYMBOL-
+TABLE clears the table, after which the old T is no longer the table\'s T
+and anything comparing with EQ would quietly stop matching. That function
+clears this too, which is the whole invalidation story -- nothing else
+removes an entry from the symbol table, interning only ever adds.")
+
+(defun autolisp-true-symbol ()
+  "The interned T symbol: AutoLISP truth. Cached; see *AUTOLISP-TRUE-SYMBOL*."
+  (or *autolisp-true-symbol*
+      ;; The one place that must NOT go through this function.
+      (setf *autolisp-true-symbol* (intern-autolisp-symbol "T"))))
+
 (defun reset-autolisp-symbol-table ()
   (clrhash clautolisp.autolisp-runtime.internal::*autolisp-symbol-table*)
+  ;; The cached T belonged to the table just cleared. Keeping it would
+  ;; hand out a symbol that is no longer the one INTERN-AUTOLISP-SYMBOL
+  ;; returns, and every EQ against truth would start failing -- in tests
+  ;; only, which is the worst place for it to be subtle.
+  (setf *autolisp-true-symbol* nil)
   (reset-default-evaluation-context))
 
 (defun default-evaluation-context ()
@@ -2243,12 +2269,12 @@ so ordinary non-debug runs keep defining plain, allocation-free bodies."
       (setf value nil
             boundp t))
     (if value
-        (intern-autolisp-symbol "T")
+        (autolisp-true-symbol)
         nil)))
 
 (defun autolisp-null (object)
   (if (null object)
-      (intern-autolisp-symbol "T")
+      (autolisp-true-symbol)
       nil))
 
 (defun autolisp-not (object)
@@ -2256,17 +2282,17 @@ so ordinary non-debug runs keep defining plain, allocation-free bodies."
 
 (defun autolisp-listp (object)
   (if (listp object)
-      (intern-autolisp-symbol "T")
+      (autolisp-true-symbol)
       nil))
 
 (defun autolisp-atom (object)
   (if (atom object)
-      (intern-autolisp-symbol "T")
+      (autolisp-true-symbol)
       nil))
 
 (defun autolisp-vl-symbolp (object)
   (if (typep object 'autolisp-symbol)
-      (intern-autolisp-symbol "T")
+      (autolisp-true-symbol)
       nil))
 
 (defun autolisp-vl-symbol-name (object)
@@ -3558,13 +3584,13 @@ COMMAND-S special forms and the VL-CMDF builtin."
 ;; OR / AND, plus vendor-inventory-2026.org §10 item 11). Short-circuit
 ;; evaluation is preserved; only the return shape changes.
 (defun eval-and-form (arguments context)
-  (let ((t-symbol (intern-autolisp-symbol "T")))
+  (let ((t-symbol (autolisp-true-symbol)))
     (dolist (argument arguments t-symbol)
       (when (autolisp-false-p (autolisp-eval argument context))
         (return nil)))))
 
 (defun eval-or-form (arguments context)
-  (let ((t-symbol (intern-autolisp-symbol "T")))
+  (let ((t-symbol (autolisp-true-symbol)))
     (dolist (argument arguments nil)
       (when (autolisp-true-p (autolisp-eval argument context))
         (return t-symbol)))))

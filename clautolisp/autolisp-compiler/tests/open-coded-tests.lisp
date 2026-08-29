@@ -135,3 +135,102 @@ else is the builtin's, including that rule."
   (is (null (%run-with-compiled-bodies "(< nil nil)")))
   (is (%same-value-p (%run-interpreted "(< 1.5 2)")
                      (%run-with-compiled-bodies "(< 1.5 2)"))))
+
+;;;; The second batch of open-coded operators (2.0.15): the one-argument
+;;;; list and predicate operators, and EQ.
+;;;;
+;;;; Same discipline as above. What is worth testing is not that (car '(1))
+;;;; is 1 -- it would be hard to get that wrong -- but the edges where the
+;;;; fast path has to DECLINE and let the builtin answer, because that is
+;;;; the only place a fast path can quietly become a second implementation.
+
+(defparameter *open-coded-unary-corpus*
+  '(;; car / cdr: nil and a cons are the whole non-error domain
+    "(car '(1 2 3))" "(cdr '(1 2 3))" "(car nil)" "(cdr nil)"
+    "(car '(1))" "(cdr '(1))" "(car '(1 . 2))" "(cdr '(1 . 2))"
+    "(car (cdr (cdr '(1 2 3))))"
+    ;; ... and anything else is an error, which must stay an error
+    "(vl-catch-all-error-message (vl-catch-all-apply (function car) (list 5)))"
+    "(vl-catch-all-error-message (vl-catch-all-apply (function cdr) (list \"s\")))"
+    ;; total predicates: no guard, so every kind of object must agree
+    "(null nil)" "(null 0)" "(null '(1))" "(null \"\")"
+    "(not nil)" "(not 1)"
+    "(atom nil)" "(atom 5)" "(atom '(1))" "(atom \"s\")"
+    "(listp nil)" "(listp '(1))" "(listp 5)" "(listp \"s\")"
+    ;; zerop DOES signal on a non-number, and accepts floats
+    "(zerop 0)" "(zerop 5)" "(zerop 0.0)" "(zerop -0.0)"
+    "(vl-catch-all-error-message (vl-catch-all-apply (function zerop) (list nil)))"
+    "(vl-catch-all-error-message (vl-catch-all-apply (function zerop) (list \"s\")))"
+    ;; 1+ / 1- including the range edges, where AutoLISP signals
+    "(1+ 5)" "(1- 5)" "(1+ 2.5)" "(1- 2.5)"
+    "(1+ 2147483646)" "(1- -2147483647)"
+    "(vl-catch-all-error-message (vl-catch-all-apply (function 1+) (list 2147483647)))"
+    "(vl-catch-all-error-message (vl-catch-all-apply (function 1-) (list -2147483648)))"
+    "(vl-catch-all-error-message (vl-catch-all-apply (function 1+) (list \"s\")))"
+    ;; unary minus negates; and the one value whose negation overflows
+    "(- 5)" "(- -5)" "(- 2.5)"
+    "(vl-catch-all-error-message (vl-catch-all-apply (function -) (list -2147483648)))"
+    ;; eq: identity, plus the documented string rule the fast path declines
+    "(eq 'a 'a)" "(eq 'a 'b)" "(eq nil nil)" "(eq 1 1)" "(eq 1 2)"
+    "(eq \"abc\" \"abc\")" "(eq \"abc\" \"abd\")" "(eq \"a\" 'a)"
+    "(eq '(1) '(1))"
+    ;; nested, so an open-coded operand feeds an open-coded operator
+    "(null (cdr '(1)))" "(1+ (car '(5 6)))" "(zerop (1- 1))")
+  "Expressions whose compiled and interpreted values must agree. Most are
+deliberately outside the fast paths.")
+
+(test open-coded-unary-operators-agree-with-the-interpreter
+  (dolist (text *open-coded-unary-corpus*)
+    (let ((interpreted (%run-interpreted text))
+          (compiled (%run-with-compiled-bodies text)))
+      (is (%same-value-p interpreted compiled)
+          "~S: interpreted ~S, compiled ~S" text interpreted compiled))))
+
+(test eq-on-two-strings-goes-to-the-builtin
+  "AutoLISP EQ says two strings with equal contents are EQ, because the
+host interns literals. The inline path is EQL, which is NOT that -- so it
+must decline whenever either argument is a string. This is the one place
+in the second batch where a plausible-looking fast path would be wrong."
+  (is (%same-value-p (%run-interpreted "(eq \"abc\" \"abc\")")
+                     (%run-with-compiled-bodies "(eq \"abc\" \"abc\")")))
+  ;; and the answer really is truth, not the nil that bare EQL would give
+  (is (not (null (%run-with-compiled-bodies "(eq \"abc\" \"abc\")")))
+      "compiled (eq \"abc\" \"abc\") gave nil; the fast path did not decline"))
+
+(test car-of-a-non-list-still-signals
+  "CAR's fast path covers nil and conses -- CL's CAR of NIL is NIL, so
+that is the builtin's whole non-error domain. A number must still reach
+the builtin and still signal, rather than returning something."
+  (let ((text "(vl-catch-all-error-message
+                 (vl-catch-all-apply (function car) (list 5)))"))
+    (is (%same-value-p (%run-interpreted text) (%run-with-compiled-bodies text)))
+    (is (search "CAR" (autolisp-string-value (%run-with-compiled-bodies text)))
+        "car of a number did not report a CAR error")))
+
+(test a-user-defun-of-a-unary-open-coded-operator-wins
+  "The guard is per call site and per operator, so it has to hold for the
+one-argument fast paths too, not just the arithmetic ones it was first
+written for."
+  (let ((result (%compiled-value
+                 "(progn (defun use (l) (car l))
+                         (setq before (use '(1 2)))
+                         (defun car (l) 'redefined)
+                         (list before (use '(1 2))))")))
+    (is (equal 2 (length result)) "unexpected shape: ~S" result)
+    (is (eql 1 (first result)))
+    (is (string= "REDEFINED" (autolisp-symbol-name (second result)))
+        "compiled code ignored a redefinition of car (got ~S)" result)))
+
+(test the-total-predicates-have-no-guard-and-still-track-a-redefinition
+  "NULL cannot signal, so its fast path has no type test at all -- it is
+the whole function. That makes the TAG check the only thing standing
+between it and a user's redefinition, so this is the test that the tag
+check alone is enough."
+  (let ((result (%compiled-value
+                 "(progn (defun use (x) (null x))
+                         (setq before (use nil))
+                         (defun null (x) 'mine)
+                         (list before (use nil)))")))
+    (is (string= "T" (autolisp-symbol-name (first result))))
+    (is (string= "MINE" (autolisp-symbol-name (second result)))
+        "compiled code ignored a redefinition of null (got ~S)" result)))
