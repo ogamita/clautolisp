@@ -3524,18 +3524,57 @@ COMMAND-S special forms and the VL-CMDF builtin."
         do (autolisp-eval-progn (rest arguments) context))
   nil)
 
+;;; The pieces of REPEAT and FOREACH that DECIDE something, factored out
+;;; so the compiler can emit the loop without restating any of it.
+;;;
+;;; The transpiler open-codes both loops -- until 2.0.21 a FOREACH inside
+;;; a compiled function meant the whole loop, body included, ran
+;;; interpreted -- and the rule it must not break is the one that governs
+;;; this whole compiler: no second implementation of anything that can
+;;; disagree. So what compiled code supplies is the SHAPE (the loop, and
+;;; the body as compiled code); every check, every error and the binding
+;;; rule come from here, which is what the interpreter calls too.
+
+(defun check-repeat-count (count)
+  "Signal unless COUNT is a valid REPEAT count; return the number of
+iterations. The count check and its diagnostic in one place, for the
+interpreter and for compiled code."
+  (unless (typep count '(signed-byte 32))
+    (signal-autolisp-runtime-error
+     :invalid-repeat-count
+     "REPEAT count must evaluate to an integer, got ~S."
+     count))
+  (max 0 count))
+
+(defun check-foreach-sequence (sequence)
+  "Signal unless SEQUENCE is a list FOREACH can walk; return it."
+  (unless (listp sequence)
+    (signal-autolisp-runtime-error
+     :invalid-foreach-sequence
+     "FOREACH list argument must evaluate to a proper list, got ~S."
+     sequence))
+  sequence)
+
+(defun bind-foreach-variable (name element context)
+  "Give NAME the value ELEMENT for one FOREACH iteration.
+
+Note what this does and does not do: it ASSIGNS when a dynamic binding
+for NAME already exists ANYWHERE in the chain, and only binds afresh
+otherwise. So a FOREACH over a name an enclosing function already binds
+writes THAT binding, and the value survives the loop. That is the
+engine's behaviour, quirk and all, and it is why compiled code calls this
+rather than binding the variable itself."
+  (if (find-dynamic-binding name (evaluation-context-dynamic-frame context))
+      (set-variable name element context)
+      (bind-dynamic-variable name element context)))
+
 (defun eval-repeat-form (arguments context)
   (unless (>= (length arguments) 1)
     (signal-autolisp-runtime-error
      :wrong-number-of-arguments
      "REPEAT expects at least one argument."))
-  (let ((count (autolisp-eval (first arguments) context)))
-    (unless (typep count '(signed-byte 32))
-      (signal-autolisp-runtime-error
-       :invalid-repeat-count
-       "REPEAT count must evaluate to an integer, got ~S."
-       count))
-    (loop repeat (max 0 count)
+  (let ((count (check-repeat-count (autolisp-eval (first arguments) context))))
+    (loop repeat count
           do (autolisp-eval-progn (rest arguments) context))
     nil))
 
@@ -3553,19 +3592,13 @@ COMMAND-S special forms and the VL-CMDF builtin."
        :invalid-foreach-binding
        "FOREACH binding name must be an AutoLISP symbol, got ~S."
        name))
-    (let ((sequence (autolisp-eval (second arguments) context)))
-      (unless (listp sequence)
-        (signal-autolisp-runtime-error
-         :invalid-foreach-sequence
-         "FOREACH list argument must evaluate to a proper list, got ~S."
-         sequence))
+    (let ((sequence (check-foreach-sequence
+                     (autolisp-eval (second arguments) context))))
       (unwind-protect
            (progn
              (push-dynamic-frame context)
              (dolist (element sequence result)
-               (if (find-dynamic-binding name (evaluation-context-dynamic-frame context))
-                   (set-variable name element context)
-                   (bind-dynamic-variable name element context))
+               (bind-foreach-variable name element context)
                (setf result (if body
                                 (autolisp-eval-progn body context)
                                 nil))))

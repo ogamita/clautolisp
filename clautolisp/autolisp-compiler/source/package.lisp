@@ -26,6 +26,11 @@
                 #:current-evaluation-context
                 #:intern-autolisp-symbol
                 #:autolisp-true-symbol
+                #:push-dynamic-frame
+                #:pop-dynamic-frame
+                #:check-repeat-count
+                #:check-foreach-sequence
+                #:bind-foreach-variable
                 #:known-special-operator-p
                 #:lookup-variable
                 #:resolve-autolisp-function-designator

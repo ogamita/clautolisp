@@ -1452,7 +1452,75 @@ of those caught a mistake in its own first draft -- the pool is a list OF
 FRAMES, the conses being the recycled links, and the test read it as a
 list of conses.
 
-STILL OPEN after slice 19
+Slice 20 (2.0.21) -- FOREACH and REPEAT stop falling back
+---------------------------------------------------------
+
+FIRST, A MEASUREMENT THAT KILLED A BACKLOG ITEM. Re-profiling the plain
+compiled path shows WRAP-BUILTIN-FUNCTION gone from the top entirely:
+open-coding removed the builtin calls it wrapped. So the CALL PROTOCOL
+item -- the argument-list convention for the subr function slot, held
+back because MAKE-AUTOLISP-SUBR is exported and a contract change --
+is now MOOT for the workloads that motivated it. Removed from the
+backlog rather than left to look actionable.
+
+What the profile shows instead is the usubr call machinery
+(BIND-USUBR-FRAME 34% cumulative) and function resolution (24%), both of
+which are blocked or risky. So the useful work is no longer
+micro-optimisation but COVERAGE.
+
+THE HOLE. The transpiler handled QUOTE PROGN IF SETQ AND OR WHILE COND
+and calls; everything else fell back. A fallback hands the interpreter
+THE WHOLE SUBFORM -- body included -- so a compiled function containing a
+FOREACH ran that entire loop interpreted. FOREACH and REPEAT are the two
+commonest loops in AutoLISP, which made this by far the largest hole left
+in what "compiled" meant.
+
+How large is worth stating exactly, because a percentage would hide it:
+
+                        2.0.20      2.0.21
+    interpreted         1212 ms     1236 ms   <- control
+    compiled            1208 ms      220 ms   5.5x
+
+In 2.0.20 compiling that function bought NOTHING -- 1208 against 1212 --
+because the loop was the workload and the loop was interpreted either
+way. That row is the finding; the 5.5x is its consequence.
+
+WHAT IS EMITTED IS THE SHAPE ONLY. Every decision -- the REPEAT count
+check and its diagnostic, the FOREACH sequence check, and FOREACH's rule
+for giving its variable a value -- was factored out of the interpreter
+into CHECK-REPEAT-COUNT, CHECK-FOREACH-SEQUENCE and
+BIND-FOREACH-VARIABLE, which BOTH now call. The alternative was restating
+them in the transpiler, and a second statement of a rule is a second
+thing that can be wrong. That rule matters here more than usual: FOREACH
+ASSIGNS when the name is already bound anywhere in the chain, so a
+FOREACH over a name an enclosing function binds writes THAT binding and
+the value survives the loop. Quirk and all -- and it is in the corpus.
+
+A BUG FOUND ON THE WAY, and it was already there. An empty loop body ---
+`(while (setq i (cdr i)))', which is how AutoLISP drains a list --
+compiled to (LOOP WHILE X DO NIL). LOOP's DO needs a compound form, so
+SBCL built a function that signalled a COMMON LISP error when CALLED. It
+worked interpreted. Nothing caught it because no corpus entry had an
+empty loop body. issues/closed/compiled-loop-with-empty-body.issue.
+
+pjb's fix, and better than the first one written: make TRANSPILE-BODY
+return `(PROGN)' rather than NIL for an empty body. (PROGN) evaluates to
+NIL so no value changes, but a transpiled body is now ALWAYS A COMPOUND
+FORM and can go anywhere a form can. The first attempt wrapped the body
+at each site that uses it as a statement, which works and leaves a rule
+every future loop has to remember. His puts the invariant at the one
+definition instead of in the head of whoever writes the next loop.
+
+AND A MEASUREMENT THAT WAS MEASURING NOTHING. The first three loop
+benchmarks reported 48 ms against 44 ms -- an unremarkable 8% -- and all
+three were STILL RUNNING FIB: the benchmark had been derived from another
+by string substitution, the anchor never matched, and the file kept its
+old workload. The tell was that ten times the iterations produced
+identical numbers. The rule that caught it is worth keeping: a benchmark
+that does not respond to its own workload is not measuring it, and a
+sanity line printing the program's own result costs nothing.
+
+STILL OPEN after slice 20
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -1463,14 +1531,13 @@ STILL OPEN after slice 19
     POLL-POINT calls, the enter/exit bookkeeping and the UNWIND-PROTECT --
     none of which is removable without giving up something the debugger
     does.
-  - the CALL PROTOCOL. Still on top for the calls that remain, and now
-    measured piece by piece (slice 13): of ~43 ns a call, the outer
-    HANDLER-CASE is ~25%, the call-stack cons ~31%, the second &rest list
-    ~9%. The cheapest real win is the argument-list convention for the
-    subr function slot, which removes one list cons and one APPLY -- but
-    MAKE-AUTOLISP-SUBR is exported and its ordinary-function convention
-    is used by the CAD layer and by eight test sites, so it is a contract
-    change, not a local one. Worth doing deliberately, not in passing.
+  - MORE TRANSPILER COVERAGE, which slice 20 makes the live thread. Still
+    falling back: SET, LET, LAMBDA, FUNCTION, DEFUN, DEFUN-Q, TRACE,
+    UNTRACE, COMMAND, COMMAND-S, VLAX-FOR. LAMBDA and FUNCTION are the
+    ones worth having next -- they appear inside bodies in
+    higher-order code, where a fallback again takes the whole form. The
+    COMMAND family is dominated by the host and not worth it; DEFUN
+    inside a body is rare.
   - open-coding has reached diminishing returns for the OPERATORS, but
     not for the shapes. What was deliberately NOT taken in slice 18:
     LENGTH, NTH, MEMBER and ASSOC each call REQUIRE-PROPER-LIST, which

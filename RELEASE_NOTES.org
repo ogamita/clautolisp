@@ -412,6 +412,19 @@ separate binary for tool integrators.
   stepping ride on) is kept while ~DEBUG~ >= ~SPACE~ and is compiled from
   ~SPEED~ 2. ~SPEED~ 3 compiles at definition rather than once a function
   is hot. Default ~((DEBUG 3) (SPACE 0) (SPEED 2))~.
+- *~foreach~ and ~repeat~ loops are compiled now — 5.5x on loop-heavy
+  code.* Until this release a compiled function containing either ran the
+  whole loop, body included, through the interpreter, so a function whose
+  work IS a ~foreach~ got nothing at all from being compiled. Everything
+  the loops decide is unchanged, because compiled code calls the same
+  runtime routines the interpreter does: ~repeat~ still yields nil rather
+  than its body's value, a ~foreach~ over a name already bound still
+  assigns to that binding, and both still report the same errors.
+- *Fixed: a ~while~ with no body crashed once its function was compiled.*
+  ~(while (setq i (cdr i)))~ — draining a list for its side effect — ran
+  correctly interpreted and raised a Common Lisp error the moment the
+  function got hot enough to compile.
+
 - *Debugging is leaner again: 12% less allocated, and a little faster.*
   A debugged call no longer allocates a shadow-stack frame — spent frames
   are reused — and the mechanism by which the debugger's ~return~ supplies

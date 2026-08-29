@@ -90,6 +90,9 @@
    #:autolisp-subr-function
    #:autolisp-open-code-tag
    #:autolisp-true-symbol
+   #:check-repeat-count
+   #:check-foreach-sequence
+   #:bind-foreach-variable
    #:autolisp-usubr
    #:make-autolisp-usubr
    #:autolisp-usubr-name
