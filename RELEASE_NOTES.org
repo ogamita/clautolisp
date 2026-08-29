@@ -412,6 +412,18 @@ separate binary for tool integrators.
   stepping ride on) is kept while ~DEBUG~ >= ~SPACE~ and is compiled from
   ~SPEED~ 2. ~SPEED~ 3 compiles at definition rather than once a function
   is hot. Default ~((DEBUG 3) (SPACE 0) (SPEED 2))~.
+- *Arithmetic and comparison in compiled code are 1.4-1.5x faster.* The
+  compiler now emits an inline fast path for ~+~, ~-~, ~*~, ~<~, ~>~,
+  ~<=~ and ~>=~ when they are called with two arguments, instead of a
+  full call for each. It is a fast path and not a second implementation:
+  it covers two in-range integers, and everything else — floats, strings,
+  nil, out-of-range results, other arities — goes to the same builtin, so
+  every value, error and message is unchanged. If the operator no longer
+  means the builtin, the inline path does not run: redefining ~+~ with
+  ~defun~, assigning it with ~setq~, or shadowing it with a ~/~-local all
+  reach your definition from compiled code, as they always did.
+  Interpreted code is unaffected.
+
 - *Calls and global reads no longer cost more the deeper the stack is.*
   Resolving a name walked the whole dynamic-frame chain before falling
   back to the namespace, so every call was O(call-stack depth) and a

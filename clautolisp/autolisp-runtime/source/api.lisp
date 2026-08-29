@@ -1009,7 +1009,7 @@ changed from hash tables to alists to avoid."
     (when frame
       ;; The other of the two places DYNAMIC-BINDING-COUNT moves. Popping
       ;; is the ONLY way a frame stops being live -- nothing else writes
-      ;; the context'"'"'s frame slot, and every PUSH-DYNAMIC-FRAME is paired
+      ;; the context's frame slot, and every PUSH-DYNAMIC-FRAME is paired
       ;; with a POP under UNWIND-PROTECT -- so this is where the bindings
       ;; it held stop counting.
       (%release-frame-binding-counts frame)
@@ -1046,7 +1046,7 @@ promotes itself and behaves as before.")
 already had for it — a frame holds at most one binding per symbol, which
 is what makes DYNAMIC-FRAME-SYMBOLS a set.
 
-One of the two places a symbol'"'"'s DYNAMIC-BINDING-COUNT moves. A NEW entry
+One of the two places a symbol's DYNAMIC-BINDING-COUNT moves. A NEW entry
 increments it; REPLACING the binding of a symbol this frame already binds
 does not, because the frame still binds that symbol exactly once. Getting
 that distinction wrong in the generous direction only costs the walk this
@@ -1451,6 +1451,24 @@ binding. A no-op when SYMBOL has no namespace cell yet."
 
 (defun autolisp-subr-function (object)
   (clautolisp.autolisp-runtime.internal::autolisp-subr-function object))
+
+(defun autolisp-open-code-tag (object)
+  "The open-coding tag of OBJECT, or NIL when OBJECT is not a tagged
+builtin subr.
+
+The one question a compiled call site asks before taking an inline fast
+path: `is the thing this name resolves to RIGHT NOW still the exact
+builtin whose semantics I open-coded?'. Everything that is not that --
+a user DEFUN, a SETQ of a lambda, a `/'-local shadow, a host override, a
+usubr, a lambda form, NIL -- answers NIL here and gets an ordinary call.
+
+Written as a function taking ANY object, rather than a slot reader, so
+the call site never has to know what it is holding before it asks."
+  (and (typep object 'autolisp-subr)
+       (clautolisp.autolisp-runtime.internal::autolisp-subr-open-code object)))
+
+(defun (setf autolisp-open-code-tag) (tag object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-subr-open-code object) tag))
 
 (defun autolisp-usubr-name (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-name object))

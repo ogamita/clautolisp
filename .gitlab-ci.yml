@@ -318,6 +318,11 @@ test:clautolisp:compiler:sbcl:
     # in directly, as a test of the compiler must: does the program that
     # SHIPS have a compiler in it? Until 2.0.12 it did not.
     - make -C clautolisp test-shipped-compiler
+    # A docstring closed early by an unescaped quote is read as FORMS into
+    # the function body. It has happened twice; whether the test suite
+    # notices depends on what the prose happens to say, so the structural
+    # check is the detector, not the suites.
+    - make -C clautolisp check-docstrings
 
 test:clautolisp:compiler:ccl:
   rules:

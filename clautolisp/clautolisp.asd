@@ -541,6 +541,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-compiler/tests/test-harness")
    (:file "autolisp-compiler/tests/equivalence-tests")
    (:file "autolisp-compiler/tests/function-body-tests")
+   (:file "autolisp-compiler/tests/open-coded-tests")
    (:file "autolisp-compiler/tests/instrumented-tests")
    (:file "autolisp-compiler/tests/run"))
   :perform (asdf:test-op (op system)

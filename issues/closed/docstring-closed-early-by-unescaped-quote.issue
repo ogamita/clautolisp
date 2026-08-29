@@ -1,0 +1,78 @@
+# docstring-closed-early-by-unescaped-quote — the same defect, twice, and now a check
+
+STATUS: DONE in 2.0.14. The 2.0.13 instance was found while editing the
+same file; the check was written the same day.
+
+## Symptom
+
+An unescaped double quote inside a docstring closes it early. What
+follows is no longer prose — it is READ AS FORMS, and they land in the
+function's body.
+
+It has now happened twice, and only one of the two was caught by running
+the tests:
+
+  2.0.9   CALL-IN-FILE-COMPILATION-UNIT's docstring contained
+          "SPEED 3 compiles the whole file at once". The quotes ended the
+          docstring, leaving SPEED 3 compiles the whole file at once as
+          bare symbols in the body. SBCL DELETES the dead variable read;
+          CCL evaluates it and signals `Unbound variable: SPEED'. Every
+          LOAD failed on CCL and nothing failed on SBCL, so it shipped
+          and sat there for two releases.
+
+  2.0.13  (SETF FRAME-BINDING)'s docstring was broken by a shell-quoting
+          idiom ('"'"') that leaked into the source through the editing
+          script. The truncated remainder read as a QUOTED STRING — one
+          dead constant at the head of the body. A dead constant upsets
+          neither host: all 31 suites passed on SBCL and on CCL, both
+          compiler gates passed, and it shipped.
+
+## Why the tests are not a detector for this
+
+Whether a broken docstring is caught depends on what the prose happens to
+say. Prose that reads as bare symbols breaks CCL and not SBCL; prose that
+reads as a string or a number breaks neither. The 2.0.13 instance was one
+character away from being the 2.0.9 instance.
+
+So the tests will keep catching some of these and missing others, and
+which ones is decided by the sentence. That is not a test, that is a
+coincidence.
+
+## What IS reliable
+
+The symptom is STRUCTURAL, not textual. Whatever the prose says, the
+result is dead forms in a definition's body, before its last form. Real
+code does not do that — a body form that is a constant, a quoted object
+or a bare variable read, in non-final position, cannot have an effect and
+cannot be the body's value. A broken docstring always produces one.
+
+## The check
+
+`make check-docstrings` (tools/check-docstrings.lisp) reads every .lisp
+file in the tree and reports any DEFUN / DEFMACRO / DEFMETHOD /
+DEFINE-COMPILER-MACRO whose body holds such a form before its last.
+
+Two details it needs in order to be trustworthy rather than merely
+reassuring:
+
+  - It READS every file, including those whose packages this image does
+    not have (CFFI, charms, a fiveam without SKIP). A file it cannot read
+    is a file it cannot check, and skipping quietly would make it blind
+    exactly where nobody is looking. Missing packages are conjured empty
+    from the text, a `PKG:SYM' that is not external takes SBCL's CONTINUE
+    restart, and `#.' reads as a placeholder so *READ-EVAL* can stay NIL.
+    279 files, none skipped.
+
+  - It was verified RED before being believed: reintroducing the exact
+    2.0.13 defect makes it report
+    `api.lisp: (SETF FRAME-BINDING): dead form in body: ...' and exit 1.
+
+Wired into both CI lanes.
+
+## The other half: how the quote got in
+
+Both instances came from EDITING, not from typing: a shell-quoting idiom
+inside a script that writes Lisp. The check catches the result whatever
+the cause, which is the right place to defend — but the cheaper habit is
+to use `like this' rather than "like this" inside a docstring, which is
+what the surrounding code already does.

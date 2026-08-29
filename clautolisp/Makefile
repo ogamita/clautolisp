@@ -144,6 +144,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
 
 .PHONY: all test test-sbcl test-ccl test-compiler-equivalence \
         test-debug-compiled test-shipped-compiler test-shipped-compiler-ccl \
+        check-docstrings \
         build build-sbcl build-ccl probe-check \
         submodules build-libredwg test-libredwg-compiler-path \
         build-read-autolisp-sbcl build-read-autolisp-ccl \
@@ -251,6 +252,11 @@ test-debug-compiled:  ## Run the whole test corpus with every INSTRUMENTED body 
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
 	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--load autolisp-compiler/tests/debug-suite-compiled.lisp
+
+check-docstrings:  ## Fail if any definition body holds dead forms — the signature of a docstring closed early by an unescaped quote (2.0.9 broke CCL, 2.0.13 shipped).
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
+		--load tools/check-docstrings.lisp
 
 test-shipped-compiler: build-clautolisp-sbcl  ## Assert the BUILT executable has a compiler in it: .lap round-trip + -O. Nothing else in the corpus runs the program that ships.
 	tools/clautolisp/tests/shipped-compiler-test.sh

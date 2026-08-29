@@ -210,8 +210,57 @@ disrupting the value-returning shape of the call site."
   (set-autolisp-errno code)
   value)
 
+;;; --- open-coding: which builtins the compiler may inline ------------
+;;;
+;;; The compiler is allowed to emit an inline fast path for a handful of
+;;; operators, because calling them through the full protocol costs far
+;;; more than the operation itself: an argument list, a call-stack entry,
+;;; two HANDLER-CASEs and two APPLYs to add two integers.
+;;;
+;;; What makes that safe is that the inline code is a FAST PATH, not a
+;;; second implementation. It handles one narrow, exactly-stated case and
+;;; hands EVERY other case -- other types, out-of-range results, wrong
+;;; argument counts, and so every error and every message -- to the very
+;;; builtin named here. There is one implementation of `+'; there is also
+;;; a shortcut for adding two small integers.
+;;;
+;;; And the tag identifies the IMPLEMENTATION, not the name. `+' can be
+;;; redefined with DEFUN, assigned with SETQ, or shadowed by a `/'-local
+;;; -- all three work, all three were checked -- and in each case the call
+;;; site resolves a different, untagged object and calls it normally.
+;;;
+;;; The table holds SYMBOLS and the tagger compares against the current
+;;; FDEFINITION, so a build that puts some other function behind the name
+;;; simply gets no tag: a missing tag costs a call, a wrong tag would cost
+;;; correctness.
+
+(defparameter *open-coded-core-builtins*
+  '(("+"  :add          builtin-+)
+    ("-"  :subtract     builtin--)
+    ("*"  :multiply     builtin-*)
+    ("<"  :less         builtin-<)
+    (">"  :greater      builtin->)
+    ("<=" :not-greater  builtin-<=)
+    (">=" :not-less     builtin->=))
+  "(NAME TAG IMPLEMENTATION) for the builtins the compiler may open-code.
+The compiler's side of this table is *OPEN-CODED-OPERATORS* in the
+transpiler; the two are joined by the TAG, so neither can open-code
+something the other did not agree to.")
+
+(defun %open-code-tag-for (name function)
+  "The open-coding tag for the core builtin NAME, but only when FUNCTION
+really is the implementation this file names for it. NIL otherwise."
+  (let ((entry (assoc name *open-coded-core-builtins* :test #'string=)))
+    (and entry
+         (fboundp (third entry))
+         (eq function (fdefinition (third entry)))
+         (second entry))))
+
 (defun make-core-builtin-subr (name function)
-  (make-autolisp-subr name (wrap-builtin-function name function)))
+  (let ((subr (make-autolisp-subr name (wrap-builtin-function name function))))
+    (setf (clautolisp.autolisp-runtime:autolisp-open-code-tag subr)
+          (%open-code-tag-for name function))
+    subr))
 
 (defun builtin-boundp (object)
   (unless (typep object 'autolisp-symbol)
