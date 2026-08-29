@@ -20,7 +20,10 @@
    (frame :initform nil :accessor ncurses-ui-frame)                  ; the vdt-frame
    (saved-active :initform nil :accessor ncurses-ui-saved-active)    ; window, for C-w o
    (minibuffer :initform "" :accessor ncurses-ui-minibuffer)         ; last-row I/O
-   (inspector-cursor :initform 0 :accessor ncurses-ui-inspector-cursor)))
+   (inspector-cursor :initform 0 :accessor ncurses-ui-inspector-cursor)
+   ;; The repl pane's live Lisp instance (windows-and-interactor-templates.issue):
+   ;; a real *AUTOLISP* activation over the shared evaluator, made on first use.
+   (repl-activation :initform nil :accessor ncurses-ui-repl-activation)))
 
 (defun make-ncurses-ui (&rest initargs)
   (apply #'make-instance 'ncurses-ui initargs))
@@ -749,7 +752,7 @@ DIRECTIVE)."
         (:aldo           (aldo-key ui session hit key))
         (:navi           (navi-key ui session hit key))
         (:framenav       (framenav-key ui session key))
-        (:repl           (values nil nil)))))
+        (:repl           (repl-key ui key)))))
 
 (defun activation-key (activation ui session hit key)
   "Dispatch KEY to a window's real interactor ACTIVATION (per-window interactor
@@ -1104,6 +1107,53 @@ what a window can run, windows-and-interactor-templates.issue)."
     (open-selector-in-source ui "Interactor templates" items
                              (lambda (name) (set-message ui "template: ~A" name))))
   nil)
+
+;;;; --- the repl pane: a live Lisp instance over the shared evaluator ------
+;;;; (windows-and-interactor-templates.issue). The :repl window (a no-op stub
+;;;; before) drives a real *AUTOLISP* activation — the relocated REPL interactor
+;;;; / "lisp" template — over the shared evaluation context: `e' prompts a form
+;;;; and evaluates it in the running image, echoing the result into the repl
+;;;; buffer. Made on first use (it needs the running context).
+
+(defun ensure-repl-activation (ui)
+  "The repl pane's Lisp activation, made on first use from the \"lisp\" template
+over the shared evaluation context; NIL if the template is unavailable."
+  (or (ncurses-ui-repl-activation ui)
+      (setf (ncurses-ui-repl-activation ui)
+            (ignore-errors
+             (clautolisp.interactor:instantiate-interactor-template
+              "lisp" (clautolisp.interactor:make-template-context))))))
+
+(defun repl-window-eval (ui line)
+  "Evaluate LINE in the repl pane's Lisp instance (over the shared evaluator),
+echoing the prompt+form and the captured output into the repl buffer. Returns
+(values T NIL)."
+  (let ((activation (ensure-repl-activation ui)))
+    (if (null activation)
+        (set-message ui "repl: no Lisp evaluator available")
+        (let ((out (make-string-output-stream)))
+          (let ((clautolisp.interactor:*command-activation* activation)
+                (*standard-output* out) (*error-output* out))
+            (handler-case
+                (funcall (clautolisp.interactor:interactor-evaluator
+                          (clautolisp.interactor:activation-interactor activation))
+                         (list :source line))
+              (error (e) (format out "~A" e))))
+          (push-repl ui "_$ ~A" line)
+          (dolist (l (%split-lines (get-output-stream-string out)))
+            (when (plusp (length l)) (push-repl ui "~A" l))))))
+  (values t nil))
+
+(defun repl-key (ui key)
+  "Drive the repl pane: `e' prompts for a form and evaluates it in the shared
+Lisp image. Other keys fall through (values NIL NIL)."
+  (cond
+    ((and (characterp key) (char= key #\e))
+     (let ((line (read-minibuffer ui "eval: ")))
+       (when (and line (plusp (length (string-trim " " line))))
+         (repl-window-eval ui line)))
+     (values t nil))
+    (t (values nil nil))))
 
 (defun handle-window-command (ui)
   "Read the key after a C-w / C-x prefix and run the built-in window command."

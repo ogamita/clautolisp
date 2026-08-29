@@ -855,7 +855,10 @@ identity / TEMPPREFIX stamping, option value parsers)."
                ;; sedit runs live in a window: instantiate + drive its interactor
                ;; template (windows-and-interactor-templates.issue).
                "clautolisp/autolisp-interactor"
-               "clautolisp/autolisp-sedit")
+               "clautolisp/autolisp-sedit"
+               ;; the repl pane runs a live *AUTOLISP* instance over the shared
+               ;; evaluator (the relocated REPL interactor + "lisp" template).
+               "clautolisp/autolisp-repl")
   :serial t
   :components
   ((:file "autolisp-debug-ui-ncurses/source/package")

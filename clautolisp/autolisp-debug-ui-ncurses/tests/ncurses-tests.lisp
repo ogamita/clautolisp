@@ -801,3 +801,17 @@
       (clautolisp.ui.ncurses::selector-key act ui #\q)
       (is (eq :untouched chosen))                    ; on-select not called
       (is (null (clautolisp.ui.ncurses::window-selector-activation source))))))
+
+;;;; --- the repl pane runs a live Lisp instance (windows-and-interactor-templates) ---
+
+(test repl-pane-evaluates-in-the-shared-lisp-image
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen)))
+    (clautolisp.ui.ncurses::repl-window-eval ui "42")
+    ;; the repl buffer echoes the form and its printed value
+    (is (not (null (some (lambda (l) (search "42" l))
+                         (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui)))))
+    ;; the pane now owns a real *AUTOLISP* activation over the shared evaluator
+    (is (eq clautolisp.repl:*autolisp*
+            (clautolisp.interactor:activation-interactor
+             (clautolisp.ui.ncurses::ncurses-ui-repl-activation ui))))))
