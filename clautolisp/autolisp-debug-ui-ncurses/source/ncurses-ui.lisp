@@ -251,15 +251,17 @@ running sedit live, windows-and-interactor-templates.issue)."
   "Return (values BUFFER FOLLOW-ROW) for WINDOW — a list of (STRING . ATTR)
 lines and an optional 0-based row to keep in view. A window running a SEDIT
 activation renders its selection; otherwise dispatch on the pane role."
-  (let ((sedit (window-sedit-activation window)))
-    (if sedit
-        (values (sedit-window-buffer sedit) nil)
-        (ecase (window-role window)
-          (:stack      (values (stack-buffer ui session) nil))
-          (:source     (source-buffer ui session))
-          (:interactor (values (interactor-buffer ui) nil))
-          (:repl       (let ((buffer (repl-buffer ui)))
-                         (values buffer (and buffer (1- (length buffer)))))))))) ; tail-follow
+  (let ((sedit (window-sedit-activation window))
+        (selector (window-selector-activation window)))
+    (cond
+      (sedit    (values (sedit-window-buffer sedit) nil))
+      (selector (values (selector-window-buffer selector) nil))
+      (t (ecase (window-role window)
+           (:stack      (values (stack-buffer ui session) nil))
+           (:source     (source-buffer ui session))
+           (:interactor (values (interactor-buffer ui) nil))
+           (:repl       (let ((buffer (repl-buffer ui)))
+                          (values buffer (and buffer (1- (length buffer))))))))))) ; tail-follow
 
 (defun render-window (ui session window rect)
   (setf (window-rect window) rect)
@@ -752,11 +754,12 @@ DIRECTIVE)."
 (defun activation-key (activation ui session hit key)
   "Dispatch KEY to a window's real interactor ACTIVATION (per-window interactor
 stacks, windows-and-interactor-templates.issue). Sedit activations map keys to
-sedit commands; other interactors do not yet handle keystrokes here."
+sedit commands; a SELECT activation moves/chooses; other interactors do not yet
+handle keystrokes here."
   (declare (ignore session hit))
-  (if (window-entry-sedit-p activation)
-      (sedit-window-key activation ui key)
-      (values nil nil)))
+  (cond ((window-entry-sedit-p activation) (sedit-window-key activation ui key))
+        ((window-entry-selector-p activation) (selector-key activation ui key))
+        (t (values nil nil))))
 
 (defun window-manager-key (ui session hit key)
   "The umbrella interactor on the active window: the C-w/C-x window-command
@@ -992,6 +995,116 @@ navigator."
   (set-message ui "sedit closed")
   nil)
 
+;;;; --- the list-selector interactor (windows-and-interactor-templates.issue:
+;;;; "a new class of interactor, to show and select an item in a list, eg. show
+;;;; the list of windows"). A window carries a SELECT activation exactly like
+;;;; sedit: it renders a titled list with the current item marked and is driven
+;;;; by up/down (n/p) + Enter (select) / q (cancel).
+
+(clautolisp.interactor:define-interactor *list-selector*
+  :name "SELECT"
+  :documentation "A list selector: pick one item from a list (windows,
+interactor templates, …). Carried in a window and driven by the ncurses key
+loop (windows-and-interactor-templates.issue).")
+
+(defstruct selector-state
+  "A SELECT activation's state: the TITLE, ITEMS (a list of (LABEL . VALUE)),
+the current INDEX, and ON-SELECT — (function (value)) run on Enter."
+  (title "Select") (items '()) (index 0) (on-select nil))
+
+(defun make-list-selector-activation (title items on-select)
+  "A SELECT activation over ITEMS (a list of (LABEL . VALUE)); ON-SELECT is
+called with the chosen VALUE on Enter. The instance is named after TITLE."
+  (clautolisp.interactor:make-activation
+   *list-selector*
+   (make-selector-state :title title :items items :index 0 :on-select on-select)
+   title))
+
+(defun window-entry-selector-p (entry)
+  (and (clautolisp.interactor:activation-p entry)
+       (eq (clautolisp.interactor:activation-interactor entry) *list-selector*)))
+
+(defun window-selector-activation (window)
+  (find-if #'window-entry-selector-p (window-stack window)))
+
+(defun selector-window-buffer (activation)
+  "Buffer lines rendering the selector: the TITLE, then each item, the current
+one marked with `> ' in the current-line face."
+  (let ((st (clautolisp.interactor:activation-state activation)))
+    (cons (cons (format nil "~A:" (selector-state-title st)) :active-status)
+          (loop for (label) in (selector-state-items st)
+                for i from 0
+                collect (cons (format nil "~:[  ~;> ~]~A" (= i (selector-state-index st)) label)
+                              (if (= i (selector-state-index st)) :current-line :normal))))))
+
+(defun open-selector-in-source (ui title items on-select)
+  "Open a SELECT activation over ITEMS in the source pane (the sedit swap
+mechanism), selecting that window so its keys drive the selector."
+  (let ((activation (make-list-selector-activation title items on-select))
+        (window (ui-window ui :source)))
+    (when window
+      (setf (window-stack window)
+            (append (remove-if (lambda (e) (or (eq e :navi)
+                                               (window-entry-sedit-p e)
+                                               (window-entry-selector-p e)))
+                               (window-stack window))
+                    (list activation)))
+      (activate-window ui window)
+      (set-message ui "select: up/down (n/p) move | RET choose | q cancel")))
+  nil)
+
+(defun close-selector-in-source (ui)
+  "Drop the selector activation from the source pane and restore the navigator."
+  (let ((window (ui-window ui :source)))
+    (when window
+      (let ((rest (remove-if #'window-entry-selector-p (window-stack window))))
+        (setf (window-stack window)
+              (if (member :navi rest) rest (append rest (list :navi))))))))
+
+(defun selector-key (activation ui key)
+  "Drive a SELECT activation: up/p and down/n move the cursor; Enter runs
+ON-SELECT with the current value; q cancels. Returns (values HANDLED DIRECTIVE)."
+  (let* ((st (clautolisp.interactor:activation-state activation))
+         (n (length (selector-state-items st))))
+    (flet ((move (d) (when (plusp n)
+                       (setf (selector-state-index st)
+                             (mod (+ (selector-state-index st) d) n)))))
+      (cond
+        ((or (eq key :up) (key-char-p key #\p)) (move -1) (values t nil))
+        ((or (eq key :down) (key-char-p key #\n)) (move +1) (values t nil))
+        ((eq key :enter)
+         (let ((on (selector-state-on-select st))
+               (value (cdr (nth (selector-state-index st) (selector-state-items st)))))
+           (close-selector-in-source ui)
+           (when on (funcall on value)))
+         (values t nil))
+        ((and (characterp key) (char= key #\q))
+         (close-selector-in-source ui) (set-message ui "select cancelled") (values t nil))
+        (t (values nil nil))))))
+
+(defun list-windows-command (ui session hit arg)
+  "`M-x windows': choose a window from the frame's windows and make it active."
+  (declare (ignore session hit arg))
+  (let ((items (mapcar (lambda (w)
+                         (cons (format nil "~A (~A)" (window-name w)
+                                       (string-downcase
+                                        (symbol-name (or (window-role w) :window))))
+                               w))
+                       (remove :minibuffer (ui-windows ui) :key #'window-role))))
+    (open-selector-in-source ui "Windows" items
+                             (lambda (w) (activate-window ui w))))
+  nil)
+
+(defun list-interactors-command (ui session hit arg)
+  "`M-x interactors': show the available interactor templates (the picker for
+what a window can run, windows-and-interactor-templates.issue)."
+  (declare (ignore session hit arg))
+  (let ((items (mapcar (lambda (n) (cons n n))
+                       (clautolisp.interactor:interactor-template-names))))
+    (open-selector-in-source ui "Interactor templates" items
+                             (lambda (name) (set-message ui "template: ~A" name))))
+  nil)
+
 (defun handle-window-command (ui)
   "Read the key after a C-w / C-x prefix and run the built-in window command."
   (run-window-command ui (tui-read-key (ncurses-ui-screen ui))))
@@ -1072,7 +1185,11 @@ RET returns the string, Esc cancels (returns NIL), Backspace deletes."
    ;; sedit live in the source pane (windows-and-interactor-templates.issue):
    ;; `make-sedit-window' is the spec name; `sedit' the short alias.
    (cons "sedit"             #'open-sedit-in-source)
-   (cons "make-sedit-window" #'open-sedit-in-source))
+   (cons "make-sedit-window" #'open-sedit-in-source)
+   ;; the list-selector (windows-and-interactor-templates.issue): pick a window
+   ;; to activate, or browse the interactor templates available to a window.
+   (cons "windows"     #'list-windows-command)
+   (cons "interactors" #'list-interactors-command))
   "Named debugger / window commands reachable through M-x and `,'. Maps a
 command NAME to (lambda (ui session hit arg) -> resume-directive-or-nil). This
 registry is the seed of the user-binding API — see ncurses-key-bindings.issue.

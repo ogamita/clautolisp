@@ -756,3 +756,48 @@
          (before (clautolisp.sedit:sedit-activation-render act)))
     (clautolisp.interactor:run-command-line "d" :stack (list act))
     (is (not (string= before (clautolisp.sedit:sedit-activation-render act))))))
+
+;;;; --- the list-selector interactor (windows-and-interactor-templates) ---
+
+(test list-selector-runs-in-a-window-and-selects
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen))
+         (chosen nil))
+    (clautolisp.ui.ncurses::open-selector-in-source
+     ui "Pick" (list (cons "one" :one) (cons "two" :two))
+     (lambda (v) (setf chosen v)))
+    (let* ((source (clautolisp.ui.ncurses::ui-window ui :source))
+           (act (clautolisp.ui.ncurses::window-selector-activation source)))
+      (is (not (null act)))
+      ;; the pane renders the titled list
+      (let ((buffer (clautolisp.ui.ncurses::window-content ui nil source)))
+        (is (not (null (some (lambda (l) (search "one" (car l))) buffer)))))
+      ;; down then Enter chooses the second item and closes the selector
+      (clautolisp.ui.ncurses::selector-key act ui :down)
+      (clautolisp.ui.ncurses::selector-key act ui :enter)
+      (is (eq :two chosen))
+      (is (null (clautolisp.ui.ncurses::window-selector-activation source)))
+      (is (not (null (member :navi (clautolisp.ui.tui:window-stack source))))))))
+
+(test list-windows-command-opens-a-window-picker
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen)))
+    (clautolisp.ui.ncurses::list-windows-command ui nil nil "")
+    (let* ((source (clautolisp.ui.ncurses::ui-window ui :source))
+           (act (clautolisp.ui.ncurses::window-selector-activation source)))
+      (is (not (null act)))
+      ;; the list names the panes (e.g. the interactor pane)
+      (let ((buffer (clautolisp.ui.ncurses::window-content ui nil source)))
+        (is (not (null (some (lambda (l) (search "interactor" (car l))) buffer))))))))
+
+(test list-selector-q-cancels
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen))
+         (chosen :untouched))
+    (clautolisp.ui.ncurses::open-selector-in-source
+     ui "Pick" (list (cons "a" :a)) (lambda (v) (setf chosen v)))
+    (let* ((source (clautolisp.ui.ncurses::ui-window ui :source))
+           (act (clautolisp.ui.ncurses::window-selector-activation source)))
+      (clautolisp.ui.ncurses::selector-key act ui #\q)
+      (is (eq :untouched chosen))                    ; on-select not called
+      (is (null (clautolisp.ui.ncurses::window-selector-activation source))))))
