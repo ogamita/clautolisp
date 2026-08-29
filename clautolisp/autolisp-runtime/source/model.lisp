@@ -56,7 +56,36 @@ clautolisp-secureload-trust-model spec.")
   ;; with *SPECIAL-OPERATOR-GENERATION*, which every mutation of the
   ;; table bumps; a stale stamp is simply a miss. Stored as a single
   ;; CONS for the same torn-read reason as BINDING-CACHE.
-  (special-operator-cache nil :type list))
+  (special-operator-cache nil :type list)
+  ;; How many LIVE dynamic frames bind this symbol. Zero means no frame
+  ;; in any chain binds it, so the walk that LOOKUP-FUNCTION,
+  ;; FIND-DYNAMIC-BINDING and their callers perform can be SKIPPED
+  ;; outright rather than run to its end and fail.
+  ;;
+  ;; This is not a cache and not a heuristic: it is a count, maintained
+  ;; at the two -- and only two -- places a frame gains or loses a
+  ;; binding, (SETF FRAME-BINDING) and POP-DYNAMIC-FRAME. Zero is an
+  ;; exact statement, which is what makes skipping the walk equivalent
+  ;; rather than merely usually-right.
+  ;;
+  ;; WHY IT EXISTS. Resolving a name walked the WHOLE dynamic-frame
+  ;; chain, doing an EQ ASSOC in every frame, before falling back to the
+  ;; namespace. For a function name -- which is essentially never
+  ;; dynamically bound -- that walk failed in every frame, every call.
+  ;; So every call and every global read cost O(call-stack depth), and a
+  ;; program got slower the deeper it ran, for no reason it could see:
+  ;; the identical loop measured 3.7x slower forty frames down.
+  ;;
+  ;; DIRECTION OF ERROR. Over-counting costs speed and nothing else --
+  ;; the walk simply happens, exactly as it did before. Under-counting
+  ;; would be a correctness bug, so nothing here clamps: a count driven
+  ;; negative by some future mistake stays negative, fails the ZEROP
+  ;; test, and walks. The safe answer is the one you get by being wrong.
+  ;;
+  ;; The count is global to the symbol, so it assumes one thread mutates
+  ;; a given context'"'"'s frames at a time -- which is already true of the
+  ;; frame chain itself, and of everything else hanging off the context.
+  (dynamic-binding-count 0 :type fixnum))
 
 ;;; AutoLISP is a Lisp-1 dialect: a symbol carries a single binding
 ;;; cell that is shared by variable and function uses. SETQ and DEFUN

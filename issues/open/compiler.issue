@@ -941,7 +941,63 @@ mistake in miniature as the one it guards against.
 Wired into both CI lanes along with test-compiler-equivalence and
 test-debug-compiled, which had never been in CI either.
 
-STILL OPEN after slice 11
+Slice 12 (2.0.13) -- the measurement said something else
+--------------------------------------------------------
+
+This slice was going to open-code the hot operators. The standing plan
+had named that as where the margin against LispEx is, and it had been
+deliberately deferred so that no operator would have a second
+implementation able to disagree with the first.
+
+Profiling first said the margin is somewhere else entirely. On compiled
+fib 30:
+
+    FRAME-BINDING       18.7% self   31.7% total
+    LOOKUP-FUNCTION     17.6% self   52.1% total
+    %ASSOC-EQ           14.2% self
+    ...
+    BUILTIN--            2.4%
+    BUILTIN-+            1.1%
+
+Over half the time resolving names; about 4% doing arithmetic. Open-coding
++ and - perfectly would have bought a few percent and added the one class
+of defect the plan was written to avoid.
+
+The cause, confirmed by a direct experiment rather than inferred from the
+profile: LOOKUP-FUNCTION and FIND-DYNAMIC-BINDING walked the WHOLE
+dynamic-frame chain before the namespace, so resolving a name cost
+O(call-stack depth). The identical loop measured 2.7x slower forty frames
+down. Fixed with an exact per-symbol count of live dynamic bindings; a
+walk guaranteed to fail is skipped. Full account in
+issues/closed/name-resolution-is-linear-in-stack-depth.issue.
+
+    -O3 fib 27          619 -> 358 ms   1.73x
+    -O3 loop, depth 1   236 -> 238 ms   1.00x   <- the control
+    -O3 loop, depth 40  578 -> 232 ms   2.49x
+
+The depth-1 row is the one worth keeping: UNCHANGED, because at depth 1
+there was never anything to skip. That is what makes the other rows mean
+what they claim. And the loop is now depth-invariant, which is the
+property rather than any single number.
+
+WHAT THIS SAYS ABOUT THE BACKLOG. The open-coding item was written from a
+probe, not from a profile of this engine, and it was wrong about where
+the time was -- not because the probe was bad but because it measured a
+different thing. Re-profiled after the fix, the top is now the CALL
+PROTOCOL:
+
+    CALL-AUTOLISP-FUNCTION-IN-CONTEXT   20.7% self
+    WRAP-BUILTIN-FUNCTION &rest lambda   7.4% self / 25.1% total
+    LOOKUP-FUNCTION                      5.9% self
+    all the arithmetic together         ~10%
+
+So the next slice is the per-call cost -- the &rest argument list, the
+call-stack cons, the HANDLER-CASE established around every builtin call --
+and open-coding operators moves DOWN the list, to after that. Measure,
+then act on the measurement; the plan is an input to that, not a
+substitute for it.
+
+STILL OPEN after slice 12
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -949,10 +1005,19 @@ STILL OPEN after slice 11
   - poll points are now what makes debugging slow (see slice 7's
     measurement), not interpretation. That is where debugging speed is
     left.
-  - open-coding hot operators as inline CL, which the Tier-2 probe says
-    is where the margin against LispEx is; deliberately NOT done yet, so
-    that no operator has a second implementation that can disagree with
-    the first.
+  - the CALL PROTOCOL, which slice 12's profile puts on top at ~21% self:
+    CALL-AUTOLISP-FUNCTION-IN-CONTEXT conses an &rest list, conses a
+    call-stack entry, and establishes a HANDLER-CASE, per builtin call.
+    A compiled call site knows its arity and could avoid most of it.
+  - open-coding hot operators as inline CL. The Tier-2 probe named this
+    as where the margin against LispEx is; slice 12's profile of THIS
+    engine puts all the arithmetic together at about 10%, behind the call
+    protocol. Still worth doing, no longer first -- and still to be done
+    one operator at a time with the equivalence test as the guard, since
+    it means a second implementation of each operator's AutoLISP
+    semantics. (Reminder of how sharp that is: `+' signals
+    INTEGER-OVERFLOW outside the 32-bit range. A naive inline `+' loses
+    that silently.)
   - reading the qualities from the CONFIGURATION MODULE, so a project
     can set them once rather than on every invocation. The --optimize
     half is done (slice 11); this is the other half of the same item,

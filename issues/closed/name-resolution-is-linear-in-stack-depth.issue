@@ -1,0 +1,132 @@
+# name-resolution-is-linear-in-stack-depth — a program got slower the deeper it ran
+
+STATUS: DONE in 2.0.13. Found 2026-08-29 by profiling before opening the
+next compiler slice; fixed the same day.
+
+## Symptom
+
+Every function call and every global-variable read cost O(call-stack
+depth). The SAME loop, run forty frames down, took 2.7x longer than at
+the top level — measured end to end, so on work alone (startup removed)
+nearer 3.7x. Nothing in the program changed; only where it was called
+from.
+
+    ;; identical body, called at depth 1 and at depth 40
+    (defun work (n / i s)
+      (setq i 0 s 0)
+      (while (< i n) (setq s (+ i 1)) (setq i (1+ i)))
+      s)
+    (defun deep (k n) (if (< k 1) (work n) (deep (- k 1) n)))
+
+    clautolisp -O3 -l shallow.lsp    236 ms
+    clautolisp -O3 -l deep.lsp       578 ms
+
+This is the shape of bug that never shows up in a micro-benchmark,
+because a micro-benchmark runs at depth 1. It shows up in an
+application, which is nested — and it shows up as "clautolisp is slow",
+with nothing to point at.
+
+## Cause
+
+LOOKUP-FUNCTION and FIND-DYNAMIC-BINDING (which LOOKUP-VARIABLE,
+SET-VARIABLE and LOOKUP-DOCUMENTATION all go through) walked the WHOLE
+dynamic-frame chain, doing an EQ ASSOC in each frame, before falling
+back to the namespace.
+
+That walk exists for a real reason: AutoLISP is a lisp-1, so a parameter
+or a `/'-local can shadow a function name, and the rule is documented and
+tested. But for a function name the walk essentially always FAILS — `+'
+is not a parameter of anything — and failing costs one ASSOC per live
+frame. So the cost of resolving `+' was the depth of the stack.
+
+The profile said so plainly, and said it about a workload that had
+nothing to do with shadowing (compiled fib 30):
+
+    FRAME-BINDING       18.7% self   31.7% total
+    LOOKUP-FUNCTION     17.6% self   52.1% total
+    %ASSOC-EQ           14.2% self
+    ...
+    BUILTIN--            2.4%
+    BUILTIN-+            1.1%
+
+Over half the time resolving names; about 4% doing the arithmetic the
+program was written to do.
+
+## Fix
+
+Each AUTOLISP-SYMBOL carries DYNAMIC-BINDING-COUNT: how many live frames
+bind it. When it is zero, no frame binds the symbol, so the walk is
+guaranteed to fail and is skipped outright.
+
+It is a count, not a cache and not a heuristic — zero is an exact
+statement — and it moves in exactly two places, which is what makes it
+checkable:
+
+  - (SETF FRAME-BINDING) increments, but only for a NEW entry; replacing
+    the binding of a symbol the frame already binds does not, because
+    the frame still binds it once.
+  - POP-DYNAMIC-FRAME decrements for every symbol the popped frame held.
+
+Those two are the only ways a frame gains or loses a binding: nothing
+outside PUSH/POP-DYNAMIC-FRAME writes the context's frame slot, every
+push is paired with a pop under UNWIND-PROTECT, and every binding
+installer in the tree funnels through BIND-DYNAMIC-VARIABLE into (SETF
+FRAME-BINDING). The debugger only reads the chain.
+
+DIRECTION OF ERROR, deliberately: over-counting costs speed and nothing
+else — the walk simply happens, as before. Under-counting would be a
+correctness bug. So nothing clamps: a count driven negative by some
+future mistake stays negative, fails the ZEROP test, and walks.
+
+## Result
+
+Best of five, built SBCL image, same machine:
+
+                        before    after   speedup
+    -O0 fib 27          781 ms   515 ms    1.52x
+    -O3 fib 27          619 ms   358 ms    1.73x
+    -O0 loop, depth 1   367 ms   366 ms    1.00x
+    -O3 loop, depth 1   236 ms   238 ms    1.00x
+    -O0 loop, depth 40  707 ms   364 ms    1.94x
+    -O3 loop, depth 40  578 ms   232 ms    2.49x
+
+The depth-1 rows are the control, and they are the most informative
+rows in the table: they are UNCHANGED. There was nothing to skip at
+depth 1, so nothing got faster — which is what says the win comes from
+removing the depth walk and not from something else having shifted.
+
+And the loop is now depth-invariant: 232 ms at depth 40 against 238 ms
+at depth 1. That property, rather than any single number, is the fix.
+
+The interpreter gets it too (1.5-1.9x): this is runtime, not compiler.
+
+## Tests
+
+The tests assert the INVARIANT that licenses the skip, not the timing it
+buys — a count is checkable and a stopwatch on a shared machine is not:
+a called name's count is zero; a parameter's count is one per live frame
+and returns to zero; an error unwinding out of a call still releases it;
+a `/'-local really does shadow a global function; a non-callable shadow
+stays transparent; a symbol bound twice in one frame counts once.
+
+The skip was verified LOAD-BEARING by breaking it: forcing
+SYMBOL-HAS-NO-DYNAMIC-BINDING-P to always answer T fails 31 tests across
+the existing corpus — shadowing, LET teardown, documentation scoping.
+The walk is guarded by far more than the new tests.
+
+## Where the time goes now
+
+Re-profiled the same workload after the fix. LOOKUP-FUNCTION 52% -> 15%;
+FRAME-BINDING and %ASSOC-EQ are gone from the profile entirely. What is
+now on top is the CALL PROTOCOL itself:
+
+    CALL-AUTOLISP-FUNCTION-IN-CONTEXT  20.7% self
+    WRAP-BUILTIN-FUNCTION's &rest lambda 7.4% self / 25.1% total
+    LOOKUP-FUNCTION                     5.9% self
+    the arithmetic                     ~10% all together
+
+So the next slice is the per-call cost — the &rest argument list, the
+call-stack cons, the HANDLER-CASE established per builtin call — and NOT
+open-coding operators, which the standing plan named and which this
+measurement puts at about a tenth of the time. Recorded in
+compiler.issue.
