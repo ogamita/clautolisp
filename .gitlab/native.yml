@@ -512,6 +512,47 @@ probe:suite:autocad:windows:
     paths: [probe-results/]
     expire_in: 90 days
 
+# BricsCAD's half of the probes/ suite, on BOTH platforms because BricsCAD
+# runs on both and a divergence between them is itself an answer.
+#
+# There was no BricsCAD job for this suite at all -- only the AutoCAD one
+# above -- so any probe/ question needing BOTH engines could not be
+# answered from CI. foreach-binding-vs-assignment.issue is exactly such a
+# question, which is what these jobs are for.
+#
+# SOFT, like the AutoCAD one and for the same reason: a probe MEASURES an
+# engine, it does not gate anything. PROBE_NO_COMMIT because the CI
+# checkout is detached; results travel as an artefact.
+probe:suite:bricscad:macos:
+  extends: .gate-macos-cad-soft
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-suite-bricscad-macos-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:suite:bricscad:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-suite-bricscad-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
 vendor:probes:bricscad:macos:
   extends: [.gate-macos-cad-hard, .vendor-probe-artifacts]
   stage: test
