@@ -140,6 +140,11 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:save-aldo-configuration #:load-aldo-configuration
    #:write-aldo-configuration #:read-aldo-configuration
    #:write-lisp-configuration #:write-configuration-file
+   #:config-save-path #:config-load-path
+   ;; cascade bridge (windows-and-interactor-templates.issue): a layer that owns
+   ;; the tui-core cascade installs these so faces/bindings/layout share the
+   ;; existing <name>.conf files.
+   #:*config-extra-entries-hook* #:*config-consume-extras-hook*
    ;; theme / decorations renderer (command reference §8)
    #:glyph->string #:theme-of #:decoration-entries #:decoration-for
    #:color-theme-p #:sgr-wrap #:apply-decoration #:situation-prefix

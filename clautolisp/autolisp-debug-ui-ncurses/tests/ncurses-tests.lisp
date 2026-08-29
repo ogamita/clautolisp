@@ -829,3 +829,44 @@
                      :thunk (lambda () (call-two context)))
       (declare (ignore ui screen))
       (is (eql 7 result)))))
+
+;;;; --- unified config persistence (cascade shares the settings files) -----
+
+(test cascade-config-round-trips-through-the-shared-format
+  (unwind-protect
+       (progn
+         (clautolisp.ui.tui:reset-configs)
+         (clautolisp.ui.tui:ensure-standard-configs)
+         (clautolisp.ui.tui:config-bind "aldo" "g" "trace")
+         (clautolisp.ui.tui:set-config-face "aldo" :current-line '(:fg :red))
+         ;; write aldo.conf: the bridge hook merges the cascade keys in
+         (let ((text (with-output-to-string (s)
+                       (clautolisp.debug.ui:write-aldo-configuration
+                        s '((:value-line-width . 72))))))
+           (is (not (null (search "value-line-width" text))))   ; scalar setting
+           (is (not (null (search "bindings" text))))           ; cascade binding
+           (is (not (null (search "faces" text))))              ; cascade face
+           ;; read back: scalar stays for the settings store, cascade -> tui-core
+           (clautolisp.ui.tui:reset-configs)
+           (clautolisp.ui.tui:ensure-standard-configs)
+           (let ((scalar (with-input-from-string (s text)
+                           (clautolisp.ui.ncurses::%consume-cascade-entries
+                            "aldo" (clautolisp.debug.ui:read-aldo-configuration s)))))
+             (is (eql 72 (cdr (assoc :value-line-width scalar))))
+             (is (equal "trace" (clautolisp.ui.tui:effective-binding "aldo" "g")))
+             (is (equal '(:fg :red)
+                        (clautolisp.ui.tui:resolve-face :current-line "aldo"))))))
+    ;; leave the shared config registry clean for other systems' tests
+    (clautolisp.ui.tui:reset-configs)))
+
+(test settings-file-is-unchanged-when-the-cascade-is-empty
+  ;; byte-compatibility: with no cascade faces/bindings, the hook is a no-op and
+  ;; aldo.conf is exactly what it was before the unification.
+  (clautolisp.ui.tui:reset-configs)
+  (clautolisp.ui.tui:ensure-standard-configs)
+  (let ((text (with-output-to-string (s)
+                (clautolisp.debug.ui:write-aldo-configuration
+                 s '((:value-line-width . 72))))))
+    (is (null (search "bindings" text)))
+    (is (null (search "faces" text))))
+  (clautolisp.ui.tui:reset-configs))

@@ -553,9 +553,39 @@ the defaults and keeps the aldo-over-lisp stacking working."
                           stream))))))
   (write-line ")" stream))
 
+;;; --- cascade bridge hooks (windows-and-interactor-templates.issue) ------
+;;; A layer that also owns the tui-core cascade configs (faces / bindings /
+;;; layout) installs these so the cascade SHARES the existing <name>.conf files
+;;; rather than a parallel set. Unset (the default), the files are written and
+;;; read exactly as before — this system does not depend on tui-core.
+
+(defvar *config-extra-entries-hook* nil
+  "(function (config-name)) -> an alist of extra (KEY . VALUE) entries to WRITE
+into <config-name>.conf beside the scalar settings — the tui-core cascade's
+:faces / :bindings / :layout. NIL writes only the scalar settings.")
+
+(defvar *config-consume-extras-hook* nil
+  "Inverse of *CONFIG-EXTRA-ENTRIES-HOOK*: (function (config-name loaded-alist))
+-> the SCALAR-ONLY alist to store, having distributed the cascade keys into the
+tui-core config. NIL returns LOADED-ALIST unchanged.")
+
+(defun %config-with-extras (name config)
+  "CONFIG plus the cascade's extra entries for NAME (via the hook); CONFIG
+unchanged when no hook is installed."
+  (append config (and *config-extra-entries-hook*
+                      (funcall *config-extra-entries-hook* name))))
+
+(defun %config-consume-extras (name alist)
+  "Hand ALIST to the consume hook (which absorbs the cascade keys and returns
+the scalar-only remainder); ALIST unchanged when no hook is installed."
+  (if *config-consume-extras-hook*
+      (funcall *config-consume-extras-hook* name alist)
+      alist))
+
 (defun write-aldo-configuration (stream &optional (config *aldo-configuration*))
-  "Write CONFIG to STREAM as aldo.conf (see WRITE-CONFIGURATION-FILE)."
-  (write-configuration-file stream config
+  "Write CONFIG to STREAM as aldo.conf (see WRITE-CONFIGURATION-FILE); includes
+the cascade's aldo faces/bindings when the bridge hook is installed."
+  (write-configuration-file stream (%config-with-extras "aldo" config)
                             *default-aldo-configuration* *setting-specs*
                             :name "aldo.conf" :what "the aldo debugger"
                             :save-command ",settings save"))
@@ -565,7 +595,7 @@ the defaults and keeps the aldo-over-lisp stacking working."
 another argument: the documented defaults and the accepted values must come
 from the LISP interactor's own tables, or lisp.conf would advertise aldo's
 settings as if they were its own."
-  (write-configuration-file stream config
+  (write-configuration-file stream (%config-with-extras "lisp" config)
                             *default-lisp-configuration* *lisp-setting-specs*
                             :name "lisp.conf"
                             :what "the LISP (REPL) interactor"
@@ -606,7 +636,7 @@ as it did, shadowing the LISP layer for all of them."
     (with-open-file (in path :direction :input :external-format :utf-8)
       (let ((config (read-aldo-configuration in)))
         (when (consp config)
-          (setf *aldo-configuration* config))))
+          (setf *aldo-configuration* (%config-consume-extras "aldo" config)))))
     path))
 
 (defun save-lisp-configuration (&optional (path (lisp-config-save-path)))
@@ -626,5 +656,5 @@ the defaults in place. Returns the path read, or NIL if none."
     (with-open-file (in path :direction :input :external-format :utf-8)
       (let ((config (read-aldo-configuration in)))
         (when (consp config)
-          (setf *lisp-configuration* config))))
+          (setf *lisp-configuration* (%config-consume-extras "lisp" config)))))
     path))
