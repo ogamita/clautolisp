@@ -1236,7 +1236,63 @@ issues/open/poll-point-restart-cost.issue for pjb to settle, along with
 the shadow-frame pool, which is blocked on what a SNAPSHOT is allowed to
 keep.
 
-STILL OPEN after slice 15
+Slice 16 (2.0.17) -- the calls that were not doing anything
+-----------------------------------------------------------
+
+Re-profiled the plain compiled path, as the backlog says to. It is flat
+now -- no dominator -- and what the flatness revealed is that a large
+share of it is CALL OVERHEAD FOR ONE-LINE FUNCTIONS:
+
+    CALL-AUTOLISP-FUNCTION-IN-CONTEXT   12.0% self
+    the compiled body itself             8.7%
+    LOOKUP-FUNCTION                      7.1% self
+    AUTOLISP-FUNCTION-TRACE-P            6.0%   <-
+    EVALUATION-CONTEXT-DYNAMIC-FRAME     4.9%   <-
+    SYMBOL-HAS-NO-DYNAMIC-BINDING-P      4.9%   <-
+    CALLABLE-VALUE-P                     4.3%   <-
+    NAMESPACE-BINDING-CELL               4.3%
+    MAKE-DYNAMIC-BINDING                 3.8%
+    FRAME-BINDING                        2.7% self  <-
+    BINDING-CELL-BOUND-P                 2.7%   <-
+
+The marked ones are all the same thing. EVALUATION-CONTEXT-DYNAMIC-FRAME
+is, in full:
+
+    (defun evaluation-context-dynamic-frame (context)
+      (internal::evaluation-context-dynamic-frame context))
+
+It exists so the internal slot reader has a public name. Out of line it
+is a function call, on every variable read, every function resolution and
+every call -- 4.9% of the profile to read one slot. BINDING-CELL-VALUE,
+BINDING-CELL-BOUND-P and EVALUATION-CONTEXT-CURRENT-NAMESPACE are the
+same shape; CALLABLE-VALUE-P, SYMBOL-HAS-NO-DYNAMIC-BINDING-P,
+AUTOLISP-OPEN-CODE-TAG, AUTOLISP-TRUE-SYMBOL and AUTOLISP-FUNCTION-TRACE-P
+are two-line predicates whose whole point is to answer `no' quickly.
+
+Eleven DECLAIM INLINEs. Nothing else changed. It is the same lesson as
+slice 15 found in the debugger -- a call to learn nothing is still a call
+-- one layer down, and it is worth naming as a pattern rather than a
+coincidence: a package boundary drawn by re-exporting accessors as
+functions is free at the source level and is NOT free at run time.
+
+RESULT, A/B/A with 15 reps each (fib 25, in process):
+
+                    2.0.16   2.0.17   speedup
+    interpreted      168      148      1.14x
+    compiled          64       48      1.33x
+
+The two runs of the new build gave 148 / 48 BOTH TIMES, identically, so
+the window was quiet and the numbers are not drift. For scale: compiled
+fib 25 was 80 ms when this session started looking at the debugger three
+slices ago.
+
+WHY INLINING IS SAFE HERE, since it is not always: an accessor IS the
+slot, and none of these is a function anyone redefines or stubs -- checked
+for SETF SYMBOL-FUNCTION / FDEFINITION over the whole tree, including the
+tests. Callers that take #' of them still get the out-of-line definition,
+which SBCL and CCL both still emit.
+
+STILL OPEN after slice 16
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -1262,10 +1318,16 @@ STILL OPEN after slice 15
     statement of its narrow case -- and note that = and /= are NOT
     numeric-only in AutoLISP, so they need reading before they are
     written.
-  - the per-call ALLOCATION of a usubr frame, which the flat post-slice-13
-    profile puts next: MAKE-DYNAMIC-BINDING at 7.6% self, plus a frame
-    struct and an alist cons, for every parameter of every user function
-    call.
+  - the per-call ALLOCATION of a usubr frame: a frame struct, a
+    dynamic-binding struct and TWO ALIST CONSES per parameter of every
+    user function call. The conses are removable without touching
+    ownership -- a dynamic-binding already carries its SYMBOL, so the
+    frame could hold a CHAIN of bindings linked by a NEXT slot instead of
+    an alist, saving 24 bytes per binding per call (about 13% of what a
+    call allocates). The representation is read in exactly four places,
+    all in api.lisp, and each binding belongs to exactly one frame --
+    both checked. Not done yet only because slice 16 found a cheaper win
+    first.
   - reading the qualities from the CONFIGURATION MODULE, so a project
     can set them once rather than on every invocation. The --optimize
     half is done (slice 11); this is the other half of the same item,
