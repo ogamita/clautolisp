@@ -935,3 +935,25 @@
         (is (= n0 (length (clautolisp.ui.ncurses::ui-windows ui))))
         (is (null (find :sedit (clautolisp.ui.ncurses::ui-windows ui)
                         :key #'clautolisp.ui.tui:window-role)))))))
+
+;;;; --- make-lisp-window: a dedicated REPL window --------------------------
+
+(test make-lisp-window-creates-a-repl-window-and-evaluates
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen))
+         (n0 (length (clautolisp.ui.ncurses::ui-windows ui))))
+    (clautolisp.ui.ncurses::make-lisp-window ui nil nil "")
+    (is (= (1+ n0) (length (clautolisp.ui.ncurses::ui-windows ui))))
+    (let* ((w (clautolisp.ui.ncurses::active-window ui))
+           (act (clautolisp.ui.ncurses::window-lisp-activation w)))
+      (is (eq :lisp-repl (clautolisp.ui.tui:window-role w)))
+      (is (not (null act)))
+      ;; evaluate a form into THIS window's own scrollback
+      (setf (gethash w (clautolisp.ui.ncurses::ncurses-ui-lisp-lines ui))
+            (append (gethash w (clautolisp.ui.ncurses::ncurses-ui-lisp-lines ui))
+                    (clautolisp.ui.ncurses::%eval-in-lisp-activation act "42")))
+      (let ((buffer (clautolisp.ui.ncurses::window-content ui nil w)))
+        (is (not (null (some (lambda (l) (search "42" (car l))) buffer)))))
+      ;; q closes the window
+      (clautolisp.ui.ncurses::lisp-window-key act ui #\q)
+      (is (= n0 (length (clautolisp.ui.ncurses::ui-windows ui)))))))

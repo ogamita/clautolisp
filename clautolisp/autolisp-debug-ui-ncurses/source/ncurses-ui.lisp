@@ -23,7 +23,10 @@
    (inspector-cursor :initform 0 :accessor ncurses-ui-inspector-cursor)
    ;; The repl pane's live Lisp instance (windows-and-interactor-templates.issue):
    ;; a real *AUTOLISP* activation over the shared evaluator, made on first use.
-   (repl-activation :initform nil :accessor ncurses-ui-repl-activation)))
+   (repl-activation :initform nil :accessor ncurses-ui-repl-activation)
+   ;; Per-window output for make-lisp-window's dedicated REPL windows
+   ;; (window -> list of lines, newest last); the repl PANE keeps repl-lines.
+   (lisp-lines :initform (make-hash-table :test 'eq) :accessor ncurses-ui-lisp-lines)))
 
 (defun make-ncurses-ui (&rest initargs)
   (apply #'make-instance 'ncurses-ui initargs))
@@ -255,10 +258,13 @@ running sedit live, windows-and-interactor-templates.issue)."
 lines and an optional 0-based row to keep in view. A window running a SEDIT
 activation renders its selection; otherwise dispatch on the pane role."
   (let ((sedit (window-sedit-activation window))
-        (selector (window-selector-activation window)))
+        (selector (window-selector-activation window))
+        (lisp (window-lisp-activation window)))
     (cond
       (sedit    (values (sedit-window-buffer sedit) nil))
       (selector (values (selector-window-buffer selector) nil))
+      (lisp     (let ((buffer (lisp-window-buffer ui window)))
+                  (values buffer (and buffer (1- (length buffer))))))  ; tail-follow
       (t (ecase (window-role window)
            (:stack      (values (stack-buffer ui session) nil))
            (:source     (source-buffer ui session))
@@ -771,6 +777,7 @@ handle keystrokes here."
   (declare (ignore session hit))
   (cond ((window-entry-sedit-p activation) (sedit-window-key activation ui key))
         ((window-entry-selector-p activation) (selector-key activation ui key))
+        ((window-entry-lisp-p activation) (lisp-window-key activation ui key))
         (t (values nil nil))))
 
 (defun window-manager-key (ui session hit key)
@@ -1161,6 +1168,22 @@ over the shared evaluation context; NIL if the template is unavailable."
              (clautolisp.interactor:instantiate-interactor-template
               "lisp" (clautolisp.interactor:make-template-context))))))
 
+(defun %eval-in-lisp-activation (activation line)
+  "Evaluate LINE through ACTIVATION's interactor evaluator (*COMMAND-ACTIVATION*
+bound to it, so it reaches its own repl-state / the shared evaluator), capturing
+output. Returns the echoed prompt line + the non-empty output lines."
+  (let ((out (make-string-output-stream)))
+    (let ((clautolisp.interactor:*command-activation* activation)
+          (*standard-output* out) (*error-output* out))
+      (handler-case
+          (funcall (clautolisp.interactor:interactor-evaluator
+                    (clautolisp.interactor:activation-interactor activation))
+                   (list :source line))
+        (error (e) (format out "~A" e))))
+    (cons (format nil "_$ ~A" line)
+          (remove-if (lambda (l) (zerop (length l)))
+                     (%split-lines (get-output-stream-string out))))))
+
 (defun repl-window-eval (ui line)
   "Evaluate LINE in the repl pane's Lisp instance (over the shared evaluator),
 echoing the prompt+form and the captured output into the repl buffer. Returns
@@ -1168,17 +1191,8 @@ echoing the prompt+form and the captured output into the repl buffer. Returns
   (let ((activation (ensure-repl-activation ui)))
     (if (null activation)
         (set-message ui "repl: no Lisp evaluator available")
-        (let ((out (make-string-output-stream)))
-          (let ((clautolisp.interactor:*command-activation* activation)
-                (*standard-output* out) (*error-output* out))
-            (handler-case
-                (funcall (clautolisp.interactor:interactor-evaluator
-                          (clautolisp.interactor:activation-interactor activation))
-                         (list :source line))
-              (error (e) (format out "~A" e))))
-          (push-repl ui "_$ ~A" line)
-          (dolist (l (%split-lines (get-output-stream-string out)))
-            (when (plusp (length l)) (push-repl ui "~A" l))))))
+        (dolist (l (%eval-in-lisp-activation activation line))
+          (push-repl ui "~A" l))))
   (values t nil))
 
 (defun repl-key (ui key)
@@ -1191,6 +1205,67 @@ Lisp image. Other keys fall through (values NIL NIL)."
          (repl-window-eval ui line)))
      (values t nil))
     (t (values nil nil))))
+
+;;;; --- make-lisp-window: a dedicated REPL window over the shared evaluator --
+;;;; A second *AUTOLISP* instance in its own window (the slime-mrepl model),
+;;;; with its own scrollback (ncurses-ui-lisp-lines, keyed by window) so it does
+;;;; not share the repl pane's buffer. `e' evaluates a prompted form; `q' closes.
+
+(defun %activation-interactor-name= (activation name)
+  (string-equal name (clautolisp.interactor:interactor-name
+                      (clautolisp.interactor:activation-interactor activation))))
+
+(defun window-entry-lisp-p (entry)
+  (and (clautolisp.interactor:activation-p entry)
+       (%activation-interactor-name= entry "AUTOLISP")))
+
+(defun window-lisp-activation (window)
+  (find-if #'window-entry-lisp-p (window-stack window)))
+
+(defun lisp-window-buffer (ui window)
+  "Buffer lines (STRING . ATTR) for a make-lisp-window REPL window."
+  (mapcar (lambda (s) (cons s :normal))
+          (gethash window (ncurses-ui-lisp-lines ui))))
+
+(defun lisp-window-key (activation ui key)
+  "Drive a dedicated lisp window: `e' evaluates a prompted form in ACTIVATION and
+appends the result to this window's scrollback; `q' closes the window."
+  (let ((window (active-window ui)))
+    (cond
+      ((and (characterp key) (char= key #\e))
+       (let ((line (read-minibuffer ui "eval: ")))
+         (when (and line (plusp (length (string-trim " " line))))
+           (setf (gethash window (ncurses-ui-lisp-lines ui))
+                 (append (gethash window (ncurses-ui-lisp-lines ui))
+                         (%eval-in-lisp-activation activation line)))))
+       (values t nil))
+      ((and (characterp key) (char= key #\q))
+       (remhash window (ncurses-ui-lisp-lines ui))
+       (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
+       (let ((now (active-window ui)))
+         (when now (pushnew :window-manager (window-stack now))))
+       (set-message ui "lisp window closed")
+       (values t nil))
+      (t (values nil nil)))))
+
+(defun make-lisp-window (ui session hit arg)
+  "`M-x make-lisp-window': open a new *AUTOLISP* REPL over the shared evaluator
+in its own window beside the active one. Returns NIL."
+  (declare (ignore session hit arg))
+  (let ((activation (ignore-errors
+                     (clautolisp.interactor:instantiate-interactor-template
+                      "lisp" (clautolisp.interactor:make-template-context)))))
+    (if (null activation)
+        (set-message ui "no Lisp evaluator available")
+        (let ((window (clautolisp.ui.tui:add-window-to-frame
+                       (ncurses-ui-frame ui) :name "lisp" :role :lisp-repl
+                       :beside (active-window ui) :split :vertical)))
+          (setf (window-stack window) (list activation))
+          (setf (gethash window (ncurses-ui-lisp-lines ui))
+                (list "AutoLISP REPL  -  e eval  q close"))
+          (activate-window ui window)
+          (set-message ui "lisp: e eval | q close"))))
+  nil)
 
 (defun handle-window-command (ui)
   "Read the key after a C-w / C-x prefix and run the built-in window command."
@@ -1273,6 +1348,7 @@ RET returns the string, Esc cancels (returns NIL), Backspace deletes."
    ;; `make-sedit-window' is the spec name; `sedit' the short alias.
    (cons "sedit"             #'open-sedit-in-source)
    (cons "make-sedit-window" #'make-sedit-window)
+   (cons "make-lisp-window"  #'make-lisp-window)
    ;; the list-selector (windows-and-interactor-templates.issue): pick a window
    ;; to activate, or browse the interactor templates available to a window.
    (cons "windows"     #'list-windows-command)
