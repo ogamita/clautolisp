@@ -1,0 +1,100 @@
+# lexical-locals-escape-analysis — binding a local lexically when it provably cannot escape
+
+STATUS: OPEN — design, from pjb (2026-08-30). Not started. This file is
+the analysis he asked for: can we know, at compile time, every function
+we might call at run time?
+
+## The optimization
+
+At (SPEED 3) (DEBUG 0), a local that is not free in its scope and that
+provably does not escape can be bound LEXICALLY -- a stack slot or a
+register -- instead of a dynamic binding in a frame. The symbol's value
+is then never touched.
+
+The prize is large and already measured from the other side. In the
+current profile of compiled code the usubr call machinery is the biggest
+cluster left: BIND-USUBR-FRAME 34% cumulative, MAKE-DYNAMIC-BINDING 9.6%
+self, MAKE-DYNAMIC-FRAME 3%, plus (SETF FRAME-BINDING). A lexical local
+costs none of it -- no frame, no binding, no chain walk on every read.
+
+pjb: BricsCAD does this, is NOT careful about the check, and so the
+optimization is DETECTABLE by the change in semantics it implies -- at
+which point one has to turn it off.
+
+## What escape means here, and why it is hard
+
+There are no closures, so a local does not escape by being captured. It
+escapes because AutoLISP IS DYNAMICALLY SCOPED: anything the scope calls,
+transitively, can read or write the name simply by using it free.
+
+So the question pjb poses is exactly the right one -- do we know the
+callees at compile time? -- and the honest answer is NO, not in general:
+
+  - EVAL and READ build code at run time.
+  - APPLY / MAPCAR with a function VALUE computed at run time.
+  - LOAD brings in code after this function was compiled.
+  - A later DEFUN, or a SETQ of a lambda, REDEFINES a callee.
+  - COMMAND re-enters LISP.
+  - *error* runs WITH THE FRAME CHAIN LIVE and can read any name. This is
+    the one that would otherwise sink the whole idea: any form can
+    signal, so every scope is reachable by a handler that names the
+    local.
+  - In clautolisp specifically, the debugger reads and WRITES bindings at
+    a stop (spec 9.4, 9.5). pjb already anticipated this by tying the
+    optimization to DEBUG 0, which is exactly right: at DEBUG 0 there is
+    no instrumented fork, so there is nowhere to stop.
+
+## A design that is sound rather than merely careful
+
+Three parts, and each reuses machinery this engine already has.
+
+1. CLOSED WORLD BY CONSTRUCTION. At compile time compute the set of
+   functions transitively reachable from the scope, using the definitions
+   in force. Refuse to optimize unless every one is statically known and
+   none of them -- nor the scope itself -- calls a builtin that can
+   invoke arbitrary AutoLISP: EVAL, APPLY, MAPCAR, COMMAND, LOAD,
+   VL-CATCH-ALL-APPLY, the VLAX callbacks. This is conservative and it is
+   checkable. Note it excludes EVAL transitively: a callee that calls
+   EVAL puts EVAL in the reachable set.
+
+2. A GENERATION GUARD for the open world. The closed world is only true
+   at the instant it was computed; a later DEFUN or LOAD can add a
+   reference. So stamp the compiled body with a DEFINITION GENERATION
+   counter, bumped by every defun / setq-of-a-lambda / load, and check it
+   on entry: if the world moved, run the dynamically-bound body instead.
+   Both pieces exist -- the generation-counter pattern from slice 6
+   (*SPECIAL-OPERATOR-GENERATION*), and the two-bodies dispatch that
+   already chooses between forks per call.
+
+3. MATERIALISE ON THE ERROR PATH. The *error* objection is answered by
+   paying only when it happens: the compiled function's unwind path
+   pushes a real dynamic frame holding the lexical variables' current
+   values before the handler runs. An error is rare; a handler that reads
+   a caller's local then still sees it. This is what turns "unlikely to
+   be noticed" into "cannot be noticed", and it is the difference between
+   this and what pjb describes BricsCAD doing.
+
+## Residual risks to state plainly
+
+  - A reactor or CAD event firing into LISP from inside the scope is not
+    in the reachable set. Rare, and arguably already outside what any
+    engine promises here, but it is a hole.
+  - Part 1 is conservative enough that the first version will optimize
+    only leaf-ish arithmetic and list code -- which is, however, exactly
+    where the hot loops are.
+
+## Recommendation
+
+Worth doing, and worth doing as its own multi-slice piece of work rather
+than folded into another. Start maximally conservative (part 1 admitting
+only builtins that cannot re-enter), get parts 2 and 3 in from the
+beginning rather than promising them, and widen the analysis by
+measurement.
+
+And one point of principle, since --optimize now exists and could carry
+an unsound-but-fast level the way BricsCAD's does: this engine's whole
+compiler rests on compiled and interpreted evaluation agreeing, and every
+slice so far has kept that by construction. A level that silently changes
+what a program computes would be the first exception. If it is ever
+wanted it should be its own named quality, documented as changing
+semantics, and never reachable from a plain SPEED number.
