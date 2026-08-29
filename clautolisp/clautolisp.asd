@@ -927,6 +927,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
                ;; shell-escape tests of bang.issue: the new tests reported
                ;; neither pass nor fail, because nothing invoked them).
                "clautolisp/autolisp-interactor/tests"
+               "clautolisp/autolisp-repl/tests"
                "clautolisp/autolisp-source-map/tests"
                "clautolisp/autolisp-runtime/tests"
                "clautolisp/drawing/tests"
@@ -950,6 +951,8 @@ identity / TEMPPREFIX stamping, option value parsers)."
                            (uiop:symbol-call :clautolisp.autolisp-reader.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.interactor.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.repl.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-runtime.tests
                                              :run-all-tests)
