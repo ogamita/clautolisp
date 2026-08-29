@@ -870,3 +870,47 @@
     (is (null (search "bindings" text)))
     (is (null (search "faces" text))))
   (clautolisp.ui.tui:reset-configs))
+
+;;;; --- named window layouts (windows-and-interactor-templates.issue Q5) ----
+
+(test layout-serialises-to-a-role-tree
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen)))
+    (is (equal +canonical-role-layout+
+               (clautolisp.ui.ncurses::layout->spec (clautolisp.ui.ncurses::ui-layout ui))))))
+
+(test save-and-load-layout-restores-the-arrangement
+  (unwind-protect
+       (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+              (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen)))
+         (clautolisp.ui.tui:reset-configs)
+         (clautolisp.ui.ncurses::save-layout ui "l1")     ; record the canonical layout
+         ;; collapse the layout to a single pane, then restore it
+         (setf (clautolisp.ui.ncurses::ui-layout ui)
+               (clautolisp.ui.ncurses::ui-window ui :repl))
+         (is (not (equal +canonical-role-layout+ (ui-layout-roles ui))))
+         (is (eq t (clautolisp.ui.ncurses::load-layout ui "l1")))
+         (is (equal +canonical-role-layout+ (ui-layout-roles ui)))
+         ;; an unknown name leaves the layout untouched
+         (is (null (clautolisp.ui.ncurses::load-layout ui "nope"))))
+    (clautolisp.ui.tui:reset-configs)))
+
+(test named-layouts-round-trip-through-the-shared-format
+  (unwind-protect
+       (progn
+         (clautolisp.ui.tui:reset-configs)
+         (let ((cfg (clautolisp.ui.tui:ensure-config "layouts"))
+               (spec '(:horizontal 1/2 :stack :source)))
+           (clautolisp.ui.tui:config-set-value cfg :layouts (list (cons "l1" spec)))
+           (let ((text (with-output-to-string (s)
+                         (clautolisp.debug.ui:write-configuration-file
+                          s (clautolisp.ui.ncurses::%cascade-entries "layouts") '() '()
+                          :name "layouts.conf" :what "layouts"))))
+             (is (not (null (search "layouts" text))))
+             (clautolisp.ui.tui:reset-configs)
+             (with-input-from-string (s text)
+               (clautolisp.ui.ncurses::%consume-cascade-entries
+                "layouts" (clautolisp.debug.ui:read-aldo-configuration s)))
+             (is (equal spec (cdr (assoc "l1" (clautolisp.ui.ncurses::saved-layouts)
+                                         :test #'string=)))))))
+    (clautolisp.ui.tui:reset-configs)))

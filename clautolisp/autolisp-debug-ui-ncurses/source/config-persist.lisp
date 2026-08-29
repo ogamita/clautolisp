@@ -13,11 +13,12 @@
 
 (in-package #:clautolisp.ui.ncurses)
 
-(defparameter +cascade-config-keys+ '(:faces :bindings :layout)
-  "The tui-core cascade keys a <name>.conf carries beside the scalar settings.")
+(defparameter +cascade-config-keys+ '(:faces :bindings :layout :layouts)
+  "The tui-core cascade keys a <name>.conf carries beside the scalar settings
+(:layouts holds the named window layouts, on the \"layouts\" config).")
 
 (defparameter +cascade-only-config-names+
-  '("sedit" "navi" "stack" "inspect" "inspector" "repl")
+  '("sedit" "navi" "stack" "inspect" "inspector" "repl" "layouts")
   "Cascade configs with no scalar settings: persisted to their own <name>.conf
 in the shared format. (aldo and lisp ride inside the settings files via the
 hooks below.)")
@@ -102,7 +103,78 @@ loaders + the consume hook; the rest directly). Returns T."
   (load-cascade-only-configurations)
   t)
 
+;;; --- named window layouts (windows-and-interactor-templates.issue Q5) ----
+;;; A layout is the frame's split tree recorded as a readable role-tree
+;;; (:horizontal RATIO A B | :vertical RATIO A B | ROLE-keyword). Named layouts
+;;; live in the "layouts" config's :LAYOUTS alist (name -> spec) and persist with
+;;; the rest of the cascade. Replay RE-TILES the existing panes; recreating NEW
+;;; windows over saved targets ("2 sedit on different files") waits on the
+;;; make-*-window window-creation.
+
+(defparameter +layouts-config-name+ "layouts")
+
+(defun layout->spec (node)
+  "Serialise a frame layout NODE (a split list or a window) to a role-tree."
+  (if (and (consp node) (member (first node) '(:horizontal :vertical)))
+      (destructuring-bind (split ratio a b) node
+        (list split ratio (layout->spec a) (layout->spec b)))
+      (clautolisp.ui.tui:window-role node)))
+
+(defun spec->layout (ui spec)
+  "Rebuild a frame layout tree from SPEC (a role-tree), mapping each role back to
+UI's existing window of that role."
+  (if (and (consp spec) (member (first spec) '(:horizontal :vertical)))
+      (destructuring-bind (split ratio a b) spec
+        (list split ratio (spec->layout ui a) (spec->layout ui b)))
+      (ui-window ui spec)))
+
+(defun saved-layouts ()
+  "The alist (NAME . SPEC) of named layouts."
+  (clautolisp.ui.tui:config-value
+   (clautolisp.ui.tui:ensure-config +layouts-config-name+) :layouts '()))
+
+(defun save-layout (ui name)
+  "Record UI's current frame layout under NAME into the \"layouts\" config
+(persisted with the rest by M-x save-configuration; no file I/O here)."
+  (let* ((spec (layout->spec (ui-layout ui)))
+         (cfg (clautolisp.ui.tui:ensure-config +layouts-config-name+))
+         (rest (remove name (clautolisp.ui.tui:config-value cfg :layouts '())
+                       :key #'car :test #'string-equal)))
+    (clautolisp.ui.tui:config-set-value cfg :layouts (acons name spec rest))
+    name))
+
+(defun load-layout (ui name)
+  "Re-tile UI's frame to the saved layout NAME (using the existing panes).
+Returns T when a layout of that name exists."
+  (let ((spec (cdr (assoc name (saved-layouts) :test #'string-equal))))
+    (when spec
+      (setf (ui-layout ui) (spec->layout ui spec))
+      t)))
+
 ;;; --- the M-x commands ---------------------------------------------------
+
+(defun %read-name (ui arg prompt)
+  (let ((name (if (and arg (plusp (length (string-trim " " arg))))
+                  (string-trim " " arg)
+                  (read-minibuffer ui prompt))))
+    (and name (plusp (length (string-trim " " name))) (string-trim " " name))))
+
+(defun save-layout-command (ui session hit arg)
+  (declare (ignore session hit))
+  (let ((name (%read-name ui arg "save layout: ")))
+    (when name
+      (save-layout ui name)
+      (set-message ui "layout ~A saved" name)))
+  nil)
+
+(defun load-layout-command (ui session hit arg)
+  (declare (ignore session hit))
+  (let ((name (%read-name ui arg "load layout: ")))
+    (when name
+      (if (load-layout ui name)
+          (set-message ui "layout ~A restored" name)
+          (set-message ui "no layout named ~A" name))))
+  nil)
 
 (defun save-configuration-command (ui session hit arg)
   (declare (ignore session hit arg))
@@ -118,7 +190,9 @@ loaders + the consume hook; the rest directly). Returns T."
 
 ;; Register (or replace, on reload) the M-x / , commands.
 (dolist (entry (list (cons "save-configuration" #'save-configuration-command)
-                     (cons "load-configuration" #'load-configuration-command)))
+                     (cons "load-configuration" #'load-configuration-command)
+                     (cons "save-layout" #'save-layout-command)
+                     (cons "load-layout" #'load-layout-command)))
   (setf *ncurses-commands*
         (cons entry (remove (car entry) *ncurses-commands*
                             :key #'car :test #'string-equal))))
