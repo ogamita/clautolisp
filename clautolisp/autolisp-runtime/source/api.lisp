@@ -187,6 +187,7 @@ and anything comparing with EQ would quietly stop matching. That function
 clears this too, which is the whole invalidation story -- nothing else
 removes an entry from the symbol table, interning only ever adds.")
 
+(declaim (inline autolisp-true-symbol))
 (defun autolisp-true-symbol ()
   "The interned T symbol: AutoLISP truth. Cached; see *AUTOLISP-TRUE-SYMBOL*."
   (or *autolisp-true-symbol*
@@ -738,9 +739,19 @@ CONTEXT's session. Returns VALUE."
 (defun evaluation-context-current-document (context)
   (clautolisp.autolisp-runtime.internal::evaluation-context-current-document context))
 
+;;; INLINE, all of them. Every one below is either a one-line re-export of
+;;; a struct accessor -- it exists so the internal slot reader has a public
+;;; name -- or a two-line predicate. Out of line, each is a full function
+;;; call on the hottest paths there are: every variable read, every
+;;; function resolution, every call. They showed up in a profile of
+;;; compiled arithmetic at 3-6% EACH, which is call overhead and nothing
+;;; else. Inlining changes no behaviour: an accessor is the slot, and these
+;;; are not functions anyone redefines.
+(declaim (inline evaluation-context-current-namespace))
 (defun evaluation-context-current-namespace (context)
   (clautolisp.autolisp-runtime.internal::evaluation-context-current-namespace context))
 
+(declaim (inline evaluation-context-dynamic-frame))
 (defun evaluation-context-dynamic-frame (context)
   (clautolisp.autolisp-runtime.internal::evaluation-context-dynamic-frame context))
 
@@ -752,9 +763,11 @@ CONTEXT's session. Returns VALUE."
    :current-namespace (or namespace document)
    :dynamic-frame nil))
 
+(declaim (inline binding-cell-value))
 (defun binding-cell-value (cell)
   (clautolisp.autolisp-runtime.internal::binding-cell-value cell))
 
+(declaim (inline binding-cell-bound-p))
 (defun binding-cell-bound-p (cell)
   (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell))
 
@@ -1060,6 +1073,7 @@ promotes itself and behaves as before.")
 ;;; changing the representation would have meant changing all six
 ;;; identically — which is how two representations start disagreeing.
 
+(declaim (inline frame-binding))
 (defun frame-binding (frame symbol)
   "SYMBOL's binding in FRAME itself, or NIL."
   (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
@@ -1122,6 +1136,7 @@ that was needed."
            :bound-p t))
     value))
 
+(declaim (inline symbol-has-no-dynamic-binding-p))
 (defun symbol-has-no-dynamic-binding-p (symbol)
   "True when NO live dynamic frame binds SYMBOL, so a walk of the frame
 chain looking for one is guaranteed to fail.
@@ -1266,6 +1281,7 @@ happen in the documented call sites)."
            (setf (clautolisp.autolisp-runtime.internal::binding-cell-doc cell) new-doc))))))
   new-doc)
 
+(declaim (inline callable-value-p))
 (defun callable-value-p (value)
   "True iff VALUE is something AutoLISP can call in operator
 position: a built-in SUBR, a user-defined USUBR, or a literal
@@ -1475,9 +1491,11 @@ binding. A no-op when SYMBOL has no namespace cell yet."
    :name name
    :function function))
 
+(declaim (inline autolisp-subr-function))
 (defun autolisp-subr-function (object)
   (clautolisp.autolisp-runtime.internal::autolisp-subr-function object))
 
+(declaim (inline autolisp-open-code-tag))
 (defun autolisp-open-code-tag (object)
   "The open-coding tag of OBJECT, or NIL when OBJECT is not a tagged
 builtin subr.
@@ -2903,6 +2921,7 @@ selected this way — they fall back to the session-wide
     ((typep function 'autolisp-usubr) (or (autolisp-usubr-name function) "<lambda>"))
     (t (format nil "~S" function))))
 
+(declaim (inline autolisp-function-trace-p))
 (defun autolisp-function-trace-p (function)
   "T iff FUNCTION's invocation should be traced — either the
 session-wide *autolisp-trace-p* flag is on, or the function has
