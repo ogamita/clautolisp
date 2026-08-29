@@ -983,9 +983,36 @@ CONTEXT's session. Returns VALUE."
           frame)
     frame))
 
+(defun %release-frame-binding-counts (frame)
+  "Decrement DYNAMIC-BINDING-COUNT for every symbol FRAME binds.
+
+Deliberately does NOT go through FRAME-BOUND-SYMBOLS, which MAPCARs a
+fresh list of the keys: this runs on every function return, and a list
+per return is exactly the kind of garbage the frames themselves were
+changed from hash tables to alists to avoid."
+  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
+    (if (listp bindings)
+        (dolist (entry bindings)
+          (let ((symbol (car entry)))
+            (when (typep symbol 'autolisp-symbol)
+              (decf (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+                     symbol)))))
+        (maphash (lambda (symbol binding)
+                   (declare (ignore binding))
+                   (when (typep symbol 'autolisp-symbol)
+                     (decf (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+                            symbol))))
+                 bindings))))
+
 (defun pop-dynamic-frame (&optional (context (current-evaluation-context)))
   (let ((frame (evaluation-context-dynamic-frame context)))
     (when frame
+      ;; The other of the two places DYNAMIC-BINDING-COUNT moves. Popping
+      ;; is the ONLY way a frame stops being live -- nothing else writes
+      ;; the context'"'"'s frame slot, and every PUSH-DYNAMIC-FRAME is paired
+      ;; with a POP under UNWIND-PROTECT -- so this is where the bindings
+      ;; it held stop counting.
+      (%release-frame-binding-counts frame)
       (setf (clautolisp.autolisp-runtime.internal::evaluation-context-dynamic-frame context)
             (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)))
     frame))
@@ -1017,13 +1044,24 @@ promotes itself and behaves as before.")
 (defun (setf frame-binding) (binding frame symbol)
   "Install BINDING for SYMBOL in FRAME, replacing any binding FRAME
 already had for it — a frame holds at most one binding per symbol, which
-is what makes DYNAMIC-FRAME-SYMBOLS a set."
-  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
+is what makes DYNAMIC-FRAME-SYMBOLS a set.
+
+One of the two places a symbol'"'"'s DYNAMIC-BINDING-COUNT moves. A NEW entry
+increments it; REPLACING the binding of a symbol this frame already binds
+does not, because the frame still binds that symbol exactly once. Getting
+that distinction wrong in the generous direction only costs the walk this
+count exists to skip; getting it wrong the other way would skip a walk
+that was needed."
+  (let* ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))
+         (existing (if (listp bindings)
+                       (assoc symbol bindings :test #'eq)
+                       (nth-value 1 (gethash symbol bindings))))
+         (newp (not existing)))
     (cond
       ((not (listp bindings))
        (setf (gethash symbol bindings) binding))
-      ((assoc symbol bindings :test #'eq)
-       (setf (cdr (assoc symbol bindings :test #'eq)) binding))
+      (existing
+       (setf (cdr existing) binding))
       ((< (length bindings) *dynamic-frame-alist-limit*)
        (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
              (acons symbol binding bindings)))
@@ -1036,6 +1074,9 @@ is what makes DYNAMIC-FRAME-SYMBOLS a set."
          (setf (gethash symbol table) binding)
          (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
                table))))
+    (when (and newp (typep symbol 'autolisp-symbol))
+      (incf (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+             symbol)))
     binding))
 
 (defun frame-bound-symbols (frame)
@@ -1055,12 +1096,28 @@ is what makes DYNAMIC-FRAME-SYMBOLS a set."
            :bound-p t))
     value))
 
+(defun symbol-has-no-dynamic-binding-p (symbol)
+  "True when NO live dynamic frame binds SYMBOL, so a walk of the frame
+chain looking for one is guaranteed to fail.
+
+The count is exact and moves only in (SETF FRAME-BINDING) and
+POP-DYNAMIC-FRAME. A non-AUTOLISP-SYMBOL has nowhere to keep a count, so
+it answers NIL and walks -- the old behaviour, which is always correct."
+  (and (typep symbol 'autolisp-symbol)
+       (zerop (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+               symbol))))
+
 (defun find-dynamic-binding (symbol frame)
-  (loop for current = frame then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent current)
-        while current
-        for binding = (frame-binding current symbol)
-        when binding
-          do (return binding)))
+  ;; The early exit is the whole point: without it this walks the entire
+  ;; frame chain and fails in every frame, on every global read and every
+  ;; assignment to a global, making both O(call-stack depth).
+  (if (symbol-has-no-dynamic-binding-p symbol)
+      nil
+      (loop for current = frame then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent current)
+            while current
+            for binding = (frame-binding current symbol)
+            when binding
+              do (return binding))))
 
 ;;; --- Dynamic-frame introspection for the debugger (spec §9) --------
 ;;
@@ -1221,18 +1278,28 @@ when it actually invokes the binding."
   ;; coercion happens lazily in CALL-AUTOLISP-FUNCTION-IN-CONTEXT
   ;; so the dynamic context at the call site is the one EVAL-LAMBDA-
   ;; FORM captures (matching the late-resolution rule above).
-  (loop for frame = (evaluation-context-dynamic-frame context)
-                then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)
-        while frame
-        for binding = (frame-binding frame symbol)
-        when (and binding
-                  (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding)
-                  (callable-value-p
-                   (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)))
-          do (return-from lookup-function
-               (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)
-                       t
-                       :dynamic)))
+  ;;
+  ;; The walk below is skipped entirely when no live frame binds SYMBOL,
+  ;; which for a function name is the overwhelming case -- `+' is not a
+  ;; parameter of anything. Without the skip, resolving the operator of
+  ;; every call walked the whole frame chain and failed in every frame,
+  ;; so a call cost O(call-stack depth): the same loop measured 3.7x
+  ;; slower forty frames down than at the top level. The shadowing rules
+  ;; documented above are unchanged -- when a frame DOES bind the name,
+  ;; the count is non-zero and the walk runs exactly as before.
+  (unless (symbol-has-no-dynamic-binding-p symbol)
+    (loop for frame = (evaluation-context-dynamic-frame context)
+                  then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)
+          while frame
+          for binding = (frame-binding frame symbol)
+          when (and binding
+                    (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding)
+                    (callable-value-p
+                     (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)))
+            do (return-from lookup-function
+                 (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)
+                         t
+                         :dynamic))))
   (let* ((cell (namespace-binding-cell (evaluation-context-current-namespace context)
                                        symbol
                                        :createp nil))

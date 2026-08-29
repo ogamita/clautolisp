@@ -1502,3 +1502,134 @@ without being handed to STRING= as a string designator."
   (is (null (clautolisp.autolisp-runtime::special-operator-function
              (list (intern-autolisp-symbol "LAMBDA") nil))))
   (is (eql 3 (%run-under-dialect :clautolisp "((lambda (x) x) 3)"))))
+
+;;;; The dynamic-binding count, and why name resolution stopped being
+;;;; O(call-stack depth).
+;;;;
+;;;; LOOKUP-FUNCTION and FIND-DYNAMIC-BINDING walked the WHOLE
+;;;; dynamic-frame chain before falling back to the namespace. For a
+;;;; function name -- which is essentially never dynamically bound -- that
+;;;; walk failed in every frame, on every call. So a call cost O(depth),
+;;;; and a program got slower the deeper it ran: the identical loop
+;;;; measured 3.7x slower forty frames down.
+;;;;
+;;;; The walk is now skipped when the symbol's DYNAMIC-BINDING-COUNT is
+;;;; zero. These tests are about the thing that LICENSES the skip -- that
+;;;; the count is exact -- rather than about the timing it buys, because a
+;;;; count is checkable and a stopwatch on a shared machine is not.
+
+(defun %binding-count (name)
+  "The live dynamic-binding count of the symbol named NAME."
+  (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+   (intern-autolisp-symbol name)))
+
+(test a-function-name-is-never-dynamically-bound-so-the-walk-is-skipped
+  "The case that matters: after running a program, the names it CALLED have
+a count of zero, which is what lets their resolution skip the frame chain
+entirely. Only names bound as parameters or `/'-locals are ever counted.
+
+Written with user functions because this suite runs the runtime WITHOUT
+the builtins -- there is no `+' here to ask about. The property is the
+same one: a name in operator position is not a name in a frame."
+  (reset-autolisp-symbol-table)
+  (%run-under-dialect
+   :clautolisp
+   "(defun leaf (n) n)
+    (defun middle (n) (leaf n))
+    (defun top (n) (middle n))
+    (top 1)")
+  (is (zerop (%binding-count "TOP")))
+  (is (zerop (%binding-count "MIDDLE")))
+  (is (zerop (%binding-count "LEAF"))))
+
+(test the-count-follows-the-frames-and-returns-to-zero
+  "A parameter is counted once per live frame that binds it, and the count
+is back to zero once the calls have returned. Both halves matter: the
+first is what makes a non-zero count mean `a frame really does bind this',
+the second is what stops the count drifting upward until every symbol
+walks again."
+  (reset-autolisp-symbol-table)
+  (%run-under-dialect :clautolisp "(defun f (n) n) (f 1) (f 2) (f 3)")
+  (is (zerop (%binding-count "N")))
+  ;; And with several frames alive at once: the deepest call sees one
+  ;; count per frame on the stack. Three functions rather than a recursive
+  ;; one because this suite has no arithmetic to count down with.
+  (reset-autolisp-symbol-table)
+  (let ((depths '()))
+    (register-special-operator
+     "NOTE-DEPTH"
+     (lambda (arguments context)
+       (declare (ignore arguments context))
+       (push (%binding-count "N") depths)
+       nil))
+    (unwind-protect
+         (progn
+           (%run-under-dialect
+            :clautolisp
+            "(defun d1 (n) (note-depth))
+             (defun d2 (n) (d1 n))
+             (defun d3 (n) (d2 n))
+             (d3 1)")
+           ;; Three frames are live at the bottom, one per call, each
+           ;; binding N.
+           (is (equal '(3) depths)))
+      (unregister-special-operator "NOTE-DEPTH")))
+  (is (zerop (%binding-count "N"))))
+
+(test the-count-is-released-when-a-call-unwinds-on-an-error
+  "PUSH-DYNAMIC-FRAME is paired with POP under UNWIND-PROTECT, so an error
+that unwinds out of a call must still release the frame's counts. If it
+did not, one error would leave that symbol's count permanently non-zero
+and it would walk the chain for the rest of the session -- slow, not
+wrong, which is the kind of leak nothing else would ever report."
+  (reset-autolisp-symbol-table)
+  (ignore-errors
+   (%run-under-dialect
+    :clautolisp
+    "(defun boom (zzz) (no-such-function-anywhere)) (boom 1)"))
+  (is (zerop (%binding-count "ZZZ"))))
+
+(test a-shadowed-function-name-still-resolves-to-the-shadow
+  "The skip must not break what the walk is FOR. A `/'-local holding a
+function value shadows the global of the same name in operator position,
+and that is only visible by walking -- so the count for that name must be
+non-zero while the frame is live, and the walk must run."
+  (reset-autolisp-symbol-table)
+  (is (eql 42 (%run-under-dialect
+               :clautolisp
+               "(defun global-one () 1)
+                (defun outer (/ global-one)
+                  (setq global-one (lambda () 42))
+                  (global-one))
+                (outer)")))
+  ;; ... and the global is back once the frame is gone.
+  (is (eql 1 (%run-under-dialect
+              :clautolisp
+              "(defun global-one () 1)
+               (defun outer (/ global-one)
+                 (setq global-one (lambda () 42))
+                 (global-one))
+               (outer)
+               (global-one)"))))
+
+(test a-non-callable-shadow-stays-transparent-in-function-position
+  "The documented lisp-1 rule LOOKUP-FUNCTION's walk implements: a
+parameter bound to nil does NOT hide a global function of the same name.
+The skip is only allowed to remove walks that would have failed, so this
+must still behave exactly as before."
+  (reset-autolisp-symbol-table)
+  (is (eql 7 (%run-under-dialect
+              :clautolisp
+              "(defun helper () 7)
+               (defun outer (/ helper) (helper))
+               (outer)"))))
+
+(test a-symbol-bound-twice-in-one-frame-is-counted-once
+  "A frame holds at most one binding per symbol, so re-binding a name
+already bound in the same frame must not add to the count -- the frame
+still binds it exactly once, and one POP will release it once."
+  (reset-autolisp-symbol-table)
+  (%run-under-dialect
+   :clautolisp
+   "(defun f (a / a) (setq a 2) a) (f 1)")
+  (is (zerop (%binding-count "A"))))
