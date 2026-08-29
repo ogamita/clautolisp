@@ -251,7 +251,11 @@ disrupting the value-returning shape of the call site."
     ("ATOM"  :atom         autolisp-atom)
     ("LISTP" :listp        autolisp-listp)
     ("ZEROP" :zerop        builtin-zerop)
-    ("EQ"    :eq           builtin-eq))
+    ("EQ"    :eq           builtin-eq)
+    ("CONS"  :cons         builtin-cons)
+    ("LIST"  :list         builtin-list)
+    ("="     :numeric-equal    builtin-=)
+    ("/="    :numeric-distinct builtin-/=))
   "(NAME TAG IMPLEMENTATION) for the builtins the compiler may open-code.
 The compiler's side of this table is *OPEN-CODED-OPERATORS* in the
 transpiler; the two are joined by the TAG, so neither can open-code

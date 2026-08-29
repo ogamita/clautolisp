@@ -412,6 +412,14 @@ separate binary for tool integrators.
   stepping ride on) is kept while ~DEBUG~ >= ~SPACE~ and is compiled from
   ~SPEED~ 2. ~SPEED~ 3 compiles at definition rather than once a function
   is hot. Default ~((DEBUG 3) (SPACE 0) (SPEED 2))~.
+- *List building in compiled code is about twice as fast.* ~cons~,
+  ~list~, ~=~ and ~/=~ now get the inline treatment, as do the
+  three-argument forms of ~+~, ~-~, ~*~, ~<~, ~>~, ~<=~ and ~>=~ — so
+  ~(cons (list i (+ i 1 2)) acc)~ in a loop is no longer four full calls.
+  The rules are unchanged: ~=~ still compares strings as well as numbers,
+  ~(< 1 3 2)~ is still nil because the comparison walks the arguments in
+  pairs, and redefining any of them still wins over the inline path.
+
 - *A function call allocates 18% less.* Each parameter and ~/~-local of
   every call cost two extra conses, spent recording a symbol the binding
   already knew. The bindings are threaded together directly now. Nothing

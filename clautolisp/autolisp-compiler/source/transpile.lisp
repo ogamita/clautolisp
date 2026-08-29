@@ -131,15 +131,15 @@ for an empty body, which is what AUTOLISP-EVAL-PROGN yields."
 
 (defparameter *open-coded-operators*
   '(;; (NAME TAG . ARITIES-THE-FAST-PATH-IS-WRITTEN-FOR)
-    ("+"    :add          2)
-    ("-"    :subtract     1 2)
-    ("*"    :multiply     2)
+    ("+"    :add          1 2 3)
+    ("-"    :subtract     1 2 3)
+    ("*"    :multiply     1 2 3)
     ("1+"   :add1         1)
     ("1-"   :sub1         1)
-    ("<"    :less         2)
-    (">"    :greater      2)
-    ("<="   :not-greater  2)
-    (">="   :not-less     2)
+    ("<"    :less         2 3)
+    (">"    :greater      2 3)
+    ("<="   :not-greater  2 3)
+    (">="   :not-less     2 3)
     ("CAR"  :car          1)
     ("CDR"  :cdr          1)
     ("NULL" :null         1)
@@ -147,7 +147,11 @@ for an empty body, which is what AUTOLISP-EVAL-PROGN yields."
     ("ATOM" :atom         1)
     ("LISTP" :listp       1)
     ("ZEROP" :zerop       1)
-    ("EQ"   :eq           2))
+    ("EQ"   :eq           2)
+    ("CONS" :cons         2)
+    ("LIST" :list         1 2 3)
+    ("="    :numeric-equal    2)
+    ("/="   :numeric-distinct 2))
   "Operator name -> the tag its open-codable builtin carries, and the
 arities an inline fast path exists for. Any other arity of the same
 operator is an ordinary call: the fast paths are written per arity because
@@ -185,18 +189,19 @@ it is taking."
       ;; both arguments in range AND the result in range; anything else --
       ;; a float, a string, an overflow -- is the builtin's business, and
       ;; goes to the builtin.
+      ;; N-ary in the builtin, so N-ary here: (+ a b c) is one fast path
+      ;; over three variables, not two nested ones. (+ x) is x, (* x) is
+      ;; x, and both still have to pass the range check because the
+      ;; builtin's ARITHMETIC-RESULT does.
       ((:add :multiply)
        (%integer-arithmetic-path (ecase tag (:add '+) (:multiply '*))
-                                 (list first-argument second-argument)
-                                 block-name))
+                                 arguments block-name))
       (:subtract
-       ;; (- x) NEGATES; (- x y) subtracts. Same builtin, two meanings,
-       ;; so two fast paths -- and (- -2147483648) overflows, which the
-       ;; result check catches like any other.
-       (%integer-arithmetic-path '- (if second-argument
-                                       (list first-argument second-argument)
-                                       (list first-argument))
-                                 block-name))
+       ;; (- x) NEGATES; (- x y ...) subtracts the rest from the first.
+       ;; Same builtin, two meanings, and CL's - agrees with both -- and
+       ;; (- -2147483648) overflows, which the result check catches like
+       ;; any other.
+       (%integer-arithmetic-path '- arguments block-name))
       (:add1 (%integer-arithmetic-path '1+ (list first-argument) block-name))
       (:sub1 (%integer-arithmetic-path '1- (list first-argument) block-name))
       ;; RELATIONAL. NUMERIC-ORDER-P folds a NON-NUMERIC argument to nil
@@ -206,15 +211,42 @@ it is taking."
       ;; anything else goes to the builtin, which is the only thing that
       ;; knows the rest of that rule.
       ((:less :greater :not-greater :not-less)
+       ;; NUMERIC-ORDER-P compares PAIRWISE ALONG the arguments -- (< a b c)
+       ;; is (and (< a b) (< b c)) -- which is what CL's n-ary < does too,
+       ;; so the whole chain is one form.
        (let ((operator (ecase tag
                          (:less '<) (:greater '>)
                          (:not-greater '<=) (:not-less '>=))))
-         `(when (and (typep ,first-argument '(signed-byte 32))
-                     (typep ,second-argument '(signed-byte 32)))
+         `(when (and ,@(mapcar (lambda (argument)
+                                 `(typep ,argument '(signed-byte 32)))
+                               arguments))
             (return-from ,block-name
-              (if (,operator ,first-argument ,second-argument)
+              (if (,operator ,@arguments)
                   (autolisp-true-symbol)
                   nil)))))
+      ;; = and /= are NOT numeric-only: COMPARISON-EQUAL-P is EQL, then
+      ;; number= for two numbers, then STRING= for two strings. Two
+      ;; integers is the narrow case where all three agree; a float
+      ;; against an integer, or anything with a string in it, goes to the
+      ;; builtin, which owns the rest of that rule.
+      (:numeric-equal
+       `(when (and (typep ,first-argument '(signed-byte 32))
+                   (typep ,second-argument '(signed-byte 32)))
+          (return-from ,block-name
+            (if (= ,first-argument ,second-argument) (autolisp-true-symbol) nil))))
+      (:numeric-distinct
+       `(when (and (typep ,first-argument '(signed-byte 32))
+                   (typep ,second-argument '(signed-byte 32)))
+          (return-from ,block-name
+            (if (= ,first-argument ,second-argument) nil (autolisp-true-symbol)))))
+      ;; CONS and LIST are TOTAL -- BUILTIN-CONS is (cons a b) and
+      ;; BUILTIN-LIST returns its &rest list -- so there is no narrow case
+      ;; and no guard: the fast path is the whole function. What it saves
+      ;; is the call, which for these is most of the cost.
+      (:cons
+       `(return-from ,block-name (cons ,first-argument ,second-argument)))
+      (:list
+       `(return-from ,block-name (list ,@arguments)))
       ;; CAR / CDR. The builtin is nil -> nil, cons -> the part, anything
       ;; else -> an error. LISTP is exactly `nil or cons', and CL's CAR
       ;; of NIL is NIL, so the whole non-error domain is one line. A
@@ -290,7 +322,7 @@ INIT FORMS, which are outside the scope of these bindings and outside the
 block, so a nested open-coded call binds and returns from its own."
   (let* ((function-var '%open-coded-function)
          (block-name '%open-coded)
-         (variables (subseq '(%open-coded-arg-1 %open-coded-arg-2)
+         (variables (subseq '(%open-coded-arg-1 %open-coded-arg-2 %open-coded-arg-3)
                             0 (length arguments))))
     `(let ((,function-var (resolve-autolisp-function-designator
                            ',(first form) ,context-var))

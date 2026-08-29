@@ -1347,7 +1347,49 @@ Verified load-bearing: disabling the chain's replace detection fails
 REBINDING-A-SYMBOL-IN-ONE-FRAME-REPLACES-RATHER-THAN-ADDS and NOTHING
 ELSE in the whole corpus -- which is the argument for having written it.
 
-STILL OPEN after slice 17
+Slice 18 (2.0.19) -- the third batch of open-coded operators
+------------------------------------------------------------
+
+CONS, LIST, = and /=, plus the three-argument arities of + - * < > <= >=
+and the one-argument arities of + and *. The mechanism and its guard are
+from slice 13; this is the part that a mechanism makes cheap.
+
+TWO THINGS NEW IN KIND:
+
+  CONS and LIST are TOTAL. BUILTIN-CONS is (cons a b); BUILTIN-LIST
+  returns its &rest list. Neither can signal and neither has a narrow
+  case, so their fast path has NO GUARD beyond the tag check -- which
+  makes the tag check the only thing between them and a user's
+  redefinition, and gives that its own test.
+
+  = and /= are NOT numeric-only, which is the trap the backlog note
+  warned about. COMPARISON-EQUAL-P is EQL, then numeric = for two
+  NUMBERS, then STRING= for two STRINGS. An inline `=' that knew only
+  about numbers would answer nil for (= "a" "a") -- the same shape of
+  defect as an inline EQ that forgot interned strings, and caught the
+  same way: the fast path covers two 32-bit integers and declines
+  everything else, including (= 1 1.0), where EQL says no and = says yes.
+
+AND ONE THAT N-ARY INVITES: the relational chain is PAIRWISE ALONG the
+arguments -- (< 1 3 2) is (and (< 1 3) (< 3 2)), which is NIL. Comparing
+the first against each of the rest would say T. CL n-ary < agrees with
+AutoLISP here, so the whole chain is one form, but the test says so out
+loud because the wrong reading is the tempting one.
+
+RESULT, A/B/A on a cons/list/=-heavy workload (building 900-element
+lists 120 times, then scanning them):
+
+                    2.0.18   2.0.19   speedup
+    interpreted      212      208      1.00x   <- control
+    compiled          76       36-40   ~2x
+
+The interpreted row is the control and it is unchanged, as it must be:
+open-coding exists only in compiled code. fib, which exercises none of
+the new operators, is unchanged too (compiled 48 -> 44 ms, within noise)
+-- worth checking because the arithmetic fast paths were rewritten to be
+n-ary rather than two-argument.
+
+STILL OPEN after slice 18
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -1366,13 +1408,15 @@ STILL OPEN after slice 17
     MAKE-AUTOLISP-SUBR is exported and its ordinary-function convention
     is used by the CAD layer and by eight test sites, so it is a contract
     change, not a local one. Worth doing deliberately, not in passing.
-  - STILL MORE open-coded operators, though the obvious ones are done
-    (slice 14). What is left is the three-or-more-argument arities of +
-    / - / * / < and friends, and the second rank by frequency: cons,
-    length, nth, member, assoc, = and /=. Each still costs only the exact
-    statement of its narrow case -- and note that = and /= are NOT
-    numeric-only in AutoLISP, so they need reading before they are
-    written.
+  - open-coding has reached diminishing returns for the OPERATORS, but
+    not for the shapes. What was deliberately NOT taken in slice 18:
+    LENGTH, NTH, MEMBER and ASSOC each call REQUIRE-PROPER-LIST, which
+    walks the list, before doing their own walk -- so the call overhead
+    a fast path would remove is small beside the work, and a fast path
+    that walked once would be a second implementation with different
+    behaviour on a dotted list. They are the wrong shape for this
+    mechanism, which is worth recording so nobody adds them on the
+    grounds that they are frequent.
   - what a call still allocates, after slice 17 removed the alist conses:
     a dynamic-frame struct and a dynamic-binding struct per parameter,
     plus the &rest list and the three-cons call-stack entry in
