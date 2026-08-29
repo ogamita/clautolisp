@@ -90,7 +90,17 @@ case "$product" in
     if [[ -z "$bin" ]]; then
       case "$platform" in
         macos)
+          # The real installation is VERSIONED and has a space in the
+          # bundle name: /Applications/BricsCAD V26.app/Contents/MacOS/
+          # bricscad. Neither of the two globs that used to be here
+          # matched it, so BricsCAD was never found on macOS -- this file
+          # claims at the top to mirror alfe's discovery, and alfe walks
+          # "/Applications/BricsCAD*.app/" (backend-bricscad.lisp), which
+          # does match. The versioned glob goes FIRST so a machine with
+          # several versions gets the newest by the sort first_glob's
+          # caller relies on.
           bin="$(first_glob \
+            "/Applications/BricsCAD"*".app/Contents/MacOS/bricscad" \
             "/Applications/BricsCAD.app/Contents/MacOS/bricscad" \
             "/Applications/Bricsys/BricsCAD"*".app/Contents/MacOS/bricscad" \
             || true)" ;;
