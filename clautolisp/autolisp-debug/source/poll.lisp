@@ -43,8 +43,17 @@ debugged thread has armed a step or set a breakpoint covering this point
   (let ((ti *thread-debug-info*))
     (when (and ti (thread-debug-info-debug-flag ti)            ; (a) fast path
                (not (thread-debug-info-jump-target ti)))       ; jumping ⇒ no stops
-      (setf (thread-debug-info-current-pp ti) (cons fid form-id))
-      (let* ((step (step-request-fires-p ti when))
+      (setf (thread-debug-info-current-pp-fid ti) fid
+            (thread-debug-info-current-pp-form-id ti) form-id
+            (thread-debug-info-current-pp-valid-p ti) t)
+      ;; The three tests below are each guarded by the slot that makes them
+      ;; possible, so a program merely RUNNING under a session -- no step
+      ;; armed, no breakpoint here, no watches -- pays three slot reads
+      ;; rather than three calls. The Bloom summary and the watches list
+      ;; were already guarded this way; the step request was not, and it is
+      ;; consulted on every poll point of every instrumented form.
+      (let* ((step (and (thread-debug-info-step-request ti)
+                        (step-request-fires-p ti when)))
              (bp (and (not step)
                       (summary-test ti fid form-id)            ; (b) Bloom
                       (find-active-breakpoint ti fid form-id when)))
@@ -97,9 +106,9 @@ current poll point and run the UI command loop, applying its resume directive
 stop. Returns NIL."
   (let ((ti *thread-debug-info*))
     (when (and ti (thread-debug-info-debug-flag ti))
-      (let* ((pp (thread-debug-info-current-pp ti))
-             (fid (if pp (car pp) 0))
-             (form-id (if pp (cdr pp) 0))
+      (let* ((valid (thread-debug-info-current-pp-valid-p ti))
+             (fid (if valid (thread-debug-info-current-pp-fid ti) 0))
+             (form-id (if valid (thread-debug-info-current-pp-form-id ti) 0))
              (metadata (metadata-for-function-id fid)))
         (apply-resume-directive
          ti (funcall *debug-hit-handler*
@@ -217,10 +226,22 @@ written once."
                      ;; when it is neither the target nor on the path to it.
                      ;; A skipped form contributes NIL. JUMP-DISPOSITION
                      ;; clears the jump when this poll point IS the target.
-                     (if (eq (jump-disposition ti fid form-id) :skip)
+                     ;;
+                     ;; The JUMP-TARGET slot is read HERE rather than left to
+                     ;; the two functions, which both begin by reading it and
+                     ;; doing nothing when it is NIL. That is the case on
+                     ;; every poll point of every program that is not
+                     ;; mid-jump -- which is all of them, nearly all the time
+                     ;; -- and it was costing two full calls per instrumented
+                     ;; form to establish. Same answers: JUMP-DISPOSITION
+                     ;; cannot return :SKIP with no target, and
+                     ;; JUMP-EXIT-CHECK does nothing with none.
+                     (if (and (thread-debug-info-jump-target ti)
+                              (eq (jump-disposition ti fid form-id) :skip))
                          nil
                          (prog1 (funcall thunk)
-                           (jump-exit-check ti fid form-id)
+                           (when (thread-debug-info-jump-target ti)
+                             (jump-exit-check ti fid form-id))
                            (poll-point fid form-id :after))))
                  (clal-poll-return (value) value))
             (debug-poll-exit ti form-id)))

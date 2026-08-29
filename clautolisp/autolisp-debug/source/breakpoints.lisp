@@ -42,7 +42,19 @@ so a stuck debugged thread can't hang a caller (tests) forever."
   (summary (make-array 1024 :element-type 'bit :initial-element 0))
   ;; volatile breakpoints, cleared the first time ANY breakpoint fires (§6)
   (volatile '() :type list)
-  (current-pp nil)
+  ;; Where execution is: the poll point most recently entered. TWO FIXNUM
+  ;; SLOTS rather than a CONS, because this is written on EVERY poll point
+  ;; -- twice per instrumented form, :before and :after -- and a cons
+  ;; there was two allocations per form of a program that is merely being
+  ;; run under a session. Nothing outside the debugger reads it; the two
+  ;; places that do (BREAK-HERE and REPORT-ERROR-STOP) want the two
+  ;; numbers, not the pair.
+  ;;
+  ;; CURRENT-PP-VALID-P distinguishes `no poll point yet' from the poll
+  ;; point (0 . 0), which is a real one: function 0's entry form.
+  (current-pp-valid-p nil)
+  (current-pp-fid 0 :type fixnum)
+  (current-pp-form-id 0 :type fixnum)
   (status :running)
   ;; Stepping + backtrace state (spec §6, §9), maintained by eval-poll-form
   ;; while a session is active on this thread:
