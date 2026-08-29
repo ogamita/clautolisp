@@ -752,18 +752,13 @@ not supplied)."
 ;;; expression namespace (at a toplevel read it is unambiguous: no
 ;;; backquote in AutoLISP).
 
-(define-interactor *autolisp*
-  :name "AUTOLISP" :alias "LISP"
-  :prompt "_$ "
-  :reader '%autolisp-reader
-  :evaluator '%autolisp-evaluate
-  :documentation "The clautolisp Lisp REPL — the bottom interactor, always
-under every stacked mode (design-revision D3): reads AutoLISP forms; a
-`,command' line runs a REPL command. Routable as `autolisp CMD' or `lisp
-CMD' from any inner mode; a user command registered here
-((clal-define-command \"AUTOLISP\" …)) is reachable everywhere — the
-\"global\" user command (D6). The prompt is late-bound (an indication of
-the current dialect can come later).")
+;;; The *AUTOLISP* REPL interactor, its REPL-STATE, its reader/evaluator, and
+;;; the "lisp" window template now live in the CLAUTOLISP.REPL library (below
+;;; this tool, so a Lisp window is instantiable from the ncurses debugger).
+;;; This file keeps the tool-specific parts: the comma-commands below (which
+;;; register into *AUTOLISP*'s dictionaries), REPL-LOOP (which drives it), and
+;;; the rich per-turn behaviour — installed into the library's hooks just after
+;;; REPL-LOOP.
 
 (define-command (*autolisp* d date) ()
     "Print the current date and time (ISO 8601)."
@@ -891,52 +886,15 @@ the current dialect can come later).")
       ;; partial output line).
       (dribble-stop))))
 
-(defstruct repl-state
-  "The AUTOLISP activation's per-run state: the evaluation context and the
-attached debug session (if any). The dialect is NOT here — it is consulted
-live at each read (CURRENT-EVALUATION-DIALECT, design-revision D2), so a
-mid-session =(setq *AUTOLISP-DIALECT* 'lax)= takes effect immediately."
-  context session break-on-error)
-
-;;; --- the lisp REPL as a window interactor template (windows-and-interactor-
-;;; templates.issue). *AUTOLISP* is the singleton REPL PROGRAM; each activation
-;;; multiplexes the ONE evaluation context (the shared evaluator). So the REPL
-;;; is a multi-instance UI over a singleton backend (issue §Core design tension:
-;;; "several lisp interactors … using the same lisp evaluator") — the template
-;;; packages the instantiation, parallel to the sedit / aldo templates. CONTEXT's
-;;; TARGET may name an explicit evaluation context; otherwise the current one is
-;;; shared. (The ncurses REPL pane consuming this lands in a later slice.)
-
-(defun %lisp-template-constructor (context)
-  "Build an AUTOLISP (lisp REPL) activation over the shared evaluation context."
-  (let ((eval-context (or (clautolisp.interactor:template-context-target context)
-                          (clautolisp.autolisp-runtime:current-evaluation-context))))
-    (make-activation *autolisp* (make-repl-state :context eval-context :session nil))))
-
-(clautolisp.interactor:define-interactor-template "lisp"
-  :display-name "Lisp REPL"
-  :description "An AutoLISP read-eval-print instance over the running evaluator"
-  :interactor *autolisp*
-  :constructor '%lisp-template-constructor
-  :config-name "lisp")
-
-(defun %autolisp-reader (input-context)
-  "The *AUTOLISP* singleton's reader: a `,command' line dispatches, anything
-else reads as one balanced AutoLISP turn under the dialect in force NOW."
-  (let ((state (activation-state *command-activation*)))
-    (comma-command-read input-context
-                        (%repl-source-reader
-                         (current-evaluation-dialect (repl-state-context state))))))
-
-(defun %autolisp-evaluate (input)
-  "The *AUTOLISP* singleton's evaluator: one REPL turn over this activation's
-context and session."
-  (let ((state (activation-state *command-activation*)))
-    (%repl-eval-source (second input)
-                       (repl-state-context state)
-                       (repl-state-session state)
-                       (repl-state-break-on-error state)
-                       (lambda () (interactor-return :terminated)))))
+;;; Install the tool's rich per-turn REPL behaviour into the relocated
+;;; *AUTOLISP* interactor (clautolisp.repl): the library keeps a minimal default
+;;; so a Lisp window works stand-alone; the tool supplies the full turn (input
+;;; history, the dribble, navigation requests, the debug-session eval path) via
+;;; %REPL-EVAL-SOURCE, and the balanced/dribble-aware source reader
+;;; %REPL-SOURCE-READER. Quoted symbols — resolved at call time; both functions
+;;; are defined just below and are fbound before the first REPL turn runs.
+(setf clautolisp.repl:*repl-eval-hook*          '%repl-eval-source
+      clautolisp.repl:*repl-source-reader-hook* '%repl-source-reader)
 
 (defun %repl-source-reader (dialect)
   "The sexp-reader COMMA-COMMAND-READ falls back to: read one whole,

@@ -325,6 +325,9 @@ identity / TEMPPREFIX stamping, option value parsers)."
                "clautolisp/autolisp-init-files"
                ;; REPL comma-commands (interactors): ,date ,uptime ,help ,quit
                "clautolisp/autolisp-interactor"
+               ;; the *AUTOLISP* REPL interactor + lisp window template now live
+               ;; in this library; the tool installs its rich per-turn hooks.
+               "clautolisp/autolisp-repl"
                ;; aldo debugger: the run loop can start a debug session under
                ;; --debugger-ui / --on-error debug (debugger §10).
                "clautolisp/autolisp-debug"
@@ -354,7 +357,6 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "tools/clautolisp/tests/debugger-options-tests")
    (:file "tools/clautolisp/tests/transmit-tests")
    (:file "tools/clautolisp/tests/aldo-conf-tests")
-   (:file "tools/clautolisp/tests/lisp-template-tests")
    (:file "tools/clautolisp/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -700,6 +702,36 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (uiop:symbol-call :clautolisp.interactor.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/autolisp-repl"
+  :description "The AutoLISP REPL interactor (*AUTOLISP*) and the lisp window template, as a library so a Lisp window is instantiable below the tool (windows-and-interactor-templates.issue). Rich per-turn behaviour is injected by the clautolisp tool through hooks."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime" "clautolisp/autolisp-interactor")
+  :serial t
+  :components
+  ((:file "autolisp-repl/source/package")
+   (:file "autolisp-repl/source/repl"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-repl/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-repl/tests"
+  :description "FiveAM tests for the AutoLISP REPL interactor library."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-repl" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-repl/tests/package")
+   (:file "autolisp-repl/tests/repl-tests")
+   (:file "autolisp-repl/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.repl.tests
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/autolisp-debug-ui"
