@@ -815,3 +815,17 @@
     (is (eq clautolisp.repl:*autolisp*
             (clautolisp.interactor:activation-interactor
              (clautolisp.ui.ncurses::ncurses-ui-repl-activation ui))))))
+
+;;;; --- the shared (aldo) tail: debugger commands route from any pane -------
+
+(test debugger-command-routes-from-any-pane
+  ;; C-w p activates the source pane; `c' there is not a navi key, so it falls
+  ;; through to the shared aldo tail (spec §C) and resumes execution.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 23) #\p #\c) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore ui screen))
+      (is (eql 7 result)))))

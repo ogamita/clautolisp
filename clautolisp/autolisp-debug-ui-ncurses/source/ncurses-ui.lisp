@@ -732,12 +732,21 @@ HANDLED NIL means the key is unbound by the user — fall through."
 (defun handle-key (ui session hit key)
   "Dispatch one key: the user keymap first (shadowing the built-ins), then the
 ACTIVE window's interactor stack (the :WINDOW-MANAGER on top, then the window's
-own interactor). The first handler that claims the key wins; return its resume
-directive or NIL."
+own interactor). The first handler that claims the key wins. A key no pane
+claims falls through to the shared debugger (spec §C's shared (aldo …) tail):
+the one ALDO handles it, so a debugger command works from whichever pane is
+active — ALDO returns NIL for keys it does not own, leaving them unbound.
+Returns the resume directive or NIL."
   (multiple-value-bind (handled directive) (user-keymap-dispatch ui session hit key)
     (if handled
         directive
-        (dolist (interactor (window-stack (active-window ui)) nil)
+        (dolist (interactor (window-stack (active-window ui))
+                            ;; fall-through: the shared aldo tail. Kept as a
+                            ;; routing default rather than a real ALDO activation
+                            ;; in every window stack — the stop's session/UI form
+                            ;; a cycle (session <-> ui <-> windows) that is unsafe
+                            ;; to embed in a traversed structure.
+                            (when session (nth-value 1 (aldo-key ui session hit key))))
           (multiple-value-bind (h d) (interactor-key interactor ui session hit key)
             (when h (return d)))))))
 
