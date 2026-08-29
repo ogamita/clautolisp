@@ -99,6 +99,7 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:thread-debug-info-breakpoints
    #:thread-debug-info-summary
    #:thread-debug-info-volatile
+   #:thread-debug-info-frame-pool
    #:thread-debug-info-current-pp-valid-p
    #:thread-debug-info-current-pp-fid
    #:thread-debug-info-current-pp-form-id

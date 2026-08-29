@@ -35,6 +35,28 @@ The default continues. A session installs a handler that reports the hit
 and blocks for the debugger's command (spec §8). This function IS the
 debugger/UI boundary in Phase 1–2.")
 
+(defconstant +clal-poll-return-tag+ '%clal-poll-return
+  "CATCH tag by which the debugger supplies a value for the INNERMOST
+instrumented form (spec §10.1, `return\').
+
+It was a RESTART -- CLAL-POLL-RETURN, established by RESTART-CASE around
+every instrumented form. A restart is the idiomatic mechanism and it is
+inspectable, so the swap was measured and put to pjb rather than taken
+quietly (issues/closed/poll-point-restart-cost.issue); he chose the speed,
+on the ground that nothing enumerates restarts here -- checked: there is
+no COMPUTE-RESTARTS anywhere in the product, and the only two users find
+this one BY NAME and invoke it.
+
+THROW reaches the innermost matching CATCH, which is the innermost poll
+point, so nesting and recursion need nothing extra: a recursive function
+has one catch per activation and the innermost is the one that wins. And
+`is one established?\' -- which FIND-RESTART used to answer by returning
+NIL -- is (PLUSP (THREAD-DEBUG-INFO-POLL-DEPTH TI)), maintained by
+DEBUG-POLL-ENTER/EXIT around exactly this CATCH.
+
+The :ABORT directives beside it already unwind by THROW to CLAL-ABORT, so
+this is the mechanism the file already used for the other resolution.")
+
 (declaim (inline poll-point))
 (defun poll-point (fid form-id when)
   "Poll point called before/after every instrumented form. No-op unless a
@@ -184,12 +206,12 @@ stop, not just an error stop."
        (request-jump ti fid form-id)))
     ((and (consp directive) (eq (first directive) :continue-with-return))
      ;; `return FORM' at a normal (non-error) stop: make the innermost
-     ;; instrumented form return VALUE via its CLAL-POLL-RETURN restart
-     ;; (spec §1 return / §10.1). Mirrors APPLY-ERROR-DIRECTIVE; declines
-     ;; (resumes normally) when no instrumented form encloses the stop.
-     (let ((restart (find-restart 'clal-poll-return)))
-       (when restart
-         (invoke-restart restart (coerce-from-cl (second directive))))))
+     ;; instrumented form return VALUE (spec §1 return / §10.1). Mirrors
+     ;; APPLY-ERROR-DIRECTIVE; declines (resumes normally) when no
+     ;; instrumented form encloses the stop, which is what a poll depth of
+     ;; zero means.
+     (when (plusp (thread-debug-info-poll-depth ti))
+       (throw +clal-poll-return-tag+ (coerce-from-cl (second directive)))))
     (t nil))
   directive)
 
@@ -219,7 +241,7 @@ written once."
         (progn
           (debug-poll-enter ti fid form-id context)
           (unwind-protect
-               (restart-case
+               (catch +clal-poll-return-tag+
                    (progn
                      (poll-point fid form-id :before)
                      ;; Form-level jump (§1): skip this form's body entirely
@@ -242,8 +264,7 @@ written once."
                          (prog1 (funcall thunk)
                            (when (thread-debug-info-jump-target ti)
                              (jump-exit-check ti fid form-id))
-                           (poll-point fid form-id :after))))
-                 (clal-poll-return (value) value))
+                           (poll-point fid form-id :after)))))
             (debug-poll-exit ti form-id)))
         ;; not a debugged thread (e.g. eval-in-frame with *debugging*
         ;; rebound, or a stray woven form): just evaluate.
