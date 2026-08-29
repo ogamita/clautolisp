@@ -997,7 +997,96 @@ and open-coding operators moves DOWN the list, to after that. Measure,
 then act on the measurement; the plan is an input to that, not a
 substitute for it.
 
-STILL OPEN after slice 12
+Slice 13 (2.0.14) -- open-coding, guarded
+-----------------------------------------
+
+Slice 12 put the CALL PROTOCOL on top of the profile and open-coding
+behind it. Measuring the protocol directly settled which to do first, and
+it was not what either the profile or the plan said on its own:
+
+    the protocol, in isolation      43 ns a call
+      of which: the outer HANDLER-CASE   ~25%
+                the call-stack cons      ~31%
+                the second &rest list     ~9%
+
+Trimming those pieces is worth 10-15% of the protocol, i.e. a few percent
+overall, and the cleanest way to get most of it -- changing the subr
+calling convention to take the argument LIST -- turned out to touch
+MAKE-AUTOLISP-SUBR, which is exported and used by the CAD layer and by
+eight test sites with an ordinary-function convention. A broad contract
+change for a small measured win.
+
+Open-coding, on the other hand, removes the WHOLE protocol for the
+operators it covers -- not the ~10% the arithmetic itself costs. In fib,
+four of the six calls per invocation are `<', `-', `+'. That is the
+lever, and it is why the original plan named open-coding even though the
+profile attributes little time to the builtins themselves: the profile
+charges their CALLS to CALL-AUTOLISP-FUNCTION-IN-CONTEXT.
+
+WHAT MAKES IT SAFE, since this is the item that was deliberately deferred
+for years of slices on exactly this ground:
+
+  It is a FAST PATH, not a second implementation. The inline code covers
+  one narrow case -- two integers in the 32-bit range -- and everything
+  else goes to the SAME builtin: floats, strings, nil, wrong arity, and
+  out-of-range results. So every value, every error and every message
+  outside that case is the builtin's, unchanged, because it IS the
+  builtin.
+
+  The narrowness is not caution for its own sake. AutoLISP `+' signals
+  INTEGER-OVERFLOW outside the 32-bit range, so the fast path checks the
+  RESULT and not merely the arguments; and `<' folds a NON-NUMERIC
+  argument to nil rather than signalling, which loop guards depend on, so
+  a float or a nil is handed over rather than "improved".
+
+  The call site checks, per call, that the name still resolves to the
+  exact builtin whose semantics were open-coded. `+' can be redefined
+  with DEFUN, assigned with SETQ, or shadowed by a `/'-local; all three
+  work, all three were checked against the running engine, and all three
+  must reach the user's definition FROM COMPILED CODE. The subr carries a
+  tag; a user definition is a different object with no tag; the guard
+  fails and the ordinary call happens.
+
+  The two tables -- *OPEN-CODED-CORE-BUILTINS* in the builtins and
+  *OPEN-CODED-OPERATORS* in the transpiler -- are joined by that tag, so
+  neither side can open-code something the other did not agree to. And
+  the builtins side stamps the tag only after checking that the function
+  behind the name really is the one named in the table, so swapping an
+  implementation silently drops the tag: a missing tag costs a call, a
+  wrong tag would cost correctness.
+
+RESULT, measured by INTERLEAVING the two binaries in one run -- the
+machine drifted enough between separate runs to invent a 12% regression
+that was not there, and alternating them removes it:
+
+                   before   after   speedup
+    -O0 shallow     429      429     1.00x   <- control
+    -O0 deep        380      384     0.99x   <- control
+    -O3 fib 27      416      271     1.54x
+    -O3 loop d1     248      177     1.40x
+    -O3 loop d40    240      173     1.39x
+
+The -O0 rows are the control and they are unchanged, as they must be:
+open-coding only exists in compiled code. Work time alone (startup ~80 ms
+removed) is about 1.75x.
+
+TWO THINGS THIS SLICE LEARNED THE HARD WAY:
+
+  Transpiler output must survive PRINT then READ. A .lap is produced by
+  printing the transpiled code as source and COMPILE-FILEing it, and
+  WRITE-LAP-SOURCE prints with *PRINT-CIRCLE* NIL -- so a GENSYM comes
+  out as `#:FN364' at every occurrence and each one reads back as a
+  DIFFERENT symbol. The binding and its references come apart and the
+  artefact does not compile. That is why the existing %VALUE / %TEST /
+  %COND are interned, and the new names are too. The artefact tests
+  caught it immediately, which is the argument for having had them.
+
+  A docstring closed early by an unescaped quote shipped in 2.0.13 and
+  the whole corpus passed on both hosts. See
+  issues/closed/docstring-closed-early-by-unescaped-quote.issue and the
+  new `make check-docstrings'.
+
+STILL OPEN after slice 13
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -1005,19 +1094,19 @@ STILL OPEN after slice 12
   - poll points are now what makes debugging slow (see slice 7's
     measurement), not interpretation. That is where debugging speed is
     left.
-  - the CALL PROTOCOL, which slice 12's profile puts on top at ~21% self:
-    CALL-AUTOLISP-FUNCTION-IN-CONTEXT conses an &rest list, conses a
-    call-stack entry, and establishes a HANDLER-CASE, per builtin call.
-    A compiled call site knows its arity and could avoid most of it.
-  - open-coding hot operators as inline CL. The Tier-2 probe named this
-    as where the margin against LispEx is; slice 12's profile of THIS
-    engine puts all the arithmetic together at about 10%, behind the call
-    protocol. Still worth doing, no longer first -- and still to be done
-    one operator at a time with the equivalence test as the guard, since
-    it means a second implementation of each operator's AutoLISP
-    semantics. (Reminder of how sharp that is: `+' signals
-    INTEGER-OVERFLOW outside the 32-bit range. A naive inline `+' loses
-    that silently.)
+  - the CALL PROTOCOL. Still on top for the calls that remain, and now
+    measured piece by piece (slice 13): of ~43 ns a call, the outer
+    HANDLER-CASE is ~25%, the call-stack cons ~31%, the second &rest list
+    ~9%. The cheapest real win is the argument-list convention for the
+    subr function slot, which removes one list cons and one APPLY -- but
+    MAKE-AUTOLISP-SUBR is exported and its ordinary-function convention
+    is used by the CAD layer and by eight test sites, so it is a contract
+    change, not a local one. Worth doing deliberately, not in passing.
+  - MORE open-coded operators. The mechanism and its guard exist now
+    (slice 13); each new operator costs only the exact statement of its
+    narrow case. The obvious next ones are 1+ / 1- / car / cdr / null /
+    eq, and the one-argument and three-or-more-argument arities of the
+    operators already covered.
   - reading the qualities from the CONFIGURATION MODULE, so a project
     can set them once rather than on every invocation. The --optimize
     half is done (slice 11); this is the other half of the same item,

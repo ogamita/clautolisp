@@ -83,7 +83,7 @@ clautolisp-secureload-trust-model spec.")
   ;; test, and walks. The safe answer is the one you get by being wrong.
   ;;
   ;; The count is global to the symbol, so it assumes one thread mutates
-  ;; a given context'"'"'s frames at a time -- which is already true of the
+  ;; a given context's frames at a time -- which is already true of the
   ;; frame chain itself, and of everything else hanging off the context.
   (dynamic-binding-count 0 :type fixnum))
 
@@ -272,7 +272,25 @@ clautolisp-secureload-trust-model spec.")
 
 (defstruct autolisp-subr
   (name "" :type string)
-  function)
+  function
+  ;; When non-NIL, a keyword naming a specific, known builtin
+  ;; implementation that the compiler is allowed to OPEN-CODE a fast path
+  ;; for -- :ADD for the core `+', and so on.
+  ;;
+  ;; It identifies the IMPLEMENTATION, not the name. A user may redefine
+  ;; `+' with DEFUN, assign it with SETQ, or shadow it with a `/'-local
+  ;; -- all three work in AutoLISP, all three were checked -- and in every
+  ;; one of those cases the value the call site resolves is a different
+  ;; object with no tag, the guard fails, and the ordinary call happens.
+  ;; That is what makes an inline fast path a fast path rather than a
+  ;; second implementation of `+' able to disagree with the first.
+  ;;
+  ;; Only INSTALL-CORE-BUILTINS sets it, and only after checking that the
+  ;; function behind the name is the very one whose semantics the compiler
+  ;; open-codes. Swap the implementation and the tag silently disappears,
+  ;; which is the safe direction: a missing tag costs a call, a wrong tag
+  ;; would cost correctness.
+  (open-code nil :type symbol))
 
 (defstruct autolisp-usubr
   (name "" :type string)

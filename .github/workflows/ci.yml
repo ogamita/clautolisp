@@ -54,6 +54,7 @@ jobs:
           make -C clautolisp test-compiler-equivalence
           make -C clautolisp test-debug-compiled
           make -C clautolisp test-shipped-compiler
+          make -C clautolisp check-docstrings
 
       - name: clautolisp — file-compat report (SBCL)
         run: |

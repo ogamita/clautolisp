@@ -28,6 +28,7 @@
                 #:known-special-operator-p
                 #:lookup-variable
                 #:resolve-autolisp-function-designator
+                #:autolisp-open-code-tag
                 #:self-evaluating-runtime-value-p
                 #:set-variable)
   (:export #:transpile-form

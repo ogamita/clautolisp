@@ -88,6 +88,7 @@
    #:make-autolisp-subr
    #:autolisp-subr-name
    #:autolisp-subr-function
+   #:autolisp-open-code-tag
    #:autolisp-usubr
    #:make-autolisp-usubr
    #:autolisp-usubr-name
