@@ -85,10 +85,23 @@ calls compile."
   `(autolisp-eval ',form ,context-var))
 
 (defun transpile-body (forms context-var)
-  "Translate FORMS as an implicit PROGN, yielding the last value — nil
-for an empty body, which is what AUTOLISP-EVAL-PROGN yields."
+  "Translate FORMS as an implicit PROGN, yielding the last value — nil for
+an empty body, which is what AUTOLISP-EVAL-PROGN yields.
+
+ALWAYS RETURNS A COMPOUND FORM: `(PROGN)' for the empty body, not NIL.
+(PROGN) evaluates to NIL, so nothing about the VALUE changes; what changes
+is that the result can be spliced into a STATEMENT position -- a LOOP's DO
+-- where NIL is not a legal form. WHILE did splice it there, and
+`(while (setq i (cdr i)))' with no body compiled into a function that
+signalled a Common Lisp error when CALLED
+(issues/closed/compiled-loop-with-empty-body.issue).
+
+pjb's fix (2026-08-30), and the better one: the alternative was wrapping
+the result at every site that uses a body as a statement, which is a rule
+every future loop would have to remember. This way there is nothing to
+remember -- a transpiled body is a form."
   (if (null forms)
-      nil
+      '(progn)
       `(progn ,@(mapcar (lambda (form) (transpile-form form context-var)) forms))))
 
 ;;; --- open-coded operators -------------------------------------------
@@ -438,11 +451,62 @@ Never fails: an unhandled form becomes an interpreter call on itself."
          ((string= name "WHILE")
           (if (null arguments)
               (%fallback form context-var)
+              ;; DO takes a COMPOUND form, which TRANSPILE-BODY always
+              ;; returns. `(while (setq i (cdr i)))' with no body at all is
+              ;; an AutoLISP idiom, not a degenerate case, and it used to
+              ;; compile to (LOOP WHILE X DO NIL). See
+              ;; issues/closed/compiled-loop-with-empty-body.issue.
               `(progn
                  (loop while (autolisp-true-p
                               ,(transpile-form (first arguments) context-var))
                        do ,(transpile-body (rest arguments) context-var))
                  nil)))
+
+         ;; REPEAT and FOREACH. Until these two, a compiled function
+         ;; containing either ran the WHOLE loop -- body included --
+         ;; through the interpreter, because a fallback hands over the
+         ;; entire subform. They are the two commonest loops in AutoLISP,
+         ;; so that was the largest hole left in what "compiled" meant.
+         ;;
+         ;; What is emitted is the SHAPE only. Every decision -- the count
+         ;; check and its diagnostic, the sequence check, and FOREACH's
+         ;; rule for giving the variable its value -- is a call to the
+         ;; runtime function the INTERPRETER calls for the same thing. The
+         ;; alternative was restating them here, and a second statement of
+         ;; a rule is a second thing that can be wrong.
+         ((string= name "REPEAT")
+          ;; (repeat COUNT body...) yields NIL, not the last body value.
+          (if (null arguments)
+              (%fallback form context-var)
+              `(progn
+                 (loop repeat (check-repeat-count
+                               ,(transpile-form (first arguments) context-var))
+                       do ,(transpile-body (rest arguments) context-var))
+                 nil)))
+
+         ((string= name "FOREACH")
+          ;; (foreach NAME LIST body...) yields the LAST BODY VALUE -- or
+          ;; nil for an empty list or an empty body. The arity and the
+          ;; binding name are checked HERE because both are literal: a
+          ;; malformed FOREACH falls back and the interpreter signals,
+          ;; rather than this file growing a second copy of that error.
+          (if (and (>= (length arguments) 2)
+                   (typep (first arguments) 'autolisp-symbol))
+              `(let ((%foreach-result nil))
+                 (unwind-protect
+                      (progn
+                        (push-dynamic-frame ,context-var)
+                        (dolist (%foreach-element
+                                 (check-foreach-sequence
+                                  ,(transpile-form (second arguments) context-var))
+                                 %foreach-result)
+                          (bind-foreach-variable ',(first arguments)
+                                                 %foreach-element
+                                                 ,context-var)
+                          (setf %foreach-result
+                                ,(transpile-body (cddr arguments) context-var))))
+                   (pop-dynamic-frame ,context-var)))
+              (%fallback form context-var)))
 
          ((string= name "COND")
           ;; A clause with only a test yields the test's value; otherwise

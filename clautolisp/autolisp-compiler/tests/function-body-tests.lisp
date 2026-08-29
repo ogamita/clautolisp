@@ -205,3 +205,88 @@ recursive call in its own body would compile against an undefined name."
      (%read-one "(defun fact (n) (if (< n 2) 1 (* n (fact (- n 1)))))")
      context)
     (is (eql 120 (autolisp-eval (%read-one "(fact 5)") context)))))
+
+;;;; REPEAT and FOREACH, open-coded (2.0.21).
+;;;;
+;;;; Until this, a compiled function containing either ran the WHOLE loop
+;;;; through the interpreter -- a fallback hands over the entire subform,
+;;;; so the body went with it. They are the two commonest loops in
+;;;; AutoLISP, which made this the largest hole left in what "compiled"
+;;;; meant.
+;;;;
+;;;; What the transpiler emits is the SHAPE. Every decision -- the count
+;;;; check, the sequence check, and FOREACH's rule for giving its variable
+;;;; a value -- is a call to the runtime function the interpreter calls,
+;;;; so there is nothing here that can disagree with the interpreter. The
+;;;; tests below are about the parts a shape can still get wrong: what the
+;;;; loop RETURNS, and what it does to the surrounding bindings.
+
+(defparameter *loop-corpus*
+  '(;; REPEAT yields NIL, not the last body value -- the mistake a Lisp
+    ;; reflex makes
+    "(progn (defun f (/ a) (setq a 0) (list (repeat 3 (setq a (+ a 1))) a)) (f))"
+    "(progn (defun f () (repeat 0 1)) (f))"
+    "(progn (defun f () (repeat -5 1)) (f))"
+    "(progn (defun f (/ a) (setq a 0) (repeat 4 (setq a (+ a 2))) a) (f))"
+    "(progn (defun f () (repeat 2)) (f))"
+    ;; a bad count is the interpreter's error, raised by the same check
+    "(progn (defun f () (repeat \"x\" 1)) (vl-catch-all-error-message (vl-catch-all-apply (function f) nil)))"
+    "(progn (defun f () (repeat nil 1)) (vl-catch-all-error-message (vl-catch-all-apply (function f) nil)))"
+    ;; FOREACH yields the LAST BODY VALUE, and nil for an empty list
+    "(progn (defun f (l) (foreach e l e)) (f '(1 2 3)))"
+    "(progn (defun f (l) (foreach e l e)) (f nil))"
+    "(progn (defun f (l / s) (setq s 0) (foreach e l (setq s (+ s e))) s) (f '(1 2 3 4)))"
+    "(progn (defun f (l) (foreach e l)) (f '(1 2)))"
+    ;; EMPTY LOOP BODIES. Not a degenerate case in AutoLISP -- draining a
+    ;; list for its side effect is what `(while (setq i (cdr i)))\' is for
+    ;; -- and the shape that was broken in compiled WHILE until 2.0.21
+    ;; (issues/closed/compiled-loop-with-empty-body.issue).
+    "(progn (defun drain (l / i) (setq i l) (while (setq i (cdr i))) i) (drain '(1 2 3)))"
+    "(progn (defun f (/ i) (setq i 0) (while (< (setq i (+ i 1)) 4)) i) (f))"
+    "(progn (defun f () (repeat 3)) (f))"
+    "(progn (defun f (l) (foreach e l)) (f '(1 2 3)))"
+    "(progn (defun f (l / acc) (setq acc nil) (foreach e l (setq acc (cons e acc))) acc) (f '(1 2 3)))"
+    ;; nested loops, and a loop whose body contains the other loop
+    "(progn (defun f (l / n) (setq n 0) (foreach e l (repeat e (setq n (+ n 1)))) n) (f '(1 2 3)))"
+    "(progn (defun f (ll / n) (setq n 0) (foreach l ll (foreach e l (setq n (+ n e)))) n) (f '((1 2) (3))))"
+    ;; a non-list is the interpreter's error, raised by the same check
+    "(progn (defun f () (foreach e 5 e)) (vl-catch-all-error-message (vl-catch-all-apply (function f) nil)))"
+    ;; the loop variable after the loop: FOREACH assigns when the name is
+    ;; already bound anywhere in the chain, so a /-local survives with the
+    ;; last element in it
+    "(progn (defun f (l / e) (setq e 'before) (foreach e l nil) e) (f '(1 2 3)))"
+    ;; ... and does NOT leak when the name was not bound before
+    "(progn (setq g 'outer) (defun f (l) (foreach g l nil)) (list (f '(1 2)) g))")
+  "Programs whose functions must give the same answers with their bodies
+compiled as with them interpreted. Most are about what the loops RETURN
+and what they leave behind, which is where a hand-written loop shape can
+differ from the interpreter's even when every check is shared.")
+
+(test compiled-loops-agree-with-interpreted-ones
+  (dolist (text *loop-corpus*)
+    (let ((interpreted (%run-interpreted text))
+          (compiled (%run-with-compiled-bodies text)))
+      (is (%same-value-p interpreted compiled)
+          "~S: interpreted ~S, compiled bodies ~S" text interpreted compiled))))
+
+(test a-compiled-foreach-really-compiles-its-body
+  "The point of open-coding FOREACH: the BODY is compiled too. A fallback
+hands the interpreter the whole subform, so before this the body of every
+foreach in every compiled function was interpreted. Asserted through the
+coverage report, which is the transpiler's own account of what it handed
+back."
+  (is (null (transpiler-coverage
+             (%read-one "(foreach e l (setq a (+ a e)))")))
+      "a foreach body was still handed to the interpreter")
+  (is (null (transpiler-coverage
+             (%read-one "(repeat n (setq a (+ a 1)))")))
+      "a repeat body was still handed to the interpreter"))
+
+(test a-compiled-repeat-yields-nil-not-its-body
+  "REPEAT's value is NIL however many times it ran -- the one thing a
+Lisp reflex writes wrongly, and invisible in any test that only checks
+side effects."
+  (is (null (%run-with-compiled-bodies
+             "(progn (defun f (/ a) (setq a 0) (repeat 3 (setq a 1))) (f))")))
+  (is (%same-value-p (%run-interpreted "(progn (defun f () (repeat 3 99)) (f))")
+                     (%run-with-compiled-bodies "(progn (defun f () (repeat 3 99)) (f))"))))

@@ -149,10 +149,13 @@ compiler's whole contract; everything else in this suite is detail."
   "A form the transpiler knows nothing about still compiles, and still
 gives the interpreter's answer. That is what makes the compiler safe to
 grow: it is correct before it is complete."
-  (is (%same-value-p (%interpreted "(foreach x '(1 2 3) x)")
-                     (%compiled "(foreach x '(1 2 3) x)")))
+  ;; COMMAND is the example now: FOREACH was, until the transpiler learned
+  ;; to open-code it (2.0.21), which is the point -- the set of unhandled
+  ;; operators shrinks and this test follows it rather than pinning it.
+  (is (%same-value-p (%interpreted "(let ((x 1)) x)")
+                     (%compiled "(let ((x 1)) x)")))
   ;; and it reports itself as a fallback rather than pretending coverage
-  (is (member "FOREACH" (transpiler-coverage (%read-one "(foreach x '(1 2 3) x)"))
+  (is (member "LET" (transpiler-coverage (%read-one "(let ((x 1)) x)"))
               :test #'equal)))
 
 (test coverage-is-reported-not-assumed
@@ -168,7 +171,13 @@ measurement. A form built only from handled operators reports nothing."
   (is (null (transpiler-coverage (%read-one "(+ (car x) (cdr y))"))))
   ;; a special operator not yet open-coded still reports itself, and only
   ;; it: the arguments around it are compiled
-  (is (equal '("REPEAT") (transpiler-coverage (%read-one "(+ 1 (repeat 2 3))")))))
+  (is (equal '("LET") (transpiler-coverage (%read-one "(+ 1 (let ((x 2)) x))"))))
+  ;; ... and the loops the transpiler DOES open-code report nothing, body
+  ;; included. A fallback hands over the whole subform, so a FOREACH that
+  ;; fell back would take its body with it -- which is what made these two
+  ;; worth open-coding and what this line is here to keep true.
+  (is (null (transpiler-coverage (%read-one "(repeat 2 (setq a 1))"))))
+  (is (null (transpiler-coverage (%read-one "(foreach e l (setq a e))")))))
 
 (test special-operators-are-never-compiled-as-calls
   "A special operator has UNEVALUATED operands. Compiling (defun f (x) …)
@@ -185,8 +194,6 @@ rather than behind a list kept here."
   ;; teaching the compiler about it shows up here as a gap rather than as
   ;; evaluated operands.
   (dolist (case '(("(set 'a 1)"        . "SET")
-                  ("(repeat 2 1)"      . "REPEAT")
-                  ("(foreach x '(1) x)" . "FOREACH")
                   ("(let ((x 1)) x)"   . "LET")
                   ("(lambda (x) x)"    . "LAMBDA")
                   ("(function car)"    . "FUNCTION")
