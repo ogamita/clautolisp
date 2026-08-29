@@ -64,6 +64,18 @@ so a stuck debugged thread can't hang a caller (tests) forever."
   ;;  - step-request: a pending step (or NIL); see stepping.lisp
   (poll-depth 0 :type fixnum)
   (call-stack '() :type list)
+  ;; Free list of shadow frames, for reuse. Each element is a CONS whose
+  ;; CAR is a spent DEBUG-FRAME -- the very cons the frame was popped
+  ;; with, handed to the pool instead of to the collector, so a debugged
+  ;; call allocates neither a frame nor a cons once the pool has warmed.
+  ;;
+  ;; Sound because a shadow frame does not OUTLIVE its activation: a
+  ;; snapshot converts every frame into a fresh STACK-FRAME eagerly, at
+  ;; the stopping point (DEBUG-FRAME->STACK-FRAME in snapshot.lisp), and
+  ;; nothing else keeps one. pjb settled the question the reuse depends on
+  ;; (2026-08-30): snapshots are read FOR INFORMATION, never resumed from
+  ;; -- they are not continuations -- so copying is all a snapshot needs.
+  (frame-pool '() :type list)
   (step-request nil)
   ;; software watchpoints (spec §2 watch): a list of WATCH records re-checked
   ;; at every poll point, plus the one that most recently fired (for the hit).

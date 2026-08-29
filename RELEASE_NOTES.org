@@ -412,6 +412,13 @@ separate binary for tool integrators.
   stepping ride on) is kept while ~DEBUG~ >= ~SPACE~ and is compiled from
   ~SPEED~ 2. ~SPEED~ 3 compiles at definition rather than once a function
   is hot. Default ~((DEBUG 3) (SPACE 0) (SPEED 2))~.
+- *Debugging is leaner again: 12% less allocated, and a little faster.*
+  A debugged call no longer allocates a shadow-stack frame — spent frames
+  are reused — and the mechanism by which the debugger's ~return~ supplies
+  a value for the innermost form is now the same ~throw~ the ~abort~
+  resolution already used. Stepping, breakpoints, watches, jumps and
+  ~return~ all behave exactly as before.
+
 - *List building in compiled code is about twice as fast.* ~cons~,
   ~list~, ~=~ and ~/=~ now get the inline treatment, as do the
   three-argument forms of ~+~, ~-~, ~*~, ~<~, ~>~, ~<=~ and ~>=~ — so

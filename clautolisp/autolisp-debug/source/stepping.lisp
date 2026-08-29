@@ -66,10 +66,24 @@ function entry (form-id 0), and record the current form-id on the top
 frame."
   (incf (thread-debug-info-poll-depth ti))
   (when (zerop form-id)
-    (push (make-debug-frame
-           :fid fid :current-form-id 0
-           :dynamic-frame (evaluation-context-dynamic-frame context))
-          (thread-debug-info-call-stack ti)))
+    ;; Take a spent frame and its cons from the pool when there is one, so
+    ;; a debugged call allocates nothing here after the first few. The
+    ;; slots are all overwritten below, so a reused frame carries nothing
+    ;; from its previous activation.
+    (let ((cell (thread-debug-info-frame-pool ti)))
+      (if cell
+          (let ((frame (car cell)))
+            (setf (thread-debug-info-frame-pool ti) (cdr cell))
+            (setf (debug-frame-fid frame) fid
+                  (debug-frame-current-form-id frame) 0
+                  (debug-frame-dynamic-frame frame)
+                  (evaluation-context-dynamic-frame context))
+            (setf (cdr cell) (thread-debug-info-call-stack ti))
+            (setf (thread-debug-info-call-stack ti) cell))
+          (push (make-debug-frame
+                 :fid fid :current-form-id 0
+                 :dynamic-frame (evaluation-context-dynamic-frame context))
+                (thread-debug-info-call-stack ti)))))
   (let ((top (car (thread-debug-info-call-stack ti))))
     (when (and top (= (debug-frame-fid top) fid))
       (setf (debug-frame-current-form-id top) form-id))))
@@ -79,7 +93,17 @@ frame."
 (form-id 0) and drop the form-depth. Always runs (unwind-protect), so a
 non-local exit through the form keeps the depths balanced."
   (when (zerop form-id)
-    (pop (thread-debug-info-call-stack ti)))
+    (let ((cell (thread-debug-info-call-stack ti)))
+      (when cell
+        (setf (thread-debug-info-call-stack ti) (cdr cell))
+        ;; The frame is spent: a snapshot that wanted it copied it at the
+        ;; stopping point. Drop its reference to the runtime dynamic-frame
+        ;; before pooling, so a pooled frame does not hold a whole binding
+        ;; chain alive, then hand the cons ITSELF to the pool -- reusing
+        ;; the cons is half the saving.
+        (setf (debug-frame-dynamic-frame (car cell)) nil)
+        (setf (cdr cell) (thread-debug-info-frame-pool ti))
+        (setf (thread-debug-info-frame-pool ti) cell))))
   (decf (thread-debug-info-poll-depth ti)))
 
 ;;; --- map a source position to a poll point (spec §17.3) ------------

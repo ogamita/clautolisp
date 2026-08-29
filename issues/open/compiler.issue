@@ -1389,17 +1389,80 @@ the new operators, is unchanged too (compiled 48 -> 44 ms, within noise)
 -- worth checking because the arithmetic fast paths were rewritten to be
 n-ary rather than two-argument.
 
-STILL OPEN after slice 18
+Slice 19 (2.0.20) -- pjb settles the two poll-point questions
+-------------------------------------------------------------
+
+Slice 15 left two items measured but not taken, because both traded
+something other than speed and neither was mine to trade. pjb settled both
+(2026-08-30). Both premises were CHECKED before acting on them.
+
+THE RESTART -> CATCH. His reading -- one restart, and a catch loses no
+functionality -- is right on both counts: one RESTART-CASE establishes
+CLAL-POLL-RETURN, two users find it BY NAME and invoke it, and there is NO
+COMPUTE-RESTARTS anywhere in the product, which is what the
+inspectability objection rested on. THROW reaches the innermost matching
+CATCH, i.e. the innermost poll point, and `is one established?' is (PLUSP
+POLL-DEPTH), already maintained around exactly that form. The :ABORT
+resolutions beside it already unwound by THROW, so there is now one
+mechanism instead of two.
+
+THE SNAPSHOTS. His question -- are they only read for information, never
+resumed from -- is the right one, and the answer made the change free:
+BUILD-SNAPSHOT already converts every shadow frame into a fresh
+STACK-FRAME eagerly, at the stopping point. A snapshot never retains a
+DEBUG-FRAME. The copy he was willing to pay for was already there.
+
+So slice 15's claim that pooling "would need the snapshot to copy what it
+keeps, and that is a change to what a snapshot IS" was WRONG, and wrong
+expensively: it deferred a change that was already safe. The blocker was
+inferred from the shape of the problem instead of read out of the code --
+which is the same mistake as assuming a test proves something about a
+program, one topic over.
+
+Spent frames now go to a free list, handed over IN THE VERY CONS they were
+popped with, so a debugged call allocates neither a frame nor a cons once
+the pool has warmed. The reference to the runtime dynamic-frame is cleared
+on the way in, so a pooled frame does not pin a binding chain.
+
+WHAT EACH BOUGHT, measured separately because they were decided
+separately:
+
+                        plain (control)  debugged   debugged alloc
+    2.0.19                  48 ms         108 ms    22,859,648
+    catch only              48 ms         104 ms    22,793,792
+    catch + frame pool      48 ms         104 ms    20,082,256
+
+The catch bought the TIME (~4% of the run, ~7% of the debugging overhead)
+and no allocation -- SBCL's RESTART-CASE costs cycles, not heap. The pool
+bought the ALLOCATION (-11.9%) and no further time. NEITHER BOUGHT BOTH,
+and the micro-benchmark that motivated the swap (5.3 ns a poll point)
+predicted more time than the real workload delivered: the usual gap
+between a mechanism measured alone and the same mechanism in context.
+Worth reporting as it came out rather than as it was pitched.
+
+TESTS. `return' at a stop was already covered in three places -- the error
+path, the normal-stop path (a regression test, from when
+APPLY-RESUME-DIRECTIVE used to drop it) and the Emacs UI -- so the swap
+had real cover from the start; disabling the throw fails the normal-stop
+one with "7 is not EQL to 99". The pool got two new tests: a stop taken
+AFTER twenty activations have filled and drained the pool still reports
+the right functions on the stack (a reused frame keeping its old FID would
+name the wrong one), and a pooled frame holds no dynamic-frame. The second
+of those caught a mistake in its own first draft -- the pool is a list OF
+FRAMES, the conses being the recycled links, and the test read it as a
+list of conses.
+
+STILL OPEN after slice 19
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
     can be done and the reason it costs speed.
-  - poll points, continued (slice 15 took 27% off the overhead). What is
-    left there is measured and written up in
-    issues/open/poll-point-restart-cost.issue: the per-form RESTART-CASE
-    (a decision for pjb, since the cheap alternative is not inspectable)
-    and a pool for the shadow-stack frames (blocked on restating what a
-    snapshot may keep).
+  - poll points: slice 15 took 27% off the overhead and slice 19 took the
+    last two measured items (issues/closed/poll-point-restart-cost.issue).
+    What remains there is the per-poll-point work itself -- two
+    POLL-POINT calls, the enter/exit bookkeeping and the UNWIND-PROTECT --
+    none of which is removable without giving up something the debugger
+    does.
   - the CALL PROTOCOL. Still on top for the calls that remain, and now
     measured piece by piece (slice 13): of ~43 ns a call, the outer
     HANDLER-CASE is ~25%, the call-stack cons ~31%, the second &rest list

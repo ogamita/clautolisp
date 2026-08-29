@@ -55,10 +55,11 @@ A decline returns normally so the condition keeps propagating."
     ((and (consp directive) (eq (first directive) :continue-with-return))
      ;; Return a value for the innermost instrumented form (§10.1). Safe
      ;; only for form-internal errors; if no instrumented form encloses
-     ;; the error there is no restart and we decline.
-     (let ((restart (find-restart 'clal-poll-return)))
-       (when restart
-         (invoke-restart restart (coerce-from-cl (second directive))))))
+     ;; the error there is no CATCH to reach, which a poll depth of zero
+     ;; is exactly what tells us, and we decline.
+     (let ((ti *thread-debug-info*))
+       (when (and ti (plusp (thread-debug-info-poll-depth ti)))
+         (throw +clal-poll-return-tag+ (coerce-from-cl (second directive))))))
     (t nil)))
 
 (defun call-with-error-integration (ti thunk break-on-caught)

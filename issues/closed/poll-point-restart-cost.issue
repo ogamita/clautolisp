@@ -68,3 +68,64 @@ activation it describes: pooling would need the snapshot to copy what it
 keeps, and that is a change to what a snapshot IS, not an optimisation.
 Worth doing deliberately, with the snapshot's ownership rules restated
 first.
+
+## DECISION (pjb, 2026-08-30) and outcome — DONE in 2.0.20
+
+Both questions settled, and both premises checked before acting rather
+than taken on trust.
+
+### The restart
+
+pjb: "there's a single restart that is defined, right? And using a catch
+doesn't lose any functionality if I understood correctly? In that case the
+gain in speed is worth using catch instead of restart."
+
+Both halves verified:
+  - ONE restart-case establishes CLAL-POLL-RETURN; two users find it BY
+    NAME and invoke it. There is NO COMPUTE-RESTARTS anywhere in the
+    product, so nothing enumerates it — which is what the inspectability
+    objection rested on.
+  - THROW reaches the innermost matching CATCH, which is the innermost
+    poll point; `is one established?' is (PLUSP POLL-DEPTH), already
+    maintained around exactly that form.
+
+Done. The :ABORT resolutions beside it already unwound by THROW to
+CLAL-ABORT, so this is now the one mechanism for both.
+
+### The snapshots
+
+pjb: "they're used only to get information from them, right? We don't have
+any mean to resume execution or things like that (it's no continuations).
+If that's correct, then making a copy for the snapshot seems ok too."
+
+Correct — and the code was already ahead of the question. BUILD-SNAPSHOT
+does (MAPCAR #'DEBUG-FRAME->STACK-FRAME (call-stack ti)) EAGERLY at the
+stopping point, converting every shadow frame into a fresh STACK-FRAME.
+A snapshot therefore never retains a DEBUG-FRAME, and the copy pjb was
+willing to pay for already exists.
+
+So this ticket's earlier claim — "pooling would need the snapshot to copy
+what it keeps, and that is a change to what a snapshot IS" — was WRONG,
+and wrong in the expensive direction: it deferred a change that was
+already safe. The lesson is the ordinary one: the blocker was assumed
+from the shape of the problem rather than read out of the code.
+
+Done: spent frames go to a free list, handed over in the very cons they
+were popped with, so a debugged call allocates neither a frame nor a cons
+once the pool has warmed. The reference to the runtime dynamic-frame is
+cleared on the way in, so a pooled frame does not pin a binding chain.
+
+### What each bought, measured separately
+
+                        plain (control)  debugged   debugged alloc
+    2.0.19                  48 ms         108 ms    22,859,648
+    catch only              48 ms         104 ms    22,793,792
+    catch + frame pool      48 ms         104 ms    20,082,256
+
+The catch bought the TIME (~4% of the run, ~7% of the debugging overhead)
+and no allocation: SBCL's RESTART-CASE turns out to cost cycles rather
+than heap. The pool bought the ALLOCATION (-11.9%) and no further time.
+Neither bought both, which is worth recording because the micro-benchmark
+that motivated the swap (5.3 ns a poll point) predicted more time than
+the real workload delivered — the usual gap between a mechanism measured
+alone and the same mechanism in context.
