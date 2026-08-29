@@ -1,0 +1,70 @@
+# poll-point-restart-cost — the CLAL-POLL-RETURN restart costs ~16 ns per poll point
+
+STATUS: OPEN — a QUESTION FOR PJB with a measurement attached. Decision
+taken for now: leave it alone. Easy to change either way.
+
+## What was measured
+
+Debugging costs roughly 2x. Slice 15 (2.0.16) removed the allocations and
+the redundant calls from the poll protocol; what remains at the top of the
+debugged profile is CALL-WITH-POLL-POINT's own body, and the biggest
+single item inside it is the RESTART-CASE established around EVERY
+instrumented form.
+
+Micro-measured on this machine, 3M iterations, over a bare call:
+
+    bare call                     8 ms
+    unwind-protect               16 ms   (+ 3 ns)
+    restart-case                 28 ms   (+ 7 ns)
+    restart-bind                 24 ms
+    catch, fixnum tag            16 ms   (+ 3 ns)
+    unwind-protect + restart-case 36 ms  (+ 9 ns)
+    unwind-protect + catch       20 ms   (+ 4 ns)
+
+So replacing the restart with a CATCH would cut the wrapper's fixed cost
+from about 9 ns to about 4 ns per poll point -- and there are two poll
+points per instrumented form.
+
+## Why it is not just a substitution
+
+The restart is CLAL-POLL-RETURN, established per form so that
+`continue-with-return' can supply a value for the INNERMOST instrumented
+form (debugger spec §10.1). Both users find it the same way:
+
+    (let ((restart (find-restart 'clal-poll-return)))
+      (when restart (invoke-restart restart value)))
+
+A CATCH with one constant tag would be exactly equivalent for those two:
+THROW reaches the innermost matching CATCH, which is the innermost poll
+point, and "is one established?" is answerable from the thread's
+POLL-DEPTH, which is already maintained. Nesting and recursion are fine --
+the innermost catch is the innermost catch.
+
+What is NOT equivalent is INSPECTABILITY. A restart is a first-class,
+named, discoverable object: it shows up in COMPUTE-RESTARTS, and a user
+who drops into the host Common Lisp debugger -- which clautolisp offers
+deliberately, through CLAL-COMMON-LISP -- sees CLAL-POLL-RETURN offered
+as a way out. A catch tag is invisible. That is a real, if small, loss of
+the thing a debugger is for.
+
+## The decision taken, and why
+
+Left as a RESTART. Removing a standard, inspectable restart from a
+DEBUGGER to save a few nanoseconds is the wrong trade to make silently,
+and the slice's other changes (which cost nothing in expressiveness) got
+the debugging overhead down 27% without it.
+
+If pjb wants the speed, the swap is small and local: poll.lisp's
+RESTART-CASE, and the two FIND-RESTART sites in poll.lisp and error.lisp.
+
+## The other item left on the table
+
+MAKE-DEBUG-FRAME allocates a shadow-stack frame per instrumented function
+ACTIVATION (not per form -- it is guarded by `(zerop form-id)'). A
+free-list of frames reused across activations would remove it, and the
+stack is strictly LIFO so a pool is straightforward. It was NOT done
+because a frame is reachable from a SNAPSHOT, and a snapshot outlives the
+activation it describes: pooling would need the snapshot to copy what it
+keeps, and that is a change to what a snapshot IS, not an optimisation.
+Worth doing deliberately, with the snapshot's ownership rules restated
+first.

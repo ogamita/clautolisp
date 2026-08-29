@@ -33,9 +33,9 @@ to *debug-hit-handler*, and carries out the resolution it returns:
                                             instrumented form (§10.1)
 
 A decline returns normally so the condition keeps propagating."
-  (let* ((pp (thread-debug-info-current-pp ti))
-         (fid (if pp (car pp) 0))
-         (form-id (if pp (cdr pp) 0))
+  (let* ((valid (thread-debug-info-current-pp-valid-p ti))
+         (fid (if valid (thread-debug-info-current-pp-fid ti) 0))
+         (form-id (if valid (thread-debug-info-current-pp-form-id ti) 0))
          (metadata (metadata-for-function-id fid))
          (hit (make-hit :thread-info ti :fid fid :form-id form-id :when :error
                         :stop-reason reason :metadata metadata

@@ -412,6 +412,17 @@ separate binary for tool integrators.
   stepping ride on) is kept while ~DEBUG~ >= ~SPACE~ and is compiled from
   ~SPEED~ 2. ~SPEED~ 3 compiles at definition rather than once a function
   is hot. Default ~((DEBUG 3) (SPACE 0) (SPEED 2))~.
+- *Debugging costs about a quarter less.* Running a program under the
+  debugger allocated two conses on every instrumented form just to record
+  where execution was, and made three function calls per poll point to
+  ask questions whose answer is almost always "nothing is armed". The
+  position is now two integer fields, and each question is asked only
+  when the thing that could make it interesting is actually set. A
+  debugged run allocates 28% less; the debugging overhead itself is down
+  about 27%. Nothing about stepping, breakpoints, watches or jumps
+  changes — a program that is not being debugged is byte-for-byte
+  unaffected.
+
 - *List and predicate operators are open-coded too: 1.6x on list-walking
   code.* ~car~, ~cdr~, ~null~, ~not~, ~atom~, ~listp~, ~zerop~, ~eq~,
   ~1+~, ~1-~ and unary ~-~ now get the same guarded inline treatment as

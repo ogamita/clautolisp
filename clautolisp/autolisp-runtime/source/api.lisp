@@ -1799,13 +1799,18 @@ the inner form as (lambda () (autolisp-eval inner context)); compiled code
 supplies it as the transpiled inner form. Same protocol, two ways of
 producing the value inside it.")
 
+(declaim (inline call-with-compiled-poll-point))
 (defun call-with-compiled-poll-point (fid form-id context thunk)
   "Run THUNK as the body of poll point FORM-ID of function FID.
 
 What compiled instrumented code emits for a %CLAL-POLL node. With no
 debugger loaded there is no protocol to run, so THUNK is simply called --
 which is also what EVAL-POLL-FORM does on a thread that is not being
-debugged."
+debugged.
+
+INLINE because compiled instrumented code calls it once per instrumented
+form, and out of line it is a whole call to read one special variable and
+funcall through it."
   (if *compiled-poll-hook*
       (funcall *compiled-poll-hook* fid form-id context thunk)
       (funcall thunk)))

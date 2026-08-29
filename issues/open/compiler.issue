@@ -1160,14 +1160,93 @@ unescaped quote around the name T ended the string early, leaving a dead
 form in the body. Written, shipped and caught the same afternoon; the
 tests were all green with it in place, exactly as they were in 2.0.13.
 
-STILL OPEN after slice 14
+Slice 15 (2.0.16) -- cheaper poll points
+----------------------------------------
+
+pjb's item 3, and slice 7's finding come round: poll points, not
+interpretation, are what makes debugging slow. Measured before touching
+anything (fib 25, in process):
+
+    plain interpreted     184 ms
+    plain compiled         80 ms
+    DEBUGGED interpreted  324 ms    1.76x
+    DEBUGGED compiled     168 ms    2.10x
+
+And profiled (465 samples, debugged compiled fib 30) the debug-specific
+work is about 42% of the run, of which CALL-WITH-POLL-POINT is 23% self.
+
+THREE CHANGES, none of which cost anything in expressiveness:
+
+  1. WHERE EXECUTION IS was a CONS, written on every poll point -- twice
+     per instrumented form -- so a program merely being RUN under a
+     session allocated two conses per form for a fact nobody outside the
+     debugger reads. It is two fixnum slots now. The subtlety a boolean
+     replaced: NIL used to mean `no poll point yet', which a cons can say
+     and a pair of zeros cannot, since (0 . 0) is a real poll point --
+     function 0's entry form. Hence the separate validity flag, and hence
+     three tests for it.
+
+  2. THE JUMP CHECKS. JUMP-DISPOSITION and JUMP-EXIT-CHECK each begin by
+     reading the jump-target slot and doing nothing when it is NIL, which
+     is the case on every poll point of every program that is not
+     mid-jump. That was two full calls per instrumented form to learn
+     nothing. The slot is read at the call site now. Same answers:
+     JUMP-DISPOSITION cannot return :SKIP with no target, and
+     JUMP-EXIT-CHECK is a no-op with none.
+
+  3. THE STEP CHECK, the same shape. The Bloom summary and the watches
+     list were already guarded by the slot that makes them possible; the
+     step request was not.
+
+Also CALL-WITH-COMPILED-POLL-POINT is now INLINE -- out of line it was a
+whole call, per instrumented form, to read one special variable and
+funcall through it.
+
+RESULT. The wall clock on this machine has a noise floor around 10%,
+which is more than the effect, so the primary measurement is ALLOCATION:
+it is deterministic and exactly attributable.
+
+                            2.0.15        2.0.16      change
+    plain compiled          10,086,112   10,086,112    0        <- control
+    DEBUGGED compiled       34,130,496   24,402,256   -28.5%
+    DEBUGGED interpreted    82,027,104   71,950,656   -12.3%
+
+The plain row is BYTE-IDENTICAL, which is the control: whatever else
+happened, nothing outside the debugged path moved.
+
+For time, 15 reps with the plain row carried as a drift control:
+
+                            2.0.15   2.0.16
+    plain compiled (control)   72       76      <- the run that got 76 was
+    DEBUGGED compiled         176      152         on the BUSIER machine
+
+The control moved AGAINST the new build and it still won. Debugging
+overhead over plain: 104 ms -> 76 ms, i.e. down 27% -- which agrees with
+the 28.5% allocation figure, and the agreement is the reason to believe
+either.
+
+WHAT WAS DELIBERATELY NOT DONE: the RESTART-CASE around every form is the
+single biggest item left (about 5 ns per poll point, twice per form), and
+swapping it for a CATCH is measured, small and local. It was left alone
+because a restart is inspectable and a catch tag is not, and clautolisp
+deliberately offers the host debugger through CLAL-COMMON-LISP -- so
+removing a named restart from a DEBUGGER for a few nanoseconds is not a
+trade to make silently. Written up with the measurement in
+issues/open/poll-point-restart-cost.issue for pjb to settle, along with
+the shadow-frame pool, which is blocked on what a SNAPSHOT is allowed to
+keep.
+
+STILL OPEN after slice 15
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
     can be done and the reason it costs speed.
-  - poll points are now what makes debugging slow (see slice 7's
-    measurement), not interpretation. That is where debugging speed is
-    left.
+  - poll points, continued (slice 15 took 27% off the overhead). What is
+    left there is measured and written up in
+    issues/open/poll-point-restart-cost.issue: the per-form RESTART-CASE
+    (a decision for pjb, since the cheap alternative is not inspectable)
+    and a pool for the shadow-stack frames (blocked on restating what a
+    snapshot may keep).
   - the CALL PROTOCOL. Still on top for the calls that remain, and now
     measured piece by piece (slice 13): of ~43 ns a call, the outer
     HANDLER-CASE is ~25%, the call-stack cons ~31%, the second &rest list
