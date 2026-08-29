@@ -130,98 +130,178 @@ for an empty body, which is what AUTOLISP-EVAL-PROGN yields."
 ;;; and, for arithmetic, the RESULT.
 
 (defparameter *open-coded-operators*
-  '(("+"  . :add)
-    ("-"  . :subtract)
-    ("*"  . :multiply)
-    ("<"  . :less)
-    (">"  . :greater)
-    ("<=" . :not-greater)
-    (">=" . :not-less))
-  "Operator name -> the tag its open-codable builtin carries. The other
-half of this table is *OPEN-CODED-CORE-BUILTINS* in the builtins, which
-is what actually stamps the tag onto a subr; they are joined by the tag,
-so neither side can open-code something the other did not agree to.")
+  '(;; (NAME TAG . ARITIES-THE-FAST-PATH-IS-WRITTEN-FOR)
+    ("+"    :add          2)
+    ("-"    :subtract     1 2)
+    ("*"    :multiply     2)
+    ("1+"   :add1         1)
+    ("1-"   :sub1         1)
+    ("<"    :less         2)
+    (">"    :greater      2)
+    ("<="   :not-greater  2)
+    (">="   :not-less     2)
+    ("CAR"  :car          1)
+    ("CDR"  :cdr          1)
+    ("NULL" :null         1)
+    ("NOT"  :not          1)
+    ("ATOM" :atom         1)
+    ("LISTP" :listp       1)
+    ("ZEROP" :zerop       1)
+    ("EQ"   :eq           2))
+  "Operator name -> the tag its open-codable builtin carries, and the
+arities an inline fast path exists for. Any other arity of the same
+operator is an ordinary call: the fast paths are written per arity because
+the SEMANTICS are per arity -- (- 5) negates and (- 9 4) subtracts.
 
-(defun %open-coded-operator (name)
-  "The open-coding tag for the operator NAME, or NIL."
-  (cdr (assoc name *open-coded-operators* :test #'string=)))
+The other half of this table is *OPEN-CODED-CORE-BUILTINS* in the
+builtins, which is what actually stamps the tag onto a subr; the two are
+joined by the tag, so neither side can open-code something the other did
+not agree to.")
 
-(defun %open-coded-fast-path (tag left right block-name)
-  "The inline form for TAG over the variables LEFT and RIGHT.
+(defun %open-coded-operator (name arity)
+  "The open-coding tag for NAME called with ARITY arguments, or NIL."
+  (let ((entry (assoc name *open-coded-operators* :test #'string=)))
+    (and entry
+         (member arity (cddr entry))
+         (second entry))))
 
-It RETURNS FROM BLOCK-NAME when the narrow case it covers applies, and
-falls off its own end otherwise -- which is how it says `not mine' without
-having to encode that in a value. A bare value could not say it: nil and 0
-are both perfectly good AutoLISP results, so no return value is free to
-mean `no answer'. Returning from the block also means the fast path
-allocates nothing at all, which is most of the point."
-  (ecase tag
-    ;; Arithmetic. BUILTIN-+ is (require-number each) then
-    ;; ARITHMETIC-RESULT, and ARITHMETIC-RESULT signals INTEGER-OVERFLOW
-    ;; for an integer outside (SIGNED-BYTE 32). So the fast path needs
-    ;; both arguments in range AND the result in range; anything else --
-    ;; a float, a string, an overflow -- is the builtin's business, and
-    ;; goes to the builtin.
-    ((:add :subtract :multiply)
-     (let ((operator (ecase tag (:add '+) (:subtract '-) (:multiply '*))))
-       `(when (and (typep ,left '(signed-byte 32))
-                   (typep ,right '(signed-byte 32)))
-          (let ((%open-coded-result (,operator ,left ,right)))
-            (when (typep %open-coded-result '(signed-byte 32))
-              (return-from ,block-name %open-coded-result))))))
-    ;; Relational. NUMERIC-ORDER-P folds a NON-NUMERIC argument to nil
-    ;; rather than signalling -- deliberately: loop guards like
-    ;; (while (<= 48 (car chars) 57) ...) depend on it -- and yields the
-    ;; interned T symbol, not CL T. Two integers is the narrow case;
-    ;; anything else goes to the builtin, which is the only thing that
-    ;; knows the rest of that rule.
-    ((:less :greater :not-greater :not-less)
-     (let ((operator (ecase tag
-                       (:less '<) (:greater '>)
-                       (:not-greater '<=) (:not-less '>=))))
-       `(when (and (typep ,left '(signed-byte 32))
-                   (typep ,right '(signed-byte 32)))
+(defun %open-coded-fast-path (tag arguments block-name)
+  "The inline form for TAG over the argument VARIABLES, returning from
+BLOCK-NAME when the narrow case it covers applies and falling off its own
+end otherwise -- which is how it says `not mine' without having to encode
+that in a value. A bare value could not say it: nil and 0 are both
+perfectly good AutoLISP results, so no return value is free to mean `no
+answer'. Returning from the block also means the fast path allocates
+nothing at all, which is most of the point.
+
+Each clause states, against the builtin it shortcuts, exactly which case
+it is taking."
+  (let ((first-argument (first arguments))
+        (second-argument (second arguments)))
+    (ecase tag
+      ;; ARITHMETIC. BUILTIN-+ is (require-number each) then
+      ;; ARITHMETIC-RESULT, and ARITHMETIC-RESULT signals INTEGER-OVERFLOW
+      ;; for an integer outside (SIGNED-BYTE 32). So the fast path needs
+      ;; both arguments in range AND the result in range; anything else --
+      ;; a float, a string, an overflow -- is the builtin's business, and
+      ;; goes to the builtin.
+      ((:add :multiply)
+       (%integer-arithmetic-path (ecase tag (:add '+) (:multiply '*))
+                                 (list first-argument second-argument)
+                                 block-name))
+      (:subtract
+       ;; (- x) NEGATES; (- x y) subtracts. Same builtin, two meanings,
+       ;; so two fast paths -- and (- -2147483648) overflows, which the
+       ;; result check catches like any other.
+       (%integer-arithmetic-path '- (if second-argument
+                                       (list first-argument second-argument)
+                                       (list first-argument))
+                                 block-name))
+      (:add1 (%integer-arithmetic-path '1+ (list first-argument) block-name))
+      (:sub1 (%integer-arithmetic-path '1- (list first-argument) block-name))
+      ;; RELATIONAL. NUMERIC-ORDER-P folds a NON-NUMERIC argument to nil
+      ;; rather than signalling -- deliberately: loop guards like
+      ;; (while (<= 48 (car chars) 57) ...) depend on it -- and yields the
+      ;; interned T symbol, not CL T. Two integers is the narrow case;
+      ;; anything else goes to the builtin, which is the only thing that
+      ;; knows the rest of that rule.
+      ((:less :greater :not-greater :not-less)
+       (let ((operator (ecase tag
+                         (:less '<) (:greater '>)
+                         (:not-greater '<=) (:not-less '>=))))
+         `(when (and (typep ,first-argument '(signed-byte 32))
+                     (typep ,second-argument '(signed-byte 32)))
+            (return-from ,block-name
+              (if (,operator ,first-argument ,second-argument)
+                  (autolisp-true-symbol)
+                  nil)))))
+      ;; CAR / CDR. The builtin is nil -> nil, cons -> the part, anything
+      ;; else -> an error. LISTP is exactly `nil or cons', and CL's CAR
+      ;; of NIL is NIL, so the whole non-error domain is one line. A
+      ;; string or a number still reaches the builtin and still signals.
+      ((:car :cdr)
+       (let ((operator (ecase tag (:car 'car) (:cdr 'cdr))))
+         `(when (listp ,first-argument)
+            (return-from ,block-name (,operator ,first-argument)))))
+      ;; TOTAL PREDICATES. AUTOLISP-NULL / -NOT / -ATOM / -LISTP accept
+      ;; ANY object and cannot signal, so there is no narrow case to
+      ;; guard: the fast path is the whole function.
+      ((:null :not)
+       `(return-from ,block-name
+          (if (null ,first-argument) (autolisp-true-symbol) nil)))
+      (:atom
+       `(return-from ,block-name
+          (if (atom ,first-argument) (autolisp-true-symbol) nil)))
+      (:listp
+       `(return-from ,block-name
+          (if (listp ,first-argument) (autolisp-true-symbol) nil)))
+      ;; ZEROP requires a number and signals otherwise, so unlike the
+      ;; predicates above it needs its guard.
+      (:zerop
+       `(when (typep ,first-argument '(signed-byte 32))
           (return-from ,block-name
-            (if (,operator ,left ,right)
-                (intern-autolisp-symbol "T")
+            (if (zerop ,first-argument) (autolisp-true-symbol) nil))))
+      ;; EQ is EQL, plus the rule that two STRINGS with equal contents
+      ;; are EQ (the host interns literals). When neither argument is a
+      ;; string that second clause cannot fire, so EQL is the whole
+      ;; answer. Two strings go to the builtin, which owns that rule.
+      (:eq
+       `(when (not (or (typep ,first-argument 'autolisp-string)
+                       (typep ,second-argument 'autolisp-string)))
+          (return-from ,block-name
+            (if (eql ,first-argument ,second-argument)
+                (autolisp-true-symbol)
                 nil)))))))
 
+(defun %integer-arithmetic-path (operator arguments block-name)
+  "The shared shape of the arithmetic fast paths: every argument a 32-bit
+integer, the result checked to be one too, and the builtin left to signal
+INTEGER-OVERFLOW when it is not."
+  `(when (and ,@(mapcar (lambda (argument)
+                          `(typep ,argument '(signed-byte 32)))
+                        arguments))
+     (let ((%open-coded-result (,operator ,@arguments)))
+       (when (typep %open-coded-result '(signed-byte 32))
+         (return-from ,block-name %open-coded-result)))))
+
 (defun transpile-open-coded-call (form tag arguments context-var)
-  "A two-argument call to an open-codable operator: the guarded fast path,
-falling through to an ordinary call of the very same function.
+  "A call to an open-codable operator at an arity it has a fast path for:
+the guarded fast path, falling through to an ordinary call of the very
+same function.
 
 Note the order. The function is resolved FIRST and the arguments after,
 which is what the ordinary call branch does and what the interpreter does
 -- an undefined function is signalled before any argument's side effect.
 And it is resolved ONCE: the fast path and the fallback both use that one
 resolution, so there is no window in which the guard inspects one
-definition and the call reaches another."
-  ;; INTERNED names, not GENSYMs, and this is a hard constraint on
-  ;; everything this file emits rather than a style choice: a .lap is
-  ;; produced by PRINTING the transpiled code as source and COMPILE-FILEing
-  ;; it, and the writer prints with *PRINT-CIRCLE* NIL. An uninterned
-  ;; symbol printed that way comes out as `#:FN364' at every occurrence,
-  ;; and each of those READS BACK AS A DIFFERENT SYMBOL -- so the binding
-  ;; and its references come apart and the artefact does not compile. The
-  ;; existing %VALUE / %TEST / %COND are interned for the same reason.
-  ;;
-  ;; Capture is not a risk here even so: transpiled user code appears only
-  ;; in the INIT FORMS, which are outside the scope of these bindings and
-  ;; outside the block, so a nested open-coded call binds and returns from
-  ;; its own.
-  (let ((function-var '%open-coded-function)
-        (left '%open-coded-left)
-        (right '%open-coded-right)
-        (block-name '%open-coded))
+definition and the call reaches another.
+
+INTERNED names, not GENSYMs, and this is a hard constraint on everything
+this file emits rather than a style choice: a .lap is produced by PRINTING
+the transpiled code as source and COMPILE-FILEing it, and the writer
+prints with *PRINT-CIRCLE* NIL. An uninterned symbol printed that way
+comes out as `#:FN364' at every occurrence, and each of those READS BACK
+AS A DIFFERENT SYMBOL -- so the binding and its references come apart and
+the artefact does not compile. The existing %VALUE / %TEST / %COND are
+interned for the same reason.
+
+Capture is not a risk even so: transpiled user code appears only in the
+INIT FORMS, which are outside the scope of these bindings and outside the
+block, so a nested open-coded call binds and returns from its own."
+  (let* ((function-var '%open-coded-function)
+         (block-name '%open-coded)
+         (variables (subseq '(%open-coded-arg-1 %open-coded-arg-2)
+                            0 (length arguments))))
     `(let ((,function-var (resolve-autolisp-function-designator
                            ',(first form) ,context-var))
-           (,left ,(transpile-form (first arguments) context-var))
-           (,right ,(transpile-form (second arguments) context-var)))
+           ,@(mapcar (lambda (variable argument)
+                       (list variable (transpile-form argument context-var)))
+                     variables arguments))
        (block ,block-name
          (when (eq (autolisp-open-code-tag ,function-var) ,tag)
-           ,(%open-coded-fast-path tag left right block-name))
+           ,(%open-coded-fast-path tag variables block-name))
          (call-autolisp-function-in-context
-          ,function-var ,context-var ,left ,right)))))
+          ,function-var ,context-var ,@variables)))))
 
 (defun transpile-form (form context-var)
   "Translate the AutoLISP FORM into a Common Lisp form evaluating it in
@@ -401,8 +481,9 @@ Never fails: an unhandled form becomes an interpreter call on itself."
          ;; that path is written for. Anything else about it -- a
          ;; different arity, a shadowed name, a redefinition -- goes
          ;; through the ordinary call below or through the guard.
-         ((and (= 2 (length arguments)) (%open-coded-operator name))
-          (transpile-open-coded-call form (%open-coded-operator name)
+         ((%open-coded-operator name (length arguments))
+          (transpile-open-coded-call form
+                                     (%open-coded-operator name (length arguments))
                                      arguments context-var))
 
          (t

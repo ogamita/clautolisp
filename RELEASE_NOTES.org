@@ -412,6 +412,19 @@ separate binary for tool integrators.
   stepping ride on) is kept while ~DEBUG~ >= ~SPACE~ and is compiled from
   ~SPEED~ 2. ~SPEED~ 3 compiles at definition rather than once a function
   is hot. Default ~((DEBUG 3) (SPACE 0) (SPEED 2))~.
+- *List and predicate operators are open-coded too: 1.6x on list-walking
+  code.* ~car~, ~cdr~, ~null~, ~not~, ~atom~, ~listp~, ~zerop~, ~eq~,
+  ~1+~, ~1-~ and unary ~-~ now get the same guarded inline treatment as
+  the arithmetic operators, so a loop over a list no longer pays a full
+  call per step. The same rules hold: the narrow case only — everything
+  else, including ~(car 5)~'s error and the rule that two equal strings
+  are ~eq~, goes to the same builtin — and a redefinition, a ~setq~ or a
+  ~/~-local shadow still wins over the inline path.
+- *Truth is no longer looked up by name.* AutoLISP truth is the symbol
+  ~T~, and producing it meant a symbol-table lookup on every predicate
+  and every comparison. It is remembered now, which makes interpreted
+  predicate-heavy code about 6% faster as well.
+
 - *Arithmetic and comparison in compiled code are 1.4-1.5x faster.* The
   compiler now emits an inline fast path for ~+~, ~-~, ~*~, ~<~, ~>~,
   ~<=~ and ~>=~ when they are called with two arguments, instead of a

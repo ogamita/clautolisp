@@ -235,13 +235,23 @@ disrupting the value-returning shape of the call site."
 ;;; correctness.
 
 (defparameter *open-coded-core-builtins*
-  '(("+"  :add          builtin-+)
-    ("-"  :subtract     builtin--)
-    ("*"  :multiply     builtin-*)
-    ("<"  :less         builtin-<)
-    (">"  :greater      builtin->)
-    ("<=" :not-greater  builtin-<=)
-    (">=" :not-less     builtin->=))
+  '(("+"     :add          builtin-+)
+    ("-"     :subtract     builtin--)
+    ("*"     :multiply     builtin-*)
+    ("1+"    :add1         builtin-1+)
+    ("1-"    :sub1         builtin-1-)
+    ("<"     :less         builtin-<)
+    (">"     :greater      builtin->)
+    ("<="    :not-greater  builtin-<=)
+    (">="    :not-less     builtin->=)
+    ("CAR"   :car          builtin-car)
+    ("CDR"   :cdr          builtin-cdr)
+    ("NULL"  :null         autolisp-null)
+    ("NOT"   :not          autolisp-not)
+    ("ATOM"  :atom         autolisp-atom)
+    ("LISTP" :listp        autolisp-listp)
+    ("ZEROP" :zerop        builtin-zerop)
+    ("EQ"    :eq           builtin-eq))
   "(NAME TAG IMPLEMENTATION) for the builtins the compiler may open-code.
 The compiler's side of this table is *OPEN-CODED-OPERATORS* in the
 transpiler; the two are joined by the TAG, so neither can open-code
@@ -884,7 +894,7 @@ explicitly.~%"))
 
 (defun builtin-vl-catch-all-error-p (object)
   (if (typep object 'autolisp-catch-all-error)
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun builtin-vl-catch-all-error-message (object)
@@ -1085,10 +1095,10 @@ when no debug session is active (the hook declines)."
   ;; that two strings whose content is equal compare eq because the
   ;; host interns string literals (autolisp-spec ch. 5).
   (cond
-    ((eql a b) (intern-autolisp-symbol "T"))
+    ((eql a b) (autolisp-true))
     ((and (typep a 'autolisp-string) (typep b 'autolisp-string)
           (string= (autolisp-string-value a) (autolisp-string-value b)))
-     (intern-autolisp-symbol "T"))
+     (autolisp-true))
     (t nil)))
 
 (defun builtin-equal (a b &optional fuzz)
@@ -1100,7 +1110,7 @@ when no debug session is active (the hook declines)."
                        fuzz)))
     (cond
       ((null tolerance)
-       (if (autolisp-equal-p a b) (intern-autolisp-symbol "T") nil))
+       (if (autolisp-equal-p a b) (autolisp-true) nil))
       ((not (numberp tolerance))
        (signal-builtin-argument-error
         :invalid-number-argument
@@ -1109,10 +1119,10 @@ when no debug session is active (the hook declines)."
         fuzz))
       ((and (numberp a) (numberp b))
        (if (<= (abs (- a b)) tolerance)
-           (intern-autolisp-symbol "T")
+           (autolisp-true)
            nil))
       (t
-       (if (autolisp-equal-p a b) (intern-autolisp-symbol "T") nil)))))
+       (if (autolisp-equal-p a b) (autolisp-true) nil)))))
 
 (defun builtin-vl-every (function-designator first-list &rest more-lists)
   (let* ((function (resolve-autolisp-function-designator function-designator))
@@ -1126,7 +1136,7 @@ when no debug session is active (the hook declines)."
                              (mapcar #'car lists)))
                (return nil))
              (setf lists (mapcar #'cdr lists))
-          finally (return (intern-autolisp-symbol "T")))))
+          finally (return (autolisp-true)))))
 
 (defun builtin-vl-some (function-designator first-list &rest more-lists)
   (let* ((function (resolve-autolisp-function-designator function-designator))
@@ -1370,7 +1380,7 @@ when no debug session is active (the hook declines)."
 
 (defun builtin-vl-consp (object)
   (if (consp object)
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun builtin-vl-list* (&rest arguments)
@@ -1985,7 +1995,7 @@ forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
 
 (defun builtin-numberp (object)
   (if (numberp object)
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun arithmetic-result (value)
@@ -2759,7 +2769,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
                  (require-string filename "VL-FILE-DIRECTORY-P")))
          (resolved (resolve-open-pathname value "VL-FILE-DIRECTORY-P")))
     (if (uiop:directory-exists-p resolved)
-        (intern-autolisp-symbol "T")
+        (autolisp-true)
         nil)))
 
 (defun builtin-vl-filename-base (filename)
@@ -2798,7 +2808,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
     (handler-case
         (progn
           (delete-file resolved)
-          (intern-autolisp-symbol "T"))
+          (autolisp-true))
       (file-error ()
         nil))))
 
@@ -2818,7 +2828,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
             nil
             (progn
               (rename-file old-path new-path)
-              (intern-autolisp-symbol "T")))
+              (autolisp-true)))
       (file-error ()
         nil))))
 
@@ -3009,7 +3019,7 @@ return ends in 0 -- and which is what pjb licensed for the shape fix.
             (progn
               (ensure-directories-exist resolved)
               (if (uiop:directory-exists-p resolved)
-                  (intern-autolisp-symbol "T")
+                  (autolisp-true)
                   nil))
           (file-error ()
             nil)))))
@@ -3398,7 +3408,7 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
     (if (every (lambda (argument)
                  (comparison-equal-p first-arg argument))
                (rest arguments))
-        (intern-autolisp-symbol "T")
+        (autolisp-true)
         nil)))
 
 (defun builtin-/= (&rest arguments)
@@ -3412,7 +3422,7 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
         do (loop for other in (rest tail)
                  when (comparison-equal-p (first tail) other)
                    do (return-from builtin-/= nil))
-        finally (return (intern-autolisp-symbol "T"))))
+        finally (return (autolisp-true))))
 
 (defun require-number (object operator-name)
   (unless (numberp object)
@@ -3438,14 +3448,14 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
   ;; issues/closed/strict-dialect-autolisp-divergences.issue §2.
   (cond
     ((null arguments)
-     (intern-autolisp-symbol "T"))
+     (autolisp-true))
     ((not (every #'numberp arguments))
      nil)
     ((or (null (rest arguments))
          (loop for (left right) on arguments
                while right
                always (funcall predicate left right)))
-     (intern-autolisp-symbol "T"))
+     (autolisp-true))
     (t nil)))
 
 (defun builtin-< (&rest arguments)
@@ -3478,12 +3488,12 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
 
 (defun builtin-zerop (object)
   (if (zerop (require-number object "ZEROP"))
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun builtin-minusp (object)
   (if (minusp (require-number object "MINUSP"))
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 ;;; --- Phase 7: function-coverage round-out ---------------------------
@@ -3585,7 +3595,7 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
   (cond
     ((and (typep object 'double-float)
           (handler-case (not (= object object)) (error () nil)))
-     (intern-autolisp-symbol "T"))
+     (autolisp-true))
     (t nil)))
 
 (defun builtin-vl-infp (object)
@@ -3595,7 +3605,7 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
     ((and (typep object 'double-float)
           (not (zerop object))
           (handler-case (= object (* 2 object)) (error () nil)))
-     (intern-autolisp-symbol "T"))
+     (autolisp-true))
     (t nil)))
 
 (defun builtin-asin (object)
@@ -4144,13 +4154,13 @@ Companion to %HOST-SYSVAR-STRING."
       ((zerop (length value)) nil)
       ((eql extnames 0)
        (if (every (lambda (c) (or (alphanumericp c) (find c "$_-"))) value)
-           (intern-autolisp-symbol "T")
+           (autolisp-true)
            nil))
       (t
        (let ((reserved (if permit-bar "<>/\\\":?*,=`;" "<>/\\\":?*|,=`;")))
          (if (find-if (lambda (c) (find c reserved)) value)
              nil
-             (intern-autolisp-symbol "T")))))))
+             (autolisp-true)))))))
 
 (defun builtin-xstrcase (string &optional downcase-p)
   ;; vl-extension flavour of strcase that handles non-ASCII text
@@ -4223,7 +4233,7 @@ Companion to %HOST-SYSVAR-STRING."
 (defun builtin-wcmatch (string pattern)
   (let ((s (autolisp-string-value (require-string string "WCMATCH")))
         (p (autolisp-string-value (require-string pattern "WCMATCH"))))
-    (if (wcmatch-pattern-p s p) (intern-autolisp-symbol "T") nil)))
+    (if (wcmatch-pattern-p s p) (autolisp-true) nil)))
 
 ;;; --- Geometry ------------------------------------------------------
 
@@ -4406,7 +4416,7 @@ on top."
 
 (defun builtin-vl-bt-on ()
   (setf *autolisp-backtrace-enabled-p* t)
-  (intern-autolisp-symbol "T"))
+  (autolisp-true))
 
 (defun builtin-vl-bt-off ()
   (setf *autolisp-backtrace-enabled-p* nil)
@@ -5126,7 +5136,7 @@ under another."
                (%host-sysvar-string host "SYSCODEPAGE")))
          (dwg (%canonical-codepage-string
                (%host-sysvar-string host "DWGCODEPAGE"))))
-    (if (string= sys dwg) nil (intern-autolisp-symbol "T"))))
+    (if (string= sys dwg) nil (autolisp-true))))
 
 ;;; --- aldo debugger configuration (CLAL-*-ALDO-CONFIGURATION) -------
 ;;;
@@ -5546,7 +5556,7 @@ on success, nil otherwise."
     (%clal-set-autolisp-var "*CLAL-CLIPBOARD*"
                             (clautolisp.autolisp-runtime:make-autolisp-string text))
     (if (clautolisp.sedit:clipboard-put-text text)
-        (clautolisp.autolisp-runtime:intern-autolisp-symbol "T")
+        (autolisp-true)
         nil)))
 
 (defun builtin-clal-clipboard-get-text ()
@@ -6044,7 +6054,7 @@ Returns T (matches the AutoLISP convention that mutators / linters
 return T on completion); the diagnostics are the user-visible
 output."
   (%lint-form-tree form)
-  (intern-autolisp-symbol "T"))
+  (autolisp-true))
 
 (defun builtin-clal-suppress-enc-diagnostic (&rest codes)
   "Add each CODE in CODES to the active per-code suppression list.
@@ -6357,7 +6367,7 @@ issues/open/clautolisp-module-app-extensions.issue."
        (autolisp-runtime-error (condition)
          (case (autolisp-runtime-error-code condition)
            ((:released-vla-object :unknown-vla-object)
-            (intern-autolisp-symbol "T"))
+            (autolisp-true))
            (t (error condition))))))
     (t nil)))
 
@@ -6990,7 +7000,7 @@ host does the case-insensitive match."
          ((typep name 'autolisp-string) (autolisp-string-value name))
          ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
          (t name)))
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun builtin-vlax-method-applicable-p (vla name)
@@ -7000,7 +7010,7 @@ host does the case-insensitive match."
          ((typep name 'autolisp-string) (autolisp-string-value name))
          ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
          (t name)))
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 ;;; --- SAFEARRAY -----------------------------------------------------
@@ -7609,7 +7619,7 @@ the data list."
 (defun builtin-vlr-added-p (reactor)
   (ensure-reactor reactor "VLR-ADDED-P")
   (if (reactor-active-p reactor)
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun builtin-vlr-type (reactor)
@@ -7695,7 +7705,7 @@ through cador-snapshot. Callbacks must be autolisp-symbols
 (defun builtin-vlr-pers-p (reactor)
   (ensure-reactor reactor "VLR-PERS-P")
   (if (reactor-persistent-p reactor)
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun builtin-vlr-pers-dictname ()
@@ -7733,7 +7743,7 @@ through cador-snapshot. Callbacks must be autolisp-symbols
                              (require-string name "NEW_DIALOG")))))
     (when (and action (not (null action)))
       (dcl-runtime-action-tile dialog-id "" action))
-    (intern-autolisp-symbol "T")))
+    (autolisp-true)))
 
 (defun builtin-start-dialog ()
   ;; (start_dialog) — no arguments. Drives the renderer's run-fn
@@ -7760,7 +7770,7 @@ through cador-snapshot. Callbacks must be autolisp-symbols
    (require-current-dialog-id "ACTION_TILE")
    (autolisp-string-value (require-string key "ACTION_TILE"))
    callback)
-  (intern-autolisp-symbol "T"))
+  (autolisp-true))
 
 (defun builtin-set-tile (key value)
   ;; (set_tile KEY VALUE) -> VALUE
@@ -7809,7 +7819,7 @@ through cador-snapshot. Callbacks must be autolisp-symbols
   ;; (start_image KEY) — open an image-paint batch on KEY.
   (let ((k (autolisp-string-value (require-string key "START_IMAGE"))))
     (dcl-runtime-start-image k)
-    (intern-autolisp-symbol "T")))
+    (autolisp-true)))
 
 (defun builtin-end-image ()
   (dcl-runtime-end-image)
@@ -8046,7 +8056,7 @@ live process object, which would otherwise leak a non-nil PID
             ((not (uiop:directory-exists-p resolved)) nil)
             (t
              (uiop:delete-empty-directory resolved)
-             (intern-autolisp-symbol "T"))))
+             (autolisp-true))))
       (error () nil))))
 
 (defun builtin-fnsplitl (filename)
@@ -8688,7 +8698,10 @@ deciding membership."
 ;;; ---- Type predicates (5 native + 4 stub)
 
 (defun autolisp-true ()
-  (intern-autolisp-symbol "T"))
+  "AutoLISP truth: the interned T symbol. The runtime caches it, so this
+is a variable read rather than a hash of the name `T' in the symbol
+table -- which it was, on every predicate and every relational operator."
+  (autolisp-true-symbol))
 
 (defun builtin-vle-integerp (x)
   (if (typep x '(signed-byte 32)) (autolisp-true) nil))
@@ -10809,7 +10822,7 @@ Variable Entries T, PI, PAUSE):
 
 Each is left untouched when already bound, matching the extension-
 variable convention below."
-  (let ((sym (intern-autolisp-symbol "T")))
+  (let ((sym (autolisp-true)))
     (unless (autolisp-symbol-value-bound-p sym)
       (%clal-set-autolisp-var "T" sym)))
   (let ((sym (intern-autolisp-symbol "PI")))

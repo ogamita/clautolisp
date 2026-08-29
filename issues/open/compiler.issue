@@ -1086,7 +1086,81 @@ TWO THINGS THIS SLICE LEARNED THE HARD WAY:
   issues/closed/docstring-closed-early-by-unescaped-quote.issue and the
   new `make check-docstrings'.
 
-STILL OPEN after slice 13
+Slice 14 (2.0.15) -- the rest of the hot operators, and truth
+-------------------------------------------------------------
+
+Slice 13 built the mechanism and its guard for seven two-argument
+arithmetic and relational operators. This extends it, which is what a
+mechanism is for: each new operator costs only the exact statement of its
+narrow case.
+
+Re-profiling first, as usual. After slice 13 the profile is FLAT -- no
+dominator left on fib -- but two things stood out and both are addressed
+here:
+
+    LOOKUP-FUNCTION                    10.2% self
+    MAKE-DYNAMIC-BINDING                7.6% self
+    NAMESPACE-BINDING-CELL              6.6% self
+    CALL-AUTOLISP-FUNCTION-IN-CONTEXT   6.1% self  (was 20.7%)
+    FIND-AUTOLISP-SYMBOL + STRING=*     ~4%
+
+That last one is TRUTH. AutoLISP truth is the SYMBOL T, so every
+predicate, every relational operator and every AND / OR has to produce
+it -- and producing it hashed the name in the symbol table, every time.
+It is now remembered in *AUTOLISP-TRUE-SYMBOL*, invalidated in the one
+place the answer can change: RESET-AUTOLISP-SYMBOL-TABLE clears the
+table, and clears this with it. Nothing else removes a symbol-table
+entry; interning only ever adds. All 43 occurrences of
+(intern-autolisp-symbol "T") went through it, so there is one spelling of
+truth rather than a fast one and a slow one.
+
+NEW OPERATORS: car cdr null not atom listp zerop eq 1+ 1- and unary -.
+The mechanism generalised from `two arguments' to `the arities each fast
+path is written for', because the SEMANTICS are per arity: (- 5) negates
+and (- 9 4) subtracts, same builtin, two meanings, two fast paths.
+
+The interesting ones are the ones that had to DECLINE:
+
+  EQ is EQL, PLUS the rule that two strings with equal contents are EQ
+  (the host interns literals). So the fast path declines whenever either
+  argument is a string -- a plausible inline EQ would have quietly
+  answered nil for (eq "abc" "abc"), which is the exact shape of the
+  defect this whole design exists to prevent. Tested directly.
+
+  CAR / CDR: nil -> nil, cons -> the part, anything else -> an error. CL
+  CAR of NIL is NIL and LISTP is exactly `nil or cons', so the whole
+  non-error domain is one line and a number still reaches the builtin and
+  still signals.
+
+  NULL / NOT / ATOM / LISTP are TOTAL -- they accept any object and cannot
+  signal -- so their fast path has no type test at all. That makes the tag
+  check the only thing between them and a user's redefinition, which is
+  now its own test.
+
+  ZEROP, unlike those, does signal on a non-number, so it keeps its guard;
+  and floats go to the builtin.
+
+RESULT, interleaved A/B against 2.0.14:
+
+                   2.0.14   new    speedup
+    -O3 lists        347     211    1.64x
+    -O3 shallow      192     166    1.16x
+    -O3 fib          265     259    1.02x   (nothing new applies)
+    -O0 lists        599     563    1.06x   (the truth cache, interpreted)
+
+A NOTE ON MEASURING. Best-of-five first reported fib 5% SLOWER, which
+would have been a real puzzle since no new fast path applies to it. Ten
+reps said 265 vs 259. Five reps is not enough on a machine doing other
+work, and the honest response to a surprising number is another
+measurement, not an explanation.
+
+THE DOCSTRING CHECK EARNED ITS KEEP ON ITS FIRST OUTING. It caught a
+BROKEN DOCSTRING IN THIS SLICE'S OWN CODE -- AUTOLISP-TRUE, where an
+unescaped quote around the name T ended the string early, leaving a dead
+form in the body. Written, shipped and caught the same afternoon; the
+tests were all green with it in place, exactly as they were in 2.0.13.
+
+STILL OPEN after slice 14
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -1102,11 +1176,17 @@ STILL OPEN after slice 13
     MAKE-AUTOLISP-SUBR is exported and its ordinary-function convention
     is used by the CAD layer and by eight test sites, so it is a contract
     change, not a local one. Worth doing deliberately, not in passing.
-  - MORE open-coded operators. The mechanism and its guard exist now
-    (slice 13); each new operator costs only the exact statement of its
-    narrow case. The obvious next ones are 1+ / 1- / car / cdr / null /
-    eq, and the one-argument and three-or-more-argument arities of the
-    operators already covered.
+  - STILL MORE open-coded operators, though the obvious ones are done
+    (slice 14). What is left is the three-or-more-argument arities of +
+    / - / * / < and friends, and the second rank by frequency: cons,
+    length, nth, member, assoc, = and /=. Each still costs only the exact
+    statement of its narrow case -- and note that = and /= are NOT
+    numeric-only in AutoLISP, so they need reading before they are
+    written.
+  - the per-call ALLOCATION of a usubr frame, which the flat post-slice-13
+    profile puts next: MAKE-DYNAMIC-BINDING at 7.6% self, plus a frame
+    struct and an alist cons, for every parameter of every user function
+    call.
   - reading the qualities from the CONFIGURATION MODULE, so a project
     can set them once rather than on every invocation. The --optimize
     half is done (slice 11); this is the other half of the same item,
