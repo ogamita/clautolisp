@@ -234,3 +234,89 @@ check alone is enough."
     (is (string= "T" (autolisp-symbol-name (first result))))
     (is (string= "MINE" (autolisp-symbol-name (second result)))
         "compiled code ignored a redefinition of null (got ~S)" result)))
+
+;;;; The third batch (2.0.19): CONS, LIST, = and /=, and the
+;;;; three-argument arities of the arithmetic and relational operators.
+;;;;
+;;;; Two things here are new in kind.
+;;;;
+;;;; CONS and LIST are TOTAL: BUILTIN-CONS is (cons a b) and BUILTIN-LIST
+;;;; returns its &rest list, so neither can signal and neither has a
+;;;; narrow case. Their fast path has no guard beyond the tag check --
+;;;; which makes the tag check the only thing between them and a
+;;;; redefinition, tested below.
+;;;;
+;;;; = and /= are NOT numeric-only, and that is the trap. AutoLISP's
+;;;; COMPARISON-EQUAL-P is EQL, then numeric = for two numbers, then
+;;;; STRING= for two strings. An inline `=' that only knew about numbers
+;;;; would answer nil for (= "a" "a"), which is the same shape of defect
+;;;; as an inline EQ that forgot interned strings.
+
+(defparameter *open-coded-third-corpus*
+  '(;; n-ary arithmetic: the fast path is over all three arguments at once
+    "(+ 1 2 3)" "(- 10 3 2)" "(* 2 3 4)"
+    "(+ 5)" "(* 5)" "(- 5)"
+    "(+ 2147483645 1 1)"
+    "(vl-catch-all-error-message (vl-catch-all-apply (function +) (list 2147483647 1 1)))"
+    "(vl-catch-all-error-message (vl-catch-all-apply (function *) (list 100000 100000 2)))"
+    ;; ... and a float anywhere in the chain sends the whole thing to the
+    ;; builtin, whose promotion rules decide
+    "(+ 1 2 3.5)" "(- 10 0.5 2)" "(* 2 3 0.5)"
+    ;; n-ary relational: pairwise ALONG the arguments, not first-against-rest
+    "(< 1 2 3)" "(< 1 3 2)" "(> 3 2 1)" "(<= 1 1 2)" "(>= 3 3 1)"
+    "(< 1 2 nil)" "(< 1.0 2 3)"
+    ;; = and /= on integers -- the narrow case
+    "(= 1 1)" "(= 1 2)" "(/= 1 2)" "(/= 1 1)"
+    ;; ... and off it, where the builtin's own rules apply
+    "(= 1 1.0)" "(= \"a\" \"a\")" "(= \"a\" \"b\")" "(= 'x 'x)" "(= nil nil)"
+    "(/= 1 1.0)" "(/= \"a\" \"a\")" "(/= 'x 'y)"
+    "(= 1 2 3)" "(= 1 1 1)" "(/= 1 2 3)"
+    ;; cons and list: total, so every shape must agree
+    "(cons 1 2)" "(cons 1 nil)" "(cons 1 '(2 3))" "(cons nil nil)"
+    "(cons '(1) '(2))" "(cons \"a\" \"b\")"
+    "(list 1)" "(list 1 2)" "(list 1 2 3)" "(list)" "(list 1 2 3 4)"
+    "(list nil nil)" "(list '(1) 2)"
+    ;; nested, so an open-coded operand feeds an open-coded operator
+    "(car (cons 1 2))" "(cdr (list 1 2 3))" "(length (list 1 2 3))"
+    "(= (+ 1 1) (* 1 2))")
+  "Expressions whose compiled and interpreted values must agree.")
+
+(test the-third-batch-agrees-with-the-interpreter
+  (dolist (text *open-coded-third-corpus*)
+    (let ((interpreted (%run-interpreted text))
+          (compiled (%run-with-compiled-bodies text)))
+      (is (%same-value-p interpreted compiled)
+          "~S: interpreted ~S, compiled ~S" text interpreted compiled))))
+
+(test equality-on-two-strings-goes-to-the-builtin
+  "`=' compares STRINGS as well as numbers, so the inline path -- which
+knows only about two integers -- must decline for anything else. An
+inline `=' that had assumed numbers would answer nil here."
+  (is (not (null (%run-with-compiled-bodies "(= \"a\" \"a\")")))
+      "compiled (= \"a\" \"a\") gave nil; the fast path did not decline")
+  (is (null (%run-with-compiled-bodies "(= \"a\" \"b\")")))
+  ;; and the mixed-type numeric case, where EQL says no and = says yes
+  (is (not (null (%run-with-compiled-bodies "(= 1 1.0)")))
+      "compiled (= 1 1.0) gave nil"))
+
+(test the-relational-chain-is-pairwise-not-first-against-rest
+  "(< 1 3 2) is NIL: the comparison walks the arguments in pairs, so a
+three-argument chain is (and (< 1 3) (< 3 2)). Comparing the first
+against each of the rest would say T here, which is the mistake an
+n-ary fast path invites."
+  (is (null (%run-with-compiled-bodies "(< 1 3 2)")))
+  (is (not (null (%run-with-compiled-bodies "(< 1 2 3)"))))
+  (is (%same-value-p (%run-interpreted "(< 1 3 2)")
+                     (%run-with-compiled-bodies "(< 1 3 2)"))))
+
+(test a-redefinition-of-a-total-operator-still-wins
+  "CONS cannot signal, so its fast path has no type test -- the tag check
+alone stands between it and a user's definition."
+  (let ((result (%compiled-value
+                 "(progn (defun use (a b) (cons a b))
+                         (setq before (use 1 2))
+                         (defun cons (a b) 'mine)
+                         (list before (use 1 2)))")))
+    (is (equal '(1 . 2) (first result)))
+    (is (string= "MINE" (autolisp-symbol-name (second result)))
+        "compiled code ignored a redefinition of cons (got ~S)" result)))
