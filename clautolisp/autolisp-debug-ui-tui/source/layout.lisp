@@ -151,6 +151,19 @@ other splits' ratios untouched."
               (t (list split ratio (tree-remove-leaf a leaf) (tree-remove-leaf b leaf)))))
       tree))
 
+(defun tree-insert-beside (tree active new split-type)
+  "Replace ACTIVE's leaf with (SPLIT-TYPE 1/2 ACTIVE NEW), adding the brand-new
+leaf NEW beside ACTIVE (unlike TREE-SPLIT-ACTIVE, NEW is not removed from
+elsewhere — the window count grows by one). A NIL TREE becomes just NEW."
+  (cond ((null tree) new)
+        (t (labels ((rec (node)
+                      (cond ((eql node active) (list split-type 1/2 active new))
+                            ((%split-p node)
+                             (destructuring-bind (s r a b) node
+                               (list s r (rec a) (rec b))))
+                            (t node))))
+             (rec tree)))))
+
 (defun tree-split-active (tree active next split-type)
   "Replace ACTIVE's leaf with (SPLIT-TYPE 1/2 ACTIVE NEXT) after removing NEXT
 from elsewhere, so the window count stays constant (C-w 2 / C-w 3)."

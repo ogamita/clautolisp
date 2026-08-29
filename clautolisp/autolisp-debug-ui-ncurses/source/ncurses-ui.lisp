@@ -954,7 +954,7 @@ prompt the minibuffer; `q' swaps the navigator back; other single-key commands
 run bare; an unhandled key falls through (values NIL NIL)."
   (cond
     ((not (characterp key)) (values nil nil))
-    ((char= key #\q) (close-sedit-in-source ui) (values t nil))
+    ((char= key #\q) (close-sedit ui) (values t nil))
     ((member key +sedit-window-arg-keys+)
      (let ((arg (read-minibuffer ui (format nil "sedit ~C " key))))
        (when (and arg (plusp (length (string-trim " " arg))))
@@ -1005,6 +1005,34 @@ navigator."
         (setf (window-stack window)
               (if (member :navi rest) rest (append rest (list :navi)))))))
   (set-message ui "sedit closed")
+  nil)
+
+(defun close-sedit (ui)
+  "`q' in a sedit: a DEDICATED :sedit window (from make-sedit-window) is removed
+from the frame; the source pane swaps its navigator back instead."
+  (let ((window (active-window ui)))
+    (if (eq (window-role window) :sedit)
+        (progn
+          (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
+          (let ((now (active-window ui)))
+            (when now (pushnew :window-manager (window-stack now))))
+          (set-message ui "sedit window closed"))
+        (close-sedit-in-source ui))))
+
+(defun make-sedit-window (ui session hit arg)
+  "`M-x make-sedit-window': open a SEDIT activation over ARG (or a prompted form)
+in a NEW window beside the active one (the spec's create-a-window form; `sedit'
+alone swaps the source pane instead). Returns NIL."
+  (declare (ignore session hit))
+  (let* ((target (%sedit-target-from-arg arg ui))
+         (activation (clautolisp.interactor:instantiate-interactor-template
+                      "sedit" (clautolisp.interactor:make-template-context :target target)))
+         (window (clautolisp.ui.tui:add-window-to-frame
+                  (ncurses-ui-frame ui) :name "sedit" :role :sedit
+                  :beside (active-window ui) :split :vertical)))
+    (setf (window-stack window) (list activation))
+    (activate-window ui window)
+    (set-message ui "sedit: d u > < move | i a r edit | q close"))
   nil)
 
 ;;;; --- the list-selector interactor (windows-and-interactor-templates.issue:
@@ -1244,7 +1272,7 @@ RET returns the string, Esc cancels (returns NIL), Backspace deletes."
    ;; sedit live in the source pane (windows-and-interactor-templates.issue):
    ;; `make-sedit-window' is the spec name; `sedit' the short alias.
    (cons "sedit"             #'open-sedit-in-source)
-   (cons "make-sedit-window" #'open-sedit-in-source)
+   (cons "make-sedit-window" #'make-sedit-window)
    ;; the list-selector (windows-and-interactor-templates.issue): pick a window
    ;; to activate, or browse the interactor templates available to a window.
    (cons "windows"     #'list-windows-command)

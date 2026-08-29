@@ -49,6 +49,7 @@ future backend behind the same protocol.")
    #:window-role #:window-frame
    #:window-buffer #:window-scroll #:window-rect #:window-stack
    #:window-list #:delete-window #:selected-window #:select-window
+   #:add-window-to-frame #:remove-window-from-frame
    ;; configuration cascade (matches the interactor stacks)
    #:config #:config-p #:config-name #:config-parent #:config-dirty
    #:*configs* #:find-config #:ensure-config #:reset-configs
@@ -69,4 +70,4 @@ future backend behind the same protocol.")
    #:rect-top #:rect-left #:rect-bottom #:rect-right
    #:rects-row-overlap-p #:rects-col-overlap-p #:window-neighbor
    #:tree-swap-leaves #:clamp-ratio #:tree-resize #:tree-balance
-   #:tree-remove-leaf #:tree-split-active))
+   #:tree-remove-leaf #:tree-split-active #:tree-insert-beside))

@@ -914,3 +914,24 @@
              (is (equal spec (cdr (assoc "l1" (clautolisp.ui.ncurses::saved-layouts)
                                          :test #'string=)))))))
     (clautolisp.ui.tui:reset-configs)))
+
+;;;; --- make-sedit-window creates a real new window ------------------------
+
+(test make-sedit-window-creates-and-removes-a-window
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen))
+         (n0 (length (clautolisp.ui.ncurses::ui-windows ui))))
+    (clautolisp.ui.ncurses::make-sedit-window ui nil nil "(+ 1 2)")
+    (is (= (1+ n0) (length (clautolisp.ui.ncurses::ui-windows ui))))
+    (let ((w (clautolisp.ui.ncurses::active-window ui)))
+      (is (eq :sedit (clautolisp.ui.tui:window-role w)))
+      (let ((act (clautolisp.ui.ncurses::window-sedit-activation w)))
+        (is (not (null act)))
+        ;; the new pane renders the sedit selection
+        (let ((buffer (clautolisp.ui.ncurses::window-content ui nil w)))
+          (is (not (null (some (lambda (l) (search "+" (car l))) buffer)))))
+        ;; q removes the dedicated window and its layout leaf
+        (clautolisp.ui.ncurses::sedit-window-key act ui #\q)
+        (is (= n0 (length (clautolisp.ui.ncurses::ui-windows ui))))
+        (is (null (find :sedit (clautolisp.ui.ncurses::ui-windows ui)
+                        :key #'clautolisp.ui.tui:window-role)))))))

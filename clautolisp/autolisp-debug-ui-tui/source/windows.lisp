@@ -70,6 +70,33 @@ unless MINIBUFP."
         (setf (frame-selected-window frame) (first (frame-windows frame)))))
     nil))
 
+(defun add-window-to-frame (frame &key (name "window") role beside (split :vertical))
+  "Create a window in FRAME (a SPECIFIC frame, unlike MAKE-WINDOW, which targets
+the selected frame), append it to FRAME's window list, and splice it into the
+layout tree BESIDE the leaf BESIDE (default: split the whole layout). A window-
+manager UI that owns an isolated frame uses this to grow its layout. Returns the
+new window."
+  (let ((window (%make-window :name name :role role :frame frame)))
+    (setf (frame-windows frame) (append (frame-windows frame) (list window)))
+    (setf (frame-layout frame)
+          (cond ((null (frame-layout frame)) window)
+                (beside (tree-insert-beside (frame-layout frame) beside window split))
+                (t (list split 1/2 (frame-layout frame) window))))
+    (unless (frame-selected-window frame)
+      (setf (frame-selected-window frame) window))
+    window))
+
+(defun remove-window-from-frame (frame window)
+  "Remove WINDOW from FRAME's window list AND collapse it out of the layout tree
+(the sibling takes its space). Reselects another window when WINDOW was selected.
+Returns WINDOW."
+  (setf (frame-windows frame) (remove window (frame-windows frame)))
+  (when (frame-layout frame)
+    (setf (frame-layout frame) (tree-remove-leaf (frame-layout frame) window)))
+  (when (eq (frame-selected-window frame) window)
+    (setf (frame-selected-window frame) (first (frame-windows frame))))
+  window)
+
 (defun selected-window ()
   "The active window of the selected frame, or NIL."
   (let ((frame (selected-frame))) (and frame (frame-selected-window frame))))
