@@ -176,8 +176,22 @@ legacy aliases). They now fail as unknown options."
     (is (equal '("localhost" 4301) (hp "localhost:4301")))
     (is (equal '("::1" 4301) (hp "[::1]:4301")))))      ; bracketed IPv6
 
-(test aldb-split-address-rejects-non-numeric-port
-  (signals error (clautolisp.tools.clautolisp::aldb-split-address "host:daytime")))
+(test aldb-split-address-resolves-service-names
+  ;; a TCP service name resolves via the system services database. Needs
+  ;; /etc/services (or the Windows equivalent); where it is absent (a minimal
+  ;; container) the lookup returns NIL and the assertions self-skip.
+  (flet ((port (a) (ignore-errors
+                     (nth-value 1 (clautolisp.tools.clautolisp::aldb-split-address a)))))
+    (let ((http (port "http")))
+      (is (or (null http) (eql 80 http)))            ; bare service name → 80
+      (when http
+        (is (eql 80 (port "127.0.0.1:http")))        ; host:service
+        (is (eql 80 (port "www")))))))               ; www is an /etc/services alias of http
+
+(test aldb-split-address-rejects-unknown-service
+  ;; an unknown service name errors (whether or not the database is present)
+  (signals error
+    (clautolisp.tools.clautolisp::aldb-split-address "host:no-such-service-zzz")))
 
 (test aldb-resolve-listener-address-explicit-and-default
   ;; stdio / non-aldb → NIL; a "HOST:PORT" passes through; plain aldb → default

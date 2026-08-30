@@ -1158,17 +1158,62 @@ at the first stop, becomes (delegates to) the emacs-ui over the accepted socket
            (subseq h 1 (1- (length h))))          ; [::1] -> ::1
           (t h))))
 
+(defun aldb-tokens (line)
+  "The whitespace-separated tokens of LINE."
+  (loop with len = (length line) with i = 0
+        for start = (position-if-not (lambda (c) (member c '(#\Space #\Tab))) line :start i)
+        while start
+        for end = (or (position-if (lambda (c) (member c '(#\Space #\Tab))) line :start start)
+                      len)
+        collect (subseq line start end)
+        do (setf i end)))
+
+(defun aldb-services-file ()
+  "The system services database path: %SystemRoot%\\System32\\drivers\\etc\\
+services on Windows, else /etc/services."
+  (or (and (uiop:os-windows-p)
+           (let ((root (uiop:getenv "SystemRoot")))
+             (and root (plusp (length root))
+                  (merge-pathnames "System32/drivers/etc/services"
+                                   (uiop:ensure-directory-pathname root)))))
+      #p"/etc/services"))
+
+(defun aldb-resolve-service-port (name)
+  "Resolve TCP service NAME to a port number via the system services database
+(getservbyname-style: /etc/services, or the Windows equivalent — a line
+=NAME PORT/tcp [ALIASES…]=). Case-insensitive on the name/aliases. Signal an
+error when NAME is unknown (or the database is absent)."
+  (with-open-file (in (aldb-services-file) :if-does-not-exist nil)
+    (when in
+      (loop for line = (read-line in nil nil) while line do
+        (let ((tokens (aldb-tokens (subseq line 0 (position #\# line)))))
+          (when (>= (length tokens) 2)
+            (destructuring-bind (service port/proto &rest aliases) tokens
+              (let ((slash (position #\/ port/proto)))
+                (when (and slash
+                           (string-equal "tcp" (subseq port/proto (1+ slash)))
+                           (or (string-equal name service)
+                               (member name aliases :test #'string-equal)))
+                  (return-from aldb-resolve-service-port
+                    (parse-integer port/proto :end slash))))))))))
+  (error "aldb: unknown TCP service ~S (not in ~A)" name (aldb-services-file)))
+
+(defun aldb-port-number (port-string)
+  "PORT-STRING as a port integer: a decimal number, or a TCP service name
+resolved via the system services database."
+  (if (and (plusp (length port-string)) (every #'digit-char-p port-string))
+      (parse-integer port-string)
+      (aldb-resolve-service-port port-string)))
+
 (defun aldb-split-address (address)
-  "Split \"HOST:PORT\" into (values HOST PORT-integer). A bare number is a port
-on 127.0.0.1; [::1]:PORT keeps the bracketed IPv6 host. A non-numeric port (a
-service name) is rejected — this transport takes a numeric port."
+  "Split \"[HOST:]PORT\" into (values HOST PORT-integer). A bare token is a port
+on 127.0.0.1; PORT is a decimal number or a TCP service name; [::1]:PORT keeps
+the bracketed IPv6 host. The LAST colon separates host from port."
   (let ((colon (position #\: address :from-end t)))
-    (flet ((numeric (s) (and (plusp (length s)) (every #'digit-char-p s))))
-      (cond ((and colon (numeric (subseq address (1+ colon))))
-             (values (aldb-clean-host (subseq address 0 colon))
-                     (parse-integer address :start (1+ colon))))
-            ((numeric address) (values "127.0.0.1" (parse-integer address)))
-            (t (error "aldb: ~S is not HOST:PORT with a numeric port" address))))))
+    (if (and colon (< (1+ colon) (length address)))
+        (values (aldb-clean-host (subseq address 0 colon))
+                (aldb-port-number (subseq address (1+ colon))))
+        (values "127.0.0.1" (aldb-port-number address)))))
 
 (defun make-aldb-listener-ui (address context)
   "Open a TCP listener at ADDRESS (\"HOST:PORT\"; PORT 0 = an OS-chosen free
