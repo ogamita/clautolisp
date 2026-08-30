@@ -147,3 +147,28 @@ legacy aliases). They now fail as unknown options."
 (test no-debugger-option-means-no-ui-request
   (is (null (clautolisp.tools.clautolisp::effective-user-interface
              (%parse "-x" "(+ 1 2)")))))
+
+;;; --- aldb transport gating (§10): stdio served, TCP listener pending ---
+
+(defun %status (debug-ui user-interface aldb-listen)
+  (clautolisp.tools.clautolisp::aldb-transport-status
+   debug-ui user-interface aldb-listen))
+
+(test aldb-stdio-transport-is-served
+  ;; --aldb-stdio, whether aldb came from the CLI or the persisted default
+  (is (eq :stdio (%status :aldb :aldb :stdio)))
+  (is (eq :stdio (%status :aldb nil   :stdio))))
+
+(test aldb-listener-requested-on-cli-is-a-hard-error
+  ;; --debugger-ui aldb (or --aldb-listen) with no stdio → the pending listener
+  (is (eq :listener-explicit (%status :aldb :aldb "127.0.0.1:4301")))
+  (is (eq :listener-explicit (%status :aldb :aldb nil))))
+
+(test aldb-listener-as-persisted-default-falls-back
+  ;; aldb only as the persisted default (no CLI request, no stdio) → warn+tui
+  (is (eq :listener-default (%status :aldb nil "127.0.0.1:4301")))
+  (is (eq :listener-default (%status :aldb nil nil))))
+
+(test non-aldb-ui-is-not-gated
+  (is (eq :not-aldb (%status :tui nil nil)))
+  (is (eq :not-aldb (%status :ncurses :ncurses nil))))

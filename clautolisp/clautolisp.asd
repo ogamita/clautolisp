@@ -335,6 +335,9 @@ identity / TEMPPREFIX stamping, option value parsers)."
                "clautolisp/autolisp-debug-ui"
                "clautolisp/autolisp-debug-ui-dumb"
                "clautolisp/autolisp-debug-ui-ncurses"
+               ;; aldb (Emacs) RPC shim — registers the :aldb / :emacs UIs so
+               ;; --aldb-stdio drives the debugger over the process stdin/stdout.
+               "clautolisp/autolisp-debug-ui-emacs"
                ;; dribble tee/echo streams (dribble.issue)
                "trivial-gray-streams"
                "uiop")

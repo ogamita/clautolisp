@@ -299,6 +299,25 @@ an explicit --debugger-ui says otherwise. NIL when no UI was requested."
                (clautolisp.autolisp-cli:cli-options-aldb-stdio-p options))
            :aldb)))
 
+(defun aldb-transport-status (debug-ui user-interface aldb-listen)
+  "How an aldb DEBUG-UI is transported to Emacs (debugger §10). USER-INTERFACE
+is the CLI --debugger-ui selection (else NIL = aldb is only the persisted
+default); ALDB-LISTEN is :STDIO for --aldb-stdio, a \"HOST:PORT\" string for
+--aldb-listen, else NIL. Returns:
+  :not-aldb          — DEBUG-UI is not aldb;
+  :stdio             — --aldb-stdio: RPC over the process stdin/stdout (the one
+                       transport implemented today — Emacs launched clautolisp
+                       as an inferior process);
+  :listener-explicit — aldb requested on the CLI but only the (pending) TCP
+                       listener would serve it → hard error;
+  :listener-default  — aldb is merely the persisted default and needs the
+                       pending listener → warn + fall back to tui.
+Pure (no I/O) so the gating is unit-testable away from the CLI entry point."
+  (cond ((not (eq debug-ui :aldb))   :not-aldb)
+        ((eq aldb-listen :stdio)     :stdio)
+        ((eq user-interface :aldb)   :listener-explicit)
+        (t                           :listener-default)))
+
 (defun resolve-default-debugger-ui ()
   "The persisted default-user-interface aldo setting (command reference §8;
 $XDG_CONFIG_HOME/clautolisp/aldo.conf), :tui when unset — the value an
@@ -1476,8 +1495,8 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                                                 options)))
                             effective-ui))
                ;; --aldb-listen / --aldb-stdio (Part C/D): recorded and
-               ;; mirrored to *CLAL-ALDB-LISTEN*; the transport itself is
-               ;; pending (see below).
+               ;; mirrored to *CLAL-ALDB-LISTEN*. --aldb-stdio is served now
+               ;; (stdio transport); --aldb-listen's TCP listener is pending.
                (aldb-listen
                  (cond ((clautolisp.autolisp-cli:cli-options-aldb-stdio-p options)
                         :stdio)
@@ -1487,25 +1506,30 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                                 (or (clautolisp.autolisp-cli:cli-options-aldb-address options)
                                     "127.0.0.1")
                                 (clautolisp.autolisp-cli:cli-options-aldb-port options))))))
-          ;; The aldb (Emacs) front-end speaks over a TCP socket (or stdio);
-          ;; the listener is not yet implemented (debugger §10). Fail clearly
-          ;; when aldb was requested on the command line; when it merely is
-          ;; the persisted default-user-interface, warn and fall back to tui
-          ;; so the tool stays usable.
-          (when (eq debug-ui :aldb)
-            (cond
-              ((eq user-interface :aldb)
-               (format *error-output*
-                       "~&clautolisp: --debugger-ui aldb is not yet implemented ~
-                        (the aldb RPC listener is pending); use tui or ncurses.~%")
-               (finish-output *error-output*)
-               (quit 2))
-              (t
-               (format *error-output*
-                       "~&clautolisp: the persisted default-user-interface ~
-                        aldb is not yet implemented; using tui.~%")
-               (finish-output *error-output*)
-               (setf debug-ui :tui effective-ui :tui))))
+          ;; The aldb (Emacs) front-end speaks a line-oriented S-expr RPC. Over
+          ;; STDIO (--aldb-stdio, Emacs launched us as an inferior process) the
+          ;; emacs-ui just drives the process stdin/stdout — implemented, so let
+          ;; :aldb through. The TCP LISTENER (--aldb-listen / the persisted
+          ;; default's connect prompt, debugger §10) still needs a socket
+          ;; transport: fail clearly when it was asked for on the command line,
+          ;; and fall back to tui when aldb was only the persisted default.
+          (ecase (aldb-transport-status debug-ui user-interface aldb-listen)
+            (:not-aldb)                 ; not aldb — nothing to gate
+            (:stdio)                    ; stdio RPC — proceed with :aldb
+            (:listener-explicit
+             (format *error-output*
+                     "~&clautolisp: the aldb TCP listener is not yet implemented; ~
+                      use --aldb-stdio (Emacs launches clautolisp as an inferior ~
+                      process), or --debugger-ui tui|ncurses.~%")
+             (finish-output *error-output*)
+             (quit 2))
+            (:listener-default
+             (format *error-output*
+                     "~&clautolisp: the persisted default-user-interface aldb needs ~
+                      the TCP listener (not yet implemented); using tui. ~
+                      (--aldb-stdio works today.)~%")
+             (finish-output *error-output*)
+             (setf debug-ui :tui effective-ui :tui)))
           (let ((*verbose-p* verbose-p)
                 (*debug-p* debug-p)
                 ;; The event policies (debugger §10 / Part B): user code may
