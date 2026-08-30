@@ -259,12 +259,14 @@ lines and an optional 0-based row to keep in view. A window running a SEDIT
 activation renders its selection; otherwise dispatch on the pane role."
   (let ((sedit (window-sedit-activation window))
         (selector (window-selector-activation window))
-        (lisp (window-lisp-activation window)))
+        (lisp (window-lisp-activation window))
+        (inspector (window-inspector-activation window)))
     (cond
-      (sedit    (values (sedit-window-buffer sedit) nil))
-      (selector (values (selector-window-buffer selector) nil))
-      (lisp     (let ((buffer (lisp-window-buffer ui window)))
-                  (values buffer (and buffer (1- (length buffer))))))  ; tail-follow
+      (sedit     (values (sedit-window-buffer sedit) nil))
+      (selector  (values (selector-window-buffer selector) nil))
+      (inspector (values (inspector-window-buffer inspector) nil))
+      (lisp      (let ((buffer (lisp-window-buffer ui window)))
+                   (values buffer (and buffer (1- (length buffer))))))  ; tail-follow
       (t (ecase (window-role window)
            (:stack      (values (stack-buffer ui session) nil))
            (:source     (source-buffer ui session))
@@ -430,6 +432,7 @@ the 0-based row of that selection, to keep in view."
   ;; templates.issue). The full dynamic cascade from the live stack (sedit ->
   ;; aldo -> lisp above a stop) lands with the shared-tail activation stacks.
   (cond ((window-sedit-activation window) "sedit")
+        ((window-inspector-activation window) "inspector")
         (t (or (cdr (assoc (window-role window) +window-config-name+)) "lisp"))))
 
 (defun active-window-config (ui)
@@ -778,6 +781,7 @@ handle keystrokes here."
   (cond ((window-entry-sedit-p activation) (sedit-window-key activation ui key))
         ((window-entry-selector-p activation) (selector-key activation ui key))
         ((window-entry-lisp-p activation) (lisp-window-key activation ui key))
+        ((window-entry-inspector-p activation) (inspector-window-key activation ui key))
         (t (values nil nil))))
 
 (defun window-manager-key (ui session hit key)
@@ -1267,6 +1271,129 @@ in its own window beside the active one. Returns NIL."
           (set-message ui "lisp: e eval | q close"))))
   nil)
 
+;;;; --- make-inspector-window: a standalone object inspector in a window ----
+;;;; The inspector CORE (clautolisp.inspect) is session-independent: (inspect
+;;;; VALUE) builds an inspector-session (misnamed — NOT the debug session) whose
+;;;; pages / descend / ascend need no debugger. A window carries one + a cursor,
+;;;; so any object is inspectable outside a stop (config cascade inspector->lisp).
+
+(clautolisp.interactor:define-interactor *inspector*
+  :name "INSPECTOR"
+  :documentation "A standalone object inspector carried in a window: navigate a
+value's structure (up/down move, d descend, u up, q close) with no debug session
+(windows-and-interactor-templates.issue).")
+
+(defstruct inspector-window-state
+  "An INSPECTOR window activation's state: the standalone inspector object and
+the current component cursor."
+  inspector (cursor 0))
+
+(defun make-inspector-activation (value)
+  "An INSPECTOR activation over VALUE (a fresh standalone inspector)."
+  (clautolisp.interactor:make-activation
+   *inspector* (make-inspector-window-state :inspector (inspect value) :cursor 0)))
+
+(defun window-entry-inspector-p (entry)
+  (and (clautolisp.interactor:activation-p entry)
+       (eq (clautolisp.interactor:activation-interactor entry) *inspector*)))
+
+(defun window-inspector-activation (window)
+  (find-if #'window-entry-inspector-p (window-stack window)))
+
+(defun inspector-window-buffer (activation)
+  "Buffer lines rendering the inspector page: type/header, current path, and each
+component (the cursor's marked)."
+  (let* ((st (clautolisp.interactor:activation-state activation))
+         (insp (inspector-window-state-inspector st))
+         (page (clautolisp.inspect:session-page insp))
+         (cursor (inspector-window-state-cursor st))
+         (out (list (cons (format nil "~A" (clautolisp.inspect:inspect-page-type-name page))
+                          :active-status))))
+    (let ((header (clautolisp.inspect:inspect-page-header page)))
+      (when header (push (cons (format nil "~A" header) :normal) out)))
+    (push (cons (format nil "at: ~A"
+                        (or (ignore-errors (clautolisp.inspect:session-path-expression insp))
+                            (clautolisp.inspect:session-origin insp)))
+                :normal)
+          out)
+    (loop for c in (clautolisp.inspect:inspect-page-components page)
+          for i from 0
+          do (push (cons (format nil "~:[  ~;> ~]~A = ~A"
+                                 (= i cursor)
+                                 (clautolisp.inspect:inspect-component-label c)
+                                 (clautolisp.inspect:inspect-component-preview c))
+                         (if (= i cursor) :current-line :normal))
+                   out))
+    (nreverse out)))
+
+(defun close-inspector-window (ui)
+  "`q' in an inspector window: remove it from the frame."
+  (let ((window (active-window ui)))
+    (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
+    (let ((now (active-window ui)))
+      (when now (pushnew :window-manager (window-stack now))))
+    (set-message ui "inspector closed")))
+
+(defun inspector-window-key (activation ui key)
+  "Drive an INSPECTOR window: up/down move the cursor; d/Enter descends into the
+current component; u ascends; q closes."
+  (let* ((st (clautolisp.interactor:activation-state activation))
+         (insp (inspector-window-state-inspector st))
+         (n (length (clautolisp.inspect:inspect-page-components
+                     (clautolisp.inspect:session-page insp)))))
+    (flet ((move (d) (when (plusp n)
+                       (setf (inspector-window-state-cursor st)
+                             (mod (+ (inspector-window-state-cursor st) d) n)))))
+      (cond
+        ((eq key :up) (move -1) (values t nil))
+        ((eq key :down) (move +1) (values t nil))
+        ((or (eq key :enter) (and (characterp key) (char= key #\d)))
+         (clautolisp.inspect:session-down insp (inspector-window-state-cursor st))
+         (setf (inspector-window-state-cursor st) 0)
+         (values t nil))
+        ((or (eq key :backspace) (and (characterp key) (char= key #\u)))
+         (clautolisp.inspect:session-up insp)
+         (setf (inspector-window-state-cursor st) 0)
+         (values t nil))
+        ((and (characterp key) (char= key #\q)) (close-inspector-window ui) (values t nil))
+        (t (values nil nil))))))
+
+(defun %inspector-target-from-arg (ui arg)
+  "The value make-inspector-window inspects: ARG (or a prompted form) evaluated
+in the shared context; NIL (inspect nil) when empty or on error."
+  (let ((text (if (and arg (plusp (length (string-trim " " arg)))) arg
+                  (read-minibuffer ui "inspect: "))))
+    (if (and text (plusp (length (string-trim " " text))))
+        (handler-case
+            (clautolisp.autolisp-runtime:autolisp-eval
+             (clautolisp.autolisp-runtime:autolisp-read-from-string text)
+             (clautolisp.autolisp-runtime:current-evaluation-context))
+          (error (e) (set-message ui "inspect: ~A" e) nil))
+        nil)))
+
+(defun make-inspector-window (ui session hit arg)
+  "`M-x make-inspector-window': inspect ARG (or a prompted form's value) in a new
+window beside the active one. Returns NIL."
+  (declare (ignore session hit))
+  (let* ((value (%inspector-target-from-arg ui arg))
+         (activation (make-inspector-activation value))
+         (window (clautolisp.ui.tui:add-window-to-frame
+                  (ncurses-ui-frame ui) :name "inspect" :role :inspector
+                  :beside (active-window ui) :split :vertical)))
+    (setf (window-stack window) (list activation))
+    (activate-window ui window)
+    (set-message ui "inspect: up/down move | d descend | u up | q close"))
+  nil)
+
+(clautolisp.interactor:define-interactor-template "inspector"
+  :display-name "Object inspector"
+  :description "Inspect a Lisp/AutoLISP object's structure in a window"
+  :interactor *inspector*
+  :constructor (lambda (context)
+                 (make-inspector-activation
+                  (clautolisp.interactor:template-context-target context)))
+  :config-name "inspector")
+
 (defun handle-window-command (ui)
   "Read the key after a C-w / C-x prefix and run the built-in window command."
   (run-window-command ui (tui-read-key (ncurses-ui-screen ui))))
@@ -1349,6 +1476,8 @@ RET returns the string, Esc cancels (returns NIL), Backspace deletes."
    (cons "sedit"             #'open-sedit-in-source)
    (cons "make-sedit-window" #'make-sedit-window)
    (cons "make-lisp-window"  #'make-lisp-window)
+   (cons "make-inspector-window" #'make-inspector-window)
+   (cons "inspect"               #'make-inspector-window)
    ;; the list-selector (windows-and-interactor-templates.issue): pick a window
    ;; to activate, or browse the interactor templates available to a window.
    (cons "windows"     #'list-windows-command)

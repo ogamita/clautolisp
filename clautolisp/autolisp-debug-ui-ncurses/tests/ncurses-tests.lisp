@@ -957,3 +957,30 @@
       ;; q closes the window
       (clautolisp.ui.ncurses::lisp-window-key act ui #\q)
       (is (= n0 (length (clautolisp.ui.ncurses::ui-windows ui)))))))
+
+;;;; --- make-inspector-window: standalone inspector in a window ------------
+
+(test make-inspector-window-inspects-in-a-window
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen))
+         (n0 (length (clautolisp.ui.ncurses::ui-windows ui))))
+    ;; a direct inspector activation over a list: render + descend + up + close
+    (let* ((activation (clautolisp.ui.ncurses::make-inspector-activation (list 10 20 30)))
+           (window (clautolisp.ui.tui:add-window-to-frame
+                    (clautolisp.ui.ncurses::ncurses-ui-frame ui)
+                    :name "inspect" :role :inspector
+                    :beside (clautolisp.ui.ncurses::active-window ui) :split :vertical)))
+      (setf (clautolisp.ui.tui:window-stack window) (list activation))
+      (clautolisp.ui.ncurses::activate-window ui window)
+      (is (eq :inspector (clautolisp.ui.tui:window-role window)))
+      (is (not (null (clautolisp.ui.ncurses::window-inspector-activation window))))
+      (is (>= (length (clautolisp.ui.ncurses::window-content ui nil window)) 1))
+      (clautolisp.ui.ncurses::inspector-window-key activation ui #\d)   ; descend
+      (clautolisp.ui.ncurses::inspector-window-key activation ui #\u)   ; ascend
+      (clautolisp.ui.ncurses::inspector-window-key activation ui #\q)   ; close
+      (is (= n0 (length (clautolisp.ui.ncurses::ui-windows ui)))))
+    ;; the command path (evaluate a form) also creates an inspector window
+    (clautolisp.ui.ncurses::make-inspector-window ui nil nil "nil")
+    (is (= (1+ n0) (length (clautolisp.ui.ncurses::ui-windows ui))))
+    (is (eq :inspector (clautolisp.ui.tui:window-role
+                        (clautolisp.ui.ncurses::active-window ui))))))
