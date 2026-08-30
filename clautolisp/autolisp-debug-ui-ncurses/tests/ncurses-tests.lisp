@@ -1022,3 +1022,27 @@
     (is (= (+ 2 n0) (length (clautolisp.ui.ncurses::ui-windows ui))))
     (is (eq :inspector (clautolisp.ui.tui:window-role
                         (clautolisp.ui.ncurses::active-window ui))))))
+
+;;;; --- make-navi-window: standalone read-only structure navigator --------
+
+(test make-navi-window-navigates-a-form-read-only
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen))
+         (n0 (length (clautolisp.ui.ncurses::ui-windows ui))))
+    (clautolisp.ui.ncurses::make-navi-window ui nil nil "(a (b c) d)")
+    (is (= (1+ n0) (length (clautolisp.ui.ncurses::ui-windows ui))))
+    (let* ((w (clautolisp.ui.ncurses::active-window ui))
+           (act (clautolisp.ui.ncurses::window-navi-activation w)))
+      (is (eq :navi-view (clautolisp.ui.tui:window-role w)))
+      (is (not (null act)))
+      ;; descend moves the selection
+      (let ((before (mapcar #'car (clautolisp.ui.ncurses::window-content ui nil w))))
+        (clautolisp.ui.ncurses::navi-window-key act ui #\d)
+        (is (not (equal before (mapcar #'car (clautolisp.ui.ncurses::window-content ui nil w))))))
+      ;; an editing key is not a motion here: unhandled (read-only)
+      (multiple-value-bind (h d) (clautolisp.ui.ncurses::navi-window-key act ui #\i)
+        (declare (ignore d))
+        (is (null h)))
+      ;; q closes
+      (clautolisp.ui.ncurses::navi-window-key act ui #\q)
+      (is (= n0 (length (clautolisp.ui.ncurses::ui-windows ui)))))))

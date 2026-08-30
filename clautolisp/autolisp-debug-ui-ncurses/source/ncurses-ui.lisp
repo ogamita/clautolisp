@@ -261,12 +261,14 @@ activation renders its selection; otherwise dispatch on the pane role."
         (selector (window-selector-activation window))
         (lisp (window-lisp-activation window))
         (inspector (window-inspector-activation window))
-        (stack-browser (window-stack-browser-activation window)))
+        (stack-browser (window-stack-browser-activation window))
+        (navi (window-navi-activation window)))
     (cond
       (sedit     (values (sedit-window-buffer sedit) nil))
       (selector  (values (selector-window-buffer selector) nil))
       (inspector (values (inspector-window-buffer inspector) nil))
       (stack-browser (values (stack-browser-window-buffer stack-browser) nil))
+      (navi      (values (navi-window-buffer navi) nil))
       (lisp      (let ((buffer (lisp-window-buffer ui window)))
                    (values buffer (and buffer (1- (length buffer))))))  ; tail-follow
       (t (ecase (window-role window)
@@ -436,6 +438,7 @@ the 0-based row of that selection, to keep in view."
   (cond ((window-sedit-activation window) "sedit")
         ((window-inspector-activation window) "inspector")
         ((window-stack-browser-activation window) "stack")
+        ((window-navi-activation window) "navi")
         (t (or (cdr (assoc (window-role window) +window-config-name+)) "lisp"))))
 
 (defun active-window-config (ui)
@@ -786,6 +789,7 @@ handle keystrokes here."
         ((window-entry-lisp-p activation) (lisp-window-key activation ui key))
         ((window-entry-inspector-p activation) (inspector-window-key activation ui key))
         ((window-entry-stack-browser-p activation) (stack-browser-window-key activation ui key))
+        ((window-entry-navi-p activation) (navi-window-key activation ui key))
         (t (values nil nil))))
 
 (defun window-manager-key (ui session hit key)
@@ -1537,6 +1541,99 @@ new window. Needs a stop (a captured snapshot). Returns NIL."
                   (clautolisp.interactor:template-context-target context)))
   :config-name "stack")
 
+;;;; --- make-navi-window: a standalone read-only structure navigator -------
+;;;; Reuses the sedit zipper WITHOUT its editing: a sedit session over a form,
+;;;; navigated by the exported motion functions (sedit-down/up/left/right, which
+;;;; mutate the state's loc in place). No editing, no eval, no session — just
+;;;; browse a structure safely (windows-and-interactor-templates.issue).
+
+(clautolisp.interactor:define-interactor *form-navigator*
+  :name "NAVI"
+  :documentation "A standalone read-only structure navigator in a window: move
+over a form's sub-expressions (d down, u up, > < siblings, [ ] first/last, q
+close). Reuses the sedit zipper with no editing.")
+
+(defstruct navi-window-state session)   ; a sedit session, navigated read-only
+
+(defun make-navi-activation (form)
+  "A NAVI activation over FORM (a sedit node / NIL): a fresh read-only sedit
+session."
+  (clautolisp.interactor:make-activation
+   *form-navigator*
+   (make-navi-window-state :session (clautolisp.sedit:sedit-open form))))
+
+(defun window-entry-navi-p (entry)
+  (and (clautolisp.interactor:activation-p entry)
+       (eq (clautolisp.interactor:activation-interactor entry) *form-navigator*)))
+
+(defun window-navi-activation (window)
+  (find-if #'window-entry-navi-p (window-stack window)))
+
+(defun %navi-state (activation)
+  (clautolisp.sedit:sedit-session-state
+   (navi-window-state-session (clautolisp.interactor:activation-state activation))))
+
+(defun navi-window-buffer (activation)
+  "Buffer lines rendering the navigator's marked selection (the sedit view)."
+  (mapcar (lambda (line) (cons line :normal))
+          (%split-lines
+           (clautolisp.sedit:render-selection
+            (clautolisp.sedit:sedit-state-loc (%navi-state activation))))))
+
+(defun close-navi-window (ui)
+  (let ((window (active-window ui)))
+    (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
+    (let ((now (active-window ui)))
+      (when now (pushnew :window-manager (window-stack now))))
+    (set-message ui "navigator closed")))
+
+(defun navi-window-key (activation ui key)
+  "Read-only structure motions: d down, u up, >/f next sibling, </b previous,
+[ first, ] last, q close. Editing keys do nothing here."
+  (let ((state (%navi-state activation)))
+    (cond
+      ((not (characterp key)) (values nil nil))
+      ((char= key #\d) (clautolisp.sedit:sedit-down state) (values t nil))
+      ((char= key #\u) (clautolisp.sedit:sedit-up state) (values t nil))
+      ((or (char= key #\>) (char= key #\f)) (clautolisp.sedit:sedit-right state) (values t nil))
+      ((or (char= key #\<) (char= key #\b)) (clautolisp.sedit:sedit-left state) (values t nil))
+      ((char= key #\[) (clautolisp.sedit:sedit-first state) (values t nil))
+      ((char= key #\]) (clautolisp.sedit:sedit-last state) (values t nil))
+      ((char= key #\q) (close-navi-window ui) (values t nil))
+      (t (values nil nil)))))
+
+(defun %navi-target-from-arg (ui arg)
+  "A sedit node for make-navi-window: ARG (or a prompted form) parsed; NIL when
+empty or on parse error (a stand-alone nil session)."
+  (let ((text (if (and arg (plusp (length (string-trim " " arg)))) arg
+                  (read-minibuffer ui "navigate form: "))))
+    (if (and text (plusp (length (string-trim " " text))))
+        (handler-case (clautolisp.sedit:parse-form text)
+          (error (e) (set-message ui "navi: ~A" e) nil))
+        nil)))
+
+(defun make-navi-window (ui session hit arg)
+  "`M-x make-navi-window': navigate ARG's (or a prompted form's) structure in a
+new read-only window beside the active one. Returns NIL."
+  (declare (ignore session hit))
+  (let* ((form (%navi-target-from-arg ui arg))
+         (activation (make-navi-activation form))
+         (window (clautolisp.ui.tui:add-window-to-frame
+                  (ncurses-ui-frame ui) :name "navi" :role :navi-view
+                  :beside (active-window ui) :split :vertical)))
+    (setf (window-stack window) (list activation))
+    (activate-window ui window)
+    (set-message ui "navi: d down u up | > < siblings | [ ] first/last | q close"))
+  nil)
+
+(clautolisp.interactor:define-interactor-template "navi"
+  :display-name "Structure navigator"
+  :description "Navigate a form's structure read-only"
+  :interactor *form-navigator*
+  :constructor (lambda (context)
+                 (make-navi-activation (clautolisp.interactor:template-context-target context)))
+  :config-name "navi")
+
 (defun handle-window-command (ui)
   "Read the key after a C-w / C-x prefix and run the built-in window command."
   (run-window-command ui (tui-read-key (ncurses-ui-screen ui))))
@@ -1623,6 +1720,8 @@ RET returns the string, Esc cancels (returns NIL), Backspace deletes."
    (cons "inspect"               #'make-inspector-window)
    (cons "make-stack-browser-window" #'make-stack-browser-window)
    (cons "backtrace"                 #'make-stack-browser-window)
+   (cons "make-navi-window" #'make-navi-window)
+   (cons "navigate"         #'make-navi-window)
    ;; the list-selector (windows-and-interactor-templates.issue): pick a window
    ;; to activate, or browse the interactor templates available to a window.
    (cons "windows"     #'list-windows-command)
