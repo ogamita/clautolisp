@@ -248,25 +248,42 @@ Ordering is deliberate rather than alphabetical:
                           ;; STRING>, which is the preference we want.
                           (t (string> a b)))))))))))
 
-(defun discover-bricscad-template (&key requested executable-path)
-  "Resolve the template DWG/DWT to launch BricsCAD with. REQUESTED,
-when non-NIL, comes from --dwg / $AUTOLISP_DWG and takes priority.
-Falls back to $AUTOLISP_BRICSCAD_TEMPLATE, then the macOS-default
-~/Library/Application Support/Bricsys/.../Default-mm.dwt path, then a
-template shipped inside the application bundle (EXECUTABLE-PATH is what
-locates it), and finally NIL (the backend will launch without an
-explicit template).
+(defun discover-bricscad-template (&key requested executable-path workdir)
+  "Resolve the drawing to launch BricsCAD with.
 
-$AUTOLISP_BRICSCAD_TEMPLATE is the zero-code answer when a machine wants
-a specific blank drawing: point it at any .dwt/.dwg and nothing here
-needs to change. That is preferable to copying a vendor template to a
-fixed name, and far preferable to committing one — a .dwg is a vendor
-binary bound to a format version (see libredwg-empty-dwg-write-invalid)."
+Order, and the reason for it:
+
+  1. REQUESTED (--dwg), then $AUTOLISP_BRICSCAD_TEMPLATE, then
+     $AUTOLISP_DWG. Anyone who names a drawing gets that drawing.
+  2. A FRESH empty.dwg written into WORKDIR, from the copy carried in
+     the image (alfe.drawing). This is the default.
+  3. The vendor templates, and finally NIL (launch with no explicit
+     drawing), as a safety net if (2) could not be written.
+
+Step 2 is new (issues/open/empty-ressource.issue, pjb 2026-08-30) and it
+replaces the previous default of pointing every run at ONE shared file.
+Sharing produced MODAL DIALOGS -- \"in use by another instance\", \"open
+read-only?\" -- when a previous CAD still held the lock or had modified
+it, and a modal dialog in a batch launch is a hung run, not a slow one.
+The workdir is unique per invocation and cleaned up after, so a drawing
+written there is nobody else\'s.
+
+This supersedes the argument that used to stand here against committing
+a .dwg (\"a vendor binary bound to a format version\"). That objection is
+real and is now recorded where the resource lives instead: a future
+engine refusing AC1032 would refuse it LOUDLY, and the file is one to
+replace rather than to maintain.
+
+$AUTOLISP_BRICSCAD_TEMPLATE remains the zero-code answer when a machine
+wants a specific blank drawing."
   (or (and requested
            (probe-file requested)
            (namestring (truename requested)))
       (env-binary "AUTOLISP_BRICSCAD_TEMPLATE")
       (env-binary "AUTOLISP_DWG")
+      (and workdir
+           (let ((fresh (alfe.drawing:fresh-empty-dwg workdir)))
+             (and fresh (namestring fresh))))
       (first-existing
        (mapcar (lambda (p) (uiop:native-namestring p))
                (list "~/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-mm.dwt"
@@ -1045,7 +1062,10 @@ future ticket."
                        (or (bricscad-backend-template-path backend)
                            (discover-bricscad-template
                             :executable-path
-                            (bricscad-backend-executable-path backend))))
+                            (bricscad-backend-executable-path backend)
+                            ;; A drawing of this run's own, in this run's
+                            ;; workdir -- see DISCOVER-BRICSCAD-TEMPLATE.
+                            :workdir workdir)))
                   (log-debug "backend BRICSCAD: wrote launcher.applescript -> ~A" apl))))))
           (let ((argv (build-launch-argv backend protocol :mode mode))
                 (session (%make-bricscad-session

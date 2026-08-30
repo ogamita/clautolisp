@@ -138,3 +138,34 @@ matches the code rather than contradicting it.
 
 If BricsCAD turns out to ASSIGN, this becomes a dialect divergence rather
 than a plain fix, which is what the dialect machinery is for.
+
+## FIXED in 2.0.22, on AutoCAD's evidence (pjb: "You may take already the
+## one-line foreach fix on AutoCAD's evidence")
+
+BIND-FOREACH-VARIABLE now binds, unconditionally, in the frame FOREACH
+pushed. clautolisp matches AutoCAD on every probed case:
+
+    case                            AutoCAD   clautolisp now   was
+    /-local of the same function    BEFORE    BEFORE           3
+    /-local of the CALLER           BEFORE    BEFORE           3
+    global                          OUTER     OUTER            OUTER
+    bound nowhere before            nil       nil              nil
+
+THE COMPILER NEEDED NO CHANGE, as predicted: slice 20 open-coded FOREACH
+by CALLING this function rather than restating the rule, so the compiled
+fork moved the moment the interpreter did.
+
+WHAT THIS EXPOSED. All 31 suites passed BOTH BEFORE AND AFTER the change.
+The equivalence corpus asserts that compiled and interpreted evaluation
+AGREE -- true either way -- and nothing asserted WHAT they agreed on. So
+nothing would have noticed a silent revert, and nothing had noticed the
+original defect. Four tests now pin the values against AutoCAD's measured
+answers, including the global case, which used to pass FOR THE WRONG
+REASON: the old assignment path missed a global only because
+FIND-DYNAMIC-BINDING does not look in the namespace, an accident rather
+than a rule.
+
+BRICSCAD IS STILL UNMEASURED (probes-suite-crashes-bricscad.issue). If it
+turns out to ASSIGN, that is a dialect divergence to encode rather than a
+reason to revert: AutoCAD defines --strict and --autocad, and the
+specification says bind.
