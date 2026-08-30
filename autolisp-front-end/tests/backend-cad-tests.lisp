@@ -911,10 +911,18 @@ CAR, and the SCR points into the workdir."
                                           :if-does-not-exist :ignore))))
 
 (test autocad-build-launch-argv-batch-discovers-template-and-still-requires-accoreconsole
-  "Batch mode discovers a usable template when one ships with the
-AutoCAD install. It still signals :no-accoreconsole when the batch
-binary itself is missing, and :no-dwg when neither --dwg,
-$AUTOLISP_DWG, nor an install template exists."
+  "Batch mode always has a drawing to open, and still signals
+:no-accoreconsole when the batch binary itself is missing.
+
+REWRITTEN for the embedded empty drawing (empty-ressource.issue). This
+test used to assert that argv named the SHIPPED acadiso.dwt, and that
+:no-dwg was signalled when no template could be found anywhere. Neither
+holds now, and both by design: alfe writes a FRESH drawing into the
+run's own workdir and passes that, so the install template is a fallback
+and :no-dwg has become all but unreachable. What is checked instead is
+the property that actually matters -- the drawing handed to the CAD
+belongs to THIS run, because a shared one is what produced the modal
+in-use dialogs."
   (let ((workdir (uiop:ensure-directory-pathname
                   (merge-pathnames
                    (format nil "alfe-test-acad-argv-~D/" (random 999999))
@@ -940,15 +948,24 @@ $AUTOLISP_DWG, nor an install template exists."
                no-acc protocol :mode :batch
                :dwg (namestring
                      (touch-file (merge-pathnames "explicit.dwg" workdir)))))
-            (signals alfe.error:backend-bootstrap-error
-              (alfe.backend.autocad:build-launch-argv
-               with-acc protocol :mode :batch))
+            ;; No accoreconsole is still fatal; a missing template no
+            ;; longer is, because alfe brings its own drawing.
             (let ((argv (alfe.backend.autocad:build-launch-argv
-                         with-install-template protocol :mode :batch)))
+                         with-acc protocol :mode :batch)))
+              (is (string= "/usr/bin/true" (first argv)))
+              (is (member "/i" argv :test #'string=)))
+            ;; The drawing is in THIS run's workdir -- not the install
+            ;; template, and not a path shared with any other run.
+            (let* ((argv (alfe.backend.autocad:build-launch-argv
+                          with-install-template protocol :mode :batch))
+                   (opened (second (member "/i" argv :test #'string=))))
               (is (string= "/usr/bin/true" (first argv)))
               (is (member "/i" argv :test #'string=))
-              (is (find "acadiso.dwt" argv :test (lambda (needle s)
-                                                   (search needle s)))))
+              (is (search (namestring workdir) opened)
+                  "the drawing handed to the CAD is not in this run's workdir: ~S"
+                  opened)
+              (is (probe-file opened)
+                  "the drawing handed to the CAD does not exist: ~S" opened))
             (let ((argv (alfe.backend.autocad:build-launch-argv
                          with-acc protocol :mode :batch
                          :dwg (namestring

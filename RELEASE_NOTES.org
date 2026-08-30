@@ -412,6 +412,14 @@ separate binary for tool integrators.
   stepping ride on) is kept while ~DEBUG~ >= ~SPACE~ and is compiled from
   ~SPEED~ 2. ~SPEED~ 3 compiles at definition rather than once a function
   is hot. Default ~((DEBUG 3) (SPACE 0) (SPEED 2))~.
+- *Fixed: ~foreach~ no longer overwrites a variable of the same name.*
+  ~(foreach e list ...)~ BINDS ~e~ for the loop and restores whatever it
+  held before, which is what AutoCAD does and what the specification
+  always said. clautolisp used to ASSIGN when the name already had a
+  binding, so a ~foreach~ clobbered a ~/~-local of the function running
+  it — and, AutoLISP being dynamically scoped, of its CALLER too.
+  Measured against AutoCAD; BricsCAD is still to be measured.
+
 - *~foreach~ and ~repeat~ loops are compiled now — 5.5x on loop-heavy
   code.* Until this release a compiled function containing either ran the
   whole loop, body included, through the interpreter, so a function whose

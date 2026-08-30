@@ -3556,17 +3556,29 @@ interpreter and for compiled code."
   sequence)
 
 (defun bind-foreach-variable (name element context)
-  "Give NAME the value ELEMENT for one FOREACH iteration.
+  "Give NAME the value ELEMENT for one FOREACH iteration: a BINDING in the
+frame FOREACH pushed, so whatever NAME held before the loop is restored
+when the loop ends.
 
-Note what this does and does not do: it ASSIGNS when a dynamic binding
-for NAME already exists ANYWHERE in the chain, and only binds afresh
-otherwise. So a FOREACH over a name an enclosing function already binds
-writes THAT binding, and the value survives the loop. That is the
-engine's behaviour, quirk and all, and it is why compiled code calls this
-rather than binding the variable itself."
-  (if (find-dynamic-binding name (evaluation-context-dynamic-frame context))
-      (set-variable name element context)
-      (bind-dynamic-variable name element context)))
+It used to ASSIGN when a dynamic binding for NAME already existed
+anywhere in the chain, and so clobbered a `/'-local -- of the function
+running the loop, and, because AutoLISP is dynamically scoped, of its
+CALLER too. Nobody had ever asked an engine whether that was right. pjb
+asked (2026-08-30), the probe went to AutoCAD, and AutoCAD BINDS:
+
+    case                            AutoCAD   clautolisp was
+    /-local of the same function    BEFORE    the last element
+    /-local of the CALLER           BEFORE    the last element
+
+which is also what the specification always said -- `bind it to name',
+`rebinding name for each iteration', `restored when the rebinding frame
+is popped'. The implementation matched neither.
+
+The compiler needs no change for this: it open-codes FOREACH by CALLING
+this function rather than restating the rule, so both forks moved
+together the moment this line did. See
+issues/open/foreach-binding-vs-assignment.issue."
+  (bind-dynamic-variable name element context))
 
 (defun eval-repeat-form (arguments context)
   (unless (>= (length arguments) 1)

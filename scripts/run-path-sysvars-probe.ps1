@@ -49,40 +49,21 @@ New-Item -ItemType Directory -Force $outDir | Out-Null
 $report = Join-Path $outDir "$Backend-Windows.txt"
 Set-Content -Encoding utf8 $report ""
 
-# A PRIVATE DRAWING PER JOB, and this is not tidiness.
+# THE DRAWING IS ALFE'S PROBLEM NOW (empty-ressource.issue).
 #
-# Every Windows CAD probe here opens the same fixed file,
-# c:/gitlab-runner/dwg/empty.dwg. A BricsCAD that was killed -- by a job
-# timeout, by a cancelled pipeline -- leaves its .dwl/.dwl2 lock beside that
-# file, and the NEXT job to open it gets a modal dialog: "already in use,
-# open read-only?" (pjb, observed 2026-08-20). Under /Automation the dialog
-# is invisible, nobody clicks it, and the job holds the concurrency-1 CAD
-# runner until its timeout -- which is how a stale lock from one dead job
-# costs every later job half an hour each
-# (cad-runner-wedged-by-modal-dialog.issue).
+# This script used to copy c:/gitlab-runner/dwg/empty.dwg to a per-job
+# name and point AUTOLISP_DWG at it. The reason was real and is worth
+# keeping on the record: every Windows CAD probe opened the same fixed
+# file, a BricsCAD killed by a timeout or a cancelled pipeline left its
+# .dwl/.dwl2 lock beside it, and the next job to open it got a modal
+# "already in use, open read-only?" -- invisible under /Automation, so
+# nobody clicked it and the job held the concurrency-1 CAD runner until
+# its timeout (cad-runner-wedged-by-modal-dialog.issue).
 #
-# Copying to a per-job name removes the collision at the root: a file named
-# after $CI_JOB_ID has no lock beside it, because nothing has ever opened it.
-# The stale lock next to the shared original stops mattering to this job.
-$src = if ($env:PROBE_DWG) { $env:PROBE_DWG } else { "c:/gitlab-runner/dwg/empty.dwg" }
-if (Test-Path $src) {
-  $jobId = if ($env:CI_JOB_ID) { $env:CI_JOB_ID } else { [guid]::NewGuid().ToString("N") }
-  # NOT under $outDir: that directory is the job's artifact path, and a
-  # drawing copied there would be uploaded with every run for nothing.
-  $workDir = Join-Path $root "dist/probe-dwg"
-  New-Item -ItemType Directory -Force $workDir | Out-Null
-  $mine = Join-Path $workDir ("probe-$jobId.dwg")
-  Copy-Item -Force $src $mine
-  # Belt and braces: a lock could exist if the name were ever reused.
-  foreach ($ext in @(".dwl", ".dwl2")) {
-    $lock = [System.IO.Path]::ChangeExtension($mine, $ext)
-    if (Test-Path $lock) { Remove-Item -Force $lock }
-  }
-  $env:AUTOLISP_DWG = ($mine -replace '\\','/')
-  Write-Host "probe drawing (private copy): $env:AUTOLISP_DWG"
-} else {
-  Write-Host "no probe drawing at $src -- letting alfe choose its own"
-}
+# alfe now carries an empty drawing in its image and writes a fresh one
+# into each invocation's own workdir, which solves it for every caller
+# at once instead of once per script. Setting AUTOLISP_DWG here would
+# override that and bring the shared file back, so this no longer does.
 
 $bargs = @("--no-init")
 switch ($Backend) {

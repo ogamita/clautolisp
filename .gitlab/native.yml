@@ -354,10 +354,9 @@ encoding:experiment:autocad:windows:
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
-    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
   script:
     - make -C autolisp-front-end build-alfe-sbcl
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad -Dwg $env:PROBE_DWG
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad
 
 # --- pathname "." / ".." probe (self-contained) ----------------------------
 # --- path-carrying system variables: what a real engine actually holds ------
@@ -447,10 +446,9 @@ pathname:probe:autocad:windows:
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
-    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
   script:
     - make -C autolisp-front-end build-alfe-sbcl
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend autocad -Dwg $env:PROBE_DWG
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend autocad
 
 # --- vendor probes on real BricsCAD / AutoCAD ------------------------------
 # Self-building (make build-alfe-sbcl in-script), like the encoding/pathname
@@ -468,22 +466,20 @@ vendor:probes:bricscad:
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
-    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
     PROBE_KEEP_WORKDIR: '1'
   script:
     - make -C autolisp-front-end build-alfe-sbcl
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend bricscad -Dwg $env:PROBE_DWG -KeepWorkdir $env:PROBE_KEEP_WORKDIR
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend bricscad -KeepWorkdir $env:PROBE_KEEP_WORKDIR
 
 vendor:probes:autocad:
   extends: [.gate-windows-cad-hard, .vendor-probe-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
-    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
     PROBE_KEEP_WORKDIR: '1'
   script:
     - make -C autolisp-front-end build-alfe-sbcl
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad -Dwg $env:PROBE_DWG -KeepWorkdir $env:PROBE_KEEP_WORKDIR
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad -KeepWorkdir $env:PROBE_KEEP_WORKDIR
 
 # The probes/ SUITE (probes/sources/manifest.txt), as opposed to the alfe
 # scenario probes above. It had no CI job at all: `make probe-autocad' was

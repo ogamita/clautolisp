@@ -1633,3 +1633,62 @@ still binds it exactly once, and one POP will release it once."
    :clautolisp
    "(defun f (a / a) (setq a 2) a) (f 1)")
   (is (zerop (%binding-count "A"))))
+
+;;;; FOREACH BINDS its loop variable — measured against AutoCAD.
+;;;;
+;;;; This engine used to ASSIGN when the name already had a dynamic
+;;;; binding anywhere in the chain, so a foreach clobbered a `/'-local of
+;;;; the function running it and — AutoLISP being dynamically scoped — of
+;;;; its CALLER too. Nobody had asked an engine whether that was right.
+;;;; pjb asked (2026-08-30); probes/sources/probe-foreach-scope.lsp went
+;;;; to AutoCAD; AutoCAD BINDS, which is also what the specification
+;;;; always said.
+;;;;
+;;;; These tests exist because the change passed all 31 suites in both
+;;;; directions: the equivalence corpus asserts that compiled and
+;;;; interpreted evaluation AGREE, which they did before and after, and
+;;;; nothing asserted WHAT they agreed on. So nothing would have noticed
+;;;; a silent revert. Now something does.
+
+(test foreach-binds-its-variable-and-restores-the-previous-value
+  "The case AutoCAD answers BEFORE. A `/'-local of the function running
+the loop must still hold its pre-loop value afterwards."
+  (reset-autolisp-symbol-table)
+  (is (string= "BEFORE"
+               (autolisp-symbol-name
+                (%run-under-dialect
+                 :clautolisp
+                 "(progn (defun f (l / e) (setq e 'before) (foreach e l nil) e)
+                         (f '(1 2 3)))")))))
+
+(test foreach-does-not-clobber-the-callers-local
+  "The sharper case, and the one dynamic scoping makes possible: a
+foreach inside a CALLEE must not write a `/'-local of its CALLER.
+AutoCAD answers BEFORE here too."
+  (reset-autolisp-symbol-table)
+  (is (string= "BEFORE"
+               (autolisp-symbol-name
+                (%run-under-dialect
+                 :clautolisp
+                 "(progn (defun inner (l) (foreach e l nil))
+                         (defun outer (l / e) (setq e 'before) (inner l) e)
+                         (outer '(1 2 3)))")))))
+
+(test foreach-leaves-a-global-of-the-same-name-alone
+  "A global is not a dynamic binding, and both engines agree it survives.
+Kept because this case used to pass for the WRONG reason -- the old
+assignment path missed it only because FIND-DYNAMIC-BINDING does not look
+in the namespace, an accident rather than a rule."
+  (reset-autolisp-symbol-table)
+  (is (string= "OUTER"
+               (autolisp-symbol-name
+                (%run-under-dialect
+                 :clautolisp
+                 "(progn (setq g 'outer) (defun f (l) (foreach g l nil)) (f '(1 2)) g)")))))
+
+(test foreach-does-not-leak-a-name-that-was-not-bound-before
+  "And the loop variable itself does not survive when nothing bound it."
+  (reset-autolisp-symbol-table)
+  (is (null (%run-under-dialect
+             :clautolisp
+             "(progn (defun f (l) (foreach fresh-name l nil)) (f '(1 2)) fresh-name)"))))
