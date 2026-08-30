@@ -87,3 +87,54 @@ It needs a machine with AutoCAD and BricsCAD -- `make probe`.
 The one outcome that should not stand is the present one: an
 implementation nobody checked, contradicting a specification nobody
 checked it against.
+
+## ANSWER FROM AUTOCAD (2026-08-30) — clautolisp is wrong
+
+probe:suite:autocad:windows, AutoCAD on the Windows runner:
+
+    case                                  AutoCAD    clautolisp
+    /-local of the same function          BEFORE     3
+    /-local of the CALLER                 BEFORE     3
+    global                                OUTER      OUTER
+    bound nowhere before                  nil        nil
+    empty list                            BEFORE     BEFORE
+    return value                          (30 nil nil) (30 nil nil)
+
+AUTOCAD BINDS. The prior value is restored when the loop ends, in both
+the same-function and the caller's-local cases -- exactly as the
+specification says ("bind it to name", "rebinding name for each
+iteration", "restored when the rebinding frame is popped").
+
+clautolisp ASSIGNS, and so clobbers a local of the function AND of its
+caller. It matches neither AutoCAD nor our own spec. The spec was right
+and the implementation was wrong.
+
+The two engines agree on everything else: the empty list, the unbound
+name, and the return value in all three shapes.
+
+BricsCAD has not answered yet (see
+issues/open/probes-suite-crashes-bricscad.issue) but its answer cannot
+make clautolisp's current behaviour correct for --strict or --autocad,
+which are the dialects AutoCAD defines.
+
+## The fix, when taken
+
+One line in BIND-FOREACH-VARIABLE: always bind in the frame FOREACH
+pushed, instead of assigning to whatever the chain already has.
+
+    (defun bind-foreach-variable (name element context)
+      (bind-dynamic-variable name element context))
+
+THE COMPILER NEEDS NO CHANGE. Slice 20 open-coded FOREACH by CALLING
+this function rather than restating the rule, so compiled and interpreted
+loops move together by construction. The equivalence corpus already
+contains both affected cases and asserts that the two agree, not what
+they agree ON, so it keeps passing and starts describing the new
+behaviour.
+
+What does need changing is any test that PINS the old values, and the
+chapter-7 documentation-scoping text should be re-read to confirm it now
+matches the code rather than contradicting it.
+
+If BricsCAD turns out to ASSIGN, this becomes a dialect divergence rather
+than a plain fix, which is what the dialect machinery is for.
