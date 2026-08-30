@@ -159,7 +159,31 @@ cad_arg_path() {
   printf '(setq cad-probe--out (open "%s" "w"))\n' \
          "$(lisp_escape "$(cad_path "$result_file")")"
   printf '(if cad-probe--out (progn (write-line "((KIND . \\"wrapper-start\\"))" cad-probe--out) (close cad-probe--out)))\n'
-  printf '(load "%s")\n' "$(lisp_escape "$(cad_path "$sources_dir/probe-core.lsp")")"
+  # WHY EACH LOAD REPORTS ITSELF.
+  #
+  # Twice now a run has left exactly `wrapper-start' and nothing else,
+  # and twice the diagnosis was a guess: the wrapper ran, something in
+  # the loads did not, and the file could not say which. On BricsCAD the
+  # bare engine segfaulted and under alfe it exited 1 in silence, so
+  # neither harness said either.
+  #
+  # LOAD returning NIL is the case that matters: SECURELOAD refuses a
+  # file outside TRUSTEDPATHS, and a repository checkout never is one.
+  # The SETVAR above is wrapped in VL-CATCH-ALL-APPLY, so an engine that
+  # REFUSES to clear SECURELOAD swallows that refusal silently -- and the
+  # run then dies later, opaquely, at the first undefined function.
+  # Recording the sysvar and each load's value turns the next run into an
+  # explanation instead of another guess.
+  printf '(setq cad-probe--out (open "%s" "a"))\n' \
+         "$(lisp_escape "$(cad_path "$result_file")")"
+  printf '(if cad-probe--out (progn (write-line (strcat "((KIND . \\"load-context\\") (SECURELOAD . \\"" (vl-princ-to-string (vl-catch-all-apply (quote getvar) (list "SECURELOAD"))) "\\"))") cad-probe--out) (close cad-probe--out)))\n'
+  # Each load records whether it returned anything. A NIL here is the
+  # whole answer when the run dies at the first undefined function.
+  printf '(setq cad-probe--loaded (vl-catch-all-apply (quote load) (list "%s")))\n' \
+         "$(lisp_escape "$(cad_path "$sources_dir/probe-core.lsp")")"
+  printf '(setq cad-probe--out (open "%s" "a"))\n' \
+         "$(lisp_escape "$(cad_path "$result_file")")"
+  printf '(if cad-probe--out (progn (write-line (strcat "((KIND . \\"load\\") (FILE . \\"probe-core.lsp\\") (VALUE . \\"" (vl-princ-to-string cad-probe--loaded) "\\"))") cad-probe--out) (close cad-probe--out)))\n'
   # Load every suite file from the manifest.
   while read -r src fn _rest; do
     [[ -z "$src" || "$src" == \#* ]] && continue
