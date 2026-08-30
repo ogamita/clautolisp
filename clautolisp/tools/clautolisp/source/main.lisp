@@ -1191,10 +1191,13 @@ there at the first stop. CONTEXT builds the tui/ncurses fallback UI."
        (clautolisp.debug:hit-error-message hit)))
 
 (defun aldb-print-connect-prompt (ui hit)
-  (format t "~&~@[~A~%~]\
-Aldo debugger activated, please use emacs aldb to connect:~%\
-~4TM-x aldb-connect RET ~A RET~%\
-Alternatively, select a terminal or ncurses user interface,~%\
+  ;; NB continue long format lines with ~<newline> (tilde-newline), which elides
+  ;; the source newline + indentation — a bare \\<newline> in a CL string is a
+  ;; LITERAL newline, so it would double every ~% here.
+  (format t "~&~@[~A~%~]~
+Aldo debugger activated, please use emacs aldb to connect:~%~
+~4TM-x aldb-connect RET ~A RET~%~
+Alternatively, select a terminal or ncurses user interface,~%~
 ~2T1) TUI~%~2T2) ncurses~%Debugger UI? "
           (aldb-stop-reason-line hit) (aldb-address ui))
   (finish-output))

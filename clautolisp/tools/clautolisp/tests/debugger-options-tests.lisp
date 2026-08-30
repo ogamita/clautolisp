@@ -187,3 +187,15 @@ legacy aliases). They now fail as unknown options."
   (let ((default (clautolisp.tools.clautolisp::aldb-resolve-listener-address :aldb nil)))
     (is (stringp default))
     (is (find #\: default))))
+
+(test connect-prompt-is-single-spaced
+  ;; the §10 connect prompt must not double-space: long format lines are
+  ;; continued with ~<newline>, not a bare backslash (which is a literal newline).
+  (let* ((ui (make-instance 'clautolisp.tools.clautolisp::aldb-listener-ui
+                            :socket nil :address "127.0.0.1:4301" :context nil))
+         (out (with-output-to-string (*standard-output*)
+                (clautolisp.tools.clautolisp::aldb-print-connect-prompt ui nil))))
+    (is (not (search (format nil "~%~%") out)))        ; no blank lines
+    (is (search "M-x aldb-connect RET 127.0.0.1:4301 RET" out))
+    (is (search "1) TUI" out))
+    (is (search "2) ncurses" out))))
