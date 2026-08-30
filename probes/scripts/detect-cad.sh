@@ -150,7 +150,13 @@ case "$product" in
       esac
     fi
     [[ -n "$bin" ]] || { echo "detect-cad: BricsCAD not found (set BRICSCAD_EXE or BRICSCAD_RUNNER)" >&2; exit 3; }
-    emit "\"$bin\" -B __SCRIPT_FILE__"
+    # The drawing comes FIRST, as a bare positional argument, then the
+    # script -- the shape alfe uses (build-launch-argv in
+    # backend-bricscad.lisp) and the one Bricsys documents. Without a
+    # document BricsCAD has nowhere to run the script, and segfaulted
+    # here before a single probe record; __DRAWING_FILE__ is substituted
+    # by run-probes.sh with a fresh copy in the run directory.
+    emit "\"$bin\" __DRAWING_FILE__ -B __SCRIPT_FILE__"
     ;;
 
   *)

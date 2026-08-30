@@ -241,9 +241,46 @@ write_metadata "prepared" 0
 # USAGE TEXT on every run, good or bad. It is NOT a sign of a malformed
 # command line, and treating it as one sent this diagnosis down a false
 # path once already.
+# __DRAWING_FILE__: a drawing OF THIS RUN'S OWN, copied into the run
+# directory from the one committed beside alfe's loader.
+#
+# Two reasons, and the first is the one that blocked this suite. BricsCAD
+# was invoked with a script and NO DOCUMENT, and it segfaulted before a
+# single probe record on both platforms -- while alfe, which always hands
+# it a drawing, works. alfe's own launcher says why: "Open a drawing with
+# the app: no document, no command line, nowhere for the keystrokes to
+# land."
+#
+# The second is why it is a COPY rather than the file itself: pjb,
+# 2026-08-30 -- passing the same drawing to successive runs produces
+# modal "already in use, open read-only?" dialogs when a previous CAD
+# left a lock, and a modal in a batch run is a hung run. The run
+# directory is already unique per invocation, so a drawing written there
+# is nobody else's. This is the same rule alfe now follows in its own
+# workdir (issues/closed/empty-ressource.issue); the probe harness is a
+# second caller of the same idea, not a second implementation of it --
+# the bytes come from the one committed file.
+drawing_file=""
+if [[ "$runner_template" == *__DRAWING_FILE__* ]]; then
+  drawing_source="$repo_root/autolisp-front-end/source/empty.dwg"
+  if [[ -f "$drawing_source" ]]; then
+    drawing_file="$run_dir/empty.dwg"
+    cp -f "$drawing_source" "$drawing_file"
+  else
+    echo "run-probes: no empty drawing at $drawing_source; launching without one" >&2
+  fi
+fi
+
 cmd="$runner_template"
 cmd="${cmd//__PROBE_FILE__/\"$(cad_arg_path "$wrapper_file")\"}"
 cmd="${cmd//__SCRIPT_FILE__/\"$(cad_arg_path "$script_file")\"}"
+if [[ -n "$drawing_file" ]]; then
+  cmd="${cmd//__DRAWING_FILE__/\"$(cad_arg_path "$drawing_file")\"}"
+else
+  # No drawing to give: drop the placeholder rather than pass an empty
+  # quoted argument, which BricsCAD would read as a filename.
+  cmd="${cmd//__DRAWING_FILE__/}"
+fi
 
 echo "run-probes: $product on $platform" >&2
 echo "  runner : $cmd" >&2
