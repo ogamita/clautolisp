@@ -529,15 +529,23 @@ probe:suite:autocad:windows:
 # (segfault on macOS, silent exit on Windows) before a single record --
 # see issues/open/probes-suite-crashes-bricscad.issue. Narrowing to the
 # suite whose question is actually open gets that answer today instead of
-# waiting for the rest to be diagnosed, and it is also the experiment
-# that says WHICH suite is fatal. Widen it as suites are cleared.
+# waiting for the rest to be diagnosed. Widen it as suites are cleared.
+#
+# The value is a PAIR, and deliberately: narrowing to foreach-scope alone
+# still segfaulted, which leaves three candidates -- probe-core's load,
+# the new suite's load, and CAD-PROBE-BEGIN-RUN -- and does not separate
+# them. `rtos foreach-scope' does: rtos is an ORIGINAL suite and runs
+# first, so run-start plus rtos records and no foreach records means the
+# new suite is at fault, while nothing beyond wrapper-start again means
+# the fault is in probe-core or begin-run and the new suite is
+# exonerated. The experiment is the job.
 probe:suite:bricscad:macos:
   extends: .gate-macos-cad-soft
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
     PROBE_NO_COMMIT: '1'
-    PROBE_SUITES: 'foreach-scope'
+    PROBE_SUITES: 'rtos foreach-scope'
   script:
     - make -C clautolisp build-clautolisp-sbcl
     - make probe-bricscad
@@ -553,7 +561,7 @@ probe:suite:bricscad:windows:
   variables:
     GIT_SUBMODULE_STRATEGY: none
     PROBE_NO_COMMIT: '1'
-    PROBE_SUITES: 'foreach-scope'
+    PROBE_SUITES: 'rtos foreach-scope'
   script:
     - make -C clautolisp build-clautolisp-sbcl
     - make probe-bricscad

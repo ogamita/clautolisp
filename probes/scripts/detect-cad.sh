@@ -15,8 +15,40 @@
 #   AUTOCAD_ACCORECONSOLE / AUTOCAD_EXE / BRICSCAD_EXE / CLAUTOLISP_BIN
 #       just the executable path; the template is built around it.
 #
-# Auto-detection mirrors alfe's backend discovery
-# (autolisp-front-end/source/backend-*.lisp).
+# Auto-detection ASKS ALFE when alfe is on PATH:
+#
+#     $ alfe --list-cad-programs
+#     acad-2026          /Applications/Autodesk/AutoCAD 2026/.../AutoCAD
+#     accoreconsole-2026 /Applications/.../AcCoreConsole
+#     bricscad-v26       /Applications/BricsCAD V26.app/Contents/MacOS/bricscad
+#     clautolisp         (embedded in alfe)
+#
+# because alfe already HAS this discovery and keeps it working. This file
+# used to say it "mirrors" alfe's -- and mirroring is exactly how it came
+# to miss /Applications/BricsCAD V26.app (versioned bundle, space in the
+# name) while alfe found it without difficulty on the same machine. Two
+# copies of a search path is one copy too many. The globs below stay as a
+# fallback for a machine with no alfe on PATH, which is the CI case today.
+
+# Ask alfe for an executable whose listing name starts with one of the
+# given prefixes, in order, so a caller can prefer accoreconsole over
+# acad. Prints the path, or fails.
+alfe_lookup() {
+  local prefix path
+  command -v alfe >/dev/null 2>&1 || return 1
+  for prefix in "$@"; do
+    # The listing is `name<blanks>path'; a path may contain spaces, so
+    # everything after the first run of blanks is the path.
+    path="$(alfe --list-cad-programs 2>/dev/null |
+            sed -n "s/^${prefix}[A-Za-z0-9._-]*[[:blank:]][[:blank:]]*//p" |
+            head -n 1)"
+    if [[ -n "$path" && "$path" != '('* && -e "$path" ]]; then
+      printf '%s\n' "$path"
+      return 0
+    fi
+  done
+  return 1
+}
 
 set -euo pipefail
 
@@ -64,6 +96,11 @@ case "$product" in
   autocad)
     [[ -n "${AUTOCAD_RUNNER:-}" ]] && emit "$AUTOCAD_RUNNER"
     # Headless AutoCAD Core Console runs a .scr that loads the wrapper.
+    # accoreconsole FIRST because it is the headless one, which is what a
+    # probe wants; alfe lists both, so ask in that order.
+    bin="${AUTOCAD_ACCORECONSOLE:-}"
+    [[ -z "$bin" ]] && bin="$(alfe_lookup accoreconsole || true)"
+    if [[ -n "$bin" ]]; then emit "\"$bin\" /s __SCRIPT_FILE__"; fi
     bin="${AUTOCAD_ACCORECONSOLE:-}"
     if [[ -z "$bin" && "$platform" == "ms-windows" ]]; then
       bin="$(first_glob \
@@ -87,6 +124,7 @@ case "$product" in
   bricscad)
     [[ -n "${BRICSCAD_RUNNER:-}" ]] && emit "$BRICSCAD_RUNNER"
     bin="${BRICSCAD_EXE:-}"
+    [[ -z "$bin" ]] && bin="$(alfe_lookup bricscad || true)"
     if [[ -z "$bin" ]]; then
       case "$platform" in
         macos)
