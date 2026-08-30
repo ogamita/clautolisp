@@ -253,25 +253,29 @@ running sedit live, windows-and-interactor-templates.issue)."
   (mapcar (lambda (line) (cons line :normal))
           (%split-lines (clautolisp.sedit:sedit-activation-render activation))))
 
+(defun window-primary (window)
+  "WINDOW's OWN interactor: the first stack entry that is not the :WINDOW-MANAGER
+marker. This is what the window renders and resolves its config through — NOT any
+activation deeper in the stack. A pane shares the (aldo lisp) tail at the BOTTOM
+of its stack for command ROUTING (handle-key walks the whole stack); that tail
+must not hijack the pane's rendering, so dispatch keys off the primary alone."
+  (find-if-not (lambda (e) (eq e :window-manager)) (window-stack window)))
+
 (defun window-content (ui session window)
   "Return (values BUFFER FOLLOW-ROW) for WINDOW — a list of (STRING . ATTR)
-lines and an optional 0-based row to keep in view. A window running a SEDIT
-activation renders its selection; otherwise dispatch on the pane role."
-  (let ((sedit (window-sedit-activation window))
-        (selector (window-selector-activation window))
-        (lisp (window-lisp-activation window))
-        (inspector (window-inspector-activation window))
-        (stack-browser (window-stack-browser-activation window))
-        (navi (window-navi-activation window)))
+lines and an optional 0-based row to keep in view. Dispatch on WINDOW's primary
+interactor (a dedicated window runs sedit/inspector/…); a debug pane keyed by a
+role keyword falls through to the role."
+  (let ((primary (window-primary window)))
     (cond
-      (sedit     (values (sedit-window-buffer sedit) nil))
-      (selector  (values (selector-window-buffer selector) nil))
-      (inspector (values (inspector-window-buffer inspector) nil))
-      (stack-browser (values (stack-browser-window-buffer stack-browser) nil))
-      (navi      (values (navi-window-buffer navi) nil))
-      ((window-aldo-view-activation window) (values (interactor-buffer ui) nil))
-      (lisp      (let ((buffer (lisp-window-buffer ui window)))
-                   (values buffer (and buffer (1- (length buffer))))))  ; tail-follow
+      ((window-entry-sedit-p primary)         (values (sedit-window-buffer primary) nil))
+      ((window-entry-selector-p primary)      (values (selector-window-buffer primary) nil))
+      ((window-entry-inspector-p primary)     (values (inspector-window-buffer primary) nil))
+      ((window-entry-stack-browser-p primary) (values (stack-browser-window-buffer primary) nil))
+      ((window-entry-navi-p primary)          (values (navi-window-buffer primary) nil))
+      ((window-entry-aldo-view-p primary)     (values (interactor-buffer ui) nil))
+      ((window-entry-lisp-p primary)          (let ((buffer (lisp-window-buffer ui window)))
+                                                (values buffer (and buffer (1- (length buffer)))))) ; tail-follow
       (t (ecase (window-role window)
            (:stack      (values (stack-buffer ui session) nil))
            (:source     (source-buffer ui session))
@@ -401,6 +405,8 @@ the 0-based row of that selection, to keep in view."
   ;; behaves as a dumb terminal. The layout/active-window live in the UI
   ;; instance and so persist across the enter/exit cycles of one session.
   (tui-start (ncurses-ui-screen ui))
+  ;; seat this stop's shared (aldo lisp) tail under the debug panes (spec §C)
+  (rebuild-shared-tail ui session hit)
   (unwind-protect
        (loop
          (render-debugger ui session)
@@ -436,12 +442,13 @@ the 0-based row of that selection, to keep in view."
   ;; (cascade sedit -> lisp), whatever pane it borrows (windows-and-interactor-
   ;; templates.issue). The full dynamic cascade from the live stack (sedit ->
   ;; aldo -> lisp above a stop) lands with the shared-tail activation stacks.
-  (cond ((window-sedit-activation window) "sedit")
-        ((window-inspector-activation window) "inspector")
-        ((window-stack-browser-activation window) "stack")
-        ((window-navi-activation window) "navi")
-        ((window-aldo-view-activation window) "aldo")
-        (t (or (cdr (assoc (window-role window) +window-config-name+)) "lisp"))))
+  (let ((primary (window-primary window)))
+    (cond ((window-entry-sedit-p primary) "sedit")
+          ((window-entry-inspector-p primary) "inspector")
+          ((window-entry-stack-browser-p primary) "stack")
+          ((window-entry-navi-p primary) "navi")
+          ((window-entry-aldo-view-p primary) "aldo")
+          (t (or (cdr (assoc (window-role window) +window-config-name+)) "lisp")))))
 
 (defun active-window-config (ui)
   "The config for UI's active window (its cascade resolves faces + bindings)."
@@ -749,21 +756,15 @@ HANDLED NIL means the key is unbound by the user — fall through."
 (defun handle-key (ui session hit key)
   "Dispatch one key: the user keymap first (shadowing the built-ins), then the
 ACTIVE window's interactor stack (the :WINDOW-MANAGER on top, then the window's
-own interactor). The first handler that claims the key wins. A key no pane
-claims falls through to the shared debugger (spec §C's shared (aldo …) tail):
-the one ALDO handles it, so a debugger command works from whichever pane is
-active — ALDO returns NIL for keys it does not own, leaving them unbound.
-Returns the resume directive or NIL."
+own interactor, then — for a debug pane — the SHARED (aldo lisp) tail at the
+bottom). The first handler down the real stack that claims the key wins; the
+bottom is where lookup ends (no fall-back to a global aldo — that would be wrong
+once several documents each carry their own aldo). Returns the resume directive
+or NIL."
   (multiple-value-bind (handled directive) (user-keymap-dispatch ui session hit key)
     (if handled
         directive
-        (dolist (interactor (window-stack (active-window ui))
-                            ;; fall-through: the shared aldo tail. Kept as a
-                            ;; routing default rather than a real ALDO activation
-                            ;; in every window stack — the stop's session/UI form
-                            ;; a cycle (session <-> ui <-> windows) that is unsafe
-                            ;; to embed in a traversed structure.
-                            (when session (nth-value 1 (aldo-key ui session hit key))))
+        (dolist (interactor (window-stack (active-window ui)) nil)
           (multiple-value-bind (h d) (interactor-key interactor ui session hit key)
             (when h (return d)))))))
 
@@ -785,14 +786,15 @@ DIRECTIVE)."
 stacks, windows-and-interactor-templates.issue). Sedit activations map keys to
 sedit commands; a SELECT activation moves/chooses; other interactors do not yet
 handle keystrokes here."
+  (declare (ignore session hit))          ; each activation carries its own backend
   (cond ((window-entry-sedit-p activation) (sedit-window-key activation ui key))
         ((window-entry-selector-p activation) (selector-key activation ui key))
         ((window-entry-lisp-p activation) (lisp-window-key activation ui key))
         ((window-entry-inspector-p activation) (inspector-window-key activation ui key))
         ((window-entry-stack-browser-p activation) (stack-browser-window-key activation ui key))
         ((window-entry-navi-p activation) (navi-window-key activation ui key))
-        ;; the aldo window takes the stop's session/hit from the dispatch context
-        ((window-entry-aldo-view-p activation) (aldo-view-window-key ui session hit key))
+        ;; the aldo activation carries its own session/hit (shared tail)
+        ((window-entry-aldo-view-p activation) (aldo-view-window-key activation ui key))
         (t (values nil nil))))
 
 (defun window-manager-key (ui session hit key)
@@ -1637,19 +1639,31 @@ new read-only window beside the active one. Returns NIL."
                  (make-navi-activation (clautolisp.interactor:template-context-target context)))
   :config-name "navi")
 
-;;;; --- make-aldo-window: a second debugger-command surface (aldo<2>) -------
-;;;; The debugger interactor in its own window. It stores NO session — a
-;;;; session-carrying activation in the window stack would make debugger-session
-;;;; <-> ui a cycle a traversal (e.g. C-w window-switch) follows -> heap
-;;;; exhaustion. The stop's session/hit come from the key-dispatch CONTEXT, so
-;;;; several aldo windows share the one debugger safely (spec §Core design
-;;;; tension: aldo is a multi-instance UI over a singleton debugger).
+;;;; --- the shared (aldo lisp) interactor-stack tail + make-aldo-window -----
+;;;; The bottom of a debug window's interactor stack — the aldo debugger UI over
+;;;; the lisp evaluator UI — is SHARED cons structure across that document's
+;;;; windows (spec §C). A command is resolved by walking the window's real stack;
+;;;; the bottom is where lookup ends (no magic fall-back to "some aldo"). Each
+;;;; aldo activation carries its own backend (the stop SESSION/HIT), so several
+;;;; aldo windows over DIFFERENT documents (multi-document mode: each a lisp repl
+;;;; thread + an aldo thread) each refer to their own tail — sharing the tail is
+;;;; what routes a window's commands to the right debugger + evaluator.
 
 (clautolisp.interactor:define-interactor *aldo-view*
   :name "ALDO-VIEW"
-  :documentation "A debugger-command window (a second aldo surface): the aldo
-keys (c s i o f | e x r | a abort) act on the current stop; q closes the
-window.")
+  :documentation "The debugger command interactor in a window (the aldo half of
+the shared tail): the aldo keys (c s i o f | e x r | a abort) act on ITS stop
+(the session it carries); q closes a stand-alone aldo window.")
+
+(defstruct aldo-view-state
+  "An ALDO-VIEW activation's backend: the debugger SESSION and current HIT it
+drives. Several aldo windows over one document share this activation (and its
+lisp) as their stack bottom; different documents carry different ones."
+  session hit)
+
+(defun make-aldo-view-activation (session hit)
+  (clautolisp.interactor:make-activation
+   *aldo-view* (make-aldo-view-state :session session :hit hit)))
 
 (defun window-entry-aldo-view-p (entry)
   (and (clautolisp.interactor:activation-p entry)
@@ -1658,31 +1672,57 @@ window.")
 (defun window-aldo-view-activation (window)
   (find-if #'window-entry-aldo-view-p (window-stack window)))
 
-(defun aldo-view-window-key (ui session hit key)
-  "q closes the aldo window; every other key is the debugger's (ALDO-KEY on the
-stop's SESSION/HIT, taken from the dispatch context — never stored)."
-  (if (and (characterp key) (char= key #\q))
-      (progn
-        (let ((window (active-window ui)))
-          (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
-          (let ((now (active-window ui)))
-            (when now (pushnew :window-manager (window-stack now)))))
-        (set-message ui "aldo window closed")
-        (values t nil))
-      (aldo-key ui session hit key)))
+(defun aldo-view-window-key (activation ui key)
+  "q closes a stand-alone aldo window (role :ALDO-VIEW); every other key — and q in
+a shared debug PANE that merely carries this aldo in its tail — is the debugger's:
+ALDO-KEY on the SESSION/HIT THIS activation carries (its own backend, not a UI
+global, so multi-document dispatch stays correct)."
+  (let ((st (clautolisp.interactor:activation-state activation)))
+    (if (and (characterp key) (char= key #\q)
+             (eq (window-role (active-window ui)) :aldo-view))
+        (progn
+          (let ((window (active-window ui)))
+            (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
+            (let ((now (active-window ui)))
+              (when now (pushnew :window-manager (window-stack now)))))
+          (set-message ui "aldo window closed")
+          (values t nil))
+        (aldo-key ui (aldo-view-state-session st) (aldo-view-state-hit st) key))))
 
 (defun make-aldo-window (ui session hit arg)
-  "`M-x make-aldo-window': open a second debugger-command window (aldo<2>) beside
-the active one. Returns NIL."
-  (declare (ignore session hit arg))
-  (let ((activation (clautolisp.interactor:make-activation *aldo-view*))
-        (window (clautolisp.ui.tui:add-window-to-frame
-                 (ncurses-ui-frame ui) :name "aldo" :role :aldo-view
-                 :beside (active-window ui) :split :vertical)))
-    (setf (window-stack window) (list activation))
+  "`M-x make-aldo-window': open a NEW aldo interactor (aldo<2>) beside the active
+window, SHARING the current window's stack bottom — its lisp evaluator (hence its
+document's backend) — so the new aldo refers to exactly the same tail. Returns
+NIL."
+  (declare (ignore arg))
+  (let* ((bottom (member-if #'window-entry-lisp-p (window-stack (active-window ui))))
+         (aldo (make-aldo-view-activation session hit))
+         (window (clautolisp.ui.tui:add-window-to-frame
+                  (ncurses-ui-frame ui) :name "aldo" :role :aldo-view
+                  :beside (active-window ui) :split :vertical)))
+    ;; a new aldo over the SHARED lisp bottom (the same cons cell, not a copy)
+    (setf (window-stack window) (if bottom (cons aldo bottom) (list aldo)))
     (activate-window ui window)
     (set-message ui "aldo: c s i o f | e x r | a abort | q close"))
   nil)
+
+(defun rebuild-shared-tail (ui session hit)
+  "Seat this stop's shared (aldo lisp) tail under the debug panes (spec §C): the
+aldo debugger UI over the lisp evaluator UI, as SHARED cons structure. Only the
+canonical stack/source/interactor panes are reseated; the repl pane, the
+minibuffer and any user-made window (sedit/inspector/…) are left alone. A command
+is then resolved by walking the window's real stack — the bottom is where lookup
+ends, with no fall-back to a global aldo."
+  (let* ((lisp (ensure-repl-activation ui))
+         (aldo (make-aldo-view-activation session hit))
+         (tail (remove nil (list aldo lisp))))          ; the shared (aldo lisp)
+    (dolist (w (ui-windows ui))
+      (case (window-role w)
+        (:interactor (setf (window-stack w) tail))       ; IS the tail
+        (:stack      (setf (window-stack w) (cons :framenav tail)))
+        (:source     (setf (window-stack w) (cons :navi tail)))))
+    (let ((active (active-window ui)))
+      (when active (pushnew :window-manager (window-stack active))))))
 
 (defun handle-window-command (ui)
   "Read the key after a C-w / C-x prefix and run the built-in window command."

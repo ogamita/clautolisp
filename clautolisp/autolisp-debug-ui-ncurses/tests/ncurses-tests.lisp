@@ -452,10 +452,20 @@
         (run-ncurses (list (code-char 23) #\p) :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
-      (progn
-        (is (eq :window-manager (first (window-stack-of ui :source))))
-        (is (equal '(:window-manager :navi) (window-stack-of ui :source)))
-        (is (not (member :window-manager (window-stack-of ui :interactor))))))))
+      (let ((src (window-stack-of ui :source))
+            (int (window-stack-of ui :interactor)))
+        ;; source pane = (:window-manager :navi . SHARED-(aldo lisp)-tail)
+        (is (eq :window-manager (first src)))
+        (is (equal '(:window-manager :navi) (subseq src 0 2)))
+        (is (not (member :window-manager int)))
+        ;; the (aldo lisp) tail is genuinely SHARED: the source pane and the
+        ;; interactor pane carry the very same aldo + lisp activation objects, so
+        ;; a command routes to the one document's debugger + evaluator (pjb —
+        ;; multi-document mode needs each aldo window to refer to its own bottom).
+        (is (eq (find-if #'clautolisp.ui.ncurses::window-entry-aldo-view-p src)
+                (find-if #'clautolisp.ui.ncurses::window-entry-aldo-view-p int)))
+        (is (eq (find-if #'clautolisp.ui.ncurses::window-entry-lisp-p src)
+                (find-if #'clautolisp.ui.ncurses::window-entry-lisp-p int)))))))
 
 (test eof-continues
   (let* ((context (fresh-context))
@@ -1059,7 +1069,10 @@
            (act (clautolisp.ui.ncurses::window-aldo-view-activation w)))
       (is (eq :aldo-view (clautolisp.ui.tui:window-role w)))
       (is (not (null act)))
-      (is (null (clautolisp.interactor:activation-state act)))
+      ;; the aldo-view carries its OWN backend (session + hit), not a UI global
+      (is (clautolisp.ui.ncurses::aldo-view-state-p
+           (clautolisp.interactor:activation-state act)))
       (is (>= (length (clautolisp.ui.ncurses::window-content ui nil w)) 1))
-      (clautolisp.ui.ncurses::aldo-view-window-key ui nil nil #\q)
+      ;; q on a stand-alone aldo window (role :aldo-view) closes it
+      (clautolisp.ui.ncurses::aldo-view-window-key act ui #\q)
       (is (= n0 (length (clautolisp.ui.ncurses::ui-windows ui)))))))

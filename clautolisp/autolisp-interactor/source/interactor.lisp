@@ -82,6 +82,15 @@ interactor's name when none was assigned."
   (or (activation-name activation)
       (interactor-name (activation-interactor activation))))
 
+(defmethod print-object ((activation activation) stream)
+  ;; Print just the label — NEVER descend into STATE. A UI activation's state
+  ;; can reach the whole running image (a debug session -> evaluation context ->
+  ;; runtime session -> every loaded function), so the default struct printer
+  ;; would try to print the entire image (megabytes) whenever an activation
+  ;; appears in a backtrace, a test failure, or the dribble.
+  (print-unreadable-object (activation stream :type t :identity t)
+    (write-string (activation-label activation) stream)))
+
 (defun uniquify-instance-name (base existing &key (test #'equal))
   "BASE when no EXISTING name equals it; otherwise BASE with a =<N>= suffix for
 the least N ≥ 2 that is free — the slime-mrepl scheme for several instances of
