@@ -19,15 +19,55 @@
 
 ;;; --- wire writing --------------------------------------------------
 
+;;; The messages must be read by EMACS `read', not Common Lisp `read'. Elisp
+;;; has no packages and is case-sensitive, so a plain CL `prin1' is unreadable
+;;; on the client: NIL prints as COMMON-LISP:NIL / T as COMMON-LISP:T (Elisp
+;;; reads those as ordinary non-nil symbols), and every keyword prints
+;;; UPPER-CASE (=:ATTACHED=), which is a *different* symbol from the lower-case
+;;; =:attached= aldb.el pcase / plist-get on. So we serialize wire forms by
+;;; hand into Elisp-readable text: nil / t, and lower-cased keywords / symbols.
+
+(defun write-elisp-string (string stream)
+  "Write STRING as an Elisp string literal (escaping \\ and \")."
+  (write-char #\" stream)
+  (loop for ch across string
+        do (when (or (char= ch #\") (char= ch #\\)) (write-char #\\ stream))
+           (write-char ch stream))
+  (write-char #\" stream))
+
+(defun write-elisp-form (object stream)
+  "Write OBJECT to STREAM as one Elisp-readable form. Wire values are lists,
+keywords, strings, integers, and nil/t (the serializers upstream reduce
+everything else — snapshots, positions, values — to those). NIL/T become the
+Elisp atoms nil/t; keywords and any other symbols are lower-cased and emitted
+without a package prefix; anything unexpected degrades to a readable string
+rather than raw CL syntax."
+  (cond
+    ((null object)     (write-string "nil" stream))
+    ((eq object t)     (write-string "t" stream))
+    ((keywordp object) (write-char #\: stream)
+                       (write-string (string-downcase (symbol-name object)) stream))
+    ((symbolp object)  (write-string (string-downcase (symbol-name object)) stream))
+    ((integerp object) (princ object stream))
+    ((stringp object)  (write-elisp-string object stream))
+    ((consp object)
+     (write-char #\( stream)
+     (loop for cell on object
+           do (write-elisp-form (car cell) stream)
+              (cond ((consp (cdr cell)) (write-char #\Space stream))
+                    ((cdr cell)                 ; a dotted tail
+                     (write-string " . " stream)
+                     (write-elisp-form (cdr cell) stream))))
+     (write-char #\) stream))
+    (t (write-elisp-string (princ-to-string object) stream))))
+
 (defun write-message (ui tag &rest args)
   "Write one RPC message — the form (TAG . ARGS) — to the channel, one per
-line, readable by Emacs `read`. Strings, integers, and keywords print
-readably; nested wire forms are plain lists."
-  (let ((stream (emacs-ui-output ui))
-        (*print-readably* nil)
-        (*print-pretty* nil)
-        (*package* (find-package :keyword)))
-    (prin1 (cons tag args) stream)
+line, as Elisp-readable text (§20.1). Keywords/symbols are lower-cased and
+NIL/T become nil/t, so the Emacs client's `read' yields the atoms aldb.el
+dispatches on."
+  (let ((stream (emacs-ui-output ui)))
+    (write-elisp-form (cons tag args) stream)
     (terpri stream)
     (force-output stream)))
 

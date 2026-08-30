@@ -147,3 +147,44 @@
                    :thunk (lambda () (call-two context)))
       (declare (ignore text messages))
       (is (eql 7 result)))))
+
+;;; --- the wire is ELISP-readable, not CL-readable (§20.1) -----------
+;;; Elisp has no packages and is case-sensitive: a CL prin1 emits
+;;; COMMON-LISP:NIL / :ATTACHED, which Emacs `read' turns into symbols that do
+;;; NOT match the nil/t and lower-case :attached aldb.el pcase / plist-get on.
+
+(test elisp-form-serializer-shapes-atoms
+  (flet ((s (x) (with-output-to-string (o)
+                  (clautolisp.ui.emacs::write-elisp-form x o))))
+    (is (string= "nil" (s nil)))
+    (is (string= "t" (s t)))
+    (is (string= ":pos" (s :pos)))                    ; keywords lower-cased
+    (is (string= "42" (s 42)))
+    (is (string= "\"hi\"" (s "hi")))
+    (is (string= "\"a\\\"b\"" (s "a\"b")))            ; \ and " escaped
+    (is (string= "(:frame 0 \"TWO\" nil)" (s '(:frame 0 "TWO" nil))))
+    (is (string= "(:a 1 (:b t) nil)" (s '(:a 1 (:b t) nil))))))
+
+(test write-message-emits-one-elisp-line
+  (let ((line (string-right-trim
+               '(#\Newline)
+               (with-output-to-string (o)
+                 (let ((ui (clautolisp.ui.emacs:make-emacs-ui
+                            :input (make-string-input-stream "") :output o)))
+                   (clautolisp.ui.emacs::write-message
+                    ui :attached :protocol-version '(1 0) :empty nil :flag t))))))
+    (is (string= "(:attached :protocol-version (1 0) :empty nil :flag t)" line))))
+
+(test hit-snapshot-on-the-wire-has-no-cl-package-atoms
+  ;; a real :breakpoint-hit line — the exact text Emacs reads — must carry no
+  ;; COMMON-LISP: / uppercase :FOO atoms (a live regression guard on the shim).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at metas 3)))
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:continue)) :context context :thread-info ti
+                   :thunk (lambda () (call-two context)))
+      (declare (ignore result messages))
+      (is (not (search "COMMON-LISP" (string-upcase text))))
+      (is (search "(:breakpoint-hit" text))          ; lower-case tag, verbatim
+      (is (search ":function" text)))))
