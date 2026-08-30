@@ -59,3 +59,47 @@ CAD, and a suite that dies leaves a file behind. Both are good designs —
 and both mean a run can SUCCEED at the shell level while measuring
 nothing. The results themselves say which product answered; nothing else
 does.
+
+## The experiment (2026-08-30): the new suite is EXONERATED
+
+Two narrowed runs on the macOS runner, BricsCAD V26:
+
+    PROBE_SUITES=foreach-scope        -> wrapper-start only, segfault
+    PROBE_SUITES='rtos foreach-scope' -> wrapper-start only, segfault
+
+RTOS is one of the four ORIGINAL suites and runs FIRST. It recorded
+nothing either. So the engine dies before any pre-existing suite produces
+a record, and probe-foreach-scope.lsp -- added the same day and the
+obvious suspect -- is not the cause.
+
+Narrowed further by what DID get written: `wrapper-start' is written by
+the generated wrapper itself, after it opens the results file and before
+it loads anything. So the wrapper ran, and death follows at
+`(load probe-core.lsp)' or immediately after it. Nothing in the job log
+distinguishes further: BricsCAD's -B output is not captured, so the
+wrapper's own `cad-probe: loading wrapper' markers never appear.
+
+The run takes ~13 seconds before the segfault, so BricsCAD is doing
+something, not failing to start.
+
+## Leading hypothesis: no drawing
+
+The probes invoke
+
+    "<bricscad>" -B <script.scr>
+
+with NO DRAWING. Every BricsCAD job in this repository that WORKS passes
+one -- vendor:probes, pathname:probe, encoding:experiment all set
+PROBE_DWG (c:/gitlab-runner/dwg/empty.dwg on Windows) -- and probes/
+README.org itself says to run "on a freshly launched CAD with a new empty
+drawing".
+
+A batch BricsCAD with no document may have no database to answer against,
+and crash rather than refuse. That is testable: give the runner template
+a drawing. It needs an empty .dwg on the macOS runner (the Windows one
+already has one at the path above), so it is a runner-side prerequisite
+rather than a code change alone.
+
+AutoCAD's accoreconsole took the same wrapper with no drawing and ran it
+to completion, which does not disprove the hypothesis -- accoreconsole is
+built for exactly that -- but does mean the wrapper itself is sound.
