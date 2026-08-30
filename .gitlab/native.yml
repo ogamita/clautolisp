@@ -523,12 +523,21 @@ probe:suite:autocad:windows:
 # SOFT, like the AutoCAD one and for the same reason: a probe MEASURES an
 # engine, it does not gate anything. PROBE_NO_COMMIT because the CI
 # checkout is detached; results travel as an artefact.
+#
+# PROBE_SUITES is set because the FULL suite does not survive BricsCAD:
+# on both platforms it writes `wrapper-start' and then the engine dies
+# (segfault on macOS, silent exit on Windows) before a single record --
+# see issues/open/probes-suite-crashes-bricscad.issue. Narrowing to the
+# suite whose question is actually open gets that answer today instead of
+# waiting for the rest to be diagnosed, and it is also the experiment
+# that says WHICH suite is fatal. Widen it as suites are cleared.
 probe:suite:bricscad:macos:
   extends: .gate-macos-cad-soft
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
     PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'foreach-scope'
   script:
     - make -C clautolisp build-clautolisp-sbcl
     - make probe-bricscad
@@ -544,6 +553,7 @@ probe:suite:bricscad:windows:
   variables:
     GIT_SUBMODULE_STRATEGY: none
     PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'foreach-scope'
   script:
     - make -C clautolisp build-clautolisp-sbcl
     - make probe-bricscad
