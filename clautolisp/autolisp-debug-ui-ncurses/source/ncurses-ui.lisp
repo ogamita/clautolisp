@@ -269,6 +269,7 @@ activation renders its selection; otherwise dispatch on the pane role."
       (inspector (values (inspector-window-buffer inspector) nil))
       (stack-browser (values (stack-browser-window-buffer stack-browser) nil))
       (navi      (values (navi-window-buffer navi) nil))
+      ((window-aldo-view-activation window) (values (interactor-buffer ui) nil))
       (lisp      (let ((buffer (lisp-window-buffer ui window)))
                    (values buffer (and buffer (1- (length buffer))))))  ; tail-follow
       (t (ecase (window-role window)
@@ -439,6 +440,7 @@ the 0-based row of that selection, to keep in view."
         ((window-inspector-activation window) "inspector")
         ((window-stack-browser-activation window) "stack")
         ((window-navi-activation window) "navi")
+        ((window-aldo-view-activation window) "aldo")
         (t (or (cdr (assoc (window-role window) +window-config-name+)) "lisp"))))
 
 (defun active-window-config (ui)
@@ -783,13 +785,14 @@ DIRECTIVE)."
 stacks, windows-and-interactor-templates.issue). Sedit activations map keys to
 sedit commands; a SELECT activation moves/chooses; other interactors do not yet
 handle keystrokes here."
-  (declare (ignore session hit))
   (cond ((window-entry-sedit-p activation) (sedit-window-key activation ui key))
         ((window-entry-selector-p activation) (selector-key activation ui key))
         ((window-entry-lisp-p activation) (lisp-window-key activation ui key))
         ((window-entry-inspector-p activation) (inspector-window-key activation ui key))
         ((window-entry-stack-browser-p activation) (stack-browser-window-key activation ui key))
         ((window-entry-navi-p activation) (navi-window-key activation ui key))
+        ;; the aldo window takes the stop's session/hit from the dispatch context
+        ((window-entry-aldo-view-p activation) (aldo-view-window-key ui session hit key))
         (t (values nil nil))))
 
 (defun window-manager-key (ui session hit key)
@@ -1634,6 +1637,53 @@ new read-only window beside the active one. Returns NIL."
                  (make-navi-activation (clautolisp.interactor:template-context-target context)))
   :config-name "navi")
 
+;;;; --- make-aldo-window: a second debugger-command surface (aldo<2>) -------
+;;;; The debugger interactor in its own window. It stores NO session — a
+;;;; session-carrying activation in the window stack would make debugger-session
+;;;; <-> ui a cycle a traversal (e.g. C-w window-switch) follows -> heap
+;;;; exhaustion. The stop's session/hit come from the key-dispatch CONTEXT, so
+;;;; several aldo windows share the one debugger safely (spec §Core design
+;;;; tension: aldo is a multi-instance UI over a singleton debugger).
+
+(clautolisp.interactor:define-interactor *aldo-view*
+  :name "ALDO-VIEW"
+  :documentation "A debugger-command window (a second aldo surface): the aldo
+keys (c s i o f | e x r | a abort) act on the current stop; q closes the
+window.")
+
+(defun window-entry-aldo-view-p (entry)
+  (and (clautolisp.interactor:activation-p entry)
+       (eq (clautolisp.interactor:activation-interactor entry) *aldo-view*)))
+
+(defun window-aldo-view-activation (window)
+  (find-if #'window-entry-aldo-view-p (window-stack window)))
+
+(defun aldo-view-window-key (ui session hit key)
+  "q closes the aldo window; every other key is the debugger's (ALDO-KEY on the
+stop's SESSION/HIT, taken from the dispatch context — never stored)."
+  (if (and (characterp key) (char= key #\q))
+      (progn
+        (let ((window (active-window ui)))
+          (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
+          (let ((now (active-window ui)))
+            (when now (pushnew :window-manager (window-stack now)))))
+        (set-message ui "aldo window closed")
+        (values t nil))
+      (aldo-key ui session hit key)))
+
+(defun make-aldo-window (ui session hit arg)
+  "`M-x make-aldo-window': open a second debugger-command window (aldo<2>) beside
+the active one. Returns NIL."
+  (declare (ignore session hit arg))
+  (let ((activation (clautolisp.interactor:make-activation *aldo-view*))
+        (window (clautolisp.ui.tui:add-window-to-frame
+                 (ncurses-ui-frame ui) :name "aldo" :role :aldo-view
+                 :beside (active-window ui) :split :vertical)))
+    (setf (window-stack window) (list activation))
+    (activate-window ui window)
+    (set-message ui "aldo: c s i o f | e x r | a abort | q close"))
+  nil)
+
 (defun handle-window-command (ui)
   "Read the key after a C-w / C-x prefix and run the built-in window command."
   (run-window-command ui (tui-read-key (ncurses-ui-screen ui))))
@@ -1722,6 +1772,7 @@ RET returns the string, Esc cancels (returns NIL), Backspace deletes."
    (cons "backtrace"                 #'make-stack-browser-window)
    (cons "make-navi-window" #'make-navi-window)
    (cons "navigate"         #'make-navi-window)
+   (cons "make-aldo-window" #'make-aldo-window)
    ;; the list-selector (windows-and-interactor-templates.issue): pick a window
    ;; to activate, or browse the interactor templates available to a window.
    (cons "windows"     #'list-windows-command)

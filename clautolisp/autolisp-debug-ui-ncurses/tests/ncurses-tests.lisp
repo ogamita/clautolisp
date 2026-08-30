@@ -1046,3 +1046,20 @@
       ;; q closes
       (clautolisp.ui.ncurses::navi-window-key act ui #\q)
       (is (= n0 (length (clautolisp.ui.ncurses::ui-windows ui)))))))
+
+;;;; --- make-aldo-window: a second debugger-command surface (aldo<2>) ------
+
+(test make-aldo-window-creates-renders-and-closes
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen))
+         (n0 (length (clautolisp.ui.ncurses::ui-windows ui))))
+    (clautolisp.ui.ncurses::make-aldo-window ui nil nil "")
+    (is (= (1+ n0) (length (clautolisp.ui.ncurses::ui-windows ui))))
+    (let* ((w (clautolisp.ui.ncurses::active-window ui))
+           (act (clautolisp.ui.ncurses::window-aldo-view-activation w)))
+      (is (eq :aldo-view (clautolisp.ui.tui:window-role w)))
+      (is (not (null act)))
+      (is (null (clautolisp.interactor:activation-state act)))
+      (is (>= (length (clautolisp.ui.ncurses::window-content ui nil w)) 1))
+      (clautolisp.ui.ncurses::aldo-view-window-key ui nil nil #\q)
+      (is (= n0 (length (clautolisp.ui.ncurses::ui-windows ui)))))))
