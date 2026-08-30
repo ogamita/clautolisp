@@ -1,0 +1,61 @@
+# probes-suite-crashes-bricscad — the probes/ suite dies on BricsCAD before any record
+
+STATUS: OPEN. Found 2026-08-30, the first time the probes/ suite was ever
+pointed at BricsCAD.
+
+## Symptom
+
+On BOTH platforms the results file contains exactly one line:
+
+    ((KIND . "wrapper-start"))
+
+and nothing else. The wrapper opened the file, wrote its marker, and the
+engine died before a single probe record — before even the run-start
+that CAD-PROBE-BEGIN-RUN writes.
+
+    macOS   (BricsCAD V26)      Segmentation fault: 11, runner exit 139
+    Windows (BricsCAD V25 fr_FR) silent exit, run-probes reports
+                                 "the wrapper started but never reached
+                                  its end record"
+
+AutoCAD ran the same wrapper, the same six suites, to completion. So did
+the clautolisp baseline.
+
+## Why it had never been seen
+
+There was no CI job for this suite on BricsCAD at all — only AutoCAD —
+and on a macOS workstation `make probe` could not FIND BricsCAD
+(issues/closed/probe-detect-cad-misses-macos-bricscad.issue), so it
+silently ran the clautolisp baseline instead. Between them, the suite had
+simply never met the engine.
+
+## What is known and what is not
+
+The wrapper LOADS all six suite files and only then runs them, so the
+death is in a LOAD or in CAD-PROBE-BEGIN-RUN, not in a probe body. That
+is as far as the evidence goes. In particular it is NOT yet known whether
+the fatal file is one of the four original suites or probe-foreach-scope
+(added the same day), because they all load before anything runs.
+
+PROBE_SUITES (added with this ticket) is what settles it: it narrows the
+wrapper to named suites, so each can be tried alone. The BricsCAD jobs
+now run `PROBE_SUITES=foreach-scope`, which both answers the question
+that is actually open and performs half the experiment.
+
+## Next
+
+  - If foreach-scope alone RUNS: the fatal suite is one of the original
+    four; bisect them the same way.
+  - If foreach-scope alone DIES: the new file is implicated and should be
+    reduced until it does not.
+
+Either way the full suite should be restored on BricsCAD, and the
+narrowing in .gitlab/native.yml removed, once the cause is known.
+
+## The general point, again
+
+`make probe` falls back to the clautolisp baseline when it detects no
+CAD, and a suite that dies leaves a file behind. Both are good designs —
+and both mean a run can SUCCEED at the shell level while measuring
+nothing. The results themselves say which product answered; nothing else
+does.

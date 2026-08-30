@@ -38,6 +38,26 @@ repo_root="$(cd "$probes_dir/.." && pwd)"
 sources_dir="$probes_dir/sources"
 manifest="$sources_dir/manifest.txt"
 
+# PROBE_SUITES: run only these manifest entries, space- or
+# comma-separated, matched against the source file name with or without
+# the `probe-' prefix and the `.lsp' suffix -- so PROBE_SUITES=foreach-scope
+# and PROBE_SUITES=probe-foreach-scope.lsp both work. Default: every suite.
+#
+# It exists because the suite was ALL-OR-NOTHING on an engine: one suite
+# that kills the CAD takes every other answer down with it, and there was
+# no way to ask the one question you came for. That is exactly what
+# happened the first time this suite met BricsCAD.
+suite_wanted() {
+  local src="$1" want name
+  [[ -z "${PROBE_SUITES:-}" ]] && return 0
+  name="${src%.lsp}"; name="${name#probe-}"
+  for want in ${PROBE_SUITES//,/ }; do
+    want="${want%.lsp}"; want="${want#probe-}"
+    [[ "$name" == "$want" ]] && return 0
+  done
+  return 1
+}
+
 [[ -f "$manifest" ]] || { echo "run-probes: missing $manifest" >&2; exit 2; }
 
 platform="ms-windows"
@@ -136,11 +156,13 @@ cad_arg_path() {
   # Load every suite file from the manifest.
   while read -r src fn _rest; do
     [[ -z "$src" || "$src" == \#* ]] && continue
+    suite_wanted "$src" || continue
     printf '(load "%s")\n' "$(lisp_escape "$(cad_path "$sources_dir/$src")")"
   done < "$manifest"
   printf '(cad-probe-begin-run)\n'
   while read -r src fn _rest; do
     [[ -z "$src" || "$src" == \#* ]] && continue
+    suite_wanted "$src" || continue
     printf '(%s)\n' "$fn"
   done < "$manifest"
   printf '(cad-probe-end-run)\n'
