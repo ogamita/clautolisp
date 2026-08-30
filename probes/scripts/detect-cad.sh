@@ -30,6 +30,23 @@
 # copies of a search path is one copy too many. The globs below stay as a
 # fallback for a machine with no alfe on PATH, which is the CI case today.
 
+# The alfe binary, if this checkout has built one or PATH has it.
+alfe_binary() {
+  local root candidate
+  if [[ -n "${ALFE_BIN:-}" && -x "${ALFE_BIN}" ]]; then
+    printf '%s\n' "$ALFE_BIN"; return 0
+  fi
+  root="$(cd "$(dirname "$0")/../.." && pwd)"
+  for candidate in \
+      "$root/autolisp-front-end/tools/alfe/bin/alfe-sbcl" \
+      "$root/autolisp-front-end/tools/alfe/bin/alfe-sbcl.exe" \
+      "$root/autolisp-front-end/tools/alfe/bin/alfe-ccl"; do
+    [[ -x "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
+  done
+  command -v alfe >/dev/null 2>&1 && { command -v alfe; return 0; }
+  return 1
+}
+
 # Ask alfe for an executable whose listing name starts with one of the
 # given prefixes, in order, so a caller can prefer accoreconsole over
 # acad. Prints the path, or fails.
@@ -123,6 +140,26 @@ case "$product" in
 
   bricscad)
     [[ -n "${BRICSCAD_RUNNER:-}" ]] && emit "$BRICSCAD_RUNNER"
+    # DRIVE BRICSCAD THROUGH ALFE when we have alfe, because launching it
+    # ourselves does not work and alfe's launching does.
+    #
+    # A raw `bricscad <drawing> -B <script>' segfaults before the wrapper
+    # loads its first suite -- on macOS V26 and Windows V25 alike, with a
+    # drawing and without one. alfe drives the same engine on both
+    # platforms, green, and it knows a pile of things this script does
+    # not: which user PROFILE to launch (the runner's default auto-loads
+    # a vertical application that blocks the /b script), /Automation on
+    # Windows, SECURELOAD, the file-IPC handshake, readiness, and how to
+    # shut the engine down afterwards.
+    #
+    # Re-deriving that here is how detect-cad.sh came to miss BricsCAD on
+    # macOS in the first place. So the probe wrapper is handed to alfe
+    # with -l, exactly as scripts/run-vendor-probes.sh does for the
+    # vendor probes, which are green. The direct invocation stays below
+    # as the fallback for a checkout with no alfe built.
+    if alfe_bin="$(alfe_binary)"; then
+      emit "\"$alfe_bin\" --no-init --bricscad --mode batch --timeout 180 -l __PROBE_FILE__"
+    fi
     bin="${BRICSCAD_EXE:-}"
     [[ -z "$bin" ]] && bin="$(alfe_lookup bricscad || true)"
     if [[ -z "$bin" ]]; then

@@ -141,6 +141,13 @@ cad_arg_path() {
 {
   # Every path below is consumed by the CAD, not by this shell, so each
   # goes through cad_path -- see its comment for what happens otherwise.
+  # SECURELOAD, in the WRAPPER and not only in the .scr: a runner that
+  # hands the wrapper straight to the engine -- the alfe route, which has
+  # no .scr at all -- would otherwise hit SECURELOAD on the nested
+  # (load)s below. Harmless where the .scr already cleared it, and
+  # vl-catch-all-apply'd because an engine without the sysvar must not
+  # die here.
+  printf "(vl-catch-all-apply 'setvar (list \"SECURELOAD\" 0))\n"
   printf '(setq cad-probe-result-file "%s")\n'  "$(lisp_escape "$(cad_path "$result_file")")"
   printf '(setq cad-probe-platform "%s")\n'      "$(lisp_escape "$platform")"
   printf '(setq cad-probe-product "%s")\n'       "$(lisp_escape "$product")"
