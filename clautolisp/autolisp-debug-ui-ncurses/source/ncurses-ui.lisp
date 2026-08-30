@@ -260,11 +260,13 @@ activation renders its selection; otherwise dispatch on the pane role."
   (let ((sedit (window-sedit-activation window))
         (selector (window-selector-activation window))
         (lisp (window-lisp-activation window))
-        (inspector (window-inspector-activation window)))
+        (inspector (window-inspector-activation window))
+        (stack-browser (window-stack-browser-activation window)))
     (cond
       (sedit     (values (sedit-window-buffer sedit) nil))
       (selector  (values (selector-window-buffer selector) nil))
       (inspector (values (inspector-window-buffer inspector) nil))
+      (stack-browser (values (stack-browser-window-buffer stack-browser) nil))
       (lisp      (let ((buffer (lisp-window-buffer ui window)))
                    (values buffer (and buffer (1- (length buffer))))))  ; tail-follow
       (t (ecase (window-role window)
@@ -433,6 +435,7 @@ the 0-based row of that selection, to keep in view."
   ;; aldo -> lisp above a stop) lands with the shared-tail activation stacks.
   (cond ((window-sedit-activation window) "sedit")
         ((window-inspector-activation window) "inspector")
+        ((window-stack-browser-activation window) "stack")
         (t (or (cdr (assoc (window-role window) +window-config-name+)) "lisp"))))
 
 (defun active-window-config (ui)
@@ -782,6 +785,7 @@ handle keystrokes here."
         ((window-entry-selector-p activation) (selector-key activation ui key))
         ((window-entry-lisp-p activation) (lisp-window-key activation ui key))
         ((window-entry-inspector-p activation) (inspector-window-key activation ui key))
+        ((window-entry-stack-browser-p activation) (stack-browser-window-key activation ui key))
         (t (values nil nil))))
 
 (defun window-manager-key (ui session hit key)
@@ -1371,18 +1375,23 @@ in the shared context; NIL (inspect nil) when empty or on error."
           (error (e) (set-message ui "inspect: ~A" e) nil))
         nil)))
 
+(defun %open-inspector-window (ui value)
+  "Open an inspector window over VALUE (a fresh standalone inspector) beside the
+active window, and select it. Returns the window."
+  (let ((activation (make-inspector-activation value))
+        (window (clautolisp.ui.tui:add-window-to-frame
+                 (ncurses-ui-frame ui) :name "inspect" :role :inspector
+                 :beside (active-window ui) :split :vertical)))
+    (setf (window-stack window) (list activation))
+    (activate-window ui window)
+    (set-message ui "inspect: up/down move | d descend | u up | q close")
+    window))
+
 (defun make-inspector-window (ui session hit arg)
   "`M-x make-inspector-window': inspect ARG (or a prompted form's value) in a new
 window beside the active one. Returns NIL."
   (declare (ignore session hit))
-  (let* ((value (%inspector-target-from-arg ui arg))
-         (activation (make-inspector-activation value))
-         (window (clautolisp.ui.tui:add-window-to-frame
-                  (ncurses-ui-frame ui) :name "inspect" :role :inspector
-                  :beside (active-window ui) :split :vertical)))
-    (setf (window-stack window) (list activation))
-    (activate-window ui window)
-    (set-message ui "inspect: up/down move | d descend | u up | q close"))
+  (%open-inspector-window ui (%inspector-target-from-arg ui arg))
   nil)
 
 (clautolisp.interactor:define-interactor-template "inspector"
@@ -1393,6 +1402,140 @@ window beside the active one. Returns NIL."
                  (make-inspector-activation
                   (clautolisp.interactor:template-context-target context)))
   :config-name "inspector")
+
+;;;; --- make-stack-browser-window: a standalone backtrace browser ----------
+;;;; Over a COPIED snapshot (autolisp-debug: build-snapshot copies frames +
+;;;; bindings out of the dynamic context at the stop), so it browses the stack
+;;;; and each frame's bindings with no live thread (pjb: "we could still inspect
+;;;; the stack and bindings"). No in-frame eval (the frames are copies) — but a
+;;;; binding's value opens in an inspector window (`i').
+
+(clautolisp.interactor:define-interactor *stack-browser*
+  :name "STACK"
+  :documentation "A standalone backtrace browser in a window over a copied
+snapshot: n/p frame, up/down binding, i inspect the binding's value, q close
+(windows-and-interactor-templates.issue).")
+
+(defstruct stack-browser-state
+  "A STACK window activation's state: the copied SNAPSHOT, the selected frame
+index, and the selected binding index within that frame."
+  snapshot (frame 0) (binding 0))
+
+(defun make-stack-browser-activation (snapshot)
+  (clautolisp.interactor:make-activation
+   *stack-browser* (make-stack-browser-state :snapshot snapshot)))
+
+(defun window-entry-stack-browser-p (entry)
+  (and (clautolisp.interactor:activation-p entry)
+       (eq (clautolisp.interactor:activation-interactor entry) *stack-browser*)))
+
+(defun window-stack-browser-activation (window)
+  (find-if #'window-entry-stack-browser-p (window-stack window)))
+
+(defun %sb-frames (st) (snapshot-call-stack (stack-browser-state-snapshot st)))
+(defun %sb-frame (st) (nth (stack-browser-state-frame st) (%sb-frames st)))
+(defun %sb-bindings (st)
+  (let ((f (%sb-frame st))) (and f (clautolisp.debug:stack-frame-bindings-introduced f))))
+
+(defun %value-preview (value)
+  (let ((s (handler-case (let ((*print-length* 6) (*print-level* 3))
+                           (princ-to-string value))
+             (error () "#<?>"))))
+    (if (> (length s) 48) (concatenate 'string (subseq s 0 45) "...") s)))
+
+(defun stack-browser-window-buffer (activation)
+  "Lines: the backtrace (selected frame marked) then the selected frame's
+bindings (selected binding marked)."
+  (let* ((st (clautolisp.interactor:activation-state activation))
+         (frames (%sb-frames st))
+         (fcur (stack-browser-state-frame st))
+         (bcur (stack-browser-state-binding st))
+         (out (list (cons (format nil "Backtrace (~D frames):" (length frames))
+                          :active-status))))
+    (loop for f in frames for i from 0
+          do (push (cons (format nil "~:[  ~;> ~]~A  ~A" (= i fcur)
+                                 (or (stack-frame-function-name f) "?")
+                                 (frame-line-label f))
+                         (if (= i fcur) :current-line :normal))
+                   out))
+    (push (cons "" :normal) out)
+    (push (cons (format nil "Frame ~A — bindings:"
+                        (and (%sb-frame st) (or (stack-frame-function-name (%sb-frame st)) "?")))
+                :active-status)
+          out)
+    (let ((bindings (%sb-bindings st)))
+      (if (null bindings)
+          (push (cons "  (no bindings)" :normal) out)
+          (loop for b in bindings for i from 0
+                do (push (cons (format nil "~:[  ~;> ~]~A = ~A" (= i bcur)
+                                       (clautolisp.autolisp-runtime:autolisp-symbol-name
+                                        (clautolisp.debug:binding-entry-symbol b))
+                                       (%value-preview (clautolisp.debug:binding-entry-value b)))
+                               (if (= i bcur) :current-line :normal))
+                         out))))
+    (nreverse out)))
+
+(defun close-stack-browser-window (ui)
+  (let ((window (active-window ui)))
+    (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
+    (let ((now (active-window ui)))
+      (when now (pushnew :window-manager (window-stack now))))
+    (set-message ui "stack browser closed")))
+
+(defun stack-browser-window-key (activation ui key)
+  "Drive a STACK window: n/p change frame; up/down move the binding cursor; i
+inspects the selected binding's value in a new inspector window; q closes."
+  (let* ((st (clautolisp.interactor:activation-state activation))
+         (nf (length (%sb-frames st))))
+    (flet ((frame-move (d)
+             (when (plusp nf)
+               (setf (stack-browser-state-frame st)
+                     (mod (+ (stack-browser-state-frame st) d) nf)
+                     (stack-browser-state-binding st) 0)))
+           (binding-move (d)
+             (let ((nb (length (%sb-bindings st))))
+               (when (plusp nb)
+                 (setf (stack-browser-state-binding st)
+                       (mod (+ (stack-browser-state-binding st) d) nb))))))
+      (cond
+        ((and (characterp key) (char= key #\n)) (frame-move +1) (values t nil))
+        ((and (characterp key) (char= key #\p)) (frame-move -1) (values t nil))
+        ((eq key :down) (binding-move +1) (values t nil))
+        ((eq key :up) (binding-move -1) (values t nil))
+        ((and (characterp key) (char= key #\i))
+         (let ((b (nth (stack-browser-state-binding st) (%sb-bindings st))))
+           (if b
+               (%open-inspector-window ui (clautolisp.debug:binding-entry-value b))
+               (set-message ui "no binding to inspect")))
+         (values t nil))
+        ((and (characterp key) (char= key #\q)) (close-stack-browser-window ui) (values t nil))
+        (t (values nil nil))))))
+
+(defun make-stack-browser-window (ui session hit arg)
+  "`M-x make-stack-browser-window': browse the current stop's copied stack in a
+new window. Needs a stop (a captured snapshot). Returns NIL."
+  (declare (ignore arg))
+  (let ((snapshot (or (and session (current-snapshot session))
+                      (and hit (clautolisp.debug:hit-snapshot hit)))))
+    (if (null snapshot)
+        (set-message ui "no stack to browse (not stopped)")
+        (let ((activation (make-stack-browser-activation snapshot))
+              (window (clautolisp.ui.tui:add-window-to-frame
+                       (ncurses-ui-frame ui) :name "stack" :role :stack-browser
+                       :beside (active-window ui) :split :vertical)))
+          (setf (window-stack window) (list activation))
+          (activate-window ui window)
+          (set-message ui "stack: n/p frame | up/down binding | i inspect | q close"))))
+  nil)
+
+(clautolisp.interactor:define-interactor-template "stack-browser"
+  :display-name "Stack browser"
+  :description "Browse a copied backtrace and its frames' bindings"
+  :interactor *stack-browser*
+  :constructor (lambda (context)
+                 (make-stack-browser-activation
+                  (clautolisp.interactor:template-context-target context)))
+  :config-name "stack")
 
 (defun handle-window-command (ui)
   "Read the key after a C-w / C-x prefix and run the built-in window command."
@@ -1478,6 +1621,8 @@ RET returns the string, Esc cancels (returns NIL), Backspace deletes."
    (cons "make-lisp-window"  #'make-lisp-window)
    (cons "make-inspector-window" #'make-inspector-window)
    (cons "inspect"               #'make-inspector-window)
+   (cons "make-stack-browser-window" #'make-stack-browser-window)
+   (cons "backtrace"                 #'make-stack-browser-window)
    ;; the list-selector (windows-and-interactor-templates.issue): pick a window
    ;; to activate, or browse the interactor templates available to a window.
    (cons "windows"     #'list-windows-command)

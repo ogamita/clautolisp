@@ -984,3 +984,41 @@
     (is (= (1+ n0) (length (clautolisp.ui.ncurses::ui-windows ui))))
     (is (eq :inspector (clautolisp.ui.tui:window-role
                         (clautolisp.ui.ncurses::active-window ui))))))
+
+;;;; --- make-stack-browser-window: standalone backtrace browser -----------
+
+(test stack-browser-window-renders-navigates-and-inspects
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen))
+         (n0 (length (clautolisp.ui.ncurses::ui-windows ui)))
+         (frame (clautolisp.debug::make-stack-frame
+                 :function-name "FOO"
+                 :bindings-introduced
+                 (list (clautolisp.debug::make-binding-entry
+                        :symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "X")
+                        :value 42)
+                       (clautolisp.debug::make-binding-entry
+                        :symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "Y")
+                        :value 99))))
+         (snapshot (clautolisp.debug::make-snapshot :call-stack (list frame)))
+         (activation (clautolisp.ui.ncurses::make-stack-browser-activation snapshot))
+         (window (clautolisp.ui.tui:add-window-to-frame
+                  (clautolisp.ui.ncurses::ncurses-ui-frame ui)
+                  :name "stack" :role :stack-browser
+                  :beside (clautolisp.ui.ncurses::active-window ui) :split :vertical)))
+    (setf (clautolisp.ui.tui:window-stack window) (list activation))
+    (clautolisp.ui.ncurses::activate-window ui window)
+    (is (= (1+ n0) (length (clautolisp.ui.ncurses::ui-windows ui))))
+    ;; renders the frame name and its bindings from copied data
+    (let ((buffer (clautolisp.ui.ncurses::window-content ui nil window)))
+      (is (not (null (some (lambda (l) (search "FOO" (car l))) buffer))))
+      (is (not (null (some (lambda (l) (search "X = 42" (car l))) buffer)))))
+    ;; down moves the binding cursor within the frame
+    (clautolisp.ui.ncurses::stack-browser-window-key activation ui :down)
+    (is (= 1 (clautolisp.ui.ncurses::stack-browser-state-binding
+              (clautolisp.interactor:activation-state activation))))
+    ;; i inspects the selected binding's value (99) in a new inspector window
+    (clautolisp.ui.ncurses::stack-browser-window-key activation ui #\i)
+    (is (= (+ 2 n0) (length (clautolisp.ui.ncurses::ui-windows ui))))
+    (is (eq :inspector (clautolisp.ui.tui:window-role
+                        (clautolisp.ui.ncurses::active-window ui))))))
