@@ -338,6 +338,11 @@ identity / TEMPPREFIX stamping, option value parsers)."
                ;; aldb (Emacs) RPC shim — registers the :aldb / :emacs UIs so
                ;; --aldb-stdio drives the debugger over the process stdin/stdout.
                "clautolisp/autolisp-debug-ui-emacs"
+               ;; aldb TCP listener (--aldb-listen, debugger §10): the run loop
+               ;; opens a socket and drives the emacs-ui over the accepted
+               ;; connection. NB new quicklisp dep — bake into the Dockerfile +
+               ;; CI pre-warm/setup-lisp loaders (clautolisp-quicklisp-ci-deps).
+               "usocket"
                ;; dribble tee/echo streams (dribble.issue)
                "trivial-gray-streams"
                "uiop")

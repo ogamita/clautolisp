@@ -148,27 +148,42 @@ legacy aliases). They now fail as unknown options."
   (is (null (clautolisp.tools.clautolisp::effective-user-interface
              (%parse "-x" "(+ 1 2)")))))
 
-;;; --- aldb transport gating (§10): stdio served, TCP listener pending ---
+;;; --- aldb transport gating (§10): stdio + TCP listener ------------
 
-(defun %status (debug-ui user-interface aldb-listen)
-  (clautolisp.tools.clautolisp::aldb-transport-status
-   debug-ui user-interface aldb-listen))
+(defun %status (debug-ui aldb-listen)
+  (clautolisp.tools.clautolisp::aldb-transport-status debug-ui aldb-listen))
 
-(test aldb-stdio-transport-is-served
-  ;; --aldb-stdio, whether aldb came from the CLI or the persisted default
-  (is (eq :stdio (%status :aldb :aldb :stdio)))
-  (is (eq :stdio (%status :aldb nil   :stdio))))
+(test aldb-stdio-transport
+  ;; --aldb-stdio: RPC over the process stdin/stdout
+  (is (eq :stdio (%status :aldb :stdio))))
 
-(test aldb-listener-requested-on-cli-is-a-hard-error
-  ;; --debugger-ui aldb (or --aldb-listen) with no stdio → the pending listener
-  (is (eq :listener-explicit (%status :aldb :aldb "127.0.0.1:4301")))
-  (is (eq :listener-explicit (%status :aldb :aldb nil))))
-
-(test aldb-listener-as-persisted-default-falls-back
-  ;; aldb only as the persisted default (no CLI request, no stdio) → warn+tui
-  (is (eq :listener-default (%status :aldb nil "127.0.0.1:4301")))
-  (is (eq :listener-default (%status :aldb nil nil))))
+(test aldb-listener-transport
+  ;; --aldb-listen HOST:PORT, and plain aldb (no explicit transport), both
+  ;; run over the TCP listener
+  (is (eq :listener (%status :aldb "127.0.0.1:4301")))
+  (is (eq :listener (%status :aldb nil))))
 
 (test non-aldb-ui-is-not-gated
-  (is (eq :not-aldb (%status :tui nil nil)))
-  (is (eq :not-aldb (%status :ncurses :ncurses nil))))
+  (is (eq :not-aldb (%status :tui nil)))
+  (is (eq :not-aldb (%status :ncurses nil))))
+
+;;; --- aldb listener address parsing/resolution --------------------
+
+(test aldb-split-address-forms
+  (flet ((hp (a) (multiple-value-list
+                  (clautolisp.tools.clautolisp::aldb-split-address a))))
+    (is (equal '("127.0.0.1" 4301) (hp "4301")))       ; bare port
+    (is (equal '("localhost" 4301) (hp "localhost:4301")))
+    (is (equal '("::1" 4301) (hp "[::1]:4301")))))      ; bracketed IPv6
+
+(test aldb-split-address-rejects-non-numeric-port
+  (signals error (clautolisp.tools.clautolisp::aldb-split-address "host:daytime")))
+
+(test aldb-resolve-listener-address-explicit-and-default
+  ;; stdio / non-aldb → NIL; a "HOST:PORT" passes through; plain aldb → default
+  (is (null (clautolisp.tools.clautolisp::aldb-resolve-listener-address :aldb :stdio)))
+  (is (null (clautolisp.tools.clautolisp::aldb-resolve-listener-address :tui nil)))
+  (is (string= "h:9" (clautolisp.tools.clautolisp::aldb-resolve-listener-address :aldb "h:9")))
+  (let ((default (clautolisp.tools.clautolisp::aldb-resolve-listener-address :aldb nil)))
+    (is (stringp default))
+    (is (find #\: default))))

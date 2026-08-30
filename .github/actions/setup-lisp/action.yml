@@ -84,7 +84,7 @@ runs:
       run: |
         sbcl --non-interactive \
              --load ~/quicklisp/setup.lisp \
-             --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria") :silent t)'
+             --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket") :silent t)'
 
     - name: Pre-warm Quicklisp dependencies (CCL)
       if: inputs.ccl == 'true'
@@ -92,5 +92,5 @@ runs:
       run: |
         ccl --no-init --quiet \
             --eval '(load #P"~/quicklisp/setup.lisp")' \
-            --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria") :silent t)' \
+            --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket") :silent t)' \
             --eval '(ccl:quit)'

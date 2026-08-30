@@ -299,24 +299,37 @@ an explicit --debugger-ui says otherwise. NIL when no UI was requested."
                (clautolisp.autolisp-cli:cli-options-aldb-stdio-p options))
            :aldb)))
 
-(defun aldb-transport-status (debug-ui user-interface aldb-listen)
-  "How an aldb DEBUG-UI is transported to Emacs (debugger §10). USER-INTERFACE
-is the CLI --debugger-ui selection (else NIL = aldb is only the persisted
-default); ALDB-LISTEN is :STDIO for --aldb-stdio, a \"HOST:PORT\" string for
---aldb-listen, else NIL. Returns:
-  :not-aldb          — DEBUG-UI is not aldb;
-  :stdio             — --aldb-stdio: RPC over the process stdin/stdout (the one
-                       transport implemented today — Emacs launched clautolisp
-                       as an inferior process);
-  :listener-explicit — aldb requested on the CLI but only the (pending) TCP
-                       listener would serve it → hard error;
-  :listener-default  — aldb is merely the persisted default and needs the
-                       pending listener → warn + fall back to tui.
+(defun aldb-transport-status (debug-ui aldb-listen)
+  "How an aldb DEBUG-UI reaches Emacs (debugger §10). ALDB-LISTEN is :STDIO for
+--aldb-stdio, a \"HOST:PORT\" string for --aldb-listen, else NIL. Returns:
+  :not-aldb  — DEBUG-UI is not aldb;
+  :stdio     — --aldb-stdio: RPC over the process stdin/stdout (Emacs launched
+               clautolisp as an inferior process);
+  :listener  — the TCP listener: --aldb-listen, or plain aldb (CLI or persisted
+               default) which listens on the default address and prints the
+               connect prompt.
 Pure (no I/O) so the gating is unit-testable away from the CLI entry point."
-  (cond ((not (eq debug-ui :aldb))   :not-aldb)
-        ((eq aldb-listen :stdio)     :stdio)
-        ((eq user-interface :aldb)   :listener-explicit)
-        (t                           :listener-default)))
+  (cond ((not (eq debug-ui :aldb)) :not-aldb)
+        ((eq aldb-listen :stdio)   :stdio)
+        (t                         :listener)))
+
+(defun aldb-default-listen-address ()
+  "The default aldb listener address: the persisted default-aldb-listening-
+address / -port aldo settings, else 127.0.0.1:4301 (command reference §10)."
+  (format nil "~A:~A"
+          (or (ignore-errors
+                (clautolisp.debug.ui:get-aldo-setting :default-aldb-listening-address))
+              "127.0.0.1")
+          (or (ignore-errors
+                (clautolisp.debug.ui:get-aldo-setting :default-aldb-listening-port))
+              4301)))
+
+(defun aldb-resolve-listener-address (debug-ui aldb-listen)
+  "The HOST:PORT the aldb listener binds when DEBUG-UI is :aldb over the TCP
+listener (not stdio): the --aldb-listen \"HOST:PORT\" if given, else the default
+address. NIL when aldb is not over a listener."
+  (when (eq (aldb-transport-status debug-ui aldb-listen) :listener)
+    (if (stringp aldb-listen) aldb-listen (aldb-default-listen-address))))
 
 (defun resolve-default-debugger-ui ()
   "The persisted default-user-interface aldo setting (command reference §8;
@@ -1110,18 +1123,191 @@ back to the terminal (tui) UI rather than crashing on an unbound screen slot."
 this image; using the terminal (tui) UI instead.~%")
             nil)))))
 
+;;;; --- the aldb (Emacs) TCP listener (debugger §10) ------------------
+;;;;
+;;;; --aldb-listen [HOST:]PORT (and a persisted default-user-interface aldb) open
+;;;; a TCP listener. The FIRST time the program reaches the debugger, aldo prints
+;;;; the connect line on the terminal and WAITS — for an Emacs aldb connection at
+;;;; the listener, or for the user to type 1/2 to fall back to the tui / ncurses
+;;;; UI for the session. The prompt is LAZY (no stop ⇒ no prompt; the program
+;;;; runs normally until it breaks). The listener is a forwarding UI wrapper whose
+;;;; DELEGATE — the emacs-ui over the accepted socket, or a tui/ncurses UI — is
+;;;; chosen at that first stop (inside CALL-WITH-STOP-INTERACTOR, which wraps the
+;;;; whole stop) and drives every stop thereafter.
+
+(defvar *aldb-listener-address* nil
+  "When non-NIL (bound in RUN for the aldb TCP-listener transport), the
+\"HOST:PORT\" START-DEBUG-SESSION opens an ALDB-LISTENER-UI on instead of a bare
+stdin/stdout emacs-ui.")
+
+(defclass aldb-listener-ui ()
+  ((socket     :initarg :socket   :accessor aldb-socket)     ; usocket listener
+   (address    :initarg :address  :accessor aldb-address)    ; "HOST:PORT" shown
+   (context    :initarg :context  :accessor aldb-context)    ; for a tui/ncurses fallback
+   (connection :initform nil      :accessor aldb-connection) ; the accepted usocket, if any
+   (delegate   :initform nil      :accessor aldb-delegate))  ; the chosen real UI
+  (:documentation "A debugger UI that listens for an Emacs aldb connection and,
+at the first stop, becomes (delegates to) the emacs-ui over the accepted socket
+— or the tui / ncurses UI the user picked at the connect prompt (§10)."))
+
+(defun aldb-clean-host (host)
+  (let ((h (string-trim " " host)))
+    (cond ((string= h "") "127.0.0.1")
+          ((and (> (length h) 1) (char= (char h 0) #\[)
+                (char= (char h (1- (length h))) #\]))
+           (subseq h 1 (1- (length h))))          ; [::1] -> ::1
+          (t h))))
+
+(defun aldb-split-address (address)
+  "Split \"HOST:PORT\" into (values HOST PORT-integer). A bare number is a port
+on 127.0.0.1; [::1]:PORT keeps the bracketed IPv6 host. A non-numeric port (a
+service name) is rejected — this transport takes a numeric port."
+  (let ((colon (position #\: address :from-end t)))
+    (flet ((numeric (s) (and (plusp (length s)) (every #'digit-char-p s))))
+      (cond ((and colon (numeric (subseq address (1+ colon))))
+             (values (aldb-clean-host (subseq address 0 colon))
+                     (parse-integer address :start (1+ colon))))
+            ((numeric address) (values "127.0.0.1" (parse-integer address)))
+            (t (error "aldb: ~S is not HOST:PORT with a numeric port" address))))))
+
+(defun make-aldb-listener-ui (address context)
+  "Open a TCP listener at ADDRESS (\"HOST:PORT\"; PORT 0 = an OS-chosen free
+port) and return an ALDB-LISTENER-UI that accepts the Emacs aldb connection
+there at the first stop. CONTEXT builds the tui/ncurses fallback UI."
+  (multiple-value-bind (host port) (aldb-split-address address)
+    (let* ((socket (usocket:socket-listen host port
+                                          :reuse-address t
+                                          :element-type 'character))
+           (actual (usocket:get-local-port socket)))
+      (make-instance 'aldb-listener-ui
+                     :socket socket
+                     :address (format nil "~A:~A" host actual)
+                     :context context))))
+
+(defun aldb-stop-reason-line (hit)
+  "A one-line reason for the stop, shown above the connect prompt, or NIL."
+  (and hit
+       (member (clautolisp.debug:hit-stop-reason hit) '(:unhandled-error :caught-error))
+       (clautolisp.debug:hit-error-message hit)))
+
+(defun aldb-print-connect-prompt (ui hit)
+  (format t "~&~@[~A~%~]\
+Aldo debugger activated, please use emacs aldb to connect:~%\
+~4TM-x aldb-connect RET ~A RET~%\
+Alternatively, select a terminal or ncurses user interface,~%\
+~2T1) TUI~%~2T2) ncurses~%Debugger UI? "
+          (aldb-stop-reason-line hit) (aldb-address ui))
+  (finish-output))
+
+(defun aldb-poll-terminal-choice ()
+  "If the terminal has a line ready, read it: 1 → :tui, 2 → :ncurses, else NIL."
+  (when (listen *standard-input*)
+    (let ((line (read-line *standard-input* nil nil)))
+      (when line
+        (case (find-if-not (lambda (c) (member c '(#\Space #\Tab))) line)
+          (#\1 :tui) (#\2 :ncurses) (t nil))))))
+
+(defun aldb-fallback-ncurses-ui ()
+  (let ((screen (ncurses-terminal-screen)))
+    (if screen
+        (clautolisp.debug.ui:make-ui :ncurses :screen screen)
+        (clautolisp.debug.ui:make-ui :terminal))))
+
+(defun aldb-wait-for-delegate (ui)
+  "Block until an Emacs aldb connects at the listener (→ an emacs-ui over the
+socket) or the user types 1/2 at the terminal (→ a tui/ncurses UI)."
+  (loop
+    (when (usocket:wait-for-input (aldb-socket ui) :timeout 1 :ready-only t)
+      (let* ((conn (usocket:socket-accept (aldb-socket ui) :element-type 'character))
+             (stream (usocket:socket-stream conn)))
+        (setf (aldb-connection ui) conn)
+        (format t "~&aldb connected.~%") (finish-output)
+        (return (clautolisp.debug.ui:make-ui :aldb :input stream :output stream))))
+    (let ((choice (aldb-poll-terminal-choice)))
+      (when choice
+        (format t "~&using ~A.~%" (string-downcase (symbol-name choice))) (finish-output)
+        (return (ecase choice
+                  (:tui (clautolisp.debug.ui:make-ui :terminal))
+                  (:ncurses (aldb-fallback-ncurses-ui))))))))
+
+(defun aldb-ensure-delegate (ui session hit)
+  "On the first stop, print the connect prompt and block until a delegate is
+chosen (an Emacs connection or a 1/2 fallback), then attach it. Idempotent."
+  (unless (aldb-delegate ui)
+    (aldb-print-connect-prompt ui hit)
+    (setf (aldb-delegate ui) (aldb-wait-for-delegate ui))
+    (clautolisp.debug.ui:ui-attached (aldb-delegate ui) session)))
+
+(defun aldb-close-listener (ui)
+  (ignore-errors (when (aldb-connection ui) (usocket:socket-close (aldb-connection ui))))
+  (ignore-errors (usocket:socket-close (aldb-socket ui))))
+
+;;; The wrapper defers until the first stop: CALL-WITH-STOP-INTERACTOR wraps the
+;;; whole stop (announcement included), so activating there means the delegate is
+;;; chosen before any notification and its own stop-interactor wrap (e.g. the
+;;; dumb UI's ALDO) still frames the stop. Every other notification forwards to
+;;; the delegate once it exists; UI-ATTACHED keeps the protocol default (no-op)
+;;; so nothing happens at session start — only at the first real stop.
+
+(defmethod clautolisp.debug.ui:call-with-stop-interactor
+    ((ui aldb-listener-ui) session hit thunk)
+  (aldb-ensure-delegate ui session hit)
+  (clautolisp.debug.ui:call-with-stop-interactor (aldb-delegate ui) session hit thunk))
+
+(macrolet ((forward (name (&rest args))
+             `(defmethod ,name ((ui aldb-listener-ui) ,@args)
+                (let ((d (aldb-delegate ui)))
+                  (when d (,name d ,@args))))))
+  (forward clautolisp.debug.ui:ui-thread-hit (session hit))
+  (forward clautolisp.debug.ui:ui-thread-unhandled-error (session hit))
+  (forward clautolisp.debug.ui:ui-thread-caught-error (session hit))
+  (forward clautolisp.debug.ui:ui-thread-resumed (session))
+  (forward clautolisp.debug.ui:ui-thread-exited (session outcome))
+  (forward clautolisp.debug.ui:ui-show-source (source-position))
+  (forward clautolisp.debug.ui:ui-breakpoint-added (breakpoint))
+  (forward clautolisp.debug.ui:ui-breakpoint-removed (breakpoint))
+  (forward clautolisp.debug.ui:ui-open-navigation-request (session request)))
+
+(defmethod clautolisp.debug.ui:ui-await-command ((ui aldb-listener-ui) session hit)
+  (let ((d (aldb-delegate ui)))
+    (if d (clautolisp.debug.ui:ui-await-command d session hit) :continue)))
+
+(defmethod clautolisp.debug.ui:ui-show-stop-source-p ((ui aldb-listener-ui))
+  (let ((d (aldb-delegate ui)))
+    (if d (clautolisp.debug.ui:ui-show-stop-source-p d) t)))
+
+(defmethod clautolisp.debug.ui:ui-show-message
+    ((ui aldb-listener-ui) level format-string &rest args)
+  (let ((d (aldb-delegate ui)))
+    (when d (apply #'clautolisp.debug.ui:ui-show-message d level format-string args))))
+
+(defmethod clautolisp.debug.ui:ui-run-command
+    ((ui aldb-listener-ui) session command &optional hit)
+  (let ((d (aldb-delegate ui)))
+    (when d (clautolisp.debug.ui:ui-run-command d session command hit))))
+
+(defmethod clautolisp.debug.ui:ui-detached ((ui aldb-listener-ui))
+  (let ((d (aldb-delegate ui)))
+    (when d (clautolisp.debug.ui:ui-detached d)))
+  (aldb-close-listener ui))
+
 (defun start-debug-session (debug-ui context)
-  "Start the debugger session for DEBUG-UI. For :ncurses, load the cl-charms
-backend on demand and hand the UI a real terminal screen; when that backend is
-unavailable, fall back cleanly to the terminal (tui) UI rather than crashing on
-an unbound screen."
-  (let* ((screen (when (eq debug-ui :ncurses) (ncurses-terminal-screen)))
-         (designator (if (and (eq debug-ui :ncurses) (null screen))
-                         :terminal
-                         (debug-ui-designator debug-ui))))
-    (clautolisp.debug.ui:start-session
-     :ui designator :context context
-     :ui-initargs (when screen (list :screen screen)))))
+  "Start the debugger session for DEBUG-UI. For :aldb with a TCP listener
+(*ALDB-LISTENER-ADDRESS* bound), open the listener and hand the session a
+forwarding ALDB-LISTENER-UI. For :ncurses, load the cl-charms backend on demand
+and hand the UI a real terminal screen; when that backend is unavailable, fall
+back cleanly to the terminal (tui) UI rather than crashing on an unbound screen."
+  (if (and (eq debug-ui :aldb) *aldb-listener-address*)
+      (clautolisp.debug.ui:start-session
+       :ui (make-aldb-listener-ui *aldb-listener-address* context)
+       :context context)
+      (let* ((screen (when (eq debug-ui :ncurses) (ncurses-terminal-screen)))
+             (designator (if (and (eq debug-ui :ncurses) (null screen))
+                             :terminal
+                             (debug-ui-designator debug-ui))))
+        (clautolisp.debug.ui:start-session
+         :ui designator :context context
+         :ui-initargs (when screen (list :screen screen))))))
 
 ;;; --- SIGINT / --on-interrupt (debugger-public-interface-and-on-error
 ;;; Part B) -------------------------------------------------------------
@@ -1495,8 +1681,8 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                                                 options)))
                             effective-ui))
                ;; --aldb-listen / --aldb-stdio (Part C/D): recorded and
-               ;; mirrored to *CLAL-ALDB-LISTEN*. --aldb-stdio is served now
-               ;; (stdio transport); --aldb-listen's TCP listener is pending.
+               ;; mirrored to *CLAL-ALDB-LISTEN*. :stdio ⇒ RPC over the process
+               ;; stdin/stdout; a "HOST:PORT" string ⇒ the TCP listener.
                (aldb-listen
                  (cond ((clautolisp.autolisp-cli:cli-options-aldb-stdio-p options)
                         :stdio)
@@ -1505,32 +1691,19 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                         (format nil "~A:~A"
                                 (or (clautolisp.autolisp-cli:cli-options-aldb-address options)
                                     "127.0.0.1")
-                                (clautolisp.autolisp-cli:cli-options-aldb-port options))))))
-          ;; The aldb (Emacs) front-end speaks a line-oriented S-expr RPC. Over
-          ;; STDIO (--aldb-stdio, Emacs launched us as an inferior process) the
-          ;; emacs-ui just drives the process stdin/stdout — implemented, so let
-          ;; :aldb through. The TCP LISTENER (--aldb-listen / the persisted
-          ;; default's connect prompt, debugger §10) still needs a socket
-          ;; transport: fail clearly when it was asked for on the command line,
-          ;; and fall back to tui when aldb was only the persisted default.
-          (ecase (aldb-transport-status debug-ui user-interface aldb-listen)
-            (:not-aldb)                 ; not aldb — nothing to gate
-            (:stdio)                    ; stdio RPC — proceed with :aldb
-            (:listener-explicit
-             (format *error-output*
-                     "~&clautolisp: the aldb TCP listener is not yet implemented; ~
-                      use --aldb-stdio (Emacs launches clautolisp as an inferior ~
-                      process), or --debugger-ui tui|ncurses.~%")
-             (finish-output *error-output*)
-             (quit 2))
-            (:listener-default
-             (format *error-output*
-                     "~&clautolisp: the persisted default-user-interface aldb needs ~
-                      the TCP listener (not yet implemented); using tui. ~
-                      (--aldb-stdio works today.)~%")
-             (finish-output *error-output*)
-             (setf debug-ui :tui effective-ui :tui)))
-          (let ((*verbose-p* verbose-p)
+                                (clautolisp.autolisp-cli:cli-options-aldb-port options)))))
+               ;; The aldb TCP-listener address (debugger §10): non-NIL only when
+               ;; aldb runs over the listener (not stdio) — the --aldb-listen
+               ;; address, else the persisted default (127.0.0.1:4301). Bound to
+               ;; *ALDB-LISTENER-ADDRESS* below so START-DEBUG-SESSION opens it.
+               (aldb-listener-address
+                 (aldb-resolve-listener-address debug-ui aldb-listen)))
+          ;; The aldb (Emacs) front-end speaks a line-oriented S-expr RPC over
+          ;; STDIO (--aldb-stdio) or a TCP socket (--aldb-listen / plain aldb).
+          ;; Both are served now; the transport is chosen by ALDB-LISTEN and, for
+          ;; the listener, ALDB-LISTENER-ADDRESS (see START-DEBUG-SESSION).
+          (let ((*aldb-listener-address* aldb-listener-address)
+                (*verbose-p* verbose-p)
                 (*debug-p* debug-p)
                 ;; The event policies (debugger §10 / Part B): user code may
                 ;; rebind the CL variables; the AutoLISP mirrors of the
