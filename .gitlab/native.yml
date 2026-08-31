@@ -542,6 +542,9 @@ probe:suite:bricscad:macos:
     GIT_SUBMODULE_STRATEGY: none
     PROBE_NO_COMMIT: '1'
     PROBE_SUITES: 'rtos foreach-scope'
+    # One form per file, so a load that HANGS still names the form it
+    # hung on -- see split_wanted in probes/scripts/run-probes.sh.
+    PROBE_SPLIT_SUITES: 'foreach-scope'
   script:
     # alfe as well as clautolisp: the BricsCAD probes are DRIVEN BY ALFE
     # (detect-cad.sh), because launching BricsCAD directly segfaults on
@@ -562,6 +565,9 @@ probe:suite:bricscad:windows:
     GIT_SUBMODULE_STRATEGY: none
     PROBE_NO_COMMIT: '1'
     PROBE_SUITES: 'rtos foreach-scope'
+    # One form per file, so a load that HANGS still names the form it
+    # hung on -- see split_wanted in probes/scripts/run-probes.sh.
+    PROBE_SPLIT_SUITES: 'foreach-scope'
   script:
     - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end build-alfe-sbcl

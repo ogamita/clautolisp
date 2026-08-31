@@ -58,6 +58,57 @@ suite_wanted() {
   return 1
 }
 
+# PROBE_SPLIT_SUITES: load these suites ONE TOP-LEVEL FORM AT A TIME,
+# each form from its own file with its own progress marker. Same name
+# matching as PROBE_SUITES. Default: none -- whole files, as before.
+#
+# WHY. A suite that makes an engine HANG or FAULT while loading writes
+# no record of itself: the marker that would name it comes after the
+# load that never returns, and vl-catch-all-apply cannot catch a dead
+# process. Twice the answer was then guessed, and twice wrongly -- once
+# blaming a suite that had loaded fine, once a form that turned out
+# innocent. Split, the last marker in the file NAMES THE FORM the engine
+# would not take, because the marker before it was already written and
+# closed.
+#
+# It is a diagnostic, not the normal path: N markers per suite is noise
+# in a healthy run, and the fragments only mean anything next to the
+# results. Turn it on for the suite that went quiet.
+split_wanted() {
+  local src="$1" want name
+  [[ -z "${PROBE_SPLIT_SUITES:-}" ]] && return 1
+  name="${src%.lsp}"; name="${name#probe-}"
+  for want in ${PROBE_SPLIT_SUITES//,/ }; do
+    want="${want%.lsp}"; want="${want#probe-}"
+    [[ "$name" == "$want" ]] && return 0
+  done
+  return 1
+}
+
+# Split SRC into one file per top-level form under DESTDIR, printing the
+# fragment paths in order. A top-level form is a line starting in column
+# 0 with `(' plus everything up to the next such line, so the comments
+# BETWEEN two forms travel with the form above them -- inert either way,
+# and it keeps the rule to one line.
+split_into_forms() {
+  local src="$1" destdir="$2" prefix="$3"
+  mkdir -p "$destdir"
+  awk -v prefix="$destdir/$prefix" '
+    function flush(  f) {
+      if (cur == "") return
+      n++
+      f = sprintf("%s-%03d.lsp", prefix, n)
+      printf "%s", cur > f
+      close(f)
+      print f
+      cur = ""
+    }
+    /^\(/ { flush(); cur = pend $0 "\n"; pend = ""; next }
+            { if (cur == "") pend = pend $0 "\n"; else cur = cur $0 "\n" }
+    END     { flush() }
+  ' "$src"
+}
+
 [[ -f "$manifest" ]] || { echo "run-probes: missing $manifest" >&2; exit 2; }
 
 platform="ms-windows"
@@ -199,9 +250,21 @@ emit_step_marker() {
   while read -r src fn _rest; do
     [[ -z "$src" || "$src" == \#* ]] && continue
     suite_wanted "$src" || continue
-    printf '(setq cad-probe--loaded (vl-catch-all-apply (quote load) (list "%s")))\n' \
-           "$(lisp_escape "$(cad_path "$sources_dir/$src")")"
-    emit_step_marker "loaded $src" "cad-probe--loaded"
+    if split_wanted "$src"; then
+      # One form per file, each announcing itself: see split_wanted.
+      frag_n=0
+      while read -r frag; do
+        frag_n=$((frag_n + 1))
+        printf '(setq cad-probe--loaded (vl-catch-all-apply (quote load) (list "%s")))\n' \
+               "$(lisp_escape "$(cad_path "$frag")")"
+        emit_step_marker "loaded $src form $frag_n ($(basename "$frag"))" \
+                         "cad-probe--loaded"
+      done < <(split_into_forms "$sources_dir/$src" "$run_dir/fragments" "${src%.lsp}")
+    else
+      printf '(setq cad-probe--loaded (vl-catch-all-apply (quote load) (list "%s")))\n' \
+             "$(lisp_escape "$(cad_path "$sources_dir/$src")")"
+      emit_step_marker "loaded $src" "cad-probe--loaded"
+    fi
   done < "$manifest"
   # Is the recorder even THERE? A load that returned without defining
   # anything and a load that defined everything look identical from the
