@@ -73,12 +73,39 @@
   (foreach e nil nil)
   e)
 
-(defun cad-probe-foreach--return-value ()
-  ;; The documented return: the last body value, and nil for an empty
-  ;; LIST. The empty BODY case is probed separately, below, and not from
-  ;; here -- see why.
-  (list (foreach e (list 1 2 3) (* e 10))
-        (foreach e nil 99)))
+;;; THE RETURN VALUE, in three cases READ AT RUN TIME.
+;;;
+;;; These three sat in one function, written directly, and BricsCAD
+;;; would not LOAD the file because of it -- on both platforms, before
+;;; a single probe ran. Splitting the suite one form per file is what
+;;; finally NAMED the function (form 10 of 13); until then the file
+;;; simply went quiet after form 9 and the cause was guessed at twice,
+;;; wrongly both times.
+;;;
+;;; Which of the three BricsCAD objects to is exactly what these
+;;; separate them to find out: FOREACH in EXPRESSION POSITION (as an
+;;; argument to LIST), FOREACH over an EMPTY LIST, or neither. Held as
+;;; text and READ when the case runs, a refusal is recorded as that
+;;; one case's `error' -- which is the answer -- instead of taking the
+;;; suite down with it.
+
+(setq cad-probe-foreach--statement-source
+      "(foreach e (list 1 2 3) (* e 10))")
+
+(setq cad-probe-foreach--expression-source
+      "(list (foreach e (list 1 2 3) (* e 10)))")
+
+(setq cad-probe-foreach--empty-list-value-source
+      "(foreach e nil 99)")
+
+(defun cad-probe-foreach--return-statement ()
+  (eval (read cad-probe-foreach--statement-source)))
+
+(defun cad-probe-foreach--return-expression ()
+  (eval (read cad-probe-foreach--expression-source)))
+
+(defun cad-probe-foreach--return-empty-list ()
+  (eval (read cad-probe-foreach--empty-list-value-source)))
 
 ;;; SYNTAX A HOST MIGHT REJECT GOES IN A STRING, not in this file's forms.
 ;;;
@@ -127,9 +154,17 @@
    "(setq e 'before) (foreach e nil nil) e"
    (function cad-probe-foreach--empty-list))
   (cad-probe--foreach
-   "return value: last body value, and an empty list"
-   "(list (foreach e '(1 2 3) (* e 10)) (foreach e nil 99))"
-   (function cad-probe-foreach--return-value))
+   "return value: last body value (statement position, read at run time)"
+   "(foreach e '(1 2 3) (* e 10))"
+   (function cad-probe-foreach--return-statement))
+  (cad-probe--foreach
+   "return value: foreach in EXPRESSION position (read at run time)"
+   "(list (foreach e '(1 2 3) (* e 10)))"
+   (function cad-probe-foreach--return-expression))
+  (cad-probe--foreach
+   "return value: foreach over an EMPTY LIST (read at run time)"
+   "(foreach e nil 99)"
+   (function cad-probe-foreach--return-empty-list))
   (cad-probe--foreach
    "return value: a foreach with NO BODY (read at run time)"
    "(foreach e '(1 2 3))"
