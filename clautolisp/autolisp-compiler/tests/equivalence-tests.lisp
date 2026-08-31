@@ -353,6 +353,119 @@ answer differently even though they share a site."
     (is (eql 101 (autolisp-eval (%read-one "(apply f (list 1))") context))
         "K is a GLOBAL here, so both closures must see its current value")))
 
+(defun %com-context (&optional (items-hook :fake))
+  "A fresh context whose COM collection hook is ITEMS-HOOK.
+
+THE ORDER IS THE POINT, and it cost two red tests to see: %FRESH-CONTEXT
+calls INSTALL-CORE-BUILTINS, which SETFs *VLAX-COLLECTION-ITEMS-HOOK* to
+the real host bridge. Binding the hook with LET around a %FRESH-CONTEXT
+therefore does nothing -- the SETF lands on that very binding and the
+real hook wins. The hook has to be installed AFTER the context exists,
+which is what this does, and why every VLAX-FOR test below builds its
+context through here rather than through %FRESH-CONTEXT.
+
+The fake turns a LIST into its own members. VLAX-FOR needs a live
+ActiveX collection, which no test can conjure; the hook is the seam the
+runtime already has for exactly that reason. It makes VLAX-FOR
+TESTABLE. It does not make it PROBED -- a different thing, with its own
+ticket."
+  (let ((context (%fresh-context)))
+    (setf *vlax-collection-items-hook*
+          (case items-hook
+            (:fake (lambda (collection)
+                     (if (listp collection) collection (list collection))))
+            (:none nil)
+            (t items-hook)))
+    context))
+
+(defun %com-compiled (text &optional (hook :fake))
+  (let ((context (%com-context hook)))
+    (funcall (compile-autolisp-form (%read-one text)) context)))
+
+(defun %com-interpreted (text &optional (hook :fake))
+  (let ((context (%com-context hook)))
+    (autolisp-eval (%read-one text) context)))
+
+(defun %com-agree-p (text)
+  (%same-value-p (%com-interpreted text) (%com-compiled text)))
+
+(test vlax-for-is-open-coded-body-included
+  "The LAST form that took its body with it when it fell back, and the
+one where that hurt most in practice: Visual LISP automation is written
+as a VLAX-FOR over a collection with all the work inside, so a compiled
+function doing COM work ran every bit of it interpreted."
+  (is (null (transpiler-coverage (%read-one "(vlax-for x c (setq a x))"))))
+  (is (null (transpiler-coverage (%read-one "(vlax-for x c (foreach e x (setq a e)))"))))
+  ;; a non-symbol binding name is still the interpreter's to diagnose
+  (is (member "VLAX-FOR" (transpiler-coverage (%read-one "(vlax-for 7 c nil)"))
+              :test #'equal)))
+
+(test vlax-for-binds-its-variable-exactly-as-foreach-does
+  "VLAX-FOR assigned-if-already-bound until 2.0.26 -- the very code
+FOREACH carried until AutoCAD was probed and answered that it BINDS. So
+the two loops in this implementation disagreed about their own loop
+variable: a VLAX-FOR over a name already bound wrote THAT binding and
+left the last member in it.
+
+Both now call BIND-FOREACH-VARIABLE. What this pins is the AGREEMENT
+between the two loops, which is what the fix actually claims; vendor
+evidence for VLAX-FOR specifically does not exist and is
+issues/open/vlax-for-binding-rule-unprobed.issue."
+  ;; BOTH PATHS, EXPLICITLY, and that is not belt-and-braces: the first
+  ;; version of this test asserted the rule with the suite's own
+  ;; settings, which compile a body eagerly -- so it exercised only the
+  ;; TRANSPILED branch, which was already right, and stayed GREEN with
+  ;; the interpreter's old assign-if-bound code put back. A test that
+  ;; cannot go red is not a test. (2.0.22 hit exactly this: 31 suites
+  ;; passed before AND after the FOREACH fix.)
+  (dolist (compiled '(nil t))
+    (let* ((*autolisp-compilation-enabled* compiled)
+           (*autolisp-compilation-threshold* (if compiled 1 16))
+           (context (%com-context)))
+      ;; A `/'-LOCAL OF THE CALLER, not a global -- and the difference is
+      ;; the whole test. Assign-if-bound and bind AGREE on a global (no
+      ;; dynamic binding is found, so the old code bound too); they
+      ;; differ only when the name IS already bound further down the
+      ;; chain, which is the case a caller's local creates and the case
+      ;; the AutoCAD probe used. Written with a global, this test stayed
+      ;; green with the bug put back.
+      (autolisp-eval
+       (%read-one "(defun loopit (c) (vlax-for x c nil))") context)
+      (autolisp-eval
+       (%read-one "(defun caller ( / x) (setq x 'before) (loopit (list 1 2 3)) x)")
+       context)
+      (let ((answer (autolisp-eval (%read-one "(caller)") context)))
+        (is (string= "BEFORE" (autolisp-symbol-name answer))
+            "VLAX-FOR wrote the CALLER's X instead of binding its own ~
+             (compiled: ~S) -- got ~S"
+            compiled answer))))
+  ;; compiled agrees with interpreted, which is the contract
+  (is (%com-agree-p "(progn (setq x 'before) (vlax-for x (list 1 2) nil) x)"))
+  ;; the body's last value is the loop's value
+  (is (eql 20 (%com-compiled "(vlax-for e (list 1 2) (* e 10))")))
+  (is (%com-agree-p "(vlax-for e (list 1 2) (* e 10))"))
+  ;; and FOREACH over the same members answers the same, which is the
+  ;; agreement this fix is actually asserting
+  (is (%same-value-p
+       (%com-compiled "(progn (setq x 'before) (vlax-for x (list 1 2) nil) x)")
+       (%compiled "(progn (setq x 'before) (foreach x (list 1 2) nil) x)"))))
+
+(test vlax-for-without-com-support-signals-before-evaluating-the-collection
+  "With no COM hook installed, VLAX-FOR signals -- and signals BEFORE
+the collection form runs, so its side effects do not happen. A compiler
+that evaluated first and complained second would differ from the
+interpreter in precisely the way nothing notices until it matters."
+  (let ((context (%com-context :none))
+        (signalled nil))
+    (autolisp-eval (%read-one "(setq a 0)") context)
+    (handler-case
+        (funcall (compile-autolisp-form (%read-one "(vlax-for x (setq a 1) nil)"))
+                 context)
+      (autolisp-runtime-error () (setf signalled t)))
+    (is (eq t signalled) "VLAX-FOR did not signal with COM absent")
+    (is (eql 0 (lookup-variable (%read-one "a") context))
+        "the collection form ran before the COM-absent error")))
+
 (test a-call-resolves-its-function-before-evaluating-arguments
   "The interpreter looks the function up FIRST, so an undefined function
 is signalled before any argument's side effects happen. A compiler that

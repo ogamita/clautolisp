@@ -646,6 +646,48 @@ Never fails: an unhandled form becomes an interpreter call on itself."
           `(eval-lambda-form ',arguments ,context-var
                              (load-time-value (make-usubr-site) t)))
 
+         ((string= name "VLAX-FOR")
+          ;; (vlax-for NAME COLLECTION body...) over an ActiveX
+          ;; collection. THE LAST FORM THAT TOOK A BODY WITH IT when it
+          ;; fell back, and the one where that hurt most in practice:
+          ;; Visual LISP automation is written as a vlax-for over a
+          ;; collection with the real work inside, so a compiled
+          ;; function doing COM work was running all of it interpreted.
+          ;;
+          ;; The MEMBERS come from the interpreter's own path -- the
+          ;; collection is evaluated and handed to
+          ;; VLAX-COLLECTION-ITEMS, which consults the hook the builtins
+          ;; layer installs, because the runtime cannot reach the host
+          ;; COM protocol and the compiler certainly cannot. The
+          ;; unavailable-COM diagnostic stays there too.
+          ;;
+          ;; The binding is BIND-FOREACH-VARIABLE, the same function
+          ;; FOREACH calls -- one rule, one place. It is asserted by
+          ;; analogy rather than by a vendor probe; see
+          ;; issues/open/vlax-for-binding-rule-unprobed.issue.
+          (if (and (>= (length arguments) 2)
+                   (typep (first arguments) 'autolisp-symbol))
+              `(let ((%vlax-result nil))
+                 (unwind-protect
+                      (progn
+                        (push-dynamic-frame ,context-var)
+                        (dolist (%vlax-element
+                                 ;; the support check FIRST, then the
+                                 ;; collection form -- the interpreter's
+                                 ;; order, and PROGN is what keeps it
+                                 (progn
+                                   (check-vlax-collection-support)
+                                   (vlax-collection-items
+                                    ,(transpile-form (second arguments) context-var)))
+                                 %vlax-result)
+                          (bind-foreach-variable ',(first arguments)
+                                                 %vlax-element
+                                                 ,context-var)
+                          (setf %vlax-result
+                                ,(transpile-body (cddr arguments) context-var))))
+                   (pop-dynamic-frame ,context-var)))
+              (%fallback form context-var)))
+
          ((string= name "COND")
           ;; A clause with only a test yields the test's value; otherwise
           ;; the clause body's last value. No clause taken yields nil.

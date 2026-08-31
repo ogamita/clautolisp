@@ -95,6 +95,8 @@
    #:bind-foreach-variable
    #:eval-lambda-form
    #:eval-let-form
+   #:check-vlax-collection-support
+   #:vlax-collection-items
    #:usubr-site
    #:make-usubr-site
    #:autolisp-usubr-site

@@ -32,6 +32,8 @@
                 #:check-foreach-sequence
                 #:eval-lambda-form
                 #:eval-let-form
+                #:check-vlax-collection-support
+                #:vlax-collection-items
                 #:make-usubr-site
                 #:parse-let-binding
                 #:emit-bricscad-undocumented-warning
