@@ -97,6 +97,7 @@
    #:eval-let-form
    #:check-vlax-collection-support
    #:vlax-collection-items
+   #:set-autolisp-place
    #:usubr-site
    #:make-usubr-site
    #:autolisp-usubr-site

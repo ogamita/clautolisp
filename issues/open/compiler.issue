@@ -1743,7 +1743,40 @@ suite has meant nothing (2.0.22's foreach fix passed 31 suites before
 AND after), and the pattern is always the same -- the test exercised a
 case where the two behaviours coincide.
 
-STILL OPEN after slice 24
+Slice 25 (2.0.27) -- SET, and taking the evaluation order from the host
+-----------------------------------------------------------------------
+
+The last FREQUENT fallback. SET is SETQ with the PLACE FORM EVALUATED,
+which is the whole difference and the reason it cannot be folded into a
+SETQ however constant the place looks: the name being assigned is not
+known until run time.
+
+Worth a small note on what was NOT restated. The transpiler emits the
+place and the value as ARGUMENTS to SET-AUTOLISP-PLACE, so Common
+Lisp's left-to-right argument evaluation gives the interpreter's LET*
+order for free -- place first, then value -- and the symbol check
+happens after both, inside that function, exactly where the interpreter
+does it. Taking the order from the host rather than writing it out is
+the same move as asking the runtime what a special operator is: fewer
+places to be wrong.
+
+That order has its own test, and it is a REAL gate rather than a
+restatement: K ends at 11 when the place runs first and at 1 when the
+value does, so the two orders differ in the ANSWER and not merely in
+the path. Verified by emitting the value first on purpose -- the test
+goes red, and the coverage test goes red with the branch disabled.
+
+WHAT REMAINS FALLING BACK, and the list is now stable: DEFUN, DEFUN-Q,
+TRACE, UNTRACE, COMMAND, COMMAND-S. None takes a body, so none of them
+un-compiles work the way FOREACH, LET and VLAX-FOR did; each costs a
+dispatch and nothing more. The COMMAND family is dominated by the host,
+DEFUN inside a body is rare, and TRACE/UNTRACE are debugging verbs
+whose cost is not in the dispatch. THE TRANSPILER-COVERAGE THREAD THAT
+SLICE 20 OPENED IS THEREFORE FINISHED unless one of those turns out to
+matter; what is left in this file is the allocation and configuration
+work, not coverage.
+
+STILL OPEN after slice 25
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -1754,16 +1787,13 @@ STILL OPEN after slice 24
     POLL-POINT calls, the enter/exit bookkeeping and the UNWIND-PROTECT --
     none of which is removable without giving up something the debugger
     does.
-  - MORE TRANSPILER COVERAGE, the live thread since slice 20. LAMBDA and
-    FUNCTION were taken in slice 21, LET in slice 22, VLAX-FOR in slice
-    24. NO FORM THAT TAKES A BODY FALLS BACK ANY MORE, which was the
-    property worth chasing: a fallback hands over the whole subform, so
-    those were the ones that silently un-compiled the work inside them.
-    Still falling back: SET, DEFUN, DEFUN-Q, TRACE, UNTRACE, COMMAND,
-    COMMAND-S -- none of which takes a body. SET is the next on
-    frequency and is a dispatch's worth of gain; the COMMAND family is
-    dominated by the host; DEFUN inside a body is rare; TRACE and
-    UNTRACE are debugging verbs whose cost is not in the dispatch.
+  - TRANSPILER COVERAGE is CLOSED as a thread (slices 20-25). NO FORM
+    THAT TAKES A BODY FALLS BACK ANY MORE -- that was the property
+    worth chasing, since a fallback hands over the whole subform and
+    so silently un-compiles the work inside it. Still falling back, and
+    deliberately: DEFUN, DEFUN-Q, TRACE, UNTRACE, COMMAND, COMMAND-S.
+    None takes a body; each costs a dispatch and nothing more. Reopen
+    only with a measurement showing one of them matters.
   - the compiler will still run the host compiler as often as it is
     asked; slice 23 removed the shape that asked 60000 times, but a
     counter or a warning past some absurd number of compilations in a

@@ -165,10 +165,10 @@ grow: it is correct before it is complete."
   ;; COMMAND is the example now: FOREACH was, until the transpiler learned
   ;; to open-code it (2.0.21), which is the point -- the set of unhandled
   ;; operators shrinks and this test follows it rather than pinning it.
-  (is (%same-value-p (%interpreted "(set 'x 1)")
-                     (%compiled "(set 'x 1)")))
+  (is (%same-value-p (%interpreted "(defun g (x) x)")
+                     (%compiled "(defun g (x) x)")))
   ;; and it reports itself as a fallback rather than pretending coverage
-  (is (member "SET" (transpiler-coverage (%read-one "(set 'x 1)"))
+  (is (member "DEFUN" (transpiler-coverage (%read-one "(defun g (x) x)"))
               :test #'equal)))
 
 (test coverage-is-reported-not-assumed
@@ -184,7 +184,7 @@ measurement. A form built only from handled operators reports nothing."
   (is (null (transpiler-coverage (%read-one "(+ (car x) (cdr y))"))))
   ;; a special operator not yet open-coded still reports itself, and only
   ;; it: the arguments around it are compiled
-  (is (equal '("SET") (transpiler-coverage (%read-one "(+ 1 (set 'x 2))"))))
+  (is (equal '("DEFUN") (transpiler-coverage (%read-one "(+ 1 (defun g (x) x))"))))
   ;; ... and the loops the transpiler DOES open-code report nothing, body
   ;; included. A fallback hands over the whole subform, so a FOREACH that
   ;; fell back would take its body with it -- which is what made these two
@@ -206,7 +206,7 @@ rather than behind a list kept here."
   ;; Listed by name so that adding an operator to the runtime without
   ;; teaching the compiler about it shows up here as a gap rather than as
   ;; evaluated operands.
-  (dolist (case '(("(set 'a 1)"        . "SET")
+  (dolist (case '(("(trace foo)"       . "TRACE")
                   ("(defun g (x) x)"   . "DEFUN")
                   ("(defun-q h (x) x)" . "DEFUN-Q")))
     (destructuring-bind (text . name) case
@@ -465,6 +465,46 @@ interpreter in precisely the way nothing notices until it matters."
     (is (eq t signalled) "VLAX-FOR did not signal with COM absent")
     (is (eql 0 (lookup-variable (%read-one "a") context))
         "the collection form ran before the COM-absent error")))
+
+(test set-evaluates-its-place-and-is-not-a-setq
+  "SET is SETQ with the PLACE FORM EVALUATED, and that is the whole
+difference: the name being assigned is not known until run time, so it
+cannot be folded to a SETQ however constant the place looks."
+  (is (null (transpiler-coverage (%read-one "(set 'a 1)"))))
+  (is (null (transpiler-coverage (%read-one "(set (car l) (+ 1 2))"))))
+  ;; the place is EVALUATED -- assigning through a name held in another
+  ;; variable is the case that separates SET from SETQ, and it is the
+  ;; reason SET exists at all
+  (is (%agree-p "(progn (setq n 'target) (set n 42) target)"))
+  (is (eql 42 (%compiled "(progn (setq n 'target) (set n 42) target)")))
+  ;; SET yields the VALUE, not the place
+  (is (eql 7 (%compiled "(set 'a 7)")))
+  (is (%agree-p "(set 'a 7)"))
+  ;; a place that does not evaluate to a symbol is the interpreter's
+  ;; error, in the interpreter's words
+  (is (equal (%signals-code "(set 1 2)")
+             (%signals-code "(set 1 2)" :compiled t)))
+  (is (equal (%signals-code "(set 'a)")
+             (%signals-code "(set 'a)" :compiled t))))
+
+(test set-evaluates-its-place-before-its-value
+  "PLACE first, then VALUE -- the interpreter's LET*. The transpiler
+emits the two as ARGUMENTS and takes the order from Common Lisp's
+left-to-right argument evaluation rather than restating it, so this
+test is what says the host's order and the interpreter's order are the
+same order.
+
+K ends at 11 when the place runs first (1, then +10) and at 1 when the
+value runs first (10, then overwritten by 1). Two behaviours that
+differ in the answer, not merely in the path -- which is the kind of
+case a green suite cannot fake."
+  (let ((text "(progn (setq k 0)
+                      (set (progn (setq k 1) 'z)
+                           (progn (setq k (+ k 10)) 5))
+                      k)"))
+    (is (eql 11 (%compiled text)))
+    (is (eql 11 (%interpreted text)))
+    (is (%agree-p text))))
 
 (test a-call-resolves-its-function-before-evaluating-arguments
   "The interpreter looks the function up FIRST, so an undefined function
