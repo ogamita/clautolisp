@@ -366,7 +366,35 @@ clautolisp-secureload-trust-model spec.")
   ;; before, rather than signalling once at definition time — computing
   ;; it eagerly in the constructor would move the error from the call to
   ;; the DEFUN, which is a behaviour change and not this slot's business.
-  (lambda-list-split nil :type list))
+  (lambda-list-split nil :type list)
+  ;; The LAMBDA SITE this closure came from, or NIL for a DEFUN and for
+  ;; any closure the interpreter built (lambda-in-a-loop-never-compiles.issue).
+  ;;
+  ;; A LAMBDA form evaluated in a loop mints a NEW usubr per iteration,
+  ;; so a compilation decision taken per OBJECT is retaken from scratch
+  ;; every time on objects that are all THE SAME CODE. At the default
+  ;; threshold that means the body is never compiled however hot the
+  ;; loop is; at threshold 1 -- which the test suite sets -- it means
+  ;; the host compiler runs once per iteration, measured at 440x slower
+  ;; than interpreting the same loop.
+  ;;
+  ;; The site is one object per LAMBDA form in the compiled code, so all
+  ;; the closures from one site share a call count and, once it is
+  ;; woven, a compiled body. It holds no environment and no values: two
+  ;; closures from one site may legitimately capture different
+  ;; environments, and only the BODY -- which is what gets compiled --
+  ;; is common to them.
+  (site nil))
+
+(defstruct usubr-site
+  "What all the closures built from ONE lambda form in the source share.
+
+Not the closure and not the environment: only the decision about
+compiling the BODY, which is the one thing they have in common. See the
+SITE slot of AUTOLISP-USUBR for why the decision cannot live on the
+closure."
+  (call-count 0 :type fixnum)
+  (compiled-body nil))
 
 (defstruct autolisp-catch-all-error
   (message "" :type string)

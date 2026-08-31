@@ -49,6 +49,9 @@
 (deftype autolisp-usubr ()
   'clautolisp.autolisp-runtime.internal::autolisp-usubr)
 
+(deftype usubr-site ()
+  'clautolisp.autolisp-runtime.internal::usubr-site)
+
 (deftype autolisp-catch-all-error ()
   'clautolisp.autolisp-runtime.internal::autolisp-catch-all-error)
 
@@ -1567,12 +1570,36 @@ the call site never has to know what it is holding before it asks."
 (defun autolisp-usubr-name (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-name object))
 
-(defun make-autolisp-usubr (name lambda-list body environment)
+(defun make-autolisp-usubr (name lambda-list body environment &optional site)
   (clautolisp.autolisp-runtime.internal::make-autolisp-usubr
    :name name
    :lambda-list lambda-list
    :body body
-   :environment environment))
+   :environment environment
+   :site site))
+
+(defun autolisp-usubr-site (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-site object))
+
+(defun make-usubr-site ()
+  "A fresh sharing point for the closures one LAMBDA form will build.
+
+Called once per compiled LAMBDA site, from a LOAD-TIME-VALUE the
+transpiler emits, so the identity is the CODE rather than any one
+closure -- which is the whole point (see the SITE slot's comment)."
+  (clautolisp.autolisp-runtime.internal::make-usubr-site))
+
+(defun usubr-site-call-count (site)
+  (clautolisp.autolisp-runtime.internal::usubr-site-call-count site))
+
+(defun (setf usubr-site-call-count) (value site)
+  (setf (clautolisp.autolisp-runtime.internal::usubr-site-call-count site) value))
+
+(defun usubr-site-compiled-body (site)
+  (clautolisp.autolisp-runtime.internal::usubr-site-compiled-body site))
+
+(defun (setf usubr-site-compiled-body) (value site)
+  (setf (clautolisp.autolisp-runtime.internal::usubr-site-compiled-body site) value))
 
 (defun autolisp-usubr-lambda-list (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-lambda-list object))
@@ -1967,13 +1994,27 @@ cannot be compiled must not run the compiler again on every call."
       ((functionp compiled) compiled)
       ((eq :failed compiled) nil)
       ((not (and (autolisp-compile-plain-fork-p) *compile-usubr-hook*)) nil)
-      ((< (incf (autolisp-usubr-call-count function))
+      ;; COUNT ON THE SITE WHEN THERE IS ONE. A lambda in a loop mints a
+      ;; new closure per iteration, so counting on the closure asks "is
+      ;; THIS object hot?" -- always no -- where the question is "is this
+      ;; CODE hot?". See lambda-in-a-loop-never-compiles.issue.
+      ((< (if (autolisp-usubr-site function)
+              (incf (usubr-site-call-count (autolisp-usubr-site function)))
+              (incf (autolisp-usubr-call-count function)))
           *autolisp-compilation-threshold*)
        nil)
       (t
        (handler-case (funcall *compile-usubr-hook* function)
          (error () (setf (autolisp-usubr-compiled-body function) :failed)))
        (let ((result (autolisp-usubr-compiled-body function)))
+         ;; Publish to the site so the NEXT closure from this lambda form
+         ;; starts compiled instead of recompiling the same body. :FAILED
+         ;; is deliberately not published: it is stored on the closure,
+         ;; and a site that failed once will fail again and be asked
+         ;; again -- rare enough to leave alone, and cheaper than
+         ;; teaching the site a third state.
+         (when (and (functionp result) (autolisp-usubr-site function))
+           (setf (usubr-site-compiled-body (autolisp-usubr-site function)) result))
          (and (functionp result) result))))))
 
 (defparameter +lap-file-type+ "lap"
@@ -3742,17 +3783,37 @@ name; a LAMBDA has none and passes NIL."
                                               function-name)
           (return))))))
 
-(defun eval-lambda-form (arguments context)
+(defun eval-lambda-form (arguments context &optional site)
+  "Build the closure a LAMBDA form denotes.
+
+SITE, when given, is the sharing point for every closure this same
+LAMBDA form builds -- the transpiler passes one per call site. A
+closure whose site already has a compiled body starts life with it, so
+a lambda in a loop compiles ONCE rather than once per iteration or,
+at the default threshold, never at all.
+
+NIL SITE is the interpreter's case and keeps the old behaviour exactly:
+the decision stays on the closure."
   (unless (>= (length arguments) 2)
     (signal-autolisp-runtime-error
      :wrong-number-of-arguments
      "LAMBDA expects a lambda list and at least one body form, got ~D arguments."
      (length arguments)))
   (maybe-warn-about-rest-separator (first arguments) "LAMBDA")
-  (make-autolisp-usubr "LAMBDA"
-                       (first arguments)
-                       (rest arguments)
-                       context))
+  (let ((function (make-autolisp-usubr "LAMBDA"
+                                       (first arguments)
+                                       (rest arguments)
+                                       context
+                                       site)))
+    ;; Inherit what the site already knows. Only the PLAIN compiled body
+    ;; is shared: an instrumented body carries form-ids tied to one
+    ;; function's debug metadata, so sharing it would make the debugger
+    ;; step through the wrong record.
+    (when site
+      (let ((compiled (usubr-site-compiled-body site)))
+        (when compiled
+          (setf (autolisp-usubr-compiled-body function) compiled))))
+    function))
 
 (defun compatibility-definition-from-parts (lambda-list body)
   (cons lambda-list body))
