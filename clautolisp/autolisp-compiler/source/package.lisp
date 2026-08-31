@@ -31,6 +31,10 @@
                 #:check-repeat-count
                 #:check-foreach-sequence
                 #:eval-lambda-form
+                #:eval-let-form
+                #:parse-let-binding
+                #:emit-bricscad-undocumented-warning
+                #:bind-dynamic-variable
                 #:eval-function-form
                 #:lambda-form-p
                 #:bind-foreach-variable

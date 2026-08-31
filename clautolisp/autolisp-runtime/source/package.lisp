@@ -94,6 +94,9 @@
    #:check-foreach-sequence
    #:bind-foreach-variable
    #:eval-lambda-form
+   #:eval-let-form
+   #:parse-let-binding
+   #:emit-bricscad-undocumented-warning
    #:eval-function-form
    #:lambda-form-p
    #:autolisp-usubr

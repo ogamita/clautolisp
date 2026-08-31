@@ -348,6 +348,30 @@ block, so a nested open-coded call binds and returns from its own."
          (call-autolisp-function-in-context
           ,function-var ,context-var ,@variables)))))
 
+(defun %parse-let-bindings-or-nil (binding-list arguments)
+  "Parse BINDING-LIST into a list of (SYMBOL INIT-FORM), returning
+(values BINDINGS T) when every binding parses and the LET is otherwise
+well formed, and (values NIL NIL) when it does not.
+
+The rules are the INTERPRETER'S: PARSE-LET-BINDING is called, inside a
+handler, rather than having its accepted shapes -- a bare symbol, a
+one- or two-element list -- copied into this file where they could
+drift. A NIL second value means `let the interpreter say what is wrong
+with this', which it will do in its own words at run time."
+  (if (not (and arguments
+                (listp binding-list)
+                ;; proper, not dotted: LAST of (a . b) is (a . b) itself
+                (null (cdr (last binding-list)))))
+      (values nil nil)
+      (handler-case
+          (values (mapcar (lambda (binding)
+                            (multiple-value-bind (symbol init)
+                                (parse-let-binding binding)
+                              (list symbol init)))
+                          binding-list)
+                  t)
+        (error () (values nil nil)))))
+
 (defun transpile-form (form context-var)
   "Translate the AutoLISP FORM into a Common Lisp form evaluating it in
 the evaluation context held by the variable CONTEXT-VAR.
@@ -507,6 +531,57 @@ Never fails: an unhandled form becomes an interpreter call on itself."
                                 ,(transpile-body (cddr arguments) context-var))))
                    (pop-dynamic-frame ,context-var)))
               (%fallback form context-var)))
+
+         ((string= name "LET")
+          ;; BricsCAD V26's undocumented CL-style LET, vendor-confirmed.
+          ;; Worth open-coding for the same reason FOREACH was, and it is
+          ;; not the speed: a fallback hands the interpreter the WHOLE
+          ;; SUBFORM, so a LET falling back took ITS ENTIRE BODY with it.
+          ;; A compiled function whose work sat inside a LET was running
+          ;; that work interpreted.
+          ;;
+          ;; PARALLEL BINDING, which is the rule that makes the shape:
+          ;; every init-form is evaluated in the ENCLOSING scope BEFORE
+          ;; any of the names is bound -- (setq x 10) (let ((x 1) (y x))
+          ;; (list x y)) gives (1 10), not (1 1). Hence the values are
+          ;; collected into a list first and the frame is pushed only
+          ;; afterwards; binding as we went would quietly make it LET*,
+          ;; which BricsCAD does NOT have.
+          ;;
+          ;; The dialect WARNING is emitted at run time, not here. Which
+          ;; dialect is in force can change during a run (*AUTOLISP-DIALECT*
+          ;; is a variable), so a warning decided at transpile time would
+          ;; be the wrong warning for a later call -- and would differ
+          ;; between the compiled and interpreted paths, which is the one
+          ;; thing this compiler may not do.
+          ;;
+          ;; Malformed binding lists go to the interpreter untouched:
+          ;; PARSE-LET-BINDING is ASKED whether each binding parses, in a
+          ;; handler, rather than having its rules restated here.
+          (let ((binding-list (first arguments)))
+            (multiple-value-bind (bindings well-formed)
+                (%parse-let-bindings-or-nil binding-list arguments)
+              (if (not well-formed)
+                  (%fallback form context-var)
+                  `(progn
+                     ;; after the shape checks, before any init runs --
+                     ;; the interpreter's order, kept
+                     (emit-bricscad-undocumented-warning "LET" ',binding-list)
+                     (let ((%let-values
+                             (list ,@(mapcar (lambda (b)
+                                               (transpile-form (second b) context-var))
+                                             bindings))))
+                       (unwind-protect
+                            (progn
+                              (push-dynamic-frame ,context-var)
+                              ,@(loop for b in bindings
+                                      for i from 0
+                                      collect `(bind-dynamic-variable
+                                                ',(first b)
+                                                (nth ,i %let-values)
+                                                ,context-var))
+                              ,(transpile-body (rest arguments) context-var))
+                         (pop-dynamic-frame ,context-var))))))))
 
          ((string= name "FUNCTION")
           ;; FUNCTION returns its argument UNEVALUATED -- it is QUOTE

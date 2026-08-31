@@ -165,10 +165,10 @@ grow: it is correct before it is complete."
   ;; COMMAND is the example now: FOREACH was, until the transpiler learned
   ;; to open-code it (2.0.21), which is the point -- the set of unhandled
   ;; operators shrinks and this test follows it rather than pinning it.
-  (is (%same-value-p (%interpreted "(let ((x 1)) x)")
-                     (%compiled "(let ((x 1)) x)")))
+  (is (%same-value-p (%interpreted "(set 'x 1)")
+                     (%compiled "(set 'x 1)")))
   ;; and it reports itself as a fallback rather than pretending coverage
-  (is (member "LET" (transpiler-coverage (%read-one "(let ((x 1)) x)"))
+  (is (member "SET" (transpiler-coverage (%read-one "(set 'x 1)"))
               :test #'equal)))
 
 (test coverage-is-reported-not-assumed
@@ -184,7 +184,7 @@ measurement. A form built only from handled operators reports nothing."
   (is (null (transpiler-coverage (%read-one "(+ (car x) (cdr y))"))))
   ;; a special operator not yet open-coded still reports itself, and only
   ;; it: the arguments around it are compiled
-  (is (equal '("LET") (transpiler-coverage (%read-one "(+ 1 (let ((x 2)) x))"))))
+  (is (equal '("SET") (transpiler-coverage (%read-one "(+ 1 (set 'x 2))"))))
   ;; ... and the loops the transpiler DOES open-code report nothing, body
   ;; included. A fallback hands over the whole subform, so a FOREACH that
   ;; fell back would take its body with it -- which is what made these two
@@ -207,7 +207,6 @@ rather than behind a list kept here."
   ;; teaching the compiler about it shows up here as a gap rather than as
   ;; evaluated operands.
   (dolist (case '(("(set 'a 1)"        . "SET")
-                  ("(let ((x 1)) x)"   . "LET")
                   ("(defun g (x) x)"   . "DEFUN")
                   ("(defun-q h (x) x)" . "DEFUN-Q")))
     (destructuring-bind (text . name) case
@@ -259,6 +258,50 @@ hot lambda body still reaches the compiler by the usual threshold."
   (is (typep (%compiled "(lambda (x) x)") 'autolisp-usubr))
   ;; arity errors stay the interpreter's
   (is (equal (%signals-code "(lambda)") (%signals-code "(lambda)" :compiled t))))
+
+(test let-is-open-coded-body-included
+  "LET fell back until 2.0.24, and the cost was not the binding: a
+fallback hands the interpreter the WHOLE SUBFORM, so a LET took ITS
+ENTIRE BODY with it and a compiled function whose work sat inside a LET
+ran that work interpreted. Same shape of hole FOREACH was."
+  (is (null (transpiler-coverage (%read-one "(let ((x 1)) x)"))))
+  (is (null (transpiler-coverage (%read-one "(let ((x 1) (y 2)) (+ x y))"))))
+  ;; the BODY is compiled too -- a call inside it reports nothing
+  (is (null (transpiler-coverage (%read-one "(let ((x 1)) (foreach e l (setq a e)))"))))
+  ;; a malformed binding list is still the interpreter's to diagnose
+  (is (member "LET" (transpiler-coverage (%read-one "(let 7 1)")) :test #'equal)))
+
+(test let-binds-in-parallel-not-sequentially
+  "Every init-form is evaluated in the ENCLOSING scope before any name is
+bound, which is what BricsCAD V26 was measured doing (2026-08-07) and
+what separates LET from a LET* that BricsCAD does not have. Binding as
+the transpiler walked the list would have made it LET* silently -- the
+values would differ only when an init mentions a name the same LET
+binds, which is exactly the case nobody writes a test for."
+  (is (%agree-p "(progn (setq x 10) (let ((x 1) (y x)) (list x y)))"))
+  ;; stated as a VALUE as well: two engines agreeing on (1 1) would pass
+  ;; an agreement-only test while both were wrong.
+  (let ((v (%compiled "(progn (setq x 10) (let ((x 1) (y x)) (list x y)))")))
+    (is (eql 1 (first v)))
+    (is (eql 10 (second v))))
+  ;; the binding is torn down afterwards, on the normal path
+  (is (%agree-p "(progn (setq x 10) (let ((x 1)) x) x)"))
+  (is (eql 10 (%compiled "(progn (setq x 10) (let ((x 1)) x) x)"))))
+
+(test let-tears-its-frame-down-on-a-non-local-exit
+  "The frame is popped by UNWIND-PROTECT, so an error inside the body
+must not leave the LET's binding standing. Interpreted and compiled are
+asserted to agree on the value AFTER the escape, which is where a
+leaked frame would show."
+  (let ((context (%fresh-context)))
+    (autolisp-eval (%read-one "(setq x 10)") context)
+    (handler-case
+        (funcall (compile-autolisp-form
+                  (%read-one "(let ((x 1)) (nosuchfunction))"))
+                 context)
+      (autolisp-runtime-error () nil))
+    (is (eql 10 (lookup-variable (%read-one "x") context))
+        "the LET frame outlived the error that escaped its body")))
 
 (test a-call-resolves-its-function-before-evaluating-arguments
   "The interpreter looks the function up FIRST, so an undefined function
