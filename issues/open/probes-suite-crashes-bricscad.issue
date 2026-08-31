@@ -60,7 +60,42 @@ and both mean a run can SUCCEED at the shell level while measuring
 nothing. The results themselves say which product answered; nothing else
 does.
 
-## The experiment (2026-08-30): the new suite is EXONERATED
+## CORRECTION (2026-08-31): the new suite was NOT exonerated. It was the cause.
+
+The section below concluded, from a narrowed run that recorded nothing,
+that probe-foreach-scope.lsp was innocent. That conclusion was WRONG, and
+it was wrong because it read a SILENCE as evidence: the run produced only
+`wrapper-start', so nothing said which file had died -- and I took
+"rtos recorded nothing either" to mean rtos had been reached, when in
+fact nothing had been reported at all.
+
+Instrumenting every load settled it. On BricsCAD, Windows V25:
+
+    ((KIND . "wrapper-start"))
+    ((KIND . "load-context") (SECURELOAD . "0"))
+    ((KIND . "load") (FILE . "probe-core.lsp") (VALUE . "nil"))
+    ((KIND . "step") (AT . "loaded probe-rtos.lsp")
+                     (VALUE . "CAD-PROBE-RUN-RTOS-PROBES"))
+
+probe-rtos loads and DEFINES its function. The next marker, for
+probe-foreach-scope.lsp, never appears. BricsCAD dies loading MY file.
+
+THE FORM: `(foreach e (list 1 2 3))' -- a FOREACH WITH NO BODY, inside
+CAD-PROBE-FOREACH--RETURN-VALUE. AutoCAD accepts it; clautolisp accepts
+it; BricsCAD will not load a file containing it, and takes the other five
+cases with it.
+
+THE FIX, and the rule worth keeping: SYNTAX A HOST MIGHT REJECT GOES IN A
+STRING, read at run time. A probe asks whether an engine accepts
+something; writing the questionable form directly means the engine
+answers by refusing to read the file, which is not an answer but a
+silence. Held as text and READ when the case runs, a refusal becomes a
+recorded `error' status for that one case and the suite continues.
+
+SECURELOAD, incidentally, was cleared all along (0 in the record above),
+so that suspicion -- also mine -- was wrong too.
+
+## The experiment (2026-08-30): the new suite is EXONERATED [SUPERSEDED]
 
 Two narrowed runs on the macOS runner, BricsCAD V26:
 
