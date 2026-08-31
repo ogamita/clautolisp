@@ -137,6 +137,17 @@ cad_arg_path() {
     fi
 }
 
+# Emit AutoLISP that appends one progress record to the results file.
+# Raw open/write/close rather than probe-core's recorder, because the
+# whole point is to work when probe-core has NOT loaded.
+emit_step_marker() {
+  local label="$1" expr="${2:-\"\"}"
+  printf '(setq cad-probe--out (open "%s" "a"))\n' \
+         "$(lisp_escape "$(cad_path "$result_file")")"
+  printf '(if cad-probe--out (progn (write-line (strcat "((KIND . \\"step\\") (AT . \\"%s\\") (VALUE . \\"" (vl-princ-to-string %s) "\\"))") cad-probe--out) (close cad-probe--out)))\n' \
+         "$(lisp_escape "$label")" "$expr"
+}
+
 # --- generate the probe wrapper (.lsp) -------------------------------
 {
   # Every path below is consumed by the CAD, not by this shell, so each
@@ -188,9 +199,16 @@ cad_arg_path() {
   while read -r src fn _rest; do
     [[ -z "$src" || "$src" == \#* ]] && continue
     suite_wanted "$src" || continue
-    printf '(load "%s")\n' "$(lisp_escape "$(cad_path "$sources_dir/$src")")"
+    printf '(setq cad-probe--loaded (vl-catch-all-apply (quote load) (list "%s")))\n' \
+           "$(lisp_escape "$(cad_path "$sources_dir/$src")")"
+    emit_step_marker "loaded $src" "cad-probe--loaded"
   done < "$manifest"
+  # Is the recorder even THERE? A load that returned without defining
+  # anything and a load that defined everything look identical from the
+  # outside, and that ambiguity is what two rounds of guessing cost.
+  emit_step_marker "begin-run-defined-p" "(if cad-probe-begin-run 1 0)"
   printf '(cad-probe-begin-run)\n'
+  emit_step_marker "begin-run-returned"
   while read -r src fn _rest; do
     [[ -z "$src" || "$src" == \#* ]] && continue
     suite_wanted "$src" || continue
