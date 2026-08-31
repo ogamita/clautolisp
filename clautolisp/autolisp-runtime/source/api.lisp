@@ -3657,6 +3657,26 @@ issues/open/foreach-binding-vs-assignment.issue."
                                 nil))))
         (pop-dynamic-frame context)))))
 
+(defun check-vlax-collection-support ()
+  "Signal unless COM collection support is installed.
+
+Separate from VLAX-COLLECTION-ITEMS, and called BEFORE the collection
+form is evaluated, because that is the interpreter's order: with COM
+absent, (vlax-for x (some-form-with-side-effects) ...) signals without
+running the side effect. A compiler that evaluated first and complained
+second would differ from the interpreter in exactly the way nothing
+notices until it matters."
+  (unless *vlax-collection-items-hook*
+    (signal-autolisp-runtime-error
+     :unsupported-special-operator
+     "VLAX-FOR is unavailable: no COM collection support is installed.")))
+
+(defun vlax-collection-items (collection)
+  "The members of COLLECTION, through the hook the builtins layer
+installs. The runtime cannot reach the host COM protocol, and the
+compiler cannot either -- both ask this."
+  (funcall *vlax-collection-items-hook* collection))
+
 (defun eval-vlax-for-form (arguments context)
   "(vlax-for VAR COLLECTION BODY...) — iterate over an ActiveX
 collection, binding VAR to each member (Visual LISP special form, spec
@@ -3674,19 +3694,34 @@ builtins layer installs (the runtime cannot reach the host COM protocol)."
       (signal-autolisp-runtime-error
        :invalid-foreach-binding
        "VLAX-FOR binding name must be an AutoLISP symbol, got ~S." name))
-    (unless *vlax-collection-items-hook*
-      (signal-autolisp-runtime-error
-       :unsupported-special-operator
-       "VLAX-FOR is unavailable: no COM collection support is installed."))
-    (let ((items (funcall *vlax-collection-items-hook*
-                          (autolisp-eval (second arguments) context))))
+    (check-vlax-collection-support)
+    (let ((items (vlax-collection-items
+                  (autolisp-eval (second arguments) context))))
       (unwind-protect
            (progn
              (push-dynamic-frame context)
              (dolist (element items result)
-               (if (find-dynamic-binding name (evaluation-context-dynamic-frame context))
-                   (set-variable name element context)
-                   (bind-dynamic-variable name element context))
+               ;; The SAME rule FOREACH uses, from the same function.
+               ;;
+               ;; This read ASSIGN-IF-ALREADY-BOUND until 2.0.26 -- the
+               ;; exact code FOREACH carried until AutoCAD was probed
+               ;; (2.0.22) and answered that it BINDS. VLAX-FOR was left
+               ;; behind by that fix, so the two loops in this
+               ;; implementation disagreed about their loop variable:
+               ;; (vlax-for x coll ...) wrote a caller's local named X
+               ;; and left the last member in it, while (foreach x l ...)
+               ;; did not.
+               ;;
+               ;; No vendor probe covers VLAX-FOR specifically -- it
+               ;; needs a live COM collection, which the probe harness
+               ;; cannot conjure. What is asserted here is the ANALOGY:
+               ;; the spec describes both in the same words, the
+               ;; behaviour FOREACH was proved to have is the one the
+               ;; spec always described, and two loops differing on
+               ;; their binding rule is far likelier to be an oversight
+               ;; than a vendor quirk nobody documented. See
+               ;; issues/open/vlax-for-binding-rule-unprobed.issue.
+               (bind-foreach-variable name element context)
                (setf result (if body (autolisp-eval-progn body context) nil))))
         (pop-dynamic-frame context)))))
 

@@ -1690,7 +1690,60 @@ the enclosing loop is interpreted anyway, and closing it would need
 exactly the source-form identity, and the weak table, that the compiled
 path was able to avoid.
 
-STILL OPEN after slice 23
+Slice 24 (2.0.26) -- VLAX-FOR, and the loop that was left behind
+-----------------------------------------------------------------
+
+THE LAST FORM THAT TOOK A BODY WITH IT when it fell back, and the one
+where that hurt most in practice: Visual LISP automation is written as
+a VLAX-FOR over a collection with all the work inside, so a compiled
+function doing COM work ran every bit of it interpreted. Open-coded to
+the same shape as FOREACH, with the members coming from the
+interpreter's own path -- the runtime cannot reach the host COM
+protocol, and the compiler certainly cannot, so both ask
+VLAX-COLLECTION-ITEMS, which consults the hook the builtins layer
+installs.
+
+The COM-absent check is a SEPARATE function from the members lookup,
+and called BEFORE the collection form is evaluated, because that is the
+interpreter's order: with COM absent, (vlax-for x (some-form-with-a-
+side-effect) ...) signals WITHOUT running the side effect. A compiler
+that evaluated first and complained second would differ in exactly the
+way nothing notices until it matters. There is a test.
+
+THE BUG FOUND WHILE DOING IT. VLAX-FOR still bound its loop variable
+with ASSIGN-IF-ALREADY-BOUND -- the very code FOREACH carried until
+AutoCAD was probed in 2.0.22 and answered that it BINDS. The rule was
+extracted into BIND-FOREACH-VARIABLE precisely so it would live in one
+place, and VLAX-FOR was not brought along. So the two loops in this
+implementation DISAGREED about their own loop variable: a VLAX-FOR over
+a name a caller had bound wrote THAT binding and left the last member
+of the collection in it. Both now call BIND-FOREACH-VARIABLE.
+
+Asserted BY ANALOGY, not by a probe: no vendor evidence covers
+VLAX-FOR, whose spec entry says only "Iterates over an ActiveX
+collection object" and is SILENT about the loop variable. What the
+tests pin is the AGREEMENT between the two loops.
+issues/open/vlax-for-binding-rule-unprobed.issue says what would settle
+it and why it has not been written -- it needs a live COM collection,
+which the headless probe suite cannot conjure.
+
+AND THE TEST THAT COULD NOT GO RED, which is the part worth carrying
+forward. The first version of the binding test asserted the rule with
+the suite's own settings, which compile a body eagerly -- so it
+exercised only the TRANSPILED branch, which was already correct, and
+stayed GREEN with the interpreter's old code put back. The second
+version forced both paths and STILL stayed green, because it used a
+GLOBAL: assign-if-bound and bind AGREE on a global, since no dynamic
+binding is found and the old code bound too. Only a `/'-LOCAL OF THE
+CALLER separates them -- which is exactly the case the AutoCAD probe
+used, and which I had in front of me. The test now runs both paths over
+a caller's local and goes red when the bug is put back. Verified, not
+assumed: this is the third time in this compiler's history that a green
+suite has meant nothing (2.0.22's foreach fix passed 31 suites before
+AND after), and the pattern is always the same -- the test exercised a
+case where the two behaviours coincide.
+
+STILL OPEN after slice 24
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -1702,14 +1755,15 @@ STILL OPEN after slice 23
     none of which is removable without giving up something the debugger
     does.
   - MORE TRANSPILER COVERAGE, the live thread since slice 20. LAMBDA and
-    FUNCTION were taken in slice 21, LET in slice 22. Still falling
-    back: SET, DEFUN, DEFUN-Q, TRACE, UNTRACE, COMMAND, COMMAND-S,
-    VLAX-FOR. SET is the next on frequency, and VLAX-FOR is the last
-    remaining form that takes a BODY with it when it falls back --
-    which is what made FOREACH and LET worth the slices they got. The
-    COMMAND family is dominated by the host and not worth it; DEFUN
-    inside a body is rare, and TRACE/UNTRACE are debugging verbs whose
-    cost is not in the dispatch.
+    FUNCTION were taken in slice 21, LET in slice 22, VLAX-FOR in slice
+    24. NO FORM THAT TAKES A BODY FALLS BACK ANY MORE, which was the
+    property worth chasing: a fallback hands over the whole subform, so
+    those were the ones that silently un-compiled the work inside them.
+    Still falling back: SET, DEFUN, DEFUN-Q, TRACE, UNTRACE, COMMAND,
+    COMMAND-S -- none of which takes a body. SET is the next on
+    frequency and is a dispatch's worth of gain; the COMMAND family is
+    dominated by the host; DEFUN inside a body is rare; TRACE and
+    UNTRACE are debugging verbs whose cost is not in the dispatch.
   - the compiler will still run the host compiler as often as it is
     asked; slice 23 removed the shape that asked 60000 times, but a
     counter or a warning past some absurd number of compilations in a

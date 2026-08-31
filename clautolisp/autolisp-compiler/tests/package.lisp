@@ -35,6 +35,7 @@
                 #:autolisp-symbol
                 #:autolisp-usubr
                 #:autolisp-usubr-site
+                #:*vlax-collection-items-hook*
                 #:usubr-site
                 #:autolisp-string
                 #:autolisp-string-value

@@ -1,0 +1,77 @@
+Title: VLAX-FOR's loop variable rule is asserted by analogy, not probed
+Status: open (the code is fixed; the EVIDENCE is what is missing)
+Found: 2.0.26, while open-coding VLAX-FOR in the transpiler
+
+WHAT WAS WRONG
+
+VLAX-FOR bound its loop variable like this:
+
+    (if (find-dynamic-binding name ...)
+        (set-variable name element context)
+        (bind-dynamic-variable name element context))
+
+That is ASSIGN-IF-ALREADY-BOUND, and it is exactly the code FOREACH
+carried until 2.0.22. In 2.0.22 pjb asked whether that was really how
+FOREACH behaves; the probe went to AutoCAD, and AutoCAD answered that
+FOREACH BINDS -- which is also what the specification had always said
+("bind it to name", "rebinding name for each iteration"). FOREACH was
+fixed and the rule was extracted into BIND-FOREACH-VARIABLE so it would
+live in one place.
+
+VLAX-FOR was not updated with it. So until 2.0.26 the two loops in this
+implementation DISAGREED about their own loop variable:
+
+    (vlax-for x coll ...)   wrote a caller's local named X, and left
+                            the last member of the collection in it
+    (foreach  x lst ...)    did not
+
+Both now call BIND-FOREACH-VARIABLE.
+
+WHY THIS TICKET STAYS OPEN
+
+The fix is asserted BY ANALOGY, and the analogy is not evidence:
+
+  - two loops in one implementation differing on their binding rule is
+    far likelier to be an oversight than an undocumented vendor quirk;
+  - the shared code says so: both went through the same
+    assign-if-bound lines, and only one of the two was corrected when
+    that code was proved wrong;
+  - FOREACH's rule was settled by a real engine, and the answer was the
+    one the spec had described all along -- so where the spec speaks
+    about a loop variable here, it has been shown reliable.
+
+AND THE WEAKNESS OF IT, stated because it is the point of the ticket:
+the spec does NOT speak about VLAX-FOR's loop variable. Its entry says
+only "Iterates over an ActiveX collection object" -- no `bind', no
+`rebinding', nothing about what survives the loop. So the third
+argument above supports FOREACH and does not reach VLAX-FOR, and what
+is left is an argument from symmetry and from shared history.
+
+That is a good argument. It is not a measurement, and 2.0.22 is the
+reason to distrust good arguments about this exact question: the
+assign-if-bound behaviour ALSO looked reasonable, was in the code for a
+long time, matched nobody, and was only settled by asking a real
+engine.
+
+WHAT WOULD SETTLE IT
+
+A probe of the shape probes/sources/probe-foreach-scope.lsp uses, but
+over a real COM collection:
+
+    (defun p ( / x)
+      (setq x 'before)
+      (vlax-for x (vla-get-blocks (vla-get-activedocument (vlax-get-acad-object)))
+        nil)
+      x)                          ; BEFORE if it binds, a block if it assigns
+
+It has not been written because it needs a live AutoCAD or BricsCAD
+with a document open -- the probe suite runs headless, and
+*VLAX-COLLECTION-ITEMS-HOOK* cannot be conjured from the harness. It
+belongs with the vendor-probe jobs rather than the suite, and should go
+in the next time those are touched.
+
+UNTIL THEN, what the tests pin is the ANALOGY, not the vendor: the
+compiler equivalence tests install a fake collection hook and assert
+that VLAX-FOR and FOREACH agree with each other. If a probe ever
+contradicts this, BIND-FOREACH-VARIABLE is the single place to change,
+which is the whole reason it exists.
