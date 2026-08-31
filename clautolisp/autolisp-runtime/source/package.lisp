@@ -95,6 +95,11 @@
    #:bind-foreach-variable
    #:eval-lambda-form
    #:eval-let-form
+   #:usubr-site
+   #:make-usubr-site
+   #:autolisp-usubr-site
+   #:usubr-site-call-count
+   #:usubr-site-compiled-body
    #:parse-let-binding
    #:emit-bricscad-undocumented-warning
    #:eval-function-form

@@ -303,6 +303,56 @@ leaked frame would show."
     (is (eql 10 (lookup-variable (%read-one "x") context))
         "the LET frame outlived the error that escaped its body")))
 
+(test a-lambda-in-a-loop-compiles-once-not-once-per-iteration
+  "A LAMBDA form evaluated in a loop mints a NEW closure per iteration,
+so a compilation decision taken per OBJECT is retaken from scratch on
+every one of them -- objects that are all the SAME CODE. Measured at
+440x SLOWER than interpreting the same loop before the site existed,
+because the host compiler ran once per iteration.
+
+The fix gives each compiled LAMBDA form one SITE, shared by every
+closure it builds. Pinned here on the two things that must hold: the
+site is the same object across iterations, and a closure built after
+the body was compiled inherits it rather than recompiling."
+  (let* ((context (%fresh-context))
+         (function (compile-autolisp-form
+                    (%read-one "(lambda (x) (* x 2))")))
+         (a (funcall function context))
+         (b (funcall function context)))
+    ;; two evaluations of ONE compiled lambda form: distinct closures...
+    (is (not (eq a b)) "the two closures were the same object")
+    ;; ...sharing one site, which is what makes the decision one decision
+    (is (eq (autolisp-usubr-site a) (autolisp-usubr-site b))
+        "the two closures did not share a site")
+    ;; and the site is a site, not merely non-nil
+    (is (typep (autolisp-usubr-site a) 'usubr-site)))
+  ;; A closure the INTERPRETER built has no site, and keeps exactly the
+  ;; behaviour it had: the decision stays on the closure.
+  (let ((interpreted (%interpreted "(lambda (x) (* x 2))")))
+    (is (null (autolisp-usubr-site interpreted))))
+  ;; The value is unchanged by any of this, compiled or not.
+  (is (%agree-p "(apply (lambda (x) (* x 2)) (list 21))"))
+  (is (eql 42 (%compiled "(apply (lambda (x) (* x 2)) (list 21))"))))
+
+(test a-site-shares-a-compiled-body-but-never-an-environment
+  "Only the BODY is common to the closures of one site, so only the
+compiled body is shared. Two closures from the same form may capture
+DIFFERENT environments, and sharing those would be a semantic change
+wearing an optimization's clothes -- the reason fix (3) in the issue
+was rejected. Pinned as a value: closures made when K differs must
+answer differently even though they share a site."
+  (let ((context (%fresh-context)))
+    (autolisp-eval (%read-one "(setq k 1)") context)
+    (autolisp-eval
+     (%read-one "(defun mk ( / ) (lambda (x) (+ x k)))") context)
+    ;; force the body compiled, then build another closure from the site
+    (autolisp-eval (%read-one "(setq f (mk))") context)
+    (autolisp-eval (%read-one "(setq k 100)") context)
+    (autolisp-eval (%read-one "(setq g (mk))") context)
+    (is (eql 101 (autolisp-eval (%read-one "(apply g (list 1))") context)))
+    (is (eql 101 (autolisp-eval (%read-one "(apply f (list 1))") context))
+        "K is a GLOBAL here, so both closures must see its current value")))
+
 (test a-call-resolves-its-function-before-evaluating-arguments
   "The interpreter looks the function up FIRST, so an undefined function
 is signalled before any argument's side effects happen. A compiler that

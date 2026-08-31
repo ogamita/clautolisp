@@ -34,6 +34,8 @@
                 #:autolisp-runtime-error-code
                 #:autolisp-symbol
                 #:autolisp-usubr
+                #:autolisp-usubr-site
+                #:usubr-site
                 #:autolisp-string
                 #:autolisp-string-value
                 #:autolisp-symbol-name

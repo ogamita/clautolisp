@@ -1631,7 +1631,66 @@ the two SEMANTIC tests stay GREEN, correctly -- the fallback computes
 the same answers. One gate pins the optimization, the others pin the
 contract.
 
-STILL OPEN after slice 22
+Slice 23 (2.0.25) -- the compilation decision moves from the object to the code
+------------------------------------------------------------------------------
+
+The 440x pathology slice 21 found while measuring, fixed. It is worth
+stating as a capability rather than as a speed-up, because the
+capability is the bigger half: BEFORE THIS SLICE NO LAMBDA BODY WAS
+EVER COMPILED at the shipped threshold, so every higher-order AutoLISP
+program -- everything written with APPLY and a lambda -- was permanently
+interpreted however hot it ran.
+
+WHY. Compilation was decided per FUNCTION OBJECT, by CALL-COUNT. A
+LAMBDA form evaluated in a loop mints a NEW object per iteration, so
+the decision was retaken from scratch on objects that were all THE SAME
+CODE: at the default threshold of 16 each closure reached a count of 1
+and was discarded, and at threshold 1 -- which the TEST SUITE sets --
+the host compiler ran once per iteration.
+
+Each compiled LAMBDA form now has one USUBR-SITE, shared by every
+closure it builds. MAYBE-COMPILE-USUBR counts on the site when there is
+one and publishes the compiled body back to it, so the next closure
+starts compiled rather than recompiling the same body.
+
+MEASURED, control flat at 4 ms throughout:
+
+    threshold      lam speed 3 before      after
+        1              26416 ms            24 ms
+       16 (shipped)    never compiled      28 ms   (56 ms interpreted)
+
+Both regimes fall to the same change, which is what made fix (1) the
+right one of the three the ticket listed: it corrects the QUESTION --
+"is this CODE hot?" rather than "is this OBJECT hot?" -- instead of
+working around the answer.
+
+IDENTITY WITHOUT A WEAK TABLE. The obvious implementation, a hash table
+keyed on the lambda's source form, needs WEAK KEYS so it does not hold
+dead code alive -- and weak hash tables differ across SBCL, CCL and
+CLISP, which is portability surface bought for nothing. The transpiler
+instead emits (LOAD-TIME-VALUE (MAKE-USUBR-SITE) T): one site per
+lambda form, made when the compiled code loads, however it got there --
+including through a .lap, which is transpiled code printed as source
+and compiled again, where a struct baked in as a literal would have had
+to print and read back.
+
+WHAT IS DELIBERATELY NOT SHARED: the ENVIRONMENT (two closures from one
+form may legitimately capture different ones -- that was the rejected
+fix (3), and a test would fail if it ever started travelling with the
+body); the INSTRUMENTED compiled body (its form-ids are tied to one
+function's debug metadata, so sharing it would step the debugger
+against the wrong record); and :FAILED (kept on the closure, so a body
+that will not compile is retried on the next closure -- rare enough to
+leave alone, and cheaper than a third state).
+
+INTERPRETED CODE IS UNCHANGED, site NIL, decision on the closure. A
+lambda in an INTERPRETED loop therefore still mints undecidable
+closures. Recorded rather than hidden: it costs nothing today because
+the enclosing loop is interpreted anyway, and closing it would need
+exactly the source-form identity, and the weak table, that the compiled
+path was able to avoid.
+
+STILL OPEN after slice 23
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -1651,10 +1710,14 @@ STILL OPEN after slice 22
     COMMAND family is dominated by the host and not worth it; DEFUN
     inside a body is rare, and TRACE/UNTRACE are debugging verbs whose
     cost is not in the dispatch.
-  - a lambda in a loop is compiled once per iteration at a low
-    threshold, and never at the default -- 440x slower than interpreted
-    on the measured shape. Older than slice 21, found by it.
-    issues/open/lambda-in-a-loop-never-compiles.issue.
+  - the compiler will still run the host compiler as often as it is
+    asked; slice 23 removed the shape that asked 60000 times, but a
+    counter or a warning past some absurd number of compilations in a
+    run is still worth having, and is the only part of
+    issues/closed/lambda-in-a-loop-never-compiles.issue left undone.
+  - a lambda in an INTERPRETED loop still mints closures no decision
+    can be taken about: the site covers the compiled path only. Costs
+    nothing today, since the enclosing loop is interpreted anyway.
   - open-coding has reached diminishing returns for the OPERATORS, but
     not for the shapes. What was deliberately NOT taken in slice 18:
     LENGTH, NTH, MEMBER and ASSOC each call REQUIRE-PROPER-LIST, which

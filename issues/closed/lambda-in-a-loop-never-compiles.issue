@@ -1,5 +1,5 @@
 Title: a LAMBDA evaluated in a loop is compiled once PER ITERATION at a low threshold
-Status: open
+Status: CLOSED 2.0.25
 Found: 2.0.23, while open-coding LAMBDA and FUNCTION (compiler.issue slice 21)
 
   Renamed from `...never compiles': measuring it showed the opposite
@@ -104,3 +104,69 @@ MEASUREMENT
 
 `lam' in the slice-21 benchmark (.bench in the slice's commit message)
 is this shape. Any fix should move that row and leave `control' alone.
+
+RESOLVED 2.0.25 -- fix (1), the site
+------------------------------------
+
+Each compiled LAMBDA FORM now gets one USUBR-SITE, and every closure
+that form builds shares it. The compilation decision moves from the
+OBJECT to the SITE: MAYBE-COMPILE-USUBR counts on the site when there
+is one, and publishes the compiled body back to it, so the next closure
+from that form starts compiled instead of recompiling the same body.
+
+MEASURED, control flat at 4 ms throughout:
+
+  threshold  lam speed 3 before      after
+      1         26416 ms          24 ms     (the host compiler ran
+                                             once per iteration)
+     16         never compiled     28 ms     (56 ms interpreted; the
+                                             shipped default)
+
+Both regimes are fixed by the same change, which is why (1) was the
+right one of the three: it corrects the QUESTION -- "is this code hot?"
+rather than "is this object hot?" -- instead of working around the
+answer.
+
+WHERE THE IDENTITY COMES FROM. Not a hash table keyed on the source
+form: that needs weak keys to avoid holding dead code alive, and weak
+hash tables differ across SBCL, CCL and CLISP, which is portability
+surface bought for nothing. The transpiler instead emits
+(LOAD-TIME-VALUE (MAKE-USUBR-SITE) T), so the site is made once per
+lambda form when the compiled code is loaded, however it got there --
+including through a .lap, which is transpiled code printed as source
+and compiled again, and where a struct baked in as a literal would have
+had to print and read back.
+
+WHAT IS SHARED, AND WHAT DELIBERATELY IS NOT.
+
+  - the plain COMPILED BODY and the call count: shared, because the
+    BODY is the one thing the closures of a site have in common.
+  - the ENVIRONMENT: never. Two closures from one form may capture
+    different environments; sharing those was fix (3), rejected as a
+    semantic change wearing an optimization's clothes. There is a test
+    that would fail if the environment ever started travelling with the
+    body.
+  - the INSTRUMENTED compiled body: not shared. It carries form-ids
+    tied to one function's debug metadata, so sharing it would make the
+    debugger step against the wrong record.
+  - :FAILED: not published to the site. It is stored on the closure, so
+    a site whose body will not compile is asked again on the next
+    closure. Rare enough to leave alone, and cheaper than teaching the
+    site a third state.
+
+INTERPRETED CODE IS UNCHANGED. A closure the interpreter builds has a
+NIL site and keeps exactly the behaviour it had, decision on the
+closure. That is a real remaining gap rather than an oversight: a
+lambda in an INTERPRETED loop still mints undecidable closures. It
+costs nothing today because the enclosing loop is interpreted anyway,
+and closing it would need the source-form identity -- and the weak
+table -- that the compiled path was able to avoid. Recorded here so
+the next person does not conclude the site covers both paths.
+
+THE GUARD, still not built. MAYBE-COMPILE-USUBR remains willing to run
+the host compiler as often as it is asked; what changed is that this
+shape no longer asks 60000 times. A counter or a warning past some
+absurd number of compilations in one run is still worth having, and is
+now the only part of this ticket left undone. It is small, and it
+belongs with the next piece of compiler instrumentation rather than
+alone.

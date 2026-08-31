@@ -630,7 +630,21 @@ Never fails: an unhandled form becomes an interpreter call on itself."
           ;; hot the loop is. That is worth its own item rather than a
           ;; silent half-fix here -- see lambda-in-a-loop-never-compiles
           ;; in the issues.
-          `(eval-lambda-form ',arguments ,context-var))
+          ;; ONE SITE PER LAMBDA FORM IN THE CODE, via LOAD-TIME-VALUE,
+          ;; so every closure this form builds shares one compilation
+          ;; decision. Without it a LAMBDA IN A LOOP mints a fresh
+          ;; closure per iteration and the decision is retaken on each:
+          ;; never compiled at the default threshold, and recompiled
+          ;; once per iteration at threshold 1 -- 440x slower than
+          ;; interpreting the same loop, measured.
+          ;;
+          ;; LOAD-TIME-VALUE and not a transpile-time literal, because a
+          ;; .lap is transpiled code PRINTED AS SOURCE and compiled
+          ;; again: a struct baked in as a literal would have to print
+          ;; and read back, and this way the site is simply made once
+          ;; when the compiled code is loaded, however it got there.
+          `(eval-lambda-form ',arguments ,context-var
+                             (load-time-value (make-usubr-site) t)))
 
          ((string= name "COND")
           ;; A clause with only a test yields the test's value; otherwise
