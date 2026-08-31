@@ -1982,6 +1982,51 @@ suite uses, so that every function it exercises runs compiled.
 Consulted at SPEED 1 and 2 only. SPEED 3 compiles at definition and never
 reaches the threshold; SPEED 0 never compiles at all.")
 
+(defparameter *usubr-compilation-count* 0
+  "How many function bodies have been handed to the host compiler.
+
+Kept because the compiler had no idea how often it was being asked. A
+LAMBDA in a loop invited it to run ONCE PER ITERATION -- 60000 times in
+the measured case, 26 seconds absorbed in silence -- and nothing
+anywhere said so; the shape was found by benchmarking, which is not a
+way to find bugs. See lambda-in-a-loop-never-compiles.issue.")
+
+(defparameter *usubr-compilation-warning-threshold* 1000
+  "Compilations in one image after which COUNT-USUBR-COMPILATION warns, once.
+
+Not a limit and not tunable policy: nothing is refused, and the number
+is deliberately ABSURD rather than tight. A thousand distinct function
+bodies in one session is already implausible for AutoLISP, so crossing
+it means the same code is being compiled over and over -- which is a
+bug in whatever decides, not in the program being compiled. A tight
+threshold would have to be RIGHT; this one only has to be unreachable
+by honest work.
+
+MEASURED, so that `unreachable' is not a guess: the whole compiler test
+suite -- every equivalence case, every open-coding case, the
+instrumented and whole-corpus runs -- compiles 56 bodies. The margin is
+eighteenfold. The shape this exists to catch overshot it by SIXTY.")
+
+(defvar *usubr-compilation-warned-p* nil
+  "True once the threshold warning has been emitted, so it is emitted ONCE.
+A diagnostic that fires 59000 times is the same silence with more
+output.")
+
+(defun count-usubr-compilation (function)
+  "Record that FUNCTION's body was compiled, and warn once if the count
+has become absurd. Called from both compilation paths."
+  (incf *usubr-compilation-count*)
+  (when (and (not *usubr-compilation-warned-p*)
+             (> *usubr-compilation-count* *usubr-compilation-warning-threshold*))
+    (setf *usubr-compilation-warned-p* t)
+    (warn "clautolisp: the host compiler has now run ~D times in this ~
+           image (most recently for ~A). That is far more distinct ~
+           function bodies than a program has, so the same body is ~
+           probably being compiled repeatedly -- which is a bug in what ~
+           DECIDES to compile, not in the code being compiled."
+          *usubr-compilation-count*
+          (autolisp-usubr-name function))))
+
 (defun maybe-compile-usubr (function)
   "Weave FUNCTION's compiled fork when it has earned one, and return it.
 
@@ -2006,6 +2051,7 @@ cannot be compiled must not run the compiler again on every call."
       (t
        (handler-case (funcall *compile-usubr-hook* function)
          (error () (setf (autolisp-usubr-compiled-body function) :failed)))
+       (count-usubr-compilation function)
        (let ((result (autolisp-usubr-compiled-body function)))
          ;; Publish to the site so the NEXT closure from this lambda form
          ;; starts compiled instead of recompiling the same body. :FAILED
@@ -2065,7 +2111,8 @@ and must still run interpreted. A DEFUN that signalled because compilation
 failed would make SPEED 3 a correctness setting, which it is not."
   (when (and (autolisp-compile-eagerly-p) *compile-usubr-hook*)
     (handler-case (funcall *compile-usubr-hook* function)
-      (error () (setf (autolisp-usubr-compiled-body function) :failed))))
+      (error () (setf (autolisp-usubr-compiled-body function) :failed)))
+    (count-usubr-compilation function))
   function)
 
 (defparameter *compile-instrumented-usubr-hook* nil

@@ -506,6 +506,34 @@ case a green suite cannot fake."
     (is (eql 11 (%interpreted text)))
     (is (%agree-p text))))
 
+(test the-compiler-says-so-when-it-is-asked-absurdly-often
+  "The compiler had no idea how often it was being asked. A LAMBDA in a
+loop invited it to run ONCE PER ITERATION -- 26 seconds absorbed in
+silence -- and the shape was found by BENCHMARKING, which is not a way
+to find bugs.
+
+The threshold is deliberately absurd rather than tight: a thousand
+distinct function bodies in one session is already implausible for
+AutoLISP, so crossing it means the same body is being compiled over and
+over. Nothing is refused; it only stops being silent."
+  (let ((*usubr-compilation-count* 0)
+        (*usubr-compilation-warned-p* nil)
+        (*usubr-compilation-warning-threshold* 3))
+    (let ((fn (%compiled "(lambda (x) x)")))
+      ;; under the threshold: no warning, and the count is real
+      (dotimes (i 3) (count-usubr-compilation fn))
+      (is (eql 3 *usubr-compilation-count*))
+      (is (null *usubr-compilation-warned-p*))
+      ;; crossing it warns, ONCE -- a diagnostic that fires 59000 times
+      ;; is the same silence with more output
+      (let ((warnings 0))
+        (handler-bind ((warning (lambda (c)
+                                  (incf warnings)
+                                  (muffle-warning c))))
+          (dotimes (i 5) (count-usubr-compilation fn)))
+        (is (eql 1 warnings) "warned ~D times, expected exactly once" warnings))
+      (is (eq t *usubr-compilation-warned-p*)))))
+
 (test a-call-resolves-its-function-before-evaluating-arguments
   "The interpreter looks the function up FIRST, so an undefined function
 is signalled before any argument's side effects happen. A compiler that

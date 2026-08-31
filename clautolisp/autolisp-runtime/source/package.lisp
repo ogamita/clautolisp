@@ -98,6 +98,10 @@
    #:check-vlax-collection-support
    #:vlax-collection-items
    #:set-autolisp-place
+   #:*usubr-compilation-count*
+   #:*usubr-compilation-warning-threshold*
+   #:*usubr-compilation-warned-p*
+   #:count-usubr-compilation
    #:usubr-site
    #:make-usubr-site
    #:autolisp-usubr-site

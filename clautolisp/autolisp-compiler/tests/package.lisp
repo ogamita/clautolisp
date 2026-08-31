@@ -36,6 +36,10 @@
                 #:autolisp-usubr
                 #:autolisp-usubr-site
                 #:*vlax-collection-items-hook*
+                #:*usubr-compilation-count*
+                #:*usubr-compilation-warning-threshold*
+                #:*usubr-compilation-warned-p*
+                #:count-usubr-compilation
                 #:usubr-site
                 #:autolisp-string
                 #:autolisp-string-value

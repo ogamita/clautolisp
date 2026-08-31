@@ -163,10 +163,16 @@ and closing it would need the source-form identity -- and the weak
 table -- that the compiled path was able to avoid. Recorded here so
 the next person does not conclude the site covers both paths.
 
-THE GUARD, still not built. MAYBE-COMPILE-USUBR remains willing to run
-the host compiler as often as it is asked; what changed is that this
-shape no longer asks 60000 times. A counter or a warning past some
-absurd number of compilations in one run is still worth having, and is
-now the only part of this ticket left undone. It is small, and it
-belongs with the next piece of compiler instrumentation rather than
-alone.
+THE GUARD, built in 2.0.28 (slice 26). COUNT-USUBR-COMPILATION counts
+both compilation paths and warns ONCE past
+*USUBR-COMPILATION-WARNING-THRESHOLD*, saying that the same body is
+probably being compiled repeatedly and that this is a bug in what
+DECIDES to compile. Nothing is refused. Once, not every time: a
+diagnostic that fires 59000 times is the same silence with more output.
+
+The threshold is absurd rather than tight, and MEASURED rather than
+asserted: the whole compiler test suite compiles 56 bodies against a
+threshold of 1000 -- an eighteenfold margin, where the shape this
+exists to catch overshot it by sixty.
+
+This ticket is now closed in full.

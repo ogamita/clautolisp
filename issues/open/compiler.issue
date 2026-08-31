@@ -1776,7 +1776,36 @@ SLICE 20 OPENED IS THEREFORE FINISHED unless one of those turns out to
 matter; what is left in this file is the allocation and configuration
 work, not coverage.
 
-STILL OPEN after slice 25
+Slice 26 (2.0.28) -- the compiler says when it is asked absurdly often
+----------------------------------------------------------------------
+
+The last piece of lambda-in-a-loop-never-compiles.issue, and the reason
+it was worth finishing rather than closing with the fix: THE COMPILER
+HAD NO IDEA HOW OFTEN IT WAS BEING ASKED. A lambda in a loop invited it
+to run once per iteration -- 60000 times, 26 seconds absorbed in
+silence -- and the shape was found by BENCHMARKING, which is not a way
+to find bugs.
+
+COUNT-USUBR-COMPILATION now counts both compilation paths, the
+threshold one and the eager one, and warns ONCE past
+*USUBR-COMPILATION-WARNING-THRESHOLD*. Nothing is refused: the warning
+says the same body is probably being compiled repeatedly, and that this
+is a bug in what DECIDES to compile rather than in the code being
+compiled -- which is exactly what was true, and exactly what nobody was
+told.
+
+ONCE, not every time: a diagnostic that fires 59000 times is the same
+silence with more output.
+
+THE THRESHOLD IS ABSURD RATHER THAN TIGHT, and that is now MEASURED
+instead of asserted. The whole compiler test suite -- every equivalence
+case, every open-coding case, the instrumented and whole-corpus runs --
+compiles 56 bodies. The threshold is 1000: an eighteenfold margin, and
+the shape it exists to catch overshot it by sixty. A tight threshold
+would have to be RIGHT; this one only has to be unreachable by honest
+work, and now there is a number saying it is.
+
+STILL OPEN after slice 26
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -1794,11 +1823,9 @@ STILL OPEN after slice 25
     deliberately: DEFUN, DEFUN-Q, TRACE, UNTRACE, COMMAND, COMMAND-S.
     None takes a body; each costs a dispatch and nothing more. Reopen
     only with a measurement showing one of them matters.
-  - the compiler will still run the host compiler as often as it is
-    asked; slice 23 removed the shape that asked 60000 times, but a
-    counter or a warning past some absurd number of compilations in a
-    run is still worth having, and is the only part of
-    issues/closed/lambda-in-a-loop-never-compiles.issue left undone.
+  - (done in slice 26: the compilation counter and its one-shot
+    warning, which was the last part of
+    issues/closed/lambda-in-a-loop-never-compiles.issue.)
   - a lambda in an INTERPRETED loop still mints closures no decision
     can be taken about: the site covers the compiled path only. Costs
     nothing today, since the enclosing loop is interpreted anyway.
