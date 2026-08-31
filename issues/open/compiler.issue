@@ -1581,7 +1581,57 @@ UNTRACE, COMMAND, COMMAND-S, VLAX-FOR. The COMMAND family is dominated
 by the host and not worth it; DEFUN inside a body is rare. LET and SET
 are the next candidates on frequency.
 
-STILL OPEN after slice 21
+Slice 22 (2.0.24) -- LET stops falling back, and takes its body with it
+-----------------------------------------------------------------------
+
+BricsCAD V26's undocumented CL-style LET, vendor-confirmed 2026-08-07
+and registered as a special operator here. It was still falling back,
+and the cost was not the binding: A FALLBACK HANDS THE INTERPRETER THE
+WHOLE SUBFORM, so a LET took ITS ENTIRE BODY with it. A compiled
+function whose work sat inside a LET ran that work interpreted -- the
+same hole FOREACH was in slice 20, in a form nobody thinks of as a
+loop.
+
+MEASURED, with a control that must not move (200000 iterations):
+
+    a loop INSIDE a LET   interpreted 64 ms   compiled 68 ms  ->  12 ms
+    the same loop, no LET interpreted 64 ms   compiled 12 ms  ->  12 ms
+
+THE 68-AGAINST-64 IS THE FINDING. Compiling that function gained
+NOTHING before this slice -- it was very slightly slower than
+interpreting it, the loop being the work and the loop being interpreted
+either way. 5.7x is merely the consequence, and the unmoved control is
+the only reason to believe it.
+
+PARALLEL BINDING, the rule that dictates the emitted shape: every
+init-form is evaluated in the ENCLOSING scope BEFORE any name is bound,
+so (setq x 10) (let ((x 1) (y x)) (list x y)) is (1 10). The values are
+therefore collected into a list first and the frame pushed only
+afterwards. Binding while walking the list would have made it LET*
+SILENTLY -- and BricsCAD V26 has no LET*, the same harvest having
+proved it. The difference shows only when an init mentions a name the
+same LET binds, which is exactly the case nobody writes a test for, so
+there is now a test for it, asserted as a VALUE and not only as an
+agreement.
+
+THE DIALECT WARNING IS EMITTED AT RUN TIME, not folded at transpile
+time. *AUTOLISP-DIALECT* is a variable and can change during a run, so
+a warning decided while compiling would be the wrong warning for a
+later call -- and would differ between the compiled and interpreted
+paths, which is the one thing this compiler may not do.
+
+Malformed binding lists go to the interpreter untouched:
+PARSE-LET-BINDING is ASKED, in a handler, whether each binding parses,
+rather than having its accepted shapes copied into the transpiler where
+they could drift.
+
+Same gate pattern as slice 21, and worth repeating because it is easy
+to miscount: with the branch disabled the COVERAGE test goes RED and
+the two SEMANTIC tests stay GREEN, correctly -- the fallback computes
+the same answers. One gate pins the optimization, the others pin the
+contract.
+
+STILL OPEN after slice 22
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -1593,10 +1643,14 @@ STILL OPEN after slice 21
     none of which is removable without giving up something the debugger
     does.
   - MORE TRANSPILER COVERAGE, the live thread since slice 20. LAMBDA and
-    FUNCTION were taken in slice 21. Still falling back: SET, LET,
-    DEFUN, DEFUN-Q, TRACE, UNTRACE, COMMAND, COMMAND-S, VLAX-FOR. LET
-    and SET are the next on frequency; the COMMAND family is dominated
-    by the host and not worth it; DEFUN inside a body is rare.
+    FUNCTION were taken in slice 21, LET in slice 22. Still falling
+    back: SET, DEFUN, DEFUN-Q, TRACE, UNTRACE, COMMAND, COMMAND-S,
+    VLAX-FOR. SET is the next on frequency, and VLAX-FOR is the last
+    remaining form that takes a BODY with it when it falls back --
+    which is what made FOREACH and LET worth the slices they got. The
+    COMMAND family is dominated by the host and not worth it; DEFUN
+    inside a body is rare, and TRACE/UNTRACE are debugging verbs whose
+    cost is not in the dispatch.
   - a lambda in a loop is compiled once per iteration at a low
     threshold, and never at the default -- 440x slower than interpreted
     on the measured shape. Older than slice 21, found by it.
