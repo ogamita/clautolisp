@@ -53,6 +53,19 @@ with = only within the same class, because AutoLISP distinguishes 1 from
           (%same-value-p (cdr a) (cdr b))))
     (t (equal a b))))
 
+(defun %signals-code (text &key compiled)
+  "The runtime error code TEXT signals, or NIL if it signals none.
+Comparing CODES rather than catching in one branch and not the other is
+what lets a test say `both ways fail the same way' -- the interpreter
+owns the diagnostic, and a transpiler that invented its own would show
+up here as two different codes rather than as two passing branches."
+  (handler-case
+      (progn (if compiled
+                 (funcall (compile-autolisp-form (%read-one text)) (%fresh-context))
+                 (%interpreted text))
+             nil)
+    (autolisp-runtime-error (condition) (autolisp-runtime-error-code condition))))
+
 (defun %agree-p (text)
   "True when TEXT evaluates to the same AutoLISP value both ways."
   (%same-value-p (%interpreted text) (%compiled text)))
@@ -195,14 +208,57 @@ rather than behind a list kept here."
   ;; evaluated operands.
   (dolist (case '(("(set 'a 1)"        . "SET")
                   ("(let ((x 1)) x)"   . "LET")
-                  ("(lambda (x) x)"    . "LAMBDA")
-                  ("(function car)"    . "FUNCTION")
                   ("(defun g (x) x)"   . "DEFUN")
                   ("(defun-q h (x) x)" . "DEFUN-Q")))
     (destructuring-bind (text . name) case
       (is (member name (transpiler-coverage (%read-one text)) :test #'equal)
           "~S was not reported as a fallback on ~A -- was it compiled as a ~
            call, evaluating operands the interpreter leaves alone?" text name))))
+
+(test lambda-and-function-are-open-coded-not-handed-over
+  "LAMBDA and FUNCTION were in the fallback list above until 2.0.23, and
+they mattered more than their frequency suggests: a fallback hands the
+interpreter the WHOLE SUBFORM, so every higher-order idiom -- the (apply
+(function f) args) that portable AutoLISP is written in -- put an
+AUTOLISP-EVAL back in the middle of otherwise compiled code."
+  (is (null (transpiler-coverage (%read-one "(function car)"))))
+  (is (null (transpiler-coverage (%read-one "(lambda (x) (* x 2))"))))
+  (is (null (transpiler-coverage (%read-one "(function (lambda (x) x))"))))
+  ;; the surrounding form is compiled too, body included
+  (is (null (transpiler-coverage
+             (%read-one "(foreach e l (apply (function car) (list e)))")))))
+
+(test function-yields-its-argument-unevaluated
+  "FUNCTION is QUOTE plus a hint to a compiler that is not this one. The
+value is the DESIGNATOR -- a symbol stays a symbol -- and that is what
+makes the resolution LATE: (apply (function fn) args) finds an FN
+defined further down the dynamic stack, which folding a lookup here
+would silently break. Stated as a value, not just as an agreement,
+because two engines agreeing on a wrong answer is what an
+equivalence-only test cannot see."
+  (let ((compiled (%compiled "(function car)")))
+    (is (typep compiled 'autolisp-symbol))
+    (is (string= "CAR" (autolisp-symbol-name compiled))))
+  (is (%agree-p "(function car)"))
+  (is (%agree-p "(function (lambda (x) x))"))
+  ;; A malformed FUNCTION must still signal the INTERPRETER's error, not
+  ;; a second one invented in the transpiler.
+  (is (equal (%signals-code "(function)") (%signals-code "(function)" :compiled t)))
+  (is (equal (%signals-code "(function 1)") (%signals-code "(function 1)" :compiled t))))
+
+(test lambda-builds-the-interpreters-own-closure
+  "The closure comes from EVAL-LAMBDA-FORM, so it is an ordinary USUBR:
+same environment capture, same arity check, and -- the part worth
+pinning -- the same CALL-COUNT and COMPILED-BODY slots, which is why a
+hot lambda body still reaches the compiler by the usual threshold."
+  (is (eql 12 (%compiled "((lambda (x) (* x 3)) 4)")))
+  (is (%agree-p "((lambda (x) (* x 3)) 4)"))
+  (is (%agree-p "((lambda (x y) (+ x y)) 1 2)"))
+  ;; the body sees the defining environment, not the calling one
+  (is (%agree-p "(progn (setq k 10) ((lambda (x) (+ x k)) 5))"))
+  (is (typep (%compiled "(lambda (x) x)") 'autolisp-usubr))
+  ;; arity errors stay the interpreter's
+  (is (equal (%signals-code "(lambda)") (%signals-code "(lambda)" :compiled t))))
 
 (test a-call-resolves-its-function-before-evaluating-arguments
   "The interpreter looks the function up FIRST, so an undefined function

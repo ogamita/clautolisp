@@ -30,6 +30,9 @@
                 #:pop-dynamic-frame
                 #:check-repeat-count
                 #:check-foreach-sequence
+                #:eval-lambda-form
+                #:eval-function-form
+                #:lambda-form-p
                 #:bind-foreach-variable
                 #:known-special-operator-p
                 #:lookup-variable

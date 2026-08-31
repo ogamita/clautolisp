@@ -1,0 +1,106 @@
+Title: a LAMBDA evaluated in a loop is compiled once PER ITERATION at a low threshold
+Status: open
+Found: 2.0.23, while open-coding LAMBDA and FUNCTION (compiler.issue slice 21)
+
+  Renamed from `...never compiles': measuring it showed the opposite
+  failure, and a worse one. Both regimes are below.
+
+SYMPTOM
+
+  (repeat 60000 (setq acc (+ acc (apply (lambda (x) (car x)) (list p)))))
+
+measured against the same loop calling CAR directly (the control):
+
+  workload                 interpreted   compiled
+  control (car directly)         20 ms       4 ms
+  hof     ((function car))       32 ms      12 ms
+  lam     (a lambda per pass)    60 ms   26416 ms      <-- 440x SLOWER
+
+Compiling this loop makes it four hundred times slower than
+interpreting it. Nothing warns; it just stops.
+
+CAUSE
+
+Compilation is decided per FUNCTION OBJECT, by AUTOLISP-USUBR's
+CALL-COUNT: MAYBE-COMPILE-USUBR weaves the fork on the call that
+crosses *AUTOLISP-COMPILATION-THRESHOLD*. Sound for a DEFUN, whose
+object outlives the decision.
+
+EVAL-LAMBDA-FORM builds a NEW usubr every time the LAMBDA form is
+EVALUATED, and a LAMBDA inside a loop body is evaluated once per
+iteration. So the decision is retaken from scratch 60000 times, on
+60000 objects that are all the same code:
+
+  threshold 1   -- each fresh closure crosses on its first call, so the
+                   HOST COMPILER RUNS ONCE PER ITERATION. This is the
+                   440x row above.
+  threshold 16  -- the shipped default. Each closure is called once,
+                   reaches 1, and is discarded, so the body is NEVER
+                   compiled however hot the loop is. No cliff, but no
+                   compilation either.
+
+Neither is a wrong answer to the question CALL-COUNT asks. The question
+is wrong: it measures the life of an OBJECT where what matters is the
+heat of a SITE.
+
+WHY THIS IS NOT THEORETICAL
+
+Threshold 1 is what the TEST SUITE sets -- deliberately, so every
+function a test exercises runs compiled (see the docstring on
+*AUTOLISP-COMPILATION-THRESHOLD*). Any test that puts a lambda in a
+loop therefore takes the 440x path. That is a plausible reading of a
+future "the compiler tests got slow" report.
+
+At SPEED 3 the eager path is NOT involved: COMPILE-USUBR-IF-EAGER is
+called only from DEFUN, so a lambda never compiles at definition. This
+is entirely the threshold path.
+
+WHY SLICE 21 DID NOT FIX IT
+
+Slice 21 open-codes the LAMBDA FORM -- the closure is built by a direct
+call to EVAL-LAMBDA-FORM instead of through an interpreter dispatch --
+and that is all. The A/B settles that this is OLDER than the slice: with
+the slice's branches disabled the same row measures 24448 ms, against
+26416 ms with them on -- the same pathology either way, the difference
+being run-to-run noise on a 25-second measurement. Slice 21 did not
+cause it and does not cure it; it is the first thing to have MEASURED
+it. Fixing it is a lifetime question, not a translation one, and did
+not belong in a slice about translation.
+
+POSSIBLE FIXES, none chosen
+
+  1. Key the count on the lambda's SOURCE FORM rather than on the
+     usubr, so every closure from one site shares one identity and one
+     decision. The count then means "how often this site ran", which is
+     the question the threshold wants answered. Cheapest; fixes both
+     regimes at once.
+
+  2. Compile the body once at transpile time and attach the ready-made
+     COMPILED-BODY to each new usubr. No threshold involved, but it
+     pays compilation for a lambda that may run once -- exactly what
+     the threshold exists to prevent.
+
+  3. Cache the closure on the enclosing usubr and reuse it. WRONG:
+     AutoLISP closures capture the context, so two iterations can
+     legitimately differ. That is a semantic change wearing an
+     optimization's clothes.
+
+(1) looks right and is small. Its one risk is identity -- two textually
+identical lambdas at different sites must not share a count in a way
+that makes one site's heat compile the other's. Harmless for
+correctness, since the bodies are equal, but it would make the
+measurement confusing, so key on the form OBJECT rather than on its
+text.
+
+GUARD WORTH HAVING EITHER WAY
+
+MAYBE-COMPILE-USUBR has no protection against compiling equivalent code
+repeatedly. Whatever fix is chosen, a compiler that can be invited to
+run 60000 times by an ordinary loop should say so -- a counter, or a
+warning past some absurd number of compilations in one run -- rather
+than absorbing it silently as 26 seconds.
+
+MEASUREMENT
+
+`lam' in the slice-21 benchmark (.bench in the slice's commit message)
+is this shape. Any fix should move that row and leave `control' alone.

@@ -1520,7 +1520,68 @@ identical numbers. The rule that caught it is worth keeping: a benchmark
 that does not respond to its own workload is not measuring it, and a
 sanity line printing the program's own result costs nothing.
 
-STILL OPEN after slice 20
+Slice 21 (2.0.23) -- LAMBDA and FUNCTION, and what measuring them found
+----------------------------------------------------------------------
+
+The two operators slice 20 named as worth having next. Both were
+falling back, and a fallback hands the interpreter the WHOLE SUBFORM,
+so the higher-order idiom portable AutoLISP is written in --
+(apply (function f) args) -- put an AUTOLISP-EVAL back into the middle
+of otherwise compiled code.
+
+FUNCTION is QUOTE plus a hint to a compiler that is not this one, so a
+well-formed (function X) is a CONSTANT and is now emitted as one. What
+is folded is the DESIGNATOR, never a lookup: a symbol stays a symbol,
+resolved against the dynamic chain when APPLY finally runs, which is
+what lets (apply (function fn) args) find an FN defined further down
+the stack. Folding the resolution would have been faster still and
+wrong, and the test says so in a sentence rather than leaving it to be
+rediscovered.
+
+LAMBDA calls the interpreter's own EVAL-LAMBDA-FORM. The closure, the
+environment capture, the arity check and the `/'-in-a-lambda-list
+warning are all behaviour rather than mechanism, and this file restates
+none of them; what is saved is the dispatch.
+
+MEASURED, ISOLATED, with a control that must not move (speed 3):
+
+    (function car) in a loop     12 ms  ->   4 ms
+    control, (setq f 1)           4 ms  ->   4 ms
+
+FUNCTION now costs exactly what a constant costs, because it IS one.
+The control is unmoved, which is the only reason to believe the other
+row.
+
+MEASURED IN CONTEXT, and this is the honest half: in an (apply
+(function car) (list p)) loop the same change is INVISIBLE -- 12 ms
+either way -- because APPLY dominates and the fold removes something
+APPLY's cost hides. The slice is a real win on the form and a wash on
+that workload, and both numbers are reported because reporting only
+the first would be true and misleading.
+
+VERIFYING THE GATE. With the two branches disabled the coverage test
+goes RED and the two VALUE tests stay GREEN -- correctly: the fallback
+computes the same answers, which is the whole fallback design. So one
+gate pins the optimization and two pin the contract, and it is worth
+knowing which is which rather than claiming three.
+
+FOUND WHILE MEASURING, and much worse than the slice is good: a LAMBDA
+inside a hot loop, COMPILED, is 440x SLOWER than interpreted -- 26416 ms
+against 60 ms, control flat. Compilation is decided per FUNCTION
+OBJECT, but EVAL-LAMBDA-FORM mints a new object per iteration, so at
+threshold 1 the host compiler runs once per iteration; at the shipped
+default of 16 the same shape never compiles at all. Threshold 1 is what
+the TEST SUITE sets. The A/B says it is older than this slice -- 24448 ms
+with the branches disabled -- so slice 21 neither caused it nor cured
+it; it is the first thing to have measured it. Written up with three
+candidate fixes in issues/open/lambda-in-a-loop-never-compiles.issue.
+
+STILL FALLING BACK after this slice: SET, LET, DEFUN, DEFUN-Q, TRACE,
+UNTRACE, COMMAND, COMMAND-S, VLAX-FOR. The COMMAND family is dominated
+by the host and not worth it; DEFUN inside a body is rare. LET and SET
+are the next candidates on frequency.
+
+STILL OPEN after slice 21
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
@@ -1531,13 +1592,15 @@ STILL OPEN after slice 20
     POLL-POINT calls, the enter/exit bookkeeping and the UNWIND-PROTECT --
     none of which is removable without giving up something the debugger
     does.
-  - MORE TRANSPILER COVERAGE, which slice 20 makes the live thread. Still
-    falling back: SET, LET, LAMBDA, FUNCTION, DEFUN, DEFUN-Q, TRACE,
-    UNTRACE, COMMAND, COMMAND-S, VLAX-FOR. LAMBDA and FUNCTION are the
-    ones worth having next -- they appear inside bodies in
-    higher-order code, where a fallback again takes the whole form. The
-    COMMAND family is dominated by the host and not worth it; DEFUN
-    inside a body is rare.
+  - MORE TRANSPILER COVERAGE, the live thread since slice 20. LAMBDA and
+    FUNCTION were taken in slice 21. Still falling back: SET, LET,
+    DEFUN, DEFUN-Q, TRACE, UNTRACE, COMMAND, COMMAND-S, VLAX-FOR. LET
+    and SET are the next on frequency; the COMMAND family is dominated
+    by the host and not worth it; DEFUN inside a body is rare.
+  - a lambda in a loop is compiled once per iteration at a low
+    threshold, and never at the default -- 440x slower than interpreted
+    on the measured shape. Older than slice 21, found by it.
+    issues/open/lambda-in-a-loop-never-compiles.issue.
   - open-coding has reached diminishing returns for the OPERATORS, but
     not for the shapes. What was deliberately NOT taken in slice 18:
     LENGTH, NTH, MEMBER and ASSOC each call REQUIRE-PROPER-LIST, which

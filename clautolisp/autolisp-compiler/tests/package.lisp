@@ -31,6 +31,9 @@
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-eval
                 #:autolisp-runtime-error
+                #:autolisp-runtime-error-code
+                #:autolisp-symbol
+                #:autolisp-usubr
                 #:autolisp-string
                 #:autolisp-string-value
                 #:autolisp-symbol-name
