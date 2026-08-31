@@ -48,12 +48,16 @@ Status (refreshed): the *TUI (dumb)* surface now implements essentially the
 whole vocabulary — the ✔ / ✔* column. The ✔* items are scoped: =goto= is by
 global name, =search= is a name search, =jump= is forward-only, poll-point
 designation is =ppN= (not yet =LINE.K= / =LINE:COL=), and UI selection wires
-=--on-error= / =--debugger-ui tui|ncurses= (the aldb TCP listener is
-deferred). The one TUI ✦ left is routing dispatch through the *stacked command
-dictionaries* (the table layer exists and is tested, but the dumb UI still
-dispatches via a hand-written table). *ncurses* and *aldb* remain thin
-fixed-key surfaces (a follow-up: add a comma-word command reader so the full
-vocabulary is reachable there too).
+=--on-error= / =--debugger-ui tui|ncurses|aldb=. The *aldb* TRANSPORT is
+complete: =--aldb-stdio= (RPC over stdin/stdout) and the =--aldb-listen
+[HOST:]PORT= TCP listener with the lazy connect prompt and its 1/2 tui/ncurses
+fallback (command-reference §10), over an Elisp-readable wire, exercised by a
+live-socket CI test. The one TUI ✦ left is routing dispatch through the *stacked
+command dictionaries* (the table layer exists and is tested, but the dumb UI
+still dispatches via a hand-written table). *ncurses* and *aldb* remain thin
+fixed-key command surfaces (base commands + inspector); the ✦ vocabulary rows
+below are the shared follow-up: a comma-word command reader so the full
+vocabulary is reachable there too (over the wire, for aldb).
 
 | Feature (normative §)                         | TUI | ncurses | aldb |
 |-----------------------------------------------+-----+---------+------|
@@ -74,8 +78,8 @@ vocabulary is reachable there too).
 | =display= / =undisplay=                        | ✔   | ✦       | ✦    |
 | cursor-based location (no typed line)          | —   | ✦       | ✦    |
 | sticky inspector while stepping (§ TUI)        | ✔   | ✦       | ✦    |
-| UI selection + activation (cmd-ref §10)        | ✔*  | ✦       | ✔*   |
-| aldb listening address/port + connect prompt   | —   | —       | ✦    |
+| UI selection + activation (cmd-ref §10)        | ✔*  | ✦       | ✔    |
+| aldb listening address/port + connect prompt   | —   | —       | ✔    |
 
 The matrix *is* the consistency statement: each UI exposes the same command
 set (one set, three surfaces), differing only in input (cursor vs typed) and
@@ -144,10 +148,16 @@ policy. Used by the TUI listing, the ncurses source pane, and (faces) aldb.
 1. F1/F2 shared over the RPC; settings and configuration exposed as wire forms.
 2. Navigation/history delegated to Emacs (buffers + =xref= + mark ring);
    re-anchor point to the current poll-point on re-entry.
-3. UI selection (=aldb=) + the listener: =default-aldb-listening-address= /
-   =-port=, the =--aldb-listen [HOST:]PORT= / =--aldb-stdio= CLI options, the
-   not-connected connect prompt and the already-connected message
-   (command-reference §10).
+3. UI selection (=aldb=) + the listener — *DONE*: =default-aldb-listening-address=
+   / =-port= (default 127.0.0.1:4301), the =--aldb-listen [HOST:]PORT= (numeric or
+   a service name) / =--aldb-stdio= CLI options, and the lazy not-connected
+   connect prompt with its =1) TUI= / =2) ncurses= fallback (command-reference
+   §10). The wire is Elisp-readable (nil/t + lower-case keywords) and a
+   live-socket integration test drives it in CI. The =autolisp-debug-ui-emacs=
+   system is baked into the tool image, so =make-ui :aldb= is registered; the TCP
+   transport uses =usocket=. Remaining aldb work is (1) and (2)'s FULL command
+   vocabulary over the wire (the ✦ matrix rows) — today aldb exposes the base
+   commands + inspector, like ncurses.
 
 * Engine prerequisites (file issues, fix before/with the UI work)
 
