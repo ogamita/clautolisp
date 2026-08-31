@@ -646,6 +646,24 @@ Never fails: an unhandled form becomes an interpreter call on itself."
           `(eval-lambda-form ',arguments ,context-var
                              (load-time-value (make-usubr-site) t)))
 
+         ((string= name "SET")
+          ;; (set PLACE VALUE) -- SETQ with the place form EVALUATED,
+          ;; which is the whole difference and the reason it cannot be
+          ;; folded to a SETQ: the name is not known until run time.
+          ;;
+          ;; The two forms are emitted as ARGUMENTS, so Common Lisp's
+          ;; left-to-right argument order gives the interpreter's order
+          ;; for free -- place first, then value -- and the symbol check
+          ;; happens after both, inside SET-AUTOLISP-PLACE, exactly
+          ;; where the interpreter does it. Getting that order from the
+          ;; host rather than restating it is the point.
+          (if (= 2 (length arguments))
+              `(set-autolisp-place
+                ,(transpile-form (first arguments) context-var)
+                ,(transpile-form (second arguments) context-var)
+                ,context-var)
+              (%fallback form context-var)))
+
          ((string= name "VLAX-FOR")
           ;; (vlax-for NAME COLLECTION body...) over an ActiveX
           ;; collection. THE LAST FORM THAT TOOK A BODY WITH IT when it

@@ -34,6 +34,7 @@
                 #:eval-let-form
                 #:check-vlax-collection-support
                 #:vlax-collection-items
+                #:set-autolisp-place
                 #:make-usubr-site
                 #:parse-let-binding
                 #:emit-bricscad-undocumented-warning

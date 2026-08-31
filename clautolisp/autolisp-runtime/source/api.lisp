@@ -3317,13 +3317,23 @@ returning the last form's value. Outside a session this is AUTOLISP-EVAL-PROGN."
      (length arguments)))
   (let* ((place-result (autolisp-eval (first arguments) context))
          (value-result (autolisp-eval (second arguments) context)))
-    (unless (typep place-result 'autolisp-symbol)
-      (signal-autolisp-runtime-error
-       :invalid-set-place
-       "SET place must evaluate to an AutoLISP symbol, got ~S."
-       place-result))
-    (set-variable place-result value-result context)
-    value-result))
+    (set-autolisp-place place-result value-result context)))
+
+(defun set-autolisp-place (place value context)
+  "Assign VALUE to the variable PLACE names, and return VALUE.
+
+PLACE and VALUE are already EVALUATED -- SET evaluates its place form,
+which is the whole difference from SETQ. Extracted so the compiler
+calls this rule instead of restating it: the check that a place is a
+symbol, its diagnostic, and the SET's value are three decisions, and
+three decisions restated are three things that can drift."
+  (unless (typep place 'autolisp-symbol)
+    (signal-autolisp-runtime-error
+     :invalid-set-place
+     "SET place must evaluate to an AutoLISP symbol, got ~S."
+     place))
+  (set-variable place value context)
+  value)
 
 (defun eval-trace-form (arguments context)
   ;; (trace foo bar)  — symbol-name arguments are taken bare (not
