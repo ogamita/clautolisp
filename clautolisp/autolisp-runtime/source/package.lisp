@@ -93,6 +93,9 @@
    #:check-repeat-count
    #:check-foreach-sequence
    #:bind-foreach-variable
+   #:eval-lambda-form
+   #:eval-function-form
+   #:lambda-form-p
    #:autolisp-usubr
    #:make-autolisp-usubr
    #:autolisp-usubr-name

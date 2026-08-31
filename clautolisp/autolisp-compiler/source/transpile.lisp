@@ -508,6 +508,55 @@ Never fails: an unhandled form becomes an interpreter call on itself."
                    (pop-dynamic-frame ,context-var)))
               (%fallback form context-var)))
 
+         ((string= name "FUNCTION")
+          ;; FUNCTION returns its argument UNEVALUATED -- it is QUOTE
+          ;; plus a hint to a compiler that is not this one -- so a
+          ;; well-formed (function X) is a CONSTANT, and constants are
+          ;; the one thing a compiler should never compute twice.
+          ;;
+          ;; Late resolution is preserved, and it is the whole reason
+          ;; this is safe: what the form yields is the DESIGNATOR, not
+          ;; the function it names. A symbol stays a symbol, resolved
+          ;; against the dynamic chain when APPLY finally runs, so the
+          ;; portable higher-order idiom (apply (function fn) args)
+          ;; still finds an FN defined further down the stack. Folding
+          ;; the LOOKUP here instead would break that, and it is not
+          ;; what this does.
+          ;;
+          ;; Anything malformed goes to EVAL-FUNCTION-FORM, which is the
+          ;; interpreter's own branch: this file does not get a second
+          ;; opinion about what a valid designator is, and the error text
+          ;; stays in one place.
+          (let ((designator (first arguments)))
+            (if (and (= (length arguments) 1)
+                     (or (typep designator 'autolisp-symbol)
+                         (lambda-form-p designator)))
+                `',designator
+                `(eval-function-form ',arguments ,context-var))))
+
+         ((string= name "LAMBDA")
+          ;; The closure is built by the interpreter's own
+          ;; EVAL-LAMBDA-FORM: it captures CONTEXT as the environment,
+          ;; checks the arity and warns about a `/' where AutoLISP wants
+          ;; none, and every one of those is behaviour rather than
+          ;; mechanism. Calling it is the whole translation -- what is
+          ;; saved is the dispatch, not the work.
+          ;;
+          ;; WHAT THIS DOES NOT DO, since the number here is small and
+          ;; someone will wonder: it does not compile the lambda's BODY.
+          ;; It does not need to. EVAL-LAMBDA-FORM returns an ordinary
+          ;; USUBR, with the CALL-COUNT and COMPILED-BODY slots every
+          ;; other function has, so a hot lambda body crosses the
+          ;; threshold and is compiled exactly like a DEFUN's.
+          ;;
+          ;; The case that stays interpreted is a LAMBDA EVALUATED IN A
+          ;; LOOP: each iteration builds a NEW usubr whose call count
+          ;; starts at zero, so it never reaches the threshold however
+          ;; hot the loop is. That is worth its own item rather than a
+          ;; silent half-fix here -- see lambda-in-a-loop-never-compiles
+          ;; in the issues.
+          `(eval-lambda-form ',arguments ,context-var))
+
          ((string= name "COND")
           ;; A clause with only a test yields the test's value; otherwise
           ;; the clause body's last value. No clause taken yields nil.
