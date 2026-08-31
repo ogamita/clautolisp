@@ -357,7 +357,10 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :description "FiveAM tests for the clautolisp tool (dribble streams and logic)."
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/clautolisp-tool" "fiveam")
+  ;; usocket + bordeaux-threads: the aldb live-socket integration test drives a
+  ;; real listener over a client socket in a second thread (both reach here
+  ;; transitively via clautolisp-tool; named explicitly for the socket test).
+  :depends-on ("clautolisp/clautolisp-tool" "fiveam" "usocket" "bordeaux-threads")
   :serial t
   :components
   ((:file "tools/clautolisp/tests/package")
@@ -365,6 +368,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "tools/clautolisp/tests/debugger-options-tests")
    (:file "tools/clautolisp/tests/transmit-tests")
    (:file "tools/clautolisp/tests/aldo-conf-tests")
+   (:file "tools/clautolisp/tests/aldb-socket-tests")
    (:file "tools/clautolisp/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
