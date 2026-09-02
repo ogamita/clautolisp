@@ -1,0 +1,64 @@
+Title: BricsCAD refuses to LOAD a file containing a form it executes happily
+Status: open (not blocking; the probe harness works around it)
+Found: 2026-08-31, chasing probes-suite-crashes-bricscad
+
+THE SHAPE OF IT
+
+probes/sources/probe-foreach-scope.lsp contained, inside one function:
+
+    (list (foreach e (list 1 2 3) (* e 10))
+          (foreach e nil 99))
+
+and earlier, in the same function, `(foreach e (list 1 2 3))' with no
+body. BricsCAD would not LOAD the file -- on macOS and on Windows,
+before a single probe ran, with no diagnostic reaching the results
+file: the process simply sat until the harness's 180-second timeout.
+
+All three of those forms EXECUTE CORRECTLY in BricsCAD. The suite now
+holds them as strings and READs them when the case runs, and BricsCAD
+answers every one -- including returning (1 2 3) for the body-less
+FOREACH, which is a divergence worth its own ticket
+(foreach-empty-body-return-diverges.issue).
+
+So the rejection is in whatever reads a file being LOADED, and not in
+the evaluator. A form BricsCAD will run is a form BricsCAD will not
+read from a file.
+
+WHICH FORM, EXACTLY, IS STILL UNKNOWN
+
+The per-form split (PROBE_SPLIT_SUITES) narrowed it to ONE FUNCTION --
+form 10 of 13, CAD-PROBE-FOREACH--RETURN-VALUE -- which is what finally
+ended the guessing. It did not narrow it further, because all three
+candidates sat in that one function:
+
+  - FOREACH in EXPRESSION POSITION, as an argument to LIST
+  - FOREACH over an EMPTY LIST
+  - FOREACH with NO BODY
+  - or only some combination of them
+
+WHAT WOULD SETTLE IT, cheaply: three one-form files, each containing
+exactly one candidate, each LOADED through VL-CATCH-ALL-APPLY with its
+own marker -- the mechanism the harness already has. The difference
+from the current suite is that these forms must be in the FILE, not in
+a string, because loading them is the experiment. A load that never
+returns still hangs the run, so this belongs in a job of its own with a
+short timeout rather than inside the probe suite.
+
+WHY IT IS NOT URGENT
+
+Nothing in clautolisp depends on the answer. It matters for two
+practical reasons and neither is pressing: AutoLISP written for
+clautolisp or AutoCAD may fail to LOAD in BricsCAD for reasons no
+diagnostic explains, and anyone writing a probe suite will meet this
+again. The second is already handled -- the rule is written at the head
+of probe-foreach-scope.lsp and the harness has the split.
+
+THE LESSON, which is the durable part
+
+A load that HANGS writes nothing about itself. The marker that would
+name the file comes after the load that never returns, and
+VL-CATCH-ALL-APPLY cannot catch a process that is not coming back. The
+file therefore says only that the PREVIOUS load finished -- a silence.
+It was read as evidence twice, and both readings were wrong: first
+blaming a suite that had loaded fine, then a form that turned out
+innocent. PROBE_SPLIT_SUITES exists so the last marker NAMES the form.

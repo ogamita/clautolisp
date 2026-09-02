@@ -1,0 +1,59 @@
+Title: a FOREACH with no body returns THE LIST in BricsCAD and NIL in AutoCAD
+Status: open (documented divergence; clautolisp follows AutoCAD)
+Found: 2026-08-31, by the foreach-scope probe suite, on both platforms
+
+THE MEASUREMENT
+
+    (foreach e (list 1 2 3))          ; no body at all
+
+    AutoCAD 2026      nil
+    BricsCAD V25/V26  (1 2 3)         ; macOS AND Windows, same answer
+    clautolisp        nil
+
+Every other case in the suite agrees across all three engines -- the
+binding rule, the value of a normal FOREACH, the value over an empty
+list. This one does not.
+
+WHY IT LOOKS LIKE BricsCAD RETURNS THE LIST
+
+FOREACH is specified to yield its last body value. With NO body there
+is no such value, so AutoCAD's nil is the reading that follows the
+words. BricsCAD appears to fall back on the value of the LIST argument
+-- which is what a loop written as `evaluate the list, then iterate'
+would leave in an accumulator if the body never wrote one. That is a
+plausible implementation accident rather than a designed answer, but it
+is CONSISTENT: both platforms, both versions probed, same result.
+
+WHAT CLAUTOLISP DOES, AND WHY
+
+NIL, following AutoCAD and the specification's wording. Chosen rather
+than deferred because the alternative -- returning the list -- would
+mean adopting an undocumented quirk of one vendor as the default
+behaviour of a dialect-neutral implementation, which is backwards.
+
+NOT ELEVATED TO THE NORMATIVE SPEC either way: this is vendor
+divergence, and the spec records what is common. The BricsCAD answer
+belongs in the *** clautolisp / vendor-divergence section of the
+FOREACH page, per the convention.
+
+IF IT SHOULD FOLLOW BRICSCAD UNDER --dialect bricscad, that is a
+one-line change at the same place FOREACH's other rules live, and this
+ticket is where the evidence for it is. It is left open for that
+decision rather than closed as `documented': the dialect machinery
+exists precisely so vendor answers can differ, and nobody has said
+whether this one should.
+
+HOW NEARLY IT WAS NEVER FOUND
+
+This case cost two days and three wrong guesses, and none of them was
+about the answer. `(foreach e lst)' with no body, written directly in
+the probe file, made BricsCAD refuse to LOAD THE FILE -- silently,
+before any probe ran, taking the other cases with it. AutoCAD and
+clautolisp both accept the form, so nothing local showed it. The suite
+only produced this row once the form was held as TEXT and READ at run
+time.
+
+So BricsCAD executes the form perfectly well; it will not READ it in a
+file it is loading. That distinction is itself worth a ticket --
+issues/open/bricscad-refuses-to-load-what-it-will-run.issue -- and it
+is the reason the probe harness now has PROBE_SPLIT_SUITES.

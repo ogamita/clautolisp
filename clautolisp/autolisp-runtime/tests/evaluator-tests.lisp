@@ -1644,6 +1644,13 @@ still binds it exactly once, and one POP will release it once."
 ;;;; to AutoCAD; AutoCAD BINDS, which is also what the specification
 ;;;; always said.
 ;;;;
+;;;; BRICSCAD HAS SINCE ANSWERED TOO (2026-08-31, macOS and Windows) and
+;;;; agrees with AutoCAD on every case here. It could not answer before
+;;;; that: it refused to LOAD the probe file, silently, for reasons that
+;;;; had nothing to do with the question -- see
+;;;; issues/open/bricscad-refuses-to-load-what-it-will-run.issue. So the
+;;;; rule below is now measured against BOTH vendors, not one.
+;;;;
 ;;;; These tests exist because the change passed all 31 suites in both
 ;;;; directions: the equivalence corpus asserts that compiled and
 ;;;; interpreted evaluation AGREE, which they did before and after, and
@@ -1673,6 +1680,40 @@ AutoCAD answers BEFORE here too."
                  "(progn (defun inner (l) (foreach e l nil))
                          (defun outer (l / e) (setq e 'before) (inner l) e)
                          (outer '(1 2 3)))")))))
+
+(test foreach-with-no-body-yields-nil-as-autocad-does
+  "A FOREACH with NO BODY. THE ONE CASE WHERE THE VENDORS DISAGREE, and
+therefore the one that must be pinned rather than left to whichever
+answer the implementation happens to fall into:
+
+    (foreach e (list 1 2 3))     AutoCAD 2026      nil
+                                 BricsCAD V25/V26  (1 2 3)
+                                 clautolisp        nil
+
+FOREACH is specified to yield its last body value; with no body there
+is no such value, so nil follows the words and AutoCAD follows the
+spec. BricsCAD appears to leave the LIST in the accumulator its loop
+never wrote -- consistent on both platforms, and plausibly an
+implementation accident rather than a designed answer.
+
+clautolisp follows AutoCAD and the specification. Adopting one vendor's
+undocumented quirk as the default of a dialect-neutral implementation
+would be backwards; if it should hold under --dialect bricscad, that is
+a decision and it has a ticket:
+issues/open/foreach-empty-body-return-diverges.issue.
+
+An empty loop body is NOT exotic here -- `(while (setq i (cdr i)))' is
+how AutoLISP drains a list, and the same shape broke this compiler once
+already (issues/closed/compiled-loop-with-empty-body.issue)."
+  (reset-autolisp-symbol-table)
+  (is (null (%run-under-dialect :clautolisp "(foreach e '(1 2 3))")))
+  ;; and the list is genuinely non-empty, so the nil above means the
+  ;; RETURN is nil -- not that the loop never ran. Written without
+  ;; builtins, because this suite installs none.
+  (reset-autolisp-symbol-table)
+  (is (eql 3 (%run-under-dialect
+              :clautolisp
+              "(progn (setq n nil) (foreach e '(1 2 3) (setq n e)) n)"))))
 
 (test foreach-leaves-a-global-of-the-same-name-alone
   "A global is not a dynamic binding, and both engines agree it survives.

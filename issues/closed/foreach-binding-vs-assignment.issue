@@ -169,3 +169,36 @@ BRICSCAD IS STILL UNMEASURED (probes-suite-crashes-bricscad.issue). If it
 turns out to ASSIGN, that is a dialect divergence to encode rather than a
 reason to revert: AutoCAD defines --strict and --autocad, and the
 specification says bind.
+
+
+CONFIRMED AGAINST BRICSCAD TOO -- 2026-08-31, both platforms
+------------------------------------------------------------
+
+This was closed on AUTOCAD's evidence alone; BricsCAD had never
+answered, because the probe suite would not LOAD there (see
+probes-suite-crashes-bricscad.issue, and the two wrong guesses it
+took). With the offending syntax moved into strings read at run time,
+BricsCAD ran the whole suite on macOS and on Windows, and agrees with
+AutoCAD on every scope case:
+
+  case                                AutoCAD  BricsCAD  clautolisp
+  loop variable is a /-local          BEFORE   BEFORE    BEFORE
+  loop variable is the CALLER's       BEFORE   BEFORE    BEFORE
+  loop variable is a global           OUTER    OUTER     OUTER
+  bound nowhere before the loop       nil      nil       nil
+  empty list -- no iteration          BEFORE   BEFORE    BEFORE
+
+BOTH VENDORS BIND. The 2.0.22 fix was right, and is now right against
+two engines rather than one. The behaviour clautolisp had before it --
+ASSIGN when the name was already bound anywhere in the chain, which
+wrote a caller's local and left the last element in it -- matched
+neither vendor and neither reading of the specification.
+
+Raw evidence in the repository:
+  probe-results/autocad/ms-windows/20260831T130043Z/
+  probe-results/bricscad/ms-windows/20260831T130116Z/
+  probe-results/bricscad/macos/20260831T140019Z/
+
+ONE DIVERGENCE DID TURN UP, and it is not about binding: a FOREACH with
+NO BODY returns THE LIST in BricsCAD and NIL in AutoCAD. New ticket:
+issues/open/foreach-empty-body-return-diverges.issue.

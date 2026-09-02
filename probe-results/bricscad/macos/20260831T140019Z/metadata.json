@@ -1,0 +1,9 @@
+{
+  "product": "bricscad",
+  "platform": "macos",
+  "timestamp_utc": "20260831T140019Z",
+  "status": "completed",
+  "exit_code": 0,
+  "runner_template": "\"/Users/pjb/.gitlab-runner/builds/bg-C2jc-y/0/ogamita/clautolisp/autolisp-front-end/tools/alfe/bin/alfe-sbcl\" --no-init --bricscad --mode batch --timeout 180 -l __PROBE_FILE__",
+  "result_file": "probe-results/bricscad/macos/20260831T140019Z/results.sexp"
+}
