@@ -1805,7 +1805,40 @@ the shape it exists to catch overshot it by sixty. A tight threshold
 would have to be RIGHT; this one only has to be unreachable by honest
 work, and now there is a number saying it is.
 
-STILL OPEN after slice 26
+Slice 27 (2.0.31) -- the corpus had stopped growing with the coverage
+---------------------------------------------------------------------
+
+Found by asking a question I should have asked five slices earlier:
+WHAT IS ACTUALLY IN THE EQUIVALENCE CORPUS?
+
+The corpus is described at the head of its own file as THE COMPILER'S
+CONTRACT, STATED AS A TEST -- every case evaluated BOTH ways, the two
+results required to agree. It still held only the six operators of
+slice 19: AND, COND, IF, OR, PROGN, SETQ.
+
+Slices 20 to 25 taught the transpiler WHILE, REPEAT, FOREACH, LET,
+LAMBDA, FUNCTION, VLAX-FOR and SET. None of them was added to the
+corpus. So the contract was being asserted over a SHRINKING FRACTION of
+what the compiler claimed to handle -- each new form had its own test,
+which is not the same thing as being in the corpus that runs every case
+both ways and compares.
+
+27 entries -> 69. The additions are chosen for the cases that
+DISTINGUISH behaviours rather than merely exercise them: an EMPTY loop
+body (the shape that once compiled to LOOP ... DO NIL and signalled a
+host error at call time), LET's PARALLEL binding (which separates it
+from a LET* BricsCAD does not have), the loop-variable rule both
+vendors were measured to follow, and SET's EVALUATED place.
+
+All green on SBCL and CCL.
+
+THE LESSON, worth more than the slice: WHEN COVERAGE GROWS, THE CORPUS
+MUST GROW WITH IT, or the contract narrows silently. Nothing failed,
+nothing warned, and the corpus went on reporting a green contract over
+a quarter of the compiler. A test suite that is not extended alongside
+the thing it tests decays into a test of history.
+
+STILL OPEN after slice 27
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
     clal-compiled-artefact.issue); CLISP is the existence proof that it
