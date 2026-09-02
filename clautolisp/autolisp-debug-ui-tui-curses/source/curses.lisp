@@ -177,8 +177,16 @@ harmless if already suspended."
 (defmethod tui-size ((screen curses-screen))
   ;; getmaxy/getmaxx return the row and column COUNTS (ncurses adds 1 to the
   ;; stored max index); the protocol wants (values rows cols).
+  ;;
+  ;; TUI-SIZE is queried at frame CONSTRUCTION — before TUI-START/initscr, since
+  ;; curses is entered lazily at the first debugger stop — so there is no window
+  ;; yet. Report a conventional 24x80 then; the real dimensions replace it on the
+  ;; first render after initscr. (Passing a NULL window to getmaxy is exactly
+  ;; what produced the opaque "NIL is not of type SYSTEM-AREA-POINTER" crash.)
   (let ((win (curses-window screen)))
-    (values (%getmaxy win) (%getmaxx win))))
+    (if (or (null win) (cffi:null-pointer-p win))
+        (values 24 80)
+        (values (%getmaxy win) (%getmaxx win)))))
 
 (defmethod tui-clear ((screen curses-screen))
   (%wclear (curses-window screen)))

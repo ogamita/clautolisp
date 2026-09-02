@@ -65,6 +65,16 @@
                 (make-condition 'curses-unavailable :detail "test")))
        "the report points the user at --debugger-ui tui")
 
+;; (4) TUI-SIZE answers BEFORE initscr (frames.lisp queries it at construction,
+;;     while curses is entered lazily) — a conventional 24x80, not a NULL-window
+;;     crash. This is the fault that took down --debugger-ui ncurses at startup.
+(let ((screen (make-curses-screen)))            ; window still NIL (no initscr)
+  (check (handler-case
+             (multiple-value-bind (rows cols) (clautolisp.ui.tui:tui-size screen)
+               (and (integerp rows) (plusp rows) (integerp cols) (plusp cols)))
+           (error () nil))
+         "tui-size returns sane dimensions on an un-started screen (no SAP crash)"))
+
 (format t "~&~[all curses error-reporting tests passed~:;~:*~D FAILURE(S)~]~%"
         *failures*)
 (finish-output)

@@ -521,6 +521,21 @@ them keeps the trace focused on actual call frames."
 (defun report-error (condition)
   (format *error-output* "~&clautolisp: ~A~%" condition))
 
+(defun print-host-backtrace (condition)
+  "Dump the host-Lisp backtrace for an UNHANDLED internal error. Called from a
+HANDLER-BIND at signal time — before the stack unwinds — so the trace reaches
+the fault, not the handler. Used when the user asked to debug (--debug or
+--on-error debug): an internal fault then shows where it came from instead of a
+bare one-line condition. uiop:print-backtrace is the portable SBCL/CCL entry."
+  (format *error-output*
+          "~&clautolisp: unhandled internal error: ~A~%CL backtrace (host Lisp):~%"
+          condition)
+  (handler-case
+      (uiop:print-backtrace :stream *error-output* :condition condition)
+    (error (probe)
+      (format *error-output* "  <unable to render host backtrace: ~A>~%" probe)))
+  (finish-output *error-output*))
+
 (defun setup-context (context host &optional mock-input)
   "Install the core builtins into the freshly created evaluation
 context's namespace and attach the chosen HAL backend to its
@@ -1793,6 +1808,19 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
             (when trace-p
               (setf clautolisp.autolisp-runtime:*autolisp-trace-p* t))
             (let ((status
+                    ;; With debugging requested (--debug or --on-error debug), an
+                    ;; UNHANDLED internal (host-Lisp) error must not vanish behind
+                    ;; a one-line condition: a HANDLER-BIND dumps the host
+                    ;; backtrace at signal time — the stack still intact — before
+                    ;; the outer handler-case reports and exits. It fires ONLY for
+                    ;; errors no inner handler took (the AutoLISP debugger / REPL
+                    ;; handle their own), so ordinary program errors are
+                    ;; unaffected; the handler DECLINES, so reporting/exit is
+                    ;; unchanged.
+                    (handler-bind
+                        ((error (lambda (condition)
+                                  (when (or debug-p (eq on-error :debug))
+                                    (print-host-backtrace condition)))))
                     ;; Under a debug session, record source positions during
                     ;; the load so the navigator can show a form's ORIGINAL
                     ;; source text (its own line breaks and indentation) rather
@@ -1816,7 +1844,7 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                                     :debug-ui debug-ui
                                     :on-error-policy on-error
                                     :dribble dribble
-                                    :dribble-interactors dribble-interactors))))
+                                    :dribble-interactors dribble-interactors)))))
               (finish-output)
               ;; RUN-WITH-INPUT returns the effective process exit status
               ;; (autolisp-set-status / (quit N) / error → 1 / file → 2).
