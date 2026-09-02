@@ -1838,6 +1838,46 @@ nothing warned, and the corpus went on reporting a green contract over
 a quarter of the compiler. A test suite that is not extended alongside
 the thing it tests decays into a test of history.
 
+WHERE THE COMPILER STANDS AFTER SLICE 27
+----------------------------------------
+
+Measured at HEAD, interpreted against compiled IN ONE PROCESS, best of
+three, alternating the two settings rather than running them as blocks
+-- machine drift once invented a 12% regression in this file and the
+ratio is what survives it.
+
+    workload                 interp   compiled  ratio
+    ------------------------ -------- --------- -----
+    fib 25 (call-bound)       148 ms     48 ms   3.1x
+    repeat+foreach loop        36 ms     12 ms   3.0x
+    loop inside a LET          64 ms     12 ms   5.3x
+    (function f) in a loop     32 ms     12 ms   2.7x
+    lambda built per pass      56 ms     28 ms   2.0x
+
+THE POINT IS NOT THE RATIOS, it is that all five are ABOVE ONE. Two of
+them were not, and neither said so:
+
+  - a loop inside a LET ran at 0.94x -- SLOWER compiled than
+    interpreted -- until slice 22, because the LET fell back and a
+    fallback hands the interpreter the whole subform, body included.
+  - a lambda built per iteration ran at 0.002x, four hundred times
+    slower, until slice 23, because the compilation decision was taken
+    per closure and a loop mints a new closure every pass.
+
+Both were invisible. The equivalence corpus asserts that compiled and
+interpreted AGREE, which they did throughout; nothing asserted that
+compiling was worth doing. `Compiled' had become a claim about which
+code path ran rather than about speed, in exactly the places where the
+work was.
+
+WHAT WOULD CATCH THE NEXT ONE: this table, re-measured. It is cheap --
+one process, a few seconds -- and it is the only artefact here that
+would go RED if a future slice made compiling slower than interpreting
+again. Worth turning into a test with a floor of 1.0x per row rather
+than leaving as a number in a ticket; not done, because a timing test
+in CI on shared runners is a flake generator, and the honest form of it
+is a benchmark someone runs, not a gate.
+
 STILL OPEN after slice 27
 -------------------------
   - a host-independent .lap. Deferred on purpose (see the closed
