@@ -37,6 +37,12 @@ trap 'rm -rf "$tmp"' EXIT
 
 cat > "$tmp/probe.lsp" <<'LSP'
 (defun probe-add (a b) (+ a b))
+;; A LAMBDA, because the transpiler emits (LOAD-TIME-VALUE
+;; (MAKE-USUBR-SITE) T) for one and a .lap is transpiled code PRINTED
+;; AS SOURCE and compiled again. Anything that does not survive print
+;; and re-read breaks there and nowhere else -- which is how GENSYMs in
+;; transpiler output were found, after they had shipped.
+(defun probe-hof (n) (apply (lambda (x) (* x 2)) (list n)))
 LSP
 
 status=0
@@ -66,6 +72,21 @@ case "$out" in
     *5*) ;;
     *)
         echo "FAIL: the .lap did not load and run (expected 5)." >&2
+        echo "      $out" >&2
+        status=1
+        ;;
+esac
+
+# 2b. The LAMBDA in that .lap works too. A lambda is the one form whose
+#     transpilation carries a LOAD-TIME-VALUE, so this is the assertion
+#     that the site emission survives being printed as source and read
+#     back -- the failure mode that has bitten this artefact before, and
+#     that only the .lap path can show.
+out=$("$exe" --no-init -x "(progn (load \"$tmp/probe.lap\") (princ (probe-hof 21)))" 2>&1) || true
+case "$out" in
+    *42*) ;;
+    *)
+        echo "FAIL: a LAMBDA did not survive the .lap round trip (expected 42)." >&2
         echo "      $out" >&2
         status=1
         ;;
