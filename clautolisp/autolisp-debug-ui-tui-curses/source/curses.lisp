@@ -27,19 +27,40 @@
 (defvar *curses-loaded* nil
   "True once LIBNCURSES has been opened this session.")
 
+(define-condition curses-unavailable (error)
+  ((detail :initarg :detail :initform nil :reader curses-unavailable-detail))
+  (:documentation
+   "Signalled when the ncurses screen cannot be brought up: libncurses could
+not be found/linked, or initscr could not open the terminal. Carries a
+human-readable DETAIL and reports an actionable message — the CLI turns it
+into a clean fall-back to the terminal (tui) UI.")
+  (:report (lambda (condition stream)
+             (format stream
+                     "the ncurses debugger screen could not be initialized: ~A~
+                      ~@[~%(TERM=~A)~]~%~
+                      libncurses may be missing or unusable on this host; ~
+                      re-run with --debugger-ui tui for the line-mode debugger."
+                     (or (curses-unavailable-detail condition) "unknown error")
+                     (ignore-errors (uiop:getenv "TERM"))))))
+
 (defun ensure-curses-loaded ()
-  "Open libncurses on demand (idempotent). Signals a CFFI error when the
-library cannot be found — the caller (the CLI) turns that into a clean
-fall-back to the tui UI."
+  "Open libncurses on demand (idempotent). Signals CURSES-UNAVAILABLE — with the
+underlying loader message — when the library cannot be found or linked, so the
+caller sees an actionable error instead of a raw CFFI/alien failure."
   (unless *curses-loaded*
-    (cffi:load-foreign-library 'libncurses)
+    (handler-case (cffi:load-foreign-library 'libncurses)
+      (cffi:load-foreign-library-error (error)
+        (error 'curses-unavailable
+               :detail (format nil "libncurses could not be loaded (~A)" error))))
     (setf *curses-loaded* t))
   *curses-loaded*)
 
 (defun curses-available-p ()
-  "True when libncurses can be opened on this host (probe; never signals)."
-  (handler-case (progn (ensure-curses-loaded) t)
-    (error () nil)))
+  "Probe whether libncurses can be opened on this host (never signals). Returns
+two values: a boolean, and — when it is false — the condition explaining why (a
+CURSES-UNAVAILABLE with the loader message), for the caller to report."
+  (handler-case (progn (ensure-curses-loaded) (values t nil))
+    (error (condition) (values nil condition))))
 
 ;;; --- bindings (plain DEFCFUN, no grovel) ------------------------------
 ;;;
@@ -101,30 +122,50 @@ fall-back to the tui UI."
 (defmethod tui-start ((screen curses-screen))
   "Enter (or resume) curses full-screen mode. initscr runs once per session;
 later calls — a new debugger stop after a TUI-STOP (endwin) — just re-apply the
-input modes and refresh, so stdscr and its state survive across the stops."
+input modes and refresh, so stdscr and its state survive across the stops.
+
+Any failure to bring curses up — libncurses missing, initscr returning no
+screen (not a terminal), or a low-level alien/type error deep in the FFI — is
+turned into a single CURSES-UNAVAILABLE with an actionable message, never the
+raw \"NIL is not of type SYSTEM-AREA-POINTER\" the bare bindings would signal."
   (ensure-curses-loaded)
-  (cond
-    ((curses-started screen)
-     ;; resume after endwin
-     (let ((win (curses-window screen)))
-       (%cbreak) (%noecho) (%keypad win 1) (ignore-errors (%curs-set 0))
-       (%wrefresh win)))
-    (t
-     (let ((win (%initscr)))
-       (setf (curses-window screen) win
-             (curses-started screen) t)
-       (%cbreak)
-       (%noecho)
-       (%keypad win 1)                  ; deliver arrow / function keys
-       (ignore-errors (%curs-set 0))    ; hide the hardware cursor
-       (when (/= 0 (%has-colors))
-         (%start-color)
-         (loop for (name . fg) in +color-names+
-               for pair from 1
-               do (%init-pair pair fg 0) ; foreground FG on COLOR_BLACK (0)
-                  (setf (gethash name (curses-color-pairs screen)) pair)))
-       (%wclear win)
-       (%wrefresh win)))))
+  (handler-case
+      (cond
+        ((curses-started screen)
+         ;; resume after endwin
+         (let ((win (curses-window screen)))
+           (when (or (null win) (cffi:null-pointer-p win))
+             (error 'curses-unavailable
+                    :detail "the curses screen was lost between stops"))
+           (%cbreak) (%noecho) (%keypad win 1) (ignore-errors (%curs-set 0))
+           (%wrefresh win)))
+        (t
+         (let ((win (%initscr)))
+           ;; initscr returns NULL when it cannot open the terminal (no tty,
+           ;; unusable $TERM); go no further with a null window — passing it to
+           ;; the window bindings is exactly what produced the opaque crash.
+           (when (or (null win) (cffi:null-pointer-p win))
+             (error 'curses-unavailable :detail "initscr() could not open the terminal"))
+           (setf (curses-window screen) win
+                 (curses-started screen) t)
+           (%cbreak)
+           (%noecho)
+           (%keypad win 1)                  ; deliver arrow / function keys
+           (ignore-errors (%curs-set 0))    ; hide the hardware cursor
+           (when (/= 0 (%has-colors))
+             (%start-color)
+             (loop for (name . fg) in +color-names+
+                   for pair from 1
+                   do (%init-pair pair fg 0) ; foreground FG on COLOR_BLACK (0)
+                      (setf (gethash name (curses-color-pairs screen)) pair)))
+           (%wclear win)
+           (%wrefresh win))))
+    ;; our own clear condition passes straight through …
+    (curses-unavailable (condition) (error condition))
+    ;; … any other bring-up failure (undefined alien, NIL→SAP type error, …) is
+    ;; wrapped so the user gets the actionable message, not the FFI internals.
+    (serious-condition (condition)
+      (error 'curses-unavailable :detail (princ-to-string condition)))))
 
 (defmethod tui-stop ((screen curses-screen))
   "Suspend curses, restoring the ordinary cooked terminal (echo on) for the

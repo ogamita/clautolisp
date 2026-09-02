@@ -16,4 +16,5 @@
                 #:tui-refresh #:tui-read-key
                 #:face-parameters)
   (:export #:curses-screen #:make-curses-screen
-           #:ensure-curses-loaded #:curses-available-p))
+           #:ensure-curses-loaded #:curses-available-p
+           #:curses-unavailable #:curses-unavailable-detail))

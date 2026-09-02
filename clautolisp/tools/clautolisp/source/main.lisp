@@ -1106,22 +1106,41 @@ cl-charms backend (clautolisp.ui.tui.charms) is accepted as a fallback if still
 loaded. Either must be present in the image (a build that includes it, or an
 init file that loads it); when neither is, we return NIL and the caller falls
 back to the terminal (tui) UI rather than crashing on an unbound screen slot."
-  (flet ((backend-maker (package name)
+  (flet ((backend-sym (package name)
            (let ((sym (and (find-package package)
                            (find-symbol (string name) package))))
              (and sym (fboundp sym) sym))))
-    (let ((maker (or ;; the no-grovel CFFI backend (libncurses on demand)
-                     (backend-maker '#:clautolisp.ui.tui.curses '#:make-curses-screen)
-                     ;; the retired cl-charms backend, if still loaded
-                     (backend-maker '#:clautolisp.ui.tui.charms '#:make-charms-screen))))
-      (if maker
-          (funcall maker)
-          (progn
-            (format *error-output*
-                    "~&clautolisp: --debugger-ui ncurses needs a curses backend ~
+    ;; The FIRST backend present in the image decides the outcome: if its
+    ;; libncurses can be opened we hand back a screen; if it is present but
+    ;; unusable on this host (libncurses missing / unlinkable), we PROBE that
+    ;; here and fall back to the tui UI with the real reason — rather than
+    ;; deferring a raw alien crash to the first debugger stop.
+    (dolist (backend '((#:clautolisp.ui.tui.curses  ; no-grovel CFFI backend
+                        #:make-curses-screen #:curses-available-p)
+                       (#:clautolisp.ui.tui.charms  ; retired cl-charms, if loaded
+                        #:make-charms-screen nil))
+                      ;; neither backend present in this image:
+                      (progn
+                        (format *error-output*
+                                "~&clautolisp: --debugger-ui ncurses needs a curses backend ~
 (package clautolisp.ui.tui.curses, system clautolisp-tui-curses), not loaded in ~
 this image; using the terminal (tui) UI instead.~%")
-            nil)))))
+                        nil))
+      (destructuring-bind (package maker-name probe-name) backend
+        (let ((maker (backend-sym package maker-name)))
+          (when maker
+            (let ((probe (and probe-name (backend-sym package probe-name))))
+              (multiple-value-bind (usable reason)
+                  (if probe (funcall probe) (values t nil))
+                (return
+                  (if usable
+                      (funcall maker)
+                      (progn
+                        (format *error-output*
+                                "~&clautolisp: --debugger-ui ncurses: the curses backend is ~
+present but not usable on this host — ~A.~%Using the terminal (tui) UI instead.~%"
+                                (or reason "libncurses could not be initialized"))
+                        nil)))))))))))
 
 ;;;; --- the aldb (Emacs) TCP listener (debugger §10) ------------------
 ;;;;
