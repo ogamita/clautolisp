@@ -36,13 +36,31 @@ candidates sat in that one function:
   - FOREACH with NO BODY
   - or only some combination of them
 
-WHAT WOULD SETTLE IT, cheaply: three one-form files, each containing
-exactly one candidate, each LOADED through VL-CATCH-ALL-APPLY with its
-own marker -- the mechanism the harness already has. The difference
-from the current suite is that these forms must be in the FILE, not in
-a string, because loading them is the experiment. A load that never
-returns still hangs the run, so this belongs in a job of its own with a
-short timeout rather than inside the probe suite.
+THE EXPERIMENT IS NOW WRITTEN -- probes/sources/probe-load-refusal.lsp,
+plus probe:load-refusal:bricscad:{macos,windows}. It holds the three
+candidates as three separate top-level forms, written OUT rather than
+hidden in strings, because loading them is the question. Run alone and
+SPLIT, each becomes its own file with its own marker, so the last
+marker names the form BricsCAD would not read.
+
+Three things had to be true for that to be safe, and now are:
+
+  - QUARANTINE. The suite is marked `quarantine' in the manifest, so a
+    default `make probe' SKIPS it and only PROBE_SUITES=load-refusal
+    runs it. Without that, adding this file would have turned every
+    ordinary BricsCAD probe run into a hang -- the trap this whole
+    ticket is about, re-laid by the ticket's own fix.
+  - PROBE_TIMEOUT. The harness's 180 s is fine for a suite that works;
+    an experiment that EXPECTS a hang runs at 45 s, because the Windows
+    runner is serial and nothing else should queue behind a deliberate
+    hang.
+  - allow_failure. A failed job here is a RESULT, not a regression.
+
+Verified on the clautolisp baseline both ways: a default run produces
+265 results and ZERO from this suite, and the named run loads all four
+forms with their markers and answers all three cases `ok'.
+
+What is still missing is the ANSWER, which only BricsCAD can give.
 
 WHY IT IS NOT URGENT
 

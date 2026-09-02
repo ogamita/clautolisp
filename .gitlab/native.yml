@@ -558,6 +558,58 @@ probe:suite:bricscad:macos:
     paths: [probe-results/]
     expire_in: 90 days
 
+# WHICH FORM WILL BRICSCAD NOT READ FROM A FILE?
+#
+# These two run the QUARANTINED load-refusal suite, alone and split.
+# Unlike every other probe, its forms are written out rather than hidden
+# in strings, because LOADING THEM IS THE EXPERIMENT -- so the engine is
+# EXPECTED to hang, and the last per-form marker in the results is the
+# answer. See probes/sources/probe-load-refusal.lsp and
+# issues/open/bricscad-refuses-to-load-what-it-will-run.issue.
+#
+# allow_failure, because a failed job here is a RESULT and not a
+# regression; PROBE_TIMEOUT low, because the Windows runner is serial
+# and nothing else should queue behind a deliberate hang.
+probe:load-refusal:bricscad:macos:
+  extends: .gate-macos-cad-soft
+  stage: test
+  allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'load-refusal'
+    PROBE_SPLIT_SUITES: 'load-refusal'
+    PROBE_TIMEOUT: '45'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-load-refusal-bricscad-macos-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:load-refusal:bricscad:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'load-refusal'
+    PROBE_SPLIT_SUITES: 'load-refusal'
+    PROBE_TIMEOUT: '45'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-load-refusal-bricscad-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
 probe:suite:bricscad:windows:
   extends: .gate-windows-cad-soft
   stage: test

@@ -48,15 +48,30 @@ manifest="$sources_dir/manifest.txt"
 # no way to ask the one question you came for. That is exactly what
 # happened the first time this suite met BricsCAD.
 suite_wanted() {
-  local src="$1" want name
-  [[ -z "${PROBE_SUITES:-}" ]] && return 0
+  local src="$1" flags="${2:-}" want name
   name="${src%.lsp}"; name="${name#probe-}"
+  if [[ -z "${PROBE_SUITES:-}" ]]; then
+    # Default run: everything EXCEPT a quarantined suite. See below.
+    [[ "$flags" == *quarantine* ]] && return 1
+    return 0
+  fi
   for want in ${PROBE_SUITES//,/ }; do
     want="${want%.lsp}"; want="${want#probe-}"
     [[ "$name" == "$want" ]] && return 0
   done
   return 1
 }
+
+# QUARANTINE, the third manifest field. A suite marked `quarantine' is
+# skipped by a default run and included only when PROBE_SUITES NAMES it.
+#
+# It exists for a suite whose forms are DESIGNED to be rejected -- the
+# load-refusal experiment, where loading the form IS the question, so
+# the syntax cannot be hidden in a string the way every other suite
+# hides it. Such a suite hangs the engine it is aimed at, and a hang
+# takes every other answer in the run down with it. Quarantine is what
+# keeps `make probe' from being a trap on the host the experiment
+# targets, without keeping the experiment out of the repository.
 
 # PROBE_SPLIT_SUITES: load these suites ONE TOP-LEVEL FORM AT A TIME,
 # each form from its own file with its own progress marker. Same name
@@ -247,9 +262,9 @@ emit_step_marker() {
          "$(lisp_escape "$(cad_path "$result_file")")"
   printf '(if cad-probe--out (progn (write-line (strcat "((KIND . \\"load\\") (FILE . \\"probe-core.lsp\\") (VALUE . \\"" (vl-princ-to-string cad-probe--loaded) "\\"))") cad-probe--out) (close cad-probe--out)))\n'
   # Load every suite file from the manifest.
-  while read -r src fn _rest; do
+  while read -r src fn flags; do
     [[ -z "$src" || "$src" == \#* ]] && continue
-    suite_wanted "$src" || continue
+    suite_wanted "$src" "$flags" || continue
     if split_wanted "$src"; then
       # One form per file, each announcing itself: see split_wanted.
       frag_n=0
@@ -272,9 +287,9 @@ emit_step_marker() {
   emit_step_marker "begin-run-defined-p" "(if cad-probe-begin-run 1 0)"
   printf '(cad-probe-begin-run)\n'
   emit_step_marker "begin-run-returned"
-  while read -r src fn _rest; do
+  while read -r src fn flags; do
     [[ -z "$src" || "$src" == \#* ]] && continue
-    suite_wanted "$src" || continue
+    suite_wanted "$src" "$flags" || continue
     printf '(%s)\n' "$fn"
   done < "$manifest"
   printf '(cad-probe-end-run)\n'
