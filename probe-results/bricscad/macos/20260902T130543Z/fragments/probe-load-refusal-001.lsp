@@ -34,23 +34,16 @@
 ;;;; CULPRIT, and it finds the FIRST. So the candidate whose status is
 ;;;; still unknown goes FIRST, and the ones already settled go last.
 ;;;;
-;;;; SETTLED (2026-09-02, BricsCAD macOS, two runs):
+;;;; ROUND 1 (2026-09-02, BricsCAD macOS) settled two of the three:
 ;;;;
-;;;;   (foreach e (list 1 2 3))                  LOADS   -- innocent
-;;;;   (list (foreach e (list 1 2 3) (* e 10)))  LOADS   -- innocent
-;;;;   (foreach e nil 99)                        REFUSED -- SOLE culprit
+;;;;   (list (foreach e (list 1 2 3) (* e 10)))   LOADED -- innocent
+;;;;   (foreach e nil 99)                         REFUSED -- the culprit
+;;;;   (foreach e (list 1 2 3))                   never reached
 ;;;;
-;;;; BRICSCAD WILL NOT READ (foreach VAR nil ...) -- a FOREACH WHOSE
-;;;; LIST ARGUMENT IS THE LITERAL NIL -- from a file it is loading. It
-;;;; executes the same form happily when the form is READ at run time.
-;;;;
-;;;; Two runs, each clearing a different candidate, so neither verdict
-;;;; rests on one observation. The order below is what made round 2
-;;;; possible: the then-unknown body-less form was moved FIRST.
-;;;;
-;;;; The suite is KEPT rather than deleted: it is now a regression test
-;;;; against a future BricsCAD that changes any of the three answers,
-;;;; and the Windows confirmation has still not been run.
+;;;; So FOREACH OVER A LITERAL NIL is a form BricsCAD will not read from
+;;;; a file, and FOREACH in expression position is fine. The body-less
+;;;; form is still unknown -- the run died before reaching it -- so it
+;;;; is FIRST now.
 ;;;;
 ;;;; issues/open/bricscad-refuses-to-load-what-it-will-run.issue
 
@@ -59,26 +52,3 @@
   ;; this run reaches it whatever the others do.
   (foreach e (list 1 2 3)))
 
-(defun cad-probe-lr--expression-position ()
-  ;; FOREACH as an ARGUMENT to another call. Loaded fine in round 1;
-  ;; kept so a future BricsCAD version cannot change that unnoticed.
-  (list (foreach e (list 1 2 3) (* e 10))))
-
-(defun cad-probe-lr--empty-list ()
-  ;; FOREACH over a literal NIL. THE KNOWN CULPRIT, so it goes LAST:
-  ;; anything after it in this file will not be reached.
-  (foreach e nil 99))
-
-(defun cad-probe-run-load-refusal-probes ()
-  ;; Reaching here at all is the headline result: it means every form
-  ;; above LOADED. The per-form markers say which ones did when it is
-  ;; not reached.
-  (cad-probe-capture "load-refusal"
-                     "the whole file loaded"
-                     (function cad-probe-lr--no-body))
-  (cad-probe-capture "load-refusal"
-                     "(list (foreach e '(1 2 3) (* e 10)))"
-                     (function cad-probe-lr--expression-position))
-  (cad-probe-capture "load-refusal"
-                     "(foreach e nil 99)"
-                     (function cad-probe-lr--empty-list)))

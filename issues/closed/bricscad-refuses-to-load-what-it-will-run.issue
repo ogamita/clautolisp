@@ -1,5 +1,5 @@
 Title: BricsCAD refuses to LOAD a file containing a form it executes happily
-Status: open (not blocking; the probe harness works around it)
+Status: CLOSED 2026-09-02 -- the form is named
 Found: 2026-08-31, chasing probes-suite-crashes-bricscad
 
 THE SHAPE OF IT
@@ -97,8 +97,62 @@ process sits there. Anyone shipping AutoLISP to both hosts should know
 it, which is why this ticket stays open until the third candidate is
 settled and the whole thing can be written up as a portability note.
 
-STILL MISSING: whether the body-less FOREACH is also refused. Round 2
-answers that, since it is now first.
+ROUND 2 -- same day, body-less form moved first. COMPLETE.
+
+    (step ... form 1 ...) (VALUE . "CAD-PROBE-LR--NO-BODY")
+    (step ... form 2 ...) (VALUE . "CAD-PROBE-LR--EXPRESSION-POSITION")
+
+and nothing after. Both loaded; form 3's marker is absent.
+
+  (foreach e (list 1 2 3))                  LOADS    -- innocent
+  (list (foreach e (list 1 2 3) (* e 10)))  LOADS    -- innocent
+  (foreach e nil 99)                        REFUSED  -- the SOLE culprit
+
+THE ANSWER, in one line: BRICSCAD WILL NOT READ `(foreach VAR nil ...)'
+-- a FOREACH WHOSE LIST ARGUMENT IS THE LITERAL NIL -- from a file it
+is loading. Nothing else in that function was ever the problem.
+
+Two independent runs agree, and each cleared a different candidate, so
+neither verdict rests on a single observation: round 1 cleared
+expression position, round 2 cleared the body-less form and confirmed
+the culprit by exclusion.
+
+WHAT IS NOT MEASURED, and should not be assumed:
+  - whether `(foreach e '() 99)' behaves the same. Only the bare symbol
+    NIL was probed. `'()' reads as the same object, so it probably
+    does, and `probably' is exactly the word that has been wrong four
+    times in this ticket.
+  - whether a NON-LITERAL nil is refused -- `(foreach e l 99)' with L
+    bound to nil is a run-time value, not something the loader sees, so
+    almost certainly not; the whole finding is that this is a READER
+    problem.
+  - Windows. Round 1 and round 2 both ran on macOS; the Windows jobs
+    were cancelled by pushes both times. The original refusal WAS seen
+    on both platforms, so the culprit is very likely the same, but the
+    per-form confirmation on Windows has not happened.
+
+WHAT IT MEANS IN PRACTICE. `(foreach x nil ...)' is what a program
+contains when its list argument is a constant that happens to be empty
+-- easily produced by a macro expansion, a generator, or a hand edit
+that emptied a literal list. Such a file loads in AutoCAD and in
+clautolisp and DOES NOT LOAD in BricsCAD, with no diagnostic at all:
+the process sits until something times it out. That is a portability
+hazard worth a note in the user manual, and possibly worth a
+--dialect bricscad warning, but that is a decision rather than a
+finding and is left for pjb.
+
+THE METHOD, which is the reusable part. Four guesses were made about
+this file and all four were wrong -- the suite that had loaded fine,
+the body-less form, then expression position, and the assumption that a
+silence meant the previous load had failed. What settled it was
+instrumentation, in three steps: mark every load; split the suite one
+form per file so a HANG names the form; and then ORDER the forms so
+that the unknown candidate is reached first, because a refusal hangs
+the engine and one run can only ever name the FIRST culprit.
+
+That last point is the non-obvious one and it is written at the head of
+probe-load-refusal.lsp: the order of the forms in that file is the
+experiment's design, not housekeeping.
 
 WHY IT IS NOT URGENT
 

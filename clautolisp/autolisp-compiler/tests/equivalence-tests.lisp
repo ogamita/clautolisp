@@ -105,6 +105,45 @@ up here as two different codes rather than as two passing branches."
     "(cond (nil 1))"
     "(cond ((= 1 1) \"eq\") (t \"ne\"))"
     "(progn (setq a 5) (cond ((> a 10) \"big\") ((> a 3) \"mid\") (t \"small\")))"
+    ;; THE FORMS SLICES 20-25 TAUGHT THE TRANSPILER. The corpus had not
+    ;; grown with the coverage: it still held only the six operators of
+    ;; slice 19, so the CONTRACT -- compiled and interpreted agree --
+    ;; was being asserted over a shrinking fraction of what the compiler
+    ;; claimed to handle. Each of these has its own test above; what
+    ;; they did NOT have is a place in the corpus that runs every case
+    ;; both ways.
+    ;;
+    ;; while / repeat / foreach (slice 20), bodies included
+    "(progn (setq i 0) (while (< i 3) (setq i (+ i 1))) i)"
+    "(progn (setq i 0) (repeat 3 (setq i (+ i 1))) i)"
+    "(repeat 3 1)"
+    "(progn (setq s 0) (foreach e '(1 2 3) (setq s (+ s e))) s)"
+    "(foreach e '(1 2 3) (* e 10))"
+    "(foreach e nil 99)"
+    ;; the loop-variable rule both vendors were measured to follow
+    "(progn (setq e 'before) (foreach e '(1 2 3) nil) e)"
+    ;; an EMPTY loop body -- (while (setq i (cdr i))) is how AutoLISP
+    ;; drains a list, and this shape once compiled to (LOOP ... DO NIL)
+    ;; and signalled a host error at CALL time
+    "(progn (setq l '(1 2)) (while (setq l (cdr l))) l)"
+    ;; function / lambda (slice 21)
+    "(function car)"
+    "(apply (function +) '(1 2))"
+    "(apply (lambda (x) (* x 2)) '(21))"
+    "((lambda (x y) (+ x y)) 1 2)"
+    ;; a lambda whose body needs the enclosing scope
+    "(progn (setq k 10) (apply (lambda (x) (+ x k)) '(5)))"
+    ;; let (slice 22), including the PARALLEL binding rule that
+    ;; separates it from a LET* BricsCAD does not have
+    "(let ((x 1)) x)"
+    "(let ((x 1) (y 2)) (+ x y))"
+    "(progn (setq x 10) (let ((x 1) (y x)) (list x y)))"
+    "(progn (setq x 10) (let ((x 1)) x) x)"
+    "(let ((x 1)) (foreach e '(1 2) (setq x (+ x e))) x)"
+    ;; set (slice 25) -- the place form is EVALUATED, which is the whole
+    ;; difference from setq
+    "(set 'a 7)"
+    "(progn (setq n 'target) (set n 42) target)"
     ;; a test-only clause yields the TEST's value
     "(cond (7))"
     ;; T is self-evaluating REGARDLESS of its binding. The two cases above
