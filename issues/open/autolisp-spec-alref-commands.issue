@@ -1,0 +1,7 @@
+Commands are missing from alref reference, and indeed, from autolisp-spec.
+
+As we included sysvar in the spec and alref, We should add the
+specifications of the commands of briscad and autocad (and specific
+commands of clautolisp we already virtually have a few actually!) in a
+specific chapter of the autolisp-spec.
+       
