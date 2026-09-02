@@ -77,3 +77,35 @@
   (let ((context (fresh-context)))
     (load-tracked context +frob-source+)
     (is (null (clautolisp.debug:ensure-metadata-for-name "NOSUCHFN" context)))))
+
+;;; --- DEBUG-level instrument-on-defun + surfaced weave failures --------
+;;; (the loader instruments interpreted code under a session; a weave that
+;;; raises is reported, not silently swallowed into a frameless function).
+
+(test defun-under-a-session-instruments-eagerly
+  ;; A function DEFINED under an active debug session (as the loader runs a
+  ;; file under --on-error debug) is instrumented at defun — debuggable
+  ;; immediately, before any call. Outside a session it is not (covered by
+  ;; ENSURE-METADATA-INSTRUMENTS-A-LOADED-BUT-UNCALLED-FUNCTION above).
+  (let ((context (fresh-context)))
+    (clautolisp.debug:with-debugging ()
+      (load-tracked context +frob-source+))
+    (is (clautolisp.debug:instrumentedp (usubr-named context "FROB")))
+    (is (clautolisp.debug:instrumentedp (usubr-named context "ID")))))
+
+(test weave-failure-is-surfaced-once-not-swallowed
+  ;; When the instrumenter cannot weave a function, the runtime must WARN
+  ;; (naming it) instead of silently leaving it frameless — and remember the
+  ;; failure so it neither re-warns nor re-attempts on every call.
+  (let ((context (fresh-context)))
+    (load-tracked context +frob-source+)
+    (let ((usubr (usubr-named context "FROB"))
+          (calls 0))
+      (let ((clautolisp.autolisp-runtime:*instrument-usubr-hook*
+              (lambda (fn) (declare (ignore fn)) (incf calls) (error "synthetic gap"))))
+        (signals warning
+          (clautolisp.autolisp-runtime:instrument-usubr-if-possible usubr))
+        (is (clautolisp.autolisp-runtime:autolisp-usubr-instrumentation-failed usubr))
+        ;; second attempt: plain body (nil), no re-attempt of the failing weave
+        (is (null (clautolisp.autolisp-runtime:instrument-usubr-if-possible usubr)))
+        (is (= 1 calls))))))

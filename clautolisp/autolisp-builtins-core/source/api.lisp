@@ -5707,10 +5707,10 @@ Returns the function object."
          (usubr (clautolisp.autolisp-runtime:make-autolisp-usubr
                  name-string lambda-list body
                  (clautolisp.autolisp-runtime:current-evaluation-context))))
-    (when (and (plusp (clal-optimization-level :debug))
-               clautolisp.autolisp-runtime:*instrument-usubr-hook*)
-      (ignore-errors
-       (funcall clautolisp.autolisp-runtime:*instrument-usubr-hook* usubr)))
+    (when (plusp (clal-optimization-level :debug))
+      ;; Surfaces a weave failure (one warning naming the function) instead of
+      ;; silently swallowing it and returning an un-instrumented function.
+      (clautolisp.autolisp-runtime:instrument-usubr-if-possible usubr))
     usubr))
 
 (defun set-drawing-codepage (new-codepage-value)

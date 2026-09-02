@@ -96,6 +96,7 @@
    #:autolisp-usubr-environment
    #:autolisp-usubr-instrumented-body
    #:autolisp-usubr-debug-metadata
+   #:autolisp-usubr-instrumentation-failed
    #:autolisp-catch-all-error
    #:make-autolisp-catch-all-error
    #:autolisp-catch-all-error-message
@@ -189,6 +190,8 @@
    #:*debugging*
    #:*instrument-usubr-hook*
    #:*debug-instrumentation-enabled*
+   #:instrument-usubr-if-possible
+   #:maybe-instrument-usubr
    #:*clal-on-error*
    #:*clal-on-interrupt*
    #:*clal-on-quit*

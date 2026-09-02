@@ -1379,6 +1379,13 @@ chosen (an Emacs connection or a 1/2 fallback), then attach it. Idempotent."
 forwarding ALDB-LISTENER-UI. For :ncurses, load the cl-charms backend on demand
 and hand the UI a real terminal screen; when that backend is unavailable, fall
 back cleanly to the terminal (tui) UI rather than crashing on an unbound screen."
+  ;; Make the CLAL-OPTIMIZATION DEBUG level authoritative for instrumentation at
+  ;; session start: derive the runtime gate from it so a debuggable-configured
+  ;; run (DEBUG>0 — the default) actually weaves instrumented forks, and a
+  ;; DEBUG-0/SPACE run does not. (CLAL-OPTIMIZE keeps the gate in sync for LIVE
+  ;; changes; this covers the launch value / any path that set DEBUG without it.)
+  (setf clautolisp.autolisp-runtime:*debug-instrumentation-enabled*
+        (plusp (clautolisp.autolisp-builtins-core:clal-optimization-level :debug)))
   (if (and (eq debug-ui :aldb) *aldb-listener-address*)
       (clautolisp.debug.ui:start-session
        :ui (make-aldb-listener-ui *aldb-listener-address* context)

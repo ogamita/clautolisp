@@ -1351,6 +1351,13 @@ binding. A no-op when SYMBOL has no namespace cell yet."
   (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-debug-metadata object)
         value))
 
+(defun autolisp-usubr-instrumentation-failed (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-instrumentation-failed object))
+
+(defun (setf autolisp-usubr-instrumentation-failed) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-instrumentation-failed object)
+        value))
+
 (defun make-autolisp-catch-all-error (message condition)
   (clautolisp.autolisp-runtime.internal::make-autolisp-catch-all-error
    :message message
@@ -1646,14 +1653,50 @@ SPACE / DEBUG 0). When NIL, debugged code runs its plain body — no poll points
 no stepping — trading debuggability for speed/size (the fork matrix's DEBUG-0
 rows). T by default, so a debug session instruments what it runs.")
 
+(defun instrument-usubr-if-possible (function)
+  "Weave FUNCTION's instrumented fork via *INSTRUMENT-USUBR-HOOK*, SURFACING a
+failure instead of silently swallowing it: if the weave raises (a construct the
+instrumenter cannot yet handle), emit ONE warning naming the function and the
+cause, remember the failure on the usubr so we neither re-warn nor re-attempt on
+every call, and fall back to the plain body. Returns the instrumented body (now
+non-nil), or NIL when the debugger layer is absent or the weave failed — the
+caller then runs the plain body (no poll points ⇒ that function shows no stack
+frames, which is exactly what the warning now makes visible instead of a silent
+empty backtrace). Idempotent: an already-instrumented function is left as is."
+  (when (and *instrument-usubr-hook*
+             (not (autolisp-usubr-instrumented-body function))
+             (not (autolisp-usubr-instrumentation-failed function)))
+    (handler-case (funcall *instrument-usubr-hook* function)
+      (error (condition)
+        (setf (autolisp-usubr-instrumentation-failed function) t)
+        (warn "clautolisp: cannot instrument ~A for debugging (~A); it will run ~
+without breakpoints or stack frames — the debugger will show no frames for it. ~
+Please report the function's source as an instrumenter gap."
+              (let ((name (autolisp-usubr-name function)))
+                (if (and name (plusp (length name))) name "<lambda>"))
+              condition))))
+  (autolisp-usubr-instrumented-body function))
+
 (defun maybe-instrument-usubr (function)
   "Lazily weave FUNCTION's instrumented fork on its first call under a debug
-session, when instrumentation is enabled and the debugger layer is loaded.
-Returns the instrumented body (now non-nil), or NIL if instrumentation is
-disabled / the debugger is absent, so the caller falls back to the plain body."
-  (when (and *debug-instrumentation-enabled* *instrument-usubr-hook*)
-    (ignore-errors (funcall *instrument-usubr-hook* function))
-    (autolisp-usubr-instrumented-body function)))
+session, when instrumentation is enabled (the CLAL-OPTIMIZATION DEBUG level, via
+*DEBUG-INSTRUMENTATION-ENABLED*) and the debugger layer is loaded. Returns the
+instrumented body (now non-nil), or NIL if instrumentation is disabled / the
+debugger is absent / the weave failed, so the caller falls back to the plain
+body. A weave failure is surfaced once (see INSTRUMENT-USUBR-IF-POSSIBLE)."
+  (when *debug-instrumentation-enabled*
+    (instrument-usubr-if-possible function)))
+
+(defun instrument-defun-if-debugging (function)
+  "Weave FUNCTION eagerly at DEFUN/load time when a debug session is active and
+instrumentation is enabled (CLAL-OPTIMIZATION DEBUG>0) — the documented \"the
+loader instruments the interpreted code\" behavior. So code loaded under
+--on-error debug / a debugger UI is debuggable immediately (breakpoints before
+first call; a weave failure surfaces at load, naming the function) instead of
+only lazily on first call. Outside a session (*DEBUGGING* NIL) this is a no-op,
+so ordinary non-debug runs keep defining plain, allocation-free bodies."
+  (when *debugging*
+    (maybe-instrument-usubr function)))
 
 (defun append-proper-and-tail (elements tail)
   (if (null elements)
@@ -3292,6 +3335,7 @@ name; a LAMBDA has none and passes NIL."
           (definition (compatibility-definition-from-parts lambda-list body)))
       (set-function name function context)
       (set-autolisp-function-list-definition name definition context)
+      (instrument-defun-if-debugging function)
       name)))
 
 (defun eval-defun-form (arguments context)
@@ -3326,6 +3370,7 @@ name; a LAMBDA has none and passes NIL."
                        (let ((text (current-form-preceding-doc)))
                          (and text (list :function text)))
                        context)
+      (instrument-defun-if-debugging function)
       name)))
 
 (defparameter *special-operator-dispatch*

@@ -208,4 +208,5 @@
    #:install-core-builtins
    #:autolisp-value->string
    #:live-event-policy
+   #:clal-optimization-level
    #:apply-dialect-trust-sysvar-defaults))

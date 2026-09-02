@@ -35,6 +35,30 @@
                  (clautolisp.debug:snapshot-function-name
                   (clautolisp.debug:hit-snapshot captured))))))
 
+(test loaded-function-under-a-session-breaks-with-frames
+  ;; The reported bug: a function LOADED under --on-error debug must break with
+  ;; a non-empty backtrace — WITHOUT any explicit instrument-usubr call. Defining
+  ;; under the session instruments eagerly, so the snapshot's call stack carries
+  ;; the real frames (OUTER ← DEEP) rather than an empty backtrace.
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (captured nil))
+    ;; define (as the loader would) UNDER the session — no manual instrument
+    (clautolisp.debug:call-with-debugging
+     (lambda ()
+       (load-tracked context "(defun deep () (nosuchfn 1))(defun outer () (deep))"))
+     :thread-info ti)
+    (is (clautolisp.debug:instrumentedp (usubr-named context "OUTER")))
+    (is (clautolisp.debug:instrumentedp (usubr-named context "DEEP")))
+    (let ((clautolisp.debug:*debug-hit-handler*
+            (lambda (hit) (setf captured hit) :abort)))
+      (clautolisp.debug:call-with-debugging
+       (lambda () (eval-call context "OUTER")) :thread-info ti))
+    (is (clautolisp.debug:hit-p captured))
+    (let ((frames (clautolisp.debug:snapshot-call-stack
+                   (clautolisp.debug:hit-snapshot captured))))
+      (is (<= 2 (length frames))))))          ; DEEP and OUTER, not empty
+
 (test abort-unwinds-the-evaluation
   (let* ((context (fresh-context))
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))

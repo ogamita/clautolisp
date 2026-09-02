@@ -208,7 +208,13 @@ clautolisp-secureload-trust-model spec.")
   ;; bound-names, function-id). Both default to NIL; an
   ;; un-instrumented function carries zero debug overhead.
   (instrumented-body nil :type list)
-  (debug-metadata nil))
+  (debug-metadata nil)
+  ;; Set once when weaving the instrumented fork raised (a construct the
+  ;; instrumenter cannot yet handle). Remembered so the runtime neither
+  ;; re-attempts the failing weave on every call nor re-warns; the function
+  ;; then runs its plain body (no poll points → no stack frames for it). See
+  ;; INSTRUMENT-USUBR-IF-POSSIBLE in api.lisp.
+  (instrumentation-failed nil))
 
 (defstruct autolisp-catch-all-error
   (message "" :type string)
