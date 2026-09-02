@@ -126,10 +126,21 @@ WHAT IS NOT MEASURED, and should not be assumed:
     bound to nil is a run-time value, not something the loader sees, so
     almost certainly not; the whole finding is that this is a READER
     problem.
-  - Windows. Round 1 and round 2 both ran on macOS; the Windows jobs
-    were cancelled by pushes both times. The original refusal WAS seen
-    on both platforms, so the culprit is very likely the same, but the
-    per-form confirmation on Windows has not happened.
+  - Windows. THREE attempts, none of which produced a Windows result.
+    Rounds 1 and 2 had their Windows jobs cancelled by my own pushes;
+    the third attempt, where I deliberately held the pushes back, ended
+    with all three Windows probe jobs failing as
+    `stuck_pending_no_matching_runners' -- the runner dropped
+    mid-pipeline, thirteen jobs with it. So the reason is now
+    environmental rather than self-inflicted, and GitLab says so
+    explicitly rather than leaving a silence.
+
+    The macOS finding is replicated THREE times, and the ORIGINAL
+    refusal was seen on both platforms, so the culprit is very likely
+    the same on Windows. `Very likely' is not measured, and in this
+    ticket that phrase has been wrong four times. RE-RUN THE WINDOWS
+    JOB when the runner is up; nothing else is needed, the experiment
+    is committed and quarantined.
 
 WHAT IT MEANS IN PRACTICE. `(foreach x nil ...)' is what a program
 contains when its list argument is a constant that happens to be empty
