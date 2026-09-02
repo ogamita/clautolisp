@@ -60,7 +60,45 @@ Verified on the clautolisp baseline both ways: a default run produces
 265 results and ZERO from this suite, and the named run loads all four
 forms with their markers and answers all three cases `ok'.
 
-What is still missing is the ANSWER, which only BricsCAD can give.
+ROUND 1 -- 2026-09-02, BricsCAD on macOS. THE CULPRIT IS NAMED.
+
+    ((KIND . "step") (AT . "loaded probe-load-refusal.lsp form 1 ...")
+                     (VALUE . "CAD-PROBE-LR--EXPRESSION-POSITION"))
+
+and nothing after it. Form 1 LOADED -- its marker carries the function
+it defined. Form 2's marker never appears.
+
+  (list (foreach e (list 1 2 3) (* e 10)))   LOADED   -- innocent
+  (foreach e nil 99)                         REFUSED  -- the culprit
+  (foreach e (list 1 2 3))                   not reached
+
+BRICSCAD WILL NOT READ A FOREACH WHOSE LIST ARGUMENT IS A LITERAL NIL,
+from a file it is loading. It executes the same form perfectly well
+when the form is READ at run time -- that is how the empty-list return
+value was measured, and it is nil there, as in AutoCAD.
+
+FOREACH IN EXPRESSION POSITION IS INNOCENT, which is worth stating
+because it was the candidate I would have bet on: a loop used as an
+argument looks like the unusual thing, and it is not.
+
+ONE RUN FINDS AT MOST ONE CULPRIT, and it finds the FIRST -- a refusal
+hangs the engine, so everything after it is never attempted. The
+suite's form ORDER is therefore part of the experiment, not
+housekeeping: the body-less form, still unknown, now goes FIRST and the
+known culprit goes LAST. That is written at the head of the suite so
+the next person does not reorder it tidily and lose the design.
+
+WHAT THIS MEANS IN PRACTICE, and it is not nothing: `(foreach x nil
+...)' is what a program contains when the list argument is a constant
+that happens to be empty -- a degenerate case a generator or a macro
+expansion produces easily. Such a file loads in AutoCAD and in
+clautolisp and DOES NOT LOAD in BricsCAD, with no diagnostic: the
+process sits there. Anyone shipping AutoLISP to both hosts should know
+it, which is why this ticket stays open until the third candidate is
+settled and the whole thing can be written up as a portability note.
+
+STILL MISSING: whether the body-less FOREACH is also refused. Round 2
+answers that, since it is now first.
 
 WHY IT IS NOT URGENT
 
