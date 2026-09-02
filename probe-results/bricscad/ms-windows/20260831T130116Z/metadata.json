@@ -1,0 +1,9 @@
+{
+  "product": "bricscad",
+  "platform": "ms-windows",
+  "timestamp_utc": "20260831T130116Z",
+  "status": "completed",
+  "exit_code": 0,
+  "runner_template": "\"/c/gitlab-runner/builds/knW21971t/0/ogamita/clautolisp/autolisp-front-end/tools/alfe/bin/alfe-sbcl.exe\" --no-init --bricscad --mode batch --timeout 180 -l __PROBE_FILE__",
+  "result_file": "probe-results/bricscad/ms-windows/20260831T130116Z/results.sexp"
+}

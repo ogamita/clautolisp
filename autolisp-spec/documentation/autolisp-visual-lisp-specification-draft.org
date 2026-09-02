@@ -1138,6 +1138,24 @@ Iterates over each element of `list`, binding it to `name`.
 *** Return Values
 Returns the final body value or `nil` if no body exists.
 
+*** Vendor Divergence
+A `foreach` with *no body at all* is the one measured disagreement
+between the two hosts:
+
+| form                       | AutoCAD 2026 | BricsCAD V25/V26 |
+|----------------------------+--------------+------------------|
+| ~(foreach e '(1 2 3))~     | ~nil~        | ~(1 2 3)~        |
+
+AutoCAD follows the rule stated above: with no body there is no final
+body value, so the result is `nil`. BricsCAD returns the *list*, on
+macOS and on Windows alike, which is the shape an implementation
+produces when the loop's accumulator is seeded with the sequence and
+the body never overwrites it. No vendor page documents either answer.
+
+Every other behaviour in this entry -- the binding rule, the value of a
+loop with a body, the value over an empty list -- was measured
+identical on both hosts.
+
 *** Side Effects
 Side effects are those of:
 
@@ -1149,9 +1167,14 @@ Side effects are those of:
 Erroneous if the list argument is not acceptable to the active host semantics.
 
 *** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2026: documented (per Autodesk reference page), and *verified
+  by probe* 2026-08-31 (Windows).
+- BricsCAD V25/V26: *verified by probe* 2026-08-31 (macOS and Windows),
+  no longer presumed. Compatible except for the no-body return value
+  recorded under Vendor Divergence.
+- Status: both hosts measured. Evidence:
+  ~probe-results/{autocad/ms-windows,bricscad/ms-windows,bricscad/macos}/2026-08-31*~,
+  produced by ~probes/sources/probe-foreach-scope.lsp~.
 
 *** Source Notes
 - [foreach (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-BE6A23C4-4E18-45A6-854E-2DE9574A6925.htm)
