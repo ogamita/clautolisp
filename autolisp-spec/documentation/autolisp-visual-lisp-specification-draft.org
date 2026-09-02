@@ -1139,8 +1139,39 @@ Iterates over each element of `list`, binding it to `name`.
 Returns the final body value or `nil` if no body exists.
 
 *** Vendor Divergence
+Two, and they are of different kinds: one is a *return value*, the
+other is whether the host will *read the form at all*.
+
+**** BricsCAD will not LOAD ~(foreach VAR nil ...)~
+
+A `foreach` whose list argument is the literal ~nil~ cannot be *loaded
+from a file* by BricsCAD. There is no diagnostic: the engine stops,
+and a batch process sits until something times it out. The same form
+*executes correctly* in BricsCAD when it is produced by ~read~ at run
+time, so the refusal is in whatever reads a file being loaded and not
+in the evaluator.
+
+| form                     | AutoCAD 2026 | BricsCAD V25/V26   |
+|--------------------------+--------------+--------------------|
+| ~(foreach e nil 99)~     | loads, `nil` | *will not load*    |
+| ~(foreach e '(1 2 3))~   | loads        | loads              |
+| ~(list (foreach ...))~   | loads        | loads              |
+
+Measured by isolating each candidate in its own file, one per load,
+over two runs (2026-09-02, macOS). `foreach` in *expression position*
+and `foreach` *without a body* were both cleared; the literal ~nil~ is
+the whole of it. Whether ~'()~ behaves identically was not probed.
+
+This matters for portability rather than for semantics:
+~(foreach x nil ...)~ is what a file contains when its list argument is
+a constant that happens to be empty -- readily produced by a macro
+expansion or a generator -- and such a file loads under AutoCAD and
+fails silently under BricsCAD.
+
+**** The return value of a body-less ~foreach~
+
 A `foreach` with *no body at all* is the one measured disagreement
-between the two hosts:
+about a *value* between the two hosts:
 
 | form                       | AutoCAD 2026 | BricsCAD V25/V26 |
 |----------------------------+--------------+------------------|
@@ -1155,6 +1186,11 @@ the body never overwrites it. No vendor page documents either answer.
 Every other behaviour in this entry -- the binding rule, the value of a
 loop with a body, the value over an empty list -- was measured
 identical on both hosts.
+
+Note that the two divergences above concern the same corner of the
+form from opposite directions: BricsCAD refuses to *read* a literal
+~nil~ list, and disagrees about the *value* when the body is absent.
+Neither is documented by either vendor.
 
 *** Side Effects
 Side effects are those of:
