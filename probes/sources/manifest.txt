@@ -2,7 +2,12 @@
 #
 # The probe suites run by `make probe`, in order. One suite per line:
 #
-#     <source-file-relative-to-this-dir>   <run-function>
+#     <source-file-relative-to-this-dir>   <run-function>   [flags]
+#
+# The only flag is `quarantine': the suite is SKIPPED by a default run
+# and included only when PROBE_SUITES names it. For a suite whose forms
+# are meant to be rejected by a host -- where a refusal hangs the engine
+# and would take every other answer in the run with it.
 #
 # run-probes.sh loads probe-core.lsp first (always), then loads each
 # source file below and calls its run-function between
@@ -19,3 +24,7 @@ probe-rtos.lsp         cad-probe-run-rtos-probes
 probe-secureload.lsp   cad-probe-run-secureload-probes
 probe-vl-catch-all-apply.lsp  cad-probe-run-vl-catch-all-apply-probes
 probe-foreach-scope.lsp       cad-probe-run-foreach-scope-probes
+
+# QUARANTINED -- run alone and split, never as part of a normal run:
+#     PROBE_SUITES=load-refusal PROBE_SPLIT_SUITES=load-refusal
+probe-load-refusal.lsp        cad-probe-run-load-refusal-probes    quarantine

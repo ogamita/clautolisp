@@ -158,7 +158,12 @@ case "$product" in
     # vendor probes, which are green. The direct invocation stays below
     # as the fallback for a checkout with no alfe built.
     if alfe_bin="$(alfe_binary)"; then
-      emit "\"$alfe_bin\" --no-init --bricscad --mode batch --timeout 180 -l __PROBE_FILE__"
+      # PROBE_TIMEOUT: how long alfe waits before giving up on the CAD.
+      # 180 s suits a normal suite. The load-refusal experiment EXPECTS a
+      # host to hang -- that is its result -- and it runs on a serial
+      # runner, so it sets this low rather than making every other job
+      # queue behind a deliberate hang.
+      emit "\"$alfe_bin\" --no-init --bricscad --mode batch --timeout ${PROBE_TIMEOUT:-180} -l __PROBE_FILE__"
     fi
     bin="${BRICSCAD_EXE:-}"
     [[ -z "$bin" ]] && bin="$(alfe_lookup bricscad || true)"
