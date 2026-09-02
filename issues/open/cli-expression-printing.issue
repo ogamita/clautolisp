@@ -1,8 +1,0 @@
-clautolisp --no-init -l  "/opt/local/share/autolisp/site-lisp/autolisp-spec/alref.lsp" -x '(alref-set-root "/opt/local/share/autolisp-spec/")' -x '(alref-apropos "MAKE-SYM")'
-
-doesn't print the output of the expression  (alref-apropos "MAKE-SYM")
-It's unfortunate, and there's no easy way to get it printed.
-
-Therefore we must modify the semantics of -x and make sure printing performed by the functions called in -x expression is routed to the standard output.
-
-The same for alfe -x '(foo)'
