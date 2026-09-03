@@ -220,6 +220,100 @@
       (declare (ignore result screen))
       (is (search "set at line 4" (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
 
+;;; --- stack-pane frame expansion (§19.1) ----------------------------
+
+(test stack-frame-opens-to-show-locals-and-selects-them
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; Stopped inside TWO at line 3; its frame (0) binds X (=7) and Z. Activate
+    ;; the stack window (C-w p C-w p: interactor->source->stack); RET opens the
+    ;; frame — its locals render indented — and Down moves to the second local.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 23) #\p (code-char 23) #\p :enter :down)
+                     :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result))
+      (is (eql 0 (clautolisp.ui.ncurses:ncurses-ui-open-frame ui)))
+      (is (= 1 (clautolisp.ui.ncurses:ncurses-ui-selected-local ui)))
+      ;; the opened frame's locals are drawn (X and Z, "name = value")
+      (is (or (grid-contains screen "X = 7") (grid-contains screen "Z ="))))))
+
+(test stack-frame-ret-toggles-open-closed
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; RET opens the selected frame; a second RET closes it again.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 23) #\p (code-char 23) #\p :enter :enter)
+                     :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (null (clautolisp.ui.ncurses:ncurses-ui-open-frame ui))))))
+
+(test stack-frame-i-inspects-the-selected-local
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; Open frame 0, then i inspects the selected local's value in a new
+    ;; inspector window (which becomes the active window).
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 23) #\p (code-char 23) #\p :enter #\i)
+                     :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (eq :inspector (active-role ui))))))
+
+(test stack-frame-e-evaluates-in-the-frame-context
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; Open frame 0 (TWO, where X=7), then e reads a form and evaluates it in
+    ;; that frame's context: X is visible there, so the repl echoes X => 7.
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (append (list (code-char 23) #\p (code-char 23) #\p :enter #\e)
+                             (coerce "x" 'list) (list :enter))
+                     :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (some (lambda (l) (search "=> 7" l))
+                (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui))))))
+
+;;; --- source-pane navigation mode chosen by the `navigator' setting -
+
+(test source-pane-uses-the-sexp-navigator-by-default
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list #\c) :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      ;; default navigator=sexp ⇒ the structural (NAVI) interactor
+      (is (member :navi (window-stack-of ui :source)))
+      (is (not (member :navi-line (window-stack-of ui :source)))))))
+
+(test source-pane-uses-the-line-navigator-when-navigator-is-line
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    ;; navigator=line SELECTS the line-by-line (NAVI-LINE) source interactor;
+    ;; Down then moves the source cursor one line (line 3 stop → line 4).
+    (with-open-file (out "two.lsp" :direction :output :if-exists :supersede)
+      (write-string +two-source+ out))
+    (clautolisp.debug.ui:set-aldo-setting :navigator :line)
+    (unwind-protect
+         (multiple-value-bind (result ui screen)
+             (run-ncurses (list (code-char 23) #\p :down)
+                          :context context :thread-info ti
+                          :thunk (lambda () (call-two context)))
+           (declare (ignore result screen))
+           (is (member :navi-line (window-stack-of ui :source)))
+           (is (not (member :navi (window-stack-of ui :source))))
+           (is (eql 4 (clautolisp.ui.ncurses:ncurses-ui-source-cursor ui))))
+      (clautolisp.debug.ui:set-aldo-setting :navigator :sexp)
+      (ignore-errors (delete-file "two.lsp")))))
+
 (test ansi-line-segments-parses-colour-runs
   ;; ANSI SGR runs → (text . face) segments; the face is named after the fg colour
   ;; (33 → :yellow); reset returns to the base attr; escapes are consumed.

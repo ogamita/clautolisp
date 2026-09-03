@@ -1277,11 +1277,20 @@ Documentation/chap-windows.tex] in a terminal:
 #+end_example
 
 *** 19.1 Panes
-- *Stack pane* (top-left): one line per frame, current frame marked.
-  Up/Down arrows navigate frames; Enter selects.
+- *Stack pane* (top-left): one line per frame, current frame marked. A
+  frame with locals is flagged =>=; when closed, Up/Down navigate frames.
+  =Enter= /opens/ the selected frame (flag =v=), listing its local
+  bindings (formals and =/=-locals) indented under it as =name = value=;
+  while open, Up/Down select a local, =i= inspects the selected local's
+  value in an inspector window, and =e= evaluates a form in that frame's
+  dynamic context (§9.3 with-frame-bindings, reconstructed for outer
+  frames). =Enter= again closes the frame.
 - *Source pane* (top-right): shows the source around the current frame's
   stopping point. Poll points are shown as coloured markers (blue = poll
-  point, red = breakpoint, yellow = current). Mouse click on a marker
+  point, red = breakpoint, yellow = current). The pane's navigation is
+  chosen by the =navigator= setting (§ settings): =sexp= (the default)
+  gives structural s-expression motion (=d=/=u=/=>=/=<=); =line= gives
+  line-by-line motion (Up/Down or =u=/=d=). Mouse click on a marker
   toggles the breakpoint, where mouse is supported by the terminal;
   otherwise, cursor movement with =b=-then-Enter does the same.
 - *Interactor pane* (bottom-left): the command line, with history and

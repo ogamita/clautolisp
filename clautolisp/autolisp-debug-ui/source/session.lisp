@@ -163,9 +163,12 @@ a PREDICATE thunk — when the predicate goes false→true. Returns the watch."
       (ui-show-source (session-ui session) (stack-frame-source-position frame)))
     frame))
 
-(defun cmd-eval (session form)
-  "Evaluate FORM in the stopping context (innermost frame; spec §17.2).
-FORM may be a string — read under the dialect in force NOW
+(defun cmd-eval (session form &key (frame-index 0))
+  "Evaluate FORM in the stopping context. FRAME-INDEX selects the stack
+frame whose dynamic context is used — 0 (the default) is the innermost,
+stopping frame (spec §17.2); an outer index evaluates in that frame's
+reconstructed context (with-frame-bindings, §9.3), for the stack pane's
+per-frame `e'. FORM may be a string — read under the dialect in force NOW
 (READ-CURRENT-SOURCE, interactor-design-revision.issue D2) — or a runtime
 form."
   (let ((snapshot (debugger-session-snapshot session))
@@ -174,7 +177,7 @@ form."
                             form :source-name "<debugger>"
                             :context (debugger-session-context session)))
                     form)))
-    (eval-in-frame snapshot parsed :frame-index 0)))
+    (eval-in-frame snapshot parsed :frame-index frame-index)))
 
 (defun cmd-set-variable (session symbol value)
   "Set SYMBOL at the stopping point — the innermost binding, or global if
