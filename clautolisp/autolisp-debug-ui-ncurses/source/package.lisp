@@ -36,7 +36,8 @@ markers (top-right), interactor (bottom-left), repl (bottom-right).")
   (:export #:ncurses-ui #:make-ncurses-ui
            ;; render entry points (also used by tests)
            #:render-debugger #:render-inspector
-           #:ncurses-ui-repl-lines #:ncurses-ui-message #:ncurses-ui-selected-frame
+           #:ncurses-ui-repl-lines #:ncurses-ui-message #:ncurses-ui-why-message
+           #:ncurses-ui-message-history #:ncurses-ui-selected-frame
            ;; unified config persistence (windows-and-interactor-templates.issue)
            #:save-all-configurations #:load-all-configurations
            #:load-cascade-only-configurations))

@@ -7,6 +7,23 @@
 
 (in-suite ncurses-suite)
 
+(test sanitize-line-replaces-control-bytes-keeps-utf8
+  ;; A stray control / C1 byte in rendered data (a function name, a value) made
+  ;; curses draw '~@?' garbage in the stack pane; SANITIZE-LINE (applied by
+  ;; WIN-PUT-LINE) turns such bytes into '?' while leaving printable text — all
+  ;; UTF-8 included — untouched.
+  (is (string= "SE?ND"
+               (clautolisp.ui.ncurses::sanitize-line
+                (concatenate 'string "SE" (string (code-char #x93)) "ND")))) ; C1 byte
+  (is (string= "a?b"
+               (clautolisp.ui.ncurses::sanitize-line
+                (concatenate 'string "a" (string (code-char 127)) "b"))))    ; DEL
+  ;; pure ASCII and legitimate UTF-8 (accents, ≥ 160) pass through unchanged
+  (is (string= "> SEND  line 372"
+               (clautolisp.ui.ncurses::sanitize-line "> SEND  line 372")))
+  (is (string= "tolère café — méthode"
+               (clautolisp.ui.ncurses::sanitize-line "tolère café — méthode"))))
+
 (defun break-at (context metas line)
   (declare (ignore context))
   (let ((ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
@@ -430,16 +447,27 @@
       (declare (ignore result screen))
       (is (eq :repl (active-role ui))))))
 
-(test window-scroll-reports-on-active-window
+(test window-scroll-and-why-preserve-and-redisplay-the-message
+  ;; Scrolling leaves the message alone; the `w' (why) key redisplays the stop
+  ;; reason even after other commands. Uses a breakpoint stop (ui-thread-hit sets
+  ;; the why-message).
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
          (ti (break-at context metas 3)))
-    ;; C-w v scrolls the active window (message records it); no crash.
     (multiple-value-bind (result ui screen)
-        (run-ncurses (list (code-char 23) #\v #\c) :context context :thread-info ti
+        (run-ncurses (list (code-char 23) #\v          ; C-w v : scroll (small cmd)
+                           #\w                          ; w     : why
+                           #\c)                         ; c     : continue
+                     :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
-      (is (search "scroll" (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
+      ;; a stop reason was captured, and the scroll did not turn the line into
+      ;; a "scroll ..." status
+      (is (stringp (clautolisp.ui.ncurses:ncurses-ui-why-message ui)))
+      (is (not (search "scroll" (clautolisp.ui.ncurses:ncurses-ui-message ui))))
+      ;; after `w', the interactor line shows the (sticky) why message
+      (is (string= (clautolisp.ui.ncurses:ncurses-ui-why-message ui)
+                   (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
 
 (test window-manager-rides-on-the-active-window-stack
   (let* ((context (fresh-context))

@@ -11,6 +11,13 @@
    (selected-frame :initform 0 :accessor ncurses-ui-selected-frame) ; stack-frame index
    (source-cursor :initform nil :accessor ncurses-ui-source-cursor)  ; line in shown file
    (message :initform "" :accessor ncurses-ui-message)               ; interactor line
+   ;; The reason we stopped (error / caught error / break message), captured at
+   ;; UI-THREAD-* and NEVER overwritten by ordinary commands — so the `w' (why)
+   ;; command can always redisplay it, and a scroll/resize can't lose it.
+   (why-message :initform nil :accessor ncurses-ui-why-message)
+   ;; A rolling history of the interactor-line messages (newest last, capped), so
+   ;; a message scrolled past is not gone (M-x messages lists it).
+   (message-history :initform '() :accessor ncurses-ui-message-history)
    (repl-lines :initform '() :accessor ncurses-ui-repl-lines)        ; newest last
    (navigator :initform nil :accessor ncurses-ui-navigator)          ; source selection
    ;; The UI runs in a tui-core vdt-frame; its four panes are real tui-core
@@ -87,8 +94,29 @@ interactor stack)."
   (setf (ncurses-ui-repl-lines ui)
         (append (ncurses-ui-repl-lines ui) (list (apply #'format nil control args)))))
 
+(defparameter +message-history-limit+ 200
+  "How many interactor-line messages to keep (M-x messages).")
+
 (defun set-message (ui control &rest args)
-  (setf (ncurses-ui-message ui) (apply #'format nil control args)))
+  "Set the interactor line to a freshly formatted message and record it in the
+rolling history (so a message can be reviewed later even after a command
+replaces it). Never touches the WHY-MESSAGE (the stop reason)."
+  (let ((text (apply #'format nil control args)))
+    (setf (ncurses-ui-message ui) text)
+    (let ((history (cons text (ncurses-ui-message-history ui))))
+      (setf (ncurses-ui-message-history ui)
+            (if (> (length history) +message-history-limit+)
+                (subseq history 0 +message-history-limit+)
+                history)))
+    text))
+
+(defun set-why (ui control &rest args)
+  "Record the reason execution stopped (error / caught error / break message).
+Sticky: only a new stop overwrites it; ordinary commands never do. Also shown on
+the interactor line at the stop, and redisplayable with the `w' (why) command."
+  (let ((text (apply #'format nil control args)))
+    (setf (ncurses-ui-why-message ui) text)
+    (set-message ui "~A" text)))
 
 ;;;; --- protocol: lifecycle + notifications ---------------------------
 
@@ -116,17 +144,36 @@ interactor stack)."
   (set-message ui "[~A] ~A" level (apply #'format nil control args)))
 
 (defmethod ui-thread-hit ((ui ncurses-ui) session hit)
-  (declare (ignore hit))
-  (reset-stop-state ui session))
+  (reset-stop-state ui session)
+  ;; Record WHY we stopped so `w' can redisplay it. A programmatic (clal-break
+  ;; "MSG") carries MSG as the hit's error-message — surface it verbatim (the
+  ;; user wants to see e.g. "collection.count-element") AND show it on the line,
+  ;; since a break is a deliberate one-shot announcement. A plain breakpoint /
+  ;; step / watch stop recurs, so we record the reason for `w' but DON'T touch
+  ;; the interactor line (leaving it for the commands the user then runs).
+  (let* ((reason (hit-stop-reason hit))
+         (msg (hit-error-message hit))
+         (why (case reason
+                (:break (if (and msg (plusp (length msg)))
+                            (format nil "break: ~A" msg)
+                            "break"))
+                (:watch "watchpoint hit")
+                (:step "stepped")
+                (t (if (and msg (plusp (length msg)))
+                       (format nil "stopped: ~A" msg)
+                       "stopped at breakpoint")))))
+    (if (eq reason :break)
+        (set-why ui "~A" why)                 ; announce + remember
+        (setf (ncurses-ui-why-message ui) why)))) ; remember only (for `w')
 
 (defmethod ui-thread-unhandled-error ((ui ncurses-ui) session hit)
   (reset-stop-state ui session)
-  (set-message ui "ERROR: ~A   (a abort, r return, c run *error*)"
-               (hit-error-message hit)))
+  (set-why ui "ERROR: ~A   (a abort, r return, c run *error*, w why)"
+           (hit-error-message hit)))
 
 (defmethod ui-thread-caught-error ((ui ncurses-ui) session hit)
   (reset-stop-state ui session)
-  (set-message ui "caught error: ~A" (hit-error-message hit)))
+  (set-why ui "caught error: ~A   (w why)" (hit-error-message hit)))
 
 (defun reset-stop-state (ui session)
   (setf (ncurses-ui-selected-frame ui) 0
@@ -170,14 +217,28 @@ when the frame has no reconstructable source form (e.g. a builtin)."
 (defun win-content-height (rect) (max 0 (1- (third rect))))
 (defun win-width (rect) (fourth rect))
 
+(defun sanitize-line (string)
+  "Replace control characters — C0 (< 32), DEL, and the C1 range (127–159) —
+with a visible '?'. curses ADDSTR renders such bytes in caret/meta notation (a
+C1 byte shows as \"~@\"…\"~?\"), so a stray control character embedded in data
+(a function name, a printed value, a source line) turned the stack pane into
+'~@?' garbage. Printable code points, including all UTF-8 text (≥ 160, e.g. the
+accented source), pass through unchanged."
+  (if (some (lambda (c) (let ((n (char-code c))) (or (< n 32) (<= 127 n 159)))) string)
+      (map 'string
+           (lambda (c) (let ((n (char-code c))) (if (or (< n 32) (<= 127 n 159)) #\? c)))
+           string)
+      string))
+
 (defun win-put-line (screen rect row text &key attr)
   "Write TEXT on content ROW (0-based) of RECT, padded/clipped to its width.
 Rows are clipped to the window's content area (its last row is the status
-line, written by WIN-STATUS)."
+line, written by WIN-STATUS). TEXT is sanitized of control characters first
+(SANITIZE-LINE) so stray bytes never render as terminal garbage."
   (destructuring-bind (top left height width) rect
     (when (< -1 row (1- height))
       (tui-put screen (+ top row) left
-               (pad-string (truncate-string text width) width) :attr attr))))
+               (pad-string (truncate-string (sanitize-line text) width) width) :attr attr))))
 
 (defun win-status (screen rect title active-p)
   "Draw RECT's status line (its bottom row): the window TITLE across the full
@@ -273,13 +334,13 @@ role keyword falls through to the role."
       ((window-entry-inspector-p primary)     (values (inspector-window-buffer primary) nil))
       ((window-entry-stack-browser-p primary) (values (stack-browser-window-buffer primary) nil))
       ((window-entry-navi-p primary)          (values (navi-window-buffer primary) nil))
-      ((window-entry-aldo-view-p primary)     (values (interactor-buffer ui) nil))
+      ((window-entry-aldo-view-p primary)     (values (interactor-buffer ui window) nil))
       ((window-entry-lisp-p primary)          (let ((buffer (lisp-window-buffer ui window)))
                                                 (values buffer (and buffer (1- (length buffer)))))) ; tail-follow
       (t (ecase (window-role window)
            (:stack      (values (stack-buffer ui session) nil))
            (:source     (source-buffer ui session))
-           (:interactor (values (interactor-buffer ui) nil))
+           (:interactor (values (interactor-buffer ui window) nil))
            (:repl       (let ((buffer (repl-buffer ui)))
                           (values buffer (and buffer (1- (length buffer))))))))))) ; tail-follow
 
@@ -386,13 +447,43 @@ the 0-based row of that selection, to keep in view."
               (push (source-position-start-line position) lines))))))
     lines))
 
-(defun interactor-buffer (ui)
-  (mapcar (lambda (s) (cons s :normal))
-          (list (format nil "DBG> ~A" (ncurses-ui-message ui))
-                ""
-                "c continue  s step  i in  o out  f finish"
-                "d u > < nav  b bkpt  e eval  x inspect  ^/v frame"
-                ", cmd   M-x name   C-w/C-x window ops   C-h m help   q quit")))
+(defun word-wrap (string width)
+  "Wrap STRING to a list of lines no wider than WIDTH, breaking at spaces where
+possible (a word longer than WIDTH is hard-split). WIDTH < 1 yields the string
+unwrapped. Used so a long DBG> message flows over several lines instead of being
+truncated to one (the reporter's request)."
+  (if (or (< width 1) (<= (length string) width))
+      (list string)
+      (let ((lines '()) (start 0) (n (length string)))
+        (loop while (< start n) do
+          (let* ((remaining (- n start))
+                 (end (min n (+ start width))))
+            (if (>= width remaining)
+                (progn (push (subseq string start) lines) (setf start n))
+                (let ((break (position #\Space string :from-end t :start start :end end)))
+                  (cond ((and break (> break start))
+                         (push (subseq string start break) lines)
+                         (setf start (1+ break)))     ; drop the break space
+                        (t (push (subseq string start end) lines)
+                           (setf start end)))))))
+        (nreverse lines))))
+
+(defun interactor-buffer (ui &optional window)
+  "The interactor pane: the DBG> message (word-wrapped to the pane width so a
+long error/why message flows instead of truncating) followed by the key legend."
+  (let* ((rect (and window (window-rect window)))
+         ;; wrap width = pane content width minus the \"DBG> \" indent; a sane
+         ;; floor when the rect is not yet known (first render).
+         (width (max 12 (- (if rect (win-width rect) 40) 6)))
+         (wrapped (word-wrap (ncurses-ui-message ui) width)))
+    (mapcar (lambda (s) (cons s :normal))
+            (append
+             (cons (format nil "DBG> ~A" (first wrapped))
+                   (mapcar (lambda (l) (format nil "     ~A" l)) (rest wrapped)))
+             (list ""
+                   "c continue  s step  i in  o out  f finish"
+                   "d u > < nav  b bkpt  e eval  x inspect  ^/v frame  w why"
+                   ", cmd   M-x name   C-w/C-x window ops   C-h m help   q quit")))))
 
 (defun repl-buffer (ui)
   (mapcar (lambda (s) (cons s :normal)) (ncurses-ui-repl-lines ui)))
@@ -821,7 +912,13 @@ inspect, return, quit."
     ((key-char-p key #\r) (values t (return-value ui session hit)))
     ((key-char-p key #\e) (eval-line ui session) (values t nil))
     ((key-char-p key #\x) (inspect-loop ui session) (values t nil))
-    ((key-char-p key #\h) (set-message ui "aldo: c s i o f | e eval x inspect r return | a abort q quit") (values t nil))
+    ((key-char-p key #\w)
+     ;; `w' why: redisplay the reason we entered the debugger (the error or
+     ;; clal-break message), which ordinary commands may have scrolled past.
+     (set-message ui "~A" (or (ncurses-ui-why-message ui)
+                              "why: not stopped on an error or break"))
+     (values t nil))
+    ((key-char-p key #\h) (set-message ui "aldo: c s i o f | e eval x inspect r return | w why | a abort q quit") (values t nil))
     (t (values nil nil))))
 
 (defun navi-key (ui session hit key)
@@ -878,9 +975,10 @@ exchanging their leaf positions in the layout tree."
             (set-message ui "no window ~(~A~)" direction))))))
 
 (defun window-resize (ui delta)
-  "Grow (DELTA>0) or shrink the active window within its enclosing split."
-  (setf (ui-layout ui) (tree-resize (ui-layout ui) (active-window ui) delta))
-  (set-message ui "resize ~A" (window-name (active-window ui))))
+  "Grow (DELTA>0) or shrink the active window within its enclosing split. A
+`small' geometry command: it does NOT touch the interactor message, so the
+stop reason and other useful text stay put (the resize is visible on screen)."
+  (setf (ui-layout ui) (tree-resize (ui-layout ui) (active-window ui) delta)))
 
 (defun window-balance (ui)
   "Even out the split enclosing the active window (C-w =)."
@@ -908,11 +1006,12 @@ re-homing the next window into the new split so four windows remain."
   "Default lines/columns per scroll (a C-u N count prefix is TODO).")
 
 (defun window-scroll-by (ui dl dc)
-  "Scroll the active window by DL lines / DC columns (clamped at next render)."
+  "Scroll the active window by DL lines / DC columns (clamped at next render). A
+`small' command: it leaves the interactor message alone (the scroll is visible
+on screen), so scrolling never erases the stop reason / a useful message."
   (let ((window (active-window ui)))
     (multiple-value-bind (sl sc) (win-scroll-values window)
-      (set-win-scroll window (+ sl dl) (+ sc dc))
-      (set-message ui "scroll ~A" (window-name window)))))
+      (set-win-scroll window (+ sl dl) (+ sc dc)))))
 
 (defun window-other (ui)
   "C-w o: toggle the active window with a saved one. First use saves the active
