@@ -22,7 +22,16 @@
   (is (string= "> SEND  line 372"
                (clautolisp.ui.ncurses::sanitize-line "> SEND  line 372")))
   (is (string= "tolère café — méthode"
-               (clautolisp.ui.ncurses::sanitize-line "tolère café — méthode"))))
+               (clautolisp.ui.ncurses::sanitize-line "tolère café — méthode")))
+  ;; ANSI SGR colour escapes (ESC [ ... m), which curses can't render in-band,
+  ;; are stripped — not shown as literal '?[33m...?[0m'.
+  (is (string= "os-function-name => COLLECTION.COUNT-ELEMENTS"
+               (clautolisp.ui.ncurses::sanitize-line
+                (format nil "os-function-name => ~C[33mCOLLECTION.COUNT-ELEMENTS~C[0m"
+                        #\Escape #\Escape))))
+  (is (string= "plain" (clautolisp.ui.ncurses::strip-ansi "plain")))
+  (is (string= "ab" (clautolisp.ui.ncurses::strip-ansi
+                     (format nil "a~C[1;31mb" #\Escape)))))
 
 (defun break-at (context metas line)
   (declare (ignore context))

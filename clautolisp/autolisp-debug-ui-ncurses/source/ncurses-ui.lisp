@@ -217,24 +217,48 @@ when the frame has no reconstructable source form (e.g. a builtin)."
 (defun win-content-height (rect) (max 0 (1- (third rect))))
 (defun win-width (rect) (fourth rect))
 
-(defun sanitize-line (string)
-  "Replace control characters — C0 (< 32), DEL, and the C1 range (127–159) —
-with a visible '?'. curses ADDSTR renders such bytes in caret/meta notation (a
-C1 byte shows as \"~@\"…\"~?\"), so a stray control character embedded in data
-(a function name, a printed value, a source line) turned the stack pane into
-'~@?' garbage. Printable code points, including all UTF-8 text (≥ 160, e.g. the
-accented source), pass through unchanged."
-  (if (some (lambda (c) (let ((n (char-code c))) (or (< n 32) (<= 127 n 159)))) string)
-      (map 'string
-           (lambda (c) (let ((n (char-code c))) (if (or (< n 32) (<= 127 n 159)) #\? c)))
-           string)
+(defun strip-ansi (string)
+  "Remove ANSI CSI escape sequences (ESC '[' … final-byte) — the colour / SGR
+codes an AutoLISP program (or the runtime symbol printer under *COLOR-OUTPUT*)
+emits for a real terminal. ncurses cannot render in-band escapes — it colours via
+attributes — so an un-stripped sequence showed as literal '?[33m…?[0m' (the ESC
+sanitized to '?', the rest verbatim). No ESC ⇒ the string is returned as is."
+  (if (find #\Escape string)
+      (with-output-to-string (out)
+        (let ((i 0) (n (length string)))
+          (loop while (< i n) do
+            (let ((c (char string i)))
+              (cond
+                ((and (char= c #\Escape) (< (1+ i) n) (char= (char string (1+ i)) #\[))
+                 (incf i 2)                              ; skip ESC [
+                 (loop while (and (< i n)                ; skip params …
+                                  (not (<= #x40 (char-code (char string i)) #x7e)))
+                       do (incf i))
+                 (when (< i n) (incf i)))                ; … and the final byte
+                (t (write-char c out) (incf i)))))))
       string))
+
+(defun sanitize-line (string)
+  "Make STRING safe to hand to curses ADDSTR: first STRIP-ANSI (in-band colour
+escapes ncurses can't render), then replace any remaining control characters —
+C0 (< 32), DEL, and the C1 range (127–159) — with a visible '?'. curses renders
+such bytes in caret/meta notation (a C1 byte shows as \"~@\"…\"~?\"), so a stray
+control character in data (a function name, a printed value, a source line) used
+to turn a pane into garbage. Printable code points, all UTF-8 text (≥ 160, e.g.
+the accented source) included, pass through unchanged."
+  (let ((string (strip-ansi string)))
+    (if (some (lambda (c) (let ((n (char-code c))) (or (< n 32) (<= 127 n 159)))) string)
+        (map 'string
+             (lambda (c) (let ((n (char-code c))) (if (or (< n 32) (<= 127 n 159)) #\? c)))
+             string)
+        string)))
 
 (defun win-put-line (screen rect row text &key attr)
   "Write TEXT on content ROW (0-based) of RECT, padded/clipped to its width.
 Rows are clipped to the window's content area (its last row is the status
-line, written by WIN-STATUS). TEXT is sanitized of control characters first
-(SANITIZE-LINE) so stray bytes never render as terminal garbage."
+line, written by WIN-STATUS). TEXT is run through SANITIZE-LINE first (ANSI
+escapes stripped, stray control bytes neutralised) so nothing renders as
+terminal garbage."
   (destructuring-bind (top left height width) rect
     (when (< -1 row (1- height))
       (tui-put screen (+ top row) left
