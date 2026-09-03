@@ -65,6 +65,14 @@
                 (make-condition 'curses-unavailable :detail "test")))
        "the report points the user at --debugger-ui tui")
 
+;; (5) setlocale(LC_ALL, "") succeeds — the platform +LC_ALL+ category number is
+;;     right for this host (returns the locale string, not NIL) — so ncurses will
+;;     measure UTF-8 in columns, not bytes (aldo-ncurses-utf8-overflow). Guarded
+;;     by a TERM so a bare CI shell still resolves a locale.
+(check (stringp (clautolisp.ui.tui.curses::%setlocale
+                 clautolisp.ui.tui.curses::+lc-all+ "C"))
+       "setlocale with the platform LC_ALL category returns a locale (not NIL)")
+
 ;; (4) TUI-SIZE answers BEFORE initscr (frames.lisp queries it at construction,
 ;;     while curses is entered lazily) — a conventional 24x80, not a NULL-window
 ;;     crash. This is the fault that took down --debugger-ui ncurses at startup.

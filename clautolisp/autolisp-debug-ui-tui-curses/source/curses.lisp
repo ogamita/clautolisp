@@ -27,6 +27,36 @@
 (defvar *curses-loaded* nil
   "True once LIBNCURSES has been opened this session.")
 
+;;; setlocale(LC_ALL, "") — MUST run before initscr so ncurses uses the user's
+;;; locale (from $LANG / $LC_*) for CHARACTER-WIDTH accounting. Without it
+;;; ncurses runs byte-wise: a UTF-8 line (accented source, the "…" truncation
+;;; ellipsis = 3 bytes) is clipped to N CHARACTERS but counted as more COLUMNS,
+;;; so it overruns the pane's right edge and ncurses auto-wraps the excess onto
+;;; the next terminal row — whose left half is the neighbouring pane (the "~@?"
+;;; that leaked from a long source line into the stack pane). setlocale lives in
+;;; libc/libSystem, resolved via the default library. LC_ALL's value is
+;;; platform-specific: 0 on macOS/BSD (Darwin), 6 on Linux/glibc.
+(cffi:defcfun ("setlocale" %setlocale) :string (category :int) (locale :string))
+
+(defparameter +lc-all+ #+bsd 0 #-bsd 6
+  "The C LC_ALL category number: 0 on the BSDs (macOS/Darwin included — SBCL puts
+:BSD in *FEATURES* there), 6 on Linux/glibc. setlocale returning non-NIL confirms
+the choice at run time.")
+
+(defvar *locale-initialized* nil)
+
+(defun ensure-locale ()
+  "Call setlocale(LC_ALL, \"\") once, so ncurses measures multibyte characters
+in display columns rather than bytes (aldo-ncurses-utf8-overflow). setlocale
+returns the locale string on success, NIL on a bad category number — so if the
+compile-time +LC_ALL+ guess is wrong for this host, fall back to the other
+common value rather than silently leaving the C locale in place."
+  (unless *locale-initialized*
+    (ignore-errors
+      (or (%setlocale +lc-all+ "")
+          (%setlocale (if (= +lc-all+ 6) 0 6) "")))
+    (setf *locale-initialized* t)))
+
 (define-condition curses-unavailable (error)
   ((detail :initarg :detail :initform nil :reader curses-unavailable-detail))
   (:documentation
@@ -52,6 +82,10 @@ caller sees an actionable error instead of a raw CFFI/alien failure."
       (cffi:load-foreign-library-error (error)
         (error 'curses-unavailable
                :detail (format nil "libncurses could not be loaded (~A)" error))))
+    ;; Establish the locale BEFORE any initscr so ncurses accounts for UTF-8
+    ;; characters by display column, not byte (see ENSURE-LOCALE) — otherwise a
+    ;; long accented source line overflows its pane and wraps into the next.
+    (ensure-locale)
     (setf *curses-loaded* t))
   *curses-loaded*)
 
