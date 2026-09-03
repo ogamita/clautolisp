@@ -9,12 +9,17 @@
 (defclass ncurses-ui ()
   ((screen :initarg :screen :initform nil :accessor ncurses-ui-screen)
    (selected-frame :initform 0 :accessor ncurses-ui-selected-frame) ; stack-frame index
-   ;; Stack-pane frame expansion (§19.1): RET "opens" a frame to show its local
-   ;; bindings indented under its line; OPEN-FRAME is that frame's index (or NIL
-   ;; when none is open) and SELECTED-LOCAL is the highlighted binding within it,
-   ;; which up/down move while a frame is open.
-   (open-frame :initform nil :accessor ncurses-ui-open-frame)
-   (selected-local :initform 0 :accessor ncurses-ui-selected-local)
+   ;; Stack-pane frame expansion (§19.1): RET "opens"/"closes" a frame to show
+   ;; its local bindings indented under its line. SEVERAL frames may be open at
+   ;; once (to compare variables across frames, e.g. in a recursion) — OPEN-FRAMES
+   ;; is the set of open frame indices. The stack pane is then a FLAT list of rows
+   ;; (each frame line, plus each open frame's locals), and STACK-CURSOR is the
+   ;; index of the highlighted row in it: Up/Down flow linearly across the whole
+   ;; list, so Down past a frame's last local lands on the next frame line, and Up
+   ;; from a frame's first local lands on that frame's own line. SELECTED-FRAME
+   ;; tracks the frame owning the cursor row (it drives the source pane).
+   (open-frames :initform '() :accessor ncurses-ui-open-frames)
+   (stack-cursor :initform 0 :accessor ncurses-ui-stack-cursor)
    (source-cursor :initform nil :accessor ncurses-ui-source-cursor)  ; line in shown file
    (message :initform "" :accessor ncurses-ui-message)               ; interactor line
    ;; The reason we stopped (error / caught error / break message), captured at
@@ -192,8 +197,8 @@ the interactor line at the stop, and redisplayable with the `w' (why) command."
 
 (defun reset-stop-state (ui session)
   (setf (ncurses-ui-selected-frame ui) 0
-        (ncurses-ui-open-frame ui) nil
-        (ncurses-ui-selected-local ui) 0
+        (ncurses-ui-open-frames ui) '()
+        (ncurses-ui-stack-cursor ui) 0
         (ncurses-ui-inspector-cursor ui) 0)
   (let ((snapshot (current-snapshot session)))
     (setf (ncurses-ui-source-cursor ui)
@@ -489,13 +494,8 @@ single \"|\" separators, and the reserved minibuffer row."
 binding-entry — the rows an opened frame shows indented under its line."
   (and frame (clautolisp.debug:stack-frame-bindings-introduced frame)))
 
-(defun open-frame-of (ui session)
-  "The stack frame the user has OPENED (RET) to inspect its locals, or NIL."
-  (let ((index (ncurses-ui-open-frame ui)))
-    (and index
-         (let ((frames (and (current-snapshot session)
-                            (snapshot-call-stack (current-snapshot session)))))
-           (and frames (< index (length frames)) (nth index frames))))))
+(defun frame-open-p (ui index)
+  (and (member index (ncurses-ui-open-frames ui)) t))
 
 (defun binding-row-string (entry)
   (format nil "~A = ~A"
@@ -503,35 +503,63 @@ binding-entry — the rows an opened frame shows indented under its line."
            (clautolisp.debug:binding-entry-symbol entry))
           (%value-preview (clautolisp.debug:binding-entry-value entry))))
 
-(defun stack-buffer (ui session)
-  "The stack pane: one line per frame (selected marked `>' :bold); an OPENED
-frame (RET) is followed by its local bindings indented, the SELECTED-LOCAL
-marked (§19.1 frame expansion)."
+(defun stack-items (ui session)
+  "The stack pane as a FLAT list of rows, in display order: for each frame a
+row (:frame I FRAME), and — when frame I is OPEN — one (:local I K ENTRY) row
+per local (or a (:frame-empty I FRAME) sentinel when it has none). The cursor
+and the renderer both walk this one list, so linear Up/Down crosses freely
+between frame lines and locals (several frames may be open at once)."
   (let ((frames (and (current-snapshot session)
                      (snapshot-call-stack (current-snapshot session))))
-        (rows '()))
+        (items '()))
     (loop for frame in frames for i from 0
-          for selected = (= i (ncurses-ui-selected-frame ui))
-          for opened = (eql i (ncurses-ui-open-frame ui))
-          do (push (cons (format nil "~A~A ~A  ~A"
-                                 (if selected ">" " ")
-                                 (if opened "v" (if (frame-locals frame) ">" " "))
-                                 (or (stack-frame-function-name frame) "?")
-                                 (frame-line-label frame))
-                         (if selected :bold :normal))
-                   rows)
-             (when opened
+          do (push (list :frame i frame) items)
+             (when (frame-open-p ui i)
                (let ((locals (frame-locals frame)))
                  (if (null locals)
-                     (push (cons "      (no locals)" :normal) rows)
+                     (push (list :frame-empty i frame) items)
                      (loop for entry in locals for k from 0
-                           do (push (cons (format nil "    ~A ~A"
-                                                  (if (= k (ncurses-ui-selected-local ui)) ">" " ")
-                                                  (binding-row-string entry))
-                                          (if (= k (ncurses-ui-selected-local ui))
-                                              :current-line :normal))
-                                    rows))))))
-    (nreverse rows)))
+                           do (push (list :local i k entry) items))))))
+    (nreverse items)))
+
+(defun stack-cursor-item (ui session)
+  "The flat stack row under the cursor (clamped), or NIL when the stack is empty."
+  (let ((items (stack-items ui session)))
+    (and items (nth (min (ncurses-ui-stack-cursor ui) (1- (length items))) items))))
+
+(defun stack-item-frame-index (item)
+  "The frame index an ITEM belongs to (a frame line or one of its locals)."
+  (and item (second item)))
+
+(defun stack-buffer (ui session)
+  "The stack pane: the flat row list (STACK-ITEMS) rendered — frame lines (fold
+marker `v' open / `>' has-locals-closed) and, under each open frame, its locals
+indented as `name = value'. The cursor row is highlighted (§19.1)."
+  (let ((items (stack-items ui session))
+        (cursor (ncurses-ui-stack-cursor ui)))
+    (loop for item in items for row from 0
+          for on = (= row cursor)
+          collect
+          (ecase (first item)
+            (:frame
+             (destructuring-bind (tag i frame) item
+               (declare (ignore tag))
+               (cons (format nil "~A~A ~A  ~A"
+                             (if on ">" " ")
+                             (cond ((frame-open-p ui i) "v")
+                                   ((frame-locals frame) ">")
+                                   (t " "))
+                             (or (stack-frame-function-name frame) "?")
+                             (frame-line-label frame))
+                     (if on :bold :normal))))
+            (:frame-empty
+             (cons (format nil "    ~A(no locals)" (if on ">" " "))
+                   (if on :current-line :normal)))
+            (:local
+             (destructuring-bind (tag i k entry) item
+               (declare (ignore tag i k))
+               (cons (format nil "    ~A ~A" (if on ">" " ") (binding-row-string entry))
+                     (if on :current-line :normal))))))))
 
 (defun frame-line-label (frame)
   (let ((position (stack-frame-source-position frame)))
@@ -625,7 +653,7 @@ long error/why message flows instead of truncating) followed by the key legend."
              (list ""
                    "c continue  s step  i in  o out  f finish"
                    "d u > < nav  b bkpt  e eval  x inspect  ^/v frame  w why"
-                   "stack: RET open frame  up/dn local  i inspect  e eval"
+                   "stack: RET open/close frame  up/dn row  i inspect  e eval"
                    ", cmd   M-x name   C-w/C-x window ops   C-h m help   q quit")))))
 
 (defun repl-buffer (ui)
@@ -1077,47 +1105,72 @@ d/u/>/< and a breakpoint at the selection."
     ((key-char-p key #\b) (toggle-breakpoint ui session) (values t nil))
     (t (values nil nil))))
 
-(defun move-local (ui session delta)
-  "Move the SELECTED-LOCAL cursor within the opened frame's bindings, echoing
-the newly-selected binding into the interactor line."
-  (let* ((frame (open-frame-of ui session))
-         (locals (frame-locals frame))
-         (n (length locals)))
+(defun sync-cursor-frame (ui session)
+  "Make SELECTED-FRAME (which drives the source pane) follow the frame owning the
+cursor row, re-anchoring the source cursor and navigator on it."
+  (let* ((item (stack-cursor-item ui session))
+         (index (or (stack-item-frame-index item) 0))
+         (frames (snapshot-call-stack (current-snapshot session))))
+    (setf (ncurses-ui-selected-frame ui) index)
+    (cmd-select-frame session index)
+    (let ((position (stack-frame-source-position (nth index frames))))
+      (when (source-position-p position)
+        (setf (ncurses-ui-source-cursor ui) (source-position-start-line position))))
+    (rebuild-navigator ui session)))
+
+(defun move-stack (ui session delta)
+  "Move the stack cursor by DELTA rows through the FLAT row list (frame lines
+and open frames' locals alike), clamped; then follow the owning frame in the
+source pane and echo the row."
+  (let* ((items (stack-items ui session))
+         (n (length items)))
     (when (plusp n)
-      (let ((new (mod (+ (ncurses-ui-selected-local ui) delta) n)))
-        (setf (ncurses-ui-selected-local ui) new)
-        (set-message ui "local: ~A" (binding-row-string (nth new locals)))))))
+      (setf (ncurses-ui-stack-cursor ui)
+            (max 0 (min (1- n) (+ (ncurses-ui-stack-cursor ui) delta))))
+      (sync-cursor-frame ui session)
+      (let ((item (stack-cursor-item ui session)))
+        (case (first item)
+          (:local (set-message ui "local: ~A" (binding-row-string (fourth item))))
+          (t      (let ((frame (third item)))
+                    (set-message ui "frame ~A" (or (stack-frame-function-name frame) "?")))))))))
 
-(defun toggle-frame-open (ui session)
-  "RET on the selected stack frame: open it to show its locals (and let up/down
-select them), or close it if it is already open."
-  (let ((index (ncurses-ui-selected-frame ui)))
-    (if (eql (ncurses-ui-open-frame ui) index)
-        (progn (setf (ncurses-ui-open-frame ui) nil)
-               (set-message ui "frame closed"))
-        (progn (setf (ncurses-ui-open-frame ui) index
-                     (ncurses-ui-selected-local ui) 0)
-               (let ((locals (frame-locals (selected-frame-of ui session))))
-                 (set-message ui "frame opened — ~[no locals~:;~:*~D local~:p (up/down, i inspect, e eval)~]"
-                              (length locals)))))))
+(defun frame-row-index (ui session frame-index)
+  "The row (cursor position) of frame FRAME-INDEX's own line in the flat list."
+  (or (position-if (lambda (item) (and (eq (first item) :frame)
+                                       (eql (second item) frame-index)))
+                   (stack-items ui session))
+      0))
 
-(defun selected-local-entry (ui session)
-  "The binding-entry the SELECTED-LOCAL cursor points at in the opened frame, or
-NIL when no frame is open / it has no locals."
-  (let ((locals (and (ncurses-ui-open-frame ui) (frame-locals (open-frame-of ui session)))))
-    (and locals (nth (ncurses-ui-selected-local ui) locals))))
+(defun toggle-frame-at-cursor (ui session)
+  "RET in the stack pane: open or close the frame owning the cursor row. Several
+frames may be open at once. The cursor lands on that frame's own line, so a
+following Down steps into (or past) its locals."
+  (let* ((item (stack-cursor-item ui session))
+         (index (stack-item-frame-index item)))
+    (when index
+      (if (frame-open-p ui index)
+          (progn (setf (ncurses-ui-open-frames ui) (remove index (ncurses-ui-open-frames ui)))
+                 (set-message ui "frame ~D closed" index))
+          (progn (push index (ncurses-ui-open-frames ui))
+                 (set-message ui "frame ~D opened — ~[no locals~:;~:*~D local~:p~]"
+                              index (length (frame-locals (nth index (snapshot-call-stack
+                                                                      (current-snapshot session))))))))
+      (setf (ncurses-ui-stack-cursor ui) (frame-row-index ui session index))
+      (sync-cursor-frame ui session))))
 
-(defun inspect-selected-local (ui session)
-  "`i' in the stack pane: open an inspector window on the selected local's value."
-  (let ((entry (selected-local-entry ui session)))
-    (if entry
-        (%open-inspector-window ui (clautolisp.debug:binding-entry-value entry))
-        (set-message ui "open a frame (RET) and select a local to inspect"))))
+(defun stack-inspect-at-cursor (ui session)
+  "`i' in the stack pane: inspect the cursor local's value in an inspector
+window. On a frame line (not a local) it prompts what to do instead."
+  (let ((item (stack-cursor-item ui session)))
+    (if (eq (first item) :local)
+        (%open-inspector-window ui (clautolisp.debug:binding-entry-value (fourth item)))
+        (set-message ui "move onto a local (open a frame with RET) to inspect"))))
 
-(defun eval-in-open-frame (ui session)
-  "`e' in the stack pane: evaluate a form in the dynamic context of the opened
-frame (or the selected frame when none is open), echoing to the repl pane."
-  (let* ((index (or (ncurses-ui-open-frame ui) (ncurses-ui-selected-frame ui)))
+(defun stack-eval-at-cursor (ui session)
+  "`e' in the stack pane: evaluate a form in the dynamic context of the frame
+owning the cursor row (a frame line or one of its locals), echoing to the repl."
+  (let* ((item (stack-cursor-item ui session))
+         (index (or (stack-item-frame-index item) (ncurses-ui-selected-frame ui)))
          (text (read-line-keys ui (format nil "eval [frame ~D]: " index))))
     (when (plusp (length text))
       (handler-case
@@ -1125,18 +1178,18 @@ frame (or the selected frame when none is open), echoing to the repl pane."
         (error (e) (push-repl ui "eval error: ~A" e))))))
 
 (defun framenav-key (ui session key)
-  "The stack navigator interactor (the `stack' window): up/down select a frame,
-or — when a frame is OPEN (RET) — select a local within it; RET toggles the
-open state; i inspects the selected local; e evaluates in the frame's context."
-  (let ((open (and (ncurses-ui-open-frame ui) t)))
-    (cond
-      ((or (eq key :enter) (key-char-p key #\Return))
-       (toggle-frame-open ui session) (values t nil))
-      ((eq key :up) (if open (move-local ui session -1) (move-frame ui session -1)) (values t nil))
-      ((eq key :down) (if open (move-local ui session +1) (move-frame ui session +1)) (values t nil))
-      ((key-char-p key #\i) (inspect-selected-local ui session) (values t nil))
-      ((key-char-p key #\e) (eval-in-open-frame ui session) (values t nil))
-      (t (values nil nil)))))
+  "The stack navigator interactor (the `stack' window): Up/Down move one row
+through the flat list of frame lines and open frames' locals (so they flow
+freely between frames); RET opens/closes the frame at the cursor (several may
+be open at once); i inspects the cursor local; e evaluates in its frame."
+  (cond
+    ((or (eq key :enter) (key-char-p key #\Return))
+     (toggle-frame-at-cursor ui session) (values t nil))
+    ((eq key :up) (move-stack ui session -1) (values t nil))
+    ((eq key :down) (move-stack ui session +1) (values t nil))
+    ((key-char-p key #\i) (stack-inspect-at-cursor ui session) (values t nil))
+    ((key-char-p key #\e) (stack-eval-at-cursor ui session) (values t nil))
+    (t (values nil nil))))
 
 (defun nav-move (ui motion)
   "Apply MOTION to the source navigator and echo the newly-selected subform
@@ -2221,17 +2274,6 @@ other M-<key> are unbound. Split out so a user-keymap fall-through can reuse it.
   (if (key-char-p k #\x)
       (mx-command ui session hit)
       (progn (set-message ui "M-~A unbound" (if (characterp k) k "key")) nil)))
-
-(defun move-frame (ui session delta)
-  (let* ((frames (snapshot-call-stack (current-snapshot session)))
-         (n (length frames))
-         (new (max 0 (min (1- n) (+ (ncurses-ui-selected-frame ui) delta)))))
-    (setf (ncurses-ui-selected-frame ui) new)
-    (cmd-select-frame session new)
-    (let ((position (stack-frame-source-position (nth new frames))))
-      (when (source-position-p position)
-        (setf (ncurses-ui-source-cursor ui) (source-position-start-line position))))
-    (rebuild-navigator ui session)))
 
 (defun toggle-breakpoint (ui session)
   "Toggle a breakpoint at the source cursor line of the selected frame's

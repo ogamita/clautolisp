@@ -38,7 +38,7 @@ markers (top-right), interactor (bottom-left), repl (bottom-right).")
            #:render-debugger #:render-inspector
            #:ncurses-ui-repl-lines #:ncurses-ui-message #:ncurses-ui-why-message
            #:ncurses-ui-message-history #:ncurses-ui-selected-frame
-           #:ncurses-ui-open-frame #:ncurses-ui-selected-local #:ncurses-ui-source-cursor
+           #:ncurses-ui-open-frames #:ncurses-ui-stack-cursor #:ncurses-ui-source-cursor
            ;; unified config persistence (windows-and-interactor-templates.issue)
            #:save-all-configurations #:load-all-configurations
            #:load-cascade-only-configurations))

@@ -1277,14 +1277,17 @@ Documentation/chap-windows.tex] in a terminal:
 #+end_example
 
 *** 19.1 Panes
-- *Stack pane* (top-left): one line per frame, current frame marked. A
-  frame with locals is flagged =>=; when closed, Up/Down navigate frames.
-  =Enter= /opens/ the selected frame (flag =v=), listing its local
+- *Stack pane* (top-left): one line per frame, a frame with locals flagged
+  =>=. =Enter= /opens/ the frame at the cursor (flag =v=), listing its local
   bindings (formals and =/=-locals) indented under it as =name = value=;
-  while open, Up/Down select a local, =i= inspects the selected local's
-  value in an inspector window, and =e= evaluates a form in that frame's
-  dynamic context (§9.3 with-frame-bindings, reconstructed for outer
-  frames). =Enter= again closes the frame.
+  =Enter= again closes it. SEVERAL frames may be open at once, to compare
+  variables and values across frames (notably in a recursion). Up/Down move
+  the cursor one row through the resulting FLAT list of frame lines and open
+  frames' locals — so Down past a frame's last local lands on the next frame
+  line, and Up from a frame's first local lands on that frame's own line. On
+  a local, =i= inspects its value in an inspector window; =e= evaluates a
+  form in the cursor frame's dynamic context (§9.3 with-frame-bindings,
+  reconstructed for outer frames). The source pane follows the cursor frame.
 - *Source pane* (top-right): shows the source around the current frame's
   stopping point. Poll points are shown as coloured markers (blue = poll
   point, red = breakpoint, yellow = current). The pane's navigation is

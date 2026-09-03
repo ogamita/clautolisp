@@ -222,20 +222,21 @@
 
 ;;; --- stack-pane frame expansion (§19.1) ----------------------------
 
-(test stack-frame-opens-to-show-locals-and-selects-them
+(test stack-frame-opens-to-show-locals-and-down-flows-into-them
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
          (ti (break-at context metas 3)))
     ;; Stopped inside TWO at line 3; its frame (0) binds X (=7) and Z. Activate
     ;; the stack window (C-w p C-w p: interactor->source->stack); RET opens the
-    ;; frame — its locals render indented — and Down moves to the second local.
+    ;; frame — its locals render indented — and Down flows onto the first local
+    ;; (flat cursor row 1).
     (multiple-value-bind (result ui screen)
         (run-ncurses (list (code-char 23) #\p (code-char 23) #\p :enter :down)
                      :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result))
-      (is (eql 0 (clautolisp.ui.ncurses:ncurses-ui-open-frame ui)))
-      (is (= 1 (clautolisp.ui.ncurses:ncurses-ui-selected-local ui)))
+      (is (member 0 (clautolisp.ui.ncurses:ncurses-ui-open-frames ui)))
+      (is (= 1 (clautolisp.ui.ncurses:ncurses-ui-stack-cursor ui))) ; on the first local
       ;; the opened frame's locals are drawn (X and Z, "name = value")
       (is (or (grid-contains screen "X = 7") (grid-contains screen "Z ="))))))
 
@@ -243,41 +244,65 @@
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
          (ti (break-at context metas 3)))
-    ;; RET opens the selected frame; a second RET closes it again.
+    ;; RET opens the frame at the cursor; a second RET closes it again.
     (multiple-value-bind (result ui screen)
         (run-ncurses (list (code-char 23) #\p (code-char 23) #\p :enter :enter)
                      :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
-      (is (null (clautolisp.ui.ncurses:ncurses-ui-open-frame ui))))))
+      (is (null (clautolisp.ui.ncurses:ncurses-ui-open-frames ui))))))
 
-(test stack-frame-i-inspects-the-selected-local
+(test stack-frame-i-inspects-the-cursor-local
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
          (ti (break-at context metas 3)))
-    ;; Open frame 0, then i inspects the selected local's value in a new
-    ;; inspector window (which becomes the active window).
+    ;; Open frame 0, Down onto its first local, then i inspects that local's
+    ;; value in a new inspector window (which becomes the active window).
     (multiple-value-bind (result ui screen)
-        (run-ncurses (list (code-char 23) #\p (code-char 23) #\p :enter #\i)
+        (run-ncurses (list (code-char 23) #\p (code-char 23) #\p :enter :down #\i)
                      :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
       (is (eq :inspector (active-role ui))))))
 
-(test stack-frame-e-evaluates-in-the-frame-context
+(test stack-frame-e-evaluates-in-the-cursor-frame-context
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
          (ti (break-at context metas 3)))
-    ;; Open frame 0 (TWO, where X=7), then e reads a form and evaluates it in
-    ;; that frame's context: X is visible there, so the repl echoes X => 7.
+    ;; On TWO's frame line (X=7), e reads a form and evaluates it in that
+    ;; frame's context: X is visible there, so the repl echoes X => 7.
     (multiple-value-bind (result ui screen)
-        (run-ncurses (append (list (code-char 23) #\p (code-char 23) #\p :enter #\e)
+        (run-ncurses (append (list (code-char 23) #\p (code-char 23) #\p #\e)
                              (coerce "x" 'list) (list :enter))
                      :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
       (declare (ignore result screen))
       (is (some (lambda (l) (search "=> 7" l))
                 (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui))))))
+
+(test stack-several-frames-open-at-once-to-compare-locals
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (id (second metas))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    ;; Break at ID's entry reached via TWO → a 2-frame stack [ID, TWO]. Open ID
+    ;; (RET), flow Down past ID's single local A onto TWO's line (Down Down),
+    ;; open TWO too (RET) — BOTH stay open, so their locals show together (to
+    ;; compare across frames). Abort before TWO's second call to ID resets state.
+    (clautolisp.debug:add-breakpoint ti (fid-of id) 0 :when :before)
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (append (list (code-char 23) #\p (code-char 23) #\p
+                                   :enter :down :down :enter #\,)
+                             (coerce "abort" 'list) (list :enter))
+                     :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result))
+      ;; both frames are open simultaneously
+      (is (member 0 (clautolisp.ui.ncurses:ncurses-ui-open-frames ui)))
+      (is (member 1 (clautolisp.ui.ncurses:ncurses-ui-open-frames ui)))
+      ;; and both frames' locals are on screen at the same time (ID's A, TWO's X)
+      (is (grid-contains screen "A = 7"))
+      (is (or (grid-contains screen "X = 7") (grid-contains screen "Z ="))))))
 
 ;;; --- source-pane navigation mode chosen by the `navigator' setting -
 
