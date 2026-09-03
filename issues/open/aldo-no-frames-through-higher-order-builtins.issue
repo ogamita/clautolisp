@@ -1,0 +1,53 @@
+# aldo: no debugger frames for functions invoked via apply/mapcar (object systems)
+
+## Symptom
+Under `--on-error debug`, an error signalled inside a function that was reached
+through `apply` (or `mapcar`, `vl-catch-all-apply`, an indirect `eval`, …) breaks
+into the debugger with an EMPTY backtrace: the stack shows only `<toplevel>`
+(source `<repl>:1 (source unavailable)`), even though `(clal-optimization)` is
+`(DEBUG 3)` and the code was loaded under the session.
+
+Reported for an a-list object system whose `send` dispatches every method via
+  (defun invoke-method (... function-name ...)
+    (apply (eval function-name) (cons instance argument-list)))
+so `(send col 'total-weight '())` erroring in the method's body shows no frames.
+(~pjb/src/public/autocad-gui-prototype/object-system/)
+
+## Root cause (confirmed empirically)
+Debugger frames come only from a function's INSTRUMENTED body (the %CLAL-POLL
+shadow stack, autolisp-debug/source/stepping.lisp debug-poll-enter). A function
+invoked through the higher-order builtins runs its PLAIN (uninstrumented) body
+under a debug session, so it fires no poll and pushes no frame.
+
+Minimal repro (REPL, --on-error debug):
+  (defun cc (x) (/ x 0))
+  (defun bb (x) (apply 'cc (list x)))   ; via APPLY
+  (defun aa (x) (bb x))
+  (aa 5)
+  => stop stack: BB <- AA <- <toplevel>   ; CC (the apply'd fn) is MISSING
+Direct chain (bb calls (cc x)) instead shows CC <- BB <- AA <- <toplevel>.
+
+A poll-level probe confirms: with `*debugging*` T and CC carrying an
+instrumented body, CC's entry poll never fires when CC is reached via `apply`;
+only AA and BB (direct calls) do. So the two-body instrumented-selection in
+`call-autolisp-function-in-context` (autolisp-runtime/source/api.lisp) is not
+taking effect on the apply path — the callee runs plain.
+
+## Fix direction
+Ensure a usubr invoked through APPLY / MAPCAR / VL-EVERY / VL-*-IF / FOREACH-like
+helpers / VL-CATCH-ALL-APPLY / indirect EVAL runs its INSTRUMENTED body under a
+debug session (two-body selection + lazy/eager weave), so it pushes a shadow
+frame like a direct call. builtin-apply already funnels through
+call-autolisp-function -> call-autolisp-function-in-context, which SELECTS the
+instrumented body under *debugging* — yet empirically the plain body runs, so
+the divergence between the direct-call path (api.lisp ~3515) and the
+builtin-invocation path (call-autolisp-function, api.lisp 1859) must be found
+and closed. User's suggestion: instrument lambda expressions dynamically when
+they are passed to eval/apply, keyed on the optimization DEBUG level.
+
+## Notes
+- Depends on the DEBUG-level instrumentation wiring shipped in 1.9.65
+  (clautolisp-version-bump); this ticket is the remaining, deeper cause.
+- Hot evaluator code + large test corpus (runtime/builtins-core/debug) — land
+  with the full suites green and add a regression that a function reached via
+  apply produces >=1 frame at an error stop.
