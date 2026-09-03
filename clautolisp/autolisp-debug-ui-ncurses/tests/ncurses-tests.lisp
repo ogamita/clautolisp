@@ -220,6 +220,23 @@
       (declare (ignore result screen))
       (is (search "set at line 4" (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
 
+(test eval-under-ncurses-emits-no-ansi-colour
+  ;; The runtime symbol printer wraps names in ANSI (ESC[33m…) when *COLOR-OUTPUT*
+  ;; is armed (as the CLI does on a tty). curses can't render in-band escapes, so
+  ;; the ncurses ui-await-command :around binds the policy OFF: an evaluated
+  ;; SYMBOL prints plain into the repl pane — no ESC, no "?[33m..?[0m" leak.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3))
+         (clautolisp.autolisp-runtime:*color-output* :yellow)) ; SGR 33, as on a tty
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list #\e #\' #\A :enter #\c)   ; e, eval 'A → symbol A, continue
+                     :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (notany (lambda (l) (find #\Escape l))
+                  (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui))))))
+
 (test eval-line-shows-result-in-repl
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))

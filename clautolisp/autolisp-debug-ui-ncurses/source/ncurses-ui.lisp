@@ -2174,7 +2174,15 @@ deletes)."
 
 (defmethod ui-await-command :around ((ui ncurses-ui) session hit)
   (declare (ignore hit))
-  (let ((*current-session* session))
+  ;; While the ncurses UI is up, disable the runtime's ANSI colour policy: the
+  ;; symbol printer (model.lisp print-object) wraps names in ESC[..m..ESC[0m for
+  ;; a real terminal, but curses colours via ATTRIBUTES and can't render in-band
+  ;; escapes — so a printed symbol value showed as "?[33m..?[0m" in a pane. Colour
+  ;; here is the UI's job (faces → attributes), so the value text stays plain at
+  ;; the source. (STRIP-ANSI in the renderer still guards escapes already baked
+  ;; into data.) The between-stops terminal REPL keeps its own *COLOR-OUTPUT*.
+  (let ((*current-session* session)
+        (clautolisp.autolisp-runtime:*color-output* nil))
     (call-next-method)))
 
 ;;;; --- small helpers -------------------------------------------------
