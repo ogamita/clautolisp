@@ -24,15 +24,20 @@ Bounded by a per-read timeout so a hang can never wedge the suite."
   (let ((stream (usocket:socket-stream sock))
         (lines '()))
     (unwind-protect
-         (loop
-           (unless (usocket:wait-for-input sock :timeout 15 :ready-only t)
-             (return))                                   ; safety: no data for 15s
-           (let ((line (read-line stream nil nil)))
-             (unless line (return))                      ; EOF: the session detached
-             (push line lines)
-             (when (search ":await-command" line)
-               (write-line "(:abort)" stream)
-               (finish-output stream))))
+         ;; A benign teardown race (the server closing right after (:detached))
+         ;; can surface as a stream error rather than a clean EOF; treat it as
+         ;; end-of-session and keep whatever lines were already read.
+         (handler-case
+             (loop
+               (unless (usocket:wait-for-input sock :timeout 15 :ready-only t)
+                 (return))                               ; safety: no data for 15s
+               (let ((line (read-line stream nil nil)))
+                 (unless line (return))                  ; EOF: the session detached
+                 (push line lines)
+                 (when (search ":await-command" line)
+                   (write-line "(:abort)" stream)
+                   (finish-output stream))))
+           (stream-error () nil))
       (ignore-errors (usocket:socket-close sock)))
     (format nil "~{~A~^~%~}" (nreverse lines))))
 

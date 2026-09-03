@@ -1321,7 +1321,20 @@ chosen (an Emacs connection or a 1/2 fallback), then attach it. Idempotent."
     (clautolisp.debug.ui:ui-attached (aldb-delegate ui) session)))
 
 (defun aldb-close-listener (ui)
-  (ignore-errors (when (aldb-connection ui) (usocket:socket-close (aldb-connection ui))))
+  "Tear the listener down cleanly. On the accepted connection: flush what we
+wrote (the trailing (:detached)), then DRAIN any bytes the client already sent
+that we never read, and only then close. A close() while unread input sits in
+the socket's receive buffer makes the OS send a TCP RST to the peer (notably on
+macOS/BSD); that RST discards the (:detached) line still queued in the client's
+receive buffer, so the client sees `connection reset' instead of reading its
+last line then a clean EOF. Draining first lets close() send an orderly FIN."
+  (let ((conn (aldb-connection ui)))
+    (when conn
+      (ignore-errors
+       (let ((stream (usocket:socket-stream conn)))
+         (finish-output stream)
+         (loop while (listen stream) do (read-char stream nil nil))))
+      (ignore-errors (usocket:socket-close conn))))
   (ignore-errors (usocket:socket-close (aldb-socket ui))))
 
 ;;; The wrapper defers until the first stop: CALL-WITH-STOP-INTERACTOR wraps the
@@ -1369,8 +1382,11 @@ chosen (an Emacs connection or a 1/2 fallback), then attach it. Idempotent."
     (when d (clautolisp.debug.ui:ui-run-command d session command hit))))
 
 (defmethod clautolisp.debug.ui:ui-detached ((ui aldb-listener-ui))
+  ;; A disconnecting Emacs must not crash the debugged session: if the client
+  ;; is already gone, writing the delegate's (:detached) hits a broken pipe —
+  ;; swallow it and still close the listener.
   (let ((d (aldb-delegate ui)))
-    (when d (clautolisp.debug.ui:ui-detached d)))
+    (when d (ignore-errors (clautolisp.debug.ui:ui-detached d))))
   (aldb-close-listener ui))
 
 (defun start-debug-session (debug-ui context)
