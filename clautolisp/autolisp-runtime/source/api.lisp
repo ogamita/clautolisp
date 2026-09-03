@@ -122,6 +122,16 @@ and EVAL-SETQ-FORM (and only by them) at the moment they update
 the binding-cell doc slot."
   (and *current-form* (gethash *current-form* *preceding-docs*)))
 
+(defparameter *debug-error-snapshot-hook* nil
+  "When non-nil (installed by the aldo debugger while a session is active), a
+function of no arguments called from the AUTOLISP-RUNTIME-ERROR DEBUG-SNAPSHOT
+slot's :INITFORM as each such condition is CREATED — at the error point, before
+any unwinding — returning an opaque debugger snapshot of the live call stack
+there. Lets the debugger show the real backtrace even when an inner HANDLER-CASE
+(a builtin wrapper, LOAD's *error* handler, …) unwinds the shadow stack before
+the session handler runs. NIL (the default) ⇒ no capture, no cost — the
+dependency-inversion pattern of *INSTRUMENT-USUBR-HOOK* / *DEBUG-BREAK-HOOK*.")
+
 (define-condition autolisp-runtime-error (error)
   ((code
     :initarg :code
@@ -136,7 +146,23 @@ the binding-cell doc slot."
    (call-stack
     :initarg :call-stack
     :initform nil
-    :reader autolisp-runtime-error-call-stack))
+    :reader autolisp-runtime-error-call-stack)
+   ;; Debugger snapshot captured at SIGNAL time (the deepest, error point),
+   ;; before any handler-case between the error and the debugger's session
+   ;; handler unwinds the poll-point shadow stack. The slot's :INITFORM calls
+   ;; *DEBUG-ERROR-SNAPSHOT-HOOK* — evaluated by MAKE-CONDITION at creation, in
+   ;; the erroring dynamic context (an INITIALIZE-INSTANCE method on a condition
+   ;; is undefined and SBCL does not run it, so the initform is the portable
+   ;; capture point). NIL when no debug session installed the hook, so ordinary
+   ;; runs and tests carry no cost. The debugger prefers this over the
+   ;; live-but-unwound stack, so a function reached through APPLY / MAPCAR / LOAD /
+   ;; vl-catch-all still shows a full backtrace
+   ;; (aldo-no-frames-through-higher-order-builtins).
+   (debug-snapshot
+    :initarg :debug-snapshot
+    :initform (and *debug-error-snapshot-hook*
+                   (ignore-errors (funcall *debug-error-snapshot-hook*)))
+    :accessor autolisp-runtime-error-debug-snapshot))
   (:report (lambda (condition stream)
              (format stream "~A" (autolisp-runtime-error-message condition)))))
 

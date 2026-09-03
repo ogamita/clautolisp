@@ -99,9 +99,13 @@ BINDINGS-OF-NAME on the full stack."
      :bindings-introduced (and dynamic-frame
                                (frame-bindings-introduced dynamic-frame)))))
 
-(defun build-snapshot (ti fid form-id when metadata)
+(defun build-snapshot (ti fid form-id when metadata &optional override-call-stack)
   "Build the spec §9 snapshot at a stopping point, from the live context
-and TI's shadow call stack."
+and TI's shadow call stack. OVERRIDE-CALL-STACK, when supplied, is a list of
+DEBUG-FRAMEs captured earlier (at an error's signal point, before any unwinding)
+and is used in place of TI's now-possibly-unwound live stack — so an error
+reached through a builtin's HANDLER-CASE (APPLY / LOAD / …) still shows the full
+backtrace (see *DEBUG-ERROR-SNAPSHOT-HOOK*)."
   (let* ((context (current-evaluation-context))
          (binding-stack (collect-binding-stack context)))
     (make-snapshot
@@ -111,7 +115,8 @@ and TI's shadow call stack."
      :form-id form-id
      :when when
      :source-position (and metadata (form-id-position metadata form-id))
-     :call-stack (mapcar #'debug-frame->stack-frame (thread-debug-info-call-stack ti))
+     :call-stack (mapcar #'debug-frame->stack-frame
+                         (or override-call-stack (thread-debug-info-call-stack ti)))
      :binding-stack binding-stack
      :visible-names (visible-names-from binding-stack)
      ;; spec §10.2: active vl-catch-all-apply frames (the builtin maintains

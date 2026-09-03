@@ -59,6 +59,36 @@
                    (clautolisp.debug:hit-snapshot captured))))
       (is (<= 2 (length frames))))))          ; DEEP and OUTER, not empty
 
+(test snapshot-survives-an-unwinding-handler-case-between-error-and-session
+  ;; A builtin wraps every subr in a HANDLER-CASE that UNWINDS the poll-point
+  ;; shadow stack before the debugger's session handler runs; a function reached
+  ;; through APPLY / MAPCAR / LOAD thereby lost its frames
+  ;; (aldo-no-frames-through-higher-order-builtins). The stack captured on the
+  ;; condition at signal time (*DEBUG-ERROR-SNAPSHOT-HOOK*, installed at load,
+  ;; consumed by build-snapshot) rescues it. Here we simulate the wrapper with a
+  ;; CL handler-case around the erroring call — no builtins needed.
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (captured nil))
+    (define-and-instrument context
+        "(defun deep () (nosuchfn 1))(defun outer () (deep))" "DEEP" "OUTER")
+    (let ((clautolisp.debug:*debug-hit-handler*
+            (lambda (hit)
+              (setf captured (mapcar #'clautolisp.debug:stack-frame-function-name
+                                     (clautolisp.debug:snapshot-call-stack
+                                      (clautolisp.debug:hit-snapshot hit))))
+              :abort)))
+      (clautolisp.debug:call-with-debugging
+       (lambda ()
+         ;; the inner handler-case unwinds the shadow stack, then re-signals —
+         ;; exactly what a builtin wrapper (WRAP-BUILTIN-FUNCTION) does
+         (handler-case (eval-call context "OUTER")
+           (clautolisp.autolisp-runtime:autolisp-runtime-error (c) (error c))))
+       :thread-info ti))
+    ;; both frames present, from the captured (not the unwound-live) stack
+    (is (member "DEEP" captured :test #'string=))
+    (is (member "OUTER" captured :test #'string=))))
+
 (test abort-unwinds-the-evaluation
   (let* ((context (fresh-context))
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))

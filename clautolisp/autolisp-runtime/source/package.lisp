@@ -190,6 +190,8 @@
    #:*debugging*
    #:*instrument-usubr-hook*
    #:*debug-instrumentation-enabled*
+   #:*debug-error-snapshot-hook*
+   #:autolisp-runtime-error-debug-snapshot
    #:instrument-usubr-if-possible
    #:maybe-instrument-usubr
    #:*clal-on-error*

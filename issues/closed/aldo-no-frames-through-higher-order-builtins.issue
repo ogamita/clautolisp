@@ -51,3 +51,28 @@ they are passed to eval/apply, keyed on the optimization DEBUG level.
 - Hot evaluator code + large test corpus (runtime/builtins-core/debug) — land
   with the full suites green and add a regression that a function reached via
   apply produces >=1 frame at an error stop.
+
+## RESOLVED (1.9.66)
+Fixed by capturing the debugger's shadow call stack onto the
+autolisp-runtime-error condition at SIGNAL time — the deepest, error point,
+before any HANDLER-CASE unwinds it — and preferring it in BUILD-SNAPSHOT:
+
+- autolisp-runtime/source/api.lisp: *DEBUG-ERROR-SNAPSHOT-HOOK* + the condition's
+  DEBUG-SNAPSHOT slot, whose :INITFORM calls the hook (an INITIALIZE-INSTANCE
+  method on a condition is undefined and unrun on SBCL — the slot initform is the
+  portable capture point, evaluated by MAKE-CONDITION at the error site).
+- autolisp-debug/source/error.lisp: CAPTURE-ERROR-SHADOW-STACK installs the hook
+  (copies the live shadow stack when a debug session is active; NIL otherwise, so
+  ordinary runs pay nothing); DEBUG-HANDLE-ERROR passes the captured stack to
+  BUILD-SNAPSHOT.
+- autolisp-debug/source/snapshot.lisp: BUILD-SNAPSHOT takes an
+  OVERRIDE-CALL-STACK, used over TI's live (now-unwound) stack.
+
+This is immune to EVERY unwinding handler-case in the path (the per-subr
+WRAP-BUILTIN-FUNCTION wrapper, the call-in-context subr branch, LOAD's *error*
+handler), so a function reached via APPLY / MAPCAR / SEND-dispatch / LOAD shows a
+full backtrace. Verified on the built tool: (apply 'cc …) → CC ← BB ← AA; the
+reporter's object system loaded via (load) → LAMBDA ← INVOKE-METHOD ← SEND ←
+<toplevel>. Tests: runtime capture-wiring + a debug-suite test that the snapshot
+survives an unwinding handler-case between the error and the session. 3701
+checks green across runtime/builtins/debug/dumb/ncurses/tool.
