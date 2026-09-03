@@ -220,11 +220,20 @@
       (declare (ignore result screen))
       (is (search "set at line 4" (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
 
-(test eval-under-ncurses-emits-no-ansi-colour
-  ;; The runtime symbol printer wraps names in ANSI (ESC[33m…) when *COLOR-OUTPUT*
-  ;; is armed (as the CLI does on a tty). curses can't render in-band escapes, so
-  ;; the ncurses ui-await-command :around binds the policy OFF: an evaluated
-  ;; SYMBOL prints plain into the repl pane — no ESC, no "?[33m..?[0m" leak.
+(test ansi-line-segments-parses-colour-runs
+  ;; ANSI SGR runs → (text . face) segments; the face is named after the fg colour
+  ;; (33 → :yellow); reset returns to the base attr; escapes are consumed.
+  (is (equal '(("plain" . :normal))
+             (clautolisp.ui.ncurses::ansi-line-segments "plain" :normal)))
+  (is (equal '(("a " . :normal) ("SYM" . :yellow) (" b" . :normal))
+             (clautolisp.ui.ncurses::ansi-line-segments
+              (format nil "a ~C[33mSYM~C[0m b" #\Escape #\Escape) :normal))))
+
+(test eval-under-ncurses-renders-symbol-in-colour
+  ;; The runtime symbol printer emits ANSI (ESC[33m…) when *COLOR-OUTPUT* is armed
+  ;; (as on a tty). The ncurses renderer turns that colour INTENT into a curses
+  ;; ATTRIBUTE: the evaluated symbol A shows in colour (:yellow) in the repl pane,
+  ;; and NO in-band escape is ever drawn to the grid.
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
          (ti (break-at context metas 3))
@@ -233,9 +242,15 @@
         (run-ncurses (list #\e #\' #\A :enter #\c)   ; e, eval 'A → symbol A, continue
                      :context context :thread-info ti
                      :thunk (lambda () (call-two context)))
-      (declare (ignore result screen))
+      (declare (ignore result ui))
+      ;; no raw escape reached the grid …
       (is (notany (lambda (l) (find #\Escape l))
-                  (clautolisp.ui.ncurses:ncurses-ui-repl-lines ui))))))
+                  (clautolisp.ui.tui:mock-grid-lines screen)))
+      ;; … and the colour was applied as an attribute somewhere on screen
+      (let ((attrs (clautolisp.ui.tui::mock-attrs screen)))
+        (is (loop for r below (array-dimension attrs 0)
+                  thereis (loop for c below (array-dimension attrs 1)
+                                thereis (eq :yellow (aref attrs r c)))))))))
 
 (test eval-line-shows-result-in-repl
   (let* ((context (fresh-context))

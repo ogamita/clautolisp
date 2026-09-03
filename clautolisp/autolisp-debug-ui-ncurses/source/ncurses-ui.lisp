@@ -253,16 +253,78 @@ the accented source) included, pass through unchanged."
              string)
         string)))
 
+(defparameter +sgr-face+
+  '((30 . :black) (31 . :red) (32 . :green) (33 . :yellow)
+    (34 . :blue) (35 . :magenta) (36 . :cyan) (37 . :white)
+    ;; bright variants map to the same colour faces
+    (90 . :black) (91 . :red) (92 . :green) (93 . :yellow)
+    (94 . :blue) (95 . :magenta) (96 . :cyan) (97 . :white))
+  "ANSI SGR foreground code → a tui-core face named after that colour (FACES.lisp
+registers :red … :white as {:fg colour}); so the runtime's colour intent, carried
+as ANSI, becomes a curses attribute without a new face registry.")
+
+(defun ansi-line-segments (text base-attr)
+  "Parse TEXT — which may carry ANSI SGR escapes emitted by the runtime colour
+policy — into a list of (VISIBLE-TEXT . ATTR) segments. A foreground colour code
+selects the face of that colour; a reset (0) or a code we don't map returns to
+BASE-ATTR. The escapes are CONSUMED (never drawn). With no ESC, one segment
+(TEXT . BASE-ATTR) — the fast path."
+  (if (not (find #\Escape text))
+      (list (cons text base-attr))
+      (let ((segments '())
+            (buf (make-string-output-stream))
+            (attr base-attr) (i 0) (n (length text)))
+        (labels ((flush ()
+                   (let ((s (get-output-stream-string buf)))
+                     (when (plusp (length s)) (push (cons s attr) segments)))))
+          (loop while (< i n) do
+            (let ((c (char text i)))
+              (if (and (char= c #\Escape) (< (1+ i) n) (char= (char text (1+ i)) #\[))
+                  (let ((j (+ i 2)) (params '()) (cur 0) (have nil))
+                    (loop while (and (< j n)
+                                     (not (<= #x40 (char-code (char text j)) #x7e)))
+                          do (let ((ch (char text j)))
+                               (cond ((char<= #\0 ch #\9)
+                                      (setf cur (+ (* cur 10) (- (char-code ch) 48)) have t))
+                                     ((char= ch #\;) (push cur params) (setf cur 0 have nil))))
+                             (incf j))
+                    (when have (push cur params))
+                    (setf params (nreverse params))
+                    (when (and (< j n) (char= (char text j) #\m)) ; only SGR
+                      (flush)
+                      (if (or (null params) (member 0 params))
+                          (setf attr base-attr)
+                          (dolist (p params)
+                            (let ((face (cdr (assoc p +sgr-face+))))
+                              (when face (setf attr face))))))
+                    (setf i (if (< j n) (1+ j) j)))      ; consume the final byte
+                  (progn (write-char c buf) (incf i)))))
+          (flush)
+          (nreverse segments)))))
+
 (defun win-put-line (screen rect row text &key attr)
-  "Write TEXT on content ROW (0-based) of RECT, padded/clipped to its width.
-Rows are clipped to the window's content area (its last row is the status
-line, written by WIN-STATUS). TEXT is run through SANITIZE-LINE first (ANSI
-escapes stripped, stray control bytes neutralised) so nothing renders as
-terminal garbage."
+  "Write TEXT on content ROW (0-based) of RECT, clipped/padded to its width, with
+per-token colour: ANSI SGR runs in TEXT (from the runtime colour policy) are
+drawn as curses ATTRIBUTES (ANSI-LINE-SEGMENTS), each segment SANITIZE-LINE'd of
+stray control bytes. An over-long line is marked with a trailing '…'. Rows are
+clipped to the window's content area (last row is the WIN-STATUS title)."
   (destructuring-bind (top left height width) rect
-    (when (< -1 row (1- height))
-      (tui-put screen (+ top row) left
-               (pad-string (truncate-string (sanitize-line text) width) width) :attr attr))))
+    (when (and (< -1 row (1- height)) (plusp width))
+      (let ((y (+ top row)) (col left) (remaining width) (truncated nil)
+            (base (or attr :normal)))
+        (dolist (segment (ansi-line-segments text base))
+          (let ((s (sanitize-line (car segment))))
+            (cond ((zerop remaining) (when (plusp (length s)) (setf truncated t)))
+                  ((> (length s) remaining)
+                   (tui-put screen y col (subseq s 0 remaining) :attr (cdr segment))
+                   (incf col remaining) (setf remaining 0 truncated t))
+                  (t (tui-put screen y col s :attr (cdr segment))
+                     (incf col (length s)) (decf remaining (length s))))))
+        (when (plusp remaining)                       ; pad to the pane width
+          (tui-put screen y col (make-string remaining :initial-element #\Space)
+                   :attr base))
+        (when truncated                               ; overflow indicator
+          (tui-put screen y (+ left width -1) "…" :attr base))))))
 
 (defun win-status (screen rect title active-p)
   "Draw RECT's status line (its bottom row): the window TITLE across the full
@@ -2174,15 +2236,13 @@ deletes)."
 
 (defmethod ui-await-command :around ((ui ncurses-ui) session hit)
   (declare (ignore hit))
-  ;; While the ncurses UI is up, disable the runtime's ANSI colour policy: the
-  ;; symbol printer (model.lisp print-object) wraps names in ESC[..m..ESC[0m for
-  ;; a real terminal, but curses colours via ATTRIBUTES and can't render in-band
-  ;; escapes — so a printed symbol value showed as "?[33m..?[0m" in a pane. Colour
-  ;; here is the UI's job (faces → attributes), so the value text stays plain at
-  ;; the source. (STRIP-ANSI in the renderer still guards escapes already baked
-  ;; into data.) The between-stops terminal REPL keeps its own *COLOR-OUTPUT*.
-  (let ((*current-session* session)
-        (clautolisp.autolisp-runtime:*color-output* nil))
+  ;; The runtime colour policy (*COLOR-OUTPUT*) stays as the CLI set it: the
+  ;; symbol printer emits ANSI SGR carrying the colour INTENT, which the renderer
+  ;; (WIN-PUT-LINE → ANSI-LINE-SEGMENTS) turns into per-token curses ATTRIBUTES —
+  ;; so the ncurses panes show the same accent the terminal REPL does, through
+  ;; the same policy, without ever drawing an in-band escape. (Colour off /
+  ;; --no-color ⇒ no ANSI ⇒ plain, same as before.)
+  (let ((*current-session* session))
     (call-next-method)))
 
 ;;;; --- small helpers -------------------------------------------------
