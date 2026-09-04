@@ -111,3 +111,24 @@ aldb-cycle goes from *aldb-stack* to *aldb* and vice-versa.
 If some aldo commands are not accessible from these aldb commands,
 signals them and propose an aldb command to invoke it.
 
+** Status (1.9.79, first pass)
+
+Done: *aldb-stack* is the primary interaction buffer, in aldb-mode; on connect
+(and at every stop) aldb tiles *aldb* over *aldb-stack*, and restores the prior
+windows on resume to the toplevel. RET is aldb-default-action (frame line →
+toggle-details; local line → inspect-in-frame), cursor stays on the selected
+frame. Implemented and wired to aldo: toggle-details (locals shown indented,
+carried per-frame over the wire), n/p, M-n/M-p, </>, t, v (show-source),
+e (eval-in-frame), d (pprint-eval-in-frame), i (inspect-in-frame),
+: (interactive-eval), C (inspect-error), s/o/x/f steps, SPC, c, q, a,
+R (return-from-frame), b, TAB (cycle), h. Server: frame wire carries locals;
+:eval-in-frame / :pprint-eval-in-frame / :inspect-in-frame select+act in the
+frame; :eval now uses the selected frame; emacs UI no longer auto-pushes the
+source view (v is on demand).
+
+Deferred (need aldo/wire support that doesn't exist yet — these signal a clear
+message via aldb--todo): r restart-frame, I invoke-restart-by-name (no
+restarts), C-y insert-frame-call-to-repl, A/B break-with-aldo (switch to the
+tui/ncurses UI — set *clal-debugger-ui*). The C-c C-d alref bindings are out of
+scope here.
+

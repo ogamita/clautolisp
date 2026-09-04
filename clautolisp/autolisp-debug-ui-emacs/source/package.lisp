@@ -15,6 +15,8 @@ itself lives in emacs/aldb.el. Registered as :emacs / :aldb.")
                 #:snapshot-function-name #:snapshot-source-position
                 #:snapshot-call-stack #:snapshot-visible-names #:snapshot-catch-stack
                 #:stack-frame-function-name #:stack-frame-source-position
+                #:stack-frame-bindings-introduced
+                #:binding-entry-symbol #:binding-entry-value
                 #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when)
   (:import-from #:clautolisp.source
                 #:source-position-p #:source-position-file

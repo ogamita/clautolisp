@@ -87,10 +87,18 @@ it is never read back as code)."
           (source-position-start-line position)
           (source-position-start-column position))))
 
+(defun frame-locals->wire (frame)
+  "The frame's own locals (formals + /-locals) as (NAME PREVIEW) pairs, so aldb
+can show them indented under the frame (aldb-toggle-details, aldb-commands.issue)."
+  (loop for entry in (stack-frame-bindings-introduced frame)
+        collect (list (autolisp-symbol-name (binding-entry-symbol entry))
+                      (preview (binding-entry-value entry)))))
+
 (defun frame->wire (frame index)
   (list :frame index
         (or (stack-frame-function-name frame) "?")
-        (source-position->wire (stack-frame-source-position frame))))
+        (source-position->wire (stack-frame-source-position frame))
+        (frame-locals->wire frame)))
 
 (defun bindings->wire (snapshot)
   "Visible bindings as (NAME PREVIEW) pairs — names and printed previews
@@ -124,6 +132,13 @@ error messages (§20.2 buffers are populated from this)."
 
 (defmethod ui-show-source ((ui emacs-ui) position)
   (write-message ui :show-source (source-position->wire position)))
+
+(defmethod ui-show-stop-source-p ((ui emacs-ui))
+  ;; aldb tiles *aldb* over *aldb-stack* and opens source on demand (v /
+  ;; aldb-show-source), so the engine must not auto-push the source view at
+  ;; each stop and disturb that layout (aldb-commands.issue).
+  (declare (ignore ui))
+  nil)
 
 (defmethod ui-breakpoint-added ((ui emacs-ui) bp)
   (write-message ui :breakpoint-added (breakpoint-id bp)
@@ -186,6 +201,17 @@ otherwise the command was answered inline and the loop keeps reading."
       (:advance (values (apply #'cmd-advance session args) t))
       (:select-frame (cmd-select-frame session (first args)) (values nil nil))
       (:eval (reply-eval ui session (first args)) (values nil nil))
+      ;; frame-targeted variants (aldb-commands.issue): select the frame, then
+      ;; evaluate / pretty-eval / inspect in its dynamic context.
+      (:eval-in-frame
+       (cmd-select-frame session (first args))
+       (reply-eval ui session (second args)) (values nil nil))
+      (:pprint-eval-in-frame
+       (cmd-select-frame session (first args))
+       (reply-pprint-eval ui session (second args)) (values nil nil))
+      (:inspect-in-frame
+       (cmd-select-frame session (first args))
+       (reply-inspect ui session (second args)) (values nil nil))
       (:set-breakpoint-line (reply-set-breakpoint ui session (first args)) (values nil nil))
       (:list-breakpoints (reply-breakpoints ui session) (values nil nil))
       (:inspect (reply-inspect ui session (first args)) (values nil nil))
@@ -200,8 +226,23 @@ otherwise the command was answered inline and the loop keeps reading."
   (first (clautolisp.autolisp-runtime:read-runtime-from-string string)))
 
 (defun reply-eval (ui session string)
+  ;; evaluate in the SELECTED frame's context (aldb tracks it via :select-frame),
+  ;; so an eval on an outer frame sees that frame's bindings (§9.3)
   (handler-case
-      (write-message ui :eval-result (preview (cmd-eval session (parse-form string)) 200))
+      (write-message ui :eval-result
+                     (preview (cmd-eval session (parse-form string)
+                                        :frame-index (session-selected-frame session))
+                              200))
+    (error (e) (write-message ui :eval-error (princ-to-string e)))))
+
+(defun reply-pprint-eval (ui session string)
+  "Like REPLY-EVAL but pretty-print the result (aldb-pprint-eval-in-frame)."
+  (handler-case
+      (let ((*print-pretty* t) (*print-right-margin* 72))
+        (write-message ui :eval-result
+                       (preview (cmd-eval session (parse-form string)
+                                          :frame-index (session-selected-frame session))
+                                2000)))
     (error (e) (write-message ui :eval-error (princ-to-string e)))))
 
 (defun return-directive (ui session string)

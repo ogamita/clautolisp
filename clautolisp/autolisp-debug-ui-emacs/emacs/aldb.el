@@ -14,12 +14,14 @@
 ;;
 ;; Transport is intentionally pluggable.  `aldb-connect' takes a process
 ;; (a network or inferior-lisp connection) whose stdout carries the debugger's
-;; messages and whose stdin accepts command forms.  Reuse SLIME's swank socket
-;; if you already run one; aldb does not mandate a transport (section 20.1).
+;; messages and whose stdin accepts command forms; called interactively it
+;; opens a TCP connection to the listener printed at the stop.
 ;;
-;; Buffers (section 20.2): *aldb* (command interface + current stop),
-;; *aldb-bindings*, *aldb-stack*, *aldb-inspect*, *aldb-workspace*.
-;; Keys (section 20.3) mirror SLDB.
+;; Buffers (section 20.2): *aldb-stack* is the primary interaction buffer — a
+;; SLDB-like backtrace whose frames expand to show their locals; *aldb* logs
+;; the exchange and shows eval results; *aldb-bindings*, *aldb-inspect*.  At a
+;; stop aldb tiles *aldb* over *aldb-stack*; on resume to the toplevel it
+;; restores the windows that were up before (aldb-commands.issue).
 
 ;;; Code:
 
@@ -54,7 +56,17 @@
 (defvar aldb--snapshot nil
   "Plist of the current stop's snapshot, as decoded from the wire.")
 
-(defvar aldb--selected-frame 0)
+(defvar aldb--selected-frame 0
+  "Index of the frame the stack buffer has selected.")
+
+(defvar aldb--details nil
+  "List of frame indices currently expanded (their locals shown).")
+
+(defvar aldb--last-error nil
+  "The last error announcement line, for `aldb-inspect-error'.")
+
+(defvar aldb--pre-window-config nil
+  "Window configuration saved before aldb took the screen, restored on resume.")
 
 (defconst aldb--protocol-major 1
   "Major protocol version aldb implements; mismatch aborts attach (section 27).")
@@ -72,11 +84,13 @@ port RET\")."
           (read-string "aldb host: " "localhost")
           (read-number "aldb port: "))))
   (setq aldb--process process
-        aldb--read-buffer "")
+        aldb--read-buffer ""
+        aldb--pre-window-config (current-window-configuration))
   (set-process-filter process #'aldb--process-filter)
-  (with-current-buffer (get-buffer-create "*aldb*")
-    (aldb-mode))
-  (pop-to-buffer "*aldb*")
+  ;; make both interaction buffers live and in aldb-mode up front
+  (with-current-buffer (aldb--buffer "*aldb*") (aldb-mode))
+  (with-current-buffer (aldb--buffer "*aldb-stack*") (aldb-mode))
+  (aldb--setup-windows)
   (aldb--log "aldb connected; waiting for the debugger…"))
 
 (defun aldb--send (form)
@@ -106,6 +120,22 @@ port RET\")."
         (cons form (substring string end)))
     (error nil)))
 
+;;; --- windows --------------------------------------------------------
+
+(defun aldb--setup-windows ()
+  "Tile *aldb* over *aldb-stack* (the primary interaction buffer), leaving the
+cursor in *aldb-stack*.  Idempotent — re-applied at every stop."
+  (delete-other-windows)
+  (switch-to-buffer (aldb--buffer "*aldb-stack*"))
+  (split-window-below 12)
+  (switch-to-buffer (aldb--buffer "*aldb*"))
+  (other-window 1))                     ; back to *aldb-stack*
+
+(defun aldb--restore-windows ()
+  "Restore the windows that were up before aldb took the screen."
+  (when aldb--pre-window-config
+    (set-window-configuration aldb--pre-window-config)))
+
 ;;; --- message dispatch (debugger -> aldb) ----------------------------
 
 (defun aldb--dispatch (message)
@@ -119,7 +149,7 @@ port RET\")."
          (aldb--log "WARNING: debugger protocol major %s, aldb expects %s"
                     (car version) aldb--protocol-major))
        (aldb--log "attached (protocol %s.%s)" (car version) (cadr version))))
-    (:detached (aldb--log "detached"))
+    (:detached (aldb--log "detached") (aldb--restore-windows))
     (:message (aldb--log "[%s] %s" (nth 1 message) (nth 2 message)))
     (:show-source (aldb--show-source (nth 1 message)))
     (:resumed (aldb--log "running…"))
@@ -141,15 +171,17 @@ port RET\")."
     (_ (aldb--log "unhandled: %S" message)))))
 
 (defun aldb--on-stop (kind snapshot)
-  (setq aldb--snapshot snapshot aldb--selected-frame 0)
+  (setq aldb--snapshot snapshot aldb--selected-frame 0 aldb--details nil)
+  (aldb--setup-windows)                 ; windows first, then populate them
   (aldb--render-stop kind)
   (aldb--render-bindings)
   (aldb--render-stack))
 
 (defun aldb--on-error (kind message)
-  (setq aldb--snapshot (nth 3 message) aldb--selected-frame 0)
-  (aldb--log "%s: %s (errno %s)  [a abort, r return, c run *error*]"
-             kind (nth 1 message) (nth 2 message))
+  (setq aldb--snapshot (nth 3 message) aldb--selected-frame 0 aldb--details nil
+        aldb--last-error (format "%s: %s (errno %s)" kind (nth 1 message) (nth 2 message)))
+  (aldb--setup-windows)
+  (aldb--log "%s  [a abort, R return, c run *error*]" aldb--last-error)
   (aldb--render-bindings)
   (aldb--render-stack))
 
@@ -162,14 +194,15 @@ port RET\")."
   (with-current-buffer (aldb--buffer "*aldb*")
     (let ((inhibit-read-only t))
       (goto-char (point-max))
-      (insert (apply #'format fmt args) "\n"))))
+      (insert (apply #'format fmt args) "\n"))
+    (let ((w (get-buffer-window (current-buffer))))
+      (when w (set-window-point w (point-max))))))
 
 (defun aldb--render-stop (kind)
   (let* ((fn (plist-get aldb--snapshot :function))
          (pos (plist-get aldb--snapshot :position)))
     (aldb--log "%s at %s%s" kind fn
-               (if pos (format " %s:%s" (nth 1 pos) (nth 2 pos)) ""))
-    (when pos (aldb--show-source pos))))
+               (if pos (format " %s:%s" (nth 1 pos) (nth 2 pos)) ""))))
 
 (defun aldb--render-bindings ()
   (with-current-buffer (aldb--buffer "*aldb-bindings*")
@@ -179,18 +212,59 @@ port RET\")."
       (dolist (pair (plist-get aldb--snapshot :bindings))
         (insert (format "  %s = %s\n" (nth 0 pair) (nth 1 pair)))))))
 
+(defun aldb--frames () (plist-get aldb--snapshot :frames))
+
 (defun aldb--render-stack ()
+  "Render the backtrace in *aldb-stack*, each frame's locals shown indented when
+the frame is expanded (`aldb--details').  Frame/local lines carry text
+properties so commands read the frame/local at point robustly; point is left on
+the selected frame."
   (with-current-buffer (aldb--buffer "*aldb-stack*")
     (let ((inhibit-read-only t))
       (erase-buffer)
-      (insert "Backtrace (RET select):\n")
-      (dolist (frame (plist-get aldb--snapshot :frames))
-        ;; frame = (:frame INDEX NAME POSITION)
-        (let ((index (nth 1 frame)) (name (nth 2 frame)) (pos (nth 3 frame)))
-          (insert (format "%s %2d: %s%s\n"
-                          (if (eql index aldb--selected-frame) ">" " ")
-                          index name
-                          (if pos (format "  line %s" (nth 2 pos)) ""))))))))
+      (insert "Backtrace  (RET open/inspect · n/p frame · t details · e eval · i inspect · h help)\n")
+      (dolist (frame (aldb--frames))
+        ;; frame = (:frame INDEX NAME POSITION LOCALS)
+        (let* ((index (nth 1 frame)) (name (nth 2 frame))
+               (pos (nth 3 frame)) (locals (nth 4 frame))
+               (open (memq index aldb--details)))
+          (insert (propertize
+                   (format "%s%s %2d: %s%s\n"
+                           (if (eql index aldb--selected-frame) ">" " ")
+                           (cond (open "-") (locals "+") (t " "))
+                           index name
+                           (if pos (format "  line %s" (nth 2 pos)) ""))
+                   'aldb-frame index))
+          (when open
+            (if (null locals)
+                (insert (propertize "        (no locals)\n" 'aldb-frame index))
+              (dolist (l locals)
+                ;; l = (NAME PREVIEW)
+                (insert (propertize (format "        %s = %s\n" (nth 0 l) (nth 1 l))
+                                    'aldb-frame index 'aldb-local (nth 0 l))))))))
+      (aldb--goto-frame aldb--selected-frame))))
+
+(defun aldb--goto-frame (index)
+  "Move point to the frame-line of frame INDEX in *aldb-stack*."
+  (goto-char (point-min))
+  (let ((target nil))
+    (while (and (not target) (not (eobp)))
+      (when (and (eql (get-text-property (point) 'aldb-frame) index)
+                 (not (get-text-property (point) 'aldb-local)))
+        (setq target (point)))
+      (forward-line 1))
+    (goto-char (or target (point-min)))
+    (let ((w (get-buffer-window (aldb--buffer "*aldb-stack*"))))
+      (when w (set-window-point w (point))))))
+
+(defun aldb--frame-at-point ()
+  "The frame index on the current *aldb-stack* line, or the selected frame."
+  (or (get-text-property (line-beginning-position) 'aldb-frame)
+      aldb--selected-frame))
+
+(defun aldb--local-at-point ()
+  "The local NAME on the current line, or nil when point is on a frame line."
+  (get-text-property (line-beginning-position) 'aldb-local))
 
 (defun aldb--show-breakpoints (breakpoints)
   (aldb--log "breakpoints: %S" breakpoints))
@@ -221,88 +295,198 @@ port RET\")."
           (run-at-time 1.0 nil (lambda () (when (overlayp ov) (delete-overlay ov))))))
       (display-buffer (current-buffer)))))
 
-;;; --- commands (aldb -> debugger), section 20.3 ----------------------
+;;; --- resume commands (aldb -> debugger) -----------------------------
 
-(defun aldb-continue () (interactive) (aldb--send '(:continue)))
-(defun aldb-step-over () (interactive) (setq aldb--last-step :over) (aldb--send '(:step :over)))
-(defun aldb-step-in () (interactive) (setq aldb--last-step :into) (aldb--send '(:step :into)))
-(defun aldb-step-out () (interactive) (setq aldb--last-step :out) (aldb--send '(:step :out)))
-(defun aldb-finish () (interactive) (setq aldb--last-step :finish) (aldb--send '(:step :finish)))
-(defun aldb-step-again () (interactive) (aldb--send (list :step aldb--last-step)))
-(defun aldb-abort () (interactive) (aldb--send '(:abort)))
-(defun aldb-quit () (interactive) (aldb--send '(:quit)))
+(defun aldb-continue () "Resume execution (aldo continue)." (interactive) (aldb--send '(:continue)))
+(defun aldb-step-over () "Step over the current form." (interactive) (setq aldb--last-step :over) (aldb--send '(:step :over)))
+(defun aldb-step-in () "Step into the current form." (interactive) (setq aldb--last-step :into) (aldb--send '(:step :into)))
+(defun aldb-step-out () "Step out of the current frame." (interactive) (setq aldb--last-step :out) (aldb--send '(:step :out)))
+(defun aldb-finish () "Finish the current frame." (interactive) (setq aldb--last-step :finish) (aldb--send '(:step :finish)))
+(defun aldb-step-again () "Repeat the last step." (interactive) (aldb--send (list :step aldb--last-step)))
+(defun aldb-abort () "Abort to the toplevel." (interactive) (aldb--send '(:abort)))
+(defun aldb-quit () "Quit aldo to the toplevel." (interactive) (aldb--send '(:quit)))
 
-(defun aldb-eval (form)
-  "Evaluate FORM (AutoLISP source text) in the selected frame."
-  (interactive "saldb eval: ")
-  (aldb--send (list :eval form)))
+;;; --- frame navigation -----------------------------------------------
 
-(defun aldb-return (form)
-  "Continue-with-return: supply FORM's value for the erroring form (section 10.1)."
-  (interactive "saldb return value: ")
-  (aldb--send (list :return form)))
+(defun aldb--frame-count () (length (aldb--frames)))
 
-(defun aldb-select-frame ()
-  "Select the frame on the current *aldb-stack* line."
-  (interactive)
-  (let ((index (aldb--line-index)))
-    (when index
-      (setq aldb--selected-frame index)
-      (aldb--send (list :select-frame index))
+(defun aldb--select (index)
+  "Select frame INDEX (clamped), tell the debugger, and move point to it."
+  (let ((n (aldb--frame-count)))
+    (when (> n 0)
+      (setq aldb--selected-frame (max 0 (min (1- n) index)))
+      (aldb--send (list :select-frame aldb--selected-frame))
       (aldb--render-stack))))
+
+(defun aldb-down () "Select the next (outer) frame." (interactive) (aldb--select (1+ aldb--selected-frame)))
+(defun aldb-up   () "Select the previous (inner) frame." (interactive) (aldb--select (1- aldb--selected-frame)))
+(defun aldb-beginning-of-backtrace () "Select the innermost frame." (interactive) (aldb--select 0))
+(defun aldb-end-of-backtrace () "Select the outermost frame." (interactive) (aldb--select (1- (aldb--frame-count))))
+
+(defun aldb-toggle-details (&optional on)
+  "Toggle showing the locals under the frame at point (ON forces them open)."
+  (interactive)
+  (let ((index (aldb--frame-at-point)))
+    (setq aldb--selected-frame index)
+    (if (or on (not (memq index aldb--details)))
+        (cl-pushnew index aldb--details)
+      (setq aldb--details (delq index aldb--details)))
+    (aldb--send (list :select-frame index))
+    (aldb--render-stack)))
+
+(defun aldb-details-down ()
+  "Close the current frame's locals, move to the next frame, open its locals."
+  (interactive)
+  (setq aldb--details (delq aldb--selected-frame aldb--details))
+  (aldb--select (1+ aldb--selected-frame))
+  (aldb-toggle-details t))
+
+(defun aldb-details-up ()
+  "Close the current frame's locals, move to the previous frame, open its locals."
+  (interactive)
+  (setq aldb--details (delq aldb--selected-frame aldb--details))
+  (aldb--select (1- aldb--selected-frame))
+  (aldb-toggle-details t))
+
+;;; --- examine the selected frame -------------------------------------
+
+(defun aldb-show-source ()
+  "Show the selected frame's source in another window."
+  (interactive)
+  (let* ((frame (nth (aldb--frame-at-point) (aldb--frames)))
+         (pos (and frame (nth 3 frame))))
+    (if pos (aldb--show-source pos) (message "aldb: no source for this frame"))))
+
+(defun aldb-eval-in-frame (string)
+  "Evaluate STRING in the frame at point; result to *aldb*."
+  (interactive "saldb eval in frame: ")
+  (aldb--send (list :eval-in-frame (aldb--frame-at-point) string)))
+
+(defun aldb-pprint-eval-in-frame (string)
+  "Evaluate STRING in the frame at point and pretty-print the result."
+  (interactive "saldb pprint eval in frame: ")
+  (aldb--send (list :pprint-eval-in-frame (aldb--frame-at-point) string)))
+
+(defun aldb-inspect-in-frame (string)
+  "Inspect STRING's value in the frame at point, in another window."
+  (interactive "saldb inspect in frame: ")
+  (aldb--send (list :inspect-in-frame (aldb--frame-at-point) string)))
+
+(defun aldb-interactive-eval (string)
+  "Evaluate STRING in the selected frame; value shown in *aldb*/minibuffer."
+  (interactive "saldb eval: ")
+  (aldb--send (list :eval-in-frame aldb--selected-frame string)))
+
+(defun aldb-inspect-error ()
+  "Redisplay the error message that entered the debugger."
+  (interactive)
+  (if aldb--last-error (message "%s" aldb--last-error) (message "aldb: no error")))
+
+;;; --- misc / breakpoints / inspector ---------------------------------
+
+(defun aldb-return-from-frame (string)
+  "Continue-with-return: supply STRING's value for the erroring form (§10.1)."
+  (interactive "saldb return value: ")
+  (aldb--send (list :return string)))
 
 (defun aldb-toggle-breakpoint (line)
   "Set a breakpoint at LINE of the current function (section 17.3)."
   (interactive (list (read-number "Breakpoint at line: " (line-number-at-pos))))
   (aldb--send (list :set-breakpoint-line line)))
 
-(defun aldb-list-breakpoints () (interactive) (aldb--send '(:list-breakpoints)))
+(defun aldb-list-breakpoints () "List breakpoints." (interactive) (aldb--send '(:list-breakpoints)))
 
 (defun aldb-inspect (form)
   "Open the inspector on FORM (AutoLISP source text)."
   (interactive "saldb inspect: ")
   (aldb--send (list :inspect form)))
 
-(defun aldb-inspect-at-point ()
-  "Inspect the value on the current *aldb-bindings* / *aldb-inspect* line."
+(defun aldb-inspector-up () "Ascend in the inspector." (interactive) (aldb--send '(:inspector-up)))
+(defun aldb-inspector-path () "Show the inspector path." (interactive) (aldb--send '(:inspector-path)))
+(defun aldb-inspector-bind () "Bind the inspected value in the workspace." (interactive) (aldb--send '(:inspector-bind :workspace)))
+
+(defun aldb-cycle ()
+  "Move between the *aldb-stack* and *aldb* windows."
   (interactive)
-  (let ((index (aldb--line-index)))
-    (when index (aldb--send (list :inspector-descend index)))))
+  (let* ((names '("*aldb-stack*" "*aldb*"))
+         (here (buffer-name))
+         (other (car (or (cdr (member here names)) names)))
+         (w (get-buffer-window other)))
+    (if w (select-window w) (switch-to-buffer other))))
 
-(defun aldb-inspector-up () (interactive) (aldb--send '(:inspector-up)))
-(defun aldb-inspector-path () (interactive) (aldb--send '(:inspector-path)))
-(defun aldb-inspector-bind () (interactive) (aldb--send '(:inspector-bind :workspace)))
+(defun aldb-default-action ()
+  "RET: on a frame line toggle its locals; on a local line inspect it."
+  (interactive)
+  (if (aldb--local-at-point)
+      (aldb-inspect-in-frame (aldb--local-at-point))
+    (aldb-toggle-details)))
 
-(defun aldb--line-index ()
-  "Parse a leading integer index from the current line, or nil."
-  (save-excursion
-    (beginning-of-line)
-    (when (re-search-forward "\\([0-9]+\\)" (line-end-position) t)
-      (string-to-number (match-string 1)))))
+;;; --- not-yet-available aldo features (aldb-commands.issue) ----------
+;;; These need aldo/wire support that does not exist yet; they signal a clear
+;;; message and point at the alternative rather than failing opaquely.
+
+(defun aldb--todo (what &optional alternative)
+  (user-error "aldb: %s is not available yet%s" what
+              (if alternative (format " — %s" alternative) "")))
+
+(defun aldb-restart-frame () "Restart the selected frame (jump to its start)." (interactive)
+  (aldb--todo "restart-frame" "use step/finish"))
+(defun aldb-invoke-restart-by-name () "Invoke a restart by name." (interactive)
+  (aldb--todo "restarts" "aldo has continue (c) / abort (a) / return (R)"))
+(defun aldb-insert-frame-call-to-repl () "Insert the frame call at the REPL." (interactive)
+  (aldb--todo "insert-frame-call-to-repl"))
+(defun aldb-break-with-aldo () "Switch to the native debugger (aldo)." (interactive)
+  (aldb--todo "switch to aldo" "set *clal-debugger-ui* to 'tui or 'ncurses"))
+(defun aldb-break () "Set a breakpoint." (interactive) (call-interactively #'aldb-toggle-breakpoint))
 
 ;;; --- mode -----------------------------------------------------------
 
 (defvar aldb-mode-map
   (let ((map (make-sparse-keymap)))
+    ;; examine the selected frame
+    (define-key map (kbd "RET") #'aldb-default-action)
+    (define-key map (kbd "<return>") #'aldb-default-action)
+    (define-key map (kbd "TAB") #'aldb-cycle)
+    (define-key map (kbd "t") #'aldb-toggle-details)
+    (define-key map (kbd "v") #'aldb-show-source)
+    (define-key map (kbd "e") #'aldb-eval-in-frame)
+    (define-key map (kbd "d") #'aldb-pprint-eval-in-frame)
+    (define-key map (kbd "i") #'aldb-inspect-in-frame)
+    (define-key map (kbd ":") #'aldb-interactive-eval)
+    (define-key map (kbd "C") #'aldb-inspect-error)
+    ;; navigate frames
+    (define-key map (kbd "n") #'aldb-down)
+    (define-key map (kbd "p") #'aldb-up)
+    (define-key map (kbd "M-n") #'aldb-details-down)
+    (define-key map (kbd "M-p") #'aldb-details-up)
+    (define-key map (kbd "<") #'aldb-beginning-of-backtrace)
+    (define-key map (kbd ">") #'aldb-end-of-backtrace)
+    ;; resume / restarts
     (define-key map (kbd "c") #'aldb-continue)
-    (define-key map (kbd "s") #'aldb-step-over)
-    (define-key map (kbd "i") #'aldb-step-in)
+    (define-key map (kbd "q") #'aldb-quit)
+    (define-key map (kbd "a") #'aldb-abort)
+    (define-key map (kbd "s") #'aldb-step-in)
     (define-key map (kbd "o") #'aldb-step-out)
+    (define-key map (kbd "x") #'aldb-step-over)
     (define-key map (kbd "f") #'aldb-finish)
     (define-key map (kbd "SPC") #'aldb-step-again)
-    (define-key map (kbd "RET") #'aldb-select-frame)
-    (define-key map (kbd "e") #'aldb-eval)
-    (define-key map (kbd "b") #'aldb-toggle-breakpoint)
+    (define-key map (kbd "R") #'aldb-return-from-frame)
+    (define-key map (kbd "r") #'aldb-restart-frame)
+    (define-key map (kbd "I") #'aldb-invoke-restart-by-name)
+    (define-key map (kbd "C-y") #'aldb-insert-frame-call-to-repl)
+    (define-key map (kbd "A") #'aldb-break-with-aldo)
+    (define-key map (kbd "B") #'aldb-break-with-aldo)
+    (define-key map (kbd "b") #'aldb-break)
+    ;; breakpoints / help
     (define-key map (kbd "C-c C-b") #'aldb-list-breakpoints)
-    (define-key map (kbd "d") #'aldb-inspect)
-    (define-key map (kbd "r") #'aldb-return)
-    (define-key map (kbd "a") #'aldb-abort)
-    (define-key map (kbd "q") #'aldb-quit)
+    (define-key map (kbd "h") #'describe-mode)
     map)
-  "Keymap for `aldb-mode', mirroring SLDB (section 20.3).")
+  "Keymap for `aldb-mode', the *aldb-stack* interaction buffer.")
 
 (define-derived-mode aldb-mode special-mode "aldb"
-  "Major mode for the clautolisp debugger interaction buffer (section 20.2)."
+  "Major mode for the clautolisp debugger interaction buffers (section 20.2).
+The primary buffer is *aldb-stack*: a backtrace whose frames expand (t / RET) to
+show their locals, with SLDB-like navigation and eval/inspect in a frame."
   (setq buffer-read-only t))
 
 (provide 'aldb)

@@ -108,6 +108,37 @@
       (let ((hit (message-of messages :breakpoint-hit)))
         (is (= 2 (length (getf (second hit) :frames))))))))
 
+(test frame-wire-carries-its-locals
+  ;; each (:frame INDEX NAME POSITION LOCALS) now carries the frame's own locals
+  ;; as (NAME PREVIEW) pairs (aldb-toggle-details, aldb-commands.issue).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at metas 3)))
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:continue)) :context context :thread-info ti
+                   :thunk (lambda () (call-two context)))
+      (declare (ignore result text))
+      (let* ((hit (message-of messages :breakpoint-hit))
+             (frame0 (first (getf (second hit) :frames)))
+             (locals (nth 4 frame0)))       ; (:frame 0 NAME POSITION LOCALS)
+        (is (member "X" locals :key #'first :test #'string=))))))
+
+(test eval-in-frame-command-uses-that-frames-context
+  ;; :eval-in-frame selects the frame then evaluates in it: at ID's entry, X is
+  ;; visible in the outer TWO frame (index 1) with value 7.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (id (second metas))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti (fid-of id) 0 :when :before)
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:eval-in-frame 1 "X") (:abort)) :context context :thread-info ti
+                   :thunk (lambda () (call-two context)))
+      (declare (ignore result text))
+      (let ((reply (message-of messages :eval-result)))
+        (is (consp reply))
+        (is (string= "7" (second reply)))))))
+
 (test inspector-descend-and-path-over-the-wire
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
