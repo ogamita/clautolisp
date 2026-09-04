@@ -170,9 +170,9 @@ PAT (case-insensitive), or NIL."
                 (autolisp-symbol-name symbol) (preview value))))
 
 (defun print-stack-line (ui snapshot)
-  (let ((names (mapcar #'stack-frame-function-name (snapshot-display-call-stack snapshot))))
+  (let ((names (mapcar #'stack-frame-function-name (snapshot-call-stack snapshot))))
     (when names
-      (out ui "DBG>   <stack: ~{~A~^ ← ~}>~%" names))))
+      (out ui "DBG>   <stack: ~{~A~^ ← ~} ← top>~%" names))))
 
 (defun effective-value-line-width ()
   "The configured single-line value width (the `value-line-width' setting,
@@ -1911,7 +1911,7 @@ directive, or NIL (with a message) when the target is rejected."
   "`frame N' / `frame inner|outer|top|bottom' — select a call frame (§3).
 top = innermost = frame 0; inner heads toward top, outer toward the toplevel."
   (let* ((snapshot (session-snapshot session))
-         (frames (and snapshot (snapshot-display-call-stack snapshot)))
+         (frames (and snapshot (snapshot-call-stack snapshot)))
          (n (length frames))
          (cur (or (session-selected-frame session) 0)))
     (if (zerop n)
@@ -2109,7 +2109,7 @@ by CLAL-SELECT-FILE when one is set (aldo-pre-debug.issue)."
 (defun print-stack (ui session)
   (let ((snapshot (session-snapshot session)))
     (when snapshot
-      (loop for frame in (snapshot-display-call-stack snapshot)
+      (loop for frame in (snapshot-call-stack snapshot)
             for i from 0
             do (out ui "DBG>   ~D: ~A  ~A~%" i
                     (stack-frame-function-name frame)

@@ -44,40 +44,6 @@
   (globals-touched '() :type list)   ; spec §9.6 — populated in Phase 3
   (catch-stack '() :type list))      ; spec §10.2 — populated in Phase 3
 
-;;; --- the virtual toplevel frame (bottom of every displayed stack) ---
-;;;
-;;; The instrumentation only pushes shadow frames for instrumented function
-;;; activations, so a stop at the toplevel (e.g. (clal-break) from a -x form or
-;;; the REPL) shows an empty or near-empty backtrace. UIs present a synthetic
-;;; frame at the BOTTOM standing for the toplevel context, so the backtrace is
-;;; never blank and its root is named. It is DISPLAY-ONLY — it is NOT in
-;;; SNAPSHOT-CALL-STACK (the real stack the engine indexes for eval / bindings),
-;;; only in SNAPSHOT-DISPLAY-CALL-STACK, which the stack browsers render.
-
-(defparameter *toplevel-frame-name* "toplevel"
-  "The function-name of the virtual bottom-of-stack frame. The tools layer binds
-it to name the current toplevel — e.g. \"toplevel REPL\" or \"toplevel CLI\" —
-around the extent where a stop may occur; NIL suppresses the virtual frame.")
-
-(defun make-toplevel-frame ()
-  "The virtual toplevel frame, or NIL when *TOPLEVEL-FRAME-NAME* is NIL. A real
-STACK-FRAME with no source and no bindings; selecting it degrades to the global
-context (eval-in-frame against globals, no source)."
-  (and *toplevel-frame-name*
-       (make-stack-frame :function-name *toplevel-frame-name*
-                         :fid 0 :form-id 0
-                         :source-position nil :bindings-introduced '())))
-
-(defun snapshot-display-call-stack (snapshot)
-  "The call stack as the UIs DISPLAY it: SNAPSHOT-CALL-STACK (innermost first)
-with the virtual toplevel frame appended at the bottom (outermost), so an empty
-or near-empty stack still shows its toplevel root. Falls back to the raw stack
-when the virtual frame is suppressed (*TOPLEVEL-FRAME-NAME* NIL)."
-  (let ((toplevel (make-toplevel-frame)))
-    (if toplevel
-        (append (snapshot-call-stack snapshot) (list toplevel))
-        (snapshot-call-stack snapshot))))
-
 ;;; --- binding stack from the dynamic-frame chain --------------------
 
 (defun collect-binding-stack (context)

@@ -40,10 +40,8 @@
         (is (= 3 (third (getf plist :position))))
         ;; X is visible and bound to 7 — sent as (NAME PREVIEW) strings
         (is (member "X" (getf plist :bindings) :key #'first :test #'string=))
-        ;; one real call frame (TWO) plus the virtual toplevel frame at the
-        ;; bottom (virtual-toplevel-frame), named "toplevel" by default
-        (is (= 2 (length (getf plist :frames))))
-        (is (string= "toplevel" (third (car (last (getf plist :frames))))))))))
+        ;; one call frame on the stack
+        (is (= 1 (length (getf plist :frames))))))))
 
 (test eval-command-replies-with-result
   (let* ((context (fresh-context))
@@ -106,10 +104,9 @@
         (run-emacs '((:select-frame 1) (:abort)) :context context :thread-info ti
                    :thunk (lambda () (call-two context)))
       (declare (ignore result text))
-      ;; the hit snapshot listed 2 real frames (ID, TWO) + the virtual toplevel
+      ;; the hit snapshot listed 2 frames
       (let ((hit (message-of messages :breakpoint-hit)))
-        (is (= 3 (length (getf (second hit) :frames))))
-        (is (string= "toplevel" (third (car (last (getf (second hit) :frames))))))))))
+        (is (= 2 (length (getf (second hit) :frames))))))))
 
 (test inspector-descend-and-path-over-the-wire
   (let* ((context (fresh-context))

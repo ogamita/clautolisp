@@ -11,7 +11,7 @@ markers (top-right), interactor (bottom-left), repl (bottom-right).")
   (:import-from #:clautolisp.debug
                 #:hit-stop-reason #:hit-source-position #:hit-error-message
                 #:snapshot-function-name #:snapshot-source-position
-                #:snapshot-call-stack #:snapshot-display-call-stack #:snapshot-visible-names
+                #:snapshot-call-stack #:snapshot-visible-names
                 #:stack-frame-function-name #:stack-frame-fid #:stack-frame-form-id
                 #:stack-frame-source-position
                 #:metadata-for-function-id #:form-id-position
