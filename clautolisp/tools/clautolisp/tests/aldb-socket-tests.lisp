@@ -42,7 +42,15 @@ Bounded by a per-read timeout so a hang can never wedge the suite."
     (format nil "~{~A~^~%~}" (nreverse lines))))
 
 (test aldb-listener-drives-a-live-socket-session
-  (let* ((context (clautolisp.autolisp-runtime:make-default-runtime-context))
+  (let* (;; MAKE-DEFAULT-RUNTIME-CONTEXT does NOT install the builtins (its
+         ;; caller does), so install them into this fresh context — otherwise
+         ;; `/' is unbound and (/ 1 0) signals an undefined-function error (via
+         ;; the vla-accessor hook, mangling the name to `/.') that escapes the
+         ;; session, instead of the intended division-by-zero. The context is the
+         ;; default now, so INSTALL-CORE-BUILTINS binds `/' &c. into it.
+         (context (let ((c (clautolisp.autolisp-runtime:make-default-runtime-context)))
+                    (clautolisp.autolisp-builtins-core:install-core-builtins)
+                    c))
          (ui (clautolisp.tools.clautolisp::make-aldb-listener-ui "127.0.0.1:0" context))
          (port (%aldb-listener-port ui))
          ;; Connect BEFORE the session runs: the listener socket is already
