@@ -71,10 +71,34 @@ dispatches on."
     (terpri stream)
     (force-output stream)))
 
+(defun strip-ansi (string)
+  "Remove ANSI CSI escape sequences (ESC [ … final-byte) from STRING. aldb
+carries PLAIN text and lets Emacs apply its own faces — the runtime colour
+policy's in-band SGR must never reach the wire (aldb-faces-not-escape-sequences).
+No ESC ⇒ STRING is returned unchanged."
+  (if (find #\Escape string)
+      (with-output-to-string (out)
+        (let ((i 0) (n (length string)))
+          (loop while (< i n) do
+            (let ((c (char string i)))
+              (cond
+                ((and (char= c #\Escape) (< (1+ i) n) (char= (char string (1+ i)) #\[))
+                 (incf i 2)
+                 (loop while (and (< i n)
+                                  (not (<= #x40 (char-code (char string i)) #x7e)))
+                       do (incf i))
+                 (when (< i n) (incf i)))
+                (t (write-char c out) (incf i)))))))
+      string))
+
 (defun preview (value &optional (limit 80))
-  "A human-readable one-line string for a value (the Emacs side shows it;
-it is never read back as code)."
-  (let ((string (handler-case (prin1-to-string value) (error () "#<?>"))))
+  "A human-readable one-line string for a value (the Emacs side shows it; it is
+never read back as code). Rendered with the runtime colour policy OFF and any
+stray ANSI stripped, so the aldb wire is plain text — Emacs applies its own
+faces (aldb-faces-not-escape-sequences)."
+  (let ((string (strip-ansi
+                 (let ((clautolisp.autolisp-runtime:*color-output* nil))
+                   (handler-case (prin1-to-string value) (error () "#<?>"))))))
     (if (> (length string) limit)
         (concatenate 'string (subseq string 0 limit) "…")
         string)))

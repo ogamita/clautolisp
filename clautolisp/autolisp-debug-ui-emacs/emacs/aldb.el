@@ -44,6 +44,19 @@
   '((t :background "dark goldenrod" :foreground "black"))
   "Face for the current stopping form.")
 
+;; aldb renders symbols and data through EMACS faces, never in-band escape
+;; sequences: the clautolisp \"symbol/value accent\" maps to these faces, which
+;; inherit standard font-lock faces so a user's theme / M-x customize drives
+;; them (aldb-faces-not-escape-sequences).
+(defface aldb-frame-face '((t :inherit font-lock-function-name-face))
+  "Face for a frame's function name in *aldb-stack*.")
+(defface aldb-local-name-face '((t :inherit font-lock-variable-name-face))
+  "Face for a local/binding name.")
+(defface aldb-value-face '((t :inherit font-lock-constant-face))
+  "Face for a printed value (the symbol/data accent).")
+(defface aldb-section-face '((t :inherit bold))
+  "Face for a section header line.")
+
 (defvar aldb--process nil
   "The process whose stdout/stdin carries the aldb RPC.")
 
@@ -208,9 +221,14 @@ cursor in *aldb-stack*.  Idempotent — re-applied at every stop."
   (with-current-buffer (aldb--buffer "*aldb-bindings*")
     (let ((inhibit-read-only t))
       (erase-buffer)
-      (insert "Bindings (RET inspect, M-RET setq):\n")
+      (insert (propertize "Bindings (RET inspect, M-RET setq):\n"
+                          'font-lock-face 'aldb-section-face))
       (dolist (pair (plist-get aldb--snapshot :bindings))
-        (insert (format "  %s = %s\n" (nth 0 pair) (nth 1 pair)))))))
+        (insert "  "
+                (propertize (nth 0 pair) 'font-lock-face 'aldb-local-name-face)
+                " = "
+                (propertize (nth 1 pair) 'font-lock-face 'aldb-value-face)
+                "\n")))))
 
 (defun aldb--frames () (plist-get aldb--snapshot :frames))
 
@@ -222,26 +240,34 @@ the selected frame."
   (with-current-buffer (aldb--buffer "*aldb-stack*")
     (let ((inhibit-read-only t))
       (erase-buffer)
-      (insert "Backtrace  (RET open/inspect · n/p frame · t details · e eval · i inspect · h help)\n")
+      (insert (propertize "Backtrace  (RET open/inspect · n/p frame · t details · e eval · i inspect · h help)\n"
+                          'font-lock-face 'aldb-section-face))
       (dolist (frame (aldb--frames))
         ;; frame = (:frame INDEX NAME POSITION LOCALS)
         (let* ((index (nth 1 frame)) (name (nth 2 frame))
                (pos (nth 3 frame)) (locals (nth 4 frame))
                (open (memq index aldb--details)))
           (insert (propertize
-                   (format "%s%s %2d: %s%s\n"
-                           (if (eql index aldb--selected-frame) ">" " ")
-                           (cond (open "-") (locals "+") (t " "))
-                           index name
-                           (if pos (format "  line %s" (nth 2 pos)) ""))
+                   (concat (format "%s%s %2d: "
+                                   (if (eql index aldb--selected-frame) ">" " ")
+                                   (cond (open "-") (locals "+") (t " "))
+                                   index)
+                           (propertize name 'font-lock-face 'aldb-frame-face)
+                           (if pos (format "  line %s" (nth 2 pos)) "")
+                           "\n")
                    'aldb-frame index))
           (when open
             (if (null locals)
                 (insert (propertize "        (no locals)\n" 'aldb-frame index))
               (dolist (l locals)
                 ;; l = (NAME PREVIEW)
-                (insert (propertize (format "        %s = %s\n" (nth 0 l) (nth 1 l))
-                                    'aldb-frame index 'aldb-local (nth 0 l))))))))
+                (insert (propertize
+                         (concat "        "
+                                 (propertize (nth 0 l) 'font-lock-face 'aldb-local-name-face)
+                                 " = "
+                                 (propertize (nth 1 l) 'font-lock-face 'aldb-value-face)
+                                 "\n")
+                         'aldb-frame index 'aldb-local (nth 0 l))))))))
       (aldb--goto-frame aldb--selected-frame))))
 
 (defun aldb--goto-frame (index)
@@ -273,14 +299,22 @@ the selected frame."
   (with-current-buffer (aldb--buffer "*aldb-inspect*")
     (let ((inhibit-read-only t))
       (erase-buffer)
-      (insert (format "inspect: %s  ->  %s\n"
-                      (plist-get page :origin) (plist-get page :path)))
-      (insert (format "#<%s> %s\n\n" (plist-get page :type) (plist-get page :header)))
+      (insert "inspect: "
+              (propertize (format "%s" (plist-get page :origin)) 'font-lock-face 'aldb-value-face)
+              "  ->  "
+              (propertize (format "%s" (plist-get page :path)) 'font-lock-face 'aldb-local-name-face)
+              "\n")
+      (insert (propertize (format "#<%s> %s" (plist-get page :type) (plist-get page :header))
+                          'font-lock-face 'aldb-section-face)
+              "\n\n")
       (dolist (c (plist-get page :components))
         ;; c = (INDEX LABEL PREVIEW DESCENDABLE)
-        (insert (format "  %2d. %-14s %s%s\n"
-                        (nth 0 c) (nth 1 c) (nth 2 c)
-                        (if (nth 3 c) "  [RET]" "")))))
+        (insert (format "  %2d. " (nth 0 c))
+                (propertize (format "%-14s" (nth 1 c)) 'font-lock-face 'aldb-local-name-face)
+                " "
+                (propertize (format "%s" (nth 2 c)) 'font-lock-face 'aldb-value-face)
+                (if (nth 3 c) "  [RET]" "")
+                "\n")))
     (display-buffer (current-buffer))))
 
 (defun aldb--show-source (pos)
@@ -468,52 +502,56 @@ the selected frame."
 
 ;;; --- mode -----------------------------------------------------------
 
-(defvar aldb-mode-map
-  (let ((map (make-sparse-keymap)))
-    ;; examine the selected frame
-    (define-key map (kbd "RET") #'aldb-default-action)
-    (define-key map (kbd "<return>") #'aldb-default-action)
-    (define-key map (kbd "TAB") #'aldb-cycle)
-    (define-key map (kbd "t") #'aldb-toggle-details)
-    (define-key map (kbd "v") #'aldb-show-source)
-    (define-key map (kbd "e") #'aldb-eval-in-frame)
-    (define-key map (kbd "d") #'aldb-pprint-eval-in-frame)
-    (define-key map (kbd "i") #'aldb-inspect-in-frame)
-    (define-key map (kbd ":") #'aldb-interactive-eval)
-    (define-key map (kbd "C") #'aldb-inspect-error)
-    ;; navigate frames
-    (define-key map (kbd "n") #'aldb-down)
-    (define-key map (kbd "p") #'aldb-up)
-    (define-key map (kbd "M-n") #'aldb-details-down)
-    (define-key map (kbd "M-p") #'aldb-details-up)
-    (define-key map (kbd "<") #'aldb-beginning-of-backtrace)
-    (define-key map (kbd ">") #'aldb-end-of-backtrace)
-    ;; resume / restarts
-    (define-key map (kbd "c") #'aldb-continue)
-    (define-key map (kbd "q") #'aldb-quit)
-    (define-key map (kbd "a") #'aldb-abort)
-    (define-key map (kbd "s") #'aldb-step-in)
-    (define-key map (kbd "o") #'aldb-step-out)
-    (define-key map (kbd "x") #'aldb-step-over)
-    (define-key map (kbd "f") #'aldb-finish)
-    (define-key map (kbd "SPC") #'aldb-step-again)
-    (define-key map (kbd "R") #'aldb-return-from-frame)
-    (define-key map (kbd "r") #'aldb-restart-frame)
-    (define-key map (kbd "I") #'aldb-invoke-restart-by-name)
-    (define-key map (kbd "C-y") #'aldb-insert-frame-call-to-repl)
-    (define-key map (kbd "A") #'aldb-break-with-aldo)
-    (define-key map (kbd "B") #'aldb-break-with-aldo)
-    (define-key map (kbd "b") #'aldb-break)
-    ;; breakpoints / help
-    (define-key map (kbd "C-c C-b") #'aldb-list-breakpoints)
-    (define-key map (kbd "h") #'describe-mode)
-    ;; AutoLISP reference lookup (the external `alref' package, if loaded)
-    (define-key map (kbd "C-c C-d C-g") #'alref-lookup)
-    (define-key map (kbd "C-c C-d g")   #'alref-lookup)
-    (define-key map (kbd "C-c C-d a")   #'alref-apropos)
-    (define-key map (kbd "C-c C-d C-a") #'alref-apropos)
-    map)
+(defvar aldb-mode-map (make-sparse-keymap)
   "Keymap for `aldb-mode', the *aldb-stack* interaction buffer.")
+
+;; Bind at top level (NOT inside the defvar initializer) so that re-loading
+;; aldb.el re-applies the bindings to the existing keymap — a `defvar' whose
+;; variable is already bound does not re-run its initializer, which would leave
+;; a reloaded aldb.el with stale keys (M-x works, but t/RET do not).
+(let ((map aldb-mode-map))
+  ;; examine the selected frame
+  (define-key map (kbd "RET") #'aldb-default-action)
+  (define-key map (kbd "<return>") #'aldb-default-action)
+  (define-key map (kbd "TAB") #'aldb-cycle)
+  (define-key map (kbd "t") #'aldb-toggle-details)
+  (define-key map (kbd "v") #'aldb-show-source)
+  (define-key map (kbd "e") #'aldb-eval-in-frame)
+  (define-key map (kbd "d") #'aldb-pprint-eval-in-frame)
+  (define-key map (kbd "i") #'aldb-inspect-in-frame)
+  (define-key map (kbd ":") #'aldb-interactive-eval)
+  (define-key map (kbd "C") #'aldb-inspect-error)
+  ;; navigate frames
+  (define-key map (kbd "n") #'aldb-down)
+  (define-key map (kbd "p") #'aldb-up)
+  (define-key map (kbd "M-n") #'aldb-details-down)
+  (define-key map (kbd "M-p") #'aldb-details-up)
+  (define-key map (kbd "<") #'aldb-beginning-of-backtrace)
+  (define-key map (kbd ">") #'aldb-end-of-backtrace)
+  ;; resume / restarts
+  (define-key map (kbd "c") #'aldb-continue)
+  (define-key map (kbd "q") #'aldb-quit)
+  (define-key map (kbd "a") #'aldb-abort)
+  (define-key map (kbd "s") #'aldb-step-in)
+  (define-key map (kbd "o") #'aldb-step-out)
+  (define-key map (kbd "x") #'aldb-step-over)
+  (define-key map (kbd "f") #'aldb-finish)
+  (define-key map (kbd "SPC") #'aldb-step-again)
+  (define-key map (kbd "R") #'aldb-return-from-frame)
+  (define-key map (kbd "r") #'aldb-restart-frame)
+  (define-key map (kbd "I") #'aldb-invoke-restart-by-name)
+  (define-key map (kbd "C-y") #'aldb-insert-frame-call-to-repl)
+  (define-key map (kbd "A") #'aldb-break-with-aldo)
+  (define-key map (kbd "B") #'aldb-break-with-aldo)
+  (define-key map (kbd "b") #'aldb-break)
+  ;; breakpoints / help
+  (define-key map (kbd "C-c C-b") #'aldb-list-breakpoints)
+  (define-key map (kbd "h") #'describe-mode)
+  ;; AutoLISP reference lookup (the external `alref' package, if loaded)
+  (define-key map (kbd "C-c C-d C-g") #'alref-lookup)
+  (define-key map (kbd "C-c C-d g")   #'alref-lookup)
+  (define-key map (kbd "C-c C-d a")   #'alref-apropos)
+  (define-key map (kbd "C-c C-d C-a") #'alref-apropos))
 
 (define-derived-mode aldb-mode special-mode "aldb"
   "Major mode for the clautolisp debugger interaction buffers (section 20.2).

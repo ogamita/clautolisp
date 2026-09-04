@@ -108,6 +108,20 @@
       (let ((hit (message-of messages :breakpoint-hit)))
         (is (= 2 (length (getf (second hit) :frames))))))))
 
+(test wire-is-escape-free-even-with-colour-output-armed
+  ;; aldb renders faces itself; the runtime colour policy's in-band ANSI must
+  ;; never reach the wire (aldb-faces-not-escape-sequences). Even with
+  ;; *COLOR-OUTPUT* armed as on a tty, no ESC appears in what the shim writes.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at metas 3))
+         (clautolisp.autolisp-runtime:*color-output* :yellow))
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:eval "'A") (:continue)) :context context :thread-info ti
+                   :thunk (lambda () (call-two context)))
+      (declare (ignore result messages))
+      (is (not (find #\Escape text))))))
+
 (test frame-wire-carries-its-locals
   ;; each (:frame INDEX NAME POSITION LOCALS) now carries the frame's own locals
   ;; as (NAME PREVIEW) pairs (aldb-toggle-details, aldb-commands.issue).
