@@ -593,7 +593,6 @@ install: build  ## Install built executables + docs + Lisp sources/systems (+ na
 	"$(MAKE)" install-programs
 	"$(MAKE)" install-libraries
 	"$(MAKE)" install-documentation
-	"$(MAKE)" install-emacs
 
 install-emacs:  ## Install the aldb.el Emacs client into $$PREFIX/share/emacs/site-lisp/clautolisp/.
 	install -d "$(EMACS_INSTALL_DIR)"
@@ -646,6 +645,9 @@ install-programs:  ## Install just the clautolisp/read-autolisp/gui/run-file-com
 	else \
 	  echo "[skip]     bare symlinks (DEFAULT_LISP is empty)" ; \
 	fi
+	@# the aldb Emacs client is a program-support file, so it ships with the
+	@# programs — `make install-programs' alone installs a usable aldb.
+	"$(MAKE)" install-emacs
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 install-documentation:  ## Install just the clautolisp documentation (org/pdf/info/man). PDFs/Info come from build/.
