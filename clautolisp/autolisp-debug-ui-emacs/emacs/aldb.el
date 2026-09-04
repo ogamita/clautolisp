@@ -297,25 +297,34 @@ the selected frame."
 
 (defun aldb--show-inspect (page)
   (with-current-buffer (aldb--buffer "*aldb-inspect*")
+    (unless (derived-mode-p 'aldb-inspect-mode) (aldb-inspect-mode))
     (let ((inhibit-read-only t))
       (erase-buffer)
       (insert "inspect: "
               (propertize (format "%s" (plist-get page :origin)) 'font-lock-face 'aldb-value-face)
               "  ->  "
               (propertize (format "%s" (plist-get page :path)) 'font-lock-face 'aldb-local-name-face)
-              "\n")
+              "   (RET descend · u up · . path · b bind · q close)\n")
       (insert (propertize (format "#<%s> %s" (plist-get page :type) (plist-get page :header))
                           'font-lock-face 'aldb-section-face)
               "\n\n")
       (dolist (c (plist-get page :components))
         ;; c = (INDEX LABEL PREVIEW DESCENDABLE); the preview is already the
-        ;; sexp representation — shown verbatim (aldb-inspect-values-not-strings)
-        (insert (format "  %2d. " (nth 0 c))
-                (propertize (format "%-14s" (nth 1 c)) 'font-lock-face 'aldb-local-name-face)
-                " "
-                (propertize (format "%s" (nth 2 c)) 'font-lock-face 'aldb-value-face)
-                "\n")))
-    (display-buffer (current-buffer))))
+        ;; sexp representation — shown verbatim (aldb-inspect-values-not-strings).
+        ;; The component index rides on the line as a text property so RET/d
+        ;; descends into the right slot regardless of cursor column.
+        (insert (propertize
+                 (concat (format "  %2d. " (nth 0 c))
+                         (propertize (format "%-14s" (nth 1 c)) 'font-lock-face 'aldb-local-name-face)
+                         " "
+                         (propertize (format "%s" (nth 2 c)) 'font-lock-face 'aldb-value-face)
+                         "\n")
+                 'aldb-inspect-index (nth 0 c)))))
+    ;; leave point on the first component and give the buffer focus so its keys
+    ;; act immediately
+    (goto-char (or (next-single-property-change (point-min) 'aldb-inspect-index)
+                   (point-min)))
+    (pop-to-buffer (current-buffer))))
 
 (defun aldb--show-source (pos)
   "Visit POS = (:pos FILE LINE COL) and transiently highlight the line."
@@ -439,6 +448,19 @@ the selected frame."
 (defun aldb-inspector-path () "Show the inspector path." (interactive) (aldb--send '(:inspector-path)))
 (defun aldb-inspector-bind () "Bind the inspected value in the workspace." (interactive) (aldb--send '(:inspector-bind :workspace)))
 
+(defun aldb-inspect-descend ()
+  "Descend into the inspector component on the current *aldb-inspect* line."
+  (interactive)
+  (let ((index (get-text-property (line-beginning-position) 'aldb-inspect-index)))
+    (if index
+        (aldb--send (list :inspector-descend index))
+      (message "aldb: no component on this line"))))
+
+(defun aldb-inspect-quit ()
+  "Close the inspector window and return to the previous window."
+  (interactive)
+  (quit-window))
+
 (defun aldb-cycle ()
   "Move between the *aldb-stack* and *aldb* windows."
   (interactive)
@@ -559,6 +581,33 @@ The primary buffer is *aldb-stack*: a backtrace whose frames expand (t / RET) to
 show their locals, with SLDB-like navigation and eval/inspect in a frame."
   (setq buffer-read-only t)
   (use-local-map aldb-mode-map))
+
+;;; --- inspector mode (*aldb-inspect*) --------------------------------
+
+(defvar aldb-inspect-mode-map (make-sparse-keymap)
+  "Keymap for `aldb-inspect-mode', the *aldb-inspect* buffer.")
+
+;; Top-level define-key (reload-safe; see aldb-mode-map).
+(let ((map aldb-inspect-mode-map))
+  (define-key map (kbd "RET") #'aldb-inspect-descend)
+  (define-key map (kbd "<return>") #'aldb-inspect-descend)
+  (define-key map (kbd "d") #'aldb-inspect-descend)
+  (define-key map (kbd "u") #'aldb-inspector-up)
+  (define-key map (kbd "l") #'aldb-inspector-up)
+  (define-key map (kbd "DEL") #'aldb-inspector-up)
+  (define-key map (kbd "n") #'next-line)
+  (define-key map (kbd "p") #'previous-line)
+  (define-key map (kbd ".") #'aldb-inspector-path)
+  (define-key map (kbd "b") #'aldb-inspector-bind)
+  (define-key map (kbd "q") #'aldb-inspect-quit)
+  (define-key map (kbd "h") #'describe-mode))
+
+(define-derived-mode aldb-inspect-mode special-mode "aldb-inspect"
+  "Major mode for the aldb object inspector buffer *aldb-inspect*.
+RET / d descend into the slot at point, u / l ascend, . shows the path, b binds
+the value in the workspace, q closes the inspector window."
+  (setq buffer-read-only t)
+  (use-local-map aldb-inspect-mode-map))
 
 (provide 'aldb)
 
