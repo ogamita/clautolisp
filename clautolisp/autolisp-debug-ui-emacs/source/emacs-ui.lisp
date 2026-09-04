@@ -104,7 +104,10 @@ error messages (§20.2 buffers are populated from this)."
   (when snapshot
     (list :function (or (snapshot-function-name snapshot) "?")
           :position (source-position->wire (snapshot-source-position snapshot))
-          :frames (loop for frame in (snapshot-call-stack snapshot)
+          ;; the DISPLAY stack — the real frames plus the virtual toplevel frame
+          ;; at the bottom, so aldb never shows a blank backtrace at a toplevel
+          ;; stop (virtual-toplevel-frame)
+          :frames (loop for frame in (snapshot-display-call-stack snapshot)
                         for i from 0 collect (frame->wire frame i))
           :bindings (bindings->wire snapshot)
           :catch-depth (length (snapshot-catch-stack snapshot)))))

@@ -13,7 +13,8 @@ itself lives in emacs/aldb.el. Registered as :emacs / :aldb.")
                 #:hit-stop-reason #:hit-source-position #:hit-error-message #:hit-errno
                 #:hit-when
                 #:snapshot-function-name #:snapshot-source-position
-                #:snapshot-call-stack #:snapshot-visible-names #:snapshot-catch-stack
+                #:snapshot-call-stack #:snapshot-display-call-stack
+                #:snapshot-visible-names #:snapshot-catch-stack
                 #:stack-frame-function-name #:stack-frame-source-position
                 #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when)
   (:import-from #:clautolisp.source

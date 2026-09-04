@@ -183,6 +183,14 @@ Three command families fall out of the rule:
   parameters= (=lp=), =list variables= (=lv=). The second initial selects
   what to list — one mental group, six members, no clashes.
 
+Every backtrace ends with a virtual *toplevel* frame at the bottom (=frame
+bottom=), named =toplevel REPL= or =toplevel CLI= for the context in force, so a
+stop at the toplevel — e.g. =(clal-break)= from a =-x= form or the REPL — never
+shows a blank stack. It is display-only (no source; evaluating in it uses the
+global context). It appears in all three UIs (tui, ncurses, aldb). (Named
+frames for primitives such as =clal-break= are deferred to the compiler/optimize
+integration.)
+
 *Immediate vs typed, with at most one key of lookahead.* In ncurses/Emacs
 the argument-free single keys fire on a keypress with no RET (=c i n o q j=);
 the expression-readers (=p r t v=) begin reading a typed expression after the

@@ -41,7 +41,8 @@ UI refines.")
                 #:watch-name #:watch-symbol #:watch-last-value #:watch-prev-value
                 #:watch-last-bound-p #:watch-prev-bound-p #:watch-predicate
                 #:snapshot-function-name #:snapshot-source-position
-                #:snapshot-call-stack #:snapshot-visible-names #:snapshot-catch-stack
+                #:snapshot-call-stack #:snapshot-display-call-stack
+                #:snapshot-visible-names #:snapshot-catch-stack
                 #:stack-frame-function-name #:stack-frame-source-position
                 #:list-breakpoints
                 #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when

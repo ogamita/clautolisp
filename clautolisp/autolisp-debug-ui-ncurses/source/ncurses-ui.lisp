@@ -227,7 +227,7 @@ when the frame has no reconstructable source form (e.g. a builtin)."
 
 (defun selected-frame-of (ui session)
   (let ((frames (and (current-snapshot session)
-                     (snapshot-call-stack (current-snapshot session)))))
+                     (snapshot-display-call-stack (current-snapshot session)))))
     (and frames (nth (min (ncurses-ui-selected-frame ui) (1- (length frames))) frames))))
 
 ;;;; --- window rendering (ncurses-windows.issue) ----------------------
@@ -510,7 +510,7 @@ per local (or a (:frame-empty I FRAME) sentinel when it has none). The cursor
 and the renderer both walk this one list, so linear Up/Down crosses freely
 between frame lines and locals (several frames may be open at once)."
   (let ((frames (and (current-snapshot session)
-                     (snapshot-call-stack (current-snapshot session))))
+                     (snapshot-display-call-stack (current-snapshot session))))
         (items '()))
     (loop for frame in frames for i from 0
           do (push (list :frame i frame) items)
@@ -1110,7 +1110,7 @@ d/u/>/< and a breakpoint at the selection."
 cursor row, re-anchoring the source cursor and navigator on it."
   (let* ((item (stack-cursor-item ui session))
          (index (or (stack-item-frame-index item) 0))
-         (frames (snapshot-call-stack (current-snapshot session))))
+         (frames (snapshot-display-call-stack (current-snapshot session))))
     (setf (ncurses-ui-selected-frame ui) index)
     (cmd-select-frame session index)
     (let ((position (stack-frame-source-position (nth index frames))))
@@ -1153,7 +1153,7 @@ following Down steps into (or past) its locals."
                  (set-message ui "frame ~D closed" index))
           (progn (push index (ncurses-ui-open-frames ui))
                  (set-message ui "frame ~D opened — ~[no locals~:;~:*~D local~:p~]"
-                              index (length (frame-locals (nth index (snapshot-call-stack
+                              index (length (frame-locals (nth index (snapshot-display-call-stack
                                                                       (current-snapshot session))))))))
       (setf (ncurses-ui-stack-cursor ui) (frame-row-index ui session index))
       (sync-cursor-frame ui session))))
@@ -1828,7 +1828,7 @@ index, and the selected binding index within that frame."
 (defun window-stack-browser-activation (window)
   (find-if #'window-entry-stack-browser-p (window-stack window)))
 
-(defun %sb-frames (st) (snapshot-call-stack (stack-browser-state-snapshot st)))
+(defun %sb-frames (st) (snapshot-display-call-stack (stack-browser-state-snapshot st)))
 (defun %sb-frame (st) (nth (stack-browser-state-frame st) (%sb-frames st)))
 (defun %sb-bindings (st)
   (let ((f (%sb-frame st))) (and f (clautolisp.debug:stack-frame-bindings-introduced f))))

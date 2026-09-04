@@ -107,6 +107,32 @@
        (lambda () (eval-call context "FROB" 7)) :thread-info ti))
     (is (eql 7 x-value))))
 
+(test snapshot-display-call-stack-appends-the-virtual-toplevel-frame
+  ;; The DISPLAY stack is the real call stack plus a virtual bottom frame named
+  ;; by *TOPLEVEL-FRAME-NAME*, so an empty/near-empty stack still shows its
+  ;; toplevel root (virtual-toplevel-frame). The real SNAPSHOT-CALL-STACK is
+  ;; unchanged (engine indexing).
+  (let* ((real (clautolisp.debug::make-stack-frame :function-name "FOO"))
+         (snap (clautolisp.debug::make-snapshot :call-stack (list real))))
+    (let ((clautolisp.debug:*toplevel-frame-name* "toplevel REPL"))
+      (let ((d (clautolisp.debug:snapshot-display-call-stack snap)))
+        (is (= 2 (length d)))                                  ; FOO + toplevel
+        (is (string= "FOO" (clautolisp.debug:stack-frame-function-name (first d))))
+        (is (string= "toplevel REPL"
+                     (clautolisp.debug:stack-frame-function-name (second d))))))
+    ;; an empty real stack still shows exactly the toplevel frame
+    (let* ((empty (clautolisp.debug::make-snapshot :call-stack '()))
+           (clautolisp.debug:*toplevel-frame-name* "toplevel CLI")
+           (d (clautolisp.debug:snapshot-display-call-stack empty)))
+      (is (= 1 (length d)))
+      (is (string= "toplevel CLI" (clautolisp.debug:stack-frame-function-name (first d)))))
+    ;; and the real stack is never mutated
+    (is (= 1 (length (clautolisp.debug:snapshot-call-stack snap))))
+    ;; NIL name suppresses the virtual frame entirely
+    (let ((clautolisp.debug:*toplevel-frame-name* nil))
+      (is (null (clautolisp.debug:snapshot-display-call-stack
+                 (clautolisp.debug::make-snapshot :call-stack '())))))))
+
 (test eval-in-frame-reconstructs-an-outer-frames-context
   ;; Both FROB and its callee ID bind a local V. Break at ID's entry (reached
   ;; via FROB), where FROB has already set its V to 1 and ID's V is still its

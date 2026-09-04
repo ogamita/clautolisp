@@ -1641,13 +1641,18 @@ machinery, not user intent)."
                 (session (and debug-ui (start-debug-session debug-ui context))))
             (unwind-protect
                  (progn
+                   ;; Name the virtual bottom-of-stack frame the UIs show
+                   ;; (virtual-toplevel-frame): the CLI-options extent while the
+                   ;; batch actions run, the REPL while it reads turns.
                    (if (and session (not interactive-p))
-                       (run-under-session-debugging session #'run-actions break)
+                       (let ((clautolisp.debug:*toplevel-frame-name* "toplevel CLI"))
+                         (run-under-session-debugging session #'run-actions break))
                        (run-actions))
                    (when interactive-p
                      (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
                       context "*AUTOLISP-INTERACTIVE*" (intern-autolisp-symbol "T")
                       (lambda ()
+                        (let ((clautolisp.debug:*toplevel-frame-name* "toplevel REPL"))
                         (repl-loop dialect context
                                    :quiet-p quiet-p
                                    :mock-input mock-input
@@ -1656,7 +1661,7 @@ machinery, not user intent)."
                                    :session session
                                    :break-on-error break
                                    :dribble dribble
-                                   :dribble-interactors dribble-interactors)))))
+                                   :dribble-interactors dribble-interactors))))))
               (when session
                 (clautolisp.debug.ui:ui-detached (clautolisp.debug.ui:session-ui session))))))
         ;; Normal completion: exit with the status a script recorded via

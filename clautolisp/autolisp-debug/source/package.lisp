@@ -181,6 +181,9 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:snapshot-when
    #:snapshot-source-position
    #:snapshot-call-stack
+   #:snapshot-display-call-stack
+   #:make-toplevel-frame
+   #:*toplevel-frame-name*
    #:snapshot-binding-stack
    #:snapshot-visible-names
    #:snapshot-globals-touched
