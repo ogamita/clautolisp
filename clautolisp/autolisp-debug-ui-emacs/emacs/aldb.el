@@ -308,12 +308,12 @@ the selected frame."
                           'font-lock-face 'aldb-section-face)
               "\n\n")
       (dolist (c (plist-get page :components))
-        ;; c = (INDEX LABEL PREVIEW DESCENDABLE)
+        ;; c = (INDEX LABEL PREVIEW DESCENDABLE); the preview is already the
+        ;; sexp representation — shown verbatim (aldb-inspect-values-not-strings)
         (insert (format "  %2d. " (nth 0 c))
                 (propertize (format "%-14s" (nth 1 c)) 'font-lock-face 'aldb-local-name-face)
                 " "
                 (propertize (format "%s" (nth 2 c)) 'font-lock-face 'aldb-value-face)
-                (if (nth 3 c) "  [RET]" "")
                 "\n")))
     (display-buffer (current-buffer))))
 

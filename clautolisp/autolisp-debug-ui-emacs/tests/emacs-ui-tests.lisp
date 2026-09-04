@@ -122,6 +122,27 @@
       (declare (ignore result messages))
       (is (not (find #\Escape text))))))
 
+(test inspect-component-previews-are-sexps-not-double-quoted-strings
+  ;; A component preview is the value's own sexp representation, sent verbatim —
+  ;; NOT prin1'd again into a quoted string. The string element of ("hello")
+  ;; prints as "hello", never the double-escaped "\"hello\""
+  ;; (aldb-inspect-values-not-strings).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at metas 3)))
+    (clautolisp.autolisp-runtime:set-variable
+     (rt-sym "L")
+     (first (clautolisp.autolisp-runtime:read-runtime-from-string "(\"hello\")"))
+     context)
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:inspect "L") (:continue)) :context context :thread-info ti
+                   :thunk (lambda () (call-two context)))
+      (declare (ignore result text))
+      (let* ((page (second (message-of messages :inspect-page)))
+             (car-comp (find "car" (getf page :components) :key #'second :test #'string=)))
+        (is (consp car-comp))
+        (is (string= "\"hello\"" (third car-comp)))))))
+
 (test frame-wire-carries-its-locals
   ;; each (:frame INDEX NAME POSITION LOCALS) now carries the frame's own locals
   ;; as (NAME PREVIEW) pairs (aldb-toggle-details, aldb-commands.issue).

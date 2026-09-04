@@ -315,9 +315,15 @@ written) when the frame has no instrumented function to restart."
     (error (e) (write-message ui :inspect-error (princ-to-string e)))))
 
 (defun page->wire (session)
+  ;; The page HEADER and each component's PREVIEW are already the inspector's
+  ;; printed (prin1) sexp representations — pass them through verbatim (ANSI
+  ;; stripped), NEVER back through PREVIEW, which would prin1 the string again
+  ;; and double-quote it, e.g. "(UUID . \"…\")" instead of (UUID . "…")
+  ;; (aldb-inspect-values-not-strings). ORIGIN and PATH are raw values, so they
+  ;; go through PREVIEW to be printed once.
   (let ((page (session-page (session-inspector session))))
     (list :type (inspect-page-type-name page)
-          :header (inspect-page-header page)
+          :header (strip-ansi (inspect-page-header page))
           :origin (preview (session-origin (session-inspector session)))
           :path (multiple-value-bind (expr kind) (cmd-inspector-path-expression session)
                   (if (eq kind :partial)
@@ -326,7 +332,7 @@ written) when the frame has no instrumented function to restart."
           :components (loop for c in (inspect-page-components page)
                             for i from 0
                             collect (list i (inspect-component-label c)
-                                          (preview (inspect-component-preview c))
+                                          (strip-ansi (inspect-component-preview c))
                                           (and (inspect-component-descendable-p c) t))))))
 
 (defun reply-page (ui session)
