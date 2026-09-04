@@ -42,15 +42,7 @@ Bounded by a per-read timeout so a hang can never wedge the suite."
     (format nil "~{~A~^~%~}" (nreverse lines))))
 
 (test aldb-listener-drives-a-live-socket-session
-  (let* (;; MAKE-DEFAULT-RUNTIME-CONTEXT does NOT install the builtins (its
-         ;; caller does), so install them into this fresh context — otherwise
-         ;; `/' is unbound and (/ 1 0) signals an undefined-function error (via
-         ;; the vla-accessor hook, mangling the name to `/.') that escapes the
-         ;; session, instead of the intended division-by-zero. The context is the
-         ;; default now, so INSTALL-CORE-BUILTINS binds `/' &c. into it.
-         (context (let ((c (clautolisp.autolisp-runtime:make-default-runtime-context)))
-                    (clautolisp.autolisp-builtins-core:install-core-builtins)
-                    c))
+  (let* ((context (clautolisp.autolisp-runtime:make-default-runtime-context))
          (ui (clautolisp.tools.clautolisp::make-aldb-listener-ui "127.0.0.1:0" context))
          (port (%aldb-listener-port ui))
          ;; Connect BEFORE the session runs: the listener socket is already
@@ -69,9 +61,16 @@ Bounded by a per-read timeout so a hang can never wedge the suite."
                   (*standard-input* (make-string-input-stream "")))
               (clautolisp.debug.ui:call-with-session
                ui
+               ;; Erroring form: an UNDEFINED function call — a deterministic
+               ;; unhandled AUTOLISP-RUNTIME-ERROR (:undefined-function) in a
+               ;; bare context that installs no builtins, avoiding the `/' path
+               ;; whose pathname-normalised name (`/.') escaped on macOS
+               ;; (aldb-socket-erroring-form). Never install builtins here: that
+               ;; resets *COM-LOADED-P* and breaks the later cador SAFEARRAY tests.
                (lambda ()
                  (clautolisp.autolisp-runtime:autolisp-eval
-                  (first (clautolisp.autolisp-runtime:read-runtime-from-string "(/ 1 0)"))
+                  (first (clautolisp.autolisp-runtime:read-runtime-from-string
+                          "(aldb-no-such-function)"))
                   context))
                :context context))))
       (bordeaux-threads:join-thread client)
