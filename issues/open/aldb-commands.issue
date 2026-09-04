@@ -1,0 +1,113 @@
+* aldb commands
+
+Implement in the aldb-mode an exhaustive set of commands and keybindings.
+They will be mostly useful in the *aldb-stack* buffer.
+
+
+You may also look at the sources of slime.el for inspiration
+~/quicklisp/dists/quicklisp/software/slime-v2.32/slime.el
+
+Command arguments are read from the minibuffer ; parsing may be deferred to aldo.
+
+** Commands to examine the selected frame:
+
+| keys | command with parameters)                 | description                                                                 |
+|------+------------------------------------------+-----------------------------------------------------------------------------|
+| t    | (aldb-toggle-details &optional ON)       | displays the locals below the line of the frame in the *aldb-stack* buffer. |
+| v    | (aldb-show-source)                       | switch too the source buffer in another window                            |
+| e    | (aldb-eval-in-frame FRAME STRING)        | evaluates in frame                                                          |
+| d    | (aldb-pprint-eval-in-frame FRAME STRING) | evaluates in frame, pretty-print the result.                                |
+| i    | (aldb-inspect-in-frame STRING)           | inspect in another window                                                   |
+
+
+** Commands to invoke restarts:
+
+We don't have restarts, but a few aldo commands.
+Note, when we exit from aldo (quit to toplevel, continue, finish, etc), in emacs  revert to windows as they were before aldb.
+For a step into or step over, don't change the windows (we should be back soon).
+
+
+| keys | command with parameters) | description                                           |
+|------+--------------------------+-------------------------------------------------------|
+| q    | (aldb-quit)              | quit aldo to toplevel.                                |
+| c    | (aldb-continue)          | invoke the aldo continue command.                     |
+
+** Commands to navigate frames:
+
+| keys | command with parameters)      | description                                                                                            |
+|------+-------------------------------+--------------------------------------------------------------------------------------------------------|
+| n    | (aldb-down)                   | select the next frame                                                                                  |
+| p    | (aldb-up)                     | select the previous frame                                                                              |
+| M-n  | (aldb-details-down)           | down, with details (close the locals of the current frame, move to next frame, and open the locals).   |
+| M-p  | (aldb-details-up)             | up, with details (close the locals of the current frame, move to previous frame, and open the locals). |
+| <    | (aldb-beginning-of-backtrace) | beginning of backtrace                                                                                 |
+| >    | (aldb-end-of-backtrace)       | end of backtrace                                                                                       |
+
+
+** Miscellaneous commands:
+
+| keys | command with parameters)        | description                                             |
+|------+---------------------------------+---------------------------------------------------------|
+| r    | (aldb-restart-frame)            | restart frame: jump to the beginning of the function    |
+| R    | (aldb-return-from-frame STRING) | input a value to return with the aldo return command.   |
+| s, i | (aldb-step-in)                  | step in                                                 |
+| S, o | (aldb-step-out)                 | step out                                                |
+| B    | (aldb-break-with-aldo)          | switch to native debugger (aldo)                |
+| A    | (aldb-break-with-aldo)          | switch to system debugger (aldo)                    |
+| :    | (aldb-interactive-eval STRING)  | Read and evaluate STRING and print value in minibuffer. |
+| C    | (aldb-inspect-error)            | redisplay error message                                 |
+
+** Full list of commands:
+
+
+| Key         | Command                        |
+|-------------+--------------------------------|
+| TAB         | aldb-cycle                   |
+| RET         | aldb-default-action            |
+| C-y         | aldb-insert-frame-call-to-repl |
+| :           | aldb-eval-in-frame             |
+| <           | aldb-beginning-of-backtrace    |
+| >           | aldb-end-of-backtrace          |
+| A           | aldb-break-with-aldo           |
+| B           | aldb-break-with-aldo           |
+| C           | aldb-inspect-error             |
+| I           | aldb-invoke-restart-by-name    |
+| R           | aldb-return-from-frame         |
+| a           | aldb-abort                     |
+| b           | aldb-break                     |
+| c           | aldb-continue                  |
+| d           | aldb-pprint-eval-in-frame      |
+| e           | aldb-eval-in-frame             |
+| i           | aldb-inspect-in-frame          |
+| n           | aldb-down                      |
+| o           | aldb-out                       |
+| p           | aldb-up                        |
+| q           | aldb-quit                      |
+| r           | aldb-restart-frame             |
+| s           | aldb-step-in                   |
+| i           | aldb-step-in                   |
+| o           | aldb-step-over                 |
+| t           | aldb-toggle-details            |
+| v           | aldb-show-source               |
+| x           | aldb-step-over                 |
+| h           | describe-mode                  |
+| <return>    | aldb-default-action            |
+| M-n         | aldb-details-down              |
+| M-p         | aldb-details-up                |
+|-------------+--------------------------------|
+| C-c C-d C-g | alref-lookup                   |
+| C-c C-d g   | alref-lookup                   |
+| C-c C-d a   | alref-apropos                  |
+| C-c C-d C-a | alref-apropos                  |
+|-------------+--------------------------------|
+
+** Notes
+
+- the default action on a stack frame line is to do: aldb-toggle-details
+- the default action on a local binding line is to do aldb-inspect-in-frame
+
+aldb-cycle goes from *aldb-stack* to *aldb* and vice-versa.
+
+If some aldo commands are not accessible from these aldb commands,
+signals them and propose an aldb command to invoke it.
+
