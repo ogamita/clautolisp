@@ -606,11 +606,14 @@ it, enable `aldb-minor-mode', and show the buffer."
   (define-key map (kbd "C-c C-d a")   #'alref-apropos)
   (define-key map (kbd "C-c C-d C-a") #'alref-apropos))
 
+(defvar aldb-mode nil)
+
 (define-derived-mode aldb-mode special-mode "aldb"
   "Major mode for the clautolisp debugger interaction buffers (section 20.2).
 The primary buffer is *aldb-stack*: a backtrace whose frames expand (t / RET) to
 show their locals, with SLDB-like navigation and eval/inspect in a frame."
   (setq buffer-read-only t)
+  (setq aldb-mode t)
   (use-local-map aldb-mode-map))
 
 ;;; --- inspector mode (*aldb-inspect*) --------------------------------
