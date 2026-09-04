@@ -212,6 +212,11 @@ otherwise the command was answered inline and the loop keeps reading."
       (:inspect-in-frame
        (cmd-select-frame session (first args))
        (reply-inspect ui session (second args)) (values nil nil))
+      ;; restart-frame: resume by jumping to the beginning of the frame's
+      ;; function (aldb-restart-frame, aldb-commands.issue). A resume directive.
+      (:restart-frame
+       (let ((d (restart-frame-directive ui session (first args))))
+         (if d (values d t) (values nil nil))))
       (:set-breakpoint-line (reply-set-breakpoint ui session (first args)) (values nil nil))
       (:list-breakpoints (reply-breakpoints ui session) (values nil nil))
       (:inspect (reply-inspect ui session (first args)) (values nil nil))
@@ -244,6 +249,19 @@ otherwise the command was answered inline and the loop keeps reading."
                                           :frame-index (session-selected-frame session))
                                 2000)))
     (error (e) (write-message ui :eval-error (princ-to-string e)))))
+
+(defun restart-frame-directive (ui session index)
+  "The resume directive that restarts frame INDEX — jumps execution to the
+beginning (form 0) of that frame's function (§1 jump). NIL (a message is
+written) when the frame has no instrumented function to restart."
+  (let* ((frames (snapshot-call-stack (session-snapshot session)))
+         (frame (and frames (nth index frames)))
+         (fid (and frame (stack-frame-fid frame))))
+    (if (and fid (plusp fid))
+        (cmd-jump session fid 0)
+        (progn (write-message ui :error "restart-frame"
+                              "no instrumented function to restart for this frame")
+               nil))))
 
 (defun return-directive (ui session string)
   (handler-case (cmd-return session (cmd-eval session (parse-form (or string "nil"))))

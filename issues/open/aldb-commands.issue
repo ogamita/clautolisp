@@ -111,24 +111,32 @@ aldb-cycle goes from *aldb-stack* to *aldb* and vice-versa.
 If some aldo commands are not accessible from these aldb commands,
 signals them and propose an aldb command to invoke it.
 
-** Status (1.9.79, first pass)
+** Status (1.9.80) — implemented
 
-Done: *aldb-stack* is the primary interaction buffer, in aldb-mode; on connect
-(and at every stop) aldb tiles *aldb* over *aldb-stack*, and restores the prior
-windows on resume to the toplevel. RET is aldb-default-action (frame line →
-toggle-details; local line → inspect-in-frame), cursor stays on the selected
-frame. Implemented and wired to aldo: toggle-details (locals shown indented,
-carried per-frame over the wire), n/p, M-n/M-p, </>, t, v (show-source),
-e (eval-in-frame), d (pprint-eval-in-frame), i (inspect-in-frame),
-: (interactive-eval), C (inspect-error), s/o/x/f steps, SPC, c, q, a,
-R (return-from-frame), b, TAB (cycle), h. Server: frame wire carries locals;
-:eval-in-frame / :pprint-eval-in-frame / :inspect-in-frame select+act in the
-frame; :eval now uses the selected frame; emacs UI no longer auto-pushes the
-source view (v is on demand).
+*aldb-stack* is the primary interaction buffer, in aldb-mode; on connect (and at
+every stop) aldb tiles *aldb* over *aldb-stack* and restores the prior windows on
+resume to the toplevel. RET is aldb-default-action (frame line → toggle-details;
+local line → inspect-in-frame), and the cursor stays on the selected frame.
 
-Deferred (need aldo/wire support that doesn't exist yet — these signal a clear
-message via aldb--todo): r restart-frame, I invoke-restart-by-name (no
-restarts), C-y insert-frame-call-to-repl, A/B break-with-aldo (switch to the
-tui/ncurses UI — set *clal-debugger-ui*). The C-c C-d alref bindings are out of
-scope here.
+All keys in the tables above are bound in aldb-mode-map:
+- examine: t toggle-details, v show-source, e eval-in-frame,
+  d pprint-eval-in-frame, i inspect-in-frame, : interactive-eval, C inspect-error
+- navigate: n down, p up, M-n details-down, M-p details-up, < / > ends
+- resume/restarts: c continue, q quit, a abort, s/o/x/f steps, SPC step-again,
+  R return-from-frame, r restart-frame (jump to the function's start), I
+  invoke-restart-by-name (aldo's continue/abort/quit/return/restart-frame),
+  C-y insert-frame-call-to-repl (pre-fills eval-in-frame with the frame call),
+  A/B break-with-aldo (hand the NEXT stop to tui/ncurses via *clal-debugger-ui*),
+  b break, TAB cycle, h describe-mode.
+- C-c C-d {C-g,g,a,C-a} bound to the external alref-lookup / alref-apropos.
+
+Server (emacs-ui): frame wire carries each frame's locals as (NAME PREVIEW)
+pairs; :eval evaluates in the SELECTED frame; :eval-in-frame /
+:pprint-eval-in-frame / :inspect-in-frame select the frame then act; :restart-
+frame maps the frame index to its fid and issues aldo's jump; the emacs UI no
+longer auto-pushes the source view (v is on demand).
+
+NOTE the elisp is byte-compile-verified but not runtime-tested headlessly; and
+aldb.el must be re-loaded in Emacs (M-x load-file) to pick up changes — a
+clautolisp binary rebuild does not touch it.
 

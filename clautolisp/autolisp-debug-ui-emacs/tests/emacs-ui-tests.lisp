@@ -139,6 +139,21 @@
         (is (consp reply))
         (is (string= "7" (second reply)))))))
 
+(test restart-frame-command-resumes-by-jumping-to-the-frames-function
+  ;; :restart-frame maps the frame index to its fid and issues aldo's jump to
+  ;; that function's start (aldb-restart-frame): the session resumes (a :resumed
+  ;; is written) and no restart-frame error is signalled (the fid was found).
+  ;; The exact runtime effect of the jump is aldo's own semantics.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at metas 3)))
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:restart-frame 0)) :context context :thread-info ti
+                   :thunk (lambda () (call-two context)))
+      (declare (ignore result text))
+      (is (member :resumed (message-tags messages)))
+      (is (not (member :error (message-tags messages)))))))
+
 (test inspector-descend-and-path-over-the-wire
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))

@@ -421,23 +421,50 @@ the selected frame."
       (aldb-inspect-in-frame (aldb--local-at-point))
     (aldb-toggle-details)))
 
-;;; --- not-yet-available aldo features (aldb-commands.issue) ----------
-;;; These need aldo/wire support that does not exist yet; they signal a clear
-;;; message and point at the alternative rather than failing opaquely.
+;;; --- restarts / misc (aldb-commands.issue) --------------------------
+;;; aldo has no CL-style named restarts; the "restarts" are its resume
+;;; commands (continue / abort / quit / return) plus restart-frame.
 
-(defun aldb--todo (what &optional alternative)
-  (user-error "aldb: %s is not available yet%s" what
-              (if alternative (format " — %s" alternative) "")))
+(defun aldb-restart-frame ()
+  "Restart the frame at point: resume by jumping to the start of its function."
+  (interactive)
+  (aldb--send (list :restart-frame (aldb--frame-at-point))))
 
-(defun aldb-restart-frame () "Restart the selected frame (jump to its start)." (interactive)
-  (aldb--todo "restart-frame" "use step/finish"))
-(defun aldb-invoke-restart-by-name () "Invoke a restart by name." (interactive)
-  (aldb--todo "restarts" "aldo has continue (c) / abort (a) / return (R)"))
-(defun aldb-insert-frame-call-to-repl () "Insert the frame call at the REPL." (interactive)
-  (aldb--todo "insert-frame-call-to-repl"))
-(defun aldb-break-with-aldo () "Switch to the native debugger (aldo)." (interactive)
-  (aldb--todo "switch to aldo" "set *clal-debugger-ui* to 'tui or 'ncurses"))
+(defun aldb-invoke-restart-by-name ()
+  "Invoke one of aldo's resume \"restarts\" chosen by name."
+  (interactive)
+  (let ((name (completing-read "aldo restart: "
+                               '("continue" "abort" "quit" "return" "restart-frame")
+                               nil t)))
+    (pcase name
+      ("continue" (aldb-continue))
+      ("abort" (aldb-abort))
+      ("quit" (aldb-quit))
+      ("return" (call-interactively #'aldb-return-from-frame))
+      ("restart-frame" (aldb-restart-frame)))))
+
+(defun aldb-insert-frame-call-to-repl ()
+  "Start an eval-in-frame pre-filled with the frame's function call, to edit."
+  (interactive)
+  (let* ((frame (nth (aldb--frame-at-point) (aldb--frames)))
+         (name (and frame (nth 2 frame)))
+         (initial (if name (format "(%s )" name) "()")))
+    (aldb--send (list :eval-in-frame (aldb--frame-at-point)
+                      (read-string "aldb eval in frame: " (cons initial (length initial)))))))
+
+(defun aldb-break-with-aldo ()
+  "Hand the NEXT stop to the native aldo UI (tui/ncurses) via *clal-debugger-ui*."
+  (interactive)
+  (let ((ui (completing-read "aldo UI for the next stop: " '("tui" "ncurses") nil t nil nil "tui")))
+    (aldb--send (list :eval-in-frame aldb--selected-frame
+                      (format "(setq *clal-debugger-ui* '%s)" ui)))
+    (message "aldb: the next debugger stop will use the %s UI" ui)))
+
 (defun aldb-break () "Set a breakpoint." (interactive) (call-interactively #'aldb-toggle-breakpoint))
+
+;;; --- AutoLISP reference lookup (external `alref' commands) -----------
+(declare-function alref-lookup "alref" ())
+(declare-function alref-apropos "alref" ())
 
 ;;; --- mode -----------------------------------------------------------
 
@@ -480,6 +507,11 @@ the selected frame."
     ;; breakpoints / help
     (define-key map (kbd "C-c C-b") #'aldb-list-breakpoints)
     (define-key map (kbd "h") #'describe-mode)
+    ;; AutoLISP reference lookup (the external `alref' package, if loaded)
+    (define-key map (kbd "C-c C-d C-g") #'alref-lookup)
+    (define-key map (kbd "C-c C-d g")   #'alref-lookup)
+    (define-key map (kbd "C-c C-d a")   #'alref-apropos)
+    (define-key map (kbd "C-c C-d C-a") #'alref-apropos)
     map)
   "Keymap for `aldb-mode', the *aldb-stack* interaction buffer.")
 
