@@ -486,6 +486,8 @@ clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt:
 #   $(PREFIX)/lib/clautolisp/<os>/<arch>/           native DWG codec libraries
 #   $(PREFIX)/include/clautolisp/                   libredwg public header
 #                                                   (dwg.h)
+#   $(PREFIX)/share/emacs/site-lisp/clautolisp/     the aldb.el Emacs client
+#                                                   (install-emacs)
 #
 # The libraries phase (install-libraries) installs exactly what the
 # release-libraries artefact packages — same files, same paths — so
@@ -558,6 +560,13 @@ CL_CONFD_INSTALL_DIR := $(DESTDIR)$(PREFIX)/etc/common-lisp/source-registry.conf
 CL_CONFD_FILE        := tools/packaging/source-registry.conf
 CL_CONFD_NAME        := 50-$(SUBPROJECT_NAME).conf
 
+# The Emacs client (aldb.el) installs under the standard site-lisp tree so
+# Emacs finds it on its load-path and the connect prompt can cite its path
+# (aldb-el-path derives the same location). Its own subdirectory keeps it
+# ours to uninstall cleanly.
+EMACS_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/emacs/site-lisp/$(SUBPROJECT_NAME)
+ALDB_EL           := autolisp-debug-ui-emacs/emacs/aldb.el
+
 CLAUTOLISP_GUI_QT_BIN := tools/clautolisp-gui-qt/build/clautolisp-gui-qt
 RUN_FILE_COMPAT_BIN   := $(RUN_FILE_COMPAT)
 
@@ -566,7 +575,7 @@ INSTALL_BINARIES_ccl  := $(CLAUTOLISP_CCL)  $(READ_AUTOLISP_CCL)
 INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARIES_$(impl)))
 
 .PHONY: install install-programs install-documentation install-libraries \
-        install-lisp-systems uninstall
+        install-lisp-systems install-emacs uninstall
 
 # Whether a missing native DWG codec (LibreDWG) is fatal to
 # `install-libraries'. Default 0: a plain `make install' from a checkout
@@ -584,6 +593,12 @@ install: build  ## Install built executables + docs + Lisp sources/systems (+ na
 	"$(MAKE)" install-programs
 	"$(MAKE)" install-libraries
 	"$(MAKE)" install-documentation
+	"$(MAKE)" install-emacs
+
+install-emacs:  ## Install the aldb.el Emacs client into $$PREFIX/share/emacs/site-lisp/clautolisp/.
+	install -d "$(EMACS_INSTALL_DIR)"
+	install -m 0644 "$(ALDB_EL)" "$(EMACS_INSTALL_DIR)/aldb.el"
+	@echo "installed: $(ALDB_EL) -> $(EMACS_INSTALL_DIR)/aldb.el"
 
 install-programs:  ## Install just the clautolisp/read-autolisp/gui/run-file-compat executables (no docs) -- the CI-friendly fast path.
 	install -d "$(BIN_INSTALL_DIR)"
@@ -771,3 +786,4 @@ uninstall:  ## Remove the clautolisp install from $$PREFIX.
 	@# documents it installs go with $(DOC_INSTALL_DIR) below.)
 	rm -rf "$(LIB_INSTALL_DIR)" "$(INCLUDE_INSTALL_DIR)"
 	rm -rf "$(LIBEXEC_INSTALL_DIR)" "$(DOC_INSTALL_DIR)"
+	rm -rf "$(EMACS_INSTALL_DIR)"

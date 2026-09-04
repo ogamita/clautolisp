@@ -1275,11 +1275,28 @@ there at the first stop. CONTEXT builds the tui/ncurses fallback UI."
 
 (defun aldb-el-path ()
   "The filesystem path of the shipped Emacs client aldb.el, or NIL when it can't
-be located (a built image without the source tree). Best-effort via ASDF."
-  (ignore-errors
-    (let ((path (asdf:system-relative-pathname
-                 "clautolisp/autolisp-debug-ui-emacs" "emacs/aldb.el")))
-      (and (probe-file path) (namestring path)))))
+be located. Checks the in-tree source (dev checkout) first, then the installed
+site-lisp copy — $PREFIX/share/emacs/site-lisp/clautolisp/aldb.el, derived from
+the installed CL source tree (…/share/common-lisp/source/clautolisp/…), where
+`make install-emacs' puts it. Best-effort via ASDF."
+  (flet ((existing (path) (and path (let ((p (ignore-errors (probe-file path))))
+                                      (and p (namestring p))))))
+    (or
+     ;; dev checkout: emacs/aldb.el beside the emacs-UI system's source
+     (ignore-errors
+       (existing (asdf:system-relative-pathname
+                  "clautolisp/autolisp-debug-ui-emacs" "emacs/aldb.el")))
+     ;; installed: reconstruct <…>/share/emacs/site-lisp/clautolisp/aldb.el from
+     ;; the system source dir (…/share/common-lisp/source/clautolisp/…-emacs/)
+     (ignore-errors
+       (let* ((dir (pathname-directory
+                    (asdf:system-source-directory "clautolisp/autolisp-debug-ui-emacs")))
+              (share (position "share" dir :test #'string= :from-end t)))
+         (when share
+           (existing
+            (make-pathname :directory (append (subseq dir 0 (1+ share))
+                                              '("emacs" "site-lisp" "clautolisp"))
+                           :name "aldb" :type "el"))))))))
 
 (defun aldb-print-connect-prompt (ui hit)
   ;; NB continue long format lines with ~<newline> (tilde-newline), which elides

@@ -1771,7 +1771,11 @@ The *first* time control reaches the debugger it reads =user-interface= (else
   Debugger UI?
   #+end_example
   =aldb-connect= prompts for the host and port separately (the actual free port
-  is the one printed). When aldb connects, the terminal input is cancelled,
+  is the one printed). The =load-file= path is the installed client,
+  =$PREFIX/share/emacs/site-lisp/clautolisp/aldb.el= (=make install-emacs=), or
+  the in-tree =autolisp-debug-ui-emacs/emacs/aldb.el= from a checkout; once it is
+  on Emacs's =load-path= a plain =(require 'aldb)= suffices. When aldb connects,
+  the terminal input is cancelled,
   terminal control reverts to the suspended program, and debugging proceeds in
   aldb. (Typing =1= / =2= switches to the tui / ncurses UI for this session
   instead.)
