@@ -149,6 +149,24 @@ cursor in *aldb-stack*.  Idempotent — re-applied at every stop."
   (when aldb--pre-window-config
     (set-window-configuration aldb--pre-window-config)))
 
+(defun aldb--setup-stop-windows (pos)
+  "The stop layout: the SOURCE at the poll-point POS in the left column, the
+*aldb* log below it, and *aldb-stack* in the right column (cursor there).
+With no source (a toplevel stop), fall back to the 2-window layout.
+POS is (:pos FILE LINE COL)."
+  (let ((src (aldb--visit-source pos)))
+    (if (not src)
+        (aldb--setup-windows)
+      (delete-other-windows)
+      (switch-to-buffer src)                     ; whole frame = source, for now
+      (let ((stack (split-window-right)))        ; left = source, right = stack
+        (set-window-buffer stack (aldb--buffer "*aldb-stack*"))
+        ;; carve the *aldb* log off the bottom of the source (left) column
+        (let ((log (split-window-below (max 6 (- (window-total-height) 10)))))
+          (set-window-buffer log (aldb--buffer "*aldb*")))
+        (let ((w (get-buffer-window src))) (when w (set-window-point w (with-current-buffer src (point)))))
+        (select-window stack)))))
+
 ;;; --- message dispatch (debugger -> aldb) ----------------------------
 
 (defun aldb--dispatch (message)
@@ -187,7 +205,7 @@ cursor in *aldb-stack*.  Idempotent — re-applied at every stop."
 
 (defun aldb--on-stop (kind snapshot)
   (setq aldb--snapshot snapshot aldb--selected-frame 0 aldb--details nil)
-  (aldb--setup-windows)                 ; windows first, then populate them
+  (aldb--setup-stop-windows (plist-get snapshot :position)) ; source + stack + log
   (aldb--render-stop kind)
   (aldb--render-bindings)
   (aldb--render-stack))
@@ -195,7 +213,7 @@ cursor in *aldb-stack*.  Idempotent — re-applied at every stop."
 (defun aldb--on-error (kind message)
   (setq aldb--snapshot (nth 3 message) aldb--selected-frame 0 aldb--details nil
         aldb--last-error (format "%s: %s (errno %s)" kind (nth 1 message) (nth 2 message)))
-  (aldb--setup-windows)
+  (aldb--setup-stop-windows (plist-get aldb--snapshot :position))
   (aldb--log "%s  [a abort, R return, c run *error*]" aldb--last-error)
   (aldb--render-bindings)
   (aldb--render-stack))
@@ -329,8 +347,17 @@ the selected frame."
     (pop-to-buffer (current-buffer))))
 
 (defun aldb--show-source (pos)
-  "Visit POS = (:pos FILE LINE COL), move point to the sexp at LINE:COL, flash
-it, enable `aldb-minor-mode', and show the buffer."
+  "Visit POS = (:pos FILE LINE COL) and show it in a window (the v command /
+:show-source), leaving point at the poll-point sexp."
+  (let ((buf (aldb--visit-source pos)))
+    (when buf
+      (let ((win (display-buffer buf)))
+        (when win (set-window-point win (with-current-buffer buf (point))))))))
+
+(defun aldb--visit-source (pos)
+  "Visit POS = (:pos FILE LINE COL): move point to the sexp at LINE:COL, flash
+it, enable `aldb-minor-mode', and return the buffer — WITHOUT touching windows.
+NIL when POS names no readable file (e.g. a toplevel stop)."
   (when (and pos (stringp (nth 1 pos)) (file-readable-p (nth 1 pos)))
     (let ((buf (find-file-noselect (nth 1 pos))))
       (with-current-buffer buf
@@ -347,10 +374,7 @@ it, enable `aldb-minor-mode', and show the buffer."
                (ov (make-overlay beg end)))
           (overlay-put ov 'face 'aldb-current-face)
           (run-at-time 1.0 nil (lambda () (when (overlayp ov) (delete-overlay ov))))))
-      ;; select the window so the source is where the cursor lands, and
-      ;; aldb-minor-mode keys act
-      (let ((win (display-buffer buf)))
-        (when win (set-window-point win (with-current-buffer buf (point))))))))
+      buf)))
 
 ;;; --- resume commands (aldb -> debugger) -----------------------------
 
