@@ -557,8 +557,10 @@ the selected frame."
   "Major mode for the clautolisp debugger interaction buffers (section 20.2).
 The primary buffer is *aldb-stack*: a backtrace whose frames expand (t / RET) to
 show their locals, with SLDB-like navigation and eval/inspect in a frame."
-  (setq buffer-read-only t))
+  (setq buffer-read-only t)
+  (use-local-map aldb-mode-map))
 
 (provide 'aldb)
+
 
 ;;; aldb.el ends here
