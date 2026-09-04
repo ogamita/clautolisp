@@ -1389,12 +1389,51 @@ last line then a clean EOF. Draining first lets close() send an orderly FIN."
     (when d (ignore-errors (clautolisp.debug.ui:ui-detached d))))
   (aldb-close-listener ui))
 
+(defun build-debug-ui (debug-ui context)
+  "Construct the debugger UI object for the keyword DEBUG-UI (:tui/:ncurses/:aldb),
+applying the transport/screen specials: :aldb with a bound listener address becomes
+an ALDB-LISTENER-UI; :ncurses acquires a real terminal screen, falling back to the
+terminal (tui) UI when the curses backend is unavailable (rather than crashing on
+an unbound screen). Shared by session start and the live per-stop UI selector."
+  (if (and (eq debug-ui :aldb) *aldb-listener-address*)
+      (make-aldb-listener-ui *aldb-listener-address* context)
+      (let* ((screen (when (eq debug-ui :ncurses) (ncurses-terminal-screen)))
+             (designator (if (and (eq debug-ui :ncurses) (null screen))
+                             :terminal
+                             (debug-ui-designator debug-ui))))
+        (apply #'clautolisp.debug.ui:make-ui designator
+               (when screen (list :screen screen))))))
+
+(defun live-debugger-ui-keyword ()
+  "The LIVE debugger-UI selection: the AutoLISP *CLAL-DEBUGGER-UI* variable when
+it names one of :tui/:ncurses/:aldb, else the CLI-set *clal-debugger-ui* default
+(the same override pattern as the interrupt/quit policies). Read fresh at each
+stop, so (setq *clal-debugger-ui* 'tui) picks the UI for the NEXT debugger entry."
+  (clautolisp.autolisp-builtins-core:live-event-policy
+   "*CLAL-DEBUGGER-UI*"
+   clautolisp.autolisp-runtime:*clal-debugger-ui*
+   '(:tui :ncurses :aldb)))
+
+(defun make-debug-ui-selector (initial-kind initial-ui context)
+  "A closure the debug session calls at each stop to get the UI to use, honoring
+the LIVE *CLAL-DEBUGGER-UI* (debugger-ui-live-switch). It remembers the current
+kind and its constructed UI, rebuilding (a fresh screen/socket) only when the kind
+actually changes, and returns the SAME object while the kind is unchanged so the
+session does no needless detach/attach. Seeded with the launch UI so the first
+stop reuses the one session start already attached."
+  (let ((kind initial-kind) (ui initial-ui))
+    (lambda ()
+      (let ((want (live-debugger-ui-keyword)))
+        (unless (eql want kind)
+          (setf kind want ui (build-debug-ui want context)))
+        ui))))
+
 (defun start-debug-session (debug-ui context)
-  "Start the debugger session for DEBUG-UI. For :aldb with a TCP listener
-(*ALDB-LISTENER-ADDRESS* bound), open the listener and hand the session a
-forwarding ALDB-LISTENER-UI. For :ncurses, load the cl-charms backend on demand
-and hand the UI a real terminal screen; when that backend is unavailable, fall
-back cleanly to the terminal (tui) UI rather than crashing on an unbound screen."
+  "Start the debugger session for DEBUG-UI, installing a per-stop UI SELECTOR so
+the live *CLAL-DEBUGGER-UI* selection is honored at every debugger entry (a
+program may switch UI between stops). The launch UI is built once and reused
+until the selection changes; see BUILD-DEBUG-UI for the transport/screen
+specials."
   ;; Make the CLAL-OPTIMIZATION DEBUG level authoritative for instrumentation at
   ;; session start: derive the runtime gate from it so a debuggable-configured
   ;; run (DEBUG>0 — the default) actually weaves instrumented forks, and a
@@ -1402,17 +1441,10 @@ back cleanly to the terminal (tui) UI rather than crashing on an unbound screen.
   ;; changes; this covers the launch value / any path that set DEBUG without it.)
   (setf clautolisp.autolisp-runtime:*debug-instrumentation-enabled*
         (plusp (clautolisp.autolisp-builtins-core:clal-optimization-level :debug)))
-  (if (and (eq debug-ui :aldb) *aldb-listener-address*)
-      (clautolisp.debug.ui:start-session
-       :ui (make-aldb-listener-ui *aldb-listener-address* context)
-       :context context)
-      (let* ((screen (when (eq debug-ui :ncurses) (ncurses-terminal-screen)))
-             (designator (if (and (eq debug-ui :ncurses) (null screen))
-                             :terminal
-                             (debug-ui-designator debug-ui))))
-        (clautolisp.debug.ui:start-session
-         :ui designator :context context
-         :ui-initargs (when screen (list :screen screen))))))
+  (let* ((initial-ui (build-debug-ui debug-ui context))
+         (selector (make-debug-ui-selector debug-ui initial-ui context)))
+    (clautolisp.debug.ui:start-session
+     :ui initial-ui :context context :ui-selector selector)))
 
 ;;; --- SIGINT / --on-interrupt (debugger-public-interface-and-on-error
 ;;; Part B) -------------------------------------------------------------

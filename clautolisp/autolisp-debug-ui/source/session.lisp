@@ -8,6 +8,11 @@
 
 (defstruct debugger-session
   ui
+  ;; An optional closure (funcall → a UI object) the CLI installs to RE-RESOLVE
+  ;; the UI at every stop from the live *CLAL-DEBUGGER-UI* selection, so setting
+  ;; that variable picks the UI for the NEXT debugger entry
+  ;; (debugger-ui-live-switch). NIL for library callers ⇒ the fixed UI above.
+  ui-selector
   thread-info
   context
   workspace
@@ -271,15 +276,18 @@ loop synchronously and applies its resume directive."
 (defmacro with-session ((ui &rest options) &body body)
   `(call-with-session ,ui (lambda () ,@body) ,@options))
 
-(defun start-session (&key (ui :terminal) thread-info context ui-initargs)
+(defun start-session (&key (ui :terminal) thread-info context ui-initargs
+                           ui-selector)
   "Create a session object attached to UI without running anything (spec
 §21). Returns the session; the caller drives evaluation under it via
-call-with-session, or uses the session for breakpoint setup first."
+call-with-session, or uses the session for breakpoint setup first.
+UI-SELECTOR, when supplied, is a thunk the session calls at every stop to
+re-resolve the UI from the live *CLAL-DEBUGGER-UI* selection (§10)."
   (let* ((uio (apply #'make-ui ui ui-initargs))
          (ti (or thread-info (make-thread-debug-info :debug-flag t)))
          (ctx (or context (make-default-runtime-context)))
          (session (make-debugger-session
-                   :ui uio :thread-info ti :context ctx
+                   :ui uio :ui-selector ui-selector :thread-info ti :context ctx
                    :workspace (make-workspace))))
     (check-protocol-version uio)
     (ui-attached uio session)
@@ -307,6 +315,25 @@ explicitly (`ls'). Default T.")
 
 ;;; --- the stop handler: build per-stop state, run the UI loop -------
 
+(defun resolve-session-ui (session)
+  "The UI that should handle the CURRENT stop. With a UI-SELECTOR installed (the
+CLI's live *CLAL-DEBUGGER-UI* re-resolution), ask it which UI to use now; when
+that differs from the session's current UI, detach the old and attach the new,
+updating the session slot — so setting *CLAL-DEBUGGER-UI* selects the UI for the
+next debugger entry. Without a selector (library callers) the fixed UI is used."
+  (let ((selector (debugger-session-ui-selector session)))
+    (if (null selector)
+        (debugger-session-ui session)
+        (let ((want (funcall selector))
+              (current (debugger-session-ui session)))
+          (cond
+            ((or (null want) (eq want current)) current)
+            (t (ignore-errors (ui-detached current))
+               (check-protocol-version want)
+               (ui-attached want session)
+               (setf (debugger-session-ui session) want)
+               want))))))
+
 (defun session-stop (session hit)
   "Called by the engine at each stop. Records the snapshot, notifies the
 UI of the appropriate event, runs the command loop, and returns the
@@ -317,7 +344,7 @@ resume directive."
         (debugger-session-inspector session) nil
         ;; a fresh stop navigates the stopped frame until `g'/nav retargets it
         (debugger-session-nav-target session) nil)
-  (let ((ui (debugger-session-ui session))
+  (let ((ui (resolve-session-ui session))
         (reason (hit-stop-reason hit)))
     ;; Establish the stop's interactor activation (the dumb UI's ALDO) around
     ;; the WHOLE stop — announcement included — so that with a dribble active

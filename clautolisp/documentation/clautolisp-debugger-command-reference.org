@@ -350,7 +350,12 @@ keystroke-UI cursor form and the typed form — under this rule.
     aborting cancels it. The QUIT event cannot be ignored.
   - The debugger's *other* CLI options select the UI and configure the aldb
     channel — =--debugger-ui=, =--aldb-listen=, =--aldb-stdio= (§10
-    *Selecting the user interface*).
+    *Selecting the user interface*). The AutoLISP variable
+    =*CLAL-DEBUGGER-UI*= mirrors =--debugger-ui= and is re-read LIVE at each
+    stop, so =(setq *clal-debugger-ui* 'tui)= selects the UI (=tui= /
+    =ncurses= / =aldb=) used at the NEXT debugger entry — e.g.
+    =(foreach *clal-debugger-ui* '(tui ncurses aldb) (clal-break))= enters
+    the debugger successively on the dumb terminal, ncurses, and aldb.
 - backing: =[have]= for the engine entry (=*debug-hit-handler*= +
   poll-point dispatch already implement "invoke the debugger at a poll
   point"), the =clal-break= / =clal-invoke-debugger= builtins,

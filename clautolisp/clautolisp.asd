@@ -368,6 +368,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "tools/clautolisp/tests/debugger-options-tests")
    (:file "tools/clautolisp/tests/transmit-tests")
    (:file "tools/clautolisp/tests/aldo-conf-tests")
+   (:file "tools/clautolisp/tests/debugger-ui-switch-tests")
    (:file "tools/clautolisp/tests/aldb-socket-tests")
    (:file "tools/clautolisp/tests/run"))
   :perform (asdf:test-op (op system)
