@@ -111,6 +111,8 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:cmd-continue #:cmd-step #:cmd-advance #:cmd-abort #:cmd-return #:cmd-jump
    #:cmd-set-breakpoint #:cmd-set-breakpoint-at-line #:cmd-advance-at-line
    #:cmd-remove-breakpoint #:cmd-list-breakpoints
+   #:cmd-breakpoint-at-line #:cmd-remove-breakpoint-at-line
+   #:cmd-toggle-breakpoint-enabled-at-line
    #:cmd-watch #:cmd-unwatch #:cmd-clear-watches #:cmd-list-watches
    #:cmd-select-frame #:cmd-eval #:cmd-set-variable
    #:cmd-inspect #:cmd-inspector-descend #:cmd-inspector-up

@@ -242,6 +242,8 @@ otherwise the command was answered inline and the loop keeps reading."
        (let ((d (restart-frame-directive ui session (first args))))
          (if d (values d t) (values nil nil))))
       (:set-breakpoint-line (reply-set-breakpoint ui session (first args)) (values nil nil))
+      (:remove-breakpoint-line (reply-remove-breakpoint ui session (first args)) (values nil nil))
+      (:toggle-breakpoint-line (reply-toggle-breakpoint ui session (first args)) (values nil nil))
       (:list-breakpoints (reply-breakpoints ui session) (values nil nil))
       (:inspect (reply-inspect ui session (first args)) (values nil nil))
       (:inspector-descend (reply-descend ui session (first args)) (values nil nil))
@@ -296,6 +298,18 @@ written) when the frame has no instrumented function to restart."
     (if bp
         (write-message ui :breakpoint-set (breakpoint-id bp) line)
         (write-message ui :message :warning (format nil "no poll point at line ~A" line)))))
+
+(defun reply-remove-breakpoint (ui session line)
+  (let ((bp (cmd-remove-breakpoint-at-line session line)))
+    (if bp
+        (write-message ui :breakpoint-removed (breakpoint-id bp))
+        (write-message ui :message :warning (format nil "no breakpoint at line ~A" line)))))
+
+(defun reply-toggle-breakpoint (ui session line)
+  (multiple-value-bind (bp enabled) (cmd-toggle-breakpoint-enabled-at-line session line)
+    (if bp
+        (write-message ui :breakpoint-enabled (breakpoint-id bp) (and enabled t))
+        (write-message ui :message :warning (format nil "no breakpoint at line ~A" line)))))
 
 (defun reply-breakpoints (ui session)
   (write-message ui :breakpoints

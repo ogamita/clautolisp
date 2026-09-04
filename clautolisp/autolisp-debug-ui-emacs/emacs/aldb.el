@@ -174,6 +174,8 @@ cursor in *aldb-stack*.  Idempotent — re-applied at every stop."
     (:breakpoint-added (aldb--log "breakpoint #%s added" (nth 1 message)))
     (:breakpoint-removed (aldb--log "breakpoint #%s removed" (nth 1 message)))
     (:breakpoints (aldb--show-breakpoints (nth 1 message)))
+    (:breakpoint-enabled (aldb--log "breakpoint #%s %s" (nth 1 message)
+                                    (if (nth 2 message) "enabled" "disabled")))
     (:eval-result (aldb--log "=> %s" (nth 1 message)))
     (:eval-error (aldb--log "eval error: %s" (nth 1 message)))
     (:inspect-page (aldb--show-inspect (nth 1 message)))
@@ -327,16 +329,28 @@ the selected frame."
     (pop-to-buffer (current-buffer))))
 
 (defun aldb--show-source (pos)
-  "Visit POS = (:pos FILE LINE COL) and transiently highlight the line."
+  "Visit POS = (:pos FILE LINE COL), move point to the sexp at LINE:COL, flash
+it, enable `aldb-minor-mode', and show the buffer."
   (when (and pos (stringp (nth 1 pos)) (file-readable-p (nth 1 pos)))
-    (with-current-buffer (find-file-noselect (nth 1 pos))
-      (save-excursion
+    (let ((buf (find-file-noselect (nth 1 pos))))
+      (with-current-buffer buf
+        (aldb-minor-mode 1)
+        ;; move point to the sexp start (LINE, COL — COL is 0-based)
         (goto-char (point-min))
         (forward-line (1- (nth 2 pos)))
-        (let ((ov (make-overlay (line-beginning-position) (line-end-position))))
+        (when (nth 3 pos) (forward-char (min (nth 3 pos)
+                                             (- (line-end-position) (point)))))
+        ;; flash the whole sexp if we can read it, else the line
+        (let* ((beg (point))
+               (end (or (ignore-errors (save-excursion (forward-sexp) (point)))
+                        (line-end-position)))
+               (ov (make-overlay beg end)))
           (overlay-put ov 'face 'aldb-current-face)
           (run-at-time 1.0 nil (lambda () (when (overlayp ov) (delete-overlay ov))))))
-      (display-buffer (current-buffer)))))
+      ;; select the window so the source is where the cursor lands, and
+      ;; aldb-minor-mode keys act
+      (let ((win (display-buffer buf)))
+        (when win (set-window-point win (with-current-buffer buf (point))))))))
 
 ;;; --- resume commands (aldb -> debugger) -----------------------------
 
@@ -438,6 +452,23 @@ the selected frame."
   (aldb--send (list :set-breakpoint-line line)))
 
 (defun aldb-list-breakpoints () "List breakpoints." (interactive) (aldb--send '(:list-breakpoints)))
+
+;; Breakpoint commands acting on the CURRENT line of an AutoLISP source buffer
+;; (aldb-minor-mode), targeting the browsed/stopped function server-side.
+(defun aldb-source-set-breakpoint ()
+  "Set a breakpoint at the current source line."
+  (interactive)
+  (aldb--send (list :set-breakpoint-line (line-number-at-pos))))
+
+(defun aldb-source-remove-breakpoint ()
+  "Remove the breakpoint at the current source line."
+  (interactive)
+  (aldb--send (list :remove-breakpoint-line (line-number-at-pos))))
+
+(defun aldb-source-toggle-breakpoint ()
+  "Enable/disable the breakpoint at the current source line."
+  (interactive)
+  (aldb--send (list :toggle-breakpoint-line (line-number-at-pos))))
 
 (defun aldb-inspect (form)
   "Open the inspector on FORM (AutoLISP source text)."
@@ -608,6 +639,36 @@ RET / d descend into the slot at point, u / l ascend, . shows the path, b binds
 the value in the workspace, q closes the inspector window."
   (setq buffer-read-only t)
   (use-local-map aldb-inspect-mode-map))
+
+;;; --- aldb-minor-mode (AutoLISP source buffers) ----------------------
+;;; Enabled by aldb-show-source on the visited AutoLISP source.  The buffer is
+;;; still editable, so the aldb commands live under the `C-c a' prefix (they act
+;;; on the CURRENT line / the debugger), never shadowing self-insert.
+
+(defvar aldb-minor-mode-map (make-sparse-keymap)
+  "Keymap for `aldb-minor-mode' — aldb commands in an AutoLISP source buffer.")
+
+;; Top-level define-key (reload-safe).
+(let ((map aldb-minor-mode-map))
+  (define-key map (kbd "C-c a c") #'aldb-continue)
+  (define-key map (kbd "C-c a s") #'aldb-step-in)
+  (define-key map (kbd "C-c a o") #'aldb-step-out)
+  (define-key map (kbd "C-c a x") #'aldb-step-over)
+  (define-key map (kbd "C-c a f") #'aldb-finish)
+  (define-key map (kbd "C-c a a") #'aldb-abort)
+  (define-key map (kbd "C-c a q") #'aldb-quit)
+  (define-key map (kbd "C-c a b") #'aldb-source-set-breakpoint)
+  (define-key map (kbd "C-c a d") #'aldb-source-remove-breakpoint)
+  (define-key map (kbd "C-c a t") #'aldb-source-toggle-breakpoint)
+  (define-key map (kbd "C-c a l") #'aldb-list-breakpoints))
+
+(define-minor-mode aldb-minor-mode
+  "Minor mode for AutoLISP source buffers shown by `aldb-show-source'.
+The aldb debugger commands are on the \\`C-c a' prefix and act on the current
+line / the debugger: c continue, s/o/x/f step in/out/over/finish, a abort,
+q quit, b set / d remove / t toggle-enabled the breakpoint at point, l list."
+  :lighter " aldb"
+  :keymap aldb-minor-mode-map)
 
 (provide 'aldb)
 

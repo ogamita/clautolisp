@@ -140,6 +140,35 @@ Returns the :advance resume directive, or NIL if LINE has no poll point."
 (defun cmd-list-breakpoints (session)
   (list-breakpoints (debugger-session-thread-info session)))
 
+(defun cmd-breakpoint-at-line (session line)
+  "The breakpoint on LINE of the function currently focused for browsing (the
+`g'/nav target, else the stopped function), or NIL — the LINE→poll-point
+resolution CMD-SET-BREAKPOINT-AT-LINE uses, matched against the live table."
+  (let ((metadata (nav-or-current-metadata session)))
+    (when metadata
+      (let ((form-id (find-form-id-at-line metadata line))
+            (fid (function-debug-metadata-function-id metadata)))
+        (when form-id
+          (find-if (lambda (bp) (and (eql (breakpoint-fid bp) fid)
+                                     (eql (breakpoint-form-id bp) form-id)))
+                   (cmd-list-breakpoints session)))))))
+
+(defun cmd-remove-breakpoint-at-line (session line)
+  "Remove the breakpoint on LINE (browsed/stopped function). Returns the removed
+breakpoint or NIL when LINE carries none."
+  (let ((bp (cmd-breakpoint-at-line session line)))
+    (when bp (cmd-remove-breakpoint session bp) bp)))
+
+(defun cmd-toggle-breakpoint-enabled-at-line (session line)
+  "Flip enabled/disabled for the breakpoint on LINE. Returns (values BREAKPOINT
+ENABLED) or (values NIL NIL) when LINE carries none."
+  (let ((bp (cmd-breakpoint-at-line session line)))
+    (if bp
+        (let ((now (not (breakpoint-enabled-p bp))))
+          (set-breakpoint-enabled bp now)
+          (values bp now))
+        (values nil nil))))
+
 ;;; --- software watchpoints (command reference §2 watch) -------------
 
 (defun cmd-watch (session symbol name &key predicate)

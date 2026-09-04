@@ -143,6 +143,28 @@
         (is (consp car-comp))
         (is (string= "\"hello\"" (third car-comp)))))))
 
+(test source-breakpoint-set-toggle-remove-over-the-wire
+  ;; aldb-minor-mode's source-buffer breakpoint commands: set a breakpoint at a
+  ;; line, disable it (:breakpoint-enabled nil), then remove it
+  ;; (:breakpoint-removed), all resolved in the stopped function.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at metas 3)))
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:set-breakpoint-line 4)
+                     (:toggle-breakpoint-line 4)
+                     (:remove-breakpoint-line 4)
+                     (:continue))
+                   :context context :thread-info ti :thunk (lambda () (call-two context)))
+      (declare (ignore result text))
+      (is (message-of messages :breakpoint-set))
+      (let ((toggled (message-of messages :breakpoint-enabled)))
+        (is (consp toggled))
+        ;; disabled: the wire flag is falsy (the harness reads wire nil/t in the
+        ;; keyword package as :nil/:t; the elisp client reads them as nil/t)
+        (is (not (eq :t (nth 2 toggled)))))
+      (is (message-of messages :breakpoint-removed)))))
+
 (test frame-wire-carries-its-locals
   ;; each (:frame INDEX NAME POSITION LOCALS) now carries the frame's own locals
   ;; as (NAME PREVIEW) pairs (aldb-toggle-details, aldb-commands.issue).
