@@ -62,7 +62,15 @@
 ;;; --- transport ------------------------------------------------------
 
 (defun aldb-connect (process)
-  "Attach aldb to PROCESS (a live CL connection speaking the section 20.1 RPC)."
+  "Attach aldb to PROCESS (a live CL connection speaking the section 20.1 RPC).
+Called interactively, prompt for HOST and PORT and open a TCP connection to the
+clautolisp aldb listener printed at the stop (\"M-x aldb-connect RET host RET
+port RET\")."
+  (interactive
+   (list (open-network-stream
+          "aldb" nil
+          (read-string "aldb host: " "localhost")
+          (read-number "aldb port: "))))
   (setq aldb--process process
         aldb--read-buffer "")
   (set-process-filter process #'aldb--process-filter)

@@ -352,7 +352,7 @@ The complete set of aldo settings, with their types:
 | ~theme~                          | =unicode= \vert{} =ascii= \vert{} =white-on-black= \vert{} =black-on-white= \vert{} =green-on-black= \vert{} =attributes= |
 | ~default-user-interface~         | =tui= \vert{} =ncurses= \vert{} =aldb=                            |
 | ~default-aldb-listening-address~ | string (=127.0.0.1=) — address the aldb (Emacs) transport listens on when no ~--aldb-listen~ / ~--aldb-stdio~ is given |
-| ~default-aldb-listening-port~    | port (=4301=) — the matching port                                 |
+| ~default-aldb-listening-port~    | port (=0= — an OS-chosen free port; set a fixed port for a stable one) |
 
 ~decorations~ is not in this table: it is structural (the theme glyphs,
 edited as data in the configuration file) rather than something =set=

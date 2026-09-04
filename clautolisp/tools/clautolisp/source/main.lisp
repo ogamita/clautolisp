@@ -314,15 +314,19 @@ Pure (no I/O) so the gating is unit-testable away from the CLI entry point."
         (t                         :listener)))
 
 (defun aldb-default-listen-address ()
-  "The default aldb listener address: the persisted default-aldb-listening-
-address / -port aldo settings, else 127.0.0.1:4301 (command reference §10)."
+  "The default aldb listener address when nothing is configured: the persisted
+default-aldb-listening-address / -port aldo settings, else 127.0.0.1 on an
+OS-chosen FREE port (port 0). A random free port is a better default than a
+fixed one — it never clashes with another session, and the actual port is
+printed in the connect prompt (command reference §10); pin one via
+default-aldb-listening-port if you want a stable port."
   (format nil "~A:~A"
           (or (ignore-errors
                 (clautolisp.debug.ui:get-aldo-setting :default-aldb-listening-address))
               "127.0.0.1")
           (or (ignore-errors
                 (clautolisp.debug.ui:get-aldo-setting :default-aldb-listening-port))
-              4301)))
+              0)))
 
 (defun aldb-resolve-listener-address (debug-ui aldb-listen)
   "The HOST:PORT the aldb listener binds when DEBUG-UI is :aldb over the TCP
@@ -1269,16 +1273,27 @@ there at the first stop. CONTEXT builds the tui/ncurses fallback UI."
        (member (clautolisp.debug:hit-stop-reason hit) '(:unhandled-error :caught-error))
        (clautolisp.debug:hit-error-message hit)))
 
+(defun aldb-el-path ()
+  "The filesystem path of the shipped Emacs client aldb.el, or NIL when it can't
+be located (a built image without the source tree). Best-effort via ASDF."
+  (ignore-errors
+    (let ((path (asdf:system-relative-pathname
+                 "clautolisp/autolisp-debug-ui-emacs" "emacs/aldb.el")))
+      (and (probe-file path) (namestring path)))))
+
 (defun aldb-print-connect-prompt (ui hit)
   ;; NB continue long format lines with ~<newline> (tilde-newline), which elides
   ;; the source newline + indentation — a bare \\<newline> in a CL string is a
   ;; LITERAL newline, so it would double every ~% here.
-  (format t "~&~@[~A~%~]~
-Aldo debugger activated, please use emacs aldb to connect:~%~
-~4TM-x aldb-connect RET ~A RET~%~
+  (multiple-value-bind (host port) (aldb-split-address (aldb-address ui))
+    (let ((el (aldb-el-path)))
+      (format t "~&~@[~A~%~]~
+Aldo debugger activated, connect from Emacs aldb:~%~
+~@[~4TM-x load-file RET ~A RET~%~]~
+~4TM-x aldb-connect RET ~A RET ~A RET~%~
 Alternatively, select a terminal or ncurses user interface,~%~
 ~2T1) TUI~%~2T2) ncurses~%Debugger UI? "
-          (aldb-stop-reason-line hit) (aldb-address ui))
+              (aldb-stop-reason-line hit) el host port)))
   (finish-output))
 
 (defun aldb-poll-terminal-choice ()
@@ -1395,8 +1410,20 @@ applying the transport/screen specials: :aldb with a bound listener address beco
 an ALDB-LISTENER-UI; :ncurses acquires a real terminal screen, falling back to the
 terminal (tui) UI when the curses backend is unavailable (rather than crashing on
 an unbound screen). Shared by session start and the live per-stop UI selector."
-  (if (and (eq debug-ui :aldb) *aldb-listener-address*)
-      (make-aldb-listener-ui *aldb-listener-address* context)
+  (if (eq debug-ui :aldb)
+      ;; aldb reaches Emacs over a channel. A configured listener address
+      ;; (--aldb-listen, or the launch aldb default) binds it; --aldb-stdio
+      ;; explicitly uses the process stdin/stdout. Otherwise — nothing
+      ;; configured, e.g. a live switch to aldb (aldb-stdio-is-a-poor-default) —
+      ;; default to a TCP listener on 127.0.0.1 / a free port, NOT stdio: the
+      ;; user connects from Emacs at the address the connect prompt prints.
+      (cond
+        (*aldb-listener-address*
+         (make-aldb-listener-ui *aldb-listener-address* context))
+        ((eq clautolisp.autolisp-runtime:*clal-aldb-listen* :stdio)
+         (clautolisp.debug.ui:make-ui :aldb))
+        (t
+         (make-aldb-listener-ui (aldb-default-listen-address) context)))
       (let* ((screen (when (eq debug-ui :ncurses) (ncurses-terminal-screen)))
              (designator (if (and (eq debug-ui :ncurses) (null screen))
                              :terminal

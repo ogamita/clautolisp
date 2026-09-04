@@ -1754,21 +1754,27 @@ The effective UI on entry is the *current* =user-interface= if present, else
 The *first* time control reaches the debugger it reads =user-interface= (else
 =default-user-interface=) and activates that UI:
 
-- *aldb — not yet connected.* aldo prints, on the program's terminal, the Emacs
-  command to connect, and *waits* — for the connection, or for the user to pick
-  a terminal UI instead:
+- *aldb — not yet connected.* With no aldb transport configured, aldb defaults
+  to a TCP listener on =127.0.0.1= and an *OS-chosen free port* (never stdio — a
+  hijacked stdio is a poor default; pin a fixed port with =--aldb-listen= or the
+  =default-aldb-listening-port= setting). aldo prints, on the program's terminal,
+  the Emacs commands to connect — first loading the shipped =aldb.el= if needed —
+  and *waits* for the connection, or for the user to pick a terminal UI instead:
   #+begin_example
   ARITHMETIC ERROR: division by zero
-  Aldo debugger activated, please use emacs aldb to connect:
-      M-x aldb-connect RET 127.0.0.1:4301 RET
+  Aldo debugger activated, connect from Emacs aldb:
+      M-x load-file RET /path/to/aldb.el RET
+      M-x aldb-connect RET 127.0.0.1 RET 51763 RET
   Alternatively, select a terminal or ncurses user interface,
     1) TUI
     2) ncurses
   Debugger UI?
   #+end_example
-  When aldb connects, the terminal input is cancelled, terminal control reverts
-  to the suspended program, and debugging proceeds in aldb. (Typing =1= / =2=
-  switches to the tui / ncurses UI for this session instead.)
+  =aldb-connect= prompts for the host and port separately (the actual free port
+  is the one printed). When aldb connects, the terminal input is cancelled,
+  terminal control reverts to the suspended program, and debugging proceeds in
+  aldb. (Typing =1= / =2= switches to the tui / ncurses UI for this session
+  instead.)
 - *aldb — already connected.* Nothing appears on the terminal; aldb is simply
   messaged and Emacs raises the aldb buffer.
 - *ncurses.* The UI runs on the terminal's *alternate screen*, so on resume the

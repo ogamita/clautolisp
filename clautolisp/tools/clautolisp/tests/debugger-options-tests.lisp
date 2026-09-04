@@ -210,6 +210,35 @@ legacy aliases). They now fail as unknown options."
          (out (with-output-to-string (*standard-output*)
                 (clautolisp.tools.clautolisp::aldb-print-connect-prompt ui nil))))
     (is (not (search (format nil "~%~%") out)))        ; no blank lines
-    (is (search "M-x aldb-connect RET 127.0.0.1:4301 RET" out))
+    ;; host and port are prompted separately, matching aldb-connect's interactive form
+    (is (search "M-x aldb-connect RET 127.0.0.1 RET 4301 RET" out))
     (is (search "1) TUI" out))
     (is (search "2) ncurses" out))))
+
+(test aldb-default-listen-address-uses-a-free-port
+  ;; With nothing configured the default binds an OS-chosen free port (0), not a
+  ;; fixed one, on 127.0.0.1 (aldb-stdio-is-a-poor-default).
+  (let ((addr (clautolisp.tools.clautolisp::aldb-default-listen-address)))
+    (is (stringp addr))
+    (is (eql 0 (nth-value 1 (clautolisp.tools.clautolisp::aldb-split-address addr))))
+    (is (string= "127.0.0.1"
+                 (nth-value 0 (clautolisp.tools.clautolisp::aldb-split-address addr))))))
+
+(test build-debug-ui-defaults-aldb-to-a-listener-not-stdio
+  ;; The crux of aldb-stdio-is-a-poor-default: with no listener address and no
+  ;; --aldb-stdio (e.g. a live switch to aldb), aldb builds a TCP LISTENER UI —
+  ;; the user connects from Emacs — rather than hijacking the process stdio.
+  (let ((clautolisp.tools.clautolisp::*aldb-listener-address* nil)
+        (clautolisp.autolisp-runtime:*clal-aldb-listen* nil)
+        (ctx (clautolisp.autolisp-runtime:make-default-runtime-context)))
+    (let ((ui (clautolisp.tools.clautolisp::build-debug-ui :aldb ctx)))
+      (unwind-protect
+           (is (typep ui 'clautolisp.tools.clautolisp::aldb-listener-ui))
+        ;; release the bound socket
+        (ignore-errors (clautolisp.tools.clautolisp::aldb-close-listener ui)))))
+  ;; but --aldb-stdio (the runtime request) still uses the stdio emacs-ui
+  (let ((clautolisp.tools.clautolisp::*aldb-listener-address* nil)
+        (clautolisp.autolisp-runtime:*clal-aldb-listen* :stdio)
+        (ctx (clautolisp.autolisp-runtime:make-default-runtime-context)))
+    (let ((ui (clautolisp.tools.clautolisp::build-debug-ui :aldb ctx)))
+      (is (not (typep ui 'clautolisp.tools.clautolisp::aldb-listener-ui))))))

@@ -38,7 +38,10 @@
     (:theme . :unicode)
     (:default-user-interface . :tui)
     (:default-aldb-listening-address . "127.0.0.1")
-    (:default-aldb-listening-port . 4301)
+    ;; 0 = an OS-chosen FREE port (aldb-stdio-is-a-poor-default): a random free
+    ;; port never clashes with another session, and the actual port is printed in
+    ;; the connect prompt. Pin a fixed port here if you prefer a stable one.
+    (:default-aldb-listening-port . 0)
     (:decorations
      (:current-pp  :unicode (9205))   ; PREFIX  ⏵ U+23F5 as a code-point list
      (:current-pp  :ascii   ">")

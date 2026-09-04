@@ -149,7 +149,7 @@ policy. Used by the TUI listing, the ncurses source pane, and (faces) aldb.
 2. Navigation/history delegated to Emacs (buffers + =xref= + mark ring);
    re-anchor point to the current poll-point on re-entry.
 3. UI selection (=aldb=) + the listener — *DONE*: =default-aldb-listening-address=
-   / =-port= (default 127.0.0.1:4301), the =--aldb-listen [HOST:]PORT= (numeric or
+   / =-port= (default 127.0.0.1 on an OS-chosen free port), the =--aldb-listen [HOST:]PORT= (numeric or
    a service name) / =--aldb-stdio= CLI options, and the lazy not-connected
    connect prompt with its =1) TUI= / =2) ncurses= fallback (command-reference
    §10). The wire is Elisp-readable (nil/t + lower-case keywords) and a
