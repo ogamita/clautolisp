@@ -1,4 +1,27 @@
-* ALDO commands accessible from the lisp REPL.
+* DONE ALDO commands accessible from the lisp REPL.
+
+** CLOSED 2026-09-05 — all three parts implemented (MR !145, 1.9.90–1.9.98)
+
+- Part 1 (breakpoint commands + list source), on the parallel aldo-companion
+  thread: ,break FUNC|FUNC.N|FILE:LINE[:COL]|LINE, ,lb, ,eb, ,db, ,rb
+  (remove — renamed from delete to dodge the eb/db/xb §0 key clash), ,cb,
+  ,ib, ,ls / ,ls FILE / ,ls FUNC. FILE:LINE breakpoints are persistent and
+  re-resolved on every load (first poll-point at/after the line); a
+  top-level form breakpoint breaks DURING the load; a reload that moves a
+  breakpoint warns. The "sleeping-aldo" interactor (make-interactor, not
+  registered) sits below *AUTOLISP*.
+- Part 2: ,settings (cascade view, keyless — the command short key is now
+  optional in the interactor framework) and ,i / ,inspect (interactive
+  inspector at the REPL, reusing the dumb UI's inspector-loop).
+- Part 3: PAGER accepts on / off / an external-pager namestring, and
+  PAGER / PAGER-HEIGHT cascade parallel to the interactor stack (lisp.conf
+  in the REPL, aldo.conf over lisp in the debugger).
+
+Follow-up filed: instrumenter-no-pollpoints-on-atoms.issue (a debugger
+should be able to break before a variable reference).
+
+The original specification follows.
+
 
 They are defined in a thin interactor pushed below the lisp interactor
 in the lisp REPL only; the same commands are accessible from the usual
