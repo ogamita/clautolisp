@@ -5544,13 +5544,55 @@ attached, print a note instead of silently doing nothing."
       clautolisp.sedit:*sedit-load-hook*       #'%clal-sedit-load-hook
       clautolisp.sedit:*sedit-debug-hook*      #'%clal-sedit-debug-hook)
 
+(defun %clal-sedit-source-file-of (name)
+  "The existing source file that defines the function named NAME (a string), or
+NIL: the file recorded (POSITION-OF) for the first compound form of the
+function's body. A REPL-defined function has none (its position, if any, names
+=<repl>=, which is not a real file)."
+  (let ((fn (ignore-errors (clautolisp.autolisp-runtime:lookup-function
+                            (clautolisp.autolisp-runtime:intern-autolisp-symbol name)))))
+    (when (typep fn 'clautolisp.autolisp-runtime:autolisp-usubr)
+      (dolist (form (clautolisp.autolisp-runtime:autolisp-usubr-body fn))
+        (when (consp form)
+          (let ((position (clautolisp.source:position-of form)))
+            (when position
+              (let ((file (clautolisp.source:source-position-file position)))
+                (when (and file (ignore-errors (probe-file file)))
+                  (return file))))))))))
+
+(defun %file-lines->string (file)
+  "FILE's contents as one string (newline-joined), read like the debugger's
+source display (CLAUTOLISP.SOURCE:LINES-OF), or NIL when it cannot be read."
+  (let ((lines (ignore-errors (clautolisp.source:lines-of file))))
+    (when (and lines (plusp (length lines)))
+      (with-output-to-string (out)
+        (loop for line across lines do (write-line line out))))))
+
+(defun %clal-sedit-ensure-recorded (object)
+  "When OBJECT is a symbol the sedit recording does not know, but which names a
+function loaded from a source file, record that file so the name recalls its
+REAL source (spec §2.2 \"from a loaded file\"; sedit-bugs-and-design.issue
+Bug 3). A no-op otherwise. Returns NIL."
+  (when (typep object 'clautolisp.autolisp-runtime:autolisp-symbol)
+    (let ((name (clautolisp.autolisp-runtime:autolisp-symbol-name object)))
+      (unless (clautolisp.sedit:recorded-definition
+               (clautolisp.sedit:sedit-recording) name)
+        (let ((file (%clal-sedit-source-file-of name)))
+          (when file
+            (ignore-errors
+             (clautolisp.sedit:record-source
+              (%file-lines->string file) (namestring file))))))))
+  nil)
+
 (defun builtin-clal-sedit (&optional object)
   "Edit OBJECT with the sedit structural editor (spec §2): no argument -> a
-stand-alone form starting at nil; a symbol -> recall its recorded definition; a
+stand-alone form starting at nil; a symbol -> recall its recorded definition
+(from the REPL recording, or — Bug 3 — from the source file that loaded it); a
 string -> a file or directory path; any other value -> edited as a sexp. Pushes
 the SEDIT interactor over the current stack (design-revision D9) and drives it
 until `q' pops it, then returns the edited object. Sets
 CLAUTOLISP.SEDIT:*CLAL-SEDIT-INITIAL-FORM* / *CLAL-SEDIT-LAST-RESULT*."
+  (%clal-sedit-ensure-recorded object)
   (let ((session (clautolisp.sedit:sedit-open (%clal-sedit-target object)
                                               :recording (clautolisp.sedit:sedit-recording))))
     (multiple-value-bind (result directive)

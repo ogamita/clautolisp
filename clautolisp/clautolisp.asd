@@ -223,6 +223,9 @@
                "clautolisp/autolisp-host"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-sedit"
+               ;; clal-sedit recalls a file-loaded function's source by its
+               ;; recorded position (POSITION-OF); sedit-bugs-and-design.issue.
+               "clautolisp/autolisp-source-map"
                "uiop")
   :serial t
   :components
