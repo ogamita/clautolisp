@@ -381,6 +381,15 @@ ARG (the raw argument string or NIL); a body that changes the view sets
   nil)
 (bind-command-alias *navi-commands* "?" "h")
 
+;; Switch to the SEDIT structural editor by swapping modes (nav-sedit-swap):
+;; pop NAV, push SEDIT on the selected form. Unlike the §1.3 editing words
+;; (which run SEDIT as a nested loop and return here on quit), this is a
+;; persistent mode change — SEDIT's quit swaps NAV back. Returns SEDIT's
+;; directive (none here) for NAVI's ON-RESULT.
+(define-navi-command (sedit)
+    "Switch to the sedit structural editor (swap NAV for SEDIT; sedit quit swaps back)."
+  (nav-swap-to-sedit ui session hit loc))
+
 ;; The editing words (§1.3): each opens the SEDIT interactor on the
 ;; selected form, performing itself as the first editing command (spec §7).
 ;; The value is a resume directive when one unwound the editor (`aldo c'

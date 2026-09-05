@@ -382,6 +382,13 @@ that runs from a sub-expression out to the file system:
 Browsing never changes what executes; ~print~, ~setq~ and friends always
 act in the current frame.
 
+To *edit* the selected form, ~sedit~ switches to the sedit structural
+editor: it swaps =NAV>= for a =SEDIT>= prompt on the same form (the
+navigator steps aside rather than nesting), and the editor's ~q~ swaps the
+navigator back — where the §1.3 editing words (~edit~, ~insert~, ~wrap~,
+…) instead run the editor as a nested step and return here on quit. Edits
+are installed into the running system when you save.
+
 In the navigator every debugger command is also available directly (the
 navigator's dictionary is stacked over the debugger's). Two escape words
 systematize reaching a shadowed command (~debug~ is the debugger
