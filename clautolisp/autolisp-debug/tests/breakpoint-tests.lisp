@@ -234,6 +234,33 @@ hit. Returns (values result hits-in-order)."
         (is (= 3 (clautolisp.source:source-position-start-line
                   (clautolisp.debug:hit-source-position (first hits)))))))))
 
+(test function-breakpoint-arms-when-the-function-is-defined
+  ;; `,break FUNC' on a function NOT defined yet records a pending FUNCTION
+  ;; breakpoint keyed by NAME + form-id (no file). Instrumenting FUNC arms it at
+  ;; that poll point — here entry (form-id 0) — drops the pending record, and it
+  ;; fires. Matching by name alone also covers a function later defined at the
+  ;; REPL (no source file).
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (multiple-value-bind (vb new-p)
+        (clautolisp.debug:add-function-breakpoint ti "FROB" 0)
+      (is (eq t new-p))
+      (is (eql 0 (clautolisp.debug:virtual-breakpoint-form-id vb)))
+      (is (= 1 (length (clautolisp.debug:list-virtual-breakpoints))))
+      ;; re-recording the same target is idempotent
+      (is (null (nth-value 1 (clautolisp.debug:add-function-breakpoint ti "FROB" 0)))))
+    (is (null (clautolisp.debug:list-breakpoints ti)))
+    (load-tracked context +frob-source+ :source-name "frob.lsp")
+    (let ((frob-meta (clautolisp.debug:instrument-usubr (usubr-named context "FROB"))))
+      (is (null (clautolisp.debug:list-virtual-breakpoints)))            ; armed + dropped
+      (let ((bps (clautolisp.debug:list-breakpoints ti)))
+        (is (= 1 (length bps)))
+        (is (= (fid-of frob-meta) (clautolisp.debug:breakpoint-fid (first bps))))
+        (is (eql 0 (clautolisp.debug:breakpoint-form-id (first bps))))))  ; entry
+    ;; a pending record for a DIFFERENT, still-undefined function stays pending
+    (clautolisp.debug:add-function-breakpoint ti "NEVER" 0)
+    (is (= 1 (length (clautolisp.debug:list-virtual-breakpoints))))))
+
 (test virtual-breakpoint-survives-toplevel-forms-moving
   ;; The issue's core requirement: the record is RELATIVE to its
   ;; top-level form. Record against the original +frob-source+ layout

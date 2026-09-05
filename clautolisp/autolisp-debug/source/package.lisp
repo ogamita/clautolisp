@@ -130,8 +130,10 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:virtual-breakpoint-line
    #:virtual-breakpoint-col
    #:virtual-breakpoint-anchor-line
+   #:virtual-breakpoint-form-id
    #:virtual-breakpoint-ti
    #:add-virtual-breakpoint
+   #:add-function-breakpoint
    #:list-virtual-breakpoints
    #:find-virtual-breakpoint
    #:remove-virtual-breakpoint

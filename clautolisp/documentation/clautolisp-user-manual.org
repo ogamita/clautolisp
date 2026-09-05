@@ -158,6 +158,12 @@ A =FUNC.N= breakpoint, by contrast, is relative to the function and
 survives edits above it. ~,ls~ and ~,break FILE:LINE~ set the /current
 file/ that bare ~,break LINE~ and ~,ls~ (no argument) act on.
 
+~,break FUNC~ (or =FUNC.N=) on a function that is /not defined yet/ does
+not fail: it warns and records a *pending* breakpoint, armed as soon as
+the function is defined — at the REPL, or by loading a source or compiled
+file. ~,lb~ lists such a breakpoint as =vbN … (not defined yet)= until it
+arms (then it appears as an ordinary =ppN=); remove it with ~,rb vbN~.
+
 These commands need a debug session, which the interactive REPL always
 has; a non-interactive batch run (~-x~ / ~-l~ without a REPL) reports
 that debugging is not active.

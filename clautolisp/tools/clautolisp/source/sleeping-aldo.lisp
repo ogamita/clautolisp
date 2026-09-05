@@ -149,6 +149,27 @@ NIL when it is not a poll-point number."
                (every #'digit-char-p (subseq s 2)))
       (parse-integer s :start 2))))
 
+(defun %sa-parse-vb (token)
+  "Parse a pending-function-breakpoint selector \"vbN\" to the integer N, or NIL."
+  (let ((s (string-trim " " token)))
+    (when (and (>= (length s) 3) (string-equal (subseq s 0 2) "vb")
+               (every #'digit-char-p (subseq s 2)))
+      (parse-integer s :start 2))))
+
+(defun %sa-function-vbs ()
+  "The pending FUNCTION breakpoints — ,break FUNC / FUNC.N on a function not
+defined yet — oldest first (the file-anchored navigator vbs are excluded)."
+  (remove-if-not #'clautolisp.debug:virtual-breakpoint-form-id
+                 (clautolisp.debug:list-virtual-breakpoints)))
+
+(defun %sa-vb-where (vb)
+  "A human location for a pending function breakpoint VB: FUNC (entry) or FUNC.N."
+  (let ((name (string-upcase (clautolisp.debug:virtual-breakpoint-function-name vb)))
+        (form-id (clautolisp.debug:virtual-breakpoint-form-id vb)))
+    (if (zerop form-id)
+        (format nil "~A (entry)" name)
+        (format nil "~A.~A" name form-id))))
+
 (defun %sa-bp-where (bp)
   "A human location for BP: the function name plus `(entry)' for the entry
 poll-point or `.N' for subform N."
@@ -201,10 +222,16 @@ function and the index is 0 (its entry)."
 
 (defun %sa-break-function (session name index)
   "Set a breakpoint on function NAME's poll-point INDEX (0 = entry),
-instrumenting it on demand. Reports the resulting ppN."
+instrumenting it on demand. When NAME is not defined yet, record a PENDING
+function breakpoint (armed when NAME is later defined at the REPL or loaded from
+source/compiled code) and warn. Reports the resulting ppN or vbN."
   (let ((metadata (clautolisp.debug:ensure-metadata-for-name name)))
     (if (null metadata)
-        (format t "~&aldo: no user-defined function named ~A~%" (string-upcase name))
+        ;; not defined yet — keep the breakpoint pending, armed on definition.
+        (let ((vb (clautolisp.debug:add-function-breakpoint (%sa-ti session) name index)))
+          (format t "~&aldo: ~A is not defined yet — pending breakpoint vb~A ~
+recorded, armed when it is defined~%"
+                  (string-upcase name) (clautolisp.debug:virtual-breakpoint-id vb)))
         (let ((count (length (clautolisp.debug:function-debug-metadata-form-id->position
                               metadata))))
           (if (>= index count)
@@ -258,11 +285,12 @@ reachable when shadowed via the ,aldo / ,debug prefix:~%")
     (when session
       (let* ((breakpoints (clautolisp.debug.ui:cmd-list-breakpoints session))
              (line-bps (clautolisp.debug:list-line-breakpoints))
+             (fn-vbs (%sa-function-vbs))
              (bp->lbp (let ((table (make-hash-table :test 'eq)))
                         (dolist (lbp line-bps table)
                           (when (clautolisp.debug:line-breakpoint-bp lbp)
                             (setf (gethash (clautolisp.debug:line-breakpoint-bp lbp) table) lbp))))))
-        (if (and (null breakpoints) (null line-bps))
+        (if (and (null breakpoints) (null line-bps) (null fn-vbs))
             (format t "~&no breakpoints.~%")
             (progn
               (dolist (bp (sort (copy-list breakpoints) #'< :key #'%sa-bp-pp))
@@ -287,7 +315,12 @@ reachable when shadowed via the ,aldo / ,debug prefix:~%")
                   (format t "~&lb~A  ~A:~A  pending~%"
                           (clautolisp.debug:line-breakpoint-id lbp)
                           (file-namestring (clautolisp.debug:line-breakpoint-file lbp))
-                          (clautolisp.debug:line-breakpoint-line lbp))))))))))
+                          (clautolisp.debug:line-breakpoint-line lbp))))
+              ;; FUNCTION breakpoints on functions not defined yet
+              (dolist (vb fn-vbs)
+                (format t "~&vb~A  ~A  (not defined yet)~%"
+                        (clautolisp.debug:virtual-breakpoint-id vb)
+                        (%sa-vb-where vb)))))))))
 
 (defun %sa-set-enabled (token enabled)
   "Enable/disable the breakpoints selected by TOKEN (ppN or ALL)."
@@ -310,26 +343,36 @@ reachable when shadowed via the ,aldo / ,debug prefix:~%")
   (%sa-set-enabled (or argument "") nil))
 
 (define-command (*sleeping-aldo* rb remove breakpoint) (&whole argument)
-    "Remove a breakpoint: ,rb ppN | ,rb lbN | ,rb ALL."
+    "Remove a breakpoint: ,rb ppN | ,rb lbN | ,rb vbN | ,rb ALL."
   (let ((session (%sleeping-aldo-require-session))
         (tok (string-trim " " (or argument ""))))
     (when session
       (cond
         ((string-equal tok "ALL")
          ;; removing a FILE:LINE breakpoint also disarms its real breakpoint;
-         ;; drop those first, then any remaining plain breakpoints.
+         ;; drop those and the pending function breakpoints first, then any
+         ;; remaining plain breakpoints.
          (let* ((lbps (clautolisp.debug:list-line-breakpoints))
-                (n-lb (length lbps)))
+                (fn-vbs (%sa-function-vbs))
+                (n-lb (length lbps))
+                (n-vb (length fn-vbs)))
            (dolist (lbp lbps) (clautolisp.debug:remove-line-breakpoint lbp))
+           (dolist (vb fn-vbs) (clautolisp.debug:remove-virtual-breakpoint vb))
            (let ((plain (clautolisp.debug.ui:cmd-list-breakpoints session)))
              (dolist (bp plain) (clautolisp.debug.ui:cmd-remove-breakpoint session bp))
-             (format t "~&removed ~A breakpoint~:P~%" (+ n-lb (length plain))))))
+             (format t "~&removed ~A breakpoint~:P~%" (+ n-lb n-vb (length plain))))))
         ((%sa-parse-lb tok)
          (let ((lbp (clautolisp.debug:find-line-breakpoint (%sa-parse-lb tok))))
            (if (null lbp)
                (format t "~&aldo: no breakpoint ~A~%" tok)
                (progn (clautolisp.debug:remove-line-breakpoint lbp)
                       (format t "~&removed lb~A~%" (%sa-parse-lb tok))))))
+        ((%sa-parse-vb tok)
+         (let ((vb (clautolisp.debug:find-virtual-breakpoint (%sa-parse-vb tok))))
+           (if (null vb)
+               (format t "~&aldo: no breakpoint ~A~%" tok)
+               (progn (clautolisp.debug:remove-virtual-breakpoint vb)
+                      (format t "~&removed vb~A~%" (%sa-parse-vb tok))))))
         (t
          (let ((bps (%sa-select-breakpoints session tok)))
            (if (eq bps :none)
