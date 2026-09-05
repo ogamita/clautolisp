@@ -2135,6 +2135,84 @@ a custom user command of the named interactor —
 and ~(clal-define-debugger-command NAMES FN [DOC])~ is its deprecated
 ALDO-only equivalent. See /Debugger/ above.
 
+*** ~CLAL-MAKE-FRAME~ / ~CLAL-FRAME-*~ -- debugger-UI frames
+The builtins in this and the following four subsections are the
+AutoLISP surface of the debugger's terminal UI — aldo's frames,
+windows, faces and key maps. They are *no-ops that return ~nil~*
+unless a debugger UI is loaded, so a program that calls them outside
+the debugger degrades quietly. Frames and windows cross into AutoLISP
+as opaque, ~eq~-stable handles (printed ~#<WINDOW "name" …>~,
+~#<TTY-FRAME …>~ / ~#<VDT-FRAME …>~); faces are named by strings.
+
+~(clal-make-frame [OPTIONS])~ creates a frame and adds it to the frame
+list *without* selecting it, returning the new frame handle; OPTIONS
+is an alist of ~name~, ~width~, ~height~, ~(minibuffer . T)~,
+~(device . tty|vdt)~ and, for a vdt frame, ~(screen . TUI-SCREEN)~.
+~(clal-frame-list)~ returns every frame handle. ~(clal-selected-frame)~
+returns the currently selected frame (or ~nil~), and
+~(clal-select-frame FRAME)~ makes FRAME the selected one — entering or
+leaving a vdt frame's 2D mode as needed — and returns FRAME.
+~(clal-delete-frame FRAME)~ removes and deletes FRAME, selecting
+another if it was current, and returns ~nil~. ~(clal-frame-name FRAME)~
+returns FRAME's name as a string.
+
+*** ~CLAL-MAKE-WINDOW~ / ~CLAL-*-WINDOW~ -- debugger-UI windows
+~(clal-make-window [OPTIONS])~ creates a window in the *selected*
+frame, appending it to that frame's window list (the first window
+becomes the frame's selected window), and returns the window handle;
+OPTIONS is an alist of ~(name . STRING)~ and ~(role . :minibuffer)~.
+~(clal-window-list [FRAME])~ returns the windows of FRAME, or of every
+frame when FRAME is omitted, excluding minibuffer windows.
+~(clal-selected-window)~ returns the active window of the selected
+frame (or ~nil~); ~(clal-select-window WINDOW)~ makes WINDOW's frame
+current and WINDOW its selected window, returning WINDOW.
+~(clal-delete-window WINDOW)~ removes WINDOW from its frame and returns
+~nil~. ~(clal-window-name WINDOW)~ returns WINDOW's name as a string.
+~(clal-call-with-temp-window OPTIONS FUNCTION)~ creates a temporary
+window (OPTIONS as for ~clal-make-window~), applies FUNCTION to its
+handle, and deletes the window afterwards even on a non-local exit,
+returning FUNCTION's value.
+
+*** ~CLAL-DEFINE-FACE~ / ~CLAL-FACE-PARAMETERS~ / ~CLAL-LIST-FACES~ -- debugger-UI faces
+~(clal-define-face NAME [FG BG BOLD UNDERLINE INVERT])~ defines or
+redefines the face NAME (a string): FG and BG are colour-name strings
+(~"red"~, ~"white"~, …) or ~nil~, and BOLD, UNDERLINE and INVERT are
+booleans; it returns NAME. ~(clal-face-parameters NAME)~ returns the
+face's display parameters as an assoc list — pairs such as
+~("fg" . "RED")~ and ~("bold" . T)~ — or ~nil~ when NAME is not a face.
+~(clal-list-faces)~ returns the names of all defined faces as a list of
+strings. These are the AutoLISP counterpart of the ~face~ decorations
+configured in ~lisp.conf~ / ~aldo.conf~, resolved per UI to ANSI
+escapes, ncurses attributes or Emacs faces.
+
+*** ~CLAL-CLEAR-WINDOW~ / ~CLAL-MOVE-CURSOR-TO~ / ~CLAL-WINDOW-PUT~ -- drawing into a window
+~(clal-clear-window [WINDOW])~ blanks WINDOW's rectangle (default: the
+selected window) and resets its cursor to ~(0 0)~, returning the window
+handle. ~(clal-move-cursor-to ROW COL [WINDOW])~ moves WINDOW's cursor
+to the window-relative ~(ROW COL)~, clamped to its rectangle, and
+returns the window handle. ~(clal-window-put ROW COL STRING [FACE WINDOW])~
+writes STRING at the window-relative ~(ROW COL)~, clipped to the
+rectangle, in the face named FACE (default the ~normal~ face), and
+returns ~nil~. On a tty frame (a plain terminal with no addressable
+screen) ~clal-clear-window~ and ~clal-window-put~ are no-ops.
+
+*** ~CLAL-BINDING~ / ~CLAL-DEFINE-UI-COMMAND~ -- debugger-UI key bindings and commands
+~(clal-binding KEY COMMAND)~ binds KEY — an Emacs-style key-sequence
+string such as ~"C-x C-f"~ — to COMMAND in the debugger UI's *user*
+keymap, returning KEY; COMMAND is a command name/line (routed through
+the command table) or an AutoLISP function designator or form evaluated
+in the stopped frame. User bindings shadow the built-ins, and prefix
+chains work. ~(clal-remove-binding KEY)~ removes the user binding at KEY
+(reverting to any built-in) and returns ~T~ when one was removed.
+~(clal-binding-lookup KEY)~ returns the command bound at KEY, or ~nil~.
+~(clal-map-bindings FUNCTION)~ calls FUNCTION with ~(KEY-STRING COMMAND)~
+for every user binding, returning ~nil~. ~(clal-define-ui-command NAME FUNCTION)~
+registers a UI command NAME (a string) implemented by the AutoLISP
+FUNCTION — applied to the command's argument string — usable from
+~M-x~, the ~,~ command line and as a ~clal-binding~ target, returning
+NAME. These complement ~clal-define-command~ (above), which adds
+commands to a named interactor.
+
 *** ~CLAL-COMMON-LISP~ / ~CLAL-BACK~ -- drop into a live Common Lisp REPL
 The developer escape hatch out of AutoLISP and into the Common Lisp
 image that is running it. It is *deliberately not available by
