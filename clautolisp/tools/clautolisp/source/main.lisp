@@ -928,11 +928,17 @@ not supplied)."
                ;; session as the activation's state — a `,command' line dispatches
                ;; against *AUTOLISP*'s dictionaries, AutoLISP source goes to the
                ;; evaluator.
+               ;; The stack is innermost-first: *AUTOLISP* on top, with the
+               ;; sleeping-aldo interactor pushed BELOW it (aldo-command-from-
+               ;; repl.issue) so a subset of aldo's breakpoint commands is
+               ;; reachable from the REPL — shadowed by any same-name lisp
+               ;; command, reached explicitly via the ALDO/DEBUG prefix.
                (*interactor-stack*
                  (list (make-activation *autolisp*
                                         (make-repl-state :context context
                                                          :session session
-                                                         :break-on-error break-on-error)))))
+                                                         :break-on-error break-on-error))
+                       (make-sleeping-aldo-activation session))))
            (when (null (interactor-loop))
              ;; EOF (Ctrl-D): a fresh line before leaving. ,quit / (quit) return
              ;; markers through INTERACTOR-RETURN and print nothing extra.

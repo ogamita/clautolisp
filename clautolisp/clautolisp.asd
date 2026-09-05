@@ -351,6 +351,10 @@ identity / TEMPPREFIX stamping, option value parsers)."
   ((:file "tools/clautolisp/source/package")
    (:file "tools/clautolisp/source/version")
    (:file "tools/clautolisp/source/dribble")
+   ;; the sleeping-aldo interactor: a subset of aldo's breakpoint commands
+   ;; usable from the Lisp REPL when the full debugger is not active
+   ;; (aldo-command-from-repl.issue); repl-loop pushes it below *AUTOLISP*.
+   (:file "tools/clautolisp/source/sleeping-aldo")
    (:file "tools/clautolisp/source/main")))
 
 (asdf:defsystem "clautolisp/clautolisp-tool/tests"
