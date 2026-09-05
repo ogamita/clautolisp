@@ -43,12 +43,26 @@
 
 (defun request-step (ti kind)
   "Arm a step of KIND (:into | :over | :out | :finish) from the current
-stopping point. :finish is an alias for :out."
-  (let ((kind (if (eq kind :finish) :out kind)))
+stopping point. :finish is an alias for :out.
+
+A :over (`next') armed at a function-ENTRY poll point (form-id 0) records
+form-depth ONE DEEPER than the entry marker. The entry poll point wraps
+the whole body (INSTRUMENT-USUBR), so the body forms poll one level
+deeper than it; without the bump every body form is `too deep' to match
+the `<= form-depth' test and step-over degenerates into step-out, landing
+on the caller instead of the first body form
+(step-over-from-entry-steps-out)."
+  (let* ((kind (if (eq kind :finish) :out kind))
+         (pp (thread-debug-info-current-pp ti))
+         (at-entry (and (consp pp) (eql 0 (cdr pp))))
+         (poll-depth (thread-debug-info-poll-depth ti)))
     (setf (thread-debug-info-step-request ti)
-          (make-step-request :kind kind
-                             :form-depth (thread-debug-info-poll-depth ti)
-                             :call-depth (call-depth-of ti)))))
+          (make-step-request
+           :kind kind
+           :form-depth (if (and (eq kind :over) at-entry)
+                           (1+ poll-depth)
+                           poll-depth)
+           :call-depth (call-depth-of ti)))))
 
 (defun clear-step-request (ti)
   (setf (thread-debug-info-step-request ti) nil))
