@@ -835,18 +835,40 @@ not supplied)."
     (format t "~&~:[~*~;~D day~:*~P, ~]~2,'0D:~2,'0D:~2,'0D~%"
             (plusp day) day hou min sec)))
 
+(defun %repl-help-line (cmd)
+  "A `,help' listing line for CMD. A keyless command (no short key — e.g.
+,settings) shows only its full word, not a bare `,'."
+  (let ((key (command-key cmd))
+        (phrase (command-phrase cmd))
+        (doc (command-docstring cmd)))
+    (if (plusp (length key))
+        (format nil "  ,~A~@[ / ,~A~]~30T~A"
+                key (and (plusp (length phrase)) phrase) doc)
+        (format nil "  ,~A~30T~A" phrase doc))))
+
+(defun %repl-interactor-help (interactor)
+  "Print the command lines of INTERACTOR (its user dictionary shadows its system
+one, both listed)."
+  (dolist (dictionary (list (interactor-user-commands interactor)
+                            (interactor-commands interactor)))
+    (dolist (cmd (dictionary-commands dictionary))
+      (format t "~A~%" (%repl-help-line cmd)))))
+
 (define-command (*autolisp* h help) ()
     "Print the REPL comma-commands."
   (format t "~&REPL commands (a line starting with `,'; anything else evaluates):~%")
-  (dolist (dictionary (list (interactor-user-commands *autolisp*)
-                            (interactor-commands *autolisp*)))
-    (dolist (cmd (dictionary-commands dictionary))
-      (format t "  ,~A~@[ / ,~A~]~28T~A~%"
-              (command-key cmd)
-              (let ((phrase (command-phrase cmd)))
-                (and (plusp (length phrase)) phrase))
-              (command-docstring cmd))))
-  (format t "  Ctrl-D~28Texit the REPL~%"))
+  (%repl-interactor-help *autolisp*)
+  ;; Interactors stacked below the REPL — the sleeping-aldo debugger commands
+  ;; (aldo-command-from-repl.issue). They are usable directly when no REPL
+  ;; command shadows them, and are always reachable by the interactor's
+  ;; name/alias prefix (e.g. ,aldo break foo / ,debug lb).
+  (dolist (activation (rest *interactor-stack*))
+    (let ((interactor (clautolisp.interactor:activation-interactor activation)))
+      (format t "~&  ~A debugging commands (also: ,~(~A~) CMD …):~%"
+              (clautolisp.interactor:interactor-name interactor)
+              (clautolisp.interactor:interactor-name interactor))
+      (%repl-interactor-help interactor)))
+  (format t "  Ctrl-D~30Texit the REPL~%"))
 
 (define-command (*autolisp* q quit) ()
     "Exit the Lisp REPL (sometimes (quit) is not available)."

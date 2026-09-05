@@ -216,8 +216,22 @@ instrumenting it on demand. Reports the resulting ppN."
                          index)))
                 (format t "~&breakpoint pp~A on ~A~%" (%sa-bp-pp bp) (%sa-bp-where bp))))))))
 
+(define-command (*sleeping-aldo* h help) ()
+    "List the aldo debugging commands usable from the REPL."
+  (format t "~&aldo debugging commands — usable at the REPL (a leading comma); ~
+reachable when shadowed via the ,aldo / ,debug prefix:~%")
+  (dolist (dictionary (list (interactor-user-commands *sleeping-aldo*)
+                            (interactor-commands *sleeping-aldo*)))
+    (dolist (cmd (dictionary-commands dictionary))
+      (let ((key (command-key cmd))
+            (phrase (command-phrase cmd)))
+        (if (plusp (length key))
+            (format t "  ,~A~@[ / ,~A~]~30T~A~%"
+                    key (and (plusp (length phrase)) phrase) (command-docstring cmd))
+            (format t "  ,~A~30T~A~%" phrase (command-docstring cmd)))))))
+
 (define-command (*sleeping-aldo* b break) (&whole argument)
-    "Set a breakpoint: ,break FUNC (entry) or ,break FUNC.N (subform N)."
+    "Set a breakpoint: ,break FUNC | FUNC.N | FILE:LINE[:COL] | LINE."
   (let ((session (%sleeping-aldo-require-session))
         (name (string-trim " " (or argument ""))))
     (when session

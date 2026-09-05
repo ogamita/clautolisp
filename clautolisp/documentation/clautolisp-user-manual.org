@@ -97,16 +97,70 @@ not an expression (at a top-level read the comma is unambiguous —
 AutoLISP has no backquote). Each command has a short key and a word
 form:
 
-| ~,d~ / ~,date~   | print the current date and time (ISO 8601)     |
-| ~,u~ / ~,uptime~ | print how long this clautolisp process has run |
-| ~,h~ / ~,help~   | list the REPL commands                         |
-| ~,q~ / ~,quit~   | exit the REPL (useful when ~(quit)~ is not     |
-|                  | available in the active dialect)               |
+| ~,d~ / ~,date~            | print the current date and time (ISO 8601)     |
+| ~,u~ / ~,uptime~          | print how long this clautolisp process has run |
+| ~,h~ / ~,help~            | list the REPL commands                         |
+| ~,q~ / ~,quit~            | exit the REPL (useful when ~(quit)~ is not     |
+|                           | available in the active dialect)               |
+| ~,s~ / ~,set~ [NAME VALUE]| show the LISP settings, or set one             |
+| ~,settings~               | show the settings across their cascading levels |
+| ~,w~ / ~,write-settings~  | write the LISP settings to =lisp.conf=         |
+| ~,i~ / ~,inspect~ FORM    | inspect the result of evaluating FORM          |
 
 The commands live in a command dictionary of the REPL's /interactor/ —
 the same mechanism behind the debugger's command dictionaries — so the
 vocabulary can grow (and user commands can shadow it) uniformly across
 all the interaction loops.
+
+A command's short key is optional: ~,settings~ has none, because
+~settings~ would take the key ~s~ that ~,set~ already holds, so the
+rarer of two colliding commands is typed in full. Where bare ~,set~
+lists the LISP interactor's resolved values, ~,settings~ shows each
+setting across its cascade levels (built-in default, then =lisp.conf=,
+then =aldo.conf=), marking the one in effect at the REPL — see /Settings
+and configuration/ below. ~,inspect~ opens the interactive object
+inspector (the same one the debugger's ~i~ opens) on the value of FORM.
+
+**** Debugging commands from the REPL
+
+The debugger (/aldo/) is always available beside the REPL, so a subset
+of its commands can be used from the REPL prompt — chiefly to manage
+breakpoints /between/ runs, before or after the code is executed. They
+are ordinary REPL commands (a leading comma); a LISP command of the same
+name shadows them, and the shadowed one is still reachable by the
+~,aldo~ / ~,debug~ prefix (e.g. ~,debug break foo~).
+
+| ~,b~ / ~,break~ FUNC          | breakpoint on the function's entry              |
+| ~,b~ / ~,break~ FUNC.N        | breakpoint on the function's Nth poll point     |
+|                               | (=.0= is the entry; the compound forms follow   |
+|                               | in source order)                                |
+| ~,b~ / ~,break~ FILE:LINE[:COL] | breakpoint at the first poll point at or after |
+|                               | that source position (see below)                |
+| ~,b~ / ~,break~ LINE          | =FILE:LINE= against the current file            |
+| ~,lb~ / ~,list breakpoints~   | list the breakpoints (by poll-point number      |
+|                               | ~ppN~, plus any pending ~lbN~)                  |
+| ~,eb~ / ~,enable breakpoint~ ppN\vert{}ALL  | enable a breakpoint (or all)      |
+| ~,db~ / ~,disable breakpoint~ ppN\vert{}ALL | disable a breakpoint (or all)     |
+| ~,rb~ / ~,remove breakpoint~ ppN\vert{}lbN\vert{}ALL | remove a breakpoint      |
+| ~,cb~ / ~,condition breakpoint~ ppN FORM | fire ppN only when FORM is non-nil   |
+|                               | (bare ~,cb ppN~ clears the condition)           |
+| ~,ib~ / ~,ignore breakpoint~ ppN COUNT | skip the next COUNT hits of ppN        |
+| ~,ls~ / ~,list source~ [FILE\vert{}FUNC] | list source with ~^~ breakpoint      |
+|                               | markers, through the pager                      |
+
+A =FILE:LINE= breakpoint is /persistent/: it is recorded against the raw
+file position and re-resolved on every load, because an edit may move
+the target. When the file is loaded it is armed at the first poll point
+at or after that line — so a breakpoint on a top-level (non-~defun~)
+form breaks /during/ the load; a reload that moves a breakpoint prints a
+=;; breakpoints changed …= warning, and ~,ls~ shows where each landed.
+A =FUNC.N= breakpoint, by contrast, is relative to the function and
+survives edits above it. ~,ls~ and ~,break FILE:LINE~ set the /current
+file/ that bare ~,break LINE~ and ~,ls~ (no argument) act on.
+
+These commands need a debug session, which the interactive REPL always
+has; a non-interactive batch run (~-x~ / ~-l~ without a REPL) reports
+that debugging is not active.
 
 *** Recording the session: the dribble
 
@@ -327,12 +381,18 @@ interactor's alias — ~aldo~ and ~debug~ are interchangeable):
 
 Per-session options are read and set from any interface:
 
-- =,settings= — list every option and its value; =,settings NAME= —
-  print one.
-- =set NAME VALUE= — set one (names and values are case-insensitive).
-  Common options: ~navigator~ (=sexp= | =line=), ~theme~ (=unicode= |
+- =set= — list the interactor's settings and their values; =set NAME
+  VALUE= — set one (names and values are case-insensitive). At the REPL
+  these are the comma commands ~,set~ / ~,set NAME VALUE~; inside the
+  debugger they are ~set~ (no comma), acting on =aldo.conf= rather than
+  =lisp.conf=.
+- =,settings= (REPL) — show every setting across its /cascading levels/
+  (built-in default, then =lisp.conf=, then =aldo.conf=), marking the
+  one in effect here; =,write-settings= persists the interactor's
+  settings.
+- Common options: ~navigator~ (=sexp= | =line=), ~theme~ (=unicode= |
   =ascii= | =white-on-black= | =black-on-white= | =green-on-black= |
-  =attributes=), ~pager~ (=on= | =off=), ~pager-height~,
+  =attributes=), ~pager~ (=on= | =off= | a pager path), ~pager-height~,
   ~source-window-height~, ~value-line-width~, ~break-on-caught~.
 
 The complete set of aldo settings, with their types:
@@ -347,8 +407,8 @@ The complete set of aldo settings, with their types:
 | ~break-on-caught~                | boolean                                                           |
 | ~source-window-height~           | integer                                                           |
 | ~value-line-width~               | integer                                                           |
-| ~pager~                          | =on= \vert{} =off=                                                |
-| ~pager-height~                   | integer                                                           |
+| ~pager~                          | =on= \vert{} =off= \vert{} a pager path (an external filter such as =less= / =more=, run on the text) |
+| ~pager-height~                   | integer — the built-in pager's page height                        |
 | ~theme~                          | =unicode= \vert{} =ascii= \vert{} =white-on-black= \vert{} =black-on-white= \vert{} =green-on-black= \vert{} =attributes= |
 | ~default-user-interface~         | =tui= \vert{} =ncurses= \vert{} =aldb=                            |
 | ~default-aldb-listening-address~ | string (=127.0.0.1=) — address the aldb (Emacs) transport listens on when no ~--aldb-listen~ / ~--aldb-stdio~ is given |
@@ -486,12 +546,20 @@ each setting, so this is visible on the spot.
 ** Long output and the pager
 
 Commands whose output exceeds the screen — =help=, a long
-=list source=, a big value — are shown a page at a time in the TUI when
-~pager~ is =on= (the default on a size-limited terminal; you typically
-turn it =off= under an Emacs ~shell~, which scrolls). The pager accepts
-the familiar =less= keys (=SPACE=/=f= forward, =b= back, =q= quit). The
-ncurses interface uses a scrollable window instead, and aldb relies on
-Emacs's own buffer scrolling.
+=list source= (=,ls= at the REPL), a big value — are shown a page at a
+time in the TUI when ~pager~ is =on= (the default on a size-limited
+terminal; you typically turn it =off= under an Emacs ~shell~, which
+scrolls). The built-in pager accepts the familiar =less= keys (=SPACE=/=f=
+forward, =b= back, =q= quit). The ncurses interface uses a scrollable
+window instead, and aldb relies on Emacs's own buffer scrolling.
+
+Setting ~pager~ to a *pager path* instead of =on=/=off= (e.g. =set pager
+/usr/bin/less=, or a bare =less= found on ~PATH~) sends the text through
+that external filter rather than the built-in pager; ~pager-height~ sizes
+the built-in one. The pager cascades parallel to the interactor stack: the
+REPL's =,ls= pages through the /LISP/ pager (=lisp.conf= over the
+defaults), while inside the debugger output pages through the /aldo/ pager
+(=aldo.conf= over =lisp.conf= over the defaults), so the two can differ.
 
 * sedit and the aldo form navigator
 
