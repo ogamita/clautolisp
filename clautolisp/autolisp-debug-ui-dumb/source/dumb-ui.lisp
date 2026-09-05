@@ -638,6 +638,15 @@ LABEL. Used by `bpcmd' (then stops) and `trace' (then continues)."
           (error (e) (out ui "~A <error: ~A>~%" label e)))
         (out ui "~A~%" label))))
 
+(defun make-watch-predicate (rform)
+  "A watch predicate: a zero-arg thunk evaluating RFORM with debugging off and
+returning its value; the watch fires on the rising edge of that value (command
+reference §2). Shares MAKE-CONDITION-PREDICATE's eval semantics. Reused by the
+tool's sleeping-aldo `,watch' command."
+  (lambda ()
+    (let ((*debugging* nil))
+      (autolisp-eval rform (current-evaluation-context)))))
+
 (defun bpcmd-cmd (ui session arg)
   "`bpcmd ppN [FORM]' — attach FORM to breakpoint ppN: when the breakpoint hits,
 FORM is evaluated and shown, then the debugger stops as usual (command reference

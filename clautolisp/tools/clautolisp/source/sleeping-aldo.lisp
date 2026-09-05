@@ -302,12 +302,15 @@ reachable when shadowed via the ,aldo / ,debug prefix:~%")
                                                 (clautolisp.debug:line-breakpoint-file lbp))
                                                (clautolisp.debug:line-breakpoint-line lbp))
                                        "")))
-                  (format t "~&pp~A  ~A~@[  line ~A~]  ~A~:[~;  [cond]~]~A~%"
+                  (format t "~&pp~A  ~A~@[  line ~A~]  ~A~:[~;  [cond]~]~:[~;  [trace]~]~:[~;  [cmd]~]~A~%"
                           (%sa-bp-pp bp)
                           (%sa-bp-where bp)
                           (%sa-bp-line bp)
                           (if (clautolisp.debug:breakpoint-enabled-p bp) "enabled" "disabled")
                           (clautolisp.debug:breakpoint-condition bp)
+                          (%sa-trace-bp-p bp)
+                          (and (clautolisp.debug:breakpoint-action bp)
+                               (not (%sa-trace-bp-p bp)))
                           annotation)))
               ;; FILE:LINE breakpoints not yet armed (their file is not loaded)
               (dolist (lbp line-bps)
@@ -549,3 +552,148 @@ current file."
                          (%sa-function-line-range
                           file (clautolisp.source:source-position-start-line position))
                        (%sa-ls-file session file from to)))))))))))
+
+;;; --- breakpoint actions, tracing, watchpoints (reuse the aldo engine) -----
+
+(defun %sa-read-form (session text)
+  "Read one AutoLISP form from TEXT in SESSION's context/dialect, or NIL."
+  (ignore-errors
+   (first (read-current-source text :source-name "<aldo>"
+                               :context (clautolisp.debug.ui:session-context session)))))
+
+(defun %sa-action-ui ()
+  "A transient dumb-ui over the REPL streams, for a breakpoint/trace action to
+print through when it fires later."
+  (clautolisp.ui.dumb:make-dumb-ui))
+
+(defun %sa-trace-bp-p (bp)
+  "True when BP is an entry tracepoint (form-id 0, an action, auto-continuing)."
+  (and (= (clautolisp.debug:breakpoint-form-id bp) 0)
+       (clautolisp.debug:breakpoint-action bp)
+       (clautolisp.debug:breakpoint-trace-p bp)))
+
+(defun %sa-find-trace-bp (session fid)
+  "The entry tracepoint on function FID, or NIL."
+  (find-if (lambda (bp) (and (= (clautolisp.debug:breakpoint-fid bp) fid)
+                             (%sa-trace-bp-p bp)))
+           (clautolisp.debug.ui:cmd-list-breakpoints session)))
+
+(defun %sa-split-verb-rest (arg)
+  "Split ARG into (values FIRST-TOKEN REST-STRING): the first whitespace-
+separated word and the trimmed remainder (or NIL)."
+  (let* ((arg (string-trim " " (or arg "")))
+         (space (position #\Space arg)))
+    (values (if space (subseq arg 0 space) arg)
+            (and space (let ((rest (string-trim " " (subseq arg (1+ space)))))
+                         (and (plusp (length rest)) rest))))))
+
+(define-command (*sleeping-aldo* bpcmd) (&whole argument)
+    "Attach a command to a breakpoint: ,bpcmd ppN FORM  (,bpcmd ppN alone clears)."
+  (let ((session (%sleeping-aldo-require-session)))
+    (when session
+      (multiple-value-bind (pp-token form-text) (%sa-split-verb-rest argument)
+        (let ((bps (%sa-select-breakpoints session pp-token)))
+          (cond
+            ((or (eq bps :none) (/= 1 (length bps)))
+             (format t "~&aldo: ,bpcmd needs one breakpoint (ppN)~%"))
+            ((null form-text)
+             (clautolisp.debug:set-breakpoint-action (first bps) nil)
+             (format t "~&pp~A command cleared~%" (%sa-bp-pp (first bps))))
+            (t
+             (let ((rform (%sa-read-form session form-text)))
+               (if (null rform)
+                   (format t "~&aldo: cannot read form ~S~%" form-text)
+                   (progn
+                     (clautolisp.debug:set-breakpoint-action
+                      (first bps)
+                      (clautolisp.ui.dumb:make-bp-action
+                       (%sa-action-ui) rform (format nil "pp~A:" (%sa-bp-pp (first bps))))
+                      :trace nil)
+                     (format t "~&pp~A command set~%" (%sa-bp-pp (first bps)))))))))))))
+
+(define-command (*sleeping-aldo* trace) (&whole argument)
+    "Trace a function's calls: ,trace FN [FORM] (auto-continues, printing FORM)."
+  (let ((session (%sleeping-aldo-require-session)))
+    (when session
+      (multiple-value-bind (name form-text) (%sa-split-verb-rest argument)
+        (if (zerop (length name))
+            (format t "~&usage: ,trace FN [FORM]~%")
+            (let ((metadata (clautolisp.debug:ensure-metadata-for-name name)))
+              (if (null metadata)
+                  (format t "~&aldo: ~A is not defined~%" (string-upcase name))
+                  (let* ((fid (clautolisp.debug:function-debug-metadata-function-id metadata))
+                         (rform (and form-text (%sa-read-form session form-text)))
+                         (existing (%sa-find-trace-bp session fid)))
+                    (when existing
+                      (clautolisp.debug.ui:cmd-remove-breakpoint session existing))
+                    (clautolisp.debug.ui:cmd-set-breakpoint
+                     session fid 0 :when :before :steady t :trace t
+                     :action (clautolisp.ui.dumb:make-bp-action
+                              (%sa-action-ui) rform
+                              (format nil "TRACE> ~A" (string-upcase name))))
+                    (format t "~&tracing ~A~:[~; (replaced)~]~%"
+                            (string-upcase name) existing)))))))))
+
+(define-command (*sleeping-aldo* untrace) (&whole argument)
+    "Stop tracing a function, or all: ,untrace [FN]."
+  (let ((session (%sleeping-aldo-require-session))
+        (name (string-trim " " (or argument ""))))
+    (when session
+      (if (zerop (length name))
+          (let ((traced (remove-if-not #'%sa-trace-bp-p
+                                       (clautolisp.debug.ui:cmd-list-breakpoints session))))
+            (if (null traced)
+                (format t "~&nothing traced.~%")
+                (progn (dolist (bp traced) (clautolisp.debug.ui:cmd-remove-breakpoint session bp))
+                       (format t "~&untraced ~A function~:P~%" (length traced)))))
+          (let ((metadata (clautolisp.debug:metadata-for-name name)))
+            (let ((bp (and metadata
+                           (%sa-find-trace-bp
+                            session (clautolisp.debug:function-debug-metadata-function-id metadata)))))
+              (if bp
+                  (progn (clautolisp.debug.ui:cmd-remove-breakpoint session bp)
+                         (format t "~&untraced ~A~%" (string-upcase name)))
+                  (format t "~&aldo: ~A is not traced~%" (string-upcase name)))))))))
+
+(define-command (*sleeping-aldo* watch) (&whole argument)
+    "Watch a variable: ,watch VAR [FORM] (stop when VAR changes, or FORM turns true)."
+  (let ((session (%sleeping-aldo-require-session)))
+    (when session
+      (multiple-value-bind (name form-text) (%sa-split-verb-rest argument)
+        (if (zerop (length name))
+            (format t "~&usage: ,watch VAR [FORM]~%")
+            (let* ((symbol (intern-autolisp-symbol (string-upcase name)))
+                   (rform (and form-text (%sa-read-form session form-text)))
+                   (predicate (and rform (clautolisp.ui.dumb:make-watch-predicate rform))))
+              (when (and form-text (null rform))
+                (format t "~&aldo: cannot read ~S (watching value change instead)~%" form-text))
+              (clautolisp.debug.ui:cmd-watch session symbol name :predicate predicate)
+              (if predicate
+                  (format t "~&watching ~A when ~A~%" (string-upcase name) form-text)
+                  (format t "~&watching ~A~%" (string-upcase name)))))))))
+
+(define-command (*sleeping-aldo* unwatch) (&whole argument)
+    "Remove a watch, or all: ,unwatch [VAR]."
+  (let ((session (%sleeping-aldo-require-session))
+        (name (string-trim " " (or argument ""))))
+    (when session
+      (if (zerop (length name))
+          (let ((n (length (clautolisp.debug.ui:cmd-list-watches session))))
+            (clautolisp.debug.ui:cmd-clear-watches session)
+            (format t "~&cleared ~D watch~:[es~;~]~%" n (= n 1)))
+          (if (clautolisp.debug.ui:cmd-unwatch session name)
+              (format t "~&unwatched ~A~%" (string-upcase name))
+              (format t "~&aldo: no watch on ~A~%" (string-upcase name)))))))
+
+(define-command (*sleeping-aldo* lw list watches) ()
+    "List the software watchpoints."
+  (let ((session (%sleeping-aldo-require-session)))
+    (when session
+      (let ((watches (clautolisp.debug.ui:cmd-list-watches session)))
+        (if (null watches)
+            (format t "~&no watches.~%")
+            (dolist (w watches)
+              (format t "~&~A~:[~;  (predicated)~]  = ~A~%"
+                      (clautolisp.debug:watch-name w)
+                      (clautolisp.debug:watch-predicate w)
+                      (clautolisp.ui.dumb:preview (clautolisp.debug:watch-last-value w)))))))))

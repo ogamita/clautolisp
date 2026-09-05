@@ -89,4 +89,7 @@ UI refines.")
            ;; the interactive object inspector loop, reused by the tool's `,i'
            ;; REPL command so REPL and debugger inspection are the same
            ;; (aldo-command-from-repl.issue).
-           #:inspector-loop))
+           #:inspector-loop
+           ;; breakpoint-action / watch-predicate makers + value preview, reused
+           ;; by the tool's sleeping-aldo bpcmd / trace / watch / lw commands.
+           #:make-bp-action #:make-watch-predicate #:preview))

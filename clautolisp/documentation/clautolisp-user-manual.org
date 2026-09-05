@@ -147,6 +147,15 @@ name shadows them, and the shadowed one is still reachable by the
 | ~,ib~ / ~,ignore breakpoint~ ppN COUNT | skip the next COUNT hits of ppN        |
 | ~,ls~ / ~,list source~ [FILE\vert{}FUNC] | list source with ~^~ breakpoint      |
 |                               | markers, through the pager                      |
+| ~,bpcmd~ ppN FORM             | evaluate FORM when ppN fires, then continue     |
+|                               | (bare ~,bpcmd ppN~ clears the command)          |
+| ~,trace~ FUNC [FORM]          | trace FUNC's calls: stop-free, printing FORM    |
+|                               | (or the call) on each entry, then continue      |
+| ~,untrace~ [FUNC]             | stop tracing FUNC, or all traced functions      |
+| ~,watch~ VAR [FORM]           | stop when VAR changes, or — with FORM — when     |
+|                               | FORM turns non-nil                              |
+| ~,unwatch~ [VAR]              | remove the watch on VAR, or all watches         |
+| ~,lw~ / ~,list watches~       | list the software watchpoints and their values  |
 
 A =FILE:LINE= breakpoint is /persistent/: it is recorded against the raw
 file position and re-resolved on every load, because an edit may move
