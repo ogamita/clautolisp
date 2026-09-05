@@ -135,6 +135,24 @@ and `u' from a directory view climbs to the parent directory."
     (setf (sedit-state-loc (sedit-session-state session))
           (or loc (%first-child-loc dirnode) (node->loc dirnode)))))
 
+(defun %sedit-into-directory (session dir)
+  "Re-root SESSION on the sub-directory DIR, read fresh from disk, its first
+entry selected (`d' descending into a directory listing entry;
+sedit-bugs-and-design.issue Bug 2)."
+  (let ((dirnode (read-directory dir)))
+    (setf (sedit-session-origin session)
+          (list :dir (namestring (uiop:ensure-directory-pathname dir))))
+    (setf (sedit-state-loc (sedit-session-state session))
+          (%first-child-loc dirnode))))
+
+(defun %sedit-into-file (session file)
+  "Re-root SESSION on FILE, opened for editing, its first top-level form selected
+(`d' descending onto a file entry in a directory listing)."
+  (let ((filenode (%open-file-node file)))
+    (setf (sedit-session-origin session) (list :file (namestring file)))
+    (setf (sedit-state-loc (sedit-session-state session))
+          (%first-child-loc filenode))))
+
 (defun %sedit-signed-skip-p (input)
   "An INPUT-COMMAND whose whole line is ±N — the skip motion."
   (and (clautolisp.interactor:input-command-p input)
@@ -202,7 +220,33 @@ STATE (its editing state) and ARG (the raw argument string or NIL)."
      (%do-motion state ,token)
      nil))
 
-(%define-sedit-motion (d down)      "d"  "Descend into the selection (all sub-sexps, not just code).")
+(%define-sedit-command (d down)
+    "Descend into the selection (all sub-sexps, not just code); in a directory
+listing, into the selected sub-directory (read from disk) or file (opened for
+editing) — `..' goes to the parent directory (sedit-bugs-and-design.issue
+Bug 2)."
+  (let* ((loc (sedit-state-loc state))
+         (focus (loc-focus loc))
+         (dir (%session-dir session)))
+    (cond
+      ((and dir (dir-node-p focus))
+       (let ((name (dir-node-name focus)))
+         (if (string= name "..")
+             (let ((here (uiop:ensure-directory-pathname dir)))
+               (%sedit-up-to-directory
+                session
+                (namestring (uiop:pathname-parent-directory-pathname here))
+                (%dir-display-name here)))
+             (%sedit-into-directory
+              session
+              (merge-pathnames (uiop:ensure-directory-pathname name)
+                               (uiop:ensure-directory-pathname dir))))))
+      ((and dir (file-node-p focus))
+       (%sedit-into-file
+        session
+        (merge-pathnames (file-node-name focus) (uiop:ensure-directory-pathname dir))))
+      (t (%do-motion state "d"))))
+  nil)
 (%define-sedit-command (u up)
     "Ascend to the containing form; from a file's toplevel form, to the
 file's directory (the file selected); from a directory view, to the parent

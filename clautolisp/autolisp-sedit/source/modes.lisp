@@ -211,15 +211,45 @@ the debugger's); motions, eval and load keep the mode."
 
 ;;; --- rendering the selection ----------------------------------------------
 
+(defun %entry-display-name (node)
+  "An entry's name for a directory listing: NAME, with a trailing / for a
+sub-directory (spec §2.4, e.g. =../=, =batnav/=)."
+  (cond ((dir-node-p node)
+         (let ((name (dir-node-name node)))
+           (if (and (plusp (length name)) (char= #\/ (char name (1- (length name)))))
+               name
+               (concatenate 'string name "/"))))
+        ((file-node-p node) (file-node-name node))
+        (t "")))
+
+(defun %render-directory (dir current &key (open "[") (close "]"))
+  "A directory listing (spec §2.4): the directory's path, then one entry per
+line — sub-directories with a trailing / — with the CURRENT entry wrapped in
+OPEN…CLOSE. This is what the browser shows when the selection is a directory
+entry, instead of the entry's (unloaded, empty) contents rendering as =[]=
+\(sedit-bugs-and-design.issue Bug 2)."
+  (with-output-to-string (out)
+    (write-string (dir-node-name dir) out)
+    (dolist (entry (dir-node-entries dir))
+      (terpri out)
+      (let ((name (%entry-display-name entry)))
+        (if (eq entry current)
+            (format out "~A~A~A" open name close)
+            (write-string name out))))))
+
 (defun render-selection (loc &key (open "[") (close "]"))
   "The top-level form the selection at LOC is in, with the selected node wrapped
 in OPEN…CLOSE (spec §2/§5.2 examples, e.g. (list [nil])). Rendered structurally
 along the path to the focus so the markers can be placed — laid out by the §5.2
 indentation rules where it does not fit one line (FORMAT-MARKED); verbatim
-elsewhere."
-  (let* ((top (loc-focus (%top-level-loc loc)))
-         (rel (nthcdr (length (loc-path (%top-level-loc loc))) (loc-path loc))))
-    (format-marked top rel :open open :close close)))
+elsewhere. When the selection is an entry of a directory, the whole directory is
+listed instead (spec §2.4)."
+  (let ((parent (and (loc-ctx loc) (loc-focus (loc-up loc)))))
+    (if (and parent (dir-node-p parent))
+        (%render-directory parent (loc-focus loc) :open open :close close)
+        (let* ((top (loc-focus (%top-level-loc loc)))
+               (rel (nthcdr (length (loc-path (%top-level-loc loc))) (loc-path loc))))
+          (format-marked top rel :open open :close close)))))
 
 (defun %top-level-loc (loc)
   "Ascend out of nested lists to the top-level form's location."
