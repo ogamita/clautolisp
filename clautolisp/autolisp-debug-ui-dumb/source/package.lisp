@@ -85,4 +85,8 @@ UI refines.")
            ;; the built-in modal pager, reused by the tool's sleeping-aldo `,ls'
            ;; command so REPL and debugger listings page the same way
            ;; (aldo-command-from-repl.issue).
-           #:paged-out))
+           #:paged-out
+           ;; the interactive object inspector loop, reused by the tool's `,i'
+           ;; REPL command so REPL and debugger inspection are the same
+           ;; (aldo-command-from-repl.issue).
+           #:inspector-loop))

@@ -910,6 +910,23 @@ not supplied)."
   (dolist (line (clautolisp.debug.ui:settings-cascade-lines))
     (format t "  ~A~%" line)))
 
+;; `,i FORM' / `,inspect FORM' — evaluate FORM and open the interactive object
+;; inspector on the result (aldo-command-from-repl.issue part 2), the same
+;; inspector the debugger's `i' opens. It reuses the (session-independent)
+;; inspector core over a transient dumb UI on the REPL streams; the shared
+;; debugger session (present in interactive mode) carries the workspace/context.
+(define-command (*autolisp* i inspect) (&whole argument)
+    "Inspect the result of evaluating FORM: ,i FORM."
+  (let ((session (clautolisp.repl:repl-state-session
+                  (activation-state *command-activation*)))
+        (arg (string-trim " " (or argument ""))))
+    (if (null session)
+        (format t "~&,inspect: the inspector needs a debug session ~
+(interactive REPL / --on-error debug / --debugger-ui)~%")
+        (clautolisp.ui.dumb:inspector-loop
+         (clautolisp.ui.dumb:make-dumb-ui) session
+         (if (zerop (length arg)) nil arg)))))
+
 (defun repl-loop (dialect context &key quiet-p mock-input gui trace-p
                                         session break-on-error
                                         dribble dribble-interactors)
