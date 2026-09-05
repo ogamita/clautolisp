@@ -77,4 +77,8 @@ UI refines.")
                 #:inspect-component-accessor #:inspect-component-descendable-p
                 ;; session-* called directly on the inspector session
                 #:session-page #:session-origin #:session-eval)
-  (:export #:dumb-ui #:make-dumb-ui))
+  (:export #:dumb-ui #:make-dumb-ui
+           ;; the breakpoint-condition predicate maker, reused by the tool's
+           ;; sleeping-aldo `,cb' command so REPL and debugger conditions share
+           ;; one evaluation semantics (aldo-command-from-repl.issue).
+           #:make-condition-predicate))

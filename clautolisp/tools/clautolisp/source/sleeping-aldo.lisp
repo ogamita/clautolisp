@@ -218,6 +218,36 @@ use ,break FUNC or ,break FUNC.N for now.~%"))
               (dolist (bp bps) (clautolisp.debug.ui:cmd-remove-breakpoint session bp))
               (format t "~&removed ~A breakpoint~:P~%" (length bps))))))))
 
+(define-command (*sleeping-aldo* cb condition breakpoint) (&whole argument)
+    "Set or clear a breakpoint condition: ,cb ppN FORM  (,cb ppN alone clears)."
+  (let ((session (%sleeping-aldo-require-session))
+        (arg (string-trim " " (or argument ""))))
+    (when session
+      (let* ((space (position #\Space arg))
+             (pp-token (if space (subseq arg 0 space) arg))
+             (form-text (and space (string-trim " " (subseq arg (1+ space)))))
+             (bps (%sa-select-breakpoints session pp-token)))
+        (cond
+          ((or (eq bps :none) (/= 1 (length bps)))
+           (format t "~&aldo: ,cb needs one breakpoint (ppN)~%"))
+          ((or (null form-text) (zerop (length form-text)))
+           (setf (clautolisp.debug:breakpoint-condition (first bps)) nil)
+           (format t "~&pp~A condition cleared~%" (%sa-bp-pp (first bps))))
+          (t
+           ;; Read the AutoLISP FORM in the session's context/dialect, then wrap
+           ;; it with the debugger's own condition semantics (evaluate with
+           ;; debugging off; stop iff non-nil; an error in the form also stops).
+           (let ((rform (ignore-errors
+                         (first (read-current-source
+                                 form-text :source-name "<aldo>"
+                                 :context (clautolisp.debug.ui:session-context session))))))
+             (if (null rform)
+                 (format t "~&aldo: cannot read condition form ~S~%" form-text)
+                 (progn
+                   (setf (clautolisp.debug:breakpoint-condition (first bps))
+                         (clautolisp.ui.dumb:make-condition-predicate rform))
+                   (format t "~&pp~A condition set~%" (%sa-bp-pp (first bps))))))))))))
+
 (define-command (*sleeping-aldo* ib ignore breakpoint) (&whole argument)
     "Ignore the next COUNT hits of a breakpoint: ,ib ppN COUNT."
   (let ((session (%sleeping-aldo-require-session))
