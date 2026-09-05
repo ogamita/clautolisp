@@ -1623,37 +1623,6 @@ inside (`aldo c', the confirmed quit) is returned to be propagated."
               (directive directive)
               (t (nav-install-edited-form ui session result loc) nil)))))))
 
-(defun nav-swap-to-sedit (ui session hit loc)
-  "NAV -> SEDIT by SWAPPING interactors, not nesting (nav-sedit-swap): pop the
-navigator, push a SEDIT activation over the same form with the same coupling
-hooks as NAV-EDIT-SESSION — a length-neutral round-trip the running loop
-drives next. SEDIT's :RETURN-TO carries the popped navigator, so SEDIT's quit
-swaps NAV back rather than aborting the stop. Returns NIL (no resume
-directive; leaving SEDIT returns to NAV, still atop the stop)."
-  (let* ((nav (nav-loc-navigator loc))
-         (text (nav-form-source-text nav)))
-    (if (not text)
-        (progn (out ui "NAV> can't edit here: no source text for this form~%") nil)
-        (let* ((sedit (clautolisp.sedit:sedit-open (clautolisp.sedit:parse-form text)))
-               (navi-activation (first clautolisp.interactor:*interactor-stack*))
-               (sedit-activation
-                 (clautolisp.sedit:make-sedit-activation
-                  sedit
-                  :return-to navi-activation
-                  :debug-hook (lambda (line) (nav-run-debug-line ui session hit line))
-                  :eval-print-hook (lambda (node) (nav-eval-node-string session node))
-                  :save-hook (lambda (sedit-session)
-                               (nav-install-edited-form
-                                ui session
-                                (clautolisp.sedit:session-result sedit-session)
-                                loc))
-                  :on-quit (lambda ()
-                             (or (ignore-errors (debugger-setting :sedit-on-quit))
-                                 :ask)))))
-          (clautolisp.interactor:pop-interactor)                          ; pop NAV
-          (push sedit-activation clautolisp.interactor:*interactor-stack*) ; push SEDIT
-          nil))))
-
 (defun nav-eval-node-string (session node)
   "Evaluate a sedit NODE's form in the stopped context and return a printable
 result string (spec §7: a Lisp form at the editor prompt evaluates like the REPL)."
