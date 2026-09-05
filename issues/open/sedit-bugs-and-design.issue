@@ -1,0 +1,327 @@
+* Bugs
+** Bug: no quitting clal-sedit
+
+#+begin_example
+Ooops: sedit asks about the debugger even when we call it from the lisp repl, we cannot even
+quit at all:
+
+_$ (clal-sedit 'iota)
+
+       [nil]
+SEDIT> q
+
+SEDIT> q from the debugger aborts the execution and returns to the toplevel
+SEDIT> (resume instead with: c continue, i into, n next, o out, a advance, r FORM return)
+SEDIT> really abort? (y/n)  
+ y
+
+       [nil]
+SEDIT> q
+
+SEDIT> q from the debugger aborts the execution and returns to the toplevel
+SEDIT> (resume instead with: c continue, i into, n next, o out, a advance, r FORM return)
+SEDIT> really abort? (y/n) y
+
+       [nil]
+SEDIT> 
+#+end_example
+
+** Bug: (clal-sedit "foo") does not list directories
+
+There's a specification with some good examples about this part…
+
+#+BEGIN_EXAMPLE
+SEDIT> f
+
+       [(defun test-foreach (min max / i)
+         (foreach i (iota (- max min))
+                  (print (+ i min))))]
+SEDIT> u
+
+       []
+SEDIT> u
+
+       [tests]
+SEDIT> d
+
+       [tests]
+SEDIT> u
+
+       [clautolisp]
+SEDIT> 
+#+END_EXAMPLE
+
+
+#+begin_example
+Directory /Users/pjb/src/ogamita/clautolisp/clautolisp/tests/
+test-debug-step.lsp
+
+Directory /Users/pjb/src/ogamita/clautolisp/clautolisp/
+autolisp-builtins-core/        autolisp-host/	     clautolisp.asd
+autolisp-cli/		       autolisp-init-files/  docker/
+autolisp-dcl/		       autolisp-inspect/     documentation/
+autolisp-debug/		       autolisp-interactor/  drawing/
+autolisp-debug-ui/	       autolisp-mock-host/   drawing-dwg/
+autolisp-debug-ui-dumb/        autolisp-reader/      examples/
+autolisp-debug-ui-emacs/       autolisp-repl/	     Makefile
+autolisp-debug-ui-ncurses/     autolisp-runtime/     PLAN.md
+autolisp-debug-ui-tui/	       autolisp-sedit/	     README.org
+autolisp-debug-ui-tui-charms/  autolisp-source-map/  tests/
+autolisp-debug-ui-tui-curses/  cador/		     third-party/
+autolisp-file-compat/	       cadtui/		     tools/
+#+end_example
+
+** Bug: (clal-sedit 'foo) does find the function definition
+
+Current implementation fails with a symbol naming a function
+loaded from a source file: clal-sedit doesn't find its definition and
+tries to edit nil:
+#+begin_example
+
+debugger-ui-ncurses-aldb
+22:49[pjb@thalassa org.xquartz:0 clautolisp 65Gi]$ rlwrap clautolisp --debug --verbose --debugger-ui ncurses -x '*clal-debugger-ui*' -x '(setq *clal-debugger-ui* (quote aldb))' -i
+
+; ALPM 0.2.0 loaded.alpm 0.2.0 loaded.; ALPM site registry: /opt/local/share/autolisp
+clautolisp: loaded /Users/pjb/.autolisp in 0.088 s
+clautolisp: evaluated *clal-debugger-ui* in 0.000 s
+clautolisp: evaluated (setq *clal-debugger-ui* (quote aldb)) in 0.000 s
+Welcome to clautolisp Version 1.9.101
+Copyright 2026-2026 Ogamita Ltd
+Licensed under AGPL; source codes available at:
+http://gitlab.com/ogamita/clautolisp/
+AUTOLISP REPL (STRICT dialect, cador host) — Ctrl-D to exit.
+  (debug=on)
+_$ (load "~/src/ogamita/clautolisp/clautolisp/tests/test-debug-step.lsp")
+[sec-untrusted-load] LOAD: /Users/pjb/src/ogamita/clautolisp/clautolisp/tests/test-debug-step.lsp is a gated file in an untrusted location (SECURELOAD=1); on a host with SECURELOAD=2 this would be blocked. Add its folder to TRUSTEDPATHS to trust it.
+TEST-FOREACH
+_$ (iota 10)
+(1 2 3 4 5 6 7 8 9 10)
+_$ (clal-sedit 'iota)
+
+       [nil]
+SEDIT> q
+
+SEDIT> q from the debugger aborts the execution and returns to the toplevel
+SEDIT> (resume instead with: c continue, i into, n next, o out, a advance, r FORM return)
+SEDIT> really abort? (y/n) y
+
+       [nil]
+SEDIT> 
+#+end_example
+
+* sedit file source vs non-file source
+** clal-sedit API extension
+
+First point, currently CLAL-SEDIT takes only a string path to edit a whole file.
+
+We cannot tell it: edit a file starting with a selection containing
+this function or this toplevel form.
+
+But in the debugger, we know we are debugging a specific function or toplevel form.
+So we need to extend the CLAL-SEDIT API to be able to specify it.
+
+
+=(clal-sedit object)=
+
+~object~: optional. Resolves as follows:
+- omitted or ~nil~ -> a stand-alone form starting at ~nil~;
+- a symbol -> recall its  recorded definition (by name) (no relation with the source file);
+- a string -> a file or directory path;
+- any other value -> edited as a sexp.
+
+Let's admit a variadic API:
+
+=(clal-sedit [type] object)=
+
+
+If the type is omited, the legacy behavior is implemented. With the
+type, we do as specified in the following table: 
+
+
+| type      | object                             | sedit action                                                  |
+|-----------+------------------------------------+---------------------------------------------------------------|
+| NIL       | any-printable-lisp-object          | the object is the initial selection                           |
+| OBJECT    | any-printable-lisp-object          | the object is the initial selection                           |
+|           |                                    |                                                               |
+| FUNCTION  | funcname:symbol                    | if the function has a source file,                            |
+|           |                                    | then edit the function in the context of the file             |
+|           |                                    | ie. equivalent to (clal-sedit 'file '("source.lsp" funcname)) |
+|           |                                    | else edit the function lambda expression                      |
+|           |                                    | ie. equivalent to (clal-sedit 'object lambda-expression)      |
+|           |                                    |                                                               |
+| FUNCTION  | (file-path:string funcname:symbol) | edit the function funcname in the file at path                |
+| FILE      | (file-path:string funcname:symbol) | (ie. edit the file, selecting the function in it).            |
+|           |                                    | If the file or the function don't exit, an error              |
+|           |                                    | is signaled.                                                  |
+|           |                                    |                                                               |
+| FILE      | (file:source-position form:sexp)   | edit the form stored in the file and position specified by    |
+|           |                                    | the file source-position.                                     |
+|           |                                    |                                                               |
+| FILE      | (file-path:string linum:integer)   | edit the comment, or the form at line linum (or just after    |
+|           |                                    | line linum).                                                  |
+|           |                                    |                                                               |
+| FILE      | file-path:string                   | edit the file (first form or comment in                       |
+|           |                                    | the file is selected)                                         |
+|           |                                    | if the file doesn't exist, a warning about it                 |
+|           |                                    | is issued, and it's created on save.                          |
+|           |                                    |                                                               |
+| DIRECTORY | directory-path:string              | edit the directory                                            |
+| FILE      | directory-path:string              | edit the directory                                            |
+|           |                                    |                                                               |
+
+
+** Here things must be discriminated.
+
+The debugger (and in general), may ask clal-sedit to edit forms that
+come from various sources, some backed by files, and some from memory.
+
+A form may come from different sources:
+
+- read from a source file,
+
+- read from a compiled file, referencing a source file that is available.
+  The form may be retrieved from the compiled file,
+  or read again from the source file.
+
+- a compiled file, referencing a source file that isn't available.
+  The form may be retrieved from the compiled file.
+  
+- the lisp REPL (edited and entered on the REPL, evaluated by the lisp
+  REPL).
+
+- freshly edited in sedit and evaled from sedit (e command)
+
+- freshly edited in sedit and evaled by (EVAL (clal-sedit ...))
+
+- generated by program and evaled by EVAL
+
+- furthermore, we may have forms that have been loaded from files
+  originally, but that have been edited with sedit, sedit having saved
+  them back to the file (clean), or not (dirty). In both case, the
+  source of the edited form may be lost or mangled (clal-sedit reads
+  subforms from the terminal, and may reuse subforms from different
+  files with copy-and-paste) in the new form.
+
+A form that has source file information can be edited by clal-sedit with
+the new parameters specifying the source file:
+
+#+begin_src lisp
+  (clal-sedit 'file (list (source-position-file (position-of toplevel-form))
+                          (source-position-start-line (position-of toplevel-form))))
+  ;; or:
+  (clal-sedit 'file (list (position-of toplevel-form) toplevel-form))
+#+end_src
+
+If clal-sedit uses the following API to save the source-file while
+maintaining the source-position-table, we won't have the last case
+where editing forms from files with sedit give us forms that are not
+associated with source-position anymore. The following API ensure that
+new forms get their own source-position, and old forms
+source-positions are updated.
+
+Furthermore, the following API would allow sedit to write forms that
+have been edited or entered independently from file, to new files, and
+thus having their source-position set for further file editing. This
+would require a specific sedit command that will be specified in a
+separate issue.
+
+The debugger can base its decision to call clal-sedit with the file
+editing option only on the presence of source-position information on
+the considered form.
+
+*** source file and position editor
+
+When we edit a function with sedit, and save it to a file, and
+evaluate it to integrate it into the lisp image, we don't want to
+reload the whole file just to record the file position with the new
+form.
+
+If we let sedit save an edited file (new forms, deleted forms,
+modified forms), then all the other positions of forms in the file
+from the first modification become invalid in the
+=*source-position-table*=.
+
+Therefore we will not let sedit edit files that have been loaded (or
+loaded and compiled, assuming the compiler transports the
+source-position data from the source).
+
+We need a source-file editing module synchronized with the
+*source-position-table* and with high level editing functions that
+maintain the consistency of the *source-position-table*.
+
+
+The API to read source files could be used by READ (so that
+source-file positions are updated). It would just have to drop
+comments, and unwrap atoms. On the other hand an editor like sedit
+would keep othe comments and atom (all toplevel items) for editing.
+
+#+begin_src lisp
+
+  (source-file-open path read-or-update) -> source
+  ;; open the source file at path for reading or for editing (updating).
+  ;; read-or-update is 'READ or 'UPDATE
+
+  ;; read operation:
+
+  (source-file-read source eof-indicator) -> comment-line or comment-block or toplevel-atom or toplevel-form or EOF indicator.
+  ;; comment-line and comment-block are structure with source-position and the list of strings of comment lines.
+  ;; toplevel-atom is a structure with the source-position and the toplevel atom.
+  ;; toplevel-form is a cons. The source-position of the toplevel-form is recorded or updated in the source-position-table.
+
+  (source-file-close source)
+  ;; close a source file.
+
+
+  ;; update operations:
+
+  (source-file-insert-toplevel-form  source ilinenum form)
+  (source-file-replace-toplevel-form source flinenum form)
+  (source-file-delete-toplevel-form  source flinenum)
+
+  ;; Inserts, replaces or deletes a toplevel form.
+  ;;
+  ;; The toplevel form replaced or deleted is identified by flinenum
+  ;; which should be the first line of the toplevel form.
+  ;;
+  ;; If flinenum or ilinenum fall in the middle of a form it's an error.
+  ;;
+  ;; The form is formatted and indented and written to the file from
+  ;; ilinenum or flinenum position. This could include 2 white lines
+  ;; following the form.
+  ;;
+  ;; The source-file position information of the form is updated
+  ;; (unless it's an atom).
+
+
+  (source-file-insert-comment source linenum new-comment-lines)
+  (source-file-replace-comment source start-linum end-linum new-comment-lines)
+  (source-file-delete-comment source start-linum end-linum)
+
+  ;; Inserts, replaces or deletes a toplevel comment.
+  ;;
+  ;; If linenum, start-linum or end-linum fall in the middle of a
+  ;; form, it's an error.
+  ;;
+  ;; If the interval start-linum (inclusive) end-linum (exclusive)
+  ;; contain other than comment or empty (blank) lines, it's an error.
+  ;;
+  ;; new-comment-lines is a list of strings one perline.
+  ;; The whole forms a comment: it may be single-line comments
+  ;; prefixed by ; ;; ;;; or ;;;;
+  ;; or it may be a comment block with ";|" as first line and "|;" as last line.
+
+
+  ;; All the source-file operations maintain the
+  ;; source-position-table, incrementing or decrementing the position
+  ;; that follow the edited lines.
+
+  (source-file-save-and-close source)
+  ;; write all the modifications to the file and close it.
+
+#+end_src
+
+Let sedit use this module to save its edits to the file, the
+source-position-table and the new forms may be maintained with
+up-to-date information.
+
+
