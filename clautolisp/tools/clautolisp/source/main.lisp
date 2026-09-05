@@ -898,6 +898,18 @@ not supplied)."
       (format t "~&saved ~A~%" (clautolisp.debug.ui:save-lisp-configuration))
     (error (condition) (format t "~&,write-settings: ~A~%" condition))))
 
+;; `,settings' has NO short key: `settings' would take the key `s', already
+;; `set's — and with the short name now optional, the rarer command forgoes it
+;; (it is reached only by the full word `,settings'). Where bare `,set' lists the
+;; resolved LISP values, `,settings' shows each setting across its cascade levels
+;; (built-in default < lisp.conf < aldo.conf), marking the one effective here.
+(define-command (*autolisp* nil settings) ()
+    "Print the settings across their cascading levels (no shorthand — type ,settings)."
+  (format t "~&settings cascade (default < lisp.conf < aldo.conf) — ~A:~%"
+          (clautolisp.debug.ui:lisp-config-save-path))
+  (dolist (line (clautolisp.debug.ui:settings-cascade-lines))
+    (format t "  ~A~%" line)))
+
 (defun repl-loop (dialect context &key quiet-p mock-input gui trace-p
                                         session break-on-error
                                         dribble dribble-interactors)

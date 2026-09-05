@@ -131,6 +131,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:reset-lisp-configuration
    #:config-explicit #:lisp-setting #:debugger-setting
    #:set-lisp-setting #:get-lisp-setting #:lisp-settings-lines
+   #:settings-cascade-lines
    #:setting-character #:shell-escape-character-setting
    #:lisp-config-save-path #:lisp-config-load-path
    #:save-lisp-configuration #:load-lisp-configuration

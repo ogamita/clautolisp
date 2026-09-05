@@ -48,6 +48,7 @@
 word(s). Punctuation / mnemonic keys (e.g. =.= , =>= , =?=) are exempt — the
 rule is checked only when both the key and the word initials are alphabetic."
   (when (and words
+             (plusp (length key))       ; a keyless command (no short name) is exempt
              (every #'alpha-char-p key)
              (every (lambda (w) (alpha-char-p (char (string w) 0))) words))
     (unless (string-equal key (words-initials words))
@@ -120,7 +121,11 @@ alternative spellings). Signals an error on a clash *in the same dictionary*
 \(clashes across dictionaries are fine — resolved by the stack). Returns the
 COMMAND."
   (destructuring-bind (key &rest words) names
-    (let* ((key (string-downcase (string key)))
+    ;; KEY may be NIL: the command then has NO short name and is reached only by
+    ;; its full phrase — the escape valve when two commands would collide on an
+    ;; initial and the rarer one forgoes its shorthand (`,settings' next to
+    ;; `,set'). Aliases are still the way to add extra spellings.
+    (let* ((key (if key (string-downcase (string key)) ""))
            (words (mapcar (lambda (w) (string-downcase (string w))) words))
            (phrase (format nil "~{~A~^ ~}" words))
            (table (dictionary-table dictionary)))
@@ -133,7 +138,7 @@ COMMAND."
       (let ((cmd (%make-command :key key :words words :phrase phrase
                                 :lambda-list lambda-list
                                 :docstring (or docstring "") :function function)))
-        (setf (gethash key table) cmd)
+        (when (plusp (length key)) (setf (gethash key table) cmd))
         (when (plusp (length phrase)) (setf (gethash phrase table) cmd))
         cmd))))
 

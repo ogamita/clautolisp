@@ -382,6 +382,30 @@ the debugger."
                                                      (%default-setting key)))
                            presentp))))
 
+(defun settings-cascade-lines ()
+  "Lines describing each LISP setting across its cascade levels — the built-in
+default, lisp.conf, then aldo.conf (which the debugger layers on top, parallel
+to the interactor stack) — marking the level whose value is effective at the
+REPL. For the REPL's `,settings'."
+  (loop :for (key) :in *lisp-setting-specs*
+        :append
+        (multiple-value-bind (lisp-value lisp-present)
+            (config-explicit key *lisp-configuration*)
+          (multiple-value-bind (aldo-value aldo-present)
+              (config-explicit key *aldo-configuration*)
+            (let* ((default (%default-setting key))
+                   (effective (if lisp-present lisp-value default)))
+              (list
+               (format nil "~(~A~) = ~A" key (format-setting-value effective))
+               (format nil "      default    ~A~:[~;   <- effective~]"
+                       (format-setting-value default) (not lisp-present))
+               (format nil "      lisp.conf  ~A~:[~;   <- effective~]"
+                       (if lisp-present (format-setting-value lisp-value) "-")
+                       lisp-present)
+               (format nil "      aldo.conf  ~A~:[~;   (debugger only)~]"
+                       (if aldo-present (format-setting-value aldo-value) "-")
+                       aldo-present)))))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; XDG path resolution (command reference §8 — Loading)
 
