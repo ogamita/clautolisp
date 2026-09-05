@@ -182,6 +182,7 @@ the shared blocker.
 | Issue                                | Status   | Note |
 |--------------------------------------+----------+------|
 | debugger-public-interface-and-on-error | TODO   | clal-* API + --on-error/--debugger-ui/--aldb-* CLI |
+| instrumenter-no-pollpoints-on-atoms   | TODO     | can't break before a variable reference; extend instrumentation? |
 | deferred-debugger-compiler-two-bodies | DEFERRED | gated on compiler (Phase 8) |
 | deferred-debugger-remote-cad          | DEFERRED | gated on transport + CAD (Phase 9) |
 
