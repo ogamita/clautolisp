@@ -65,3 +65,103 @@ However the PAGER setting can be ON, OFF, or also a namestring, ie. a
 string containing the path to a pager filter like =more(1)=,
 =less(1)=, etc.
 
+* FILE:LINE breakpoints — refined design (pjb, 2026-09-05)
+
+Status of the command set: the breakpoint *management* commands are
+implemented (=,break FUNC= / =,break FUNC.N=, =,lb=, =,eb=, =,db=, =,rb=,
+=,ib=, =,cb=; 1.9.90–1.9.93 on branch =debugger-ui-ncurses-aldb=). The
+=FILE:LINE= / bare-=LINE= break forms and =,ls= remain, and pjb refined
+their design as below.
+
+** Function-relative addressing (settled)
+
+Keep =FUNC.N= with =.0= = the function ENTRY, =.N= = the instrumenter's
+Nth poll-point (compound evaluable form, pre-order; see
+=instrumenter-no-pollpoints-on-atoms.issue=). A function-relative
+breakpoint survives edits ABOVE the function; it is invalidated only when
+the function itself is edited so that forms are inserted/removed before it.
+
+** =,break FILE:LINE[:COL]= is ALWAYS a virtual (persistent) breakpoint
+
+Whether or not the file is loaded, the request is recorded as a persistent
+=FILE:LINE= breakpoint, because the file may be edited and reloaded before
+the breakpoint is reached, so it must be (re)resolved on each load.
+
+Resolution algorithm — the SAME whether setting it while the file is
+already loaded or materialising it when the file is (re)loaded:
+
+  find the first poll-point at or after FILE:LINE:1 (line LINE, column 1),
+  and record/report its exact file position, and in which function and
+  subform index (=FUNC.N=) — or that it is a top-level form — the
+  breakpoint is set.
+
+So a =FILE:LINE= record differs from today's virtual breakpoint (which is
+keyed by the enclosing =(defun NAME …)= and an anchor line): the
+=FILE:LINE= record is keyed by the raw file position and re-resolved by
+the "first poll-point at/after LINE:1" search over the file's current
+poll-points on each load.
+
+** Top-level (non-=defun=) breakpoints break DURING LOAD
+
+A breakpoint may fall on a top-level form that is not a =defun= — then it
+must break into the debugger WHILE LOADING the file (source or the
+compiled alternative). Example:
+
+: example.lsp
+: 1: ;; example
+: 2: (defun foo (x)
+: 3:    (* 2 x))
+: 4: (setq voo (foo 21))
+:
+: _$ ,break example.lsp:3
+: _$ ,break example.lsp:4
+: _$ (clal-compile-file "example.lsp")
+: _$ (load "example")          ; loads example.fasl
+: ALDO is activated on line 4:
+: 4: ^(setq voo (foo 21))
+: DBG^ continue
+: 3:    ^(* 2 x)
+: DBG^ lv
+:   x = 21
+: DBG^ continue
+: _$
+
+This requires the load path to instrument (and poll) top-level forms, not
+only =defun= bodies, so a breakpoint on a top-level form fires during the
+load itself.
+
+** Reload after edits: re-resolve + warn
+
+When a file is (re)loaded, re-resolve every =FILE:LINE= breakpoint for
+that file against the new content; when a breakpoint's resolved position
+changed, print a warning listing the changed =FILE:LINE= refs (often only
+breakpoints from some point in the file on change, since a prefix usually
+does not — so the list is not necessarily all of the file's breakpoints):
+
+: _$ (load "example")     ; example.lsp is newer than example.fasl
+: ;; Warning: breakpoints changed example.lsp:3, example.lsp:4
+: _$ ,ls example.lsp
+: 1: (defun foo (x)
+: 3:    ^(princ "=======")
+: 4:    ^(print  (* 2 x))
+: 5:    (princ "\n"))
+: 6: (setq voo (foo 21))
+
+=,ls= shows where the breakpoints landed (=^= markers), and sets the
+current file. Bare =,break LINE= and =,ls= (no arg) use the current file
+(set by =,ls= or =,break FILE:LINE=), erroring clearly when none is set.
+
+** Implementation scope (engine + REPL), landed as its own reviewed step
+
+1. A persistent =FILE:LINE= breakpoint record (file + line + col + ti),
+   distinct from / generalising the defun-anchored virtual breakpoint.
+2. The shared "first poll-point at/after LINE:1" resolver over a file's
+   current poll-points (across its functions AND top-level forms).
+3. Instrument + poll TOP-LEVEL forms at load so a top-level breakpoint
+   breaks during the load.
+4. Reload re-resolution with a "breakpoints changed" warning.
+5. The REPL commands: =,break FILE:LINE[:COL]=, =,break LINE= (current
+   file), and =,ls= (list source through the pager, with =^= breakpoint
+   markers; reuses the existing aldo pager — external pager is an internal
+   pager option, not a client concern).
+
