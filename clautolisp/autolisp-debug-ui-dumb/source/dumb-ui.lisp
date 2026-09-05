@@ -1601,6 +1601,13 @@ inside (`aldo c', the confirmed quit) is returned to be propagated."
           (multiple-value-bind (result directive)
               (clautolisp.sedit:sedit-enter
                sedit :input (dumb-ui-input ui) :output (%out-stream ui)
+                     ;; entered to resolve a live stop iff there is a HIT:
+                     ;; then SEDIT's `q' aborts the run (spec §1); a hit-less
+                     ;; pre-debug edit just pops back to NAV. Not gated on
+                     ;; find-activation "ALDO" — the always-on REPL
+                     ;; sleeping-aldo shares that name
+                     ;; (sedit-bugs-and-design.issue Bug 1).
+                     :at-stop (and hit t)
                      :debug-hook (lambda (line) (nav-run-debug-line ui session hit line))
                      :eval-print-hook (lambda (node) (nav-eval-node-string session node))
                      ;; the sedit-on-quit guard (design-revision point-6

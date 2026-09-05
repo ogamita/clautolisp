@@ -33,9 +33,14 @@ SAVE-HOOK persists the edited result where a file path is not the target
 (the debugger bridge installs the definition); ON-QUIT is a thunk yielding
 the sedit-on-quit policy (:auto-save / :do-not-save / :ask) consulted when
 quitting a MODIFIED session (interactor-design-revision.issue, point-6
-answer)."
+answer). AT-STOP is true when SEDIT was entered from the debugger to resolve
+a live stop (=nav-edit-session= with a hit): then =q= aborts the run (spec
+§1), like NAVI's =q= at a stop. It is NIL for a plain =(clal-sedit …)= from
+the REPL — where =q= simply pops the editor — so =q= must not be gated on
+=find-activation \"ALDO\"= (the always-on REPL sleeping-aldo shares that
+name; sedit-bugs-and-design.issue Bug 1)."
   session debug-hook eval-hook load-hook eval-print-hook
-  save-hook (on-quit (constantly :ask)))
+  save-hook (on-quit (constantly :ask)) at-stop)
 
 (defun %loc-root-node (loc)
   "The whole tree LOC is in (ascend to the very root — past the file / dir
@@ -320,7 +325,7 @@ aldo CMD forces the debugger's meaning of a shadowed key"))
 setting); above a debugger stop, quitting aborts the debugged execution
 (asks first)."
   (when (%sedit-quit-guard (%sedit-istate))
-  (if (clautolisp.interactor:find-activation "ALDO")
+  (if (sedit-interactor-state-at-stop (%sedit-istate))
       ;; above the debugger (T4): leaving is resolving the stop — warn,
       ;; confirm, and delegate to the debugger's own quit (whose abort
       ;; directive cascades out of every nested loop); else do nothing.
@@ -355,7 +360,8 @@ what a bare library user of the sedit system gets.")
 
 (defun make-sedit-activation (session &key debug-hook eval-hook load-hook
                                            eval-print-hook save-hook
-                                           (on-quit *default-on-quit-policy*))
+                                           (on-quit *default-on-quit-policy*)
+                                           at-stop)
   "Build a SEDIT ACTIVATION over SESSION (an interactor-stack entry pairing the
 *SEDIT* interactor with a fresh SEDIT-INTERACTOR-STATE), without running any
 loop. SEDIT-ENTER pushes and drives one of these; the sedit interactor
@@ -368,11 +374,12 @@ STATE)."
     :session session
     :debug-hook debug-hook :eval-hook eval-hook
     :load-hook load-hook :eval-print-hook eval-print-hook
-    :save-hook save-hook :on-quit on-quit)))
+    :save-hook save-hook :on-quit on-quit :at-stop at-stop)))
 
 (defun sedit-enter (session &key debug-hook eval-hook load-hook eval-print-hook
                                  save-hook
                                  (on-quit *default-on-quit-policy*)
+                                 at-stop
                                  (input *standard-input*)
                                  (output *standard-output*)
                                  (error-output output))
@@ -388,7 +395,7 @@ propagate."
                  session
                  :debug-hook debug-hook :eval-hook eval-hook
                  :load-hook load-hook :eval-print-hook eval-print-hook
-                 :save-hook save-hook :on-quit on-quit)
+                 :save-hook save-hook :on-quit on-quit :at-stop at-stop)
                 clautolisp.interactor:*interactor-stack*)))
     (let ((directive (clautolisp.interactor:interactor-loop
                       :input input :output output :error-output error-output
