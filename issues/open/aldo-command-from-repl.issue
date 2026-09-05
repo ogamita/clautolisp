@@ -1,0 +1,67 @@
+* ALDO commands accessible from the lisp REPL.
+
+They are defined in a thin interactor pushed below the lisp interactor
+in the lisp REPL only; the same commands are accessible from the usual
+aldo interactor when aldo is active.
+
+This implies that if commands with the same name are defined in the
+lisp interactor, the command defined in the lisp interactor shadows
+the debugging commands. As always, we can access the interactor below
+by prefixing the command with the interactor name or nickname, ALDO or
+DEBUG.
+
+                                              
+| short | command              | argument   | description                                            |
+|-------+----------------------+------------+--------------------------------------------------------|
+| b     | break                | file:linum |                                                        |
+| b     | break                | linum      | (assuming we have a current file)                      |
+| b     | break                | func-name  | breaks on function entry                               |
+| lb    | list breakpoints     | ∅          | list break points                                      |
+| eb    | enable breakpoint    | ppN        | enable a breakpoint                                    |
+| eb    | enable breakpoint    | ALL        | enable all breakpoints                                 |
+| db    | disable breakpoint   | ppN        | disable a breakpoint                                   |
+| db    | disable breakpoint   | ALL        | disable all breakpoints                                |
+| xb    | delete breakpoint    | ppN        | delete a breakpoint                                    |
+| xb    | delete breakpoint    | ALL        | delete all breakpoints (ask confirmation).             |
+| cb    | condition breakpoint | ppN sexp   | add a condition to the breakpoint                      |
+| ib    | ignore breakpoint    | ppN count  | ignore the next count executions of the breakpoint     |
+|-------+----------------------+------------+--------------------------------------------------------|
+| ls    | list source          | func-name  | pretty print the function source                       |
+| ls    | list source          | file       | list the file source thru configured pager.            |
+|       |                      |            | In both case: prints with breakpoint, etc, indicators, |
+|       |                      |            | and set the current file.                              |
+|-------+----------------------+------------+--------------------------------------------------------|
+
+* New LISP REPL Command
+
+We have SET and WRITE-SETTING commands in the Lisp REPL command set,
+We are missing a SETTINGS command to print out the current settings.
+
+
+We'll also add an inspect command that does the same as
+=(inspector form)= or =(clal-inspect form)=.
+
+| short | command  | argument | description                                  |
+|-------+----------+----------+----------------------------------------------|
+|       | settings | ∅        | Prints the current settings (hierarchically, |
+|       |          |          | showing the various cascading levels         |
+|-------+----------+----------+----------------------------------------------|
+| i     | inspect  | form     | inspect the result of evaluating form.       |
+|-------+----------+----------+----------------------------------------------|
+
+* PAGER option
+
+The lisp configuration can contain a pager settings as does the aldo configuration
+In the lisp repl, the lisp configuration takes over.
+In the aldo debugger, the aldo configuration takes over.
+(Just the normal cascading configuration paralleling the interactor stack).
+
+There are two pager options:
+
+- (PAGER . ON)
+- (PAGER-HEIGHT . 24)
+
+However the PAGER setting can be ON, OFF, or also a namestring, ie. a
+string containing the path to a pager filter like =more(1)=,
+=less(1)=, etc.
+
