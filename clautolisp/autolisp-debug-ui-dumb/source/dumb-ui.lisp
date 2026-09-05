@@ -20,7 +20,13 @@
    ;; snapshots, newest first, pushed on each debugger re-entry; `restore N'
    ;; returns to one. Bounded by the navigation-history-max setting.
    (navigation-history :initarg :navigation-history :initform '()
-                       :accessor dumb-ui-navigation-history)))
+                       :accessor dumb-ui-navigation-history)
+   ;; gdb-style step repeat: the raw line of the last STEPPING command
+   ;; (c/i/n/o) entered at the DBG prompt, or NIL. A bare RET repeats it. It
+   ;; lives on the UI (not the per-stop activation) so it survives the
+   ;; resume/re-stop cycle between steps; any non-stepping command clears it.
+   (last-step-command :initarg :last-step-command :initform nil
+                      :accessor dumb-ui-last-step-command)))
 
 (defun make-dumb-ui (&rest initargs)
   (apply #'make-instance 'dumb-ui initargs))
@@ -326,7 +332,7 @@ p/path, q/quit. Registered in commands.lisp.")
 (define-interactor *aldo*
   :name "ALDO" :alias "debug"
   :prompt '%aldo-prompt
-  :reader '%line-command-read
+  :reader '%aldo-command-read
   :evaluator '%aldo-evaluate
   :commands *aldo-commands*
   :on-result '%directive-on-result
@@ -1669,21 +1675,74 @@ result string (spec §7: a Lisp form at the editor prompt evaluates like the REP
               (eq (car (first tokens)) 'integer)
               (member (char (cdr (first tokens)) 0) '(#\+ #\-))))))
 
+;;; --- gdb-style step repeat: a bare RET repeats the last stepping command ---
+;;;
+;;; At a debugger stop the active interactor is the navigator (NAV>) or, plain,
+;;; ALDO; the stepping commands (c/i/n/o) reach the debugger by fall-through
+;;; either way. The last stepping command entered is remembered on the
+;;; persistent dumb-ui (so it survives the resume/re-stop cycle between steps),
+;;; and a bare RET repeats it; any other command clears the repeat.
+
+(defparameter *aldo-stepping-verbs*
+  '("c" "continue" "i" "into" "n" "next" "o" "out")
+  "The stepping commands whose entry a bare RET repeats.")
+
+(defun %aldo-stepping-verb-p (verb)
+  (and verb (member verb *aldo-stepping-verbs* :test #'string-equal)))
+
+(defun %stop-ui ()
+  "The dumb-ui of the current debugger-stop activation (navi / lavi / aldo), or
+NIL when the current activation is none of these."
+  (let ((state (activation-state *command-activation*)))
+    (cond ((navi-state-p state) (navi-state-ui state))
+          ((lavi-state-p state) (lavi-state-ui state))
+          ((aldo-state-p state) (aldo-state-ui state)))))
+
+(defun %record-step-command (ui input)
+  "Remember INPUT's line on UI iff it is a stepping command, else clear the
+pending repeat. Returns INPUT."
+  (when ui
+    (setf (dumb-ui-last-step-command ui)
+          (and (input-command-p input)
+               (%aldo-stepping-verb-p
+                (first (clautolisp.interactor:input-command-invocation input)))
+               (input-command-raw input))))
+  input)
+
+(defun %repeat-step-command (ui)
+  "The input to repeat for UI's pending stepping command, or NIL when none."
+  (let ((line (and ui (dumb-ui-last-step-command ui))))
+    (when line
+      (make-input-command :raw line
+                          :tokens (clautolisp.interactor:parse-command line)))))
+
 (defun %navi-read (state input-context)
-  "The navigator reader: a blank line redisplays (bare RET — STATE may be NIL
-for LAVI, whose status always reprints); a ±N line reads as the skip motion;
-otherwise a command, or a `(' form to evaluate in the current frame."
-  (let ((input (%line-command-read input-context)))
+  "The navigator reader: a blank line repeats the last stepping command (c/i/n/o)
+if there is one, else redisplays (bare RET — STATE may be NIL for LAVI, whose
+status always reprints); a ±N line reads as the skip motion; otherwise a
+command, or a `(' form to evaluate in the current frame."
+  (let ((input (%line-command-read input-context))
+        (ui (%stop-ui)))
     (cond
       ((eq input :blank)
-       (when state (setf (navi-state-redraw state) t))
-       :blank)
+       (or (%repeat-step-command ui)
+           (progn (when state (setf (navi-state-redraw state) t)) :blank)))
       ((%signed-skip-p input)
+       (%record-step-command ui input)          ; a motion, not a step → clears
        (let ((count (cdr (first (input-command-tokens input)))))
          (make-input-command
           :raw (concatenate 'string "skip " count)
           :tokens (list (cons 'ident "skip") (cons 'integer count)))))
-      (t input))))
+      (t (%record-step-command ui input)))))
+
+(defun %aldo-command-read (input-context)
+  "The plain ALDO reader (DBG> without the navigator): %LINE-COMMAND-READ with
+the same gdb-style step repeat as the navigator."
+  (let ((input (%line-command-read input-context))
+        (ui (%stop-ui)))
+    (cond
+      ((eq input :blank) (or (%repeat-step-command ui) :blank))
+      (t (%record-step-command ui input)))))
 
 (defun %navi-prompt (stream)
   "The *NAVI* singleton's prompt: the kind-specific NAV> prompt over this

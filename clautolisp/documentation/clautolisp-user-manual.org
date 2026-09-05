@@ -325,7 +325,10 @@ The same verbs work in every interface (typed as tokens in the TUI,
 single keys in ncurses/aldb). The most used:
 
 - Execution: ~continue~ (=c=), ~into~ (=i=, step into), ~next~ (=n=,
-  step over), ~out~ (=o=, finish), ~quit~ (=q=, abort the run).
+  step over), ~out~ (=o=, finish), ~quit~ (=q=, abort the run). After a
+  stepping command (=c=/=i=/=n=/=o=) a bare =RET= repeats it — so you can
+  walk through code by tapping Return, gdb-style; any other command
+  cancels the repeat.
 - Breakpoints: ~break~ (=b=) at a form / line; ~list breakpoints~ (=lb=);
   ~enable~ / ~disable~ / ~delete~ / ~condition~ / ~ignore~ a breakpoint.
 - Stack: ~list frames~ (=lf=, the backtrace); the ~frame~ family —
