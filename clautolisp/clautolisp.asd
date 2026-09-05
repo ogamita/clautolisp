@@ -345,6 +345,9 @@ identity / TEMPPREFIX stamping, option value parsers)."
                "usocket"
                ;; dribble tee/echo streams (dribble.issue)
                "trivial-gray-streams"
+               ;; the aldo companion thread runs beside the REPL (the lisp
+               ;; environment's debugger runs on its own thread).
+               "bordeaux-threads"
                "uiop")
   :serial t
   :components

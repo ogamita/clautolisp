@@ -1576,6 +1576,107 @@ that, degrading to the documented NIL."
   #-(and sbcl (not win32))
   nil)
 
+;;;; --- the lisp environment: a REPL/application thread + its aldo companion ---
+;;;;
+;;;; aldo is always available beside a running lisp environment (aldo-command-
+;;;; from-repl.issue). The debugger UI runs on its OWN thread — the "aldo
+;;;; companion" — mutually exclusive with the application/REPL thread: on a stop
+;;;; the application hands the hit to the companion through the thread-debug-
+;;;; info's blocking-queue rendezvous and blocks until the companion returns a
+;;;; resume directive; between stops the companion sleeps on the outbound queue.
+;;;; That rendezvous IS the mutex ("when the repl works, aldo sleeps, and vice-
+;;;; versa"), and it is what lets sleeping-aldo commands touch the shared
+;;;; breakpoint table from the REPL thread safely.
+;;;;
+;;;; CALL-WITH-LISP-ENVIRONMENT abstracts the thread pair. For now the REPL runs
+;;;; in the CURRENT (main) thread (REPL-IN-CURRENT-THREAD t, the only supported
+;;;; mode); the seam is here so a future mode can fork a dedicated REPL thread
+;;;; too — e.g. to leave the main thread for a CAD application's GUI, running the
+;;;; whole lisp repl + aldo pair off it.
+
+(defstruct lisp-environment
+  "A running lisp environment: its debugger SESSION (holding the shared
+thread-debug-info + breakpoint table), the ALDO-COMPANION thread that drives the
+debugger UI, and REPL-THREAD (NIL while the REPL runs in the current thread)."
+  session aldo-companion (repl-thread nil))
+
+(defun %session-companion-queues-ready (session)
+  "Ensure SESSION's thread-info carries the inbound/outbound blocking queues the
+application↔companion rendezvous uses; return the thread-info."
+  (let ((ti (clautolisp.debug.ui:session-thread-info session)))
+    (unless (clautolisp.debug:thread-debug-info-inbound ti)
+      (setf (clautolisp.debug:thread-debug-info-inbound ti)
+            (clautolisp.debug:make-blocking-queue)))
+    (unless (clautolisp.debug:thread-debug-info-outbound ti)
+      (setf (clautolisp.debug:thread-debug-info-outbound ti)
+            (clautolisp.debug:make-blocking-queue)))
+    ti))
+
+(defun %companion-hit-handler (hit)
+  "The application-thread *DEBUG-HIT-HANDLER* under a lisp environment: report the
+HIT to the aldo companion on the outbound queue and block on the inbound queue
+for the companion's resume directive (the shape of the engine's QUEUE-HIT-
+HANDLER, written here against the exported accessors)."
+  (let ((ti (clautolisp.debug:hit-thread-info hit)))
+    (setf (clautolisp.debug:thread-debug-info-status ti) :stopped)
+    (clautolisp.debug:bq-push (clautolisp.debug:thread-debug-info-outbound ti)
+                              (list :hit hit))
+    (prog1 (clautolisp.debug:bq-pop (clautolisp.debug:thread-debug-info-inbound ti))
+      (setf (clautolisp.debug:thread-debug-info-status ti) :running))))
+
+(defun start-aldo-companion (session)
+  "Fork the aldo companion thread for SESSION: it drives the debugger UI for every
+hit the application hands off through the outbound queue, pushing SESSION-STOP's
+resume directive back on the inbound queue, until a (:shutdown) message. The UI
+writes to the streams it captured at session creation; the process-global
+*COLOR-OUTPUT* accent is rebound here so the companion prints in colour too."
+  (let ((ti (%session-companion-queues-ready session))
+        (color clautolisp.autolisp-runtime:*color-output*))
+    (bordeaux-threads:make-thread
+     (lambda ()
+       (let ((clautolisp.autolisp-runtime:*color-output* color))
+         (loop
+           (let ((message (clautolisp.debug:bq-pop
+                           (clautolisp.debug:thread-debug-info-outbound ti))))
+             (case (first message)
+               (:hit
+                (clautolisp.debug:bq-push
+                 (clautolisp.debug:thread-debug-info-inbound ti)
+                 ;; A fault inside the UI must not wedge the blocked application:
+                 ;; on error, resume with :continue so the program carries on.
+                 (handler-case
+                     (clautolisp.debug.ui:session-stop session (second message))
+                   (error (condition)
+                     (format *error-output* "~&aldo companion: ~A~%" condition)
+                     :continue))))
+               (:shutdown (return)))))))
+     :name "aldo-companion")))
+
+(defun stop-aldo-companion (session companion)
+  "Tell the aldo companion thread to exit (a (:shutdown) on the outbound queue)
+and join it."
+  (when (and companion (bordeaux-threads:thread-alive-p companion))
+    (clautolisp.debug:bq-push
+     (clautolisp.debug:thread-debug-info-outbound
+      (clautolisp.debug.ui:session-thread-info session))
+     (list :shutdown))
+    (ignore-errors (bordeaux-threads:join-thread companion))))
+
+(defun call-with-lisp-environment (session function &key (repl-in-current-thread t))
+  "Run FUNCTION — the lisp application/REPL work — as a lisp environment beside an
+aldo companion thread driving SESSION's debugger UI (see the block comment).
+REPL-IN-CURRENT-THREAD must be true for now: FUNCTION runs on the calling thread
+and the companion is torn down on exit. The keyword is the forecast seam for a
+future mode that forks a dedicated REPL thread as well."
+  (unless repl-in-current-thread
+    (error "call-with-lisp-environment: forking a dedicated REPL thread is not ~
+implemented yet; only the current-thread REPL mode (repl-in-current-thread t) ~
+is supported."))
+  (%session-companion-queues-ready session)
+  (let ((companion (start-aldo-companion session)))
+    (unwind-protect (funcall function)
+      (stop-aldo-companion session companion))))
+
 (defun run-under-session-debugging (session thunk break-on-error)
   "Run THUNK with debugging active under an already-attached SESSION (debugger
 §10): an uncaught AutoLISP error stops in the session's UI when BREAK-ON-ERROR
@@ -1585,7 +1686,14 @@ aborted from the debugger. Each call is its own abort extent, so a REPL turn's
 abort returns to the prompt rather than unwinding the whole loop."
   (let ((clautolisp.debug:*break-on-error* break-on-error)
         (clautolisp.debug:*debug-hit-handler*
-          (lambda (hit) (clautolisp.debug.ui:session-stop session hit))))
+          ;; Under a lisp environment (the ti carries the rendezvous queues) the
+          ;; aldo companion thread drives the stop; hand the hit off to it. With
+          ;; no companion (defensive: debugging run outside an environment) drive
+          ;; the UI inline on this thread, as before.
+          (if (clautolisp.debug:thread-debug-info-inbound
+               (clautolisp.debug.ui:session-thread-info session))
+              #'%companion-hit-handler
+              (lambda (hit) (clautolisp.debug.ui:session-stop session hit)))))
     (clautolisp.debug:call-with-debugging
      thunk :thread-info (clautolisp.debug.ui:session-thread-info session))))
 
@@ -1662,26 +1770,36 @@ machinery, not user intent)."
           ;; *break-on-error* is off under --on-error ignore.
           (let ((break (and debug-ui (not (eq on-error-policy :ignore))))
                 (session (and debug-ui (start-debug-session debug-ui context))))
-            (unwind-protect
-                 (progn
-                   (if (and session (not interactive-p))
-                       (run-under-session-debugging session #'run-actions break)
-                       (run-actions))
-                   (when interactive-p
-                     (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
-                      context "*AUTOLISP-INTERACTIVE*" (intern-autolisp-symbol "T")
-                      (lambda ()
-                        (repl-loop dialect context
-                                   :quiet-p quiet-p
-                                   :mock-input mock-input
-                                   :gui gui
-                                   :trace-p trace-p
-                                   :session session
-                                   :break-on-error break
-                                   :dribble dribble
-                                   :dribble-interactors dribble-interactors)))))
-              (when session
-                (clautolisp.debug.ui:ui-detached (clautolisp.debug.ui:session-ui session))))))
+            (flet ((run-environment ()
+                     ;; The application/REPL work of the lisp environment (run on
+                     ;; the current thread; the aldo companion runs beside it).
+                     (if (and session (not interactive-p))
+                         (run-under-session-debugging session #'run-actions break)
+                         (run-actions))
+                     (when interactive-p
+                       (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
+                        context "*AUTOLISP-INTERACTIVE*" (intern-autolisp-symbol "T")
+                        (lambda ()
+                          (repl-loop dialect context
+                                     :quiet-p quiet-p
+                                     :mock-input mock-input
+                                     :gui gui
+                                     :trace-p trace-p
+                                     :session session
+                                     :break-on-error break
+                                     :dribble dribble
+                                     :dribble-interactors dribble-interactors))))))
+              (unwind-protect
+                   ;; With a debug session, run beside the aldo companion thread
+                   ;; (the debugger UI runs there, mutually exclusive with this
+                   ;; thread). With no session, run plain on this thread.
+                   (if session
+                       (call-with-lisp-environment session #'run-environment
+                                                   :repl-in-current-thread t)
+                       (run-environment))
+                (when session
+                  (clautolisp.debug.ui:ui-detached
+                   (clautolisp.debug.ui:session-ui session)))))))
         ;; Normal completion: exit with the status a script recorded via
         ;; (autolisp-set-status N) — 0 when it never touched the channel.
         (autolisp-exit-status context))
