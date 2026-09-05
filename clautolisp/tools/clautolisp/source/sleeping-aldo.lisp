@@ -427,9 +427,14 @@ breakpoint's target line."
           do (format out "~:[  ~;^ ~]~4D: ~A~%" (member n marked) n text))))
 
 (defun %sa-page (text)
-  "Page TEXT through the aldo pager over the REPL's streams (PAGER / PAGER-HEIGHT
-settings apply)."
-  (clautolisp.ui.dumb:paged-out (clautolisp.ui.dumb:make-dumb-ui) text))
+  "Page TEXT over the REPL's streams through the LISP pager — resolved from
+lisp.conf over the defaults, parallel to the interactor stack (the debugger uses
+the aldo pager). PAGER is on / off / an external pager path; PAGER-HEIGHT is the
+built-in pager's page height."
+  (clautolisp.ui.dumb:paged-out
+   (clautolisp.ui.dumb:make-dumb-ui) text
+   :pager (clautolisp.debug.ui:get-lisp-setting :pager)
+   :pager-height (clautolisp.debug.ui:get-lisp-setting :pager-height)))
 
 (defun %sa-function-line-range (file start-line)
   "The source line range (values FROM TO) of the function whose first body form

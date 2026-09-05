@@ -46,16 +46,37 @@ dumb UI's own stream. See *DEBUGGER-OUTPUT*."
         (butlast lines)
         lines)))
 
-(defun paged-out (ui text)
+(defun %page-through-external (ui text program)
+  "Pipe TEXT through the external pager PROGRAM (a namestring, e.g. less(1) /
+more(1)), letting it use the terminal; on any failure fall back to writing TEXT
+straight to the UI's stream so long output is never lost."
+  (handler-case
+      (uiop:run-program (list program)
+                        :input (make-string-input-stream text)
+                        :output :interactive
+                        :error-output :interactive
+                        :ignore-error-status t)
+    (error ()
+      (write-string text (%out-stream ui)))))
+
+(defun paged-out (ui text &key (pager (get-aldo-setting :pager))
+                               (pager-height (get-aldo-setting :pager-height)))
   "Emit TEXT to the UI, a page at a time when the pager is on and TEXT is taller
-than a page (command reference §8 *Paging long output*). The page prompt reads
-one line of input (the modal pager sub-mode): SPACE / f / =>= / RET next page,
-b / =<= back, d / u half-page down / up, j / k one line down / up, g / =<<=
-first, G / =>>= last, =/pat= / =?pat= search forward / backward, n / N repeat
-search, q quit. With the pager off, or on a non-interactive stream (EOF), TEXT
-is written straight through (never blocks)."
-  (let* ((pager-on (eq (get-aldo-setting :pager) :on))
-         (page (max 1 (1- (or (get-aldo-setting :pager-height) 24))))
+than a page (command reference §8 *Paging long output*). PAGER is :ON (the
+built-in modal pager), :OFF (write straight through), or a namestring naming an
+external pager filter (less(1) / more(1)); PAGER-HEIGHT is the built-in pager's
+page height. They default to the aldo (debugger) settings; the REPL's `,ls'
+passes the LISP-resolved values so the pager cascades parallel to the interactor
+stack (aldo-command-from-repl.issue). The built-in page prompt reads one line of
+input (the modal pager sub-mode): SPACE / f / =>= / RET next page, b / =<= back,
+d / u half-page down / up, j / k one line down / up, g / =<<= first, G / =>>=
+last, =/pat= / =?pat= search forward / backward, n / N repeat search, q quit.
+With the pager off, or on a non-interactive stream (EOF), TEXT is written
+straight through (never blocks)."
+  (when (stringp pager)
+    (return-from paged-out (%page-through-external ui text pager)))
+  (let* ((pager-on (eq pager :on))
+         (page (max 1 (1- (or pager-height 24))))
          (half (max 1 (floor page 2)))
          (lines (coerce (string-lines text) 'vector))
          (n (length lines))

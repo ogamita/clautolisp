@@ -64,7 +64,7 @@ types and the :DECORATIONS sub-list for the theme glyphs.")
     (:break-on-caught         :boolean)
     (:source-window-height    :integer)
     (:value-line-width        :integer)
-    (:pager                   :enum (:on :off))
+    (:pager                   :pager)
     (:pager-height            :integer)
     (:theme                   :enum (:unicode :ascii :white-on-black
                                      :black-on-white :green-on-black :attributes))
@@ -86,7 +86,13 @@ parsing and validation. :DECORATIONS is structural (edited as data, not via
 
 (defparameter *default-lisp-configuration*
   '((:sedit-on-quit . :ask)
-    (:shell-escape-character . #\!))
+    (:shell-escape-character . #\!)
+    ;; The pager cascades parallel to the interactor stack (aldo-command-from-
+    ;; repl.issue): the REPL's `,ls' and other long output page through the LISP
+    ;; pager (lisp.conf over these defaults); the debugger pages through the aldo
+    ;; pager (aldo.conf over lisp.conf over defaults).
+    (:pager . :on)
+    (:pager-height . 24))
   "Built-in defaults for the LISP (REPL) interactor. Its first setting is
 :SEDIT-ON-QUIT — the same key aldo carries, governing (clal-sedit …)
 invocations made from the REPL while aldo's governs debugger-side ones.
@@ -98,7 +104,9 @@ key absent from aldo.conf is taken from lisp.conf.")
 
 (defparameter *lisp-setting-specs*
   '((:sedit-on-quit :enum (:auto-save :do-not-save :ask))
-    (:shell-escape-character :character))
+    (:shell-escape-character :character)
+    (:pager :pager)
+    (:pager-height :integer))
   "(KEY TYPE [ALLOWED]) for the LISP interactor's settings; same shape as
 *SETTING-SPECS*.")
 
@@ -243,6 +251,14 @@ Signals a SIMPLE-ERROR on a bad value."
              ((member raw '("off" "false" "nil" "no" "0") :test #'string-equal) nil)
              (t (error "value ~S is not a boolean (on/off)" raw))))
       (:string raw)
+      (:pager
+       ;; ON / OFF, or a namestring naming an external pager filter
+       ;; (more(1)/less(1)/…) — aldo-command-from-repl.issue part 3.
+       (cond ((string-equal raw "on") :on)
+             ((string-equal raw "off") :off)
+             ((zerop (length raw))
+              (error "value ~S is not on/off or a pager path" raw))
+             (t raw)))
       (:character
        ;; "ascii character or unicode code point" (pjb). Both spellings are
        ;; accepted, exactly as the :DECORATIONS glyphs accept either a
@@ -524,6 +540,7 @@ here, because the file reader maps only those two symbols to booleans — an
         (declare (ignore name))
         (ecase type
           (:enum      (format nil "~{~(~A~)~^ | ~}" allowed))
+          (:pager     "on | off | a pager path in a string")
           (:integer   "an integer")
           (:boolean   "t | nil")
           (:string    "a string")
