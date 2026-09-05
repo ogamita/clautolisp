@@ -189,6 +189,8 @@
    ;; Debugger integration (clautolisp-debugger).
    #:*debugging*
    #:*instrument-usubr-hook*
+   #:*before-load-file-hook*
+   #:*after-load-file-hook*
    #:*debug-instrumentation-enabled*
    #:*debug-error-snapshot-hook*
    #:autolisp-runtime-error-debug-snapshot

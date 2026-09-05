@@ -595,6 +595,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-debug/source/metadata")
    (:file "autolisp-debug/source/breakpoints")
    (:file "autolisp-debug/source/virtual-breakpoints")
+   (:file "autolisp-debug/source/line-breakpoints")
    (:file "autolisp-debug/source/watch")
    (:file "autolisp-debug/source/jump")
    (:file "autolisp-debug/source/snapshot")

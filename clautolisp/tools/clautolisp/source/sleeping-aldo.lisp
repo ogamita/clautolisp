@@ -36,8 +36,11 @@
 
 (defstruct sleeping-aldo-state
   "A sleeping-aldo activation's state: the debugger SESSION whose thread-info
-holds the breakpoints, or NIL when no debugger is attached to the REPL."
-  session)
+holds the breakpoints (or NIL when no debugger is attached to the REPL), and the
+CURRENT-FILE that bare `,break LINE' and `,ls' act on (set by `,break FILE:LINE'
+and `,ls FILE')."
+  session
+  (current-file nil))
 
 (defparameter *sleeping-aldo*
   (make-interactor
@@ -66,6 +69,60 @@ to push below the *AUTOLISP* interactor in the REPL stack."
 --on-error debug, or a --debugger-ui to manage breakpoints.~%")
         nil)))
 
+(defun %sa-current-file ()
+  "The sleeping-aldo current file, or NIL."
+  (sleeping-aldo-state-current-file (activation-state *command-activation*)))
+
+(defun (setf %sa-current-file) (file)
+  (setf (sleeping-aldo-state-current-file (activation-state *command-activation*)) file))
+
+(defun %sa-ti (session)
+  (clautolisp.debug.ui:session-thread-info session))
+
+;;; --- FILE:LINE[:COL] parsing ---------------------------------------------
+
+(defun %sa-parse-file-line (spec)
+  "Parse a FILE:LINE or FILE:LINE:COL breakpoint spec into (values FILE LINE COL),
+or NIL when it has no trailing LINE. Splits on `:' and takes the one or two
+trailing all-digit fields as LINE[:COL], rejoining the rest as FILE (so a
+Windows drive letter, e.g. C:\\a\\b.lsp:3, survives)."
+  (let ((fields (loop with start = 0
+                      for pos = (position #\: spec :start start)
+                      collect (subseq spec start (or pos (length spec)))
+                      while pos do (setf start (1+ pos)))))
+    (labels ((intp (s) (and (plusp (length s)) (every #'digit-char-p s))))
+      (let ((n (length fields)))
+        (cond
+          ((and (>= n 3) (intp (nth (- n 1) fields)) (intp (nth (- n 2) fields)))
+           (values (format nil "~{~A~^:~}" (subseq fields 0 (- n 2)))
+                   (parse-integer (nth (- n 2) fields))
+                   (parse-integer (nth (- n 1) fields))))
+          ((and (>= n 2) (intp (nth (- n 1) fields)))
+           (values (format nil "~{~A~^:~}" (subseq fields 0 (- n 1)))
+                   (parse-integer (nth (- n 1) fields))
+                   1))
+          (t nil))))))
+
+(defun %sa-break-file-line (session file line col)
+  "Set a FILE:LINE[:COL] breakpoint: record it (armed now if the file is loaded,
+else pending until the file is loaded), set the current file, and report."
+  (let* ((resolved (or (ignore-errors (namestring (truename file))) file))
+         (ti (%sa-ti session)))
+    (setf (%sa-current-file) resolved)
+    (multiple-value-bind (lbp new-p armed-p)
+        (clautolisp.debug:set-line-breakpoint ti resolved line col)
+      (declare (ignore new-p))
+      (if armed-p
+          (let ((bp (clautolisp.debug:line-breakpoint-bp lbp)))
+            (format t "~&breakpoint lb~A at ~A:~A~@[:~A~] — pp~A on ~A~%"
+                    (clautolisp.debug:line-breakpoint-id lbp)
+                    (file-namestring resolved) line (and (/= col 1) col)
+                    (%sa-bp-pp bp) (%sa-bp-where bp)))
+          (format t "~&breakpoint lb~A at ~A:~A~@[:~A~] — pending, armed when the ~
+file is loaded~%"
+                  (clautolisp.debug:line-breakpoint-id lbp)
+                  (file-namestring resolved) line (and (/= col 1) col))))))
+
 ;;; --- breakpoint identification (ppN) and location display ----------------
 
 (defun %sa-bp-pp (bp)
@@ -84,6 +141,13 @@ NIL when it is not a poll-point number."
     (and (plusp (length digits))
          (every #'digit-char-p digits)
          (values (parse-integer digits)))))
+
+(defun %sa-parse-lb (token)
+  "Parse a FILE:LINE breakpoint selector \"lbN\" to the integer N, or NIL."
+  (let ((s (string-trim " " token)))
+    (when (and (>= (length s) 3) (string-equal (subseq s 0 2) "lb")
+               (every #'digit-char-p (subseq s 2)))
+      (parse-integer s :start 2))))
 
 (defun %sa-bp-where (bp)
   "A human location for BP: the function name plus `(entry)' for the entry
@@ -159,33 +223,57 @@ instrumenting it on demand. Reports the resulting ppN."
     (when session
       (cond
         ((zerop (length name))
-         (format t "~&usage: ,break FUNC          breakpoint on the function's entry~%~
-                      ~&       ,break FUNC.N        breakpoint on subform N (0 = entry)~%"))
-        ;; the file:line and bare-line forms are staged for a follow-up
+         (format t "~&usage: ,break FUNC | FUNC.N | FILE:LINE[:COL] | LINE~%"))
         ((find #\: name)
-         (format t "~&aldo: ,break FILE:LINE is coming in a follow-up; ~
-use ,break FUNC or ,break FUNC.N for now.~%"))
+         (multiple-value-bind (file line col) (%sa-parse-file-line name)
+           (if (null line)
+               (format t "~&aldo: cannot parse ~S as FILE:LINE[:COL]~%" name)
+               (%sa-break-file-line session file line col))))
         ((every #'digit-char-p name)
-         (format t "~&aldo: ,break LINE is coming in a follow-up; ~
-use ,break FUNC or ,break FUNC.N for now.~%"))
+         (let ((file (%sa-current-file)))
+           (if (null file)
+               (format t "~&aldo: no current file — use ,ls FILE or ,break FILE:LINE first~%")
+               (%sa-break-file-line session file (parse-integer name) 1))))
         (t
          (multiple-value-bind (fname index) (%sa-parse-func-dot name)
            (%sa-break-function session fname index)))))))
 
 (define-command (*sleeping-aldo* lb list breakpoints) ()
-    "List the breakpoints (by poll-point number ppN)."
+    "List the breakpoints (poll-point ppN, plus any pending FILE:LINE lbN)."
   (let ((session (%sleeping-aldo-require-session)))
     (when session
-      (let ((breakpoints (clautolisp.debug.ui:cmd-list-breakpoints session)))
-        (if (null breakpoints)
+      (let* ((breakpoints (clautolisp.debug.ui:cmd-list-breakpoints session))
+             (line-bps (clautolisp.debug:list-line-breakpoints))
+             (bp->lbp (let ((table (make-hash-table :test 'eq)))
+                        (dolist (lbp line-bps table)
+                          (when (clautolisp.debug:line-breakpoint-bp lbp)
+                            (setf (gethash (clautolisp.debug:line-breakpoint-bp lbp) table) lbp))))))
+        (if (and (null breakpoints) (null line-bps))
             (format t "~&no breakpoints.~%")
-            (dolist (bp (sort (copy-list breakpoints) #'< :key #'%sa-bp-pp))
-              (format t "~&pp~A  ~A~@[  line ~A~]  ~A~:[~;  [cond]~]~%"
-                      (%sa-bp-pp bp)
-                      (%sa-bp-where bp)
-                      (%sa-bp-line bp)
-                      (if (clautolisp.debug:breakpoint-enabled-p bp) "enabled" "disabled")
-                      (clautolisp.debug:breakpoint-condition bp))))))))
+            (progn
+              (dolist (bp (sort (copy-list breakpoints) #'< :key #'%sa-bp-pp))
+                (let* ((lbp (gethash bp bp->lbp))
+                       (annotation (if lbp
+                                       (format nil "  (lb~A ~A:~A)"
+                                               (clautolisp.debug:line-breakpoint-id lbp)
+                                               (file-namestring
+                                                (clautolisp.debug:line-breakpoint-file lbp))
+                                               (clautolisp.debug:line-breakpoint-line lbp))
+                                       "")))
+                  (format t "~&pp~A  ~A~@[  line ~A~]  ~A~:[~;  [cond]~]~A~%"
+                          (%sa-bp-pp bp)
+                          (%sa-bp-where bp)
+                          (%sa-bp-line bp)
+                          (if (clautolisp.debug:breakpoint-enabled-p bp) "enabled" "disabled")
+                          (clautolisp.debug:breakpoint-condition bp)
+                          annotation)))
+              ;; FILE:LINE breakpoints not yet armed (their file is not loaded)
+              (dolist (lbp line-bps)
+                (unless (clautolisp.debug:line-breakpoint-bp lbp)
+                  (format t "~&lb~A  ~A:~A  pending~%"
+                          (clautolisp.debug:line-breakpoint-id lbp)
+                          (file-namestring (clautolisp.debug:line-breakpoint-file lbp))
+                          (clautolisp.debug:line-breakpoint-line lbp))))))))))
 
 (defun %sa-set-enabled (token enabled)
   "Enable/disable the breakpoints selected by TOKEN (ppN or ALL)."
@@ -208,15 +296,33 @@ use ,break FUNC or ,break FUNC.N for now.~%"))
   (%sa-set-enabled (or argument "") nil))
 
 (define-command (*sleeping-aldo* rb remove breakpoint) (&whole argument)
-    "Remove a breakpoint: ,rb ppN | ,rb ALL."
-  (let ((session (%sleeping-aldo-require-session)))
+    "Remove a breakpoint: ,rb ppN | ,rb lbN | ,rb ALL."
+  (let ((session (%sleeping-aldo-require-session))
+        (tok (string-trim " " (or argument ""))))
     (when session
-      (let ((bps (%sa-select-breakpoints session (or argument ""))))
-        (if (eq bps :none)
-            (format t "~&aldo: no breakpoint ~A~%" (string-trim " " (or argument "")))
-            (progn
-              (dolist (bp bps) (clautolisp.debug.ui:cmd-remove-breakpoint session bp))
-              (format t "~&removed ~A breakpoint~:P~%" (length bps))))))))
+      (cond
+        ((string-equal tok "ALL")
+         ;; removing a FILE:LINE breakpoint also disarms its real breakpoint;
+         ;; drop those first, then any remaining plain breakpoints.
+         (let* ((lbps (clautolisp.debug:list-line-breakpoints))
+                (n-lb (length lbps)))
+           (dolist (lbp lbps) (clautolisp.debug:remove-line-breakpoint lbp))
+           (let ((plain (clautolisp.debug.ui:cmd-list-breakpoints session)))
+             (dolist (bp plain) (clautolisp.debug.ui:cmd-remove-breakpoint session bp))
+             (format t "~&removed ~A breakpoint~:P~%" (+ n-lb (length plain))))))
+        ((%sa-parse-lb tok)
+         (let ((lbp (clautolisp.debug:find-line-breakpoint (%sa-parse-lb tok))))
+           (if (null lbp)
+               (format t "~&aldo: no breakpoint ~A~%" tok)
+               (progn (clautolisp.debug:remove-line-breakpoint lbp)
+                      (format t "~&removed lb~A~%" (%sa-parse-lb tok))))))
+        (t
+         (let ((bps (%sa-select-breakpoints session tok)))
+           (if (eq bps :none)
+               (format t "~&aldo: no breakpoint ~A~%" tok)
+               (progn
+                 (dolist (bp bps) (clautolisp.debug.ui:cmd-remove-breakpoint session bp))
+                 (format t "~&removed ~A breakpoint~:P~%" (length bps))))))))))
 
 (define-command (*sleeping-aldo* cb condition breakpoint) (&whole argument)
     "Set or clear a breakpoint condition: ,cb ppN FORM  (,cb ppN alone clears)."

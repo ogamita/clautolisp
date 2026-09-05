@@ -1679,6 +1679,19 @@ SPACE / DEBUG 0). When NIL, debugged code runs its plain body — no poll points
 no stepping — trading debuggability for speed/size (the fork matrix's DEBUG-0
 rows). T by default, so a debug session instruments what it runs.")
 
+(defparameter *before-load-file-hook* nil
+  "When non-nil, a function called with the resolved namestring of a file about
+to be loaded (AUTOLISP-LOAD-FILE-IN-CONTEXT), before its forms are evaluated. The
+aldo debugger installs it to open a new load generation for that file's FILE:LINE
+breakpoints, so a reload re-resolves them (aldo-command-from-repl.issue). NIL when
+the debug system is absent.")
+
+(defparameter *after-load-file-hook* nil
+  "When non-nil, a function called with the resolved namestring of a file just
+loaded, after its forms are evaluated (on normal completion). The aldo debugger
+installs it to warn when a reload moved any FILE:LINE breakpoint. NIL when the
+debug system is absent.")
+
 (defun instrument-usubr-if-possible (function)
   "Weave FUNCTION's instrumented fork via *INSTRUMENT-USUBR-HOOK*, SURFACING a
 failure instead of silently swallowing it: if the weave raises (a construct the
@@ -3677,12 +3690,24 @@ so a value written and read back under the same encoding round-trips."
               read-options)))
     (call-with-autolisp-error-handler
      (lambda ()
-       ;; Top-level forms go through the compiled-eval model so a file
-       ;; loaded under a debug session is instrumentable (LOAD → EVAL →
-       ;; clal-compile). Outside a session this is a plain eval-progn.
-       (autolisp-eval-toplevel-progn
-        (apply #'read-runtime-from-file path effective-options)
-        context))
+       ;; A file (re)load opens a new "load generation" for its FILE:LINE
+       ;; breakpoints (aldo-command-from-repl.issue): the before-hook lets the
+       ;; debugger clear their per-load arming so they re-resolve against the
+       ;; new content, the after-hook lets it warn about any that moved. Both
+       ;; NIL when the debug system is absent; the resolved namestring is used
+       ;; so it matches the metadata source positions.
+       (let ((resolved (ignore-errors (namestring (truename path)))))
+         (when (and *before-load-file-hook* resolved)
+           (funcall *before-load-file-hook* resolved))
+         ;; Top-level forms go through the compiled-eval model so a file
+         ;; loaded under a debug session is instrumentable (LOAD → EVAL →
+         ;; clal-compile). Outside a session this is a plain eval-progn.
+         (multiple-value-prog1
+             (autolisp-eval-toplevel-progn
+              (apply #'read-runtime-from-file path effective-options)
+              context)
+           (when (and *after-load-file-hook* resolved)
+             (funcall *after-load-file-hook* resolved)))))
      context)))
 
 (defun autolisp-load-file (path &rest read-options)

@@ -138,6 +138,15 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:clear-virtual-breakpoints
    #:virtual-breakpoints-for-file
    #:materialize-virtual-breakpoints
+   ;; FILE:LINE breakpoints (aldo-command-from-repl.issue)
+   #:line-breakpoint #:line-breakpoint-p
+   #:line-breakpoint-id #:line-breakpoint-file #:line-breakpoint-line
+   #:line-breakpoint-col #:line-breakpoint-ti #:line-breakpoint-bp
+   #:line-breakpoint-resolved-line #:line-breakpoint-armed-generation
+   #:add-line-breakpoint #:list-line-breakpoints #:find-line-breakpoint
+   #:remove-line-breakpoint #:line-breakpoints-for-file
+   #:resolve-line-breakpoint #:set-line-breakpoint
+   #:materialize-line-breakpoints
    ;; software watchpoints (command reference §2 watch)
    #:watch #:watch-p
    #:watch-symbol #:watch-name #:watch-last-value #:watch-prev-value
