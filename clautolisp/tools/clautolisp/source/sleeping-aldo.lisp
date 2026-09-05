@@ -383,3 +383,107 @@ instrumenting it on demand. Reports the resulting ppN."
                              (if (plusp remaining) (progn (decf remaining) nil) t))))
                    (format t "~&pp~A will ignore its next ~A hit~:P~%"
                            (%sa-bp-pp bp) count))))))))))
+
+;;; --- list source (,ls), through the aldo pager ---------------------------
+
+(defun %sa-same-file-p (a b)
+  "Truename-tolerant same-file test for two file-designator strings."
+  (and (stringp a) (stringp b)
+       (or (equal a b)
+           (let ((ta (ignore-errors (namestring (truename a))))
+                 (tb (ignore-errors (namestring (truename b)))))
+             (and ta tb (equal ta tb))))))
+
+(defun %sa-file-breakpoint-lines (session file)
+  "The source lines of FILE that carry a breakpoint: the poll-point line of each
+armed breakpoint whose function is in FILE, plus each pending FILE:LINE
+breakpoint's target line."
+  (let ((lines '()))
+    (dolist (bp (clautolisp.debug.ui:cmd-list-breakpoints session))
+      (let* ((metadata (clautolisp.debug:metadata-for-function-id
+                        (clautolisp.debug:breakpoint-fid bp)))
+             ;; the entry poll point (form-id 0) has no position of its own —
+             ;; mark the function's first body form line instead.
+             (position (and metadata
+                            (or (ignore-errors
+                                 (clautolisp.debug:form-id-position
+                                  metadata (clautolisp.debug:breakpoint-form-id bp)))
+                                (clautolisp.debug:function-debug-metadata-source-position
+                                 metadata)))))
+        (when (and (clautolisp.source:source-position-p position)
+                   (%sa-same-file-p file (clautolisp.source:source-position-file position)))
+          (pushnew (clautolisp.source:source-position-start-line position) lines))))
+    (dolist (lbp (clautolisp.debug:line-breakpoints-for-file file))
+      (unless (clautolisp.debug:line-breakpoint-bp lbp)
+        (pushnew (clautolisp.debug:line-breakpoint-line lbp) lines)))
+    lines))
+
+(defun %sa-render-listing (lines marked from to)
+  "A numbered listing of the string vector LINES for the 1-based inclusive range
+[FROM,TO], each line prefixed `^ ' when its number is in MARKED, else two spaces."
+  (with-output-to-string (out)
+    (loop for n from (max 1 from) to (min (length lines) to)
+          for text = (aref lines (1- n))
+          do (format out "~:[  ~;^ ~]~4D: ~A~%" (member n marked) n text))))
+
+(defun %sa-page (text)
+  "Page TEXT through the aldo pager over the REPL's streams (PAGER / PAGER-HEIGHT
+settings apply)."
+  (clautolisp.ui.dumb:paged-out (clautolisp.ui.dumb:make-dumb-ui) text))
+
+(defun %sa-function-line-range (file start-line)
+  "The source line range (values FROM TO) of the function whose first body form
+is at START-LINE in FILE: from the defun header line to just before the next
+function in the file (or end of file)."
+  (let ((next nil))
+    (dolist (metadata (clautolisp.debug:all-function-metadata))
+      (let ((position (clautolisp.debug:function-debug-metadata-source-position metadata)))
+        (when (and (clautolisp.source:source-position-p position)
+                   (%sa-same-file-p file (clautolisp.source:source-position-file position))
+                   (> (clautolisp.source:source-position-start-line position) start-line)
+                   (or (null next)
+                       (< (clautolisp.source:source-position-start-line position) next)))
+          (setf next (clautolisp.source:source-position-start-line position)))))
+    (values (max 1 (1- start-line)) (if next (1- next) most-positive-fixnum))))
+
+(defun %sa-ls-file (session file from to)
+  "List FILE's lines [FROM,TO] with breakpoint markers, through the pager; set the
+current file."
+  (let* ((resolved (or (ignore-errors (namestring (truename file))) file))
+         (lines (ignore-errors (clautolisp.source:lines-of resolved))))
+    (setf (%sa-current-file) resolved)
+    (if (or (null lines) (zerop (length lines)))
+        (format t "~&aldo: cannot read ~A~%" (file-namestring resolved))
+        (%sa-page (%sa-render-listing lines (%sa-file-breakpoint-lines session resolved)
+                                      from to)))))
+
+(define-command (*sleeping-aldo* ls list source) (&whole argument)
+    "List source with breakpoint markers: ,ls | ,ls FILE | ,ls FUNC."
+  (let ((session (%sleeping-aldo-require-session))
+        (arg (string-trim " " (or argument ""))))
+    (when session
+      (cond
+        ((zerop (length arg))
+         (let ((file (%sa-current-file)))
+           (if file
+               (%sa-ls-file session file 1 most-positive-fixnum)
+               (format t "~&aldo: no current file — ,ls FILE or ,break FILE:LINE first~%"))))
+        ;; a path-looking argument is a file
+        ((or (find #\/ arg) (find #\\ arg) (find #\. arg))
+         (%sa-ls-file session arg 1 most-positive-fixnum))
+        (t
+         ;; otherwise a function name: list its source region (falls back to a
+         ;; file of that name when it is not a defined function)
+         (let ((metadata (clautolisp.debug:ensure-metadata-for-name arg)))
+           (if (null metadata)
+               (%sa-ls-file session arg 1 most-positive-fixnum)
+               (let* ((position (clautolisp.debug:function-debug-metadata-source-position metadata))
+                      (file (and (clautolisp.source:source-position-p position)
+                                 (clautolisp.source:source-position-file position))))
+                 (if (null file)
+                     (format t "~&aldo: ~A has no source location ~
+(loaded without source tracking?)~%" (string-upcase arg))
+                     (multiple-value-bind (from to)
+                         (%sa-function-line-range
+                          file (clautolisp.source:source-position-start-line position))
+                       (%sa-ls-file session file from to)))))))))))

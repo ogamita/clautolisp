@@ -81,4 +81,8 @@ UI refines.")
            ;; the breakpoint-condition predicate maker, reused by the tool's
            ;; sleeping-aldo `,cb' command so REPL and debugger conditions share
            ;; one evaluation semantics (aldo-command-from-repl.issue).
-           #:make-condition-predicate))
+           #:make-condition-predicate
+           ;; the built-in modal pager, reused by the tool's sleeping-aldo `,ls'
+           ;; command so REPL and debugger listings page the same way
+           ;; (aldo-command-from-repl.issue).
+           #:paged-out))
