@@ -376,3 +376,35 @@ CI load of the same text:
 Each is one line to test from a working session, and they are listed in
 the order they are cheapest to try, not in order of my confidence --
 which has been wrong on this ticket four times.
+
+
+THE RUNNER ENVIRONMENT IS THE OPEN VARIABLE -- pjb, 2026-09-06
+---------------------------------------------------------------
+
+pjb: the Windows runners are configured with shell=powershell, and the
+scripts then run under /bin/bash -- "but it's not clear what
+environment is used". There are .bashrc files in several places that
+eventually load the same rc files and set the environment as
+interactively, which is not a good arrangement for a runner. He is
+giving the gitlab runner on the laptop an EXPLICIT environment, as the
+coming windows-server runner will have, and we retry in a couple of
+days.
+
+That fits the anomaly this ticket could not resolve: a NON-INTERACTIVE
+bash does not source .bashrc, so the environment it receives from
+powershell need not be the one an interactive `which dirname' reports.
+It also explains why "PATH is short" and "awk and sed are present" both
+appeared true -- they were measured in different environments, mine in
+the runner's and pjb's interactively.
+
+So the dirname question is not answered, it is DISSOLVED: it was never
+about dirname. Nothing more should be inferred from it until the
+explicit environment exists.
+
+WAITING ON: the re-run under that environment. The harness now prints,
+on every run, $0, the shell version, whether dirname resolves, uname
+AND THE FULL PATH -- so the first run under the new environment shows
+whether it is what was intended, instead of being another round of
+inference. Nothing else is needed from this end: the load-refusal suite
+is committed and quarantined, and the four remaining differences from
+pjb's working .scr are listed above, cheapest first.

@@ -87,6 +87,15 @@ probe_preflight() {
   # So RECORD what the environment actually is, rather than theorise a
   # third time. One line, on a run that otherwise says nothing.
   echo "run-probes: env - \$0=$0 shell=${BASH_VERSION:-?} dirname=$(command -v dirname || echo NOT-FOUND) uname=$(uname -s 2>/dev/null || echo ?)" >&2
+  # PATH too, unconditionally and in full. The Windows runners use
+  # shell=powershell and the scripts then run under /bin/bash, so which
+  # environment that bash actually gets is the open question -- a
+  # non-interactive bash does not source .bashrc, so it need not match
+  # what an interactive `which dirname' reports. pjb is giving the
+  # runner an EXPLICIT environment (2026-09-06); this line is what will
+  # show whether the new one is what was intended, on the first run
+  # rather than after another round of inference.
+  echo "run-probes: env - PATH=$PATH" >&2
 }
 probe_preflight
 
