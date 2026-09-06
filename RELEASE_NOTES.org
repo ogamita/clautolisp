@@ -11,15 +11,17 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.9.9 / alfe 1.9.8 /
+master at the top of the file (clautolisp 2.1.0 / alfe 2.1.0 /
 read-autolisp 1.9.0). alfe tracks clautolisp's version: because
 =alfe --clautolisp= embeds essentially the whole clautolisp engine, a
 change to clautolisp's sources bumps alfe too — and alfe's own changes
 (the AutoCAD start-engine PROBE fix, =--on-error=) bump it independently.
-read-autolisp has not changed since 1.9.0, and version-rules lets an
-unchanged program keep its stamp. For the chronology and the
-issue-by-issue history, see ~git log~ on master and the issues under
-~issues/closed/~.
+The 2.x series opens with the aldo debugger's three interchangeable UIs
+and the sedit structural editor (below); alfe ships the whole engine, so
+it carries the 2.1 stamp too. read-autolisp has not changed since 1.9.0
+(its reader library is untouched), and version-rules lets an unchanged
+program keep its stamp. For the chronology and the issue-by-issue
+history, see ~git log~ on master and the issues under ~issues/closed/~.
 
 A standing rule lives in ~AGENTS.md~ § /Release notes/: this file
 *must* be updated in the same commit as any user-visible feature
@@ -626,14 +628,41 @@ separate binary for tool integrators.
   variable — =*clal-on-error*=, =*clal-on-interrupt*=, =*clal-on-quit*= —
   and the interrupt / quit policies are re-read *live*, so ~(setq …)~
   overrides the CLI at runtime.
-- *Debugger UI selection*: =--debugger-ui tui|ncurses|aldb= is the per-run
+- *Three interchangeable debugger UIs.* The aldo debugger now drives the
+  same command set through three front-ends: =dumb= (the line-mode
+  terminal UI), =ncurses= (the full-screen four-pane UI, built on the
+  shared =tui-core= terminal-screen abstraction), and =aldb= (the Emacs
+  UI over an Elisp-readable RPC channel). One command language, three
+  surfaces. The canonical spellings are =dumb=, =ncurses= and =aldb=;
+  =terminal= / =tui= are accepted as aliases of =dumb= and =emacs= as an
+  alias of =aldb=, and all spellings are case-insensitive.
+- *Debugger UI selection*: =--debugger-ui dumb|ncurses|aldb= is the per-run
   override of the persisted =default-user-interface= aldo setting
-  (=aldo.conf= is now consulted at launch); =--aldb-listen [HOST:]PORT= /
-  =--aldb-stdio= configure the aldb (Emacs) channel and imply
-  =--debugger-ui aldb= (the aldb RPC transport itself is still pending —
-  selecting it fails with a clear message). These REPLACE the former
-  =--aldo-user-interface= / =--aldb-listening-address= /
-  =--aldb-listening-port= spellings (no aliases kept).
+  (=aldo.conf= is consulted at launch); =--aldb-listen [HOST:]PORT= /
+  =--aldb-stdio= configure and select the aldb (Emacs) channel — the RPC
+  transport is complete (stdio and a TCP listener with a lazy connect
+  prompt), exercised by a live-socket CI test. The AutoLISP variable
+  =*clal-debugger-ui*= selects the UI at runtime and accepts the same
+  spellings and aliases; an unrecognised value warns on each use and
+  falls back to the =dumb= UI. See the command reference § /UI selection/.
+- *aldo debugging from the REPL, with no stop active* (the /sleeping-aldo/
+  interactor): the breakpoint and inspection vocabulary is reachable at
+  the =$_= prompt as comma-commands — =,break= / =,lb= / =,eb= / =,db= /
+  =,rb= / =,cb= / =,ib= / =,ls= to set, list, enable, disable, regex-,
+  condition- and ignore-count breakpoints and list source, plus =,bpcmd=,
+  =,trace= / =,untrace= and =,watch= / =,unwatch= / =,lw= — so you arm
+  breakpoints, traces and watchpoints before the code runs, not only once
+  stopped. See the command reference § /Debugging from the REPL/.
+- *sedit edits files and directories, keeping source positions consistent.*
+  =(clal-sedit "path")= opens a file or a directory; a directory lists its
+  =.lsp= / Lisp entries (windowed to the terminal height around the
+  selection, with =⋮= elision markers) and descends into files, and a file
+  lists its top-level forms — so you navigate directory → file → form and
+  back. Saving routes through a new source-file module that rewrites only
+  the touched forms and shifts the recorded source positions of everything
+  below, so line/column metadata stays correct across edits. The extended
+  =(clal-sedit TYPE OBJECT)= call selects what to edit explicitly. See the
+  sedit spec § /Editing files and directories/.
 
 ** Exit-status channel (portable pass/fail for batch scripts)
 
