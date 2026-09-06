@@ -14,6 +14,10 @@
 ;;;; clautolisp/tools/clautolisp/source/version.lisp. alfe's own changes
 ;;;; bump it independently on top of that. (It had drifted, stuck at
 ;;;; 1.9.0 while clautolisp reached 1.9.7 and alfe gained the AutoCAD
-;;;; start-engine PROBE fix and --on-error; realigned here.)
+;;;; start-engine PROBE fix and --on-error; realigned here. Realigned
+;;;; again to 2.1.0 for the release-2.1.0 cut: clautolisp reached the
+;;;; 2.x series with the aldo debugger's three UIs and the sedit editor,
+;;;; and version-rules requires a program shipped and changed within a
+;;;; series to carry that series' A.B.)
 
-(defparameter *version* "1.9.89")
+(defparameter *version* "2.1.0")
