@@ -1144,16 +1144,21 @@ other is whether the host will *read the form at all*.
 
 **** BricsCAD will not LOAD ~(foreach VAR nil ...)~
 
-A `foreach` whose list argument is the literal ~nil~ cannot be *loaded
-from a file* by BricsCAD. There is no diagnostic: the engine stops,
-and a batch process sits until something times it out. The same form
-*executes correctly* in BricsCAD when it is produced by ~read~ at run
-time, so the refusal is in whatever reads a file being loaded and not
-in the evaluator.
+Loading a file that contains a `foreach` whose list argument is the
+literal ~nil~ makes BricsCAD *stop making progress*: no diagnostic, no
+further output, and a batch process sits until something times it out.
+The same form *executes correctly* in BricsCAD when it is produced by
+~read~ at run time, so the evaluator is not implicated.
+
+What stops it is *not established*. The measurement is that the load
+does not return -- each load is wrapped in ~vl-catch-all-apply~, so an
+error the engine signalled would have been caught and recorded, and
+none was. A reader rejection, a crash and a modal dialog all fit that
+silence equally.
 
 | form                     | AutoCAD 2026 | BricsCAD V25/V26   |
 |--------------------------+--------------+--------------------|
-| ~(foreach e nil 99)~     | loads, `nil` | *will not load*    |
+| ~(foreach e nil 99)~     | loads, `nil` | *load never returns* |
 | ~(foreach e '(1 2 3))~   | loads        | loads              |
 | ~(list (foreach ...))~   | loads        | loads              |
 

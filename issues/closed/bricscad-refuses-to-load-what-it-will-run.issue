@@ -183,3 +183,63 @@ file therefore says only that the PREVIOUS load finished -- a silence.
 It was read as evidence twice, and both readings were wrong: first
 blaming a suite that had loaded fine, then a form that turned out
 innocent. PROBE_SPLIT_SUITES exists so the last marker NAMES the form.
+
+
+WHAT THE OUTPUT FILE ACTUALLY SAYS -- pjb, 2026-09-06
+------------------------------------------------------
+
+pjb: "What do you mean by `(foreach e nil 99) is refused'? I don't see
+this form in the probe output file."
+
+He is right, and the distinction is the one this whole ticket is about.
+THE FORM APPEARS NOWHERE IN THE RESULTS FILE. The file is four records
+and stops:
+
+    ((KIND . "wrapper-start"))
+    ((KIND . "load-context") (SECURELOAD . "0"))
+    ((KIND . "load") (FILE . "probe-core.lsp") (VALUE . "nil"))
+    ((KIND . "step") (AT . "loaded ... form 1 (...-001.lsp)")
+                     (VALUE . "CAD-PROBE-LR--NO-BODY"))
+    ((KIND . "step") (AT . "loaded ... form 2 (...-002.lsp)")
+                     (VALUE . "CAD-PROBE-LR--EXPRESSION-POSITION"))
+
+The identity of the form comes from a DIFFERENT file in the same
+artifact -- fragments/probe-load-refusal-003.lsp, written by the split,
+which holds (defun cad-probe-lr--empty-list () ... (foreach e nil 99)).
+
+SO WHAT IS ESTABLISHED IS NARROWER THAN "REFUSED":
+
+  - fragments 001 and 002 loaded, and their markers name what they
+    defined, so those loads returned;
+  - the load of fragment 003 NEVER RETURNED. No marker, and nothing
+    afterwards, until the harness timeout;
+  - each load is wrapped in VL-CATCH-ALL-APPLY, so a form the engine
+    SIGNALLED about would have been caught and recorded WITH its
+    marker. There is no marker at all, so this is not a catchable
+    refusal -- it is the process not coming back.
+
+"REFUSED" AND "WILL NOT READ" WERE INTERPRETATION, written as finding.
+The word "read" in particular claims a decision inside the reader,
+which nothing here shows: a hang, a crash, and a modal dialog are all
+consistent with the same silence. What IS separately established is
+that the evaluator is fine -- the foreach-scope suite evaluates
+(foreach e nil 99) by READ at run time and gets nil, status ok, on both
+platforms.
+
+THE ACCURATE STATEMENT:
+
+    Loading a file that contains (foreach e nil 99) makes BricsCAD stop
+    making progress -- no error, no further output -- while the same
+    form evaluates correctly when READ at run time. Which mechanism
+    stops it is not established.
+
+That the fault is reached at form 3 and not before is solid: it rests
+on markers that WERE written, not on ones that were not.
+
+WHY THIS CORRECTION IS THE POINT AND NOT A FOOTNOTE: reading a silence
+as evidence is the exact error that cost this investigation four wrong
+guesses, and the instrumentation was built to stop it. It stopped it in
+the MEASUREMENT -- the split legitimately narrows the fault to one
+fragment -- and then it crept back into the CONCLUSION, where "did not
+return" became "refused" became "will not read". The tooling was
+sound; the sentence was not.

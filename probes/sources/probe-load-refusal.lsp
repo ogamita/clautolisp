@@ -36,13 +36,23 @@
 ;;;;
 ;;;; SETTLED (2026-09-02, BricsCAD macOS, two runs):
 ;;;;
-;;;;   (foreach e (list 1 2 3))                  LOADS   -- innocent
-;;;;   (list (foreach e (list 1 2 3) (* e 10)))  LOADS   -- innocent
-;;;;   (foreach e nil 99)                        REFUSED -- SOLE culprit
+;;;;   (foreach e (list 1 2 3))                  LOADS -- marker written
+;;;;   (list (foreach e (list 1 2 3) (* e 10)))  LOADS -- marker written
+;;;;   (foreach e nil 99)                        LOAD NEVER RETURNS
 ;;;;
-;;;; BRICSCAD WILL NOT READ (foreach VAR nil ...) -- a FOREACH WHOSE
-;;;; LIST ARGUMENT IS THE LITERAL NIL -- from a file it is loading. It
-;;;; executes the same form happily when the form is READ at run time.
+;;;; Loading a file that contains (foreach VAR nil ...) makes BricsCAD
+;;;; STOP MAKING PROGRESS: no marker, nothing after it, until the
+;;;; harness timeout. It executes the same form happily when the form
+;;;; is READ at run time, so the evaluator is not implicated.
+;;;;
+;;;; SAY `THE LOAD DOES NOT RETURN', NOT `IT REFUSES' AND NOT `IT WILL
+;;;; NOT READ' (pjb, 2026-09-06). The results file names FUNCTIONS that
+;;;; loaded; the culprit's identity comes from the FRAGMENT FILE, and
+;;;; its verdict from a marker that is ABSENT. Each load is wrapped in
+;;;; VL-CATCH-ALL-APPLY, so an error the engine signalled would have
+;;;; been caught and recorded -- none was, which rules out a catchable
+;;;; refusal and rules IN nothing: a reader rejection, a crash and a
+;;;; modal dialog all fit the same silence.
 ;;;;
 ;;;; Two runs, each clearing a different candidate, so neither verdict
 ;;;; rests on one observation. The order below is what made round 2
