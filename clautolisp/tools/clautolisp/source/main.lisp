@@ -59,10 +59,11 @@
   (format t "                         break into the debugger BEFORE the stack unwinds; continuing~%")
   (format t "                         resumes the quit, aborting cancels it. Sets *CLAL-ON-QUIT*,~%")
   (format t "                         re-read LIVE at each (quit)/(exit) call.~%")
-  (format t "  --debugger-ui UI       Debugger front-end: tui (the line/terminal UI), ncurses, or~%")
-  (format t "                         aldb (the Emacs front-end). Selecting one runs the program~%")
-  (format t "                         under a debug session. Per-run override of the persisted~%")
-  (format t "                         default-user-interface aldo setting (aldo.conf), default tui.~%")
+  (format t "  --debugger-ui UI       Debugger front-end: dumb (the line/terminal UI; `terminal'~%")
+  (format t "                         and `tui' alias it), ncurses, or aldb (the Emacs front-end;~%")
+  (format t "                         `emacs' aliases it). Case-insensitive. Selecting one runs the~%")
+  (format t "                         program under a debug session. Per-run override of the~%")
+  (format t "                         persisted default-user-interface aldo setting, default dumb.~%")
   (format t "  --aldb-listen [HOST:]PORT  Address the aldb (Emacs) listener binds; HOST defaults~%")
   (format t "                         to 127.0.0.1, PORT is a number (0 = pick a free port) or a~%")
   (format t "                         service name. Implies --debugger-ui aldb.~%")
@@ -337,7 +338,7 @@ address. NIL when aldb is not over a listener."
 
 (defun resolve-default-debugger-ui ()
   "The persisted default-user-interface aldo setting (command reference §8;
-$XDG_CONFIG_HOME/clautolisp/aldo.conf), :tui when unset — the value an
+$XDG_CONFIG_HOME/clautolisp/aldo.conf), :dumb when unset — the value an
 explicit --debugger-ui overrides for this run only."
   (ignore-errors (clautolisp.debug.ui:load-aldo-configuration))
   (ignore-errors (clautolisp.debug.ui:load-lisp-configuration))
@@ -373,7 +374,7 @@ explicit --debugger-ui overrides for this run only."
           (ignore-errors (clautolisp.debug.ui:shell-escape-character-setting)))
         clautolisp.interactor:*shell-escape-runner* #'run-shell-command)
   (or (ignore-errors (clautolisp.debug.ui:get-aldo-setting :default-user-interface))
-      :tui))
+      :dumb))
 
 (defun run-shell-command (command)
   "Run COMMAND through $SHELL with stdin/stdout/stderr INHERITED.
@@ -1164,12 +1165,15 @@ is handled separately by the REPL wrapper in RUN-WITH-INPUT."
     (usage)))
 
 (defun debug-ui-designator (ui-keyword)
-  "Map a --debugger-ui keyword to a registered UI designator
-(register-ui name). :tui is the dumb/terminal UI."
-  (ecase ui-keyword
-    (:tui :terminal)
+  "Map a --debugger-ui / *clal-debugger-ui* keyword to a registered UI
+designator (register-ui name). Canonical: :dumb, :ncurses, :aldb; the aliases
+:terminal / :tui map to :dumb and :emacs to :aldb; anything else falls back to
+:dumb (the always-available line UI)."
+  (case ui-keyword
+    ((:dumb :terminal :tui) :dumb)
     (:ncurses :ncurses)
-    (:aldb :aldb)))
+    ((:aldb :emacs) :aldb)
+    (t :dumb)))
 
 (defun ncurses-terminal-screen ()
   "Return a real terminal screen for the ncurses debugger UI, or NIL (after a
@@ -1366,17 +1370,17 @@ Aldo debugger activated, connect from Emacs aldb:~%~
 ~@[~4TM-x load-file RET ~A RET~%~]~
 ~4TM-x aldb-connect RET ~A RET ~A RET~%~
 Alternatively, select a terminal or ncurses user interface,~%~
-~2T1) TUI~%~2T2) ncurses~%Debugger UI? "
+~2T1) dumb~%~2T2) ncurses~%Debugger UI? "
               (aldb-stop-reason-line hit) el host port)))
   (finish-output))
 
 (defun aldb-poll-terminal-choice ()
-  "If the terminal has a line ready, read it: 1 → :tui, 2 → :ncurses, else NIL."
+  "If the terminal has a line ready, read it: 1 → :dumb, 2 → :ncurses, else NIL."
   (when (listen *standard-input*)
     (let ((line (read-line *standard-input* nil nil)))
       (when line
         (case (find-if-not (lambda (c) (member c '(#\Space #\Tab))) line)
-          (#\1 :tui) (#\2 :ncurses) (t nil))))))
+          (#\1 :dumb) (#\2 :ncurses) (t nil))))))
 
 (defun aldb-fallback-ncurses-ui ()
   (let ((screen (ncurses-terminal-screen)))
@@ -1398,7 +1402,7 @@ socket) or the user types 1/2 at the terminal (→ a tui/ncurses UI)."
       (when choice
         (format t "~&using ~A.~%" (string-downcase (symbol-name choice))) (finish-output)
         (return (ecase choice
-                  (:tui (clautolisp.debug.ui:make-ui :terminal))
+                  (:dumb (clautolisp.debug.ui:make-ui :dumb))
                   (:ncurses (aldb-fallback-ncurses-ui))))))))
 
 (defun aldb-ensure-delegate (ui session hit)
@@ -1479,7 +1483,7 @@ last line then a clean EOF. Draining first lets close() send an orderly FIN."
   (aldb-close-listener ui))
 
 (defun build-debug-ui (debug-ui context)
-  "Construct the debugger UI object for the keyword DEBUG-UI (:tui/:ncurses/:aldb),
+  "Construct the debugger UI object for the keyword DEBUG-UI (:dumb/:ncurses/:aldb),
 applying the transport/screen specials: :aldb with a bound listener address becomes
 an ALDB-LISTENER-UI; :ncurses acquires a real terminal screen, falling back to the
 terminal (tui) UI when the curses backend is unavailable (rather than crashing on
@@ -1505,15 +1509,38 @@ an unbound screen). Shared by session start and the live per-stop UI selector."
         (apply #'clautolisp.debug.ui:make-ui designator
                (when screen (list :screen screen))))))
 
+(defun %normalize-debugger-ui-symbol (value)
+  "The canonical debugger-UI keyword (:dumb / :ncurses / :aldb) named by the
+AutoLISP symbol VALUE (by name, case-insensitively), or NIL when it names none.
+Canonical DUMB / NCURSES / ALDB; aliases TERMINAL and TUI -> :dumb, EMACS ->
+:aldb."
+  (when (typep value 'clautolisp.autolisp-runtime:autolisp-symbol)
+    (let ((name (string-upcase (clautolisp.autolisp-runtime:autolisp-symbol-name value))))
+      (cond ((member name '("DUMB" "TERMINAL" "TUI") :test #'string=) :dumb)
+            ((string= name "NCURSES") :ncurses)
+            ((member name '("ALDB" "EMACS") :test #'string=) :aldb)))))
+
 (defun live-debugger-ui-keyword ()
-  "The LIVE debugger-UI selection: the AutoLISP *CLAL-DEBUGGER-UI* variable when
-it names one of :tui/:ncurses/:aldb, else the CLI-set *clal-debugger-ui* default
-(the same override pattern as the interrupt/quit policies). Read fresh at each
-stop, so (setq *clal-debugger-ui* 'tui) picks the UI for the NEXT debugger entry."
-  (clautolisp.autolisp-builtins-core:live-event-policy
-   "*CLAL-DEBUGGER-UI*"
-   clautolisp.autolisp-runtime:*clal-debugger-ui*
-   '(:tui :ncurses :aldb)))
+  "The LIVE debugger-UI selection, read fresh at each stop. The AutoLISP
+*CLAL-DEBUGGER-UI* variable overrides the CLI-set default when it names a UI —
+canonical DUMB / NCURSES / ALDB (aliases TERMINAL and TUI for DUMB, EMACS for
+ALDB), matched case-insensitively. Unset (NIL) uses the CLI default. Set to any
+OTHER value, it warns (each time it is read) and uses the DUMB UI. So (setq
+*clal-debugger-ui* 'ncurses) picks the UI for the next debugger entry."
+  (let* ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "*CLAL-DEBUGGER-UI*"))
+         (value (and (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p sym)
+                     (clautolisp.autolisp-runtime:autolisp-symbol-value sym))))
+    (cond
+      ((null value) clautolisp.autolisp-runtime:*clal-debugger-ui*)
+      ((%normalize-debugger-ui-symbol value))
+      (t (let ((shown (if (typep value 'clautolisp.autolisp-runtime:autolisp-symbol)
+                          (clautolisp.autolisp-runtime:autolisp-symbol-name value)
+                          value)))
+           (format *error-output*
+                   "~&[debugger-ui] *CLAL-DEBUGGER-UI* value ~S is not one of ~
+DUMB / NCURSES / ALDB (or the aliases TERMINAL / TUI / EMACS); using DUMB.~%"
+                   shown))
+         :dumb))))
 
 (defun make-debug-ui-selector (initial-kind initial-ui context)
   "A closure the debug session calls at each stop to get the UI to use, honoring

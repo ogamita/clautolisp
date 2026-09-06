@@ -34,14 +34,35 @@ so LIVE-DEBUGGER-UI-KEYWORD reads the AutoLISP *CLAL-DEBUGGER-UI* from it."
       (is (eq :ncurses (clautolisp.tools.clautolisp::live-debugger-ui-keyword))))))
 
 (test live-debugger-ui-keyword-honours-the-autolisp-mirror
-  ;; (setq *clal-debugger-ui* 'tui) overrides the CLI default, read live.
+  ;; (setq *clal-debugger-ui* 'dumb) overrides the CLI default, read live.
+  ;; Canonical symbols DUMB/NCURSES/ALDB; TERMINAL/TUI alias DUMB, EMACS ALDB;
+  ;; matching is case-insensitive.
   (with-active-context (ctx)
     (let ((clautolisp.autolisp-runtime:*clal-debugger-ui* :ncurses))
-      (%set-debugger-ui-mirror "TUI" ctx)
-      (is (eq :tui (clautolisp.tools.clautolisp::live-debugger-ui-keyword)))
+      (%set-debugger-ui-mirror "DUMB" ctx)
+      (is (eq :dumb (clautolisp.tools.clautolisp::live-debugger-ui-keyword)))
+      ;; TUI / TERMINAL are aliases of DUMB (case-insensitive)
+      (%set-debugger-ui-mirror "tui" ctx)
+      (is (eq :dumb (clautolisp.tools.clautolisp::live-debugger-ui-keyword)))
+      (%set-debugger-ui-mirror "Terminal" ctx)
+      (is (eq :dumb (clautolisp.tools.clautolisp::live-debugger-ui-keyword)))
+      ;; EMACS aliases ALDB
+      (%set-debugger-ui-mirror "emacs" ctx)
+      (is (eq :aldb (clautolisp.tools.clautolisp::live-debugger-ui-keyword)))
       ;; and a later change is seen (it is re-read each call, not cached)
       (%set-debugger-ui-mirror "ALDB" ctx)
       (is (eq :aldb (clautolisp.tools.clautolisp::live-debugger-ui-keyword))))))
+
+(test live-debugger-ui-keyword-unknown-value-warns-and-uses-dumb
+  ;; An unrecognised *CLAL-DEBUGGER-UI* falls back to DUMB, with a warning
+  ;; written each time it is read.
+  (with-active-context (ctx)
+    (let ((clautolisp.autolisp-runtime:*clal-debugger-ui* :ncurses))
+      (%set-debugger-ui-mirror "GTK" ctx)
+      (let ((warned (with-output-to-string (*error-output*)
+                      (is (eq :dumb (clautolisp.tools.clautolisp::live-debugger-ui-keyword))))))
+        (is (search "GTK" warned))
+        (is (search "DUMB" warned))))))
 
 (test debug-ui-selector-rebuilds-only-when-the-live-selection-changes
   ;; The per-stop selector returns the SAME UI while the selection is unchanged,

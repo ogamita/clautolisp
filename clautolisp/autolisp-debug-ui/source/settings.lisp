@@ -36,7 +36,7 @@
     (:pager . :on)
     (:pager-height . 24)
     (:theme . :unicode)
-    (:default-user-interface . :tui)
+    (:default-user-interface . :dumb)
     (:default-aldb-listening-address . "127.0.0.1")
     ;; 0 = an OS-chosen FREE port (aldb-stdio-is-a-poor-default): a random free
     ;; port never clashes with another session, and the actual port is printed in
@@ -68,7 +68,7 @@ types and the :DECORATIONS sub-list for the theme glyphs.")
     (:pager-height            :integer)
     (:theme                   :enum (:unicode :ascii :white-on-black
                                      :black-on-white :green-on-black :attributes))
-    (:default-user-interface  :enum (:tui :ncurses :aldb))
+    (:default-user-interface  :enum (:dumb :ncurses :aldb :terminal :tui :emacs))
     (:default-aldb-listening-address :string)
     (:default-aldb-listening-port    :port))
   "For each scalar setting: (KEY TYPE [ALLOWED]). TYPE drives `set' value

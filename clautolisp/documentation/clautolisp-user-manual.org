@@ -299,13 +299,17 @@ full speed and is stepped over).
 ** The three user interfaces
 
 aldo presents *one* command set through three interchangeable
-interfaces; a feature available in one is available in all.
+interfaces; a feature available in one is available in all. Choose one
+with =--debugger-ui= (or the =*clal-debugger-ui*= variable) — the
+canonical spellings are =dumb=, =ncurses=, and =aldb=; =terminal= and
+=tui= alias =dumb=, and =emacs= aliases =aldb=, matched case-insensitively.
 
-- *TUI* — the line-mode terminal interface. You type a short command
-  token (or an AutoLISP form) and press =RET=. It needs nothing beyond a
-  plain terminal, styles its output with ANSI colour where the terminal
-  allows, and pages long output (see /Settings/ below). It is the
-  fallback that always works, including inside an Emacs ~shell~ buffer.
+- *dumb* — the line-mode terminal interface (=--debugger-ui dumb=; also
+  spelled =terminal= or =tui=). You type a short command token (or an
+  AutoLISP form) and press =RET=. It needs nothing beyond a plain
+  terminal, styles its output with ANSI colour where the terminal allows,
+  and pages long output (see /Settings/ below). It is the fallback that
+  always works, including inside an Emacs ~shell~ buffer.
 - *ncurses* — a full-screen, four-pane interface (stack, source,
   interactor, REPL). Commands fire on a single keypress; you move the
   cursor onto a form and act on it (no line numbers to type). It runs on

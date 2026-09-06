@@ -26,10 +26,11 @@ Developer tooling on top of the runtime:
   commands), tracing, software watchpoints, break-on-caught-error, regex
   breakpoints, stepping, form-level jump, and structural source browsing.
   Reachable from the REPL through the =,aldo= / =,debug= commands, and driven
-  by three interchangeable UIs: the terminal line-mode UI (=--debugger-ui
-  terminal=), the ncurses four-pane UI (=--debugger-ui ncurses=), and the Emacs
-  =aldb= UI (=--debugger-ui aldb=) — over the shared =tui-core= terminal screen
-  abstraction the ncurses UI is built on.
+  by three interchangeable UIs, selected with =--debugger-ui= (or the
+  =*clal-debugger-ui*= variable) — canonical spellings =dumb= (the line-mode
+  terminal UI), =ncurses= (the four-pane UI), and =aldb= (the Emacs UI);
+  =terminal= / =tui= alias =dumb= and =emacs= aliases =aldb=, case-insensitive.
+  The ncurses UI is built on the shared =tui-core= terminal screen abstraction.
 - *sedit* — the S-expression structural editor and the aldo form navigator,
   with file and directory editing, a source-file module that keeps source
   positions consistent across edits, and the =(clal-sedit …)= entry point.

@@ -367,10 +367,13 @@ command below is these same commands, presented at a stop.
     channel — =--debugger-ui=, =--aldb-listen=, =--aldb-stdio= (§10
     *Selecting the user interface*). The AutoLISP variable
     =*CLAL-DEBUGGER-UI*= mirrors =--debugger-ui= and is re-read LIVE at each
-    stop, so =(setq *clal-debugger-ui* 'tui)= selects the UI (=tui= /
-    =ncurses= / =aldb=) used at the NEXT debugger entry — e.g.
-    =(foreach *clal-debugger-ui* '(tui ncurses aldb) (clal-break))= enters
-    the debugger successively on the dumb terminal, ncurses, and aldb.
+    stop, so =(setq *clal-debugger-ui* 'dumb)= selects the UI — canonical
+    =dumb= / =ncurses= / =aldb= (with =terminal= / =tui= aliasing =dumb= and
+    =emacs= aliasing =aldb=, matched case-insensitively) — used at the NEXT
+    debugger entry — e.g. =(foreach *clal-debugger-ui* '(dumb ncurses aldb)
+    (clal-break))= enters the debugger successively on the dumb terminal,
+    ncurses, and aldb. An unrecognised value warns (each time) and falls back
+    to the dumb UI.
 - backing: =[have]= for the engine entry (=*debug-hit-handler*= +
   poll-point dispatch already implement "invoke the debugger at a poll
   point"), the =clal-break= / =clal-invoke-debugger= builtins,
@@ -1121,9 +1124,10 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
     terminal height is known, else =pager-height= alone (the terminal size is
     often unavailable on a dumb terminal). With neither available, the built-in
     fallback of *24* lines is used.
-  - =default-user-interface= — which UI the debugger uses on entry: =tui=
-    (the *TUI*, on a line-mode terminal), =ncurses= (the full-screen UI), or
-    =aldb= (the Emacs UI). This is the *persisted default*; the *current* value
+  - =default-user-interface= — which UI the debugger uses on entry: =dumb=
+    (the line-mode terminal UI; =terminal= / =tui= alias it), =ncurses= (the
+    full-screen UI), or =aldb= (the Emacs UI; =emacs= aliases it). This is the
+    *persisted default*; the *current* value
     =user-interface= (set by the CLI, §10) overrides it for one run without
     being saved. See §10 *Selecting the user interface*.
   - =default-aldb-listening-address= — the address aldb listens on for the
@@ -1699,7 +1703,8 @@ via poll-point body suppression (see =jump LINE=, §1).
 One command set, three input surfaces (spec §17 keeps UIs interchangeable),
 all driven by the same =read → check-commands → eval → print= loop:
 
-- *TUI (line-mode terminal):* every command is a typed token (=c=, =lf=,
+- *dumb (line-mode terminal) — selector =dumb= (aliases =terminal= / =tui=):*
+  every command is a typed token (=c=, =lf=,
   =break 12=, or a bare =(form)=) terminated by RET. No prefix ambiguity — the
   whole token is read before dispatch. "Dumb" for *input* only: its *output* is
   styled with ANSI colour/inverse where the terminal allows (see *Terminal

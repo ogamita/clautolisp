@@ -59,12 +59,18 @@ batch: on-error quit; on-interrupt debug; on-quit quit)."
 ;;; --- --debugger-ui ------------------------------------------------
 
 (test debugger-ui-values
-  (is (eq :tui     (clautolisp.autolisp-cli:cli-options-user-interface
-                    (%parse "--debugger-ui" "tui"))))
-  (is (eq :tui     (clautolisp.autolisp-cli:cli-options-user-interface
+  ;; Canonical spellings: dumb / ncurses / aldb. terminal & tui alias dumb;
+  ;; emacs aliases aldb. Matching is case-insensitive.
+  (is (eq :dumb    (clautolisp.autolisp-cli:cli-options-user-interface
+                    (%parse "--debugger-ui" "dumb"))))
+  (is (eq :dumb    (clautolisp.autolisp-cli:cli-options-user-interface
                     (%parse "--debugger-ui" "terminal"))))
+  (is (eq :dumb    (clautolisp.autolisp-cli:cli-options-user-interface
+                    (%parse "--debugger-ui" "tui"))))
+  (is (eq :dumb    (clautolisp.autolisp-cli:cli-options-user-interface
+                    (%parse "--debugger-ui" "DUMB"))))            ; case-insensitive
   (is (eq :ncurses (clautolisp.autolisp-cli:cli-options-user-interface
-                    (%parse "--debugger-ui" "ncurses"))))
+                    (%parse "--debugger-ui" "NCurses"))))
   (is (eq :aldb    (clautolisp.autolisp-cli:cli-options-user-interface
                     (%parse "--debugger-ui" "aldb"))))
   (is (eq :aldb    (clautolisp.autolisp-cli:cli-options-user-interface
@@ -212,7 +218,7 @@ legacy aliases). They now fail as unknown options."
     (is (not (search (format nil "~%~%") out)))        ; no blank lines
     ;; host and port are prompted separately, matching aldb-connect's interactive form
     (is (search "M-x aldb-connect RET 127.0.0.1 RET 4301 RET" out))
-    (is (search "1) TUI" out))
+    (is (search "1) dumb" out))
     (is (search "2) ncurses" out))))
 
 (test aldb-default-listen-address-uses-a-free-port

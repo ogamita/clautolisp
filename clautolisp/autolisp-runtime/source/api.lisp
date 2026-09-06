@@ -1499,12 +1499,15 @@ it). The QUIT event cannot be ignored. Set by the clautolisp CLI's
 --on-quit option; the AutoLISP variable *CLAL-ON-QUIT* mirrors it and is
 consulted LIVE at each (quit) / (exit) call.")
 
-(defparameter *clal-debugger-ui* :tui
-  "The debugger user-interface selection (debugger command reference §10):
-:TUI (the line/terminal UI), :NCURSES, or :ALDB (the Emacs front-end). Set
-by the clautolisp CLI's --debugger-ui option, defaulting to the persisted
+(defparameter *clal-debugger-ui* :dumb
+  "The debugger user-interface selection (debugger command reference §10). The
+canonical values are the symbols =DUMB= (the line/terminal UI), =NCURSES=, and
+=ALDB= (the Emacs front-end); =TERMINAL= and =TUI= are accepted aliases of
+=DUMB=, and =EMACS= of =ALDB=, matched case-insensitively. Set by the
+clautolisp CLI's --debugger-ui option, defaulting to the persisted
 default-user-interface aldo setting. Mirrored to the AutoLISP variable
-*CLAL-DEBUGGER-UI*.")
+*CLAL-DEBUGGER-UI*, which the debugger reads live at each stop; if it is set to
+an unrecognised value the debugger warns and uses the DUMB UI.")
 
 (defparameter *clal-aldb-listen* nil
   "The aldb (Emacs UI) transport requested on the CLI

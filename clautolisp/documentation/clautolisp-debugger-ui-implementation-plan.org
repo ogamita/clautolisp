@@ -49,7 +49,8 @@ whole vocabulary — the ✔ / ✔* column. The ✔* items are scoped: =goto= is
 global name and =search= is a name search. Poll points can now be designated
 by =ppN=, =FUNC.N=, =LINE=, =LINE.K= and =LINE:COL= (finer locations shipped —
 command reference §0/§12), and UI selection wires =--on-error= /
-=--debugger-ui tui|ncurses|aldb=. Dumb-UI dispatch now goes through the stacked
+=--debugger-ui dumb|ncurses|aldb= (terminal/tui alias dumb, emacs aliases aldb;
+case-insensitive). Dumb-UI dispatch now goes through the stacked
 command dictionaries (the interactor framework), not the old hand-written
 table. The REPL also exposes aldo's breakpoint/watch commands when no stop is
 active (the *sleeping-aldo* interactor: =,break/,lb/,eb/,db/,rb/,cb/,ib/,ls/

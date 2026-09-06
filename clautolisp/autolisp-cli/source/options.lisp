@@ -75,7 +75,7 @@
   (on-error         nil)              ; C   --on-error quit|debug|ignore     → :quit/:debug/:ignore
   (on-interrupt     nil)              ; C   --on-interrupt debug|ignore|quit → :debug/:ignore/:quit
   (on-quit          nil)              ; C   --on-quit debug|quit             → :debug/:quit
-  (user-interface   nil)              ; C   --debugger-ui tui|ncurses|aldb   → :tui/:ncurses/:aldb
+  (user-interface   nil)              ; C   --debugger-ui dumb|ncurses|aldb  → :dumb/:ncurses/:aldb (terminal/tui alias dumb; emacs aliases aldb)
   (aldb-address     nil)              ; C   --aldb-listen [HOST:]PORT — the HOST part (string)
   (aldb-port        nil)              ; C   --aldb-listen [HOST:]PORT — the PORT part (integer or service-name string)
   (aldb-stdio-p     nil))             ; C   --aldb-stdio → t
@@ -280,15 +280,19 @@ is a TTY, otherwise the TUI — so every headless / piped run gets the TUI).
                   (format nil "Unknown --dcl mode ~S (expected tui/gui/auto)" value)))))
 
 (defun parse-user-interface (value option)
-  "The --debugger-ui selection: tui (the line/terminal UI; `terminal' and
-`dumb' are accepted spellings), ncurses, or aldb (the Emacs front-end;
-`emacs' is an accepted spelling)."
-  (cond ((string-equal value "tui")     :tui)
-        ((or (string-equal value "terminal") (string-equal value "dumb")) :tui)
-        ((string-equal value "ncurses") :ncurses)
-        ((or (string-equal value "aldb") (string-equal value "emacs")) :aldb)
+  "The --debugger-ui selection. The canonical spellings are =dumb=, =ncurses=,
+and =aldb=; =terminal= and =tui= are accepted aliases of =dumb=, and =emacs= of
+=aldb=. Matching is case-insensitive. Returns the canonical keyword :dumb,
+:ncurses, or :aldb."
+  (cond ((or (string-equal value "dumb")
+             (string-equal value "terminal")
+             (string-equal value "tui"))      :dumb)
+        ((string-equal value "ncurses")       :ncurses)
+        ((or (string-equal value "aldb")
+             (string-equal value "emacs"))    :aldb)
         (t (error 'cli-usage-error
                   :option option
                   :message
-                  (format nil "Unknown ~A value ~S (expected tui/ncurses/aldb)"
+                  (format nil "Unknown ~A value ~S (expected dumb/ncurses/aldb; ~
+terminal and tui alias dumb, emacs aliases aldb)"
                           option value)))))
