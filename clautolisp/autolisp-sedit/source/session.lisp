@@ -189,6 +189,35 @@ the UI asks on leave).")
   "A location selecting BRANCH's first child, or BRANCH itself when it is empty."
   (or (loc-down (node->loc branch)) (node->loc branch)))
 
+(defparameter +sedit-sexp-file-types+ '("lsp" "lisp" "cl" "el" "scm")
+  "Extensions treated as Lisp/sexp source files when a directory chooses its
+initial selection (spec §2.4).")
+
+(defun %sexp-file-node-p (node)
+  "True when NODE is a file entry whose extension names a Lisp/sexp source."
+  (and (file-node-p node)
+       (let ((type (pathname-type (file-node-name node))))
+         (and type (member (string-downcase type) +sedit-sexp-file-types+
+                           :test #'string=)))))
+
+(defun %dir-initial-loc (dirnode)
+  "A location selecting DIRNODE's initial entry per spec §2.4: the first
+Lisp/sexp file, else the first sub-directory (not the =..= pseudo-entry), else
+the first entry (=..=). Falls back to DIRNODE itself when it is empty."
+  (let* ((entries (dir-node-entries dirnode))
+         (pick (or (find-if #'%sexp-file-node-p entries)
+                   (find-if (lambda (e)
+                              (and (dir-node-p e)
+                                   (not (equal (dir-node-name e) ".."))))
+                            entries)
+                   (first entries))))
+    (if pick
+        (let ((loc (%first-child-loc dirnode)))
+          (loop while (and loc (not (eq (loc-focus loc) pick)))
+                do (setf loc (loc-right loc)))
+          (or loc (%first-child-loc dirnode)))
+        (node->loc dirnode))))
+
 (defun %resolve-open (object recording)
   "Resolve OBJECT to (values ROOT ORIGIN INITIAL-LOC) for SEDIT-OPEN (spec §2)."
   (cond
@@ -205,7 +234,7 @@ the UI asks on leave).")
     ((stringp object)                           ; a path: directory or file
      (if (%directory-path-p object)
          (let ((dir (read-directory object)))
-           (values dir (list :dir object) (%first-child-loc dir)))
+           (values dir (list :dir object) (%dir-initial-loc dir)))
          (let ((file (%open-file-node object)))
            (values file (list :file object) (%first-child-loc file)))))
     (t (error "sedit-open: cannot edit ~S" object))))

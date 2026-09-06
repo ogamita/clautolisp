@@ -143,7 +143,7 @@ sedit-bugs-and-design.issue Bug 2)."
     (setf (sedit-session-origin session)
           (list :dir (namestring (uiop:ensure-directory-pathname dir))))
     (setf (sedit-state-loc (sedit-session-state session))
-          (%first-child-loc dirnode))))
+          (%dir-initial-loc dirnode))))
 
 (defun %sedit-into-file (session file)
   "Re-root SESSION on FILE, opened for editing, its first top-level form selected

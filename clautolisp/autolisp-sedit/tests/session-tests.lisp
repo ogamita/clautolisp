@@ -90,8 +90,8 @@
     (let ((s (sedit-open dir)))
       (is (equal (list :dir dir) (sedit-session-origin s)))
       (is (dir-node-p (sedit-session-initial s)))
-      ;; first entry is the ".." pseudo-entry
-      (is (equal ".." (dir-node-name (state-focus (sedit-session-state s))))))))
+      ;; initial selection is the first Lisp/sexp file, not ".." (spec §2.4)
+      (is (equal "one.lsp" (file-node-name (state-focus (sedit-session-state s))))))))
 
 ;;; --- the §2 result table --------------------------------------------------
 

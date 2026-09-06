@@ -136,7 +136,7 @@ LOAD-HOOK. Not an editing command — the mode is unchanged (§6.6)."
   "Rebuild the session's dir-node from disk, selecting its first entry."
   (let ((dir (%session-dir session)))
     (when dir
-      (setf (sedit-state-loc (sedit-session-state session)) (%first-child-loc (read-directory dir))))))
+      (setf (sedit-state-loc (sedit-session-state session)) (%dir-initial-loc (read-directory dir))))))
 
 (defun %do-new (session arg)
   (let ((dir (%session-dir session)))
