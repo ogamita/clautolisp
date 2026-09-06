@@ -650,7 +650,7 @@ own rules.
 (clal-sedit)                 ; a fresh stand-alone form, starting at nil
 (clal-sedit 'foo)            ; recall and edit the definition of FOO
 (clal-sedit "prog.lsp")      ; edit a file (its first top-level form selected)
-(clal-sedit "~/src/")        ; browse a directory
+(clal-sedit "~/src/")        ; browse a directory (first Lisp/sexp file selected)
 (clal-sedit '(+ 1 2))        ; edit a value as a sexp
 #+end_example
 
@@ -673,6 +673,12 @@ means:
 (clal-sedit 'file "prog.lsp")       ; a file (created on save if new)
 (clal-sedit 'directory "~/src/")    ; a directory
 #+end_example
+
+In a directory listing, ~d~ descends — into a sub-directory (read fresh from
+disk) or into a file (opened for editing) — and ~..~ climbs to the parent
+directory. A long listing is *windowed*: at most a screen-height of entries is
+shown around the selection, with ~⋮ (N more above)~ / ~⋮ (N more below)~
+markers for the rest.
 
 ** Editing while debugging
 

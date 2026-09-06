@@ -260,6 +260,21 @@ the dumb terminal, having no cursor, types the LOC or opens the sedit-style
 selection sub-mode (§2). Each command entry lists *both* spellings — the
 keystroke-UI cursor form and the typed form — under this rule.
 
+* 0.1 Debugging from the plain REPL (sleeping-aldo)
+
+The full debugger runs at a stop. When no stop is active, a *subset* of aldo's
+breakpoint/watch commands is still available at the ordinary Lisp REPL through
+the *sleeping-aldo* interactor, as comma-commands reached with the =,aldo= /
+=,debug= prefix (or directly when the name does not collide with a REPL
+command): =,break=, =,lb= (list breakpoints), =,eb= / =,db= (enable/disable),
+=,rb= (remove), =,cb= (condition), =,ib= (ignore), =,ls= (list source),
+=,bpcmd=, =,trace= / =,untrace=, =,watch= / =,unwatch=, =,lw= (list watches),
+and =,help=. A =FILE:LINE= breakpoint set here is *persistent* (re-resolved on
+load); a breakpoint on a not-yet-defined function is listed as =vbN … (not
+defined yet)= and a pending =FILE:LINE= as =lbN … pending= until it arms. See
+the user manual (“Debugging commands from the REPL”) for the full table. Every
+command below is these same commands, presented at a stop.
+
 * 1. Execution control (run / step / resume)
 
 ** continue

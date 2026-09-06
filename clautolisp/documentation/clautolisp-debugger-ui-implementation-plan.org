@@ -46,15 +46,18 @@ command-reference backing) · ✦ to implement · — n/a for that UI.
 
 Status (refreshed): the *TUI (dumb)* surface now implements essentially the
 whole vocabulary — the ✔ / ✔* column. The ✔* items are scoped: =goto= is by
-global name, =search= is a name search, =jump= is forward-only, poll-point
-designation is =ppN= (not yet =LINE.K= / =LINE:COL=), and UI selection wires
-=--on-error= / =--debugger-ui tui|ncurses|aldb=. The *aldb* TRANSPORT is
+global name and =search= is a name search. Poll points can now be designated
+by =ppN=, =FUNC.N=, =LINE=, =LINE.K= and =LINE:COL= (finer locations shipped —
+command reference §0/§12), and UI selection wires =--on-error= /
+=--debugger-ui tui|ncurses|aldb=. Dumb-UI dispatch now goes through the stacked
+command dictionaries (the interactor framework), not the old hand-written
+table. The REPL also exposes aldo's breakpoint/watch commands when no stop is
+active (the *sleeping-aldo* interactor: =,break/,lb/,eb/,db/,rb/,cb/,ib/,ls/
+,bpcmd/,trace/,untrace/,watch/,unwatch/,lw=). The *aldb* TRANSPORT is
 complete: =--aldb-stdio= (RPC over stdin/stdout) and the =--aldb-listen
 [HOST:]PORT= TCP listener with the lazy connect prompt and its 1/2 tui/ncurses
 fallback (command-reference §10), over an Elisp-readable wire, exercised by a
-live-socket CI test. The one TUI ✦ left is routing dispatch through the *stacked
-command dictionaries* (the table layer exists and is tested, but the dumb UI
-still dispatches via a hand-written table). *ncurses* and *aldb* remain thin
+live-socket CI test. *ncurses* and *aldb* remain thin
 fixed-key command surfaces (base commands + inspector); the ✦ vocabulary rows
 below are the shared follow-up: a comma-word command reader so the full
 vocabulary is reachable there too (over the wire, for aldb).

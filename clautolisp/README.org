@@ -3,27 +3,50 @@
 #+OPTIONS: toc:2 num:t
 
 * Purpose
-~clautolisp~ is the implementation subproject of the repository.
+~clautolisp~ is the Common Lisp implementation of AutoLISP: a reader, runtime
+object model, evaluator, dialect layer (AutoCAD / BricsCAD / strict / lax /
+clautolisp), host-abstraction layer with an in-memory CAD backend (cador), the
+built-in library (=vl-*=, =vla-*=, =vlax-*=, =vle-*=, entity/selection/
+dictionary/table access, system variables, encodings), and the developer
+tooling built on top of it.
 
-Its role is to host the Common Lisp implementation of the AutoLISP runtime, reader, evaluator, host abstraction layers, and related implementation tooling.
+It runs hosted on SBCL and CCL, and ships as the engine inside =alfe= (the
+AutoLISP front-end): =alfe --clautolisp=.
 
 * Status
-This subproject is currently in planning and architecture-definition mode.
+Working implementation (version 2.0.0). The reader, runtime, evaluator, host
+abstraction, cador mock host, dialect system, and the AutoLISP built-in library
+are implemented and covered by an extensive FiveAM suite (=make test-sbcl= /
+=make test-ccl=).
 
-The implementation plan exists, but the concrete reader, runtime, and host modules still need to be developed.
+Developer tooling on top of the runtime:
+
+- *aldo* — the AutoLISP debugger: breakpoints (function / =FILE:LINE= /
+  =FUNC.N=, pending breakpoints, conditions, ignore counts, breakpoint
+  commands), tracing, software watchpoints, break-on-caught-error, regex
+  breakpoints, stepping, form-level jump, and structural source browsing.
+  Reachable from the REPL through the =,aldo= / =,debug= commands, and driven
+  by three interchangeable UIs: the terminal line-mode UI (=--debugger-ui
+  terminal=), the ncurses four-pane UI (=--debugger-ui ncurses=), and the Emacs
+  =aldb= UI (=--debugger-ui aldb=) — over the shared =tui-core= terminal screen
+  abstraction the ncurses UI is built on.
+- *sedit* — the S-expression structural editor and the aldo form navigator,
+  with file and directory editing, a source-file module that keeps source
+  positions consistent across edits, and the =(clal-sedit …)= entry point.
 
 * Main Files
-- ~PLAN.md~
-- ~clautolisp.asd~
-- ~documentation/development-plan.org~
-- ~autolisp-reader/PLAN.md~
-- ~autolisp-reader/documentation/autolisp-reader-specifications.org~
+- ~clautolisp.asd~ — the ASDF systems (aggregate ~clautolisp~; per-subsystem
+  systems and their ~/tests~).
+- ~Makefile~ — build / test / run targets (~test-sbcl~, ~test-ccl~,
+  ~run-file-compat-*~, binary builds, documentation).
+- ~tools/clautolisp/~ — the ~clautolisp~ command-line tool and REPL.
+- ~documentation/clautolisp-user-manual.org~ — the user manual.
+- ~documentation/clautolisp-debugger-spec.org~,
+  ~documentation/clautolisp-debugger-command-reference.org~,
+  ~documentation/clautolisp-sedit-spec.org~ and the UI specs
+  (~clautolisp-debugger-tui-spec.org~ and the ncurses / aldb specs) — the
+  debugger, command, and editor specifications.
 
 * Planning Document
-The planning document for this subproject is:
-
-- ~PLAN.md~
-
-The first concrete module directory is:
-
-- ~autolisp-reader/~
+- ~PLAN.md~ — the implementation plan; ~issues/~ (at the repository root) holds
+  the open/closed issue tracker and ~TRIAGE.org~ index.
