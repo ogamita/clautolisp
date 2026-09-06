@@ -2509,6 +2509,50 @@ ineffective, because there was no compiler for it to reach. If you have
 code that reads ~(clal-optimization)~ back and expects a ~SPEED~ of 0,
 that expectation no longer holds.
 
+*** What the compiler compiles, and what it hands back
+Compiling a function does not mean every part of it becomes Common
+Lisp. A form the compiler does not translate is *handed to the
+interpreter* — and it is handed the *whole form*, everything inside it
+included. That is why the question matters to you rather than only to
+the implementation: a construct that falls back takes its **body** with
+it, so the work inside a loop can go on being interpreted inside a
+function you believe you compiled.
+
+Everything that *takes a body* is compiled: ~progn~, ~if~, ~cond~,
+~and~, ~or~, ~while~, ~repeat~, ~foreach~, ~let~, ~vlax-for~,
+~lambda~, together with ~setq~, ~set~, ~quote~ and ~function~, and
+every function call.
+
+These are still handed to the interpreter, deliberately: ~defun~,
+~defun-q~, ~trace~, ~untrace~, ~command~ and ~command-s~. None of them
+takes a body, so each costs one dispatch and nothing inside it is
+un-compiled. ~command~ is dominated by the host's own work; a ~defun~
+*inside* another function's body is rare; ~trace~ and ~untrace~ are
+debugging verbs whose cost is not in the dispatch.
+
+If you are measuring and a function seems not to have gained anything,
+this list is the first thing to check — before this was closed, a loop
+written inside a ~let~ ran no faster compiled than interpreted, because
+the ~let~ fell back and took the loop with it.
+
+*** When the compiler says it is being asked too often
+Past a thousand compilations in one session, clautolisp warns once:
+
+#+BEGIN_EXAMPLE
+clautolisp: the host compiler has now run 1001 times in this image
+(most recently for F). That is far more distinct function bodies than
+a program has, so the same body is probably being compiled repeatedly
+-- which is a bug in what DECIDES to compile, not in the code being
+compiled.
+#+END_EXAMPLE
+
+Nothing is refused and the program continues. The number is deliberately
+absurd rather than tight: the whole clautolisp test suite compiles 56
+bodies, so an honest program does not approach it, and crossing it means
+the same code is being compiled again and again. If you see it, the
+report is worth making — it is far more likely to be a defect in
+clautolisp than in your program.
+
 *** ~CLAL-COMPILE-FILE~ / ~CLAL-COMPILE-SYSTEM~ -- compile an application
 ~(clal-compile-file SOURCE [OUTPUT])~ compiles one AutoLISP source file
 into a ~.lap~ compiled application; ~OUTPUT~ defaults to the source name

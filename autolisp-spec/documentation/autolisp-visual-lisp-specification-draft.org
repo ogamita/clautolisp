@@ -1139,44 +1139,8 @@ Iterates over each element of `list`, binding it to `name`.
 Returns the final body value or `nil` if no body exists.
 
 *** Vendor Divergence
-Two, and they are of different kinds: one is a *return value*, the
-other is whether the host will *read the form at all*.
-
-**** BricsCAD will not LOAD ~(foreach VAR nil ...)~
-
-Loading a file that contains a `foreach` whose list argument is the
-literal ~nil~ makes BricsCAD *stop making progress*: no diagnostic, no
-further output, and a batch process sits until something times it out.
-The same form *executes correctly* in BricsCAD when it is produced by
-~read~ at run time, so the evaluator is not implicated.
-
-What stops it is *not established*. The measurement is that the load
-does not return -- each load is wrapped in ~vl-catch-all-apply~, so an
-error the engine signalled would have been caught and recorded, and
-none was. A reader rejection, a crash and a modal dialog all fit that
-silence equally.
-
-| form                     | AutoCAD 2026 | BricsCAD V25/V26   |
-|--------------------------+--------------+--------------------|
-| ~(foreach e nil 99)~     | loads, `nil` | *load never returns* |
-| ~(foreach e '(1 2 3))~   | loads        | loads              |
-| ~(list (foreach ...))~   | loads        | loads              |
-
-Measured by isolating each candidate in its own file, one per load,
-over two runs (2026-09-02, macOS). `foreach` in *expression position*
-and `foreach` *without a body* were both cleared; the literal ~nil~ is
-the whole of it. Whether ~'()~ behaves identically was not probed.
-
-This matters for portability rather than for semantics:
-~(foreach x nil ...)~ is what a file contains when its list argument is
-a constant that happens to be empty -- readily produced by a macro
-expansion or a generator -- and such a file loads under AutoCAD and
-fails silently under BricsCAD.
-
-**** The return value of a body-less ~foreach~
-
 A `foreach` with *no body at all* is the one measured disagreement
-about a *value* between the two hosts:
+between the two hosts:
 
 | form                       | AutoCAD 2026 | BricsCAD V25/V26 |
 |----------------------------+--------------+------------------|
@@ -1188,14 +1152,17 @@ macOS and on Windows alike, which is the shape an implementation
 produces when the loop's accumulator is seeded with the sequence and
 the body never overwrites it. No vendor page documents either answer.
 
-Every other behaviour in this entry -- the binding rule, the value of a
-loop with a body, the value over an empty list -- was measured
-identical on both hosts.
+Every other behaviour in this entry — the binding rule, the value of a
+loop with a body, the value over an empty list — was measured identical
+on both hosts.
 
-Note that the two divergences above concern the same corner of the
-form from opposite directions: BricsCAD refuses to *read* a literal
-~nil~ list, and disagrees about the *value* when the body is absent.
-Neither is documented by either vendor.
+*** clautolisp
+Returns `nil` for a body-less `foreach`, following AutoCAD and the rule
+stated under /Return Values/. Adopting one vendor's undocumented answer
+as the default of a dialect-neutral implementation would be backwards;
+whether ~--dialect bricscad~ should return the list instead is an open
+question, recorded in
+~issues/open/foreach-empty-body-return-diverges.issue~.
 
 *** Side Effects
 Side effects are those of:
@@ -1651,10 +1618,36 @@ Iterates over an ActiveX collection object.
 *** Notes
 This construct belongs to the Visual LISP / ActiveX layer, not the core portable AutoLISP layer.
 
+*** The loop variable — not specified
+Neither Autodesk's page nor this entry says what happens to ~var~: no
+statement that it is *bound*, none that it is *assigned*, and none about
+whether it survives the loop. The corresponding wording for ~foreach~
+does say "bind it to name", and both AutoCAD and BricsCAD were measured
+to bind (see that entry) — but that is ~foreach~, and it does not carry
+over by itself.
+
+No vendor evidence exists for ~vlax-for~ specifically. Obtaining it
+needs a live ActiveX collection, which a headless probe cannot conjure;
+it belongs with the manual vendor-probe jobs.
+
+*** clautolisp
+Binds, using the same rule as ~foreach~ — one function serves both, so
+the two loops cannot drift apart. This is asserted *by analogy*, not
+measured: two loops in one implementation disagreeing about their own
+loop variable is far likelier to be an oversight than an undocumented
+vendor behaviour.
+
+Until 2.0.26 clautolisp *assigned* here when the name was already bound
+further down the dynamic chain, so a ~vlax-for~ over a name a caller had
+bound wrote *that* binding and left the last collection member in it.
+That was the code ~foreach~ carried until AutoCAD was probed, and
+~vlax-for~ had simply been left behind when it was corrected.
+
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+  The loop-variable rule is unverified on *both* hosts — see above.
 
 *** Source Notes
 - [About Special Forms (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP/files/GUID-F992EAA3-AFFC-425D-B7C9-6A9CB0EA2768.htm)

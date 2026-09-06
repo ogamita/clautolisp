@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 2.1.0 / alfe 2.1.0 /
+master at the top of the file (clautolisp 2.2.0 / alfe 2.2.0 /
 read-autolisp 1.9.0). alfe tracks clautolisp's version: because
 =alfe --clautolisp= embeds essentially the whole clautolisp engine, a
 change to clautolisp's sources bumps alfe too — and alfe's own changes
@@ -420,7 +420,9 @@ separate binary for tool integrators.
   always said. clautolisp used to ASSIGN when the name already had a
   binding, so a ~foreach~ clobbered a ~/~-local of the function running
   it — and, AutoLISP being dynamically scoped, of its CALLER too.
-  Measured against AutoCAD; BricsCAD is still to be measured.
+  Measured against BOTH vendors: AutoCAD and BricsCAD agree on every
+  scope case, on macOS and on Windows. The behaviour clautolisp had
+  before matched neither.
 
 - *~foreach~ and ~repeat~ loops are compiled now — 5.5x on loop-heavy
   code.* Until this release a compiled function containing either ran the
@@ -428,8 +430,44 @@ separate binary for tool integrators.
   work IS a ~foreach~ got nothing at all from being compiled. Everything
   the loops decide is unchanged, because compiled code calls the same
   runtime routines the interpreter does: ~repeat~ still yields nil rather
-  than its body's value, a ~foreach~ over a name already bound still
-  assigns to that binding, and both still report the same errors.
+  than its body's value, ~foreach~ still BINDS its loop variable (the
+  entry above), and both still report the same errors.
+- *Every form that takes a body is compiled now.* ~let~, ~lambda~,
+  ~function~, ~vlax-for~ and ~set~ joined the loops. This matters more
+  than the list suggests: a form the compiler does not translate is
+  handed to the interpreter *whole*, body included, so one of them
+  inside a function silently un-compiled the work within it. A loop
+  written inside a ~let~ measured 68 ms compiled against 64 ms
+  interpreted — compiling it gained *nothing* — and is 12 ms now.
+  Still handed over, deliberately: ~defun~, ~defun-q~, ~trace~,
+  ~untrace~, ~command~ and ~command-s~, none of which takes a body.
+
+- *Higher-order code is compiled at last.* Before this release NO
+  ~lambda~ body was ever compiled at the shipped settings, so every
+  program written with ~apply~ and a ~lambda~ ran interpreted however
+  hot it got — and nothing said so. Compiling was decided per function
+  OBJECT, and a ~lambda~ in a loop makes a new object every iteration,
+  so the decision was retaken from scratch on objects that were all the
+  same code. At the test settings the same shape made the host compiler
+  run once per iteration: 26 seconds where interpreting took 60 ms.
+  Both are fixed by deciding per lambda SITE.
+
+- *Fixed: ~vlax-for~ no longer overwrites a variable of the same name.*
+  It still assigned when the name was already bound further down the
+  dynamic chain — the very code ~foreach~ carried until AutoCAD was
+  probed — so a ~vlax-for~ over a name a caller had bound wrote that
+  binding and left the last collection member in it. Both loops now use
+  one rule and cannot drift apart. Asserted by analogy with ~foreach~,
+  not measured: no vendor evidence exists for ~vlax-for~ specifically,
+  and its specification entry says nothing about the loop variable.
+
+- *The compiler says when it is being asked absurdly often.* Past a
+  thousand compilations in one session it warns, once, that the same
+  body is probably being compiled repeatedly — a defect in what decides
+  to compile rather than in your code. Nothing is refused. The
+  threshold is deliberately unreachable by honest work: the whole
+  clautolisp test suite compiles 56 bodies.
+
 - *Fixed: a ~while~ with no body crashed once its function was compiled.*
   ~(while (setq i (cdr i)))~ — draining a list for its side effect — ran
   correctly interpreted and raised a Common Lisp error the moment the
