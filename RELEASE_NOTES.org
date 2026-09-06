@@ -1107,6 +1107,14 @@ file or COM), and forwards the workload.
   ~(alref-apropos PATTERN)~ and ~(alref-describe NAME)~ for
   REPL-driven discovery (matches the spec's clautolisp-extension
   family).
+- The plain-text ~pages/~ the alref libraries read now install under
+  =$PREFIX/share/doc/autolisp-spec/pages/=, beside the HTML and the
+  org/pdf docs, instead of =$PREFIX/share/autolisp-spec/pages/= — the
+  whole spec lives under one doc root. Both alref libraries' default
+  data root follows: ~alref.lsp~'s ~*alref-root*~ and ~alref.el~'s
+  ~alref--default-spec-directory~ now point at
+  =share/doc/autolisp-spec/= (override with ~(alref-set-root …)~ /
+  ~alref-spec-directory~ as before).
 - New normative anchors in this release line:
   - locale-insensitivity contract for ~rtos~ and the value printer;
   - the ~atof~ lex model with the OR rule for ~"42."~ / ~"5."~ /

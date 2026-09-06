@@ -36,9 +36,9 @@
 ;;;;
 ;;;; Configuration:
 ;;;;
-;;;;   (alref-set-root "/path/to/share/autolisp-spec/")
+;;;;   (alref-set-root "/path/to/share/doc/autolisp-spec/")
 ;;;;
-;;;; Defaults to "/opt/share/autolisp-spec/"; load-time autodetection
+;;;; Defaults to "/opt/local/share/doc/autolisp-spec/"; load-time autodetection
 ;;;; isn't possible in stock AutoLISP (no file-system-aware autoload
 ;;;; primitive), so set the root explicitly in your init file or
 ;;;; pass it on the first call.
@@ -52,7 +52,7 @@
 ;; every change that touches alref.lsp's behaviour. (alref-version)
 ;; returns this string — useful when a user reports a bug, so we
 ;; know which revision of the library they're running against.
-(setq *alref-version* "1.3.1")
+(setq *alref-version* "1.3.2")
 
 (defun alref-version ( )
   "Return the alref.lsp library version as a string (e.g. \"1.0.0\").
@@ -60,10 +60,11 @@ Format is MAJOR.MINOR.DEVELOP, matching the clautolisp convention."
   *alref-version*)
 
 ;; Default install root. Matches the repo-wide PREFIX=/opt/local
-;; convention documented in the root Makefile's install target.
-;; Override at load time via:
-;;   (alref-set-root "/usr/local/share/autolisp-spec/")
-(setq *alref-root* "/opt/local/share/autolisp-spec/")
+;; convention documented in the root Makefile's install target. The
+;; paged spec data ships under share/doc/autolisp-spec/ alongside the
+;; html and the org/pdf docs. Override at load time via:
+;;   (alref-set-root "/usr/local/share/doc/autolisp-spec/")
+(setq *alref-root* "/opt/local/share/doc/autolisp-spec/")
 
 (defun alref-set-root (path)
   "Point the library at the install directory. The directory must

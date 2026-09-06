@@ -159,15 +159,17 @@ clean-build:  ## Remove every paged derivative under build/.
 #
 #   $(PREFIX)/share/doc/autolisp-spec/           org + pdf reference docs
 #   $(PREFIX)/share/doc/autolisp-spec/html/      HTML manual (browse-able)
-#   $(PREFIX)/share/info/                        autolisp-spec.info (info dir)
-#   $(PREFIX)/share/autolisp-spec/pages/         plain-text pages (data files
+#   $(PREFIX)/share/doc/autolisp-spec/pages/     plain-text pages (data files
 #                                                the alref libraries read)
+#   $(PREFIX)/share/info/                        autolisp-spec.info (info dir)
 #   $(PREFIX)/share/emacs/site-lisp/autolisp-spec/    alref.el
 #   $(PREFIX)/share/autolisp/site-lisp/autolisp-spec/ alref.lsp
 #
-# pages/ stays under share/autolisp-spec/ rather than share/doc/
-# because both alref libraries treat it as data (open it for read,
-# parse the index, etc.), not as readable docs.
+# pages/ ships under share/doc/autolisp-spec/ alongside the html/ and
+# the org/pdf docs, so the whole spec — readable docs and the plain-text
+# pages the alref libraries read as data — lives under one doc root. The
+# alref libraries' default spec-data root points there (see alref.lsp
+# *alref-root* and alref.el alref--default-spec-directory).
 
 DOC_INSTALL_DIR   := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
 DATA_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/$(SUBPROJECT_NAME)
@@ -202,10 +204,10 @@ install-programs: install-alref-libs  ## Install the alref reference libraries (
 
 install-documentation: install-alref-libs  ## Install the autolisp-spec docs (.org/.pdf/HTML/Info/pages + alref libs).
 	install -d "$(DOC_INSTALL_DIR)/html"
-	install -d "$(DATA_INSTALL_DIR)/pages"
+	install -d "$(DOC_INSTALL_DIR)/pages"
 	install -d "$(INFO_INSTALL_DIR)"
 	@if [ -d "$(HTML_DIR)"  ]; then cp -R "$(HTML_DIR)/."  "$(DOC_INSTALL_DIR)/html/";  fi
-	@if [ -d "$(PAGES_DIR)" ]; then cp -R "$(PAGES_DIR)/." "$(DATA_INSTALL_DIR)/pages/"; fi
+	@if [ -d "$(PAGES_DIR)" ]; then cp -R "$(PAGES_DIR)/." "$(DOC_INSTALL_DIR)/pages/"; fi
 	@if [ -f "$(INFO_DIR)/autolisp-spec.info" ]; then \
 	  install -m 0644 "$(INFO_DIR)/autolisp-spec.info" "$(INFO_INSTALL_DIR)/"; \
 	  "$(INSTALL_INFO)" --info-dir="$(INFO_INSTALL_DIR)" \
