@@ -464,6 +464,21 @@ extension; --~(~A~) has no per-call encoding control on LOAD."
   (let ((d (ignore-errors (current-evaluation-dialect))))
     (and d (clautolisp.autolisp-reader:autolisp-dialect-name d))))
 
+(defun %sysvar-host (host)
+  "HOST, with its sysvar table rebuilt first when the dialect has moved
+since the table was built. EVERY sysvar read and write goes through
+this, which is what makes `(setq *AUTOLISP-DIALECT* …)' visible to
+GETVAR at once instead of at the next launch — the table used to be
+frozen to the LAUNCH dialect while everything else followed the
+variable (sysvar-table-ignores-runtime-dialect-change.issue).
+
+Cheap on the common path: one EQ inside
+ENSURE-SYSVAR-TABLE-MATCHES-DIALECT against the dialect the table
+already reflects."
+  (when host
+    (ensure-sysvar-table-matches-dialect host (%secureload-dialect-name)))
+  host)
+
 (defun %secureload-trusted-p (abs-namestring host dialect-name)
   "True when ABS-NAMESTRING is a trusted load location for the current
 host / dialect."
@@ -4035,7 +4050,7 @@ AutoCAD example: (rtos 17.5 5 2) => \"17 1/2\".  system-variables.issue
 DEFAULT when HOST is nil, the sysvar is absent or non-integer, or the
 host does not support getvar (e.g. a host-less unit-test context).
 Companion to %HOST-SYSVAR-STRING."
-  (let ((raw (and host (ignore-errors (host-getvar host name)))))
+  (let ((raw (and host (ignore-errors (host-getvar (%sysvar-host host) name)))))
     (if (integerp raw) raw default)))
 
 (defun builtin-snvalid (string &optional flag)
@@ -4874,14 +4889,19 @@ never overwritten by a redundant (setvar \"CLAUTOLISPDROP\" 1)."
   (let ((string (autolisp-string-value (require-string name "GETVAR"))))
     (when (%lispsys-name-p string)
       (%dispatch-lispsys-foreign-dialect-diagnostic "GETVAR"))
-    (host-getvar (current-evaluation-host) string)))
+    (host-getvar (%sysvar-host (current-evaluation-host)) string)))
 
 (defun builtin-setvar (name value)
   (let ((string (autolisp-string-value (require-string name "SETVAR"))))
     (when (%lispsys-name-p string)
       (%dispatch-lispsys-foreign-dialect-diagnostic "SETVAR")
       (%validate-lispsys-value value))
-    (let ((result (host-setvar (current-evaluation-host) string value)))
+    (let ((result (host-setvar (%sysvar-host (current-evaluation-host))
+                              string value)))
+      ;; Remember it, so a dialect that hides this sysvar MASKS the
+      ;; setting instead of destroying it (pjb's ruling, recorded in
+      ;; secureload.lisp's controller header).
+      (note-sysvar-user-value string value)
       (when (%clautolisp-drop-name-p string)
         (%apply-clautolisp-drop
          (%host-sysvar-integer (current-evaluation-host) "CLAUTOLISPDROP" 0)))
@@ -4997,7 +5017,7 @@ ANSI row, expanded'."
 string (unwrapping the autolisp-string wrapper applied by
 present-sysvar-value). Returns nil when the sysvar is absent or
 its value is not a string."
-  (let ((raw (host-getvar host name)))
+  (let ((raw (host-getvar (%sysvar-host host) name)))
     (cond
       ((null raw) nil)
       ((typep raw 'autolisp-string) (autolisp-string-value raw))

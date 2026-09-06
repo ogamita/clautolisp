@@ -49,6 +49,8 @@
    #:host-set-derived-sysvar
    #:host-define-sysvar
    #:host-undefine-sysvar
+   #:host-snapshot-sysvars
+   #:host-restore-sysvars
    #:host-sysvar-names
    #:host-registry-read #:host-registry-write
    #:host-registry-delete #:host-registry-descendents

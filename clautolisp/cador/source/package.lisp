@@ -42,6 +42,7 @@
                 #:dictionary-entries
                 #:sysvar-cell
                 #:make-sysvar-cell
+                #:copy-sysvar-cell
                 #:sysvar-cell-name
                 #:sysvar-cell-kind
                 #:sysvar-cell-value
@@ -88,6 +89,8 @@
                 #:host-set-derived-sysvar
                 #:host-define-sysvar
                 #:host-undefine-sysvar
+                #:host-snapshot-sysvars
+                #:host-restore-sysvars
                 #:host-sysvar-names
                 #:host-registry-read #:host-registry-write
                 #:host-registry-delete #:host-registry-descendents

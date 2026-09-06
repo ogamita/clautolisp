@@ -1,0 +1,91 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: version-invariants-broken-by-shakedown-release — `make check-versions` fails on six counts, and only two are mine to fix
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-sysvar-dialect-tracking
+
+* Constat
+
+=make check-versions= — le contrôle que la procédure de release exige de
+passer avant de taguer — échoue sur *six* violations, toutes préexistantes
+au travail de 1.9.9 :
+
+#+begin_example
+FAIL  I1: branches in the release-* namespace (reserved for tags)
+FAIL  I3: release-1.8.49 is not an ancestor of release-1.8.103 (same series)
+FAIL  I5: version-1.8 is at 8159c49a, expected release-1.8.103 (e8047837)
+FAIL  I5: version-1.9 is at 894ec9d3, expected release-1.9.3 (d6b67812)
+FAIL  I5: version-1  is at 894ec9d3, expected release-1.9.3 (d6b67812)
+FAIL  I7: release-1.8.103 is not reachable from the trunk or any maint-*/dev-* line
+#+end_example
+
+Elles se rangent en trois groupes très différents, et il ne faut surtout
+pas les traiter d'un bloc.
+
+* Groupe 1 — corrigeable sans rien décider (fait)
+
+Les deux =I5= sur =version-1.9= et =version-1=. Ce sont les pointeurs que
+la procédure de release fait avancer après le tag, et ils sont restés sur
+=894ec9d3= alors que =release-1.9.3= est publiée. C'est une étape de la
+procédure qui n'a pas été jouée, pas une question de conception.
+
+* Groupe 2 — corrigeable, mais destructif de forme (à faire)
+
+=I1= : la branche =origin/release-pipeline= vit dans l'espace de noms
+=release-*=, réservé aux TAGS. Elle n'est *pas* fusionnée dans master, donc
+la supprimer perdrait du travail : le correctif est de la RENOMMER
+(=feat-release-pipeline=), c'est-à-dire pousser le nouveau nom puis
+supprimer l'ancien.
+
+Je ne l'ai pas fait : renommer la branche d'un autre est visible de
+l'extérieur et peut casser une copie locale ou une MR ouverte. Un mot de
+pjb et c'est fait en deux commandes.
+
+* Groupe 3 — pas un défaut à corriger, une question à trancher (pjb)
+
+=I3=, =I7= et le =I5= sur =version-1.8= viennent tous du *même* objet :
+
+: release-1.8.103   « shakedown 5 — confirm all.zip + publish:release »
+:                   2026-08-22, e8047837
+
+Ce n'est PAS une scorie. C'est une *release publiée*, avec 13 assets, et
+— fait notable — ses assets sont servis depuis
+=poseidon.informatimago.com/ogamita/clautolisp/releases/1.8.103/= et non
+depuis les artefacts de jobs GitLab. Le pipeline de release a donc été
+réorganisé pour héberger ailleurs, ce qui est vraisemblablement pourquoi
+le stockage du projet est retombé de 23,10 Go à 9,37 Go
+(namespace-storage-blocks-ci.issue).
+
+Le problème est que =1.8.103= est un numéro de *rodage* posé dans la série
+1.8, dont le vrai sommet est =release-1.8.49=. Le vérificateur en conclut,
+correctement selon ses règles, que la série 1.8 est cassée : 1.8.49 n'est
+pas ancêtre de 1.8.103, 1.8.103 n'est atteignable depuis aucune ligne, et
+=version-1.8= devrait pointer sur le plus haut tag de la série.
+
+Trois issues possibles, dans l'ordre où je les recommanderais :
+
+1. *Sortir les rodages de l'espace de release* — les taguer
+   =shakedown-…= plutôt que =release-1.8.103=, et retirer celui-ci. Coût :
+   la release publiée du 22/08 disparaît, avec ses 13 liens.
+2. *Apprendre au vérificateur ce qu'est un rodage* — une liste
+   d'exceptions, ou une convention de numérotation (≥ .100 = rodage)
+   qu'il ignore. Coût : une règle de plus dans un fichier partagé avec
+   d'autres projets (informatimago/rules).
+3. *Ne rien faire* et vivre avec trois violations permanentes. Coût réel :
+   =check-versions= cesse d'être un signal — il échoue toujours, donc plus
+   personne ne le lit, et la prochaine vraie violation passera inaperçue.
+   C'est la plus mauvaise des trois, et c'est celle qu'on prend par défaut.
+
+*Je n'ai rien décidé ici et rien supprimé* : effacer un tag de release
+publié n'est pas un geste que je prends sans un mot explicite, quel que
+soit le mandat.
+
+* Conséquence immédiate
+
+Tant que le groupe 3 n'est pas tranché, =make check-versions= échoue, donc
+la procédure de release ne peut pas être suivie *à la lettre*. J'ai coupé
+=release-1.9.9= en le sachant, en vérifiant que les trois violations
+restantes concernent toutes la série 1.8 et le rodage, et aucune la série
+1.9 que je publie.

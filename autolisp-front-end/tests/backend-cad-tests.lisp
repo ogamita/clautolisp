@@ -201,7 +201,13 @@ ATTACHED=/CREATED= protocol that the legacy bash bridge defines."
               (is (search "SendCommand" content))
               (is (search "ATTACHED=" content))
               (is (search "CREATED=" content))
-              (is (search (namestring run-common) content)))))
+              (is (search (namestring run-common) content))
+              ;; Regression: same 424 "Object required" trap as AutoCAD —
+              ;; `app` must be Set to an object before the first `Is Nothing`.
+              (is (search "Set app = Nothing" content))
+              (let ((init (search "Set app = Nothing" content))
+                    (probe (search "app Is Nothing" content)))
+                (is (and init probe (< init probe)))))))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
@@ -464,7 +470,15 @@ calls 'the hard-won piece'."
               (is (search (namestring run-common) content))
               ;; com-mode + wait-secs are wired through.
               (is (search "\"attach\"" content))
-              (is (search "30" content)))))
+              (is (search "30" content))
+              ;; Regression: `app` must be a real object reference before the
+              ;; first `Is Nothing` test. An unassigned Dim is Empty, and
+              ;; `Empty Is Nothing` raises VBScript err 424 "Object required"
+              ;; on the attach-miss path (this bit at emitted line 72).
+              (is (search "Set app = Nothing" content))
+              (let ((init (search "Set app = Nothing" content))
+                    (probe (search "app Is Nothing" content)))
+                (is (and init probe (< init probe)))))))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 

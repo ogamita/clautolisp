@@ -61,6 +61,7 @@ from the cador package before the Phase-17a extraction.")
    ;; Data carrier: sysvar / header-variable cell.
    #:sysvar-cell
    #:make-sysvar-cell
+   #:copy-sysvar-cell
    #:sysvar-cell-name
    #:sysvar-cell-kind
    #:sysvar-cell-value

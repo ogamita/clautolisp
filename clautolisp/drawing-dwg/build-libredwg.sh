@@ -87,6 +87,43 @@ case "$host_uname" in
         fi ;;
     esac ;;
 esac
+# ... AND GIVE IT THE .exe A NATIVE PROGRAM NEEDS TO SEE.
+#
+# MSYS2's POSIX layer opens `gcc' when only `gcc.exe' exists. So
+# `command -v gcc' answers /mingw64/bin/gcc, `[ -x ]' on it is true, and
+# `"$compiler_path" -dumpmachine' below runs perfectly well -- every check
+# in this script passes.
+#
+# cmake is a NATIVE program and does no such fallback. It receives the
+# argument converted to <msys-root>/mingw64/bin/gcc, tests EXISTS on it,
+# finds nothing, and reports
+#
+#     The CMAKE_C_COMPILER: D:/a/_temp/msys64/mingw64/bin/gcc
+#     is not a full path to an existing compiler tool.
+#
+# AFTER having printed "The C compiler identification is GNU 16.1.0" two
+# lines earlier, which is what makes the message so hard to read: it did
+# find the compiler, it just cannot name the file.
+#
+# Measured on GitHub's windows-2025 runner, 2026-08-23, on a COLD build
+# directory. It goes unnoticed on the GitLab Windows runner because that
+# one cleans with `-ffd' rather than `-ffdx', so a configured CMake cache
+# survives between pipelines and cmake is never asked the question again.
+#
+# This is the same .exe trap that once shipped Windows release binaries
+# without their extension (windows-release-binaries-lose-exe.issue): a
+# name that MSYS2 resolves and Windows does not.
+case "$host_uname" in
+  MINGW*|MSYS*|CYGWIN*)
+    case "$compiler_path" in
+      *.exe) ;;
+      *) if [ -e "$compiler_path.exe" ]; then
+           echo "C compiler path completed: $compiler_path -> $compiler_path.exe"
+           compiler_path="$compiler_path.exe"
+         fi ;;
+    esac ;;
+esac
+
 compiler_dir="$(cd "$(dirname "$compiler_path")" && pwd)"
 PATH="$compiler_dir:$PATH"
 export PATH

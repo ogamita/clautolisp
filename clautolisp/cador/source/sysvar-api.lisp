@@ -260,6 +260,30 @@ the launch-time overlay does not need to know which catalogue is installed."
   (let ((string (ensure-sysvar-name name 'undefine-sysvar)))
     (cador-remove-sysvar host string)))
 
+(defmethod host-snapshot-sysvars ((host cador))
+  "An independent copy of HOST's whole sysvar table. Taken once, before
+any dialect overlay is applied, it is the dialect-INDEPENDENT base that
+a later dialect switch rebuilds from — see
+sysvar-table-ignores-runtime-dialect-change.issue."
+  (cador-copy-sysvar-table (cador-sysvars host)))
+
+(defmethod host-restore-sysvars ((host cador) snapshot)
+  "Replace HOST's sysvar table with a fresh copy of SNAPSHOT. Copied
+rather than installed, so the same snapshot can be replayed at every
+dialect change and still mean the same thing."
+  (when snapshot
+    ;; IN PLACE (clrhash + refill), not by installing a new hash-table:
+    ;; the table belongs to the active drawing and other code holds it
+    ;; directly (see cador-reset in api.lisp, which clrhashes it too).
+    ;; Swapping the object would leave those references pointing at the
+    ;; old table.
+    (let ((table (cador-sysvars host)))
+      (clrhash table)
+      (maphash (lambda (name cell)
+                 (setf (gethash name table) (copy-sysvar-cell cell)))
+               snapshot))
+    t))
+
 (defmethod host-set-derived-sysvar ((host cador) name value)
   "Launch-time bypass of the cell's read-only flag for host-derived
 sysvars (SYSCODEPAGE, DWGCODEPAGE, …). The catalogue marks these as
