@@ -6,9 +6,16 @@ All three *Bugs* below are FIXED and pushed:
                                                     selection per §2.4, 1.9.109)
 - Bug "does [not] find the function definition"  — DONE, 1.9.107
 
-The design work below — the =(clal-sedit [type] object)= API extension and the
-=source-file-*= module that keeps =*source-position-table*= consistent on save
-— is NOT done (deferred; "bugs first").
+Design work:
+- the =(clal-sedit [type] object)= API extension — DONE, 1.9.111 (all rows;
+  line/position selection finds a top-level form by locating its verbatim text
+  in the file, since the sedit parser does not record line numbers).
+- the =source-file-*= module that keeps =*source-position-table*= consistent on
+  save — NOT done (deferred; needs the compiler-branch decision on transporting
+  source positions).
+
+Also: long directory listings are windowed to H-4 entries around the selection
+(1.9.110).
 
 * Bugs
 ** Bug: no quitting clal-sedit                                   [DONE 1.9.106]
@@ -122,7 +129,7 @@ SEDIT>
 #+end_example
 
 * sedit file source vs non-file source
-** clal-sedit API extension
+** clal-sedit API extension                                      [DONE 1.9.111]
 
 First point, currently CLAL-SEDIT takes only a string path to edit a whole file.
 

@@ -656,9 +656,23 @@ own rules.
 
 ~clal-sedit~ runs the editor on the terminal and returns the edited object.
 Recall by name works because the interactive REPL *records* every top-level
-form you evaluate, so ~(clal-sedit 'foo)~ finds the ~defun~ / ~setq~ you
-typed. The initial and final forms are left in ~*clal-sedit-initial-form*~ and
+form you evaluate — and a function loaded from a source file is recalled from
+that file — so ~(clal-sedit 'foo)~ finds the ~defun~ / ~setq~ of FOO. The
+initial and final forms are left in ~*clal-sedit-initial-form*~ and
 ~*clal-sedit-last-result*~.
+
+A two-argument form, ~(clal-sedit TYPE OBJECT)~, is explicit about what OBJECT
+means:
+
+#+begin_example
+(clal-sedit 'object X)              ; edit X as a sexp (even if X is a symbol)
+(clal-sedit 'function 'foo)         ; edit FOO in its source file (the defun
+                                    ;   selected), or its definition if it has none
+(clal-sedit 'file '("prog.lsp" foo)); open prog.lsp with the defun of FOO selected
+(clal-sedit 'file '("prog.lsp" 42)) ; open prog.lsp at the form on/after line 42
+(clal-sedit 'file "prog.lsp")       ; a file (created on save if new)
+(clal-sedit 'directory "~/src/")    ; a directory
+#+end_example
 
 ** Editing while debugging
 
