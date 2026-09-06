@@ -30,8 +30,8 @@ chapter intros, etc.
 The paged spec data, the Emacs lib, and the AutoLISP lib install
 under:
 
-  $(PREFIX)/share/autolisp-spec/pages/         data files (alref reads)
   $(PREFIX)/share/doc/autolisp-spec/           reference org + pdf docs
+  $(PREFIX)/share/doc/autolisp-spec/pages/     data files (alref reads)
   $(PREFIX)/share/info/                        autolisp-spec.info
   $(PREFIX)/share/emacs/site-lisp/autolisp-spec/    alref.el
   $(PREFIX)/share/autolisp/site-lisp/autolisp-spec/ alref.lsp
@@ -66,7 +66,7 @@ At the AutoLISP REPL, load the library (typically from a user
 init file):
 
   (load "/opt/local/share/autolisp/site-lisp/autolisp-spec/alref.lsp")
-  (alref-set-root "/opt/local/share/autolisp-spec/")
+  (alref-set-root "/opt/local/share/doc/autolisp-spec/")
 
 Then call:
 
