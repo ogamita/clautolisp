@@ -301,3 +301,36 @@ error), and must not clip a form. Maintains the position table. Returns SF."
   "Delete the comment/blank lines in [START-LINUM, END-LINUM). Same constraints
 as SOURCE-FILE-REPLACE-COMMENT. Maintains the position table. Returns SF."
   (source-file-replace-comment sf start-linum end-linum '()))
+
+;;; --- whole-file save that keeps positions consistent (sedit's save) -----
+
+(defun save-file-text (path new-text)
+  "Write NEW-TEXT to PATH, first shifting the position table so the forms below
+the changed region keep their positions (sedit-bugs-and-design.issue). OLD and
+NEW are compared by their common leading/trailing lines to locate one
+contiguous change (the usual single-form edit); everything below it moves by
+the net line delta. Returns the namestring."
+  (let* ((path (namestring path))
+         (old (%split-lines (if (probe-file path) (uiop:read-file-string path) "")))
+         (new (%split-lines new-text))
+         (o (coerce old 'vector))
+         (n (coerce new 'vector))
+         (olen (length o))
+         (nlen (length n)))
+    (unless (equalp o n)
+      (let ((p 0) (s 0))
+        (loop while (and (< p olen) (< p nlen) (string= (aref o p) (aref n p)))
+              do (incf p))
+        (loop while (and (< s (- olen p)) (< s (- nlen p))
+                         (string= (aref o (- olen 1 s)) (aref n (- nlen 1 s))))
+              do (incf s))
+        ;; lines after the old trailing region (1-based olen-s+1) move by nlen-olen
+        (clautolisp.source:shift-source-positions path (+ (- olen s) 1) (- nlen olen))))
+    (with-open-file (out path :direction :output :if-exists :supersede
+                              :if-does-not-exist :create :external-format :utf-8)
+      (write-string new-text out))
+    path))
+
+;; Install SAVE-FILE-TEXT as sedit's file-save hook, so an interactive sedit
+;; `s' on a file-backed session keeps the position map consistent.
+(setf clautolisp.sedit:*sedit-file-save-hook* #'save-file-text)

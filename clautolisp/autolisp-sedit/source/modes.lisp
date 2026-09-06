@@ -115,11 +115,28 @@ LOAD-HOOK. Not an editing command — the mode is unchanged (§6.6)."
   (let ((path (or arg (%session-file session))))
     (when (and load-hook path) (funcall load-hook path))))
 
+(defvar *sedit-file-save-hook* nil
+  "When set, a function (PATH TEXT) that writes TEXT to file PATH while keeping
+CLAUTOLISP.SOURCE:*SOURCE-POSITION-TABLE* consistent (sedit-bugs-and-design.
+issue): it is what makes a sedit file save not invalidate the positions of the
+forms below the edit. The clautolisp tool installs it; a bare sedit library
+user gets NIL and a plain whole-file write. Applies to file-backed sessions.")
+
 (defun %do-save (session arg)
-  "save [PATH] (§5.8): write the edited file/form to PATH, or the session's file."
+  "save [PATH] (§5.8): write the edited file to PATH or the session's file. A
+file-backed session writes its WHOLE file — every top-level item, not just the
+selected form (which used to truncate the file) — and, through
+*SEDIT-FILE-SAVE-HOOK*, keeps the source-position map consistent
+(sedit-bugs-and-design.issue). A stand-alone/sexp session still writes the
+selected top-level form."
   (let ((path (or arg (%session-file session))))
     (when path
-      (sedit-save (sedit-result-node (sedit-state-loc (sedit-session-state session))) path))))
+      (if (%session-file session)
+          (let ((text (unparse (%loc-root (sedit-state-loc (sedit-session-state session))))))
+            (if *sedit-file-save-hook*
+                (funcall *sedit-file-save-hook* (namestring path) text)
+                (%write-text-file text path)))
+          (sedit-save (sedit-result-node (sedit-state-loc (sedit-session-state session))) path)))))
 
 (defun %session-file (session)
   "The file path backing SESSION, or NIL (a stand-alone / directory session)."

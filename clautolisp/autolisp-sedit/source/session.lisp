@@ -112,6 +112,19 @@ CL disposition (:supersede overwrites, :error refuses). Returns the namestring."
     (write-string (unparse node) s))
   (namestring (truename path)))
 
+(defun %loc-root (loc)
+  "The root node of LOC's whole tree (ascend past every list/file/dir boundary)."
+  (let ((l loc))
+    (loop while (loc-ctx l) do (setf l (loc-up l)))
+    (loc-focus l)))
+
+(defun %write-text-file (text path)
+  "Write TEXT to PATH (supersede/create); returns the namestring."
+  (with-open-file (s path :direction :output :if-exists :supersede
+                          :if-does-not-exist :create :external-format :utf-8)
+    (write-string text s))
+  (namestring path))
+
 (defun %dir-display-name (dir-pathname)
   "The last directory component of DIR-PATHNAME as a name, e.g. \"src\"."
   (car (last (pathname-directory dir-pathname))))

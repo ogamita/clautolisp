@@ -86,6 +86,21 @@
       (let ((text (uiop:read-file-string path)))
         (is (eql (%startline b) (%line-of "defun b" text)))))))
 
+(test source-file-save-file-text-keeps-positions-consistent
+  ;; a whole-file save (as sedit does) where form A grew must leave B and C
+  ;; with positions matching where they actually end up.
+  (with-sf-temp (path (format nil "(defun a (x) x)~%~%(defun b (y) y)~%~%(defun c (z) z)~%"))
+    (let* ((sf (funcall (%sf 'source-file-open) path 'read))
+           (a (funcall (%sf 'source-file-read) sf))
+           (b (funcall (%sf 'source-file-read) sf))
+           (c (funcall (%sf 'source-file-read) sf)))
+      (declare (ignore a))
+      (funcall (%sf 'save-file-text) path
+               (format nil "(defun a (x)~%  (+ x 1)~%  x)~%~%(defun b (y) y)~%~%(defun c (z) z)~%"))
+      (let ((text (uiop:read-file-string path)))
+        (is (eql (%startline b) (%line-of "defun b" text)))
+        (is (eql (%startline c) (%line-of "defun c" text)))))))
+
 (test source-file-insert-inside-a-form-is-an-error
   (with-sf-temp (path (format nil "(defun a (x)~%  (+ x 1))~%"))
     (let ((sf (funcall (%sf 'source-file-open) path 'update)))
