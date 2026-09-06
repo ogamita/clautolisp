@@ -11,8 +11,10 @@ Design work:
   line/position selection finds a top-level form by locating its verbatim text
   in the file, since the sedit parser does not record line numbers).
 - the =source-file-*= module that keeps =*source-position-table*= consistent on
-  save — NOT done (deferred; needs the compiler-branch decision on transporting
-  source positions).
+  save — DONE, 1.9.112 (clautolisp.source-file: open/read/close/save + insert/
+  replace/delete of top-level forms and comments; each mutation shifts the
+  position table by its line delta via CLAUTOLISP.SOURCE:SHIFT-SOURCE-POSITIONS).
+  Follow-up: route sedit's own file save through this module.
 
 Also: long directory listings are windowed to H-4 entries around the selection
 (1.9.110).
