@@ -72,6 +72,21 @@ probe_preflight() {
   fi
   command -v cygpath >/dev/null 2>&1 \
     || echo "run-probes: note - cygpath absent; paths passed to the CAD are used as is." >&2
+
+  # A NOTE, NEVER FATAL: nothing here calls dirname any more, so this
+  # only answers a question the evidence has left open.
+  #
+  # The Windows runner once failed with `missing //sources/manifest.txt'
+  # -- a path that requires $(dirname "$0") to have produced NOTHING,
+  # since a failed cd gives one slash and a backslash path gives a
+  # different directory entirely. But the tools checked above are all
+  # present on that same unchanged runner, and in msys2 dirname lives in
+  # the same /usr/bin as awk and sed. Both cannot be true of a simple
+  # "PATH is short".
+  #
+  # So RECORD what the environment actually is, rather than theorise a
+  # third time. One line, on a run that otherwise says nothing.
+  echo "run-probes: env - \$0=$0 shell=${BASH_VERSION:-?} dirname=$(command -v dirname || echo NOT-FOUND) uname=$(uname -s 2>/dev/null || echo ?)" >&2
 }
 probe_preflight
 

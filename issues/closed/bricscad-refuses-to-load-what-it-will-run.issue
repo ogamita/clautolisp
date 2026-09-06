@@ -326,3 +326,53 @@ is coincidence across two runs, or it is with the FILE rather than the
 form -- which is why the byte-exact 184-byte fragment has been sent to
 pjb to load directly. If that file loads for him, the fragment is
 cleared too and the cause is wholly in the CI context.
+
+
+WINDOWS REPRODUCES IT -- and that sharpens the contrast
+--------------------------------------------------------
+
+probe:load-refusal:bricscad:windows, 2026-09-06, stops at exactly the
+same place as macOS: forms 1 and 2 load, nothing after. So the CI stop
+is PLATFORM-INDEPENDENT, which rules out every platform-specific
+explanation -- macOS dialogs, Windows paths, one runner's environment.
+
+In the SAME pipeline, probe:suite:bricscad:windows SUCCEEDED. That
+suite is also split, also driven by alfe, also loads fragment files --
+and it carries (foreach e nil 99) AS A STRING that it READs at run
+time. It ran green on both platforms.
+
+So the two conditions are both necessary:
+
+    literal in a loaded file  +  the CI context   -> stops
+    literal in a loaded file  alone (pjb's .scr)  -> fine
+    the CI context alone (as a string)            -> fine
+
+That is a narrower statement than anything this ticket has held so far,
+and it is made entirely of runs that PRODUCED output rather than of one
+that did not.
+
+RULED OUT ALONG THE WAY, each checked rather than argued:
+
+  - the form itself -- pjb: REPL, defun, call, and a .scr that LOADS a
+    file containing it, all fine on BricsCAD V26 macOS
+  - the fragment's bytes -- clean ASCII, LF only, no BOM
+  - a missing final newline, which would plausibly leave a reader
+    waiting: the file ends "))\n\n"
+  - the load path -- identical in shape to the fragment that loads,
+    differing only in filename
+  - the drawing lock -- alfe embeds an empty.dwg and makes a fresh one
+    per invocation (2.0.22), and run-probes.sh copies its own into the
+    per-run directory; that has been true for every run discussed here
+  - the platform
+
+WHAT IS LEFT, being the differences between pjb's working .scr and the
+CI load of the same text:
+
+  1. the load is wrapped in VL-CATCH-ALL-APPLY rather than bare
+  2. alfe drives the session (--bricscad --mode batch)
+  3. it is the third LOAD of the session, not the first
+  4. the wrapper sets SECURELOAD to 0
+
+Each is one line to test from a working session, and they are listed in
+the order they are cheapest to try, not in order of my confidence --
+which has been wrong on this ticket four times.
