@@ -1,0 +1,9 @@
+{
+  "product": "bricscad",
+  "platform": "macos",
+  "timestamp_utc": "20260906T190558Z",
+  "status": "completed",
+  "exit_code": 0,
+  "runner_template": "\"/Applications/BricsCAD V26.app/Contents/MacOS/bricscad\" -B __SCRIPT_FILE__",
+  "result_file": "probe-results/bricscad/macos/20260906T190558Z/results.sexp"
+}
