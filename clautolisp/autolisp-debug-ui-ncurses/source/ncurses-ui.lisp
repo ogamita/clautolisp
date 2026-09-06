@@ -108,7 +108,11 @@ interactor stack)."
       (pushnew :window-manager (window-stack new)))))
 
 (register-ui :ncurses (lambda (&rest initargs) (apply #'make-ncurses-ui initargs)))
-(register-ui :tui     (lambda (&rest initargs) (apply #'make-ncurses-ui initargs)))
+;; NB: :tui is NOT ncurses. Throughout the CLI / debug-ui-designator / aldb
+;; fallback, `tui' means the line-mode *terminal* (dumb) UI; :tui is registered
+;; to the dumb UI in autolisp-debug-ui-dumb. Registering it to ncurses here was
+;; dead + contradictory (every path pre-maps :tui before the registry), so it is
+;; removed.
 
 (defun push-repl (ui control &rest args)
   (setf (ncurses-ui-repl-lines ui)

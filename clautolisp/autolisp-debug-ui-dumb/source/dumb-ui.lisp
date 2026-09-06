@@ -33,6 +33,10 @@
 
 (register-ui :terminal (lambda (&rest initargs) (apply #'make-dumb-ui initargs)))
 (register-ui :dumb     (lambda (&rest initargs) (apply #'make-dumb-ui initargs)))
+;; `tui' is a spelling of the line-mode terminal UI (CLI parse-user-interface,
+;; debug-ui-designator, the aldb fallback all treat :tui as the terminal UI);
+;; register it here so a direct (make-ui :tui) is correct too, not ncurses.
+(register-ui :tui      (lambda (&rest initargs) (apply #'make-dumb-ui initargs)))
 
 (defun %out-stream (ui)
   "The stream debugger command output goes to: the UI-neutral *DEBUGGER-OUTPUT*
