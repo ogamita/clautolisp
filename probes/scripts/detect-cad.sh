@@ -36,7 +36,7 @@ alfe_binary() {
   if [[ -n "${ALFE_BIN:-}" && -x "${ALFE_BIN}" ]]; then
     printf '%s\n' "$ALFE_BIN"; return 0
   fi
-  root="$(cd "$(dirname "$0")/../.." && pwd)"
+  root="$(cd "$(script_dir_of_detect "$0")/../.." && pwd)"
   for candidate in \
       "$root/autolisp-front-end/tools/alfe/bin/alfe-sbcl" \
       "$root/autolisp-front-end/tools/alfe/bin/alfe-sbcl.exe" \
@@ -69,6 +69,15 @@ alfe_lookup() {
 
 set -euo pipefail
 
+# See the note in run-probes.sh: $(dirname "$0") is empty on a Windows
+# runner without coreutils, which silently resolves the repository root
+# to "/". Parameter expansion needs no external program.
+script_dir_of_detect() {
+  local path="$1" dir="${1%/*}"
+  if [ "$dir" = "$path" ]; then dir="."; fi
+  printf '%s' "$dir"
+}
+
 product="${1:?usage: detect-cad.sh <autocad|bricscad|clautolisp>}"
 
 platform="ms-windows"
@@ -95,7 +104,7 @@ case "$product" in
     [[ -n "${CLAUTOLISP_RUNNER:-}" ]] && emit "$CLAUTOLISP_RUNNER"
     bin="${CLAUTOLISP_BIN:-}"
     if [[ -z "$bin" ]]; then
-      root="$(cd "$(dirname "$0")/../.." && pwd)"
+      root="$(cd "$(script_dir_of_detect "$0")/../.." && pwd)"
       # .exe first: the Windows build produces clautolisp-sbcl.exe (pjb,
       # 2026-08-16), and the `-x' test below is not execution, so it will
       # not resolve the suffix on its own.

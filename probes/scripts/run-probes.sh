@@ -33,7 +33,34 @@ set -euo pipefail
 
 product="${1:?usage: run-probes.sh <autocad|bricscad|clautolisp>}"
 
-probes_dir="$(cd "$(dirname "$0")/.." && pwd)"
+# WHERE THIS SCRIPT LIVES, without calling dirname.
+#
+# It used to be $(dirname "$0"), and on a Windows runner whose PATH has
+# no coreutils that expands to NOTHING -- so `cd "$(dirname "$0")/.."'
+# became `cd "/.."', which SUCCEEDS and lands at the filesystem root.
+# The script then looked for `//sources/manifest.txt' and reported a
+# missing manifest: a confusing message about the wrong thing, three
+# steps downstream of the actual fault. Parameter expansion needs no
+# external program and cannot fail that way.
+script_dir_of() {
+  local path="$1" dir="${1%/*}"
+  # no slash in the path at all: it was found via PATH or is in CWD
+  if [ "$dir" = "$path" ]; then dir="."; fi
+  printf '%s' "$dir"
+}
+
+probes_dir="$(cd "$(script_dir_of "$0")/.." && pwd)"
+
+# A resolved root of "/" or "" means the computation above went wrong,
+# and every later message would be about the wrong path. Say so HERE,
+# naming what was computed, rather than three steps downstream.
+if [ -z "${probes_dir:-}" ] || [ "$probes_dir" = "/" ]; then
+  echo "run-probes: cannot locate the probes directory." >&2
+  echo "  \$0        = $0" >&2
+  echo "  script dir = $(script_dir_of "$0")" >&2
+  echo "  cwd        = $(pwd)" >&2
+  exit 2
+fi
 repo_root="$(cd "$probes_dir/.." && pwd)"
 sources_dir="$probes_dir/sources"
 manifest="$sources_dir/manifest.txt"
