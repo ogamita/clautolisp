@@ -311,6 +311,10 @@ NEW are compared by their common leading/trailing lines to locate one
 contiguous change (the usual single-form edit); everything below it moves by
 the net line delta. Returns the namestring."
   (let* ((path (namestring path))
+         ;; positions are recorded under the file's truename (SOURCE-FILE-OPEN),
+         ;; so shift under the same canonical key — a raw path over a symlinked
+         ;; directory would not match and the shift would silently miss.
+         (key (namestring (or (ignore-errors (truename path)) path)))
          (old (%split-lines (if (probe-file path) (uiop:read-file-string path) "")))
          (new (%split-lines new-text))
          (o (coerce old 'vector))
@@ -325,7 +329,7 @@ the net line delta. Returns the namestring."
                          (string= (aref o (- olen 1 s)) (aref n (- nlen 1 s))))
               do (incf s))
         ;; lines after the old trailing region (1-based olen-s+1) move by nlen-olen
-        (clautolisp.source:shift-source-positions path (+ (- olen s) 1) (- nlen olen))))
+        (clautolisp.source:shift-source-positions key (+ (- olen s) 1) (- nlen olen))))
     (with-open-file (out path :direction :output :if-exists :supersede
                               :if-does-not-exist :create :external-format :utf-8)
       (write-string new-text out))
