@@ -1767,11 +1767,27 @@ the path. Verified by emitting the value first on purpose -- the test
 goes red, and the coverage test goes red with the branch disabled.
 
 WHAT REMAINS FALLING BACK, and the list is now stable: DEFUN, DEFUN-Q,
-TRACE, UNTRACE, COMMAND, COMMAND-S. None takes a body, so none of them
-un-compiles work the way FOREACH, LET and VLAX-FOR did; each costs a
-dispatch and nothing more. The COMMAND family is dominated by the host,
-DEFUN inside a body is rare, and TRACE/UNTRACE are debugging verbs
-whose cost is not in the dispatch. THE TRANSPILER-COVERAGE THREAD THAT
+TRACE, UNTRACE, COMMAND, COMMAND-S. None of them un-compiles work the
+way FOREACH, LET and VLAX-FOR did -- for two different reasons, and the
+distinction was first written down wrongly here (pjb: "defun and
+defun-q take bodies. Are you saying that they don't compile them?").
+
+TRACE, UNTRACE, COMMAND and COMMAND-S have NO BODY: they take
+arguments. One dispatch each, and the COMMAND family is dominated by
+the host anyway.
+
+DEFUN and DEFUN-Q DO take a body. What makes handing them over free is
+not the absence of a body but that the body is STORED RATHER THAN RUN:
+evaluating a DEFUN builds the function, and the body inside it executes
+later, when that function is CALLED -- by which time it is an ordinary
+function body compiled by the ordinary rules (hot at SPEED 1-2, at
+definition at SPEED 3).
+
+Verified rather than reasoned: the coverage of
+(progn (defun inner (x) (* x x)) (inner 5)) reports ("DEFUN") -- it
+does fall back -- the form still answers 25, and INNER's COMPILED-BODY
+holds a function afterwards. The definition is interpreted; the
+function defined is compiled. THE TRANSPILER-COVERAGE THREAD THAT
 SLICE 20 OPENED IS THEREFORE FINISHED unless one of those turns out to
 matter; what is left in this file is the allocation and configuration
 work, not coverage.
@@ -1893,9 +1909,12 @@ STILL OPEN after slice 27
     THAT TAKES A BODY FALLS BACK ANY MORE -- that was the property
     worth chasing, since a fallback hands over the whole subform and
     so silently un-compiles the work inside it. Still falling back, and
-    deliberately: DEFUN, DEFUN-Q, TRACE, UNTRACE, COMMAND, COMMAND-S.
-    None takes a body; each costs a dispatch and nothing more. Reopen
-    only with a measurement showing one of them matters.
+    deliberately: TRACE, UNTRACE, COMMAND and COMMAND-S, which have no
+    body at all, and DEFUN / DEFUN-Q, which DO take one -- but store it
+    rather than run it, so the function they define is compiled by the
+    ordinary rules when called and the fallback un-compiles nothing
+    (see slice 25 for the measurement). Reopen only with a measurement
+    showing one of them matters.
   - (done in slice 26: the compilation counter and its one-shot
     warning, which was the last part of
     issues/closed/lambda-in-a-loop-never-compiles.issue.)

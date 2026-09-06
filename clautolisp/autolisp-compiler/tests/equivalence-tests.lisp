@@ -573,6 +573,35 @@ over. Nothing is refused; it only stops being silent."
         (is (eql 1 warnings) "warned ~D times, expected exactly once" warnings))
       (is (eq t *usubr-compilation-warned-p*)))))
 
+(test a-defun-that-falls-back-still-defines-a-compiled-function
+  "DEFUN falls back -- and un-compiles nothing, which is NOT because it
+has no body. It has one. pjb asked the right question (2026-09-06:
+`defun and defun-q take bodies. Are you saying that they don't compile
+them?'), and the documentation had the conclusion right for the wrong
+reason.
+
+The reason is that a DEFUN's body is STORED, not RUN. Evaluating the
+form builds the function; the body executes later, when that function
+is CALLED, and by then it is an ordinary function body compiled by the
+ordinary rules. So the definition is interpreted -- one dispatch -- and
+the function defined is compiled like any other.
+
+That distinction is invisible in a value test, which is how it came to
+be written down wrongly, so it is pinned on the COMPILED-BODY slot."
+  (let* ((*autolisp-compilation-enabled* t)
+         (*autolisp-compilation-threshold* 1)
+         (context (%fresh-context))
+         (text "(progn (defun inner (x) (* x x)) (inner 5))"))
+    ;; the DEFUN does fall back ...
+    (is (member "DEFUN" (transpiler-coverage (%read-one text)) :test #'equal))
+    ;; ... the form still answers ...
+    (is (eql 25 (funcall (compile-autolisp-form (%read-one text)) context)))
+    ;; ... and the function it defined has a COMPILED body.
+    (let ((inner (lookup-function (%read-one "inner") context)))
+      (is (typep inner 'autolisp-usubr))
+      (is (functionp (autolisp-usubr-compiled-body inner))
+          "the DEFUN fell back and its function was left interpreted"))))
+
 (test a-call-resolves-its-function-before-evaluating-arguments
   "The interpreter looks the function up FIRST, so an undefined function
 is signalled before any argument's side effects happen. A compiler that

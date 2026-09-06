@@ -439,8 +439,12 @@ separate binary for tool integrators.
   inside a function silently un-compiled the work within it. A loop
   written inside a ~let~ measured 68 ms compiled against 64 ms
   interpreted — compiling it gained *nothing* — and is 12 ms now.
-  Still handed over, deliberately: ~defun~, ~defun-q~, ~trace~,
-  ~untrace~, ~command~ and ~command-s~, none of which takes a body.
+  Still handed over, deliberately: ~trace~, ~untrace~, ~command~ and
+  ~command-s~, which have no body at all, and ~defun~ / ~defun-q~,
+  whose body is not *run* when the form is evaluated but *stored* — the
+  function they define is compiled by the ordinary rules when it is
+  called, so handing the definition to the interpreter un-compiles
+  nothing.
 
 - *Higher-order code is compiled at last.* Before this release NO
   ~lambda~ body was ever compiled at the shipped settings, so every

@@ -2518,17 +2518,28 @@ the implementation: a construct that falls back takes its **body** with
 it, so the work inside a loop can go on being interpreted inside a
 function you believe you compiled.
 
-Everything that *takes a body* is compiled: ~progn~, ~if~, ~cond~,
-~and~, ~or~, ~while~, ~repeat~, ~foreach~, ~let~, ~vlax-for~,
-~lambda~, together with ~setq~, ~set~, ~quote~ and ~function~, and
-every function call.
+Everything whose body is *run as part of evaluating the form* is
+compiled: ~progn~, ~if~, ~cond~, ~and~, ~or~, ~while~, ~repeat~,
+~foreach~, ~let~, ~vlax-for~, ~lambda~, together with ~setq~, ~set~,
+~quote~ and ~function~, and every function call.
 
 These are still handed to the interpreter, deliberately: ~defun~,
 ~defun-q~, ~trace~, ~untrace~, ~command~ and ~command-s~. None of them
-takes a body, so each costs one dispatch and nothing inside it is
-un-compiled. ~command~ is dominated by the host's own work; a ~defun~
-*inside* another function's body is rare; ~trace~ and ~untrace~ are
-debugging verbs whose cost is not in the dispatch.
+un-compiles any work, though for two different reasons.
+
+~trace~, ~untrace~, ~command~ and ~command-s~ have no body at all —
+they take arguments — so each costs one dispatch and that is the whole
+of it. ~command~ is in any case dominated by the host's own work.
+
+~defun~ and ~defun-q~ *do* take a body, and it is worth being exact
+about why handing them over costs nothing: their body is not *run* when
+the form is evaluated, it is *stored*. Evaluating a ~defun~ builds the
+function; the body inside it is executed later, when that function is
+called — and by then it is an ordinary function body, compiled by the
+ordinary rules (once hot at ~SPEED~ 1 and 2, at definition at
+~SPEED~ 3). So a ~defun~ nested inside another function's body is
+interpreted *as a definition*, one dispatch, and the function it
+defines is compiled exactly like any other.
 
 If you are measuring and a function seems not to have gained anything,
 this list is the first thing to check — before this was closed, a loop

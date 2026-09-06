@@ -35,6 +35,7 @@
                 #:autolisp-symbol
                 #:autolisp-usubr
                 #:autolisp-usubr-site
+                #:autolisp-usubr-compiled-body
                 #:*vlax-collection-items-hook*
                 #:*usubr-compilation-count*
                 #:*usubr-compilation-warning-threshold*
