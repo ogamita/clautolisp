@@ -222,20 +222,42 @@ sub-directory (spec §2.4, e.g. =../=, =batnav/=)."
         ((file-node-p node) (file-node-name node))
         (t "")))
 
+(defvar *sedit-window-height* 24
+  "Assumed terminal height H for windowing a long directory listing: at most
+H-4 entries are shown, centred on the selection (%RENDER-DIRECTORY). A higher
+layer that knows the real terminal / pager height may rebind it; the default
+matches the debugger pager's default height.")
+
 (defun %render-directory (dir current &key (open "[") (close "]"))
   "A directory listing (spec §2.4): the directory's path, then one entry per
 line — sub-directories with a trailing / — with the CURRENT entry wrapped in
 OPEN…CLOSE. This is what the browser shows when the selection is a directory
 entry, instead of the entry's (unloaded, empty) contents rendering as =[]=
-\(sedit-bugs-and-design.issue Bug 2)."
-  (with-output-to-string (out)
-    (write-string (dir-node-name dir) out)
-    (dolist (entry (dir-node-entries dir))
-      (terpri out)
-      (let ((name (%entry-display-name entry)))
-        (if (eq entry current)
-            (format out "~A~A~A" open name close)
-            (write-string name out))))))
+\(sedit-bugs-and-design.issue Bug 2). Long listings are windowed to at most
+H-4 entries (H = *SEDIT-WINDOW-HEIGHT*) centred on the selection — clamped at
+either end — with =⋮ (N more …)= markers for the entries scrolled off."
+  (let* ((entries (dir-node-entries dir))
+         (n (length entries))
+         (h (max 5 *sedit-window-height*))
+         (w (max 1 (- h 4)))
+         (sel (or (position current entries :test #'eq) 0)))
+    (multiple-value-bind (start end)
+        (if (<= n w)
+            (values 0 n)
+            (let ((s (max 0 (min (- sel (floor w 2)) (- n w)))))
+              (values s (+ s w))))
+      (with-output-to-string (out)
+        (write-string (dir-node-name dir) out)
+        (when (plusp start)
+          (format out "~%  ⋮ (~D more above)" start))
+        (loop for entry in (subseq entries start end)
+              do (terpri out)
+                 (let ((name (%entry-display-name entry)))
+                   (if (eq entry current)
+                       (format out "~A~A~A" open name close)
+                       (write-string name out))))
+        (when (< end n)
+          (format out "~%  ⋮ (~D more below)" (- n end)))))))
 
 (defun render-selection (loc &key (open "[") (close "]"))
   "The top-level form the selection at LOC is in, with the selected node wrapped

@@ -1599,6 +1599,12 @@ inside (`aldo c', the confirmed quit) is returned to be propagated."
             (clautolisp.sedit:sedit-command
              sedit (if arg (format nil "~A ~A" cmd arg) cmd)))
           (multiple-value-bind (result directive)
+              ;; window a long directory listing to the configured page height
+              ;; (sedit-bugs-and-design.issue): sedit is dependency-free, so the
+              ;; debugger passes its resolved height down through this special.
+              (let ((clautolisp.sedit:*sedit-window-height*
+                      (or (ignore-errors (get-aldo-setting :pager-height))
+                          clautolisp.sedit:*sedit-window-height*)))
               (clautolisp.sedit:sedit-enter
                sedit :input (dumb-ui-input ui) :output (%out-stream ui)
                      ;; entered to resolve a live stop iff there is a HIT:
@@ -1625,7 +1631,7 @@ inside (`aldo c', the confirmed quit) is returned to be propagated."
                                    loc))
                      :on-quit (lambda ()
                                 (or (ignore-errors (debugger-setting :sedit-on-quit))
-                                    :ask)))
+                                    :ask))))
             (cond
               (directive directive)
               (t (nav-install-edited-form ui session result loc) nil)))))))

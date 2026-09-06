@@ -62,7 +62,7 @@ clal-sedit (Phases 4–5), and the clipboard providers (Phase 6) come later.")
    #:*clal-sedit-initial-form* #:*clal-sedit-last-result*
    ;; --- modes, the transition machine, and the driver (§1, §5, §6.6) ---
    #:sedit-command #:sedit-run #:render-selection
-   #:sedit-mode-prompt #:sedit-help-text
+   #:sedit-mode-prompt #:sedit-help-text #:*sedit-window-height*
    ;; SEDIT as an interactor (interactor-design-revision.issue T2/D9)
    #:*sedit* #:*sedit-commands* #:*sedit-user-commands*
    #:sedit-enter #:sedit-interactor-help #:*default-on-quit-policy*
