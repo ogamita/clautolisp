@@ -1,5 +1,5 @@
 Title: BricsCAD refuses to LOAD a file containing a form it executes happily
-Status: CLOSED 2026-09-02 -- the form is named
+Status: REOPENED 2026-09-06 -- the named form was disproved
 Found: 2026-08-31, chasing probes-suite-crashes-bricscad
 
 THE SHAPE OF IT
@@ -243,3 +243,57 @@ the MEASUREMENT -- the split legitimately narrows the fault to one
 fragment -- and then it crept back into the CONCLUSION, where "did not
 return" became "refused" became "will not read". The tooling was
 sound; the sentence was not.
+
+
+WITHDRAWN: (foreach e nil 99) IS NOT THE CULPRIT -- pjb, 2026-09-06
+--------------------------------------------------------------------
+
+pjb, at a BricsCAD V26 REPL on macOS:
+
+    : (foreach e nil 99)
+    nil
+
+    (defun f () (foreach e nil 99))
+    (f)                                  "definitely loaded successfully"
+
+So the form reads, evaluates, survives being a DEFUN body, and the
+function calls. Every step this ticket accused it of. THE
+IDENTIFICATION IS WRONG and is withdrawn.
+
+WHAT IT WAS BUILT ON, which is the lesson: fragment 003's load produced
+no marker, fragment 003 contained that form, therefore that form was
+the culprit. Two orderings agreed, which felt like corroboration. But
+both readings rest on an ABSENCE plus two deductions -- which load came
+next (from the wrapper) and what was in it (from the fragment file) --
+and an absence supports no conclusion about a CAUSE. It says only that
+something stopped.
+
+WHAT STILL STANDS, because it rests on markers that WERE written:
+
+  - fragments 001 and 002 load and their markers name what they defined
+  - after the marker for the fragment before it, nothing further is
+    ever written
+  - the paths differ only in filename; the bytes are clean ASCII, no CR
+  - the two runs stopped at the fragment holding that form in BOTH
+    orderings, so the stop CORRELATES with it
+
+Correlation with a form that is independently proven harmless means the
+cause is somewhere the correlation does not reach: the CI context. The
+candidates now are the ones the REPL test does not cover --
+
+  - batch mode under alfe, versus an interactive session
+  - the accumulated state of two prior LOADs, versus a fresh REPL
+  - a modal dialog appearing for an unrelated reason (pjb has reported
+    BricsCAD dialogs about a drawing being in use on this very runner),
+    which stops everything and writes nothing
+
+HARNESS CHANGE, so the next run needs one deduction fewer: each
+fragment is now announced BEFORE its load as well as after, with the
+PATH in the record. "entering <file>" followed by nothing then states
+that the load was ENTERED and did not return, instead of leaving that
+to be inferred from the wrapper.
+
+STILL TO ASK pjb: whether his successful test was TYPED at the REPL or
+LOADED FROM A FILE with (load "..."), and whether the session was fresh.
+Typed-versus-loaded is the one axis his result does not settle, and it
+is the axis this ticket is about.

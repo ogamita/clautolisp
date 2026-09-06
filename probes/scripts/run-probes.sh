@@ -335,10 +335,26 @@ emit_step_marker() {
     [[ -z "$src" || "$src" == \#* ]] && continue
     suite_wanted "$src" "$flags" || continue
     if split_wanted "$src"; then
-      # One form per file, each announcing itself: see split_wanted.
+      # One form per file, each announcing itself BEFORE AND AFTER: see
+      # split_wanted.
+      #
+      # THE BEFORE MARKER REMOVES AN INFERENCE. With only an after
+      # marker, a fragment that goes quiet says "the previous load
+      # finished" and the rest is deduction: which load was next, from
+      # the wrapper; what was in it, from the fragment file. That is
+      # two steps of reasoning on top of an ABSENCE, and it is how
+      # (foreach e nil 99) came to be named a culprit that pjb then
+      # disproved at the REPL in one line.
+      #
+      # With both markers the file states it: "entering <file>" and
+      # then nothing means the load was ENTERED and did not return.
+      # The path is in the record too, so it need not be recovered from
+      # the wrapper.
       frag_n=0
       while read -r frag; do
         frag_n=$((frag_n + 1))
+        emit_step_marker "entering $src form $frag_n ($(basename "$frag"))" \
+                         "\"$(lisp_escape "$(cad_path "$frag")")\""
         printf '(setq cad-probe--loaded (vl-catch-all-apply (quote load) (list "%s")))\n' \
                "$(lisp_escape "$(cad_path "$frag")")"
         emit_step_marker "loaded $src form $frag_n ($(basename "$frag"))" \
