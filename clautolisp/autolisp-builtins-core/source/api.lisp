@@ -5584,30 +5584,133 @@ Bug 3). A no-op otherwise. Returns NIL."
               (%file-lines->string file) (namestring file))))))))
   nil)
 
-(defun builtin-clal-sedit (&optional object)
-  "Edit OBJECT with the sedit structural editor (spec §2): no argument -> a
-stand-alone form starting at nil; a symbol -> recall its recorded definition
-(from the REPL recording, or — Bug 3 — from the source file that loaded it); a
-string -> a file or directory path; any other value -> edited as a sexp. Pushes
-the SEDIT interactor over the current stack (design-revision D9) and drives it
-until `q' pops it, then returns the edited object. Sets
-CLAUTOLISP.SEDIT:*CLAL-SEDIT-INITIAL-FORM* / *CLAL-SEDIT-LAST-RESULT*."
-  (%clal-sedit-ensure-recorded object)
-  (let ((session (clautolisp.sedit:sedit-open (%clal-sedit-target object)
+(defun %clal-sedit-run (session)
+  "Drive SESSION in the SEDIT interactor (design-revision D9) until `q' pops it,
+publish its initial / final forms to the AutoLISP variables, and return the
+edited object."
+  (multiple-value-bind (result directive)
+      (clautolisp.sedit:sedit-enter session
+                                    :input *standard-input* :output *standard-output*
+                                    :eval-hook #'%clal-sedit-eval-hook
+                                    :eval-print-hook #'%clal-sedit-eval-print-hook
+                                    :load-hook #'%clal-sedit-load-hook
+                                    :debug-hook #'%clal-sedit-debug-hook)
+    (declare (ignore directive))
+    (%clal-set-autolisp-var "*CLAL-SEDIT-INITIAL-FORM*"
+                            (%clal-node->value clautolisp.sedit:*clal-sedit-initial-form*))
+    (%clal-set-autolisp-var "*CLAL-SEDIT-LAST-RESULT*" (%clal-node->value result))
+    (%clal-node->value result)))
+
+(defun %clal-recall-function-form (name)
+  "The =(defun NAME lambda-list . body)= form of the currently defined user
+function NAME (a string), as an AutoLISP list value, or NIL when NAME is not a
+user function — the FUNCTION-type fallback when NAME has no source file."
+  (let ((fn (ignore-errors (clautolisp.autolisp-runtime:lookup-function
+                            (clautolisp.autolisp-runtime:intern-autolisp-symbol name)))))
+    (when (typep fn 'clautolisp.autolisp-runtime:autolisp-usubr)
+      (list* (clautolisp.autolisp-runtime:intern-autolisp-symbol "DEFUN")
+             (clautolisp.autolisp-runtime:intern-autolisp-symbol name)
+             (clautolisp.autolisp-runtime:autolisp-usubr-lambda-list fn)
+             (clautolisp.autolisp-runtime:autolisp-usubr-body fn)))))
+
+(defun %clal-sedit-open-file (path &key name line)
+  "Open PATH in a sedit session, selecting the top-level form defining NAME or
+the item at/after LINE when given (else the file's first form)."
+  (let ((session (clautolisp.sedit:sedit-open (namestring path)
                                               :recording (clautolisp.sedit:sedit-recording))))
-    (multiple-value-bind (result directive)
-        (clautolisp.sedit:sedit-enter session
-                                      :input *standard-input* :output *standard-output*
-                                      :eval-hook #'%clal-sedit-eval-hook
-                                      :eval-print-hook #'%clal-sedit-eval-print-hook
-                                      :load-hook #'%clal-sedit-load-hook
-                                      :debug-hook #'%clal-sedit-debug-hook)
-      (declare (ignore directive))
-      ;; publish the session's initial / final forms to the AutoLISP variables
-      (%clal-set-autolisp-var "*CLAL-SEDIT-INITIAL-FORM*"
-                              (%clal-node->value clautolisp.sedit:*clal-sedit-initial-form*))
-      (%clal-set-autolisp-var "*CLAL-SEDIT-LAST-RESULT*" (%clal-node->value result))
-      (%clal-node->value result))))
+    (when (or name line) (clautolisp.sedit:sedit-select session :name name :line line))
+    session))
+
+(defun %clal-object-session (object)
+  "A sedit session editing OBJECT as a stand-alone sexp (type NIL / OBJECT)."
+  (clautolisp.sedit:sedit-open (%clal-value->node object)))
+
+(defun %clal-sedit-extended-session (type object)
+  "Resolve the extended =(clal-sedit TYPE OBJECT)= call (sedit-bugs-and-design.
+issue) to a sedit session. TYPE is an AutoLISP symbol (NIL/OBJECT/FUNCTION/
+FILE/DIRECTORY); OBJECT's admissible shapes are per the issue's table."
+  (let ((kind (cond ((null type) "OBJECT")
+                    ((typep type 'clautolisp.autolisp-runtime:autolisp-symbol)
+                     (string-upcase (clautolisp.autolisp-runtime:autolisp-symbol-name type)))
+                    (t (princ-to-string type)))))
+    (labels ((str (x) (and (typep x 'clautolisp.autolisp-runtime:autolisp-string)
+                           (clautolisp.autolisp-runtime:autolisp-string-value x)))
+             (sym (x) (and (typep x 'clautolisp.autolisp-runtime:autolisp-symbol)
+                           (clautolisp.autolisp-runtime:autolisp-symbol-name x)))
+             (open-file-for (fname path)
+               "Open PATH selecting function FNAME; error if the file or the
+function is missing."
+               (unless (probe-file path)
+                 (signal-builtin-argument-error
+                  :bad-argument "CLAL-SEDIT" "no such file ~S." path))
+               (let ((session (%clal-sedit-open-file path :name fname)))
+                 (unless (clautolisp.sedit:sedit-select session :name fname)
+                   (signal-builtin-argument-error
+                    :bad-argument "CLAL-SEDIT"
+                    "~A is not defined in ~S." (string-upcase fname) path))
+                 session)))
+      (cond
+        ;; NIL / OBJECT: OBJECT is the initial selection, edited as a sexp.
+        ((member kind '("OBJECT" "NIL") :test #'string=)
+         (%clal-object-session object))
+        ;; FUNCTION funcname : file-context when the function has a source file,
+        ;; else its (reconstructed) definition.
+        ((and (string= kind "FUNCTION") (sym object))
+         (let ((file (%clal-sedit-source-file-of (sym object))))
+           (if file
+               (open-file-for (sym object) file)
+               (let ((form (%clal-recall-function-form (sym object))))
+                 (if form
+                     (%clal-object-session form)
+                     (signal-builtin-argument-error
+                      :bad-argument "CLAL-SEDIT"
+                      "~A is not a user function." (string-upcase (sym object))))))))
+        ;; FUNCTION/FILE (file-path funcname) : edit the function in the file.
+        ((and (member kind '("FUNCTION" "FILE") :test #'string=)
+              (consp object) (str (first object)) (sym (second object)))
+         (open-file-for (sym (second object)) (str (first object))))
+        ;; FILE (file-path linum) : the comment/form at or after LINE.
+        ((and (string= kind "FILE") (consp object)
+              (str (first object)) (integerp (second object)))
+         (%clal-sedit-open-file (str (first object)) :line (second object)))
+        ;; FILE (source-position form) : the form at the recorded position.
+        ((and (string= kind "FILE") (consp object)
+              (clautolisp.source:source-position-p (first object)))
+         (let ((pos (first object)))
+           (%clal-sedit-open-file (clautolisp.source:source-position-file pos)
+                                  :line (clautolisp.source:source-position-start-line pos))))
+        ;; FILE / DIRECTORY <path> : a plain file or directory.
+        ((and (member kind '("FILE" "DIRECTORY") :test #'string=) (str object))
+         (clautolisp.sedit:sedit-open (str object)
+                                      :recording (clautolisp.sedit:sedit-recording)))
+        (t
+         (signal-builtin-argument-error
+          :bad-argument "CLAL-SEDIT"
+          "cannot edit ~A ~S with the extended clal-sedit API." kind object))))))
+
+(defun builtin-clal-sedit (&rest args)
+  "Edit with the sedit structural editor. Legacy 0/1-argument form (spec §2):
+no argument -> a stand-alone form at nil; a symbol -> recall its recorded
+definition (REPL recording, or the source file that loaded it); a string -> a
+file or directory path; any other value -> edited as a sexp. Extended
+2-argument form =(clal-sedit TYPE OBJECT)= (sedit-bugs-and-design.issue): TYPE
+is NIL/OBJECT (edit OBJECT as a sexp), FUNCTION (edit a function, in its file
+when it has one), FILE (a path, a (path funcname), a (path linum), or a
+(source-position form)), or DIRECTORY (a path). Pushes SEDIT over the stack,
+drives it to `q', and returns the edited object; sets
+CLAUTOLISP.SEDIT:*CLAL-SEDIT-INITIAL-FORM* / *CLAL-SEDIT-LAST-RESULT*."
+  (case (length args)
+    ((0 1)
+     (let ((object (first args)))
+       (%clal-sedit-ensure-recorded object)
+       (%clal-sedit-run
+        (clautolisp.sedit:sedit-open (%clal-sedit-target object)
+                                     :recording (clautolisp.sedit:sedit-recording)))))
+    (2 (%clal-sedit-run (%clal-sedit-extended-session (first args) (second args))))
+    (t (signal-builtin-argument-error
+        :bad-argument "CLAL-SEDIT"
+        "CLAL-SEDIT takes 0, 1 (object) or 2 (type object) arguments, got ~D."
+        (length args)))))
 
 (defun builtin-clal-clipboard-put-text (string)
   "Set the system clipboard to STRING, and record STRING in *clal-clipboard* so
