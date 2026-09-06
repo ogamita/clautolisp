@@ -293,7 +293,36 @@ PATH in the record. "entering <file>" followed by nothing then states
 that the load was ENTERED and did not return, instead of leaving that
 to be inferred from the wrapper.
 
-STILL TO ASK pjb: whether his successful test was TYPED at the REPL or
-LOADED FROM A FILE with (load "..."), and whether the session was fresh.
-Typed-versus-loaded is the one axis his result does not settle, and it
-is the axis this ticket is about.
+AND THE FILE PATH IS EXONERATED TOO -- pjb, same day, with a .scr:
+
+    (load "~/src/ogamita/clautolisp/probes/test-foreach.lsp")
+    (setq log (open ".../test-foreach.out" "w"))
+    (write-line "SUCCESS" log)
+    (close log)
+    ._QUIT
+
+and the .out file contained SUCCESS. So the form LOADS FROM A FILE, in
+BATCH, under a script -- the one axis the REPL test had left open, and
+the axis this ticket was named after. The title is now wrong twice
+over: BricsCAD neither refuses the form nor refuses to load it.
+
+WHAT IS LEFT is the difference between that .scr and the CI run, since
+the form, the defun, the file and batch mode are all cleared:
+
+  - driven by ALFE (--bricscad --mode batch), not a bare .scr
+  - the load is wrapped in VL-CATCH-ALL-APPLY
+  - it is the third LOAD of the session, after probe-core and one or
+    two fragments, not the first
+  - a drawing is open, and pjb has reported BricsCAD modal dialogs
+    about a drawing in use ON THIS RUNNER -- a dialog stops everything
+    and writes nothing, which is precisely the signature seen
+  - SECURELOAD is set to 0 by the wrapper
+
+THE CORRELATION THAT MISLED ME, stated so it is not re-derived: the
+stop tracked the empty-list FRAGMENT across two orderings, at two
+different load positions. That looked like content-dependence and is
+not, since the content is now cleared four ways. Either the correlation
+is coincidence across two runs, or it is with the FILE rather than the
+form -- which is why the byte-exact 184-byte fragment has been sent to
+pjb to load directly. If that file loads for him, the fragment is
+cleared too and the cause is wholly in the CI context.
