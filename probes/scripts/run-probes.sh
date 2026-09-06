@@ -33,6 +33,48 @@ set -euo pipefail
 
 product="${1:?usage: run-probes.sh <autocad|bricscad|clautolisp>}"
 
+# --- preflight: the external tools this harness actually needs --------
+#
+# WHY THIS EXISTS. The Windows runner failed with
+#
+#     run-probes: missing //sources/manifest.txt
+#
+# which was neither about the manifest nor about that path: locating the
+# script had called dirname, dirname was not on PATH, the empty result
+# turned `cd "$(dirname "$0")/.."' into `cd "/.."', and the message
+# described the wrong thing three steps downstream. Locating no longer
+# needs a subprocess -- but EVERYTHING ELSE HERE STILL DOES. sed, awk,
+# mkdir, date and cp are used further in, so a PATH missing one coreutils
+# is a PATH that will fail later and just as obliquely.
+#
+# The environment is normally msys2, where these live in /usr/bin; under
+# a Windows shell that means c:/msys64/usr/bin must be on PATH. When it
+# is not, this says so ONCE, up front, naming what is missing and what
+# PATH was searched -- rather than letting the run die at whichever tool
+# it happens to reach first.
+#
+# cygpath is Windows-only and genuinely optional (cad_arg_path falls back
+# when it is absent), so it is REPORTED but never fatal.
+probe_preflight() {
+  local missing="" tool
+  for tool in awk sed grep sort head cat cp mkdir date basename env; do
+    command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+  done
+  if [ -n "$missing" ]; then
+    echo "run-probes: required tools not found on PATH:$missing" >&2
+    echo "  PATH = $PATH" >&2
+    echo "  uname = $(command -v uname >/dev/null 2>&1 && uname -s || echo '<uname missing too>')" >&2
+    echo "  The environment is normally msys2, where these are in" >&2
+    echo "  /usr/bin; from a Windows shell c:/msys64/usr/bin must be on" >&2
+    echo "  PATH. This is a RUNNER configuration problem, not a probe" >&2
+    echo "  failure -- nothing reached the CAD." >&2
+    exit 2
+  fi
+  command -v cygpath >/dev/null 2>&1 \
+    || echo "run-probes: note - cygpath absent; paths passed to the CAD are used as is." >&2
+}
+probe_preflight
+
 # WHERE THIS SCRIPT LIVES, without calling dirname.
 #
 # It used to be $(dirname "$0"), and on a Windows runner whose PATH has
