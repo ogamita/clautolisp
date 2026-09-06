@@ -53,8 +53,16 @@ the `<= form-depth' test and step-over degenerates into step-out, landing
 on the caller instead of the first body form
 (step-over-from-entry-steps-out)."
   (let* ((kind (if (eq kind :finish) :out kind))
-         (pp (thread-debug-info-current-pp ti))
-         (at-entry (and (consp pp) (eql 0 (cdr pp))))
+         ;; WHERE EXECUTION IS, read from the three CURRENT-PP slots.
+         ;; This asked for (thread-debug-info-current-pp ti) and took its
+         ;; CDR, back when the poll point was recorded as a CONS. It is
+         ;; two fixnums and a validity flag now -- a cons there cost two
+         ;; allocations per form of any program merely RUN under a
+         ;; session. The flag is not decoration: (0 . 0) was a real poll
+         ;; point, function 0's entry, so NIL could mean `none yet' where
+         ;; zeros cannot.
+         (at-entry (and (thread-debug-info-current-pp-valid-p ti)
+                        (eql 0 (thread-debug-info-current-pp-form-id ti))))
          (poll-depth (thread-debug-info-poll-depth ti)))
     (setf (thread-debug-info-step-request ti)
           (make-step-request

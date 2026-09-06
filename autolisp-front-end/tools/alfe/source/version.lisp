@@ -18,6 +18,12 @@
 ;;;; again to 2.1.0 for the release-2.1.0 cut: clautolisp reached the
 ;;;; 2.x series with the aldo debugger's three UIs and the sedit editor,
 ;;;; and version-rules requires a program shipped and changed within a
-;;;; series to carry that series' A.B.)
+;;;; series to carry that series' A.B.
+;;;;
+;;;; Realigned to 2.2.0 with clautolisp's MINOR bump for the
+;;;; AutoLISP-to-Common-Lisp compiler: `alfe --clautolisp' embeds that
+;;;; engine, so a new feature in it is a new feature in alfe, and the
+;;;; rule at the head of this file -- keep at least in step -- is what
+;;;; makes that automatic rather than a thing to remember.)
 
-(defparameter *version* "2.1.1")
+(defparameter *version* "2.2.0")
