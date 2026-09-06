@@ -20,4 +20,4 @@
 ;;;; and version-rules requires a program shipped and changed within a
 ;;;; series to carry that series' A.B.)
 
-(defparameter *version* "2.1.0")
+(defparameter *version* "2.1.1")
