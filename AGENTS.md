@@ -488,6 +488,23 @@ tag formats are **deprecated**. The existing tags stay (they are
 published immutable refs), but no new ones are created — a program
 version is read from its source.
 
+**Known audit exception — `release-1.8.103` (the shakedown tag).**
+`make check-versions` permanently reports two violations for the 1.8 series,
+and both are expected: `release-1.8.103` is a *release-pipeline shakedown*
+tag (message: "shakedown 5 — confirm all.zip + publish:release"), cut on a
+throwaway branch that forked before `release-1.8.41`..`.49` and never merged
+back — so it does **not** contain the real 1.8 trunk work (which lives at
+`release-1.8.49` → 1.9 → 2.x on `master`); its high DEVELOP number is the CI
+counter, not newer content. Consequently the audit reports **I3**
+(`1.8.49` is not an ancestor of `1.8.103`) and **I5** (`version-1.8` "should"
+be at the newest-by-number `1.8.103`). Both are artefacts of that immutable
+tag. The deliberate resolution: **`version-1.8` stays at `release-1.8.49`**
+(the real 1.8 tip a "1.8" user should get), and the shakedown tag is kept
+reachable — not orphaned (I7) — by the `dev-1.8-shakedown` branch. The tag is
+not deleted (published immutable ref) and `version-1.8` is not repointed onto
+it. Treat these two I3/I5 lines as a standing, accepted exception for the 1.8
+series only.
+
 **Cutting a release** (full procedure in `version-rules.md` § 5):
 
 1. bump the shipped programs' stamps, update `RELEASE_NOTES.org`, commit;
