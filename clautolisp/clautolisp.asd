@@ -231,7 +231,10 @@
   :components
   ((:file "autolisp-builtins-core/source/package")
    (:file "autolisp-builtins-core/source/secureload")
-   (:file "autolisp-builtins-core/source/api"))
+   (:file "autolisp-builtins-core/source/api")
+   ;; the source-file editing module (sedit-bugs-and-design.issue) — after api,
+   ;; it uses the AutoLISP printer defined there.
+   (:file "autolisp-builtins-core/source/source-file"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-builtins-core/tests")))
   :perform (asdf:test-op (op system)
@@ -533,6 +536,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-builtins-core/tests/encoding-roundtrip-tests")
    (:file "autolisp-builtins-core/tests/path-dotdot-tests")
    (:file "autolisp-builtins-core/tests/case-insensitive-paths-tests")
+   (:file "autolisp-builtins-core/tests/source-file-tests")
    (:file "autolisp-builtins-core/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

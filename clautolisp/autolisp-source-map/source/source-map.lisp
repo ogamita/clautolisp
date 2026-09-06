@@ -78,6 +78,27 @@ table, and return the stored SOURCE-POSITION (or NIL if SPAN is NIL)."
   "Forget every recorded source position."
   (clrhash *source-position-table*))
 
+(defun shift-source-positions (file from-line delta)
+  "Shift every recorded position of FILE whose START-LINE >= FROM-LINE by DELTA
+lines (both start and end line). This keeps *SOURCE-POSITION-TABLE* consistent
+after DELTA lines are inserted (DELTA>0) or deleted (DELTA<0) at FROM-LINE in
+FILE, so positions of the forms below an edit still point at their source —
+the invariant the source-file editing module relies on. FILE is compared by
+namestring. Returns the number of positions shifted."
+  (if (zerop delta)
+      0
+      (let ((file (and file (namestring file)))
+            (count 0))
+        (maphash (lambda (object position)
+                   (declare (ignore object))
+                   (when (and (equal (source-position-file position) file)
+                              (>= (source-position-start-line position) from-line))
+                     (incf (source-position-start-line position) delta)
+                     (incf (source-position-end-line position) delta)
+                     (incf count)))
+                 *source-position-table*)
+        count)))
+
 (defun call-with-source-tracking (thunk)
   "Call THUNK with source-position tracking enabled. The table is NOT
 reset (positions must survive past the load so the instrumenter can read
