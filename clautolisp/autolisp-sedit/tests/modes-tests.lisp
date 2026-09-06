@@ -179,8 +179,7 @@
 (test directory-rename-and-new-via-object-exclusive-keys
   (with-temp-dir (dir)
     (sedit-fs-new-file dir "a.lsp")
-    (let ((s (sedit-open dir)))                        ; EDIT, dir session, focus ".."
-      (sedit-command s ">")                            ; -> a.lsp entry
+    (let ((s (sedit-open dir)))                        ; EDIT, dir session, focus a.lsp (§2.4)
       (is (equal "a.lsp" (file-node-name (loc-focus (sedit-state-loc (sedit-session-state s))))))
       (sedit-command s "r b.lsp")                      ; r on a dir entry = rename
       (is (not (probe-file (merge-pathnames "a.lsp" (uiop:ensure-directory-pathname dir)))))

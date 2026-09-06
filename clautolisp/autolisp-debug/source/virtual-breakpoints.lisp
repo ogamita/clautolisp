@@ -31,6 +31,12 @@
   (line 0 :type fixnum)            ; target form start line, at record time
   (col 0 :type fixnum)             ; target form start column, at record time
   (anchor-line 0 :type fixnum)     ; first body form start line, at record time
+  ;; When non-NIL this is a FUNCTION breakpoint (`,break FUNC' / `FUNC.N' on a
+  ;; function not defined yet): it is keyed by FUNCTION-NAME alone (FILE / LINE
+  ;; unused) and arms at this instrumenter poll point (0 = entry) whenever the
+  ;; function is instrumented — defined at the REPL, or loaded from source or a
+  ;; compiled file. NIL for the file-anchored (aldo-pre-debug) virtual bp above.
+  (form-id nil)
   ti)                              ; thread-debug-info the real breakpoint goes on
 
 (defvar *virtual-breakpoints* '()
@@ -60,6 +66,25 @@ pending record is returned instead of duplicated, NEW-P NIL."
                    :id (incf *virtual-breakpoint-id-counter*)
                    :file file :function-name function-name
                    :line line :col col :anchor-line anchor-line :ti ti)))
+          (push vb *virtual-breakpoints*)
+          (values vb t)))))
+
+(defun add-function-breakpoint (ti function-name form-id)
+  "Record a pending breakpoint on FUNCTION-NAME's poll point FORM-ID (0 = entry)
+for a function that is NOT defined yet: armed when FUNCTION-NAME is instrumented
+— defined at the REPL, or loaded from source/compiled code. Returns (values
+VIRTUAL-BREAKPOINT NEW-P): an equivalent pending record is reused, NEW-P NIL."
+  (let ((existing (find-if (lambda (vb)
+                             (and (virtual-breakpoint-form-id vb)
+                                  (string-equal (virtual-breakpoint-function-name vb)
+                                                function-name)
+                                  (eql (virtual-breakpoint-form-id vb) form-id)))
+                           *virtual-breakpoints*)))
+    (if existing
+        (values existing nil)
+        (let ((vb (make-virtual-breakpoint
+                   :id (incf *virtual-breakpoint-id-counter*)
+                   :function-name function-name :form-id form-id :ti ti)))
           (push vb *virtual-breakpoints*)
           (values vb t)))))
 
@@ -107,24 +132,40 @@ poll point on the line (a within-form reformat). A record that resolves is
 armed on its thread-debug-info and dropped; one that does not stays pending
 (it may match a later redefinition). Returns the list of (VB . BREAKPOINT)
 pairs armed."
-  (let ((source (function-debug-metadata-source-position metadata))
-        (armed '()))
-    (when (source-position-p source)
-      (dolist (vb (list-virtual-breakpoints))
-        (when (and (string-equal (virtual-breakpoint-function-name vb)
-                                 (function-debug-metadata-name metadata))
-                   (same-source-file-p (virtual-breakpoint-file vb)
-                                       (source-position-file source)))
-          (let* ((delta (- (source-position-start-line source)
-                           (virtual-breakpoint-anchor-line vb)))
-                 (line (+ (virtual-breakpoint-line vb) delta))
-                 (form-id (or (form-id-at-line-col metadata line
-                                                   (virtual-breakpoint-col vb))
-                              (find-form-id-at-line metadata line))))
-            (when (and form-id (thread-debug-info-p (virtual-breakpoint-ti vb)))
-              (let ((bp (add-breakpoint (virtual-breakpoint-ti vb)
-                                        (function-debug-metadata-function-id metadata)
-                                        form-id)))
-                (remove-virtual-breakpoint vb)
-                (push (cons vb bp) armed)))))))
+  (let* ((name (function-debug-metadata-name metadata))
+         (fid (function-debug-metadata-function-id metadata))
+         (poll-count (length (function-debug-metadata-form-id->position metadata)))
+         (source (function-debug-metadata-source-position metadata))
+         (armed '()))
+    (dolist (vb (list-virtual-breakpoints))
+      (cond
+        ;; FUNCTION breakpoint (`,break FUNC' / `FUNC.N' on an undefined
+        ;; function): match by NAME alone — any file — and arm at the recorded
+        ;; poll point once the function has one (a smaller redefinition leaves an
+        ;; out-of-range record pending). No source position is needed, so this
+        ;; also arms a function defined at the REPL (no source file).
+        ((virtual-breakpoint-form-id vb)
+         (when (and (string-equal (virtual-breakpoint-function-name vb) name)
+                    (< (virtual-breakpoint-form-id vb) poll-count)
+                    (thread-debug-info-p (virtual-breakpoint-ti vb)))
+           (let ((bp (add-breakpoint (virtual-breakpoint-ti vb) fid
+                                     (virtual-breakpoint-form-id vb))))
+             (remove-virtual-breakpoint vb)
+             (push (cons vb bp) armed))))
+        ;; file-anchored virtual breakpoint (aldo-pre-debug): match NAME + file,
+        ;; shift by the anchor delta, resolve LINE:COL to a poll point.
+        ((and (source-position-p source)
+              (string-equal (virtual-breakpoint-function-name vb) name)
+              (same-source-file-p (virtual-breakpoint-file vb)
+                                  (source-position-file source)))
+         (let* ((delta (- (source-position-start-line source)
+                          (virtual-breakpoint-anchor-line vb)))
+                (line (+ (virtual-breakpoint-line vb) delta))
+                (form-id (or (form-id-at-line-col metadata line
+                                                  (virtual-breakpoint-col vb))
+                             (find-form-id-at-line metadata line))))
+           (when (and form-id (thread-debug-info-p (virtual-breakpoint-ti vb)))
+             (let ((bp (add-breakpoint (virtual-breakpoint-ti vb) fid form-id)))
+               (remove-virtual-breakpoint vb)
+               (push (cons vb bp) armed)))))))
     (nreverse armed)))

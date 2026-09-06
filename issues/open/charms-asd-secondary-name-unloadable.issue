@@ -1,0 +1,53 @@
+#+TITLE: cl-charms backend .asd: secondary system name is unloadable
+#+STATUS: TODO
+#+PRIORITY: P3
+
+* Symptom
+
+The documented load workflow for the optional ncurses backend fails:
+
+: (asdf:load-asd #p".../autolisp-debug-ui-tui-charms/clautolisp-charms.asd")
+: (asdf:load-system "clautolisp/autolisp-debug-ui-tui-charms")
+: => Component "clautolisp-charms" not found
+
+* Cause
+
+=clautolisp/autolisp-debug-ui-tui-charms/clautolisp-charms.asd= defines the
+system *clautolisp/autolisp-debug-ui-tui-charms*. That is a SECONDARY system
+whose primary name is =clautolisp=, so ASDF expects it in =clautolisp.asd=
+(the aggregate) — not in a file named =clautolisp-charms.asd=. ASDF's
+find-system for the secondary re-searches the =clautolisp= primary (the
+aggregate), which does not define it, and fails. The .asd's own header
+documents the broken workflow as if it worked.
+
+This backend is INTENTIONALLY outside the aggregate (it needs cl-charms /
+libncurses + a real terminal, must never be a build/CI dependency); the
+problem is only its ASDF *name*, not its exclusion.
+
+* Fix options
+
+1. Rename the system to a standalone primary matching the file:
+   =(defsystem "clautolisp-charms" …)= in =clautolisp-charms.asd=, then
+   =(asdf:load-system "clautolisp-charms")= works once the .asd is on the
+   registry (or after an explicit load-asd). Update the two doc references
+   (=documentation/clautolisp-debugger-{design-notes,ui-implementation-plan}.org=)
+   and the .asd header example.
+2. Or rename the file to =clautolisp.asd='s directory convention — not viable
+   (would collide with the aggregate).
+
+Option 1 is the intended fix.
+
+* Not blocking the CLI
+
+=clautolisp --debugger-ui ncurses= no longer depends on this: NCURSES-TERMINAL-SCREEN
+(tools/clautolisp/source/main.lisp) resolves the backend by find-package /
+find-symbol on =clautolisp.ui.tui.charms= — it uses the backend when already
+loaded into the image and otherwise warns and falls back to the tui UI. This
+ticket is about making the *documented explicit load* work, so the backend can
+be loaded (from an init file or a charms-including build) in the first place.
+
+* Related
+
+Surfaced while wiring =--debugger-ui ncurses= to a real terminal screen
+(debugger-ui-ncurses-aldb branch): before this, selecting ncurses crashed with
+an unbound SCREEN slot because nothing ever built a charms-screen for it.

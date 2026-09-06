@@ -66,6 +66,30 @@
       (is (equal (list two 1 :before) (hit-key (first hits))))    ; the breakpoint
       (is (equal (list two 3 :before) (hit-key (second hits)))))))  ; stepped over (id x) to (id z)
 
+(test step-over-from-entry-stops-at-first-body-form
+  ;; Regression (step-over-from-entry-steps-out): the function-entry poll point
+  ;; wraps the whole body, so body forms poll one level DEEPER than the entry
+  ;; marker. A `next' issued at the entry must land on the FIRST body form, not
+  ;; treat every body form as too-deep and degenerate into step-out to the
+  ;; caller (the observed bug: `n' at STEP-THIS's entry jumped to <toplevel>).
+  (let* ((context (fresh-context))
+         (source (format nil "(defun id (a) a)~%(defun two (x / z)~%  (setq z (id x))~%  (id z))"))
+         (metas (define-and-instrument context source "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)    ; TWO entry
+    (multiple-value-bind (result hits)
+        (run-steps context ti "TWO" '(5)
+                   (lambda (hit count)
+                     (declare (ignore count))
+                     (if (eq (clautolisp.debug:hit-stop-reason hit) :breakpoint)
+                         (progn (clautolisp.debug:clear-breakpoints ti) '(:step :over))
+                         :continue)))
+      (declare (ignore result))
+      (is (= 2 (length hits)))
+      (is (equal (list two 0 :before) (hit-key (first hits))))     ; the entry breakpoint
+      (is (equal (list two 1 :before) (hit-key (second hits))))))) ; landed on the first body form, not the caller
+
 (test step-out-returns-to-caller
   (let* ((context (fresh-context))
          (source (format nil "(defun id (a) a)~%(defun two (x / z)~%  (setq z (id x))~%  (id z))"))

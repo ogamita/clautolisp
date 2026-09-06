@@ -115,11 +115,28 @@ LOAD-HOOK. Not an editing command — the mode is unchanged (§6.6)."
   (let ((path (or arg (%session-file session))))
     (when (and load-hook path) (funcall load-hook path))))
 
+(defvar *sedit-file-save-hook* nil
+  "When set, a function (PATH TEXT) that writes TEXT to file PATH while keeping
+CLAUTOLISP.SOURCE:*SOURCE-POSITION-TABLE* consistent (sedit-bugs-and-design.
+issue): it is what makes a sedit file save not invalidate the positions of the
+forms below the edit. The clautolisp tool installs it; a bare sedit library
+user gets NIL and a plain whole-file write. Applies to file-backed sessions.")
+
 (defun %do-save (session arg)
-  "save [PATH] (§5.8): write the edited file/form to PATH, or the session's file."
+  "save [PATH] (§5.8): write the edited file to PATH or the session's file. A
+file-backed session writes its WHOLE file — every top-level item, not just the
+selected form (which used to truncate the file) — and, through
+*SEDIT-FILE-SAVE-HOOK*, keeps the source-position map consistent
+(sedit-bugs-and-design.issue). A stand-alone/sexp session still writes the
+selected top-level form."
   (let ((path (or arg (%session-file session))))
     (when path
-      (sedit-save (sedit-result-node (sedit-state-loc (sedit-session-state session))) path))))
+      (if (%session-file session)
+          (let ((text (unparse (%loc-root (sedit-state-loc (sedit-session-state session))))))
+            (if *sedit-file-save-hook*
+                (funcall *sedit-file-save-hook* (namestring path) text)
+                (%write-text-file text path)))
+          (sedit-save (sedit-result-node (sedit-state-loc (sedit-session-state session))) path)))))
 
 (defun %session-file (session)
   "The file path backing SESSION, or NIL (a stand-alone / directory session)."
@@ -136,7 +153,7 @@ LOAD-HOOK. Not an editing command — the mode is unchanged (§6.6)."
   "Rebuild the session's dir-node from disk, selecting its first entry."
   (let ((dir (%session-dir session)))
     (when dir
-      (setf (sedit-state-loc (sedit-session-state session)) (%first-child-loc (read-directory dir))))))
+      (setf (sedit-state-loc (sedit-session-state session)) (%dir-initial-loc (read-directory dir))))))
 
 (defun %do-new (session arg)
   (let ((dir (%session-dir session)))
@@ -211,15 +228,67 @@ the debugger's); motions, eval and load keep the mode."
 
 ;;; --- rendering the selection ----------------------------------------------
 
+(defun %entry-display-name (node)
+  "An entry's name for a directory listing: NAME, with a trailing / for a
+sub-directory (spec §2.4, e.g. =../=, =batnav/=)."
+  (cond ((dir-node-p node)
+         (let ((name (dir-node-name node)))
+           (if (and (plusp (length name)) (char= #\/ (char name (1- (length name)))))
+               name
+               (concatenate 'string name "/"))))
+        ((file-node-p node) (file-node-name node))
+        (t "")))
+
+(defvar *sedit-window-height* 24
+  "Assumed terminal height H for windowing a long directory listing: at most
+H-4 entries are shown, centred on the selection (%RENDER-DIRECTORY). A higher
+layer that knows the real terminal / pager height may rebind it; the default
+matches the debugger pager's default height.")
+
+(defun %render-directory (dir current &key (open "[") (close "]"))
+  "A directory listing (spec §2.4): the directory's path, then one entry per
+line — sub-directories with a trailing / — with the CURRENT entry wrapped in
+OPEN…CLOSE. This is what the browser shows when the selection is a directory
+entry, instead of the entry's (unloaded, empty) contents rendering as =[]=
+\(sedit-bugs-and-design.issue Bug 2). Long listings are windowed to at most
+H-4 entries (H = *SEDIT-WINDOW-HEIGHT*) centred on the selection — clamped at
+either end — with =⋮ (N more …)= markers for the entries scrolled off."
+  (let* ((entries (dir-node-entries dir))
+         (n (length entries))
+         (h (max 5 *sedit-window-height*))
+         (w (max 1 (- h 4)))
+         (sel (or (position current entries :test #'eq) 0)))
+    (multiple-value-bind (start end)
+        (if (<= n w)
+            (values 0 n)
+            (let ((s (max 0 (min (- sel (floor w 2)) (- n w)))))
+              (values s (+ s w))))
+      (with-output-to-string (out)
+        (write-string (dir-node-name dir) out)
+        (when (plusp start)
+          (format out "~%  ⋮ (~D more above)" start))
+        (loop for entry in (subseq entries start end)
+              do (terpri out)
+                 (let ((name (%entry-display-name entry)))
+                   (if (eq entry current)
+                       (format out "~A~A~A" open name close)
+                       (write-string name out))))
+        (when (< end n)
+          (format out "~%  ⋮ (~D more below)" (- n end)))))))
+
 (defun render-selection (loc &key (open "[") (close "]"))
   "The top-level form the selection at LOC is in, with the selected node wrapped
 in OPEN…CLOSE (spec §2/§5.2 examples, e.g. (list [nil])). Rendered structurally
 along the path to the focus so the markers can be placed — laid out by the §5.2
 indentation rules where it does not fit one line (FORMAT-MARKED); verbatim
-elsewhere."
-  (let* ((top (loc-focus (%top-level-loc loc)))
-         (rel (nthcdr (length (loc-path (%top-level-loc loc))) (loc-path loc))))
-    (format-marked top rel :open open :close close)))
+elsewhere. When the selection is an entry of a directory, the whole directory is
+listed instead (spec §2.4)."
+  (let ((parent (and (loc-ctx loc) (loc-focus (loc-up loc)))))
+    (if (and parent (dir-node-p parent))
+        (%render-directory parent (loc-focus loc) :open open :close close)
+        (let* ((top (loc-focus (%top-level-loc loc)))
+               (rel (nthcdr (length (loc-path (%top-level-loc loc))) (loc-path loc))))
+          (format-marked top rel :open open :close close)))))
 
 (defun %top-level-loc (loc)
   "Ascend out of nested lists to the top-level form's location."

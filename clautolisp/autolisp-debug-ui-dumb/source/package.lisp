@@ -77,4 +77,19 @@ UI refines.")
                 #:inspect-component-accessor #:inspect-component-descendable-p
                 ;; session-* called directly on the inspector session
                 #:session-page #:session-origin #:session-eval)
-  (:export #:dumb-ui #:make-dumb-ui))
+  (:export #:dumb-ui #:make-dumb-ui
+           ;; the breakpoint-condition predicate maker, reused by the tool's
+           ;; sleeping-aldo `,cb' command so REPL and debugger conditions share
+           ;; one evaluation semantics (aldo-command-from-repl.issue).
+           #:make-condition-predicate
+           ;; the built-in modal pager, reused by the tool's sleeping-aldo `,ls'
+           ;; command so REPL and debugger listings page the same way
+           ;; (aldo-command-from-repl.issue).
+           #:paged-out
+           ;; the interactive object inspector loop, reused by the tool's `,i'
+           ;; REPL command so REPL and debugger inspection are the same
+           ;; (aldo-command-from-repl.issue).
+           #:inspector-loop
+           ;; breakpoint-action / watch-predicate makers + value preview, reused
+           ;; by the tool's sleeping-aldo bpcmd / trace / watch / lw commands.
+           #:make-bp-action #:make-watch-predicate #:preview))

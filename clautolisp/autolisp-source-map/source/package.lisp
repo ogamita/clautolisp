@@ -29,6 +29,7 @@ back to its source. The runtime records positions here when
    #:note-position
    #:position-of
    #:clear-source-positions
+   #:shift-source-positions
    #:call-with-source-tracking
    #:with-source-tracking
    #:lines-of))

@@ -20,17 +20,34 @@
    ;; snapshots, newest first, pushed on each debugger re-entry; `restore N'
    ;; returns to one. Bounded by the navigation-history-max setting.
    (navigation-history :initarg :navigation-history :initform '()
-                       :accessor dumb-ui-navigation-history)))
+                       :accessor dumb-ui-navigation-history)
+   ;; gdb-style step repeat: the raw line of the last STEPPING command
+   ;; (c/i/n/o) entered at the DBG prompt, or NIL. A bare RET repeats it. It
+   ;; lives on the UI (not the per-stop activation) so it survives the
+   ;; resume/re-stop cycle between steps; any non-stepping command clears it.
+   (last-step-command :initarg :last-step-command :initform nil
+                      :accessor dumb-ui-last-step-command)))
 
 (defun make-dumb-ui (&rest initargs)
   (apply #'make-instance 'dumb-ui initargs))
 
 (register-ui :terminal (lambda (&rest initargs) (apply #'make-dumb-ui initargs)))
 (register-ui :dumb     (lambda (&rest initargs) (apply #'make-dumb-ui initargs)))
+;; `tui' is a spelling of the line-mode terminal UI (CLI parse-user-interface,
+;; debug-ui-designator, the aldb fallback all treat :tui as the terminal UI);
+;; register it here so a direct (make-ui :tui) is correct too, not ncurses.
+(register-ui :tui      (lambda (&rest initargs) (apply #'make-dumb-ui initargs)))
+
+(defun %out-stream (ui)
+  "The stream debugger command output goes to: the UI-neutral *DEBUGGER-OUTPUT*
+seam when bound (a non-dumb UI directing output into its own pane), else this
+dumb UI's own stream. See *DEBUGGER-OUTPUT*."
+  (or *debugger-output* (dumb-ui-output ui)))
 
 (defun out (ui control &rest args)
-  (apply #'format (dumb-ui-output ui) control args)
-  (force-output (dumb-ui-output ui)))
+  (let ((stream (%out-stream ui)))
+    (apply #'format stream control args)
+    (force-output stream)))
 
 (defun string-lines (text)
   "TEXT split into a list of lines (a single trailing newline is dropped)."
@@ -39,16 +56,37 @@
         (butlast lines)
         lines)))
 
-(defun paged-out (ui text)
+(defun %page-through-external (ui text program)
+  "Pipe TEXT through the external pager PROGRAM (a namestring, e.g. less(1) /
+more(1)), letting it use the terminal; on any failure fall back to writing TEXT
+straight to the UI's stream so long output is never lost."
+  (handler-case
+      (uiop:run-program (list program)
+                        :input (make-string-input-stream text)
+                        :output :interactive
+                        :error-output :interactive
+                        :ignore-error-status t)
+    (error ()
+      (write-string text (%out-stream ui)))))
+
+(defun paged-out (ui text &key (pager (get-aldo-setting :pager))
+                               (pager-height (get-aldo-setting :pager-height)))
   "Emit TEXT to the UI, a page at a time when the pager is on and TEXT is taller
-than a page (command reference §8 *Paging long output*). The page prompt reads
-one line of input (the modal pager sub-mode): SPACE / f / =>= / RET next page,
-b / =<= back, d / u half-page down / up, j / k one line down / up, g / =<<=
-first, G / =>>= last, =/pat= / =?pat= search forward / backward, n / N repeat
-search, q quit. With the pager off, or on a non-interactive stream (EOF), TEXT
-is written straight through (never blocks)."
-  (let* ((pager-on (eq (get-aldo-setting :pager) :on))
-         (page (max 1 (1- (or (get-aldo-setting :pager-height) 24))))
+than a page (command reference §8 *Paging long output*). PAGER is :ON (the
+built-in modal pager), :OFF (write straight through), or a namestring naming an
+external pager filter (less(1) / more(1)); PAGER-HEIGHT is the built-in pager's
+page height. They default to the aldo (debugger) settings; the REPL's `,ls'
+passes the LISP-resolved values so the pager cascades parallel to the interactor
+stack (aldo-command-from-repl.issue). The built-in page prompt reads one line of
+input (the modal pager sub-mode): SPACE / f / =>= / RET next page, b / =<= back,
+d / u half-page down / up, j / k one line down / up, g / =<<= first, G / =>>=
+last, =/pat= / =?pat= search forward / backward, n / N repeat search, q quit.
+With the pager off, or on a non-interactive stream (EOF), TEXT is written
+straight through (never blocks)."
+  (when (stringp pager)
+    (return-from paged-out (%page-through-external ui text pager)))
+  (let* ((pager-on (eq pager :on))
+         (page (max 1 (1- (or pager-height 24))))
          (half (max 1 (floor page 2)))
          (lines (coerce (string-lines text) 'vector))
          (n (length lines))
@@ -62,7 +100,7 @@ PAT (case-insensitive), or NIL."
                      when (search pat (svref lines k) :test #'char-equal)
                        do (return k)))))
       (if (or (not pager-on) (<= n page))
-          (write-string text (dumb-ui-output ui))
+          (write-string text (%out-stream ui))
           (loop with s = 0 with last-pat = nil
                 do (loop for k from s below (min n (+ s page))
                          do (out ui "~A~%" (svref lines k)))
@@ -216,17 +254,19 @@ navigation-history-max setting (command reference §3)."
               (subseq (cons (copy-list stack) (dumb-ui-navigation-history ui))
                       0 (min (1+ (length (dumb-ui-navigation-history ui))) (max 1 max))))))))
 
-(defmethod ui-run-command ((ui dumb-ui) session command)
-  "Run one debugger command string outside a stop (spec §7): split it into
-verb + argument and dispatch it. HIT is NIL (there is no current stop), so
-meta commands like `help' / `settings' work; frame-relative commands degrade
-gracefully. Returns the resume directive, or NIL."
+(defmethod ui-run-command ((ui dumb-ui) session command &optional hit)
+  "Run one debugger command string (spec §7): split it into verb + argument and
+dispatch it. HIT is the current stop when supplied (the ncurses UI routes its
+,/M-x command line here WITH the stop's hit, so frame-relative commands act on
+it); outside a stop HIT is NIL, so meta commands like `help' / `settings' work
+and frame-relative commands degrade gracefully. Returns the resume directive, or
+NIL."
   (let* ((line (string-trim " 	" (or command "")))
          (sp (position #\Space line))
          (cmd (if sp (subseq line 0 sp) line))
          (arg (and sp (string-trim " " (subseq line sp)))))
     (unless (zerop (length cmd))
-      (run-command ui session nil cmd arg))))
+      (run-command ui session hit cmd arg))))
 
 (defmethod ui-open-navigation-request ((ui dumb-ui) session request)
   "Open the navigator on a queued CLAL-NAV-* REQUEST outside a stop — the
@@ -296,7 +336,7 @@ p/path, q/quit. Registered in commands.lisp.")
 (define-interactor *aldo*
   :name "ALDO" :alias "debug"
   :prompt '%aldo-prompt
-  :reader '%line-command-read
+  :reader '%aldo-command-read
   :evaluator '%aldo-evaluate
   :commands *aldo-commands*
   :on-result '%directive-on-result
@@ -374,6 +414,35 @@ frame and echoes with the DBG> prefix."
                 *interactor-stack*)))
     (funcall thunk)))
 
+;;; --- ALDO as a window interactor template (windows-and-interactor-templates)
+;;; The *ALDO* interactor is a singleton PROGRAM; each activation's ALDO-STATE
+;;; references the ONE shared debugger SESSION/engine. So aldo is already a
+;;; multi-instance UI over a singleton backend (issue §Core design tension) —
+;;; the template just packages the instantiation, parallel to the sedit
+;;; template. The context TARGET carries the stop bundle: a DEBUGGER-SESSION, or
+;;; a plist (:session S :ui U :hit H); NIL yields an unwired activation the
+;;; driver fills. (The ncurses panes consuming this land in a later slice.)
+
+(defun %aldo-template-constructor (context)
+  "Build an ALDO activation over the shared debugger session named by CONTEXT's
+TARGET (a DEBUGGER-SESSION or a (:session :ui :hit) plist)."
+  (let ((target (clautolisp.interactor:template-context-target context)))
+    (multiple-value-bind (session ui hit)
+        (typecase target
+          (null (values nil nil nil))
+          (debugger-session (values target nil nil))
+          (cons (values (getf target :session) (getf target :ui) (getf target :hit)))
+          (t (values target nil nil)))
+      (make-activation *aldo*
+                       (make-aldo-state :ui ui :session session :hit hit)))))
+
+(clautolisp.interactor:define-interactor-template "aldo"
+  :display-name "Aldo debugger"
+  :description "The clautolisp debugger command interactor over the running stop"
+  :interactor *aldo*
+  :constructor '%aldo-template-constructor
+  :config-name "aldo")
+
 (defmethod ui-await-command ((ui dumb-ui) session hit)
   (record-navigation-state ui)
   ;; The stop's ALDO activation was pushed by CALL-WITH-STOP-INTERACTOR around
@@ -406,8 +475,8 @@ frame and echoes with the DBG> prefix."
         (when loc
           (push-interactor *navi* (make-navi-state :ui ui :session session
                                                    :hit hit :loc loc)))))
-    (or (interactor-loop :input (dumb-ui-input ui) :output (dumb-ui-output ui)
-                         :error-output (dumb-ui-output ui) :floor floor)
+    (or (interactor-loop :input (dumb-ui-input ui) :output (%out-stream ui)
+                         :error-output (%out-stream ui) :floor floor)
         :continue)))                                 ; EOF ⇒ continue (CI/pipe)
 
 (defun %command-tokens (arg)
@@ -572,6 +641,15 @@ LABEL. Used by `bpcmd' (then stops) and `trace' (then continues)."
                    (preview (autolisp-eval rform (current-evaluation-context)) 200)))
           (error (e) (out ui "~A <error: ~A>~%" label e)))
         (out ui "~A~%" label))))
+
+(defun make-watch-predicate (rform)
+  "A watch predicate: a zero-arg thunk evaluating RFORM with debugging off and
+returning its value; the watch fires on the rising edge of that value (command
+reference §2). Shares MAKE-CONDITION-PREDICATE's eval semantics. Reused by the
+tool's sleeping-aldo `,watch' command."
+  (lambda ()
+    (let ((*debugging* nil))
+      (autolisp-eval rform (current-evaluation-context)))))
 
 (defun bpcmd-cmd (ui session arg)
   "`bpcmd ppN [FORM]' — attach FORM to breakpoint ppN: when the breakpoint hits,
@@ -1525,8 +1603,21 @@ inside (`aldo c', the confirmed quit) is returned to be propagated."
             (clautolisp.sedit:sedit-command
              sedit (if arg (format nil "~A ~A" cmd arg) cmd)))
           (multiple-value-bind (result directive)
+              ;; window a long directory listing to the configured page height
+              ;; (sedit-bugs-and-design.issue): sedit is dependency-free, so the
+              ;; debugger passes its resolved height down through this special.
+              (let ((clautolisp.sedit:*sedit-window-height*
+                      (or (ignore-errors (get-aldo-setting :pager-height))
+                          clautolisp.sedit:*sedit-window-height*)))
               (clautolisp.sedit:sedit-enter
-               sedit :input (dumb-ui-input ui) :output (dumb-ui-output ui)
+               sedit :input (dumb-ui-input ui) :output (%out-stream ui)
+                     ;; entered to resolve a live stop iff there is a HIT:
+                     ;; then SEDIT's `q' aborts the run (spec §1); a hit-less
+                     ;; pre-debug edit just pops back to NAV. Not gated on
+                     ;; find-activation "ALDO" — the always-on REPL
+                     ;; sleeping-aldo shares that name
+                     ;; (sedit-bugs-and-design.issue Bug 1).
+                     :at-stop (and hit t)
                      :debug-hook (lambda (line) (nav-run-debug-line ui session hit line))
                      :eval-print-hook (lambda (node) (nav-eval-node-string session node))
                      ;; the sedit-on-quit guard (design-revision point-6
@@ -1544,7 +1635,7 @@ inside (`aldo c', the confirmed quit) is returned to be propagated."
                                    loc))
                      :on-quit (lambda ()
                                 (or (ignore-errors (debugger-setting :sedit-on-quit))
-                                    :ask)))
+                                    :ask))))
             (cond
               (directive directive)
               (t (nav-install-edited-form ui session result loc) nil)))))))
@@ -1610,21 +1701,74 @@ result string (spec §7: a Lisp form at the editor prompt evaluates like the REP
               (eq (car (first tokens)) 'integer)
               (member (char (cdr (first tokens)) 0) '(#\+ #\-))))))
 
+;;; --- gdb-style step repeat: a bare RET repeats the last stepping command ---
+;;;
+;;; At a debugger stop the active interactor is the navigator (NAV>) or, plain,
+;;; ALDO; the stepping commands (c/i/n/o) reach the debugger by fall-through
+;;; either way. The last stepping command entered is remembered on the
+;;; persistent dumb-ui (so it survives the resume/re-stop cycle between steps),
+;;; and a bare RET repeats it; any other command clears the repeat.
+
+(defparameter *aldo-stepping-verbs*
+  '("c" "continue" "i" "into" "n" "next" "o" "out")
+  "The stepping commands whose entry a bare RET repeats.")
+
+(defun %aldo-stepping-verb-p (verb)
+  (and verb (member verb *aldo-stepping-verbs* :test #'string-equal)))
+
+(defun %stop-ui ()
+  "The dumb-ui of the current debugger-stop activation (navi / lavi / aldo), or
+NIL when the current activation is none of these."
+  (let ((state (activation-state *command-activation*)))
+    (cond ((navi-state-p state) (navi-state-ui state))
+          ((lavi-state-p state) (lavi-state-ui state))
+          ((aldo-state-p state) (aldo-state-ui state)))))
+
+(defun %record-step-command (ui input)
+  "Remember INPUT's line on UI iff it is a stepping command, else clear the
+pending repeat. Returns INPUT."
+  (when ui
+    (setf (dumb-ui-last-step-command ui)
+          (and (input-command-p input)
+               (%aldo-stepping-verb-p
+                (first (clautolisp.interactor:input-command-invocation input)))
+               (input-command-raw input))))
+  input)
+
+(defun %repeat-step-command (ui)
+  "The input to repeat for UI's pending stepping command, or NIL when none."
+  (let ((line (and ui (dumb-ui-last-step-command ui))))
+    (when line
+      (make-input-command :raw line
+                          :tokens (clautolisp.interactor:parse-command line)))))
+
 (defun %navi-read (state input-context)
-  "The navigator reader: a blank line redisplays (bare RET — STATE may be NIL
-for LAVI, whose status always reprints); a ±N line reads as the skip motion;
-otherwise a command, or a `(' form to evaluate in the current frame."
-  (let ((input (%line-command-read input-context)))
+  "The navigator reader: a blank line repeats the last stepping command (c/i/n/o)
+if there is one, else redisplays (bare RET — STATE may be NIL for LAVI, whose
+status always reprints); a ±N line reads as the skip motion; otherwise a
+command, or a `(' form to evaluate in the current frame."
+  (let ((input (%line-command-read input-context))
+        (ui (%stop-ui)))
     (cond
       ((eq input :blank)
-       (when state (setf (navi-state-redraw state) t))
-       :blank)
+       (or (%repeat-step-command ui)
+           (progn (when state (setf (navi-state-redraw state) t)) :blank)))
       ((%signed-skip-p input)
+       (%record-step-command ui input)          ; a motion, not a step → clears
        (let ((count (cdr (first (input-command-tokens input)))))
          (make-input-command
           :raw (concatenate 'string "skip " count)
           :tokens (list (cons 'ident "skip") (cons 'integer count)))))
-      (t input))))
+      (t (%record-step-command ui input)))))
+
+(defun %aldo-command-read (input-context)
+  "The plain ALDO reader (DBG> without the navigator): %LINE-COMMAND-READ with
+the same gdb-style step repeat as the navigator."
+  (let ((input (%line-command-read input-context))
+        (ui (%stop-ui)))
+    (cond
+      ((eq input :blank) (or (%repeat-step-command ui) :blank))
+      (t (%record-step-command ui input)))))
 
 (defun %navi-prompt (stream)
   "The *NAVI* singleton's prompt: the kind-specific NAV> prompt over this
@@ -1678,8 +1822,8 @@ resume directive a debugger command issued inside carried out."
         (*debugger-ui* ui)
         (*debugger-session* session)
         (*debugger-hit* hit))
-    (interactor-loop :input (dumb-ui-input ui) :output (dumb-ui-output ui)
-                     :error-output (dumb-ui-output ui)
+    (interactor-loop :input (dumb-ui-input ui) :output (%out-stream ui)
+                     :error-output (%out-stream ui)
                      :floor (length *interactor-stack*))))
 
 (defun navi-enter (ui session hit loc)

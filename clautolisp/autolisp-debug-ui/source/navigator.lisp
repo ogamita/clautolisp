@@ -432,3 +432,37 @@ caller then brackets whole lines. NIL when no source text is available."
                 (clautolisp.source:source-position-end-column own))
         (multiple-value-bind (file start end) (%nav-node-span node)
           (when file (values file start nil end nil))))))
+
+;;; --- building a navigator from a function's debug metadata ------------
+;;;
+;;; Shared by every UI that shows a function's source: reconstruct the
+;;; =(defun …)= form recorded in the metadata and open a navigator on it,
+;;; re-anchored to the current poll-point. The dumb UI keeps its own
+;;; nav-loc wrapper (nav-function-loc); ncurses/aldb use these directly.
+
+(defun source-form-of-metadata (metadata)
+  "Reconstruct =(defun NAME LAMBDA-LIST BODY…)= from METADATA's usubr, or NIL."
+  (when metadata
+    (let ((usubr (function-debug-metadata-usubr metadata)))
+      (when usubr
+        (list* (intern-autolisp-symbol "DEFUN")
+               (intern-autolisp-symbol (autolisp-usubr-name usubr))
+               (autolisp-usubr-lambda-list usubr)
+               (autolisp-usubr-body usubr))))))
+
+(defun navigator-for-metadata (metadata &optional stop-position)
+  "A navigator over METADATA's source form. Its initial selection re-anchors
+to the current poll-point at STOP-POSITION (a SOURCE-POSITION) when one is
+given and a form starts there (sedit spec §7 re-entry); failing that it is the
+function's first poll-point (NAV-CODE-DOWN past the non-evaluable =defun=
+head), per sedit spec §4. NIL when METADATA has no reconstructable form."
+  (let ((form (source-form-of-metadata metadata)))
+    (when form
+      (let ((nav (make-navigator form)))
+        (unless (and (source-position-p stop-position)
+                     (nav-select-source-position
+                      nav
+                      (source-position-start-line stop-position)
+                      (source-position-start-column stop-position)))
+          (nav-code-down nav))
+        nav))))

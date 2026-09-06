@@ -275,12 +275,12 @@ build:clautolisp-ci-image:
 .pre-warm-quicklisp-sbcl: &pre-warm-quicklisp-sbcl
   - sbcl --noinform --no-userinit --non-interactive
          --load /root/quicklisp/setup.lisp
-         --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria") :silent t)'
+         --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket") :silent t)'
 
 .pre-warm-quicklisp-ccl: &pre-warm-quicklisp-ccl
   - ccl --no-init -b
         -e '(load "/root/quicklisp/setup.lisp")'
-        -e '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria") :silent t)'
+        -e '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket") :silent t)'
         -e '(ccl:quit)'
 
 test:clautolisp:sbcl:

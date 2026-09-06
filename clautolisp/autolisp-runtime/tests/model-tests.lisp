@@ -748,6 +748,26 @@
               3))))
     (is (= 0 (autolisp-errno)))))
 
+(test debug-error-snapshot-hook-captures-onto-the-condition
+  ;; The debugger installs *DEBUG-ERROR-SNAPSHOT-HOOK* so each
+  ;; autolisp-runtime-error captures the debugger's stack at the SIGNAL point
+  ;; (via the DEBUG-SNAPSHOT slot's :initform, evaluated by make-condition) —
+  ;; immune to any handler-case that unwinds it before the debugger runs
+  ;; (aldo-no-frames-through-higher-order-builtins).
+  (let ((clautolisp.autolisp-runtime:*debug-error-snapshot-hook* (lambda () :captured-here)))
+    (is (eq :captured-here
+            (clautolisp.autolisp-runtime:autolisp-runtime-error-debug-snapshot
+             (make-condition 'autolisp-runtime-error :code :x :message "m")))))
+  ;; No hook (the default, no debug session) ⇒ no capture, no cost.
+  (let ((clautolisp.autolisp-runtime:*debug-error-snapshot-hook* nil))
+    (is (null (clautolisp.autolisp-runtime:autolisp-runtime-error-debug-snapshot
+               (make-condition 'autolisp-runtime-error :code :x :message "m")))))
+  ;; A hook that raises must not break condition creation (it is ignored).
+  (let ((clautolisp.autolisp-runtime:*debug-error-snapshot-hook*
+          (lambda () (error "hook blew up"))))
+    (is (null (clautolisp.autolisp-runtime:autolisp-runtime-error-debug-snapshot
+               (make-condition 'autolisp-runtime-error :code :x :message "m"))))))
+
 ;;; --- POSIX locale probe (LC_ALL / LC_CTYPE / LANG) ------------------
 
 (test parse-locale-encoding-string-maps-common-encodings

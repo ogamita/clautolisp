@@ -36,9 +36,12 @@
     (:pager . :on)
     (:pager-height . 24)
     (:theme . :unicode)
-    (:default-user-interface . :tui)
+    (:default-user-interface . :dumb)
     (:default-aldb-listening-address . "127.0.0.1")
-    (:default-aldb-listening-port . 4301)
+    ;; 0 = an OS-chosen FREE port (aldb-stdio-is-a-poor-default): a random free
+    ;; port never clashes with another session, and the actual port is printed in
+    ;; the connect prompt. Pin a fixed port here if you prefer a stable one.
+    (:default-aldb-listening-port . 0)
     (:decorations
      (:current-pp  :unicode (9205))   ; PREFIX  ⏵ U+23F5 as a code-point list
      (:current-pp  :ascii   ">")
@@ -61,11 +64,11 @@ types and the :DECORATIONS sub-list for the theme glyphs.")
     (:break-on-caught         :boolean)
     (:source-window-height    :integer)
     (:value-line-width        :integer)
-    (:pager                   :enum (:on :off))
+    (:pager                   :pager)
     (:pager-height            :integer)
     (:theme                   :enum (:unicode :ascii :white-on-black
                                      :black-on-white :green-on-black :attributes))
-    (:default-user-interface  :enum (:tui :ncurses :aldb))
+    (:default-user-interface  :enum (:dumb :ncurses :aldb :terminal :tui :emacs))
     (:default-aldb-listening-address :string)
     (:default-aldb-listening-port    :port))
   "For each scalar setting: (KEY TYPE [ALLOWED]). TYPE drives `set' value
@@ -83,7 +86,13 @@ parsing and validation. :DECORATIONS is structural (edited as data, not via
 
 (defparameter *default-lisp-configuration*
   '((:sedit-on-quit . :ask)
-    (:shell-escape-character . #\!))
+    (:shell-escape-character . #\!)
+    ;; The pager cascades parallel to the interactor stack (aldo-command-from-
+    ;; repl.issue): the REPL's `,ls' and other long output page through the LISP
+    ;; pager (lisp.conf over these defaults); the debugger pages through the aldo
+    ;; pager (aldo.conf over lisp.conf over defaults).
+    (:pager . :on)
+    (:pager-height . 24))
   "Built-in defaults for the LISP (REPL) interactor. Its first setting is
 :SEDIT-ON-QUIT — the same key aldo carries, governing (clal-sedit …)
 invocations made from the REPL while aldo's governs debugger-side ones.
@@ -95,7 +104,9 @@ key absent from aldo.conf is taken from lisp.conf.")
 
 (defparameter *lisp-setting-specs*
   '((:sedit-on-quit :enum (:auto-save :do-not-save :ask))
-    (:shell-escape-character :character))
+    (:shell-escape-character :character)
+    (:pager :pager)
+    (:pager-height :integer))
   "(KEY TYPE [ALLOWED]) for the LISP interactor's settings; same shape as
 *SETTING-SPECS*.")
 
@@ -240,6 +251,14 @@ Signals a SIMPLE-ERROR on a bad value."
              ((member raw '("off" "false" "nil" "no" "0") :test #'string-equal) nil)
              (t (error "value ~S is not a boolean (on/off)" raw))))
       (:string raw)
+      (:pager
+       ;; ON / OFF, or a namestring naming an external pager filter
+       ;; (more(1)/less(1)/…) — aldo-command-from-repl.issue part 3.
+       (cond ((string-equal raw "on") :on)
+             ((string-equal raw "off") :off)
+             ((zerop (length raw))
+              (error "value ~S is not on/off or a pager path" raw))
+             (t raw)))
       (:character
        ;; "ascii character or unicode code point" (pjb). Both spellings are
        ;; accepted, exactly as the :DECORATIONS glyphs accept either a
@@ -379,6 +398,30 @@ the debugger."
                                                      (%default-setting key)))
                            presentp))))
 
+(defun settings-cascade-lines ()
+  "Lines describing each LISP setting across its cascade levels — the built-in
+default, lisp.conf, then aldo.conf (which the debugger layers on top, parallel
+to the interactor stack) — marking the level whose value is effective at the
+REPL. For the REPL's `,settings'."
+  (loop :for (key) :in *lisp-setting-specs*
+        :append
+        (multiple-value-bind (lisp-value lisp-present)
+            (config-explicit key *lisp-configuration*)
+          (multiple-value-bind (aldo-value aldo-present)
+              (config-explicit key *aldo-configuration*)
+            (let* ((default (%default-setting key))
+                   (effective (if lisp-present lisp-value default)))
+              (list
+               (format nil "~(~A~) = ~A" key (format-setting-value effective))
+               (format nil "      default    ~A~:[~;   <- effective~]"
+                       (format-setting-value default) (not lisp-present))
+               (format nil "      lisp.conf  ~A~:[~;   <- effective~]"
+                       (if lisp-present (format-setting-value lisp-value) "-")
+                       lisp-present)
+               (format nil "      aldo.conf  ~A~:[~;   (debugger only)~]"
+                       (if aldo-present (format-setting-value aldo-value) "-")
+                       aldo-present)))))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; XDG path resolution (command reference §8 — Loading)
 
@@ -497,6 +540,7 @@ here, because the file reader maps only those two symbols to booleans — an
         (declare (ignore name))
         (ecase type
           (:enum      (format nil "~{~(~A~)~^ | ~}" allowed))
+          (:pager     "on | off | a pager path in a string")
           (:integer   "an integer")
           (:boolean   "t | nil")
           (:string    "a string")
@@ -553,9 +597,39 @@ the defaults and keeps the aldo-over-lisp stacking working."
                           stream))))))
   (write-line ")" stream))
 
+;;; --- cascade bridge hooks (windows-and-interactor-templates.issue) ------
+;;; A layer that also owns the tui-core cascade configs (faces / bindings /
+;;; layout) installs these so the cascade SHARES the existing <name>.conf files
+;;; rather than a parallel set. Unset (the default), the files are written and
+;;; read exactly as before — this system does not depend on tui-core.
+
+(defvar *config-extra-entries-hook* nil
+  "(function (config-name)) -> an alist of extra (KEY . VALUE) entries to WRITE
+into <config-name>.conf beside the scalar settings — the tui-core cascade's
+:faces / :bindings / :layout. NIL writes only the scalar settings.")
+
+(defvar *config-consume-extras-hook* nil
+  "Inverse of *CONFIG-EXTRA-ENTRIES-HOOK*: (function (config-name loaded-alist))
+-> the SCALAR-ONLY alist to store, having distributed the cascade keys into the
+tui-core config. NIL returns LOADED-ALIST unchanged.")
+
+(defun %config-with-extras (name config)
+  "CONFIG plus the cascade's extra entries for NAME (via the hook); CONFIG
+unchanged when no hook is installed."
+  (append config (and *config-extra-entries-hook*
+                      (funcall *config-extra-entries-hook* name))))
+
+(defun %config-consume-extras (name alist)
+  "Hand ALIST to the consume hook (which absorbs the cascade keys and returns
+the scalar-only remainder); ALIST unchanged when no hook is installed."
+  (if *config-consume-extras-hook*
+      (funcall *config-consume-extras-hook* name alist)
+      alist))
+
 (defun write-aldo-configuration (stream &optional (config *aldo-configuration*))
-  "Write CONFIG to STREAM as aldo.conf (see WRITE-CONFIGURATION-FILE)."
-  (write-configuration-file stream config
+  "Write CONFIG to STREAM as aldo.conf (see WRITE-CONFIGURATION-FILE); includes
+the cascade's aldo faces/bindings when the bridge hook is installed."
+  (write-configuration-file stream (%config-with-extras "aldo" config)
                             *default-aldo-configuration* *setting-specs*
                             :name "aldo.conf" :what "the aldo debugger"
                             :save-command ",settings save"))
@@ -565,7 +639,7 @@ the defaults and keeps the aldo-over-lisp stacking working."
 another argument: the documented defaults and the accepted values must come
 from the LISP interactor's own tables, or lisp.conf would advertise aldo's
 settings as if they were its own."
-  (write-configuration-file stream config
+  (write-configuration-file stream (%config-with-extras "lisp" config)
                             *default-lisp-configuration* *lisp-setting-specs*
                             :name "lisp.conf"
                             :what "the LISP (REPL) interactor"
@@ -606,7 +680,7 @@ as it did, shadowing the LISP layer for all of them."
     (with-open-file (in path :direction :input :external-format :utf-8)
       (let ((config (read-aldo-configuration in)))
         (when (consp config)
-          (setf *aldo-configuration* config))))
+          (setf *aldo-configuration* (%config-consume-extras "aldo" config)))))
     path))
 
 (defun save-lisp-configuration (&optional (path (lisp-config-save-path)))
@@ -626,5 +700,5 @@ the defaults in place. Returns the path read, or NIL if none."
     (with-open-file (in path :direction :input :external-format :utf-8)
       (let ((config (read-aldo-configuration in)))
         (when (consp config)
-          (setf *lisp-configuration* config))))
+          (setf *lisp-configuration* (%config-consume-extras "lisp" config)))))
     path))

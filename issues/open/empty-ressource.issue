@@ -1,0 +1,37 @@
+alfe needs to pass an empty dwg to bricscad and autocad.  To avoid
+reusing previous empty.dwg files, that may be modified or locked by
+other instances alfe must create a new empty.dwg file for each
+invocation of the CAD, in the invocation workdir.  Eventually we
+should have resources and documents and templates, in
+/opt/local/share/clautolisp/*/ but for alfe it may be preferable to
+keep it stand alone, and since empty.dwg is small, to include it as a
+resource in the lisp image.
+
+The following can be used load the empty.dwg file contents into a
+vector kept in the lisp image, and to save a copy into a new file when
+and where it will be needed. (adjust the "empty.dwg" path for
+load-time reading when compiling the source file.
+
+Move the empty.dwg file from issues/open to the right directory
+(eg. along with the sources that load it).
+
+
+
+#+begin_src lisp
+    (defvar *empty-dwg-contents*
+      (load-time-value
+       (let ((sequence))
+         (with-open-file (in "empty.dwg"  :element-type '(unsigned-byte 8))
+           (read-sequence (setf sequence (make-array (file-length in)
+                                                     :element-type '(unsigned-byte 8)))
+                          in))
+         sequence)))
+
+    (defun save-empty-dwg (path)
+      (with-open-file (out path :element-type '(unsigned-byte 8)
+                           :direction :output
+                                :if-exists :supersede
+                                :if-does-not-exist :create)
+        (write-sequence *empty-dwg-contents* out)))
+#+end_src
+

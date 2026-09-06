@@ -21,6 +21,9 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
                 #:autolisp-symbol
                 #:autolisp-symbol-name
                 #:intern-autolisp-symbol
+                #:autolisp-usubr-name
+                #:autolisp-usubr-lambda-list
+                #:autolisp-usubr-body
                 #:read-runtime-from-string
                 #:make-default-runtime-context
                 #:current-evaluation-context)
@@ -40,6 +43,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
                 #:poll-point-at
                 #:metadata-for-function-id
                 #:function-debug-metadata-function-id
+                #:function-debug-metadata-usubr
                 #:find-form-id-at-line
                 #:hit-snapshot #:hit-stop-reason #:hit-source-position
                 #:hit-error-message #:hit-fid #:hit-form-id #:hit-when #:hit-breakpoint
@@ -71,6 +75,22 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
                 #:make-workspace #:workspace-list #:workspace-clear
                 #:inspector-session-workspace)
   (:export
+   ;; per-module print IO-syntax (TUI module spec §13)
+   #:clal-princ #:clal-prin1 #:clal-print
+   #:clal-prin1-to-string #:clal-princ-to-string
+   #:call-with-clal-print-syntax #:define-clal-print-module
+   #:*clal-print-array* #:*clal-print-case* #:*clal-print-circle*
+   #:*clal-print-length* #:*clal-print-level* #:*clal-print-lines*
+   #:with-stack-print-syntax #:with-inspect-print-syntax
+   #:with-aldo-print-syntax #:with-repl-print-syntax
+   #:*clal-stack-print-array* #:*clal-stack-print-case* #:*clal-stack-print-circle*
+   #:*clal-stack-print-length* #:*clal-stack-print-level* #:*clal-stack-print-lines*
+   #:*clal-inspect-print-array* #:*clal-inspect-print-case* #:*clal-inspect-print-circle*
+   #:*clal-inspect-print-length* #:*clal-inspect-print-level* #:*clal-inspect-print-lines*
+   #:*clal-aldo-print-array* #:*clal-aldo-print-case* #:*clal-aldo-print-circle*
+   #:*clal-aldo-print-length* #:*clal-aldo-print-level* #:*clal-aldo-print-lines*
+   #:*clal-repl-print-array* #:*clal-repl-print-case* #:*clal-repl-print-circle*
+   #:*clal-repl-print-length* #:*clal-repl-print-level* #:*clal-repl-print-lines*
    ;; UI protocol — debugger → UI (notifications)
    #:ui-attached #:ui-detached
    #:ui-thread-hit #:ui-thread-unhandled-error #:ui-thread-caught-error
@@ -91,6 +111,8 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:cmd-continue #:cmd-step #:cmd-advance #:cmd-abort #:cmd-return #:cmd-jump
    #:cmd-set-breakpoint #:cmd-set-breakpoint-at-line #:cmd-advance-at-line
    #:cmd-remove-breakpoint #:cmd-list-breakpoints
+   #:cmd-breakpoint-at-line #:cmd-remove-breakpoint-at-line
+   #:cmd-toggle-breakpoint-enabled-at-line
    #:cmd-watch #:cmd-unwatch #:cmd-clear-watches #:cmd-list-watches
    #:cmd-select-frame #:cmd-eval #:cmd-set-variable
    #:cmd-inspect #:cmd-inspector-descend #:cmd-inspector-up
@@ -109,6 +131,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:reset-lisp-configuration
    #:config-explicit #:lisp-setting #:debugger-setting
    #:set-lisp-setting #:get-lisp-setting #:lisp-settings-lines
+   #:settings-cascade-lines
    #:setting-character #:shell-escape-character-setting
    #:lisp-config-save-path #:lisp-config-load-path
    #:save-lisp-configuration #:load-lisp-configuration
@@ -120,6 +143,11 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:save-aldo-configuration #:load-aldo-configuration
    #:write-aldo-configuration #:read-aldo-configuration
    #:write-lisp-configuration #:write-configuration-file
+   #:config-save-path #:config-load-path
+   ;; cascade bridge (windows-and-interactor-templates.issue): a layer that owns
+   ;; the tui-core cascade installs these so faces/bindings/layout share the
+   ;; existing <name>.conf files.
+   #:*config-extra-entries-hook* #:*config-consume-extras-hook*
    ;; theme / decorations renderer (command reference §8)
    #:glyph->string #:theme-of #:decoration-entries #:decoration-for
    #:color-theme-p #:sgr-wrap #:apply-decoration #:situation-prefix
@@ -128,7 +156,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:command-lambda-list #:command-docstring #:command-function #:command-arity
    #:dictionary #:dictionary-name #:make-command-dictionary
    #:+debugger-escape-word+
-   #:*debugger-ui* #:*debugger-session* #:*debugger-hit*
+   #:*debugger-ui* #:*debugger-session* #:*debugger-hit* #:*debugger-output*
    #:interactor-user-dictionary
    #:bind-debugger-command #:unbind-debugger-command #:define-debugger-command
    #:register-interactor-command
@@ -139,6 +167,10 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:sync-config-from-variable #:sync-config-to-variable
    ;; structural sexp navigator (command reference §3)
    #:make-navigator #:navigator-root #:navigator-path #:nav-selected
+   ;; SOURCE-FORM-OF-METADATA is intentionally NOT exported: the dumb UI
+   ;; defines its own same-named function, and :use-ing an exported one here
+   ;; would collide. Only the higher-level builder is shared.
+   #:navigator-for-metadata
    #:nav-parent #:nav-index
    #:nav-down #:nav-up #:nav-forward #:nav-backward #:nav-first #:nav-last
    #:nav-skip #:nav-render #:nav-source-listing #:nav-selected-position

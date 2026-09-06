@@ -231,6 +231,30 @@ _$ (clal-sedit "~/src/public/autolisp")
 SEDIT>
 #+end_example
 
+A long directory listing is *windowed*: at most =H-4= entries (=H= the terminal
+height, =*sedit-window-height*=, default 24) are shown, centred on the
+selection — clamped so the selection rides the top or bottom near the ends —
+with =⋮ (N more above)= / =⋮ (N more below)= markers for the entries scrolled
+off. Short listings show every entry.
+
+** 2.5 The two-argument form — =(clal-sedit TYPE OBJECT)=
+
+The one-argument =(clal-sedit [object])= above infers what OBJECT is from its
+Lisp type. The two-argument form is *explicit*: TYPE (an AutoLISP symbol) says
+how to interpret OBJECT, so a symbol can be edited as a value, or a function
+opened in the context of its file. This is the form the debugger uses to open a
+function's source (§7).
+
+| TYPE        | OBJECT                          | edits                                                        |
+|-------------+---------------------------------+-------------------------------------------------------------|
+| =nil= / =object= | any printable value        | OBJECT itself, as the initial selection (a symbol is *not* recalled). |
+| =function=  | FUNCNAME (a symbol)             | if FUNCNAME has a source file, its =defun= in the file (as =(clal-sedit 'file (list "src.lsp" 'FUNCNAME))=); else its definition. Errors if FUNCNAME is not a user function. |
+| =function= / =file= | (FILE-PATH FUNCNAME)     | open FILE-PATH with the =defun= of FUNCNAME selected; error if the file or the function is missing. |
+| =file=      | (FILE-PATH LINUM)               | open FILE-PATH with the top-level item at or just after line LINUM selected. |
+| =file=      | (SOURCE-POSITION FORM)          | open the file named by the source position, at that position.  |
+| =file=      | FILE-PATH (a string)            | edit the file (first item selected); created on save if new.  |
+| =directory= | DIRECTORY-PATH (a string)       | browse the directory (§2.4).                                  |
+
 * 3. REPL source recording
 
 To let sedit recall and re-evaluate forms typed at the REPL, the REPL records
@@ -747,6 +771,15 @@ comment objects rendered as comment text.
 | file           | file path    | save the file as the given path (1)                     |
 | form in a file | none         | save the file                                           |
 | form           | file path    | save the enclosing top-level form to the given path (2) |
+
+Saving a *file-backed* session writes the *whole file* — every top-level item,
+not just the selected form — through the source-file module
+(=clautolisp.source-file=), which keeps =clautolisp.source:*source-position-
+table*= consistent by shifting the positions of the forms below the edited
+region by its line delta. So a save does not invalidate the source positions
+(hence the breakpoints and file navigation) of the un-edited forms. (Earlier
+=save= wrote only the selected top-level form, truncating the file; fixed in
+sedit-bugs-and-design.issue.)
 
 (1) if the path exists: =File "…" exists. Overwrite (yes, cancel)?=
 (2) if the path exists: =File "…" exists. (overwrite, append, cancel)?=

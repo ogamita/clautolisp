@@ -61,6 +61,9 @@
 (deftype autolisp-vla-object ()
   'clautolisp.autolisp-runtime.internal::autolisp-vla-object)
 
+(deftype autolisp-lisp-object ()
+  'clautolisp.autolisp-runtime.internal::autolisp-lisp-object)
+
 ;;; --- AutoLISP call-stack tracking ---------------------------------
 ;;;
 ;;; *autolisp-call-stack* records the chain of forms currently being
@@ -119,6 +122,16 @@ and EVAL-SETQ-FORM (and only by them) at the moment they update
 the binding-cell doc slot."
   (and *current-form* (gethash *current-form* *preceding-docs*)))
 
+(defparameter *debug-error-snapshot-hook* nil
+  "When non-nil (installed by the aldo debugger while a session is active), a
+function of no arguments called from the AUTOLISP-RUNTIME-ERROR DEBUG-SNAPSHOT
+slot's :INITFORM as each such condition is CREATED — at the error point, before
+any unwinding — returning an opaque debugger snapshot of the live call stack
+there. Lets the debugger show the real backtrace even when an inner HANDLER-CASE
+(a builtin wrapper, LOAD's *error* handler, …) unwinds the shadow stack before
+the session handler runs. NIL (the default) ⇒ no capture, no cost — the
+dependency-inversion pattern of *INSTRUMENT-USUBR-HOOK* / *DEBUG-BREAK-HOOK*.")
+
 (define-condition autolisp-runtime-error (error)
   ((code
     :initarg :code
@@ -133,7 +146,23 @@ the binding-cell doc slot."
    (call-stack
     :initarg :call-stack
     :initform nil
-    :reader autolisp-runtime-error-call-stack))
+    :reader autolisp-runtime-error-call-stack)
+   ;; Debugger snapshot captured at SIGNAL time (the deepest, error point),
+   ;; before any handler-case between the error and the debugger's session
+   ;; handler unwinds the poll-point shadow stack. The slot's :INITFORM calls
+   ;; *DEBUG-ERROR-SNAPSHOT-HOOK* — evaluated by MAKE-CONDITION at creation, in
+   ;; the erroring dynamic context (an INITIALIZE-INSTANCE method on a condition
+   ;; is undefined and SBCL does not run it, so the initform is the portable
+   ;; capture point). NIL when no debug session installed the hook, so ordinary
+   ;; runs and tests carry no cost. The debugger prefers this over the
+   ;; live-but-unwound stack, so a function reached through APPLY / MAPCAR / LOAD /
+   ;; vl-catch-all still shows a full backtrace
+   ;; (aldo-no-frames-through-higher-order-builtins).
+   (debug-snapshot
+    :initarg :debug-snapshot
+    :initform (and *debug-error-snapshot-hook*
+                   (ignore-errors (funcall *debug-error-snapshot-hook*)))
+    :accessor autolisp-runtime-error-debug-snapshot))
   (:report (lambda (condition stream)
              (format stream "~A" (autolisp-runtime-error-message condition)))))
 
@@ -1348,6 +1377,13 @@ binding. A no-op when SYMBOL has no namespace cell yet."
   (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-debug-metadata object)
         value))
 
+(defun autolisp-usubr-instrumentation-failed (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-instrumentation-failed object))
+
+(defun (setf autolisp-usubr-instrumentation-failed) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-instrumentation-failed object)
+        value))
+
 (defun make-autolisp-catch-all-error (message condition)
   (clautolisp.autolisp-runtime.internal::make-autolisp-catch-all-error
    :message message
@@ -1379,6 +1415,56 @@ error wraps a non-autolisp-runtime condition."
 
 (defun make-autolisp-vla-object (&key value)
   (clautolisp.autolisp-runtime.internal::make-autolisp-vla-object :value value))
+
+;;; --- opaque AutoLISP handles onto Common Lisp objects ------------------
+;;; Frames / windows / faces and the like cross into AutoLISP as opaque,
+;;; type-safe handles rather than integer indices: (type (clal-make-window …))
+;;; -> WINDOW, and they print as #<WINDOW "name" address>. Wrappers are interned
+;;; per CL object so the same object is EQ-stable across AutoLISP calls.
+
+(defun autolisp-lisp-object-value (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-lisp-object-value object))
+
+(defun autolisp-lisp-object-type-name (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-lisp-object-type-name object))
+
+(defvar *lisp-object-wrappers*
+  (make-hash-table :test 'eq)
+  "CL object -> its interned AUTOLISP-LISP-OBJECT wrapper (EQ-stable identity).")
+
+(defun wrap-lisp-object (value type-name &optional labeler)
+  "Wrap the CL VALUE as an opaque AutoLISP object reporting TYPE-NAME (a string,
+e.g. \"WINDOW\") to (type …); LABELER is an optional thunk returning a fresh
+short label for printing. The same VALUE always yields the same (EQ) wrapper."
+  (or (gethash value *lisp-object-wrappers*)
+      (setf (gethash value *lisp-object-wrappers*)
+            (clautolisp.autolisp-runtime.internal::make-autolisp-lisp-object
+             :value value :type-name type-name :labeler labeler))))
+
+(defun lisp-object-p (object &optional type-name)
+  "True when OBJECT is an opaque AutoLISP lisp-object (of TYPE-NAME, if given)."
+  (and (typep object 'autolisp-lisp-object)
+       (or (null type-name)
+           (string-equal type-name (autolisp-lisp-object-type-name object)))))
+
+(defun unwrap-lisp-object (object &optional type-name who)
+  "The CL object inside an opaque AUTOLISP-LISP-OBJECT; a runtime error if OBJECT
+is not a lisp-object, or (when TYPE-NAME is given) not of that type. WHO names
+the caller for the error message."
+  (unless (typep object 'autolisp-lisp-object)
+    (signal-autolisp-runtime-error
+     :bad-argument "~@[~A: ~]expected an opaque lisp-object, got ~S."
+     who object))
+  (when (and type-name
+             (not (string-equal type-name (autolisp-lisp-object-type-name object))))
+    (signal-autolisp-runtime-error
+     :bad-argument "~@[~A: ~]expected a ~A handle, got a ~A."
+     who type-name (autolisp-lisp-object-type-name object)))
+  (autolisp-lisp-object-value object))
+
+(defun reset-lisp-object-wrappers ()
+  "Drop the interned lisp-object wrappers (a fresh session / tests)."
+  (clrhash *lisp-object-wrappers*))
 
 (defun make-autolisp-safearray (&key value)
   (clautolisp.autolisp-runtime.internal::make-autolisp-safearray :value value))
@@ -1413,12 +1499,15 @@ it). The QUIT event cannot be ignored. Set by the clautolisp CLI's
 --on-quit option; the AutoLISP variable *CLAL-ON-QUIT* mirrors it and is
 consulted LIVE at each (quit) / (exit) call.")
 
-(defparameter *clal-debugger-ui* :tui
-  "The debugger user-interface selection (debugger command reference §10):
-:TUI (the line/terminal UI), :NCURSES, or :ALDB (the Emacs front-end). Set
-by the clautolisp CLI's --debugger-ui option, defaulting to the persisted
+(defparameter *clal-debugger-ui* :dumb
+  "The debugger user-interface selection (debugger command reference §10). The
+canonical values are the symbols =DUMB= (the line/terminal UI), =NCURSES=, and
+=ALDB= (the Emacs front-end); =TERMINAL= and =TUI= are accepted aliases of
+=DUMB=, and =EMACS= of =ALDB=, matched case-insensitively. Set by the
+clautolisp CLI's --debugger-ui option, defaulting to the persisted
 default-user-interface aldo setting. Mirrored to the AutoLISP variable
-*CLAL-DEBUGGER-UI*.")
+*CLAL-DEBUGGER-UI*, which the debugger reads live at each stop; if it is set to
+an unrecognised value the debugger warns and uses the DUMB UI.")
 
 (defparameter *clal-aldb-listen* nil
   "The aldb (Emacs UI) transport requested on the CLI
@@ -1521,6 +1610,23 @@ AutoLISP command body, DOC a string or NIL. The debugger UI installs it; NIL
 strings, for the CLAL-LIST-INTERACTOR-NAMES builtin. The debugger UI
 installs it; NIL (an empty list) when that layer is absent.")
 
+(defparameter *ui-binding-hook* nil
+  "When non-nil, a function (OP &rest ARGS) the CLAL-BINDING family of builtins
+call to manage the debugger UI's user key bindings (ncurses-key-bindings.issue).
+OP is a keyword: :BIND (KEY-STRING COMMAND) — COMMAND a CL string (a command
+name/line) or an AutoLISP function designator / form; :UNBIND (KEY-STRING);
+:LOOKUP (KEY-STRING); :MAP (AUTOLISP-FUNCTION) — called with (KEY-STRING COMMAND)
+per binding; :DEFINE-COMMAND (NAME-STRING AUTOLISP-FUNCTION). The debugger UI
+installs it; NIL (a no-op) when that layer is absent.")
+
+(defparameter *ui-object-hook* nil
+  "When non-nil, a function (OP &rest ARGS) the CLAL frame / window / face
+builtins call to reach the debugger UI's tui-core objects (TUI module spec). OP
+is a keyword (:MAKE-FRAME :FRAME-LIST :SELECT-FRAME :MAKE-WINDOW :WINDOW-LIST
+:DEFINE-FACE :FACE-PARAMETERS …); the hook marshals AutoLISP values <-> tui-core
+objects (returning opaque lisp-object handles via WRAP-LISP-OBJECT). The debugger
+UI installs it; NIL (a no-op) when that layer is absent.")
+
 (defparameter *debug-break-hook* nil
   "When non-nil, a function of one optional MESSAGE argument that the
 CLAL-BREAK / CLAL-INVOKE-DEBUGGER builtins call to drop into the aldo debugger
@@ -1576,14 +1682,63 @@ SPACE / DEBUG 0). When NIL, debugged code runs its plain body — no poll points
 no stepping — trading debuggability for speed/size (the fork matrix's DEBUG-0
 rows). T by default, so a debug session instruments what it runs.")
 
+(defparameter *before-load-file-hook* nil
+  "When non-nil, a function called with the resolved namestring of a file about
+to be loaded (AUTOLISP-LOAD-FILE-IN-CONTEXT), before its forms are evaluated. The
+aldo debugger installs it to open a new load generation for that file's FILE:LINE
+breakpoints, so a reload re-resolves them (aldo-command-from-repl.issue). NIL when
+the debug system is absent.")
+
+(defparameter *after-load-file-hook* nil
+  "When non-nil, a function called with the resolved namestring of a file just
+loaded, after its forms are evaluated (on normal completion). The aldo debugger
+installs it to warn when a reload moved any FILE:LINE breakpoint. NIL when the
+debug system is absent.")
+
+(defun instrument-usubr-if-possible (function)
+  "Weave FUNCTION's instrumented fork via *INSTRUMENT-USUBR-HOOK*, SURFACING a
+failure instead of silently swallowing it: if the weave raises (a construct the
+instrumenter cannot yet handle), emit ONE warning naming the function and the
+cause, remember the failure on the usubr so we neither re-warn nor re-attempt on
+every call, and fall back to the plain body. Returns the instrumented body (now
+non-nil), or NIL when the debugger layer is absent or the weave failed — the
+caller then runs the plain body (no poll points ⇒ that function shows no stack
+frames, which is exactly what the warning now makes visible instead of a silent
+empty backtrace). Idempotent: an already-instrumented function is left as is."
+  (when (and *instrument-usubr-hook*
+             (not (autolisp-usubr-instrumented-body function))
+             (not (autolisp-usubr-instrumentation-failed function)))
+    (handler-case (funcall *instrument-usubr-hook* function)
+      (error (condition)
+        (setf (autolisp-usubr-instrumentation-failed function) t)
+        (warn "clautolisp: cannot instrument ~A for debugging (~A); it will run ~
+without breakpoints or stack frames — the debugger will show no frames for it. ~
+Please report the function's source as an instrumenter gap."
+              (let ((name (autolisp-usubr-name function)))
+                (if (and name (plusp (length name))) name "<lambda>"))
+              condition))))
+  (autolisp-usubr-instrumented-body function))
+
 (defun maybe-instrument-usubr (function)
   "Lazily weave FUNCTION's instrumented fork on its first call under a debug
-session, when instrumentation is enabled and the debugger layer is loaded.
-Returns the instrumented body (now non-nil), or NIL if instrumentation is
-disabled / the debugger is absent, so the caller falls back to the plain body."
-  (when (and *debug-instrumentation-enabled* *instrument-usubr-hook*)
-    (ignore-errors (funcall *instrument-usubr-hook* function))
-    (autolisp-usubr-instrumented-body function)))
+session, when instrumentation is enabled (the CLAL-OPTIMIZATION DEBUG level, via
+*DEBUG-INSTRUMENTATION-ENABLED*) and the debugger layer is loaded. Returns the
+instrumented body (now non-nil), or NIL if instrumentation is disabled / the
+debugger is absent / the weave failed, so the caller falls back to the plain
+body. A weave failure is surfaced once (see INSTRUMENT-USUBR-IF-POSSIBLE)."
+  (when *debug-instrumentation-enabled*
+    (instrument-usubr-if-possible function)))
+
+(defun instrument-defun-if-debugging (function)
+  "Weave FUNCTION eagerly at DEFUN/load time when a debug session is active and
+instrumentation is enabled (CLAL-OPTIMIZATION DEBUG>0) — the documented \"the
+loader instruments the interpreted code\" behavior. So code loaded under
+--on-error debug / a debugger UI is debuggable immediately (breakpoints before
+first call; a weave failure surfaces at load, naming the function) instead of
+only lazily on first call. Outside a session (*DEBUGGING* NIL) this is a no-op,
+so ordinary non-debug runs keep defining plain, allocation-free bodies."
+  (when *debugging*
+    (maybe-instrument-usubr function)))
 
 (defun append-proper-and-tail (elements tail)
   (if (null elements)
@@ -3222,6 +3377,7 @@ name; a LAMBDA has none and passes NIL."
           (definition (compatibility-definition-from-parts lambda-list body)))
       (set-function name function context)
       (set-autolisp-function-list-definition name definition context)
+      (instrument-defun-if-debugging function)
       name)))
 
 (defun eval-defun-form (arguments context)
@@ -3256,6 +3412,7 @@ name; a LAMBDA has none and passes NIL."
                        (let ((text (current-form-preceding-doc)))
                          (and text (list :function text)))
                        context)
+      (instrument-defun-if-debugging function)
       name)))
 
 (defparameter *special-operator-dispatch*
@@ -3438,6 +3595,10 @@ forms have unevaluated operands it must not instrument (spec §5.3)."
      (intern-autolisp-symbol "VARIANT"))
     ((typep object 'autolisp-vla-object)
      (intern-autolisp-symbol "VLA-OBJECT"))
+    ((typep object 'autolisp-lisp-object)
+     ;; an opaque handle onto a CL object reports its own type designator,
+     ;; e.g. (type (clal-make-window …)) -> WINDOW
+     (intern-autolisp-symbol (autolisp-lisp-object-type-name object)))
     (t
      (signal-autolisp-runtime-error
       :unknown-runtime-type
@@ -3532,12 +3693,24 @@ so a value written and read back under the same encoding round-trips."
               read-options)))
     (call-with-autolisp-error-handler
      (lambda ()
-       ;; Top-level forms go through the compiled-eval model so a file
-       ;; loaded under a debug session is instrumentable (LOAD → EVAL →
-       ;; clal-compile). Outside a session this is a plain eval-progn.
-       (autolisp-eval-toplevel-progn
-        (apply #'read-runtime-from-file path effective-options)
-        context))
+       ;; A file (re)load opens a new "load generation" for its FILE:LINE
+       ;; breakpoints (aldo-command-from-repl.issue): the before-hook lets the
+       ;; debugger clear their per-load arming so they re-resolve against the
+       ;; new content, the after-hook lets it warn about any that moved. Both
+       ;; NIL when the debug system is absent; the resolved namestring is used
+       ;; so it matches the metadata source positions.
+       (let ((resolved (ignore-errors (namestring (truename path)))))
+         (when (and *before-load-file-hook* resolved)
+           (funcall *before-load-file-hook* resolved))
+         ;; Top-level forms go through the compiled-eval model so a file
+         ;; loaded under a debug session is instrumentable (LOAD → EVAL →
+         ;; clal-compile). Outside a session this is a plain eval-progn.
+         (multiple-value-prog1
+             (autolisp-eval-toplevel-progn
+              (apply #'read-runtime-from-file path effective-options)
+              context)
+           (when (and *after-load-file-hook* resolved)
+             (funcall *after-load-file-hook* resolved)))))
      context)))
 
 (defun autolisp-load-file (path &rest read-options)

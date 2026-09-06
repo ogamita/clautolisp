@@ -18,7 +18,7 @@ global store."
     (is (eql 1000 (clautolisp.debug.ui:get-aldo-setting :navigation-history-max)))
     (is (eql 24 (clautolisp.debug.ui:get-aldo-setting :pager-height)))
     (is (eq :unicode (clautolisp.debug.ui:get-aldo-setting :theme)))
-    (is (eq :tui (clautolisp.debug.ui:get-aldo-setting :default-user-interface)))
+    (is (eq :dumb (clautolisp.debug.ui:get-aldo-setting :default-user-interface)))
     ;; case-insensitive key lookup
     (is (eq :sexp (clautolisp.debug.ui:get-aldo-setting "NAVIGATOR")))))
 

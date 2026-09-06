@@ -112,6 +112,19 @@ CL disposition (:supersede overwrites, :error refuses). Returns the namestring."
     (write-string (unparse node) s))
   (namestring (truename path)))
 
+(defun %loc-root (loc)
+  "The root node of LOC's whole tree (ascend past every list/file/dir boundary)."
+  (let ((l loc))
+    (loop while (loc-ctx l) do (setf l (loc-up l)))
+    (loc-focus l)))
+
+(defun %write-text-file (text path)
+  "Write TEXT to PATH (supersede/create); returns the namestring."
+  (with-open-file (s path :direction :output :if-exists :supersede
+                          :if-does-not-exist :create :external-format :utf-8)
+    (write-string text s))
+  (namestring path))
+
 (defun %dir-display-name (dir-pathname)
   "The last directory component of DIR-PATHNAME as a name, e.g. \"src\"."
   (car (last (pathname-directory dir-pathname))))
@@ -189,6 +202,95 @@ the UI asks on leave).")
   "A location selecting BRANCH's first child, or BRANCH itself when it is empty."
   (or (loc-down (node->loc branch)) (node->loc branch)))
 
+(defparameter +sedit-sexp-file-types+ '("lsp" "lisp" "cl" "el" "scm")
+  "Extensions treated as Lisp/sexp source files when a directory chooses its
+initial selection (spec §2.4).")
+
+(defun %sexp-file-node-p (node)
+  "True when NODE is a file entry whose extension names a Lisp/sexp source."
+  (and (file-node-p node)
+       (let ((type (pathname-type (file-node-name node))))
+         (and type (member (string-downcase type) +sedit-sexp-file-types+
+                           :test #'string=)))))
+
+(defun %dir-initial-loc (dirnode)
+  "A location selecting DIRNODE's initial entry per spec §2.4: the first
+Lisp/sexp file, else the first sub-directory (not the =..= pseudo-entry), else
+the first entry (=..=). Falls back to DIRNODE itself when it is empty."
+  (let* ((entries (dir-node-entries dirnode))
+         (pick (or (find-if #'%sexp-file-node-p entries)
+                   (find-if (lambda (e)
+                              (and (dir-node-p e)
+                                   (not (equal (dir-node-name e) ".."))))
+                            entries)
+                   (first entries))))
+    (if pick
+        (let ((loc (%first-child-loc dirnode)))
+          (loop while (and loc (not (eq (loc-focus loc) pick)))
+                do (setf loc (loc-right loc)))
+          (or loc (%first-child-loc dirnode)))
+        (node->loc dirnode))))
+
+;;; --- selecting a top-level form within a file (extended clal-sedit API) ----
+
+(defun %file-loc-satisfying (file-node predicate)
+  "A loc over FILE-NODE selecting the first child satisfying PREDICATE (a
+function of the child node), or NIL when none does."
+  (loop for loc = (%first-child-loc file-node) then (loc-right loc)
+        while loc
+        when (funcall predicate (loc-focus loc)) do (return loc)))
+
+(defun %file-loc-by-name (file-node name)
+  "A loc over FILE-NODE selecting the top-level form that defines NAME (a
+string/symbol), or NIL when no child defines it."
+  (let ((key (%name-key name)))
+    (%file-loc-satisfying file-node
+                          (lambda (node) (equal key (definition-name node))))))
+
+(defun %file-child-start-lines (file-node)
+  "A list of 1-based start line numbers, one per child of FILE-NODE, found by
+locating each child's verbatim text within the whole file text (so inter-form
+whitespace and comments are accounted for). Returns NIL when the file text or a
+child's text is unavailable, so callers can fall back."
+  (let ((whole (node-text file-node))
+        (children (node-children file-node)))
+    (when (and (stringp whole) children)
+      (loop with pos = 0
+            for child in children
+            for text = (node-text child)
+            for at = (and (stringp text) (plusp (length text))
+                          (search text whole :start2 pos))
+            unless at do (return nil)
+            collect (1+ (count #\Newline whole :end at))
+            do (setf pos (+ at (length text)))))))
+
+(defun %file-loc-by-line (file-node line)
+  "A loc over FILE-NODE selecting the top-level item at or just after LINE (spec
+§2.4/API: the comment or form at LINE), or NIL when line info is unavailable or
+FILE-NODE is empty. The last item is chosen when LINE is past every child."
+  (let ((starts (%file-child-start-lines file-node)))
+    (when starts
+      (let* ((index (or (position-if (lambda (s) (>= s line)) starts)
+                        (1- (length starts)))))
+        (loop for loc = (%first-child-loc file-node) then (loc-right loc)
+              for i from 0
+              while loc
+              when (= i index) do (return loc))))))
+
+(defun sedit-select (session &key name line)
+  "After SEDIT-OPEN on a file, move SESSION's selection to the top-level form
+that defines NAME (a string/symbol), or to the item at/after LINE. Returns T
+when a matching selection was made, NIL otherwise (selection unchanged). Used
+by the extended =(clal-sedit …)= API to open a file focused on a function or
+a line (sedit-bugs-and-design.issue)."
+  (let* ((root (sedit-session-initial session))
+         (loc (when (file-node-p root)
+                (cond (name (%file-loc-by-name root name))
+                      (line (%file-loc-by-line root line))))))
+    (when loc
+      (setf (sedit-state-loc (sedit-session-state session)) loc)
+      t)))
+
 (defun %resolve-open (object recording)
   "Resolve OBJECT to (values ROOT ORIGIN INITIAL-LOC) for SEDIT-OPEN (spec §2)."
   (cond
@@ -205,7 +307,7 @@ the UI asks on leave).")
     ((stringp object)                           ; a path: directory or file
      (if (%directory-path-p object)
          (let ((dir (read-directory object)))
-           (values dir (list :dir object) (%first-child-loc dir)))
+           (values dir (list :dir object) (%dir-initial-loc dir)))
          (let ((file (%open-file-node object)))
            (values file (list :file object) (%first-child-loc file)))))
     (t (error "sedit-open: cannot edit ~S" object))))

@@ -71,6 +71,7 @@ implementations, not here.")
    #:interactor-documentation
    #:activation #:make-activation #:activation-p
    #:activation-interactor #:activation-state
+   #:activation-name #:activation-label #:uniquify-instance-name
    #:*command-interactor* #:*command-activation*
    #:*command-line* #:*command-arguments-text*
    #:*interactor-stack*
@@ -88,4 +89,18 @@ implementations, not here.")
    #:find-interactor-command #:+system-command-word+
    #:call-command #:find-and-run-command #:run-command-line
    #:interactor-loop #:interactor-return
-   #:define-interactor #:define-command #:define-user-command))
+   #:define-interactor #:define-command #:define-user-command
+   ;; interactor templates (windows-and-interactor-templates.issue): a
+   ;; window-instantiable interactor kind + the context its constructor gets
+   #:template-context #:make-template-context #:template-context-p
+   #:template-context-window #:template-context-frame #:template-context-stack
+   #:template-context-target
+   #:template-context-save-continuation #:template-context-quit-continuation
+   #:interactor-template #:interactor-template-p #:make-interactor-template
+   #:interactor-template-name #:interactor-template-display-name
+   #:interactor-template-description #:interactor-template-interactor
+   #:interactor-template-constructor #:interactor-template-config-name
+   #:*interactor-templates* #:register-interactor-template
+   #:find-interactor-template #:list-interactor-templates
+   #:interactor-template-names #:instantiate-interactor-template
+   #:define-interactor-template))

@@ -1,0 +1,350 @@
+* general ncurses user interface
+
+We must start thinking a little more generally of the ncurses user interface.
+
+I want that clautolisp starts in the dumb terminal mode REPL.
+
+We have an inspector (only in the debugger for now, we need to provide
+a public API for it: (clal-inspect object)), and an editor
+(clal-sedit) that work in the dumb terminal.
+
+We have the debugger working in the dumb terminal.
+
+And with cadtui, we're getting a CAD working in the dumb terminal
+too.
+
+Now, when we want to benefit from the 2D terminal capabilities with
+ncurses or PDcurses, perhaps we would want to do it for all these
+features.  Notably in conjuction with cadtui, which introduces the
+notion of window, menus, and views.  So far cadtui is  envisionned to
+run on the dumb terminal, but it would also be a good match to a 2D
+terminal with ncurses/PDcurses.
+
+Now, we won't be re-implementing a whole emacs, but this user
+interface would be implemented as A mini emacs. Ie. we provide some
+mechanisms, and built-in commands, but the user may define his own
+commands.  built-in commands are written in Common Lisp, and
+user-defined commands are written in autolisp, and can be hooked to
+key bindings to be invoked from the ncurses TUI, or they can be
+invoked by command name or abbreviation in the dumb UI (as we already
+specified it).
+
+We'll take the notion of frame from emacs. A frame is a set of windows
+that is displayed in a GUI unit (what a GUI usually calls a window). A
+dumb terminal is a frame containing a single window. A 2D terminal is
+a frame that can display with ncurses several windows.
+
+* frames
+
+So our systems starts up with a single dumb-terminal frame, and we may
+create new frames when needed.
+
+| name           | description                               |
+|----------------+-------------------------------------------|
+| tty-frame      | dumb terminal frame                       |
+| ncurses-frame  | ncurses 2D terminal frame                 |
+| PDcurses-frame | PDcurses 2D terminal frame                |
+| vdt-frame      | abstract, ncurses-frame or PDcurses-frame |
+
+To hide the implementation details, we could call both ncurses-frame
+and PDcurses-frame vdt-frame (Video Display Terminal, assuming that we
+skip directly to cursor addressable and smart terminals (since we can
+do ncurses on it)).
+
+All the functions defined here are prefixed by clal- when exposed to
+autolisp.
+All the object types defined here are opaque types.
+
+** (frame-list) --> list of frame
+
+Initially, only one tty-frame instance, representing stdin/stdout
+
+** (selected-frame) --> frame
+
+return the currently active frame
+
+** (make-frame options)
+
+options is a list of:
+
+- (name . STRING)	The frame should be named STRING.
+- (width . NUMBER)	The frame should be NUMBER characters in width.
+- (height . NUMBER)	The frame should be NUMBER text lines high.
+- (minibuffer . t)	The frame should have a minibuffer.
+- (minibuffer . nil)	The frame should have no minibuffer.
+- (device . tty)	The frame should be displayed on a dumb terminal device.
+- (device . vdt)	The frame should be displayed on a 2D terminal device.
+
+We could have several tty-frame on the list. Only the selected frame
+is working. For the dumb terminal this wouldn't make a difference,
+since all tty-frame share the same terminal flow, but logically we'd
+have a different context and if later we work with multiple devices,
+this could be differentiated.
+
+We will definitely have several vdt-frame, and selecting one or
+another would redisplay the screen. Selecting back a tty-frame would
+swap the terminal back on the tty page.
+
+** (frame-name frame) -> string
+** (set-frame-name frame string)
+** (frame-width frame) -> integer
+** (frame-height frame) -> integer
+** (set-frame-width frame integer)
+** (set-frame-height frame integer)
+** (frame-minibuffer frame) -> nil or buffer
+** (frame-device frame) -> (member tty vdt)
+
+** (delete-frame frame)
+
+Remove the frame from the frame list and deletes it.
+Nothing should use this frame anymore.
+
+** (select-frame frame)
+
+Selects the frame.
+
+When a tty-frame is selected, the terminals goes back to the initial
+page, using normal tty settings and line discipline.
+
+When a vdt-frame is selected, the terminal goes to 2D ncurses/PDcurses
+mode. If the frame size is less than the terminal size, then a border
+may be displayed centered in the terminal (with the background
+unchanged). Otherwise the whole terminal size is used (the frame size
+is updated).
+
+When the terminal size changes (SIGWINCH) the frame size should be
+updated too.
+
+** (terminal-device-supports-vdt-p) -> boolean
+
+indicates whether we can create and use a vdt-frame.
+
+* windows
+
+frames may contain one or more windows. One of the window of a frame
+can be a special window called the ~*minibuffer*~ which is used to
+input commands and arguments. Only vdt-frame can meaningfully have a
+~*minibuffer*~ window, which is always 1 single line at the bottom of
+the frame. tty-frame have an implicit minibuffer since they use line
+discipline.
+
+Windows can be laid out horizontally and/or vertically in the frame
+and they always take the whole space of the frame.  Windows usually
+have a status line at the bottom of the window, which display the
+title of the window and other status information.  The active window
+has a status line displayed is a special face different from the face
+used for inactive windows to let the user identify it clearly.
+
+A face is a set of display parameters (bold, underline, italic,
+blinking, inverted, foreground color, background color), and are
+configurable.
+
+** (make-window options) -> window
+
+options is a list of options
+- (name . "string") the name/title of the window
+
+The window is created in the selected frame.  
+
+If the selected frame has no window so far, it speads over the whole
+frame, with layout:
+#+begin_example
+(whole <window-index>)
+#+end_example
+
+If there is already a minibuffer window, then the layout becomes:
+#+begin_example
+(horizontal <window-index> <minibuffer-index>)
+#+end_example
+
+If there is already a single non-minibuffer window, then the layout
+becomes:
+#+begin_example
+(horizontal <previous-window-index> <window-index>)
+#+end_example
+
+Note: the minibuffer is always in:
+#+begin_src 
+(horizontal … <minibuffer-index>)
+#+end_src
+
+If there are already windows, then the layout becomes:
+#+begin_example
+(horizontal (horizontal … <window-index>) <minibuffer-index>)
+#+end_example
+
+** (window-name window) --> string
+** (set-window-name window string)
+** (window-list frame minibufp)
+
+frame = nil list all the windows in all the frame. Otherwise only list
+the windows in the given frame. (Note: the tty-frame has one repl
+window, and no minibuffer window).
+
+minibufp = nil: don't return the minibuffers. = t: includes the
+minibuffers in the resulting list.
+
+** (delete-window window)
+
+Removes the window from the frame. This reorganizes the layout.
+
+** (selected-window) --> window
+
+Returns the active window in the selected frame.
+
+** (select-window window)
+
+Activates the window.
+Make window’s frame the selected frame and WINDOW that frame’s
+selected window.
+
+
+* example of operation
+
+We start in the tty-frame "autolisp", the initial frame.
+
+If we run ~(clal-sedit 'foo)~, we edit the function foo, in the
+tty-frame, with the line commands.
+
+
+
+But we may also run: ~(call-with-temp-window 'clal-sedit '(foo))~
+or: ~(with-temp-window (lambda (window) (clal-sedit 'foo)))~
+
+#+begin_src lisp
+  (let ((temp-frame (make-frame '((name . "temp") (device . vdt) (minibuffer . t)))))
+         ;; we may use the minibuffer for M-x and , commands
+    (select-frame temp-frame)
+    (let ((temp-window (make-window '((name . "temp")))))
+      (select-window temp-window)
+      (prog1 (clal-sedit 'foo)
+         (delete-frame temp-frame)))) ; this deletes the windows inside the frame.
+#+end_src
+
+in which case, sedit will use the features of the 2D terminal and the
+window interactor will process char discipline input and mapping to
+key to commands.
+
+The important aspect is that we are using ncurses/PDcurses temporarily
+in the middle of a dumb terminal session.
+
+The same mechanism is used by aldo when the --debuging-ui
+ncurses/PDcurses option is given.
+
+* ATTENTION - no threads
+
+ATTENTION: We don't have multiple threads, so displaying and updating
+of window, and command input and processing (by interactors, or REPL
+input), is still done by the single thread, In the example above, by
+the clal-sedit function. It must be programmed explicitely to install
+its key binding or commands in an interactor and stack it to benefit
+from the possibility of calling the underlying interactor ie. the Lisp
+REPL, while editing. The window manager can process input only when
+the function calls the autolisp READ-LINE or READ-CHAR (cf cadtui
+design, we will have to reconcile both views but we need to use the
+same mechanism here, since we have no threads).
+
+Actually, this is part of what an emacs is: the "applications" are
+implemented as a set of independent commands put in dispatching
+tables, like we have in the case of the debugger. It's a single
+interactor loop that gets the commands and dispatch them to the right
+function, logically to inspect, sedit, navi, aldo or lisp. The
+addition of windows doesn't change this. If we created a frame with
+eg. a REPL and two sedit on two different files, to make things going,
+we would have to assemble one stack of interactor for each window, one
+with the LISP interactor for the REPL window, and two stacks with
+sedit interactors but with different states! (cf aldo, IIRC we had to
+deal with this state for the interactors).
+In the example above, clal-sedit must deal with the interactors
+explicitely both in the tty case and in the vdt case using the window
+parameter (actually (selected-window)).
+
+* stack
+
+So we'll need a new stack interactor.
+
+Les frames sont actuellement affichés seulement avec le nom
+de la fonction et la ligne où se trouve l'appel, je suppose.
+
+Je m'attendrais à avoir pour les frames d'appel de fonction, outre le
+nom de la fonction, les arguments (prin1'ed avec des restrictions
+~*print-length* ~=3~ ~*print-length* ~=1~ etc (mais aussi configurable)).
+
+En navigant sur les frames on peut les "ouvrir" pour afficher les
+bindings locaux. (et les refermer).
+
+La commande d'évaluation se fait dans le scope de la frame
+sélectionnée.
+
+Il  faut aussi  prévoir une  protection, dans  le cas  où il  y a  une
+recursivités trés  profonde, ne pas  afficher des milliers  de frames.
+S'arrêter à un nombre raisonnable (configurable), et si on actionne la dernière
+ligne, on ajoute des frames  supplémentaires (une indication du nombre
+total de frames serait utile).
+
+Voici un exemple du backtrace dans ~*sldb*~:
+
+#+begin_example
+Backtrace:
+  0: (ccl::call-check-regs break "hi")
+      Locals:
+        fn = break
+        args = ("hi")
+        old-regs = nil
+  1: (ccl::cheap-eval (break "hi"))
+  2: (swank::eval-region "(break \"hi\")
+     ")
+      Locals:
+        string = "(break \"hi\")
+                 "
+        stream = #<string-input-stream  #x302002B3DCFD>
+        values = nil
+        - = (break "hi")
+        form = (break "hi")
+  3: ((:internal swank-repl::repl-eval))
+  4: (swank-repl::track-package #<ccl:compiled-lexical-closure (:internal swank-repl::repl-eval) #x302002B3DD2F>)
+  5: ((:internal swank-repl::repl-eval))
+  6: (swank::call-with-retry-restart "Retry SLIME REPL evaluation request." #<ccl:compiled-lexical-closure (:internal swank-r..
+  7: ((:internal swank-repl::repl-eval))
+#+end_example
+
+Voici les commandes de base fournies par sldb, pour s'en inspirer dans
+la fenêtre stack, et dans aldb par la suite.
+
+#+begin_example
+Commands to examine the selected frame:
+   t   - toggle details (local bindings, CATCH tags)
+   v   - view source for the frame (in the source window)
+   e   - eval in frame
+   d   - eval in frame, pretty-print result
+   D   - disassemble
+   i   - inspect
+
+Commands to invoke restarts:   (pass thru to the underlying interactor = aldo)
+   q   - quit
+   a   - abort
+   c   - continue
+   0-9 - restart shortcuts
+   I   - invoke restart by name
+
+Commands to navigate frames:
+   n   - down
+   p   - up
+   M-n - down, with details
+   M-p - up, with details
+   TAB - cycle between restarts & backtrace   -- no restart in autolisp
+   <   - beginning of backtrace
+   >   - end of backtrace                     -- of displayed backtrace, We can type RET to
+                                              -- expand when there are more frames below.
+#+end_example
+
+* source
+
+J'ai setting navigator = sexp.
+
+Currently we have tracking of stack frame -> source line, which is nice.
+But we want to have navi or sedit in the source window.
+I guess you implemented it ad-hoc, but when we integrate with aldo,
+we just need to configure the right interactor as "source" window
+interactor, ie. the navi or the sedit interactor (with commands to
+swap interactors, like in the tty).

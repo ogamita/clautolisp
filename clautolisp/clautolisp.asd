@@ -1,3 +1,11 @@
+;;;; The independent tui-core module (TUI module spec §10) lives in its own
+;;;; standalone .asd. Load it here at read time so that every dependent naming
+;;;; "tui-core" (the umbrella clautolisp system, the ncurses UI, the curses /
+;;;; charms backends) resolves it — in every context that loads clautolisp.asd,
+;;;; with no source-registry configuration required.
+(asdf:load-asd (merge-pathnames "autolisp-debug-ui-tui/tui-core.asd"
+                                (or *load-truename* *default-pathname-defaults*)))
+
 (asdf:defsystem "clautolisp"
   :description "Aggregate clautolisp implementation systems."
   :author "Codex"
@@ -19,7 +27,7 @@
                "clautolisp/autolisp-interactor"
                "clautolisp/autolisp-debug-ui"
                "clautolisp/autolisp-debug-ui-dumb"
-               "clautolisp/autolisp-debug-ui-tui"
+               "tui-core"
                "clautolisp/autolisp-debug-ui-ncurses")
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/tests")))
@@ -215,12 +223,18 @@
                "clautolisp/autolisp-host"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-sedit"
+               ;; clal-sedit recalls a file-loaded function's source by its
+               ;; recorded position (POSITION-OF); sedit-bugs-and-design.issue.
+               "clautolisp/autolisp-source-map"
                "uiop")
   :serial t
   :components
   ((:file "autolisp-builtins-core/source/package")
    (:file "autolisp-builtins-core/source/secureload")
-   (:file "autolisp-builtins-core/source/api"))
+   (:file "autolisp-builtins-core/source/api")
+   ;; the source-file editing module (sedit-bugs-and-design.issue) — after api,
+   ;; it uses the AutoLISP printer defined there.
+   (:file "autolisp-builtins-core/source/source-file"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-builtins-core/tests")))
   :perform (asdf:test-op (op system)
@@ -317,6 +331,9 @@ identity / TEMPPREFIX stamping, option value parsers)."
                "clautolisp/autolisp-init-files"
                ;; REPL comma-commands (interactors): ,date ,uptime ,help ,quit
                "clautolisp/autolisp-interactor"
+               ;; the *AUTOLISP* REPL interactor + lisp window template now live
+               ;; in this library; the tool installs its rich per-turn hooks.
+               "clautolisp/autolisp-repl"
                ;; aldo debugger: the run loop can start a debug session under
                ;; --debugger-ui / --on-error debug (debugger §10).
                "clautolisp/autolisp-debug"
@@ -324,21 +341,39 @@ identity / TEMPPREFIX stamping, option value parsers)."
                "clautolisp/autolisp-debug-ui"
                "clautolisp/autolisp-debug-ui-dumb"
                "clautolisp/autolisp-debug-ui-ncurses"
+               ;; aldb (Emacs) RPC shim — registers the :aldb / :emacs UIs so
+               ;; --aldb-stdio drives the debugger over the process stdin/stdout.
+               "clautolisp/autolisp-debug-ui-emacs"
+               ;; aldb TCP listener (--aldb-listen, debugger §10): the run loop
+               ;; opens a socket and drives the emacs-ui over the accepted
+               ;; connection. NB new quicklisp dep — bake into the Dockerfile +
+               ;; CI pre-warm/setup-lisp loaders (clautolisp-quicklisp-ci-deps).
+               "usocket"
                ;; dribble tee/echo streams (dribble.issue)
                "trivial-gray-streams"
+               ;; the aldo companion thread runs beside the REPL (the lisp
+               ;; environment's debugger runs on its own thread).
+               "bordeaux-threads"
                "uiop")
   :serial t
   :components
   ((:file "tools/clautolisp/source/package")
    (:file "tools/clautolisp/source/version")
    (:file "tools/clautolisp/source/dribble")
+   ;; the sleeping-aldo interactor: a subset of aldo's breakpoint commands
+   ;; usable from the Lisp REPL when the full debugger is not active
+   ;; (aldo-command-from-repl.issue); repl-loop pushes it below *AUTOLISP*.
+   (:file "tools/clautolisp/source/sleeping-aldo")
    (:file "tools/clautolisp/source/main")))
 
 (asdf:defsystem "clautolisp/clautolisp-tool/tests"
   :description "FiveAM tests for the clautolisp tool (dribble streams and logic)."
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/clautolisp-tool" "fiveam")
+  ;; usocket + bordeaux-threads: the aldb live-socket integration test drives a
+  ;; real listener over a client socket in a second thread (both reach here
+  ;; transitively via clautolisp-tool; named explicitly for the socket test).
+  :depends-on ("clautolisp/clautolisp-tool" "fiveam" "usocket" "bordeaux-threads")
   :serial t
   :components
   ((:file "tools/clautolisp/tests/package")
@@ -346,6 +381,8 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "tools/clautolisp/tests/debugger-options-tests")
    (:file "tools/clautolisp/tests/transmit-tests")
    (:file "tools/clautolisp/tests/aldo-conf-tests")
+   (:file "tools/clautolisp/tests/debugger-ui-switch-tests")
+   (:file "tools/clautolisp/tests/aldb-socket-tests")
    (:file "tools/clautolisp/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -500,6 +537,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-builtins-core/tests/encoding-roundtrip-tests")
    (:file "autolisp-builtins-core/tests/path-dotdot-tests")
    (:file "autolisp-builtins-core/tests/case-insensitive-paths-tests")
+   (:file "autolisp-builtins-core/tests/source-file-tests")
    (:file "autolisp-builtins-core/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -565,6 +603,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-debug/source/metadata")
    (:file "autolisp-debug/source/breakpoints")
    (:file "autolisp-debug/source/virtual-breakpoints")
+   (:file "autolisp-debug/source/line-breakpoints")
    (:file "autolisp-debug/source/watch")
    (:file "autolisp-debug/source/jump")
    (:file "autolisp-debug/source/snapshot")
@@ -650,6 +689,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-sedit/tests/session-tests")
    (:file "autolisp-sedit/tests/modes-tests")
    (:file "autolisp-sedit/tests/clipboard-tests")
+   (:file "autolisp-sedit/tests/template-tests")
    (:file "autolisp-sedit/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -666,7 +706,8 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-interactor/source/command")
    (:file "autolisp-interactor/source/parse")
    (:file "autolisp-interactor/source/input")
-   (:file "autolisp-interactor/source/interactor"))
+   (:file "autolisp-interactor/source/interactor")
+   (:file "autolisp-interactor/source/template"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-interactor/tests")))
   :perform (asdf:test-op (op system)
@@ -685,10 +726,41 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-interactor/tests/command-tests")
    (:file "autolisp-interactor/tests/interactor-tests")
    (:file "autolisp-interactor/tests/shell-escape-tests")
+   (:file "autolisp-interactor/tests/template-tests")
    (:file "autolisp-interactor/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (uiop:symbol-call :clautolisp.interactor.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/autolisp-repl"
+  :description "The AutoLISP REPL interactor (*AUTOLISP*) and the lisp window template, as a library so a Lisp window is instantiable below the tool (windows-and-interactor-templates.issue). Rich per-turn behaviour is injected by the clautolisp tool through hooks."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime" "clautolisp/autolisp-interactor")
+  :serial t
+  :components
+  ((:file "autolisp-repl/source/package")
+   (:file "autolisp-repl/source/repl"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-repl/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-repl/tests"
+  :description "FiveAM tests for the AutoLISP REPL interactor library."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-repl" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-repl/tests/package")
+   (:file "autolisp-repl/tests/repl-tests")
+   (:file "autolisp-repl/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.repl.tests
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/autolisp-debug-ui"
@@ -703,6 +775,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :serial t
   :components
   ((:file "autolisp-debug-ui/source/package")
+   (:file "autolisp-debug-ui/source/print-syntax")
    (:file "autolisp-debug-ui/source/protocol")
    (:file "autolisp-debug-ui/source/session")
    (:file "autolisp-debug-ui/source/settings")
@@ -794,31 +867,33 @@ identity / TEMPPREFIX stamping, option value parsers)."
                          (uiop:symbol-call :clautolisp.debug.tests
                                            :run-all-tests)))
 
-(asdf:defsystem "clautolisp/autolisp-debug-ui-tui"
-  :description "Thin terminal-UI abstraction + mock backend for the ncurses debugger UI (debugger §19.3)."
-  :author "Codex"
-  :license "AGPL-3.0"
-  :depends-on ()
-  :serial t
-  :components
-  ((:file "autolisp-debug-ui-tui/source/package")
-   (:file "autolisp-debug-ui-tui/source/tui"))
-  :in-order-to ((asdf:test-op
-                 (asdf:test-op "clautolisp/autolisp-debug-ui-ncurses/tests")))
-  :perform (asdf:test-op (op system)
-                         (declare (ignore op system))
-                         :success))
+;; The tui-core module lives in its own standalone system (TUI module spec §10);
+;; see autolisp-debug-ui-tui/tui-core.asd, loaded at the top of this file so
+;; dependents that name "tui-core" resolve without source-registry setup.
 
 (asdf:defsystem "clautolisp/autolisp-debug-ui-ncurses"
   :description "Four-pane ncurses debugger UI on the tui abstraction (debugger §19)."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-debug-ui"
-               "clautolisp/autolisp-debug-ui-tui")
+               "tui-core"
+               ;; the ncurses UI routes ,<line> minibuffer commands through the
+               ;; shared ALDO command vocabulary (dumb UI-RUN-COMMAND with its
+               ;; output redirected into a pane); reuse rather than reimplement.
+               "clautolisp/autolisp-debug-ui-dumb"
+               ;; sedit runs live in a window: instantiate + drive its interactor
+               ;; template (windows-and-interactor-templates.issue).
+               "clautolisp/autolisp-interactor"
+               "clautolisp/autolisp-sedit"
+               ;; the repl pane runs a live *AUTOLISP* instance over the shared
+               ;; evaluator (the relocated REPL interactor + "lisp" template).
+               "clautolisp/autolisp-repl")
   :serial t
   :components
   ((:file "autolisp-debug-ui-ncurses/source/package")
-   (:file "autolisp-debug-ui-ncurses/source/ncurses-ui"))
+   (:file "autolisp-debug-ui-ncurses/source/layout")
+   (:file "autolisp-debug-ui-ncurses/source/ncurses-ui")
+   (:file "autolisp-debug-ui-ncurses/source/config-persist"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-debug-ui-ncurses/tests")))
   :perform (asdf:test-op (op system)
@@ -882,6 +957,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
                ;; shell-escape tests of bang.issue: the new tests reported
                ;; neither pass nor fail, because nothing invoked them).
                "clautolisp/autolisp-interactor/tests"
+               "clautolisp/autolisp-repl/tests"
                "clautolisp/autolisp-source-map/tests"
                "clautolisp/autolisp-runtime/tests"
                "clautolisp/drawing/tests"
@@ -905,6 +981,8 @@ identity / TEMPPREFIX stamping, option value parsers)."
                            (uiop:symbol-call :clautolisp.autolisp-reader.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.interactor.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.repl.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-runtime.tests
                                              :run-all-tests)

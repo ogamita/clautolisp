@@ -1,0 +1,100 @@
+* ncurses debugger UI: key bindings and a user binding API
+
+How keys are bound in the four-pane ncurses UI today, and a proposed AutoLISP
+API for user-defined bindings. Companion to ncurses-windows.issue.
+
+** How bindings work today (Common Lisp)
+
+Two hard-coded layers in =clautolisp/autolisp-debug-ui-ncurses/source/ncurses-ui.lisp=:
+
+1. *Key dispatch* — =HANDLE-KEY= is a =cond= over the key returned by
+   =tui-read-key= (a character or a keyword =:up/:down/:enter/:escape/…=). Each
+   clause calls an action (=cmd-continue=, =nav-move=, =toggle-breakpoint=,
+   =inspect-loop=, …) and returns a resume directive or NIL. Prefix keys read a
+   further key themselves:
+   - =C-w= (=HANDLE-WINDOW-COMMAND=) — the window commands (select/swap/split/
+     resize/reset), another =cond=.
+   - =Esc= (=META-COMMAND=) — =Esc-x= is M-x.
+
+2. *Named commands* — =*NCURSES-COMMANDS*= is an alist mapping a command NAME
+   (string) to =(lambda (ui session hit arg) -> directive-or-nil)=. It is
+   reached by:
+   - *M-x* — read a command NAME in the minibuffer, run it.
+   - *,* (comma) — read a whole command LINE =NAME ARGS…= in the minibuffer,
+     run it.
+   This registry is the seed for user bindings: a binding maps a key sequence
+   to one of these names (or, later, to an AutoLISP function).
+
+Not yet covered: the full aldo / sedit / navi *line* vocabulary. Those live in
+the dumb UI's interactor dictionaries (=clautolisp.interactor=, the
+ALDO/NAVI/SEDIT interactors). Reaching them from ncurses — e.g. =,sedit load=
+to enter SEDIT — needs the *per-window interactor stacks under an umbrella
+ncurses interactor* (pjb): each window owns an interactor stack; the umbrella
+catches window commands and routes the rest to the active window's stack. Until
+then =,= and M-x only reach =*NCURSES-COMMANDS*=. Wiring =*NCURSES-COMMANDS*=
+(and the key dispatch) onto the shared command table (F2 in
+clautolisp-debugger-ui-implementation-plan.org) is the unifying step: one
+command set, three surfaces.
+
+** Key-sequence syntax
+
+Emacs-style, parsed to a sequence of key tokens:
+- a bare character: ="b"=, ="4"=, =">"=
+- =C-<c>= control, =M-<c>= meta (Esc prefix, or the 8th-bit / terminal-specific
+  meta encoding when available), =S-<c>= shift for named keys
+- named keys: =RET SPC TAB DEL ESC UP DOWN LEFT RIGHT HOME END= …
+- a *sequence* separated by spaces makes a prefix chain: ="C-x C-f"=,
+  ="C-w >"=. Prefixes with no complete binding wait for the next key (an
+  active keymap node); a leaf runs its command.
+
+** Proposed AutoLISP binding API
+
+Bindings are AutoLISP-visible so a user's init file / program can customize the
+debugger. A *user keymap* shadows the predefined one; unbound user keys fall
+through to the built-ins.
+
+| form                                             | effect |
+|--------------------------------------------------+--------|
+| =(clal-binding "C-x C-f" "sedit load")=          | bind a key sequence to a command LINE (run as if typed after =,=): the words go through the command table / interactors |
+| =(clal-binding "b" '(user-breaks))=              | bind to an AutoLISP FORM/함수: a function designator or a quoted form evaluated (in the stopped frame) when the key fires |
+| =(clal-binding "M-r" "window-size-balance")=     | bind to a NAMED command from =*NCURSES-COMMANDS*= |
+| =(clal-remove-binding "C-x C-f")=                | remove a user binding (revert to the built-in, if any) |
+| =(clal-map-bindings (lambda (key command) …))=   | iterate every user binding, KEY a canonical key-sequence string, COMMAND its bound value |
+| =(clal-binding-lookup "C-w >")=                  | return the command bound to a key sequence (user map first, then built-in), or nil |
+| =(clal-define-ui-command "user-breaks" (lambda () …))= | register a NAMED command (usable from M-x, =,=, and as a binding target) implemented in AutoLISP |
+
+Semantics:
+- COMMAND value is one of: a *string* naming a command or a command line; a
+  *function designator*; or a *form* to evaluate. Strings route through the
+  command table (so both window commands and, once wired, aldo/sedit commands
+  are reachable); functions/forms run user code.
+- The user keymap is a prefix tree (so =C-x= can be a prefix even though the
+  built-ins do not use it). Binding a sequence whose prefix is a built-in leaf
+  shadows that leaf with a prefix.
+- Bindings persist with the aldo configuration alongside the window-layout
+  save/load (=C-w s/l=, ncurses-windows.issue), under a named binding set.
+- The same map should serve the ncurses and (eventually) aldb surfaces; the tui
+  (dumb) line UI keeps its typed commands but can share =clal-define-ui-command=.
+
+** Implementation sketch
+
+1. Replace the =cond= dispatch with a *keymap* structure (prefix tree of
+   key-token -> command | sub-keymap), one built-in map + one user map layered
+   over it; =HANDLE-KEY= walks the merged map, accumulating a prefix until a
+   leaf.
+2. Generalise =*NCURSES-COMMANDS*= into the command table (F2) so a name
+   resolves the same command in every UI.
+3. Expose =clal-binding= / =clal-remove-binding= / =clal-map-bindings= /
+   =clal-define-ui-command= as CL-INTERNAL prelude builtins over the user
+   keymap + command table (mirroring =clal-define-command= for the interactors,
+   see interactor framework).
+4. Persist the user keymap in =aldo.conf= (config-get/config-set), loadable per
+   session.
+
+** Acceptance
+
+- A user can, from AutoLISP, bind a key to a named command, a command line, and
+  a function; the binding fires in the ncurses UI; =clal-map-bindings= lists it;
+  =clal-remove-binding= reverts it.
+- User bindings shadow built-ins; prefix chains (=C-x C-f=) work.
+- FiveAM tests over the mock screen for lookup / shadow / prefix / remove.

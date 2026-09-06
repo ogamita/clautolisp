@@ -5314,6 +5314,96 @@ debugger UI is loaded."
              (and doc (clautolisp.autolisp-runtime:autolisp-string-value doc))))
   nil)
 
+;;; --- user key bindings (ncurses-key-bindings.issue) --------------------
+
+(defun %clal-key-string (key who)
+  (clautolisp.autolisp-runtime:autolisp-string-value key))
+
+(defun builtin-clal-binding (key command)
+  "Bind KEY (an Emacs-style key-sequence string, e.g. \"C-x C-f\") to COMMAND in
+the debugger UI's user keymap (ncurses-key-bindings.issue). COMMAND is a command
+name/line STRING (routed through the command table — window, named, and aldo
+commands), or an AutoLISP function designator / form run when the key fires (in
+the stopped frame). User bindings shadow the built-ins; prefix chains work.
+Returns KEY, or nil when the debugger UI is not loaded."
+  (when clautolisp.autolisp-runtime:*ui-binding-hook*
+    (funcall clautolisp.autolisp-runtime:*ui-binding-hook*
+             :bind (%clal-key-string key "CLAL-BINDING") command)
+    key))
+
+(defun builtin-clal-remove-binding (key)
+  "Remove the user binding at KEY (revert to the built-in, if any). Returns T
+when a binding was removed, else nil."
+  (and clautolisp.autolisp-runtime:*ui-binding-hook*
+       (funcall clautolisp.autolisp-runtime:*ui-binding-hook*
+                :unbind (%clal-key-string key "CLAL-REMOVE-BINDING"))
+       (clautolisp.autolisp-runtime:intern-autolisp-symbol "T")))
+
+(defun builtin-clal-binding-lookup (key)
+  "The command bound to KEY in the user keymap (as originally given to
+CLAL-BINDING), or nil."
+  (when clautolisp.autolisp-runtime:*ui-binding-hook*
+    (funcall clautolisp.autolisp-runtime:*ui-binding-hook*
+             :lookup (%clal-key-string key "CLAL-BINDING-LOOKUP"))))
+
+(defun builtin-clal-map-bindings (function)
+  "Call FUNCTION with (KEY-STRING COMMAND) for every user binding; returns nil.
+A no-op unless the debugger UI is loaded."
+  (when clautolisp.autolisp-runtime:*ui-binding-hook*
+    (funcall clautolisp.autolisp-runtime:*ui-binding-hook* :map function))
+  nil)
+
+(defun builtin-clal-define-ui-command (name function)
+  "Register a debugger-UI named command NAME (a string) implemented by the
+AutoLISP FUNCTION (applied to the command's argument string), usable from M-x,
+`,', and as a CLAL-BINDING target. Returns NAME, or nil when the UI is absent."
+  (when clautolisp.autolisp-runtime:*ui-binding-hook*
+    (funcall clautolisp.autolisp-runtime:*ui-binding-hook*
+             :define-command (%clal-key-string name "CLAL-DEFINE-UI-COMMAND") function)
+    name))
+
+;;; --- frames / windows / faces (opaque handles; TUI module spec) --------
+;;; These reach the debugger UI's tui-core objects through *ui-object-hook*.
+;;; Frames and windows cross into AutoLISP as opaque, type-safe handles
+;;; (#<WINDOW "name" …>, (type …) -> WINDOW); faces are named by strings. All
+;;; are no-ops (nil) unless a debugger UI is loaded.
+
+(defmacro %define-clal-ui-object-builtin (name op lambda-list)
+  "Define BUILTIN-<NAME> forwarding LAMBDA-LIST to *ui-object-hook* under OP."
+  `(defun ,(intern (format nil "BUILTIN-~A" name)) ,lambda-list
+     (when clautolisp.autolisp-runtime:*ui-object-hook*
+       (funcall clautolisp.autolisp-runtime:*ui-object-hook*
+                ,op ,@(remove '&optional lambda-list)))))
+
+(%define-clal-ui-object-builtin clal-make-frame     :make-frame     (&optional options))
+(%define-clal-ui-object-builtin clal-frame-list     :frame-list     ())
+(%define-clal-ui-object-builtin clal-selected-frame :selected-frame ())
+(%define-clal-ui-object-builtin clal-select-frame   :select-frame   (frame))
+(%define-clal-ui-object-builtin clal-delete-frame   :delete-frame   (frame))
+(%define-clal-ui-object-builtin clal-frame-name     :frame-name     (frame))
+(%define-clal-ui-object-builtin clal-make-window     :make-window     (&optional options))
+(%define-clal-ui-object-builtin clal-window-list     :window-list     (&optional frame))
+(%define-clal-ui-object-builtin clal-selected-window :selected-window ())
+(%define-clal-ui-object-builtin clal-select-window   :select-window   (window))
+(%define-clal-ui-object-builtin clal-delete-window   :delete-window   (window))
+(%define-clal-ui-object-builtin clal-window-name     :window-name     (window))
+(%define-clal-ui-object-builtin clal-define-face     :define-face
+                                (name &optional fg bg bold underline invert))
+(%define-clal-ui-object-builtin clal-face-parameters :face-parameters (name))
+(%define-clal-ui-object-builtin clal-list-faces      :list-faces      ())
+;; window drawing operations (tty-safe; default to the selected window)
+(%define-clal-ui-object-builtin clal-clear-window   :clear-window   (&optional window))
+(%define-clal-ui-object-builtin clal-move-cursor-to :move-cursor-to (row col &optional window))
+(%define-clal-ui-object-builtin clal-window-put     :window-put     (row col string &optional face window))
+
+(defun builtin-clal-call-with-temp-window (options function)
+  "Create a temporary window per OPTIONS, apply FUNCTION to its handle, and
+delete the window afterwards (even on non-local exit). Returns FUNCTION's value.
+A no-op (nil) unless the debugger UI is loaded."
+  (when clautolisp.autolisp-runtime:*ui-object-hook*
+    (funcall clautolisp.autolisp-runtime:*ui-object-hook*
+             :with-temp-window options function)))
+
 (defun %clal-dribble-interactors (interactors)
   "Convert the CLAL-DRIBBLE INTERACTORS argument to what the dribble hook
 expects: NIL -> NIL (consult *CLAL-DRIBBLE-INTERACTORS*); the symbol T ->
@@ -5464,28 +5554,183 @@ attached, print a note instead of silently doing nothing."
         (finish-output *standard-output*)
         nil)))
 
-(defun builtin-clal-sedit (&optional object)
-  "Edit OBJECT with the sedit structural editor (spec §2): no argument -> a
-stand-alone form starting at nil; a symbol -> recall its recorded definition; a
-string -> a file or directory path; any other value -> edited as a sexp. Pushes
-the SEDIT interactor over the current stack (design-revision D9) and drives it
-until `q' pops it, then returns the edited object. Sets
-CLAUTOLISP.SEDIT:*CLAL-SEDIT-INITIAL-FORM* / *CLAL-SEDIT-LAST-RESULT*."
-  (let ((session (clautolisp.sedit:sedit-open (%clal-sedit-target object)
+;; Install the sedit *window template*'s runtime hooks (windows-and-interactor-
+;; templates.issue): the template (autolisp-sedit) is dependency-free and keeps
+;; these as NIL specials; this system, which owns the AutoLISP coupling, fills
+;; them so a sedit opened in a window evaluates/loads/debugs exactly as
+;; (clal-sedit …) does. Same shape as the *default-on-quit-policy* install.
+(setf clautolisp.sedit:*sedit-eval-hook*       #'%clal-sedit-eval-hook
+      clautolisp.sedit:*sedit-eval-print-hook* #'%clal-sedit-eval-print-hook
+      clautolisp.sedit:*sedit-load-hook*       #'%clal-sedit-load-hook
+      clautolisp.sedit:*sedit-debug-hook*      #'%clal-sedit-debug-hook)
+
+(defun %clal-sedit-source-file-of (name)
+  "The existing source file that defines the function named NAME (a string), or
+NIL: the file recorded (POSITION-OF) for the first compound form of the
+function's body. A REPL-defined function has none (its position, if any, names
+=<repl>=, which is not a real file)."
+  (let ((fn (ignore-errors (clautolisp.autolisp-runtime:lookup-function
+                            (clautolisp.autolisp-runtime:intern-autolisp-symbol name)))))
+    (when (typep fn 'clautolisp.autolisp-runtime:autolisp-usubr)
+      (dolist (form (clautolisp.autolisp-runtime:autolisp-usubr-body fn))
+        (when (consp form)
+          (let ((position (clautolisp.source:position-of form)))
+            (when position
+              (let ((file (clautolisp.source:source-position-file position)))
+                (when (and file (ignore-errors (probe-file file)))
+                  (return file))))))))))
+
+(defun %file-lines->string (file)
+  "FILE's contents as one string (newline-joined), read like the debugger's
+source display (CLAUTOLISP.SOURCE:LINES-OF), or NIL when it cannot be read."
+  (let ((lines (ignore-errors (clautolisp.source:lines-of file))))
+    (when (and lines (plusp (length lines)))
+      (with-output-to-string (out)
+        (loop for line across lines do (write-line line out))))))
+
+(defun %clal-sedit-ensure-recorded (object)
+  "When OBJECT is a symbol the sedit recording does not know, but which names a
+function loaded from a source file, record that file so the name recalls its
+REAL source (spec §2.2 \"from a loaded file\"; sedit-bugs-and-design.issue
+Bug 3). A no-op otherwise. Returns NIL."
+  (when (typep object 'clautolisp.autolisp-runtime:autolisp-symbol)
+    (let ((name (clautolisp.autolisp-runtime:autolisp-symbol-name object)))
+      (unless (clautolisp.sedit:recorded-definition
+               (clautolisp.sedit:sedit-recording) name)
+        (let ((file (%clal-sedit-source-file-of name)))
+          (when file
+            (ignore-errors
+             (clautolisp.sedit:record-source
+              (%file-lines->string file) (namestring file))))))))
+  nil)
+
+(defun %clal-sedit-run (session)
+  "Drive SESSION in the SEDIT interactor (design-revision D9) until `q' pops it,
+publish its initial / final forms to the AutoLISP variables, and return the
+edited object."
+  (multiple-value-bind (result directive)
+      (clautolisp.sedit:sedit-enter session
+                                    :input *standard-input* :output *standard-output*
+                                    :eval-hook #'%clal-sedit-eval-hook
+                                    :eval-print-hook #'%clal-sedit-eval-print-hook
+                                    :load-hook #'%clal-sedit-load-hook
+                                    :debug-hook #'%clal-sedit-debug-hook)
+    (declare (ignore directive))
+    (%clal-set-autolisp-var "*CLAL-SEDIT-INITIAL-FORM*"
+                            (%clal-node->value clautolisp.sedit:*clal-sedit-initial-form*))
+    (%clal-set-autolisp-var "*CLAL-SEDIT-LAST-RESULT*" (%clal-node->value result))
+    (%clal-node->value result)))
+
+(defun %clal-recall-function-form (name)
+  "The =(defun NAME lambda-list . body)= form of the currently defined user
+function NAME (a string), as an AutoLISP list value, or NIL when NAME is not a
+user function — the FUNCTION-type fallback when NAME has no source file."
+  (let ((fn (ignore-errors (clautolisp.autolisp-runtime:lookup-function
+                            (clautolisp.autolisp-runtime:intern-autolisp-symbol name)))))
+    (when (typep fn 'clautolisp.autolisp-runtime:autolisp-usubr)
+      (list* (clautolisp.autolisp-runtime:intern-autolisp-symbol "DEFUN")
+             (clautolisp.autolisp-runtime:intern-autolisp-symbol name)
+             (clautolisp.autolisp-runtime:autolisp-usubr-lambda-list fn)
+             (clautolisp.autolisp-runtime:autolisp-usubr-body fn)))))
+
+(defun %clal-sedit-open-file (path &key name line)
+  "Open PATH in a sedit session, selecting the top-level form defining NAME or
+the item at/after LINE when given (else the file's first form)."
+  (let ((session (clautolisp.sedit:sedit-open (namestring path)
                                               :recording (clautolisp.sedit:sedit-recording))))
-    (multiple-value-bind (result directive)
-        (clautolisp.sedit:sedit-enter session
-                                      :input *standard-input* :output *standard-output*
-                                      :eval-hook #'%clal-sedit-eval-hook
-                                      :eval-print-hook #'%clal-sedit-eval-print-hook
-                                      :load-hook #'%clal-sedit-load-hook
-                                      :debug-hook #'%clal-sedit-debug-hook)
-      (declare (ignore directive))
-      ;; publish the session's initial / final forms to the AutoLISP variables
-      (%clal-set-autolisp-var "*CLAL-SEDIT-INITIAL-FORM*"
-                              (%clal-node->value clautolisp.sedit:*clal-sedit-initial-form*))
-      (%clal-set-autolisp-var "*CLAL-SEDIT-LAST-RESULT*" (%clal-node->value result))
-      (%clal-node->value result))))
+    (when (or name line) (clautolisp.sedit:sedit-select session :name name :line line))
+    session))
+
+(defun %clal-object-session (object)
+  "A sedit session editing OBJECT as a stand-alone sexp (type NIL / OBJECT)."
+  (clautolisp.sedit:sedit-open (%clal-value->node object)))
+
+(defun %clal-sedit-extended-session (type object)
+  "Resolve the extended =(clal-sedit TYPE OBJECT)= call (sedit-bugs-and-design.
+issue) to a sedit session. TYPE is an AutoLISP symbol (NIL/OBJECT/FUNCTION/
+FILE/DIRECTORY); OBJECT's admissible shapes are per the issue's table."
+  (let ((kind (cond ((null type) "OBJECT")
+                    ((typep type 'clautolisp.autolisp-runtime:autolisp-symbol)
+                     (string-upcase (clautolisp.autolisp-runtime:autolisp-symbol-name type)))
+                    (t (princ-to-string type)))))
+    (labels ((str (x) (and (typep x 'clautolisp.autolisp-runtime:autolisp-string)
+                           (clautolisp.autolisp-runtime:autolisp-string-value x)))
+             (sym (x) (and (typep x 'clautolisp.autolisp-runtime:autolisp-symbol)
+                           (clautolisp.autolisp-runtime:autolisp-symbol-name x)))
+             (open-file-for (fname path)
+               "Open PATH selecting function FNAME; error if the file or the
+function is missing."
+               (unless (probe-file path)
+                 (signal-builtin-argument-error
+                  :bad-argument "CLAL-SEDIT" "no such file ~S." path))
+               (let ((session (%clal-sedit-open-file path :name fname)))
+                 (unless (clautolisp.sedit:sedit-select session :name fname)
+                   (signal-builtin-argument-error
+                    :bad-argument "CLAL-SEDIT"
+                    "~A is not defined in ~S." (string-upcase fname) path))
+                 session)))
+      (cond
+        ;; NIL / OBJECT: OBJECT is the initial selection, edited as a sexp.
+        ((member kind '("OBJECT" "NIL") :test #'string=)
+         (%clal-object-session object))
+        ;; FUNCTION funcname : file-context when the function has a source file,
+        ;; else its (reconstructed) definition.
+        ((and (string= kind "FUNCTION") (sym object))
+         (let ((file (%clal-sedit-source-file-of (sym object))))
+           (if file
+               (open-file-for (sym object) file)
+               (let ((form (%clal-recall-function-form (sym object))))
+                 (if form
+                     (%clal-object-session form)
+                     (signal-builtin-argument-error
+                      :bad-argument "CLAL-SEDIT"
+                      "~A is not a user function." (string-upcase (sym object))))))))
+        ;; FUNCTION/FILE (file-path funcname) : edit the function in the file.
+        ((and (member kind '("FUNCTION" "FILE") :test #'string=)
+              (consp object) (str (first object)) (sym (second object)))
+         (open-file-for (sym (second object)) (str (first object))))
+        ;; FILE (file-path linum) : the comment/form at or after LINE.
+        ((and (string= kind "FILE") (consp object)
+              (str (first object)) (integerp (second object)))
+         (%clal-sedit-open-file (str (first object)) :line (second object)))
+        ;; FILE (source-position form) : the form at the recorded position.
+        ((and (string= kind "FILE") (consp object)
+              (clautolisp.source:source-position-p (first object)))
+         (let ((pos (first object)))
+           (%clal-sedit-open-file (clautolisp.source:source-position-file pos)
+                                  :line (clautolisp.source:source-position-start-line pos))))
+        ;; FILE / DIRECTORY <path> : a plain file or directory.
+        ((and (member kind '("FILE" "DIRECTORY") :test #'string=) (str object))
+         (clautolisp.sedit:sedit-open (str object)
+                                      :recording (clautolisp.sedit:sedit-recording)))
+        (t
+         (signal-builtin-argument-error
+          :bad-argument "CLAL-SEDIT"
+          "cannot edit ~A ~S with the extended clal-sedit API." kind object))))))
+
+(defun builtin-clal-sedit (&rest args)
+  "Edit with the sedit structural editor. Legacy 0/1-argument form (spec §2):
+no argument -> a stand-alone form at nil; a symbol -> recall its recorded
+definition (REPL recording, or the source file that loaded it); a string -> a
+file or directory path; any other value -> edited as a sexp. Extended
+2-argument form =(clal-sedit TYPE OBJECT)= (sedit-bugs-and-design.issue): TYPE
+is NIL/OBJECT (edit OBJECT as a sexp), FUNCTION (edit a function, in its file
+when it has one), FILE (a path, a (path funcname), a (path linum), or a
+(source-position form)), or DIRECTORY (a path). Pushes SEDIT over the stack,
+drives it to `q', and returns the edited object; sets
+CLAUTOLISP.SEDIT:*CLAL-SEDIT-INITIAL-FORM* / *CLAL-SEDIT-LAST-RESULT*."
+  (case (length args)
+    ((0 1)
+     (let ((object (first args)))
+       (%clal-sedit-ensure-recorded object)
+       (%clal-sedit-run
+        (clautolisp.sedit:sedit-open (%clal-sedit-target object)
+                                     :recording (clautolisp.sedit:sedit-recording)))))
+    (2 (%clal-sedit-run (%clal-sedit-extended-session (first args) (second args))))
+    (t (signal-builtin-argument-error
+        :bad-argument "CLAL-SEDIT"
+        "CLAL-SEDIT takes 0, 1 (object) or 2 (type object) arguments, got ~D."
+        (length args)))))
 
 (defun builtin-clal-clipboard-put-text (string)
   "Set the system clipboard to STRING, and record STRING in *clal-clipboard* so
@@ -5627,10 +5872,10 @@ Returns the function object."
          (usubr (clautolisp.autolisp-runtime:make-autolisp-usubr
                  name-string lambda-list body
                  (clautolisp.autolisp-runtime:current-evaluation-context))))
-    (when (and (plusp (clal-optimization-level :debug))
-               clautolisp.autolisp-runtime:*instrument-usubr-hook*)
-      (ignore-errors
-       (funcall clautolisp.autolisp-runtime:*instrument-usubr-hook* usubr)))
+    (when (plusp (clal-optimization-level :debug))
+      ;; Surfaces a weave failure (one warning naming the function) instead of
+      ;; silently swallowing it and returning an un-instrumented function.
+      (clautolisp.autolisp-runtime:instrument-usubr-if-possible usubr))
     usubr))
 
 (defun set-drawing-codepage (new-codepage-value)
@@ -9915,6 +10160,30 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-COMPILE"          #'builtin-clal-compile)
    (make-core-builtin-subr "CLAL-DEFINE-DEBUGGER-COMMAND" #'builtin-clal-define-debugger-command)
    (make-core-builtin-subr "CLAL-DEFINE-COMMAND" #'builtin-clal-define-command)
+   (make-core-builtin-subr "CLAL-BINDING"          #'builtin-clal-binding)
+   (make-core-builtin-subr "CLAL-REMOVE-BINDING"   #'builtin-clal-remove-binding)
+   (make-core-builtin-subr "CLAL-BINDING-LOOKUP"   #'builtin-clal-binding-lookup)
+   (make-core-builtin-subr "CLAL-MAP-BINDINGS"     #'builtin-clal-map-bindings)
+   (make-core-builtin-subr "CLAL-DEFINE-UI-COMMAND" #'builtin-clal-define-ui-command)
+   (make-core-builtin-subr "CLAL-MAKE-FRAME"       #'builtin-clal-make-frame)
+   (make-core-builtin-subr "CLAL-FRAME-LIST"       #'builtin-clal-frame-list)
+   (make-core-builtin-subr "CLAL-SELECTED-FRAME"   #'builtin-clal-selected-frame)
+   (make-core-builtin-subr "CLAL-SELECT-FRAME"     #'builtin-clal-select-frame)
+   (make-core-builtin-subr "CLAL-DELETE-FRAME"     #'builtin-clal-delete-frame)
+   (make-core-builtin-subr "CLAL-FRAME-NAME"       #'builtin-clal-frame-name)
+   (make-core-builtin-subr "CLAL-MAKE-WINDOW"      #'builtin-clal-make-window)
+   (make-core-builtin-subr "CLAL-WINDOW-LIST"      #'builtin-clal-window-list)
+   (make-core-builtin-subr "CLAL-SELECTED-WINDOW"  #'builtin-clal-selected-window)
+   (make-core-builtin-subr "CLAL-SELECT-WINDOW"    #'builtin-clal-select-window)
+   (make-core-builtin-subr "CLAL-DELETE-WINDOW"    #'builtin-clal-delete-window)
+   (make-core-builtin-subr "CLAL-WINDOW-NAME"      #'builtin-clal-window-name)
+   (make-core-builtin-subr "CLAL-DEFINE-FACE"      #'builtin-clal-define-face)
+   (make-core-builtin-subr "CLAL-FACE-PARAMETERS"  #'builtin-clal-face-parameters)
+   (make-core-builtin-subr "CLAL-LIST-FACES"       #'builtin-clal-list-faces)
+   (make-core-builtin-subr "CLAL-CLEAR-WINDOW"     #'builtin-clal-clear-window)
+   (make-core-builtin-subr "CLAL-MOVE-CURSOR-TO"   #'builtin-clal-move-cursor-to)
+   (make-core-builtin-subr "CLAL-WINDOW-PUT"       #'builtin-clal-window-put)
+   (make-core-builtin-subr "CLAL-CALL-WITH-TEMP-WINDOW" #'builtin-clal-call-with-temp-window)
    (make-core-builtin-subr "CLAL-LIST-INTERACTOR-NAMES" #'builtin-clal-list-interactor-names)
    (make-core-builtin-subr "CLAL-DRIBBLE"          #'builtin-clal-dribble)
    (make-core-builtin-subr "CLAL-NAV-FUNCTION"     #'builtin-clal-nav-function)

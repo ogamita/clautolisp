@@ -97,16 +97,85 @@ not an expression (at a top-level read the comma is unambiguous —
 AutoLISP has no backquote). Each command has a short key and a word
 form:
 
-| ~,d~ / ~,date~   | print the current date and time (ISO 8601)     |
-| ~,u~ / ~,uptime~ | print how long this clautolisp process has run |
-| ~,h~ / ~,help~   | list the REPL commands                         |
-| ~,q~ / ~,quit~   | exit the REPL (useful when ~(quit)~ is not     |
-|                  | available in the active dialect)               |
+| ~,d~ / ~,date~            | print the current date and time (ISO 8601)     |
+| ~,u~ / ~,uptime~          | print how long this clautolisp process has run |
+| ~,h~ / ~,help~            | list the REPL commands                         |
+| ~,q~ / ~,quit~            | exit the REPL (useful when ~(quit)~ is not     |
+|                           | available in the active dialect)               |
+| ~,s~ / ~,set~ [NAME VALUE]| show the LISP settings, or set one             |
+| ~,settings~               | show the settings across their cascading levels |
+| ~,w~ / ~,write-settings~  | write the LISP settings to =lisp.conf=         |
+| ~,i~ / ~,inspect~ FORM    | inspect the result of evaluating FORM          |
 
 The commands live in a command dictionary of the REPL's /interactor/ —
 the same mechanism behind the debugger's command dictionaries — so the
 vocabulary can grow (and user commands can shadow it) uniformly across
 all the interaction loops.
+
+A command's short key is optional: ~,settings~ has none, because
+~settings~ would take the key ~s~ that ~,set~ already holds, so the
+rarer of two colliding commands is typed in full. Where bare ~,set~
+lists the LISP interactor's resolved values, ~,settings~ shows each
+setting across its cascade levels (built-in default, then =lisp.conf=,
+then =aldo.conf=), marking the one in effect at the REPL — see /Settings
+and configuration/ below. ~,inspect~ opens the interactive object
+inspector (the same one the debugger's ~i~ opens) on the value of FORM.
+
+**** Debugging commands from the REPL
+
+The debugger (/aldo/) is always available beside the REPL, so a subset
+of its commands can be used from the REPL prompt — chiefly to manage
+breakpoints /between/ runs, before or after the code is executed. They
+are ordinary REPL commands (a leading comma); a LISP command of the same
+name shadows them, and the shadowed one is still reachable by the
+~,aldo~ / ~,debug~ prefix (e.g. ~,debug break foo~).
+
+| ~,b~ / ~,break~ FUNC          | breakpoint on the function's entry              |
+| ~,b~ / ~,break~ FUNC.N        | breakpoint on the function's Nth poll point     |
+|                               | (=.0= is the entry; the compound forms follow   |
+|                               | in source order)                                |
+| ~,b~ / ~,break~ FILE:LINE[:COL] | breakpoint at the first poll point at or after |
+|                               | that source position (see below)                |
+| ~,b~ / ~,break~ LINE          | =FILE:LINE= against the current file            |
+| ~,lb~ / ~,list breakpoints~   | list the breakpoints (by poll-point number      |
+|                               | ~ppN~, plus any pending ~lbN~)                  |
+| ~,eb~ / ~,enable breakpoint~ ppN\vert{}ALL  | enable a breakpoint (or all)      |
+| ~,db~ / ~,disable breakpoint~ ppN\vert{}ALL | disable a breakpoint (or all)     |
+| ~,rb~ / ~,remove breakpoint~ ppN\vert{}lbN\vert{}ALL | remove a breakpoint      |
+| ~,cb~ / ~,condition breakpoint~ ppN FORM | fire ppN only when FORM is non-nil   |
+|                               | (bare ~,cb ppN~ clears the condition)           |
+| ~,ib~ / ~,ignore breakpoint~ ppN COUNT | skip the next COUNT hits of ppN        |
+| ~,ls~ / ~,list source~ [FILE\vert{}FUNC] | list source with ~^~ breakpoint      |
+|                               | markers, through the pager                      |
+| ~,bpcmd~ ppN FORM             | evaluate FORM when ppN fires, then continue     |
+|                               | (bare ~,bpcmd ppN~ clears the command)          |
+| ~,trace~ FUNC [FORM]          | trace FUNC's calls: stop-free, printing FORM    |
+|                               | (or the call) on each entry, then continue      |
+| ~,untrace~ [FUNC]             | stop tracing FUNC, or all traced functions      |
+| ~,watch~ VAR [FORM]           | stop when VAR changes, or — with FORM — when     |
+|                               | FORM turns non-nil                              |
+| ~,unwatch~ [VAR]              | remove the watch on VAR, or all watches         |
+| ~,lw~ / ~,list watches~       | list the software watchpoints and their values  |
+
+A =FILE:LINE= breakpoint is /persistent/: it is recorded against the raw
+file position and re-resolved on every load, because an edit may move
+the target. When the file is loaded it is armed at the first poll point
+at or after that line — so a breakpoint on a top-level (non-~defun~)
+form breaks /during/ the load; a reload that moves a breakpoint prints a
+=;; breakpoints changed …= warning, and ~,ls~ shows where each landed.
+A =FUNC.N= breakpoint, by contrast, is relative to the function and
+survives edits above it. ~,ls~ and ~,break FILE:LINE~ set the /current
+file/ that bare ~,break LINE~ and ~,ls~ (no argument) act on.
+
+~,break FUNC~ (or =FUNC.N=) on a function that is /not defined yet/ does
+not fail: it warns and records a *pending* breakpoint, armed as soon as
+the function is defined — at the REPL, or by loading a source or compiled
+file. ~,lb~ lists such a breakpoint as =vbN … (not defined yet)= until it
+arms (then it appears as an ordinary =ppN=); remove it with ~,rb vbN~.
+
+These commands need a debug session, which the interactive REPL always
+has; a non-interactive batch run (~-x~ / ~-l~ without a REPL) reports
+that debugging is not active.
 
 *** Recording the session: the dribble
 
@@ -230,13 +299,17 @@ full speed and is stepped over).
 ** The three user interfaces
 
 aldo presents *one* command set through three interchangeable
-interfaces; a feature available in one is available in all.
+interfaces; a feature available in one is available in all. Choose one
+with =--debugger-ui= (or the =*clal-debugger-ui*= variable) — the
+canonical spellings are =dumb=, =ncurses=, and =aldb=; =terminal= and
+=tui= alias =dumb=, and =emacs= aliases =aldb=, matched case-insensitively.
 
-- *TUI* — the line-mode terminal interface. You type a short command
-  token (or an AutoLISP form) and press =RET=. It needs nothing beyond a
-  plain terminal, styles its output with ANSI colour where the terminal
-  allows, and pages long output (see /Settings/ below). It is the
-  fallback that always works, including inside an Emacs ~shell~ buffer.
+- *dumb* — the line-mode terminal interface (=--debugger-ui dumb=; also
+  spelled =terminal= or =tui=). You type a short command token (or an
+  AutoLISP form) and press =RET=. It needs nothing beyond a plain
+  terminal, styles its output with ANSI colour where the terminal allows,
+  and pages long output (see /Settings/ below). It is the fallback that
+  always works, including inside an Emacs ~shell~ buffer.
 - *ncurses* — a full-screen, four-pane interface (stack, source,
   interactor, REPL). Commands fire on a single keypress; you move the
   cursor onto a form and act on it (no line numbers to type). It runs on
@@ -271,7 +344,10 @@ The same verbs work in every interface (typed as tokens in the TUI,
 single keys in ncurses/aldb). The most used:
 
 - Execution: ~continue~ (=c=), ~into~ (=i=, step into), ~next~ (=n=,
-  step over), ~out~ (=o=, finish), ~quit~ (=q=, abort the run).
+  step over), ~out~ (=o=, finish), ~quit~ (=q=, abort the run). After a
+  stepping command (=c=/=i=/=n=/=o=) a bare =RET= repeats it — so you can
+  walk through code by tapping Return, gdb-style; any other command
+  cancels the repeat.
 - Breakpoints: ~break~ (=b=) at a form / line; ~list breakpoints~ (=lb=);
   ~enable~ / ~disable~ / ~delete~ / ~condition~ / ~ignore~ a breakpoint.
 - Stack: ~list frames~ (=lf=, the backtrace); the ~frame~ family —
@@ -310,6 +386,12 @@ that runs from a sub-expression out to the file system:
 Browsing never changes what executes; ~print~, ~setq~ and friends always
 act in the current frame.
 
+To *edit* the selected form, ~edit~ (also spelled ~sedit~) opens the sedit
+structural editor on it, at a =SEDIT>= prompt, returning to the navigator
+on quit; the other §1.3 editing words (~insert~, ~replace~, ~wrap~, …) open
+it likewise, performing themselves as the first edit. Edits are installed
+into the running system when you save.
+
 In the navigator every debugger command is also available directly (the
 navigator's dictionary is stacked over the debugger's). Two escape words
 systematize reaching a shadowed command (~debug~ is the debugger
@@ -327,12 +409,18 @@ interactor's alias — ~aldo~ and ~debug~ are interchangeable):
 
 Per-session options are read and set from any interface:
 
-- =,settings= — list every option and its value; =,settings NAME= —
-  print one.
-- =set NAME VALUE= — set one (names and values are case-insensitive).
-  Common options: ~navigator~ (=sexp= | =line=), ~theme~ (=unicode= |
+- =set= — list the interactor's settings and their values; =set NAME
+  VALUE= — set one (names and values are case-insensitive). At the REPL
+  these are the comma commands ~,set~ / ~,set NAME VALUE~; inside the
+  debugger they are ~set~ (no comma), acting on =aldo.conf= rather than
+  =lisp.conf=.
+- =,settings= (REPL) — show every setting across its /cascading levels/
+  (built-in default, then =lisp.conf=, then =aldo.conf=), marking the
+  one in effect here; =,write-settings= persists the interactor's
+  settings.
+- Common options: ~navigator~ (=sexp= | =line=), ~theme~ (=unicode= |
   =ascii= | =white-on-black= | =black-on-white= | =green-on-black= |
-  =attributes=), ~pager~ (=on= | =off=), ~pager-height~,
+  =attributes=), ~pager~ (=on= | =off= | a pager path), ~pager-height~,
   ~source-window-height~, ~value-line-width~, ~break-on-caught~.
 
 The complete set of aldo settings, with their types:
@@ -347,12 +435,12 @@ The complete set of aldo settings, with their types:
 | ~break-on-caught~                | boolean                                                           |
 | ~source-window-height~           | integer                                                           |
 | ~value-line-width~               | integer                                                           |
-| ~pager~                          | =on= \vert{} =off=                                                |
-| ~pager-height~                   | integer                                                           |
+| ~pager~                          | =on= \vert{} =off= \vert{} a pager path (an external filter such as =less= / =more=, run on the text) |
+| ~pager-height~                   | integer — the built-in pager's page height                        |
 | ~theme~                          | =unicode= \vert{} =ascii= \vert{} =white-on-black= \vert{} =black-on-white= \vert{} =green-on-black= \vert{} =attributes= |
 | ~default-user-interface~         | =tui= \vert{} =ncurses= \vert{} =aldb=                            |
 | ~default-aldb-listening-address~ | string (=127.0.0.1=) — address the aldb (Emacs) transport listens on when no ~--aldb-listen~ / ~--aldb-stdio~ is given |
-| ~default-aldb-listening-port~    | port (=4301=) — the matching port                                 |
+| ~default-aldb-listening-port~    | port (=0= — an OS-chosen free port; set a fixed port for a stable one) |
 
 ~decorations~ is not in this table: it is structural (the theme glyphs,
 edited as data in the configuration file) rather than something =set=
@@ -486,12 +574,20 @@ each setting, so this is visible on the spot.
 ** Long output and the pager
 
 Commands whose output exceeds the screen — =help=, a long
-=list source=, a big value — are shown a page at a time in the TUI when
-~pager~ is =on= (the default on a size-limited terminal; you typically
-turn it =off= under an Emacs ~shell~, which scrolls). The pager accepts
-the familiar =less= keys (=SPACE=/=f= forward, =b= back, =q= quit). The
-ncurses interface uses a scrollable window instead, and aldb relies on
-Emacs's own buffer scrolling.
+=list source= (=,ls= at the REPL), a big value — are shown a page at a
+time in the TUI when ~pager~ is =on= (the default on a size-limited
+terminal; you typically turn it =off= under an Emacs ~shell~, which
+scrolls). The built-in pager accepts the familiar =less= keys (=SPACE=/=f=
+forward, =b= back, =q= quit). The ncurses interface uses a scrollable
+window instead, and aldb relies on Emacs's own buffer scrolling.
+
+Setting ~pager~ to a *pager path* instead of =on=/=off= (e.g. =set pager
+/usr/bin/less=, or a bare =less= found on ~PATH~) sends the text through
+that external filter rather than the built-in pager; ~pager-height~ sizes
+the built-in one. The pager cascades parallel to the interactor stack: the
+REPL's =,ls= pages through the /LISP/ pager (=lisp.conf= over the
+defaults), while inside the debugger output pages through the /aldo/ pager
+(=aldo.conf= over =lisp.conf= over the defaults), so the two can differ.
 
 * sedit and the aldo form navigator
 
@@ -558,15 +654,35 @@ own rules.
 (clal-sedit)                 ; a fresh stand-alone form, starting at nil
 (clal-sedit 'foo)            ; recall and edit the definition of FOO
 (clal-sedit "prog.lsp")      ; edit a file (its first top-level form selected)
-(clal-sedit "~/src/")        ; browse a directory
+(clal-sedit "~/src/")        ; browse a directory (first Lisp/sexp file selected)
 (clal-sedit '(+ 1 2))        ; edit a value as a sexp
 #+end_example
 
 ~clal-sedit~ runs the editor on the terminal and returns the edited object.
 Recall by name works because the interactive REPL *records* every top-level
-form you evaluate, so ~(clal-sedit 'foo)~ finds the ~defun~ / ~setq~ you
-typed. The initial and final forms are left in ~*clal-sedit-initial-form*~ and
+form you evaluate — and a function loaded from a source file is recalled from
+that file — so ~(clal-sedit 'foo)~ finds the ~defun~ / ~setq~ of FOO. The
+initial and final forms are left in ~*clal-sedit-initial-form*~ and
 ~*clal-sedit-last-result*~.
+
+A two-argument form, ~(clal-sedit TYPE OBJECT)~, is explicit about what OBJECT
+means:
+
+#+begin_example
+(clal-sedit 'object X)              ; edit X as a sexp (even if X is a symbol)
+(clal-sedit 'function 'foo)         ; edit FOO in its source file (the defun
+                                    ;   selected), or its definition if it has none
+(clal-sedit 'file '("prog.lsp" foo)); open prog.lsp with the defun of FOO selected
+(clal-sedit 'file '("prog.lsp" 42)) ; open prog.lsp at the form on/after line 42
+(clal-sedit 'file "prog.lsp")       ; a file (created on save if new)
+(clal-sedit 'directory "~/src/")    ; a directory
+#+end_example
+
+In a directory listing, ~d~ descends — into a sub-directory (read fresh from
+disk) or into a file (opened for editing) — and ~..~ climbs to the parent
+directory. A long listing is *windowed*: at most a screen-height of entries is
+shown around the selection, with ~⋮ (N more above)~ / ~⋮ (N more below)~
+markers for the rest.
 
 ** Editing while debugging
 
@@ -2177,6 +2293,84 @@ a custom user command of the named interactor —
 ~"NAVI"~, ~"LAVI"~, ~"INSPECT"~, ~"AUTOLISP"~) —
 and ~(clal-define-debugger-command NAMES FN [DOC])~ is its deprecated
 ALDO-only equivalent. See /Debugger/ above.
+
+*** ~CLAL-MAKE-FRAME~ / ~CLAL-FRAME-*~ -- debugger-UI frames
+The builtins in this and the following four subsections are the
+AutoLISP surface of the debugger's terminal UI — aldo's frames,
+windows, faces and key maps. They are *no-ops that return ~nil~*
+unless a debugger UI is loaded, so a program that calls them outside
+the debugger degrades quietly. Frames and windows cross into AutoLISP
+as opaque, ~eq~-stable handles (printed ~#<WINDOW "name" …>~,
+~#<TTY-FRAME …>~ / ~#<VDT-FRAME …>~); faces are named by strings.
+
+~(clal-make-frame [OPTIONS])~ creates a frame and adds it to the frame
+list *without* selecting it, returning the new frame handle; OPTIONS
+is an alist of ~name~, ~width~, ~height~, ~(minibuffer . T)~,
+~(device . tty|vdt)~ and, for a vdt frame, ~(screen . TUI-SCREEN)~.
+~(clal-frame-list)~ returns every frame handle. ~(clal-selected-frame)~
+returns the currently selected frame (or ~nil~), and
+~(clal-select-frame FRAME)~ makes FRAME the selected one — entering or
+leaving a vdt frame's 2D mode as needed — and returns FRAME.
+~(clal-delete-frame FRAME)~ removes and deletes FRAME, selecting
+another if it was current, and returns ~nil~. ~(clal-frame-name FRAME)~
+returns FRAME's name as a string.
+
+*** ~CLAL-MAKE-WINDOW~ / ~CLAL-*-WINDOW~ -- debugger-UI windows
+~(clal-make-window [OPTIONS])~ creates a window in the *selected*
+frame, appending it to that frame's window list (the first window
+becomes the frame's selected window), and returns the window handle;
+OPTIONS is an alist of ~(name . STRING)~ and ~(role . :minibuffer)~.
+~(clal-window-list [FRAME])~ returns the windows of FRAME, or of every
+frame when FRAME is omitted, excluding minibuffer windows.
+~(clal-selected-window)~ returns the active window of the selected
+frame (or ~nil~); ~(clal-select-window WINDOW)~ makes WINDOW's frame
+current and WINDOW its selected window, returning WINDOW.
+~(clal-delete-window WINDOW)~ removes WINDOW from its frame and returns
+~nil~. ~(clal-window-name WINDOW)~ returns WINDOW's name as a string.
+~(clal-call-with-temp-window OPTIONS FUNCTION)~ creates a temporary
+window (OPTIONS as for ~clal-make-window~), applies FUNCTION to its
+handle, and deletes the window afterwards even on a non-local exit,
+returning FUNCTION's value.
+
+*** ~CLAL-DEFINE-FACE~ / ~CLAL-FACE-PARAMETERS~ / ~CLAL-LIST-FACES~ -- debugger-UI faces
+~(clal-define-face NAME [FG BG BOLD UNDERLINE INVERT])~ defines or
+redefines the face NAME (a string): FG and BG are colour-name strings
+(~"red"~, ~"white"~, …) or ~nil~, and BOLD, UNDERLINE and INVERT are
+booleans; it returns NAME. ~(clal-face-parameters NAME)~ returns the
+face's display parameters as an assoc list — pairs such as
+~("fg" . "RED")~ and ~("bold" . T)~ — or ~nil~ when NAME is not a face.
+~(clal-list-faces)~ returns the names of all defined faces as a list of
+strings. These are the AutoLISP counterpart of the ~face~ decorations
+configured in ~lisp.conf~ / ~aldo.conf~, resolved per UI to ANSI
+escapes, ncurses attributes or Emacs faces.
+
+*** ~CLAL-CLEAR-WINDOW~ / ~CLAL-MOVE-CURSOR-TO~ / ~CLAL-WINDOW-PUT~ -- drawing into a window
+~(clal-clear-window [WINDOW])~ blanks WINDOW's rectangle (default: the
+selected window) and resets its cursor to ~(0 0)~, returning the window
+handle. ~(clal-move-cursor-to ROW COL [WINDOW])~ moves WINDOW's cursor
+to the window-relative ~(ROW COL)~, clamped to its rectangle, and
+returns the window handle. ~(clal-window-put ROW COL STRING [FACE WINDOW])~
+writes STRING at the window-relative ~(ROW COL)~, clipped to the
+rectangle, in the face named FACE (default the ~normal~ face), and
+returns ~nil~. On a tty frame (a plain terminal with no addressable
+screen) ~clal-clear-window~ and ~clal-window-put~ are no-ops.
+
+*** ~CLAL-BINDING~ / ~CLAL-DEFINE-UI-COMMAND~ -- debugger-UI key bindings and commands
+~(clal-binding KEY COMMAND)~ binds KEY — an Emacs-style key-sequence
+string such as ~"C-x C-f"~ — to COMMAND in the debugger UI's *user*
+keymap, returning KEY; COMMAND is a command name/line (routed through
+the command table) or an AutoLISP function designator or form evaluated
+in the stopped frame. User bindings shadow the built-ins, and prefix
+chains work. ~(clal-remove-binding KEY)~ removes the user binding at KEY
+(reverting to any built-in) and returns ~T~ when one was removed.
+~(clal-binding-lookup KEY)~ returns the command bound at KEY, or ~nil~.
+~(clal-map-bindings FUNCTION)~ calls FUNCTION with ~(KEY-STRING COMMAND)~
+for every user binding, returning ~nil~. ~(clal-define-ui-command NAME FUNCTION)~
+registers a UI command NAME (a string) implemented by the AutoLISP
+FUNCTION — applied to the command's argument string — usable from
+~M-x~, the ~,~ command line and as a ~clal-binding~ target, returning
+NAME. These complement ~clal-define-command~ (above), which adds
+commands to a named interactor.
 
 *** ~CLAL-COMMON-LISP~ / ~CLAL-BACK~ -- drop into a live Common Lisp REPL
 The developer escape hatch out of AutoLISP and into the Common Lisp

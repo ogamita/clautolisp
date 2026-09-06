@@ -99,9 +99,13 @@ BINDINGS-OF-NAME on the full stack."
      :bindings-introduced (and dynamic-frame
                                (frame-bindings-introduced dynamic-frame)))))
 
-(defun build-snapshot (ti fid form-id when metadata)
+(defun build-snapshot (ti fid form-id when metadata &optional override-call-stack)
   "Build the spec §9 snapshot at a stopping point, from the live context
-and TI's shadow call stack."
+and TI's shadow call stack. OVERRIDE-CALL-STACK, when supplied, is a list of
+DEBUG-FRAMEs captured earlier (at an error's signal point, before any unwinding)
+and is used in place of TI's now-possibly-unwound live stack — so an error
+reached through a builtin's HANDLER-CASE (APPLY / LOAD / …) still shows the full
+backtrace (see *DEBUG-ERROR-SNAPSHOT-HOOK*)."
   (let* ((context (current-evaluation-context))
          (binding-stack (collect-binding-stack context)))
     (make-snapshot
@@ -111,7 +115,8 @@ and TI's shadow call stack."
      :form-id form-id
      :when when
      :source-position (and metadata (form-id-position metadata form-id))
-     :call-stack (mapcar #'debug-frame->stack-frame (thread-debug-info-call-stack ti))
+     :call-stack (mapcar #'debug-frame->stack-frame
+                         (or override-call-stack (thread-debug-info-call-stack ti)))
      :binding-stack binding-stack
      :visible-names (visible-names-from binding-stack)
      ;; spec §10.2: active vl-catch-all-apply frames (the builtin maintains
@@ -164,14 +169,43 @@ becomes visible again."
 — the innermost binding, or the global namespace if unshadowed (§9.5)."
   (set-variable symbol (coerce-from-cl value) context))
 
+(defun frame-visible-bindings (snapshot frame-index)
+  "The variables visible to code running in frame FRAME-INDEX, as an
+alist (SYMBOL . VALUE). AutoLISP is dynamically scoped, so a frame sees
+its own bindings shadowing its callers': scan frames FRAME-INDEX..outermost
+innermost-first, keeping the first (innermost) value seen per symbol (§9.3)."
+  (let ((frames (snapshot-call-stack snapshot))
+        (seen (make-hash-table :test 'eq))
+        (result '()))
+    (loop for i from frame-index below (length frames)
+          for frame = (nth i frames)
+          do (dolist (entry (stack-frame-bindings-introduced frame))
+               (let ((symbol (binding-entry-symbol entry)))
+                 (unless (gethash symbol seen)
+                   (setf (gethash symbol seen) t)
+                   (push (cons symbol (binding-entry-value entry)) result)))))
+    (nreverse result)))
+
 (defun eval-in-frame (snapshot form &key (frame-index 0))
-  "Evaluate FORM (a runtime AutoLISP form) in the snapshot's binding
-state, with debugging disabled so the evaluation cannot re-enter the
-debugger. Phase 2 supports the innermost frame (index 0); outer-frame
-evaluation (with-frame-bindings, §9.3) is deferred."
-  (declare (ignore snapshot))
-  (unless (zerop frame-index)
-    (error "eval-in-frame: outer-frame evaluation (index ~D) is not yet supported."
-           frame-index))
+  "Evaluate FORM (a runtime AutoLISP form) in the dynamic context of frame
+FRAME-INDEX, with debugging disabled so the evaluation cannot re-enter the
+debugger. Index 0 (innermost) evaluates in the live context as it stands.
+An outer frame (index > 0) is reconstructed (with-frame-bindings, §9.3) by
+pushing a fresh dynamic frame that SHADOWS the live bindings with the frame's
+captured values (FRAME-VISIBLE-BINDINGS) — so it works whether or not the
+original frames are still live (an error stop's stack is already unwound).
+The shadow frame is always popped (UNWIND-PROTECT), leaving the live state
+untouched. (A caller-frame's LET-shadowing of a global may still show through
+— that residual §9.3 case is documented, not yet reconstructed.)"
   (let ((*debugging* nil))
-    (autolisp-eval form (current-evaluation-context))))
+    (if (zerop frame-index)
+        (autolisp-eval form (current-evaluation-context))
+        (let ((context (current-evaluation-context)))
+          (clautolisp.autolisp-runtime:push-dynamic-frame context)
+          (unwind-protect
+               (progn
+                 (loop for (symbol . value) in (frame-visible-bindings snapshot frame-index)
+                       do (clautolisp.autolisp-runtime:bind-dynamic-variable
+                           symbol value context))
+                 (autolisp-eval form context))
+            (clautolisp.autolisp-runtime:pop-dynamic-frame context))))))

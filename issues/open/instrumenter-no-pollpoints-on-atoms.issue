@@ -1,0 +1,93 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: Instrumenter assigns no poll-points to atoms — cannot break before evaluating a variable reference
+#+AUTHOR: pjb (reported), investigated by the aldo REPL-breakpoint work
+
+* TODO Instrumenter assigns no poll-points to atoms
+
+** Symptom
+
+The debugger cannot set a breakpoint that stops *before* an atom
+(a variable reference or a literal) is evaluated. Poll-points — and
+therefore breakpoints, steps and watches — exist only on compound
+forms. In
+
+: (defun foo (a b / c)
+:    (setq c (+ a b))
+:    (foreach v (list a b c) (print v))
+:    (print (list b c)))
+
+you can stop before ~(+ a b)~ but not before the evaluation of ~a~,
+~b~, ~c~ or ~v~ (the variable references), nor before a literal.
+
+This surfaced while designing the =func-name.INDEX= breakpoint
+designation for the REPL-accessible aldo commands
+(=aldo-command-from-repl.issue=): a natural "evaluable-subform index"
+that counts *every* evaluable subform left-to-right, including
+variable references —
+
+:    (defun foo (a b / c)
+:       0:(setq c 1:(+ 2:a 3:b))
+:       4:(foreach v 5:(list 6:a 7:b 8:c)
+:          9:(print 10:v))
+:       11:(print 12:(list 13:b 14:c)))
+
+— does NOT correspond to the instrumenter's numbering, because the
+instrumenter numbers no atoms. (We aligned the REPL designation on the
+instrumenter-native numbering instead; see below. This issue is about
+whether the instrumentation itself should be extended.)
+
+** Cause
+
+=autolisp-debug/source/instrument.lisp= only allocates a form-id to
+*compound* (cons) evaluable forms that are not leaf special forms.
+=instrument-eval-form= returns non-cons forms unchanged (no id), and
+=instrument-inner= keeps the operator symbol ~(first form)~ verbatim
+and only walks ~(rest form)~. So operator symbols, binding targets
+(the SETQ place, the FOREACH binding var, the DEFUN arg list) and all
+atoms get no poll-point.
+
+The design reason recorded in =autolisp-source-map/source/source-map.lisp=
+is that "only compound forms are recorded; atoms lower to bare CL
+values that cannot carry a key" — i.e. an atom has nowhere to hang a
+=%CLAL-POLL= wrapper without changing how atoms are compiled/evaluated.
+
+The instrumenter-native numbering for the example is therefore just:
+
+: 0 = function entry (whole body)
+: 1 = (setq c (+ a b))
+: 2 = (+ a b)
+: 3 = (foreach v (list a b c) (print v))
+: 4 = (list a b c)
+: 5 = (print v)
+: 6 = (print (list b c))
+: 7 = (list b c)
+
+** What to check / possible fix (later)
+
+Decide whether a debugger *should* be able to break before evaluating
+a variable reference (pjb: it should), and if so, extend the
+instrumentation to place a poll-point on atom operands as well —
+e.g. wrap an atom operand ~x~ as ~(%CLAL-POLL fid form-id x)~ the same
+way compound forms are wrapped, so a variable reference (and,
+optionally, a literal) gets its own poll-point.
+
+Considerations:
+
+- Cost: a poll-point per atom multiplies poll overhead in hot code;
+  may want it gated (e.g. only under a high DEBUG optimize level, or a
+  dedicated "fine instrumentation" setting).
+- Source keys: atoms currently carry no source-position key
+  (=source-map.lisp=). Placing a poll-point on an atom needs a
+  position to be recorded for it (from the reader's source map) so the
+  location machinery (=find-form-id-at-line=, =form-id-at-line-col=)
+  can resolve to it.
+- Semantics: whether the "value" of stopping before a bare variable
+  reference is worth the overhead in AutoLISP specifically.
+- If the instrumentation is extended, the =func-name.INDEX= REPL
+  designation stays instrumenter-native, so it automatically gains the
+  new atom indices — no change needed there.
+
+** Related
+
+- =aldo-command-from-repl.issue= (the REPL-accessible aldo commands
+  whose position-designation raised this).

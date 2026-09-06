@@ -14,7 +14,12 @@
                 #:interactor-prompt #:interactor-reader
                 #:interactor-evaluator
                 #:make-activation #:activation-state #:*command-activation*
+                #:make-interactor
                 #:interactor-loop #:interactor-return)
+  ;; the *AUTOLISP* REPL interactor + its state now live in the repl library;
+  ;; the tool's comma-commands register into it and repl-loop drives it.
+  (:import-from #:clautolisp.repl
+                #:*autolisp* #:make-repl-state)
   (:import-from #:clautolisp.autolisp-reader
                 #:autolisp-dialect
                 #:autolisp-dialect-name

@@ -59,10 +59,11 @@
   (format t "                         break into the debugger BEFORE the stack unwinds; continuing~%")
   (format t "                         resumes the quit, aborting cancels it. Sets *CLAL-ON-QUIT*,~%")
   (format t "                         re-read LIVE at each (quit)/(exit) call.~%")
-  (format t "  --debugger-ui UI       Debugger front-end: tui (the line/terminal UI), ncurses, or~%")
-  (format t "                         aldb (the Emacs front-end). Selecting one runs the program~%")
-  (format t "                         under a debug session. Per-run override of the persisted~%")
-  (format t "                         default-user-interface aldo setting (aldo.conf), default tui.~%")
+  (format t "  --debugger-ui UI       Debugger front-end: dumb (the line/terminal UI; `terminal'~%")
+  (format t "                         and `tui' alias it), ncurses, or aldb (the Emacs front-end;~%")
+  (format t "                         `emacs' aliases it). Case-insensitive. Selecting one runs the~%")
+  (format t "                         program under a debug session. Per-run override of the~%")
+  (format t "                         persisted default-user-interface aldo setting, default dumb.~%")
   (format t "  --aldb-listen [HOST:]PORT  Address the aldb (Emacs) listener binds; HOST defaults~%")
   (format t "                         to 127.0.0.1, PORT is a number (0 = pick a free port) or a~%")
   (format t "                         service name. Implies --debugger-ui aldb.~%")
@@ -299,12 +300,52 @@ an explicit --debugger-ui says otherwise. NIL when no UI was requested."
                (clautolisp.autolisp-cli:cli-options-aldb-stdio-p options))
            :aldb)))
 
+(defun aldb-transport-status (debug-ui aldb-listen)
+  "How an aldb DEBUG-UI reaches Emacs (debugger §10). ALDB-LISTEN is :STDIO for
+--aldb-stdio, a \"HOST:PORT\" string for --aldb-listen, else NIL. Returns:
+  :not-aldb  — DEBUG-UI is not aldb;
+  :stdio     — --aldb-stdio: RPC over the process stdin/stdout (Emacs launched
+               clautolisp as an inferior process);
+  :listener  — the TCP listener: --aldb-listen, or plain aldb (CLI or persisted
+               default) which listens on the default address and prints the
+               connect prompt.
+Pure (no I/O) so the gating is unit-testable away from the CLI entry point."
+  (cond ((not (eq debug-ui :aldb)) :not-aldb)
+        ((eq aldb-listen :stdio)   :stdio)
+        (t                         :listener)))
+
+(defun aldb-default-listen-address ()
+  "The default aldb listener address when nothing is configured: the persisted
+default-aldb-listening-address / -port aldo settings, else 127.0.0.1 on an
+OS-chosen FREE port (port 0). A random free port is a better default than a
+fixed one — it never clashes with another session, and the actual port is
+printed in the connect prompt (command reference §10); pin one via
+default-aldb-listening-port if you want a stable port."
+  (format nil "~A:~A"
+          (or (ignore-errors
+                (clautolisp.debug.ui:get-aldo-setting :default-aldb-listening-address))
+              "127.0.0.1")
+          (or (ignore-errors
+                (clautolisp.debug.ui:get-aldo-setting :default-aldb-listening-port))
+              0)))
+
+(defun aldb-resolve-listener-address (debug-ui aldb-listen)
+  "The HOST:PORT the aldb listener binds when DEBUG-UI is :aldb over the TCP
+listener (not stdio): the --aldb-listen \"HOST:PORT\" if given, else the default
+address. NIL when aldb is not over a listener."
+  (when (eq (aldb-transport-status debug-ui aldb-listen) :listener)
+    (if (stringp aldb-listen) aldb-listen (aldb-default-listen-address))))
+
 (defun resolve-default-debugger-ui ()
   "The persisted default-user-interface aldo setting (command reference §8;
-$XDG_CONFIG_HOME/clautolisp/aldo.conf), :tui when unset — the value an
+$XDG_CONFIG_HOME/clautolisp/aldo.conf), :dumb when unset — the value an
 explicit --debugger-ui overrides for this run only."
   (ignore-errors (clautolisp.debug.ui:load-aldo-configuration))
   (ignore-errors (clautolisp.debug.ui:load-lisp-configuration))
+  ;; the aldo/lisp cascade (faces/bindings) rides in the two files above via the
+  ;; settings consume hook; load the remaining cascade-only files (sedit/navi/…)
+  ;; here (windows-and-interactor-templates.issue: the cascade shares the files).
+  (ignore-errors (clautolisp.ui.ncurses:load-cascade-only-configurations))
   ;; Route (clal-sedit …) from the REPL through the LISP interactor's own
   ;; configuration. Only lisp.conf is active at the REPL — the debugger side
   ;; has its own bridge and gets the stacked aldo-over-lisp lookup
@@ -333,7 +374,7 @@ explicit --debugger-ui overrides for this run only."
           (ignore-errors (clautolisp.debug.ui:shell-escape-character-setting)))
         clautolisp.interactor:*shell-escape-runner* #'run-shell-command)
   (or (ignore-errors (clautolisp.debug.ui:get-aldo-setting :default-user-interface))
-      :tui))
+      :dumb))
 
 (defun run-shell-command (command)
   "Run COMMAND through $SHELL with stdin/stdout/stderr INHERITED.
@@ -484,6 +525,21 @@ them keeps the trace focused on actual call frames."
 
 (defun report-error (condition)
   (format *error-output* "~&clautolisp: ~A~%" condition))
+
+(defun print-host-backtrace (condition)
+  "Dump the host-Lisp backtrace for an UNHANDLED internal error. Called from a
+HANDLER-BIND at signal time — before the stack unwinds — so the trace reaches
+the fault, not the handler. Used when the user asked to debug (--debug or
+--on-error debug): an internal fault then shows where it came from instead of a
+bare one-line condition. uiop:print-backtrace is the portable SBCL/CCL entry."
+  (format *error-output*
+          "~&clautolisp: unhandled internal error: ~A~%CL backtrace (host Lisp):~%"
+          condition)
+  (handler-case
+      (uiop:print-backtrace :stream *error-output* :condition condition)
+    (error (probe)
+      (format *error-output* "  <unable to render host backtrace: ~A>~%" probe)))
+  (finish-output *error-output*))
 
 (defun setup-context (context host &optional mock-input)
   "Install the core builtins into the freshly created evaluation
@@ -752,18 +808,13 @@ not supplied)."
 ;;; expression namespace (at a toplevel read it is unambiguous: no
 ;;; backquote in AutoLISP).
 
-(define-interactor *autolisp*
-  :name "AUTOLISP" :alias "LISP"
-  :prompt "_$ "
-  :reader '%autolisp-reader
-  :evaluator '%autolisp-evaluate
-  :documentation "The clautolisp Lisp REPL — the bottom interactor, always
-under every stacked mode (design-revision D3): reads AutoLISP forms; a
-`,command' line runs a REPL command. Routable as `autolisp CMD' or `lisp
-CMD' from any inner mode; a user command registered here
-((clal-define-command \"AUTOLISP\" …)) is reachable everywhere — the
-\"global\" user command (D6). The prompt is late-bound (an indication of
-the current dialect can come later).")
+;;; The *AUTOLISP* REPL interactor, its REPL-STATE, its reader/evaluator, and
+;;; the "lisp" window template now live in the CLAUTOLISP.REPL library (below
+;;; this tool, so a Lisp window is instantiable from the ncurses debugger).
+;;; This file keeps the tool-specific parts: the comma-commands below (which
+;;; register into *AUTOLISP*'s dictionaries), REPL-LOOP (which drives it), and
+;;; the rich per-turn behaviour — installed into the library's hooks just after
+;;; REPL-LOOP.
 
 (define-command (*autolisp* d date) ()
     "Print the current date and time (ISO 8601)."
@@ -785,18 +836,40 @@ the current dialect can come later).")
     (format t "~&~:[~*~;~D day~:*~P, ~]~2,'0D:~2,'0D:~2,'0D~%"
             (plusp day) day hou min sec)))
 
+(defun %repl-help-line (cmd)
+  "A `,help' listing line for CMD. A keyless command (no short key — e.g.
+,settings) shows only its full word, not a bare `,'."
+  (let ((key (command-key cmd))
+        (phrase (command-phrase cmd))
+        (doc (command-docstring cmd)))
+    (if (plusp (length key))
+        (format nil "  ,~A~@[ / ,~A~]~30T~A"
+                key (and (plusp (length phrase)) phrase) doc)
+        (format nil "  ,~A~30T~A" phrase doc))))
+
+(defun %repl-interactor-help (interactor)
+  "Print the command lines of INTERACTOR (its user dictionary shadows its system
+one, both listed)."
+  (dolist (dictionary (list (interactor-user-commands interactor)
+                            (interactor-commands interactor)))
+    (dolist (cmd (dictionary-commands dictionary))
+      (format t "~A~%" (%repl-help-line cmd)))))
+
 (define-command (*autolisp* h help) ()
     "Print the REPL comma-commands."
   (format t "~&REPL commands (a line starting with `,'; anything else evaluates):~%")
-  (dolist (dictionary (list (interactor-user-commands *autolisp*)
-                            (interactor-commands *autolisp*)))
-    (dolist (cmd (dictionary-commands dictionary))
-      (format t "  ,~A~@[ / ,~A~]~28T~A~%"
-              (command-key cmd)
-              (let ((phrase (command-phrase cmd)))
-                (and (plusp (length phrase)) phrase))
-              (command-docstring cmd))))
-  (format t "  Ctrl-D~28Texit the REPL~%"))
+  (%repl-interactor-help *autolisp*)
+  ;; Interactors stacked below the REPL — the sleeping-aldo debugger commands
+  ;; (aldo-command-from-repl.issue). They are usable directly when no REPL
+  ;; command shadows them, and are always reachable by the interactor's
+  ;; name/alias prefix (e.g. ,aldo break foo / ,debug lb).
+  (dolist (activation (rest *interactor-stack*))
+    (let ((interactor (clautolisp.interactor:activation-interactor activation)))
+      (format t "~&  ~A debugging commands (also: ,~(~A~) CMD …):~%"
+              (clautolisp.interactor:interactor-name interactor)
+              (clautolisp.interactor:interactor-name interactor))
+      (%repl-interactor-help interactor)))
+  (format t "  Ctrl-D~30Texit the REPL~%"))
 
 (define-command (*autolisp* q quit) ()
     "Exit the Lisp REPL (sometimes (quit) is not available)."
@@ -848,6 +921,35 @@ the current dialect can come later).")
       (format t "~&saved ~A~%" (clautolisp.debug.ui:save-lisp-configuration))
     (error (condition) (format t "~&,write-settings: ~A~%" condition))))
 
+;; `,settings' has NO short key: `settings' would take the key `s', already
+;; `set's — and with the short name now optional, the rarer command forgoes it
+;; (it is reached only by the full word `,settings'). Where bare `,set' lists the
+;; resolved LISP values, `,settings' shows each setting across its cascade levels
+;; (built-in default < lisp.conf < aldo.conf), marking the one effective here.
+(define-command (*autolisp* nil settings) ()
+    "Print the settings across their cascading levels (no shorthand — type ,settings)."
+  (format t "~&settings cascade (default < lisp.conf < aldo.conf) — ~A:~%"
+          (clautolisp.debug.ui:lisp-config-save-path))
+  (dolist (line (clautolisp.debug.ui:settings-cascade-lines))
+    (format t "  ~A~%" line)))
+
+;; `,i FORM' / `,inspect FORM' — evaluate FORM and open the interactive object
+;; inspector on the result (aldo-command-from-repl.issue part 2), the same
+;; inspector the debugger's `i' opens. It reuses the (session-independent)
+;; inspector core over a transient dumb UI on the REPL streams; the shared
+;; debugger session (present in interactive mode) carries the workspace/context.
+(define-command (*autolisp* i inspect) (&whole argument)
+    "Inspect the result of evaluating FORM: ,i FORM."
+  (let ((session (clautolisp.repl:repl-state-session
+                  (activation-state *command-activation*)))
+        (arg (string-trim " " (or argument ""))))
+    (if (null session)
+        (format t "~&,inspect: the inspector needs a debug session ~
+(interactive REPL / --on-error debug / --debugger-ui)~%")
+        (clautolisp.ui.dumb:inspector-loop
+         (clautolisp.ui.dumb:make-dumb-ui) session
+         (if (zerop (length arg)) nil arg)))))
+
 (defun repl-loop (dialect context &key quiet-p mock-input gui trace-p
                                         session break-on-error
                                         dribble dribble-interactors)
@@ -878,11 +980,17 @@ the current dialect can come later).")
                ;; session as the activation's state — a `,command' line dispatches
                ;; against *AUTOLISP*'s dictionaries, AutoLISP source goes to the
                ;; evaluator.
+               ;; The stack is innermost-first: *AUTOLISP* on top, with the
+               ;; sleeping-aldo interactor pushed BELOW it (aldo-command-from-
+               ;; repl.issue) so a subset of aldo's breakpoint commands is
+               ;; reachable from the REPL — shadowed by any same-name lisp
+               ;; command, reached explicitly via the ALDO/DEBUG prefix.
                (*interactor-stack*
                  (list (make-activation *autolisp*
                                         (make-repl-state :context context
                                                          :session session
-                                                         :break-on-error break-on-error)))))
+                                                         :break-on-error break-on-error))
+                       (make-sleeping-aldo-activation session))))
            (when (null (interactor-loop))
              ;; EOF (Ctrl-D): a fresh line before leaving. ,quit / (quit) return
              ;; markers through INTERACTOR-RETURN and print nothing extra.
@@ -891,30 +999,15 @@ the current dialect can come later).")
       ;; partial output line).
       (dribble-stop))))
 
-(defstruct repl-state
-  "The AUTOLISP activation's per-run state: the evaluation context and the
-attached debug session (if any). The dialect is NOT here — it is consulted
-live at each read (CURRENT-EVALUATION-DIALECT, design-revision D2), so a
-mid-session =(setq *AUTOLISP-DIALECT* 'lax)= takes effect immediately."
-  context session break-on-error)
-
-(defun %autolisp-reader (input-context)
-  "The *AUTOLISP* singleton's reader: a `,command' line dispatches, anything
-else reads as one balanced AutoLISP turn under the dialect in force NOW."
-  (let ((state (activation-state *command-activation*)))
-    (comma-command-read input-context
-                        (%repl-source-reader
-                         (current-evaluation-dialect (repl-state-context state))))))
-
-(defun %autolisp-evaluate (input)
-  "The *AUTOLISP* singleton's evaluator: one REPL turn over this activation's
-context and session."
-  (let ((state (activation-state *command-activation*)))
-    (%repl-eval-source (second input)
-                       (repl-state-context state)
-                       (repl-state-session state)
-                       (repl-state-break-on-error state)
-                       (lambda () (interactor-return :terminated)))))
+;;; Install the tool's rich per-turn REPL behaviour into the relocated
+;;; *AUTOLISP* interactor (clautolisp.repl): the library keeps a minimal default
+;;; so a Lisp window works stand-alone; the tool supplies the full turn (input
+;;; history, the dribble, navigation requests, the debug-session eval path) via
+;;; %REPL-EVAL-SOURCE, and the balanced/dribble-aware source reader
+;;; %REPL-SOURCE-READER. Quoted symbols — resolved at call time; both functions
+;;; are defined just below and are fbound before the first REPL turn runs.
+(setf clautolisp.repl:*repl-eval-hook*          '%repl-eval-source
+      clautolisp.repl:*repl-source-reader-hook* '%repl-source-reader)
 
 (defun %repl-source-reader (dialect)
   "The sexp-reader COMMA-COMMAND-READ falls back to: read one whole,
@@ -1072,12 +1165,414 @@ is handled separately by the REPL wrapper in RUN-WITH-INPUT."
     (usage)))
 
 (defun debug-ui-designator (ui-keyword)
-  "Map a --debugger-ui keyword to a registered UI designator
-(register-ui name). :tui is the dumb/terminal UI."
-  (ecase ui-keyword
-    (:tui :terminal)
+  "Map a --debugger-ui / *clal-debugger-ui* keyword to a registered UI
+designator (register-ui name). Canonical: :dumb, :ncurses, :aldb; the aliases
+:terminal / :tui map to :dumb and :emacs to :aldb; anything else falls back to
+:dumb (the always-available line UI)."
+  (case ui-keyword
+    ((:dumb :terminal :tui) :dumb)
     (:ncurses :ncurses)
-    (:aldb :aldb)))
+    ((:aldb :emacs) :aldb)
+    (t :dumb)))
+
+(defun ncurses-terminal-screen ()
+  "Return a real terminal screen for the ncurses debugger UI, or NIL (after a
+warning) when no curses backend is present in this image.
+
+Preferred backend: the no-grovel CFFI ncurses backend (package
+clautolisp.ui.tui.curses, system clautolisp-tui-curses) — its CL code carries
+no build-time dependency on ncurses and opens libncurses on demand. The retired
+cl-charms backend (clautolisp.ui.tui.charms) is accepted as a fallback if still
+loaded. Either must be present in the image (a build that includes it, or an
+init file that loads it); when neither is, we return NIL and the caller falls
+back to the terminal (tui) UI rather than crashing on an unbound screen slot."
+  (flet ((backend-sym (package name)
+           (let ((sym (and (find-package package)
+                           (find-symbol (string name) package))))
+             (and sym (fboundp sym) sym))))
+    ;; The FIRST backend present in the image decides the outcome: if its
+    ;; libncurses can be opened we hand back a screen; if it is present but
+    ;; unusable on this host (libncurses missing / unlinkable), we PROBE that
+    ;; here and fall back to the tui UI with the real reason — rather than
+    ;; deferring a raw alien crash to the first debugger stop.
+    (dolist (backend '((#:clautolisp.ui.tui.curses  ; no-grovel CFFI backend
+                        #:make-curses-screen #:curses-available-p)
+                       (#:clautolisp.ui.tui.charms  ; retired cl-charms, if loaded
+                        #:make-charms-screen nil))
+                      ;; neither backend present in this image:
+                      (progn
+                        (format *error-output*
+                                "~&clautolisp: --debugger-ui ncurses needs a curses backend ~
+(package clautolisp.ui.tui.curses, system clautolisp-tui-curses), not loaded in ~
+this image; using the terminal (tui) UI instead.~%")
+                        nil))
+      (destructuring-bind (package maker-name probe-name) backend
+        (let ((maker (backend-sym package maker-name)))
+          (when maker
+            (let ((probe (and probe-name (backend-sym package probe-name))))
+              (multiple-value-bind (usable reason)
+                  (if probe (funcall probe) (values t nil))
+                (return
+                  (if usable
+                      (funcall maker)
+                      (progn
+                        (format *error-output*
+                                "~&clautolisp: --debugger-ui ncurses: the curses backend is ~
+present but not usable on this host — ~A.~%Using the terminal (tui) UI instead.~%"
+                                (or reason "libncurses could not be initialized"))
+                        nil)))))))))))
+
+;;;; --- the aldb (Emacs) TCP listener (debugger §10) ------------------
+;;;;
+;;;; --aldb-listen [HOST:]PORT (and a persisted default-user-interface aldb) open
+;;;; a TCP listener. The FIRST time the program reaches the debugger, aldo prints
+;;;; the connect line on the terminal and WAITS — for an Emacs aldb connection at
+;;;; the listener, or for the user to type 1/2 to fall back to the tui / ncurses
+;;;; UI for the session. The prompt is LAZY (no stop ⇒ no prompt; the program
+;;;; runs normally until it breaks). The listener is a forwarding UI wrapper whose
+;;;; DELEGATE — the emacs-ui over the accepted socket, or a tui/ncurses UI — is
+;;;; chosen at that first stop (inside CALL-WITH-STOP-INTERACTOR, which wraps the
+;;;; whole stop) and drives every stop thereafter.
+
+(defvar *aldb-listener-address* nil
+  "When non-NIL (bound in RUN for the aldb TCP-listener transport), the
+\"HOST:PORT\" START-DEBUG-SESSION opens an ALDB-LISTENER-UI on instead of a bare
+stdin/stdout emacs-ui.")
+
+(defclass aldb-listener-ui ()
+  ((socket     :initarg :socket   :accessor aldb-socket)     ; usocket listener
+   (address    :initarg :address  :accessor aldb-address)    ; "HOST:PORT" shown
+   (context    :initarg :context  :accessor aldb-context)    ; for a tui/ncurses fallback
+   (connection :initform nil      :accessor aldb-connection) ; the accepted usocket, if any
+   (delegate   :initform nil      :accessor aldb-delegate))  ; the chosen real UI
+  (:documentation "A debugger UI that listens for an Emacs aldb connection and,
+at the first stop, becomes (delegates to) the emacs-ui over the accepted socket
+— or the tui / ncurses UI the user picked at the connect prompt (§10)."))
+
+(defun aldb-clean-host (host)
+  (let ((h (string-trim " " host)))
+    (cond ((string= h "") "127.0.0.1")
+          ((and (> (length h) 1) (char= (char h 0) #\[)
+                (char= (char h (1- (length h))) #\]))
+           (subseq h 1 (1- (length h))))          ; [::1] -> ::1
+          (t h))))
+
+(defun aldb-tokens (line)
+  "The whitespace-separated tokens of LINE."
+  (loop with len = (length line) with i = 0
+        for start = (position-if-not (lambda (c) (member c '(#\Space #\Tab))) line :start i)
+        while start
+        for end = (or (position-if (lambda (c) (member c '(#\Space #\Tab))) line :start start)
+                      len)
+        collect (subseq line start end)
+        do (setf i end)))
+
+(defun aldb-services-file ()
+  "The system services database path: %SystemRoot%\\System32\\drivers\\etc\\
+services on Windows, else /etc/services."
+  (or (and (uiop:os-windows-p)
+           (let ((root (uiop:getenv "SystemRoot")))
+             (and root (plusp (length root))
+                  (merge-pathnames "System32/drivers/etc/services"
+                                   (uiop:ensure-directory-pathname root)))))
+      #p"/etc/services"))
+
+(defun aldb-resolve-service-port (name)
+  "Resolve TCP service NAME to a port number via the system services database
+(getservbyname-style: /etc/services, or the Windows equivalent — a line
+=NAME PORT/tcp [ALIASES…]=). Case-insensitive on the name/aliases. Signal an
+error when NAME is unknown (or the database is absent)."
+  (with-open-file (in (aldb-services-file) :if-does-not-exist nil)
+    (when in
+      (loop for line = (read-line in nil nil) while line do
+        (let ((tokens (aldb-tokens (subseq line 0 (position #\# line)))))
+          (when (>= (length tokens) 2)
+            (destructuring-bind (service port/proto &rest aliases) tokens
+              (let ((slash (position #\/ port/proto)))
+                (when (and slash
+                           (string-equal "tcp" (subseq port/proto (1+ slash)))
+                           (or (string-equal name service)
+                               (member name aliases :test #'string-equal)))
+                  (return-from aldb-resolve-service-port
+                    (parse-integer port/proto :end slash))))))))))
+  (error "aldb: unknown TCP service ~S (not in ~A)" name (aldb-services-file)))
+
+(defun aldb-port-number (port-string)
+  "PORT-STRING as a port integer: a decimal number, or a TCP service name
+resolved via the system services database."
+  (if (and (plusp (length port-string)) (every #'digit-char-p port-string))
+      (parse-integer port-string)
+      (aldb-resolve-service-port port-string)))
+
+(defun aldb-split-address (address)
+  "Split \"[HOST:]PORT\" into (values HOST PORT-integer). A bare token is a port
+on 127.0.0.1; PORT is a decimal number or a TCP service name; [::1]:PORT keeps
+the bracketed IPv6 host. The LAST colon separates host from port."
+  (let ((colon (position #\: address :from-end t)))
+    (if (and colon (< (1+ colon) (length address)))
+        (values (aldb-clean-host (subseq address 0 colon))
+                (aldb-port-number (subseq address (1+ colon))))
+        (values "127.0.0.1" (aldb-port-number address)))))
+
+(defun make-aldb-listener-ui (address context)
+  "Open a TCP listener at ADDRESS (\"HOST:PORT\"; PORT 0 = an OS-chosen free
+port) and return an ALDB-LISTENER-UI that accepts the Emacs aldb connection
+there at the first stop. CONTEXT builds the tui/ncurses fallback UI."
+  (multiple-value-bind (host port) (aldb-split-address address)
+    (let* ((socket (usocket:socket-listen host port
+                                          :reuse-address t
+                                          :element-type 'character))
+           (actual (usocket:get-local-port socket)))
+      (make-instance 'aldb-listener-ui
+                     :socket socket
+                     :address (format nil "~A:~A" host actual)
+                     :context context))))
+
+(defun aldb-stop-reason-line (hit)
+  "A one-line reason for the stop, shown above the connect prompt, or NIL."
+  (and hit
+       (member (clautolisp.debug:hit-stop-reason hit) '(:unhandled-error :caught-error))
+       (clautolisp.debug:hit-error-message hit)))
+
+(defun aldb-el-path ()
+  "The filesystem path of the shipped Emacs client aldb.el, or NIL when it can't
+be located. Checks the in-tree source (dev checkout) first, then the installed
+site-lisp copy — $PREFIX/share/emacs/site-lisp/clautolisp/aldb.el, derived from
+the installed CL source tree (…/share/common-lisp/source/clautolisp/…), where
+`make install-emacs' puts it. Best-effort via ASDF."
+  (flet ((existing (path) (and path (let ((p (ignore-errors (probe-file path))))
+                                      (and p (namestring p))))))
+    (or
+     ;; dev checkout: emacs/aldb.el beside the emacs-UI system's source
+     (ignore-errors
+       (existing (asdf:system-relative-pathname
+                  "clautolisp/autolisp-debug-ui-emacs" "emacs/aldb.el")))
+     ;; installed: reconstruct <…>/share/emacs/site-lisp/clautolisp/aldb.el from
+     ;; the system source dir (…/share/common-lisp/source/clautolisp/…-emacs/)
+     (ignore-errors
+       (let* ((dir (pathname-directory
+                    (asdf:system-source-directory "clautolisp/autolisp-debug-ui-emacs")))
+              (share (position "share" dir :test #'string= :from-end t)))
+         (when share
+           (existing
+            (make-pathname :directory (append (subseq dir 0 (1+ share))
+                                              '("emacs" "site-lisp" "clautolisp"))
+                           :name "aldb" :type "el"))))))))
+
+(defun aldb-print-connect-prompt (ui hit)
+  ;; NB continue long format lines with ~<newline> (tilde-newline), which elides
+  ;; the source newline + indentation — a bare \\<newline> in a CL string is a
+  ;; LITERAL newline, so it would double every ~% here.
+  (multiple-value-bind (host port) (aldb-split-address (aldb-address ui))
+    (let ((el (aldb-el-path)))
+      (format t "~&~@[~A~%~]~
+Aldo debugger activated, connect from Emacs aldb:~%~
+~@[~4TM-x load-file RET ~A RET~%~]~
+~4TM-x aldb-connect RET ~A RET ~A RET~%~
+Alternatively, select a terminal or ncurses user interface,~%~
+~2T1) dumb~%~2T2) ncurses~%Debugger UI? "
+              (aldb-stop-reason-line hit) el host port)))
+  (finish-output))
+
+(defun aldb-poll-terminal-choice ()
+  "If the terminal has a line ready, read it: 1 → :dumb, 2 → :ncurses, else NIL."
+  (when (listen *standard-input*)
+    (let ((line (read-line *standard-input* nil nil)))
+      (when line
+        (case (find-if-not (lambda (c) (member c '(#\Space #\Tab))) line)
+          (#\1 :dumb) (#\2 :ncurses) (t nil))))))
+
+(defun aldb-fallback-ncurses-ui ()
+  (let ((screen (ncurses-terminal-screen)))
+    (if screen
+        (clautolisp.debug.ui:make-ui :ncurses :screen screen)
+        (clautolisp.debug.ui:make-ui :terminal))))
+
+(defun aldb-wait-for-delegate (ui)
+  "Block until an Emacs aldb connects at the listener (→ an emacs-ui over the
+socket) or the user types 1/2 at the terminal (→ a tui/ncurses UI)."
+  (loop
+    (when (usocket:wait-for-input (aldb-socket ui) :timeout 1 :ready-only t)
+      (let* ((conn (usocket:socket-accept (aldb-socket ui) :element-type 'character))
+             (stream (usocket:socket-stream conn)))
+        (setf (aldb-connection ui) conn)
+        (format t "~&aldb connected.~%") (finish-output)
+        (return (clautolisp.debug.ui:make-ui :aldb :input stream :output stream))))
+    (let ((choice (aldb-poll-terminal-choice)))
+      (when choice
+        (format t "~&using ~A.~%" (string-downcase (symbol-name choice))) (finish-output)
+        (return (ecase choice
+                  (:dumb (clautolisp.debug.ui:make-ui :dumb))
+                  (:ncurses (aldb-fallback-ncurses-ui))))))))
+
+(defun aldb-ensure-delegate (ui session hit)
+  "On the first stop, print the connect prompt and block until a delegate is
+chosen (an Emacs connection or a 1/2 fallback), then attach it. Idempotent."
+  (unless (aldb-delegate ui)
+    (aldb-print-connect-prompt ui hit)
+    (setf (aldb-delegate ui) (aldb-wait-for-delegate ui))
+    (clautolisp.debug.ui:ui-attached (aldb-delegate ui) session)))
+
+(defun aldb-close-listener (ui)
+  "Tear the listener down cleanly. On the accepted connection: flush what we
+wrote (the trailing (:detached)), then DRAIN any bytes the client already sent
+that we never read, and only then close. A close() while unread input sits in
+the socket's receive buffer makes the OS send a TCP RST to the peer (notably on
+macOS/BSD); that RST discards the (:detached) line still queued in the client's
+receive buffer, so the client sees `connection reset' instead of reading its
+last line then a clean EOF. Draining first lets close() send an orderly FIN."
+  (let ((conn (aldb-connection ui)))
+    (when conn
+      (ignore-errors
+       (let ((stream (usocket:socket-stream conn)))
+         (finish-output stream)
+         (loop while (listen stream) do (read-char stream nil nil))))
+      (ignore-errors (usocket:socket-close conn))))
+  (ignore-errors (usocket:socket-close (aldb-socket ui))))
+
+;;; The wrapper defers until the first stop: CALL-WITH-STOP-INTERACTOR wraps the
+;;; whole stop (announcement included), so activating there means the delegate is
+;;; chosen before any notification and its own stop-interactor wrap (e.g. the
+;;; dumb UI's ALDO) still frames the stop. Every other notification forwards to
+;;; the delegate once it exists; UI-ATTACHED keeps the protocol default (no-op)
+;;; so nothing happens at session start — only at the first real stop.
+
+(defmethod clautolisp.debug.ui:call-with-stop-interactor
+    ((ui aldb-listener-ui) session hit thunk)
+  (aldb-ensure-delegate ui session hit)
+  (clautolisp.debug.ui:call-with-stop-interactor (aldb-delegate ui) session hit thunk))
+
+(macrolet ((forward (name (&rest args))
+             `(defmethod ,name ((ui aldb-listener-ui) ,@args)
+                (let ((d (aldb-delegate ui)))
+                  (when d (,name d ,@args))))))
+  (forward clautolisp.debug.ui:ui-thread-hit (session hit))
+  (forward clautolisp.debug.ui:ui-thread-unhandled-error (session hit))
+  (forward clautolisp.debug.ui:ui-thread-caught-error (session hit))
+  (forward clautolisp.debug.ui:ui-thread-resumed (session))
+  (forward clautolisp.debug.ui:ui-thread-exited (session outcome))
+  (forward clautolisp.debug.ui:ui-show-source (source-position))
+  (forward clautolisp.debug.ui:ui-breakpoint-added (breakpoint))
+  (forward clautolisp.debug.ui:ui-breakpoint-removed (breakpoint))
+  (forward clautolisp.debug.ui:ui-open-navigation-request (session request)))
+
+(defmethod clautolisp.debug.ui:ui-await-command ((ui aldb-listener-ui) session hit)
+  (let ((d (aldb-delegate ui)))
+    (if d (clautolisp.debug.ui:ui-await-command d session hit) :continue)))
+
+(defmethod clautolisp.debug.ui:ui-show-stop-source-p ((ui aldb-listener-ui))
+  (let ((d (aldb-delegate ui)))
+    (if d (clautolisp.debug.ui:ui-show-stop-source-p d) t)))
+
+(defmethod clautolisp.debug.ui:ui-show-message
+    ((ui aldb-listener-ui) level format-string &rest args)
+  (let ((d (aldb-delegate ui)))
+    (when d (apply #'clautolisp.debug.ui:ui-show-message d level format-string args))))
+
+(defmethod clautolisp.debug.ui:ui-run-command
+    ((ui aldb-listener-ui) session command &optional hit)
+  (let ((d (aldb-delegate ui)))
+    (when d (clautolisp.debug.ui:ui-run-command d session command hit))))
+
+(defmethod clautolisp.debug.ui:ui-detached ((ui aldb-listener-ui))
+  ;; A disconnecting Emacs must not crash the debugged session: if the client
+  ;; is already gone, writing the delegate's (:detached) hits a broken pipe —
+  ;; swallow it and still close the listener.
+  (let ((d (aldb-delegate ui)))
+    (when d (ignore-errors (clautolisp.debug.ui:ui-detached d))))
+  (aldb-close-listener ui))
+
+(defun build-debug-ui (debug-ui context)
+  "Construct the debugger UI object for the keyword DEBUG-UI (:dumb/:ncurses/:aldb),
+applying the transport/screen specials: :aldb with a bound listener address becomes
+an ALDB-LISTENER-UI; :ncurses acquires a real terminal screen, falling back to the
+terminal (tui) UI when the curses backend is unavailable (rather than crashing on
+an unbound screen). Shared by session start and the live per-stop UI selector."
+  (if (eq debug-ui :aldb)
+      ;; aldb reaches Emacs over a channel. A configured listener address
+      ;; (--aldb-listen, or the launch aldb default) binds it; --aldb-stdio
+      ;; explicitly uses the process stdin/stdout. Otherwise — nothing
+      ;; configured, e.g. a live switch to aldb (aldb-stdio-is-a-poor-default) —
+      ;; default to a TCP listener on 127.0.0.1 / a free port, NOT stdio: the
+      ;; user connects from Emacs at the address the connect prompt prints.
+      (cond
+        (*aldb-listener-address*
+         (make-aldb-listener-ui *aldb-listener-address* context))
+        ((eq clautolisp.autolisp-runtime:*clal-aldb-listen* :stdio)
+         (clautolisp.debug.ui:make-ui :aldb))
+        (t
+         (make-aldb-listener-ui (aldb-default-listen-address) context)))
+      (let* ((screen (when (eq debug-ui :ncurses) (ncurses-terminal-screen)))
+             (designator (if (and (eq debug-ui :ncurses) (null screen))
+                             :terminal
+                             (debug-ui-designator debug-ui))))
+        (apply #'clautolisp.debug.ui:make-ui designator
+               (when screen (list :screen screen))))))
+
+(defun %normalize-debugger-ui-symbol (value)
+  "The canonical debugger-UI keyword (:dumb / :ncurses / :aldb) named by the
+AutoLISP symbol VALUE (by name, case-insensitively), or NIL when it names none.
+Canonical DUMB / NCURSES / ALDB; aliases TERMINAL and TUI -> :dumb, EMACS ->
+:aldb."
+  (when (typep value 'clautolisp.autolisp-runtime:autolisp-symbol)
+    (let ((name (string-upcase (clautolisp.autolisp-runtime:autolisp-symbol-name value))))
+      (cond ((member name '("DUMB" "TERMINAL" "TUI") :test #'string=) :dumb)
+            ((string= name "NCURSES") :ncurses)
+            ((member name '("ALDB" "EMACS") :test #'string=) :aldb)))))
+
+(defun live-debugger-ui-keyword ()
+  "The LIVE debugger-UI selection, read fresh at each stop. The AutoLISP
+*CLAL-DEBUGGER-UI* variable overrides the CLI-set default when it names a UI —
+canonical DUMB / NCURSES / ALDB (aliases TERMINAL and TUI for DUMB, EMACS for
+ALDB), matched case-insensitively. Unset (NIL) uses the CLI default. Set to any
+OTHER value, it warns (each time it is read) and uses the DUMB UI. So (setq
+*clal-debugger-ui* 'ncurses) picks the UI for the next debugger entry."
+  (let* ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "*CLAL-DEBUGGER-UI*"))
+         (value (and (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p sym)
+                     (clautolisp.autolisp-runtime:autolisp-symbol-value sym))))
+    (cond
+      ((null value) clautolisp.autolisp-runtime:*clal-debugger-ui*)
+      ((%normalize-debugger-ui-symbol value))
+      (t (let ((shown (if (typep value 'clautolisp.autolisp-runtime:autolisp-symbol)
+                          (clautolisp.autolisp-runtime:autolisp-symbol-name value)
+                          value)))
+           (format *error-output*
+                   "~&[debugger-ui] *CLAL-DEBUGGER-UI* value ~S is not one of ~
+DUMB / NCURSES / ALDB (or the aliases TERMINAL / TUI / EMACS); using DUMB.~%"
+                   shown))
+         :dumb))))
+
+(defun make-debug-ui-selector (initial-kind initial-ui context)
+  "A closure the debug session calls at each stop to get the UI to use, honoring
+the LIVE *CLAL-DEBUGGER-UI* (debugger-ui-live-switch). It remembers the current
+kind and its constructed UI, rebuilding (a fresh screen/socket) only when the kind
+actually changes, and returns the SAME object while the kind is unchanged so the
+session does no needless detach/attach. Seeded with the launch UI so the first
+stop reuses the one session start already attached."
+  (let ((kind initial-kind) (ui initial-ui))
+    (lambda ()
+      (let ((want (live-debugger-ui-keyword)))
+        (unless (eql want kind)
+          (setf kind want ui (build-debug-ui want context)))
+        ui))))
+
+(defun start-debug-session (debug-ui context)
+  "Start the debugger session for DEBUG-UI, installing a per-stop UI SELECTOR so
+the live *CLAL-DEBUGGER-UI* selection is honored at every debugger entry (a
+program may switch UI between stops). The launch UI is built once and reused
+until the selection changes; see BUILD-DEBUG-UI for the transport/screen
+specials."
+  ;; Make the CLAL-OPTIMIZATION DEBUG level authoritative for instrumentation at
+  ;; session start: derive the runtime gate from it so a debuggable-configured
+  ;; run (DEBUG>0 — the default) actually weaves instrumented forks, and a
+  ;; DEBUG-0/SPACE run does not. (CLAL-OPTIMIZE keeps the gate in sync for LIVE
+  ;; changes; this covers the launch value / any path that set DEBUG without it.)
+  (setf clautolisp.autolisp-runtime:*debug-instrumentation-enabled*
+        (plusp (clautolisp.autolisp-builtins-core:clal-optimization-level :debug)))
+  (let* ((initial-ui (build-debug-ui debug-ui context))
+         (selector (make-debug-ui-selector debug-ui initial-ui context)))
+    (clautolisp.debug.ui:start-session
+     :ui initial-ui :context context :ui-selector selector)))
 
 ;;; --- SIGINT / --on-interrupt (debugger-public-interface-and-on-error
 ;;; Part B) -------------------------------------------------------------
@@ -1159,6 +1654,107 @@ that, degrading to the documented NIL."
   #-(and sbcl (not win32))
   nil)
 
+;;;; --- the lisp environment: a REPL/application thread + its aldo companion ---
+;;;;
+;;;; aldo is always available beside a running lisp environment (aldo-command-
+;;;; from-repl.issue). The debugger UI runs on its OWN thread — the "aldo
+;;;; companion" — mutually exclusive with the application/REPL thread: on a stop
+;;;; the application hands the hit to the companion through the thread-debug-
+;;;; info's blocking-queue rendezvous and blocks until the companion returns a
+;;;; resume directive; between stops the companion sleeps on the outbound queue.
+;;;; That rendezvous IS the mutex ("when the repl works, aldo sleeps, and vice-
+;;;; versa"), and it is what lets sleeping-aldo commands touch the shared
+;;;; breakpoint table from the REPL thread safely.
+;;;;
+;;;; CALL-WITH-LISP-ENVIRONMENT abstracts the thread pair. For now the REPL runs
+;;;; in the CURRENT (main) thread (REPL-IN-CURRENT-THREAD t, the only supported
+;;;; mode); the seam is here so a future mode can fork a dedicated REPL thread
+;;;; too — e.g. to leave the main thread for a CAD application's GUI, running the
+;;;; whole lisp repl + aldo pair off it.
+
+(defstruct lisp-environment
+  "A running lisp environment: its debugger SESSION (holding the shared
+thread-debug-info + breakpoint table), the ALDO-COMPANION thread that drives the
+debugger UI, and REPL-THREAD (NIL while the REPL runs in the current thread)."
+  session aldo-companion (repl-thread nil))
+
+(defun %session-companion-queues-ready (session)
+  "Ensure SESSION's thread-info carries the inbound/outbound blocking queues the
+application↔companion rendezvous uses; return the thread-info."
+  (let ((ti (clautolisp.debug.ui:session-thread-info session)))
+    (unless (clautolisp.debug:thread-debug-info-inbound ti)
+      (setf (clautolisp.debug:thread-debug-info-inbound ti)
+            (clautolisp.debug:make-blocking-queue)))
+    (unless (clautolisp.debug:thread-debug-info-outbound ti)
+      (setf (clautolisp.debug:thread-debug-info-outbound ti)
+            (clautolisp.debug:make-blocking-queue)))
+    ti))
+
+(defun %companion-hit-handler (hit)
+  "The application-thread *DEBUG-HIT-HANDLER* under a lisp environment: report the
+HIT to the aldo companion on the outbound queue and block on the inbound queue
+for the companion's resume directive (the shape of the engine's QUEUE-HIT-
+HANDLER, written here against the exported accessors)."
+  (let ((ti (clautolisp.debug:hit-thread-info hit)))
+    (setf (clautolisp.debug:thread-debug-info-status ti) :stopped)
+    (clautolisp.debug:bq-push (clautolisp.debug:thread-debug-info-outbound ti)
+                              (list :hit hit))
+    (prog1 (clautolisp.debug:bq-pop (clautolisp.debug:thread-debug-info-inbound ti))
+      (setf (clautolisp.debug:thread-debug-info-status ti) :running))))
+
+(defun start-aldo-companion (session)
+  "Fork the aldo companion thread for SESSION: it drives the debugger UI for every
+hit the application hands off through the outbound queue, pushing SESSION-STOP's
+resume directive back on the inbound queue, until a (:shutdown) message. The UI
+writes to the streams it captured at session creation; the process-global
+*COLOR-OUTPUT* accent is rebound here so the companion prints in colour too."
+  (let ((ti (%session-companion-queues-ready session))
+        (color clautolisp.autolisp-runtime:*color-output*))
+    (bordeaux-threads:make-thread
+     (lambda ()
+       (let ((clautolisp.autolisp-runtime:*color-output* color))
+         (loop
+           (let ((message (clautolisp.debug:bq-pop
+                           (clautolisp.debug:thread-debug-info-outbound ti))))
+             (case (first message)
+               (:hit
+                (clautolisp.debug:bq-push
+                 (clautolisp.debug:thread-debug-info-inbound ti)
+                 ;; A fault inside the UI must not wedge the blocked application:
+                 ;; on error, resume with :continue so the program carries on.
+                 (handler-case
+                     (clautolisp.debug.ui:session-stop session (second message))
+                   (error (condition)
+                     (format *error-output* "~&aldo companion: ~A~%" condition)
+                     :continue))))
+               (:shutdown (return)))))))
+     :name "aldo-companion")))
+
+(defun stop-aldo-companion (session companion)
+  "Tell the aldo companion thread to exit (a (:shutdown) on the outbound queue)
+and join it."
+  (when (and companion (bordeaux-threads:thread-alive-p companion))
+    (clautolisp.debug:bq-push
+     (clautolisp.debug:thread-debug-info-outbound
+      (clautolisp.debug.ui:session-thread-info session))
+     (list :shutdown))
+    (ignore-errors (bordeaux-threads:join-thread companion))))
+
+(defun call-with-lisp-environment (session function &key (repl-in-current-thread t))
+  "Run FUNCTION — the lisp application/REPL work — as a lisp environment beside an
+aldo companion thread driving SESSION's debugger UI (see the block comment).
+REPL-IN-CURRENT-THREAD must be true for now: FUNCTION runs on the calling thread
+and the companion is torn down on exit. The keyword is the forecast seam for a
+future mode that forks a dedicated REPL thread as well."
+  (unless repl-in-current-thread
+    (error "call-with-lisp-environment: forking a dedicated REPL thread is not ~
+implemented yet; only the current-thread REPL mode (repl-in-current-thread t) ~
+is supported."))
+  (%session-companion-queues-ready session)
+  (let ((companion (start-aldo-companion session)))
+    (unwind-protect (funcall function)
+      (stop-aldo-companion session companion))))
+
 (defun run-under-session-debugging (session thunk break-on-error)
   "Run THUNK with debugging active under an already-attached SESSION (debugger
 §10): an uncaught AutoLISP error stops in the session's UI when BREAK-ON-ERROR
@@ -1168,7 +1764,14 @@ aborted from the debugger. Each call is its own abort extent, so a REPL turn's
 abort returns to the prompt rather than unwinding the whole loop."
   (let ((clautolisp.debug:*break-on-error* break-on-error)
         (clautolisp.debug:*debug-hit-handler*
-          (lambda (hit) (clautolisp.debug.ui:session-stop session hit))))
+          ;; Under a lisp environment (the ti carries the rendezvous queues) the
+          ;; aldo companion thread drives the stop; hand the hit off to it. With
+          ;; no companion (defensive: debugging run outside an environment) drive
+          ;; the UI inline on this thread, as before.
+          (if (clautolisp.debug:thread-debug-info-inbound
+               (clautolisp.debug.ui:session-thread-info session))
+              #'%companion-hit-handler
+              (lambda (hit) (clautolisp.debug.ui:session-stop session hit)))))
     (clautolisp.debug:call-with-debugging
      thunk :thread-info (clautolisp.debug.ui:session-thread-info session))))
 
@@ -1244,29 +1847,37 @@ machinery, not user intent)."
           ;;    which debugs each turn (so `clautolisp` + (/ 0) breaks in).
           ;; *break-on-error* is off under --on-error ignore.
           (let ((break (and debug-ui (not (eq on-error-policy :ignore))))
-                (session (and debug-ui
-                              (clautolisp.debug.ui:start-session
-                               :ui (debug-ui-designator debug-ui) :context context))))
-            (unwind-protect
-                 (progn
-                   (if (and session (not interactive-p))
-                       (run-under-session-debugging session #'run-actions break)
-                       (run-actions))
-                   (when interactive-p
-                     (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
-                      context "*AUTOLISP-INTERACTIVE*" (intern-autolisp-symbol "T")
-                      (lambda ()
-                        (repl-loop dialect context
-                                   :quiet-p quiet-p
-                                   :mock-input mock-input
-                                   :gui gui
-                                   :trace-p trace-p
-                                   :session session
-                                   :break-on-error break
-                                   :dribble dribble
-                                   :dribble-interactors dribble-interactors)))))
-              (when session
-                (clautolisp.debug.ui:ui-detached (clautolisp.debug.ui:session-ui session))))))
+                (session (and debug-ui (start-debug-session debug-ui context))))
+            (flet ((run-environment ()
+                     ;; The application/REPL work of the lisp environment (run on
+                     ;; the current thread; the aldo companion runs beside it).
+                     (if (and session (not interactive-p))
+                         (run-under-session-debugging session #'run-actions break)
+                         (run-actions))
+                     (when interactive-p
+                       (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
+                        context "*AUTOLISP-INTERACTIVE*" (intern-autolisp-symbol "T")
+                        (lambda ()
+                          (repl-loop dialect context
+                                     :quiet-p quiet-p
+                                     :mock-input mock-input
+                                     :gui gui
+                                     :trace-p trace-p
+                                     :session session
+                                     :break-on-error break
+                                     :dribble dribble
+                                     :dribble-interactors dribble-interactors))))))
+              (unwind-protect
+                   ;; With a debug session, run beside the aldo companion thread
+                   ;; (the debugger UI runs there, mutually exclusive with this
+                   ;; thread). With no session, run plain on this thread.
+                   (if session
+                       (call-with-lisp-environment session #'run-environment
+                                                   :repl-in-current-thread t)
+                       (run-environment))
+                (when session
+                  (clautolisp.debug.ui:ui-detached
+                   (clautolisp.debug.ui:session-ui session)))))))
         ;; Normal completion: exit with the status a script recorded via
         ;; (autolisp-set-status N) — 0 when it never touched the channel.
         (autolisp-exit-status context))
@@ -1453,8 +2064,8 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                                                 options)))
                             effective-ui))
                ;; --aldb-listen / --aldb-stdio (Part C/D): recorded and
-               ;; mirrored to *CLAL-ALDB-LISTEN*; the transport itself is
-               ;; pending (see below).
+               ;; mirrored to *CLAL-ALDB-LISTEN*. :stdio ⇒ RPC over the process
+               ;; stdin/stdout; a "HOST:PORT" string ⇒ the TCP listener.
                (aldb-listen
                  (cond ((clautolisp.autolisp-cli:cli-options-aldb-stdio-p options)
                         :stdio)
@@ -1463,27 +2074,19 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                         (format nil "~A:~A"
                                 (or (clautolisp.autolisp-cli:cli-options-aldb-address options)
                                     "127.0.0.1")
-                                (clautolisp.autolisp-cli:cli-options-aldb-port options))))))
-          ;; The aldb (Emacs) front-end speaks over a TCP socket (or stdio);
-          ;; the listener is not yet implemented (debugger §10). Fail clearly
-          ;; when aldb was requested on the command line; when it merely is
-          ;; the persisted default-user-interface, warn and fall back to tui
-          ;; so the tool stays usable.
-          (when (eq debug-ui :aldb)
-            (cond
-              ((eq user-interface :aldb)
-               (format *error-output*
-                       "~&clautolisp: --debugger-ui aldb is not yet implemented ~
-                        (the aldb RPC listener is pending); use tui or ncurses.~%")
-               (finish-output *error-output*)
-               (quit 2))
-              (t
-               (format *error-output*
-                       "~&clautolisp: the persisted default-user-interface ~
-                        aldb is not yet implemented; using tui.~%")
-               (finish-output *error-output*)
-               (setf debug-ui :tui effective-ui :tui))))
-          (let ((*verbose-p* verbose-p)
+                                (clautolisp.autolisp-cli:cli-options-aldb-port options)))))
+               ;; The aldb TCP-listener address (debugger §10): non-NIL only when
+               ;; aldb runs over the listener (not stdio) — the --aldb-listen
+               ;; address, else the persisted default (127.0.0.1:4301). Bound to
+               ;; *ALDB-LISTENER-ADDRESS* below so START-DEBUG-SESSION opens it.
+               (aldb-listener-address
+                 (aldb-resolve-listener-address debug-ui aldb-listen)))
+          ;; The aldb (Emacs) front-end speaks a line-oriented S-expr RPC over
+          ;; STDIO (--aldb-stdio) or a TCP socket (--aldb-listen / plain aldb).
+          ;; Both are served now; the transport is chosen by ALDB-LISTEN and, for
+          ;; the listener, ALDB-LISTENER-ADDRESS (see START-DEBUG-SESSION).
+          (let ((*aldb-listener-address* aldb-listener-address)
+                (*verbose-p* verbose-p)
                 (*debug-p* debug-p)
                 ;; The event policies (debugger §10 / Part B): user code may
                 ;; rebind the CL variables; the AutoLISP mirrors of the
@@ -1506,6 +2109,19 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
             (when trace-p
               (setf clautolisp.autolisp-runtime:*autolisp-trace-p* t))
             (let ((status
+                    ;; With debugging requested (--debug or --on-error debug), an
+                    ;; UNHANDLED internal (host-Lisp) error must not vanish behind
+                    ;; a one-line condition: a HANDLER-BIND dumps the host
+                    ;; backtrace at signal time — the stack still intact — before
+                    ;; the outer handler-case reports and exits. It fires ONLY for
+                    ;; errors no inner handler took (the AutoLISP debugger / REPL
+                    ;; handle their own), so ordinary program errors are
+                    ;; unaffected; the handler DECLINES, so reporting/exit is
+                    ;; unchanged.
+                    (handler-bind
+                        ((error (lambda (condition)
+                                  (when (or debug-p (eq on-error :debug))
+                                    (print-host-backtrace condition)))))
                     ;; Under a debug session, record source positions during
                     ;; the load so the navigator can show a form's ORIGINAL
                     ;; source text (its own line breaks and indentation) rather
@@ -1529,7 +2145,7 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                                     :debug-ui debug-ui
                                     :on-error-policy on-error
                                     :dribble dribble
-                                    :dribble-interactors dribble-interactors))))
+                                    :dribble-interactors dribble-interactors)))))
               (finish-output)
               ;; RUN-WITH-INPUT returns the effective process exit status
               ;; (autolisp-set-status / (quit N) / error → 1 / file → 2).

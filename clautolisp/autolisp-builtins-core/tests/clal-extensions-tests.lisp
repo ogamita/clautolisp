@@ -684,3 +684,93 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
                (clautolisp.autolisp-runtime:autolisp-string-value
                 (clautolisp.autolisp-runtime:autolisp-symbol-value
                  (clautolisp.autolisp-runtime:intern-autolisp-symbol "*CLAL-CLIPBOARD*")))))))
+
+;;; --- clal-binding family (ncurses-key-bindings.issue) ------------------
+
+(test clal-binding-builtins-forward-to-the-ui-hook
+  ;; The CLAL-BINDING family converts the key to a CL string and forwards to
+  ;; *ui-binding-hook* (installed by the debugger UI). With no UI loaded the
+  ;; builtins are a no-op; here a stub hook records the calls.
+  (let ((calls '()))
+    (let ((clautolisp.autolisp-runtime:*ui-binding-hook*
+            (lambda (op &rest args) (push (list* op args) calls) "z")))
+      (clautolisp.autolisp-builtins-core::builtin-clal-binding
+       (clautolisp.autolisp-runtime:make-autolisp-string "C-x C-f")
+       (clautolisp.autolisp-runtime:make-autolisp-string "sedit load"))
+      (clautolisp.autolisp-builtins-core::builtin-clal-remove-binding
+       (clautolisp.autolisp-runtime:make-autolisp-string "C-x C-f")))
+    (setf calls (nreverse calls))
+    (is (eq :bind (first (first calls))))
+    (is (equal "C-x C-f" (second (first calls))))            ; key -> CL string
+    (is (equal "sedit load"                                  ; command forwarded
+               (clautolisp.autolisp-runtime:autolisp-string-value (third (first calls)))))
+    (is (eq :unbind (first (second calls))))
+    (is (equal "C-x C-f" (second (second calls))))))
+
+(test clal-binding-is-a-no-op-without-a-ui
+  ;; No debugger UI loaded (hook nil) -> the builtins are harmless no-ops.
+  (let ((clautolisp.autolisp-runtime:*ui-binding-hook* nil))
+    (is (null (clautolisp.autolisp-builtins-core::builtin-clal-binding
+               (clautolisp.autolisp-runtime:make-autolisp-string "z")
+               (clautolisp.autolisp-runtime:make-autolisp-string "continue"))))
+    (is (null (clautolisp.autolisp-builtins-core::builtin-clal-binding-lookup
+               (clautolisp.autolisp-runtime:make-autolisp-string "z"))))))
+
+;;; --- opaque lisp-object handles + clal frame/window/face builtins ------
+
+(test opaque-lisp-object-reports-its-type-and-prints-unreadably
+  (clautolisp.autolisp-runtime:reset-lisp-object-wrappers)
+  (let* ((obj (list :a :b))
+         (w (clautolisp.autolisp-runtime:wrap-lisp-object obj "WINDOW" (lambda () "sedit"))))
+    (is (clautolisp.autolisp-runtime:lisp-object-p w))
+    (is (clautolisp.autolisp-runtime:lisp-object-p w "WINDOW"))
+    (is (not (clautolisp.autolisp-runtime:lisp-object-p w "FRAME")))
+    ;; (type handle) -> WINDOW
+    (is (string= "WINDOW" (clautolisp.autolisp-runtime:autolisp-symbol-name
+                           (clautolisp.autolisp-runtime:autolisp-type w))))
+    (is (search "#<WINDOW \"sedit\"" (prin1-to-string w)))
+    ;; interned: same object -> EQ handle; unwrap round-trips
+    (is (eq w (clautolisp.autolisp-runtime:wrap-lisp-object obj "WINDOW")))
+    (is (eq obj (clautolisp.autolisp-runtime:unwrap-lisp-object w "WINDOW")))))
+
+(test clal-object-builtins-forward-to-the-ui-object-hook
+  (let ((calls '()))
+    (let ((clautolisp.autolisp-runtime:*ui-object-hook*
+            (lambda (op &rest args) (push (cons op args) calls) op)))
+      (clautolisp.autolisp-builtins-core::builtin-clal-make-window
+       (list (cons (clautolisp.autolisp-runtime:make-autolisp-string "name")
+                   (clautolisp.autolisp-runtime:make-autolisp-string "sedit"))))
+      (clautolisp.autolisp-builtins-core::builtin-clal-frame-list)
+      (clautolisp.autolisp-builtins-core::builtin-clal-define-face
+       (clautolisp.autolisp-runtime:make-autolisp-string "warn")))
+    (setf calls (nreverse calls))
+    (is (eq :make-window (first (first calls))))
+    (is (eq :frame-list (first (second calls))))
+    (is (eq :define-face (first (third calls))))))
+
+(test clal-object-builtins-are-no-ops-without-a-ui
+  (let ((clautolisp.autolisp-runtime:*ui-object-hook* nil))
+    (is (null (clautolisp.autolisp-builtins-core::builtin-clal-make-window nil)))
+    (is (null (clautolisp.autolisp-builtins-core::builtin-clal-frame-list)))))
+
+(test clal-call-with-temp-window-forwards-to-hook
+  (let ((calls '()))
+    (let ((clautolisp.autolisp-runtime:*ui-object-hook*
+            (lambda (op &rest args) (push (cons op args) calls) :ok)))
+      (is (eq :ok (clautolisp.autolisp-builtins-core::builtin-clal-call-with-temp-window
+                   nil (clautolisp.autolisp-runtime:make-autolisp-string "fn")))))
+    (is (eq :with-temp-window (car (first calls))))))
+
+(test clal-window-op-builtins-forward-to-the-hook
+  (let ((calls '()))
+    (let ((clautolisp.autolisp-runtime:*ui-object-hook*
+            (lambda (op &rest args) (push (cons op args) calls) op)))
+      (clautolisp.autolisp-builtins-core::builtin-clal-clear-window)
+      (clautolisp.autolisp-builtins-core::builtin-clal-move-cursor-to 2 3)
+      (clautolisp.autolisp-builtins-core::builtin-clal-window-put
+       0 0 (clautolisp.autolisp-runtime:make-autolisp-string "x")))
+    (setf calls (nreverse calls))
+    (is (eq :clear-window (first (first calls))))
+    (is (eq :move-cursor-to (first (second calls))))
+    (is (equal '(2 3) (subseq (rest (second calls)) 0 2)))   ; row col (+ nil window)
+    (is (eq :window-put (first (third calls))))))

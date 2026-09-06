@@ -400,6 +400,10 @@ ARG (the raw argument string or NIL); a body that changes the view sets
                       (setf (navi-state-redraw state) t)
                       directive)))))
 
+;; `sedit' is an extra spelling of `edit' (both open the structural editor on
+;; the selected form as a nested loop, returning here on quit).
+(bind-command-alias *navi-commands* "sedit" "edit")
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; LAVI — the flat line navigator's vocabulary (`set navigator line').

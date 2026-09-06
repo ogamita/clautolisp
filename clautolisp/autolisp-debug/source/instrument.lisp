@@ -164,6 +164,11 @@ USUBR's body conses must have been recorded by a tracked load
           ;; runs before any of the function's poll points, so the
           ;; breakpoint fires on the very first post-load execution.
           (materialize-virtual-breakpoints metadata)
+          ;; …and any FILE:LINE breakpoints that resolve into this function or
+          ;; `<toplevel>' form — armed in file order as the load proceeds, so a
+          ;; top-level breakpoint fires during the load (aldo-command-from-
+          ;; repl.issue).
+          (materialize-line-breakpoints metadata)
           metadata))))
 
 (defun ensure-metadata-for-name
