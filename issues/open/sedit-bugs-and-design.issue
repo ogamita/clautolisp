@@ -1,5 +1,17 @@
+* Status (2026-09-06, branch debugger-ui-ncurses-aldb)
+
+All three *Bugs* below are FIXED and pushed:
+- Bug "no quitting clal-sedit"                   — DONE, 1.9.106
+- Bug "does not list directories"                — DONE, 1.9.108 (+ first-file
+                                                    selection per §2.4, 1.9.109)
+- Bug "does [not] find the function definition"  — DONE, 1.9.107
+
+The design work below — the =(clal-sedit [type] object)= API extension and the
+=source-file-*= module that keeps =*source-position-table*= consistent on save
+— is NOT done (deferred; "bugs first").
+
 * Bugs
-** Bug: no quitting clal-sedit
+** Bug: no quitting clal-sedit                                   [DONE 1.9.106]
 
 #+begin_example
 Ooops: sedit asks about the debugger even when we call it from the lisp repl, we cannot even
@@ -26,7 +38,7 @@ SEDIT> really abort? (y/n) y
 SEDIT> 
 #+end_example
 
-** Bug: (clal-sedit "foo") does not list directories
+** Bug: (clal-sedit "foo") does not list directories             [DONE 1.9.108/1.9.109]
 
 There's a specification with some good examples about this part…
 
@@ -71,7 +83,7 @@ autolisp-debug-ui-tui-curses/  cador/		     third-party/
 autolisp-file-compat/	       cadtui/		     tools/
 #+end_example
 
-** Bug: (clal-sedit 'foo) does find the function definition
+** Bug: (clal-sedit 'foo) does find the function definition      [DONE 1.9.107]
 
 Current implementation fails with a symbol naming a function
 loaded from a source file: clal-sedit doesn't find its definition and
