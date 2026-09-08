@@ -1,0 +1,103 @@
+read-string-does-not-skip-comments — (read "string") ignores load's comment-stripping on real BricsCAD, unlike clautolisp
+============================================================================================================================
+
+Status: OPEN. Found via a real, reproducible parity gap while building
+an unrelated project (autocad-gui-prototype, loader.lsp), 2026-09-08.
+
+Summary
+-------
+
+  (read ";; foo\nbar")
+
+  BricsCAD V26 (real, macOS)  -> NIL
+  clautolisp                 -> BAR
+
+`load` (reading a form from a FILE) skips `;`-comments before handing
+a form to the reader, on both sides -- that much is consistent. But
+`read` applied directly to a STRING containing leading comment lines
+does NOT skip them on real BricsCAD: it returns NIL (as if EOF were
+reached immediately), while clautolisp's own `read` strips comments
+the same way `load` does, silently matching a naive assumption about
+AutoLISP source-file handling rather than (apparently) real AutoLISP
+reader semantics on a bare string.
+
+Concretely (autocad-gui-prototype/loader.lsp): a small loader read a
+metadata file (a foo.alpm, itself starting with four `;;;;` header-
+comment lines, then a real `(alpm-define-system ...)` form) via
+read-line + strcat (reconstructing the whole file into one string) and
+a single `(read whole-string)` on the result. Under clautolisp this
+returned the expected form every time headless -- 130/130 tests green,
+including an end-to-end reload of loader.lsp. On real BricsCAD V26 it
+silently returned NIL, every single time, for all three files
+affected (each starting with the same four-line comment header) --
+plain `load`-based file loads elsewhere in the exact same project were
+completely unaffected (they never call `read` on a string, only
+`load` on a file). Confirmed via a live BricsCAD probe: the
+reconstructed string was verified byte-correct (exact length, exact
+content, comments included) via `strlen`/`princ`, then `(read that-
+string)` still came back NIL. Root cause pinned down only after
+several other hypotheses (SECURELOAD/TRUSTEDPATHS, boundp reliability
+on `C:` symbols, literal-path identity, `foreach` vs. plain function
+nesting, file encoding) were each tested live on BricsCAD and ruled
+out first — this is the confirmed, reproducible bottom of it, not a
+guess.
+
+To check
+--------
+
+  1. The autolisp-spec pages for READ — does the spec text say
+     anything about comment-skipping being a LOAD/file-reader
+     responsibility rather than READ's own? If the spec is silent or
+     wrong here, it needs a correction either way.
+  2. Real AutoCAD (not just BricsCAD) — same probe
+     `(read ";; foo\nbar")`: does AutoCAD's reader behave like
+     BricsCAD's (NIL) or like clautolisp's (BAR)? If AutoCAD and
+     BricsCAD disagree with each other too, this may be a genuine
+     BricsCAD-specific quirk rather than a general AutoLISP-family
+     read semantics question — changes what "correct" means here.
+  3. Whether this is really "no comment support in read at all" or
+     something narrower — e.g. maybe a comment is tolerated mid-string
+     (between two real tokens) but not as the very FIRST thing read
+     sees; the probe above only exercises the "string starts with
+     comments" case, not comments in other positions. Worth a small
+     matrix before deciding the fix (none attempted here — this issue
+     is the found-and-triaged report, not the full characterization).
+
+Fix
+---
+
+Once (1)/(2)/(3) are answered:
+
+  - If real AutoLISP (either vendor) genuinely never skips comments in
+    `read`-on-a-string, clautolisp's own `read` is the one that's
+    wrong (too lenient) and should stop silently accepting a comment-
+    led string — at minimum matching the stricter vendor behavior
+    under --autocad/--bricscad dialects, possibly staying lenient
+    under --clautolisp (own dialect) if that leniency is worth keeping
+    as a deliberate, PER-DIALECT convenience.
+  - Either way, this looks like exactly the kind of gap
+    deferred-clautolisp-out-of-dialect-warnings.issue's mechanism
+    should eventually flag — not "operator doesn't exist in this
+    dialect" (READ exists everywhere) but "operator behaves
+    differently across dialects, worth a warning when a caller's
+    result would differ from a stricter/vendor dialect's". If that
+    general warning mechanism isn't close to landing, a narrower,
+    read-specific warning (or at minimum a documented BricsCAD/AutoCAD
+    caveat on READ's own spec page) is worth doing on its own,
+    smaller track — a headless CI run in the downstream project would
+    have caught this immediately instead of burning most of a day of
+    live-BricsCAD trial and error to isolate it.
+
+Workaround shipped downstream (autocad-gui-prototype, not clautolisp
+itself): the caller now strips comment-only lines itself before ever
+calling `read`, rather than relying on `read` to do it — see
+loader.lsp `fs-loader--comment-line-p` / `fs-loader--slurp`,
+commit bfc057d.
+
+Found by
+--------
+
+autocad-gui-prototype/loader.lsp live-BricsCAD debugging session,
+2026-09-08 (Claude Sonnet 5, with pjb driving BricsCAD interactively).
+Related: deferred-clautolisp-out-of-dialect-warnings.issue (the
+general per-dialect-behavior warning mechanism this could plug into).
