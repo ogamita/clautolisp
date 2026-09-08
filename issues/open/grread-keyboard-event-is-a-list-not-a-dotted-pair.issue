@@ -1,0 +1,100 @@
+grread-keyboard-event-is-a-list-not-a-dotted-pair — real BricsCAD grread returns (code value) as a proper list; a common downstream assumption (and this issue's own filer's code) wrongly treats it as (code . value)
+======================================================================================================================================================================================================================
+
+Status: OPEN. Found on real BricsCAD V26 (macOS) via a live bug report
+in an unrelated project (autocad-gui-prototype), 2026-09-08. Not about
+a clautolisp behavior difference this time (grread is a documented,
+deliberate stub there -- returns NIL immediately, host cador doesn't
+implement it, see clautolisp_grread_unimplemented in that project's
+own notes) -- filed here as data for WHEN grread event synthesis is
+eventually implemented, so the real return shape is right from the
+start rather than needing a second fix once someone actually exercises
+it.
+
+Summary
+-------
+
+A custom keyboard-input loop (`(grread T 2 0)` in a `while` loop,
+building up a string character by character -- the classic
+DCL-free/inline-text-entry pattern) extracted the event's value via
+`(cdr r)`, treating the grread return as a dotted pair
+`(code . value)`. On real BricsCAD, a keyboard event actually comes
+back as a genuine two-element LIST, `(code value)` -- so
+`(cdr '(2 102))` is `(102)` (a one-element list), not `102` (the bare
+integer). Downstream code passing that to `chr` fails loudly:
+
+  bad argument type <(102)> ; expected <INTEGER> at [chr]
+
+but code comparing it with `=` (e.g. `(= val 13)` for RETURN) does
+NOT itself error -- `=` apparently just returns NIL comparing a list
+against a number rather than raising a type error -- so a naive
+version of this bug can silently mis-route control flow (every
+special-key check quietly failing to match) rather than crashing
+immediately, depending on what the code does in each branch. In the
+reporting project's own case it happened to crash on the very last,
+catch-all branch, which is what surfaced it -- a differently-shaped
+handler could easily have masked this as "keystrokes are just being
+ignored" instead, much harder to diagnose.
+
+Why this is worth tracking now, unimplemented or not
+------------------------------------------------------
+
+- clautolisp's own grread already returns NIL for everything (a
+  documented, intentional gap, not this issue) -- so this exact
+  mismatch could never be exercised or caught headless under
+  clautolisp today, by construction. The reporting project's own
+  gui-inline-textbox-prompt has been in the codebase, "working" per
+  every headless test, since roughly 2026-09-02/03 -- its very first
+  live keystroke on real BricsCAD, over five days and 130+ headless
+  tests later, is what finally hit this.
+- If/when cador (or any future clautolisp host) implements real
+  keyboard/mouse grread event synthesis, getting the return SHAPE
+  right the first time (a plain list, not a dotted pair) avoids
+  reproducing this exact class of bug for every project that then
+  starts relying on clautolisp's own grread mock to validate
+  real-world behavior it was previously untestable for.
+- Worth checking the autolisp-spec's own GRREAD page for what it
+  currently documents/implies about the return shape -- if it uses
+  dotted-pair notation anywhere (a natural, common shorthand that
+  reads ambiguously either way), that's worth correcting or at least
+  disambiguating explicitly, given how easy the wrong reading is to
+  fall into (the reporting project's own code, and this filer, both
+  did).
+
+To check
+--------
+
+  1. Real AutoCAD (not just BricsCAD) -- does its grread ALSO return a
+     plain list `(code value)`, or does it differ? Not tested here
+     (no AutoCAD access at hand for this specific check, unlike the
+     read-string-does-not-skip-comments issue where the filer had
+     both). Given grread is core, ancient AutoLISP (predates the
+     AutoCAD/BricsCAD split entirely), a vendor divergence here would
+     be surprising -- but "surprising" described the block-comment
+     finding on that other issue too, so worth actually checking
+     rather than assuming.
+  2. Whether this list-vs-dotted-pair shape is consistent across EVERY
+     grread event code (2=keyboard, 5=mouse-move, and whichever others
+     exist), or varies by code. Only the keyboard case (code 2) has
+     been directly observed on real hardware as of this filing; a
+     second, analogous fix for code 5 (mouse-move, `val` expected to
+     be a point) was applied downstream by the same reasoning but is
+     NOT yet independently confirmed live.
+
+Downstream fix (autocad-gui-prototype, not clautolisp itself)
+---------------------------------------------------------------
+
+`(setq code (car r) val (cadr r))` instead of `(setq code (car r) val
+(cdr r))`, in both of that project's own grread consumers
+(gui-inline-textbox-prompt, confirmed against the real error; and
+gui-drag-attach-loop's identical pattern, fixed by the same reasoning
+but not yet independently confirmed for its own code=5 case). See
+gui-utils/src/gui-utils.lsp.
+
+Found by
+--------
+
+autocad-gui-prototype gui-inline-textbox-prompt live-BricsCAD bug
+report and fix, 2026-09-08 (Claude Sonnet 5, with pjb driving BricsCAD
+interactively — same session, same day as the
+read-string-does-not-skip-comments issue).
