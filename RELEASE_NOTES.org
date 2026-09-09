@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 2.2.0 / alfe 2.2.0 /
+master at the top of the file (clautolisp 2.2.1 / alfe 2.2.1 /
 read-autolisp 1.9.0). alfe tracks clautolisp's version: because
 =alfe --clautolisp= embeds essentially the whole clautolisp engine, a
 change to clautolisp's sources bumps alfe too — and alfe's own changes
