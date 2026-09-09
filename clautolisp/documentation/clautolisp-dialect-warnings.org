@@ -400,6 +400,61 @@ the two APIs that do work.
 - clautolisp: emitted by: clautolisp/cador/source/entity-api.lisp, EMIT-ENTMOD-OBJECT-DIVERGENCE-WARNING
 - clautolisp: the D3 divergence: issues/open/vendor-probe-autocad-bricscad-divergences.issue
 
+** =[read-leading-comment]= --- READ on a string starting with a comment
+
+*** Message
+
+: [read-leading-comment] (read ...) on a string starting with a line comment returns NIL immediately, matching the real engine under --dialect bricscad.
+
+The wording varies: this code is emitted from several call sites,
+each writing its own message. What is stable is the tag.
+
+*** How the dialects diverge
+
+Neither vendor's `read' reference page documents comment-handling in
+its string argument at all (Autodesk's and Bricsys' pages are both
+silent on it), and the two real engines do not even agree with EACH
+OTHER -- confirmed live against real installs, not inferred:
+
+  (read "; foo\nbar")     -- a leading `;' LINE comment
+  (read ";| foo |; bar")   -- a leading `;| ... |;' BLOCK comment
+
+- BricsCAD (V25 Windows, V26 macOS) returns NIL for BOTH forms: the
+  instant the first non-blank content it meets is any comment, before
+  any real object, it behaves as if EOF were reached immediately.
+- AutoCAD 2022 (Windows) returns NIL only for the BLOCK form; a
+  leading LINE comment is skipped and the following object returned --
+  the same as clautolisp's own reader.
+- clautolisp's own reader is uniform and lenient: it always skips a
+  leading comment, of either kind, and returns the following object.
+
+So `--dialect bricscad' reproduces BricsCAD's NIL for both kinds (and
+warns for both); `--dialect autocad' reproduces AutoCAD's NIL for a
+leading BLOCK comment only (and warns only for that kind -- a leading
+LINE comment stays silent, since clautolisp already matches AutoCAD
+there); `--strict' KEEPS clautolisp's lenient skip-and-return behaviour
+for both kinds but WARNS for both, because strict names no vendor and
+at least one real engine disagrees either way; `--dialect clautolisp'
+and `--lax' stay silent for both -- the same deliberate convenience
+already granted to every other clautolisp-only leniency.
+
+*** Why it matters
+
+A caller who wrote or generated a leading comment -- a `;;;;' file
+header, or an `;| ... |;' doc block -- and then handed the whole text
+to `read' as a STRING (rather than `load'ing it as a file) gets a
+silently different answer depending on which real engine runs it: an
+object on AutoCAD, NIL on BricsCAD, for the identical string. The
+warning surfaces that before it becomes a `nil where NAME was' bug
+several calls later.
+
+*** References
+
+- clautolisp: the governing issue: issues/open/read-string-does-not-skip-comments.issue
+- clautolisp: emitted by: clautolisp/autolisp-builtins-core/source/api.lisp, EMIT-READ-LEADING-COMMENT-WARNING
+- Autodesk: read (AutoLISP), 2026 CHS: https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm
+- Bricsys: read (DevRef V26): https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/read.htm
+
 * Encoding diagnostics --- the closed =*ENC-DIAGNOSTIC-CODES*= set
 
 ** =[enc-foreign-dialect]= --- Encoding control belonging to another dialect

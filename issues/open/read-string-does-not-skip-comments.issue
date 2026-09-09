@@ -1,11 +1,23 @@
 read-string-does-not-skip-comments — real AutoCAD/BricsCAD readers are stricter about comments than clautolisp's; line comments are --bricscad-specific, block comments break BOTH vendors
 ==========================================================================================================================================================================================
 
-Status: OPEN, root cause fully characterized (2026-09-08) — two
-distinct failure modes now confirmed on real hardware, across both
-vendors and platforms. Found while building an unrelated project
-(autocad-gui-prototype, loader.lsp), which has since worked around it
-by not calling `read` on a string at all (see Downstream fix below).
+Status: FIX IMPLEMENTED in clautolisp 2.1.1 (2026-09-08) — root cause
+fully characterized across both vendors and platforms; the per-dialect
+behavior + advisory-warning design below is landed (BUILTIN-READ in
+`clautolisp/autolisp-builtins-core/source/api.lisp`, the
+`[read-leading-comment]` dialect-warning register entry in
+`clautolisp/autolisp-runtime/source/portability.lisp`, and a new
+per-dialect matrix test, `builtin-read-leading-comment-dialect-matrix`
+in `clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp`).
+Remaining: the autolisp-spec `READ` page (autolisp-spec/documentation/
+autolisp-visual-lisp-specification-draft.org) still needs the
+Tested-Behaviour / dialect-divergence note this issue's original "To
+check" item asked for — tracked as the next step, not yet done as of
+this revision. Found while building an unrelated project
+(autocad-gui-prototype, loader.lsp), which has worked around it
+downstream by not calling `read` on a string at all (see Downstream
+fix below) — that workaround stays in place regardless of the
+clautolisp-side fix landing, since it predates it.
 
 Summary
 -------
@@ -64,42 +76,86 @@ file encoding) were each tested live on BricsCAD and ruled out first.
 Fix
 ---
 
-Two separate fixes, matching the two separate findings above:
+pjb's 2026-09-08 ruling settled this as ONE mechanism covering both
+comment kinds, not two independent tracks: `read` (string form)
+consults the ACTIVE DIALECT for what to do when the first non-blank
+content of its string argument is a comment, of either kind, before
+any real object. Two axes — BEHAVIOR (what `read` returns) and WARN-P
+(whether it also emits an advisory) — cross into this matrix:
 
-  - Line comments: a narrow, `--bricscad`-dialect-scoped change. Under
-    `--bricscad`, `read` (string form) should return NIL on a leading
-    `;`-line-comment, matching real BricsCAD exactly. Under `--autocad`
-    and `--clautolisp`, KEEP the current skip-and-continue behaviour —
-    it already matches real AutoCAD 2022, and clautolisp's own dialect
-    has no vendor to match, so leniency there is a deliberate
-    convenience, not a bug.
-  - Block comments: NOT dialect-scoped — clautolisp is too lenient
-    relative to BOTH real vendors tested, so `read` returning NIL on a
-    leading `;|...|;` block comment is arguably the correct default
-    behaviour under `--autocad` AND `--bricscad`, and worth considering
-    even under `--clautolisp` (own dialect) for consistency, unless the
-    lenient block-comment handling there is a deliberate, documented
-    convenience someone is relying on — needs a decision, not just a
-    mechanical port of the bricscad fix.
-  - Either way, this is exactly the kind of per-dialect (for line
-    comments) / general-correctness (for block comments) gap
-    deferred-clautolisp-out-of-dialect-warnings.issue's mechanism could
-    eventually flag — but that issue's mechanism is about a
-    MISSING-operator warning (READ exists in every dialect here, so it
-    wouldn't fire as designed today). If the fixes above land as real
-    behaviour changes, a warning becomes largely moot for --bricscad
-    (it would just be correct) — but ANY caller relying on the current
-    lenient comment-skipping in `read`-on-a-string (there may be other
-    code out there doing what autocad-gui-prototype's loader.lsp
-    originally did) would silently start getting NIL instead of an
-    object once either fix lands. Worth a one-time NEWS/changelog
-    callout when shipped, even without the general warning mechanism.
-  - Check the autolisp-spec pages for READ against both findings —
-    does the spec text say anything about comment-skipping being a
-    LOAD/file-reader responsibility rather than READ's own? It should
-    end up documenting both divergences explicitly (bricscad vs.
-    autocad/clautolisp for line comments; clautolisp vs. both real
-    vendors for block comments), not left silent or generic either way.
+  | Dialect              | leading `;` LINE        | leading `;|...|;` BLOCK   |
+  |----------------------+--------------------------+---------------------------|
+  | --dialect bricscad   | NIL, warns               | NIL, warns                |
+  | --dialect autocad    | skip+return, silent      | NIL, warns                |
+  | --strict             | skip+return, WARNS       | skip+return, WARNS        |
+  | --dialect clautolisp | skip+return, silent      | skip+return, silent       |
+  | --lax                | skip+return, silent      | skip+return, silent       |
+
+Rationale for each row:
+
+  - `--dialect bricscad`: reproduces real BricsCAD (V25 Windows / V26
+    macOS) exactly for both comment kinds — NIL, every time, the
+    instant the first thing `read` meets is a comment. Warns, because
+    the caller is about to silently lose the object a clautolisp-only
+    run would have handed back.
+  - `--dialect autocad`: reproduces real AutoCAD 2022 (Windows)
+    exactly — a leading LINE comment is skipped, matching clautolisp's
+    own default, so that case is silent; a leading BLOCK comment
+    returns NIL, so that case warns (the one place --autocad's own
+    return value now diverges from clautolisp's default).
+  - `--strict`: KEEPS clautolisp's own lenient skip-and-return
+    behaviour for BOTH kinds (strict is not literally impersonating
+    either vendor's engine) but WARNS for both, because strict means
+    "portable across the real hosts I know about", and at least one
+    real host disagrees for either comment kind — this is a genuine
+    portability hazard even though nothing breaks under --strict
+    itself.
+  - `--dialect clautolisp` / `--lax`: unchanged, fully silent, for
+    both kinds — the same deliberate, documented convenience already
+    granted to every other clautolisp-only leniency (--lax's general
+    "accept every vendor's extension without complaining" contract;
+    --clautolisp's own blessed defaults).
+
+Implemented as the `[read-leading-comment]` dialect-portability
+warning (autolisp-spec ch.25 mechanism — the SAME advisory-warning
+machinery `path-dotdot` / `ext-bricscad-undocumented` / etc. use, NOT
+deferred-clautolisp-out-of-dialect-warnings.issue's still-unbuilt
+MISSING-operator mechanism, which would not fire here anyway since
+READ exists in every dialect):
+
+  - Register entry (message template, per-dialect prose, references):
+    `clautolisp/autolisp-runtime/source/portability.lisp`, tag
+    `"read-leading-comment"`, kind `:vendor-divergence`.
+  - Emitter + policy + the BUILTIN-READ rewrite:
+    `clautolisp/autolisp-builtins-core/source/api.lisp` —
+    `%READ-STRING-LEADING-COMMENT-KIND` (peeks the first token via the
+    reader's own tokenizer, `:retain-comments-p t`, without disturbing
+    the real parse), `%READ-LEADING-COMMENT-POLICY` (the matrix above,
+    keyed off `AUTOLISP-DIALECT-PRODUCT` so it covers every BricsCAD /
+    AutoCAD version+platform variant, not just `-v26` / `-2026`), and
+    `EMIT-READ-LEADING-COMMENT-WARNING`. Not deduplicated — unlike a
+    DEFUN/LAMBDA lambda-list, a READ call has no source-position
+    "occurrence" to key a once-per-occurrence dedup on, so it fires
+    every call, like `EMIT-ENTMAKE-MARKER-DIVERGENCE-WARNING` does for
+    the same reason.
+  - Test: `builtin-read-leading-comment-dialect-matrix` in
+    `clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp` —
+    exercises all five matrix rows above end-to-end through the READ
+    builtin, both comment kinds, asserting both the return value and
+    the presence/absence of the `[read-leading-comment]` warning text
+    on *ERROR-OUTPUT*.
+  - Annex regenerated: `documentation/clautolisp-dialect-warnings.org`
+    (via `make dialect-warnings-annex`) now documents the tag.
+  - Version bump: DEVELOP 2.1.0 -> 2.1.1 in
+    `clautolisp/tools/clautolisp/source/version.lisp`
+    (clautolisp-version-bump convention).
+  - NOT changed: what `read` does with a TRAILING comment (after the
+    first object, or between repeated `read` calls on one string) —
+    still out of scope per the original "To check" item 3 above; only
+    the LEADING-comment case is characterized and fixed here.
+  - Still open: the autolisp-spec `READ` function-entry page needs the
+    Tested-Behaviour / per-dialect note this issue's original "To
+    check" item 1 asked for (see Status above).
 
 Downstream fix (autocad-gui-prototype, not clautolisp itself)
 ---------------------------------------------------------------

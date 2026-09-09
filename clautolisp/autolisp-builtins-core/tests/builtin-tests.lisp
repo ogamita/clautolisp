@@ -717,6 +717,77 @@
       (is (typep (second result) 'autolisp-symbol))
       (is (string= "FOO" (autolisp-symbol-name (second result)))))))
 
+(test builtin-read-leading-comment-dialect-matrix
+  "issue read-string-does-not-skip-comments: READ on a string whose
+first non-blank content is a comment (mono-line `;' or block `;| |;')
+behaves differently per dialect -- reproducing the confirmed live
+vendor matrix under --dialect bricscad / --dialect autocad, warning
+but staying lenient under --strict, and staying silently lenient
+under --dialect clautolisp / --lax."
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (unwind-protect
+      (let ((read-fn (autolisp-symbol-function (find-autolisp-symbol "READ"))))
+        (flet ((read-under (dialect text)
+                 (let* ((session (make-runtime-session :dialect dialect))
+                        (context (make-evaluation-context :session session)))
+                   (set-default-evaluation-context context)
+                   (let ((*error-output* (make-string-output-stream)))
+                     (values (call-autolisp-function read-fn
+                                                      (make-autolisp-string text))
+                             (get-output-stream-string *error-output*)))))
+               (bar-p (result)
+                 (and (typep result 'autolisp-symbol)
+                      (string= "BAR" (autolisp-symbol-name result)))))
+          (let ((line-comment (format nil "; a comment~%BAR"))
+                (block-comment ";| a comment |; BAR"))
+            ;; --dialect bricscad: NIL for both kinds, and warns for both.
+            (multiple-value-bind (result warning)
+                (read-under (clautolisp.autolisp-reader:autolisp-dialect-bricscad-v26)
+                            line-comment)
+              (is (null result))
+              (is (search "[read-leading-comment]" warning)))
+            (multiple-value-bind (result warning)
+                (read-under (clautolisp.autolisp-reader:autolisp-dialect-bricscad-v26)
+                            block-comment)
+              (is (null result))
+              (is (search "[read-leading-comment]" warning)))
+            ;; --dialect autocad: a leading LINE comment is skipped
+            ;; silently (matches clautolisp already); a leading BLOCK
+            ;; comment returns NIL, and warns.
+            (multiple-value-bind (result warning)
+                (read-under (clautolisp.autolisp-reader:autolisp-dialect-autocad-2026)
+                            line-comment)
+              (is (bar-p result))
+              (is (string= "" warning)))
+            (multiple-value-bind (result warning)
+                (read-under (clautolisp.autolisp-reader:autolisp-dialect-autocad-2026)
+                            block-comment)
+              (is (null result))
+              (is (search "[read-leading-comment]" warning)))
+            ;; --strict: keeps the lenient skip-and-return behaviour,
+            ;; but warns for both kinds -- strict names no vendor and
+            ;; both kinds are a hazard on at least one real engine.
+            (multiple-value-bind (result warning)
+                (read-under (clautolisp.autolisp-reader:autolisp-dialect-strict)
+                            line-comment)
+              (is (bar-p result))
+              (is (search "[read-leading-comment]" warning)))
+            (multiple-value-bind (result warning)
+                (read-under (clautolisp.autolisp-reader:autolisp-dialect-strict)
+                            block-comment)
+              (is (bar-p result))
+              (is (search "[read-leading-comment]" warning)))
+            ;; --dialect clautolisp / --lax: lenient AND silent, for
+            ;; both kinds -- the deliberate clautolisp-only convenience.
+            (dolist (dialect (list (clautolisp.autolisp-reader:autolisp-dialect-clautolisp)
+                                   (clautolisp.autolisp-reader:autolisp-dialect-lax)))
+              (dolist (text (list line-comment block-comment))
+                (multiple-value-bind (result warning) (read-under dialect text)
+                  (is (bar-p result))
+                  (is (string= "" warning))))))))
+    (clautolisp.autolisp-runtime:reset-default-evaluation-context)))
+
 (test builtin-load-binds-autolisp-load-pathname
   "While builtin-load is processing a file, *AUTOLISP-LOAD-PATHNAME*
 is bound to the absolute pathname of that file; on return the

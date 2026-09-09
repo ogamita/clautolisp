@@ -3031,10 +3031,90 @@ return ends in 0 -- and which is what pjb licensed for the shape fix.
 (defun builtin-close (file)
   (close-autolisp-file (require-file file "CLOSE")))
 
-(defun builtin-read (string)
+(defun %read-string-leading-comment-kind (text)
+  "NIL, :line, or :block: which kind of comment (if any) is the FIRST
+non-blank content TEXT's own tokenizer would see -- i.e. what READ is
+about to meet before any real object. Used only to drive READ's
+per-dialect comment-handling policy below (issue
+read-string-does-not-skip-comments); it does not change how TEXT is
+actually parsed when no leading comment is found, or when the policy
+below says to skip it and read on. Defensive: any tokenizer error here
+is swallowed (returns NIL, meaning \"proceed as usual\") -- a pre-check
+must never be the reason a working READ call starts failing."
+  (ignore-errors
+   (let* ((result (clautolisp.autolisp-reader:tokenize-string
+                   text :retain-comments-p t))
+          (first-token (first (clautolisp.autolisp-reader:read-result-objects
+                               result))))
+     (when (and first-token
+                (eq (clautolisp.autolisp-reader:token-kind first-token)
+                    :comment))
+       (let ((lexeme (clautolisp.autolisp-reader:token-lexeme first-token)))
+         (if (and (>= (length lexeme) 2) (string= ";|" lexeme :end2 2))
+             :block
+             :line))))))
+
+(defun %read-leading-comment-policy (comment-kind)
+  "(values BEHAVIOR WARN-P DIALECT-NAME) for a READ whose string
+argument's first non-blank content is a COMMENT-KIND (:line / :block)
+comment, under the CURRENT-EVALUATION-DIALECT.
+
+BEHAVIOR is :skip (skip the comment, return the following object --
+clautolisp's own uniform, lenient choice) or :nil (return NIL
+immediately, matching a real vendor engine exactly).
+
+The matrix (issues/open/read-string-does-not-skip-comments.issue,
+confirmed live against both vendors):
+
+  bricscad          -- :nil,  warn -- for BOTH kinds (real BricsCAD
+                       V25 Windows / V26 macOS).
+  autocad           -- line:  :skip, silent (already matches
+                                clautolisp);
+                        block: :nil,  warn (real AutoCAD 2022, Windows).
+  strict            -- :skip for both, but WARN for both -- strict
+                       names no vendor, and both kinds are a real
+                       hazard on at least one real engine.
+  clautolisp / lax  -- :skip for both, silent: the same deliberate
+                       leniency the original --bricscad behaviour was."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (name (and dialect
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+         (product (and dialect
+                       (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+    (cond
+      ((eq product :bricscad) (values :nil t name))
+      ((eq product :autocad)
+       (if (eq comment-kind :block)
+           (values :nil t name)
+           (values :skip nil name)))
+      ((eq name :strict) (values :skip t name))
+      (t (values :skip nil name)))))
+
+(defun emit-read-leading-comment-warning (comment-kind behavior dialect-name)
+  "Advisory to *ERROR-OUTPUT*: a `[read-leading-comment]' dialect
+portability warning (autolisp-spec ch.25) -- READ was given a string
+whose first non-blank content is a `;' (COMMENT-KIND :line) or
+`;| ... |;' (COMMENT-KIND :block) comment. See
+issues/open/read-string-does-not-skip-comments.issue for the full
+vendor matrix this reports.
+
+Not deduplicated: unlike a DEFUN/LAMBDA lambda-list, a READ call has no
+source-position \"occurrence\" to key a once-per-occurrence dedup on,
+so -- like EMIT-ENTMAKE-MARKER-DIVERGENCE-WARNING -- this fires every
+time it is called."
+  (let ((comment-word (if (eq comment-kind :block) "block" "line"))
+        (outcome-text
+          (if (eq behavior :nil)
+              "returns NIL immediately, matching the real engine"
+              "still skips it and returns the following object -- a real engine may not")))
+    (format *error-output*
+            "~&[read-leading-comment] (read ...) on a string starting with a ~
+~A comment ~A under --dialect ~(~A~).~%"
+            comment-word outcome-text (or dialect-name :strict))))
+
+(defun %builtin-read-parse (text)
   (handler-case
-      (autolisp-read-from-string
-       (autolisp-string-value (require-string string "READ")))
+      (autolisp-read-from-string text)
     (autolisp-runtime-error (condition)
       (error 'autolisp-runtime-error
              :code :invalid-read-syntax
@@ -3049,6 +3129,28 @@ return ends in 0 -- and which is what pjb licensed for the shape fix.
              :details (list :builtin "READ"
                             :condition condition)
              :call-stack (current-autolisp-call-stack)))))
+
+(defun builtin-read (string)
+  ;; issue read-string-does-not-skip-comments: real BricsCAD returns
+  ;; NIL the instant the first non-blank content it meets is a
+  ;; comment (mono-line or block), before any real object; real
+  ;; AutoCAD does that only for a block comment. clautolisp's own
+  ;; reader has always been uniformly lenient (skip any leading
+  ;; comment, return the following object) -- kept as-is under
+  ;; --dialect clautolisp / --lax, reproduced faithfully under
+  ;; --dialect bricscad / --dialect autocad, and kept-but-flagged
+  ;; under --strict.
+  (let* ((text (autolisp-string-value (require-string string "READ")))
+         (comment-kind (%read-string-leading-comment-kind text)))
+    (if comment-kind
+        (multiple-value-bind (behavior warn-p dialect-name)
+            (%read-leading-comment-policy comment-kind)
+          (when warn-p
+            (emit-read-leading-comment-warning comment-kind behavior dialect-name))
+          (if (eq behavior :nil)
+              nil
+              (%builtin-read-parse text)))
+        (%builtin-read-parse text))))
 
 (defun builtin-read-line (&optional file)
   ;; AutoLISP `(read-line [file-desc])`: the file descriptor is

@@ -8366,26 +8366,94 @@ Function
 
 *** Syntax
 #+begin_example
-(read string)
+(read [string])
 #+end_example
 
+*** Arguments and Values
+- `string` (optional): a text value to parse. Both vendor pages note it
+  "should not contain blanks, except within a list or string" — parsing
+  stops at the first delimiter (blank, newline, tab, or a matched
+  form). Omitted: BricsCAD's page documents this as returning `nil`;
+  AutoCAD's page does not name the omitted-argument case explicitly.
+
 *** Description
-Parses the first AutoLISP expression represented in a string.
+Parses the first AutoLISP expression represented in `string` and
+returns it, converted to the corresponding AutoLISP data type
+(integer, real, list, symbol, string, file, `T`, or `nil`).
 
 *** Return Values
-Returns the first object read from the string.
+Returns the first object read from the string, or `nil` if none is
+found (empty/whitespace-only input, or — see Notes — a string whose
+first non-blank content is a comment, depending on dialect).
+
+*** Examples
+- `(read "hello")` -> `HELLO`
+- `(read "(a b c)")` -> `(A B C)`
+- `(read "1.2300")` -> `1.23`
 
 *** Notes
-`read` is the main vendor-documented entry point into surface syntax behavior.
+`read` is the main vendor-documented entry point into surface syntax
+behavior, but neither vendor's own `read` reference page says anything
+at all about comment-handling in the string argument — comments are
+documented only on a separate, generically-titled Autodesk page framed
+around *program files* ("About Comments in AutoLISP Program Files"),
+not around `read` on a bare string. In the absence of a spec, the two
+real engines do not even agree with EACH OTHER:
+
+**** Tested Behaviour (product-tested, 2026-09-08 — see the issue below)
+A string whose first non-blank content is a comment, before any real
+object — whether a `;` line comment or a `;| ... |;` block comment —
+is handled differently by every engine tested:
+
+| Engine                             | leading LINE comment (`;`)   | leading BLOCK comment          |
+|------------------------------------+-------------------------------+---------------------------------|
+| BricsCAD (V25 Windows, V26 macOS)  | returns `NIL`                 | returns `NIL`                  |
+| AutoCAD 2022 (Windows)             | skips it, returns the object  | returns `NIL`                  |
+| clautolisp (its own default)       | skips it, returns the object  | skips it, returns the object   |
+
+(the BLOCK-comment column is the `;| ... |;` form)
+
+So BricsCAD returns `NIL` the instant the first non-blank thing its
+reader meets is any comment, of either kind, before any real object.
+AutoCAD only does that for a *block* comment — a leading line comment
+is skipped exactly like `load` would skip it. clautolisp's own reader
+is uniformly lenient for both. (Trailing comments — after the first
+object, or between repeated `read` calls on one string — are not
+characterized here.)
+
+**** Per-dialect behavior (clautolisp 2.1.1+)
+clautolisp reproduces this per `--dialect`, and emits an advisory
+`[read-leading-comment]` dialect-portability warning (autolisp-spec
+ch. 25) wherever the effective behavior is a hazard on a real engine:
+
+- `--dialect bricscad`: returns `NIL` for a leading comment of either
+  kind (matching real BricsCAD exactly) and warns for both.
+- `--dialect autocad`: skips a leading line comment silently (matches
+  real AutoCAD and clautolisp's own default); returns `NIL` and warns
+  for a leading block comment (matching real AutoCAD).
+- `--strict`: keeps clautolisp's lenient skip-and-return behavior for
+  both kinds, but warns for both — strict names no vendor, and at
+  least one real engine disagrees either way.
+- `--dialect clautolisp` / `--lax`: silently lenient for both kinds,
+  unchanged — the same convenience already granted to every other
+  clautolisp-only leniency.
 
 *** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2026: documented (per Autodesk reference page). Comment
+  handling: undocumented; product-tested as of the AutoCAD 2022
+  release (see Tested Behaviour above).
+- BricsCAD V26: documented (Bricsys DevRef page). Comment handling:
+  undocumented; product-tested against V25 (Windows) and V26 (macOS).
+- Status: documented by both vendors for the basic contract; comment
+  handling is an undocumented, vendor-divergent behavior established
+  by live product testing, not by either reference page.
 
 *** Source Notes
-- [read (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm)
-- Status: documented.
+- [read (AutoLISP), AutoCAD 2026](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm) — silent on comment-handling.
+- [read (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/read.htm) — silent on comment-handling.
+- [About Comments in AutoLISP Program Files](https://help.autodesk.com/cloudhelp/2015/ENU/AutoCAD-AutoLISP/files/GUID-4D4664AD-301F-4E6E-AD65-4B7CE6A258B8.htm) — the only vendor text on `;` / `;| |;` comments at all; framed around program *files*, not `read` on a string.
+- `issues/open/read-string-does-not-skip-comments.issue` — the product-tested vendor matrix and the clautolisp fix (dialect matrix, the `[read-leading-comment]` warning).
+- Status: documented (basic contract); comment-handling divergence product-tested, not vendor-documented.
 
 #+LATEX: \newpage
 
