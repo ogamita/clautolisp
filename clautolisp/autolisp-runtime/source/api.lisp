@@ -49,6 +49,9 @@
 (deftype autolisp-usubr ()
   'clautolisp.autolisp-runtime.internal::autolisp-usubr)
 
+(deftype usubr-site ()
+  'clautolisp.autolisp-runtime.internal::usubr-site)
+
 (deftype autolisp-catch-all-error ()
   'clautolisp.autolisp-runtime.internal::autolisp-catch-all-error)
 
@@ -201,8 +204,35 @@ dependency-inversion pattern of *INSTRUMENT-USUBR-HOOK* / *DEBUG-BREAK-HOOK*.")
          :details arguments
          :call-stack (current-autolisp-call-stack)))
 
+(defvar *autolisp-true-symbol* nil
+  "The interned T symbol, remembered.
+
+AutoLISP truth is a SYMBOL, so every predicate, every relational operator
+and every AND / OR has to produce it -- and producing it meant hashing the
+string \"T\" in the symbol table, on every one of those. It showed up in a
+profile of compiled arithmetic as FIND-AUTOLISP-SYMBOL plus STRING=*,
+about 4%, for a value that never changes.
+
+It CAN change, exactly once and in exactly one way: RESET-AUTOLISP-SYMBOL-
+TABLE clears the table, after which the old T is no longer the table\'s T
+and anything comparing with EQ would quietly stop matching. That function
+clears this too, which is the whole invalidation story -- nothing else
+removes an entry from the symbol table, interning only ever adds.")
+
+(declaim (inline autolisp-true-symbol))
+(defun autolisp-true-symbol ()
+  "The interned T symbol: AutoLISP truth. Cached; see *AUTOLISP-TRUE-SYMBOL*."
+  (or *autolisp-true-symbol*
+      ;; The one place that must NOT go through this function.
+      (setf *autolisp-true-symbol* (intern-autolisp-symbol "T"))))
+
 (defun reset-autolisp-symbol-table ()
   (clrhash clautolisp.autolisp-runtime.internal::*autolisp-symbol-table*)
+  ;; The cached T belonged to the table just cleared. Keeping it would
+  ;; hand out a symbol that is no longer the one INTERN-AUTOLISP-SYMBOL
+  ;; returns, and every EQ against truth would start failing -- in tests
+  ;; only, which is the worst place for it to be subtle.
+  (setf *autolisp-true-symbol* nil)
   (reset-default-evaluation-context))
 
 (defun default-evaluation-context ()
@@ -741,9 +771,19 @@ CONTEXT's session. Returns VALUE."
 (defun evaluation-context-current-document (context)
   (clautolisp.autolisp-runtime.internal::evaluation-context-current-document context))
 
+;;; INLINE, all of them. Every one below is either a one-line re-export of
+;;; a struct accessor -- it exists so the internal slot reader has a public
+;;; name -- or a two-line predicate. Out of line, each is a full function
+;;; call on the hottest paths there are: every variable read, every
+;;; function resolution, every call. They showed up in a profile of
+;;; compiled arithmetic at 3-6% EACH, which is call overhead and nothing
+;;; else. Inlining changes no behaviour: an accessor is the slot, and these
+;;; are not functions anyone redefines.
+(declaim (inline evaluation-context-current-namespace))
 (defun evaluation-context-current-namespace (context)
   (clautolisp.autolisp-runtime.internal::evaluation-context-current-namespace context))
 
+(declaim (inline evaluation-context-dynamic-frame))
 (defun evaluation-context-dynamic-frame (context)
   (clautolisp.autolisp-runtime.internal::evaluation-context-dynamic-frame context))
 
@@ -755,9 +795,11 @@ CONTEXT's session. Returns VALUE."
    :current-namespace (or namespace document)
    :dynamic-frame nil))
 
+(declaim (inline binding-cell-value))
 (defun binding-cell-value (cell)
   (clautolisp.autolisp-runtime.internal::binding-cell-value cell))
 
+(declaim (inline binding-cell-bound-p))
 (defun binding-cell-bound-p (cell)
   (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell))
 
@@ -799,10 +841,31 @@ CONTEXT's session. Returns VALUE."
 (defun namespace-function-table (namespace) (namespace-bindings-table namespace))
 
 (defun namespace-binding-cell (namespace symbol &key (createp t))
-  (or (gethash symbol (namespace-bindings-table namespace))
-      (when createp
-        (setf (gethash symbol (namespace-bindings-table namespace))
-              (clautolisp.autolisp-runtime.internal::make-binding-cell)))))
+  ;; The one-entry cache on the symbol (see AUTOLISP-SYMBOL's
+  ;; BINDING-CACHE slot) turns the common case into a slot read and an
+  ;; EQ test, in place of a TYPECASE on the namespace plus an EQ hash
+  ;; lookup. It is sound because a binding cell, once created, is never
+  ;; removed from its namespace, and no namespace's bindings table is
+  ;; ever cleared or replaced — so the symbol-to-cell mapping only ever
+  ;; grows. A redefinition changes the cell's VALUE, which is read
+  ;; through the cell in both paths, so nothing here caches a definition.
+  (let ((cache (and (typep symbol 'autolisp-symbol)
+                    (clautolisp.autolisp-runtime.internal::autolisp-symbol-binding-cache
+                     symbol))))
+    (if (eq namespace (car cache))
+        (cdr cache)
+        (let ((cell (or (gethash symbol (namespace-bindings-table namespace))
+                        (when createp
+                          (setf (gethash symbol (namespace-bindings-table namespace))
+                                (clautolisp.autolisp-runtime.internal::make-binding-cell))))))
+          ;; Only a cell that exists is remembered: a :CREATEP NIL miss
+          ;; must stay a miss, or the next :CREATEP T call would be
+          ;; answered with NIL from the cache instead of creating a cell.
+          (when (and cell (typep symbol 'autolisp-symbol))
+            (setf (clautolisp.autolisp-runtime.internal::autolisp-symbol-binding-cache
+                   symbol)
+                  (cons namespace cell)))
+          cell))))
 
 (defun namespace-value-cell (namespace symbol &key (createp t))
   (namespace-binding-cell namespace symbol :createp createp))
@@ -991,29 +1054,193 @@ CONTEXT's session. Returns VALUE."
           frame)
     frame))
 
+(defun %release-frame-binding-counts (frame)
+  "Decrement DYNAMIC-BINDING-COUNT for every symbol FRAME binds.
+
+Deliberately does NOT go through FRAME-BOUND-SYMBOLS, which MAPCARs a
+fresh list of the keys: this runs on every function return, and a list
+per return is exactly the kind of garbage the frames themselves were
+changed from hash tables to alists to avoid."
+  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
+    (if (hash-table-p bindings)
+        (maphash (lambda (symbol binding)
+                   (declare (ignore binding))
+                   (when (typep symbol 'autolisp-symbol)
+                     (decf (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+                            symbol))))
+                 bindings)
+        (loop for binding = bindings
+                then (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+              while binding
+              do (let ((symbol (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol
+                                binding)))
+                   (when (typep symbol 'autolisp-symbol)
+                     (decf (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+                            symbol))))))))
+
 (defun pop-dynamic-frame (&optional (context (current-evaluation-context)))
   (let ((frame (evaluation-context-dynamic-frame context)))
     (when frame
+      ;; The other of the two places DYNAMIC-BINDING-COUNT moves. Popping
+      ;; is the ONLY way a frame stops being live -- nothing else writes
+      ;; the context's frame slot, and every PUSH-DYNAMIC-FRAME is paired
+      ;; with a POP under UNWIND-PROTECT -- so this is where the bindings
+      ;; it held stop counting.
+      (%release-frame-binding-counts frame)
       (setf (clautolisp.autolisp-runtime.internal::evaluation-context-dynamic-frame context)
             (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)))
     frame))
 
+(defparameter *dynamic-frame-alist-limit* 12
+  "How many bindings a dynamic frame keeps in an alist before switching to
+a hash table.
+
+A frame holds one function call's parameters and `/'-locals, which is a
+handful — searching a short alist with EQ is cheaper than hashing, and
+costs no allocation at all, where a hash table costs one per call. The
+limit exists only so a pathological function with a hundred locals does
+not degrade lookup along the whole frame chain: past it, the frame
+promotes itself and behaves as before.")
+
+;;; The three operations every reader of a frame's bindings needs. They
+;;; exist so that the alist/hash-table duality is decided in ONE place:
+;;; before them, six call sites did GETHASH on the slot directly, and
+;;; changing the representation would have meant changing all six
+;;; identically — which is how two representations start disagreeing.
+
+(declaim (inline frame-binding))
+(defun frame-binding (frame symbol)
+  "SYMBOL's binding in FRAME itself, or NIL."
+  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
+    (if (hash-table-p bindings)
+        (gethash symbol bindings)
+        (loop for binding = bindings
+                then (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+              while binding
+              when (eq (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol binding)
+                       symbol)
+                do (return binding)))))
+
+(defun (setf frame-binding) (binding frame symbol)
+  "Install BINDING for SYMBOL in FRAME, replacing any binding FRAME
+already had for it — a frame holds at most one binding per symbol, which
+is what makes DYNAMIC-FRAME-SYMBOLS a set.
+
+One of the two places a symbol's DYNAMIC-BINDING-COUNT moves. A NEW entry
+increments it; REPLACING the binding of a symbol this frame already binds
+does not, because the frame still binds that symbol exactly once. Getting
+that distinction wrong in the generous direction only costs the walk this
+count exists to skip; getting it wrong the other way would skip a walk
+that was needed."
+  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))
+        (newp t))
+    (if (hash-table-p bindings)
+        (progn
+          (setf newp (not (nth-value 1 (gethash symbol bindings))))
+          (setf (gethash symbol bindings) binding))
+        ;; The chain. One walk finds the existing entry (with its
+        ;; predecessor, so it can be spliced out) and counts the entries
+        ;; for the promotion test -- the count is only used when no
+        ;; existing entry was found, which is exactly when the walk ran to
+        ;; the end.
+        (let ((previous nil)
+              (existing nil)
+              (count 0))
+          (loop for current = bindings
+                  then (clautolisp.autolisp-runtime.internal::dynamic-binding-next current)
+                while current
+                do (when (eq (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol
+                              current)
+                             symbol)
+                     (setf existing current)
+                     (return))
+                   (incf count)
+                   (setf previous current))
+          (cond
+            (existing
+             ;; Replace: splice the new binding in where the old one was,
+             ;; leaving the old one orphaned -- which is what replacing the
+             ;; CDR of an alist entry did. NEXT is cleared on the way out so
+             ;; a discarded binding does not hold the rest of the chain
+             ;; alive.
+             (setf newp nil)
+             (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+                   (clautolisp.autolisp-runtime.internal::dynamic-binding-next existing))
+             (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-next existing) nil)
+             (if previous
+                 (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-next previous)
+                       binding)
+                 (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
+                       binding)))
+            ((< count *dynamic-frame-alist-limit*)
+             (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+                   bindings)
+             (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
+                   binding))
+            (t
+             ;; Promote: this frame has outgrown a linear search.
+             (let ((table (make-hash-table :test #'eq
+                                           :size (* 2 *dynamic-frame-alist-limit*))))
+               (loop for current = bindings
+                       then (clautolisp.autolisp-runtime.internal::dynamic-binding-next current)
+                     while current
+                     do (setf (gethash
+                               (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol
+                                current)
+                               table)
+                              current))
+               (setf (gethash symbol table) binding)
+               (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
+                     table))))))
+    (when (and newp (typep symbol 'autolisp-symbol))
+      (incf (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+             symbol)))
+    binding))
+
+(defun frame-bound-symbols (frame)
+  "The symbols FRAME binds directly, in no particular order."
+  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
+    (if (hash-table-p bindings)
+        (loop for symbol being the hash-keys of bindings collect symbol)
+        (loop for binding = bindings
+                then (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+              while binding
+              collect (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol
+                       binding)))))
+
 (defun bind-dynamic-variable (symbol value &optional (context (current-evaluation-context)))
   (let ((frame (or (evaluation-context-dynamic-frame context)
                    (push-dynamic-frame context))))
-    (setf (gethash symbol (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))
+    (setf (frame-binding frame symbol)
           (clautolisp.autolisp-runtime.internal::make-dynamic-binding
            :symbol symbol
            :value value
            :bound-p t))
     value))
 
+(declaim (inline symbol-has-no-dynamic-binding-p))
+(defun symbol-has-no-dynamic-binding-p (symbol)
+  "True when NO live dynamic frame binds SYMBOL, so a walk of the frame
+chain looking for one is guaranteed to fail.
+
+The count is exact and moves only in (SETF FRAME-BINDING) and
+POP-DYNAMIC-FRAME. A non-AUTOLISP-SYMBOL has nowhere to keep a count, so
+it answers NIL and walks -- the old behaviour, which is always correct."
+  (and (typep symbol 'autolisp-symbol)
+       (zerop (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+               symbol))))
+
 (defun find-dynamic-binding (symbol frame)
-  (loop for current = frame then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent current)
-        while current
-        for binding = (gethash symbol (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings current))
-        when binding
-          do (return binding)))
+  ;; The early exit is the whole point: without it this walks the entire
+  ;; frame chain and fails in every frame, on every global read and every
+  ;; assignment to a global, making both O(call-stack depth).
+  (if (symbol-has-no-dynamic-binding-p symbol)
+      nil
+      (loop for current = frame then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent current)
+            while current
+            for binding = (frame-binding current symbol)
+            when binding
+              do (return binding))))
 
 ;;; --- Dynamic-frame introspection for the debugger (spec §9) --------
 ;;
@@ -1030,15 +1257,12 @@ CONTEXT's session. Returns VALUE."
 (defun dynamic-frame-symbols (frame)
   "List of AutoLISP symbols bound *directly* in FRAME (not its parents),
 i.e. the shadowings this frame introduced."
-  (loop for symbol being the hash-keys
-          of (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
-        collect symbol))
+  (frame-bound-symbols frame))
 
 (defun dynamic-frame-binding-value (frame symbol)
   "Read SYMBOL's binding in FRAME only. Returns (values value bound-p);
 bound-p is NIL when FRAME has no binding for SYMBOL."
-  (let ((binding (gethash symbol
-                          (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))))
+  (let ((binding (frame-binding frame symbol)))
     (if binding
         (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)
                 (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding))
@@ -1048,8 +1272,7 @@ bound-p is NIL when FRAME has no binding for SYMBOL."
   "Write SYMBOL's binding in FRAME only (the debugger's shadowed-binding
 write, §9.4). Signals if FRAME has no binding for SYMBOL — the debugger
 must not create a new frame-local binding mid-execution (§16.1)."
-  (let ((binding (gethash symbol
-                          (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))))
+  (let ((binding (frame-binding frame symbol)))
     (unless binding
       (signal-autolisp-runtime-error
        :no-such-frame-binding
@@ -1140,6 +1363,7 @@ happen in the documented call sites)."
            (setf (clautolisp.autolisp-runtime.internal::binding-cell-doc cell) new-doc))))))
   new-doc)
 
+(declaim (inline callable-value-p))
 (defun callable-value-p (value)
   "True iff VALUE is something AutoLISP can call in operator
 position: a built-in SUBR, a user-defined USUBR, or a literal
@@ -1178,20 +1402,28 @@ when it actually invokes the binding."
   ;; coercion happens lazily in CALL-AUTOLISP-FUNCTION-IN-CONTEXT
   ;; so the dynamic context at the call site is the one EVAL-LAMBDA-
   ;; FORM captures (matching the late-resolution rule above).
-  (loop for frame = (evaluation-context-dynamic-frame context)
-                then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)
-        while frame
-        for binding = (gethash symbol
-                               (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings
-                                frame))
-        when (and binding
-                  (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding)
-                  (callable-value-p
-                   (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)))
-          do (return-from lookup-function
-               (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)
-                       t
-                       :dynamic)))
+  ;;
+  ;; The walk below is skipped entirely when no live frame binds SYMBOL,
+  ;; which for a function name is the overwhelming case -- `+' is not a
+  ;; parameter of anything. Without the skip, resolving the operator of
+  ;; every call walked the whole frame chain and failed in every frame,
+  ;; so a call cost O(call-stack depth): the same loop measured 3.7x
+  ;; slower forty frames down than at the top level. The shadowing rules
+  ;; documented above are unchanged -- when a frame DOES bind the name,
+  ;; the count is non-zero and the walk runs exactly as before.
+  (unless (symbol-has-no-dynamic-binding-p symbol)
+    (loop for frame = (evaluation-context-dynamic-frame context)
+                  then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)
+          while frame
+          for binding = (frame-binding frame symbol)
+          when (and binding
+                    (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding)
+                    (callable-value-p
+                     (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)))
+            do (return-from lookup-function
+                 (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)
+                         t
+                         :dynamic))))
   (let* ((cell (namespace-binding-cell (evaluation-context-current-namespace context)
                                        symbol
                                        :createp nil))
@@ -1341,18 +1573,62 @@ binding. A no-op when SYMBOL has no namespace cell yet."
    :name name
    :function function))
 
+(declaim (inline autolisp-subr-function))
 (defun autolisp-subr-function (object)
   (clautolisp.autolisp-runtime.internal::autolisp-subr-function object))
+
+(declaim (inline autolisp-open-code-tag))
+(defun autolisp-open-code-tag (object)
+  "The open-coding tag of OBJECT, or NIL when OBJECT is not a tagged
+builtin subr.
+
+The one question a compiled call site asks before taking an inline fast
+path: `is the thing this name resolves to RIGHT NOW still the exact
+builtin whose semantics I open-coded?'. Everything that is not that --
+a user DEFUN, a SETQ of a lambda, a `/'-local shadow, a host override, a
+usubr, a lambda form, NIL -- answers NIL here and gets an ordinary call.
+
+Written as a function taking ANY object, rather than a slot reader, so
+the call site never has to know what it is holding before it asks."
+  (and (typep object 'autolisp-subr)
+       (clautolisp.autolisp-runtime.internal::autolisp-subr-open-code object)))
+
+(defun (setf autolisp-open-code-tag) (tag object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-subr-open-code object) tag))
 
 (defun autolisp-usubr-name (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-name object))
 
-(defun make-autolisp-usubr (name lambda-list body environment)
+(defun make-autolisp-usubr (name lambda-list body environment &optional site)
   (clautolisp.autolisp-runtime.internal::make-autolisp-usubr
    :name name
    :lambda-list lambda-list
    :body body
-   :environment environment))
+   :environment environment
+   :site site))
+
+(defun autolisp-usubr-site (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-site object))
+
+(defun make-usubr-site ()
+  "A fresh sharing point for the closures one LAMBDA form will build.
+
+Called once per compiled LAMBDA site, from a LOAD-TIME-VALUE the
+transpiler emits, so the identity is the CODE rather than any one
+closure -- which is the whole point (see the SITE slot's comment)."
+  (clautolisp.autolisp-runtime.internal::make-usubr-site))
+
+(defun usubr-site-call-count (site)
+  (clautolisp.autolisp-runtime.internal::usubr-site-call-count site))
+
+(defun (setf usubr-site-call-count) (value site)
+  (setf (clautolisp.autolisp-runtime.internal::usubr-site-call-count site) value))
+
+(defun usubr-site-compiled-body (site)
+  (clautolisp.autolisp-runtime.internal::usubr-site-compiled-body site))
+
+(defun (setf usubr-site-compiled-body) (value site)
+  (setf (clautolisp.autolisp-runtime.internal::usubr-site-compiled-body site) value))
 
 (defun autolisp-usubr-lambda-list (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-lambda-list object))
@@ -1368,6 +1644,29 @@ binding. A no-op when SYMBOL has no namespace cell yet."
 
 (defun (setf autolisp-usubr-instrumented-body) (value object)
   (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-instrumented-body object)
+        value))
+
+(defun autolisp-usubr-compiled-body (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-compiled-body object))
+
+(defun (setf autolisp-usubr-compiled-body) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-compiled-body object)
+        value))
+
+(defun autolisp-usubr-compiled-instrumented-body (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-compiled-instrumented-body
+   object))
+
+(defun (setf autolisp-usubr-compiled-instrumented-body) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-compiled-instrumented-body
+         object)
+        value))
+
+(defun autolisp-usubr-call-count (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-call-count object))
+
+(defun (setf autolisp-usubr-call-count) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-call-count object)
         value))
 
 (defun autolisp-usubr-debug-metadata (object)
@@ -1675,6 +1974,48 @@ runtime instrument functions for stepping/breakpoints — lazily, on a function'
 first call under a debug session — without the runtime depending on the debugger
 layer (the same dependency-inversion as *debug-break-hook*).")
 
+(defparameter +poll-operator-name+ "%CLAL-POLL"
+  "Name of the special operator the debugger weaves around every
+instrumentable form of a function it instruments.
+
+It lives HERE, in the runtime, rather than in the debugger that weaves it,
+because it names a protocol with THREE participants, not two: the debugger
+emits the node, the interpreter dispatches it (through
+REGISTER-SPECIAL-OPERATOR), and the compiler has to recognise it in order to
+translate an instrumented body instead of handing it straight back to the
+interpreter. A name each of them spelled separately would be three chances
+to disagree.")
+
+(defparameter *compiled-poll-hook* nil
+  "When non-nil, a function (FID FORM-ID CONTEXT THUNK) running THUNK under
+the debugger's poll protocol: the shadow stack, the :BEFORE / :AFTER poll
+points, form-level jumps and the CLAL-POLL-RETURN restart. The debug system
+installs it (clautolisp.debug:call-with-poll-point) when it loads; NIL when
+the debugger is absent.
+
+The same dependency-inversion as *INSTRUMENT-USUBR-HOOK*, and it exists for
+one reason: compiled instrumented code must reach the poll protocol as the
+INTERPRETER'S OWN, not through a second copy of it. EVAL-POLL-FORM supplies
+the inner form as (lambda () (autolisp-eval inner context)); compiled code
+supplies it as the transpiled inner form. Same protocol, two ways of
+producing the value inside it.")
+
+(declaim (inline call-with-compiled-poll-point))
+(defun call-with-compiled-poll-point (fid form-id context thunk)
+  "Run THUNK as the body of poll point FORM-ID of function FID.
+
+What compiled instrumented code emits for a %CLAL-POLL node. With no
+debugger loaded there is no protocol to run, so THUNK is simply called --
+which is also what EVAL-POLL-FORM does on a thread that is not being
+debugged.
+
+INLINE because compiled instrumented code calls it once per instrumented
+form, and out of line it is a whole call to read one special variable and
+funcall through it."
+  (if *compiled-poll-hook*
+      (funcall *compiled-poll-hook* fid form-id context thunk)
+      (funcall thunk)))
+
 (defparameter *debug-instrumentation-enabled* t
   "Whether the runtime weaves instrumented forks while debugging. Reflects the
 CLAL-OPTIMIZATION DEBUG level (CLAL-OPTIMIZE sets it: T when DEBUG>0, NIL under
@@ -1718,6 +2059,240 @@ Please report the function's source as an instrumenter gap."
                 (if (and name (plusp (length name))) name "<lambda>"))
               condition))))
   (autolisp-usubr-instrumented-body function))
+(defparameter *compile-usubr-hook* nil
+  "When non-nil, a function (USUBR) that transpiles USUBR's body to Common Lisp
+and stores the result in its COMPILED-BODY slot
+(clautolisp.autolisp-compiler:compile-usubr). The compiler installs it when its
+system loads; NIL when the compiler is absent. Same dependency-inversion as
+*INSTRUMENT-USUBR-HOOK* and for the same reason: the runtime must be able to run
+compiled function bodies without depending on the compiler layer.")
+
+(defparameter *autolisp-compilation-enabled* t
+  "Whether the runtime weaves compiled forks for AutoLISP functions. T by
+default, but that is only half the switch — with no compiler loaded
+*COMPILE-USUBR-HOOK* is NIL and nothing is compiled, so an image built without
+the compiler behaves exactly as it did before it existed. Bind this to NIL to
+force everything through the interpreter, which is the first thing to try when
+compiled and interpreted results are suspected of disagreeing.")
+
+(defparameter *autolisp-speed-level* 2
+  "The SPEED optimization quality, 0..3, as the runtime sees it.
+
+THE ALGEBRA (debugger-public-interface issue, Part A). The optimization
+qualities do not each own a switch; what matters is their level, and for the
+instrumented fork their level RELATIVE to one another:
+
+  non-instrumented fork   always present; compiled iff SPEED >= 1
+  instrumented fork       present iff DEBUG >= SPACE; compiled iff SPEED >= 2
+
+So the two forks compile at different levels ON PURPOSE. SPEED 1 says `make
+my code fast'; SPEED 2 says `and make it fast while I am debugging it too',
+which is a further step because a compiled instrumented fork is worth less
+(the poll protocol, not interpretation, is what makes debugging slow) and
+costs a second compilation of the same function.
+
+SPEED 3 says compile EAGERLY, at definition, rather than once a function is
+hot. That is not merely sooner: compiling a whole file in one unit is what
+makes file-wide optimizations possible at all, where compiling one function
+at a time on the call that made it hot can only ever optimize that function.
+
+Set by CLAL-OPTIMIZE. Bound directly only by tests.")
+
+(defun autolisp-compile-plain-fork-p ()
+  "Whether a function's non-instrumented fork should be compiled."
+  (and *autolisp-compilation-enabled* (>= *autolisp-speed-level* 1)))
+
+(defun autolisp-compile-instrumented-fork-p ()
+  "Whether a function's instrumented fork should be compiled."
+  (and *autolisp-compilation-enabled* (>= *autolisp-speed-level* 2)))
+
+(defun autolisp-compile-eagerly-p ()
+  "Whether functions are compiled at definition rather than once hot."
+  (and *autolisp-compilation-enabled* (>= *autolisp-speed-level* 3)))
+
+(defparameter *autolisp-compilation-threshold* 16
+  "How many times a function must be called before its body is compiled.
+
+Not a tuning knob so much as a statement about what compilation costs: weaving
+a fork runs the host Common Lisp compiler, which is expensive next to
+interpreting a short body once. Most functions in a freshly loaded file are
+called once or never, and compiling those would make loading slower for no
+return. A function that has been called sixteen times is doing work, and pays
+the compilation back quickly. 1 means compile on first call — what the test
+suite uses, so that every function it exercises runs compiled.
+
+Consulted at SPEED 1 and 2 only. SPEED 3 compiles at definition and never
+reaches the threshold; SPEED 0 never compiles at all.")
+
+(defparameter *usubr-compilation-count* 0
+  "How many function bodies have been handed to the host compiler.
+
+Kept because the compiler had no idea how often it was being asked. A
+LAMBDA in a loop invited it to run ONCE PER ITERATION -- 60000 times in
+the measured case, 26 seconds absorbed in silence -- and nothing
+anywhere said so; the shape was found by benchmarking, which is not a
+way to find bugs. See lambda-in-a-loop-never-compiles.issue.")
+
+(defparameter *usubr-compilation-warning-threshold* 1000
+  "Compilations in one image after which COUNT-USUBR-COMPILATION warns, once.
+
+Not a limit and not tunable policy: nothing is refused, and the number
+is deliberately ABSURD rather than tight. A thousand distinct function
+bodies in one session is already implausible for AutoLISP, so crossing
+it means the same code is being compiled over and over -- which is a
+bug in whatever decides, not in the program being compiled. A tight
+threshold would have to be RIGHT; this one only has to be unreachable
+by honest work.
+
+MEASURED, so that `unreachable' is not a guess: the whole compiler test
+suite -- every equivalence case, every open-coding case, the
+instrumented and whole-corpus runs -- compiles 56 bodies. The margin is
+eighteenfold. The shape this exists to catch overshot it by SIXTY.")
+
+(defvar *usubr-compilation-warned-p* nil
+  "True once the threshold warning has been emitted, so it is emitted ONCE.
+A diagnostic that fires 59000 times is the same silence with more
+output.")
+
+(defun count-usubr-compilation (function)
+  "Record that FUNCTION's body was compiled, and warn once if the count
+has become absurd. Called from both compilation paths."
+  (incf *usubr-compilation-count*)
+  (when (and (not *usubr-compilation-warned-p*)
+             (> *usubr-compilation-count* *usubr-compilation-warning-threshold*))
+    (setf *usubr-compilation-warned-p* t)
+    (warn "clautolisp: the host compiler has now run ~D times in this ~
+           image (most recently for ~A). That is far more distinct ~
+           function bodies than a program has, so the same body is ~
+           probably being compiled repeatedly -- which is a bug in what ~
+           DECIDES to compile, not in the code being compiled."
+          *usubr-compilation-count*
+          (autolisp-usubr-name function))))
+
+(defun maybe-compile-usubr (function)
+  "Weave FUNCTION's compiled fork when it has earned one, and return it.
+
+Returns the compiled body (a function) or NIL, in which case the caller runs the
+plain body. A compilation that errors stores :FAILED rather than NIL, so it is
+attempted once and never retried: NIL means `not tried yet', and a body that
+cannot be compiled must not run the compiler again on every call."
+  (let ((compiled (autolisp-usubr-compiled-body function)))
+    (cond
+      ((functionp compiled) compiled)
+      ((eq :failed compiled) nil)
+      ((not (and (autolisp-compile-plain-fork-p) *compile-usubr-hook*)) nil)
+      ;; COUNT ON THE SITE WHEN THERE IS ONE. A lambda in a loop mints a
+      ;; new closure per iteration, so counting on the closure asks "is
+      ;; THIS object hot?" -- always no -- where the question is "is this
+      ;; CODE hot?". See lambda-in-a-loop-never-compiles.issue.
+      ((< (if (autolisp-usubr-site function)
+              (incf (usubr-site-call-count (autolisp-usubr-site function)))
+              (incf (autolisp-usubr-call-count function)))
+          *autolisp-compilation-threshold*)
+       nil)
+      (t
+       (handler-case (funcall *compile-usubr-hook* function)
+         (error () (setf (autolisp-usubr-compiled-body function) :failed)))
+       (count-usubr-compilation function)
+       (let ((result (autolisp-usubr-compiled-body function)))
+         ;; Publish to the site so the NEXT closure from this lambda form
+         ;; starts compiled instead of recompiling the same body. :FAILED
+         ;; is deliberately not published: it is stored on the closure,
+         ;; and a site that failed once will fail again and be asked
+         ;; again -- rare enough to leave alone, and cheaper than
+         ;; teaching the site a third state.
+         (when (and (functionp result) (autolisp-usubr-site function))
+           (setf (usubr-site-compiled-body (autolisp-usubr-site function)) result))
+         (and (functionp result) result))))))
+
+(defparameter +lap-file-type+ "lap"
+  "Pathname type of a compiled AutoLISP application.
+
+A .lap is a native host FASL, renamed -- the analogue of AutoCAD .vlx and
+BricsCAD .des. It lives here rather than in the compiler because LOAD has
+to recognise the type whether or not the compiler is present in the
+image: a clautolisp built without the compiler must say `I cannot load
+this\' rather than try to read it as source.")
+
+(defparameter *compile-files-to-artefact-hook* nil
+  "When non-nil, a function (SOURCE-PATHNAMES OUTPUT-PATHNAME) that
+compiles the AutoLISP sources into one .lap and returns its truename, or
+NIL on failure (clautolisp.autolisp-compiler:compile-autolisp-files-to-lap).
+
+Installed by the compiler when it loads; NIL when it is absent. The same
+dependency inversion as *COMPILE-USUBR-HOOK*, and needed for the same
+reason twice over: the runtime must not depend on the compiler, and
+neither must the builtins layer, which is where CLAL-COMPILE-FILE lives
+and which sits below the compiler in the system graph.")
+
+(defun default-lap-pathname (source-pathname)
+  "SOURCE.lsp -> SOURCE.lap, beside the source."
+  (make-pathname :type +lap-file-type+ :defaults source-pathname))
+
+(defun lap-pathname-p (pathname)
+  "True when PATHNAME names a compiled AutoLISP application."
+  (string-equal +lap-file-type+ (or (pathname-type pathname) "")))
+
+(defun compile-usubr-if-eager (function)
+  "Compile FUNCTION now, if SPEED asks for eager compilation.
+
+At SPEED 3 a function is compiled when it is DEFINED rather than when it turns
+out to be hot. Called from DEFUN, so it never affects a function that is only
+being interpreted at a lower level.
+
+Only the PLAIN fork. An instrumented fork does not exist yet at definition
+time -- the debugger weaves one on a function's first call under a session,
+deliberately, so that code defined before the session is debuggable without a
+separate instrument-on-defun pass. Eagerly instrumenting every DEFUN to have
+something to compile would make loading a file pay for a debug session that
+may never start.
+
+Errors are swallowed the same way MAYBE-COMPILE-USUBR swallows them, into
+:FAILED: a function whose body the compiler chokes on must still be DEFINED,
+and must still run interpreted. A DEFUN that signalled because compilation
+failed would make SPEED 3 a correctness setting, which it is not."
+  (when (and (autolisp-compile-eagerly-p) *compile-usubr-hook*)
+    (handler-case (funcall *compile-usubr-hook* function)
+      (error () (setf (autolisp-usubr-compiled-body function) :failed)))
+    (count-usubr-compilation function))
+  function)
+
+(defparameter *compile-instrumented-usubr-hook* nil
+  "When non-nil, a function (USUBR) that transpiles USUBR's INSTRUMENTED
+body and stores the result in COMPILED-INSTRUMENTED-BODY
+(clautolisp.autolisp-compiler:compile-instrumented-usubr). NIL when the
+compiler is absent, in which case debugged code runs interpreted exactly as
+it did before the compiler existed.")
+
+(defun maybe-compile-instrumented-usubr (function)
+  "Weave FUNCTION's COMPILED INSTRUMENTED fork when it has earned one.
+
+The instrumented body must already exist: this compiles what the
+instrumenter produced, it does not instrument. Returns the compiled function
+or NIL, in which case the caller interprets the instrumented body.
+
+Shares CALL-COUNT and the threshold with the plain compiled fork, because
+they are answering the same question -- is this function hot enough to be
+worth compiling. A function that was already hot before the debugger
+attached therefore compiles its instrumented fork at once, which is the case
+that matters: running to a breakpoint deep inside a loop."
+  (let ((compiled (autolisp-usubr-compiled-instrumented-body function)))
+    (cond
+      ((functionp compiled) compiled)
+      ((eq :failed compiled) nil)
+      ((not (and (autolisp-compile-instrumented-fork-p)
+                 *compile-instrumented-usubr-hook*))
+       nil)
+      ((null (autolisp-usubr-instrumented-body function)) nil)
+      ((< (incf (autolisp-usubr-call-count function))
+          *autolisp-compilation-threshold*)
+       nil)
+      (t
+       (handler-case (funcall *compile-instrumented-usubr-hook* function)
+         (error () (setf (autolisp-usubr-compiled-instrumented-body function)
+                         :failed)))
+       (let ((result (autolisp-usubr-compiled-instrumented-body function)))
+         (and (functionp result) result))))))
 
 (defun maybe-instrument-usubr (function)
   "Lazily weave FUNCTION's instrumented fork on its first call under a debug
@@ -1855,12 +2430,12 @@ so ordinary non-debug runs keep defining plain, allocation-free bodies."
       (setf value nil
             boundp t))
     (if value
-        (intern-autolisp-symbol "T")
+        (autolisp-true-symbol)
         nil)))
 
 (defun autolisp-null (object)
   (if (null object)
-      (intern-autolisp-symbol "T")
+      (autolisp-true-symbol)
       nil))
 
 (defun autolisp-not (object)
@@ -1868,17 +2443,17 @@ so ordinary non-debug runs keep defining plain, allocation-free bodies."
 
 (defun autolisp-listp (object)
   (if (listp object)
-      (intern-autolisp-symbol "T")
+      (autolisp-true-symbol)
       nil))
 
 (defun autolisp-atom (object)
   (if (atom object)
-      (intern-autolisp-symbol "T")
+      (autolisp-true-symbol)
       nil))
 
 (defun autolisp-vl-symbolp (object)
   (if (typep object 'autolisp-symbol)
-      (intern-autolisp-symbol "T")
+      (autolisp-true-symbol)
       nil))
 
 (defun autolisp-vl-symbol-name (object)
@@ -2544,9 +3119,33 @@ every existing AutoLISP defun."
               (when amp-pos (first rest-slice))
               locals))))
 
+(defun usubr-lambda-list-split (function)
+  "SPLIT-USUBR-LAMBDA-LIST for FUNCTION, computed once and remembered.
+
+Returns the same three values as SPLIT-USUBR-LAMBDA-LIST. A lambda list
+does not change after the function object exists, so re-walking it on
+every call — two POSITION-IFs, up to three SUBSEQs and the validation —
+was work repeated to reach an answer already known. It showed up as
+POSITION-IF at 7% of a call-dominated profile.
+
+Only successful splits are remembered. A malformed lambda list keeps
+signalling on every call, exactly as before: memoising the failure, or
+computing this eagerly in the constructor, would move the diagnostic from
+the call to the definition, which is a behaviour change."
+  (let ((split (clautolisp.autolisp-runtime.internal::autolisp-usubr-lambda-list-split
+                function)))
+    (if split
+        (values (first split) (second split) (third split))
+        (multiple-value-bind (required rest-param locals)
+            (split-usubr-lambda-list (autolisp-usubr-lambda-list function))
+          (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-lambda-list-split
+                 function)
+                (list required rest-param locals))
+          (values required rest-param locals)))))
+
 (defun bind-usubr-frame (function arguments context)
   (multiple-value-bind (required rest-param locals)
-      (split-usubr-lambda-list (autolisp-usubr-lambda-list function))
+      (usubr-lambda-list-split function)
     (let ((req-count (length required))
           (arg-count (length arguments)))
       (cond
@@ -2614,6 +3213,7 @@ selected this way — they fall back to the session-wide
     ((typep function 'autolisp-usubr) (or (autolisp-usubr-name function) "<lambda>"))
     (t (format nil "~S" function))))
 
+(declaim (inline autolisp-function-trace-p))
 (defun autolisp-function-trace-p (function)
   "T iff FUNCTION's invocation should be traced — either the
 session-wide *autolisp-trace-p* flag is on, or the function has
@@ -2621,11 +3221,17 @@ a name that's been registered via the TRACE special operator.
 Anonymous lambdas (no name) fall through to the session-wide
 flag only."
   (or *autolisp-trace-p*
-      (let ((name (cond ((typep function 'autolisp-subr)
-                         (autolisp-subr-name function))
-                        ((typep function 'autolisp-usubr)
-                         (autolisp-usubr-name function)))))
-        (and name (gethash name *autolisp-traced-symbols*)))))
+      ;; The empty-table test comes FIRST and is the point of it. Nothing
+      ;; is traced in the overwhelmingly common case, yet this ran an
+      ;; EQUAL hash — i.e. hashed a name STRING — on every single call to
+      ;; learn that. HASH-TABLE-COUNT is a slot read, and an empty table
+      ;; can only answer NIL, so the two are equivalent.
+      (and (plusp (hash-table-count *autolisp-traced-symbols*))
+           (let ((name (cond ((typep function 'autolisp-subr)
+                              (autolisp-subr-name function))
+                             ((typep function 'autolisp-usubr)
+                              (autolisp-usubr-name function)))))
+             (and name (gethash name *autolisp-traced-symbols*))))))
 
 (defun autolisp-format-trace-value (value)
   ;; Compact one-line printer for trace-value display. Strings keep
@@ -2727,17 +3333,39 @@ flag only."
                ;; — and an uninstrumented function always runs plain. With
                ;; no session active *DEBUGGING* is NIL and this reduces to
                ;; the original plain-body path at no cost.
-               (let ((selected-body
+               (let* (;; Which of the four bodies runs.
+                      ;;
+                      ;; Debuggability still wins over speed where the
+                      ;; two compete -- an instrumented body must run
+                      ;; under a debug session or stepping and
+                      ;; breakpoints would stop working on any function
+                      ;; hot enough to have been compiled. What changed
+                      ;; is that this is no longer a choice between
+                      ;; debuggable and compiled: the transpiler can
+                      ;; compile an INSTRUMENTED body too, so a debug
+                      ;; session gets both. The order is therefore
+                      ;; instrumented-and-compiled, then instrumented,
+                      ;; then compiled, then plain.
+                      (instrumented-body
+                       (and *debugging*
+                            (or (autolisp-usubr-instrumented-body function)
+                                (maybe-instrument-usubr function))))
+                      (compiled-body
+                       (if instrumented-body
+                           (maybe-compile-instrumented-usubr function)
+                           (and (not *debugging*)
+                                (maybe-compile-usubr function))))
+                      (selected-body
                        (if *debugging*
-                           (or (autolisp-usubr-instrumented-body function)
-                               ;; Lazily weave the instrumented fork on this
-                               ;; function's first call under a debug session
-                               ;; (compiled-eval model): stepping/breakpoints
-                               ;; then ride on it, and code defined before the
-                               ;; session becomes debuggable without a separate
+                           (or instrumented-body
+                               ;; The instrumented fork is woven lazily on
+                               ;; this function's first call under a debug
+                               ;; session (compiled-eval model), just above:
+                               ;; stepping/breakpoints ride on it, and code
+                               ;; defined before the session becomes
+                               ;; debuggable without a separate
                                ;; instrument-on-defun pass. No cost when not
                                ;; debugging (*DEBUGGING* NIL short-circuits).
-                               (maybe-instrument-usubr function)
                                (autolisp-usubr-body function))
                            (autolisp-usubr-body function))))
                  (let ((*autolisp-call-stack*
@@ -2757,7 +3385,16 @@ flag only."
                    ;; frame provably exists and the pop pairs with it.
                    (bind-usubr-frame function arguments context)
                    (unwind-protect
-                        (autolisp-eval-progn selected-body context)
+                        ;; The compiled fork runs HERE and nowhere else:
+                        ;; inside the frame BIND-USUBR-FRAME just pushed
+                        ;; and inside the same unwind-protect, so it sees
+                        ;; the parameters bound exactly as the plain body
+                        ;; does and unwinds the same way. Compiling the
+                        ;; body changes how the body is evaluated, not
+                        ;; what it is evaluated in.
+                        (if compiled-body
+                            (funcall compiled-body context)
+                            (autolisp-eval-progn selected-body context))
                      (pop-dynamic-frame context)))))
               (t
                (signal-autolisp-runtime-error
@@ -2881,13 +3518,23 @@ returning the last form's value. Outside a session this is AUTOLISP-EVAL-PROGN."
      (length arguments)))
   (let* ((place-result (autolisp-eval (first arguments) context))
          (value-result (autolisp-eval (second arguments) context)))
-    (unless (typep place-result 'autolisp-symbol)
-      (signal-autolisp-runtime-error
-       :invalid-set-place
-       "SET place must evaluate to an AutoLISP symbol, got ~S."
-       place-result))
-    (set-variable place-result value-result context)
-    value-result))
+    (set-autolisp-place place-result value-result context)))
+
+(defun set-autolisp-place (place value context)
+  "Assign VALUE to the variable PLACE names, and return VALUE.
+
+PLACE and VALUE are already EVALUATED -- SET evaluates its place form,
+which is the whole difference from SETQ. Extracted so the compiler
+calls this rule instead of restating it: the check that a place is a
+symbol, its diagnostic, and the SET's value are three decisions, and
+three decisions restated are three things that can drift."
+  (unless (typep place 'autolisp-symbol)
+    (signal-autolisp-runtime-error
+     :invalid-set-place
+     "SET place must evaluate to an AutoLISP symbol, got ~S."
+     place))
+  (set-variable place value context)
+  value)
 
 (defun eval-trace-form (arguments context)
   ;; (trace foo bar)  — symbol-name arguments are taken bare (not
@@ -3109,13 +3756,13 @@ COMMAND-S special forms and the VL-CMDF builtin."
 ;; OR / AND, plus vendor-inventory-2026.org §10 item 11). Short-circuit
 ;; evaluation is preserved; only the return shape changes.
 (defun eval-and-form (arguments context)
-  (let ((t-symbol (intern-autolisp-symbol "T")))
+  (let ((t-symbol (autolisp-true-symbol)))
     (dolist (argument arguments t-symbol)
       (when (autolisp-false-p (autolisp-eval argument context))
         (return nil)))))
 
 (defun eval-or-form (arguments context)
-  (let ((t-symbol (intern-autolisp-symbol "T")))
+  (let ((t-symbol (autolisp-true-symbol)))
     (dolist (argument arguments nil)
       (when (autolisp-true-p (autolisp-eval argument context))
         (return t-symbol)))))
@@ -3129,18 +3776,69 @@ COMMAND-S special forms and the VL-CMDF builtin."
         do (autolisp-eval-progn (rest arguments) context))
   nil)
 
+;;; The pieces of REPEAT and FOREACH that DECIDE something, factored out
+;;; so the compiler can emit the loop without restating any of it.
+;;;
+;;; The transpiler open-codes both loops -- until 2.0.21 a FOREACH inside
+;;; a compiled function meant the whole loop, body included, ran
+;;; interpreted -- and the rule it must not break is the one that governs
+;;; this whole compiler: no second implementation of anything that can
+;;; disagree. So what compiled code supplies is the SHAPE (the loop, and
+;;; the body as compiled code); every check, every error and the binding
+;;; rule come from here, which is what the interpreter calls too.
+
+(defun check-repeat-count (count)
+  "Signal unless COUNT is a valid REPEAT count; return the number of
+iterations. The count check and its diagnostic in one place, for the
+interpreter and for compiled code."
+  (unless (typep count '(signed-byte 32))
+    (signal-autolisp-runtime-error
+     :invalid-repeat-count
+     "REPEAT count must evaluate to an integer, got ~S."
+     count))
+  (max 0 count))
+
+(defun check-foreach-sequence (sequence)
+  "Signal unless SEQUENCE is a list FOREACH can walk; return it."
+  (unless (listp sequence)
+    (signal-autolisp-runtime-error
+     :invalid-foreach-sequence
+     "FOREACH list argument must evaluate to a proper list, got ~S."
+     sequence))
+  sequence)
+
+(defun bind-foreach-variable (name element context)
+  "Give NAME the value ELEMENT for one FOREACH iteration: a BINDING in the
+frame FOREACH pushed, so whatever NAME held before the loop is restored
+when the loop ends.
+
+It used to ASSIGN when a dynamic binding for NAME already existed
+anywhere in the chain, and so clobbered a `/'-local -- of the function
+running the loop, and, because AutoLISP is dynamically scoped, of its
+CALLER too. Nobody had ever asked an engine whether that was right. pjb
+asked (2026-08-30), the probe went to AutoCAD, and AutoCAD BINDS:
+
+    case                            AutoCAD   clautolisp was
+    /-local of the same function    BEFORE    the last element
+    /-local of the CALLER           BEFORE    the last element
+
+which is also what the specification always said -- `bind it to name',
+`rebinding name for each iteration', `restored when the rebinding frame
+is popped'. The implementation matched neither.
+
+The compiler needs no change for this: it open-codes FOREACH by CALLING
+this function rather than restating the rule, so both forks moved
+together the moment this line did. See
+issues/open/foreach-binding-vs-assignment.issue."
+  (bind-dynamic-variable name element context))
+
 (defun eval-repeat-form (arguments context)
   (unless (>= (length arguments) 1)
     (signal-autolisp-runtime-error
      :wrong-number-of-arguments
      "REPEAT expects at least one argument."))
-  (let ((count (autolisp-eval (first arguments) context)))
-    (unless (typep count '(signed-byte 32))
-      (signal-autolisp-runtime-error
-       :invalid-repeat-count
-       "REPEAT count must evaluate to an integer, got ~S."
-       count))
-    (loop repeat (max 0 count)
+  (let ((count (check-repeat-count (autolisp-eval (first arguments) context))))
+    (loop repeat count
           do (autolisp-eval-progn (rest arguments) context))
     nil))
 
@@ -3158,23 +3856,37 @@ COMMAND-S special forms and the VL-CMDF builtin."
        :invalid-foreach-binding
        "FOREACH binding name must be an AutoLISP symbol, got ~S."
        name))
-    (let ((sequence (autolisp-eval (second arguments) context)))
-      (unless (listp sequence)
-        (signal-autolisp-runtime-error
-         :invalid-foreach-sequence
-         "FOREACH list argument must evaluate to a proper list, got ~S."
-         sequence))
+    (let ((sequence (check-foreach-sequence
+                     (autolisp-eval (second arguments) context))))
       (unwind-protect
            (progn
              (push-dynamic-frame context)
              (dolist (element sequence result)
-               (if (find-dynamic-binding name (evaluation-context-dynamic-frame context))
-                   (set-variable name element context)
-                   (bind-dynamic-variable name element context))
+               (bind-foreach-variable name element context)
                (setf result (if body
                                 (autolisp-eval-progn body context)
                                 nil))))
         (pop-dynamic-frame context)))))
+
+(defun check-vlax-collection-support ()
+  "Signal unless COM collection support is installed.
+
+Separate from VLAX-COLLECTION-ITEMS, and called BEFORE the collection
+form is evaluated, because that is the interpreter's order: with COM
+absent, (vlax-for x (some-form-with-side-effects) ...) signals without
+running the side effect. A compiler that evaluated first and complained
+second would differ from the interpreter in exactly the way nothing
+notices until it matters."
+  (unless *vlax-collection-items-hook*
+    (signal-autolisp-runtime-error
+     :unsupported-special-operator
+     "VLAX-FOR is unavailable: no COM collection support is installed.")))
+
+(defun vlax-collection-items (collection)
+  "The members of COLLECTION, through the hook the builtins layer
+installs. The runtime cannot reach the host COM protocol, and the
+compiler cannot either -- both ask this."
+  (funcall *vlax-collection-items-hook* collection))
 
 (defun eval-vlax-for-form (arguments context)
   "(vlax-for VAR COLLECTION BODY...) — iterate over an ActiveX
@@ -3193,19 +3905,34 @@ builtins layer installs (the runtime cannot reach the host COM protocol)."
       (signal-autolisp-runtime-error
        :invalid-foreach-binding
        "VLAX-FOR binding name must be an AutoLISP symbol, got ~S." name))
-    (unless *vlax-collection-items-hook*
-      (signal-autolisp-runtime-error
-       :unsupported-special-operator
-       "VLAX-FOR is unavailable: no COM collection support is installed."))
-    (let ((items (funcall *vlax-collection-items-hook*
-                          (autolisp-eval (second arguments) context))))
+    (check-vlax-collection-support)
+    (let ((items (vlax-collection-items
+                  (autolisp-eval (second arguments) context))))
       (unwind-protect
            (progn
              (push-dynamic-frame context)
              (dolist (element items result)
-               (if (find-dynamic-binding name (evaluation-context-dynamic-frame context))
-                   (set-variable name element context)
-                   (bind-dynamic-variable name element context))
+               ;; The SAME rule FOREACH uses, from the same function.
+               ;;
+               ;; This read ASSIGN-IF-ALREADY-BOUND until 2.0.26 -- the
+               ;; exact code FOREACH carried until AutoCAD was probed
+               ;; (2.0.22) and answered that it BINDS. VLAX-FOR was left
+               ;; behind by that fix, so the two loops in this
+               ;; implementation disagreed about their loop variable:
+               ;; (vlax-for x coll ...) wrote a caller's local named X
+               ;; and left the last member in it, while (foreach x l ...)
+               ;; did not.
+               ;;
+               ;; No vendor probe covers VLAX-FOR specifically -- it
+               ;; needs a live COM collection, which the probe harness
+               ;; cannot conjure. What is asserted here is the ANALOGY:
+               ;; the spec describes both in the same words, the
+               ;; behaviour FOREACH was proved to have is the one the
+               ;; spec always described, and two loops differing on
+               ;; their binding rule is far likelier to be an oversight
+               ;; than a vendor quirk nobody documented. See
+               ;; issues/open/vlax-for-binding-rule-unprobed.issue.
+               (bind-foreach-variable name element context)
                (setf result (if body (autolisp-eval-progn body context) nil))))
         (pop-dynamic-frame context)))))
 
@@ -3302,17 +4029,37 @@ name; a LAMBDA has none and passes NIL."
                                               function-name)
           (return))))))
 
-(defun eval-lambda-form (arguments context)
+(defun eval-lambda-form (arguments context &optional site)
+  "Build the closure a LAMBDA form denotes.
+
+SITE, when given, is the sharing point for every closure this same
+LAMBDA form builds -- the transpiler passes one per call site. A
+closure whose site already has a compiled body starts life with it, so
+a lambda in a loop compiles ONCE rather than once per iteration or,
+at the default threshold, never at all.
+
+NIL SITE is the interpreter's case and keeps the old behaviour exactly:
+the decision stays on the closure."
   (unless (>= (length arguments) 2)
     (signal-autolisp-runtime-error
      :wrong-number-of-arguments
      "LAMBDA expects a lambda list and at least one body form, got ~D arguments."
      (length arguments)))
   (maybe-warn-about-rest-separator (first arguments) "LAMBDA")
-  (make-autolisp-usubr "LAMBDA"
-                       (first arguments)
-                       (rest arguments)
-                       context))
+  (let ((function (make-autolisp-usubr "LAMBDA"
+                                       (first arguments)
+                                       (rest arguments)
+                                       context
+                                       site)))
+    ;; Inherit what the site already knows. Only the PLAIN compiled body
+    ;; is shared: an instrumented body carries form-ids tied to one
+    ;; function's debug metadata, so sharing it would make the debugger
+    ;; step through the wrong record.
+    (when site
+      (let ((compiled (usubr-site-compiled-body site)))
+        (when compiled
+          (setf (autolisp-usubr-compiled-body function) compiled))))
+    function))
 
 (defun compatibility-definition-from-parts (lambda-list body)
   (cons lambda-list body))
@@ -3401,6 +4148,10 @@ name; a LAMBDA has none and passes NIL."
                                          body
                                          context)))
       (set-function name function context)
+      ;; SPEED 3: compile now rather than once hot. Deliberately AFTER
+      ;; SET-FUNCTION, so a self-recursive function resolves its own name
+      ;; while being compiled exactly as it would at run time.
+      (compile-usubr-if-eager function)
       ;; Source-aware-defun-documentation: DEFUN always rewrites the
       ;; binding cell's doc slot. With a preceding ;|…|; block the
       ;; new doc is (:function "TEXT"); without one it is nil. Every
@@ -3414,6 +4165,15 @@ name; a LAMBDA has none and passes NIL."
                        context)
       (instrument-defun-if-debugging function)
       name)))
+
+(defvar *special-operator-generation* 0
+  "Bumped by every mutation of *SPECIAL-OPERATOR-DISPATCH*.
+
+Each AUTOLISP-SYMBOL caches the handler it last resolved to, stamped
+with this counter; a bump invalidates every cached answer at once
+without walking the symbol table. A DEFVAR, not a DEFPARAMETER, so
+that reloading this file bumps the counter (see below) instead of
+resetting it to a value that stale caches would still match.")
 
 (defparameter *special-operator-dispatch*
   (list (cons "QUOTE" #'eval-quote-form)
@@ -3443,10 +4203,31 @@ name; a LAMBDA has none and passes NIL."
         (cons "COMMAND" #'eval-command-form)
         (cons "COMMAND-S" #'eval-command-s-form)))
 
+;;; Reloading this file rebuilds the table above and drops anything
+;;; registered into it at runtime; bump the generation so no symbol
+;;; keeps pointing at a handler this image no longer dispatches.
+(incf *special-operator-generation*)
+
 (defun special-operator-function (operator)
-  (cdr (assoc (special-operator-name operator)
-              *special-operator-dispatch*
-              :test #'string=)))
+  "The handler for OPERATOR, or NIL if it names no special operator.
+
+Called on the operator of every compound form the interpreter
+evaluates, so the answer is memoised on the symbol itself; see the
+SPECIAL-OPERATOR-CACHE slot of AUTOLISP-SYMBOL. Only a symbol can name
+a special operator, so anything else is NIL without consulting the
+table at all."
+  (when (typep operator 'autolisp-symbol)
+    (let ((cache (clautolisp.autolisp-runtime.internal::autolisp-symbol-special-operator-cache
+                  operator)))
+      (if (eql (car cache) *special-operator-generation*)
+          (cdr cache)
+          (let ((handler (cdr (assoc (special-operator-name operator)
+                                     *special-operator-dispatch*
+                                     :test #'string=))))
+            (setf (clautolisp.autolisp-runtime.internal::autolisp-symbol-special-operator-cache
+                   operator)
+                  (cons *special-operator-generation* handler))
+            handler)))))
 
 (defun register-special-operator (name function)
   "Install FUNCTION as the handler for the special operator named NAME
@@ -3459,6 +4240,7 @@ debug system. Re-registering a name replaces the previous handler."
     (if entry
         (setf (cdr entry) function)
         (push (cons name function) *special-operator-dispatch*)))
+  (incf *special-operator-generation*)
   name)
 
 (defun unregister-special-operator (name)
@@ -3468,6 +4250,7 @@ register-special-operator. Returns T if an entry was removed."
     (setf *special-operator-dispatch*
           (remove name *special-operator-dispatch*
                   :key #'car :test #'string=))
+    (incf *special-operator-generation*)
     (and present t)))
 
 (defun known-special-operator-p (name)
@@ -3651,6 +4434,34 @@ so a value written and read back under the same encoding round-trips."
           (t nil)))
     (error () nil)))
 
+(defun call-in-file-compilation-unit (thunk)
+  "Run THUNK -- the loading of one AutoLISP file -- inside a host
+compilation unit when SPEED asks for eager compilation.
+
+This is where `SPEED 3 compiles the whole file at once' actually happens,
+and it needed no new machinery: at SPEED 3 every DEFUN compiles as it is
+evaluated, so putting the LOAD inside one unit puts every one of that
+file's compilations inside it too.
+
+:OVERRIDE NIL, deliberately, and this is where the design note in
+compiler.issue diverges from pjb's sketch. A nested unit with :OVERRIDE
+T starts a FRESH one instead of joining the enclosing one -- which would
+make CLAL-COMPILE-SYSTEM's system-wide unit inert, since each file it
+loads would open its own. :OVERRIDE NIL is what lets a file's unit be
+absorbed into a system's when there is one, and still create its own when
+there is not.
+
+WHAT THIS BUYS TODAY, precisely: a compilation unit defers
+undefined-function warnings to its end, so a function called before it is
+defined -- across files, in a system -- resolves quietly instead of
+warning at every forward reference. The wider prize pjb named (coalescing
+common literals, linking calls directly instead of through the symbol
+binding) belongs to COMPILE-FILE, not to a run of COMPILE calls, and
+arrives with the artefact writer."
+  (if (autolisp-compile-eagerly-p)
+      (with-compilation-unit (:override nil) (funcall thunk))
+      (funcall thunk)))
+
 (defun autolisp-load-file-in-context (path context &rest read-options)
   ;; Source-file encoding precedence, when the caller did NOT pass
   ;; an explicit :external-format:
@@ -3702,13 +4513,22 @@ so a value written and read back under the same encoding round-trips."
        (let ((resolved (ignore-errors (namestring (truename path)))))
          (when (and *before-load-file-hook* resolved)
            (funcall *before-load-file-hook* resolved))
-         ;; Top-level forms go through the compiled-eval model so a file
-         ;; loaded under a debug session is instrumentable (LOAD → EVAL →
-         ;; clal-compile). Outside a session this is a plain eval-progn.
          (multiple-value-prog1
-             (autolisp-eval-toplevel-progn
-              (apply #'read-runtime-from-file path effective-options)
-              context)
+             ;; ONE compilation unit for the whole file, INSIDE the load
+             ;; generation rather than around it: the debugger's hooks
+             ;; bracket the load, and the compiler's unit brackets the
+             ;; forms it may compile while that load runs. Nesting them
+             ;; the other way would put the after-hook inside the unit
+             ;; and defer its warnings past the load it reports on.
+             (call-in-file-compilation-unit
+              (lambda ()
+                ;; Top-level forms go through the compiled-eval model so a
+                ;; file loaded under a debug session is instrumentable
+                ;; (LOAD -> EVAL -> clal-compile). Outside a session this is
+                ;; a plain eval-progn.
+                (autolisp-eval-toplevel-progn
+                 (apply #'read-runtime-from-file path effective-options)
+                 context)))
            (when (and *after-load-file-hook* resolved)
              (funcall *after-load-file-hook* resolved)))))
      context)))

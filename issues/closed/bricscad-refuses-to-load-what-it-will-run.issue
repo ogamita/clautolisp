@@ -1,0 +1,410 @@
+Title: BricsCAD refuses to LOAD a file containing a form it executes happily
+Status: REOPENED 2026-09-06 -- the named form was disproved
+Found: 2026-08-31, chasing probes-suite-crashes-bricscad
+
+THE SHAPE OF IT
+
+probes/sources/probe-foreach-scope.lsp contained, inside one function:
+
+    (list (foreach e (list 1 2 3) (* e 10))
+          (foreach e nil 99))
+
+and earlier, in the same function, `(foreach e (list 1 2 3))' with no
+body. BricsCAD would not LOAD the file -- on macOS and on Windows,
+before a single probe ran, with no diagnostic reaching the results
+file: the process simply sat until the harness's 180-second timeout.
+
+All three of those forms EXECUTE CORRECTLY in BricsCAD. The suite now
+holds them as strings and READs them when the case runs, and BricsCAD
+answers every one -- including returning (1 2 3) for the body-less
+FOREACH, which is a divergence worth its own ticket
+(foreach-empty-body-return-diverges.issue).
+
+So the rejection is in whatever reads a file being LOADED, and not in
+the evaluator. A form BricsCAD will run is a form BricsCAD will not
+read from a file.
+
+WHICH FORM, EXACTLY, IS STILL UNKNOWN
+
+The per-form split (PROBE_SPLIT_SUITES) narrowed it to ONE FUNCTION --
+form 10 of 13, CAD-PROBE-FOREACH--RETURN-VALUE -- which is what finally
+ended the guessing. It did not narrow it further, because all three
+candidates sat in that one function:
+
+  - FOREACH in EXPRESSION POSITION, as an argument to LIST
+  - FOREACH over an EMPTY LIST
+  - FOREACH with NO BODY
+  - or only some combination of them
+
+THE EXPERIMENT IS NOW WRITTEN -- probes/sources/probe-load-refusal.lsp,
+plus probe:load-refusal:bricscad:{macos,windows}. It holds the three
+candidates as three separate top-level forms, written OUT rather than
+hidden in strings, because loading them is the question. Run alone and
+SPLIT, each becomes its own file with its own marker, so the last
+marker names the form BricsCAD would not read.
+
+Three things had to be true for that to be safe, and now are:
+
+  - QUARANTINE. The suite is marked `quarantine' in the manifest, so a
+    default `make probe' SKIPS it and only PROBE_SUITES=load-refusal
+    runs it. Without that, adding this file would have turned every
+    ordinary BricsCAD probe run into a hang -- the trap this whole
+    ticket is about, re-laid by the ticket's own fix.
+  - PROBE_TIMEOUT. The harness's 180 s is fine for a suite that works;
+    an experiment that EXPECTS a hang runs at 45 s, because the Windows
+    runner is serial and nothing else should queue behind a deliberate
+    hang.
+  - allow_failure. A failed job here is a RESULT, not a regression.
+
+Verified on the clautolisp baseline both ways: a default run produces
+265 results and ZERO from this suite, and the named run loads all four
+forms with their markers and answers all three cases `ok'.
+
+ROUND 1 -- 2026-09-02, BricsCAD on macOS. THE CULPRIT IS NAMED.
+
+    ((KIND . "step") (AT . "loaded probe-load-refusal.lsp form 1 ...")
+                     (VALUE . "CAD-PROBE-LR--EXPRESSION-POSITION"))
+
+and nothing after it. Form 1 LOADED -- its marker carries the function
+it defined. Form 2's marker never appears.
+
+  (list (foreach e (list 1 2 3) (* e 10)))   LOADED   -- innocent
+  (foreach e nil 99)                         REFUSED  -- the culprit
+  (foreach e (list 1 2 3))                   not reached
+
+BRICSCAD WILL NOT READ A FOREACH WHOSE LIST ARGUMENT IS A LITERAL NIL,
+from a file it is loading. It executes the same form perfectly well
+when the form is READ at run time -- that is how the empty-list return
+value was measured, and it is nil there, as in AutoCAD.
+
+FOREACH IN EXPRESSION POSITION IS INNOCENT, which is worth stating
+because it was the candidate I would have bet on: a loop used as an
+argument looks like the unusual thing, and it is not.
+
+ONE RUN FINDS AT MOST ONE CULPRIT, and it finds the FIRST -- a refusal
+hangs the engine, so everything after it is never attempted. The
+suite's form ORDER is therefore part of the experiment, not
+housekeeping: the body-less form, still unknown, now goes FIRST and the
+known culprit goes LAST. That is written at the head of the suite so
+the next person does not reorder it tidily and lose the design.
+
+WHAT THIS MEANS IN PRACTICE, and it is not nothing: `(foreach x nil
+...)' is what a program contains when the list argument is a constant
+that happens to be empty -- a degenerate case a generator or a macro
+expansion produces easily. Such a file loads in AutoCAD and in
+clautolisp and DOES NOT LOAD in BricsCAD, with no diagnostic: the
+process sits there. Anyone shipping AutoLISP to both hosts should know
+it, which is why this ticket stays open until the third candidate is
+settled and the whole thing can be written up as a portability note.
+
+ROUND 2 -- same day, body-less form moved first. COMPLETE.
+
+    (step ... form 1 ...) (VALUE . "CAD-PROBE-LR--NO-BODY")
+    (step ... form 2 ...) (VALUE . "CAD-PROBE-LR--EXPRESSION-POSITION")
+
+and nothing after. Both loaded; form 3's marker is absent.
+
+  (foreach e (list 1 2 3))                  LOADS    -- innocent
+  (list (foreach e (list 1 2 3) (* e 10)))  LOADS    -- innocent
+  (foreach e nil 99)                        REFUSED  -- the SOLE culprit
+
+THE ANSWER, in one line: BRICSCAD WILL NOT READ `(foreach VAR nil ...)'
+-- a FOREACH WHOSE LIST ARGUMENT IS THE LITERAL NIL -- from a file it
+is loading. Nothing else in that function was ever the problem.
+
+Two independent runs agree, and each cleared a different candidate, so
+neither verdict rests on a single observation: round 1 cleared
+expression position, round 2 cleared the body-less form and confirmed
+the culprit by exclusion.
+
+WHAT IS NOT MEASURED, and should not be assumed:
+  - whether `(foreach e '() 99)' behaves the same. Only the bare symbol
+    NIL was probed. `'()' reads as the same object, so it probably
+    does, and `probably' is exactly the word that has been wrong four
+    times in this ticket.
+  - whether a NON-LITERAL nil is refused -- `(foreach e l 99)' with L
+    bound to nil is a run-time value, not something the loader sees, so
+    almost certainly not; the whole finding is that this is a READER
+    problem.
+  - Windows. THREE attempts, none of which produced a Windows result.
+    Rounds 1 and 2 had their Windows jobs cancelled by my own pushes;
+    the third attempt, where I deliberately held the pushes back, ended
+    with all three Windows probe jobs failing as
+    `stuck_pending_no_matching_runners' -- the runner dropped
+    mid-pipeline, thirteen jobs with it. So the reason is now
+    environmental rather than self-inflicted, and GitLab says so
+    explicitly rather than leaving a silence.
+
+    The macOS finding is replicated THREE times, and the ORIGINAL
+    refusal was seen on both platforms, so the culprit is very likely
+    the same on Windows. `Very likely' is not measured, and in this
+    ticket that phrase has been wrong four times. RE-RUN THE WINDOWS
+    JOB when the runner is up; nothing else is needed, the experiment
+    is committed and quarantined.
+
+WHAT IT MEANS IN PRACTICE. `(foreach x nil ...)' is what a program
+contains when its list argument is a constant that happens to be empty
+-- easily produced by a macro expansion, a generator, or a hand edit
+that emptied a literal list. Such a file loads in AutoCAD and in
+clautolisp and DOES NOT LOAD in BricsCAD, with no diagnostic at all:
+the process sits until something times it out. That is a portability
+hazard worth a note in the user manual, and possibly worth a
+--dialect bricscad warning, but that is a decision rather than a
+finding and is left for pjb.
+
+THE METHOD, which is the reusable part. Four guesses were made about
+this file and all four were wrong -- the suite that had loaded fine,
+the body-less form, then expression position, and the assumption that a
+silence meant the previous load had failed. What settled it was
+instrumentation, in three steps: mark every load; split the suite one
+form per file so a HANG names the form; and then ORDER the forms so
+that the unknown candidate is reached first, because a refusal hangs
+the engine and one run can only ever name the FIRST culprit.
+
+That last point is the non-obvious one and it is written at the head of
+probe-load-refusal.lsp: the order of the forms in that file is the
+experiment's design, not housekeeping.
+
+WHY IT IS NOT URGENT
+
+Nothing in clautolisp depends on the answer. It matters for two
+practical reasons and neither is pressing: AutoLISP written for
+clautolisp or AutoCAD may fail to LOAD in BricsCAD for reasons no
+diagnostic explains, and anyone writing a probe suite will meet this
+again. The second is already handled -- the rule is written at the head
+of probe-foreach-scope.lsp and the harness has the split.
+
+THE LESSON, which is the durable part
+
+A load that HANGS writes nothing about itself. The marker that would
+name the file comes after the load that never returns, and
+VL-CATCH-ALL-APPLY cannot catch a process that is not coming back. The
+file therefore says only that the PREVIOUS load finished -- a silence.
+It was read as evidence twice, and both readings were wrong: first
+blaming a suite that had loaded fine, then a form that turned out
+innocent. PROBE_SPLIT_SUITES exists so the last marker NAMES the form.
+
+
+WHAT THE OUTPUT FILE ACTUALLY SAYS -- pjb, 2026-09-06
+------------------------------------------------------
+
+pjb: "What do you mean by `(foreach e nil 99) is refused'? I don't see
+this form in the probe output file."
+
+He is right, and the distinction is the one this whole ticket is about.
+THE FORM APPEARS NOWHERE IN THE RESULTS FILE. The file is four records
+and stops:
+
+    ((KIND . "wrapper-start"))
+    ((KIND . "load-context") (SECURELOAD . "0"))
+    ((KIND . "load") (FILE . "probe-core.lsp") (VALUE . "nil"))
+    ((KIND . "step") (AT . "loaded ... form 1 (...-001.lsp)")
+                     (VALUE . "CAD-PROBE-LR--NO-BODY"))
+    ((KIND . "step") (AT . "loaded ... form 2 (...-002.lsp)")
+                     (VALUE . "CAD-PROBE-LR--EXPRESSION-POSITION"))
+
+The identity of the form comes from a DIFFERENT file in the same
+artifact -- fragments/probe-load-refusal-003.lsp, written by the split,
+which holds (defun cad-probe-lr--empty-list () ... (foreach e nil 99)).
+
+SO WHAT IS ESTABLISHED IS NARROWER THAN "REFUSED":
+
+  - fragments 001 and 002 loaded, and their markers name what they
+    defined, so those loads returned;
+  - the load of fragment 003 NEVER RETURNED. No marker, and nothing
+    afterwards, until the harness timeout;
+  - each load is wrapped in VL-CATCH-ALL-APPLY, so a form the engine
+    SIGNALLED about would have been caught and recorded WITH its
+    marker. There is no marker at all, so this is not a catchable
+    refusal -- it is the process not coming back.
+
+"REFUSED" AND "WILL NOT READ" WERE INTERPRETATION, written as finding.
+The word "read" in particular claims a decision inside the reader,
+which nothing here shows: a hang, a crash, and a modal dialog are all
+consistent with the same silence. What IS separately established is
+that the evaluator is fine -- the foreach-scope suite evaluates
+(foreach e nil 99) by READ at run time and gets nil, status ok, on both
+platforms.
+
+THE ACCURATE STATEMENT:
+
+    Loading a file that contains (foreach e nil 99) makes BricsCAD stop
+    making progress -- no error, no further output -- while the same
+    form evaluates correctly when READ at run time. Which mechanism
+    stops it is not established.
+
+That the fault is reached at form 3 and not before is solid: it rests
+on markers that WERE written, not on ones that were not.
+
+WHY THIS CORRECTION IS THE POINT AND NOT A FOOTNOTE: reading a silence
+as evidence is the exact error that cost this investigation four wrong
+guesses, and the instrumentation was built to stop it. It stopped it in
+the MEASUREMENT -- the split legitimately narrows the fault to one
+fragment -- and then it crept back into the CONCLUSION, where "did not
+return" became "refused" became "will not read". The tooling was
+sound; the sentence was not.
+
+
+WITHDRAWN: (foreach e nil 99) IS NOT THE CULPRIT -- pjb, 2026-09-06
+--------------------------------------------------------------------
+
+pjb, at a BricsCAD V26 REPL on macOS:
+
+    : (foreach e nil 99)
+    nil
+
+    (defun f () (foreach e nil 99))
+    (f)                                  "definitely loaded successfully"
+
+So the form reads, evaluates, survives being a DEFUN body, and the
+function calls. Every step this ticket accused it of. THE
+IDENTIFICATION IS WRONG and is withdrawn.
+
+WHAT IT WAS BUILT ON, which is the lesson: fragment 003's load produced
+no marker, fragment 003 contained that form, therefore that form was
+the culprit. Two orderings agreed, which felt like corroboration. But
+both readings rest on an ABSENCE plus two deductions -- which load came
+next (from the wrapper) and what was in it (from the fragment file) --
+and an absence supports no conclusion about a CAUSE. It says only that
+something stopped.
+
+WHAT STILL STANDS, because it rests on markers that WERE written:
+
+  - fragments 001 and 002 load and their markers name what they defined
+  - after the marker for the fragment before it, nothing further is
+    ever written
+  - the paths differ only in filename; the bytes are clean ASCII, no CR
+  - the two runs stopped at the fragment holding that form in BOTH
+    orderings, so the stop CORRELATES with it
+
+Correlation with a form that is independently proven harmless means the
+cause is somewhere the correlation does not reach: the CI context. The
+candidates now are the ones the REPL test does not cover --
+
+  - batch mode under alfe, versus an interactive session
+  - the accumulated state of two prior LOADs, versus a fresh REPL
+  - a modal dialog appearing for an unrelated reason (pjb has reported
+    BricsCAD dialogs about a drawing being in use on this very runner),
+    which stops everything and writes nothing
+
+HARNESS CHANGE, so the next run needs one deduction fewer: each
+fragment is now announced BEFORE its load as well as after, with the
+PATH in the record. "entering <file>" followed by nothing then states
+that the load was ENTERED and did not return, instead of leaving that
+to be inferred from the wrapper.
+
+AND THE FILE PATH IS EXONERATED TOO -- pjb, same day, with a .scr:
+
+    (load "~/src/ogamita/clautolisp/probes/test-foreach.lsp")
+    (setq log (open ".../test-foreach.out" "w"))
+    (write-line "SUCCESS" log)
+    (close log)
+    ._QUIT
+
+and the .out file contained SUCCESS. So the form LOADS FROM A FILE, in
+BATCH, under a script -- the one axis the REPL test had left open, and
+the axis this ticket was named after. The title is now wrong twice
+over: BricsCAD neither refuses the form nor refuses to load it.
+
+WHAT IS LEFT is the difference between that .scr and the CI run, since
+the form, the defun, the file and batch mode are all cleared:
+
+  - driven by ALFE (--bricscad --mode batch), not a bare .scr
+  - the load is wrapped in VL-CATCH-ALL-APPLY
+  - it is the third LOAD of the session, after probe-core and one or
+    two fragments, not the first
+  - a drawing is open, and pjb has reported BricsCAD modal dialogs
+    about a drawing in use ON THIS RUNNER -- a dialog stops everything
+    and writes nothing, which is precisely the signature seen
+  - SECURELOAD is set to 0 by the wrapper
+
+THE CORRELATION THAT MISLED ME, stated so it is not re-derived: the
+stop tracked the empty-list FRAGMENT across two orderings, at two
+different load positions. That looked like content-dependence and is
+not, since the content is now cleared four ways. Either the correlation
+is coincidence across two runs, or it is with the FILE rather than the
+form -- which is why the byte-exact 184-byte fragment has been sent to
+pjb to load directly. If that file loads for him, the fragment is
+cleared too and the cause is wholly in the CI context.
+
+
+WINDOWS REPRODUCES IT -- and that sharpens the contrast
+--------------------------------------------------------
+
+probe:load-refusal:bricscad:windows, 2026-09-06, stops at exactly the
+same place as macOS: forms 1 and 2 load, nothing after. So the CI stop
+is PLATFORM-INDEPENDENT, which rules out every platform-specific
+explanation -- macOS dialogs, Windows paths, one runner's environment.
+
+In the SAME pipeline, probe:suite:bricscad:windows SUCCEEDED. That
+suite is also split, also driven by alfe, also loads fragment files --
+and it carries (foreach e nil 99) AS A STRING that it READs at run
+time. It ran green on both platforms.
+
+So the two conditions are both necessary:
+
+    literal in a loaded file  +  the CI context   -> stops
+    literal in a loaded file  alone (pjb's .scr)  -> fine
+    the CI context alone (as a string)            -> fine
+
+That is a narrower statement than anything this ticket has held so far,
+and it is made entirely of runs that PRODUCED output rather than of one
+that did not.
+
+RULED OUT ALONG THE WAY, each checked rather than argued:
+
+  - the form itself -- pjb: REPL, defun, call, and a .scr that LOADS a
+    file containing it, all fine on BricsCAD V26 macOS
+  - the fragment's bytes -- clean ASCII, LF only, no BOM
+  - a missing final newline, which would plausibly leave a reader
+    waiting: the file ends "))\n\n"
+  - the load path -- identical in shape to the fragment that loads,
+    differing only in filename
+  - the drawing lock -- alfe embeds an empty.dwg and makes a fresh one
+    per invocation (2.0.22), and run-probes.sh copies its own into the
+    per-run directory; that has been true for every run discussed here
+  - the platform
+
+WHAT IS LEFT, being the differences between pjb's working .scr and the
+CI load of the same text:
+
+  1. the load is wrapped in VL-CATCH-ALL-APPLY rather than bare
+  2. alfe drives the session (--bricscad --mode batch)
+  3. it is the third LOAD of the session, not the first
+  4. the wrapper sets SECURELOAD to 0
+
+Each is one line to test from a working session, and they are listed in
+the order they are cheapest to try, not in order of my confidence --
+which has been wrong on this ticket four times.
+
+
+THE RUNNER ENVIRONMENT IS THE OPEN VARIABLE -- pjb, 2026-09-06
+---------------------------------------------------------------
+
+pjb: the Windows runners are configured with shell=powershell, and the
+scripts then run under /bin/bash -- "but it's not clear what
+environment is used". There are .bashrc files in several places that
+eventually load the same rc files and set the environment as
+interactively, which is not a good arrangement for a runner. He is
+giving the gitlab runner on the laptop an EXPLICIT environment, as the
+coming windows-server runner will have, and we retry in a couple of
+days.
+
+That fits the anomaly this ticket could not resolve: a NON-INTERACTIVE
+bash does not source .bashrc, so the environment it receives from
+powershell need not be the one an interactive `which dirname' reports.
+It also explains why "PATH is short" and "awk and sed are present" both
+appeared true -- they were measured in different environments, mine in
+the runner's and pjb's interactively.
+
+So the dirname question is not answered, it is DISSOLVED: it was never
+about dirname. Nothing more should be inferred from it until the
+explicit environment exists.
+
+WAITING ON: the re-run under that environment. The harness now prints,
+on every run, $0, the shell version, whether dirname resolves, uname
+AND THE FULL PATH -- so the first run under the new environment shows
+whether it is what was intended, instead of being another round of
+inference. Nothing else is needed from this end: the load-refusal suite
+is committed and quarantined, and the four remaining differences from
+pjb's working .scr are listed above, cheapest first.

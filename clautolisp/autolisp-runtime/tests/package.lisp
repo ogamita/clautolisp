@@ -83,10 +83,16 @@
                 #:find-runtime-session-document
                 #:function-cell-function
                 #:intern-autolisp-symbol
+                #:register-special-operator
+                #:unregister-special-operator
                 #:lookup-documentation
                 #:lookup-function
                 #:lookup-variable
                 #:make-document-namespace
+                #:make-blackboard-namespace
+                #:namespace-binding-cell
+                #:binding-cell-value
+                #:binding-cell-bound-p
                 #:make-evaluation-context
                 #:make-autolisp-string
                 #:make-autolisp-subr

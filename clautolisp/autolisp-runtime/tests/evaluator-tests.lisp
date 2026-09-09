@@ -1265,3 +1265,471 @@ is deliberately empty because their text varies by call site."
     (dolist (tag (dialect-warning-tags))
       (is (search (format nil "=[~A]=" tag) annex)
           "~A is missing from the generated annex" tag))))
+
+
+;;;; Dynamic frames: bindings live in an ALIST until a frame outgrows it,
+;;;; then the frame promotes itself to a hash table. It used to be a hash
+;;;; table always -- one allocated per function call, to hold typically a
+;;;; single parameter. These tests pin the BEHAVIOUR the representation
+;;;; must preserve, so that the representation stays free to change.
+;;;;
+;;;; They deliberately use only special operators (DEFUN, SETQ, PROGN):
+;;;; this suite runs without the core builtins installed, so `+' and
+;;;; `list' are not available to write them with.
+
+(test a-frame-keeps-every-local-across-the-alist-to-table-promotion
+  "A function with more locals than a frame keeps in an alist must still
+bind every one of them -- including the FIRST, which was bound while the
+frame was still an alist and had to survive being copied into the table.
+Dropping the early entries is the way this optimisation would fail, and
+it would fail silently: the local would simply read as nil."
+  (reset-autolisp-symbol-table)
+  ;; 16 locals, against an alist limit of 12, so the promotion happens
+  ;; part-way through and the first locals predate it.
+  (let ((source "(defun f (/ a b c d e g h i j k l m n o p q)
+                    (setq a 1) (setq b 2) (setq c 3) (setq d 4)
+                    (setq e 5) (setq g 6) (setq h 7) (setq i 8)
+                    (setq j 9) (setq k 10) (setq l 11) (setq m 12)
+                    (setq n 13) (setq o 14) (setq p 15) (setq q 16)
+                    ~A)"))
+    ;; the first local, bound long before the promotion
+    (is (eql 1 (%run-under-dialect :clautolisp
+                                   (format nil "~A (f)" (format nil source "a")))))
+    ;; one bound exactly around the boundary
+    (is (eql 12 (%run-under-dialect :clautolisp
+                                    (format nil "~A (f)" (format nil source "m")))))
+    ;; and the last, bound when the frame was already a table
+    (is (eql 16 (%run-under-dialect :clautolisp
+                                    (format nil "~A (f)" (format nil source "q")))))))
+
+(test a-local-shadows-a-global-and-restores-it
+  "The whole point of a frame: `/'-locals shadow, and the shadow is gone
+when the call returns. Pinned across the representation change because a
+frame that lost or leaked a binding would break exactly here."
+  (reset-autolisp-symbol-table)
+  (is (eql 1 (%run-under-dialect :clautolisp
+                                 "(setq x 99) (defun f (/ x) (setq x 1) x) (f)")))
+  (is (eql 99 (%run-under-dialect :clautolisp
+                                  "(setq x 99) (defun f (/ x) (setq x 1) x) (f) x"))))
+
+(test nested-frames-shadow-independently
+  "Two frames binding the same name must not share storage: the inner
+call's shadow must not survive into the outer one. A frame that appended
+to a shared list instead of owning its own bindings would pass the single
+-call test above and fail this one."
+  (reset-autolisp-symbol-table)
+  (is (eql 2 (%run-under-dialect
+              :clautolisp
+              "(defun inner (/ x) (setq x 3) x)
+               (defun outer (/ x) (setq x 2) (inner) x)
+               (outer)"))))
+
+(test rebinding-a-name-in-one-frame-does-not-duplicate-it
+  "A frame holds at most one binding per symbol. Setting a local twice
+must replace, not accumulate -- otherwise the frame grows on every
+assignment and promotes itself for no reason."
+  (reset-autolisp-symbol-table)
+  (is (eql 7 (%run-under-dialect
+              :clautolisp
+              "(defun f (/ a) (setq a 1) (setq a 2) (setq a 7) a) (f)"))))
+
+
+;;;; The per-symbol binding-cell cache. A symbol remembers the last
+;;;; (namespace . cell) it resolved to, so that a variable read, an
+;;;; assignment or a call costs a slot read and an EQ test instead of a
+;;;; TYPECASE plus a hash lookup. These tests pin the two properties that
+;;;; make that sound, both of which fail SILENTLY if broken: a wrong
+;;;; namespace would hand back another document's binding, and a cached
+;;;; DEFINITION would make redefinition stop working.
+
+(test the-binding-cache-is-per-namespace-not-per-symbol
+  "The same symbol in two namespaces must resolve to two different cells.
+A cache that ignored the namespace would return whichever was looked up
+first — one drawing reading another drawing's variables, silently."
+  (reset-autolisp-symbol-table)
+  (let* ((symbol (intern-autolisp-symbol "SHARED-NAME"))
+         (one (make-document-namespace :name "ONE"))
+         (two (make-document-namespace :name "TWO"))
+         (cell-one (namespace-binding-cell one symbol))
+         (cell-two (namespace-binding-cell two symbol)))
+    (is (not (eq cell-one cell-two))
+        "the same cell was handed out for two namespaces")
+    ;; and going back must return the FIRST cell, not re-create one
+    (is (eq cell-one (namespace-binding-cell one symbol)))
+    (is (eq cell-two (namespace-binding-cell two symbol)))
+    ;; the cells hold independent values
+    ;; Writing a cell has no public SETF — these tests deliberately reach
+    ;; into the internal accessor, because what they test IS the internal
+    ;; cache in front of it.
+    (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell-one) 1
+          (clautolisp.autolisp-runtime.internal::binding-cell-value cell-two) 2)
+    (is (eql 1 (binding-cell-value (namespace-binding-cell one symbol))))
+    (is (eql 2 (binding-cell-value (namespace-binding-cell two symbol))))))
+
+(test the-binding-cache-survives-alternating-namespaces
+  "The cache holds ONE entry, so alternating namespaces misses on every
+lookup. Missing must be merely slower, never wrong."
+  (reset-autolisp-symbol-table)
+  (let* ((symbol (intern-autolisp-symbol "ALTERNATING"))
+         (one (make-document-namespace :name "ONE"))
+         (two (make-document-namespace :name "TWO")))
+    (setf (clautolisp.autolisp-runtime.internal::binding-cell-value
+           (namespace-binding-cell one symbol)) 10
+          (clautolisp.autolisp-runtime.internal::binding-cell-value
+           (namespace-binding-cell two symbol)) 20)
+    (dotimes (i 5)
+      (is (eql 10 (binding-cell-value (namespace-binding-cell one symbol))))
+      (is (eql 20 (binding-cell-value (namespace-binding-cell two symbol)))))))
+
+(test a-createp-nil-miss-is-not-remembered-as-an-answer
+  "Asking with :CREATEP NIL for a symbol that has no cell must not record
+`no cell\' in the cache — the next :CREATEP T call has to create one.
+Caching the miss would make the binding permanently unwritable."
+  (reset-autolisp-symbol-table)
+  (let* ((symbol (intern-autolisp-symbol "NOT-YET-BOUND"))
+         (namespace (make-document-namespace :name "NS")))
+    (is (null (namespace-binding-cell namespace symbol :createp nil)))
+    (let ((cell (namespace-binding-cell namespace symbol)))
+      (is (not (null cell)) "no cell was created after a :CREATEP NIL miss")
+      (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) 42)
+      (is (eql 42 (binding-cell-value
+                   (namespace-binding-cell namespace symbol :createp nil)))))))
+
+(test redefinition-is-visible-through-the-cache
+  "The cache remembers where a binding LIVES, never what it holds. A
+function redefined after its first call must run the new definition —
+the failure this would cause is a program that silently keeps running
+the code you just replaced."
+  (reset-autolisp-symbol-table)
+  (is (eql 2 (%run-under-dialect
+              :clautolisp
+              "(defun f () 1) (f) (defun f () 2) (f)")))
+  (reset-autolisp-symbol-table)
+  (is (eql 7 (%run-under-dialect
+              :clautolisp
+              "(setq a 1) a (setq a 7) a"))))
+
+;;;; The special-operator cache.
+;;;;
+;;;; SPECIAL-OPERATOR-FUNCTION memoises its answer on the symbol,
+;;;; stamped with a generation counter that every mutation of the
+;;;; dispatch table bumps. Unlike the binding cache, this answer CAN go
+;;;; stale — the debugger installs %CLAL-POLL into the table at runtime
+;;;; — so the invalidation is the part worth pinning. Every failure
+;;;; below is silent: a stale cache does not signal, it just keeps
+;;;; dispatching yesterday's handler.
+
+(test a-symbol-that-is-not-a-special-operator-stays-that-way
+  "NIL is a real answer here, not a missing one: the cache must record
+`this is an ordinary function name\' rather than re-scanning the table.
+Pinned because storing NIL as `not asked yet\' would silently disable
+the cache for exactly the common case it exists to serve."
+  (reset-autolisp-symbol-table)
+  (let ((symbol (intern-autolisp-symbol "AN-ORDINARY-NAME")))
+    (dotimes (i 3)
+      (is (null (clautolisp.autolisp-runtime::special-operator-function symbol))))
+    ;; and a genuine operator still resolves
+    (is (not (null (clautolisp.autolisp-runtime::special-operator-function
+                    (intern-autolisp-symbol "IF")))))))
+
+(test registering-an-operator-invalidates-what-symbols-already-cached
+  "A symbol asked about BEFORE an operator of that name is registered
+must see the new handler afterwards. Without the generation bump the
+debugger could install %CLAL-POLL and have it ignored in exactly the
+code that had already run once — which is all the code a debugger is
+ever attached to."
+  (reset-autolisp-symbol-table)
+  (let ((symbol (intern-autolisp-symbol "LATE-OPERATOR"))
+        (handler (lambda (arguments context)
+                   (declare (ignore arguments context))
+                   :from-the-late-operator)))
+    (is (null (clautolisp.autolisp-runtime::special-operator-function symbol)))
+    (unwind-protect
+         (progn
+           (register-special-operator "LATE-OPERATOR" handler)
+           (is (eq handler (clautolisp.autolisp-runtime::special-operator-function
+                            symbol))))
+      (unregister-special-operator "LATE-OPERATOR"))
+    ;; and unregistering must be visible through the cache too
+    (is (null (clautolisp.autolisp-runtime::special-operator-function symbol)))))
+
+(test re-registering-a-name-replaces-the-cached-handler
+  "Re-registering is the documented way to replace a handler. A cache
+that kept the first one would run the old code with no diagnostic."
+  (reset-autolisp-symbol-table)
+  (let ((symbol (intern-autolisp-symbol "REPLACED-OPERATOR"))
+        (first (lambda (arguments context)
+                 (declare (ignore arguments context)) :first))
+        (second (lambda (arguments context)
+                  (declare (ignore arguments context)) :second)))
+    (unwind-protect
+         (progn
+           (register-special-operator "REPLACED-OPERATOR" first)
+           (is (eq first (clautolisp.autolisp-runtime::special-operator-function
+                          symbol)))
+           (register-special-operator "REPLACED-OPERATOR" second)
+           (is (eq second (clautolisp.autolisp-runtime::special-operator-function
+                           symbol))))
+      (unregister-special-operator "REPLACED-OPERATOR"))))
+
+(test a-registered-operator-is-dispatched-by-the-evaluator
+  "The end of the chain: a runtime-registered operator receives its
+arguments UNEVALUATED, like every other special operator. This is what
+the debugger's poll operator depends on."
+  (reset-autolisp-symbol-table)
+  (let ((seen nil))
+    (unwind-protect
+         (progn
+           (register-special-operator
+            "CAPTURE-RAW"
+            (lambda (arguments context)
+              (declare (ignore context))
+              (setf seen arguments)
+              :captured))
+           (let ((result (%run-under-dialect
+                          :clautolisp "(capture-raw undefined-variable)")))
+             (is (eq :captured result))
+             (is (= 1 (length seen)))
+             (is (string= "UNDEFINED-VARIABLE"
+                          (autolisp-symbol-name (first seen))))))
+      (unregister-special-operator "CAPTURE-RAW"))))
+
+(test a-lambda-form-operator-is-never-a-special-operator
+  "The operator of ((lambda ...) args) is a CONS, not a symbol. It must
+answer NIL without consulting the table at all — and, more to the point,
+without being handed to STRING= as a string designator."
+  (reset-autolisp-symbol-table)
+  (is (null (clautolisp.autolisp-runtime::special-operator-function
+             (list (intern-autolisp-symbol "LAMBDA") nil))))
+  (is (eql 3 (%run-under-dialect :clautolisp "((lambda (x) x) 3)"))))
+
+;;;; The dynamic-binding count, and why name resolution stopped being
+;;;; O(call-stack depth).
+;;;;
+;;;; LOOKUP-FUNCTION and FIND-DYNAMIC-BINDING walked the WHOLE
+;;;; dynamic-frame chain before falling back to the namespace. For a
+;;;; function name -- which is essentially never dynamically bound -- that
+;;;; walk failed in every frame, on every call. So a call cost O(depth),
+;;;; and a program got slower the deeper it ran: the identical loop
+;;;; measured 3.7x slower forty frames down.
+;;;;
+;;;; The walk is now skipped when the symbol's DYNAMIC-BINDING-COUNT is
+;;;; zero. These tests are about the thing that LICENSES the skip -- that
+;;;; the count is exact -- rather than about the timing it buys, because a
+;;;; count is checkable and a stopwatch on a shared machine is not.
+
+(defun %binding-count (name)
+  "The live dynamic-binding count of the symbol named NAME."
+  (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+   (intern-autolisp-symbol name)))
+
+(test a-function-name-is-never-dynamically-bound-so-the-walk-is-skipped
+  "The case that matters: after running a program, the names it CALLED have
+a count of zero, which is what lets their resolution skip the frame chain
+entirely. Only names bound as parameters or `/'-locals are ever counted.
+
+Written with user functions because this suite runs the runtime WITHOUT
+the builtins -- there is no `+' here to ask about. The property is the
+same one: a name in operator position is not a name in a frame."
+  (reset-autolisp-symbol-table)
+  (%run-under-dialect
+   :clautolisp
+   "(defun leaf (n) n)
+    (defun middle (n) (leaf n))
+    (defun top (n) (middle n))
+    (top 1)")
+  (is (zerop (%binding-count "TOP")))
+  (is (zerop (%binding-count "MIDDLE")))
+  (is (zerop (%binding-count "LEAF"))))
+
+(test the-count-follows-the-frames-and-returns-to-zero
+  "A parameter is counted once per live frame that binds it, and the count
+is back to zero once the calls have returned. Both halves matter: the
+first is what makes a non-zero count mean `a frame really does bind this',
+the second is what stops the count drifting upward until every symbol
+walks again."
+  (reset-autolisp-symbol-table)
+  (%run-under-dialect :clautolisp "(defun f (n) n) (f 1) (f 2) (f 3)")
+  (is (zerop (%binding-count "N")))
+  ;; And with several frames alive at once: the deepest call sees one
+  ;; count per frame on the stack. Three functions rather than a recursive
+  ;; one because this suite has no arithmetic to count down with.
+  (reset-autolisp-symbol-table)
+  (let ((depths '()))
+    (register-special-operator
+     "NOTE-DEPTH"
+     (lambda (arguments context)
+       (declare (ignore arguments context))
+       (push (%binding-count "N") depths)
+       nil))
+    (unwind-protect
+         (progn
+           (%run-under-dialect
+            :clautolisp
+            "(defun d1 (n) (note-depth))
+             (defun d2 (n) (d1 n))
+             (defun d3 (n) (d2 n))
+             (d3 1)")
+           ;; Three frames are live at the bottom, one per call, each
+           ;; binding N.
+           (is (equal '(3) depths)))
+      (unregister-special-operator "NOTE-DEPTH")))
+  (is (zerop (%binding-count "N"))))
+
+(test the-count-is-released-when-a-call-unwinds-on-an-error
+  "PUSH-DYNAMIC-FRAME is paired with POP under UNWIND-PROTECT, so an error
+that unwinds out of a call must still release the frame's counts. If it
+did not, one error would leave that symbol's count permanently non-zero
+and it would walk the chain for the rest of the session -- slow, not
+wrong, which is the kind of leak nothing else would ever report."
+  (reset-autolisp-symbol-table)
+  (ignore-errors
+   (%run-under-dialect
+    :clautolisp
+    "(defun boom (zzz) (no-such-function-anywhere)) (boom 1)"))
+  (is (zerop (%binding-count "ZZZ"))))
+
+(test a-shadowed-function-name-still-resolves-to-the-shadow
+  "The skip must not break what the walk is FOR. A `/'-local holding a
+function value shadows the global of the same name in operator position,
+and that is only visible by walking -- so the count for that name must be
+non-zero while the frame is live, and the walk must run."
+  (reset-autolisp-symbol-table)
+  (is (eql 42 (%run-under-dialect
+               :clautolisp
+               "(defun global-one () 1)
+                (defun outer (/ global-one)
+                  (setq global-one (lambda () 42))
+                  (global-one))
+                (outer)")))
+  ;; ... and the global is back once the frame is gone.
+  (is (eql 1 (%run-under-dialect
+              :clautolisp
+              "(defun global-one () 1)
+               (defun outer (/ global-one)
+                 (setq global-one (lambda () 42))
+                 (global-one))
+               (outer)
+               (global-one)"))))
+
+(test a-non-callable-shadow-stays-transparent-in-function-position
+  "The documented lisp-1 rule LOOKUP-FUNCTION's walk implements: a
+parameter bound to nil does NOT hide a global function of the same name.
+The skip is only allowed to remove walks that would have failed, so this
+must still behave exactly as before."
+  (reset-autolisp-symbol-table)
+  (is (eql 7 (%run-under-dialect
+              :clautolisp
+              "(defun helper () 7)
+               (defun outer (/ helper) (helper))
+               (outer)"))))
+
+(test a-symbol-bound-twice-in-one-frame-is-counted-once
+  "A frame holds at most one binding per symbol, so re-binding a name
+already bound in the same frame must not add to the count -- the frame
+still binds it exactly once, and one POP will release it once."
+  (reset-autolisp-symbol-table)
+  (%run-under-dialect
+   :clautolisp
+   "(defun f (a / a) (setq a 2) a) (f 1)")
+  (is (zerop (%binding-count "A"))))
+
+;;;; FOREACH BINDS its loop variable — measured against AutoCAD.
+;;;;
+;;;; This engine used to ASSIGN when the name already had a dynamic
+;;;; binding anywhere in the chain, so a foreach clobbered a `/'-local of
+;;;; the function running it and — AutoLISP being dynamically scoped — of
+;;;; its CALLER too. Nobody had asked an engine whether that was right.
+;;;; pjb asked (2026-08-30); probes/sources/probe-foreach-scope.lsp went
+;;;; to AutoCAD; AutoCAD BINDS, which is also what the specification
+;;;; always said.
+;;;;
+;;;; BRICSCAD HAS SINCE ANSWERED TOO (2026-08-31, macOS and Windows) and
+;;;; agrees with AutoCAD on every case here. It could not answer before
+;;;; that: it refused to LOAD the probe file, silently, for reasons that
+;;;; had nothing to do with the question -- see
+;;;; issues/open/bricscad-refuses-to-load-what-it-will-run.issue. So the
+;;;; rule below is now measured against BOTH vendors, not one.
+;;;;
+;;;; These tests exist because the change passed all 31 suites in both
+;;;; directions: the equivalence corpus asserts that compiled and
+;;;; interpreted evaluation AGREE, which they did before and after, and
+;;;; nothing asserted WHAT they agreed on. So nothing would have noticed
+;;;; a silent revert. Now something does.
+
+(test foreach-binds-its-variable-and-restores-the-previous-value
+  "The case AutoCAD answers BEFORE. A `/'-local of the function running
+the loop must still hold its pre-loop value afterwards."
+  (reset-autolisp-symbol-table)
+  (is (string= "BEFORE"
+               (autolisp-symbol-name
+                (%run-under-dialect
+                 :clautolisp
+                 "(progn (defun f (l / e) (setq e 'before) (foreach e l nil) e)
+                         (f '(1 2 3)))")))))
+
+(test foreach-does-not-clobber-the-callers-local
+  "The sharper case, and the one dynamic scoping makes possible: a
+foreach inside a CALLEE must not write a `/'-local of its CALLER.
+AutoCAD answers BEFORE here too."
+  (reset-autolisp-symbol-table)
+  (is (string= "BEFORE"
+               (autolisp-symbol-name
+                (%run-under-dialect
+                 :clautolisp
+                 "(progn (defun inner (l) (foreach e l nil))
+                         (defun outer (l / e) (setq e 'before) (inner l) e)
+                         (outer '(1 2 3)))")))))
+
+(test foreach-with-no-body-yields-nil-as-autocad-does
+  "A FOREACH with NO BODY. THE ONE CASE WHERE THE VENDORS DISAGREE, and
+therefore the one that must be pinned rather than left to whichever
+answer the implementation happens to fall into:
+
+    (foreach e (list 1 2 3))     AutoCAD 2026      nil
+                                 BricsCAD V25/V26  (1 2 3)
+                                 clautolisp        nil
+
+FOREACH is specified to yield its last body value; with no body there
+is no such value, so nil follows the words and AutoCAD follows the
+spec. BricsCAD appears to leave the LIST in the accumulator its loop
+never wrote -- consistent on both platforms, and plausibly an
+implementation accident rather than a designed answer.
+
+clautolisp follows AutoCAD and the specification. Adopting one vendor's
+undocumented quirk as the default of a dialect-neutral implementation
+would be backwards; if it should hold under --dialect bricscad, that is
+a decision and it has a ticket:
+issues/open/foreach-empty-body-return-diverges.issue.
+
+An empty loop body is NOT exotic here -- `(while (setq i (cdr i)))' is
+how AutoLISP drains a list, and the same shape broke this compiler once
+already (issues/closed/compiled-loop-with-empty-body.issue)."
+  (reset-autolisp-symbol-table)
+  (is (null (%run-under-dialect :clautolisp "(foreach e '(1 2 3))")))
+  ;; and the list is genuinely non-empty, so the nil above means the
+  ;; RETURN is nil -- not that the loop never ran. Written without
+  ;; builtins, because this suite installs none.
+  (reset-autolisp-symbol-table)
+  (is (eql 3 (%run-under-dialect
+              :clautolisp
+              "(progn (setq n nil) (foreach e '(1 2 3) (setq n e)) n)"))))
+
+(test foreach-leaves-a-global-of-the-same-name-alone
+  "A global is not a dynamic binding, and both engines agree it survives.
+Kept because this case used to pass for the WRONG reason -- the old
+assignment path missed it only because FIND-DYNAMIC-BINDING does not look
+in the namespace, an accident rather than a rule."
+  (reset-autolisp-symbol-table)
+  (is (string= "OUTER"
+               (autolisp-symbol-name
+                (%run-under-dialect
+                 :clautolisp
+                 "(progn (setq g 'outer) (defun f (l) (foreach g l nil)) (f '(1 2)) g)")))))
+
+(test foreach-does-not-leak-a-name-that-was-not-bound-before
+  "And the loop variable itself does not survive when nothing bound it."
+  (reset-autolisp-symbol-table)
+  (is (null (%run-under-dialect
+             :clautolisp
+             "(progn (defun f (l) (foreach fresh-name l nil)) (f '(1 2)) fresh-name)"))))

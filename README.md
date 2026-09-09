@@ -28,20 +28,25 @@ The implementation is not meant only as a runtime. It is also intended to serve 
 
 ## Project Status
 
-The project is currently in a specification-first phase.
+The specification remains the reference the rest is measured against, but the implementation is no longer trailing it: `clautolisp` runs AutoLISP, debugs it, edits it structurally, and compiles it.
 
-The specification document has been substantially expanded into a HyperSpec-style draft reference, and the remaining work is now mostly:
+Current work is:
 
-- closure of a few under-specified points,
-- executable validation against real AutoCAD and BricsCAD behavior,
-- progressive implementation of the language runtime and host layers.
+- closure of the remaining under-specified points,
+- executable validation against real AutoCAD and BricsCAD, through the probe harness and the CAD-backed CI lanes,
+- broadening the runtime and host layers.
+
+Where the two disagree, the specification records the vendor divergence rather than pretending it away: `foreach` binding, a body-less `foreach`'s return value, and the pathname and encoding rules are all documented with the measurements behind them.
 
 ## Subproject Status
 
 - `autolisp-spec`:
   active and currently the most mature subproject; the specification draft exists and the remaining work is mainly gap-closure and validation.
 - `clautolisp`:
-  early implementation stage; the reader subsystem is implemented and has already read a real AutoLISP corpus of 663 `.lsp` files, 100583 lines, and 3508077 characters successfully, the first runtime and builtin layers exist, and the file-compatibility harness now executes 69 declarative file, pathname, stream, mutation, and printer scenarios with 140 checks on both SBCL and CCL, with product-runner adapters in place for later AutoCAD and BricsCAD audits.
+  a working implementation. The reader has read a real AutoLISP corpus of 663 `.lsp` files (100583 lines, 3508077 characters); the runtime, builtin and host layers execute it; the file-compatibility harness runs 69 declarative file, pathname, stream, mutation and printer scenarios on both SBCL and CCL, with product-runner adapters for the AutoCAD and BricsCAD audits. On top of that:
+  - **aldo**, a source-level debugger — breakpoints, stepping, backtraces — with three interchangeable UIs (dumb terminal, ncurses, Emacs);
+  - **sedit**, a structural editor, and a form navigator;
+  - an **AutoLISP-to-Common-Lisp compiler**. Function bodies are translated to Common Lisp and compiled by the host; anything not translated is handed back to the interpreter, so the compiler is correct before it is complete. Compiled and interpreted evaluation are asserted to agree over a corpus of cases, and code stays debuggable when compiled — the debugger's instrumented fork is compiled too. `(clal-optimize '((speed 3)))` or `-O speed=3`; `clal-compile-file` writes a loadable `.lap`.
 - `autolisp-test`:
   first version implemented; pure-AutoLISP harness loadable on AutoCAD, BricsCAD and `clautolisp`, with 654 deftests across 113 files covering every operator currently implemented in `clautolisp` (Phase C STRICT corpus), three vendor-divergent twin-test files derived from the BricsCAD V26 probe (Phase D), and stubs for the families that depend on a mock host or vendor-specific runtime (Phase E: DCL, COM/VLAX, VLA, VLR, ObjectDBX, Express Tools, DOSLib, ARX, BRX). The conformance model uses three profiles (`STRICT`, `AUTOCAD`, `BRICSCAD`) and orthogonal platform/runtime tags; verdicts are reported per subset as `CONFORMS`, `DEVIATES`, or `NOT-APPLICABLE`. Run with `make -C autolisp-test test` (canonical SBCL path through the standalone executable), or one of `test-clautolisp-sbcl`, `test-clautolisp-ccl`, `test-asdf-sbcl`, `test-asdf-ccl` for the alternative paths.
 

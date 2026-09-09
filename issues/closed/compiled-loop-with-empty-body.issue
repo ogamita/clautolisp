@@ -1,0 +1,67 @@
+# compiled-loop-with-empty-body — a WHILE with no body breaks once compiled
+
+STATUS: DONE in 2.0.21. Found 2026-08-30 while open-coding REPEAT and
+FOREACH: a test written for the NEW code's empty-body case failed, and the
+same shape turned out to be already in the OLD code for WHILE.
+
+## Symptom
+
+A `while` with no body — idiomatic AutoLISP for draining a list —
+
+    (defun drain (l / i) (setq i l) (while (setq i (cdr i))) i)
+
+works interpreted and CRASHES once the function is compiled:
+
+    A compound form was expected, but NIL found.
+    current LOOP context: DO NIL.
+
+It is a Common Lisp error, not an AutoLISP one, raised when the function
+is CALLED rather than when it is compiled: SBCL compiles the broken form
+into a function that signals COMPILED-PROGRAM-ERROR on entry. So the
+symptom is a host-level error from a program that had been running fine,
+appearing the moment the function got hot enough to compile.
+
+## Cause
+
+TRANSPILE-BODY yields NIL for an empty body, and the WHILE branch spliced
+it straight into a LOOP:
+
+    (loop while <test> do ,(transpile-body (rest arguments) context-var))
+
+With no body that is `(loop while X do nil)`, and LOOP's DO requires a
+COMPOUND form. NIL is not one.
+
+Nothing caught it because no entry in the equivalence corpus had an empty
+loop body — the corpus is what the compiler is checked against, and it
+only checks the shapes it contains.
+
+## Fix
+
+pjb's, and better than the one first written. The first attempt wrapped
+the body at each site that uses it as a statement -- `do (progn ...)` in
+WHILE and in the REPEAT this slice added, which had inherited the same
+shape by being written to look like it. That works and leaves a rule
+every future loop has to remember.
+
+His: make TRANSPILE-BODY return `(PROGN)` for an empty body instead of
+NIL. (PROGN) evaluates to NIL, so no value changes; what changes is that
+a transpiled body is ALWAYS A COMPOUND FORM, and can therefore go
+anywhere a form can. The use sites go back to splicing it plainly, and
+there is nothing left to remember.
+
+The difference is where the invariant lives: at one definition, or in the
+head of whoever writes the next loop.
+
+## Tests
+
+Empty-body entries for WHILE, REPEAT and FOREACH added to the corpora, so
+the shape is checked rather than assumed to be uninteresting. Verified
+they fail without the fix.
+
+## The general point
+
+The bug lived in the difference between "a body" and "a body with at
+least one form" — a case that reads as degenerate and is ordinary in
+AutoLISP, where `(while (setq i (cdr i)))` is how you walk a list for its
+side effect. Worth remembering when adding any further loop: the empty
+body is not an edge case here, it is an idiom.

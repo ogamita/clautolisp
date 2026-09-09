@@ -60,8 +60,12 @@ if (Test-Path "$alfe.exe") {
 #     of mine; the launched argv carries no /p at all, and per pjb EPURE is
 #     loaded by explicit options, not by the default profile. The profile is
 #     needed here to stop a PROMPT, not to unload an application.
-if (-not $env:AUTOLISP_DWG) {
-  $env:AUTOLISP_DWG = if ($env:PROBE_DWG) { $env:PROBE_DWG } else { "c:/gitlab-runner/dwg/empty.dwg" }
+# Only when someone NAMED a drawing. Defaulting to the shared
+# c:/gitlab-runner/dwg/empty.dwg is what left a stale .dwl lock in front of
+# the next job as a modal dialog; alfe writes a fresh drawing into its own
+# workdir when nothing is named (empty-ressource.issue).
+if ((-not $env:AUTOLISP_DWG) -and $env:PROBE_DWG) {
+  $env:AUTOLISP_DWG = $env:PROBE_DWG
 }
 if (-not $env:AUTOLISP_BRICSCAD_PROFILE) {
   $env:AUTOLISP_BRICSCAD_PROFILE =

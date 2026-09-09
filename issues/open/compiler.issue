@@ -328,3 +328,1618 @@ alfe-request-timeout-aborts-long-eval fixed first):
     interpreter baseline in benchmark-results.org.
   - benchmark suite version bumped if any workload changes; record
     before/after tables in benchmark-results.org.
+
+
+================================================================
+IMPLEMENTATION LOG (Claude, branch implement-compiler, 2.0.x)
+================================================================
+
+Slice 1 -- 2.0.0/2.0.1: the transpiler skeleton
+-----------------------------------------------
+clautolisp/autolisp-compiler, one design decision: anything the
+transpiler cannot translate compiles to (autolisp-eval '<form> context).
+The compiler is therefore CORRECT FROM ITS FIRST LINE and gets faster as
+coverage grows, instead of being wrong until complete. Constants, symbol
+references, QUOTE, PROGN, IF, SETQ, AND, OR, COND, WHILE open-coded;
+everything else fell back. Equivalence corpus: compiled and interpreted
+evaluation must AGREE (not "the compiler handles these forms").
+
+Slice 2 -- 2.0.2: function calls
+--------------------------------
+A call compiles to CALL-AUTOLISP-FUNCTION-IN-CONTEXT with the callee
+resolved by RESOLVE-AUTOLISP-FUNCTION-DESIGNATOR. Using the interpreter's
+OWN entry point is the point: TRACE, the :subr/:usubr call-stack frames,
+the debugger's two-bodies dispatch and the subr host-error wrapping keep
+working with no second implementation of any of them.
+
+Dropped deliberately: the per-form (:eval . form) frame AUTOLISP-EVAL
+pushes. That cons per evaluated form IS the cost being removed, so
+backtraces through compiled code show function frames but not
+intermediate form frames. Restoring them is the INSTRUMENTED variant's
+job (pjb asked for both), and this is the seam where the two will differ.
+
+The call branch sits behind the runtime's KNOWN-SPECIAL-OPERATOR-P --
+the same question the debugger's instrumenter asks -- because a special
+operator has unevaluated operands and compiling (defun f (x) ...) as a
+call would evaluate its lambda list and body as arguments.
+
+MEASURED: 3.4x-4.2x on fully-compiled loops; 2.3x when the callee is a
+user function whose body still runs interpreted.
+
+Bug found and fixed while writing it:
+transpiler-t-is-not-self-evaluating (issues/closed/).
+
+Slice 3 -- 2.0.3: compiled function BODIES
+------------------------------------------
+An AUTOLISP-USUBR now carries a COMPILED-BODY beside its plain and
+instrumented ones -- a THIRD fork -- and CALL-AUTOLISP-FUNCTION-IN-CONTEXT
+runs it inside the frame BIND-USUBR-FRAME already pushes. Compiling the
+body changes how the body is evaluated, not what it is evaluated in.
+
+Weaving is the compiler's, installed through *COMPILE-USUBR-HOOK*: the
+same dependency inversion as *INSTRUMENT-USUBR-HOOK*, so an image built
+without the compiler behaves exactly as it did before it existed.
+
+LAZY, AT A THRESHOLD (*AUTOLISP-COMPILATION-THRESHOLD*, default 16).
+Weaving runs the host CL compiler, which costs far more than
+interpreting a short body once, and most functions in a freshly loaded
+file are called once or never. A failed compilation stores :FAILED, not
+NIL, so it is attempted once and never retried -- NIL means "not tried".
+
+An instrumented body WINS under a debug session: the one place the two
+forks compete, and debuggability wins it.
+
+MEASURED (same machine, fresh contexts, values compared):
+  fib 21, recursive .............................. 3.00x
+  a loop inside one function body ................ 3.37x
+  a loop calling a small function 50000 times .... 1.14x   <-- the finding
+
+THAT 1.14x IS THE MOST USEFUL NUMBER IN THIS LOG. A call-dominated
+workload barely moves, because what dominates is no longer body
+evaluation but the CALL PROTOCOL itself: the trace check, the call-stack
+cons, BIND-USUBR-FRAME, the unwind-protect and POP-DYNAMIC-FRAME, none of
+which compiling a body touches. Open-coding more operators would not
+help that workload at all. So the next slice is the call protocol -- and
+this is exactly the "measure, then open-code" order the transpiler's
+header argues for: without the measurement the obvious next move
+(open-coding + - * / car cdr) would have been the wrong one.
+
+VERIFICATION -- and this matters more than the corpus. `make
+test-compiler-equivalence` runs the ENTIRE project corpus (31 suites)
+with the threshold at 1, so every AutoLISP function the tests exercise
+runs COMPILED, and every existing assertion must still hold. Result: 83
+function bodies compiled, zero failures. The script COUNTS the bodies it
+compiled and exits non-zero if the count is zero, because a green run
+proves nothing if nothing was compiled -- the same failure mode as a
+test file that loads without running, which is the worst kind since it
+presents as a pass.
+
+Slice 4 -- 2.0.4: the call protocol
+-----------------------------------
+Slice 3's 1.14x on a call-dominated workload said the bottleneck had
+moved out of body evaluation and into the CALL PROTOCOL. Profiled it
+(sb-sprof, a tiny function called 2,000,000 times) rather than guessing,
+and the profile named three costs that were pure repeated work:
+
+  1. SPLIT-USUBR-LAMBDA-LIST ran on EVERY call -- two POSITION-IFs, up to
+     three SUBSEQs and the whole validation -- to re-derive an answer
+     fixed when the function object was made. 7% of the profile as
+     POSITION-IF. Now memoised on the usubr (USUBR-LAMBDA-LIST-SPLIT).
+     Only SUCCESSFUL splits are remembered: a malformed lambda list must
+     keep signalling on every call, and computing it eagerly in the
+     constructor would move the diagnostic from the call to the DEFUN.
+
+  2. AUTOLISP-FUNCTION-TRACE-P hashed a name STRING in an EQUAL table on
+     every call, to discover that nothing is traced. The empty-table test
+     now comes first: HASH-TABLE-COUNT is a slot read, and an empty table
+     can only answer NIL. This is where GETHASH/EQUAL, SXHASH-STRING and
+     STRING= in the profile came from.
+
+  3. A DYNAMIC-FRAME allocated a HASH TABLE in its initform -- one per
+     function call, to hold typically a single parameter. Bindings are
+     now an alist, promoted to a hash table past
+     *DYNAMIC-FRAME-ALIST-LIMIT* (12) so a function with a hundred locals
+     does not degrade lookup along the frame chain. Six call sites read
+     the slot directly with GETHASH; they now go through FRAME-BINDING /
+     (SETF FRAME-BINDING) / FRAME-BOUND-SYMBOLS, so the representation is
+     decided in ONE place -- six identical GETHASHes is how two
+     representations start disagreeing.
+
+After: POSITION-IF, GETHASH/EQUAL, the string hashing, %MAKE-HASH-TABLE,
+%ALLOC-HASH-TABLE, GROW-HASH-TABLE and MAKE-DYNAMIC-FRAME are all gone
+from the top of the profile.
+
+MEASURED A/B (min of 5 runs each, the same tree with only these three
+changes reverted for the baseline -- NOT inferred from profiler sample
+counts, which I first misread off truncated output):
+
+  fib 21, recursive ......... compiled 0.036s -> 0.028s  (~22% faster)
+  loop calling a function ... compiled 0.456s -> 0.440s  (~4%)
+  loop inside a body ........ compiled 0.156s -> 0.148s  (~5%)
+
+The gain lands on RECURSION and on call-heavy code, which is what it
+should: it is per-call overhead that was removed. It benefits the
+INTERPRETER equally -- these are shared costs -- so the compiled/
+interpreted RATIO barely moves (1.19x on the call-dominated loop). The
+ratio is the wrong instrument for this change; absolute time is the
+right one.
+
+What still dominates a call-dominated profile:
+CALL-AUTOLISP-FUNCTION-IN-CONTEXT itself (17% self) and LOOKUP-FUNCTION
+(20% cumulative) -- the function is re-resolved from the symbol on every
+call. Caching that at the call site is the obvious next move and the
+delicate one, because AutoLISP functions can be redefined at any moment:
+the cache would have to key on the binding CELL, not the function value.
+
+Behaviour pinned by four new runtime tests (evaluator-tests.lisp), which
+assert what the frame must DO rather than how it stores it: every local
+survives the alist-to-table promotion (including the first, bound before
+it), locals shadow and restore globals, nested frames shadow
+independently, and re-assigning a local replaces rather than accumulates.
+They use only special operators, since that suite runs without builtins.
+
+Slice 5 -- 2.0.5: the symbol-to-cell lookup
+-------------------------------------------
+Slice 4 left LOOKUP-FUNCTION at 20% of a call-dominated profile, most of
+it inside NAMESPACE-BINDING-CELL: a TYPECASE on the namespace plus an EQ
+hash lookup, run on every variable read, every assignment and every call.
+
+An AUTOLISP-SYMBOL now remembers the last (NAMESPACE . CELL) it resolved
+to. A hit is a slot read and an EQ test.
+
+WHY IT IS SOUND, checked rather than assumed: no code path removes an
+entry from a namespace's bindings table (no REMHASH anywhere on them),
+none clears a table (the only CLRHASH on a binding table is
+RESET-AUTOLISP-SYMBOL-TABLE, which discards the symbols themselves and
+their caches with them), and no code replaces a table wholesale. So the
+symbol-to-cell mapping only ever grows, and a remembered answer stays
+right. What a redefinition changes is the cell's VALUE, read through the
+cell in both paths -- this caches the LOOKUP, never the DEFINITION.
+
+Two details that are the difference between a cache and a bug:
+  - ONE entry, stored as a single CONS. A two-slot cache could be read
+    torn -- namespace from one writer, cell from another -- and hand back
+    a cell belonging to a different namespace. A cons is built before it
+    is published and never mutated.
+  - A :CREATEP NIL miss is NOT remembered. Caching `no cell' would make
+    the next :CREATEP T call answer NIL from the cache instead of
+    creating the cell, leaving the binding permanently unwritable.
+
+MEASURED A/B, min of 5, back to back (the first attempt compared against
+numbers taken earlier under different machine load and looked like a
+REGRESSION -- it was noise; the back-to-back run settled it):
+
+                             compiled   A -> B     interpreted A -> B
+  fib 21, recursive           0.032 -> 0.028      0.096 -> 0.080
+  loop calling a function     0.468 -> 0.412      0.548 -> 0.480
+  loop inside a body          0.164 -> 0.128      0.572 -> 0.500
+  variable-heavy loop         0.556 -> 0.480      0.560 -> 0.488
+
+12-22% across every workload, compiled AND interpreted, which is what a
+lookup on the common path of the whole engine should give.
+
+Note the variable-heavy row: compiled and interpreted are within 2% of
+each other there. A loop of SETQs and variable reads has almost nothing
+for the transpiler to remove -- it emits the same SET-VARIABLE and
+LOOKUP-VARIABLE calls the interpreter makes. The transpiler's gain is in
+removing DISPATCH, so it shows on control flow and calls, not on variable
+traffic. Worth knowing before promising numbers on real drawings' code.
+
+Four tests pin the cache's two silent failure modes: the same symbol in
+two namespaces must resolve to two different cells (a wrong namespace
+would read another document's variables), alternating namespaces must
+merely miss rather than answer wrongly, a :CREATEP NIL miss must not be
+remembered, and a redefinition must be visible through the cache.
+
+Slice 6 (2.0.6) -- a symbol remembers whether it is a special operator
+----------------------------------------------------------------------
+
+The item at the head of slice 5's STILL OPEN list, done. On every
+compound form it evaluates, the interpreter asked "is this operator a
+special operator?", and the answer cost a STRING-UPCASE -- which
+allocates a fresh string -- followed by an ASSOC with STRING= over the
+24-entry dispatch table. For an ordinary function call, the common case,
+that scan ran to the end and failed every single time. The answer is now
+memoised on the AUTOLISP-SYMBOL itself.
+
+Unlike the binding cache of slice 5, this answer CAN go stale: the table
+is runtime-mutable, because the debugger registers its %CLAL-POLL poll
+operator into it. So the entry is stamped with
+*SPECIAL-OPERATOR-GENERATION*, which REGISTER-SPECIAL-OPERATOR and
+UNREGISTER-SPECIAL-OPERATOR both bump; a stale stamp is simply a miss.
+Invalidating a whole generation at once costs nothing and never walks
+the symbol table.
+
+Two details are the difference between a cache and a bug:
+
+  - A NIL handler is a VALUABLE answer, not a missing one -- it is the
+    common case. So the cache entry is a CONS whose CAR is the
+    generation: the cons being present is what separates "not a special
+    operator" from "not asked yet". Storing the handler alone would have
+    disabled the cache for exactly the case it exists to serve.
+  - The counter is a DEFVAR, not a DEFPARAMETER, and the file bumps it
+    at load time. Reloading api.lisp rebuilds the dispatch table and
+    drops anything registered into it at runtime; a counter that reset
+    to 0 alongside it would let stale caches match again.
+
+Only a symbol can name a special operator, so a non-symbol operator now
+answers NIL without touching the table. Previously a lambda form's
+operator went through ASSOC with STRING= and was compared, as a string
+designator, against all 24 names -- correct by accident, and 24 string
+compares per call.
+
+MEASURED, back to back, minimum of 5 (2.0.5 -> 2.0.6):
+
+  workload                    compiled          interpreted
+  fib 24, recursive           0.124 -> 0.120    0.360 -> 0.168
+  loop calling a function     0.588 -> 0.276    0.688 -> 0.284
+  loop inside a body          0.096 -> 0.092    0.364 -> 0.168
+  variable-heavy loop         0.524 -> 0.240    0.516 -> 0.240
+
+The interpreter is 2.1x-2.4x faster on every workload. This is the
+largest single win of the six slices, and it is worth understanding why
+a dispatch lookup dominated: the forms in a hot AutoLISP loop are tiny,
+so a per-form allocation plus a 24-entry string scan was not overhead
+around the work, it WAS the work.
+
+Read the compiled column carefully -- it does not say the compiler got
+faster. Compiled code never calls SPECIAL-OPERATOR-FUNCTION at run time;
+the transpiler resolved that question at compile time. Rows 1 and 3 (a
+compiled body) are unchanged, as they must be. Rows 2 and 4 move because
+their WHILE loop is top-level code, which is interpreted in both
+columns. That the two unchanged rows are exactly the two that should be
+unchanged is the check that these numbers mean what they claim.
+
+Five tests pin the invalidation, every failure of which is silent: a
+non-operator stays a non-operator across repeated asks, registering an
+operator is visible to a symbol that already cached NIL, unregistering
+is too, re-registering replaces the handler, a registered operator still
+receives its arguments UNEVALUATED end to end, and a lambda-form
+operator answers NIL without reaching the table.
+
+Slice 7 (2.0.7) -- the instrumented transpiler variant
+------------------------------------------------------
+
+The second of the two variants pjb asked for. They are not two
+compilers: they are the same TRANSPILE-FORM given two different bodies.
+The non-instrumented variant compiles a function's plain body; the
+instrumented one compiles the body the DEBUGGER wove, in which every
+instrumentable form is wrapped in a (%CLAL-POLL fid form-id INNER) node.
+
+That node was the entire obstacle. It is a registered special operator,
+so the transpiler fell back on it -- and since the OUTERMOST node wraps
+the whole body, compiling an instrumented function produced one call to
+AUTOLISP-EVAL and gained exactly nothing. Compiling instrumented code
+means open-coding that node; there is no other way in.
+
+WHAT IS NOT DUPLICATED. The emitted code is not a reimplementation of
+the poll protocol. EVAL-POLL-FORM was refactored into
+CALL-WITH-POLL-POINT (fid form-id context THUNK) plus a two-line caller
+that supplies (lambda () (autolisp-eval inner context)); compiled code
+calls the same function with the transpiled inner form as its thunk. The
+shadow stack, the :BEFORE/:AFTER poll points, form-level jumps and the
+CLAL-POLL-RETURN restart are written once. A second copy would be a
+debugger that steps differently on functions that happen to be hot --
+the kind of bug a user would never believe and never reproduce.
+
+LAYERING. The compiler does not depend on the debugger and the debugger
+does not depend on the compiler; they meet in the runtime, through
+*COMPILED-POLL-HOOK* (debug -> runtime) and
+*COMPILE-INSTRUMENTED-USUBR-HOOK* (compiler -> runtime), the same
+dependency inversion as *INSTRUMENT-USUBR-HOOK*. +POLL-OPERATOR-NAME+
+moved into the runtime for the same reason: three layers speak that
+name, and three spellings would be three chances to disagree.
+
+WHAT CHANGED IN THE DISPATCH. The runtime used to ask for a compiled fork
+only when *DEBUGGING* was NIL, because the choice was between a
+debuggable body and a fast one and debuggability had to win. There is no
+longer a choice: the order is now instrumented-and-compiled,
+instrumented, compiled, plain.
+
+MEASURED (fib 24 under a live debug session, debug flag on, no
+breakpoint hit -- the run-to-breakpoint case; minimum of 5, three runs):
+
+  instrumented, interpreted     0.244 - 0.268
+  instrumented, compiled        0.176 - 0.188   =>  1.36x - 1.43x
+  no debug session, compiled    0.120 - 0.136
+
+Read against that third row: debugging a hot function used to cost ~2.0x
+and now costs ~1.5x. The gain is FAR smaller than the 3x the plain
+variant gets, and the reason is worth recording -- the poll protocol
+itself (a shadow-stack push, an UNWIND-PROTECT and a RESTART-CASE per
+poll point, per form) is now the cost. Compiling can only remove the
+interpreter dispatch AROUND that machinery. Making debugging faster from
+here means making poll points cheaper, not compiling harder.
+
+HOW IT IS TESTED. `make test-debug-compiled' runs the ENTIRE corpus with
+every instrumented body compiled and counts them: 394 compiled, all 31
+suites green. That is the real assurance, and it is much stronger than
+any corpus of hand-written cases, because what could break here is not a
+wrong ANSWER -- it is a poll point firing in a different order, a shadow
+stack left unbalanced by a non-local exit, a jump skipping the wrong
+form. Those are invisible to an equivalence corpus and are exactly what
+the stepping / breakpoint / jump suites already look for.
+
+Six unit tests cover what the corpus cannot, of which one carries the
+slice: AN-INSTRUMENTED-BODY-REALLY-COMPILES-RATHER-THAN-FALLING-BACK.
+Every other test would pass unchanged if the compiler still emitted one
+AUTOLISP-EVAL of the whole woven body -- that behaviour is CORRECT, just
+pointless. Verified as a real control: with the %CLAL-POLL branch
+disabled, the equivalence cases still all pass and only that one test
+fails.
+
+Slice 8 (2.0.8) -- SPEED is unpinned, and the qualities become an algebra
+--------------------------------------------------------------------------
+
+The compiler had no user-reachable surface. It turned out it had had one
+all along: CLAL-OPTIMIZE / CLAL-OPTIMIZATION are specified (two spec
+entries, a user-manual section, the fork matrix in the
+debugger-public-interface issue), shipped, and SPEED -- "code is
+compiled to a faster binary" -- was hard-pinned to 0 with the comment
+`pinned until Tier 2'. Tier 2 is slices 1-7. The pin is gone.
+
+WHAT pjb CORRECTED. I had reported SPACE as "reads back but drives
+nothing", and treated the matrix as four fixed rows. It is not a table
+of rows: it is an algebra over the levels, and SPACE is not a switch of
+its own but what DEBUG is WEIGHED AGAINST.
+
+  non-instrumented fork   always present; compiled iff SPEED >= 1
+  instrumented fork       present iff DEBUG >= SPACE; compiled iff SPEED >= 2
+  eager, at definition    iff SPEED >= 3
+
+That reading gives the intermediate levels something to mean, which four
+fixed rows never did. (DEBUG 3) (SPACE 3) says the two matter equally
+and KEEPS the instrumented fork -- the >= boundary, and the case most
+likely to be got wrong, so it has its own test.
+
+The two forks compiling at different SPEED levels is deliberate and
+measured: SPEED 1 is "make my code fast", SPEED 2 is "and while I am
+debugging it too", which is a further step because it costs a second
+compilation of every function and buys less -- slice 7 measured the poll
+protocol, not interpretation, as what makes debugging slow.
+
+SPEED 3 means compile EAGERLY. Sooner is the small part. The point is
+that a whole file compiled in ONE with-compilation-unit admits file-wide
+optimizations -- literal coalescing, direct function linking instead of
+going through the symbol binding -- that compiling one function at a
+time, on the call that happened to make it hot, can never do. This slice
+implements eager-at-DEFUN; the file-wide unit needs CLAL-COMPILE-FILE
+and is the next slice.
+
+THE DEFAULT. ((DEBUG 3) (SPACE 0) (SPEED 2)), not the issue's (SPEED 0).
+Taking the 0 literally would have shipped a compiler that is off unless
+asked for -- a regression dressed as spec-compliance -- because SPEED 2
+is exactly the behaviour the engine already had while the pin was in.
+Written up for pjb to revise in speed-default-level.issue; it is one
+number in one place.
+
+WHAT WAS NOT TESTED BEFORE. Nothing. There was not a single test for
+CLAL-OPTIMIZE or CLAL-OPTIMIZATION anywhere in the tree -- an
+AutoLISP-facing builtin, fully specified, with a documented trap in it
+(SPEED silently ignored), and no test. Seven now cover the algebra and
+the argument errors; four more in the compiler suite cover SPEED end to
+end, including that eager compilation of a body the compiler chokes on
+must still DEFINE the function and run it interpreted. SPEED 3 must not
+become a correctness setting.
+
+Slice 9 (2.0.9) -- CLAL-COMPILE-FILE and CLAL-COMPILE-SYSTEM
+-------------------------------------------------------------
+
+"SPEED 3 compiles the whole file at once during LOAD" needed no new
+machinery, which is the pleasant part. At SPEED 3 every DEFUN compiles
+as it is evaluated (slice 8), so putting LOAD inside one host
+compilation unit puts every one of that file's compilations inside it.
+CALL-IN-FILE-COMPILATION-UNIT wraps the single point where a file's
+forms are evaluated, and the two new builtins are thin on top of it.
+
+ONE CORRECTION TO pjb'S SKETCH, and it matters. The sketch has the
+file-level unit at :OVERRIDE T and the system-level one at :OVERRIDE
+NIL. Those two cannot both hold: :OVERRIDE T starts a FRESH unit
+instead of joining the enclosing one, so with it on the file level
+CLAL-COMPILE-SYSTEM's system-wide unit would be inert -- each file it
+loaded would open its own and the outer one would contain nothing.
+:OVERRIDE NIL on both is what gives the intended semantics: a file's
+unit is absorbed into a system's when there is one, and creates its own
+when there is not. Implemented that way, with the reason at the call
+site so nobody restores the T.
+
+WHAT THE UNIT ACTUALLY BUYS TODAY, stated precisely because the gap
+matters. A compilation unit around a run of COMPILE calls defers
+undefined-function warnings to its end. That is real and it is exactly
+what makes forward references across files work quietly -- the thing pjb
+flagged. The wider prize he named (coalescing common literals, linking
+calls directly instead of through the symbol binding) belongs to
+COMPILE-FILE, not to COMPILE, and arrives with the artefact writer. It
+would be easy and wrong to describe this slice as delivering file-wide
+optimization.
+
+THE QUALITIES GOVERN, NOT THE NAMES. Below SPEED 3 neither builtin
+opens a unit and neither forces compilation; at SPEED 0 they compile
+nothing at all and are simply LOAD. That is pjb's specification applied
+literally -- "if we had (DEBUG 3) (SPEED 0) (SPACE 0) while calling
+clal-compile-system we would have to do just the plain per-file work" --
+and it is the right shape: a function called `compile-file' that
+compiled regardless of the qualities would be the surprise the qualities
+exist to prevent.
+
+OUTPUT-FILE SIGNALS RATHER THAN BEING IGNORED. CLAL-COMPILE-SYSTEM
+takes the (output-file source-file-list) API pjb asked for, but nothing
+is written to disk yet, so a non-nil OUTPUT-FILE signals
+:unsupported-output-file naming the ticket. Of the three ways to handle
+an argument the build cannot honour -- ignore it, pretend, refuse --
+only refusing avoids sending someone to look for a file that was never
+created.
+
+VLISP-COMPILE IS NOT IN THIS SLICE, deliberately. Two reasons. The name
+pjb used, VLISP-COMPILE-FILE, does not exist in either vendor: the
+specified function is VLISP-COMPILE (mode, source, [output]). And it is
+specified to return T when the OUTPUT FILE WAS CREATED. clautolisp
+creates none, so the current no-op returning nil is HONEST; making it
+return T for an in-memory compilation would claim a file exists.
+It becomes real with the artefact, and its 'st / 'lsm / 'lsa modes then
+map naturally onto per-file versus system-wide units -- which is what
+those mode names mean in the VLISP IDE.
+
+Five tests: it defines what it loads, it honours SPEED rather than its
+own name, a missing file returns nil the way LOAD does, a non-nil
+OUTPUT-FILE is refused, and a two-file system with a forward reference
+from the first file to the second resolves and runs.
+
+Slice 10 (2.0.10) -- the .lap artefact, and VLISP-COMPILE on top of it
+----------------------------------------------------------------------
+
+pjb answered the design question of slice 9, and the answer was to stop
+trying to be clever. An artefact cannot be a Lisp image: AutoCAD and
+BricsCAD load applications INTO a document that already has others
+loaded, in any order, so a .lap has to load into a running image. A
+native host FASL, renamed, is the only thing that does that.
+
+Cross-host and cross-version portability are therefore GIVEN UP
+deliberately, not overlooked. A portable format means a custom byte-code
+FASL and bocl's experience with one was not good on speed. Builds that
+differ are kept in different directories, as the binary releases already
+are; the name carries nothing about the build.
+
+THE PROBLEM WAS NOT THE ONE I HAD WRITTEN DOWN. compiler.issue had said
+this needs MAKE-LOAD-FORM. It does not. COMPILE-FILE is the only door to
+a FASL, so the artefact is GENERATED AS SOURCE and compiled -- which
+makes the problem PRINTING, not externalizing. AUTOLISP-SYMBOL has a
+PRINT-OBJECT method that writes its bare name, so printing one into a
+generated file yields a token that reads back as a COMMON LISP symbol.
+Nothing signals. The artefact is simply wrong, and wrong in a way no
+type error would catch.
+
+EXTERNALIZE-DATUM emits CONSTRUCTOR forms instead --
+(INTERN-AUTOLISP-SYMBOL "FOO") -- which is what "re-interning by name"
+was always for: the symbol lands in the LOADING image's table, the only
+table it could usefully be in. The second reason stands as recorded: a
+struct read back from #S(...) would be EQ to nothing, and every EQ test
+in the runtime would quietly stop matching.
+
+LOAD-TIME-VALUE around every constructed literal, and this one is easy
+to miss. Without it a fallback inside a loop -- a plain (AUTOLISP-EVAL
+'<form> context) -- rebuilds its form on every iteration. Not merely
+slower: source positions are recorded against body conses, so a form
+rebuilt per call is a form the debugger can no longer locate.
+
+A .lap KEEPS EACH FUNCTION'S SOURCE BODY beside its compiled one.
+Dropping it would make artefacts smaller and every function loaded from
+one impossible to instrument, because the debugger weaves its fork FROM
+the body.
+
+CLAL-COMPILE-SYSTEM emits all its sources into ONE generated file, so a
+single COMPILE-FILE covers the whole system. That is a better answer
+than slice 9's WITH-COMPILATION-UNIT: a real single compilation, in
+which literals can genuinely be coalesced across the application, rather
+than only a shared warning context.
+
+VLISP-COMPILE is now the vendor-API spelling of CLAL-COMPILE-FILE. Its
+mode is accepted and ignored as in BricsCAD, and the reason is worth
+keeping: 'st versus 'lsm / 'lsa is single-file versus
+optimize-and-link-ACROSS-files, and a call naming one source has nothing
+to link across -- the cross-file form is CLAL-COMPILE-SYSTEM. An UNKNOWN
+mode signals, though: all three real modes do the same thing here, so
+ignoring 'st is harmless, but ignoring a misspelling would hide a typo
+in a build script indefinitely.
+
+The tests are round trips, not existence checks: compile, then load the
+artefact into a FRESH context and run what it defines. A test that only
+checked a file appeared would pass for an empty artefact, and for one
+whose symbols are interned in a table nobody reads -- which is exactly
+the failure the externalizer exists to prevent.
+
+Slice 11 (2.0.12) -- the --optimize option, and the compiler that was
+not in the program
+-------------------------------------------------------------------
+
+The option itself is small and does exactly what pjb validated: `-O
+QUALITY=N,...` / `--optimize=...`, plus `-O0`..`-O3`, setting the
+qualities BEFORE the first file is loaded. His reasoning is the whole
+justification and is worth keeping verbatim in the code: in CL a DECLAIM
+governs the rest of its file because DECLAIM is a macro with a
+compilation-time side effect; AutoLISP has neither macros nor a
+compilation-time/load-time/run-time distinction, so a (clal-optimize
+...) at the top of a .lsp takes effect only when it is EVALUATED -- by
+which time the file it was meant to govern has been read and its DEFUNs
+built. Nothing inside the language is early enough.
+
+Decisions worth recording:
+
+  The grammar MIRRORS CLAL-OPTIMIZE rather than inventing a second
+  vocabulary: QUALITY=N, a bare QUALITY meaning level 3 (as a bare
+  quality symbol means there), and a bare N meaning speed=N. One
+  concept, two spellings.
+
+  Occurrences ACCUMULATE. `-O speed=3 -O debug=0` is the same request as
+  `-O speed=3,debug=0`. Replacing would make the second occurrence
+  silently discard the first, which is not what anyone types it for.
+
+  `-O0`..`-O3` are four LITERAL short specs. The shared parser matches
+  short options by exact string and has no attached-value rule; the
+  -E<situation> family is enumerated the same way. Four specs beat a
+  parser change that would affect every option.
+
+  The CLI parses to ((QUALITY . LEVEL) ...) and hands those to
+  SET-CLAL-OPTIMIZATION-LEVELS, which goes through
+  APPLY-CLAL-OPTIMIZATION exactly as CLAL-OPTIMIZE does. The algebra
+  turning levels into mechanism stays in ONE place; a level set from the
+  command line cannot come to mean something different from the same
+  level set from AutoLISP.
+
+  Applied AFTER BUILD-CONTEXT (INSTALL-CORE-BUILTINS re-derives the
+  gates from *CLAL-OPTIMIZATION* and would otherwise undo the request)
+  and BEFORE the first action, including the init files.
+
+THE FINDING, which is much bigger than the option:
+
+The shipped clautolisp executable contained NO COMPILER. Ten slices of
+it, all tested, none of it in the program. `clautolisp/clautolisp-tool`
+did not depend on `clautolisp/autolisp-compiler`, so the compiler was
+never loaded, so its (setf *compile-usubr-hook* ...) toplevel forms
+never ran, so every hook stayed NIL -- and a NIL hook means the
+interpreter runs. By design: that is exactly the configuration in which
+the compiler is absent, so nothing warns.
+
+It was found by MEASURING what the new option did, which was nothing:
+
+    before                after
+      -O0   851 ms          -O0   916 ms
+      -O2   845 ms          -O2   734 ms
+      -O3   858 ms          -O3   747 ms
+      ratio 1.00            ratio 1.24
+
+(fib 27 through the built SBCL image, best of five. The two columns are
+different images; the ratio WITHIN a column is the measurement.)
+
+The dependency inversion that makes the compiler optional is right, and
+its consequence is what was missed: because nothing below pulls the
+compiler in, the program that ASSEMBLES the components has to name it,
+and only the test systems did. Every compiler test system depends on the
+compiler directly -- as a test of the compiler must -- so the hooks were
+always installed in the test image. The tests were true of the test
+image, and were reported as if they were true of the program.
+
+This is the 2.0.11 lesson one level up. There, tests ran on one host and
+were reported as holding for both. Here they ran in one image and were
+reported as holding for the program. The test was not wrong either time;
+the extrapolation was. Recorded as
+issues/closed/compiler-absent-from-shipped-binary.issue.
+
+The same commit adds the gate, because fixing the dependency does not
+stop it recurring: make test-shipped-compiler builds the executable and
+asserts that CLAL-COMPILE-FILE produces an artefact, that the .lap loads
+and runs, and that -O reaches (clal-optimization). The probe is
+CLAL-COMPILE-FILE rather than a timing comparison because it is the one
+surface that distinguishes `no compiler in this build' from every other
+failure -- it signals COMPILER-NOT-AVAILABLE instead of falling back.
+
+The gate was verified RED before being believed: dependency removed,
+executable rebuilt, three checks fail and the output names the missing
+line in clautolisp.asd. A gate never seen red is not a gate -- the same
+mistake in miniature as the one it guards against.
+
+Wired into both CI lanes along with test-compiler-equivalence and
+test-debug-compiled, which had never been in CI either.
+
+Slice 12 (2.0.13) -- the measurement said something else
+--------------------------------------------------------
+
+This slice was going to open-code the hot operators. The standing plan
+had named that as where the margin against LispEx is, and it had been
+deliberately deferred so that no operator would have a second
+implementation able to disagree with the first.
+
+Profiling first said the margin is somewhere else entirely. On compiled
+fib 30:
+
+    FRAME-BINDING       18.7% self   31.7% total
+    LOOKUP-FUNCTION     17.6% self   52.1% total
+    %ASSOC-EQ           14.2% self
+    ...
+    BUILTIN--            2.4%
+    BUILTIN-+            1.1%
+
+Over half the time resolving names; about 4% doing arithmetic. Open-coding
++ and - perfectly would have bought a few percent and added the one class
+of defect the plan was written to avoid.
+
+The cause, confirmed by a direct experiment rather than inferred from the
+profile: LOOKUP-FUNCTION and FIND-DYNAMIC-BINDING walked the WHOLE
+dynamic-frame chain before the namespace, so resolving a name cost
+O(call-stack depth). The identical loop measured 2.7x slower forty frames
+down. Fixed with an exact per-symbol count of live dynamic bindings; a
+walk guaranteed to fail is skipped. Full account in
+issues/closed/name-resolution-is-linear-in-stack-depth.issue.
+
+    -O3 fib 27          619 -> 358 ms   1.73x
+    -O3 loop, depth 1   236 -> 238 ms   1.00x   <- the control
+    -O3 loop, depth 40  578 -> 232 ms   2.49x
+
+The depth-1 row is the one worth keeping: UNCHANGED, because at depth 1
+there was never anything to skip. That is what makes the other rows mean
+what they claim. And the loop is now depth-invariant, which is the
+property rather than any single number.
+
+WHAT THIS SAYS ABOUT THE BACKLOG. The open-coding item was written from a
+probe, not from a profile of this engine, and it was wrong about where
+the time was -- not because the probe was bad but because it measured a
+different thing. Re-profiled after the fix, the top is now the CALL
+PROTOCOL:
+
+    CALL-AUTOLISP-FUNCTION-IN-CONTEXT   20.7% self
+    WRAP-BUILTIN-FUNCTION &rest lambda   7.4% self / 25.1% total
+    LOOKUP-FUNCTION                      5.9% self
+    all the arithmetic together         ~10%
+
+So the next slice is the per-call cost -- the &rest argument list, the
+call-stack cons, the HANDLER-CASE established around every builtin call --
+and open-coding operators moves DOWN the list, to after that. Measure,
+then act on the measurement; the plan is an input to that, not a
+substitute for it.
+
+Slice 13 (2.0.14) -- open-coding, guarded
+-----------------------------------------
+
+Slice 12 put the CALL PROTOCOL on top of the profile and open-coding
+behind it. Measuring the protocol directly settled which to do first, and
+it was not what either the profile or the plan said on its own:
+
+    the protocol, in isolation      43 ns a call
+      of which: the outer HANDLER-CASE   ~25%
+                the call-stack cons      ~31%
+                the second &rest list     ~9%
+
+Trimming those pieces is worth 10-15% of the protocol, i.e. a few percent
+overall, and the cleanest way to get most of it -- changing the subr
+calling convention to take the argument LIST -- turned out to touch
+MAKE-AUTOLISP-SUBR, which is exported and used by the CAD layer and by
+eight test sites with an ordinary-function convention. A broad contract
+change for a small measured win.
+
+Open-coding, on the other hand, removes the WHOLE protocol for the
+operators it covers -- not the ~10% the arithmetic itself costs. In fib,
+four of the six calls per invocation are `<', `-', `+'. That is the
+lever, and it is why the original plan named open-coding even though the
+profile attributes little time to the builtins themselves: the profile
+charges their CALLS to CALL-AUTOLISP-FUNCTION-IN-CONTEXT.
+
+WHAT MAKES IT SAFE, since this is the item that was deliberately deferred
+for years of slices on exactly this ground:
+
+  It is a FAST PATH, not a second implementation. The inline code covers
+  one narrow case -- two integers in the 32-bit range -- and everything
+  else goes to the SAME builtin: floats, strings, nil, wrong arity, and
+  out-of-range results. So every value, every error and every message
+  outside that case is the builtin's, unchanged, because it IS the
+  builtin.
+
+  The narrowness is not caution for its own sake. AutoLISP `+' signals
+  INTEGER-OVERFLOW outside the 32-bit range, so the fast path checks the
+  RESULT and not merely the arguments; and `<' folds a NON-NUMERIC
+  argument to nil rather than signalling, which loop guards depend on, so
+  a float or a nil is handed over rather than "improved".
+
+  The call site checks, per call, that the name still resolves to the
+  exact builtin whose semantics were open-coded. `+' can be redefined
+  with DEFUN, assigned with SETQ, or shadowed by a `/'-local; all three
+  work, all three were checked against the running engine, and all three
+  must reach the user's definition FROM COMPILED CODE. The subr carries a
+  tag; a user definition is a different object with no tag; the guard
+  fails and the ordinary call happens.
+
+  The two tables -- *OPEN-CODED-CORE-BUILTINS* in the builtins and
+  *OPEN-CODED-OPERATORS* in the transpiler -- are joined by that tag, so
+  neither side can open-code something the other did not agree to. And
+  the builtins side stamps the tag only after checking that the function
+  behind the name really is the one named in the table, so swapping an
+  implementation silently drops the tag: a missing tag costs a call, a
+  wrong tag would cost correctness.
+
+RESULT, measured by INTERLEAVING the two binaries in one run -- the
+machine drifted enough between separate runs to invent a 12% regression
+that was not there, and alternating them removes it:
+
+                   before   after   speedup
+    -O0 shallow     429      429     1.00x   <- control
+    -O0 deep        380      384     0.99x   <- control
+    -O3 fib 27      416      271     1.54x
+    -O3 loop d1     248      177     1.40x
+    -O3 loop d40    240      173     1.39x
+
+The -O0 rows are the control and they are unchanged, as they must be:
+open-coding only exists in compiled code. Work time alone (startup ~80 ms
+removed) is about 1.75x.
+
+TWO THINGS THIS SLICE LEARNED THE HARD WAY:
+
+  Transpiler output must survive PRINT then READ. A .lap is produced by
+  printing the transpiled code as source and COMPILE-FILEing it, and
+  WRITE-LAP-SOURCE prints with *PRINT-CIRCLE* NIL -- so a GENSYM comes
+  out as `#:FN364' at every occurrence and each one reads back as a
+  DIFFERENT symbol. The binding and its references come apart and the
+  artefact does not compile. That is why the existing %VALUE / %TEST /
+  %COND are interned, and the new names are too. The artefact tests
+  caught it immediately, which is the argument for having had them.
+
+  A docstring closed early by an unescaped quote shipped in 2.0.13 and
+  the whole corpus passed on both hosts. See
+  issues/closed/docstring-closed-early-by-unescaped-quote.issue and the
+  new `make check-docstrings'.
+
+Slice 14 (2.0.15) -- the rest of the hot operators, and truth
+-------------------------------------------------------------
+
+Slice 13 built the mechanism and its guard for seven two-argument
+arithmetic and relational operators. This extends it, which is what a
+mechanism is for: each new operator costs only the exact statement of its
+narrow case.
+
+Re-profiling first, as usual. After slice 13 the profile is FLAT -- no
+dominator left on fib -- but two things stood out and both are addressed
+here:
+
+    LOOKUP-FUNCTION                    10.2% self
+    MAKE-DYNAMIC-BINDING                7.6% self
+    NAMESPACE-BINDING-CELL              6.6% self
+    CALL-AUTOLISP-FUNCTION-IN-CONTEXT   6.1% self  (was 20.7%)
+    FIND-AUTOLISP-SYMBOL + STRING=*     ~4%
+
+That last one is TRUTH. AutoLISP truth is the SYMBOL T, so every
+predicate, every relational operator and every AND / OR has to produce
+it -- and producing it hashed the name in the symbol table, every time.
+It is now remembered in *AUTOLISP-TRUE-SYMBOL*, invalidated in the one
+place the answer can change: RESET-AUTOLISP-SYMBOL-TABLE clears the
+table, and clears this with it. Nothing else removes a symbol-table
+entry; interning only ever adds. All 43 occurrences of
+(intern-autolisp-symbol "T") went through it, so there is one spelling of
+truth rather than a fast one and a slow one.
+
+NEW OPERATORS: car cdr null not atom listp zerop eq 1+ 1- and unary -.
+The mechanism generalised from `two arguments' to `the arities each fast
+path is written for', because the SEMANTICS are per arity: (- 5) negates
+and (- 9 4) subtracts, same builtin, two meanings, two fast paths.
+
+The interesting ones are the ones that had to DECLINE:
+
+  EQ is EQL, PLUS the rule that two strings with equal contents are EQ
+  (the host interns literals). So the fast path declines whenever either
+  argument is a string -- a plausible inline EQ would have quietly
+  answered nil for (eq "abc" "abc"), which is the exact shape of the
+  defect this whole design exists to prevent. Tested directly.
+
+  CAR / CDR: nil -> nil, cons -> the part, anything else -> an error. CL
+  CAR of NIL is NIL and LISTP is exactly `nil or cons', so the whole
+  non-error domain is one line and a number still reaches the builtin and
+  still signals.
+
+  NULL / NOT / ATOM / LISTP are TOTAL -- they accept any object and cannot
+  signal -- so their fast path has no type test at all. That makes the tag
+  check the only thing between them and a user's redefinition, which is
+  now its own test.
+
+  ZEROP, unlike those, does signal on a non-number, so it keeps its guard;
+  and floats go to the builtin.
+
+RESULT, interleaved A/B against 2.0.14:
+
+                   2.0.14   new    speedup
+    -O3 lists        347     211    1.64x
+    -O3 shallow      192     166    1.16x
+    -O3 fib          265     259    1.02x   (nothing new applies)
+    -O0 lists        599     563    1.06x   (the truth cache, interpreted)
+
+A NOTE ON MEASURING. Best-of-five first reported fib 5% SLOWER, which
+would have been a real puzzle since no new fast path applies to it. Ten
+reps said 265 vs 259. Five reps is not enough on a machine doing other
+work, and the honest response to a surprising number is another
+measurement, not an explanation.
+
+THE DOCSTRING CHECK EARNED ITS KEEP ON ITS FIRST OUTING. It caught a
+BROKEN DOCSTRING IN THIS SLICE'S OWN CODE -- AUTOLISP-TRUE, where an
+unescaped quote around the name T ended the string early, leaving a dead
+form in the body. Written, shipped and caught the same afternoon; the
+tests were all green with it in place, exactly as they were in 2.0.13.
+
+Slice 15 (2.0.16) -- cheaper poll points
+----------------------------------------
+
+pjb's item 3, and slice 7's finding come round: poll points, not
+interpretation, are what makes debugging slow. Measured before touching
+anything (fib 25, in process):
+
+    plain interpreted     184 ms
+    plain compiled         80 ms
+    DEBUGGED interpreted  324 ms    1.76x
+    DEBUGGED compiled     168 ms    2.10x
+
+And profiled (465 samples, debugged compiled fib 30) the debug-specific
+work is about 42% of the run, of which CALL-WITH-POLL-POINT is 23% self.
+
+THREE CHANGES, none of which cost anything in expressiveness:
+
+  1. WHERE EXECUTION IS was a CONS, written on every poll point -- twice
+     per instrumented form -- so a program merely being RUN under a
+     session allocated two conses per form for a fact nobody outside the
+     debugger reads. It is two fixnum slots now. The subtlety a boolean
+     replaced: NIL used to mean `no poll point yet', which a cons can say
+     and a pair of zeros cannot, since (0 . 0) is a real poll point --
+     function 0's entry form. Hence the separate validity flag, and hence
+     three tests for it.
+
+  2. THE JUMP CHECKS. JUMP-DISPOSITION and JUMP-EXIT-CHECK each begin by
+     reading the jump-target slot and doing nothing when it is NIL, which
+     is the case on every poll point of every program that is not
+     mid-jump. That was two full calls per instrumented form to learn
+     nothing. The slot is read at the call site now. Same answers:
+     JUMP-DISPOSITION cannot return :SKIP with no target, and
+     JUMP-EXIT-CHECK is a no-op with none.
+
+  3. THE STEP CHECK, the same shape. The Bloom summary and the watches
+     list were already guarded by the slot that makes them possible; the
+     step request was not.
+
+Also CALL-WITH-COMPILED-POLL-POINT is now INLINE -- out of line it was a
+whole call, per instrumented form, to read one special variable and
+funcall through it.
+
+RESULT. The wall clock on this machine has a noise floor around 10%,
+which is more than the effect, so the primary measurement is ALLOCATION:
+it is deterministic and exactly attributable.
+
+                            2.0.15        2.0.16      change
+    plain compiled          10,086,112   10,086,112    0        <- control
+    DEBUGGED compiled       34,130,496   24,402,256   -28.5%
+    DEBUGGED interpreted    82,027,104   71,950,656   -12.3%
+
+The plain row is BYTE-IDENTICAL, which is the control: whatever else
+happened, nothing outside the debugged path moved.
+
+For time, 15 reps with the plain row carried as a drift control:
+
+                            2.0.15   2.0.16
+    plain compiled (control)   72       76      <- the run that got 76 was
+    DEBUGGED compiled         176      152         on the BUSIER machine
+
+The control moved AGAINST the new build and it still won. Debugging
+overhead over plain: 104 ms -> 76 ms, i.e. down 27% -- which agrees with
+the 28.5% allocation figure, and the agreement is the reason to believe
+either.
+
+WHAT WAS DELIBERATELY NOT DONE: the RESTART-CASE around every form is the
+single biggest item left (about 5 ns per poll point, twice per form), and
+swapping it for a CATCH is measured, small and local. It was left alone
+because a restart is inspectable and a catch tag is not, and clautolisp
+deliberately offers the host debugger through CLAL-COMMON-LISP -- so
+removing a named restart from a DEBUGGER for a few nanoseconds is not a
+trade to make silently. Written up with the measurement in
+issues/open/poll-point-restart-cost.issue for pjb to settle, along with
+the shadow-frame pool, which is blocked on what a SNAPSHOT is allowed to
+keep.
+
+Slice 16 (2.0.17) -- the calls that were not doing anything
+-----------------------------------------------------------
+
+Re-profiled the plain compiled path, as the backlog says to. It is flat
+now -- no dominator -- and what the flatness revealed is that a large
+share of it is CALL OVERHEAD FOR ONE-LINE FUNCTIONS:
+
+    CALL-AUTOLISP-FUNCTION-IN-CONTEXT   12.0% self
+    the compiled body itself             8.7%
+    LOOKUP-FUNCTION                      7.1% self
+    AUTOLISP-FUNCTION-TRACE-P            6.0%   <-
+    EVALUATION-CONTEXT-DYNAMIC-FRAME     4.9%   <-
+    SYMBOL-HAS-NO-DYNAMIC-BINDING-P      4.9%   <-
+    CALLABLE-VALUE-P                     4.3%   <-
+    NAMESPACE-BINDING-CELL               4.3%
+    MAKE-DYNAMIC-BINDING                 3.8%
+    FRAME-BINDING                        2.7% self  <-
+    BINDING-CELL-BOUND-P                 2.7%   <-
+
+The marked ones are all the same thing. EVALUATION-CONTEXT-DYNAMIC-FRAME
+is, in full:
+
+    (defun evaluation-context-dynamic-frame (context)
+      (internal::evaluation-context-dynamic-frame context))
+
+It exists so the internal slot reader has a public name. Out of line it
+is a function call, on every variable read, every function resolution and
+every call -- 4.9% of the profile to read one slot. BINDING-CELL-VALUE,
+BINDING-CELL-BOUND-P and EVALUATION-CONTEXT-CURRENT-NAMESPACE are the
+same shape; CALLABLE-VALUE-P, SYMBOL-HAS-NO-DYNAMIC-BINDING-P,
+AUTOLISP-OPEN-CODE-TAG, AUTOLISP-TRUE-SYMBOL and AUTOLISP-FUNCTION-TRACE-P
+are two-line predicates whose whole point is to answer `no' quickly.
+
+Eleven DECLAIM INLINEs. Nothing else changed. It is the same lesson as
+slice 15 found in the debugger -- a call to learn nothing is still a call
+-- one layer down, and it is worth naming as a pattern rather than a
+coincidence: a package boundary drawn by re-exporting accessors as
+functions is free at the source level and is NOT free at run time.
+
+RESULT, A/B/A with 15 reps each (fib 25, in process):
+
+                    2.0.16   2.0.17   speedup
+    interpreted      168      148      1.14x
+    compiled          64       48      1.33x
+
+The two runs of the new build gave 148 / 48 BOTH TIMES, identically, so
+the window was quiet and the numbers are not drift. For scale: compiled
+fib 25 was 80 ms when this session started looking at the debugger three
+slices ago.
+
+WHY INLINING IS SAFE HERE, since it is not always: an accessor IS the
+slot, and none of these is a function anyone redefines or stubs -- checked
+for SETF SYMBOL-FUNCTION / FDEFINITION over the whole tree, including the
+tests. Callers that take #' of them still get the out-of-line definition,
+which SBCL and CCL both still emit.
+
+Slice 17 (2.0.18) -- a frame's bindings stop being an alist
+-----------------------------------------------------------
+
+The item slice 16 scoped and did not take. A frame held its bindings as an
+alist of (symbol . binding): two conses per parameter and per `/'-local of
+every call, spent recording a symbol THE BINDING ALREADY CARRIED in its
+own SYMBOL slot. The bindings are now threaded together directly, by a
+NEXT slot on the binding.
+
+    per binding, before:  binding struct + 2 conses
+    per binding, after:   binding struct (one slot wider)
+
+Allocation, the deterministic measurement (fib 22, bytes consed):
+
+                          2.0.17        2.0.18      change
+    plain compiled       10,086,112    8,254,624    -18.2%
+    DEBUGGED compiled    24,402,256   22,859,648     -6.3%
+    DEBUGGED interpreted 71,950,656   70,063,200     -2.6%
+
+Wall clock is unchanged within this benchmark's noise; the win is
+allocation and the collector work behind it, which is what shows up in
+the long-running loops real CAD code is made of rather than in fib.
+
+WHY IT IS SOUND, and both halves were checked before writing a line:
+
+  A binding belongs to EXACTLY ONE frame. The sole caller of (SETF
+  FRAME-BINDING) is BIND-DYNAMIC-VARIABLE and it makes a fresh binding
+  every time. A shared binding would need two NEXTs and would corrupt
+  both chains.
+
+  The representation is read in EXACTLY FOUR PLACES, all in api.lisp, and
+  FRAME-BINDING is not exported -- the debugger reaches bindings through
+  DYNAMIC-FRAME-BINDING-VALUE, which goes through it. The file already
+  said so ("the only thing that should read this slot") and it was true.
+
+ONE TRAP: the alist/hash-table discriminator was (LISTP BINDINGS). A chain
+head is a STRUCT, not a list, so every one of those became HASH-TABLE-P.
+Missing one would have read a binding as an alist -- silently, and only
+for frames that had promoted.
+
+TESTS. The PROMOTION path -- what a frame does once it holds more
+bindings than a linear walk searches cheaply -- had NO TEST AT ALL before
+this, and is not reachable from any ordinary program: it needs more than
+a dozen locals in one function. It now has four, written against the
+representation directly rather than through AutoLISP source, because the
+representation is what changed: binding past the limit and resolving
+every name across the promotion boundary; rebinding a name in one frame
+(legal -- (defun f (a / a) ...)) replacing rather than adding, in BOTH
+representations, since replacement is written twice; and nested frames
+shadowing innermost-first with the live-binding counts following.
+
+Verified load-bearing: disabling the chain's replace detection fails
+REBINDING-A-SYMBOL-IN-ONE-FRAME-REPLACES-RATHER-THAN-ADDS and NOTHING
+ELSE in the whole corpus -- which is the argument for having written it.
+
+Slice 18 (2.0.19) -- the third batch of open-coded operators
+------------------------------------------------------------
+
+CONS, LIST, = and /=, plus the three-argument arities of + - * < > <= >=
+and the one-argument arities of + and *. The mechanism and its guard are
+from slice 13; this is the part that a mechanism makes cheap.
+
+TWO THINGS NEW IN KIND:
+
+  CONS and LIST are TOTAL. BUILTIN-CONS is (cons a b); BUILTIN-LIST
+  returns its &rest list. Neither can signal and neither has a narrow
+  case, so their fast path has NO GUARD beyond the tag check -- which
+  makes the tag check the only thing between them and a user's
+  redefinition, and gives that its own test.
+
+  = and /= are NOT numeric-only, which is the trap the backlog note
+  warned about. COMPARISON-EQUAL-P is EQL, then numeric = for two
+  NUMBERS, then STRING= for two STRINGS. An inline `=' that knew only
+  about numbers would answer nil for (= "a" "a") -- the same shape of
+  defect as an inline EQ that forgot interned strings, and caught the
+  same way: the fast path covers two 32-bit integers and declines
+  everything else, including (= 1 1.0), where EQL says no and = says yes.
+
+AND ONE THAT N-ARY INVITES: the relational chain is PAIRWISE ALONG the
+arguments -- (< 1 3 2) is (and (< 1 3) (< 3 2)), which is NIL. Comparing
+the first against each of the rest would say T. CL n-ary < agrees with
+AutoLISP here, so the whole chain is one form, but the test says so out
+loud because the wrong reading is the tempting one.
+
+RESULT, A/B/A on a cons/list/=-heavy workload (building 900-element
+lists 120 times, then scanning them):
+
+                    2.0.18   2.0.19   speedup
+    interpreted      212      208      1.00x   <- control
+    compiled          76       36-40   ~2x
+
+The interpreted row is the control and it is unchanged, as it must be:
+open-coding exists only in compiled code. fib, which exercises none of
+the new operators, is unchanged too (compiled 48 -> 44 ms, within noise)
+-- worth checking because the arithmetic fast paths were rewritten to be
+n-ary rather than two-argument.
+
+Slice 19 (2.0.20) -- pjb settles the two poll-point questions
+-------------------------------------------------------------
+
+Slice 15 left two items measured but not taken, because both traded
+something other than speed and neither was mine to trade. pjb settled both
+(2026-08-30). Both premises were CHECKED before acting on them.
+
+THE RESTART -> CATCH. His reading -- one restart, and a catch loses no
+functionality -- is right on both counts: one RESTART-CASE establishes
+CLAL-POLL-RETURN, two users find it BY NAME and invoke it, and there is NO
+COMPUTE-RESTARTS anywhere in the product, which is what the
+inspectability objection rested on. THROW reaches the innermost matching
+CATCH, i.e. the innermost poll point, and `is one established?' is (PLUSP
+POLL-DEPTH), already maintained around exactly that form. The :ABORT
+resolutions beside it already unwound by THROW, so there is now one
+mechanism instead of two.
+
+THE SNAPSHOTS. His question -- are they only read for information, never
+resumed from -- is the right one, and the answer made the change free:
+BUILD-SNAPSHOT already converts every shadow frame into a fresh
+STACK-FRAME eagerly, at the stopping point. A snapshot never retains a
+DEBUG-FRAME. The copy he was willing to pay for was already there.
+
+So slice 15's claim that pooling "would need the snapshot to copy what it
+keeps, and that is a change to what a snapshot IS" was WRONG, and wrong
+expensively: it deferred a change that was already safe. The blocker was
+inferred from the shape of the problem instead of read out of the code --
+which is the same mistake as assuming a test proves something about a
+program, one topic over.
+
+Spent frames now go to a free list, handed over IN THE VERY CONS they were
+popped with, so a debugged call allocates neither a frame nor a cons once
+the pool has warmed. The reference to the runtime dynamic-frame is cleared
+on the way in, so a pooled frame does not pin a binding chain.
+
+WHAT EACH BOUGHT, measured separately because they were decided
+separately:
+
+                        plain (control)  debugged   debugged alloc
+    2.0.19                  48 ms         108 ms    22,859,648
+    catch only              48 ms         104 ms    22,793,792
+    catch + frame pool      48 ms         104 ms    20,082,256
+
+The catch bought the TIME (~4% of the run, ~7% of the debugging overhead)
+and no allocation -- SBCL's RESTART-CASE costs cycles, not heap. The pool
+bought the ALLOCATION (-11.9%) and no further time. NEITHER BOUGHT BOTH,
+and the micro-benchmark that motivated the swap (5.3 ns a poll point)
+predicted more time than the real workload delivered: the usual gap
+between a mechanism measured alone and the same mechanism in context.
+Worth reporting as it came out rather than as it was pitched.
+
+TESTS. `return' at a stop was already covered in three places -- the error
+path, the normal-stop path (a regression test, from when
+APPLY-RESUME-DIRECTIVE used to drop it) and the Emacs UI -- so the swap
+had real cover from the start; disabling the throw fails the normal-stop
+one with "7 is not EQL to 99". The pool got two new tests: a stop taken
+AFTER twenty activations have filled and drained the pool still reports
+the right functions on the stack (a reused frame keeping its old FID would
+name the wrong one), and a pooled frame holds no dynamic-frame. The second
+of those caught a mistake in its own first draft -- the pool is a list OF
+FRAMES, the conses being the recycled links, and the test read it as a
+list of conses.
+
+Slice 20 (2.0.21) -- FOREACH and REPEAT stop falling back
+---------------------------------------------------------
+
+FIRST, A MEASUREMENT THAT KILLED A BACKLOG ITEM. Re-profiling the plain
+compiled path shows WRAP-BUILTIN-FUNCTION gone from the top entirely:
+open-coding removed the builtin calls it wrapped. So the CALL PROTOCOL
+item -- the argument-list convention for the subr function slot, held
+back because MAKE-AUTOLISP-SUBR is exported and a contract change --
+is now MOOT for the workloads that motivated it. Removed from the
+backlog rather than left to look actionable.
+
+What the profile shows instead is the usubr call machinery
+(BIND-USUBR-FRAME 34% cumulative) and function resolution (24%), both of
+which are blocked or risky. So the useful work is no longer
+micro-optimisation but COVERAGE.
+
+THE HOLE. The transpiler handled QUOTE PROGN IF SETQ AND OR WHILE COND
+and calls; everything else fell back. A fallback hands the interpreter
+THE WHOLE SUBFORM -- body included -- so a compiled function containing a
+FOREACH ran that entire loop interpreted. FOREACH and REPEAT are the two
+commonest loops in AutoLISP, which made this by far the largest hole left
+in what "compiled" meant.
+
+How large is worth stating exactly, because a percentage would hide it:
+
+                        2.0.20      2.0.21
+    interpreted         1212 ms     1236 ms   <- control
+    compiled            1208 ms      220 ms   5.5x
+
+In 2.0.20 compiling that function bought NOTHING -- 1208 against 1212 --
+because the loop was the workload and the loop was interpreted either
+way. That row is the finding; the 5.5x is its consequence.
+
+WHAT IS EMITTED IS THE SHAPE ONLY. Every decision -- the REPEAT count
+check and its diagnostic, the FOREACH sequence check, and FOREACH's rule
+for giving its variable a value -- was factored out of the interpreter
+into CHECK-REPEAT-COUNT, CHECK-FOREACH-SEQUENCE and
+BIND-FOREACH-VARIABLE, which BOTH now call. The alternative was restating
+them in the transpiler, and a second statement of a rule is a second
+thing that can be wrong. That rule matters here more than usual: FOREACH
+ASSIGNS when the name is already bound anywhere in the chain, so a
+FOREACH over a name an enclosing function binds writes THAT binding and
+the value survives the loop. Quirk and all -- and it is in the corpus.
+
+A BUG FOUND ON THE WAY, and it was already there. An empty loop body ---
+`(while (setq i (cdr i)))', which is how AutoLISP drains a list --
+compiled to (LOOP WHILE X DO NIL). LOOP's DO needs a compound form, so
+SBCL built a function that signalled a COMMON LISP error when CALLED. It
+worked interpreted. Nothing caught it because no corpus entry had an
+empty loop body. issues/closed/compiled-loop-with-empty-body.issue.
+
+pjb's fix, and better than the first one written: make TRANSPILE-BODY
+return `(PROGN)' rather than NIL for an empty body. (PROGN) evaluates to
+NIL so no value changes, but a transpiled body is now ALWAYS A COMPOUND
+FORM and can go anywhere a form can. The first attempt wrapped the body
+at each site that uses it as a statement, which works and leaves a rule
+every future loop has to remember. His puts the invariant at the one
+definition instead of in the head of whoever writes the next loop.
+
+AND A MEASUREMENT THAT WAS MEASURING NOTHING. The first three loop
+benchmarks reported 48 ms against 44 ms -- an unremarkable 8% -- and all
+three were STILL RUNNING FIB: the benchmark had been derived from another
+by string substitution, the anchor never matched, and the file kept its
+old workload. The tell was that ten times the iterations produced
+identical numbers. The rule that caught it is worth keeping: a benchmark
+that does not respond to its own workload is not measuring it, and a
+sanity line printing the program's own result costs nothing.
+
+Slice 21 (2.0.23) -- LAMBDA and FUNCTION, and what measuring them found
+----------------------------------------------------------------------
+
+The two operators slice 20 named as worth having next. Both were
+falling back, and a fallback hands the interpreter the WHOLE SUBFORM,
+so the higher-order idiom portable AutoLISP is written in --
+(apply (function f) args) -- put an AUTOLISP-EVAL back into the middle
+of otherwise compiled code.
+
+FUNCTION is QUOTE plus a hint to a compiler that is not this one, so a
+well-formed (function X) is a CONSTANT and is now emitted as one. What
+is folded is the DESIGNATOR, never a lookup: a symbol stays a symbol,
+resolved against the dynamic chain when APPLY finally runs, which is
+what lets (apply (function fn) args) find an FN defined further down
+the stack. Folding the resolution would have been faster still and
+wrong, and the test says so in a sentence rather than leaving it to be
+rediscovered.
+
+LAMBDA calls the interpreter's own EVAL-LAMBDA-FORM. The closure, the
+environment capture, the arity check and the `/'-in-a-lambda-list
+warning are all behaviour rather than mechanism, and this file restates
+none of them; what is saved is the dispatch.
+
+MEASURED, ISOLATED, with a control that must not move (speed 3):
+
+    (function car) in a loop     12 ms  ->   4 ms
+    control, (setq f 1)           4 ms  ->   4 ms
+
+FUNCTION now costs exactly what a constant costs, because it IS one.
+The control is unmoved, which is the only reason to believe the other
+row.
+
+MEASURED IN CONTEXT, and this is the honest half: in an (apply
+(function car) (list p)) loop the same change is INVISIBLE -- 12 ms
+either way -- because APPLY dominates and the fold removes something
+APPLY's cost hides. The slice is a real win on the form and a wash on
+that workload, and both numbers are reported because reporting only
+the first would be true and misleading.
+
+VERIFYING THE GATE. With the two branches disabled the coverage test
+goes RED and the two VALUE tests stay GREEN -- correctly: the fallback
+computes the same answers, which is the whole fallback design. So one
+gate pins the optimization and two pin the contract, and it is worth
+knowing which is which rather than claiming three.
+
+FOUND WHILE MEASURING, and much worse than the slice is good: a LAMBDA
+inside a hot loop, COMPILED, is 440x SLOWER than interpreted -- 26416 ms
+against 60 ms, control flat. Compilation is decided per FUNCTION
+OBJECT, but EVAL-LAMBDA-FORM mints a new object per iteration, so at
+threshold 1 the host compiler runs once per iteration; at the shipped
+default of 16 the same shape never compiles at all. Threshold 1 is what
+the TEST SUITE sets. The A/B says it is older than this slice -- 24448 ms
+with the branches disabled -- so slice 21 neither caused it nor cured
+it; it is the first thing to have measured it. Written up with three
+candidate fixes in issues/open/lambda-in-a-loop-never-compiles.issue.
+
+STILL FALLING BACK after this slice: SET, LET, DEFUN, DEFUN-Q, TRACE,
+UNTRACE, COMMAND, COMMAND-S, VLAX-FOR. The COMMAND family is dominated
+by the host and not worth it; DEFUN inside a body is rare. LET and SET
+are the next candidates on frequency.
+
+Slice 22 (2.0.24) -- LET stops falling back, and takes its body with it
+-----------------------------------------------------------------------
+
+BricsCAD V26's undocumented CL-style LET, vendor-confirmed 2026-08-07
+and registered as a special operator here. It was still falling back,
+and the cost was not the binding: A FALLBACK HANDS THE INTERPRETER THE
+WHOLE SUBFORM, so a LET took ITS ENTIRE BODY with it. A compiled
+function whose work sat inside a LET ran that work interpreted -- the
+same hole FOREACH was in slice 20, in a form nobody thinks of as a
+loop.
+
+MEASURED, with a control that must not move (200000 iterations):
+
+    a loop INSIDE a LET   interpreted 64 ms   compiled 68 ms  ->  12 ms
+    the same loop, no LET interpreted 64 ms   compiled 12 ms  ->  12 ms
+
+THE 68-AGAINST-64 IS THE FINDING. Compiling that function gained
+NOTHING before this slice -- it was very slightly slower than
+interpreting it, the loop being the work and the loop being interpreted
+either way. 5.7x is merely the consequence, and the unmoved control is
+the only reason to believe it.
+
+PARALLEL BINDING, the rule that dictates the emitted shape: every
+init-form is evaluated in the ENCLOSING scope BEFORE any name is bound,
+so (setq x 10) (let ((x 1) (y x)) (list x y)) is (1 10). The values are
+therefore collected into a list first and the frame pushed only
+afterwards. Binding while walking the list would have made it LET*
+SILENTLY -- and BricsCAD V26 has no LET*, the same harvest having
+proved it. The difference shows only when an init mentions a name the
+same LET binds, which is exactly the case nobody writes a test for, so
+there is now a test for it, asserted as a VALUE and not only as an
+agreement.
+
+THE DIALECT WARNING IS EMITTED AT RUN TIME, not folded at transpile
+time. *AUTOLISP-DIALECT* is a variable and can change during a run, so
+a warning decided while compiling would be the wrong warning for a
+later call -- and would differ between the compiled and interpreted
+paths, which is the one thing this compiler may not do.
+
+Malformed binding lists go to the interpreter untouched:
+PARSE-LET-BINDING is ASKED, in a handler, whether each binding parses,
+rather than having its accepted shapes copied into the transpiler where
+they could drift.
+
+Same gate pattern as slice 21, and worth repeating because it is easy
+to miscount: with the branch disabled the COVERAGE test goes RED and
+the two SEMANTIC tests stay GREEN, correctly -- the fallback computes
+the same answers. One gate pins the optimization, the others pin the
+contract.
+
+Slice 23 (2.0.25) -- the compilation decision moves from the object to the code
+------------------------------------------------------------------------------
+
+The 440x pathology slice 21 found while measuring, fixed. It is worth
+stating as a capability rather than as a speed-up, because the
+capability is the bigger half: BEFORE THIS SLICE NO LAMBDA BODY WAS
+EVER COMPILED at the shipped threshold, so every higher-order AutoLISP
+program -- everything written with APPLY and a lambda -- was permanently
+interpreted however hot it ran.
+
+WHY. Compilation was decided per FUNCTION OBJECT, by CALL-COUNT. A
+LAMBDA form evaluated in a loop mints a NEW object per iteration, so
+the decision was retaken from scratch on objects that were all THE SAME
+CODE: at the default threshold of 16 each closure reached a count of 1
+and was discarded, and at threshold 1 -- which the TEST SUITE sets --
+the host compiler ran once per iteration.
+
+Each compiled LAMBDA form now has one USUBR-SITE, shared by every
+closure it builds. MAYBE-COMPILE-USUBR counts on the site when there is
+one and publishes the compiled body back to it, so the next closure
+starts compiled rather than recompiling the same body.
+
+MEASURED, control flat at 4 ms throughout:
+
+    threshold      lam speed 3 before      after
+        1              26416 ms            24 ms
+       16 (shipped)    never compiled      28 ms   (56 ms interpreted)
+
+Both regimes fall to the same change, which is what made fix (1) the
+right one of the three the ticket listed: it corrects the QUESTION --
+"is this CODE hot?" rather than "is this OBJECT hot?" -- instead of
+working around the answer.
+
+IDENTITY WITHOUT A WEAK TABLE. The obvious implementation, a hash table
+keyed on the lambda's source form, needs WEAK KEYS so it does not hold
+dead code alive -- and weak hash tables differ across SBCL, CCL and
+CLISP, which is portability surface bought for nothing. The transpiler
+instead emits (LOAD-TIME-VALUE (MAKE-USUBR-SITE) T): one site per
+lambda form, made when the compiled code loads, however it got there --
+including through a .lap, which is transpiled code printed as source
+and compiled again, where a struct baked in as a literal would have had
+to print and read back.
+
+WHAT IS DELIBERATELY NOT SHARED: the ENVIRONMENT (two closures from one
+form may legitimately capture different ones -- that was the rejected
+fix (3), and a test would fail if it ever started travelling with the
+body); the INSTRUMENTED compiled body (its form-ids are tied to one
+function's debug metadata, so sharing it would step the debugger
+against the wrong record); and :FAILED (kept on the closure, so a body
+that will not compile is retried on the next closure -- rare enough to
+leave alone, and cheaper than a third state).
+
+INTERPRETED CODE IS UNCHANGED, site NIL, decision on the closure. A
+lambda in an INTERPRETED loop therefore still mints undecidable
+closures. Recorded rather than hidden: it costs nothing today because
+the enclosing loop is interpreted anyway, and closing it would need
+exactly the source-form identity, and the weak table, that the compiled
+path was able to avoid.
+
+Slice 24 (2.0.26) -- VLAX-FOR, and the loop that was left behind
+-----------------------------------------------------------------
+
+THE LAST FORM THAT TOOK A BODY WITH IT when it fell back, and the one
+where that hurt most in practice: Visual LISP automation is written as
+a VLAX-FOR over a collection with all the work inside, so a compiled
+function doing COM work ran every bit of it interpreted. Open-coded to
+the same shape as FOREACH, with the members coming from the
+interpreter's own path -- the runtime cannot reach the host COM
+protocol, and the compiler certainly cannot, so both ask
+VLAX-COLLECTION-ITEMS, which consults the hook the builtins layer
+installs.
+
+The COM-absent check is a SEPARATE function from the members lookup,
+and called BEFORE the collection form is evaluated, because that is the
+interpreter's order: with COM absent, (vlax-for x (some-form-with-a-
+side-effect) ...) signals WITHOUT running the side effect. A compiler
+that evaluated first and complained second would differ in exactly the
+way nothing notices until it matters. There is a test.
+
+THE BUG FOUND WHILE DOING IT. VLAX-FOR still bound its loop variable
+with ASSIGN-IF-ALREADY-BOUND -- the very code FOREACH carried until
+AutoCAD was probed in 2.0.22 and answered that it BINDS. The rule was
+extracted into BIND-FOREACH-VARIABLE precisely so it would live in one
+place, and VLAX-FOR was not brought along. So the two loops in this
+implementation DISAGREED about their own loop variable: a VLAX-FOR over
+a name a caller had bound wrote THAT binding and left the last member
+of the collection in it. Both now call BIND-FOREACH-VARIABLE.
+
+Asserted BY ANALOGY, not by a probe: no vendor evidence covers
+VLAX-FOR, whose spec entry says only "Iterates over an ActiveX
+collection object" and is SILENT about the loop variable. What the
+tests pin is the AGREEMENT between the two loops.
+issues/open/vlax-for-binding-rule-unprobed.issue says what would settle
+it and why it has not been written -- it needs a live COM collection,
+which the headless probe suite cannot conjure.
+
+AND THE TEST THAT COULD NOT GO RED, which is the part worth carrying
+forward. The first version of the binding test asserted the rule with
+the suite's own settings, which compile a body eagerly -- so it
+exercised only the TRANSPILED branch, which was already correct, and
+stayed GREEN with the interpreter's old code put back. The second
+version forced both paths and STILL stayed green, because it used a
+GLOBAL: assign-if-bound and bind AGREE on a global, since no dynamic
+binding is found and the old code bound too. Only a `/'-LOCAL OF THE
+CALLER separates them -- which is exactly the case the AutoCAD probe
+used, and which I had in front of me. The test now runs both paths over
+a caller's local and goes red when the bug is put back. Verified, not
+assumed: this is the third time in this compiler's history that a green
+suite has meant nothing (2.0.22's foreach fix passed 31 suites before
+AND after), and the pattern is always the same -- the test exercised a
+case where the two behaviours coincide.
+
+Slice 25 (2.0.27) -- SET, and taking the evaluation order from the host
+-----------------------------------------------------------------------
+
+The last FREQUENT fallback. SET is SETQ with the PLACE FORM EVALUATED,
+which is the whole difference and the reason it cannot be folded into a
+SETQ however constant the place looks: the name being assigned is not
+known until run time.
+
+Worth a small note on what was NOT restated. The transpiler emits the
+place and the value as ARGUMENTS to SET-AUTOLISP-PLACE, so Common
+Lisp's left-to-right argument evaluation gives the interpreter's LET*
+order for free -- place first, then value -- and the symbol check
+happens after both, inside that function, exactly where the interpreter
+does it. Taking the order from the host rather than writing it out is
+the same move as asking the runtime what a special operator is: fewer
+places to be wrong.
+
+That order has its own test, and it is a REAL gate rather than a
+restatement: K ends at 11 when the place runs first and at 1 when the
+value does, so the two orders differ in the ANSWER and not merely in
+the path. Verified by emitting the value first on purpose -- the test
+goes red, and the coverage test goes red with the branch disabled.
+
+WHAT REMAINS FALLING BACK, and the list is now stable: DEFUN, DEFUN-Q,
+TRACE, UNTRACE, COMMAND, COMMAND-S. None of them un-compiles work the
+way FOREACH, LET and VLAX-FOR did -- for two different reasons, and the
+distinction was first written down wrongly here (pjb: "defun and
+defun-q take bodies. Are you saying that they don't compile them?").
+
+TRACE, UNTRACE, COMMAND and COMMAND-S have NO BODY: they take
+arguments. One dispatch each, and the COMMAND family is dominated by
+the host anyway.
+
+DEFUN and DEFUN-Q DO take a body. What makes handing them over free is
+not the absence of a body but that the body is STORED RATHER THAN RUN:
+evaluating a DEFUN builds the function, and the body inside it executes
+later, when that function is CALLED -- by which time it is an ordinary
+function body compiled by the ordinary rules (hot at SPEED 1-2, at
+definition at SPEED 3).
+
+Verified rather than reasoned: the coverage of
+(progn (defun inner (x) (* x x)) (inner 5)) reports ("DEFUN") -- it
+does fall back -- the form still answers 25, and INNER's COMPILED-BODY
+holds a function afterwards. The definition is interpreted; the
+function defined is compiled. THE TRANSPILER-COVERAGE THREAD THAT
+SLICE 20 OPENED IS THEREFORE FINISHED unless one of those turns out to
+matter; what is left in this file is the allocation and configuration
+work, not coverage.
+
+Slice 26 (2.0.28) -- the compiler says when it is asked absurdly often
+----------------------------------------------------------------------
+
+The last piece of lambda-in-a-loop-never-compiles.issue, and the reason
+it was worth finishing rather than closing with the fix: THE COMPILER
+HAD NO IDEA HOW OFTEN IT WAS BEING ASKED. A lambda in a loop invited it
+to run once per iteration -- 60000 times, 26 seconds absorbed in
+silence -- and the shape was found by BENCHMARKING, which is not a way
+to find bugs.
+
+COUNT-USUBR-COMPILATION now counts both compilation paths, the
+threshold one and the eager one, and warns ONCE past
+*USUBR-COMPILATION-WARNING-THRESHOLD*. Nothing is refused: the warning
+says the same body is probably being compiled repeatedly, and that this
+is a bug in what DECIDES to compile rather than in the code being
+compiled -- which is exactly what was true, and exactly what nobody was
+told.
+
+ONCE, not every time: a diagnostic that fires 59000 times is the same
+silence with more output.
+
+THE THRESHOLD IS ABSURD RATHER THAN TIGHT, and that is now MEASURED
+instead of asserted. The whole compiler test suite -- every equivalence
+case, every open-coding case, the instrumented and whole-corpus runs --
+compiles 56 bodies. The threshold is 1000: an eighteenfold margin, and
+the shape it exists to catch overshot it by sixty. A tight threshold
+would have to be RIGHT; this one only has to be unreachable by honest
+work, and now there is a number saying it is.
+
+Slice 27 (2.0.31) -- the corpus had stopped growing with the coverage
+---------------------------------------------------------------------
+
+Found by asking a question I should have asked five slices earlier:
+WHAT IS ACTUALLY IN THE EQUIVALENCE CORPUS?
+
+The corpus is described at the head of its own file as THE COMPILER'S
+CONTRACT, STATED AS A TEST -- every case evaluated BOTH ways, the two
+results required to agree. It still held only the six operators of
+slice 19: AND, COND, IF, OR, PROGN, SETQ.
+
+Slices 20 to 25 taught the transpiler WHILE, REPEAT, FOREACH, LET,
+LAMBDA, FUNCTION, VLAX-FOR and SET. None of them was added to the
+corpus. So the contract was being asserted over a SHRINKING FRACTION of
+what the compiler claimed to handle -- each new form had its own test,
+which is not the same thing as being in the corpus that runs every case
+both ways and compares.
+
+27 entries -> 69. The additions are chosen for the cases that
+DISTINGUISH behaviours rather than merely exercise them: an EMPTY loop
+body (the shape that once compiled to LOOP ... DO NIL and signalled a
+host error at call time), LET's PARALLEL binding (which separates it
+from a LET* BricsCAD does not have), the loop-variable rule both
+vendors were measured to follow, and SET's EVALUATED place.
+
+All green on SBCL and CCL.
+
+THE LESSON, worth more than the slice: WHEN COVERAGE GROWS, THE CORPUS
+MUST GROW WITH IT, or the contract narrows silently. Nothing failed,
+nothing warned, and the corpus went on reporting a green contract over
+a quarter of the compiler. A test suite that is not extended alongside
+the thing it tests decays into a test of history.
+
+WHERE THE COMPILER STANDS AFTER SLICE 27
+----------------------------------------
+
+Measured at HEAD, interpreted against compiled IN ONE PROCESS, best of
+three, alternating the two settings rather than running them as blocks
+-- machine drift once invented a 12% regression in this file and the
+ratio is what survives it.
+
+    workload                 interp   compiled  ratio
+    ------------------------ -------- --------- -----
+    fib 25 (call-bound)       148 ms     48 ms   3.1x
+    repeat+foreach loop        36 ms     12 ms   3.0x
+    loop inside a LET          64 ms     12 ms   5.3x
+    (function f) in a loop     32 ms     12 ms   2.7x
+    lambda built per pass      56 ms     28 ms   2.0x
+
+THE POINT IS NOT THE RATIOS, it is that all five are ABOVE ONE. Two of
+them were not, and neither said so:
+
+  - a loop inside a LET ran at 0.94x -- SLOWER compiled than
+    interpreted -- until slice 22, because the LET fell back and a
+    fallback hands the interpreter the whole subform, body included.
+  - a lambda built per iteration ran at 0.002x, four hundred times
+    slower, until slice 23, because the compilation decision was taken
+    per closure and a loop mints a new closure every pass.
+
+Both were invisible. The equivalence corpus asserts that compiled and
+interpreted AGREE, which they did throughout; nothing asserted that
+compiling was worth doing. `Compiled' had become a claim about which
+code path ran rather than about speed, in exactly the places where the
+work was.
+
+WHAT WOULD CATCH THE NEXT ONE: this table, re-measured. It is cheap --
+one process, a few seconds -- and it is the only artefact here that
+would go RED if a future slice made compiling slower than interpreting
+again. Worth turning into a test with a floor of 1.0x per row rather
+than leaving as a number in a ticket; not done, because a timing test
+in CI on shared runners is a flake generator, and the honest form of it
+is a benchmark someone runs, not a gate.
+
+STILL OPEN after slice 27
+-------------------------
+  - a host-independent .lap. Deferred on purpose (see the closed
+    clal-compiled-artefact.issue); CLISP is the existence proof that it
+    can be done and the reason it costs speed.
+  - poll points: slice 15 took 27% off the overhead and slice 19 took the
+    last two measured items (issues/closed/poll-point-restart-cost.issue).
+    What remains there is the per-poll-point work itself -- two
+    POLL-POINT calls, the enter/exit bookkeeping and the UNWIND-PROTECT --
+    none of which is removable without giving up something the debugger
+    does.
+  - TRANSPILER COVERAGE is CLOSED as a thread (slices 20-25). NO FORM
+    THAT TAKES A BODY FALLS BACK ANY MORE -- that was the property
+    worth chasing, since a fallback hands over the whole subform and
+    so silently un-compiles the work inside it. Still falling back, and
+    deliberately: TRACE, UNTRACE, COMMAND and COMMAND-S, which have no
+    body at all, and DEFUN / DEFUN-Q, which DO take one -- but store it
+    rather than run it, so the function they define is compiled by the
+    ordinary rules when called and the fallback un-compiles nothing
+    (see slice 25 for the measurement). Reopen only with a measurement
+    showing one of them matters.
+  - (done in slice 26: the compilation counter and its one-shot
+    warning, which was the last part of
+    issues/closed/lambda-in-a-loop-never-compiles.issue.)
+  - a lambda in an INTERPRETED loop still mints closures no decision
+    can be taken about: the site covers the compiled path only. Costs
+    nothing today, since the enclosing loop is interpreted anyway.
+  - open-coding has reached diminishing returns for the OPERATORS, but
+    not for the shapes. What was deliberately NOT taken in slice 18:
+    LENGTH, NTH, MEMBER and ASSOC each call REQUIRE-PROPER-LIST, which
+    walks the list, before doing their own walk -- so the call overhead
+    a fast path would remove is small beside the work, and a fast path
+    that walked once would be a second implementation with different
+    behaviour on a dotted list. They are the wrong shape for this
+    mechanism, which is worth recording so nobody adds them on the
+    grounds that they are frequent.
+  - what a call still allocates, after slice 17 removed the alist conses:
+    a dynamic-frame struct and a dynamic-binding struct per parameter,
+    plus the &rest list and the three-cons call-stack entry in
+    CALL-AUTOLISP-FUNCTION-IN-CONTEXT. The frame and binding structs
+    cannot simply be pooled -- a closure captures its environment and the
+    debugger's snapshot reaches frames -- so that one needs the ownership
+    rules restated first, exactly like the shadow-frame pool in
+    poll-point-restart-cost.issue.
+  - reading the qualities from the CONFIGURATION MODULE, so a project
+    can set them once rather than on every invocation. The --optimize
+    half is done (slice 11); this is the other half of the same item,
+    and belongs with the deferred "gather options / getenv / defaults
+    into the configuration module" work.

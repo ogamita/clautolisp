@@ -162,3 +162,127 @@
     (let ((m3 (clautolisp.debug:bq-pop (clautolisp.debug:thread-debug-info-outbound ti) 10)))
       (is (eq :thread-exit (first m3)))
       (is (equal '(:value . 7) (second m3))))))
+;;;; Where execution is: the CURRENT-PP slots.
+;;;;
+;;;; The poll point most recently entered is recorded on every poll point
+;;;; -- twice per instrumented form -- so it is kept in two FIXNUM slots
+;;;; rather than a cons: a cons there was two allocations per form of a
+;;;; program that is merely being RUN under a session, and removing them
+;;;; took 28% off everything a debugged run allocates.
+;;;;
+;;;; The subtlety a boolean replaced: NIL used to mean `no poll point
+;;;; yet', which a cons could say and a pair of zeros cannot -- (0 . 0) is
+;;;; a REAL poll point, function 0's entry form. Hence the separate
+;;;; validity flag, and hence these tests.
+
+(test current-pp-starts-invalid-and-reports-zeros
+  "A fresh thread-debug-info has entered no poll point. The two readers
+(BREAK-HERE and the error stop) must then report fid 0 / form-id 0 --
+which is what they did when the slot was NIL, and what the validity flag
+is for now that zeros are also a legitimate answer."
+  (let ((ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (is (null (clautolisp.debug:thread-debug-info-current-pp-valid-p ti)))
+    (is (eql 0 (clautolisp.debug:thread-debug-info-current-pp-fid ti)))
+    (is (eql 0 (clautolisp.debug:thread-debug-info-current-pp-form-id ti)))))
+
+(test current-pp-tracks-the-poll-point-execution-reached
+  "Running instrumented code fills it in, and the values are the poll
+point the run last entered -- which is what a stop reports as `where you
+are'."
+  (let* ((context (fresh-context))
+         (metas (define-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:call-with-debugging
+     (lambda () (eval-call context "FROB" 7))
+     :thread-info ti)
+    (is (not (null (clautolisp.debug:thread-debug-info-current-pp-valid-p ti)))
+        "no poll point was recorded by a run of instrumented code")
+    ;; FROB's poll points are the ones that ran last, so the recorded fid
+    ;; is FROB's -- not ID's, whose activation finished earlier.
+    (is (eql frob (clautolisp.debug:thread-debug-info-current-pp-fid ti))
+        "recorded fid ~S, expected FROB's ~S"
+        (clautolisp.debug:thread-debug-info-current-pp-fid ti) frob)))
+
+(test a-stop-reports-the-poll-point-it-stopped-at
+  "The end-to-end statement: the fid/form-id a hit carries are the ones
+the slots held. This is what would break, silently and only at a stop, if
+the two writers and the two readers ever disagreed about the encoding."
+  (let* ((context (fresh-context))
+         (metas (define-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 1 :when :before)
+    (multiple-value-bind (result hits)
+        (run-steps context ti "FROB" '(7) (lambda (hit count)
+                                            (declare (ignore hit count))
+                                            :continue))
+      (declare (ignore result))
+      (is (= 1 (length hits)) "expected exactly one hit, got ~S" (length hits))
+      (is (equal (list frob 1 :before) (hit-key (first hits)))))))
+
+;;;; Reusing the shadow frames.
+;;;;
+;;;; A shadow frame is pooled when its activation ends and handed to the
+;;;; next one, so a debugged call allocates neither a frame nor a cons
+;;;; once the pool has warmed. That is only sound because a frame does not
+;;;; OUTLIVE its activation: BUILD-SNAPSHOT converts every frame into a
+;;;; fresh STACK-FRAME eagerly, at the stopping point, and nothing else
+;;;; keeps one. pjb settled the question it rests on (2026-08-30):
+;;;; snapshots are read for information, never resumed from.
+;;;;
+;;;; What could go wrong is a reused frame carrying something from its
+;;;; previous activation, which would show as a backtrace naming the wrong
+;;;; function -- so the test stops AFTER the pool has been filled and
+;;;; drained many times, and checks the stack it reports.
+
+(test a-stop-after-many-activations-still-reports-the-right-stack
+  "Run the instrumented functions enough times to fill the frame pool and
+draw from it repeatedly, and only then stop. The snapshot's call stack
+must name the functions actually on it -- a reused frame that kept its old
+FID would name whichever function last used that frame."
+  (let* ((context (fresh-context))
+         (metas (define-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (id (fid-of (second metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (stack nil))
+    ;; warm: twenty activations, no stops, so every frame is pooled and
+    ;; taken again
+    (dotimes (i 20)
+      (clautolisp.debug:call-with-debugging
+       (lambda () (eval-call context "FROB" 7)) :thread-info ti))
+    ;; now stop inside the callee, two frames deep
+    (clautolisp.debug:add-breakpoint ti id 0 :when :before)
+    (let ((clautolisp.debug:*debug-hit-handler*
+            (lambda (hit)
+              (setf stack (clautolisp.debug:snapshot-call-stack
+                           (clautolisp.debug:hit-snapshot hit)))
+              :continue)))
+      (clautolisp.debug:call-with-debugging
+       (lambda () (eval-call context "FROB" 7)) :thread-info ti))
+    (is (= 2 (length stack))
+        "expected FROB and ID on the stack, got ~S frames" (length stack))
+    (is (eql id (clautolisp.debug:stack-frame-fid (first stack)))
+        "the innermost frame is not ID -- a pooled frame kept its old fid")
+    (is (eql frob (clautolisp.debug:stack-frame-fid (second stack)))
+        "the outer frame is not FROB")))
+
+(test a-pooled-frame-does-not-hold-a-dynamic-frame-alive
+  "A spent frame goes to the pool with its reference to the runtime
+dynamic-frame cleared. Without that, every pooled frame would pin a whole
+binding chain -- a leak that grows with the deepest stack ever reached and
+that nothing else would report."
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (define-and-instrument context +frob-source+ "FROB" "ID")
+    (clautolisp.debug:call-with-debugging
+     (lambda () (eval-call context "FROB" 7)) :thread-info ti)
+    ;; The pool is a LIST OF FRAMES -- the conses it is made of are the
+    ;; ones the frames were popped with, handed over rather than dropped,
+    ;; so the list's elements are the frames themselves.
+    (let ((pool (clautolisp.debug:thread-debug-info-frame-pool ti)))
+      (is (not (null pool)) "nothing was pooled by a completed activation")
+      (dolist (frame pool)
+        (is (null (clautolisp.debug::debug-frame-dynamic-frame frame))
+            "a pooled frame still points at a runtime dynamic-frame")))))

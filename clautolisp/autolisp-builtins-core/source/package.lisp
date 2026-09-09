@@ -59,6 +59,7 @@
                 #:autolisp-vl-symbol-value
                 #:close-autolisp-file
                 #:intern-autolisp-symbol
+                #:autolisp-true-symbol
                 #:lookup-variable
                 #:make-autolisp-subr
                 #:propagate-variable
@@ -208,6 +209,7 @@
    #:core-builtins
    #:find-core-builtin
    #:install-core-builtins
+   #:set-clal-optimization-levels
    #:autolisp-value->string
    #:live-event-policy
    #:clal-optimization-level

@@ -88,6 +88,29 @@
    #:make-autolisp-subr
    #:autolisp-subr-name
    #:autolisp-subr-function
+   #:autolisp-open-code-tag
+   #:autolisp-true-symbol
+   #:check-repeat-count
+   #:check-foreach-sequence
+   #:bind-foreach-variable
+   #:eval-lambda-form
+   #:eval-let-form
+   #:check-vlax-collection-support
+   #:vlax-collection-items
+   #:set-autolisp-place
+   #:*usubr-compilation-count*
+   #:*usubr-compilation-warning-threshold*
+   #:*usubr-compilation-warned-p*
+   #:count-usubr-compilation
+   #:usubr-site
+   #:make-usubr-site
+   #:autolisp-usubr-site
+   #:usubr-site-call-count
+   #:usubr-site-compiled-body
+   #:parse-let-binding
+   #:emit-bricscad-undocumented-warning
+   #:eval-function-form
+   #:lambda-form-p
    #:autolisp-usubr
    #:make-autolisp-usubr
    #:autolisp-usubr-name
@@ -97,6 +120,25 @@
    #:autolisp-usubr-instrumented-body
    #:autolisp-usubr-debug-metadata
    #:autolisp-usubr-instrumentation-failed
+   #:autolisp-usubr-compiled-body
+   #:autolisp-usubr-compiled-instrumented-body
+   #:autolisp-usubr-call-count
+   #:*compile-usubr-hook*
+   #:*compile-instrumented-usubr-hook*
+   #:+poll-operator-name+
+   #:*compiled-poll-hook*
+   #:call-with-compiled-poll-point
+   #:*autolisp-compilation-enabled*
+   #:*autolisp-compilation-threshold*
+   #:*autolisp-speed-level*
+   #:autolisp-compile-plain-fork-p
+   #:autolisp-compile-instrumented-fork-p
+   #:autolisp-compile-eagerly-p
+   #:call-in-file-compilation-unit
+   #:+lap-file-type+
+   #:*compile-files-to-artefact-hook*
+   #:default-lap-pathname
+   #:lap-pathname-p
    #:autolisp-catch-all-error
    #:make-autolisp-catch-all-error
    #:autolisp-catch-all-error-message
@@ -204,6 +246,7 @@
    #:register-special-operator
    #:unregister-special-operator
    #:known-special-operator-p
+   #:self-evaluating-runtime-value-p
    #:split-usubr-lambda-list
    #:catch-frame
    #:make-catch-frame

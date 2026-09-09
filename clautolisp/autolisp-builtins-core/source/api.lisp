@@ -210,8 +210,71 @@ disrupting the value-returning shape of the call site."
   (set-autolisp-errno code)
   value)
 
+;;; --- open-coding: which builtins the compiler may inline ------------
+;;;
+;;; The compiler is allowed to emit an inline fast path for a handful of
+;;; operators, because calling them through the full protocol costs far
+;;; more than the operation itself: an argument list, a call-stack entry,
+;;; two HANDLER-CASEs and two APPLYs to add two integers.
+;;;
+;;; What makes that safe is that the inline code is a FAST PATH, not a
+;;; second implementation. It handles one narrow, exactly-stated case and
+;;; hands EVERY other case -- other types, out-of-range results, wrong
+;;; argument counts, and so every error and every message -- to the very
+;;; builtin named here. There is one implementation of `+'; there is also
+;;; a shortcut for adding two small integers.
+;;;
+;;; And the tag identifies the IMPLEMENTATION, not the name. `+' can be
+;;; redefined with DEFUN, assigned with SETQ, or shadowed by a `/'-local
+;;; -- all three work, all three were checked -- and in each case the call
+;;; site resolves a different, untagged object and calls it normally.
+;;;
+;;; The table holds SYMBOLS and the tagger compares against the current
+;;; FDEFINITION, so a build that puts some other function behind the name
+;;; simply gets no tag: a missing tag costs a call, a wrong tag would cost
+;;; correctness.
+
+(defparameter *open-coded-core-builtins*
+  '(("+"     :add          builtin-+)
+    ("-"     :subtract     builtin--)
+    ("*"     :multiply     builtin-*)
+    ("1+"    :add1         builtin-1+)
+    ("1-"    :sub1         builtin-1-)
+    ("<"     :less         builtin-<)
+    (">"     :greater      builtin->)
+    ("<="    :not-greater  builtin-<=)
+    (">="    :not-less     builtin->=)
+    ("CAR"   :car          builtin-car)
+    ("CDR"   :cdr          builtin-cdr)
+    ("NULL"  :null         autolisp-null)
+    ("NOT"   :not          autolisp-not)
+    ("ATOM"  :atom         autolisp-atom)
+    ("LISTP" :listp        autolisp-listp)
+    ("ZEROP" :zerop        builtin-zerop)
+    ("EQ"    :eq           builtin-eq)
+    ("CONS"  :cons         builtin-cons)
+    ("LIST"  :list         builtin-list)
+    ("="     :numeric-equal    builtin-=)
+    ("/="    :numeric-distinct builtin-/=))
+  "(NAME TAG IMPLEMENTATION) for the builtins the compiler may open-code.
+The compiler's side of this table is *OPEN-CODED-OPERATORS* in the
+transpiler; the two are joined by the TAG, so neither can open-code
+something the other did not agree to.")
+
+(defun %open-code-tag-for (name function)
+  "The open-coding tag for the core builtin NAME, but only when FUNCTION
+really is the implementation this file names for it. NIL otherwise."
+  (let ((entry (assoc name *open-coded-core-builtins* :test #'string=)))
+    (and entry
+         (fboundp (third entry))
+         (eq function (fdefinition (third entry)))
+         (second entry))))
+
 (defun make-core-builtin-subr (name function)
-  (make-autolisp-subr name (wrap-builtin-function name function)))
+  (let ((subr (make-autolisp-subr name (wrap-builtin-function name function))))
+    (setf (clautolisp.autolisp-runtime:autolisp-open-code-tag subr)
+          (%open-code-tag-for name function))
+    subr))
 
 (defun builtin-boundp (object)
   (unless (typep object 'autolisp-symbol)
@@ -603,6 +666,29 @@ TRUSTEDPATHS to trust it."
                "LOAD"
                "LOAD could not locate ~A."
                value)))))
+      ;; A .lap is a host FASL: hand it to the host loader rather than to
+      ;; the AutoLISP reader. It must be tried BEFORE the unsupported-type
+      ;; branch below, and it is deliberately NOT listed there: .vlx and
+      ;; .fas are other vendors' artefacts, which clautolisp genuinely
+      ;; cannot read, while .lap is its own.
+      ((clautolisp.autolisp-runtime:lap-pathname-p resolved)
+       (handler-case (progn (load resolved) (set-autolisp-errno 0)
+                            (autolisp-true))
+         (error (condition)
+           (set-autolisp-errno 73)
+           (if onfailure-supplied-p
+               (evaluate-load-onfailure onfailure)
+               (call-with-autolisp-error-handler
+                (lambda ()
+                  (signal-builtin-host-error
+                   :unloadable-application
+                   "LOAD"
+                   ;; The likely causes are worth naming: a .lap is a
+                   ;; native FASL, so one built by the other host Lisp or
+                   ;; by another clautolisp will not load, by design.
+                   "LOAD could not load ~A (~A). A .lap is specific to the ~
+host Lisp and clautolisp version that built it."
+                   (namestring resolved) condition)))))))
       ((member (string-downcase (or (pathname-type resolved) "")) '("vlx" "fas")
                :test #'string=)
        (set-autolisp-errno 73)
@@ -812,7 +898,7 @@ explicitly.~%"))
 
 (defun builtin-vl-catch-all-error-p (object)
   (if (typep object 'autolisp-catch-all-error)
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun builtin-vl-catch-all-error-message (object)
@@ -1013,10 +1099,10 @@ when no debug session is active (the hook declines)."
   ;; that two strings whose content is equal compare eq because the
   ;; host interns string literals (autolisp-spec ch. 5).
   (cond
-    ((eql a b) (intern-autolisp-symbol "T"))
+    ((eql a b) (autolisp-true))
     ((and (typep a 'autolisp-string) (typep b 'autolisp-string)
           (string= (autolisp-string-value a) (autolisp-string-value b)))
-     (intern-autolisp-symbol "T"))
+     (autolisp-true))
     (t nil)))
 
 (defun builtin-equal (a b &optional fuzz)
@@ -1028,7 +1114,7 @@ when no debug session is active (the hook declines)."
                        fuzz)))
     (cond
       ((null tolerance)
-       (if (autolisp-equal-p a b) (intern-autolisp-symbol "T") nil))
+       (if (autolisp-equal-p a b) (autolisp-true) nil))
       ((not (numberp tolerance))
        (signal-builtin-argument-error
         :invalid-number-argument
@@ -1037,10 +1123,10 @@ when no debug session is active (the hook declines)."
         fuzz))
       ((and (numberp a) (numberp b))
        (if (<= (abs (- a b)) tolerance)
-           (intern-autolisp-symbol "T")
+           (autolisp-true)
            nil))
       (t
-       (if (autolisp-equal-p a b) (intern-autolisp-symbol "T") nil)))))
+       (if (autolisp-equal-p a b) (autolisp-true) nil)))))
 
 (defun builtin-vl-every (function-designator first-list &rest more-lists)
   (let* ((function (resolve-autolisp-function-designator function-designator))
@@ -1054,7 +1140,7 @@ when no debug session is active (the hook declines)."
                              (mapcar #'car lists)))
                (return nil))
              (setf lists (mapcar #'cdr lists))
-          finally (return (intern-autolisp-symbol "T")))))
+          finally (return (autolisp-true)))))
 
 (defun builtin-vl-some (function-designator first-list &rest more-lists)
   (let* ((function (resolve-autolisp-function-designator function-designator))
@@ -1298,7 +1384,7 @@ when no debug session is active (the hook declines)."
 
 (defun builtin-vl-consp (object)
   (if (consp object)
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun builtin-vl-list* (&rest arguments)
@@ -1913,7 +1999,7 @@ forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
 
 (defun builtin-numberp (object)
   (if (numberp object)
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun arithmetic-result (value)
@@ -2687,7 +2773,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
                  (require-string filename "VL-FILE-DIRECTORY-P")))
          (resolved (resolve-open-pathname value "VL-FILE-DIRECTORY-P")))
     (if (uiop:directory-exists-p resolved)
-        (intern-autolisp-symbol "T")
+        (autolisp-true)
         nil)))
 
 (defun builtin-vl-filename-base (filename)
@@ -2726,7 +2812,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
     (handler-case
         (progn
           (delete-file resolved)
-          (intern-autolisp-symbol "T"))
+          (autolisp-true))
       (file-error ()
         nil))))
 
@@ -2746,7 +2832,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
             nil
             (progn
               (rename-file old-path new-path)
-              (intern-autolisp-symbol "T")))
+              (autolisp-true)))
       (file-error ()
         nil))))
 
@@ -2937,7 +3023,7 @@ return ends in 0 -- and which is what pjb licensed for the shape fix.
             (progn
               (ensure-directories-exist resolved)
               (if (uiop:directory-exists-p resolved)
-                  (intern-autolisp-symbol "T")
+                  (autolisp-true)
                   nil))
           (file-error ()
             nil)))))
@@ -3326,7 +3412,7 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
     (if (every (lambda (argument)
                  (comparison-equal-p first-arg argument))
                (rest arguments))
-        (intern-autolisp-symbol "T")
+        (autolisp-true)
         nil)))
 
 (defun builtin-/= (&rest arguments)
@@ -3340,7 +3426,7 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
         do (loop for other in (rest tail)
                  when (comparison-equal-p (first tail) other)
                    do (return-from builtin-/= nil))
-        finally (return (intern-autolisp-symbol "T"))))
+        finally (return (autolisp-true))))
 
 (defun require-number (object operator-name)
   (unless (numberp object)
@@ -3366,14 +3452,14 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
   ;; issues/closed/strict-dialect-autolisp-divergences.issue §2.
   (cond
     ((null arguments)
-     (intern-autolisp-symbol "T"))
+     (autolisp-true))
     ((not (every #'numberp arguments))
      nil)
     ((or (null (rest arguments))
          (loop for (left right) on arguments
                while right
                always (funcall predicate left right)))
-     (intern-autolisp-symbol "T"))
+     (autolisp-true))
     (t nil)))
 
 (defun builtin-< (&rest arguments)
@@ -3406,12 +3492,12 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
 
 (defun builtin-zerop (object)
   (if (zerop (require-number object "ZEROP"))
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun builtin-minusp (object)
   (if (minusp (require-number object "MINUSP"))
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 ;;; --- Phase 7: function-coverage round-out ---------------------------
@@ -3513,7 +3599,7 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
   (cond
     ((and (typep object 'double-float)
           (handler-case (not (= object object)) (error () nil)))
-     (intern-autolisp-symbol "T"))
+     (autolisp-true))
     (t nil)))
 
 (defun builtin-vl-infp (object)
@@ -3523,7 +3609,7 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
     ((and (typep object 'double-float)
           (not (zerop object))
           (handler-case (= object (* 2 object)) (error () nil)))
-     (intern-autolisp-symbol "T"))
+     (autolisp-true))
     (t nil)))
 
 (defun builtin-asin (object)
@@ -4072,13 +4158,13 @@ Companion to %HOST-SYSVAR-STRING."
       ((zerop (length value)) nil)
       ((eql extnames 0)
        (if (every (lambda (c) (or (alphanumericp c) (find c "$_-"))) value)
-           (intern-autolisp-symbol "T")
+           (autolisp-true)
            nil))
       (t
        (let ((reserved (if permit-bar "<>/\\\":?*,=`;" "<>/\\\":?*|,=`;")))
          (if (find-if (lambda (c) (find c reserved)) value)
              nil
-             (intern-autolisp-symbol "T")))))))
+             (autolisp-true)))))))
 
 (defun builtin-xstrcase (string &optional downcase-p)
   ;; vl-extension flavour of strcase that handles non-ASCII text
@@ -4151,7 +4237,7 @@ Companion to %HOST-SYSVAR-STRING."
 (defun builtin-wcmatch (string pattern)
   (let ((s (autolisp-string-value (require-string string "WCMATCH")))
         (p (autolisp-string-value (require-string pattern "WCMATCH"))))
-    (if (wcmatch-pattern-p s p) (intern-autolisp-symbol "T") nil)))
+    (if (wcmatch-pattern-p s p) (autolisp-true) nil)))
 
 ;;; --- Geometry ------------------------------------------------------
 
@@ -4334,7 +4420,7 @@ on top."
 
 (defun builtin-vl-bt-on ()
   (setf *autolisp-backtrace-enabled-p* t)
-  (intern-autolisp-symbol "T"))
+  (autolisp-true))
 
 (defun builtin-vl-bt-off ()
   (setf *autolisp-backtrace-enabled-p* nil)
@@ -5054,7 +5140,7 @@ under another."
                (%host-sysvar-string host "SYSCODEPAGE")))
          (dwg (%canonical-codepage-string
                (%host-sysvar-string host "DWGCODEPAGE"))))
-    (if (string= sys dwg) nil (intern-autolisp-symbol "T"))))
+    (if (string= sys dwg) nil (autolisp-true))))
 
 ;;; --- aldo debugger configuration (CLAL-*-ALDO-CONFIGURATION) -------
 ;;;
@@ -5110,36 +5196,14 @@ default when the variable is unbound."
           (clautolisp.autolisp-runtime:set-variable sym default)
           default))))
 
-(defun %aldo-getenv (name)
-  (let ((v (uiop:getenv name))) (if (and v (plusp (length v))) v nil)))
-
-(defun aldo-xdg-config-home ()
-  (or (%aldo-getenv "XDG_CONFIG_HOME")
-      (namestring (merge-pathnames ".config/" (user-homedir-pathname)))))
-
-(defun aldo-xdg-config-dirs ()
-  (loop :for part :in (uiop:split-string (or (%aldo-getenv "XDG_CONFIG_DIRS") "/etc/xdg")
-                                         :separator ":")
-        :when (plusp (length part)) :collect part))
-
-(defun aldo-config-relative-path ()
-  (make-pathname :directory '(:relative "clautolisp") :name "aldo" :type "conf"))
-
-(defun aldo-config-save-path ()
-  (merge-pathnames (aldo-config-relative-path)
-                   (uiop:ensure-directory-pathname (aldo-xdg-config-home))))
-
-(defun aldo-config-load-path ()
-  "The save path if it exists, else the first clautolisp/aldo.conf along
-$XDG_CONFIG_DIRS, or NIL."
-  (let ((home (aldo-config-save-path)))
-    (if (probe-file home)
-        home
-        (loop :for dir :in (aldo-xdg-config-dirs)
-              :for path := (merge-pathnames (aldo-config-relative-path)
-                                            (uiop:ensure-directory-pathname dir))
-              :when (probe-file path) :return path))))
-
+;;; Where aldo.conf lives is CLAUTOLISP.CONFIGURATION's answer now.
+;;;
+;;; It used to be answered here TOO -- a full second implementation, XDG
+;;; logic included, agreeing with the debug UI's line for line. Not
+;;; carelessness: this system sits BELOW autolisp-debug-ui and cannot
+;;; depend on it, so the builtin that needed the path had no access to the
+;;; implementation that already existed. The rule moved down to a layer
+;;; both can see instead (aldo-config-path-implemented-twice.issue).
 (defun load-aldo-configuration-from (path)
   "Read the configuration from PATH (an AutoLISP sexp) and set
 *CLAL-ALDO-CONFIGURATION*; return the new value, or nil if PATH is missing."
@@ -5192,12 +5256,12 @@ set; both forms read back as the same configuration."
 (defun builtin-clal-load-aldo-configuration ()
   "Read *CLAL-ALDO-CONFIGURATION* from the available XDG aldo.conf and set the
 variable; return the new value, or nil if no configuration file was found."
-  (load-aldo-configuration-from (aldo-config-load-path)))
+  (load-aldo-configuration-from (clautolisp.configuration:config-load-path "aldo")))
 
 (defun builtin-clal-save-aldo-configuration ()
   "Write *CLAL-ALDO-CONFIGURATION* to $XDG_CONFIG_HOME/clautolisp/aldo.conf as
 an AutoLISP sexp (UTF-8); return the path string."
-  (save-aldo-configuration-to (aldo-config-save-path)))
+  (save-aldo-configuration-to (clautolisp.configuration:config-save-path "aldo")))
 
 (defun builtin-clal-break ()
   "Drop into the aldo debugger at the current poll point when a debug session is
@@ -5741,7 +5805,7 @@ on success, nil otherwise."
     (%clal-set-autolisp-var "*CLAL-CLIPBOARD*"
                             (clautolisp.autolisp-runtime:make-autolisp-string text))
     (if (clautolisp.sedit:clipboard-put-text text)
-        (clautolisp.autolisp-runtime:intern-autolisp-symbol "T")
+        (autolisp-true)
         nil)))
 
 (defun builtin-clal-clipboard-get-text ()
@@ -5773,19 +5837,46 @@ are empty."
 ;;; --- CLAL-OPTIMIZE / CLAL-OPTIMIZATION -------------------------------
 ;;;
 ;;; The optimization qualities (debugger-public-interface issue Part A) gate
-;;; how EVAL and CLAL-COMPILE build a function's forks: DEBUG > 0 weaves the
-;;; instrumented fork (the poll points that stepping and breakpoints ride on),
-;;; SPACE trades that fork away for size, and SPEED would compile to CL — Tier 2,
-;;; pinned at 0 until the compiler-to-CL lands. Levels are 0..3 (SPEED aside,
-;;; the interpreter treats any non-zero DEBUG as "instrument", 3=2=1).
+;;; how LOAD, EVAL and CLAL-COMPILE build a function's forks. Levels are 0..3.
+;;;
+;;; WHAT DECIDES IS THE LEVELS, AND FOR THE INSTRUMENTED FORK THEIR RELATIVE
+;;; ORDER -- not one boolean per quality:
+;;;
+;;;   non-instrumented fork   always present; compiled iff SPEED >= 1
+;;;   instrumented fork       present iff DEBUG >= SPACE; compiled iff SPEED >= 2
+;;;
+;;; So SPACE is not a switch of its own: it is what DEBUG is weighed against.
+;;; Asking for (DEBUG 3) (SPACE 3) says the two matter equally, and DEBUG >=
+;;; SPACE keeps the instrumented fork; (DEBUG 0) (SPACE 3) says size wins and
+;;; the fork goes. That is what "the relative quality values stress the
+;;; priority of qualities" means in the issue, applied rather than restated.
+;;;
+;;; The two forks compile at different SPEED levels deliberately. SPEED 1 is
+;;; `make my code fast'; SPEED 2 is `and while I am debugging it too', which
+;;; is a further step because it costs a second compilation of every function
+;;; and buys less (measured: the poll protocol, not interpretation, is what
+;;; makes debugging slow).
+;;;
+;;; SPEED 3 additionally compiles EAGERLY, at definition rather than once a
+;;; function is hot. Sooner is the small part; the point is that a whole file
+;;; compiled in one unit admits file-wide optimizations that compiling one
+;;; function at a time, on the call that happened to make it hot, never can.
 
 (defparameter *clal-optimization-qualities* '(:debug :space :speed)
   "The optimization qualities, in canonical print order.")
 
 (defparameter *clal-optimization*
-  (list (cons :debug 3) (cons :space 0) (cons :speed 0))
+  (list (cons :debug 3) (cons :space 0) (cons :speed 2))
   "Current optimization qualities as an alist QUALITY -> level (0..3). Read by
-EVAL / CLAL-COMPILE to choose the fork(s) to build; set by CLAL-OPTIMIZE.")
+LOAD / EVAL / CLAL-COMPILE to choose the fork(s) to build; set by CLAL-OPTIMIZE.
+
+The default reads as: debugging matters most, speed next, size not at all --
+which is clautolisp's posture, and is also the setting that reproduces the
+behaviour the engine had while SPEED was pinned. DEBUG 3 >= SPACE 0 keeps the
+instrumented fork; SPEED 2 compiles both forks once a function is hot. The
+issue's example default of (SPEED 0) was written while there was no compiler
+to ask for; taking it literally now would ship a compiler that is off unless
+asked for, which is a regression dressed as spec-compliance.")
 
 (defun clal-optimization-level (quality)
   "The current level (0..3) of QUALITY (:debug / :space / :speed)."
@@ -5806,8 +5897,7 @@ EVAL / CLAL-COMPILE to choose the fork(s) to build; set by CLAL-OPTIMIZE.")
 
 (defun builtin-clal-optimization ()
   "Return the current optimization qualities as ((DEBUG n) (SPACE n) (SPEED n))
-(debugger-public-interface issue Part A). SPEED is pinned at 0 until the
-compiler-to-CL (Tier 2)."
+(debugger-public-interface issue Part A)."
   (%clal-optimization->autolisp))
 
 (defun %clal-parse-optimize-element (element)
@@ -5834,20 +5924,155 @@ or a list (SYMBOL LEVEL). Signals on an unknown quality or an out-of-range level
          (autolisp-symbol-name symbol)))
       (setf (cdr (assoc quality *clal-optimization*)) level))))
 
+(defun apply-clal-optimization ()
+  "Push the current qualities into the runtime's gates.
+
+The single place the algebra above is turned into mechanism, so that
+CLAL-OPTIMIZE and start-up cannot disagree about what a given set of levels
+means. INSTALL-CORE-BUILTINS calls it too: without that, the runtime's
+defaults and *CLAL-OPTIMIZATION*'s would be two independent claims about the
+same thing, and reading (clal-optimization) would describe a configuration the
+engine was not actually in."
+  (setf clautolisp.autolisp-runtime:*debug-instrumentation-enabled*
+        (>= (clal-optimization-level :debug)
+            (clal-optimization-level :space)))
+  (setf clautolisp.autolisp-runtime:*autolisp-speed-level*
+        (clal-optimization-level :speed))
+  (%clal-optimization->autolisp))
+
+(defun set-clal-optimization-levels (pairs)
+  "Set the optimization qualities from PAIRS, a list of (QUALITY . LEVEL)
+conses with QUALITY a keyword in *CLAL-OPTIMIZATION-QUALITIES* and LEVEL an
+integer 0..3, then push them into the runtime's gates. Qualities absent from
+PAIRS keep their current level; PAIRS is applied left to right, so a repeated
+quality takes its last value. Returns the new qualities as the AutoLISP list.
+
+This is the entry point the command line uses (--optimize / -O). It exists so
+that the CLI does not have to build an AutoLISP list only for CLAL-OPTIMIZE to
+take it apart again, and -- more to the point -- so that the CLI and
+CLAL-OPTIMIZE end up in APPLY-CLAL-OPTIMIZATION together: the algebra turning
+levels into mechanism stays in exactly one place, and a level set from the
+command line cannot come to mean something different from the same level set
+from AutoLISP."
+  ;; Validate EVERY pair before applying ANY of them. A bad pair half-way
+  ;; through would otherwise leave the qualities partly changed and partly
+  ;; not -- a configuration nobody asked for, and one the caller cannot see
+  ;; because it only got the error.
+  (dolist (pair pairs)
+    (let ((quality (car pair))
+          (level   (cdr pair)))
+      (unless (member quality *clal-optimization-qualities*)
+        (error "Unknown optimization quality ~S (expected one of ~S)."
+               quality *clal-optimization-qualities*))
+      (unless (typep level '(integer 0 3))
+        (error "Optimization level for ~S must be an integer 0..3, got ~S."
+               quality level))))
+  (dolist (pair pairs)
+    (setf (cdr (assoc (car pair) *clal-optimization*)) (cdr pair)))
+  (apply-clal-optimization))
+
 (defun builtin-clal-optimize (qualities)
   "Set the optimization qualities (debugger-public-interface issue Part A).
 QUALITIES is an AutoLISP list; each element is a bare quality symbol (= level 3)
-or (SYMBOL LEVEL). Unmentioned qualities keep their current level. SPEED is
-pinned at 0 (Tier 2, no compiler-to-CL yet). Returns the new qualities."
+or (SYMBOL LEVEL). Unmentioned qualities keep their current level. Returns the
+new qualities.
+
+SPEED is no longer pinned: the compiler-to-CL it was reserved for exists, and
+this is the surface the specification always intended for it."
   (require-proper-list qualities "CLAL-OPTIMIZE")
   (dolist (element qualities)
     (%clal-parse-optimize-element element))
-  (setf (cdr (assoc :speed *clal-optimization*)) 0) ; pinned until Tier 2
-  ;; Reflect DEBUG into the runtime instrumentation gate: DEBUG>0 weaves
-  ;; instrumented forks under a session, DEBUG 0 (SPACE mode) runs plain.
-  (setf clautolisp.autolisp-runtime:*debug-instrumentation-enabled*
-        (plusp (clal-optimization-level :debug)))
+  (apply-clal-optimization)
   (%clal-optimization->autolisp))
+
+(defun %clal-resolve-source (source-file who)
+  "Resolve SOURCE-FILE the way LOAD resolves its argument, or NIL."
+  (resolve-load-pathname
+   (autolisp-string-value (require-string source-file who))))
+
+(defun %clal-compile-to-artefact (sources output who)
+  "Compile SOURCES into the artefact OUTPUT. Returns T, or NIL on any
+failure, with ERRNO 73 for a source that could not be located -- the same
+report LOAD and VLISP-COMPILE make for a file they cannot find."
+  (let ((resolved (loop for source in sources
+                        for path = (%clal-resolve-source source who)
+                        do (unless path
+                             (set-autolisp-errno 73)
+                             (return nil))
+                        collect path)))
+    (cond
+      ((null resolved) nil)
+      ((null clautolisp.autolisp-runtime:*compile-files-to-artefact-hook*)
+       ;; An image built without the compiler. Say so, rather than
+       ;; returning NIL: a NIL here is documented to mean `a source file
+       ;; could not be found', and reusing it for `this build cannot
+       ;; compile at all' would send the caller looking for a typo in a
+       ;; path that was perfectly correct.
+       (signal-builtin-argument-error
+        :compiler-not-available who
+        "~A needs the clautolisp compiler, which this build does not ~
+include." who))
+      ((null (funcall clautolisp.autolisp-runtime:*compile-files-to-artefact-hook*
+                      resolved output))
+       nil)
+      (t (autolisp-true)))))
+
+(defun builtin-clal-compile-file (source-file &optional output-file)
+  "Compile SOURCE-FILE into a .lap artefact (pjb, 2026-08-27/28).
+
+OUTPUT-FILE defaults to SOURCE-FILE with the type .lap, beside the
+source. The artefact is a native host FASL, renamed: it is loadable into
+a running image alongside other applications, which is what an AutoLISP
+`application\' has to be, and it is therefore specific to the host Lisp
+and to this clautolisp -- see clal-compiled-artefact.issue.
+
+This COMPILES; it does not load. That is the same division CL makes
+between COMPILE-FILE and LOAD, and the same one VLISP-COMPILE makes.
+
+Unlike the implicit compilation that happens during LOAD, this does NOT
+consult SPEED. An explicit request to compile a file to an artefact is
+not a hint that the engine may decline -- the qualities govern what the
+engine does on its OWN initiative, not what it does when told."
+  (let* ((resolved (%clal-resolve-source source-file "CLAL-COMPILE-FILE"))
+         (output (cond
+                   ((autolisp-false-p output-file)
+                    (and resolved
+                         (clautolisp.autolisp-runtime:default-lap-pathname
+                          resolved)))
+                   (t (pathname
+                       (autolisp-string-value
+                        (require-string output-file "CLAL-COMPILE-FILE")))))))
+    (cond
+      ((null resolved) (set-autolisp-errno 73) nil)
+      (t (%clal-compile-to-artefact (list source-file) output
+                                    "CLAL-COMPILE-FILE")))))
+
+(defun builtin-clal-compile-system (output-file source-files)
+  "Compile SOURCE-FILES into ONE artefact named OUTPUT-FILE.
+
+The difference from calling CLAL-COMPILE-FILE on each source is that all
+of them go through a SINGLE host compilation: literals can be coalesced
+across the whole system, and a function defined in a later file and
+called from an earlier one resolves without a warning at every forward
+reference. A system that did not share one compilation is a loop the
+caller could have written, so this one always shares it.
+
+OUTPUT-FILE is required -- there is no sensible default name for an
+artefact built from several sources."
+  (require-proper-list source-files "CLAL-COMPILE-SYSTEM")
+  (when (autolisp-false-p output-file)
+    (signal-builtin-argument-error
+     :bad-argument "CLAL-COMPILE-SYSTEM"
+     "CLAL-COMPILE-SYSTEM needs an output file name."))
+  (when (null source-files)
+    (signal-builtin-argument-error
+     :bad-argument "CLAL-COMPILE-SYSTEM"
+     "CLAL-COMPILE-SYSTEM needs at least one source file."))
+  (%clal-compile-to-artefact
+   source-files
+   (pathname (autolisp-string-value
+              (require-string output-file "CLAL-COMPILE-SYSTEM")))
+   "CLAL-COMPILE-SYSTEM"))
 
 (defun builtin-clal-compile (name lambda-expression)
   "Compile LAMBDA-EXPRESSION — a (LAMBDA lambda-list . body) form — into an
@@ -6078,7 +6303,7 @@ Returns T (matches the AutoLISP convention that mutators / linters
 return T on completion); the diagnostics are the user-visible
 output."
   (%lint-form-tree form)
-  (intern-autolisp-symbol "T"))
+  (autolisp-true))
 
 (defun builtin-clal-suppress-enc-diagnostic (&rest codes)
   "Add each CODE in CODES to the active per-code suppression list.
@@ -6391,7 +6616,7 @@ issues/open/clautolisp-module-app-extensions.issue."
        (autolisp-runtime-error (condition)
          (case (autolisp-runtime-error-code condition)
            ((:released-vla-object :unknown-vla-object)
-            (intern-autolisp-symbol "T"))
+            (autolisp-true))
            (t (error condition))))))
     (t nil)))
 
@@ -7024,7 +7249,7 @@ host does the case-insensitive match."
          ((typep name 'autolisp-string) (autolisp-string-value name))
          ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
          (t name)))
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun builtin-vlax-method-applicable-p (vla name)
@@ -7034,7 +7259,7 @@ host does the case-insensitive match."
          ((typep name 'autolisp-string) (autolisp-string-value name))
          ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
          (t name)))
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 ;;; --- SAFEARRAY -----------------------------------------------------
@@ -7643,7 +7868,7 @@ the data list."
 (defun builtin-vlr-added-p (reactor)
   (ensure-reactor reactor "VLR-ADDED-P")
   (if (reactor-active-p reactor)
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun builtin-vlr-type (reactor)
@@ -7729,7 +7954,7 @@ through cador-snapshot. Callbacks must be autolisp-symbols
 (defun builtin-vlr-pers-p (reactor)
   (ensure-reactor reactor "VLR-PERS-P")
   (if (reactor-persistent-p reactor)
-      (intern-autolisp-symbol "T")
+      (autolisp-true)
       nil))
 
 (defun builtin-vlr-pers-dictname ()
@@ -7767,7 +7992,7 @@ through cador-snapshot. Callbacks must be autolisp-symbols
                              (require-string name "NEW_DIALOG")))))
     (when (and action (not (null action)))
       (dcl-runtime-action-tile dialog-id "" action))
-    (intern-autolisp-symbol "T")))
+    (autolisp-true)))
 
 (defun builtin-start-dialog ()
   ;; (start_dialog) — no arguments. Drives the renderer's run-fn
@@ -7794,7 +8019,7 @@ through cador-snapshot. Callbacks must be autolisp-symbols
    (require-current-dialog-id "ACTION_TILE")
    (autolisp-string-value (require-string key "ACTION_TILE"))
    callback)
-  (intern-autolisp-symbol "T"))
+  (autolisp-true))
 
 (defun builtin-set-tile (key value)
   ;; (set_tile KEY VALUE) -> VALUE
@@ -7843,7 +8068,7 @@ through cador-snapshot. Callbacks must be autolisp-symbols
   ;; (start_image KEY) — open an image-paint batch on KEY.
   (let ((k (autolisp-string-value (require-string key "START_IMAGE"))))
     (dcl-runtime-start-image k)
-    (intern-autolisp-symbol "T")))
+    (autolisp-true)))
 
 (defun builtin-end-image ()
   (dcl-runtime-end-image)
@@ -8080,7 +8305,7 @@ live process object, which would otherwise leak a non-nil PID
             ((not (uiop:directory-exists-p resolved)) nil)
             (t
              (uiop:delete-empty-directory resolved)
-             (intern-autolisp-symbol "T"))))
+             (autolisp-true))))
       (error () nil))))
 
 (defun builtin-fnsplitl (filename)
@@ -8722,7 +8947,10 @@ deciding membership."
 ;;; ---- Type predicates (5 native + 4 stub)
 
 (defun autolisp-true ()
-  (intern-autolisp-symbol "T"))
+  "AutoLISP truth: the interned T symbol. The runtime caches it, so this
+is a variable read rather than a hash of the name `T' in the symbol
+table -- which it was, on every predicate and every relational operator."
+  (autolisp-true-symbol))
 
 (defun builtin-vle-integerp (x)
   (if (typep x '(signed-byte 32)) (autolisp-true) nil))
@@ -9499,9 +9727,41 @@ name strings."
 ;;; STUB: VLISP-COMPILE — no separate compile step in clautolisp;
 ;;; future upgrade could emit FASL via compile-file. See
 ;;; deferred-stubbed-functions.issue § VLISP-* IDE stubs.
+(defparameter +vlisp-compile-modes+ '("ST" "LSM" "LSA")
+  "The build modes VLISP-COMPILE accepts: standard, and the two
+optimize-and-link variants. They are the same setting the VLISP IDE
+stores in its project files, so a call and a .prj can be read against
+each other (autolisp-spec, VLISP-COMPILE, /Mode names outside the
+function/).")
+
 (defun builtin-vlisp-compile (mode source-file &optional out-file)
-  (declare (ignore mode source-file out-file))
-  nil)
+  "Compile SOURCE-FILE into a compiled application, the vendor way.
+
+The clautolisp analogue of AutoCAD .fas and BricsCAD .des is .lap, so
+this is CLAL-COMPILE-FILE under the specified vendor API: it returns T
+when the output file was created and nil otherwise, which is the
+contract both vendors document.
+
+MODE is accepted and ignored, as it is in BricsCAD V26. That is not
+laziness here but a fact about what the modes mean: \'ST versus
+\'LSM / \'LSA is single-file versus optimize-and-link-ACROSS-files, and
+a call that names ONE source has nothing to link across. clautolisp
+already compiles each file as one unit; the cross-file form is
+CLAL-COMPILE-SYSTEM, which is where a linking mode would have anything
+to do.
+
+An unknown mode signals rather than being ignored: ignoring \'st is
+harmless because all three do the same thing here, but ignoring a
+misspelling would hide a typo in a build script forever."
+  (let ((mode-name (and (typep mode 'autolisp-symbol)
+                        (string-upcase (autolisp-symbol-name mode)))))
+    (unless (and mode-name
+                 (member mode-name +vlisp-compile-modes+ :test #'string=))
+      (signal-builtin-argument-error
+       :bad-argument "VLISP-COMPILE"
+       "VLISP-COMPILE mode must be one of ~{~A~^, ~}, got ~S."
+       +vlisp-compile-modes+ mode))
+    (builtin-clal-compile-file source-file out-file)))
 
 ;;; STUB: VLISP-EXPORT-SYMBOL — records names in
 ;;; *vlisp-exported-symbols* (observable from CL) but doesn't
@@ -10158,6 +10418,8 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-OPTIMIZATION"     #'builtin-clal-optimization)
    (make-core-builtin-subr "CLAL-OPTIMIZE"         #'builtin-clal-optimize)
    (make-core-builtin-subr "CLAL-COMPILE"          #'builtin-clal-compile)
+   (make-core-builtin-subr "CLAL-COMPILE-FILE"     #'builtin-clal-compile-file)
+   (make-core-builtin-subr "CLAL-COMPILE-SYSTEM"   #'builtin-clal-compile-system)
    (make-core-builtin-subr "CLAL-DEFINE-DEBUGGER-COMMAND" #'builtin-clal-define-debugger-command)
    (make-core-builtin-subr "CLAL-DEFINE-COMMAND" #'builtin-clal-define-command)
    (make-core-builtin-subr "CLAL-BINDING"          #'builtin-clal-binding)
@@ -10833,7 +11095,7 @@ Variable Entries T, PI, PAUSE):
 
 Each is left untouched when already bound, matching the extension-
 variable convention below."
-  (let ((sym (intern-autolisp-symbol "T")))
+  (let ((sym (autolisp-true)))
     (unless (autolisp-symbol-value-bound-p sym)
       (%clal-set-autolisp-var "T" sym)))
   (let ((sym (intern-autolisp-symbol "PI")))
@@ -10849,6 +11111,9 @@ variable convention below."
       (set-autolisp-symbol-function symbol builtin)))
   (install-predefined-variables)
   (install-clal-extension-variables)
+  ;; Make the runtime's gates agree with *CLAL-OPTIMIZATION* from the
+  ;; start, rather than only from the first CLAL-OPTIMIZE call.
+  (apply-clal-optimization)
   ;; Fresh builtin world: COM is not loaded yet, and the runtime's
   ;; unbound-function hook resolves the dynamic vla-* accessor façade.
   (setf *com-loaded-p* nil)

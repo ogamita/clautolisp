@@ -17,7 +17,12 @@ param(
   # or it stops with NO-DWG; empty.dwg is the clean canvas the create/delete
   # probes want. Overridden by the PROBE_DWG CI variable. A content drawing
   # (e.g. 2018.dwg) can be passed for read-oriented probes later.
-  [string]$Dwg = "c:/gitlab-runner/dwg/empty.dwg",
+  # EMPTY BY DEFAULT since empty-ressource.issue: alfe carries an empty
+  # drawing in its image and writes a FRESH one into each run's workdir,
+  # so nothing needs to name a shared file -- and naming one is what
+  # produced the "already in use, open read-only?" modals. Pass -Dwg
+  # explicitly only to probe a SPECIFIC drawing.
+  [string]$Dwg = "",
   # When 1 (default), pass --debug --verbose --keep-workdir to alfe and
   # copy each kept protocol workdir into the artifacts for inspection.
   # NB: must NOT be named -Debug -- that collides with PowerShell's reserved

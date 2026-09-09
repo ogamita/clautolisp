@@ -1,0 +1,178 @@
+Title: a LAMBDA evaluated in a loop is compiled once PER ITERATION at a low threshold
+Status: CLOSED 2.0.25
+Found: 2.0.23, while open-coding LAMBDA and FUNCTION (compiler.issue slice 21)
+
+  Renamed from `...never compiles': measuring it showed the opposite
+  failure, and a worse one. Both regimes are below.
+
+SYMPTOM
+
+  (repeat 60000 (setq acc (+ acc (apply (lambda (x) (car x)) (list p)))))
+
+measured against the same loop calling CAR directly (the control):
+
+  workload                 interpreted   compiled
+  control (car directly)         20 ms       4 ms
+  hof     ((function car))       32 ms      12 ms
+  lam     (a lambda per pass)    60 ms   26416 ms      <-- 440x SLOWER
+
+Compiling this loop makes it four hundred times slower than
+interpreting it. Nothing warns; it just stops.
+
+CAUSE
+
+Compilation is decided per FUNCTION OBJECT, by AUTOLISP-USUBR's
+CALL-COUNT: MAYBE-COMPILE-USUBR weaves the fork on the call that
+crosses *AUTOLISP-COMPILATION-THRESHOLD*. Sound for a DEFUN, whose
+object outlives the decision.
+
+EVAL-LAMBDA-FORM builds a NEW usubr every time the LAMBDA form is
+EVALUATED, and a LAMBDA inside a loop body is evaluated once per
+iteration. So the decision is retaken from scratch 60000 times, on
+60000 objects that are all the same code:
+
+  threshold 1   -- each fresh closure crosses on its first call, so the
+                   HOST COMPILER RUNS ONCE PER ITERATION. This is the
+                   440x row above.
+  threshold 16  -- the shipped default. Each closure is called once,
+                   reaches 1, and is discarded, so the body is NEVER
+                   compiled however hot the loop is. No cliff, but no
+                   compilation either.
+
+Neither is a wrong answer to the question CALL-COUNT asks. The question
+is wrong: it measures the life of an OBJECT where what matters is the
+heat of a SITE.
+
+WHY THIS IS NOT THEORETICAL
+
+Threshold 1 is what the TEST SUITE sets -- deliberately, so every
+function a test exercises runs compiled (see the docstring on
+*AUTOLISP-COMPILATION-THRESHOLD*). Any test that puts a lambda in a
+loop therefore takes the 440x path. That is a plausible reading of a
+future "the compiler tests got slow" report.
+
+At SPEED 3 the eager path is NOT involved: COMPILE-USUBR-IF-EAGER is
+called only from DEFUN, so a lambda never compiles at definition. This
+is entirely the threshold path.
+
+WHY SLICE 21 DID NOT FIX IT
+
+Slice 21 open-codes the LAMBDA FORM -- the closure is built by a direct
+call to EVAL-LAMBDA-FORM instead of through an interpreter dispatch --
+and that is all. The A/B settles that this is OLDER than the slice: with
+the slice's branches disabled the same row measures 24448 ms, against
+26416 ms with them on -- the same pathology either way, the difference
+being run-to-run noise on a 25-second measurement. Slice 21 did not
+cause it and does not cure it; it is the first thing to have MEASURED
+it. Fixing it is a lifetime question, not a translation one, and did
+not belong in a slice about translation.
+
+POSSIBLE FIXES, none chosen
+
+  1. Key the count on the lambda's SOURCE FORM rather than on the
+     usubr, so every closure from one site shares one identity and one
+     decision. The count then means "how often this site ran", which is
+     the question the threshold wants answered. Cheapest; fixes both
+     regimes at once.
+
+  2. Compile the body once at transpile time and attach the ready-made
+     COMPILED-BODY to each new usubr. No threshold involved, but it
+     pays compilation for a lambda that may run once -- exactly what
+     the threshold exists to prevent.
+
+  3. Cache the closure on the enclosing usubr and reuse it. WRONG:
+     AutoLISP closures capture the context, so two iterations can
+     legitimately differ. That is a semantic change wearing an
+     optimization's clothes.
+
+(1) looks right and is small. Its one risk is identity -- two textually
+identical lambdas at different sites must not share a count in a way
+that makes one site's heat compile the other's. Harmless for
+correctness, since the bodies are equal, but it would make the
+measurement confusing, so key on the form OBJECT rather than on its
+text.
+
+GUARD WORTH HAVING EITHER WAY
+
+MAYBE-COMPILE-USUBR has no protection against compiling equivalent code
+repeatedly. Whatever fix is chosen, a compiler that can be invited to
+run 60000 times by an ordinary loop should say so -- a counter, or a
+warning past some absurd number of compilations in one run -- rather
+than absorbing it silently as 26 seconds.
+
+MEASUREMENT
+
+`lam' in the slice-21 benchmark (.bench in the slice's commit message)
+is this shape. Any fix should move that row and leave `control' alone.
+
+RESOLVED 2.0.25 -- fix (1), the site
+------------------------------------
+
+Each compiled LAMBDA FORM now gets one USUBR-SITE, and every closure
+that form builds shares it. The compilation decision moves from the
+OBJECT to the SITE: MAYBE-COMPILE-USUBR counts on the site when there
+is one, and publishes the compiled body back to it, so the next closure
+from that form starts compiled instead of recompiling the same body.
+
+MEASURED, control flat at 4 ms throughout:
+
+  threshold  lam speed 3 before      after
+      1         26416 ms          24 ms     (the host compiler ran
+                                             once per iteration)
+     16         never compiled     28 ms     (56 ms interpreted; the
+                                             shipped default)
+
+Both regimes are fixed by the same change, which is why (1) was the
+right one of the three: it corrects the QUESTION -- "is this code hot?"
+rather than "is this object hot?" -- instead of working around the
+answer.
+
+WHERE THE IDENTITY COMES FROM. Not a hash table keyed on the source
+form: that needs weak keys to avoid holding dead code alive, and weak
+hash tables differ across SBCL, CCL and CLISP, which is portability
+surface bought for nothing. The transpiler instead emits
+(LOAD-TIME-VALUE (MAKE-USUBR-SITE) T), so the site is made once per
+lambda form when the compiled code is loaded, however it got there --
+including through a .lap, which is transpiled code printed as source
+and compiled again, and where a struct baked in as a literal would have
+had to print and read back.
+
+WHAT IS SHARED, AND WHAT DELIBERATELY IS NOT.
+
+  - the plain COMPILED BODY and the call count: shared, because the
+    BODY is the one thing the closures of a site have in common.
+  - the ENVIRONMENT: never. Two closures from one form may capture
+    different environments; sharing those was fix (3), rejected as a
+    semantic change wearing an optimization's clothes. There is a test
+    that would fail if the environment ever started travelling with the
+    body.
+  - the INSTRUMENTED compiled body: not shared. It carries form-ids
+    tied to one function's debug metadata, so sharing it would make the
+    debugger step against the wrong record.
+  - :FAILED: not published to the site. It is stored on the closure, so
+    a site whose body will not compile is asked again on the next
+    closure. Rare enough to leave alone, and cheaper than teaching the
+    site a third state.
+
+INTERPRETED CODE IS UNCHANGED. A closure the interpreter builds has a
+NIL site and keeps exactly the behaviour it had, decision on the
+closure. That is a real remaining gap rather than an oversight: a
+lambda in an INTERPRETED loop still mints undecidable closures. It
+costs nothing today because the enclosing loop is interpreted anyway,
+and closing it would need the source-form identity -- and the weak
+table -- that the compiled path was able to avoid. Recorded here so
+the next person does not conclude the site covers both paths.
+
+THE GUARD, built in 2.0.28 (slice 26). COUNT-USUBR-COMPILATION counts
+both compilation paths and warns ONCE past
+*USUBR-COMPILATION-WARNING-THRESHOLD*, saying that the same body is
+probably being compiled repeatedly and that this is a bug in what
+DECIDES to compile. Nothing is refused. Once, not every time: a
+diagnostic that fires 59000 times is the same silence with more output.
+
+The threshold is absurd rather than tight, and MEASURED rather than
+asserted: the whole compiler test suite compiles 56 bodies against a
+threshold of 1000 -- an eighteenfold margin, where the shape this
+exists to catch overshot it by sixty.
+
+This ticket is now closed in full.

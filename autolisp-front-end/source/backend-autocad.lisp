@@ -206,18 +206,33 @@ when the user did not pass --dwg / $AUTOLISP_DWG."
                        (merge-pathnames "UserDataCache/Template/acadiso.dwt" root)
                        (merge-pathnames "UserDataCache/Template/acad.dwt" root)))))
 
-(defun discover-autocad-template (backend &key requested)
+(defun discover-autocad-template (backend &key requested workdir)
   "Resolve the drawing/template to feed accoreconsole batch mode.
 Order of precedence:
   1. REQUESTED (from --dwg) when it exists;
   2. $AUTOLISP_DWG when it exists;
-  3. a shipped acadiso.dwt/acad.dwt next to the discovered AutoCAD
+  3. a FRESH empty.dwg written into WORKDIR from the copy carried in the
+     image (alfe.drawing);
+  4. a shipped acadiso.dwt/acad.dwt next to the discovered AutoCAD
      install;
-  4. NIL, in which case the caller raises :no-dwg."
+  5. NIL, in which case the caller raises :no-dwg.
+
+Step 3 is new (issues/open/empty-ressource.issue, pjb 2026-08-30). Every
+run gets its OWN drawing because sharing one produces modal dialogs --
+\"in use by another instance\", \"open read-only?\" -- when a previous CAD
+still holds the lock or has modified the file, and a modal dialog in a
+batch launch is a hung run rather than a slow one. accoreconsole OPENS
+the drawing it is given (/i), so it is exactly the file that gets locked.
+
+It also all but retires the :NO-DWG error below: that error meant \"this
+machine has no template I can find\", and now alfe brings one."
   (or (and requested
            (probe-file requested)
            (namestring (truename requested)))
       (env-binary "AUTOLISP_DWG")
+      (and workdir
+           (let ((fresh (alfe.drawing:fresh-empty-dwg workdir)))
+             (and fresh (namestring fresh))))
       (first-existing (candidate-autocad-template-paths backend))))
 
 ;;; --- DETECT --------------------------------------------------------
@@ -446,7 +461,9 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
   (let* ((variant (choose-effective-mode backend mode))
          (workdir (alfe.protocol.file:protocol-session-workdir protocol-session))
          (resolved-dwg (and (eq variant :batch)
-                            (discover-autocad-template backend :requested dwg))))
+                            (discover-autocad-template backend
+                                                       :requested dwg
+                                                       :workdir workdir))))
     (case variant
       (:automation
        (list "cscript" "//nologo"

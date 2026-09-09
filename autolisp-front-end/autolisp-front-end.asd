@@ -89,13 +89,19 @@
                "babel")                 ; codepage->UTF-8 transcode of -Esource -l sources
   :serial t
   :components
-  ((:file "source/backend-cad-common")
+  ((:file "source/empty-drawing")
+   (:file "source/backend-cad-common")
    ;; The CAD-side runtime + bootstrap helpers are data files consumed
    ;; at run time (the backend stages them into the workdir). Declaring
    ;; them static-file keeps `make install` / `asdf:require-system`
    ;; aware of them for packaging and survives executable image dumps.
    (:static-file "source/runtime/autolisp-bootstrap.lsp")
-   (:static-file "source/runtime/autolisp-remote-io.lsp")))
+   (:static-file "source/runtime/autolisp-remote-io.lsp")
+   ;; empty.dwg is read AT COMPILE TIME into the image by
+   ;; source/empty-drawing.lisp, so unlike the two above it is not needed
+   ;; at run time -- but it IS needed to build, and declaring it keeps it
+   ;; in the source distribution and makes the dependency visible.
+   (:static-file "source/empty.dwg")))
 
 (asdf:defsystem "autolisp-front-end/backend-bricscad"
   :description "alfe backend driving BricsCAD via the file-IPC protocol."
@@ -166,6 +172,7 @@
    (:file "tests/backend-clautolisp-tests")
    (:file "tests/file-protocol-tests")
    (:file "tests/backend-cad-tests")
+   (:file "tests/empty-drawing-tests")
    (:file "tests/conformance-tests")
    (:file "tests/run"))
   :perform (asdf:test-op (op system)

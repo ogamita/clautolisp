@@ -1138,6 +1138,32 @@ Iterates over each element of `list`, binding it to `name`.
 *** Return Values
 Returns the final body value or `nil` if no body exists.
 
+*** Vendor Divergence
+A `foreach` with *no body at all* is the one measured disagreement
+between the two hosts:
+
+| form                       | AutoCAD 2026 | BricsCAD V25/V26 |
+|----------------------------+--------------+------------------|
+| ~(foreach e '(1 2 3))~     | ~nil~        | ~(1 2 3)~        |
+
+AutoCAD follows the rule stated above: with no body there is no final
+body value, so the result is `nil`. BricsCAD returns the *list*, on
+macOS and on Windows alike, which is the shape an implementation
+produces when the loop's accumulator is seeded with the sequence and
+the body never overwrites it. No vendor page documents either answer.
+
+Every other behaviour in this entry — the binding rule, the value of a
+loop with a body, the value over an empty list — was measured identical
+on both hosts.
+
+*** clautolisp
+Returns `nil` for a body-less `foreach`, following AutoCAD and the rule
+stated under /Return Values/. Adopting one vendor's undocumented answer
+as the default of a dialect-neutral implementation would be backwards;
+whether ~--dialect bricscad~ should return the list instead is an open
+question, recorded in
+~issues/open/foreach-empty-body-return-diverges.issue~.
+
 *** Side Effects
 Side effects are those of:
 
@@ -1149,9 +1175,14 @@ Side effects are those of:
 Erroneous if the list argument is not acceptable to the active host semantics.
 
 *** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2026: documented (per Autodesk reference page), and *verified
+  by probe* 2026-08-31 (Windows).
+- BricsCAD V25/V26: *verified by probe* 2026-08-31 (macOS and Windows),
+  no longer presumed. Compatible except for the no-body return value
+  recorded under Vendor Divergence.
+- Status: both hosts measured. Evidence:
+  ~probe-results/{autocad/ms-windows,bricscad/ms-windows,bricscad/macos}/2026-08-31*~,
+  produced by ~probes/sources/probe-foreach-scope.lsp~.
 
 *** Source Notes
 - [foreach (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-BE6A23C4-4E18-45A6-854E-2DE9574A6925.htm)
@@ -1587,10 +1618,36 @@ Iterates over an ActiveX collection object.
 *** Notes
 This construct belongs to the Visual LISP / ActiveX layer, not the core portable AutoLISP layer.
 
+*** The loop variable — not specified
+Neither Autodesk's page nor this entry says what happens to ~var~: no
+statement that it is *bound*, none that it is *assigned*, and none about
+whether it survives the loop. The corresponding wording for ~foreach~
+does say "bind it to name", and both AutoCAD and BricsCAD were measured
+to bind (see that entry) — but that is ~foreach~, and it does not carry
+over by itself.
+
+No vendor evidence exists for ~vlax-for~ specifically. Obtaining it
+needs a live ActiveX collection, which a headless probe cannot conjure;
+it belongs with the manual vendor-probe jobs.
+
+*** clautolisp
+Binds, using the same rule as ~foreach~ — one function serves both, so
+the two loops cannot drift apart. This is asserted *by analogy*, not
+measured: two loops in one implementation disagreeing about their own
+loop variable is far likelier to be an oversight than an undocumented
+vendor behaviour.
+
+Until 2.0.26 clautolisp *assigned* here when the name was already bound
+further down the dynamic chain, so a ~vlax-for~ over a name a caller had
+bound wrote *that* binding and left the last collection member in it.
+That was the code ~foreach~ carried until AutoCAD was probed, and
+~vlax-for~ had simply been left behind when it was corrected.
+
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+  The loop-variable rule is unverified on *both* hosts — see above.
 
 *** Source Notes
 - [About Special Forms (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP/files/GUID-F992EAA3-AFFC-425D-B7C9-6A9CB0EA2768.htm)
@@ -12810,14 +12867,28 @@ No arguments.
 *** Description
 Return the current optimization qualities as an AutoLISP list
 ~((DEBUG n) (SPACE n) (SPEED n))~ (debugger public interface, Part
-A). These qualities gate how EVAL and ~clal-compile~ build a
-function's forks: ~DEBUG~ > 0 weaves the instrumented fork that
-stepping and breakpoints ride on; ~SPACE~ trades it away for size.
-~SPEED~ is pinned at ~0~ until the compiler-to-CL (Tier 2) lands.
+A). These qualities gate how ~load~, ~eval~ and ~clal-compile~ build
+a function's two forks. What decides is the levels, and for the
+instrumented fork their level *relative to one another*:
+
+| fork              | present when   | compiled when |
+|-------------------+----------------+---------------|
+| non-instrumented  | always         | ~SPEED~ >= 1  |
+| instrumented      | ~DEBUG~ >= ~SPACE~ | ~SPEED~ >= 2  |
+
+~SPACE~ is therefore not a switch of its own: it is what ~DEBUG~ is
+weighed against. Asking for ~(DEBUG 3) (SPACE 3)~ says the two
+matter equally and keeps the instrumented fork; ~(DEBUG 0) (SPACE
+3)~ says size wins and drops it.
+
+~SPEED~ 3 further means *eager* compilation — at definition rather
+than once a function has proved hot — which is what allows a whole
+file to be compiled as one unit and optimized across function
+boundaries.
 
 *** Return Values
 A three-element list ~((DEBUG n) (SPACE n) (SPEED n))~, each ~n~ an
-integer 0..3.
+integer 0..3. The default is ~((DEBUG 3) (SPACE 0) (SPEED 2))~.
 
 *** Side Effects
 None.
@@ -12831,7 +12902,7 @@ None.
 *** Examples
 #+begin_example
 (clal-optimization)
-=> ((DEBUG 3) (SPACE 0) (SPEED 0))
+=> ((DEBUG 3) (SPACE 0) (SPEED 2))
 #+end_example
 
 *** Availability
@@ -12864,17 +12935,22 @@ clautolisp Extension Function
 
 *** Description
 Set the optimization qualities (debugger public interface, Part
-A). Unmentioned qualities keep their current level. ~SPEED~ is
-always forced to ~0~ (Tier 2, no compiler-to-CL yet). Setting
-~DEBUG~ also drives the runtime instrumentation gate: ~DEBUG~ > 0
-weaves instrumented forks under a session, ~DEBUG~ 0 runs plain.
+A). Unmentioned qualities keep their current level.
+
+The levels take effect as described under ~clal-optimization~: the
+instrumented fork is kept while ~DEBUG~ >= ~SPACE~, the
+non-instrumented fork is compiled from ~SPEED~ 1, the instrumented
+fork from ~SPEED~ 2, and ~SPEED~ 3 compiles eagerly at definition.
+
+~SPEED~ was pinned at ~0~ in releases before 2.0.8, when there was
+no compiler for it to reach; it is now honoured.
 
 *** Return Values
 The new qualities as ~((DEBUG n) (SPACE n) (SPEED n))~.
 
 *** Side Effects
-Updates the process-wide optimization alist and the runtime
-instrumentation-enabled flag.
+Updates the process-wide optimization alist, the runtime
+instrumentation-enabled flag and the runtime compilation level.
 
 *** Affected By
 - The previous ~clal-optimize~ setting (unmentioned qualities are
@@ -12889,7 +12965,11 @@ level outside 0..3. Signals from ~require-proper-list~ when
 *** Examples
 #+begin_example
 (clal-optimize '((debug 0) space))
-=> ((DEBUG 0) (SPACE 3) (SPEED 0))
+=> ((DEBUG 0) (SPACE 3) (SPEED 2))
+
+;; run everything compiled, and compile it at load time
+(clal-optimize '((speed 3)))
+=> ((DEBUG 0) (SPACE 3) (SPEED 3))
 #+end_example
 
 *** Availability
@@ -12901,6 +12981,128 @@ level outside 0..3. Signals from ~require-proper-list~ when
 *** Source Notes
 - clautolisp-only extension; see the debugger-public-interface
   issue (Part A).
+
+#+LATEX: \newpage
+** Function Entry: CLAL-COMPILE-FILE
+*** Name
+~clal-compile-file~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-compile-file source-file [output-file])
+#+end_example
+
+*** Arguments and Values
+- ~source-file~ — a string naming an AutoLISP source file, resolved
+  the way ~load~ resolves its argument.
+- ~output-file~ (optional) — a string naming the artefact. When
+  omitted, the source name with type ~.lap~, beside the source.
+
+*** Description
+Compile ~source-file~ into a ~.lap~ compiled application.
+
+A ~.lap~ is a native host FASL, renamed — the clautolisp analogue of
+AutoCAD ~.fas~ and BricsCAD ~.des~. It loads into a running image
+alongside other applications, which is what an AutoLISP application has
+to be, and it is therefore specific to the host Lisp (SBCL or CCL) and
+to the clautolisp version that built it. Builds that differ are kept in
+different directories, not distinguished by name.
+
+This compiles; it does not load. That is the division Common Lisp makes
+between ~compile-file~ and ~load~, and the one ~vlisp-compile~ makes.
+
+Unlike the compilation that happens on its own during ~load~, this does
+*not* consult ~SPEED~: the qualities govern what the engine does on its
+own initiative, not what it does when told.
+
+*** Return Values
+~T~ when the artefact was written; ~nil~ when the source could not be
+located (with ~errno~ 73) or the host compiler failed — the same
+contract ~vlisp-compile~ has.
+
+*** Side Effects
+Writes the artefact. Does not define anything in the calling image.
+
+*** Exceptional Situations
+Signals ~:compiler-not-available~ in a clautolisp built without the
+compiler. Signals from ~require-string~ when ~source-file~ is not a
+string. A missing source is reported by the return value.
+
+*** Examples
+#+begin_example
+(clal-compile-file "geometry.lsp")
+=> T                                 ; wrote geometry.lap
+(load "geometry.lap")
+#+end_example
+
+*** Availability
+- clautolisp: since 2.0.9; writes a ~.lap~ since 2.0.10.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; specified by pjb 2026-08-27. The vendor
+  analogue is ~vlisp-compile~, which writes an artefact.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-COMPILE-SYSTEM
+*** Name
+~clal-compile-system~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-compile-system output-file source-files)
+#+end_example
+
+*** Arguments and Values
+- ~output-file~ — a string naming the artefact. Required: there is no
+  sensible default name for one built from several sources.
+- ~source-files~ — a proper list of strings naming AutoLISP source
+  files, each resolved the way ~load~ resolves its argument.
+
+*** Description
+Compile several source files into ONE ~.lap~ application.
+
+What this adds over calling ~clal-compile-file~ on each source is that
+all of them go through a single host compilation: literals can be
+coalesced across the whole system, and a function defined in a later file
+and called from an earlier one resolves without a warning at every
+forward reference. A system that did not share one compilation would be a
+loop the caller could write, so this one always shares it.
+
+*** Return Values
+~T~ when the artefact was written; ~nil~ when a source could not be
+located (with ~errno~ 73) or the host compiler failed.
+
+*** Side Effects
+Writes the artefact. Does not define anything in the calling image.
+
+*** Exceptional Situations
+Signals ~:bad-argument~ when ~output-file~ is ~nil~ or ~source-files~ is
+empty, ~:compiler-not-available~ in a build without the compiler, and
+from ~require-proper-list~ when ~source-files~ is not a proper list.
+
+*** Examples
+#+begin_example
+(clal-compile-system "myapp.lap" '("geometry.lsp" "commands.lsp"))
+=> T
+(load "myapp.lap")
+#+end_example
+
+*** Availability
+- clautolisp: since 2.0.9; writes a ~.lap~ since 2.0.10.
+- AutoCAD: NOT present (the analogue is the Make Application wizard,
+  producing ~.vlx~).
+- BricsCAD: NOT present (the analogue is DEScoder, producing ~.des~).
+
+*** Source Notes
+- clautolisp-only extension; specified by pjb 2026-08-27.
 
 #+LATEX: \newpage
 ** Function Entry: CLAL-COMPILE
@@ -75047,7 +75249,24 @@ Writes the compiled output file to disk.
 *** Availability
 - AutoCAD 2026: documented; produces `.fas` (and `.vlx` archives via auxiliary tooling).
 - BricsCAD V26: documented; produces `.des`; the `mode` argument is parsed but ignored.
+- clautolisp: implemented since 2.0.10; produces `.lap` (a native host
+  FASL, renamed). Like BricsCAD it ignores `mode` — see the clautolisp
+  note below.
 - Status: cross-vendor divergence — see Phase 4 reconciliation in `vendor-inventory-2026.org` §10.
+
+*** clautolisp
+clautolisp produces `.lap`, its own analogue of `.fas` / `.des`, and
+returns `T` when that file was written. Before 2.0.10 it had no compiler
+and this function was a no-op returning `nil`.
+
+`mode` is accepted and ignored, as in BricsCAD, and for a reason worth
+stating: `'st` versus `'lsm` / `'lsa` is single-file versus
+optimize-and-link-*across files*, and a call naming one source has
+nothing to link across. clautolisp already compiles each file as one
+unit; the cross-file form is `clal-compile-system`. An *unknown* mode
+signals rather than being ignored — all three real modes do the same
+thing here, so ignoring `'st` is harmless, but ignoring a misspelling
+would hide a typo in a build script indefinitely.
 
 *** Mode names outside the function
 The three `mode` names are not private to `vlisp-compile`; they are the

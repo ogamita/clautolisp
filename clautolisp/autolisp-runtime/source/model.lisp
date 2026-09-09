@@ -15,7 +15,77 @@ clautolisp-secureload-trust-model spec.")
 (defstruct autolisp-symbol
   (name "" :type string)
   (original-name nil :type (or null string))
-  (plist '() :type list))
+  (plist '() :type list)
+  ;; Last (NAMESPACE . BINDING-CELL) this symbol resolved to, or NIL.
+  ;;
+  ;; Looking a symbol up in a namespace was a TYPECASE on the namespace
+  ;; plus an EQ hash lookup, on every variable read, every assignment and
+  ;; every function call — 13% of a call-dominated profile. A binding
+  ;; cell, once made, is never removed from its namespace and no
+  ;; namespace's table is ever cleared or replaced, so the answer is
+  ;; stable and worth remembering. What changes on a redefinition is the
+  ;; cell's VALUE, which is read through the cell either way — so this
+  ;; caches the lookup without caching the definition.
+  ;;
+  ;; ONE entry, deliberately: a symbol is used in one namespace at a
+  ;; time in any hot loop, and a bigger cache would cost more to consult
+  ;; than the hash lookup it replaces. Alternating namespaces simply miss.
+  ;;
+  ;; Stored as a single CONS so the pair is written in one slot store. A
+  ;; two-slot cache could be read torn — namespace from one writer, cell
+  ;; from another — and hand back a cell belonging to the wrong
+  ;; namespace; a cons is built before it is published and never mutated.
+  (binding-cache nil :type list)
+  ;; Last (GENERATION . HANDLER) answer to "is this symbol a special
+  ;; operator?", or NIL for never asked.
+  ;;
+  ;; The interpreter asks that question about the operator of EVERY
+  ;; compound form it evaluates, and the answer cost a STRING-UPCASE
+  ;; (which allocates a fresh string each time) followed by an ASSOC
+  ;; with STRING= over the whole dispatch table. For an ordinary
+  ;; function call — the common case — that scan runs to the end and
+  ;; fails, every single time.
+  ;;
+  ;; A NIL handler is a valuable answer, not a missing one, so the
+  ;; entry is a CONS whose CAR is the generation: the cons being
+  ;; present is what distinguishes "not a special operator" from "not
+  ;; asked yet".
+  ;;
+  ;; The table is runtime-mutable (the debugger registers %CLAL-POLL),
+  ;; so unlike BINDING-CACHE this answer can go stale. It is stamped
+  ;; with *SPECIAL-OPERATOR-GENERATION*, which every mutation of the
+  ;; table bumps; a stale stamp is simply a miss. Stored as a single
+  ;; CONS for the same torn-read reason as BINDING-CACHE.
+  (special-operator-cache nil :type list)
+  ;; How many LIVE dynamic frames bind this symbol. Zero means no frame
+  ;; in any chain binds it, so the walk that LOOKUP-FUNCTION,
+  ;; FIND-DYNAMIC-BINDING and their callers perform can be SKIPPED
+  ;; outright rather than run to its end and fail.
+  ;;
+  ;; This is not a cache and not a heuristic: it is a count, maintained
+  ;; at the two -- and only two -- places a frame gains or loses a
+  ;; binding, (SETF FRAME-BINDING) and POP-DYNAMIC-FRAME. Zero is an
+  ;; exact statement, which is what makes skipping the walk equivalent
+  ;; rather than merely usually-right.
+  ;;
+  ;; WHY IT EXISTS. Resolving a name walked the WHOLE dynamic-frame
+  ;; chain, doing an EQ ASSOC in every frame, before falling back to the
+  ;; namespace. For a function name -- which is essentially never
+  ;; dynamically bound -- that walk failed in every frame, every call.
+  ;; So every call and every global read cost O(call-stack depth), and a
+  ;; program got slower the deeper it ran, for no reason it could see:
+  ;; the identical loop measured 3.7x slower forty frames down.
+  ;;
+  ;; DIRECTION OF ERROR. Over-counting costs speed and nothing else --
+  ;; the walk simply happens, exactly as it did before. Under-counting
+  ;; would be a correctness bug, so nothing here clamps: a count driven
+  ;; negative by some future mistake stays negative, fails the ZEROP
+  ;; test, and walks. The safe answer is the one you get by being wrong.
+  ;;
+  ;; The count is global to the symbol, so it assumes one thread mutates
+  ;; a given context's frames at a time -- which is already true of the
+  ;; frame chain itself, and of everything else hanging off the context.
+  (dynamic-binding-count 0 :type fixnum))
 
 ;;; AutoLISP is a Lisp-1 dialect: a symbol carries a single binding
 ;;; cell that is shared by variable and function uses. SETQ and DEFUN
@@ -77,6 +147,21 @@ clautolisp-secureload-trust-model spec.")
   symbol
   (value nil)
   (bound-p nil :type boolean)
+  ;; The next binding in the frame that holds this one, or NIL.
+  ;;
+  ;; A frame's bindings are a CHAIN of these rather than an alist of
+  ;; (symbol . binding), which they were until 2.0.18. The alist cost two
+  ;; conses per binding per call -- and paid them to record a symbol the
+  ;; binding was already carrying in its own SYMBOL slot. Threading the
+  ;; chain through the bindings themselves removes both conses and adds
+  ;; one slot: 24 bytes saved per parameter of every user function call,
+  ;; about an eighth of everything a call allocates.
+  ;;
+  ;; It is sound because a binding belongs to EXACTLY ONE frame: the sole
+  ;; caller of (SETF FRAME-BINDING) is BIND-DYNAMIC-VARIABLE, and it makes
+  ;; a fresh binding every time. A shared binding would need two NEXTs and
+  ;; would corrupt both chains.
+  (next nil)
   ;; See binding-cell's doc slot — same semantics for the dynamic
   ;; shadow that `/'-locals / lambda parameters / foreach iteration
   ;; variables push onto the stack. lookup-documentation walks the
@@ -84,7 +169,25 @@ clautolisp-secureload-trust-model spec.")
   (doc nil :type list))
 
 (defstruct dynamic-frame
-  (bindings (make-hash-table :test #'eq))
+  ;; BINDINGS is either a CHAIN of dynamic-bindings linked by their NEXT
+  ;; slots — the ordinary case, and NIL when the frame is empty — or an EQ
+  ;; hash table, once the frame holds more entries than a linear walk
+  ;; searches cheaply. See FRAME-BINDING in api.lisp, which is the only
+  ;; thing that should read this slot.
+  ;;
+  ;; It was an ALIST of (symbol . binding) until 2.0.18. The two conses per
+  ;; entry were paying to record a symbol the binding already carried in
+  ;; its own SYMBOL slot; threading the chain through the bindings costs
+  ;; one slot and no conses. Note the discriminator is HASH-TABLE-P and no
+  ;; longer LISTP: a chain head is a STRUCT, not a list.
+  ;;
+  ;; It used to be a hash table always, allocated in this initform, i.e.
+  ;; ONE HASH TABLE PER FUNCTION CALL — to hold, typically, a single
+  ;; parameter. It showed up in a call-dominated profile as
+  ;; %MAKE-HASH-TABLE + %ALLOC-HASH-TABLE + GROW-HASH-TABLE together
+  ;; costing more than the lookups they served, plus the garbage they
+  ;; made. An empty list allocates nothing.
+  (bindings '())
   parent)
 
 (defstruct runtime-session
@@ -191,7 +294,25 @@ clautolisp-secureload-trust-model spec.")
 
 (defstruct autolisp-subr
   (name "" :type string)
-  function)
+  function
+  ;; When non-NIL, a keyword naming a specific, known builtin
+  ;; implementation that the compiler is allowed to OPEN-CODE a fast path
+  ;; for -- :ADD for the core `+', and so on.
+  ;;
+  ;; It identifies the IMPLEMENTATION, not the name. A user may redefine
+  ;; `+' with DEFUN, assign it with SETQ, or shadow it with a `/'-local
+  ;; -- all three work in AutoLISP, all three were checked -- and in every
+  ;; one of those cases the value the call site resolves is a different
+  ;; object with no tag, the guard fails, and the ordinary call happens.
+  ;; That is what makes an inline fast path a fast path rather than a
+  ;; second implementation of `+' able to disagree with the first.
+  ;;
+  ;; Only INSTALL-CORE-BUILTINS sets it, and only after checking that the
+  ;; function behind the name is the very one whose semantics the compiler
+  ;; open-codes. Swap the implementation and the tag silently disappears,
+  ;; which is the safe direction: a missing tag costs a call, a wrong tag
+  ;; would cost correctness.
+  (open-code nil :type symbol))
 
 (defstruct autolisp-usubr
   (name "" :type string)
@@ -214,7 +335,72 @@ clautolisp-secureload-trust-model spec.")
   ;; re-attempts the failing weave on every call nor re-warns; the function
   ;; then runs its plain body (no poll points → no stack frames for it). See
   ;; INSTRUMENT-USUBR-IF-POSSIBLE in api.lisp.
-  (instrumentation-failed nil))
+  (instrumentation-failed nil)
+  ;; Compiler support (compiler.issue, Tier 2). COMPILED-BODY, when it
+  ;; holds a function, is a Common Lisp function of one argument (the
+  ;; evaluation context) evaluating BODY — the transpiler's fork, a THIRD
+  ;; body alongside the plain and the instrumented one. The evaluator
+  ;; runs it in place of BODY, except while a debug session is active:
+  ;; there an instrumented body wins, so stepping and breakpoints keep
+  ;; working exactly as before. It also holds :FAILED after a compilation
+  ;; that errored, which is not the same as NIL — NIL means "not tried
+  ;; yet" and would be retried on every call.
+  ;;
+  ;; CALL-COUNT is what decides when compiling is worth its own cost. A
+  ;; function called once — which is most of a freshly loaded file — must
+  ;; not pay for a compilation it will never amortise, so the fork is
+  ;; woven lazily, on the call that crosses the threshold.
+  ;;
+  ;; COMPILED-INSTRUMENTED-BODY is the FOURTH body: the transpiler's fork
+  ;; of INSTRUMENTED-BODY. Without it a debug session forces everything
+  ;; back through the interpreter, because compiling was skipped whenever
+  ;; *DEBUGGING* was set. That is the right answer only if instrumented
+  ;; code cannot be compiled -- and it can, once the transpiler open-codes
+  ;; the %CLAL-POLL node instead of handing it back to the interpreter.
+  ;; Same :FAILED convention as COMPILED-BODY.
+  (compiled-body nil)
+  (compiled-instrumented-body nil)
+  (call-count 0 :type fixnum)
+  ;; Memoised result of SPLIT-USUBR-LAMBDA-LIST: (REQUIRED REST-PARAM
+  ;; LOCALS), or NIL when it has not been computed yet. A lambda list
+  ;; never changes after the function object is made, yet binding a frame
+  ;; re-walked it on EVERY call — two POSITION-IFs, up to three SUBSEQs
+  ;; and the whole validation, per call, to reach the same answer.
+  ;;
+  ;; Filled lazily, and only on SUCCESS. That is deliberate: a malformed
+  ;; lambda list must keep signalling on every call, exactly as it did
+  ;; before, rather than signalling once at definition time — computing
+  ;; it eagerly in the constructor would move the error from the call to
+  ;; the DEFUN, which is a behaviour change and not this slot's business.
+  (lambda-list-split nil :type list)
+  ;; The LAMBDA SITE this closure came from, or NIL for a DEFUN and for
+  ;; any closure the interpreter built (lambda-in-a-loop-never-compiles.issue).
+  ;;
+  ;; A LAMBDA form evaluated in a loop mints a NEW usubr per iteration,
+  ;; so a compilation decision taken per OBJECT is retaken from scratch
+  ;; every time on objects that are all THE SAME CODE. At the default
+  ;; threshold that means the body is never compiled however hot the
+  ;; loop is; at threshold 1 -- which the test suite sets -- it means
+  ;; the host compiler runs once per iteration, measured at 440x slower
+  ;; than interpreting the same loop.
+  ;;
+  ;; The site is one object per LAMBDA form in the compiled code, so all
+  ;; the closures from one site share a call count and, once it is
+  ;; woven, a compiled body. It holds no environment and no values: two
+  ;; closures from one site may legitimately capture different
+  ;; environments, and only the BODY -- which is what gets compiled --
+  ;; is common to them.
+  (site nil))
+
+(defstruct usubr-site
+  "What all the closures built from ONE lambda form in the source share.
+
+Not the closure and not the environment: only the decision about
+compiling the BODY, which is the one thing they have in common. See the
+SITE slot of AUTOLISP-USUBR for why the decision cannot live on the
+closure."
+  (call-count 0 :type fixnum)
+  (compiled-body nil))
 
 (defstruct autolisp-catch-all-error
   (message "" :type string)

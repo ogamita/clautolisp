@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 2.1.0 / alfe 2.1.0 /
+master at the top of the file (clautolisp 2.2.0 / alfe 2.2.0 /
 read-autolisp 1.9.0). alfe tracks clautolisp's version: because
 =alfe --clautolisp= embeds essentially the whole clautolisp engine, a
 change to clautolisp's sources bumps alfe too — and alfe's own changes
@@ -408,8 +408,187 @@ separate binary for tool integrators.
   it by accident. ~*clal-on-error*~ chooses what an unhandled CL error
   does. See § /clautolisp Extensions/.
 - ~clal-optimize~ / ~clal-optimization~ — read and set the optimization
-  qualities. ~DEBUG~ above 0 is what makes breakpoints and stepping
-  possible; ~SPEED~ is pinned at 0 until the compiler tier exists.
+  qualities. A function has two forks, and the levels decide which exist
+  and which are compiled: the ordinary fork is always present and is
+  compiled from ~SPEED~ 1, the instrumented fork (what breakpoints and
+  stepping ride on) is kept while ~DEBUG~ >= ~SPACE~ and is compiled from
+  ~SPEED~ 2. ~SPEED~ 3 compiles at definition rather than once a function
+  is hot. Default ~((DEBUG 3) (SPACE 0) (SPEED 2))~.
+- *Fixed: ~foreach~ no longer overwrites a variable of the same name.*
+  ~(foreach e list ...)~ BINDS ~e~ for the loop and restores whatever it
+  held before, which is what AutoCAD does and what the specification
+  always said. clautolisp used to ASSIGN when the name already had a
+  binding, so a ~foreach~ clobbered a ~/~-local of the function running
+  it — and, AutoLISP being dynamically scoped, of its CALLER too.
+  Measured against BOTH vendors: AutoCAD and BricsCAD agree on every
+  scope case, on macOS and on Windows. The behaviour clautolisp had
+  before matched neither.
+
+- *~foreach~ and ~repeat~ loops are compiled now — 5.5x on loop-heavy
+  code.* Until this release a compiled function containing either ran the
+  whole loop, body included, through the interpreter, so a function whose
+  work IS a ~foreach~ got nothing at all from being compiled. Everything
+  the loops decide is unchanged, because compiled code calls the same
+  runtime routines the interpreter does: ~repeat~ still yields nil rather
+  than its body's value, ~foreach~ still BINDS its loop variable (the
+  entry above), and both still report the same errors.
+- *Every form that takes a body is compiled now.* ~let~, ~lambda~,
+  ~function~, ~vlax-for~ and ~set~ joined the loops. This matters more
+  than the list suggests: a form the compiler does not translate is
+  handed to the interpreter *whole*, body included, so one of them
+  inside a function silently un-compiled the work within it. A loop
+  written inside a ~let~ measured 68 ms compiled against 64 ms
+  interpreted — compiling it gained *nothing* — and is 12 ms now.
+  Still handed over, deliberately: ~trace~, ~untrace~, ~command~ and
+  ~command-s~, which have no body at all, and ~defun~ / ~defun-q~,
+  whose body is not *run* when the form is evaluated but *stored* — the
+  function they define is compiled by the ordinary rules when it is
+  called, so handing the definition to the interpreter un-compiles
+  nothing.
+
+- *Higher-order code is compiled at last.* Before this release NO
+  ~lambda~ body was ever compiled at the shipped settings, so every
+  program written with ~apply~ and a ~lambda~ ran interpreted however
+  hot it got — and nothing said so. Compiling was decided per function
+  OBJECT, and a ~lambda~ in a loop makes a new object every iteration,
+  so the decision was retaken from scratch on objects that were all the
+  same code. At the test settings the same shape made the host compiler
+  run once per iteration: 26 seconds where interpreting took 60 ms.
+  Both are fixed by deciding per lambda SITE.
+
+- *Fixed: ~vlax-for~ no longer overwrites a variable of the same name.*
+  It still assigned when the name was already bound further down the
+  dynamic chain — the very code ~foreach~ carried until AutoCAD was
+  probed — so a ~vlax-for~ over a name a caller had bound wrote that
+  binding and left the last collection member in it. Both loops now use
+  one rule and cannot drift apart. Asserted by analogy with ~foreach~,
+  not measured: no vendor evidence exists for ~vlax-for~ specifically,
+  and its specification entry says nothing about the loop variable.
+
+- *The compiler says when it is being asked absurdly often.* Past a
+  thousand compilations in one session it warns, once, that the same
+  body is probably being compiled repeatedly — a defect in what decides
+  to compile rather than in your code. Nothing is refused. The
+  threshold is deliberately unreachable by honest work: the whole
+  clautolisp test suite compiles 56 bodies.
+
+- *Fixed: a ~while~ with no body crashed once its function was compiled.*
+  ~(while (setq i (cdr i)))~ — draining a list for its side effect — ran
+  correctly interpreted and raised a Common Lisp error the moment the
+  function got hot enough to compile.
+
+- *Debugging is leaner again: 12% less allocated, and a little faster.*
+  A debugged call no longer allocates a shadow-stack frame — spent frames
+  are reused — and the mechanism by which the debugger's ~return~ supplies
+  a value for the innermost form is now the same ~throw~ the ~abort~
+  resolution already used. Stepping, breakpoints, watches, jumps and
+  ~return~ all behave exactly as before.
+
+- *List building in compiled code is about twice as fast.* ~cons~,
+  ~list~, ~=~ and ~/=~ now get the inline treatment, as do the
+  three-argument forms of ~+~, ~-~, ~*~, ~<~, ~>~, ~<=~ and ~>=~ — so
+  ~(cons (list i (+ i 1 2)) acc)~ in a loop is no longer four full calls.
+  The rules are unchanged: ~=~ still compares strings as well as numbers,
+  ~(< 1 3 2)~ is still nil because the comparison walks the arguments in
+  pairs, and redefining any of them still wins over the inline path.
+
+- *A function call allocates 18% less.* Each parameter and ~/~-local of
+  every call cost two extra conses, spent recording a symbol the binding
+  already knew. The bindings are threaded together directly now. Nothing
+  observable changes; there is simply less for the garbage collector to
+  do, which matters most in the long-running loops CAD code is made of.
+
+- *Everything is faster again: 1.33x compiled, 1.14x interpreted.* A
+  dozen one-line functions on the hottest paths — the public names for a
+  struct slot, and two-line predicates — were full function calls, each
+  costing 3-6% of a call-heavy profile for no work at all. They are
+  inlined now. No behaviour changes: an accessor is the slot it reads.
+
+- *Debugging costs about a quarter less.* Running a program under the
+  debugger allocated two conses on every instrumented form just to record
+  where execution was, and made three function calls per poll point to
+  ask questions whose answer is almost always "nothing is armed". The
+  position is now two integer fields, and each question is asked only
+  when the thing that could make it interesting is actually set. A
+  debugged run allocates 28% less; the debugging overhead itself is down
+  about 27%. Nothing about stepping, breakpoints, watches or jumps
+  changes — a program that is not being debugged is byte-for-byte
+  unaffected.
+
+- *List and predicate operators are open-coded too: 1.6x on list-walking
+  code.* ~car~, ~cdr~, ~null~, ~not~, ~atom~, ~listp~, ~zerop~, ~eq~,
+  ~1+~, ~1-~ and unary ~-~ now get the same guarded inline treatment as
+  the arithmetic operators, so a loop over a list no longer pays a full
+  call per step. The same rules hold: the narrow case only — everything
+  else, including ~(car 5)~'s error and the rule that two equal strings
+  are ~eq~, goes to the same builtin — and a redefinition, a ~setq~ or a
+  ~/~-local shadow still wins over the inline path.
+- *Truth is no longer looked up by name.* AutoLISP truth is the symbol
+  ~T~, and producing it meant a symbol-table lookup on every predicate
+  and every comparison. It is remembered now, which makes interpreted
+  predicate-heavy code about 6% faster as well.
+
+- *Arithmetic and comparison in compiled code are 1.4-1.5x faster.* The
+  compiler now emits an inline fast path for ~+~, ~-~, ~*~, ~<~, ~>~,
+  ~<=~ and ~>=~ when they are called with two arguments, instead of a
+  full call for each. It is a fast path and not a second implementation:
+  it covers two in-range integers, and everything else — floats, strings,
+  nil, out-of-range results, other arities — goes to the same builtin, so
+  every value, error and message is unchanged. If the operator no longer
+  means the builtin, the inline path does not run: redefining ~+~ with
+  ~defun~, assigning it with ~setq~, or shadowing it with a ~/~-local all
+  reach your definition from compiled code, as they always did.
+  Interpreted code is unaffected.
+
+- *Calls and global reads no longer cost more the deeper the stack is.*
+  Resolving a name walked the whole dynamic-frame chain before falling
+  back to the namespace, so every call was O(call-stack depth) and a
+  program ran slower the deeper it went: the identical loop took 2.7x
+  longer forty frames down than at the top level. A symbol now knows how
+  many live frames bind it, and a walk that is guaranteed to fail is
+  skipped. Measured: 1.5-1.7x on recursive code, 1.9-2.5x at depth, and
+  the same loop now costs the same at depth 40 as at depth 1. Interpreted
+  code gains it too — this is the runtime, not the compiler. Shadowing a
+  function name with a parameter or a ~/~-local behaves exactly as before.
+
+- *~-O~ / ~--optimize~ sets the optimization qualities before anything
+  is loaded.* ~-O speed=3,debug=0~, or the familiar ~-O0~ … ~-O3~
+  (= ~speed=0~ … ~speed=3~); a bare quality name means level 3, the
+  option may be repeated, and a quality you do not mention keeps its
+  level. It is the command-line spelling of ~clal-optimize~, and it
+  exists because ~clal-optimize~ cannot reach the moment that matters:
+  written inside a =.lsp= it takes effect only when it is evaluated,
+  after the file containing it has been read and its ~defun~ s built.
+  ~SPEED~ 3 governs how a file is compiled *as it is loaded*, so only
+  the command line is early enough.
+- *The shipped ~clautolisp~ executable now actually contains the
+  compiler.* It did not: the program was built without the compiler
+  system, so every ~SPEED~ level behaved like ~SPEED~ 0 and asking for
+  optimization changed nothing you could measure. The compiler is
+  reached through hooks — which is what lets the runtime not depend on
+  it — so nothing pulled it into the image, and the test suites, which
+  depend on it directly, could not see the difference.
+
+- *~SPEED~ is no longer pinned at 0.* It was silently ineffective while
+  there was no compiler to reach; the AutoLISP-to-Common-Lisp compiler
+  now exists, and ~SPEED~ is its switch. Code that read
+  ~(clal-optimization)~ back expecting a ~SPEED~ of 0 will now see what
+  it asked for. See § /clautolisp Extensions/.
+- *Compiled applications: ~.lap~.* ~clal-compile-file~ writes one
+  source file to a ~.lap~; ~clal-compile-system~ writes several to a
+  single ~.lap~, sharing one host compilation so literals are coalesced
+  across the application and forward references between its files
+  resolve. ~load~ loads a ~.lap~. Functions arrive already compiled and
+  keep their source body, so they stay debuggable.
+- *A ~.lap~ is a native host FASL, renamed.* It therefore does *not*
+  move between an SBCL clautolisp and a CCL one, and is not promised to
+  survive a clautolisp version change. Keep builds in different
+  directories, as the binary releases already are; loading a
+  mismatched ~.lap~ reports that reason rather than a read error.
+- ~vlisp-compile~ *now compiles.* It was a no-op returning ~nil~ while
+  there was no compiler; it writes a ~.lap~ where AutoCAD writes ~.fas~
+  and BricsCAD writes ~.des~, and returns ~T~. Its ~mode~ is ignored as
+  in BricsCAD, but an unknown mode signals instead of being absorbed.
 - ~clal-compile~, ~clal-module-extension~ — compile a lambda form, and
   ask which file extension this host uses for a packaged artefact
   (~.lap~ / the OS shared-library suffix) instead of guessing.

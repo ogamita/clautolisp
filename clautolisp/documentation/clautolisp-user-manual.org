@@ -802,6 +802,48 @@ operator under its ~*** clautolisp~ note.
                             list of names (default: ~AUTOLISP~ only).
                             Also sets ~*clal-dribble-interactors*~.
 
+** Optimization
+- ~-O SPEC~, ~--optimize SPEC~ :: Set the optimization qualities
+                            *before anything is loaded*. ~SPEC~ is a
+                            comma-separated list of specifiers, each
+                            one of:
+                            ~QUALITY=N~ (a quality — ~debug~, ~space~
+                            or ~speed~ — at level ~N~, 0..3),
+                            ~QUALITY~ (that quality at level 3), or a
+                            bare ~N~ (shorthand for ~speed=N~).
+                            The option may be repeated; occurrences
+                            accumulate left to right, and a quality you
+                            never mention keeps the level it had.
+- ~-O0~ … ~-O3~          :: Shorthand for ~-O speed=0~ … ~-O speed=3~.
+
+This is the command-line spelling of ~(clal-optimize …)~, and § /The
+clautolisp extensions/ ~CLAL-OPTIMIZE~ explains what the levels mean —
+which of a function's two forks exist and which are compiled. Read the
+result back at any time with ~(clal-optimization)~.
+
+The option exists because ~clal-optimize~ cannot reach the moment that
+matters most. In Common Lisp a ~declaim~ at the top of a file changes
+the qualities for the rest of *that file*, because ~declaim~ has a
+compilation-time effect. AutoLISP has no macros, and no distinction
+between compilation time, load time and run time — so a
+~(clal-optimize '((speed 3)))~ written at the top of a =.lsp= takes
+effect only when that call is *evaluated*, by which time the file it
+was meant to govern has already been read and its ~defun~ s already
+built. Nothing inside the language can set the qualities before the
+first file is loaded. The command line can:
+
+#+BEGIN_SRC sh
+$ clautolisp -O3 -l application.lsp        # compile at definition
+$ clautolisp -O0 -l application.lsp        # interpret everything
+$ clautolisp -O speed=3,debug=0 -l app.lsp # fast, not debuggable
+$ clautolisp -O2 -x '(princ (clal-optimization))'
+((DEBUG 3) (SPACE 0) (SPEED 2))
+#+END_SRC
+
+Note that ~--optimize debug=0~ and ~--debug~ are unrelated: ~--debug~
+is a verbosity flag, while ~debug~ here is an optimization quality —
+whether your functions keep the instrumented fork the debugger needs.
+
 ** Debugger (aldo)
 See § /Debugger/ for the semantics; the options in brief:
 
@@ -2421,18 +2463,157 @@ and returns the new set. Each element of ~QUALITIES~ is either a bare
 quality symbol — which means level 3 — or a ~(SYMBOL LEVEL)~ pair, and
 any quality you do not mention keeps its current level.
 
-~DEBUG~ is the one with an observable effect today: above 0 the runtime
-weaves the instrumented fork of a function, which is what makes
-breakpoints and stepping possible; at 0 functions run plain and the
-debugger cannot stop inside them. ~SPEED~ is *pinned at 0* and setting
-it is silently ineffective — it is reserved for the compiler-to-CL tier,
-which does not exist yet. It is documented here so that reading back a
-~SPEED~ of 0 you did not ask for is not mistaken for a bug.
+A function has two forks, and the levels decide which of them exist and
+which are compiled. What matters is not each quality on its own but the
+levels, and — for the instrumented fork — how ~DEBUG~ and ~SPACE~ compare:
+
+| fork                            | present when       | compiled when |
+|---------------------------------+--------------------+---------------|
+| the ordinary one                | always             | ~SPEED~ >= 1  |
+| the instrumented one (debugging)| ~DEBUG~ >= ~SPACE~ | ~SPEED~ >= 2  |
+
+So ~SPACE~ is not a switch you turn on; it is what you weigh ~DEBUG~
+against. ~(DEBUG 3) (SPACE 3)~ says the two matter equally and keeps the
+instrumented fork, which is what breakpoints and stepping ride on;
+~(DEBUG 0) (SPACE 3)~ says size wins and drops it, and the debugger can
+then no longer stop inside your functions.
+
+~SPEED~ has one more step. At 1 and 2 a function is compiled once it has
+proved *hot* — called enough times to earn the compilation — so you pay
+nothing for functions that a file defines and never calls. At 3 it is
+compiled at *definition* instead. That is not just sooner: compiling a
+whole file as one unit is what allows optimizations across function
+boundaries, which compiling one function at a time cannot do.
+
+The default is ~((DEBUG 3) (SPACE 0) (SPEED 2))~ — debugging matters
+most, speed next, size not at all.
+
+To choose the qualities *before* the first file is loaded — which is
+when ~SPEED 3~ matters most, since it governs how a file is compiled as
+it is loaded — use the ~-O~ / ~--optimize~ command-line option; see §
+/Options / Optimization/. A ~(clal-optimize …)~ written inside a =.lsp=
+cannot do this, because it takes effect only when it is evaluated, and
+by then the file containing it has already been built.
 
 #+BEGIN_SRC autolisp
 _$ (clal-optimize '((debug 0) (space 3)))   ; run plain, no instrumentation
+((DEBUG 0) (SPACE 3) (SPEED 2))
+_$ (clal-optimize '((speed 3)))             ; and compile at load time
+((DEBUG 0) (SPACE 3) (SPEED 3))
+_$ (clal-optimize '((speed 0)))             ; interpret everything
 ((DEBUG 0) (SPACE 3) (SPEED 0))
 #+END_SRC
+
+Before release 2.0.8 ~SPEED~ was pinned at 0 and setting it was silently
+ineffective, because there was no compiler for it to reach. If you have
+code that reads ~(clal-optimization)~ back and expects a ~SPEED~ of 0,
+that expectation no longer holds.
+
+*** What the compiler compiles, and what it hands back
+Compiling a function does not mean every part of it becomes Common
+Lisp. A form the compiler does not translate is *handed to the
+interpreter* — and it is handed the *whole form*, everything inside it
+included. That is why the question matters to you rather than only to
+the implementation: a construct that falls back takes its **body** with
+it, so the work inside a loop can go on being interpreted inside a
+function you believe you compiled.
+
+Everything whose body is *run as part of evaluating the form* is
+compiled: ~progn~, ~if~, ~cond~, ~and~, ~or~, ~while~, ~repeat~,
+~foreach~, ~let~, ~vlax-for~, ~lambda~, together with ~setq~, ~set~,
+~quote~ and ~function~, and every function call.
+
+These are still handed to the interpreter, deliberately: ~defun~,
+~defun-q~, ~trace~, ~untrace~, ~command~ and ~command-s~. None of them
+un-compiles any work, though for two different reasons.
+
+~trace~, ~untrace~, ~command~ and ~command-s~ have no body at all —
+they take arguments — so each costs one dispatch and that is the whole
+of it. ~command~ is in any case dominated by the host's own work.
+
+~defun~ and ~defun-q~ *do* take a body, and it is worth being exact
+about why handing them over costs nothing: their body is not *run* when
+the form is evaluated, it is *stored*. Evaluating a ~defun~ builds the
+function; the body inside it is executed later, when that function is
+called — and by then it is an ordinary function body, compiled by the
+ordinary rules (once hot at ~SPEED~ 1 and 2, at definition at
+~SPEED~ 3). So a ~defun~ nested inside another function's body is
+interpreted *as a definition*, one dispatch, and the function it
+defines is compiled exactly like any other.
+
+If you are measuring and a function seems not to have gained anything,
+this list is the first thing to check — before this was closed, a loop
+written inside a ~let~ ran no faster compiled than interpreted, because
+the ~let~ fell back and took the loop with it.
+
+*** When the compiler says it is being asked too often
+Past a thousand compilations in one session, clautolisp warns once:
+
+#+BEGIN_EXAMPLE
+clautolisp: the host compiler has now run 1001 times in this image
+(most recently for F). That is far more distinct function bodies than
+a program has, so the same body is probably being compiled repeatedly
+-- which is a bug in what DECIDES to compile, not in the code being
+compiled.
+#+END_EXAMPLE
+
+Nothing is refused and the program continues. The number is deliberately
+absurd rather than tight: the whole clautolisp test suite compiles 56
+bodies, so an honest program does not approach it, and crossing it means
+the same code is being compiled again and again. If you see it, the
+report is worth making — it is far more likely to be a defect in
+clautolisp than in your program.
+
+*** ~CLAL-COMPILE-FILE~ / ~CLAL-COMPILE-SYSTEM~ -- compile an application
+~(clal-compile-file SOURCE [OUTPUT])~ compiles one AutoLISP source file
+into a ~.lap~ compiled application; ~OUTPUT~ defaults to the source name
+with type ~.lap~, beside the source.
+~(clal-compile-system OUTPUT SOURCES)~ compiles a list of sources into a
+single ~.lap~. Both compile; neither loads. Load the result with ~load~
+like any other file.
+
+**** What a ~.lap~ is, and what it is not
+A ~.lap~ is a *native host FASL, renamed*. It loads into a running
+clautolisp alongside other applications, in any order — which is what an
+AutoLISP application has to be, and why it is not a saved Lisp image.
+
+Two consequences, both deliberate:
+
+- A ~.lap~ built by an SBCL clautolisp will *not* load in a CCL one, or
+  the reverse.
+- A ~.lap~ is not promised to load in a different clautolisp version.
+
+A portable format would mean inventing a byte-code FASL, and that trade
+is not worth making today. Keep builds for different hosts and versions
+in *different directories*, exactly as the binary releases are kept —
+the file name carries nothing about which build made it. Loading a
+~.lap~ that does not match says so, naming the reason.
+
+**** Why the system form exists
+Compiling several sources together puts them through *one* host
+compilation, so literals can be shared across the whole application and a
+function defined in a later source and called from an earlier one
+resolves without a warning at each forward reference. And it ships as one
+file rather than one per source.
+
+#+BEGIN_SRC autolisp
+_$ (clal-compile-file "geometry.lsp")
+T
+_$ (load "geometry.lap")
+
+_$ (clal-compile-system "myapp.lap" '("geometry.lsp" "commands.lsp"))
+T
+#+END_SRC
+
+Functions arriving from a ~.lap~ come already compiled — they never pay
+the hotness threshold again — and they keep their source body, so they
+stay debuggable.
+
+~vlisp-compile~ is the vendor spelling of the same thing: it writes a
+~.lap~ where AutoCAD writes ~.fas~ and BricsCAD writes ~.des~, and
+returns ~T~ when the file was written. Its ~mode~ argument is ignored,
+as in BricsCAD — an *unknown* mode signals, so a typo in a build script
+is not silently absorbed.
 
 *** ~CLAL-COMPILE~ -- build an applicable function object
 ~(clal-compile NAME LAMBDA-EXPRESSION)~ compiles a

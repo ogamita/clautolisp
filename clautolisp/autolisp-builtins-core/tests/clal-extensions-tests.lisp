@@ -774,3 +774,390 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (eq :move-cursor-to (first (second calls))))
     (is (equal '(2 3) (subseq (rest (second calls)) 0 2)))   ; row col (+ nil window)
     (is (eq :window-put (first (third calls))))))
+;;; --- clal-optimize / clal-optimization ------------------------------
+;;;
+;;; The optimization qualities are the AutoLISP-facing surface of the
+;;; compiler and the debugger's instrumentation, so what is tested here
+;;; is the ALGEBRA -- which levels, in which relation, produce which
+;;; forks -- not the wording of the list that comes back.
+;;;
+;;;   non-instrumented fork   always present; compiled iff SPEED >= 1
+;;;   instrumented fork       present iff DEBUG >= SPACE; compiled iff SPEED >= 2
+;;;   eager (at definition)   iff SPEED >= 3
+;;;
+;;; Until 2.0.8 SPEED was pinned at 0 and none of this existed to test.
+
+(defun %optimize (text)
+  "Set qualities from an AutoLISP source list, return the resulting alist
+of QUALITY -> level."
+  (clautolisp.autolisp-builtins-core::builtin-clal-optimize
+   (first (clautolisp.autolisp-runtime:read-runtime-from-string text)))
+  (mapcar (lambda (quality)
+            (cons quality
+                  (clautolisp.autolisp-builtins-core::clal-optimization-level
+                   quality)))
+          '(:debug :space :speed)))
+
+(defun %signals-runtime-error-p (thunk)
+  "True iff THUNK signals an AutoLISP runtime error. Written as a
+predicate rather than with FiveAM's SIGNALS because this suite imports
+IS and not SIGNALS, and an unimported FiveAM macro fails at RUN time on
+the branch you expect never to take."
+  (handler-case (progn (funcall thunk) nil)
+    (autolisp-runtime-error () t)))
+
+(defun %signals-error-p (thunk)
+  "True iff THUNK signals a CL ERROR. SET-CLAL-OPTIMIZATION-LEVELS is not an
+AutoLISP builtin -- it is called from the CLI, before any AutoLISP evaluation
+context exists -- so it signals a plain ERROR, not an AUTOLISP-RUNTIME-ERROR."
+  (handler-case (progn (funcall thunk) nil)
+    (error () t)))
+
+(defun %reset-optimization ()
+  (setf clautolisp.autolisp-builtins-core::*clal-optimization*
+        (list (cons :debug 3) (cons :space 0) (cons :speed 2)))
+  (clautolisp.autolisp-builtins-core::apply-clal-optimization))
+
+(test clal-optimize-no-longer-pins-speed-to-zero
+  "The regression test for unpinning SPEED. It was forced back to 0 on
+every call, so that asking for it was silently ineffective -- documented
+as such, because there was no compiler for it to reach. There is now."
+  (%reset-optimization)
+  (unwind-protect
+       (let ((levels (%optimize "((speed 3))")))
+         (is (eql 3 (cdr (assoc :speed levels)))))
+    (%reset-optimization)))
+
+(test speed-decides-which-forks-compile
+  "SPEED 1 compiles the plain fork; the instrumented fork needs SPEED 2.
+Different levels on purpose: compiling the instrumented fork costs a
+second compilation of every function and buys less."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (%optimize "((speed 0))")
+         (is (not (clautolisp.autolisp-runtime:autolisp-compile-plain-fork-p)))
+         (is (not (clautolisp.autolisp-runtime:autolisp-compile-instrumented-fork-p)))
+         (%optimize "((speed 1))")
+         (is (clautolisp.autolisp-runtime:autolisp-compile-plain-fork-p))
+         (is (not (clautolisp.autolisp-runtime:autolisp-compile-instrumented-fork-p)))
+         (%optimize "((speed 2))")
+         (is (clautolisp.autolisp-runtime:autolisp-compile-plain-fork-p))
+         (is (clautolisp.autolisp-runtime:autolisp-compile-instrumented-fork-p))
+         (is (not (clautolisp.autolisp-runtime:autolisp-compile-eagerly-p)))
+         (%optimize "((speed 3))")
+         (is (clautolisp.autolisp-runtime:autolisp-compile-eagerly-p)))
+    (%reset-optimization)))
+
+(test the-instrumented-fork-is-kept-when-debug-is-at-least-space
+  "SPACE is not a switch of its own: it is what DEBUG is weighed against.
+The EQUAL case is the boundary worth pinning -- (DEBUG 3) (SPACE 3) says
+the two matter equally, and the fork is kept."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (%optimize "((debug 3) (space 0))")
+         (is (not (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*)))
+         (%optimize "((debug 3) (space 3))")
+         (is (not (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*))
+             "DEBUG = SPACE dropped the instrumented fork")
+         (%optimize "((debug 0) (space 3))")
+         (is (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*))
+         (%optimize "((debug 0) (space 0))")
+         (is (not (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*))
+             "DEBUG 0 with SPACE 0 asked for no size saving, so the fork stays"))
+    (%reset-optimization)))
+
+(test a-bare-quality-symbol-means-level-three
+  (%reset-optimization)
+  (unwind-protect
+       (let ((levels (%optimize "(speed)")))
+         (is (eql 3 (cdr (assoc :speed levels)))))
+    (%reset-optimization)))
+
+(test unmentioned-qualities-keep-their-level
+  (%reset-optimization)
+  (unwind-protect
+       (let ((levels (%optimize "((speed 1))")))
+         (is (eql 3 (cdr (assoc :debug levels))))
+         (is (eql 0 (cdr (assoc :space levels))))
+         (is (eql 1 (cdr (assoc :speed levels)))))
+    (%reset-optimization)))
+
+(test clal-optimization-reports-what-the-engine-is-actually-doing
+  "Reading back a setting must describe the engine's real configuration.
+While SPEED was pinned this was the documented trap -- you asked for 3
+and read back 0 -- and it is worth a test now that the answer is honest."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (%optimize "((speed 1))")
+         (let ((reported
+                 (clautolisp.autolisp-builtins-core::builtin-clal-optimization)))
+           (is (= 3 (length reported)))
+           (is (equal '("DEBUG" "SPACE" "SPEED")
+                      (mapcar (lambda (entry)
+                                (clautolisp.autolisp-runtime:autolisp-symbol-name
+                                 (first entry)))
+                              reported)))
+           (is (equal '(3 0 1) (mapcar #'second reported)))
+           (is (eql 1 clautolisp.autolisp-runtime:*autolisp-speed-level*))))
+    (%reset-optimization)))
+
+(test clal-optimize-rejects-nonsense
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (is (%signals-runtime-error-p (lambda () (%optimize "((debug 4))")))
+             "a level above 3 was accepted")
+         (is (%signals-runtime-error-p (lambda () (%optimize "((debug -1))")))
+             "a negative level was accepted")
+         (is (%signals-runtime-error-p (lambda () (%optimize "((quickness 3))")))
+             "an unknown quality was accepted")
+         (is (%signals-runtime-error-p (lambda () (%optimize "(42)")))
+             "a non-symbol element was accepted"))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-is-the-same-request-by-another-door
+  "SET-CLAL-OPTIMIZATION-LEVELS is what --optimize / -O calls. It takes
+(QUALITY . LEVEL) conses instead of an AutoLISP list, so that the CLI does
+not build a list only for CLAL-OPTIMIZE to take it apart again -- but it must
+land on exactly the same configuration, because both go through
+APPLY-CLAL-OPTIMIZATION. If these two ever disagreed, the same level would
+mean one thing from the command line and another from AutoLISP."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+          '((:speed . 3) (:debug . 0) (:space . 1)))
+         (is (eql 3 (clautolisp.autolisp-builtins-core::clal-optimization-level :speed)))
+         (is (eql 0 (clautolisp.autolisp-builtins-core::clal-optimization-level :debug)))
+         (is (eql 1 (clautolisp.autolisp-builtins-core::clal-optimization-level :space)))
+         ;; The gates, not just the bookkeeping: DEBUG 0 < SPACE 1 drops the
+         ;; instrumented fork, and SPEED 3 is the eager level.
+         (is (eql 3 clautolisp.autolisp-runtime:*autolisp-speed-level*))
+         (is (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*)))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-leaves-unmentioned-qualities-alone
+  "An option that mentions SPEED says nothing about DEBUG or SPACE. This is
+what makes `-O2' safe to type: it must not quietly reset the other two."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+          '((:speed . 0)))
+         (is (eql 0 (clautolisp.autolisp-builtins-core::clal-optimization-level :speed)))
+         (is (eql 3 (clautolisp.autolisp-builtins-core::clal-optimization-level :debug)))
+         (is (eql 0 (clautolisp.autolisp-builtins-core::clal-optimization-level :space))))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-applies-pairs-left-to-right
+  "A repeated quality takes its LAST value, so `-O2 -O3' means 3. The CLI
+accumulates occurrences rather than replacing them, so the list handed here
+really can name one quality twice."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+          '((:speed . 2) (:speed . 3)))
+         (is (eql 3 (clautolisp.autolisp-builtins-core::clal-optimization-level :speed))))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-rejects-nonsense
+  "The same range and vocabulary CLAL-OPTIMIZE enforces. The CLI parser
+rejects these first, but this entry point is exported and must not be a way
+around the check."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (is (%signals-error-p
+              (lambda () (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+                          '((:speed . 4)))))
+             "a level above 3 was accepted")
+         (is (%signals-error-p
+              (lambda () (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+                          '((:quickness . 3)))))
+             "an unknown quality was accepted"))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-is-all-or-nothing
+  "A bad pair half-way through must leave the qualities exactly as they were.
+Applying the good pairs and then signalling would leave a configuration nobody
+asked for, and the caller would never see it -- it only gets the error."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (is (%signals-error-p
+              (lambda () (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+                          '((:speed . 0) (:quickness . 3)))))
+             "the bad pair was accepted")
+         (is (eql 2 (clautolisp.autolisp-builtins-core::clal-optimization-level :speed))
+             "SPEED was changed by a call that signalled")
+         (is (eql 2 clautolisp.autolisp-runtime:*autolisp-speed-level*)
+             "the runtime gate was changed by a call that signalled"))
+    (%reset-optimization)))
+
+;;; --- clal-compile-file / clal-compile-system ------------------------
+;;;
+;;; A .lap is a native host FASL, renamed: loadable into a running image
+;;; alongside other applications, and therefore specific to the host Lisp
+;;; and the clautolisp version that built it (pjb, 2026-08-28).
+;;;
+;;; The test that matters is the ROUND TRIP -- compile to an artefact,
+;;; then load the artefact into a FRESH context and run what it defines.
+;;; Checking only that a file appeared would pass for an artefact that is
+;;; empty, or one whose symbols are interned in a table nobody reads.
+
+(defun %write-lsp (pathname text)
+  (with-open-file (out pathname :direction :output
+                                :if-exists :supersede
+                                :if-does-not-exist :create)
+    (write-string text out))
+  pathname)
+
+(defun %eval-here (text)
+  "Evaluate TEXT in the CURRENT context. Not RUN-AUTOLISP-STRING: that
+starts a fresh session, which would discard the definitions a freshly
+loaded artefact just installed."
+  (clautolisp.autolisp-runtime:autolisp-eval
+   (first (clautolisp.autolisp-runtime:read-runtime-from-string text))
+   (clautolisp.autolisp-runtime:current-evaluation-context)))
+
+(defun %as-autolisp-path (pathname)
+  (clautolisp.autolisp-runtime:make-autolisp-string (namestring pathname)))
+
+(defun %fresh-builtin-context ()
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (clautolisp.autolisp-builtins-core:install-core-builtins))
+
+(defun %load-here (pathname)
+  (clautolisp.autolisp-builtins-core::builtin-load (%as-autolisp-path pathname)))
+
+(test clal-compile-file-writes-an-artefact-that-loads-and-runs
+  "The round trip. The artefact must define its functions in whatever
+image loads it -- which is the claim that a printed AUTOLISP-SYMBOL, or
+one read back as a fresh struct, would silently break."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(defun sq (x) (* x x))
+(defun twice (x) (+ x x))")
+    (let* ((lap (make-pathname :type "lap" :defaults p))
+           (result (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+                    (%as-autolisp-path p))))
+      (unwind-protect
+           (progn
+             (is (not (null result)) "clal-compile-file reported failure")
+             (is (not (null (probe-file lap))) "no .lap was written")
+             ;; A FRESH context: nothing the compilation did in this image
+             ;; may be what makes the next assertions pass.
+             (%fresh-builtin-context)
+             (is (not (null (%load-here lap))) "the .lap did not load")
+             (is (eql 81 (%eval-here "(sq 9)")))
+             (is (eql 14 (%eval-here "(twice 7)"))))
+        (ignore-errors (delete-file lap))))))
+
+(test a-loaded-artefact-brings-its-compiled-bodies-with-it
+  "The point of an artefact over its source: the functions arrive already
+compiled, so they never pay the threshold or the host compiler again."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(defun sq3 (x) (* x x))")
+    (let ((lap (make-pathname :type "lap" :defaults p)))
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+              (%as-autolisp-path p))
+             (%fresh-builtin-context)
+             (%load-here lap)
+             (is (not (null
+                       (clautolisp.autolisp-runtime:autolisp-usubr-compiled-body
+                        (clautolisp.autolisp-runtime:lookup-function
+                         (clautolisp.autolisp-runtime:intern-autolisp-symbol
+                          "SQ3")))))
+                 "a function from a .lap arrived without its compiled body"))
+        (ignore-errors (delete-file lap))))))
+
+(test an-artefact-keeps-the-source-body-so-it-stays-debuggable
+  "Dropping BODY would make artefacts load faster and functions from them
+impossible to instrument. The debugger weaves its fork FROM the body."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(defun sq4 (x) (* x x))")
+    (let ((lap (make-pathname :type "lap" :defaults p)))
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+              (%as-autolisp-path p))
+             (%fresh-builtin-context)
+             (%load-here lap)
+             (is (not (null
+                       (clautolisp.autolisp-runtime:autolisp-usubr-body
+                        (clautolisp.autolisp-runtime:lookup-function
+                         (clautolisp.autolisp-runtime:intern-autolisp-symbol
+                          "SQ4")))))
+                 "a function from a .lap lost its source body"))
+        (ignore-errors (delete-file lap))))))
+
+(test an-artefact-carries-non-defun-top-level-forms-too
+  "A source file is not only DEFUNs. Whatever else it does at top level
+has to happen when the artefact is loaded, in the same order."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(setq greeting \"hello\")
+(defun greet () greeting)")
+    (let ((lap (make-pathname :type "lap" :defaults p)))
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+              (%as-autolisp-path p))
+             (%fresh-builtin-context)
+             (%load-here lap)
+             (is (equal "hello"
+                        (clautolisp.autolisp-runtime:autolisp-string-value
+                         (%eval-here "(greet)")))))
+        (ignore-errors (delete-file lap))))))
+
+(test clal-compile-file-reports-a-missing-file-the-way-load-does
+  (%fresh-builtin-context)
+  (is (null (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+             (clautolisp.autolisp-runtime:make-autolisp-string
+              "/nonexistent/definitely-not-here.lsp")))))
+
+(test clal-compile-system-needs-an-output-name
+  "There is no sensible default name for an artefact built from several
+sources, so the argument is required rather than guessed at."
+  (%fresh-builtin-context)
+  (is (%signals-runtime-error-p
+       (lambda ()
+         (clautolisp.autolisp-builtins-core::builtin-clal-compile-system
+          nil (list (clautolisp.autolisp-runtime:make-autolisp-string "a.lsp")))))))
+
+(test clal-compile-system-builds-one-artefact-from-several-sources
+  "The reason the system form exists: one compilation over all the files,
+so a call in an earlier file to a function defined in a later one
+resolves -- and one artefact to ship, not one per source."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname a :type "lsp" :keep nil)
+    (uiop:with-temporary-file (:pathname b :type "lsp" :keep nil)
+      (uiop:with-temporary-file (:pathname out :type "lap" :keep nil)
+        ;; A calls B's function; B is compiled second.
+        (%write-lsp a "(defun caller (x) (callee x))")
+        (%write-lsp b "(defun callee (x) (* x 3))")
+        (let ((result
+                (clautolisp.autolisp-builtins-core::builtin-clal-compile-system
+                 (%as-autolisp-path out)
+                 (list (%as-autolisp-path a) (%as-autolisp-path b)))))
+          (is (not (null result)) "clal-compile-system reported failure"))
+        (%fresh-builtin-context)
+        (is (not (null (%load-here out))) "the system .lap did not load")
+        (is (eql 21 (%eval-here "(caller 7)")))))))
+
+(test loading-a-lap-that-is-not-one-fails-with-its-own-diagnostic
+  "A .lap is host- and version-specific by design, so `this file will not
+load' is a normal outcome and needs a message that says why, rather than
+the reader's confusion at finding a FASL where source was expected."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lap" :keep nil)
+    (%write-lsp p "this is not a fasl")
+    (is (%signals-runtime-error-p (lambda () (%load-here p))))))
