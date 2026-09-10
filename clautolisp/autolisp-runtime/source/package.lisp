@@ -148,6 +148,10 @@
    #:autolisp-runtime-error-code
    #:autolisp-runtime-error-call-stack
    #:current-autolisp-call-stack
+   #:*stack-exhaustion-backtrace-depth*
+   #:capture-innermost-call-stack
+   #:call-guarding-stack-exhaustion
+   #:with-stack-exhaustion-guard
    #:autolisp-runtime-error-message
    #:autolisp-runtime-error-details
    #:autolisp-termination
@@ -235,6 +239,7 @@
    #:*after-load-file-hook*
    #:*debug-instrumentation-enabled*
    #:*debug-error-snapshot-hook*
+   #:*stack-exhaustion-debug-snapshot-hook*
    #:autolisp-runtime-error-debug-snapshot
    #:instrument-usubr-if-possible
    #:maybe-instrument-usubr

@@ -812,7 +812,14 @@ instrumentable/steppable."
             session
             (lambda () (autolisp-eval-toplevel-progn forms context))
             break-on-error))
-         (autolisp-eval-progn forms context)))
+         ;; No session: nothing else guards against a host stack-exhaustion
+         ;; (e.g. an infinite recursion), which is a STORAGE-CONDITION, not an
+         ;; ERROR — left unguarded it would crash the whole REPL instead of
+         ;; reporting the error and returning to the prompt like any other
+         ;; uncaught AutoLISP error. With a session, CALL-WITH-ERROR-
+         ;; INTEGRATION already guards the call above.
+         (clautolisp.autolisp-runtime:with-stack-exhaustion-guard
+           (autolisp-eval-progn forms context))))
    context))
 
 (defun %repl-drain-navigation-request (session)
@@ -1915,7 +1922,17 @@ machinery, not user intent)."
                      ;; the current thread; the aldo companion runs beside it).
                      (if (and session (not interactive-p))
                          (run-under-session-debugging session #'run-actions break)
-                         (run-actions))
+                         ;; No session guarding this run (either none was
+                         ;; requested, or the actions run plain ahead of an
+                         ;; interactive session per the comment above): a host
+                         ;; stack-exhaustion (e.g. an infinite recursion in a
+                         ;; -l/-x action) is a STORAGE-CONDITION, not an ERROR,
+                         ;; so nothing else here would catch it — it would
+                         ;; crash instead of reporting like any other uncaught
+                         ;; AutoLISP error (RUN-WITH-INPUT's own
+                         ;; AUTOLISP-RUNTIME-ERROR clause, below).
+                         (clautolisp.autolisp-runtime:with-stack-exhaustion-guard
+                           (run-actions)))
                      (when interactive-p
                        (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
                         context "*AUTOLISP-INTERACTIVE*" (intern-autolisp-symbol "T")

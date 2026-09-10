@@ -90,6 +90,24 @@ handling.")
 keep a snapshot beyond the dynamic extent of the active frame."
   (copy-list *autolisp-call-stack*))
 
+(defparameter *stack-exhaustion-backtrace-depth* 10
+  "How many innermost frames to keep when recovering from a host
+STORAGE-CONDITION (stack exhaustion -- e.g. SBCL's
+CONTROL-STACK-EXHAUSTED, typically an unbounded/too-deep AutoLISP
+recursion). Capturing must stay O(this many), never O(recursion depth):
+by the time the condition fires, only a reserved sliver of control stack
+is usable again, so even a plain (COPY-LIST *AUTOLISP-CALL-STACK*) — safe
+for an ordinary error — cannot be trusted here. See
+CALL-GUARDING-STACK-EXHAUSTION.")
+
+(defun capture-innermost-call-stack (&optional (limit *stack-exhaustion-backtrace-depth*))
+  "The innermost LIMIT frames of *AUTOLISP-CALL-STACK*, without walking or
+copying anything beyond them. Unlike CURRENT-AUTOLISP-CALL-STACK (a full
+COPY-LIST), this is safe to call with almost no control-stack headroom left."
+  (loop for cell on *autolisp-call-stack*
+        repeat limit
+        collect (car cell)))
+
 ;;; --- source-aware-defun-documentation: read-time → eval-time bridge
 
 (defparameter *preceding-docs* (make-hash-table :test 'eq)
@@ -134,6 +152,15 @@ there. Lets the debugger show the real backtrace even when an inner HANDLER-CASE
 (a builtin wrapper, LOAD's *error* handler, …) unwinds the shadow stack before
 the session handler runs. NIL (the default) ⇒ no capture, no cost — the
 dependency-inversion pattern of *INSTRUMENT-USUBR-HOOK* / *DEBUG-BREAK-HOOK*.")
+
+(defparameter *stack-exhaustion-debug-snapshot-hook* nil
+  "Like *DEBUG-ERROR-SNAPSHOT-HOOK*, but for CALL-GUARDING-STACK-EXHAUSTION:
+installed by the aldo debugger, called from inside the STORAGE-CONDITION
+handler itself — while almost no control stack remains — to capture the
+debugger's own shadow call stack. Unlike *DEBUG-ERROR-SNAPSHOT-HOOK*'s
+installed function (an unbounded COPY-LIST, fine for an ordinary error), this
+hook MUST do O(*STACK-EXHAUSTION-BACKTRACE-DEPTH*) work only. NIL (the
+default) ⇒ no capture, no cost, matching *DEBUG-ERROR-SNAPSHOT-HOOK*.")
 
 (define-condition autolisp-runtime-error (error)
   ((code
@@ -203,6 +230,60 @@ dependency-inversion pattern of *INSTRUMENT-USUBR-HOOK* / *DEBUG-BREAK-HOOK*.")
          :message (apply #'format nil control-string arguments)
          :details arguments
          :call-stack (current-autolisp-call-stack)))
+
+(defun call-guarding-stack-exhaustion (thunk)
+  "Run THUNK. If it exhausts the host control stack — unbounded or
+too-deep AutoLISP recursion hitting a host STORAGE-CONDITION (e.g. SBCL's
+CONTROL-STACK-EXHAUSTED) — this is a SERIOUS-CONDITION, not an ERROR, so
+nothing else in clautolisp catches it: left alone it would propagate
+straight past the AutoLISP *ERROR* handler, the aldo debugger, and every
+top-level report, either crashing the process or surfacing as a bare host
+condition with no AutoLISP-level context at all.
+
+Recovery has to happen in two stages, because the two things it needs —
+enough call-stack data to be useful, and enough control-stack headroom to
+be safe — are not both available at the same moment:
+
+  1. The HANDLER-BIND clause below runs BEFORE any unwinding, at the exact
+     point *AUTOLISP-CALL-STACK* (and, via *STACK-EXHAUSTION-DEBUG-
+     SNAPSHOT-HOOK*, the debugger's own shadow stack) is at its deepest —
+     but with only the reserved guard-page sliver of control stack left
+     to work with. So it does the absolute minimum: capture the innermost
+     *STACK-EXHAUSTION-BACKTRACE-DEPTH* frames (O(that many), never
+     O(recursion depth) — see CAPTURE-INNERMOST-CALL-STACK) into plain
+     local variables, then THROW — the cheapest possible non-local exit —
+     to unwind everything back to a safe depth.
+  2. Once unwound, it is safe to do real work again, so an ordinary
+     AUTOLISP-RUNTIME-ERROR is signalled, carrying that (already-bounded)
+     backtrace. This is the key move: every existing consumer —
+     REPORT-RUNTIME-ERROR, the aldo debugger's DEBUG-HANDLE-ERROR, VL-BT,
+     the aldb wire protocol — already knows how to handle an
+     AUTOLISP-RUNTIME-ERROR, so \"stack exhausted\" is reported (or broken
+     into) exactly like any other unhandled AutoLISP error, just with ten
+     frames instead of a crash. No renderer needed any changes."
+  (let (call-stack debug-snapshot (tag (list 'stack-exhausted)))
+    (catch tag
+      (handler-bind
+          ((storage-condition
+             (lambda (condition)
+               (declare (ignore condition))
+               (setf call-stack (capture-innermost-call-stack)
+                     debug-snapshot (and *stack-exhaustion-debug-snapshot-hook*
+                                         (ignore-errors
+                                          (funcall *stack-exhaustion-debug-snapshot-hook*))))
+               (throw tag nil))))
+        (return-from call-guarding-stack-exhaustion (funcall thunk))))
+    (error 'autolisp-runtime-error
+           :code :stack-exhausted
+           :message (format nil "Stack exhausted (infinite or too-deep recursion?) — ~
+showing the innermost ~D frame~:P." *stack-exhaustion-backtrace-depth*)
+           :call-stack call-stack
+           :debug-snapshot debug-snapshot)))
+
+(defmacro with-stack-exhaustion-guard (&body body)
+  "Run BODY guarded against host stack exhaustion. See
+CALL-GUARDING-STACK-EXHAUSTION."
+  `(call-guarding-stack-exhaustion (lambda () ,@body)))
 
 (defvar *autolisp-true-symbol* nil
   "The interned T symbol, remembered.

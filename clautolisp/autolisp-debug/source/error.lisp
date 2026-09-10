@@ -68,6 +68,22 @@ as the runtime's *DEBUG-ERROR-SNAPSHOT-HOOK* (the dependency-inversion pattern o
 
 (setf clautolisp.autolisp-runtime:*debug-error-snapshot-hook* #'capture-error-shadow-stack)
 
+(defun capture-innermost-error-shadow-stack ()
+  "Like CAPTURE-ERROR-SHADOW-STACK, but bounded to the innermost
+*STACK-EXHAUSTION-BACKTRACE-DEPTH* debug-frames. Installed as
+*STACK-EXHAUSTION-DEBUG-SNAPSHOT-HOOK*, called from inside a
+STORAGE-CONDITION handler with almost no control stack left — the plain
+COPY-LIST above is not an option there (see
+CALL-GUARDING-STACK-EXHAUSTION)."
+  (let ((ti *thread-debug-info*))
+    (when (and ti (thread-debug-info-debug-flag ti))
+      (loop for cell on (thread-debug-info-call-stack ti)
+            repeat clautolisp.autolisp-runtime:*stack-exhaustion-backtrace-depth*
+            collect (car cell)))))
+
+(setf clautolisp.autolisp-runtime:*stack-exhaustion-debug-snapshot-hook*
+      #'capture-innermost-error-shadow-stack)
+
 (defun apply-error-directive (directive)
   (cond
     ((or (null directive) (eq directive :continue) (eq directive :continue-with-error))
@@ -103,4 +119,10 @@ session-scoped. Returns THUNK's value, or :ABORTED if the user aborted."
                        (lambda (condition)
                          (when *break-on-error*
                            (debug-handle-error ti condition :unhandled-error)))))
-        (funcall thunk)))))
+        ;; Guard INSIDE this handler-bind (not around the whole session), so
+        ;; the AUTOLISP-RUNTIME-ERROR it re-signals on stack exhaustion is
+        ;; still within the handler-bind's dynamic extent and breaks into the
+        ;; debugger exactly like any other unhandled error, rather than
+        ;; unwinding past the session unnoticed.
+        (clautolisp.autolisp-runtime:with-stack-exhaustion-guard
+          (funcall thunk))))))
