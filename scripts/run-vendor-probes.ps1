@@ -254,15 +254,33 @@ foreach ($p in $probes) {
   $cmp = & python3 (Join-Path $root "scripts/compare-observations.py") $sexp $log 2>&1
   $cmpRc = $LASTEXITCODE
   $cmp | ForEach-Object { Write-Host "$_" }
-  $obsLine = ($cmp | Select-String -Pattern '^observations:' | Select-Object -First 1).ToString()
+  $obsLine = ($cmp | Select-String -Pattern '^observations:' | Select-Object -First 1)
+  $obsLine = if ($obsLine) { $obsLine.ToString() } else { "" }
+  # A probe that YIELDS A RESULT is a success; only failing to obtain one fails
+  # the job (pjb 2026-09-10). compare-observations exits: 0 conforms, 1 the probe
+  # produced observations that diverge from the recorded expectation, 3 no
+  # observations at all.
+  #   0        -> PASS.
+  #   3        -> no result (backend unreachable / crashed): FAIL, every backend.
+  #   1 + real CAD -> DIVERGED: the vendor differs from our recorded expectation.
+  #                DATA about the vendor (vendor-probe-autocad-bricscad-divergences.issue),
+  #                saved as the SUMMARY/log artifact — not a job failure. Green.
+  #   1 + clautolisp reference -> the emulation must conform: keep gating it.
   if ($cmpRc -eq 0) {
     $summary += "PASS  $($p.Name) -- $obsLine"
     Write-Host "PASS  $($p.Name)"
-  } else {
+  } elseif ($cmpRc -eq 3) {
     $failed++
     if (-not $obsLine) { $obsLine = "no observations (backend unreachable or crashed)" }
     $summary += "FAIL  $($p.Name) -- $obsLine"
-    Write-Host "FAIL  $($p.Name)"
+    Write-Host "FAIL  $($p.Name) (no result: backend unreachable or probe crashed)"
+  } elseif ($Backend -eq "clautolisp") {
+    $failed++
+    $summary += "FAIL  $($p.Name) -- $obsLine (clautolisp reference must conform)"
+    Write-Host "FAIL  $($p.Name) (clautolisp reference diverged)"
+  } else {
+    $summary += "DIVERGED  $($p.Name) -- $obsLine (recorded, not gated)"
+    Write-Host "DIVERGED  $($p.Name) (vendor differs from recorded expectation; recorded, not gated)"
   }
 }
 $summary | Set-Content -Encoding utf8 (Join-Path $outDir "SUMMARY.txt")

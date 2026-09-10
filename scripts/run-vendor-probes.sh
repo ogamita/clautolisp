@@ -196,12 +196,31 @@ for i in "${!probe_names[@]}"; do
   cmp_out="$(python3 "$root/scripts/compare-observations.py" "$sexp" "$log" 2>&1)"; cmp_rc=$?
   echo "$cmp_out"
   obs_line="$(printf '%s\n' "$cmp_out" | grep -m1 '^observations:')"
+  # A probe that YIELDS A RESULT is a success; only failing to obtain one fails
+  # the job (pjb 2026-09-10). compare-observations exits: 0 conforms, 1 the probe
+  # produced observations that diverge from the recorded expectation, 3 no
+  # observations at all.
+  #   rc 0        -> PASS.
+  #   rc 3        -> no result (backend unreachable / crashed): FAIL, every backend.
+  #   rc 1 + real CAD -> DIVERGED: the vendor differs from our recorded expectation.
+  #                  That is DATA about the vendor (tracked in
+  #                  vendor-probe-autocad-bricscad-divergences.issue), saved as the
+  #                  SUMMARY/log artifact — not a job failure. Green.
+  #   rc 1 + clautolisp reference -> the emulation must conform, so a divergence
+  #                  there is a real regression: keep gating it.
   if [ "$cmp_rc" -eq 0 ]; then
     summary+="PASS  $name -- ${obs_line:-conforms}"$'\n'; echo "PASS  $name"
-  else
+  elif [ "$cmp_rc" -eq 3 ]; then
     failed=$((failed+1))
     summary+="FAIL  $name -- ${obs_line:-no observations (backend unreachable or crashed)}"$'\n'
-    echo "FAIL  $name"
+    echo "FAIL  $name (no result: backend unreachable or probe crashed)"
+  elif [ "$backend" = "clautolisp" ]; then
+    failed=$((failed+1))
+    summary+="FAIL  $name -- ${obs_line} (clautolisp reference must conform)"$'\n'
+    echo "FAIL  $name (clautolisp reference diverged)"
+  else
+    summary+="DIVERGED  $name -- ${obs_line} (recorded, not gated)"$'\n'
+    echo "DIVERGED  $name (vendor differs from recorded expectation; recorded, not gated)"
   fi
   unset args
 done
