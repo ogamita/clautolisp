@@ -543,7 +543,12 @@ set -e
 # enough: the wrapper writes a `wrapper-start' marker before anything can
 # fail, so a suite that dies on its first form still leaves a file behind.
 # Checking for run-end is what tells "it ran" from "it started".
-if [[ $exit_code -eq 0 && -s "$result_file" ]] && grep -q 'run-end' "$result_file"; then
+if [[ -s "$result_file" ]] && grep -q 'run-end' "$result_file"; then
+  # A COMPLETE result (reached its run-end record) is a SUCCESS regardless of the
+  # runner's exit code: a probe that yields a result succeeds; a non-zero exit
+  # here is a PROBE OBSERVATION (e.g. a load refusal, or a suite assertion the
+  # vendor did not satisfy), not a failure to run (pjb 2026-09-10). The runner's
+  # code is still recorded in the metadata for the record.
   write_metadata "completed" "$exit_code"
 elif [[ $exit_code -eq 0 && -s "$result_file" ]]; then
   write_metadata "incomplete" "$exit_code"
@@ -591,4 +596,10 @@ else
 fi
 
 echo "Probe run directory: $run_dir"
+# A complete result (run-end present) is a success even when the runner exited
+# non-zero — see the "completed" branch above. Only a run that produced no
+# complete result keeps the runner's failing code.
+if [[ -s "$result_file" ]] && grep -q 'run-end' "$result_file"; then
+  exit 0
+fi
 exit "$exit_code"

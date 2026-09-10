@@ -16,8 +16,18 @@ in-process conformance runner does:
   UNEXPECTED        exhibited != expected                     (fails, exit 1)
   MISSING           an expected observation was never emitted (fails, exit 1)
 
-Prints a per-observation report and the tallies; exits 1 iff any UNEXPECTED
-or MISSING, else 0.
+Prints a per-observation report and the tallies. Exit codes:
+
+  0  every observation CONFORMS (or is a green KNOWN-DIVERGENCE)
+  1  the probe produced observations but some are UNEXPECTED / MISSING
+     (a divergence — a RESULT was obtained)
+  3  no observations parsed at all — the probe produced NO result (backend
+     unreachable / crashed)
+
+The caller decides how to gate each: a divergence (1) is a real result — for a
+vendor backend it is DATA to record, not a job failure — while no result (3)
+is the failure that always matters. Keeping them as distinct exit codes lets
+run-vendor-probes tell them apart without parsing this text.
 """
 import re
 import sys
@@ -147,7 +157,7 @@ def main():
               "have crashed or the backend been unreachable, but check the log "
               "itself first: if it holds OBSERVE lines, they were not decoded)"
               % total)
-        sys.exit(1)
+        sys.exit(3)                       # no result at all — always a failure
     sys.exit(1 if (tally["unexpected"] or tally["missing"]) else 0)
 
 
