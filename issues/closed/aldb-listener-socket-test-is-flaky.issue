@@ -1,0 +1,143 @@
+Title: ALDB-LISTENER-DRIVES-A-LIVE-SOCKET-SESSION fails intermittently on a broken pipe
+Status: CLOSED 2.2.3 -- root cause found + fixed 2026-09-10
+Found: 2026-09-06, in passing, running the suite for an unrelated change
+
+SYMPTOM 1 (2026-09-06)
+
+    ALDB-LISTENER-DRIVES-A-LIVE-SOCKET-SESSION in CLAUTOLISP-TOOL-SUITE:
+      Unexpected Error: #<SB-INT:BROKEN-PIPE ...>
+      Couldn't write to #<SB-SYS:FD-STREAM for
+        "socket 127.0.0.1:44119, peer: 127.0.0.1:46746">:
+        Broken pipe.
+
+One failure out of 33 suites. The IMMEDIATELY FOLLOWING run of the same
+suite, same image, same tree, was green: 33 suites, 0 failures. Nothing
+between the two runs changed.
+
+WHY IT IS WORTH A TICKET RATHER THAN A SHRUG
+
+A test that fails once in a while is worse than one that fails always.
+It teaches people to re-run rather than to look, and the day it fails
+for a REAL reason it will be re-run too. This project has already spent
+days on the opposite failure -- a silence read as evidence -- and a
+flake is the same coin: an outcome nobody trusts enough to act on.
+
+It also lands in CI, where a red pipeline on a merge request costs a
+maintainer's attention before anyone knows it was noise.
+
+NOT INTRODUCED BY THE COMPILER BRANCH: it appeared while running the
+suite for a documentation change, on a tree whose only code delta was
+one new compiler test, and the listener is master's work. Recorded here
+rather than in that branch's issues because it belongs to the debugger
+UI, not the compiler.
+
+SYMPTOM 2 (2026-09-09, GitLab job 16389774638, test:clautolisp:windows)
+
+Same test, a DIFFERENT symptom -- not a write failing on a broken pipe,
+but the whole ORIGINAL AutoLISP error escaping uncaught:
+
+    ALDB-LISTENER-DRIVES-A-LIVE-SOCKET-SESSION in CLAUTOLISP-TOOL-SUITE []:
+         Unexpected Error: #<CLAUTOLISP.AUTOLISP-RUNTIME:AUTOLISP-RUNTIME-ERROR {1104DCD723}>
+    Undefined AutoLISP function ALDB-NO-SUCH-FUNCTION..
+
+"Did 1 check" (not the normal 6): the escape happens before the test body's
+first `is`, i.e. inside the `(let ((outcome (... call-with-session ...))))`
+binding itself, so FiveAM records the whole test as one failed check rather
+than any specific assertion.
+
+ROOT CAUSE (found 2026-09-10, reproduced locally on macOS -- no CAD, no
+Windows runner needed, confirming the "it needs no CAD and no runner" note
+below)
+
+Reproduced by running the raw test body in a tight loop (a few hundred to a
+few thousand iterations); failure rate ~0.3-1%, matching "one in 33 suites"
+and "3 in 300" from earlier sampling. Traced with `*on-error*`/`*on-failure*`
+bound to `:debug` (so FiveAM's own handler declines and the condition
+reaches an outer HANDLER-BIND while the stack is still live) plus temporary
+instrumentation on DEBUG-HANDLE-ERROR / APPLY-ERROR-DIRECTIVE /
+%ALDB-DRIVE-CONNECTED.
+
+On a failing run:
+
+    [trace] DEBUG-HANDLE-ERROR called, reason=UNHANDLED-ERROR break-on-error=T
+    [trace] server: aldb-wait-for-delegate returned after 0.000s
+    [trace] APPLY-ERROR-DIRECTIVE got :CONTINUE
+    [trace] client wire = ""
+    [trace] client: 15s inactivity timeout, elapsed=0.005s
+
+*BREAK-ON-ERROR* is T and the debugger DOES engage (rules out an earlier
+"maybe *break-on-error* leaked to NIL" hypothesis -- it does not; CL's
+dynamic LET/UNWIND-PROTECT scoping around it holds exactly as designed).
+The server side (aldb-wait-for-delegate accepting the already-queued
+connection) is fine, near-instant every time.
+
+The bug is in the TEST'S OWN client driver, %ALDB-DRIVE-CONNECTED:
+
+    (unless (usocket:wait-for-input sock :timeout 15 :ready-only t)
+      (return))                               ; safety: no data for 15s
+
+USOCKET:WAIT-FOR-INPUT can return NIL ("not ready") well before its
+requested timeout elapses -- observed as a 15-SECOND wait returning FALSE
+in under 5 MILLISECONDS. Most likely an interrupted underlying
+select/poll/kqueue call (plausibly provoked by the OTHER thread this test
+spawns doing its own socket syscalls concurrently) that some layer under
+USOCKET mishandles as a genuine timeout instead of retrying it. The
+client's ORIGINAL code treated any single NIL as "genuinely 15s of
+silence" and gave up immediately, closing its socket having read NOTHING
+-- not even the first (:attached ...) message, which the server had not
+even had a chance to write yet.
+
+That is what produces BOTH observed symptoms:
+  - Symptom 2 (this run): the server, moments later, tries to READ the
+    client's (:abort) reply and gets immediate EOF (the peer already
+    closed) -- EMACS-UI's UI-AWAIT-COMMAND treats EOF as "the client went
+    away", returning :CONTINUE, which is the documented "decline -> let it
+    propagate to the user's *error*" resolution (autolisp-debug/source/
+    error.lisp). With no *error* handler installed (the test deliberately
+    uses a bare context), the original AUTOLISP-RUNTIME-ERROR just
+    continues propagating, unhandled, exactly as observed.
+  - Symptom 1 (the original report): a variant of the same race -- the
+    server writes into (or closes) a socket the client already abandoned,
+    surfacing as SB-INT:BROKEN-PIPE on a write instead.
+
+Confirms the original "WHAT IT LOOKS LIKE" guess below (a race between the
+client and the server, widening under load) was on the right track, but
+narrows it to a specific, fixable culprit: WAIT-FOR-INPUT's :TIMEOUT is not
+safe to trust as a single call in this client -- it must be retried against
+a real wall-clock deadline, the same way the PRODUCTION accept loop
+(aldb-wait-for-delegate, tools/clautolisp/source/main.lisp) already does
+(it re-polls every 1s in a genuine LOOP, so a single spurious NIL there
+costs nothing) -- the test's one-shot 15s wait was the only place trusting
+a single call.
+
+FIX (clautolisp 2.2.3)
+
+tools/clautolisp/tests/aldb-socket-tests.lisp: added
+%ALDB-WAIT-FOR-INPUT-UNTIL, which retries USOCKET:WAIT-FOR-INPUT against a
+GET-INTERNAL-REAL-TIME deadline (computed once, 15s out) instead of trusting
+one call's :TIMEOUT; %ALDB-DRIVE-CONNECTED now calls it instead of a bare
+WAIT-FOR-INPUT. Verified with 5000 successive runs of the raw test body
+locally (0 failures; the unfixed version had already reproduced at ~0.3-1%
+in the same harness) plus one full `asdf:test-system "clautolisp"` pass
+(191/191).
+
+WHAT WAS NOT DONE, ON PURPOSE
+
+Production code (aldb-wait-for-delegate) was NOT touched: its accept loop
+already retries every 1s regardless of any single WAIT-FOR-INPUT result, so
+it was never exposed to this. Nothing here points at a real bug in the
+debugger's protocol or its error-decline semantics (:CONTINUE-on-EOF is
+correct -- a real Emacs client vanishing mid-session should let the error
+propagate rather than hang the host forever); the fix is entirely in the
+test's use of WAIT-FOR-INPUT.
+
+OPEN QUESTION, IF THIS RECURS ELSEWHERE
+
+USOCKET:WAIT-FOR-INPUT's early-return behaviour under a concurrent socket
+syscall in another thread looks like it could bite ANY caller in this
+codebase that treats a single WAIT-FOR-INPUT call as authoritative rather
+than retrying against a deadline (upstream-dependency-bug-policy: worth a
+grep across the tree, and if usocket/SBCL's own EINTR handling turns out to
+be the small dependency bug at the bottom of this, an upstream MR is the
+right next step -- not yet done here, since only this one call site was
+confirmed affected).

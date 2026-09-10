@@ -17,19 +17,41 @@
   (let ((address (clautolisp.tools.clautolisp::aldb-address ui)))
     (parse-integer address :start (1+ (position #\: address :from-end t)))))
 
+(defun %aldb-wait-for-input-until (sock deadline)
+  "Like USOCKET:WAIT-FOR-INPUT on SOCK, but retries against DEADLINE (an
+INTERNAL-TIME-UNITS-PER-SECOND-scaled value from GET-INTERNAL-REAL-TIME)
+instead of trusting a single call's :TIMEOUT. A wait can spuriously report
+\"not ready\" well before its requested timeout elapses -- observed locally
+as a 15-SECOND wait returning FALSE in under 5 MILLISECONDS, most likely an
+interrupted underlying select/poll/kqueue call that a layer below usocket
+mishandles as a genuine timeout instead of retrying it -- and mistaking that
+for real silence is exactly what made
+ALDB-LISTENER-DRIVES-A-LIVE-SOCKET-SESSION flaky (see
+aldb-listener-socket-test-is-flaky.issue: this client gave up in ~5ms, closed
+its socket, and the server's next READ on the now-closed peer then saw EOF
+instead of the client's (:abort), producing an UNHANDLED, uncaught
+AUTOLISP-RUNTIME-ERROR instead of a clean :ABORTED outcome)."
+  (loop
+    (let ((remaining (/ (- deadline (get-internal-real-time))
+                         (float internal-time-units-per-second))))
+      (when (<= remaining 0) (return nil))
+      (when (usocket:wait-for-input sock :timeout remaining :ready-only t)
+        (return t)))))
+
 (defun %aldb-drive-connected (sock)
   "Read the debugger's wire from the already-connected client SOCK until EOF,
 sending (:abort) once it is awaiting a command. Return the lines as one string.
 Bounded by a per-read timeout so a hang can never wedge the suite."
   (let ((stream (usocket:socket-stream sock))
-        (lines '()))
+        (lines '())
+        (deadline (+ (get-internal-real-time) (* 15 internal-time-units-per-second))))
     (unwind-protect
          ;; A benign teardown race (the server closing right after (:detached))
          ;; can surface as a stream error rather than a clean EOF; treat it as
          ;; end-of-session and keep whatever lines were already read.
          (handler-case
              (loop
-               (unless (usocket:wait-for-input sock :timeout 15 :ready-only t)
+               (unless (%aldb-wait-for-input-until sock deadline)
                  (return))                               ; safety: no data for 15s
                (let ((line (read-line stream nil nil)))
                  (unless line (return))                  ; EOF: the session detached
