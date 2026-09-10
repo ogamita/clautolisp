@@ -509,6 +509,23 @@ calls 'the hard-won piece'."
 
 ;;; --- mock CAD end-to-end via file-protocol ------------------------
 
+(defun %mock-retry-file-op (thunk)
+  "Run THUNK, retrying a TRANSIENT Windows sharing violation (a FILE-ERROR /
+STREAM-ERROR on a file whose handle another party is still releasing) a few
+times with a short back-off, then re-signalling. The mock's per-cycle
+`delete-file' and echo `:append' are otherwise bare ops under the thread's
+outer IGNORE-ERRORS: on Windows a momentary sharing violation there aborts the
+WHOLE mock thread, so it stops consuming stdin.txt and the driver's next
+SEND-STDIN times out with [STDIN-BUSY] — the intermittent test:alfe:windows this
+guards against. It mirrors the same transient that READ-FILE-AS-STRING already
+retries in the production protocol; dormant on POSIX, where these ops never
+raise."
+  (loop for n from 1 to 50 do
+    (handler-case (return (funcall thunk))
+      ((or file-error stream-error) (c)
+        (when (>= n 50) (error c))
+        (sleep 0.02)))))
+
 (defun spawn-mock-cad-runtime (protocol-session
                                &key (cycles 1)
                                     (echo-stdin-p t)
@@ -544,16 +561,19 @@ stdout.txt so the test driver can verify the round-trip."
                do (sleep 0.02))
          (when (probe-file stdin)
            (setf request (alfe.protocol.file:read-file-as-string stdin))
-           (delete-file stdin))
+           (%mock-retry-file-op
+            (lambda () (when (probe-file stdin) (delete-file stdin)))))
          (alfe.protocol.file:write-atomic-file
           (alfe.protocol.file:protocol-session-status-path protocol-session)
           (format nil "RUNNING ~D" (1+ i)))
          (when (and echo-stdin-p request)
-           (with-open-file (out (alfe.protocol.file:protocol-session-stdout-path
-                                 protocol-session)
-                                :direction :output :if-exists :append
-                                :external-format :utf-8)
-             (write-string request out)))
+           (%mock-retry-file-op
+            (lambda ()
+              (with-open-file (out (alfe.protocol.file:protocol-session-stdout-path
+                                    protocol-session)
+                                   :direction :output :if-exists :append
+                                   :external-format :utf-8)
+                (write-string request out)))))
          (alfe.protocol.file:write-atomic-file
           (alfe.protocol.file:protocol-session-status-path protocol-session)
           (format nil "DONE ~D OK" (1+ i)))
