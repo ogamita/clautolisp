@@ -67,5 +67,15 @@ to a partial file left by a crash."
   "FRESH-EMPTY-DWG is a courtesy: a backend that cannot get a drawing
 here still has its template discovery to fall back on, so this must
 return NIL rather than signal and take the run down with it."
+  ;; The target must be one FRESH-EMPTY-DWG genuinely cannot create a
+  ;; directory in, on EVERY platform. A child of an existing regular FILE is
+  ;; that everywhere: creating a directory below a file fails with ENOTDIR
+  ;; (POSIX) / its Windows equivalent, so ENSURE-DIRECTORIES-EXIST signals and
+  ;; the courtesy-decline path returns NIL. The old "/proc/definitely/not/
+  ;; writable/" was unwritable only on Linux — on Windows it mapped to a
+  ;; perfectly creatable C:\proc\... and the write SUCCEEDED, returning a
+  ;; pathname and reddening test:alfe:windows.
   (handler-bind ((warning #'muffle-warning))
-    (is (null (alfe.drawing:fresh-empty-dwg "/proc/definitely/not/writable/")))))
+    (uiop:with-temporary-file (:pathname file)
+      (let ((under-a-file (merge-pathnames "sub/" (uiop:ensure-directory-pathname file))))
+        (is (null (alfe.drawing:fresh-empty-dwg under-a-file)))))))
