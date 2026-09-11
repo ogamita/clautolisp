@@ -1,5 +1,6 @@
 Title: a FOREACH with no body returns THE LIST in BricsCAD and NIL in AutoCAD
-Status: open (documented divergence; clautolisp follows AutoCAD)
+Status: RESOLVED 2026-09-11 -- dialect-discriminated with a portability
+        warning (clautolisp 2.2.4 / alfe 2.2.5). See RESOLUTION below.
 Found: 2026-08-31, by the foreach-scope probe suite, on both platforms
 
 THE MEASUREMENT
@@ -36,12 +37,35 @@ divergence, and the spec records what is common. The BricsCAD answer
 belongs in the *** clautolisp / vendor-divergence section of the
 FOREACH page, per the convention.
 
-IF IT SHOULD FOLLOW BRICSCAD UNDER --dialect bricscad, that is a
-one-line change at the same place FOREACH's other rules live, and this
-ticket is where the evidence for it is. It is left open for that
-decision rather than closed as `documented': the dialect machinery
-exists precisely so vendor answers can differ, and nobody has said
-whether this one should.
+RESOLUTION (pjb, 2026-09-11): follow BricsCAD under --dialect bricscad,
+and DISCRIMINATE BY DIALECT WITH WARNINGS. pjb confirmed the reference
+value at three consoles -- clautolisp, AutoCAD 2022 (Windows) and
+BricsCAD V26 (macOS) / V25 (Windows) -- and stated the spec: FOREACH
+"returns the final body value or nil if no body exists". So nil is
+correct and BricsCAD is the deviant, and the divergence "must be
+documented and discriminated by dialect with warnings".
+
+Implemented exactly like every other :vendor-divergence
+(%RESOLVED-DIVERGENCE-POLICY in cador is the template):
+
+  dialect                      body-less FOREACH over a non-empty list
+  ---------------------------  ---------------------------------------
+  --autocad / --clautolisp     nil     (spec value, silent)
+  --strict                     nil     (spec value, + portability warning)
+  --dialect bricscad           the list (BricsCAD's value, + warning)
+  --lax                        the list (silent)
+
+An empty list is nil under every dialect (the hosts agree), so it does
+not diverge and does not warn.
+
+The decision lives in ONE place, FOREACH-EMPTY-BODY-RESULT
+(clautolisp/autolisp-runtime/source/api.lisp), which the interpreter
+(EVAL-FOREACH-FORM) and the compiler (transpile.lisp, open-coded FOREACH)
+both call -- so the two forks cannot answer differently. The warning is
+registered as `foreach-empty-body' in portability.lisp and appears in the
+generated dialect-warnings annex. Documented in the FOREACH page's
+*** clautolisp section. Tested: FOREACH-EMPTY-BODY-IS-DIALECT-DISCRIMINATED
+(runtime) and COMPILED-FOREACH-EMPTY-BODY-HONOURS-THE-DIALECT (compiler).
 
 HOW NEARLY IT WAS NEVER FOUND
 

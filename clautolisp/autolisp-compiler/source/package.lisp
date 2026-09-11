@@ -42,6 +42,7 @@
                 #:eval-function-form
                 #:lambda-form-p
                 #:bind-foreach-variable
+                #:foreach-empty-body-result
                 #:known-special-operator-p
                 #:lookup-variable
                 #:resolve-autolisp-function-designator

@@ -197,6 +197,26 @@ compiler's whole contract; everything else in this suite is detail."
       (is (%same-value-p interpreted compiled)
           "~S: interpreted ~S, compiled ~S" text interpreted compiled))))
 
+(test compiled-foreach-empty-body-honours-the-dialect
+  "The body-less FOREACH return is dialect-discriminated (nil per the
+spec/AutoCAD, the list under --dialect bricscad;
+foreach-empty-body-return-diverges.issue). The compiled loop must reach
+the SAME dialect-resolved value as the interpreter -- both call
+FOREACH-EMPTY-BODY-RESULT, so a shape that open-codes the loop cannot
+answer differently. The dialect is set with the runtime *AUTOLISP-DIALECT*
+variable, which CURRENT-EVALUATION-DIALECT honours dynamically. The
+portability warning is captured so it stays out of the test log."
+  (let ((*error-output* (make-string-output-stream)))
+    ;; --dialect bricscad: both forks yield BricsCAD's list.
+    (let ((src "(progn (setq *AUTOLISP-DIALECT* 'bricscad-v26) (foreach e '(1 2 3)))"))
+      (is (%same-value-p (%interpreted src) (%compiled src))
+          "compiled and interpreted disagree under --dialect bricscad")
+      (is (%same-value-p '(1 2 3) (%compiled src))
+          "compiled body-less FOREACH under --dialect bricscad must be (1 2 3)"))
+    ;; default (strict): both forks yield the spec value nil.
+    (is (null (%interpreted "(foreach e '(1 2 3))")))
+    (is (null (%compiled "(foreach e '(1 2 3))")))))
+
 (test unhandled-forms-fall-back-instead-of-failing
   "A form the transpiler knows nothing about still compiles, and still
 gives the interpreter's answer. That is what makes the compiler safe to
