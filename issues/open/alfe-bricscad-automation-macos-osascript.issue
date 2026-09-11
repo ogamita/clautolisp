@@ -1,5 +1,7 @@
 Title: re-enable alfe --mode automation on macOS and debug osascript driving of BricsCAD
-Status: OPEN (option B of alfe-bricscad-automation-macos) — to be done AT a macOS + BricsCAD machine
+Status: OPEN — injection layer FIXED + verified live (Round 6, 2026-09-11);
+  blocked on a separate, deeper protocol-loop bug, see
+  issues/open/alfe-bricscad-automation-macos-stopped-status.issue
 Priority: P3
 Type: feature / investigation
 Depends: issues/closed/alfe-bricscad-automation-macos.issue
@@ -108,6 +110,111 @@ missing document). What remains — all GUI-level, machine-only:
 - Keep the change minimal and reversible: the opt-in must not weaken the
   immediate, honest failure that option A introduced for the common
   "no BricsCAD installed" case.
+
+* Round 6 — live at the machine, 2026-09-11: injection FIXED, one layer
+  deeper opened
+
+pjb + Claude, live BricsCAD V26 on macOS (this machine), Accessibility
+granted to the invoking process (the nested claude-code helper .app needed
+LSREGISTER first — Finder's "+" picker silently refuses an unregistered
+bundle; `lsregister -f <bundle>` fixes it).
+
+** Implemented (autolisp-front-end/source/backend-bricscad.lisp)
+
+  - MACOS-AUTOMATION-OPT-IN-P + CHOOSE-EFFECTIVE-MODE: the refusal is now
+    conditional on $ALFE_ENABLE_MACOS_AUTOMATION (unset = exactly the old
+    behaviour; the existing off-by-default tests stay green unmodified).
+  - *BRICSCAD-APPLESCRIPT-TEMPLATE* hardened:
+    - Targets the console window by its AXMain=true attribute, NOT by
+      title (titles are translated — "Historique des invites" in French,
+      "Prompt History" in English — matching by name would break on any
+      non-English install).
+    - Clicks into that window before typing. This is the actual fix:
+      "BricsCAD is frontmost" was already true in every earlier CI round
+      (launcher-focus.txt said so) and was STILL not enough, because
+      BricsCAD Lite runs its console as a window separate from the
+      drawing window — frontmost-app-level checks cannot tell which of
+      the app's OWN windows has keyboard focus.
+    - Types in 8-character bursts, re-checking frontmost after each, so a
+      mid-injection deviation (another window stealing focus) is
+      detected instead of silently swallowed.
+    - On deviation: Escape (discard whatever partial fragment landed),
+      `display dialog` asking the user to stop interfering, retry up to
+      3 times. Honest limitation, stated in the template's own comments:
+      the console exposes NO accessible text value anywhere in its AX
+      tree (verified — see below), so there is no way to read back how
+      much of a partial injection landed. The retry therefore always
+      redoes the WHOLE command rather than attempting a character-level
+      resume, which would need state that provably does not exist.
+
+** Verified live (not merely osacompile-clean)
+
+  (+ 1 2) typed into the real console -> 3, evaluated and echoed.
+  (load "<fake path>") -> BricsCAD's own "LOAD failed" error, i.e. the
+  CAD genuinely parsed and ran the injected form.
+  The real production payload, (load "<run-common.lsp>"), typed via the
+  ACTUAL emitted launcher.applescript (byte-identical to what
+  EMIT-LAUNCHER-APPLESCRIPT produces — extracted from a real `alfe
+  --bricscad --mode automation --print-command` run, not hand-transcribed)
+  -> BricsCAD evaluated it and returned nil, THREE separate times across
+  three separate runs (one manual, two via scripts/verify-bricscad-
+  automation.sh phase 1). This closes out all three remaining hypotheses
+  from the earlier rounds:
+    - "keyboard focus lands elsewhere" -> CONFIRMED as the cause, and
+      FIXED (window-targeted click).
+    - "a modal/first-run dialog owns input" -> none was present; two
+      tiny AXDialog windows seen during probing were unrelated
+      Screen-Recording-permission-overlay cruft, not BricsCAD's.
+    - "BricsCAD does not accept synthetic CGEvents at all" -> FALSIFIED;
+      it does, reliably, once the right window is focused.
+  One real bug was caught and fixed only by actually running this (not
+  by osacompile syntax-checking alone): a UI-element reference returned
+  out of a `tell' block does not resolve on its own outside that
+  context (macOS -1700) — FOCUSCONSOLEWINDOW's `position of cmdWin' /
+  `size of cmdWin' needed their own `tell application \"System Events\"'.
+  A second regression was caught by the EXISTING test suite: the
+  deviation-retry's re-activation line unconditionally used `open -a',
+  which broke MACOS-LAUNCHER-APPLESCRIPT-FALLS-BACK-TO-PLAIN-BINARY
+  (asserts `open -a' never appears for a non-bundled bricscad) — fixed
+  by reactivating via System Events' `set frontmost of process' instead,
+  which works either way and does not risk reopening docPath as a new
+  document.
+
+** NOT yet exercised live: the deviation/dialog/retry path itself. It is
+  osacompile-clean and logic-reviewed, but reliably TRIGGERING a
+  mid-burst focus change from a second concurrent actor was not attempted
+  this round — the happy path already needed the machine time. Worth a
+  follow-up manual pass: run the launcher, then deliberately click another
+  app mid-injection, and confirm the dialog appears and the retry lands
+  the command correctly.
+
+** New, DEEPER, SEPARATE problem found: verify:bricscad-automation:macos
+  phase 1 still does not reach the full READY -> request -> DONE cycle,
+  even now that keystrokes land correctly. Two live end-to-end runs (one
+  with ALFE_PROBE_TIMEOUT=60, one at the script's real 240s default) both
+  ended with protocol/status.txt = STOPPED, marker-present=0, top-level
+  status.txt = \"99\" (a value the runtime source already calls \"the
+  mystery status 99\" in its own comments — autolisp-remote-io.lsp, two
+  occurrences). Diagnostics prove the CAD-side runtime genuinely started:
+  protocol/heartbeat.txt, runtime-flags.txt and runtime-info.txt are all
+  populated (BricsCAD / 26.0 BricsCAD / BRICSCAD), and the live console
+  showed `(load \"…run-common.lsp\")' -> nil with no CAD-side error. So
+  AUTOLISP-PROTOCOL-SERVER-LOOP reached its `(autolisp-protocol-set-status
+  \"READY 0\")' at minimum. Ruled out: AUTOLISP-PROTOCOL-REMOTE-READ-LINE
+  is purely file-poll based (STDINFILE + control.txt), not raw process
+  stdin, so a detached `open -a'-launched BricsCAD having no piped stdin
+  is NOT the cause (that was my first hypothesis; checking the source
+  disproved it). The loop only reaches its terminal
+  `(autolisp-protocol-set-status \"STOPPED\")' via its normal fall-through
+  (the `while (not *AUTOLISP_PROTOCOL_STOP*)' exiting) — i.e. something
+  set *AUTOLISP_PROTOCOL_STOP*, most likely a SHUTDOWN line arriving via
+  protocol/control.txt. Leading hypothesis, NOT yet confirmed: alfe's own
+  client-side READY-wait or session-teardown path writes SHUTDOWN to
+  control.txt on some condition that fires for the automation variant but
+  not batch — worth checking WAIT-FOR-STATUS-PREFIX / whatever writes
+  control.txt from the alfe side next. This is out of scope for THIS
+  ticket (which was specifically about the injection layer, now fixed and
+  proven) — filed as issues/open/alfe-bricscad-automation-macos-stopped-status.issue.
 
 * References
 

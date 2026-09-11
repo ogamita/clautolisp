@@ -1661,6 +1661,50 @@ on every platform, and --mode auto still prefers it when the CLI is found."
     (is (eq :batch (alfe.backend.bricscad::choose-effective-mode backend :batch)))
     (is (eq :batch (alfe.backend.bricscad::choose-effective-mode backend :auto)))))
 
+;;; --- opt-in re-enable (alfe-bricscad-automation-macos-osascript, option B) -
+;;;
+;;; The refusal above stays the DEFAULT; $ALFE_ENABLE_MACOS_AUTOMATION lets it
+;;; be relaxed explicitly to debug the hardened AppleScript path against a
+;;; real BricsCAD, interactively, at the machine (verified live 2026-09-11).
+
+(test bricscad-automation-opt-in-relaxes-refusal-on-macos
+  "With the opt-in set, macOS resolves :automation instead of refusing —
+mirrors how Windows already behaves, unconditionally."
+  (let ((backend (alfe.backend.bricscad:make-bricscad-backend
+                  :executable-path "/fake/bricscad")))
+    (when (alfe.backend.cad-common:macos-p)
+      (with-env ("ALFE_ENABLE_MACOS_AUTOMATION" "1")
+        (is (eq :automation
+                (alfe.backend.bricscad::choose-effective-mode backend :automation)))))))
+
+(test bricscad-automation-opt-in-is-off-by-default
+  "Merely having the machinery does not change the default: with the env
+var ABSENT (the normal case, and every CI job), the refusal is exactly as
+before — this is the acceptance criterion that the opt-in must not weaken
+the honest immediate failure for the common \"no automation here\" case."
+  (let ((backend (alfe.backend.bricscad:make-bricscad-backend
+                  :executable-path "/fake/bricscad")))
+    (unless (alfe.backend.cad-common:windows-p)
+      (is (not (alfe.backend.bricscad::macos-automation-opt-in-p)))
+      (handler-case
+          (progn
+            (alfe.backend.bricscad::choose-effective-mode backend :automation)
+            (is nil "Expected BACKEND-NOT-AVAILABLE with the opt-in unset."))
+        (alfe.error:backend-not-available (condition)
+          (is (eq :no-automation (alfe.error:backend-error-code condition))))))))
+
+(test bricscad-automation-opt-in-string-forms
+  "$ALFE_ENABLE_MACOS_AUTOMATION=0 and an empty string do NOT opt in —
+only a genuinely truthy value does. Guards against a caller who sets the
+var to \"0\" meaning \"off\" accidentally enabling it."
+  (when (alfe.backend.cad-common:macos-p)
+    (with-env ("ALFE_ENABLE_MACOS_AUTOMATION" "0")
+      (is (not (alfe.backend.bricscad::macos-automation-opt-in-p))))
+    (with-env ("ALFE_ENABLE_MACOS_AUTOMATION" "")
+      (is (not (alfe.backend.bricscad::macos-automation-opt-in-p))))
+    (with-env ("ALFE_ENABLE_MACOS_AUTOMATION" "1")
+      (is (alfe.backend.bricscad::macos-automation-opt-in-p)))))
+
 (test bricscad-applescript-emitter-is-kept
   "The AppleScript emitter, the preflight and the launcher-state reporting are
 deliberately KEPT (the ticket: they are what made five investigation rounds

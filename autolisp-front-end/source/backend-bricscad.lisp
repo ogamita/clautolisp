@@ -617,15 +617,167 @@ if not focused then
   error \"BricsCAD never became frontmost within ${STARTUPWAIT}s (frontmost was \\\"\" & frontApp & \"\\\"); refusing to send keystrokes to another application.\" number 1
 end if
 
-tell application \"System Events\"
-  keystroke \"(load \\\"\" & runLspFile & \"\\\")\"
-  key code 36 -- Return
-end tell
+-- ------------------------------------------------------------------
+-- Window-targeted, deviation-aware injection (alfe-bricscad-automation-
+-- macos-osascript, 2026-09-11 live BricsCAD V26/macOS session).
+--
+-- \"BricsCAD is frontmost\" (just checked above) is NECESSARY but NOT
+-- SUFFICIENT: BricsCAD Lite runs its command console as a window
+-- SEPARATE from the drawing window, and the app can be frontmost while
+-- the DRAWING window — not the console — holds actual keyboard focus.
+-- That silently swallowed every keystroke in all five earlier CI
+-- rounds, which only ever checked the app-level frontmost name.
+--
+-- Empirically, the console window is the one whose AXMain attribute is
+-- true; every other BricsCAD window (the drawing window, tooltips,
+-- palettes) reports AXMain = false. This is locale-independent — do
+-- NOT match by window title/name (it is translated, e.g. \"Historique
+-- des invites\" in French, \"Prompt History\" in English).
+--
+-- The console exposes NO accessible text value (no AXTextField /
+-- AXTextArea anywhere in its tree — it is one custom-painted widget
+-- combining scrollback and the live input line), so there is no way to
+-- read back how much of an injected string actually landed. That is
+-- why the retry logic below always discards and retypes the WHOLE
+-- command on a deviation rather than attempting a character-level
+-- resume: a resume would require reading state that provably does not
+-- exist here.
+
+on findConsoleWindow(procName)
+  tell application \"System Events\"
+    tell process procName
+      repeat with w in windows
+        try
+          if (value of attribute \"AXMain\" of w) is true then
+            return w
+          end if
+        end try
+      end repeat
+    end tell
+  end tell
+  return missing value
+end findConsoleWindow
+
+on clampNumber(v, lo, hi)
+  if v < lo then
+    return lo
+  else if v > hi then
+    return hi
+  else
+    return v
+  end if
+end clampNumber
+
+-- Click well inside the console window (never on its scrollbar or title
+-- bar) to give THAT WINDOW keyboard focus, as distinct from merely
+-- activating the app. Verified empirically: the app being frontmost
+-- alone was not enough, but a click at a point like this followed by
+-- `keystroke' delivered text that BricsCAD actually typed and evaluated.
+on focusConsoleWindow(cmdWin)
+  -- Property access on a UI-element reference returned out of a `tell'
+  -- block must itself be re-wrapped in the matching `tell application' —
+  -- the reference does not resolve on its own outside that context (macOS
+  -- error -1700, found by actually running this against live BricsCAD).
+  tell application \"System Events\"
+    set wPos to position of cmdWin
+    set wSize to size of cmdWin
+  end tell
+  set clickX to (item 1 of wPos) + my clampNumber(400, 40, (item 1 of wSize) - 40)
+  set clickY to (item 2 of wPos) + my clampNumber((item 2 of wSize) - 50, 20, (item 2 of wSize) - 10)
+  tell application \"System Events\" to click at {clickX, clickY}
+end focusConsoleWindow
+
+-- Type TXT in small bursts, RE-CHECKING after every burst that BricsCAD
+-- is still the process actually receiving them. A single `keystroke' of
+-- the whole string would be one blocking call with no chance to notice
+-- the front application changed mid-string; bursts are what make a
+-- mid-injection deviation (e.g. the user clicking another window)
+-- detectable at all. Returns true iff TXT was fully typed with BricsCAD
+-- staying frontmost throughout.
+on typeWatchingFocus(txt, procName, chunkSize)
+  set n to length of txt
+  set i to 1
+  repeat while i <= n
+    set j to i + chunkSize - 1
+    if j > n then set j to n
+    tell application \"System Events\" to keystroke (text i thru j of txt)
+    set stillFront to false
+    try
+      tell application \"System Events\"
+        set stillFront to (name of first process whose frontmost is true) contains procName
+      end tell
+    end try
+    if not stillFront then return false
+    set i to j + 1
+  end repeat
+  return true
+end typeWatchingFocus
+
+set procName to \"bricscad\"
+set loadForm to \"(load \\\"\" & runLspFile & \"\\\")\"
+set attemptLimit to 3
+set attemptNum to 1
+set succeeded to false
+
+repeat while (attemptNum <= attemptLimit) and (not succeeded)
+  set cmdWin to my findConsoleWindow(procName)
+  if cmdWin is missing value then
+    error \"BricsCAD console window (AXMain) not found; cannot target keystrokes.\" number 3
+  end if
+  my focusConsoleWindow(cmdWin)
+  delay 0.2
+
+  if my typeWatchingFocus(loadForm, procName, 8) then
+    tell application \"System Events\" to key code 36 -- Return
+    set succeeded to true
+  else
+    -- DEVIATION: some other application became frontmost mid-injection.
+    -- Do not resend blindly (see the header note: the console's own
+    -- state cannot be read back). Escape first, to discard whatever
+    -- partial fragment BricsCAD's console may have received, then ask
+    -- the human to stop interfering before the whole command is retried
+    -- from scratch.
+    try
+      tell application \"System Events\" to key code 53 -- Escape
+    end try
+    set dialogResult to (display dialog ¬
+      \"alfe is driving BricsCAD's command line and lost keyboard focus (another window became frontmost). Please leave BricsCAD alone until this finishes.\" & return & return & \"Attempt \" & attemptNum & \" of \" & attemptLimit & \".\" ¬
+      buttons {\"Cancel\", \"Retry\"} default button \"Retry\" with icon caution giving up after 60)
+    if button returned of dialogResult is \"Cancel\" then
+      error \"macOS automation cancelled by the user after a focus deviation.\" number 4
+    end if
+    if gave up of dialogResult then
+      error \"macOS automation timed out waiting for the user to acknowledge a focus deviation.\" number 5
+    end if
+    -- Re-activate via System Events rather than `open -a appPath': that
+    -- would only work when BricsCAD is a bundled .app (LAUNCHCOMMAND above
+    -- already special-cases the non-bundle fallback of running the binary
+    -- directly), and re-running it here risks re-opening docPath as a NEW
+    -- document on top of whatever is already running. Targeting the
+    -- process by name works either way and only raises what is already
+    -- there.
+    tell application \"System Events\" to set frontmost of process procName to true
+    delay 1
+  end if
+  set attemptNum to attemptNum + 1
+end repeat
+
+if not succeeded then
+  error \"BricsCAD console kept losing keyboard focus; gave up after \" & attemptLimit & \" attempts.\" number 6
+end if
 "
   "AppleScript template for macOS automation. Injects (load
-runLspFile) into BricsCAD's command line via System Events keystrokes —
-requires an interactive session and Accessibility permission for the
-process running osascript.")
+runLspFile) into BricsCAD's command line via System Events keystrokes,
+targeting the AXMain=true console window specifically (locale-independent
+— do not match by window title) rather than relying on the app merely
+being frontmost. Typing happens in small bursts so a mid-injection focus
+deviation (e.g. the user clicking another window) is detected; on
+deviation it discards any partial input (Escape — the console exposes no
+readable text state to resume from character-by-character), asks the
+user via a dialog to stop interfering, and retries the whole command,
+bounded to a few attempts. Requires an interactive session and
+Accessibility permission for the process running osascript. See
+issues/open/alfe-bricscad-automation-macos-osascript.issue.")
 
 (defun macos-app-bundle-for (executable-path)
   "The .app bundle enclosing EXECUTABLE-PATH — e.g.
@@ -727,6 +879,21 @@ and therefore a command line — to type into."
 
 ;;; --- launch argv ---------------------------------------------------
 
+(defun macos-automation-opt-in-p ()
+  "True only on macOS, when $ALFE_ENABLE_MACOS_AUTOMATION is set to a
+non-empty value other than \"0\". Does not affect Windows (already
+fully supported) or Linux (never implemented — BUILD-LAUNCH-ARGV's
+:automation branch still errors there regardless of this opt-in).
+
+This is OPTION B of alfe-bricscad-automation-macos: the macOS refusal
+in CHOOSE-EFFECTIVE-MODE stays the default, but can be explicitly
+relaxed to debug the osascript/AppleScript path against a real
+BricsCAD, interactively, at the machine. See
+issues/open/alfe-bricscad-automation-macos-osascript.issue."
+  (and (macos-p)
+       (let ((v (uiop:getenv "ALFE_ENABLE_MACOS_AUTOMATION")))
+         (and v (plusp (length v)) (not (string= v "0"))))))
+
 (defun choose-effective-mode (backend cli-mode)
   "Translate the CLI's :auto / :batch / :automation into the
 backend's variant slot. :auto picks :batch on every platform when the
@@ -757,21 +924,29 @@ written.
 The AppleScript emitter, the Accessibility preflight and the launcher
 state reporting are DELIBERATELY KEPT. They are what made the five
 investigation rounds interpretable, and option B of the ticket — driving
-the emitted launcher by hand at the machine — is still open."
+the emitted launcher by hand at the machine — is still open, and is now
+reachable behind MACOS-AUTOMATION-OPT-IN-P ($ALFE_ENABLE_MACOS_AUTOMATION):
+with the opt-in unset, macOS behaves EXACTLY as before this function grew
+the check; with it set, this refusal is skipped and BUILD-LAUNCH-ARGV's
+existing macOS :automation branch (osascript launcher.applescript) is
+reached, now with a hardened launcher — see
+*BRICSCAD-APPLESCRIPT-TEMPLATE*."
   (let ((variant (case cli-mode
                    (:auto
                     (if (bricscad-backend-executable-path backend)
                         :batch
                         :automation))
                    ((:batch :automation) cli-mode))))
-    (when (and (eq variant :automation) (not (windows-p)))
+    (when (and (eq variant :automation)
+               (not (windows-p))
+               (not (macos-automation-opt-in-p)))
       (error 'backend-not-available
              :backend :bricscad
              :code :no-automation
              :message
              (if (eq cli-mode :automation)
-                 "BricsCAD --mode automation is not supported on this OS (Windows only). Use --mode batch, which is the default when the BricsCAD CLI is found."
-                 "BricsCAD CLI executable not found, and --mode automation is not supported on this OS (Windows only), so there is no fallback. Install BricsCAD or point alfe at it.")))
+                 "BricsCAD --mode automation is not supported on this OS (Windows only). Use --mode batch, which is the default when the BricsCAD CLI is found, or set ALFE_ENABLE_MACOS_AUTOMATION=1 to opt into the experimental macOS AppleScript path (see alfe-bricscad-automation-macos-osascript.issue)."
+                 "BricsCAD CLI executable not found, and --mode automation is not supported on this OS (Windows only), so there is no fallback. Install BricsCAD or point alfe at it, or set ALFE_ENABLE_MACOS_AUTOMATION=1 to opt into the experimental macOS AppleScript path.")))
     variant))
 
 (defun build-launch-argv (backend protocol-session
