@@ -1,0 +1,137 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: windows-msys-paths-in-autolisp-load — findfile/load ne résolvent pas les chemins /c/... injectés par make
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-windows-msys-paths-in-autolisp-load
+
+* Contexte
+
+Signalé le 2026-09-11 depuis SCHMS+, commit =9e86a4d3= :
+
+- [[https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/501789][501789 — test-unitaire:windows]].
+- [[https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/501791][501791 — test-unitaire-clautolisp:windows]].
+- Échec initial : [[https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/498972][498972]].
+
+Les deux nouveaux jobs exécutent finalement la même cible clautolisp.
+Windows Server, runner GitLab shell PowerShell, recettes make exécutées
+par un shell POSIX fourni par Git. Le programme retenu est =alfe.cmd= ;
+sa bannière annonce =alfe 1.9.8=. La version exacte du runtime embarqué
+reste à relever : cette bannière seule ne l'établit pas.
+
+Traces et archives des deux jobs téléchargées et examinées. Le diagnostic
+Lisp est dans =tests/.autolisp-workdir/unitaire/console-cao.out= ;
+=test-unitaire.status= reste à la sentinelle =99=. Aucune suite ne démarre.
+
+* Problème observé
+
+Le Makefile construit ses chemins avec =$(CURDIR)=, au format MSYS
+=/c/...= sur ce serveur. Il injecte le chemin du point d'entrée dans une
+expression AutoLISP :
+
+#+begin_src makefile
+  -x '(setq *tu:self-override* "$(call TEST_ENTRY,$(1))")' \
+  -l "$(call TEST_ENTRY,$(1))"
+#+end_src
+
+Le point d'entrée s'exécute, dérive la racine du dépôt depuis
+=*tu:self-override*= avec =vl-filename-directory=, puis appelle :
+
+#+begin_src lisp
+(vl-catch-all-apply
+  (function load)
+  (list (strcat *tu:repo-dir* "/tests/test-runner-commun.lsp")))
+#+end_src
+
+Dans les deux jobs, la chaîne fournie à =-x= conserve le préfixe MSYS.
+Voici les observations, chemins abrégés pour ne pas embarquer les
+répertoires absolus propres au runner ; les points de suspension ne font
+pas partie des valeurs réelles :
+
+#+begin_example
+make CURDIR                         = /c/.../schms
+shell pwd / PWD                     = /c/.../schms
+getenv PWD côté Lisp                = C:/.../schms
+self-override                      = /c/.../schms/tests/test-unitaire.lsp
+runner load argument               = /c/.../schms/tests/test-runner-commun.lsp
+findfile relatif Makefile           = C:/.../schms/Makefile
+findfile relatif harnais            = C:/.../schms/tests/test-runner-commun.lsp
+findfile chemin calculé harnais     = nil
+LOAD could not locate /c/.../schms/tests/test-runner-commun.lsp.
+#+end_example
+
+Le shell confirme que les deux fichiers sont lisibles. Le runtime trouve
+le harnais par son chemin relatif mais pas par le chemin MSYS calculé.
+Cela établit un problème de résolution de format de chemin ; un mauvais
+cwd n'explique pas ces observations. Le message relatif de l'échec initial
+était trompeur : l'argument réel de =load= est un chemin absolu MSYS.
+
+* Couche existante et investigation
+
+Le dépôt contient déjà la couche =clautolisp.pathname-mapping= dans
+=clautolisp/autolisp-runtime/source/pathname-mapping.lisp=, avec les
+référentiels build/run/user, =map-in=, =map-out=,
+=initialize-run-environment= et =describe-mapping-environments=.
+Les tests =clautolisp/autolisp-runtime/tests/pathname-mapping-tests.lisp=
+couvrent notamment MSYS2 vers Windows natif et un Lisp natif lancé sous
+MSYS2 (=pathmap-mingw-under-msys2-renders-native=).
+
+La correction doit s'appuyer sur cette couche, pas imposer à chaque
+application cliente de réimplémenter la conversion via =cygpath=.
+Le point de défaillance interne n'est pas encore établi. Vérifier :
+
+1. La version et la provenance du binaire installé sur le serveur, et
+   la présence effective de cette couche dans le runtime embarqué.
+2. L'initialisation du mapping dans le chemin alfe/backend clautolisp,
+   notamment en mode direct, comparée au lancement clautolisp autonome.
+3. Les référentiels détectés et les variables =MSYSTEM=, =OSTYPE=,
+   =MSYS2_ARG_CONV_EXCL= et =MSYS2_ENV_CONV_EXCL= au lancement effectif.
+   Le fait que make produise un chemin MSYS ne garantit pas à lui seul
+   que le processus Lisp détecte un environnement MSYS.
+4. Le passage des arguments de =findfile= et =load= dans =map-in= avant
+   la recherche/ouverture native, y compris quand la chaîne vient de
+   =-x= ou a été calculée pendant l'exécution AutoLISP.
+5. Les différences entre un argument CLI =-l= et un chemin contenu dans
+   une expression =-x=. Le chargement initial fonctionne ; les traces
+   seules ne disent pas quelle couche l'a rendu possible.
+
+Ne pas convertir aveuglément toutes les chaînes de =-x= : ce sont des
+expressions et des données utilisateur. La conversion doit intervenir
+aux frontières des opérations qui interprètent une chaîne comme chemin.
+
+* Reproduction ciblée à ajouter
+
+Sur Windows natif lancé depuis le même environnement make/shell que la CI,
+créer un fichier Lisp temporaire contenant une forme inoffensive.
+Construire dynamiquement ses chemins natif et MSYS, sans chemin de poste
+codé en dur. Comparer :
+
+- =findfile= avec chemin relatif, natif et MSYS ;
+- =load= avec ces mêmes chemins, dont un chemin transmis par =-x= puis
+  recomposé avec =strcat= et chargé via =vl-catch-all-apply= ;
+- clautolisp autonome et alfe avec backend clautolisp.
+
+Reproduire d'abord avec le binaire du serveur, puis avec les sources
+courantes. Les essais locaux SCHMS précédents passaient 197/197, y compris
+avec un alfe annonçant 1.9.8, mais ils ne validaient pas la même production
+de =CURDIR= au format MSYS : ils ne réfutent donc pas cet échec CI.
+
+* Critères d'acceptation
+
+- Un test de régression échoue avant correction dans l'environnement
+  concerné et passe ensuite pour =findfile= et =load= via alfe.
+- Les variantes native et MSYS désignent le même fichier sous le mapping
+  Windows/MSYS approprié, y compris dans les chemins calculés en Lisp.
+- Vérifier également =open= en lecture/écriture : SCHMS injecte les chemins
+  de sortie, erreur, statut et répertoire de travail par les mêmes =-x=.
+  Leur défaillance est un risque à tester, pas un échec déjà observé ici.
+- Préserver les chemins natifs, UNC, les espaces, les chemins relatifs,
+  et le comportement POSIX ; ne pas réinterpréter universellement tout
+  chemin POSIX commençant par une lettre comme un lecteur Windows.
+- Relancer les deux cibles SCHMS sur Windows Server : harnais chargé,
+  résultats écrits au bon endroit, statut final 0 et 197/197 tests réussis
+  pour le commit SCHMS cité.
+- Documenter les ajustements de contrat utilisateur éventuels selon les
+  règles du dépôt ; ne pas clôturer sur la seule présence d'un test unitaire
+  de mapping si l'intégration réelle alfe/findfile/load reste défaillante.

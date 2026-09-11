@@ -102,6 +102,8 @@ retrofitted as they are touched.
   :Priority: P2
   :END:
 
+- TODO [[file:windows-msys-paths-in-autolisp-load.issue][windows-msys-paths-in-autolisp-load]] — 2026-09-11 : SCHMS Windows Server, chemins MSYS injectés par -x non résolus par findfile/load ; vérifier l'intégration de pathname-mapping dans alfe et les opérations fichier.
+
 | Issue                                    | Type          | Status   | Note |
 |------------------------------------------+---------------+----------+------|
 | pi-constant-unbound                      | builtin       | DONE     | PI evaluates to NIL in every dialect (vendors: 3.14159…); one-line fix, 97 uses in the SCHMS+ sources; error surfaces at the arithmetic, not at the constant — RESOLVED 1.7.25 (bind PI/T/PAUSE), issues/closed/ |
