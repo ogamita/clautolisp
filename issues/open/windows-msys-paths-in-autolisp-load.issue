@@ -1,10 +1,58 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: windows-msys-paths-in-autolisp-load — findfile/load ne résolvent pas les chemins /c/... injectés par make
-#+STATUS: TODO
+#+STATUS: FIX-LANDED-AWAITING-CI
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: -
 #+BRANCH: fix-windows-msys-paths-in-autolisp-load
+
+* Cause établie et correction (clautolisp 2.2.4 / alfe 2.2.5)
+
+Cause racine unique : la détection d'environnement collapsait la trame
+d'exécution (run) sur la trame de compilation (build). =%DETECT-ENVIRONMENT=
+appliquait l'override « ground-truth » =%FORCE-NATIVE-DRIVE-STYLE= à
+*toute* trame détectée, y compris la trame run. Sur le runner
+mingw-SBCL-sous-MSYS2 (=(truename "/")= est un lecteur), la trame run
+perdait donc son =drive-mount-prefix= (=/=) et sa table de montage :
+=to-canonical "/c/…"= ne trouvait plus aucun montage, signalait
+=UNMAPPABLE-PATH=, et =%map-in-safe= renvoyait le =/c/…= brut — que le
+CL mingw ne peut pas ouvrir. D'où findfile du chemin calculé = nil ET
+« LOAD could not locate /c/… ». (LOAD passe bien par =map-in= via
+=RESOLVE-OPEN-PATHNAME= ; le défaut n'était pas là.)
+
+Correction, conforme au modèle de la spec (trames build ≠ run) :
+
+1. =%DETECT-ENVIRONMENT= : l'override natif est désormais réservé à la
+   trame BUILD (« ce que le CL attend comme chemins physiques »,
+   spec §5.1). La trame RUN reste une trame MSYS2 =:posix-mount=, donc
+   =/c/…= (et =/v/…=) se traduisent en =C:/…= / =V:/…= à l'ouverture,
+   tandis qu'un =C:/…= natif déjà passé par le harnais reste natif
+   (branche drive-path de =to-canonical=, indépendante de la trame run) —
+   l'intention du correctif d'origine est préservée.
+   Conséquence voulue : =map-out= (retour de =findfile=) rend désormais
+   le chemin dans la trame utilisateur (=/c/…=), qui se recharge sans
+   perte via =map-in=.
+
+2. Durcissement des frontières « chaîne interprétée comme chemin » qui
+   ne passaient pas encore par =map-in= : =RESOLVE-OPEN-SEARCH-PATHNAME=
+   (lecture/écriture OPEN) et =RESOLVE-DIRECTORY-PATHNAME= (vl-mkdir).
+   Les noms relatifs restent inchangés (map-in est l'identité dessus).
+   Aucune conversion aveugle des chaînes =-x=.
+
+Tests ajoutés (exécutables sur hôte Linux via injection de trames) :
+- =pathmap-detect-build-native-run-keeps-mount-under-mingw= : la trame
+  build part native, la trame run reste =:posix-mount= ; =/c/…= et =/v/…=
+  s'ouvrent en natif, un =C:/…= reste natif, =map-out= rend =/c/…=.
+- =pathmap-posix-host-does-not-invent-drives= : sur un vrai hôte POSIX,
+  =/c/foo= et =/v/bar= restent intacts (pas de réinterprétation).
+- =open-read-resolver-maps-in-the-user-frame-path= : OPEN en lecture
+  passe bien par map-in (montage synthétique vers un fichier réel).
+Suites =autolisp-runtime= et =autolisp-builtins-core= : vertes.
+
+Reste à faire avant clôture : relancer les deux cibles SCHMS sur Windows
+Server (dépôt SNCF, non exécutable ici) et confirmer 197/197 + statut 0.
+Le lane =clautolisp:windows= exécute déjà ces tests de mapping sur un
+runner mingw réel.
 
 * Contexte
 

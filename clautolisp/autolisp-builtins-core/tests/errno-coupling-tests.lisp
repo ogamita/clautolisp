@@ -209,3 +209,41 @@ Returns the context."
   (let ((result (clautolisp.autolisp-builtins-core::builtin-tablet)))
     (is (null result))
     (is (eql 68 (autolisp-errno)))))
+
+;;; --- OPEN read path maps in (windows-msys-paths-in-autolisp-load) ------
+
+(test open-read-resolver-maps-in-the-user-frame-path
+  ;; Regression: OPEN's resolver (RESOLVE-OPEN-SEARCH-PATHNAME) must MAP-IN
+  ;; the user/run-frame path, the way LOAD and the vl-file-* builtins do
+  ;; via RESOLVE-OPEN-PATHNAME. On the MSYS2 runner the program hands OPEN a
+  ;; /c/... path; here a synthetic run-frame mount stands in for /c/ and is
+  ;; pointed at a real directory on THIS host, so the mapping is exercised
+  ;; on Linux. Before the fix the resolver only normalised separators and
+  ;; the mapped path was never reached.
+  (let* ((dir (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "clal-openmap-~36R/" (random (expt 36 8)))
+                                (uiop:temporary-directory))))
+         (file (merge-pathnames "a.lsp" dir)))
+    (ensure-directories-exist dir)
+    (unwind-protect
+         (progn
+           (with-open-file (s file :direction :output :if-exists :supersede
+                                   :if-does-not-exist :create)
+             (write-string "(princ)" s))
+           (let ((clautolisp.pathname-mapping:*run-environment*
+                   (clautolisp.pathname-mapping:make-environment-for-kind
+                    :wsl :home "/home/pjb"
+                    :mount-table
+                    (list (clautolisp.pathname-mapping:make-mount-entry
+                           :frame-prefix "/synthetic/"
+                           :canonical-prefix (namestring dir)))))
+                 (clautolisp.pathname-mapping:*build-environment*
+                   (clautolisp.pathname-mapping:identity-environment)))
+             (let ((resolved (clautolisp.autolisp-builtins-core::resolve-open-search-pathname
+                              "/synthetic/a.lsp" "OPEN" :must-exist)))
+               (is (and resolved (probe-file resolved))
+                   "OPEN resolver did not map /synthetic/a.lsp onto the real file; got ~S"
+                   resolved)
+               (is (equal (truename file) (truename resolved))))))
+      (ignore-errors (delete-file file))
+      (ignore-errors (uiop:delete-empty-directory dir)))))

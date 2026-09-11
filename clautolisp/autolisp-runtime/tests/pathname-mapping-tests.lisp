@@ -296,3 +296,66 @@ read, and that is a valid answer."
   (is (null (clautolisp.pathname-mapping:live-mount-entries :posix)))
   (is (listp (clautolisp.pathname-mapping:live-mount-entries :msys2)))
   (is (listp (clautolisp.pathname-mapping:live-mount-entries :wsl))))
+
+;;; --- build/run detection split (windows-msys-paths-in-autolisp-load) ------
+;;;
+;;; The mingw-SBCL-under-MSYS2 CI runner: MSYSTEM is set (classifies
+;;; :msys2) and (truename "/") is a drive path, so the host CL opens
+;;; NATIVE C:/… paths while make hands the program /c/… paths ($(CURDIR)
+;;; in MSYS form). These drive the internal %DETECT-ENVIRONMENT with the
+;;; runner's probe inputs injected, so the (build x run) split is
+;;; verifiable on a Linux host that cannot itself be that environment.
+
+(defun %mingw-under-msys2-detect (tag)
+  "%DETECT-ENVIRONMENT as it would resolve on the mingw-under-MSYS2 runner:
+MSYSTEM set, os-windows-p true, (truename \"/\") a drive path, no live
+mount file to read."
+  (clautolisp.pathname-mapping::%detect-environment
+   tag
+   :inputs (list :msystem "UCRT64" :ostype nil :uname-o nil
+                 :proc-version nil :osrelease nil :os-windows-p t)
+   :root-truename "C:/msys64/"
+   :home "C:/msys64/home/pjb"
+   :live nil))
+
+(test pathmap-detect-build-native-run-keeps-mount-under-mingw
+  ;; The FIX: the native-drive-style override is BUILD-only. The build
+  ;; frame renders native (the CL opens C:/…); the run frame stays a
+  ;; :posix-mount MSYS2 frame so the user's /c/… paths translate. Before
+  ;; the fix both frames were forced native and /c/… became UNMAPPABLE.
+  (let ((build (%mingw-under-msys2-detect :build))
+        (run   (%mingw-under-msys2-detect :run)))
+    (is (eq :drive-letter (clautolisp.pathname-mapping:menv-drive-style build)))
+    (is (null (clautolisp.pathname-mapping:menv-drive-mount-prefix build)))
+    (is (eq :posix-mount (clautolisp.pathname-mapping:menv-drive-style run)))
+    (is (string= "/" (clautolisp.pathname-mapping:menv-drive-mount-prefix run)))
+    ;; End to end: a /c/… path the program computes maps in to the native
+    ;; C:/… the mingw CL can open.
+    (is (string= "C:/Users/pjb/schms/tests/t.lsp"
+                 (clautolisp.pathname-mapping:map-in-namestring
+                  "/c/Users/pjb/schms/tests/t.lsp" :run run :build build)))
+    ;; …and a /v/… path on another drive maps just the same.
+    (is (string= "V:/data/a.lsp"
+                 (clautolisp.pathname-mapping:map-in-namestring
+                  "/v/data/a.lsp" :run run :build build)))
+    ;; A native C:/… path the harness passes still stays native (the
+    ;; original override's intent, preserved without collapsing the run
+    ;; frame).
+    (is (string= "C:/Users/pjb/schms/tests/t.lsp"
+                 (clautolisp.pathname-mapping:map-in-namestring
+                  "C:/Users/pjb/schms/tests/t.lsp" :run run :build build)))
+    ;; map-out renders a host path back in the user's /c/… frame, so a
+    ;; findfile result re-loads through map-in without loss.
+    (is (string= "/c/Users/pjb/schms/tests/t.lsp"
+                 (clautolisp.pathname-mapping:map-out-namestring
+                  "C:/Users/pjb/schms/tests/t.lsp" :run run :build build)))))
+
+(test pathmap-posix-host-does-not-invent-drives
+  ;; Acceptance: on a genuine POSIX host, /c/foo and /v/bar are ordinary
+  ;; directories, NOT Windows drives — the identity environment leaves
+  ;; them untouched (no universal "leading letter => drive" rewrite).
+  (let ((p (%posix)))
+    (dolist (s '("/c/foo" "/v/bar/baz.lsp" "/mnt/c/x" "/usr/local/lib"))
+      (is (string= s (clautolisp.pathname-mapping:map-in-namestring
+                      s :run p :build p))
+          "POSIX identity map-in changed ~S" s))))
