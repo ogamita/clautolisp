@@ -509,28 +509,50 @@ Never fails: an unhandled form becomes an interpreter call on itself."
                  nil)))
 
          ((string= name "FOREACH")
-          ;; (foreach NAME LIST body...) yields the LAST BODY VALUE -- or
-          ;; nil for an empty list or an empty body. The arity and the
-          ;; binding name are checked HERE because both are literal: a
-          ;; malformed FOREACH falls back and the interpreter signals,
-          ;; rather than this file growing a second copy of that error.
-          (if (and (>= (length arguments) 2)
-                   (typep (first arguments) 'autolisp-symbol))
-              `(let ((%foreach-result nil))
-                 (unwind-protect
-                      (progn
-                        (push-dynamic-frame ,context-var)
-                        (dolist (%foreach-element
-                                 (check-foreach-sequence
-                                  ,(transpile-form (second arguments) context-var))
-                                 %foreach-result)
-                          (bind-foreach-variable ',(first arguments)
-                                                 %foreach-element
-                                                 ,context-var)
-                          (setf %foreach-result
-                                ,(transpile-body (cddr arguments) context-var))))
-                   (pop-dynamic-frame ,context-var)))
-              (%fallback form context-var)))
+          ;; (foreach NAME LIST body...) yields the LAST BODY VALUE -- or,
+          ;; for an EMPTY BODY, the dialect-resolved value that
+          ;; FOREACH-EMPTY-BODY-RESULT returns (nil per the spec/AutoCAD,
+          ;; the list under --dialect bricscad;
+          ;; foreach-empty-body-return-diverges.issue) -- the same function
+          ;; the interpreter calls, so the two forks cannot drift. The
+          ;; arity and the binding name are checked HERE because both are
+          ;; literal: a malformed FOREACH falls back and the interpreter
+          ;; signals, rather than this file growing a second copy of that
+          ;; error.
+          (cond
+            ((not (and (>= (length arguments) 2)
+                       (typep (first arguments) 'autolisp-symbol)))
+             (%fallback form context-var))
+            ((cddr arguments)
+             `(let ((%foreach-result nil))
+                (unwind-protect
+                     (progn
+                       (push-dynamic-frame ,context-var)
+                       (dolist (%foreach-element
+                                (check-foreach-sequence
+                                 ,(transpile-form (second arguments) context-var))
+                                %foreach-result)
+                         (bind-foreach-variable ',(first arguments)
+                                                %foreach-element
+                                                ,context-var)
+                         (setf %foreach-result
+                               ,(transpile-body (cddr arguments) context-var))))
+                  (pop-dynamic-frame ,context-var))))
+            (t
+             ;; No body: run the loop for its (discarded) bindings, then
+             ;; return the dialect-resolved body-less value.
+             `(let ((%foreach-sequence
+                     (check-foreach-sequence
+                      ,(transpile-form (second arguments) context-var))))
+                (unwind-protect
+                     (progn
+                       (push-dynamic-frame ,context-var)
+                       (dolist (%foreach-element %foreach-sequence)
+                         (bind-foreach-variable ',(first arguments)
+                                                %foreach-element
+                                                ,context-var)))
+                  (pop-dynamic-frame ,context-var))
+                (foreach-empty-body-result %foreach-sequence ,context-var)))))
 
          ((string= name "LET")
           ;; BricsCAD V26's undocumented CL-style LET, vendor-confirmed.

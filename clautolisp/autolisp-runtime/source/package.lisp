@@ -93,6 +93,7 @@
    #:check-repeat-count
    #:check-foreach-sequence
    #:bind-foreach-variable
+   #:foreach-empty-body-result
    #:eval-lambda-form
    #:eval-let-form
    #:check-vlax-collection-support

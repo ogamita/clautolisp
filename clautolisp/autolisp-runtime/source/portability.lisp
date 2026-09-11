@@ -451,6 +451,33 @@ the two APIs that do work."
    ("clautolisp: the D3 divergence" . "issues/open/vendor-probe-autocad-bricscad-divergences.issue")))
 
 (register-dialect-warning
+ :tag "foreach-empty-body"
+ :title "FOREACH with no body — return value"
+ :kind :vendor-divergence
+ :message "a FOREACH with no body returns nil under the spec and AutoCAD, but the list under BricsCAD"
+ :arguments "the active dialect and which value clautolisp is about to return"
+ :example ": [foreach-empty-body] a FOREACH with no body returns nil under the specification and AutoCAD, but BricsCAD returns the list left in its accumulator. clautolisp returns the list under --dialect bricscad; the two answers are not portable."
+ :dialects
+ "The autolisp-spec says FOREACH yields \"the final body value, or nil if
+no body exists\"; AutoCAD (2022, 2026) follows it and returns nil for a
+body-less FOREACH over a non-empty list. BricsCAD (V25 Windows, V26 macOS)
+returns the LIST instead -- the value its loop left in the accumulator,
+plausibly an implementation accident.
+
+clautolisp returns nil under --autocad, --clautolisp and --strict (the
+spec value), and reproduces BricsCAD's list under --dialect bricscad and
+--lax. strict and bricscad additionally warn: the return is not portable
+either way."
+ :rationale
+ "An empty loop body is not exotic -- (while (setq i (cdr i))) drains a
+list the same way -- so a program can depend on this return without a line
+that looks unusual. The warning names the hazard; the dialect switch lets
+BricsCAD-targeted code get BricsCAD's answer."
+ :references
+ '(("clautolisp: emitted by" . "clautolisp/autolisp-runtime/source/api.lisp, EMIT-FOREACH-EMPTY-BODY-DIVERGENCE-WARNING")
+   ("clautolisp: the ticket" . "issues/open/foreach-empty-body-return-diverges.issue")))
+
+(register-dialect-warning
  :tag "read-leading-comment"
  :title "READ on a string starting with a comment"
  :kind :vendor-divergence

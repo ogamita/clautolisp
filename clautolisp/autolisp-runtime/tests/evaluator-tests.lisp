@@ -1715,6 +1715,43 @@ already (issues/closed/compiled-loop-with-empty-body.issue)."
               :clautolisp
               "(progn (setq n nil) (foreach e '(1 2 3) (setq n e)) n)"))))
 
+(test foreach-empty-body-is-dialect-discriminated
+  "The body-less FOREACH return is now DISCRIMINATED BY DIALECT, following
+every other :vendor-divergence: the spec value nil under autocad,
+clautolisp and strict; BricsCAD's list under --dialect bricscad and --lax.
+strict and bricscad WARN -- the two answers are not portable, which is
+what the warning says. An EMPTY list is nil for every engine (they agree
+there), so it neither diverges nor warns.
+(foreach-empty-body-return-diverges.issue)"
+  (flet ((val (dialect)
+           (reset-autolisp-symbol-table)
+           (%run-under-dialect dialect "(foreach e '(1 2 3))"))
+         (warned (dialect source)
+           (reset-autolisp-symbol-table)
+           (multiple-value-bind (r d) (%run-under-dialect dialect source)
+             (declare (ignore r))
+             (and (search "[foreach-empty-body]" d) t))))
+    ;; The spec value, nil, silent, under the normative dialects.
+    (is (null (val :autocad-2022)))
+    (is (null (val :autocad-2026)))
+    (is (null (val :clautolisp)))
+    (is (not (warned :clautolisp   "(foreach e '(1 2 3))")))
+    (is (not (warned :autocad-2026 "(foreach e '(1 2 3))")))
+    ;; BricsCAD's list, and a portability warning, under the vendor dialect.
+    (is (equal '(1 2 3) (val :bricscad-v26)))
+    (is (equal '(1 2 3) (val :bricscad-v25)))
+    (is (warned :bricscad-v26 "(foreach e '(1 2 3))"))
+    ;; lax: the list too, but silent.
+    (is (equal '(1 2 3) (val :lax)))
+    (is (not (warned :lax "(foreach e '(1 2 3))")))
+    ;; strict: the spec value nil, but WARNED (any divergence is unsafe).
+    (is (null (val :strict)))
+    (is (warned :strict "(foreach e '(1 2 3))"))
+    ;; An empty list: nil everywhere, no divergence, no warning.
+    (reset-autolisp-symbol-table)
+    (is (null (%run-under-dialect :bricscad-v26 "(foreach e '())")))
+    (is (not (warned :bricscad-v26 "(foreach e '())")))))
+
 (test foreach-leaves-a-global-of-the-same-name-alone
   "A global is not a dynamic binding, and both engines agree it survives.
 Kept because this case used to pass for the WRONG reason -- the old

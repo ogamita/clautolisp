@@ -3832,6 +3832,59 @@ together the moment this line did. See
 issues/open/foreach-binding-vs-assignment.issue."
   (bind-dynamic-variable name element context))
 
+;;; FOREACH with NO BODY: the RETURN VALUE is the one case where the
+;;; vendors disagree (foreach-empty-body-return-diverges.issue). The spec
+;;; -- "the final body value, or nil if no body exists" -- and AutoCAD
+;;; (2022, 2026) return nil; BricsCAD (V25 Windows, V26 macOS) returns the
+;;; LIST its loop left in the accumulator. clautolisp follows the spec by
+;;; default and reproduces BricsCAD's answer only under --dialect bricscad
+;;; (and --lax), classifying the dialect exactly as every other
+;;; :vendor-divergence does (cf. %RESOLVED-DIVERGENCE-POLICY in cador).
+;;; The interpreter and the compiler BOTH call FOREACH-EMPTY-BODY-RESULT
+;;; for the body-less case, so the two forks cannot drift (see the note
+;;; above CHECK-REPEAT-COUNT).
+
+(defun %resolved-foreach-empty-body-policy (dialect-name)
+  "Classify DIALECT-NAME for the body-less FOREACH return divergence.
+Returns (values ACTION WARN-P): ACTION is :normative (nil, per the spec
+and AutoCAD) or :deviant (the list, per BricsCAD); WARN-P is true iff a
+portability warning is due.  lax -> deviant, silent; bricscad -> deviant
++ warn; strict -> normative + warn; autocad / clautolisp / unknown ->
+normative, silent."
+  (case dialect-name
+    ((:lax)                            (values :deviant   nil))
+    ((:bricscad :bricscad-v25 :bricscad-v26 :bricscad-mac :bricscad-linux)
+     (values :deviant   t))
+    ((:strict)                         (values :normative t))
+    (t                                 (values :normative nil))))
+
+(defun emit-foreach-empty-body-divergence-warning (dialect-name action)
+  "Advisory to *ERROR-OUTPUT*: a body-less FOREACH's return value is not
+portable.  Emitted under --dialect bricscad (where clautolisp returns the
+list to match) and --strict (where it returns nil, per the spec)."
+  (format *error-output*
+          "~&[foreach-empty-body] a FOREACH with no body returns nil under ~
+the specification and AutoCAD, but BricsCAD returns the list left in its ~
+accumulator. clautolisp returns ~A under --dialect ~A; the two answers ~
+are not portable.~%"
+          (if (eq action :deviant) "the list" "nil")
+          (or dialect-name "the active dialect")))
+
+(defun foreach-empty-body-result (sequence context)
+  "The value a body-less FOREACH yields, resolved by the active dialect.
+nil for an empty SEQUENCE -- the vendors agree there, so nothing diverges
+and nothing warns.  For a non-empty SEQUENCE the answer follows
+%RESOLVED-FOREACH-EMPTY-BODY-POLICY: the list under bricscad / lax, nil
+everywhere else, warning under bricscad and strict."
+  (if (null sequence)
+      nil
+      (let ((dialect-name (ignore-errors (current-evaluation-dialect-name context))))
+        (multiple-value-bind (action warn-p)
+            (%resolved-foreach-empty-body-policy dialect-name)
+          (when warn-p
+            (emit-foreach-empty-body-divergence-warning dialect-name action))
+          (if (eq action :deviant) sequence nil)))))
+
 (defun eval-repeat-form (arguments context)
   (unless (>= (length arguments) 1)
     (signal-autolisp-runtime-error
@@ -3861,12 +3914,16 @@ issues/open/foreach-binding-vs-assignment.issue."
       (unwind-protect
            (progn
              (push-dynamic-frame context)
-             (dolist (element sequence result)
+             (dolist (element sequence)
                (bind-foreach-variable name element context)
-               (setf result (if body
-                                (autolisp-eval-progn body context)
-                                nil))))
-        (pop-dynamic-frame context)))))
+               (when body
+                 (setf result (autolisp-eval-progn body context)))))
+        (pop-dynamic-frame context))
+      ;; With a body, the last body value; with none, the dialect-resolved
+      ;; body-less value (nil per the spec/AutoCAD, the list under bricscad).
+      (if body
+          result
+          (foreach-empty-body-result sequence context)))))
 
 (defun check-vlax-collection-support ()
   "Signal unless COM collection support is installed.
