@@ -577,14 +577,24 @@ win a tie against a convention."
                              :key #'mount-frame-prefix :test #'string=))
                      standard)))
 
-(defun %detect-environment (probe-tag)
-  (let* ((inputs (%detect-inputs))
-         (kind (apply #'classify-environment-kind inputs))
-         (root-truename (ignore-errors (namestring (truename #P"/"))))
-         (live (live-mount-entries kind))
+(defun %detect-environment (probe-tag &key
+                                        (inputs (%detect-inputs) inputs-supplied-p)
+                                        (root-truename
+                                         (ignore-errors (namestring (truename #P"/"))))
+                                        (home (%detect-home))
+                                        (live nil live-supplied-p))
+  ;; INPUTS / ROOT-TRUENAME / HOME / LIVE default to the live process
+  ;; probes, so the shipped runtime behaves exactly as before.  They are
+  ;; overridable so the (build x run) detection logic — including the
+  ;; build-only native override below — is testable on a Linux host that
+  ;; cannot itself be a mingw-under-MSYS2 environment
+  ;; (windows-msys-paths-in-autolisp-load.issue).
+  (declare (ignorable inputs-supplied-p))
+  (let* ((kind (apply #'classify-environment-kind inputs))
+         (live (if live-supplied-p live (live-mount-entries kind)))
          (env (make-environment-for-kind
                kind
-               :home (%detect-home)
+               :home home
                :probe (list* :tag probe-tag :root-truename root-truename
                              :live-mounts (length live) inputs))))
     ;; Seed from what the system actually reports, keeping the conventional
@@ -597,7 +607,25 @@ win a tie against a convention."
     ;; paths, force native rendering regardless of the shell that set
     ;; MSYSTEM/OSTYPE.  Fixes the mingw-SBCL-under-MSYS2 runner where a
     ;; native C:/… was being rewritten to /c/… and became unopenable.
-    (when (%cl-renders-native-drive-paths-p root-truename)
+    ;;
+    ;; This override belongs to the BUILD frame ONLY.  The build frame
+    ;; describes how the host CL *opens* files (from-canonical must emit
+    ;; C:/…, the form the mingw CL can open).  The RUN frame describes how
+    ;; the user/shell *names* files, and on that same MSYS2 runner the
+    ;; user passes /c/… paths (make's $(CURDIR)).  Forcing the run frame
+    ;; native too collapses the two frames the whole layer exists to keep
+    ;; apart: it clears the run frame's drive-mount-prefix and mount
+    ;; table, so to-canonical "/c/…" finds no mount, signals
+    ;; UNMAPPABLE-PATH, and %map-in-safe hands the raw /c/… back to the
+    ;; host — which cannot open it (findfile of a computed /c/… path
+    ;; returned nil and LOAD could not locate it:
+    ;; windows-msys-paths-in-autolisp-load.issue).  Keeping the run frame
+    ;; a :posix-mount MSYS2 frame lets /c/… map in to C:/… while an
+    ;; already-native C:/… passed by the harness still stays native (the
+    ;; drive-path branch of TO-CANONICAL handles it independently of the
+    ;; run frame's drive-style), preserving the original fix's intent.
+    (when (and (eq probe-tag :build)
+               (%cl-renders-native-drive-paths-p root-truename))
       (%force-native-drive-style env))
     env))
 

@@ -552,10 +552,14 @@ if [[ -s "$result_file" ]] && grep -q 'run-end' "$result_file"; then
   write_metadata "completed" "$exit_code"
 elif [[ $exit_code -eq 0 && -s "$result_file" ]]; then
   write_metadata "incomplete" "$exit_code"
-  echo "run-probes: ERROR — the wrapper started but never reached its end record." >&2
-  echo "  A suite raised and stopped the run. The partial results are kept:" >&2
+  echo "run-probes: NOTE — the wrapper started but never reached its end record." >&2
+  echo "  A suite stopped the run early; the partial results are kept:" >&2
   echo "    $result_file" >&2
-  exit 1
+  # PROBE_ANY_RESULT_IS_SUCCESS: an EXPERIMENT suite (e.g. load-refusal) is
+  # meant to record whatever the engine does — up to and including stopping
+  # early with no end record — so a non-empty result IS the outcome and the
+  # job passes. Normal suites keep the strict rule: an incomplete run fails.
+  [[ -n "${PROBE_ANY_RESULT_IS_SUCCESS:-}" ]] || exit 1
 else
   write_metadata "failed" "$exit_code"
   # An EMPTY result file after a CLEAN exit is the failure mode worth
@@ -597,9 +601,19 @@ fi
 
 echo "Probe run directory: $run_dir"
 # A complete result (run-end present) is a success even when the runner exited
-# non-zero — see the "completed" branch above. Only a run that produced no
-# complete result keeps the runner's failing code.
+# non-zero — see the "completed" branch above.
 if [[ -s "$result_file" ]] && grep -q 'run-end' "$result_file"; then
+  exit 0
+fi
+# PROBE_ANY_RESULT_IS_SUCCESS: for an EXPERIMENT suite (load-refusal) the
+# engine is EXPECTED to stop before run-end — a crash, a hang the timeout
+# kills, or a load that never returns — and the captured partial result is
+# the whole point. Any NON-EMPTY result then counts as success regardless
+# of the runner's exit code: the artefact is the outcome (pjb 2026-09-11,
+# "ensure the probe is successful whatever the outcome"). A run that
+# produced NOTHING at all still keeps the failing code — no result is the
+# one real failure.
+if [[ -n "${PROBE_ANY_RESULT_IS_SUCCESS:-}" ]] && [[ -s "$result_file" ]]; then
   exit 0
 fi
 exit "$exit_code"
