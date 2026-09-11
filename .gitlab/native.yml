@@ -567,9 +567,13 @@ probe:suite:bricscad:macos:
 # answer. See probes/sources/probe-load-refusal.lsp and
 # issues/open/bricscad-refuses-to-load-what-it-will-run.issue.
 #
-# allow_failure, because a failed job here is a RESULT and not a
-# regression; PROBE_TIMEOUT low, because the Windows runner is serial
-# and nothing else should queue behind a deliberate hang.
+# PROBE_TIMEOUT low, because the Windows runner is serial and nothing
+# should queue behind a deliberate hang. PROBE_ANY_RESULT_IS_SUCCESS,
+# because this is an EXPERIMENT whose whole point is to capture whatever
+# the engine does — a crash, a hang the timeout kills, a load that never
+# returns — so ANY captured (non-empty) result is a success and the job
+# goes GREEN; only a run that produced nothing at all fails. allow_failure
+# is kept as a belt-and-braces guard for the no-result case.
 probe:load-refusal:bricscad:macos:
   extends: .gate-macos-cad-soft
   stage: test
@@ -580,6 +584,7 @@ probe:load-refusal:bricscad:macos:
     PROBE_SUITES: 'load-refusal'
     PROBE_SPLIT_SUITES: 'load-refusal'
     PROBE_TIMEOUT: '45'
+    PROBE_ANY_RESULT_IS_SUCCESS: '1'
   script:
     - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end build-alfe-sbcl
@@ -600,6 +605,7 @@ probe:load-refusal:bricscad:windows:
     PROBE_SUITES: 'load-refusal'
     PROBE_SPLIT_SUITES: 'load-refusal'
     PROBE_TIMEOUT: '45'
+    PROBE_ANY_RESULT_IS_SUCCESS: '1'
   script:
     - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end build-alfe-sbcl
