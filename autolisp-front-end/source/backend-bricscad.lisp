@@ -687,13 +687,58 @@ on focusConsoleWindow(cmdWin)
   tell application \"System Events\" to click at {clickX, clickY}
 end focusConsoleWindow
 
--- Type TXT in small bursts, RE-CHECKING after every burst that BricsCAD
--- is still the process actually receiving them. A single `keystroke' of
--- the whole string would be one blocking call with no chance to notice
--- the front application changed mid-string; bursts are what make a
--- mid-injection deviation (e.g. the user clicking another window)
--- detectable at all. Returns true iff TXT was fully typed with BricsCAD
--- staying frontmost throughout.
+-- Guarantee an EMPTY prompt before typing anything, regardless of what
+-- (if anything) was already sitting there. Found necessary by actually
+-- running this against live BricsCAD (2026-09-11): the console is a real
+-- position-aware text field, not an append-only terminal — a click can
+-- land MID-STRING if something uncommitted is already present (e.g. a
+-- leftover fragment from an earlier interrupted script), and typing then
+-- INSERTS there instead of appending, corrupting both the old and the
+-- new text together. End first (so Shift+Home is guaranteed to select
+-- the WHOLE line rather than only the part after wherever the click
+-- happened to land), then Backspace the selection away.
+on clearConsoleLine(procName)
+  tell application \"System Events\"
+    key code 119 -- End
+    key code 115 using shift down -- Shift+Home: select the whole line
+    key code 51 -- Backspace: delete the selection
+  end tell
+end clearConsoleLine
+
+-- Is the console window BOTH (a) in the frontmost PROCESS and (b) the
+-- FOCUSED window within that process? (a) alone is not enough: BricsCAD
+-- Lite has (at least) two windows, and the process staying frontmost
+-- while the DRAWING window silently takes over key-window status inside
+-- it — a click on the drawing area, an internal tooltip/autosave prompt,
+-- anything — is invisible to a process-level check alone. AXFocusedWindow
+-- is the process-relative primitive for \"which of MY OWN windows has
+-- the keyboard right now\" (verified live, 2026-09-11:
+-- `tell process \"bricscad\" to get value of attribute \"AXFocusedWindow\"'
+-- correctly reports the console window while it holds focus). Wrapped in
+-- `try' because a fully backgrounded process can raise resolving its own
+-- attributes; any error there means \"cannot confirm focus\", i.e. false.
+on consoleStillFocused(procName)
+  set ok to false
+  try
+    tell application \"System Events\"
+      if (name of first process whose frontmost is true) contains procName then
+        if (value of attribute \"AXMain\" of (value of attribute \"AXFocusedWindow\" of process procName)) then
+          set ok to true
+        end if
+      end if
+    end tell
+  end try
+  return ok
+end consoleStillFocused
+
+-- Type TXT in small bursts, RE-CHECKING after every burst with
+-- consoleStillFocused. A single `keystroke' of the whole string would be
+-- one blocking call with no chance to notice focus moved mid-string;
+-- bursts bound the damage of an undetected deviation to at most one
+-- chunk's worth of characters, and checking BOTH conditions above (not
+-- just process-frontmost, the earlier version's bug) is what actually
+-- catches a same-app window-focus change, not only a different app
+-- stealing focus outright.
 on typeWatchingFocus(txt, procName, chunkSize)
   set n to length of txt
   set i to 1
@@ -701,17 +746,73 @@ on typeWatchingFocus(txt, procName, chunkSize)
     set j to i + chunkSize - 1
     if j > n then set j to n
     tell application \"System Events\" to keystroke (text i thru j of txt)
-    set stillFront to false
-    try
-      tell application \"System Events\"
-        set stillFront to (name of first process whose frontmost is true) contains procName
-      end tell
-    end try
-    if not stillFront then return false
+    if not (my consoleStillFocused(procName)) then return false
     set i to j + 1
   end repeat
   return true
 end typeWatchingFocus
+
+-- Content-level confirmation BEFORE committing with Return: select from
+-- the caret back to the start of the current line (Shift+Home) and copy
+-- it, so what is compared is what BricsCAD's own console actually holds
+-- — not merely \"focus looked right during typing\", which typeWatchingFocus
+-- already checked but cannot guarantee against every possible timing
+-- window. The console exposes no AXValue (verified: no AXTextField /
+-- AXTextArea anywhere in its tree), so pixel OCR would normally be the
+-- only alternative — but the widget DOES support ordinary text selection
+-- and Cmd+C despite that, which a live round-trip confirmed
+-- (2026-09-11): typing `(setq test-verif-marker 424242)', Shift+Home,
+-- Cmd+C, reading `the clipboard' back gave exactly
+-- `: (setq test-verif-marker 424242)' — prompt prefix + the typed form,
+-- verbatim. Matched by SUFFIX because the prompt text is not something
+-- this script controls or should hard-code. The trailing Right-arrow
+-- collapses the selection back to the caret so the Return that follows
+-- submits cleanly rather than acting on a lingering selection.
+on verifyTypedLine(expectedForm, procName)
+  tell application \"System Events\"
+    key code 115 using shift down -- Shift+Home
+    keystroke \"c\" using command down
+    key code 124 -- Right arrow: collapse selection
+  end tell
+  delay 0.15
+  set copiedText to \"\"
+  try
+    set copiedText to (the clipboard as text)
+  end try
+  set expectedLength to length of expectedForm
+  set copiedLength to length of copiedText
+  if copiedLength < expectedLength then return false
+  return (text (copiedLength - expectedLength + 1) thru copiedLength of copiedText) is expectedForm
+end verifyTypedLine
+
+-- Recovery after a detected deviation (typing-time OR verification-time).
+-- Order matters, and getting it wrong was itself a bug found by actually
+-- running the first version of this template: Escape must be sent AFTER
+-- re-establishing frontmost + re-clicking the console, not before —
+-- Escape sent while some OTHER window is still key reaches THAT window,
+-- not BricsCAD's console, and never actually clears the partial fragment
+-- it was meant to discard. Re-activating via System Events' `set
+-- frontmost of process' (not `open -a appPath') works whether or not
+-- BricsCAD is a bundled .app, and cannot re-open docPath as a second
+-- document the way re-running LAUNCHCOMMAND could.
+on recoverConsole(procName)
+  tell application \"System Events\" to set frontmost of process procName to true
+  set w to my findConsoleWindow(procName)
+  if w is not missing value then
+    my focusConsoleWindow(w)
+    delay 0.2
+    -- Escape first: if BricsCAD is genuinely mid-command (e.g. awaiting a
+    -- point/click, not just idle at the base prompt), only Escape aborts
+    -- that — deleting characters cannot. Then CLEARCONSOLELINE: Escape
+    -- aborts a PENDING COMMAND, it does not reliably guarantee an idle
+    -- prompt is textually empty, and a raw leftover fragment sitting
+    -- there (not inside any command) is exactly what corrupted the very
+    -- first live run of this hardening (2026-09-11).
+    tell application \"System Events\" to key code 53 -- Escape
+    delay 0.2
+    my clearConsoleLine(procName)
+  end if
+end recoverConsole
 
 set procName to \"bricscad\"
 set loadForm to \"(load \\\"\" & runLspFile & \"\\\")\"
@@ -726,38 +827,60 @@ repeat while (attemptNum <= attemptLimit) and (not succeeded)
   end if
   my focusConsoleWindow(cmdWin)
   delay 0.2
+  -- Every attempt, not only after a detected deviation: this script
+  -- cannot assume the console starts empty. A leftover fragment from an
+  -- entirely UNRELATED earlier session (this script's own click landing
+  -- mid-string in it) is exactly what corrupted the first live run of
+  -- this hardening.
+  my clearConsoleLine(procName)
+  delay 0.1
 
-  if my typeWatchingFocus(loadForm, procName, 8) then
+  set typedOK to my typeWatchingFocus(loadForm, procName, 8)
+  set verifiedOK to false
+  if typedOK then set verifiedOK to my verifyTypedLine(loadForm, procName)
+
+  if typedOK and verifiedOK then
     tell application \"System Events\" to key code 36 -- Return
     set succeeded to true
   else
-    -- DEVIATION: some other application became frontmost mid-injection.
-    -- Do not resend blindly (see the header note: the console's own
-    -- state cannot be read back). Escape first, to discard whatever
-    -- partial fragment BricsCAD's console may have received, then ask
-    -- the human to stop interfering before the whole command is retried
-    -- from scratch.
+    my recoverConsole(procName)
+    set dialogMessage to \"Attempt \" & attemptNum & \" of \" & attemptLimit & \".\"
+    if not typedOK then
+      set dialogMessage to \"alfe is driving BricsCAD's command line and lost keyboard focus (another window became key mid-injection). Please leave BricsCAD alone until this finishes.\" & return & return & dialogMessage
+    else
+      set dialogMessage to \"alfe typed into BricsCAD's command line but could not confirm the console received it correctly. Please leave BricsCAD alone until this finishes.\" & return & return & dialogMessage
+    end if
+    set userDeclined to false
+    set userGaveUp to false
     try
-      tell application \"System Events\" to key code 53 -- Escape
+      set dialogResult to (display dialog dialogMessage ¬
+        buttons {\"Cancel\", \"Retry\"} default button \"Retry\" with icon caution giving up after 60)
+      if button returned of dialogResult is \"Cancel\" then set userDeclined to true
+      if gave up of dialogResult then set userGaveUp to true
+    on error errMsg number errNum
+      -- `display dialog' raises -128 ITSELF (it does not return a normal
+      -- record) when its \"Cancel\" button is clicked, or when Escape /
+      -- Cmd-period is pressed while it is showing — both mean the same
+      -- thing here: the user declined to retry. Caught explicitly so
+      -- that path always produces OUR OWN clear error below, never a
+      -- bare, easily-misread native -128 that could be mistaken for a
+      -- bug (this is exactly what happened live, 2026-09-11: a -128 was
+      -- reported even though the user's own account was \"I clicked
+      -- Retry, not Cancel\" — the ambiguity itself was the problem, not
+      -- necessarily which button was actually clicked). Any OTHER error
+      -- is re-signalled unchanged, not swallowed.
+      if errNum is -128 then
+        set userDeclined to true
+      else
+        error errMsg number errNum
+      end if
     end try
-    set dialogResult to (display dialog ¬
-      \"alfe is driving BricsCAD's command line and lost keyboard focus (another window became frontmost). Please leave BricsCAD alone until this finishes.\" & return & return & \"Attempt \" & attemptNum & \" of \" & attemptLimit & \".\" ¬
-      buttons {\"Cancel\", \"Retry\"} default button \"Retry\" with icon caution giving up after 60)
-    if button returned of dialogResult is \"Cancel\" then
+    if userDeclined then
       error \"macOS automation cancelled by the user after a focus deviation.\" number 4
     end if
-    if gave up of dialogResult then
+    if userGaveUp then
       error \"macOS automation timed out waiting for the user to acknowledge a focus deviation.\" number 5
     end if
-    -- Re-activate via System Events rather than `open -a appPath': that
-    -- would only work when BricsCAD is a bundled .app (LAUNCHCOMMAND above
-    -- already special-cases the non-bundle fallback of running the binary
-    -- directly), and re-running it here risks re-opening docPath as a NEW
-    -- document on top of whatever is already running. Targeting the
-    -- process by name works either way and only raises what is already
-    -- there.
-    tell application \"System Events\" to set frontmost of process procName to true
-    delay 1
   end if
   set attemptNum to attemptNum + 1
 end repeat
@@ -770,13 +893,35 @@ end if
 runLspFile) into BricsCAD's command line via System Events keystrokes,
 targeting the AXMain=true console window specifically (locale-independent
 — do not match by window title) rather than relying on the app merely
-being frontmost. Typing happens in small bursts so a mid-injection focus
-deviation (e.g. the user clicking another window) is detected; on
-deviation it discards any partial input (Escape — the console exposes no
-readable text state to resume from character-by-character), asks the
-user via a dialog to stop interfering, and retries the whole command,
-bounded to a few attempts. Requires an interactive session and
-Accessibility permission for the process running osascript. See
+being frontmost. Typing happens in small bursts, each followed by
+CONSOLESTILLFOCUSED — a conjunction of \"BricsCAD is the frontmost
+process\" AND \"the console is BricsCAD's own AXFocusedWindow\", so a
+same-app window-focus change (e.g. a click landing on the drawing window
+instead) is caught, not only a different app stealing focus outright.
+Before committing with Return, VERIFYTYPEDLINE does a CONTENT-level
+check — select-to-line-start (Shift+Home), copy, compare the clipboard
+against the intended text by suffix — since the console exposes no
+AXValue to read directly but does support ordinary text selection and
+Cmd+C. CLEARCONSOLELINE (End, Shift+Home, Backspace) runs before typing
+on EVERY attempt, not only after a detected deviation: the console is a
+real position-aware text field, not an append-only terminal, so a click
+can land MID-STRING if anything is already sitting there uncommitted
+(e.g. a leftover fragment from an unrelated earlier session) — corrupting
+old and new text together, which is exactly what a live run of an
+earlier version of this template did. On either kind of deviation,
+RECOVERCONSOLE re-establishes frontmost + re-focuses the console BEFORE
+sending Escape (Escape sent while some other window is still key would
+reach THAT window and never actually clear the partial fragment — a bug
+an earlier version of this template had) and then CLEARCONSOLELINE,
+discards the partial input, asks the user via a dialog to stop
+interfering (its \"Cancel\"/Escape/Cmd-period path is caught explicitly
+so a decline always raises OUR OWN clear error, never a bare, easily
+misread native -128), and the whole command is retried from scratch (not
+a character-level resume — the console's readable state, even via the
+clipboard trick, is only ever a snapshot taken by asking, not a live
+value that could be diffed against safely mid-stream). Bounded to a few
+attempts. Requires an interactive session and Accessibility permission
+for the process running osascript. See
 issues/open/alfe-bricscad-automation-macos-osascript.issue.")
 
 (defun macos-app-bundle-for (executable-path)
