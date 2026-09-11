@@ -1,0 +1,124 @@
+Title: re-enable alfe --mode automation on macOS and debug osascript driving of BricsCAD
+Status: OPEN (option B of alfe-bricscad-automation-macos) — to be done AT a macOS + BricsCAD machine
+Priority: P3
+Type: feature / investigation
+Depends: issues/closed/alfe-bricscad-automation-macos.issue
+
+* What
+
+Pursue OPTION B of the (now closed) alfe-bricscad-automation-macos
+ticket: keep --mode automation refused by DEFAULT on macOS, but make it
+possible to RE-ENABLE it explicitly, and then debug the osascript /
+AppleScript keystroke path against a real BricsCAD, interactively, at the
+machine. pjb, 2026-09-11: "re-enable --mode automation and debug osa
+scripting with bricscad on macos. We'll do it on macos."
+
+This is NOT a CI task and NOT reproducible headless. It needs an
+interactive GUI session with BricsCAD visible, Accessibility (TCC)
+granted to the shell running osascript, and a human watching where the
+injected text lands.
+
+* Background (see the closed ticket for the full five-round history)
+
+On macOS, --mode automation drives BricsCAD with osascript running the
+emitted launcher.applescript (EMIT-LAUNCHER-APPLESCRIPT), which injects
+`(load "run-common.lsp")' via System Events keystrokes. On 2026-08-14 pjb
+took OPTION A: --mode automation is refused on every non-Windows OS
+(BACKEND-NOT-AVAILABLE :NO-AUTOMATION), so it fails immediately instead of
+launching a CAD and timing out. That refusal is what the CI job
+verify:bricscad-automation:macos hits today (job 16444148404: phase 1
+automation FAIL exit=3 [NO-AUTOMATION], phase 2 batch PASS — the runner
+and BricsCAD are healthy; the mode is simply disabled).
+
+Everything needed to investigate was deliberately KEPT: the AppleScript
+emitter, MACOS-APP-BUNDLE-FOR, the Accessibility preflight, the
+launcher-state / launcher-focus reporting, the LAUNCHER-FAILED fast-fail,
+and scripts/verify-bricscad-automation.sh with its batch control phase.
+
+Five hypotheses were already eliminated on the real runner (script
+validity, Accessibility/TCC, launcher liveness, application focus,
+missing document). What remains — all GUI-level, machine-only:
+
+  - keyboard focus INSIDE BricsCAD is not on the command line (keystrokes
+    reach the app but land in the drawing area / a ribbon search box /
+    the Start tab);
+  - a modal or first-run dialog owns input;
+  - BricsCAD on macOS does not accept command input via synthetic
+    CGEvents at all — it may read the keyboard through a path that
+    `System Events' keystroke does not drive.
+
+* Plan
+
+1. OPT-IN RE-ENABLE (does not change the default). In
+   CHOOSE-EFFECTIVE-MODE (autolisp-front-end/source/backend-bricscad.lisp,
+   ~line 767) the refusal `(when (and (eq variant :automation) (not
+   (windows-p))) (error ...))' becomes conditional on an explicit opt-in
+   — e.g. an env var ALFE_ENABLE_MACOS_AUTOMATION=1 (and/or a hidden CLI
+   flag). Without the opt-in, macOS behaves EXACTLY as today (immediate
+   :NO-AUTOMATION, --mode batch the supported path). The BUILD-LAUNCH-ARGV
+   :automation macOS branch (~line 823) already emits `osascript
+   launcher.applescript', so nothing else is needed to reach the path.
+
+2. DEBUG AT THE MACHINE (option B). With the opt-in set, run
+   scripts/verify-bricscad-automation.sh (or the emitted
+   launcher.applescript by hand) with BricsCAD visible and watch where
+   the text goes. protocol/status.txt, protocol/stdout.txt,
+   launcher-focus.txt and the kept workdir are the instruments.
+
+3. HARDEN THE INJECTION — the concrete things to try, roughly in order of
+   promise (the unsolved failure is: keystrokes reach a FOCUSED BricsCAD
+   and still do not execute — so the `keystroke' mechanism itself is the
+   prime suspect, not timing):
+   - CLIPBOARD PASTE instead of literal keystroke: `set the clipboard to
+     "(load \"...\")"', `keystroke "v" using command down', then
+     `keystroke return'. This is the leading candidate for why per-char
+     `keystroke' never took effect.
+   - DELIVERY CONFIRMATION LOOP: after injecting, poll protocol/status.txt
+     for READY -> request -> DONE; if no progress within N s, re-`activate'
+     BricsCAD and re-inject, bounded to a few attempts, so a lost inject
+     is retried rather than silently timing out.
+   - EXPLICIT ACTIVATE + RE-ASSERT FRONTMOST immediately before each
+     burst (not only once at startup), and consider clicking/placing the
+     command line via UI scripting (AXUIElement) so focus is on the input
+     field, addressing the top remaining hypothesis.
+   - If synthetic CGEvents are simply not accepted: evaluate a non-keystroke
+     channel (e.g. a BricsCAD-side listener that reads a file/socket, the
+     way the batch file-protocol already works), and treat AppleScript as
+     launch-only.
+
+* Acceptance
+
+- With the opt-in set, verify:bricscad-automation:macos phase 1 completes
+  the protocol cycle on a real macOS + BricsCAD GUI session (READY ->
+  request -> DONE, marker echoed), OR the artefacts pin down which of the
+  remaining hypotheses is the cause.
+- The DEFAULT is unchanged: without the opt-in, macOS still refuses
+  --mode automation immediately (the existing tests in
+  backend-cad-tests.lisp must stay green — assert on both platforms so
+  they are not vacuous on the Windows lane).
+- Once a working path exists, decide whether to promote it from opt-in to
+  default on macOS, or keep it opt-in with --mode batch remaining the
+  documented macOS path.
+
+* Notes / constraints
+
+- Cannot be verified in CI or by an agent without the machine: no
+  interactive GUI, no Accessibility grant, no human to observe. This
+  ticket is a human-at-the-keyboard task on macOS.
+- Keep the change minimal and reversible: the opt-in must not weaken the
+  immediate, honest failure that option A introduced for the common
+  "no BricsCAD installed" case.
+
+* References
+
+- issues/closed/alfe-bricscad-automation-macos.issue (full history, five
+  eliminations, option A/B, what was kept)
+- autolisp-front-end/source/backend-bricscad.lisp
+  - CHOOSE-EFFECTIVE-MODE (the refusal to relax behind an opt-in)
+  - *BRICSCAD-APPLESCRIPT-TEMPLATE* + EMIT-LAUNCHER-APPLESCRIPT (the launcher)
+  - BUILD-LAUNCH-ARGV :automation macOS branch (osascript launcher.applescript)
+- scripts/verify-bricscad-automation.sh (the harness; accessibility
+  preflight + batch control + artefact capture)
+- .gitlab CI job verify:bricscad-automation:macos (manual/allow_failure);
+  latest evidence: job 16444148404 (2026-09-11) — automation FAIL exit=3
+  [NO-AUTOMATION], batch PASS.
