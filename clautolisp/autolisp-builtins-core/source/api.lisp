@@ -1705,8 +1705,15 @@ identical to a plain cwd merge.
 
 LEAF carries OPEN's mode into the case-folding walk: \"r\" resolves the
 leaf, \"w\" takes it as written, \"a\" prefers an existing one. See
-%RESOLVE-PATH-CASE."
-  (let ((normalized (normalize-path-string string)))
+%RESOLVE-PATH-CASE.
+
+An absolute name is MAP-IN'd first so OPEN accepts a user/run-frame path
+(a /c/… MSYS path on the Windows runner) the same way LOAD and the
+vl-file-* builtins do via RESOLVE-OPEN-PATHNAME
+(windows-msys-paths-in-autolisp-load.issue). A relative name is left
+untouched by MAP-IN (TO-CANONICAL passes relatives through) and still
+walks the support search below."
+  (let ((normalized (%map-in-safe (normalize-path-string string))))
     (cond
       ((absolute-path-string-p normalized)
        (%fold-pathname-case (pathname normalized) who leaf))
@@ -1743,7 +1750,12 @@ leaf, \"w\" takes it as written, \"a\" prefers an existing one. See
   ;; LEAF is :as-written for VL-MKDIR: (vl-mkdir "newdir") beside an
   ;; existing NEWDIR must create newdir, not quietly resolve onto the
   ;; other one and report success for a directory it did not make.
-  (let ((normalized (normalize-path-string directory-string)))
+  ;;
+  ;; MAP-IN the user/run-frame directory so a /c/… MSYS path names the
+  ;; same directory the vl-file-* builtins reach through
+  ;; RESOLVE-OPEN-PATHNAME (windows-msys-paths-in-autolisp-load.issue); a
+  ;; relative name is passed through unchanged by MAP-IN.
+  (let ((normalized (%map-in-safe (normalize-path-string directory-string))))
     (handler-case
         (%fold-pathname-case
          (uiop:ensure-directory-pathname
