@@ -109,8 +109,14 @@ Debugger / ncurses UI (P3, pure-Lisp, this branch's workstream =debugger-ui-ncur
   layout persistence that recreates user-defined interactors.
 Docs / spec:
 - TODO =autolisp-spec-alref-commands= — spec: alref command listing.
-- TODO =grread-keyboard-event-is-a-list-not-a-dotted-pair= — doc-only: grread is a deliberate
-  stub; downstream-assumption clarification, low value.
+- DONE =grread-keyboard-event-is-a-list-not-a-dotted-pair= — RESOLVED 2026-09-12
+  (clautolisp 2.2.15 / alfe 2.2.23): grread implemented for the keyboard case
+  (code 2) at the host seam (host-grread on cador reads one char from the
+  prompt-stream → the proper list (2 CHAR-CODE); no input → nil). UI-agnostic
+  (works under dumb + ncurses + --mock-input). Mouse/graphical codes out of
+  scope (pjb). autolisp-spec GRREAD gained a *** clautolisp section + the
+  list-not-dotted-pair note; headless test pins the shape. Residual (needs real
+  CAD, non-blocking): AutoCAD return-shape + mouse code-5 cross-checks. Closed.
 Needs triage:
 - =empty-ressource= — unclassified; read and tier (or close) at next pass.
 

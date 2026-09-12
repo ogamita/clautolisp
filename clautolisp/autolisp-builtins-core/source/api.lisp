@@ -6624,6 +6624,27 @@ issues/open/clautolisp-module-app-extensions.issue."
   (host-getint (current-evaluation-host)
                (and prompt (optional-prompt-string prompt "GETINT"))))
 
+(defun builtin-grread (&optional track allkeys curtype)
+  "grread: read a low-level input event
+(grread-keyboard-event-is-a-list-not-a-dotted-pair.issue). clautolisp has no
+drawing editor, so only the KEYBOARD case is implemented: it reads one
+character from the active host's input and returns the documented proper LIST
+(2 CHAR-CODE) — a two-element list, never a dotted pair (2 . CHAR-CODE). Every
+mouse / point / tablet event code needs a graphical host and is not produced;
+a host with no interactive input (batch, or a backend that does not support
+grread) returns nil rather than signalling. TRACK/ALLKEYS/CURTYPE are accepted
+for call-compatibility and are inert in a terminal."
+  (handler-case
+      (host-grread (current-evaluation-host) track allkeys curtype)
+    (clautolisp.autolisp-runtime:autolisp-runtime-error (e)
+      ;; A backend that does not support grread (nihil, or a minimal host)
+      ;; means "no interactive graphics input here" -> nil, per the spec's
+      ;; no-input-device return; other runtime errors propagate.
+      (if (eq (clautolisp.autolisp-runtime:autolisp-runtime-error-code e)
+              :host-not-supported)
+          nil
+          (error e)))))
+
 (defun builtin-getreal (&optional prompt)
   (host-getreal (current-evaluation-host)
                 (and prompt (optional-prompt-string prompt "GETREAL"))))
@@ -10380,7 +10401,9 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     ;; DCL dialogs / tiles (3)
     "GET_ATTR" "INIT_DIALOG" "REDRAW_DIALOG"
     ;; Graphics primitives (GR*) (7)
-    "GRARC" "GRCLEAR" "GRDRAW" "GRFILL" "GRREAD" "GRTEXT" "GRVECS"
+    ;; GRREAD is no longer a nil stub — it has a real keyboard (code 2)
+    ;; implementation (see builtin-grread / host-grread on cador).
+    "GRARC" "GRCLEAR" "GRDRAW" "GRFILL" "GRTEXT" "GRVECS"
     ;; Interactive prompts (GET*/INITGET) (5) — ALERT is the real
     ;; impl above and is NOT in this list. GETPROPERTYVALUE landed in
     ;; M2-M5 per the issue text and is excluded here.
@@ -10581,6 +10604,7 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "INITGET"    #'builtin-initget)
    (make-core-builtin-subr "GETSTRING"  #'builtin-getstring)
    (make-core-builtin-subr "GETINT"     #'builtin-getint)
+   (make-core-builtin-subr "GRREAD"     #'builtin-grread)
    (make-core-builtin-subr "GETREAL"    #'builtin-getreal)
    (make-core-builtin-subr "GETPOINT"   #'builtin-getpoint)
    (make-core-builtin-subr "GETCORNER"  #'builtin-getcorner)

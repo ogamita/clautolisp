@@ -58,6 +58,20 @@ CL string or :eof on end of stream / when no input was configured."
       (t (let ((line (read-line stream nil :eof)))
            line)))))
 
+(defmethod host-grread ((host cador) track key-press cursor)
+  "clautolisp keyboard grread (grread-keyboard-event-is-a-list-not-a-dotted-pair
+.issue): read ONE character from the prompt-stream and return the documented
+proper list (2 CHAR-CODE) — a two-element list, never a dotted pair. No
+configured input stream, or end of stream, returns nil. Mouse / point / tablet
+event codes need a real drawing editor and are not produced here.
+TRACK/KEY-PRESS/CURSOR are inert in a terminal."
+  (declare (ignore track key-press cursor))
+  (let ((stream (cador-prompt-stream host)))
+    (when stream
+      (let ((ch (read-char stream nil :eof)))
+        (unless (eql ch :eof)
+          (list 2 (char-code ch)))))))
+
 (defun parse-real (text)
   (let ((trimmed (string-trim '(#\Space #\Tab #\Return) text)))
     (handler-case

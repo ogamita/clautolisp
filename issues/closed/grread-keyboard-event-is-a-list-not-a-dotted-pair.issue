@@ -1,7 +1,25 @@
 grread-keyboard-event-is-a-list-not-a-dotted-pair — real BricsCAD grread returns (code value) as a proper list; a common downstream assumption (and this issue's own filer's code) wrongly treats it as (code . value)
 ======================================================================================================================================================================================================================
 
-Status: OPEN. Found on real BricsCAD V26 (macOS) via a live bug report
+Status: DONE (2026-09-12, clautolisp 2.2.15 / alfe 2.2.23). grread is now
+implemented for the KEYBOARD case (code 2): builtin-grread routes through
+host-grread on the cador host, which reads one character from the prompt-stream
+and returns the documented PROPER LIST (2 CHAR-CODE) — a two-element list, never
+a dotted pair. A host with no interactive input (batch / unsupported backend)
+returns nil. Mouse / point / tablet codes are out of scope (clautolisp has no
+drawing editor; pjb: "keyboard code 2 across both UIs; skip mouse"). The seam is
+UI-agnostic (the host prompt-stream), so it works under both the dumb and
+ncurses front-ends and under --mock-input / test string streams. The autolisp-
+spec GRREAD page gained a *** clautolisp deviation section and an explicit
+list-not-dotted-pair note. Headless test grread-keyboard-event-is-a-proper-list
+pins the shape (incl. the (cdr r) dotted-pair trap) and the batch→nil path; full
+`make -C clautolisp test-sbcl` green. RESIDUAL (informational, needs real CAD,
+NOT blocking — recorded here): the "To check" items below — whether AutoCAD
+returns the same list shape (#1) and the mouse code-5 shape (#2) — remain
+hardware-verification items; the implemented keyboard shape matches the
+documented AutoLISP spec and live BricsCAD V26. Closed.
+
+Original report — Found on real BricsCAD V26 (macOS) via a live bug report
 in an unrelated project (autocad-gui-prototype), 2026-09-08. Not about
 a clautolisp behavior difference this time (grread is a documented,
 deliberate stub there -- returns NIL immediately, host cador doesn't

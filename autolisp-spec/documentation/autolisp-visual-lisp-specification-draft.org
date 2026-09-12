@@ -66857,6 +66857,23 @@ List describing the input event.
 
 Autodesk documents that the first list element is an event type code, with the second element depending on that type.
 
+The event is a proper two-element list =(code value)= — NOT a dotted pair
+=(code . value)=. For a keyboard event (code 2) the value is the character code,
+so the list is e.g. =(2 102)=; the value is =(cadr result)=, and =(cdr result)=
+is the one-element list =(102)=, not the bare integer. (Observed on live
+BricsCAD V26, 2026-09-08; this is the classic AutoLISP shape, easy to misread as
+a dotted pair.)
+
+*** clautolisp
+clautolisp has no drawing editor, so it implements only the KEYBOARD case
+(code 2): =grread= reads one character from the active host's input stream and
+returns the proper list =(2 CHAR-CODE)=. Mouse, point, tablet and other
+graphical event codes are not produced; and a host with no interactive input
+(batch mode, or a backend that does not support =grread=) returns =nil= rather
+than signalling. =track=/=allkeys=/=curtype= are accepted for call-compatibility
+but are inert in a terminal (no cursor, no drag tracking). A live CAD host
+restores the native graphical behaviour.
+
 *** Side Effects
 - enters low-level input mode
 - consumes input events

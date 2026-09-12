@@ -148,10 +148,11 @@
 
 (test cador-operations-error-with-host-not-supported-when-not-yet-implemented
   ;; Phase 10/11/12 implemented the entity, sysvar, and prompt
-  ;; surfaces. Graphics (grdraw / grtext / grvecs / grclear /
-  ;; grread / redraw) and the command dispatcher remain inherited
-  ;; from the base-class :host-not-supported fallback until later
-  ;; phases fill them in.
+  ;; surfaces, and grread now has a real keyboard implementation (it
+  ;; reads the prompt-stream). The remaining graphics ops (grdraw /
+  ;; grtext / grvecs / grclear / redraw) and the command dispatcher
+  ;; remain inherited from the base-class :host-not-supported fallback
+  ;; until later phases fill them in.
   (let ((mock (make-cador)))
     (handler-case (host-grdraw mock '(0 0) '(1 1) 7 nil)
       (autolisp-runtime-error (condition)

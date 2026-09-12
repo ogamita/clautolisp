@@ -4433,6 +4433,27 @@ INPUT-LINE; return the raw AutoLISP result. Generalises
               (clautolisp.autolisp-runtime:evaluation-context-session context))
              mock)))))
 
+(test grread-keyboard-event-is-a-proper-list
+  "grread reads one keyboard character from the active host's input and returns
+the documented proper list (2 CHAR-CODE) — a two-element list, never a dotted
+pair (grread-keyboard-event-is-a-list-not-a-dotted-pair.issue). No interactive
+input returns nil rather than signalling."
+  (reset-autolisp-symbol-table)
+  (let ((r (%get-with-mock-input "(grread T 2 0)" "a")))
+    (is (listp r))
+    (is (eql 2 (length r)) "two-element list, not a dotted pair")
+    (is (eql 2 (car r)) "keyboard event code is 2")
+    (is (eql (char-code #\a) (cadr r)) "value is the char code")
+    ;; the exact dotted-pair trap the issue documents: (cdr r) is the
+    ;; one-element list (CODE), NOT the bare integer.
+    (is (equal (list (char-code #\a)) (cdr r))))
+  ;; the no-argument form reads a character the same way.
+  (reset-autolisp-symbol-table)
+  (is (eql 2 (car (%get-with-mock-input "(grread)" "Z"))))
+  ;; no interactive input (no host input stream) -> nil, not an error.
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string "(grread)" :setup-fn #'install-core-into))))
+
 (test coverage-get-family-reads-parsed-value-from-host
   "The interactive GET* prompts delegate to the active host's prompt stream
 and return the parsed value of their type. Driven by a MockHost input line:
