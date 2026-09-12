@@ -35,6 +35,26 @@
   family (getint/getreal/getkword/getangle/getorient/getcorner) via a
   MockHost input stream (%get-with-mock-input helper). Coverage now **86.3%
   (540/626, 86 untested)**.
+- 2026-09-12 (clautolisp 2.2.7 / alfe 2.2.15): first fixed the
+  coverage tool itself — =coverage-report.sh= had been committed with
+  CRLF line terminators, so =set -euo pipefail= tripped "set: pipefail:
+  invalid option name" and the tool could not run at all under bash;
+  normalised to LF. The implemented set has since grown to 702 (new
+  families registered), re-baselining the measured figure. Backfilled
+  the VL-* stub family: =vl-stub-family-returns-nil= (vl-getgeomextents,
+  vl-list-exported-functions, vl-unload-vlx, vl-vbarun,
+  vl-local-undo-{pop,push,reset,steps}, the 8 vl-vplayer-{get,set}-*
+  siblings, vl-propagate), =vl-stub-family-returns-true= (vl-acad-defun/
+  undefun, vl-{hide,show}promptmenu → AutoLISP T), and
+  =vl-doc-export-import-return-the-symbol=. Coverage **83.5% → 86.8%
+  (586 → 609 / 702)**. (MR !169.)
+- 2026-09-12 (clautolisp 2.2.8 / alfe 2.2.16): backfilled the VLE-*
+  BricsCAD-extension stub family (20 pure no-op stubs):
+  =vle-stub-family-returns-nil= (19 nil-returners incl. vle-alert,
+  vle-{start,end}-transaction, vle-entget-m/-massoc, vle-entmod-m,
+  vle-safearray->list, the vle-nth<x> template name, …) and
+  =vle-sunid-returns-zero= (the one non-nil stub, integer 0). None need
+  a host fixture. Coverage **86.8% → 89.6% (609 → 629 / 702)**.
 - Note: the tool is deliberately conservative — it counts only literal
   =(name= form heads, so DATA-DRIVEN / macro-generated tests are invisible
   to it; write explicit literal snippets when backfilling so the tool
