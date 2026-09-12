@@ -19,6 +19,18 @@ NO ncurses-native DCL rendering. This issue builds it, so the line (dumb) and
 full-screen (ncurses) DCL paths are genuinely parallel, and documents how widget
 input is done in each.
 
+* Design decisions (CONFIRMED by pjb, 2026-09-13)
+
+- Navigation/activation: =:up/:down= + =Tab/Shift-Tab= move focus; =:enter= or
+  =Space= activates/toggles the focused tile; printable chars edit a focused
+  edit_box (=:backspace= deletes); =:left/:right= adjust a focused slider and
+  move list/popup selection; =:escape= = cancel.
+- Layout: 2-D honouring the DCL =:row= / =:column= geometry from the start (a
+  real dialog look), NOT the one-tile-per-line fallback.
+- Renderer selection: =--dcl auto= PREFERS ncurses when stdout is a TTY +
+  curses available + no GUI configured; non-TTY stays the line TUI (the
+  =-command= scenario); explicit =--dcl ncurses|tui= always honoured.
+
 * Design
 
 ** Behaviour parity is the invariant
@@ -77,6 +89,19 @@ policy: keep non-TTY → line TUI (the =-command= scenario); when TTY +
 (DECISION — confirm whether auto should prefer ncurses over the line TUI when
 interactive). =make-ncurses-renderer= must NOT self-install at load (unlike
 terminal.lisp:410) — installation stays opt-in via the CLI.
+
+* Progress
+
+- Slice 1 DONE (clautolisp 2.2.16 / alfe 2.2.24): =ncurses-renderer.lisp= —
+  =make-ncurses-renderer= (dcl-renderer shape, not self-installing) +
+  =ncurses-run-dialog= modal loop over a tui-core screen; a 2-D :row/:column
+  =%ncurses-layout=; text/button rendering (=[ label ]=); focus ring (reusing
+  =terminal-collect-interactive-keys=) with =:up/:down/:tab= nav and the
+  focused tile drawn =:selection=; Enter/Space activation (buttons via
+  =terminal-handle-button=, other tiles via =terminal-handle-value-tile= for
+  parity); Esc / key-stream EOF cancel (status 0). autolisp-dcl gains a
+  cycle-free =tui-core= dep. 4 headless mock-screen tests in autolisp-dcl/tests;
+  full =make -C clautolisp test-sbcl= green.
 
 * Slices (each: full `make -C clautolisp test-sbcl` green, own MR, version bump)
 
