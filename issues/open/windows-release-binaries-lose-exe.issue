@@ -204,3 +204,37 @@ is what will answer it on the next tag, for every platform at once.
 
 Found because pjb looked inside the archive. Nothing in the pipeline did
 — which is the point of the check added here.
+
+* Verification (2026-09-13) — fixes present, Windows release still UNCONFIRMED
+
+All four fixes are confirmed present on master (=e719c575=):
+- =Makefile= =dispatch-layout= moves every built image (bare AND =.exe=)
+  into =libexec/.../binaries/= keeping its name, then drops the
+  dispatch.sh/.cmd launchers — so the =.exe= names the launcher opens are
+  preserved (supersedes the =cp= idiom the issue first fixed).
+- =.release-common= carries =dependencies: []= with the full rationale
+  comment (.gitlab-ci.yml:671-690) — a release lane inherits no artefacts,
+  so the Linux =build:alfe:sbcl= ELF can no longer land in the Windows
+  workspace.
+- =scripts/release-windows.sh= clears the fasl cache before building
+  (lines 45-71) and refuses to build if it cannot.
+- =make verify-release-artefacts= is a gate in all four release jobs
+  (.gitlab-ci.yml:729/802/890/915) and, per this issue, opens the archive
+  and runs =--version=.
+
+What is NOT confirmed, and why this stays open: the Windows-specific
+acceptance (=release:windows:x86-64= produces correctly-named, version-
+correct binaries) has NOT been exercised on any real release since the
+fix. =release:windows:x86-64= was =failed= on =release-1.9.1= and =manual=
+(runner offline) on =release-1.9.3= and =release-2.2.1=; only the darwin /
+linux release jobs ran green there (so =dependencies: []= and the
+=--version= gate ARE proven on those platforms). The Windows packaging
+fix is implemented and Linux-fixture-verified (=REL_OS=windows= override)
+but never run end-to-end on the Windows runner.
+
+To confirm and close, with the Windows runner now available (pjb):
+play =release:windows:x86-64= manually on a recent release tag's
+pipeline, or cut the next release with the runner online — either runs
+=verify-release-artefacts= against the real Windows archive, which is the
+acceptance. Not done here because triggering/ publishing a release is
+pjb's call, not a background action.

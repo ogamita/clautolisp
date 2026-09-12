@@ -104,3 +104,27 @@ nothing until the sweep has actually been run.
 - =benchmark:bricscad:windows= runs the benchmark instead of dying on
   =Exec format error= (it is the one with a known-good baseline).
 - No change to POSIX behaviour, which the =make -n= check above asserts.
+
+* Verification (2026-09-13) — fixes present, Windows benchmark still UNCONFIRMED
+
+Both consumer fixes are confirmed present on master (=e719c575=):
+- =autolisp-benchmark/Makefile= carries the =HOST_UNAME=/=EXE= mechanism
+  (lines 67-70: =ALFE_SBCL := …/alfe-sbcl$(EXE)=), identical to
+  =autolisp-front-end/Makefile=, so the benchmark spells =alfe-sbcl.exe= on
+  Windows and =alfe-sbcl= on POSIX.
+- =harvest:sysvars:bricscad:windows= names =alfe-sbcl.exe= (ALFE_BIN,
+  .gitlab/native.yml:716); the POSIX =make -n= check in this issue still
+  asserts no POSIX regression.
+
+Not confirmed, so this stays open: the acceptance criterion is that
+=benchmark:bricscad:windows= actually RUNS instead of dying on
+=Exec format error=, and that job has not run since the fix —
+=benchmark:bricscad:windows= is =manual= (runner offline) on the release
+tags checked (=release-1.9.3=), so the name fix has not been exercised
+end-to-end on the Windows/BricsCAD runner. With the Windows runner now
+available (pjb): trigger =benchmark:bricscad:windows= (known-good ~1 m 37 s
+baseline) on a master or tag pipeline to confirm and close. Not done here
+because it consumes the exclusive CAD Windows runner (~30 min, a laptop
+sometimes on battery per TRIAGE) — pjb's call, not a background action.
+(The =benchmark:autocad:windows= half remains separately blocked by
+=benchmark-autocad-windows-hangs-and-blocks-release=.)
