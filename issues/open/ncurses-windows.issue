@@ -236,3 +236,8 @@ on C-w k ("kill") + M-x delete-layout.
 
 Deferred (terminal-key decoding, not headlessly testable): the scroll "alt
 key 2" bindings C-<prior>/<next>/<kp-*> — see window-scrolling.issue.
+
+* UPDATE 2026-09-12: the scroll "alt key 2" terminal keys are now implemented
+(see window-scrolling.issue): curses KEY_PPAGE/NPAGE/A3/C3 decode to
+:page-up/:page-down/:kp-page-up/:kp-page-down and scroll the active window.
+No longer deferred.

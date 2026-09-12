@@ -139,6 +139,10 @@ CURSES-UNAVAILABLE with the loader message), for the caller to report."
 (defparameter +key-backspace+ #o407)
 (defparameter +key-enter+     #o527)
 (defparameter +key-resize+    #o632)
+(defparameter +key-npage+     #o522)   ; PageDown / <next>
+(defparameter +key-ppage+     #o523)   ; PageUp   / <prior>
+(defparameter +key-a3+        #o533)   ; keypad upper-right = keypad PageUp  / <kp-prior>
+(defparameter +key-c3+        #o535)   ; keypad lower-right = keypad PageDown / <kp-next>
 
 ;;; --- the screen -------------------------------------------------------
 
@@ -258,6 +262,14 @@ harmless if already suspended."
       ((= code +key-backspace+) :backspace)
       ((= code +key-enter+) :enter)
       ((= code +key-resize+) :resize)
+      ;; page / keypad-page keys — scroll the active window (window-scrolling.issue).
+      ;; keypad() mode delivers PageUp/PageDown as KEY_PPAGE/KEY_NPAGE and the
+      ;; numeric-keypad page keys as KEY_A3/KEY_C3; a terminal that also sends a
+      ;; distinct Ctrl+Page sequence maps there via terminfo, else to these.
+      ((= code +key-ppage+) :page-up)       ; <prior>
+      ((= code +key-npage+) :page-down)     ; <next>
+      ((= code +key-a3+) :kp-page-up)       ; <kp-prior>
+      ((= code +key-c3+) :kp-page-down)     ; <kp-next>
       ((or (= code 10) (= code 13)) :enter)
       ((= code 27) :escape)
       ((or (= code 8) (= code 127)) :backspace)

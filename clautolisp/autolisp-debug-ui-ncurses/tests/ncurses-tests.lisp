@@ -641,6 +641,8 @@
     (multiple-value-bind (result ui screen)
         (run-ncurses (list (code-char 22)                       ; C-v     scroll up
                            :escape #\v                            ; M-v     scroll down
+                           :page-up :page-down                    ; <prior>/<next> scroll right/left
+                           :kp-page-up :kp-page-down              ; <kp-prior>/<kp-next> scroll down/up
                            (code-char 23) (code-char 21) #\3 #\>  ; C-w C-u 3 >  (count=3)
                            #\c)                                   ; continue
                      :context context :thread-info ti

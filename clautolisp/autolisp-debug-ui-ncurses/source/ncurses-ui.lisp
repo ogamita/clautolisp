@@ -1073,6 +1073,17 @@ prefix, the minibuffer , command line, Esc-x (M-x) and C-h help."
     ((key-char-p key #\,) (values t (comma-command ui session hit)))
     ((and (characterp key) (= (char-code key) 22))   ; C-v: scroll active window up
      (window-scroll-by ui +window-scroll-step+ 0) (values t nil))
+    ;; page / keypad-page scroll keys (window-scrolling.issue "alt key 2"):
+    ;; <prior>/<next> scroll horizontally (right/left), the keypad page keys
+    ;; scroll vertically (up/down). These apply to the active window.
+    ((eq key :page-up)                               ; <prior> / C-<prior>: scroll right
+     (window-scroll-by ui 0 +window-scroll-step+) (values t nil))
+    ((eq key :page-down)                             ; <next> / C-<next>: scroll left
+     (window-scroll-by ui 0 (- +window-scroll-step+)) (values t nil))
+    ((eq key :kp-page-down)                          ; <kp-next>: scroll up
+     (window-scroll-by ui +window-scroll-step+ 0) (values t nil))
+    ((eq key :kp-page-up)                            ; <kp-prior>: scroll down
+     (window-scroll-by ui (- +window-scroll-step+) 0) (values t nil))
     ((eq key :escape) (values t (meta-command ui session hit)))
     ((eq key :backspace) (help-prefix ui) (values t nil))       ; C-h m
     (t (values nil nil))))
