@@ -4744,6 +4744,78 @@ descendents, delete, and persistence across a fresh store load."
     (is (null (run-autolisp-string form :setup-fn #'install-core-into))
         "~A should return nil under the stub impl" form)))
 
+;;;; ----- complete-unit-tests: VL-* stub family behavioural coverage -----
+;;;; (complete-unit-tests.issue) Backfill the untested VL-* stubs that
+;;;; coverage-report.sh flags: the VL-LOCAL-UNDO-*, VL-VPLAYER-* siblings,
+;;;; VL-GETGEOMEXTENTS, VL-LIST-EXPORTED-FUNCTIONS, VL-UNLOAD-VLX, VL-VBARUN,
+;;;; VL-ACAD-DEFUN/UNDEFUN, VL-*PROMPTMENU, VL-PROPAGATE, VL-DOC-EXPORT/IMPORT.
+;;;; These are documented stubs (real implementations tracked in
+;;;; deferred-stubbed-functions.issue); the tests pin the CURRENT documented
+;;;; return so the call path is exercised and regressions are caught. A few
+;;;; DIVERGE from the AutoCAD/BricsCAD spec value (vl-unload-vlx is spec'd
+;;;; T-on-success, vl-acad-defun/undefun spec'd to return an integer, vl-vbarun
+;;;; the macro name) precisely because the stub is not yet a real
+;;;; implementation; that value-promotion is out of scope for this coverage
+;;;; epic and lives in deferred-stubbed-functions.issue.
+
+(test vl-stub-family-returns-nil
+  "The untested nil-returning VL-* stubs each return nil under a
+representative call (complete-unit-tests.issue coverage backfill)."
+  (reset-autolisp-symbol-table)
+  (dolist (form '("(vl-getgeomextents nil)"
+                  "(vl-list-exported-functions)"
+                  "(vl-list-exported-functions \"APP\")"
+                  "(vl-unload-vlx \"foo.vlx\")"
+                  "(vl-vbarun \"Macro\")"
+                  "(vl-local-undo-pop)"
+                  "(vl-local-undo-push)"
+                  "(vl-local-undo-reset)"
+                  "(vl-local-undo-steps)"
+                  "(vl-vplayer-get-linetype \"L\" 1)"
+                  "(vl-vplayer-get-lineweight \"L\" 1)"
+                  "(vl-vplayer-get-transparency \"L\" 1)"
+                  "(vl-vplayer-set-color \"L\" 1 1)"
+                  "(vl-vplayer-set-linetype \"L\" 1 \"X\")"
+                  "(vl-vplayer-set-lineweight \"L\" 1 1)"
+                  "(vl-vplayer-set-transparency \"L\" 1 1)"
+                  "(vl-vplayer-set-truecolor \"L\" 1 1)"
+                  ;; vl-propagate is documented "always returns nil"; the stub
+                  ;; returns the variable's value, which is nil when unbound.
+                  "(vl-propagate 'vl-unbound-probe-var)"))
+    (is (null (run-autolisp-string form :setup-fn #'install-core-into))
+        "~A should return nil under the stub impl" form)))
+
+(test vl-stub-family-returns-true
+  "The untested T-returning VL-* stubs each return AutoLISP T
+(complete-unit-tests.issue). vl-acad-defun/undefun are spec'd to return an
+integer; the stub returns T — value-promotion is tracked in
+deferred-stubbed-functions.issue, so this pins current behaviour."
+  (reset-autolisp-symbol-table)
+  (dolist (form '("(vl-acad-defun 'foo 1)"
+                  "(vl-acad-undefun 'foo 1)"
+                  "(vl-hidepromptmenu)"
+                  "(vl-showpromptmenu)"))
+    (is (string= "T" (autolisp-symbol-name
+                      (run-autolisp-string form :setup-fn #'install-core-into)))
+        "~A should return AutoLISP T under the stub impl" form)))
+
+(test vl-doc-export-import-return-the-symbol
+  "vl-doc-export returns the exported symbol; vl-doc-import of a known symbol
+returns that symbol (complete-unit-tests.issue literal-snippet coverage — the
+full document-namespace semantics are exercised by
+builtin-document-export-and-import / builtin-document-import-by-application)."
+  (reset-autolisp-symbol-table)
+  (let ((exported (run-autolisp-string
+                   "(progn (defun expfn () 1) (vl-doc-export 'expfn))"
+                   :setup-fn #'install-core-into)))
+    (is (and exported (string= "EXPFN" (autolisp-symbol-name exported)))
+        "vl-doc-export should return the EXPFN symbol, got ~S" exported))
+  (reset-autolisp-symbol-table)
+  (let ((imported (run-autolisp-string "(vl-doc-import 'car)"
+                                       :setup-fn #'install-core-into)))
+    (is (and imported (string= "CAR" (autolisp-symbol-name imported)))
+        "vl-doc-import should return the CAR symbol, got ~S" imported)))
+
 ;;;; ----- LOAD honours the AutoLISP-level *AUTOLISP-FILE-ENCODING* -----
 
 (test load-honours-autolisp-file-encoding-override
