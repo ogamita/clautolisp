@@ -122,6 +122,15 @@ issue): it is what makes a sedit file save not invalidate the positions of the
 forms below the edit. The clautolisp tool installs it; a bare sedit library
 user gets NIL and a plain whole-file write. Applies to file-backed sessions.")
 
+(defvar *sedit-write-new-file-hook* nil
+  "When set, a function (PATH FORM-TEXTS) that writes the top-level form source
+strings FORM-TEXTS to file PATH — appending and merging into PATH when it
+already exists — and registers each written form's source position in
+CLAUTOLISP.SOURCE:*SOURCE-POSITION-TABLE* so the forms become file-associated
+for further file editing (sedit-save-forms-to-new-file-command.issue). The
+clautolisp tool installs it (via the source-file module); a bare sedit library
+user gets NIL and a plain append with no position registration.")
+
 (defun %do-save (session arg)
   "save [PATH] (§5.8): write the edited file to PATH or the session's file. A
 file-backed session writes its WHOLE file — every top-level item, not just the
@@ -142,6 +151,50 @@ selected top-level form."
   "The file path backing SESSION, or NIL (a stand-alone / directory session)."
   (let ((origin (sedit-session-origin session)))
     (and (consp origin) (eq (first origin) :file) (second origin))))
+
+(defun %file-less-toplevel-forms (session)
+  "The top-level non-comment form NODES of SESSION's tree that are not already
+file-backed (sedit-save-forms-to-new-file-command.issue). A :file session's
+forms already belong to a file — use `s' there — so this is NIL; a stand-alone
+/ sexp session's whole tree qualifies (its single form, or every child when the
+root is a file-node)."
+  (unless (%session-file session)
+    (let ((root (%loc-root (sedit-state-loc (sedit-session-state session)))))
+      (remove-if #'comment-node-p
+                 (if (file-node-p root) (file-node-children root) (list root))))))
+
+(defun %do-write-new (session arg)
+  "w PATH (sedit-save-forms-to-new-file-command.issue §5.8b): write the session's
+file-less top-level forms to a NEW file PATH — appending and merging into PATH
+when it already exists — and, through *SEDIT-WRITE-NEW-FILE-HOOK*, register their
+source positions so the forms become file-associated. PATH is required; a
+file-backed session has no file-less forms (use `s'). Returns NIL (not an
+editing command: the mode is unchanged)."
+  (let ((path arg)
+        (forms (%file-less-toplevel-forms session)))
+    (cond
+      ((null path)
+       (format t "~&w PATH: a destination path is required~%"))
+      ((null forms)
+       (format t "~&sedit: no file-less forms to write~A~%"
+               (if (%session-file session)
+                   " (this session is file-backed; use `s' to save it)"
+                   "")))
+      (t
+       (let ((texts (mapcar #'unparse forms)))
+         (if *sedit-write-new-file-hook*
+             (funcall *sedit-write-new-file-hook* (namestring path) texts)
+             ;; bare-library fallback: append the text, no position registration.
+             (%write-text-file
+              (let ((block (format nil "~{~A~^~2%~}~%" texts)))
+                (if (probe-file path)
+                    (concatenate 'string
+                                 (string-right-trim '(#\Newline) (uiop:read-file-string path))
+                                 (format nil "~2%") block)
+                    block))
+              path))
+         (format t "~&sedit: wrote ~D form~:P to ~A~%" (length texts) path)))))
+  nil)
 
 ;;; --- directory ops (§5.9): act on disk, then re-read the listing ----------
 

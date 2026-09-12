@@ -186,3 +186,30 @@
       (is (probe-file (merge-pathnames "b.lsp" (uiop:ensure-directory-pathname dir))))
       (sedit-command s "n c.lsp")                      ; n = new file
       (is (probe-file (merge-pathnames "c.lsp" (uiop:ensure-directory-pathname dir)))))))
+
+;;; --- w: write file-less forms to a new file (sedit-save-forms-to-new-file-command) ---
+
+(test sedit-write-new-forwards-file-less-forms-to-the-hook
+  "The `w' command hands the session's file-less top-level forms (as source
+strings) to *sedit-write-new-file-hook*."
+  (let* ((calls '())
+         (clautolisp.sedit:*sedit-write-new-file-hook*
+           (lambda (path texts) (push (cons path texts) calls) path))
+         (session (sedit-open (sexp->tree '(defun sq (x) (* x x))))))
+    (clautolisp.sedit::%do-write-new session "/tmp/sedit-w-test.lsp")
+    (is (eql 1 (length calls)))
+    (is (string= "/tmp/sedit-w-test.lsp" (car (first calls))))
+    (is (eql 1 (length (cdr (first calls)))))
+    (is (search "defun sq" (first (cdr (first calls)))))))
+
+(test sedit-write-new-is-a-noop-on-a-file-backed-session
+  "A :file session's forms already belong to a file, so `w' has no file-less
+forms and does not call the hook."
+  (let* ((called nil)
+         (clautolisp.sedit:*sedit-write-new-file-hook*
+           (lambda (path texts) (declare (ignore path texts)) (setf called t)))
+         (session (sedit-open (sexp->tree '(defun sq (x) x)))))
+    (setf (sedit-session-origin session) (list :file "/tmp/x.lsp"))
+    (clautolisp.sedit::%do-write-new session "/tmp/sedit-w-nope.lsp")
+    (is (null called))
+    (is (null (clautolisp.sedit::%file-less-toplevel-forms session)))))

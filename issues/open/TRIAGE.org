@@ -86,10 +86,13 @@ Debugger / ncurses UI (P3, pure-Lisp, this branch's workstream =debugger-ui-ncur
   the three bugs (quit-from-REPL, directory listing, function-definition recall),
   the =(clal-sedit [type] object)= API extension, and the =clautolisp.source-file=
   position-maintaining save module. Closed; its one deferred thread split out below.
-- TODO =sedit-save-forms-to-new-file-command= — P3: a sedit command to write
-  independently-edited/entered forms to a NEW file, registering their
-  source-positions (via the source-file module) so they become file-associated.
-  Split out of sedit-bugs-and-design. Headless-Lisp-doable.
+- DONE =sedit-save-forms-to-new-file-command= — RESOLVED 2026-09-12 (clautolisp
+  2.2.13 / alfe 2.2.21): sedit command =w PATH= (alias =write-new-file=) writes
+  the session's file-less forms to a NEW file, appending + merging when it
+  exists, and registers their source positions via the source-file module. pjb
+  design calls: scope = all file-less session forms, existing path = append+merge,
+  key = =w= (`S' infeasible — sedit downcases tokens, collides with `s'=save).
+  4 tests across the sedit + builtins-core suites, both green. Closed.
 - DONE =charms-asd-secondary-name-unloadable= — superseded: the cl-charms backend was retired for the correctly-named standalone =clautolisp-tui-curses= system (verified 2026-09-12, closed; optional dead-file cleanup of the old charms.asd remains).
 - DRAFT =ncurses-misc= — broad "mini-emacs" vision / design reference, no
   acceptance criteria; much of its API is already realized but it is not a

@@ -111,3 +111,38 @@
                                   sf 2 (%rd "(defun q () 1)"))
                          :no-error)
                 (error () :caught)))))))
+
+;;;; write-new-source-file — sedit's `w' (save file-less forms to a new file),
+;;;; sedit-save-forms-to-new-file-command.issue.
+
+(test write-new-source-file-creates-file-and-registers-positions
+  "write-new-source-file writes form(s) to a fresh file and registers each
+written form's source position so it is file-associated on reopen."
+  (uiop:with-temporary-file (:pathname %p :type "lsp" :keep nil)
+    (let ((path (namestring %p)))
+      (ignore-errors (delete-file path))          ; start from a non-existent path
+      (funcall (%sf 'write-new-source-file) path
+               (list "(defun sq (x) (* x x))" "(defun cube (x) (* x x x))"))
+      (is (probe-file path) "the file was created")
+      (let* ((sf (funcall (%sf 'source-file-open) path 'read))
+             (a (funcall (%sf 'source-file-read) sf))
+             (b (funcall (%sf 'source-file-read) sf)))
+        (is (consp a))
+        (is (consp b))
+        (is (eql 1 (%startline a)) "first form registered at line 1")
+        (is (and (%startline b) (< (%startline a) (%startline b)))
+            "second form registered below the first")))))
+
+(test write-new-source-file-appends-and-merges-into-existing
+  "A write to an EXISTING file appends the new form(s) and re-registers every
+form's position (append + merge), leaving the original form present."
+  (with-sf-temp (path (format nil "(defun a (x) x)~%"))
+    (funcall (%sf 'write-new-source-file) path (list "(defun b (y) y)"))
+    (let ((text (uiop:read-file-string path)))
+      (is (%line-of "defun a" text) "original form retained")
+      (is (%line-of "defun b" text) "new form appended"))
+    (let* ((sf (funcall (%sf 'source-file-open) path 'read))
+           (a (funcall (%sf 'source-file-read) sf))
+           (b (funcall (%sf 'source-file-read) sf)))
+      (is (and (%startline a) (%startline b)) "both forms have positions")
+      (is (< (%startline a) (%startline b)) "appended form is below the original"))))
