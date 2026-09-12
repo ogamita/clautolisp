@@ -443,7 +443,24 @@ warns about. Shared here so both use it."
             do (sleep 0.2)))
     (ignore-errors
      (when (uiop:process-alive-p info)
-       (uiop:terminate-process info :urgent t))))
+       (uiop:terminate-process info :urgent t)
+       ;; :urgent is SIGKILL, which the kernel delivers ASYNCHRONOUSLY: the
+       ;; process is doomed but not necessarily REAPED the instant
+       ;; terminate-process returns, so process-alive-p can still read true
+       ;; for a short window — wider on a loaded machine. A caller that
+       ;; checks liveness right after we return (and our own contract —
+       ;; "the process is gone when this returns") then sees a survivor
+       ;; that is already dying. Poll briefly for the death we just caused,
+       ;; still BOUNDED (SIGKILL cannot be trapped, so this resolves in
+       ;; milliseconds; the cap only guards a pathological D-state child)
+       ;; and never an unbounded wait-process
+       ;; (timing-flakes-in-process-and-socket-tests).
+       (let ((kstart (get-internal-real-time)))
+         (loop while (and (ignore-errors (uiop:process-alive-p info))
+                          (< (/ (float (- (get-internal-real-time) kstart))
+                                internal-time-units-per-second)
+                             2))
+               do (sleep 0.02))))))
   nil)
 
 (defun drive-protocol-actions (protocol-session plan
