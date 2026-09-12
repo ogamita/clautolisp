@@ -321,6 +321,13 @@ directory (sedit-file-and-up.issue)."
 (%define-sedit-editing (s save)    "s" "s [PATH]: write the edited file/form.")
 (%define-sedit-editing (n new)     "n" "n NAME: new file (on a directory).")
 
+(%define-sedit-command (w write)
+    "w PATH: write the session's file-less forms to a NEW file PATH (append + merge
+if it exists), registering their source positions so they become file-associated."
+  (%do-write-new session arg)
+  nil)
+(clautolisp.interactor:bind-command-alias *sedit-commands* "write-new-file" "w")
+
 (%define-sedit-command (rename) "rename NAME: rename the selected directory entry."
   (%do-rename session arg)
   nil)
@@ -355,7 +362,7 @@ directory (sedit-file-and-up.issue)."
   (format nil "SEDIT commands (§5): d u  > (f) < (b)  << >>  ±N move | ~
 i a r insert/add/replace | ic ac rc comment | z undo | c copy x cut v paste | ~
 wrap slurp barf splice split join | e eval  m macroexpand | l load  s save | ~
-n new  rename  delete (directory) | (form) evaluate | q quit | h help~%~
+w write-new-file | n new  rename  delete (directory) | (form) evaluate | q quit | h help~%~
 unshadowed debugger commands fall through while the debugger is below; ~
 aldo CMD forces the debugger's meaning of a shadowed key"))
 

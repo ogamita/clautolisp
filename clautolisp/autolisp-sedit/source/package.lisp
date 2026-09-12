@@ -72,6 +72,7 @@ clal-sedit (Phases 4–5), and the clipboard providers (Phase 6) come later.")
    #:sedit-activation-session #:sedit-activation-render
    #:*sedit-eval-hook* #:*sedit-eval-print-hook*
    #:*sedit-load-hook* #:*sedit-debug-hook* #:*sedit-file-save-hook*
+   #:*sedit-write-new-file-hook*
    ;; --- clipboard (§5.4 + clipboard-interface.org) ---
    #:clipboard-provider #:clipboard-provider-p #:make-clipboard-provider
    #:clipboard-provider-name #:clipboard-provider-available-p

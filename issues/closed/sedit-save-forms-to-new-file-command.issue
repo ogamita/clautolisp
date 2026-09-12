@@ -1,9 +1,27 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: sedit: a command to save independently-edited forms to a new file
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: feature
 #+DEPENDS: sedit-bugs-and-design (DONE), source-file module (DONE, 1.9.112)
+
+* RESOLVED (2026-09-12, clautolisp 2.2.13 / alfe 2.2.21)
+
+Shipped. The sedit command =w PATH= (word =write=, alias =write-new-file=;
+`S' was not usable — sedit downcases tokens, so it collides with `s'=save)
+writes the session's file-less top-level forms to a NEW file and registers
+their source positions. Design sub-questions decided (pjb): SCOPE = all
+file-less forms of the session (a :file session has none — use `s'); EXISTING
+PATH = append + merge (the forms are appended, then every form in the resulting
+file is re-read so its position is (re)recorded); KEY = =w= (since `S' is
+infeasible). Implementation: =clautolisp.sedit::%do-write-new= +
+=*sedit-write-new-file-hook*= (modes.lisp), the command in interactor.lisp, and
+the hook impl =clautolisp.source-file::write-new-source-file= installed from
+source-file.lisp (same pattern as the `s' save hook). Tests:
+=write-new-source-file-creates-file-and-registers-positions= /
+=…-appends-and-merges-into-existing= (builtins-core suite) and
+=sedit-write-new-forwards-file-less-forms-to-the-hook= /
+=…-is-a-noop-on-a-file-backed-session= (sedit suite). Both suites green. Closed.
 
 * Context
 

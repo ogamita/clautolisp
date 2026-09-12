@@ -338,3 +338,36 @@ the net line delta. Returns the namestring."
 ;; Install SAVE-FILE-TEXT as sedit's file-save hook, so an interactive sedit
 ;; `s' on a file-backed session keeps the position map consistent.
 (setf clautolisp.sedit:*sedit-file-save-hook* #'save-file-text)
+
+;;; --- write file-less forms to a new file (sedit's `w') ------------------
+
+(defun write-new-source-file (path form-texts)
+  "Append the top-level form source strings FORM-TEXTS to PATH — creating it when
+absent, merging when it exists — then register every form now in the file in
+the source-position table (by reading it back, which records each form cons at
+its span), so the written forms become file-associated for further file editing
+(sedit-save-forms-to-new-file-command.issue). Installed as
+CLAUTOLISP.SEDIT:*SEDIT-WRITE-NEW-FILE-HOOK*. Returns the namestring."
+  (let* ((path (namestring path))
+         (block (format nil "~{~A~^~2%~}~%" form-texts))
+         (text (if (probe-file path)
+                   (let ((existing (uiop:read-file-string path)))
+                     (if (plusp (length (string-trim '(#\Space #\Tab #\Newline #\Return)
+                                                     existing)))
+                         (concatenate 'string
+                                      (string-right-trim '(#\Newline) existing)
+                                      (format nil "~2%") block)
+                         block))
+                   block)))
+    (with-open-file (out path :direction :output :if-exists :supersede
+                              :if-does-not-exist :create :external-format :utf-8)
+      (write-string text out))
+    ;; Re-read every top-level form so its position lands in the table (append +
+    ;; merge: existing forms are re-recorded at their current spans too).
+    (let ((sf (source-file-open path 'read)))
+      (unwind-protect
+           (loop for item = (source-file-read sf :eof) until (eq item :eof))
+        (source-file-close sf)))
+    (namestring (or (ignore-errors (truename path)) path))))
+
+(setf clautolisp.sedit:*sedit-write-new-file-hook* #'write-new-source-file)
