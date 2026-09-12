@@ -1071,6 +1071,8 @@ prefix, the minibuffer , command line, Esc-x (M-x) and C-h help."
     ((and (characterp key) (member (char-code key) '(23 24)))   ; C-w / C-x
      (handle-window-command ui) (values t nil))
     ((key-char-p key #\,) (values t (comma-command ui session hit)))
+    ((and (characterp key) (= (char-code key) 22))   ; C-v: scroll active window up
+     (window-scroll-by ui +window-scroll-step+ 0) (values t nil))
     ((eq key :escape) (values t (meta-command ui session hit)))
     ((eq key :backspace) (help-prefix ui) (values t nil))       ; C-h m
     (t (values nil nil))))
@@ -2118,25 +2120,41 @@ ends, with no fall-back to a global aldo."
       (when active (pushnew :window-manager (window-stack active))))))
 
 (defun handle-window-command (ui)
-  "Read the key after a C-w / C-x prefix and run the built-in window command."
-  (run-window-command ui (tui-read-key (ncurses-ui-screen ui))))
+  "Read the key after a C-w / C-x prefix and run the built-in window command.
+An optional C-u [N] count prefix (ncurses-windows / window-scrolling.issue)
+multiplies the resize and scroll steps: C-u DIGITS uses N, a bare C-u means 4
+as in Emacs. The key after the digits is the command key."
+  (let ((k (tui-read-key (ncurses-ui-screen ui)))
+        (count 1))
+    (when (and (characterp k) (= (char-code k) 21)) ; C-u
+      (let ((digits '()))
+        (loop for nk = (tui-read-key (ncurses-ui-screen ui))
+              while (and (characterp nk) (digit-char-p nk))
+              do (push nk digits)
+              finally (setf k nk))
+        (setf count (if digits
+                        (parse-integer (coerce (nreverse digits) 'string))
+                        4))))
+    (run-window-command ui k count)))
 
-(defun run-window-command (ui k)
+(defun run-window-command (ui k &optional (count 1))
   "Run the built-in window command bound to K after a C-w / C-x prefix
-(ncurses-windows.issue + window-scrolling.issue). NOTE: >/</v/^ now SCROLL the
-active window; swap right/left are reachable as the named commands
-window-swap-right/-left (,/M-x), swap above/below stay on u/d. Split out so an
-already-read K (from a user-keymap fall-through) can be dispatched too."
+(ncurses-windows.issue + window-scrolling.issue). COUNT is the C-u prefix
+(default 1): it multiplies the scroll and resize steps; other commands ignore
+it. NOTE: >/</v/^ now SCROLL the active window; swap right/left are reachable as
+the named commands window-swap-right/-left (,/M-x), swap above/below stay on
+u/d. Split out so an already-read K (from a user-keymap fall-through) can be
+dispatched too."
   (progn
     (cond
       ((key-char-p k #\n) (window-select ui +1))
       ((key-char-p k #\p) (window-select ui -1))
       ((key-char-p k #\o) (window-other ui))
-      ;; scrolling (window-scrolling.issue)
-      ((key-char-p k #\>) (window-scroll-by ui 0 +window-scroll-step+))
-      ((key-char-p k #\<) (window-scroll-by ui 0 (- +window-scroll-step+)))
-      ((key-char-p k #\v) (window-scroll-by ui +window-scroll-step+ 0))
-      ((key-char-p k #\^) (window-scroll-by ui (- +window-scroll-step+) 0))
+      ;; scrolling (window-scrolling.issue); COUNT is the C-u N prefix
+      ((key-char-p k #\>) (window-scroll-by ui 0 (* count +window-scroll-step+)))
+      ((key-char-p k #\<) (window-scroll-by ui 0 (* count (- +window-scroll-step+))))
+      ((key-char-p k #\v) (window-scroll-by ui (* count +window-scroll-step+) 0))
+      ((key-char-p k #\^) (window-scroll-by ui (* count (- +window-scroll-step+)) 0))
       ;; swap above/below (right/left via named commands, keys now scroll)
       ((key-char-p k #\u) (window-swap ui :above))
       ((key-char-p k #\d) (window-swap ui :below))
@@ -2147,15 +2165,16 @@ already-read K (from a user-keymap fall-through) can be dispatched too."
       ((key-char-p k #\-) (window-resize ui (- +window-resize-step+)))
       ((key-char-p k #\=) (window-balance ui))
       ;; named window layouts (ncurses-windows.issue "save and load the window
-      ;; layout"). s save, w save-as (override-confirm), l load. NOTE: the
-      ;; issue also names `C-w d' for window-layout-delete, but `C-w d' is
-      ;; already window-swap-below in its "move windows" section — a conflict
-      ;; in the spec; delete stays on M-x (delete-layout) until pjb resolves
-      ;; which C-w d should be.
+      ;; layout"). s save, w save-as (override-confirm), l load, k delete
+      ;; ("kill"). The issue names `C-w d' for delete, but `C-w d' is already
+      ;; window-swap-below in its "move windows" section; pjb resolved the
+      ;; conflict (2026-09-12) by keeping `C-w d' = swap-below and putting
+      ;; delete on `C-w k'. (delete is also M-x delete-layout.)
       ((key-char-p k #\s) (save-layout-command ui nil nil nil))
       ((key-char-p k #\w) (save-as-layout-command ui nil nil nil))
       ((key-char-p k #\l) (load-layout-command ui nil nil nil))
-      (t (set-message ui "C-w/C-x: n/p sel  o other  >/</v/^ scroll  u/d swap  2/3 split  4 reset  +/-/= size  s/w/l layout save/save-as/load")))))
+      ((key-char-p k #\k) (delete-layout-command ui nil nil nil))
+      (t (set-message ui "C-w/C-x: n/p sel  o other  >/</v/^ scroll  u/d swap  2/3 split  4 reset  +/-/= size  s/w/l/k layout save/save-as/load/kill")))))
 
 ;;;; --- minibuffer: M-x and , (ncurses-windows.issue) -----------------
 
@@ -2284,9 +2303,13 @@ on the real stop rather than degrading."
 (defun run-meta-command (ui session hit k)
   "Run the built-in Meta command for the key K read after Esc: M-x runs M-x;
 other M-<key> are unbound. Split out so a user-keymap fall-through can reuse it."
-  (if (key-char-p k #\x)
-      (mx-command ui session hit)
-      (progn (set-message ui "M-~A unbound" (if (characterp k) k "key")) nil)))
+  (cond
+    ((key-char-p k #\x) (mx-command ui session hit))
+    ;; M-v: scroll the active window down, the Emacs alias for C-w ^
+    ;; (window-scrolling.issue). C-v (scroll up) is handled in
+    ;; WINDOW-MANAGER-KEY; M-v arrives here because Esc-v routes through Meta.
+    ((key-char-p k #\v) (window-scroll-by ui (- +window-scroll-step+) 0) nil)
+    (t (progn (set-message ui "M-~A unbound" (if (characterp k) k "key")) nil))))
 
 (defun toggle-breakpoint (ui session)
   "Toggle a breakpoint at the source cursor line of the selected frame's

@@ -218,3 +218,21 @@ Lisp functions will be provided to let the user define the binding
 maps, and invoke predefined commands, from his own commands.
 
 
+
+
+* Implemented (2026-09-12, clautolisp 2.2.6 / alfe 2.2.14)
+
+Done and tested (ncurses-suite): window select (C-w n/p), swap (u/d +
+right/left via named commands), split (2/3/4), resize (C-w +/-/=), and now:
+- C-u N count prefix for resize (and scroll): C-w C-u N + / - scales the step.
+- named window layouts: C-w s save, C-w w save-as (override-confirm), C-w l
+  load, C-w k delete (confirm). All four also on M-x (save-layout /
+  save-layout-as / load-layout / delete-layout).
+
+C-w d CONFLICT (resolved by pjb 2026-09-12): the issue binds C-w d to BOTH
+window-swap-below ("move windows") AND window-layout-delete ("save/load
+layout"). Kept C-w d = swap-below (existing, tested); window-layout-delete is
+on C-w k ("kill") + M-x delete-layout.
+
+Deferred (terminal-key decoding, not headlessly testable): the scroll "alt
+key 2" bindings C-<prior>/<next>/<kp-*> — see window-scrolling.issue.

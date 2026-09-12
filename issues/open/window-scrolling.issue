@@ -46,3 +46,22 @@ active window, and reset it to nil.
 
 
 For other window commands, with a C-w something key binding, let's add a C-x something key binding.
+
+
+* Implemented (2026-09-12, clautolisp 2.2.6 / alfe 2.2.14)
+
+Done and tested (ncurses-suite):
+- C-w >/</v/^ scroll the active window (with C-x aliases; C-x is a C-w alias).
+- C-v scrolls up, M-v scrolls down (the Emacs aliases) — global on the active
+  window (C-v in WINDOW-MANAGER-KEY, M-v in RUN-META-COMMAND).
+- C-u N count prefix: after C-w, `C-u DIGITS <cmd>' multiplies the scroll
+  (and resize) step by N; a bare C-u means 4 (HANDLE-WINDOW-COMMAND).
+- C-h m help (help-key-bindings), C-w o window-other.
+
+Deferred (needs terminal key-code decoding + a real terminal, not headlessly
+testable): the "alt key 2" bindings C-<prior> / C-<next> / <kp-next> /
+<kp-prior>. curses.lisp currently decodes only the arrow keys (:up/:down/
+:left/:right); PageUp/PageDown + Ctrl/keypad variants are not mapped, and
+whether a given terminal even delivers them distinctly varies. Adding them
+means mapping KEY_PPAGE/KEY_NPAGE (and the Ctrl/keypad escape sequences) in
+curses.lisp and verifying at a real terminal.
