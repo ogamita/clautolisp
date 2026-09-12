@@ -629,6 +629,28 @@
       (is (string= (clautolisp.ui.ncurses:ncurses-ui-why-message ui)
                    (clautolisp.ui.ncurses:ncurses-ui-message ui))))))
 
+(test scroll-alt-keys-and-count-prefix-are-handled
+  ;; window-scrolling.issue alternate scroll keys + the C-u N count prefix:
+  ;; C-v scrolls the active window up (global), M-v scrolls it down (the Emacs
+  ;; alias for C-w ^), and C-w C-u 3 > applies a 3x scroll step. The whole
+  ;; sequence must run clean, and M-v must now be BOUND (before this it
+  ;; reported "M-v unbound").
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at context metas 3)))
+    (multiple-value-bind (result ui screen)
+        (run-ncurses (list (code-char 22)                       ; C-v     scroll up
+                           :escape #\v                            ; M-v     scroll down
+                           :page-up :page-down                    ; <prior>/<next> scroll right/left
+                           :kp-page-up :kp-page-down              ; <kp-prior>/<kp-next> scroll down/up
+                           (code-char 23) (code-char 21) #\3 #\>  ; C-w C-u 3 >  (count=3)
+                           #\c)                                   ; continue
+                     :context context :thread-info ti
+                     :thunk (lambda () (call-two context)))
+      (declare (ignore result screen))
+      (is (not (search "unbound" (clautolisp.ui.ncurses:ncurses-ui-message ui)))
+          "M-v should scroll, not report `M-v unbound'"))))
+
 (test window-manager-rides-on-the-active-window-stack
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
@@ -1091,6 +1113,26 @@
          (is (equal +canonical-role-layout+ (ui-layout-roles ui)))
          ;; an unknown name leaves the layout untouched
          (is (null (clautolisp.ui.ncurses::load-layout ui "nope"))))
+    (clautolisp.ui.tui:reset-configs)))
+
+(test delete-layout-removes-a-named-layout
+  ;; window-layout-delete backend (ncurses-windows.issue): delete-layout
+  ;; removes exactly the named layout, returns T iff it existed, and leaves
+  ;; the others intact.
+  (unwind-protect
+       (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+              (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen)))
+         (clautolisp.ui.tui:reset-configs)
+         (clautolisp.ui.ncurses::save-layout ui "l1")
+         (clautolisp.ui.ncurses::save-layout ui "l2")
+         (is (clautolisp.ui.ncurses::layout-exists-p "l1"))
+         (is (clautolisp.ui.ncurses::layout-exists-p "l2"))
+         ;; delete l1: returns T, l1 gone, l2 untouched
+         (is (eq t (clautolisp.ui.ncurses::delete-layout "l1")))
+         (is (not (clautolisp.ui.ncurses::layout-exists-p "l1")))
+         (is (clautolisp.ui.ncurses::layout-exists-p "l2"))
+         ;; deleting an absent name is a no-op that returns NIL
+         (is (null (clautolisp.ui.ncurses::delete-layout "l1"))))
     (clautolisp.ui.tui:reset-configs)))
 
 (test named-layouts-round-trip-through-the-shared-format
