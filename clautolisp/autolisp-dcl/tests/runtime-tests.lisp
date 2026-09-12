@@ -374,3 +374,44 @@ than looping forever."
     (declare (ignorable id))
     (let ((screen (clautolisp.ui.tui:make-mock-screen :keys '())))
       (is (eql 0 (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen))))))
+
+;;;; --- ncurses DCL renderer value widgets (slice 2) ------------------------
+
+(test ncurses-toggle-flips-with-space
+  "Space on a focused toggle flips its state; the value round-trips through
+get_tile (parity with the line renderer)."
+  (with-tui-dialog (id dialog ": toggle { key = \"shout\"; label = \"Shout?\"; }")
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :keys (list #\Space))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "1" (dcl-runtime-get-tile id "shout"))))))
+
+(test ncurses-radio-column-is-mutually-exclusive
+  "Selecting the second radio button sets it to 1 and its sibling to 0."
+  (with-tui-dialog (id dialog ": radio_column { key = \"grp\";
+                                 : radio_button { key = \"r1\"; label = \"One\"; }
+                                 : radio_button { key = \"r2\"; label = \"Two\"; } }")
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :keys (list :down :enter))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "1" (dcl-runtime-get-tile id "r2")))
+      (is (string= "0" (dcl-runtime-get-tile id "r1"))))))
+
+(test ncurses-edit-box-types-and-backspaces
+  "Printable keys type into a focused edit_box; Backspace deletes the last char."
+  (with-tui-dialog (id dialog ": edit_box { key = \"name\"; label = \"Name\"; }")
+    (let ((screen (clautolisp.ui.tui:make-mock-screen
+                   :keys (list #\a #\b #\c :backspace))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "ab" (dcl-runtime-get-tile id "name"))))))
+
+(test ncurses-slider-steps-and-clamps
+  "Left/Right step the focused slider, clamped to min_value/max_value."
+  (with-tui-dialog (id dialog ": slider { key = \"s\"; min_value = 0; max_value = 3; }")
+    (let ((screen (clautolisp.ui.tui:make-mock-screen
+                   ;; four rights from 0 clamp at the max of 3.
+                   :keys (list :right :right :right :right))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "3" (dcl-runtime-get-tile id "s")))))
+  (with-tui-dialog (id dialog ": slider { key = \"s\"; min_value = 0; max_value = 3; }")
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :keys (list :left))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "0" (dcl-runtime-get-tile id "s"))))))

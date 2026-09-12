@@ -103,6 +103,15 @@ terminal.lisp:410) — installation stays opt-in via the CLI.
   cycle-free =tui-core= dep. 4 headless mock-screen tests in autolisp-dcl/tests;
   full =make -C clautolisp test-sbcl= green.
 
+- Slice 2 DONE (clautolisp 2.2.17 / alfe 2.2.25): value-widget keyboard input —
+  edit_box typing + Backspace (=%ncurses-edit-insert= / =-backspace=, reason
+  changed), slider Left/Right clamped to min/max (=%ncurses-slider-step=), and
+  Enter/Space activation of toggle / radio (mutual exclusion) / list via the
+  shared terminal value-tile helpers (parity). =%ncurses-activate= commits
+  edit_box/slider with reason lost-focus rather than routing through the line
+  renderer's stdin-prompting path. 4 headless tests (toggle flip, radio
+  exclusivity, edit type+backspace, slider clamp); full test-sbcl green.
+
 * Slices (each: full `make -C clautolisp test-sbcl` green, own MR, version bump)
 
 1. Renderer skeleton + modal loop: =make-ncurses-renderer= (dcl-renderer struct,
