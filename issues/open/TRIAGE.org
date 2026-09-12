@@ -323,6 +323,7 @@ the shared blocker.
 | Issue               | Status | Note |
 |---------------------+--------+------|
 | dcl-tui-completion  | IN PROGRESS | TUI complete (1.7.18): clusters expand, all interactive tiles round-trip, --dcl tui\vert{}gui\vert{}auto selection, $reason breadth, all-widgets + listpick examples/tests green; remaining = the Qt C++ GUI app (item 6, opendcl epic) |
+| dcl-ncurses-renderer | TODO | P3: full-screen ncurses DCL renderer parallel to the line TUI (pjb: three DCL UIs — dumb/ncurses/Qt — should be parallel). Planned 2026-09-12 (design + 4 slices + per-widget input docs); draws against tui-core, reuses the runtime action/$reason plumbing; --dcl ncurses selection. Awaiting design sign-off (nav keys, layout, auto-select). |
 
 *** OpenDCL (feature build; no code yet — one epic per opendcl.plan)
 opendcl-runtime-core, opendcl-controls, opendcl-host-pickers,
