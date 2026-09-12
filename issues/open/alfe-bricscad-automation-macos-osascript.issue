@@ -1,10 +1,12 @@
 Title: re-enable alfe --mode automation on macOS and debug osascript driving of BricsCAD
-Status: OPEN — injection layer hardened further in Round 7 (mid-injection
-  window-focus detection, content-level verification, corrupted-input
-  guard), and a genuine intermittent synthetic-input flakiness was found
-  in this environment that the hardening correctly DETECTS but has not
-  been proven to fully recover from every time. Still separately blocked
-  on the deeper protocol-loop bug, see
+Status: OPEN — Round 8 (2026-09-12) fixed six more real, live-reproduced
+  bugs in the injection layer (see below) and found the actual root cause
+  of the remaining live-test failures: BUILD-LAUNCH-ARGV/LAUNCHCOMMAND
+  always passes docPath to `open -a', even when BricsCAD is already
+  running with a document open, which can knock it back to the Welcome
+  page instead of reusing the existing session — filed separately as
+  issues/open/alfe-bricscad-automation-macos-reopens-welcome-page.issue.
+  Still separately blocked on the deeper protocol-loop bug, see
   issues/open/alfe-bricscad-automation-macos-stopped-status.issue
 Priority: P3
 Type: feature / investigation
@@ -76,7 +78,7 @@ missing document). What remains — all GUI-level, machine-only:
    and still do not execute — so the `keystroke' mechanism itself is the
    prime suspect, not timing):
    - CLIPBOARD PASTE instead of literal keystroke: `set the clipboard to
-     "(load \"...\")"', `keystroke "v" using command down', then
+     "(load "...")"', `keystroke "v" using command down', then
      `keystroke return'. This is the leading candidate for why per-char
      `keystroke' never took effect.
    - DELIVERY CONFIRMATION LOOP: after injecting, poll protocol/status.txt
@@ -175,7 +177,7 @@ bundle; `lsregister -f <bundle>` fixes it).
   by osacompile syntax-checking alone): a UI-element reference returned
   out of a `tell' block does not resolve on its own outside that
   context (macOS -1700) — FOCUSCONSOLEWINDOW's `position of cmdWin' /
-  `size of cmdWin' needed their own `tell application \"System Events\"'.
+  `size of cmdWin' needed their own `tell application "System Events"'.
   A second regression was caught by the EXISTING test suite: the
   deviation-retry's re-activation line unconditionally used `open -a',
   which broke MACOS-LAUNCHER-APPLESCRIPT-FALLS-BACK-TO-PLAIN-BINARY
@@ -197,19 +199,19 @@ bundle; `lsregister -f <bundle>` fixes it).
   even now that keystrokes land correctly. Two live end-to-end runs (one
   with ALFE_PROBE_TIMEOUT=60, one at the script's real 240s default) both
   ended with protocol/status.txt = STOPPED, marker-present=0, top-level
-  status.txt = \"99\" (a value the runtime source already calls \"the
-  mystery status 99\" in its own comments — autolisp-remote-io.lsp, two
+  status.txt = "99" (a value the runtime source already calls "the
+  mystery status 99" in its own comments — autolisp-remote-io.lsp, two
   occurrences). Diagnostics prove the CAD-side runtime genuinely started:
   protocol/heartbeat.txt, runtime-flags.txt and runtime-info.txt are all
   populated (BricsCAD / 26.0 BricsCAD / BRICSCAD), and the live console
-  showed `(load \"…run-common.lsp\")' -> nil with no CAD-side error. So
+  showed `(load "…run-common.lsp")' -> nil with no CAD-side error. So
   AUTOLISP-PROTOCOL-SERVER-LOOP reached its `(autolisp-protocol-set-status
-  \"READY 0\")' at minimum. Ruled out: AUTOLISP-PROTOCOL-REMOTE-READ-LINE
+  "READY 0")' at minimum. Ruled out: AUTOLISP-PROTOCOL-REMOTE-READ-LINE
   is purely file-poll based (STDINFILE + control.txt), not raw process
   stdin, so a detached `open -a'-launched BricsCAD having no piped stdin
   is NOT the cause (that was my first hypothesis; checking the source
   disproved it). The loop only reaches its terminal
-  `(autolisp-protocol-set-status \"STOPPED\")' via its normal fall-through
+  `(autolisp-protocol-set-status "STOPPED")' via its normal fall-through
   (the `while (not *AUTOLISP_PROTOCOL_STOP*)' exiting) — i.e. something
   set *AUTOLISP_PROTOCOL_STOP*, most likely a SHUTDOWN line arriving via
   protocol/control.txt. Leading hypothesis, NOT yet confirmed: alfe's own
@@ -245,18 +247,18 @@ becoming frontmost)? Does it read the screen to confirm before RET? Does
 it resume typing after regaining focus, or restart?
 
 ** Gap found on inspection (before any live test): the Round 6
-CONSOLESTILLFOCUSED-equivalent check only tested \"is bricscad the
-frontmost PROCESS\" — true even when the user (or BricsCAD itself)
+CONSOLESTILLFOCUSED-equivalent check only tested "is bricscad the
+frontmost PROCESS" — true even when the user (or BricsCAD itself)
 switches KEY WINDOW from the console to the drawing window WITHOUT
 switching app. Confirmed live that the right primitive exists:
-`tell process \"bricscad\" to get value of attribute \"AXFocusedWindow\"'
+`tell process "bricscad" to get value of attribute "AXFocusedWindow"'
 correctly reports the console while it holds focus.
 
 ** Fixes implemented (autolisp-front-end/source/backend-bricscad.lisp):
 
-  1. CONSOLESTILLFOCUSED now checks the CONJUNCTION of \"bricscad is the
-     frontmost process\" AND \"the console is bricscad's own
-     AXFocusedWindow\" — catches a same-app window-focus change, not
+  1. CONSOLESTILLFOCUSED now checks the CONJUNCTION of "bricscad is the
+     frontmost process" AND "the console is bricscad's own
+     AXFocusedWindow" — catches a same-app window-focus change, not
      only a different app stealing focus outright.
   2. VERIFYTYPEDLINE: a genuine CONTENT-level check before committing
      with Return. The console has no AXValue, so pixel OCR looked like
@@ -272,12 +274,12 @@ correctly reports the console while it holds focus.
      was meant to discard. Own bug, found re-reading the Round 6 code
      rather than by a fresh live failure.
   4. Dialog handling hardened: `display dialog' itself raises -128
-     (\"User canceled\") when ITS \"Cancel\" button is clicked OR when
+     ("User canceled") when ITS "Cancel" button is clicked OR when
      Escape/Cmd-period is pressed while it is showing — it does not
      return a normal record in that case. That native -128 is now caught
      explicitly and converted into this script's own clear, numbered
      error, so a decline is never a bare, ambiguous -128 again — found
-     necessary live: pjb reported clicking \"Retry\", the run still ended
+     necessary live: pjb reported clicking "Retry", the run still ended
      in a raw -128, and there was no way from that alone to tell whether
      the click was actually registered as Cancel, whether Escape had been
      pressed, or whether this was a genuine bug.
@@ -291,7 +293,7 @@ already sitting there uncommitted (a leftover fragment from an entirely
 UNRELATED earlier interactive session, in this case), and typing then
 INSERTS there instead of appending — corrupting old and new text
 together. This is what produced the first visibly garbled command
-(`load\"/(setq test-verif-marker 424242)' — a splice of an old leftover
+(`load"/(setq test-verif-marker 424242)' — a splice of an old leftover
 test string and the new `(load ...)' payload, submitted as TWO separate
 malformed commands because a Return also ended up mid-stream). Reproduced
 identically three times before the fix; VERIFYTYPEDLINE correctly
@@ -304,8 +306,8 @@ CLEARCONSOLELINE in place, isolated minimal reproductions (clear, type an
 8-character chunk, verify) intermittently show NOTHING landing at all
 (clipboard read back only the bare prompt) — and separately, fresh
 `osascript' invocations that send a click or keystroke (never ones that
-only READ state) intermittently raise -25211 (\"not allowed assistive
-access\") despite `UI elements enabled' reliably returning true
+only READ state) intermittently raise -25211 ("not allowed assistive
+access") despite `UI elements enabled' reliably returning true
 moments before and after. Both point at an intermittent flakiness in
 this session's synthetic-input channel to System Events, not a logic bug
 in the script — plausibly related to the sheer volume of synthetic
@@ -313,7 +315,7 @@ events sent this session (many hundreds, across dozens of separate
 osascript invocations). NOT reproduced as a problem in the very first
 Round 6 live runs, which is circumstantial evidence for a
 volume/duration-related cause rather than something present from the
-start. A genuinely clean/simple ad hoc test (\"HELLOTEST123\", no
+start. A genuinely clean/simple ad hoc test ("HELLOTEST123", no
 chunking, no clear-line, no verify) landed perfectly at the same point in
 this investigation, so basic keystroke delivery is not categorically
 broken — it is specifically INTERMITTENT.
@@ -321,7 +323,7 @@ broken — it is specifically INTERMITTENT.
 Also isolated and explained, NOT a production bug: a `'_isoplane'`
 command appeared in the console transcript during this round's manual
 debugging. Traced to a mistake in an AD HOC DIAGNOSTIC script only —
-`keystroke \"e\" using command down' was meant as \"Cmd+End\" (scroll to
+`keystroke "e" using command down' was meant as "Cmd+End" (scroll to
 bottom) but is actually just Cmd+E, which BricsCAD binds to the isoplane
 toggle. The production template never sends this; noted here only so a
 future reader does not mistake it for something the template does.
@@ -339,4 +341,135 @@ session at the machine should: (a) characterize whether the flakiness
 correlates with session duration/event volume (a fresh, short session
 would test this cleanly), and (b) if it does, consider whether
 attemptLimit and/or the giving-up timeouts need to be more generous, or
-whether a longer inter-attempt delay lets the channel \"recover\".
+whether a longer inter-attempt delay lets the channel "recover".
+
+* Round 8 — pjb + Claude, live at the machine, 2026-09-12
+
+A long live session, six real bugs found and fixed by actually running
+the template against live BricsCAD repeatedly (none of them would have
+been caught by osacompile or code review alone), plus one environmental
+incident (a hung BricsCAD) and one architectural gap identified but
+deliberately NOT fixed in this session (filed separately, see Status).
+
+** Environmental: BricsCAD hung mid-session
+
+Partway through, the console window appeared to be "stuck in front of
+all other apps" — actually a HUNG BricsCAD process (98-99% CPU, state R,
+1367+ minutes of accumulated CPU time), unresponsive to Accessibility
+queries (`AXMain` lookups started raising "Invalid index", `windows of
+process` returned empty despite a window visibly still painted on
+screen — a frozen app's last-rendered frame stays on screen and does not
+yield z-order properly). Graceful quit failed; force-quit (`kill -9`)
+recovered the desktop. Everything open in it was this session's own
+throwaway test data. Relaunching fresh is what surfaced several of the
+findings below — a long-lived instance had been masking them.
+
+** Six real bugs found and fixed (autolisp-front-end/source/backend-bricscad.lisp)
+
+  1. CONSOLESTILLFOCUSED only checked "bricscad is the frontmost
+     PROCESS" — true even when the user (or BricsCAD itself) switches
+     KEY WINDOW from the console to the drawing window without switching
+     app. Fixed: now the conjunction of that AND "the console is
+     bricscad's own AXFocusedWindow" (verified live that this attribute
+     is queryable and correct).
+  2. VERIFYTYPEDLINE added: a genuine CONTENT-level check before
+     committing with Return, not just a focus check — select-to-line-start
+     (Shift+Home), Cmd+C, compare the clipboard by suffix. The console
+     has no AXValue but does support ordinary text selection and Cmd+C,
+     confirmed by a live round-trip.
+  3. RECOVERCONSOLE was sending Escape BEFORE re-focusing the console —
+     reordered to re-activate + re-focus first, since Escape sent while
+     another window is key reaches THAT window and never clears anything.
+  4. Every risky System Events call (keystroke, the verify sequence, the
+     click, clearing, window enumeration, the final Return) is now
+     individually wrapped in `try', treated as a retryable deviation
+     rather than crashing the whole script uncaught on one unlucky tick —
+     an intermittent -25211 was observed live on fresh osascript
+     invocations that send input (never ones that only read state),
+     roughly 1 run in 10 across this investigation, not reproducibly tied
+     to any specific script shape tried.
+  5. Return's own success is now confirmed by re-checking the line is
+     actually GONE (via VERIFYTYPEDLINE again), not merely that `key code
+     36' didn't raise — a run that raised nothing still once left the
+     verified-correct form sitting un-submitted at the prompt, cursor
+     blinking, nothing printed.
+  6. FINDCONSOLEWINDOW no longer matches by AXMAIN at all. AXMain was
+     the Round 6 finding's identifier and it is WRONG as a general rule —
+     found live that AXMain migrates to whichever window last held real
+     OS focus, INCLUDING the drawing window (e.g. right after opening a
+     document). Replaced with exclusion: the drawing window's title is
+     the PRODUCT name ("BricsCAD Lite" here) and stays that way regardless
+     of which document/tab is open (confirmed across many documents this
+     session); "BricsCAD" is a brand name and is not translated by
+     locale, so "AXStandardWindow, non-empty name, does NOT contain
+     'bricscad'" identifies the console in any language without
+     hard-coding any of its translated titles. Also: a genuinely fresh
+     BricsCAD profile starts with the console panel CLOSED, not merely
+     unfocused (no such window exists at all until BricsCAD's own F2
+     toggle is sent) — F2 is now tried once if FINDCONSOLEWINDOW comes up
+     empty on the first attempt.
+
+** Two more bugs found only by then running THOSE fixes live
+
+  - FOCUSCONSOLEWINDOW's click point was a fixed/fractional offset from
+    the window's BOTTOM edge. Found live: when this window is
+    repositioned low enough on screen, its lower portion sits UNDER the
+    macOS Dock, and a click there is silently eaten by the Dock instead
+    of reaching the console — nothing lands, no error. Fixed by clicking
+    near the window's TOP instead (never obscured by the Dock regardless
+    of window position) and using Cmd+End (a standard Cocoa
+    moveToEndOfDocument: shortcut, key code 119 with command down — NOT
+    the Cmd+E isoplane mixup from Round 7) to reach the true end of the
+    buffer from wherever the click actually landed. Keyboard delivery is
+    unaffected by the Dock; only mouse clicks are.
+  - CLEARCONSOLELINE (Shift+Home + one Backspace) reliably left the LAST
+    character of whatever was there behind. Found live, root-caused
+    precisely: Backspace here deletes exactly ONE character regardless of
+    an active selection's extent — the selection itself is real and IS
+    correctly respected by Cmd+C (which is why VERIFYTYPEDLINE's
+    read-back has always worked), just not by Backspace. A leftover
+    two-character residue ("AB") survived a Shift+Home+one-Backspace
+    clear as "A", which then prefixed itself onto the next typed command,
+    producing a submitted, malformed "A(load" — reproduced twice
+    identically before the fix. Fixed: Cmd+End, then a BOUNDED loop of
+    250 plain Backspaces (empirically reliable; comfortably above any
+    realistic command length for this use).
+
+Also present this round, needing its own delay between the two actions:
+a click immediately followed by Cmd+End in the SAME `tell' block (no gap
+at all) could race ahead of the click's own focus-transfer completing —
+FOCUSCONSOLEWINDOW now has an explicit `delay 0.2' between them, not just
+the caller's own post-call delay (which runs after both, not between
+them).
+
+** Root cause of the remaining live-test failures, found but NOT fixed
+this round
+
+After all six-plus-two fixes above, live runs of the ACTUAL production
+launcher (via a real `alfe --mode automation --print-command`-emitted
+script) still failed, while hand-written diagnostic scripts exercising
+the identical typing/verification logic succeeded reliably. The
+difference: the diagnostic scripts never called `open -a app docPath'
+against an ALREADY-RUNNING BricsCAD with a document open; the production
+launcher always does (LAUNCHCOMMAND/%APPLESCRIPT-LAUNCH-COMMAND passes
+docPath whenever a template is discovered, unconditionally). Confirmed
+live: after a launcher run, the main "BricsCAD Lite" window had been
+knocked back to its "Début"/Welcome tab, in front of the "Dessin1"
+document tab that had been active — disconnecting the console from any
+active drawing context. This is architecturally a bigger fix (needs a
+real "is BricsCAD already running with a document" check to decide
+whether docPath should be passed at all, echoing the very process-name
+probe Round 6 removed as unnecessary for ACTIVATION — it turns out to
+still matter for the DOCUMENT-OPENING side effect) than should be rushed
+at the end of an already long session. Filed separately as
+issues/open/alfe-bricscad-automation-macos-reopens-welcome-page.issue.
+
+** Net effect
+
+Every fix above is real, live-reproduced, and re-verified after fixing
+(alfe SBCL suite 646/646 green throughout). The injection/verification
+machinery itself — click, type, verify, submit, detect deviations,
+recover — is now considerably more sound than at the start of this
+round. What still blocks a clean end-to-end PASS is the newly-found,
+separately-filed docPath/Welcome-page issue, not the injection layer
+this ticket is about.

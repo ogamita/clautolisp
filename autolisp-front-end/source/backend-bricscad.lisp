@@ -644,17 +644,46 @@ end if
 -- exist here.
 
 on findConsoleWindow(procName)
-  tell application \"System Events\"
-    tell process procName
-      repeat with w in windows
-        try
-          if (value of attribute \"AXMain\" of w) is true then
-            return w
-          end if
-        end try
-      end repeat
+  -- NOT matched by AXMain: found live (2026-09-12) that AXMain migrates
+  -- to whichever window last held real OS focus, INCLUDING the drawing
+  -- window (e.g. right after opening a document via `open -a app
+  -- docPath') — the very first live investigation of this template
+  -- happened to catch AXMain on the console and that was mistakenly
+  -- generalized as a stable identifier. It was true then, not always.
+  --
+  -- NOT matched by subrole either: both the console and the drawing
+  -- window report AXStandardWindow.
+  --
+  -- Matched instead by EXCLUSION: the drawing window's title is the
+  -- PRODUCT name (\"BricsCAD Lite\" on this install) and stays that way
+  -- regardless of which document/tab is open — confirmed live across
+  -- many different open documents this session. \"BricsCAD\" is a brand
+  -- name and does not get translated by locale, so a window whose name
+  -- does NOT contain it, has a real (non-empty) name, and is a standard
+  -- window is the console, in any language, without hard-coding any of
+  -- its translated titles (\"Historique des invites\" in French,
+  -- \"Prompt History\" in English, etc.).
+  --
+  -- Outer `try' added alongside the per-window one already here: a
+  -- transient System Events hiccup enumerating `windows' itself (same
+  -- class documented on TYPEWATCHINGFOCUS) must degrade to \"not found
+  -- this attempt\" — handled by the caller's normal retry path — rather
+  -- than crash the whole script uncaught.
+  try
+    tell application \"System Events\"
+      tell process procName
+        repeat with w in windows
+          try
+            set wName to name of w
+            set wSubrole to subrole of w
+            if wSubrole is \"AXStandardWindow\" and wName is not missing value and (length of wName) > 0 and wName does not contain \"bricscad\" then
+              return w
+            end if
+          end try
+        end repeat
+      end tell
     end tell
-  end tell
+  end try
   return missing value
 end findConsoleWindow
 
@@ -678,13 +707,53 @@ on focusConsoleWindow(cmdWin)
   -- block must itself be re-wrapped in the matching `tell application' —
   -- the reference does not resolve on its own outside that context (macOS
   -- error -1700, found by actually running this against live BricsCAD).
-  tell application \"System Events\"
-    set wPos to position of cmdWin
-    set wSize to size of cmdWin
-  end tell
-  set clickX to (item 1 of wPos) + my clampNumber(400, 40, (item 1 of wSize) - 40)
-  set clickY to (item 2 of wPos) + my clampNumber((item 2 of wSize) - 50, 20, (item 2 of wSize) - 10)
-  tell application \"System Events\" to click at {clickX, clickY}
+  --
+  -- The whole body is inside a `try': a transient System Events hiccup
+  -- here (same class as the one documented on TYPEWATCHINGFOCUS) must not
+  -- crash the script uncaught. This handler has no return value the
+  -- caller checks, so swallowing is correct — a click that silently
+  -- failed to register is exactly the kind of misalignment
+  -- CONSOLESTILLFOCUSED / VERIFYTYPEDLINE are there to catch downstream,
+  -- which is a cleaner single place to react to it than duplicating that
+  -- logic here.
+  try
+    tell application \"System Events\"
+      set wPos to position of cmdWin
+      set wSize to size of cmdWin
+    end tell
+    -- Click NEAR THE TOP of the window, not the bottom, then use Cmd+End
+    -- (a standard Cocoa text-editing shortcut, moveToEndOfDocument: — NOT
+    -- the same as the Cmd+E isoplane mixup from earlier in this
+    -- investigation) to move the caret to the true end of the buffer
+    -- regardless of where the click landed.
+    --
+    -- Any offset measured from the window's BOTTOM (a fixed pixel amount,
+    -- or even a fraction of the window's own height) is fragile: found
+    -- live (2026-09-12) that this console can end up positioned low
+    -- enough on screen that its lower portion sits UNDER the macOS Dock —
+    -- a click there hits the Dock instead of the console, and nothing
+    -- lands at all, with no error to signal it (the Dock silently eats
+    -- the click). The window's TOP, by contrast, is never obscured by
+    -- the Dock regardless of how the window is positioned, so clicking
+    -- there is unconditionally safe — and Cmd+End then reaches the live
+    -- prompt from wherever the click actually put the caret, verified
+    -- live: typing after click-top + Cmd+End landed correctly at the
+    -- bottom prompt even though that exact screen region was itself
+    -- under the Dock and not fully visible in a screenshot — the
+    -- keyboard-level delivery is unaffected by the Dock, only mouse
+    -- clicks are.
+    set clickX to (item 1 of wPos) + my clampNumber(400, 40, (item 1 of wSize) - 40)
+    set clickY to (item 2 of wPos) + my clampNumber(30, 20, (item 2 of wSize) - 15)
+    tell application \"System Events\" to click at {clickX, clickY}
+    -- A delay HERE, not just a shared one at the caller, matters: found
+    -- live (2026-09-12) that sending Cmd+End in the SAME `tell' block
+    -- immediately after the click (no gap at all) could race ahead of
+    -- the click's own focus-transfer actually completing, silently
+    -- landing nowhere. The caller's own post-call delay is not a
+    -- substitute — it runs after BOTH of these, not between them.
+    delay 0.2
+    tell application \"System Events\" to key code 119 using command down -- Cmd+End
+  end try
 end focusConsoleWindow
 
 -- Guarantee an EMPTY prompt before typing anything, regardless of what
@@ -694,15 +763,37 @@ end focusConsoleWindow
 -- land MID-STRING if something uncommitted is already present (e.g. a
 -- leftover fragment from an earlier interrupted script), and typing then
 -- INSERTS there instead of appending, corrupting both the old and the
--- new text together. End first (so Shift+Home is guaranteed to select
--- the WHOLE line rather than only the part after wherever the click
--- happened to land), then Backspace the selection away.
+-- new text together.
+--
+-- NOT implemented as Shift+Home + one Backspace, even though that reads
+-- as the obvious way to delete a selection: found live (2026-09-12) that
+-- Backspace here deletes exactly ONE character regardless of an active
+-- selection's extent — the selection itself is real and correctly
+-- respected by Cmd+C (VERIFYTYPEDLINE's read-back has always worked),
+-- just not by Backspace. A single-Backspace clear reliably left the
+-- LAST character of whatever was there behind, which then prefixed
+-- itself onto the next typed command (observed: leftover \"AB\" ->
+-- Shift+Home+one Backspace -> \"A\" survives -> typing \"(load ...\"
+-- next produced the submitted, malformed \"A(load\"). Cmd+End (so the
+-- selection, and this loop, start from the true end regardless of where
+-- a prior click landed) followed by a BOUNDED loop of plain Backspaces
+-- is empirically reliable instead — verified live clearing exactly this
+-- kind of leftover. 250 is comfortably above any realistic command
+-- length for this use (a `(load \"<path>\")' form).
 on clearConsoleLine(procName)
-  tell application \"System Events\"
-    key code 119 -- End
-    key code 115 using shift down -- Shift+Home: select the whole line
-    key code 51 -- Backspace: delete the selection
-  end tell
+  -- Swallowed for the same reason as FOCUSCONSOLEWINDOW: no checked
+  -- return value, and a failure here manifests downstream as a
+  -- VERIFYTYPEDLINE mismatch anyway, which already has its own recovery
+  -- path.
+  try
+    tell application \"System Events\" to key code 119 using command down -- Cmd+End
+    delay 0.1
+    tell application \"System Events\"
+      repeat 250 times
+        key code 51 -- Backspace
+      end repeat
+    end tell
+  end try
 end clearConsoleLine
 
 -- Is the console window BOTH (a) in the frontmost PROCESS and (b) the
@@ -745,7 +836,22 @@ on typeWatchingFocus(txt, procName, chunkSize)
   repeat while i <= n
     set j to i + chunkSize - 1
     if j > n then set j to n
-    tell application \"System Events\" to keystroke (text i thru j of txt)
+    try
+      tell application \"System Events\" to keystroke (text i thru j of txt)
+    on error
+      -- A transient System Events hiccup must not crash the whole script
+      -- uncaught. Observed live (2026-09-11): intermittent -25211 on a
+      -- fresh osascript invocation's FIRST action that sends input,
+      -- despite `UI elements enabled' reliably returning true moments
+      -- before and after, and despite dozens of repeated identical
+      -- invocations otherwise succeeding cleanly — genuinely rare
+      -- (roughly 1 in 10 across this investigation) and not reproducibly
+      -- tied to any specific script shape tried. Treated exactly like a
+      -- detected focus deviation, so the SAME recovery/retry path handles
+      -- it regardless of root cause, instead of the whole automation
+      -- attempt dying on one unlucky tick.
+      return false
+    end try
     if not (my consoleStillFocused(procName)) then return false
     set i to j + 1
   end repeat
@@ -769,11 +875,19 @@ end typeWatchingFocus
 -- collapses the selection back to the caret so the Return that follows
 -- submits cleanly rather than acting on a lingering selection.
 on verifyTypedLine(expectedForm, procName)
-  tell application \"System Events\"
-    key code 115 using shift down -- Shift+Home
-    keystroke \"c\" using command down
-    key code 124 -- Right arrow: collapse selection
-  end tell
+  try
+    tell application \"System Events\"
+      key code 115 using shift down -- Shift+Home
+      keystroke \"c\" using command down
+      key code 124 -- Right arrow: collapse selection
+    end tell
+  on error
+    -- Same reasoning as typeWatchingFocus's try: a transient System
+    -- Events hiccup here must fail the verification (treated as
+    -- \"could not confirm\", triggering recovery) rather than crash the
+    -- whole script uncaught.
+    return false
+  end try
   delay 0.15
   set copiedText to \"\"
   try
@@ -796,7 +910,16 @@ end verifyTypedLine
 -- BricsCAD is a bundled .app, and cannot re-open docPath as a second
 -- document the way re-running LAUNCHCOMMAND could.
 on recoverConsole(procName)
-  tell application \"System Events\" to set frontmost of process procName to true
+  -- Every System Events call in this handler is individually swallowed
+  -- (try, no re-raise) for the same reason as FOCUSCONSOLEWINDOW /
+  -- CLEARCONSOLELINE: this is a best-effort recovery step with no
+  -- checked return value, called right before the user sees a dialog
+  -- anyway — a transient hiccup here must not crash the script in the
+  -- one place that is already busy telling the human something went
+  -- wrong.
+  try
+    tell application \"System Events\" to set frontmost of process procName to true
+  end try
   set w to my findConsoleWindow(procName)
   if w is not missing value then
     my focusConsoleWindow(w)
@@ -808,7 +931,9 @@ on recoverConsole(procName)
     -- prompt is textually empty, and a raw leftover fragment sitting
     -- there (not inside any command) is exactly what corrupted the very
     -- first live run of this hardening (2026-09-11).
-    tell application \"System Events\" to key code 53 -- Escape
+    try
+      tell application \"System Events\" to key code 53 -- Escape
+    end try
     delay 0.2
     my clearConsoleLine(procName)
   end if
@@ -819,36 +944,97 @@ set loadForm to \"(load \\\"\" & runLspFile & \"\\\")\"
 set attemptLimit to 3
 set attemptNum to 1
 set succeeded to false
+set triedF2 to false
 
 repeat while (attemptNum <= attemptLimit) and (not succeeded)
+  -- A transient failure finding the console window is now ALSO a
+  -- retryable condition, not an immediate fatal error — consistent with
+  -- every other step below. FINDCONSOLEWINDOW itself already degrades a
+  -- System Events hiccup to \"not found\" rather than raising.
   set cmdWin to my findConsoleWindow(procName)
-  if cmdWin is missing value then
-    error \"BricsCAD console window (AXMain) not found; cannot target keystrokes.\" number 3
+  -- On a genuinely fresh BricsCAD profile the console panel starts
+  -- CLOSED, not merely unfocused — found live (2026-09-12) launching a
+  -- brand new instance after force-quitting a hung one: no
+  -- \"Historique des invites\" window existed at all until F2 (BricsCAD's
+  -- own text-window toggle) was sent by hand. Tried at most ONCE per
+  -- script run (repeating F2 would just re-hide it) — if the console
+  -- still isn't found afterward, that is a real failure, not something
+  -- to keep toggling blindly.
+  if cmdWin is missing value and not triedF2 then
+    set triedF2 to true
+    try
+      tell application \"System Events\" to tell process procName to key code 120 -- F2
+    end try
+    delay 0.5
+    set cmdWin to my findConsoleWindow(procName)
   end if
-  my focusConsoleWindow(cmdWin)
-  delay 0.2
-  -- Every attempt, not only after a detected deviation: this script
-  -- cannot assume the console starts empty. A leftover fragment from an
-  -- entirely UNRELATED earlier session (this script's own click landing
-  -- mid-string in it) is exactly what corrupted the first live run of
-  -- this hardening.
-  my clearConsoleLine(procName)
-  delay 0.1
-
-  set typedOK to my typeWatchingFocus(loadForm, procName, 8)
+  set typedOK to false
   set verifiedOK to false
-  if typedOK then set verifiedOK to my verifyTypedLine(loadForm, procName)
+  set returnSentOK to false
+  if cmdWin is not missing value then
+    my focusConsoleWindow(cmdWin)
+    delay 0.2
+    -- Every attempt, not only after a detected deviation: this script
+    -- cannot assume the console starts empty. A leftover fragment from
+    -- an entirely UNRELATED earlier session (this script's own click
+    -- landing mid-string in it) is exactly what corrupted the first
+    -- live run of this hardening.
+    my clearConsoleLine(procName)
+    delay 0.1
 
-  if typedOK and verifiedOK then
-    tell application \"System Events\" to key code 36 -- Return
+    set typedOK to my typeWatchingFocus(loadForm, procName, 8)
+    if typedOK then set verifiedOK to my verifyTypedLine(loadForm, procName)
+
+    -- The form is confirmed correct in the console at this point (if
+    -- TYPEDOK and VERIFIEDOK); a transient failure sending Return ITSELF
+    -- should not force a full retype — we already know the content is
+    -- right — so this retries just the Return keystroke a few times
+    -- before falling back to the general recovery path.
+    --
+    -- Success here is NOT \"key code 36 didn't throw\" — that is
+    -- necessary but NOT sufficient. Observed live (2026-09-11): a run
+    -- this script itself marked successful (no error thrown sending
+    -- Return) left the fully-verified-correct form sitting UNCOMMITTED
+    -- at the prompt, cursor blinking, nothing printed — BricsCAD never
+    -- actually processed the keystroke, and the AppleScript layer had no
+    -- way to know that on its own. So after each attempt, re-run
+    -- VERIFYTYPEDLINE's same select+copy check: if the SAME text is
+    -- STILL sitting there, Return did not register and this loops; once
+    -- it is gone (submitted — cleared to a new empty prompt, or replaced
+    -- by BricsCAD's own response), Return actually took effect. (Minor
+    -- accepted risk: AutoCAD-lineage command lines repeat the last
+    -- command on a bare Return at an EMPTY prompt, so a false negative
+    -- here could in principle resend Return once too often — harmless
+    -- for this specific idempotent (load ...) payload, but worth noting
+    -- for any future caller of this same pattern with a non-idempotent
+    -- form.)
+    if typedOK and verifiedOK then
+      repeat 3 times
+        try
+          tell application \"System Events\" to key code 36 -- Return
+        end try
+        delay 0.3
+        if not (my verifyTypedLine(loadForm, procName)) then
+          set returnSentOK to true
+          exit repeat
+        end if
+      end repeat
+    end if
+  end if
+
+  if cmdWin is not missing value and typedOK and verifiedOK and returnSentOK then
     set succeeded to true
   else
-    my recoverConsole(procName)
+    if cmdWin is not missing value then my recoverConsole(procName)
     set dialogMessage to \"Attempt \" & attemptNum & \" of \" & attemptLimit & \".\"
-    if not typedOK then
+    if cmdWin is missing value then
+      set dialogMessage to \"alfe could not find BricsCAD's console window this attempt. Please leave BricsCAD alone until this finishes.\" & return & return & dialogMessage
+    else if not typedOK then
       set dialogMessage to \"alfe is driving BricsCAD's command line and lost keyboard focus (another window became key mid-injection). Please leave BricsCAD alone until this finishes.\" & return & return & dialogMessage
-    else
+    else if not verifiedOK then
       set dialogMessage to \"alfe typed into BricsCAD's command line but could not confirm the console received it correctly. Please leave BricsCAD alone until this finishes.\" & return & return & dialogMessage
+    else
+      set dialogMessage to \"alfe verified BricsCAD's command line was correct but could not submit it (Return kept failing). Please leave BricsCAD alone until this finishes.\" & return & return & dialogMessage
     end if
     set userDeclined to false
     set userGaveUp to false
@@ -920,8 +1106,19 @@ misread native -128), and the whole command is retried from scratch (not
 a character-level resume — the console's readable state, even via the
 clipboard trick, is only ever a snapshot taken by asking, not a live
 value that could be diffed against safely mid-stream). Bounded to a few
-attempts. Requires an interactive session and Accessibility permission
-for the process running osascript. See
+attempts. On a genuinely fresh BricsCAD profile the console panel can
+start CLOSED rather than merely unfocused; F2 (BricsCAD's own text-window
+toggle) is tried once if FINDCONSOLEWINDOW comes up empty. Every System
+Events call that can throw is individually caught and treated as a
+retryable deviation rather than crashing the script uncaught — including
+Return itself, whose success is confirmed by re-checking the line is
+actually gone, not merely that the keystroke call didn't raise (a run
+that raised nothing still once left the verified-correct form sitting
+un-submitted at the prompt). FOCUSCONSOLEWINDOW's click targets a
+FRACTION of the console window's own height, not a fixed offset from its
+bottom edge, so it cannot land on the macOS Dock when the window happens
+to sit low on screen. Requires an interactive session and Accessibility
+permission for the process running osascript. See
 issues/open/alfe-bricscad-automation-macos-osascript.issue.")
 
 (defun macos-app-bundle-for (executable-path)

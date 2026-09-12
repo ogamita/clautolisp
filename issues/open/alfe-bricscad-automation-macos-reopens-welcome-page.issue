@@ -1,0 +1,86 @@
+Title: BricsCAD macOS automation: open -a app docPath knocks an already-running instance back to the Welcome page
+Status: OPEN — new, machine-only, P3
+Priority: P3
+Type: bug
+Depends: issues/open/alfe-bricscad-automation-macos-osascript.issue
+
+* What
+
+Found live (2026-09-12) while verifying the Round 8 injection hardening
+in alfe-bricscad-automation-macos-osascript.issue. The AppleScript
+launcher's LAUNCHCOMMAND (built by %APPLESCRIPT-LAUNCH-COMMAND in
+autolisp-front-end/source/backend-bricscad.lisp) does:
+
+  do shell script "open -a " & quoted form of appPath & " " & quoted form of docPath
+
+whenever a template path was discovered — unconditionally, with no check
+for whether BricsCAD is already running. When BricsCAD IS already
+running with a document open (a realistic, common case: alfe re-run
+against the same long-lived instance during iterative testing, or a user
+who already had BricsCAD open before invoking alfe), this call can knock
+the main window back to its "Début" (Start/Welcome) tab instead of
+reusing the existing document or opening docPath as expected — confirmed
+by screenshot: the "BricsCAD Lite" window's active tab changed from
+"Dessin1" to "Début" immediately after a launcher run, with no new
+document tab created for docPath at all.
+
+The console window (Historique des invites) remains visually present
+after this, but typing into it then does nothing — no corruption, just
+total silence, no error surfaced anywhere. This produced several
+seemingly-random live-test failures during Round 8 that were eventually
+traced to this, not to the keystroke-injection layer (which was
+separately confirmed reliable via hand-written diagnostic scripts that
+never called `open -a docPath` a second time against a running
+instance).
+
+* Why this matters now
+
+Round 6 (2026-08-14 predecessor decision, referenced in this ticket's
+own history) deliberately REMOVED a `set running to exists (processes
+whose name is "bricscad")' probe from the template, reasoning that
+`open -a` is idempotent for ACTIVATION and no process-name check was
+needed. That reasoning holds for activation — but this round found it
+does NOT extend to the DOCUMENT-OPENING side effect: `open -a app
+docPath` behaves differently (and disruptively) when the app already has
+a document open versus a cold start. The two concerns were conflated;
+activation should stay probe-free, but opening a document should not be
+attempted blindly against a session that may already have one.
+
+* Suggested fix (not yet implemented)
+
+  - Detect whether BricsCAD is already running (a real process check is
+    warranted here specifically, unlike the activation case) and, if so,
+    emit LAUNCHCOMMAND as `open -a appPath' alone (no docPath) — the
+    existing "already open" branch this function already has for when no
+    template is discovered at all (see %APPLESCRIPT-LAUNCH-COMMAND's
+    `bundle' vs `(and bundle template-path)' branches) — rather than
+    conditioning solely on "was a template discovered".
+  - Verify live: with BricsCAD already running and a document open,
+    confirm the Welcome page is never shown and the existing document
+    (or console) stays usable.
+  - Also verify the COLD-START case still works: BricsCAD not yet
+    running, docPath should still be passed so a fresh launch has a
+    document (and therefore a command line) to type into — this is the
+    scenario %APPLESCRIPT-LAUNCH-COMMAND's docstring already documents
+    as the reason docPath is passed at all ("no document, no command
+    line, nowhere for the keystrokes to land").
+
+* Notes / constraints
+
+  - Machine-only, like its parent ticket: needs a live macOS + BricsCAD
+    session to verify.
+  - Do not re-litigate the keystroke-injection layer here — Round 8 of
+    the parent ticket separately hardened and re-verified that machinery
+    (window-focus detection, content verification, corrupted-input
+    guards, Dock-collision-safe clicking, exception handling throughout);
+    this ticket is specifically about the launch/document-opening step
+    that runs before any of that.
+
+* References
+
+  - issues/open/alfe-bricscad-automation-macos-osascript.issue (Round 8:
+    how this was found, and the six-plus-two injection-layer fixes made
+    in the same session)
+  - autolisp-front-end/source/backend-bricscad.lisp
+    - %APPLESCRIPT-LAUNCH-COMMAND (~line 1150) — builds LAUNCHCOMMAND
+    - EMIT-LAUNCHER-APPLESCRIPT — calls it and fills in docPath
