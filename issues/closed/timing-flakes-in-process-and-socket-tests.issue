@@ -1,6 +1,41 @@
 Title: tests that drive processes and sockets fail intermittently (two instances)
-Status: open
+Status: RESOLVED 2026-09-12 — all three root-caused and fixed (see RESOLUTION)
 Found: 2026-09-06, in passing, running the suite for an unrelated change
+
+RESOLUTION (2026-09-12)
+-----------------------
+
+All three flaky tests named below were fixed at the cause — the wait was
+made ordered, never an auto-retry, as this ticket demands.
+
+1. ALDB-LISTENER-DRIVES-A-LIVE-SOCKET-SESSION — already fixed earlier
+   (clautolisp 2.2.3, MR !156): the live-socket test was rewritten
+   single-threaded — connect queues in the listener backlog, the (:abort)
+   reply is pre-buffered, and there is no client thread to close the peer
+   first. The broken-pipe race is gone.
+
+2. KILL-ENGINE-PROCESS-IS-BOUNDED-NOT-BLOCKING (alfe 2.2.13) — root cause:
+   KILL-ENGINE-PROCESS escalated to terminate-process :urgent (SIGKILL)
+   and RETURNED immediately. SIGKILL is delivered asynchronously, so
+   process-alive-p could still read true for a short window (wider under
+   load) — the "a TERM-ignoring process survived; :urgent did not fire"
+   failure. Fix: after the urgent kill, bounded-poll for the death we just
+   caused (SIGKILL cannot be trapped, so it resolves in ms; the 2 s cap
+   only guards a pathological D-state child; never an unbounded
+   wait-process). autolisp-front-end/source/backend-cad-common.lisp.
+
+3. PROTOCOL-MOCK-CAD-FULL-LIFECYCLE (alfe 2.2.13) — root cause: the mock
+   held the TRANSIENT states RUNNING 1 / DONE 1 OK for only 0.05 s before
+   overwriting status.txt — BELOW the alfe poll primitive's 50 ms initial
+   back-off — so WAIT-FOR-STATUS-PREFIX could poll once, land after the
+   window, and then wait out its whole timeout for a state already gone.
+   Fix: hold those states 0.3 s, matching the file's own STOPPING rationale
+   (0.2 s, explicitly "longer than the poll back-off") and more faithful to
+   a real CAD (which holds RUNNING for the whole eval).
+   autolisp-front-end/tests/file-protocol-tests.lisp, MOCK-CAD-RUNTIME.
+
+Verified: 200-iteration loop over the three kill-engine tests +
+PROTOCOL-MOCK-CAD-FULL-LIFECYCLE — 2800 checks, 0 non-pass.
 
 SYMPTOM
 

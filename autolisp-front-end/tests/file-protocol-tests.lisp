@@ -888,13 +888,26 @@ when the runtime has published one or more timestamps."
 
 (defun mock-cad-runtime (session
                          &key (initial-ready-delay 0.05)
-                              (running-delay 0.05)
-                              (done-delay 0.05))
+                              (running-delay 0.3)
+                              (done-delay 0.3))
   "A tiny CAD-side runtime emulator. Runs the documented state
 machine — BOOTING (already published by INIT-SESSION) → READY 0 →
 RUNNING 1 → DONE 1 OK → READY 1 → STOPPING → STOPPED — pausing the
 configured delay between transitions so the alfe side has time to
 observe each one.
+
+RUNNING-DELAY and DONE-DELAY are the windows during which those two
+TRANSIENT states are observable before status.txt is overwritten. They
+MUST exceed the alfe-side poll primitive's initial back-off
+(=*poll-initial-ms*= = 50 ms) with margin, for the same reason STOPPING
+is held 0.2 s below — otherwise WAIT-FOR-STATUS-PREFIX can poll once,
+land after the window, and then wait out its whole timeout for a state
+that has already been overwritten and will never return. At the old
+0.05 s (BELOW the 50 ms back-off) that was missable even unloaded, and
+routine under a full-suite load — the PROTOCOL-MOCK-CAD-FULL-LIFECYCLE
+half of timing-flakes-in-process-and-socket-tests. A real CAD holds
+RUNNING for as long as the eval runs, so a generous hold is also the
+more faithful emulation, not a test-only fudge.
 
 When stdin.txt arrives between READY 0 and RUNNING 1, the runtime
 treats its content as the request body, writes the body verbatim
