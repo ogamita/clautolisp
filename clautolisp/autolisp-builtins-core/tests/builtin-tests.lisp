@@ -4948,6 +4948,66 @@ and vlax-method-applicable-p answer T/nil against the cador mock document
   (is (%vla "(vl-load-com)(vlax-method-applicable-p (vla-get-activedocument (vlax-get-acad-object)) \"Save\")"))
   (is (null (%vla "(vl-load-com)(vlax-method-applicable-p (vla-get-activedocument (vlax-get-acad-object)) \"Regen\")"))))
 
+;;;; ----- complete-unit-tests: misc stub / DCL / property / LISP$ / BCAD$ ---
+;;;; (complete-unit-tests.issue) The remaining untested no-host operators:
+;;;; the DCL no-ops, the ActiveX property stubs, the LISP$ / BCAD$ runtime
+;;;; stubs, plus DIMY_TILE / EXPAND / LISP$VERSION which have a real return.
+;;;; The four entity/dictionary ops need the cador mock host. Pure stubs are
+;;;; pinned to current behaviour; promotion lives in deferred-stubbed-functions.
+
+(test misc-stub-family-returns-nil
+  "The untested no-host nil-returning stubs each return nil under a
+representative call (complete-unit-tests.issue)."
+  (reset-autolisp-symbol-table)
+  (dolist (form '("(dlg-sysvars)"
+                  "(term_dialog)"
+                  "(dumpallproperties 'foo)"
+                  "(getpropertyvalue 'foo \"Color\")"
+                  "(ispropertyreadonly 'foo \"Color\")"
+                  "(ispropertyvalid 'foo \"Color\")"
+                  "(setpropertyvalue 'foo \"Color\" 1)"
+                  "(lisp$install)"
+                  "(lisp$enablefastcom t)"
+                  "(bcad$disable-extended-error)"
+                  "(bcad$licenselevels)"))
+    (is (null (run-autolisp-string form :setup-fn #'install-core-into))
+        "~A should return nil under the stub impl" form)))
+
+(test misc-value-returning-builtins
+  "DIMY_TILE returns the fixed tile height 20; EXPAND is the identity (NOT a
+nil stub); LISP$VERSION returns the 'clautolisp <ver>' string
+(complete-unit-tests.issue)."
+  (reset-autolisp-symbol-table)
+  (is (eql 20 (run-autolisp-string "(dimy_tile \"K\")" :setup-fn #'install-core-into)))
+  (is (eql 5 (run-autolisp-string "(expand 5)" :setup-fn #'install-core-into)))
+  (is (search "clautolisp"
+              (%reg-str (run-autolisp-string "(lisp$version)" :setup-fn #'install-core-into)))))
+
+(test entity-and-dictionary-ops-on-cador
+  "ENTUPD / SSGETFIRST / DICTOBJNAME / DICTRENAME against the cador mock host
+(complete-unit-tests.issue). These signal on the bare nihil host, so they use
+the %vla fixture (as the drawing-data tests do)."
+  ;; No pickfirst set in a fresh drawing.
+  (is (null (%vla "(ssgetfirst)")))
+  ;; entupd returns the ename it refreshed.
+  (is (%vla (concatenate 'string
+             "(vl-load-com)"
+             "(setq e (entmakex (list (cons 0 \"CIRCLE\")(cons 10 (list 0.0 0.0 0.0))(cons 40 1.0))))"
+             "(equal e (entupd e))")))
+  ;; dictobjname resolves a key to its member ename.
+  (is (%vla (concatenate 'string
+             "(setq nod (namedobjdict))"
+             "(setq xr (entmakex (list (cons 0 \"XRECORD\")(cons 100 \"AcDbXrecord\")(cons 1 \"v1\"))))"
+             "(dictadd nod \"K\" xr)"
+             "(equal xr (dictobjname nod \"K\"))")))
+  ;; dictrename returns the new key string on success.
+  (is (string= "K2"
+               (%reg-str (%vla (concatenate 'string
+                "(setq nod (namedobjdict))"
+                "(setq xr (entmakex (list (cons 0 \"XRECORD\")(cons 100 \"AcDbXrecord\")(cons 1 \"v1\"))))"
+                "(dictadd nod \"K\" xr)"
+                "(dictrename nod \"K\" \"K2\")"))))))
+
 ;;;; ----- LOAD honours the AutoLISP-level *AUTOLISP-FILE-ENCODING* -----
 
 (test load-honours-autolisp-file-encoding-override

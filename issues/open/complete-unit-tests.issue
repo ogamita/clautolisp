@@ -70,6 +70,16 @@
   (vlax-get-or-create-object, vlax-property-available-p /
   vlax-method-applicable-p with T/nil cases). Coverage **89.6% → 92.2%
   (629 → 647 / 702)**.
+- 2026-09-12 (clautolisp 2.2.10 / alfe 2.2.18): backfilled the misc
+  cluster — =misc-stub-family-returns-nil= (dlg-sysvars, term_dialog, the
+  5 ActiveX property stubs getpropertyvalue/setpropertyvalue/isproperty*/
+  dumpallproperties, lisp$install, lisp$enablefastcom, bcad$disable-
+  extended-error, bcad$licenselevels), =misc-value-returning-builtins=
+  (dimy_tile → 20, EXPAND → identity not nil, lisp$version → the
+  "clautolisp <ver>" string) and =entity-and-dictionary-ops-on-cador=
+  (ssgetfirst, entupd, dictobjname, dictrename via the %vla mock host).
+  Coverage **92.2% → 94.0% (647 → 660 / 702)**. Remaining untested are
+  the CLAL-* UI/clipboard/frame/window/codepage family.
 - Note: the tool is deliberately conservative — it counts only literal
   =(name= form heads, so DATA-DRIVEN / macro-generated tests are invisible
   to it; write explicit literal snippets when backfilling so the tool
