@@ -2146,7 +2146,16 @@ already-read K (from a user-keymap fall-through) can be dispatched too."
       ((key-char-p k #\+) (window-resize ui +window-resize-step+))
       ((key-char-p k #\-) (window-resize ui (- +window-resize-step+)))
       ((key-char-p k #\=) (window-balance ui))
-      (t (set-message ui "C-w/C-x: n/p sel  o other  >/</v/^ scroll  u/d swap  2/3 split  4 reset  +/-/= size")))))
+      ;; named window layouts (ncurses-windows.issue "save and load the window
+      ;; layout"). s save, w save-as (override-confirm), l load. NOTE: the
+      ;; issue also names `C-w d' for window-layout-delete, but `C-w d' is
+      ;; already window-swap-below in its "move windows" section — a conflict
+      ;; in the spec; delete stays on M-x (delete-layout) until pjb resolves
+      ;; which C-w d should be.
+      ((key-char-p k #\s) (save-layout-command ui nil nil nil))
+      ((key-char-p k #\w) (save-as-layout-command ui nil nil nil))
+      ((key-char-p k #\l) (load-layout-command ui nil nil nil))
+      (t (set-message ui "C-w/C-x: n/p sel  o other  >/</v/^ scroll  u/d swap  2/3 split  4 reset  +/-/= size  s/w/l layout save/save-as/load")))))
 
 ;;;; --- minibuffer: M-x and , (ncurses-windows.issue) -----------------
 

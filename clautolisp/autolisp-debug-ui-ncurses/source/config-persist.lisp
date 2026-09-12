@@ -151,6 +151,20 @@ Returns T when a layout of that name exists."
       (setf (ui-layout ui) (spec->layout ui spec))
       t)))
 
+(defun layout-exists-p (name)
+  "True when a named layout NAME is saved."
+  (and (assoc name (saved-layouts) :test #'string-equal) t))
+
+(defun delete-layout (name)
+  "Remove the named layout NAME from the \"layouts\" config. Returns T when a
+layout of that name existed (windows-and-interactor-templates / ncurses-windows
+`window-layout-delete')."
+  (let* ((cfg (clautolisp.ui.tui:ensure-config +layouts-config-name+))
+         (all (clautolisp.ui.tui:config-value cfg :layouts '()))
+         (rest (remove name all :key #'car :test #'string-equal)))
+    (clautolisp.ui.tui:config-set-value cfg :layouts rest)
+    (< (length rest) (length all))))
+
 ;;; --- the M-x commands ---------------------------------------------------
 
 (defun %read-name (ui arg prompt)
@@ -174,6 +188,38 @@ Returns T when a layout of that name exists."
       (if (load-layout ui name)
           (set-message ui "layout ~A restored" name)
           (set-message ui "no layout named ~A" name))))
+  nil)
+
+(defun %confirm (ui prompt)
+  "Ask PROMPT in the minibuffer; true only on a leading y/Y."
+  (let ((answer (read-minibuffer ui prompt)))
+    (and answer (plusp (length answer)) (char-equal #\y (char answer 0)))))
+
+(defun save-as-layout-command (ui session hit arg)
+  "Prompt for a NAME and save the current layout under it; if a layout of that
+name already exists, ask to override first (ncurses-windows `C-w w')."
+  (declare (ignore session hit))
+  (let ((name (%read-name ui arg "save layout as: ")))
+    (when name
+      (if (and (layout-exists-p name)
+               (not (%confirm ui (format nil "layout ~A exists; override? (y/n) " name))))
+          (set-message ui "layout ~A kept" name)
+          (progn (save-layout ui name)
+                 (set-message ui "layout ~A saved" name)))))
+  nil)
+
+(defun delete-layout-command (ui session hit arg)
+  "Prompt for a saved layout NAME and, after confirmation, delete it
+(ncurses-windows `window-layout-delete')."
+  (declare (ignore session hit))
+  (let ((name (%read-name ui arg "delete layout: ")))
+    (when name
+      (cond
+        ((not (layout-exists-p name)) (set-message ui "no layout named ~A" name))
+        ((%confirm ui (format nil "delete layout ~A? (y/n) " name))
+         (delete-layout name)
+         (set-message ui "layout ~A deleted" name))
+        (t (set-message ui "layout ~A kept" name)))))
   nil)
 
 (defun save-configuration-command (ui session hit arg)
@@ -212,7 +258,9 @@ or clal-break message — which a later command may have replaced on the line."
 (dolist (entry (list (cons "save-configuration" #'save-configuration-command)
                      (cons "load-configuration" #'load-configuration-command)
                      (cons "save-layout" #'save-layout-command)
+                     (cons "save-layout-as" #'save-as-layout-command)
                      (cons "load-layout" #'load-layout-command)
+                     (cons "delete-layout" #'delete-layout-command)
                      (cons "messages" #'messages-command)
                      (cons "why" #'why-command)))
   (setf *ncurses-commands*

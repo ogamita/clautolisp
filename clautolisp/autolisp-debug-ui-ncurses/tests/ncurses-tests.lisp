@@ -1093,6 +1093,26 @@
          (is (null (clautolisp.ui.ncurses::load-layout ui "nope"))))
     (clautolisp.ui.tui:reset-configs)))
 
+(test delete-layout-removes-a-named-layout
+  ;; window-layout-delete backend (ncurses-windows.issue): delete-layout
+  ;; removes exactly the named layout, returns T iff it existed, and leaves
+  ;; the others intact.
+  (unwind-protect
+       (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+              (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen)))
+         (clautolisp.ui.tui:reset-configs)
+         (clautolisp.ui.ncurses::save-layout ui "l1")
+         (clautolisp.ui.ncurses::save-layout ui "l2")
+         (is (clautolisp.ui.ncurses::layout-exists-p "l1"))
+         (is (clautolisp.ui.ncurses::layout-exists-p "l2"))
+         ;; delete l1: returns T, l1 gone, l2 untouched
+         (is (eq t (clautolisp.ui.ncurses::delete-layout "l1")))
+         (is (not (clautolisp.ui.ncurses::layout-exists-p "l1")))
+         (is (clautolisp.ui.ncurses::layout-exists-p "l2"))
+         ;; deleting an absent name is a no-op that returns NIL
+         (is (null (clautolisp.ui.ncurses::delete-layout "l1"))))
+    (clautolisp.ui.tui:reset-configs)))
+
 (test named-layouts-round-trip-through-the-shared-format
   (unwind-protect
        (progn
