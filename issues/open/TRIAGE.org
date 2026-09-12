@@ -82,7 +82,14 @@ Debugger / ncurses UI (P3, pure-Lisp, this branch's workstream =debugger-ui-ncur
 - DONE =ncurses-key-bindings= — keymap prefix-tree + 5 AutoLISP builtins (api.lisp ~5500) + user-binding test suite (verified 2026-09-12, closed).
 - DONE =aldb-commands= — aldb.el binds the full command table + 19 server tests (verified 2026-09-12, closed).
 - DONE =ncurses-windows=, =window-scrolling= — RESOLVED 2026-09-12 (clautolisp 2.2.6 / alfe 2.2.14, MR !168): layout commands (=C-w s/w/l=, delete on =C-w k= — the =C-w d= spec double-binding was kept as swap-below per pjb), the =C-u N= count prefix for resize/scroll, =C-v=/=M-v= scroll aliases, and the page/keypad scroll keys (=<prior>/<next>/<kp-prior>/<kp-next>=, decoded in curses.lisp). ncurses-suite green. Both closed.
-- TODO =sedit-bugs-and-design= — sedit editor bugs + design.
+- DONE =sedit-bugs-and-design= — RESOLVED 2026-09-12 (shipped 1.9.106–1.9.114):
+  the three bugs (quit-from-REPL, directory listing, function-definition recall),
+  the =(clal-sedit [type] object)= API extension, and the =clautolisp.source-file=
+  position-maintaining save module. Closed; its one deferred thread split out below.
+- TODO =sedit-save-forms-to-new-file-command= — P3: a sedit command to write
+  independently-edited/entered forms to a NEW file, registering their
+  source-positions (via the source-file module) so they become file-associated.
+  Split out of sedit-bugs-and-design. Headless-Lisp-doable.
 - DONE =charms-asd-secondary-name-unloadable= — superseded: the cl-charms backend was retired for the correctly-named standalone =clautolisp-tui-curses= system (verified 2026-09-12, closed; optional dead-file cleanup of the old charms.asd remains).
 - DRAFT =ncurses-misc= — broad "mini-emacs" vision / design reference, no
   acceptance criteria; much of its API is already realized but it is not a

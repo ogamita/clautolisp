@@ -1,3 +1,13 @@
+* RESOLVED (2026-09-12, clautolisp 2.2.12) — closed
+
+All items below shipped across 1.9.106–1.9.114 (the three bugs, the
+=(clal-sedit [type] object)= API extension, and the =clautolisp.source-file=
+position-maintaining save module) and are verified against the current tree.
+Nothing here remains open. The one forward-looking thread the text defers to a
+"separate issue" — a sedit command to save independently-edited/entered forms
+to a NEW file (setting their source-positions) — is filed as
+=issues/open/sedit-save-forms-to-new-file-command.issue=. This issue is closed.
+
 * Status (2026-09-06, branch debugger-ui-ncurses-aldb)
 
 All three *Bugs* below are FIXED and pushed:
