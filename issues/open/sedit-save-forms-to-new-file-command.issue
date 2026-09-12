@@ -1,0 +1,68 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: sedit: a command to save independently-edited forms to a new file
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: sedit-bugs-and-design (DONE), source-file module (DONE, 1.9.112)
+
+* Context
+
+Split out of =sedit-bugs-and-design.issue= (now closed). That issue shipped
+the =clautolisp.source-file= module (1.9.112) and routed sedit's own file save
+through it (1.9.113/1.9.114), so forms that already come *from* a file keep a
+consistent =*source-position-table*= across edits. It deferred one
+forward-looking piece to this issue, quoting its own text:
+
+  "the following API would allow sedit to write forms that have been edited or
+   entered independently from file, to new files, and thus having their
+   source-position set for further file editing. This would require a specific
+   sedit command that will be specified in a separate issue."
+
+* Problem
+
+A form edited or entered in sedit that did NOT originate from a file has no
+entry in =*source-position-table*=. It can be evaluated into the image, but it
+is not file-associated, so:
+
+  - sedit cannot later edit it *as a file form* (no position to anchor to), and
+  - the debugger's rule for offering file-editing — "call clal-sedit with the
+    file option only when the form carries source-position information" — never
+    fires for it.
+
+There is today no sedit command to take such a form (or a selection of them)
+and write it to a *new* file while registering its source-position.
+
+* Proposed command
+
+Add a sedit command (key + M-x name) that writes the selected form(s) to a
+chosen new file and registers their source-positions, reusing the existing
+=clautolisp.source-file= API (=source-file-open= on a fresh path,
+=source-file-insert-toplevel-form= per form, =source-file-save-and-close=) so
+the position table is populated exactly as it is for forms loaded from a file.
+After the command, the written forms are file-associated and further sedit file
+edits behave identically to forms originally loaded from that file.
+
+Open sub-questions for the design pass (pjb to confirm):
+  - Scope of "selection": the current form only, a marked set, or the whole
+    sedit buffer of independently-entered forms?
+  - Behaviour when the target path already exists: refuse, append (merging into
+    its position table), or overwrite?
+  - The command's binding/name (sedit already uses =s= for "save the current
+    file"; this new-file save needs its own key — e.g. =S= / =C-w n= — plus an
+    M-x name).
+
+* Acceptance
+
+  - A sedit command writes independently-entered form(s) to a new file.
+  - After it runs, each written form has a =*source-position-table*= entry (so
+    =(clal-sedit 'file …)= / the debugger's file-edit path works on it), proven
+    by a headless unit test that enters a form, runs the command to a temp file,
+    reopens it, and asserts the form is found by source position.
+  - Existing source-file / sedit tests stay green.
+
+* Notes
+
+Headless-Lisp-doable: the source-file module and sedit session are exercised
+without a live ncurses UI in the builtins-core / sedit test suites; the new
+command's behaviour (write + position registration) is unit-testable the same
+way. The interactive key binding is wired the way the other sedit commands are.
