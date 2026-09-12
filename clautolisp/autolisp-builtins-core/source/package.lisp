@@ -176,6 +176,7 @@
                 #:host-initget
                 #:host-getstring
                 #:host-getint
+                #:host-grread
                 #:host-getreal
                 #:host-getpoint
                 #:host-getcorner
