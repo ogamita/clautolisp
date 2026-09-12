@@ -1523,6 +1523,43 @@ always passes a template."
     (is (not (search "quoted form of docPath" no-doc)))
     (is (search "open -a " no-doc))))
 
+(test macos-launcher-applescript-checks-already-running-before-opening-doc
+  "alfe-bricscad-automation-macos-reopens-welcome-page: `open -a app
+docPath' against a BricsCAD that already has a document/console window
+open can knock its main window back to the Welcome page instead of
+reusing the existing session — found live, 2026-09-12. docPath must
+therefore only be passed when no such window exists yet, decided at
+RUNTIME (the emitted script, not Lisp-side, since BricsCAD's state can
+change between generation and execution) — not by resurrecting the
+reserved-word `running' probe Round 6 removed for activation (that
+removal stays correct; only the document-opening side effect needed a
+check). And NOT by a bare \"is the process running\" check either: found
+live that this is too coarse — a freshly-launched, running-but-no-
+document-yet BricsCAD needs docPath exactly as much as no process at
+all, so the check must be \"does a document/console window already
+exist\", the same exclusion-by-product-name signal FINDCONSOLEWINDOW
+uses, not merely process existence."
+  (let ((script (%emitted-applescript
+                 "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad"
+                 :template-path "/tmp/tpl/Default-mm.dwt")))
+    ;; The check itself, and NOT the reserved word `running' as a bare
+    ;; variable name (Round 6's own fault, still guarded against).
+    (is (search "alreadyHasDoc" script))
+    (is (not (search "set running to" script)))
+    (is (search "exists (processes whose name contains" script))
+    ;; Must check for an existing DOCUMENT window, not merely that the
+    ;; process exists — the same exclusion-by-name signal as
+    ;; FINDCONSOLEWINDOW, so a running-but-doc-less BricsCAD still gets
+    ;; docPath.
+    (is (search "does not contain \"bricscad\"" script))
+    (is (search "AXStandardWindow" script))
+    ;; Both shapes of the launch line must be present...
+    (is (search "open -a \" & quoted form of appPath & \" \" & quoted form of docPath" script))
+    ;; ...but the doc-opening one must be reachable only via a runtime
+    ;; conditional, not unconditionally.
+    (is (search "if alreadyHasDoc then" script))
+    (is (search "else" script))))
+
 ;;; --- the emitted .vbs must be VALID VBScript ------------------------------
 ;;;
 ;;; alfe-autocad-vbscript-comments (pjb, 2026-08-12): the bridge templates

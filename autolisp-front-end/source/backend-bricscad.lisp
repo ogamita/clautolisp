@@ -617,6 +617,18 @@ if not focused then
   error \"BricsCAD never became frontmost within ${STARTUPWAIT}s (frontmost was \\\"\" & frontApp & \"\\\"); refusing to send keystrokes to another application.\" number 1
 end if
 
+-- \"BricsCAD is the frontmost PROCESS\" (just confirmed) says nothing
+-- about whether a just-opened DOCUMENT has finished initializing — the
+-- process can become frontmost well before its UI (ribbon, console
+-- panel) has settled. Found live (2026-09-12): sending F2 to reveal a
+-- closed console panel immediately after LAUNCHCOMMAND opened a fresh
+-- document could fire before BricsCAD was ready to act on it, leaving
+-- the console still closed even though the SAME F2 keystroke worked
+-- correctly moments later run by hand. A short fixed settle delay here
+-- is a pragmatic bound, not a proof of readiness — genuine polling for
+-- document-readiness is a further refinement, not attempted this round.
+delay 1.5
+
 -- ------------------------------------------------------------------
 -- Window-targeted, deviation-aware injection (alfe-bricscad-automation-
 -- macos-osascript, 2026-09-11 live BricsCAD V26/macOS session).
@@ -1148,25 +1160,70 @@ bundle name, not by the unix binary's name."
                           :defaults path)))))))
 
 (defun %applescript-launch-command (executable-path &optional template-path)
-  "The `do shell script' line the launcher uses to bring BricsCAD up.
+  "The AppleScript fragment the launcher uses to bring BricsCAD up.
 Prefers the enclosing .app bundle with `open -a' (the supported way to
 launch a macOS GUI app); falls back to running the binary directly in
 the background when the executable is not inside a bundle. AppleScript's
 `quoted form of' does the shell quoting, so a path with spaces — the
 normal case, \"BricsCAD V26.app\" — is safe.
 
-When TEMPLATE-PATH is given it is opened WITH the app. That is not a
-nicety: `keystroke' types into the frontmost window, and a BricsCAD with
-no drawing open shows its Start page, which has no command line to
-receive the text. The 2026-08-01 macOS probe proved the keystrokes were
-reaching a focused BricsCAD (launcher-focus.txt said
-`frontmost=bricscad focused=true', osascript exit 0) and still executing
-nothing. The batch path never had this problem because it always passes
-a template on the command line."
+When TEMPLATE-PATH is given, it is opened WITH the app — but ONLY when
+no document is already open, checked at RUNTIME (the emitted
+AppleScript, not this Lisp function, decides that: BricsCAD's state can
+change between when this string is generated and when the launcher
+actually executes). Opening a document is not a nicety on a cold start:
+`keystroke' types into the frontmost window, and a BricsCAD with no
+drawing open shows its Start page, which has no command line to receive
+the text (2026-08-01 macOS probe: keystrokes reached a focused BricsCAD
+and still executed nothing, traced to exactly this). But it is actively
+HARMFUL when BricsCAD is already running WITH a document open: found
+live (2026-09-12, alfe-bricscad-automation-macos-reopens-welcome-page)
+that `open -a app docPath' against that state can knock its main window
+back to the Welcome/Start page instead of reusing the existing session —
+disconnecting the console from any active drawing context, with
+keystrokes then landing nowhere and no error surfaced anywhere.
+
+The check is NOT \"is BricsCAD running\" — found live that this is too
+coarse: a freshly-launched BricsCAD that is running but has not yet had
+any document opened (sitting on its own Start page, exactly the state a
+truly cold launch passes through) needs docPath just as much as no
+process at all does, and a bare running-process check would wrongly skip
+it there too, leaving no command line to type into — the very problem
+docPath exists to solve. The check is instead \"does a document/console
+window already exist\" — the SAME exclusion signal FINDCONSOLEWINDOW
+uses (a standard window whose name does not contain \"bricscad\", the
+product name, which stays constant and untranslated regardless of which
+document is open): if one already exists, skip docPath; otherwise pass
+it, whether that is because BricsCAD is not running yet or because it is
+running with nothing open. Nor is this a return to the reserved-word
+`running' process probe Round 6 removed for plain ACTIVATION — `open -a'
+alone stays genuinely idempotent there; this only decides the SEPARATE,
+non-idempotent docPath side effect on that same call."
   (let ((bundle (macos-app-bundle-for executable-path)))
     (cond
       ((and bundle template-path)
-       "do shell script \"open -a \" & quoted form of appPath & \" \" & quoted form of docPath")
+       "set alreadyHasDoc to false
+try
+  tell application \"System Events\"
+    if exists (processes whose name contains \"bricscad\") then
+      tell process \"bricscad\"
+        repeat with w in windows
+          try
+            if (subrole of w is \"AXStandardWindow\") and (name of w is not missing value) and ((length of (name of w)) > 0) and ((name of w) does not contain \"bricscad\") then
+              set alreadyHasDoc to true
+              exit repeat
+            end if
+          end try
+        end repeat
+      end tell
+    end if
+  end tell
+end try
+if alreadyHasDoc then
+  do shell script \"open -a \" & quoted form of appPath
+else
+  do shell script \"open -a \" & quoted form of appPath & \" \" & quoted form of docPath
+end if")
       (bundle
        "do shell script \"open -a \" & quoted form of appPath")
       (t

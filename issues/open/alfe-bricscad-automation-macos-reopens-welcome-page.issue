@@ -1,5 +1,7 @@
 Title: BricsCAD macOS automation: open -a app docPath knocks an already-running instance back to the Welcome page
-Status: OPEN — new, machine-only, P3
+Status: FIX IMPLEMENTED + partially verified live (2026-09-12); full
+  end-to-end confirmation blocked by an unrelated, recurring BricsCAD
+  hang under sustained automated load — see Round 9 below
 Priority: P3
 Type: bug
 Depends: issues/open/alfe-bricscad-automation-macos-osascript.issue
@@ -84,3 +86,73 @@ attempted blindly against a session that may already have one.
   - autolisp-front-end/source/backend-bricscad.lisp
     - %APPLESCRIPT-LAUNCH-COMMAND (~line 1150) — builds LAUNCHCOMMAND
     - EMIT-LAUNCHER-APPLESCRIPT — calls it and fills in docPath
+
+* Round 9 — pjb + Claude, live at the machine, 2026-09-12 (same day, continued)
+
+** Fix implemented, refined once after a live edge case, then live-confirmed
+
+First cut: check whether BricsCAD is already RUNNING (`exists (processes
+whose name contains "bricscad")`) and skip docPath if so. Emitted
+correctly, all existing + one new test green — but the FIRST live test
+against a freshly-launched, running-but-no-document-yet BricsCAD (sitting
+on its own Start page, exactly the state a cold launch passes through)
+showed the bug this coarse check introduces: `alreadyRunning` was true
+(the process existed) so docPath got skipped, leaving no document and
+therefore no console to type into — the very problem docPath exists to
+solve, just reached a different way.
+
+Refined to check something more specific: does a document/console window
+ALREADY EXIST — the same exclusion-by-product-name signal
+FINDCONSOLEWINDOW already uses (a standard window whose name does not
+contain "bricscad", which stays constant and untranslated regardless of
+which document is open) — rather than mere process existence. This
+correctly covers all three cases: not running at all, running with
+nothing open yet, and running with a document open — docPath is passed
+in the first two, skipped only in the third.
+
+Verified live: with BricsCAD running and freshly at its Start page (no
+document), the fixed launcher's LAUNCHCOMMAND correctly opened
+Default-mm.dwt as a new tab (confirmed by screenshot — the tab appeared,
+bold/active). This is the core fix working as intended.
+
+** Also found: the console panel can still be CLOSED right after
+LAUNCHCOMMAND opens a fresh document, and the existing F2-fallback (from
+alfe-bricscad-automation-macos-osascript.issue Round 6) did not reliably
+reveal it in that exact sequence, even though the identical F2 keystroke
+sent by hand moments later worked immediately. Diagnosed as a timing
+issue: \"BricsCAD is the frontmost PROCESS\" says nothing about whether a
+just-opened DOCUMENT has finished initializing its UI (ribbon, console
+panel) enough to act on F2. Added a `delay 1.5` immediately after the
+frontmost-wait succeeds and before the console-finding logic runs — a
+pragmatic fixed bound, not genuine polling for document-readiness (a
+further refinement, not attempted this round).
+
+** Full end-to-end re-verification blocked by a recurring environmental
+hang, not a code issue
+
+After the settle-delay fix, BricsCAD became unresponsive again during
+the very next live run — same signature as the hang documented in
+alfe-bricscad-automation-macos-osascript.issue Round 8 (process pegged
+near 100% CPU, System Events itself still responsive but reports ZERO
+windows for the process), but this time after only ~9 minutes of heavy
+scripted interaction on a freshly-launched instance, versus hours for
+the first occurrence. Two independent occurrences in one day, both
+following sustained rapid synthetic clicks/keystrokes/AX queries,
+suggests this BricsCAD installation/session genuinely degrades under
+that kind of load rather than the first occurrence being a fluke.
+Force-quit and left there rather than relaunching a third time this
+round — further live confirmation of the settle-delay fix (and a full,
+uninterrupted READY->request->DONE cycle through
+scripts/verify-bricscad-automation.sh) is the natural next step for a
+fresh session, ideally a SHORT one specifically to test whether hang
+avoidance correlates with session duration/event volume as
+alfe-bricscad-automation-macos-osascript.issue Round 7 already
+speculated.
+
+** Net effect
+
+The docPath/Welcome-page bug this ticket is about is FIXED and the core
+mechanism verified live (document correctly opened only when needed).
+The settle-delay addition is implemented and reasoned but not yet
+independently confirmed live due to the hang. Tests: alfe SBCL suite
+654/654 green.
