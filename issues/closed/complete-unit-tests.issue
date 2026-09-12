@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: complete-unit-tests — behavioural unit-test coverage for every builtin
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: coverage-epic
 #+DEPENDS: -
@@ -97,6 +97,22 @@
   in clal-extensions-tests.lisp via direct =builtin-clal-*= calls — a
   tool blind spot (it credits only literal =(clal-*= AutoLISP snippets), not
   the CL homographs — not a true gap, and inside the epic's 5% slack.
+- 2026-09-12 (clautolisp 2.2.12 / alfe 2.2.20): closed the last 18
+  tool-blind-spots by invoking each already-behaviourally-tested CLAL-* op
+  from a literal AutoLISP snippet so coverage-report.sh credits it:
+  =clal-ui-builtins-invocable-from-autolisp= (frame-list, binding,
+  binding-lookup, remove-binding, clear-window, move-cursor-to, window-put,
+  call-with-temp-window → nil), =clal-codepage-builtins-from-autolisp=
+  (system/drawing-codepage → "ANSI", mismatch-p → nil, via %vla),
+  =clal-common-lisp-from-autolisp= (42, via a CLAUTOLISPDROP setup-fn),
+  =clal-clipboard-builtins-from-autolisp= (put/get + copy/paste round-trip
+  through a mock provider), =clal-compile-builtins-from-autolisp=
+  (clal-compile-file / clal-compile-system on temp sources). **Coverage
+  97.4% → 100.0% (702 / 702, 0 untested).** builtins-core suite at 2200
+  checks, 0 non-pass. ACCEPTANCE MET: ≥95% behavioural (100%), the
+  coverage-report.sh tool is checked in (and two of its own defects — CRLF
+  line endings and the '$'-truncating regex — were fixed along the way),
+  and the suite climbed well past the ~1100-check goal. EPIC DONE.
 - Note: the tool is deliberately conservative — it counts only literal
   =(name= form heads, so DATA-DRIVEN / macro-generated tests are invisible
   to it; write explicit literal snippets when backfilling so the tool

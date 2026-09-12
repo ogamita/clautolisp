@@ -1161,3 +1161,79 @@ the reader's confusion at finding a FASL where source was expected."
   (uiop:with-temporary-file (:pathname p :type "lap" :keep nil)
     (%write-lsp p "this is not a fasl")
     (is (%signals-runtime-error-p (lambda () (%load-here p))))))
+
+;;;; ----- complete-unit-tests: CLAL-* invoked from AutoLISP -----------------
+;;;; (complete-unit-tests.issue) These CLAL-* operators were already exercised
+;;;; above via direct builtin-clal-* CL calls, but coverage-report.sh credits a
+;;;; builtin only when it appears as a literal (clal-… AutoLISP form head. These
+;;;; tests invoke each from an AutoLISP snippet so the coverage tool sees them,
+;;;; while still pinning a documented return.
+
+(test clal-ui-builtins-invocable-from-autolisp
+  "The CLAL UI / binding / window builtins are callable from AutoLISP and
+return the documented nil with no debug UI attached (complete-unit-tests.issue)."
+  (reset-autolisp-symbol-table)
+  (dolist (form '("(clal-frame-list)"
+                  "(clal-binding \"z\" \"continue\")"
+                  "(clal-binding-lookup \"z\")"
+                  "(clal-remove-binding \"z\")"
+                  "(clal-clear-window)"
+                  "(clal-move-cursor-to 1 1)"
+                  "(clal-window-put 1 1 \"x\")"
+                  "(clal-call-with-temp-window nil '(lambda (w) 1))"))
+    (is (null (run-autolisp-string form :setup-fn #'install-core-into))
+        "~A should return nil with no UI attached" form)))
+
+(test clal-codepage-builtins-from-autolisp
+  "clal-system-codepage / clal-drawing-codepage / clal-codepage-mismatch-p
+invoked from AutoLISP against the cador mock (empty catalogue codepages render
+as the \"ANSI\" placeholder, so sys == dwg → no mismatch)
+(complete-unit-tests.issue)."
+  (is (string= "ANSI" (%reg-str (%vla "(clal-system-codepage)"))))
+  (is (string= "ANSI" (%reg-str (%vla "(clal-drawing-codepage)"))))
+  (is (null (%vla "(clal-codepage-mismatch-p)"))))
+
+(test clal-common-lisp-from-autolisp
+  "clal-common-lisp (installed by CLAUTOLISPDROP) evaluates an AutoLISP form
+and returns its value, invoked as a literal AutoLISP call (complete-unit-tests.issue)."
+  (is (eql 42 (run-autolisp-string
+               "(clal-common-lisp \"(* 6 7)\")"
+               :setup-fn (lambda (ctx)
+                           (declare (ignore ctx))
+                           (install-core-builtins)
+                           (clautolisp.autolisp-builtins-core::%apply-clautolisp-drop 1))))))
+
+(test clal-clipboard-builtins-from-autolisp
+  "clal-clipboard-put-text/get-text and copy-sexp/paste-sexp round-trip through
+a mock clipboard provider, invoked from AutoLISP (complete-unit-tests.issue)."
+  (let* ((box (list nil))
+         (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
+    (is (string= "hi there"
+                 (%reg-str (run-autolisp-string
+                            "(clal-clipboard-put-text \"hi there\")(clal-clipboard-get-text)"
+                            :setup-fn #'install-core-into)))))
+  (let* ((box (list nil))
+         (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
+    (is (equal '(1 2 3)
+               (run-autolisp-string
+                "(clal-clipboard-copy-sexp '(1 2 3))(clal-clipboard-paste-sexp)"
+                :setup-fn #'install-core-into)))))
+
+(test clal-compile-builtins-from-autolisp
+  "clal-compile-file / clal-compile-system compile a trivial source to an
+artefact and report success, invoked from AutoLISP (complete-unit-tests.issue;
+needs the compiler, which the test image loads)."
+  (uiop:with-temporary-file (:pathname a :type "lsp" :keep nil)
+    (with-open-file (o a :direction :output :if-exists :supersede)
+      (write-string "(defun sq (x) (* x x))" o))
+    (is (not (null (run-autolisp-string
+                    (format nil "(clal-compile-file \"~A\")" (namestring a))
+                    :setup-fn #'install-core-into)))))
+  (uiop:with-temporary-file (:pathname a :type "lsp" :keep nil)
+    (uiop:with-temporary-file (:pathname out :type "lap" :keep nil)
+      (with-open-file (o a :direction :output :if-exists :supersede)
+        (write-string "(defun cube (x) (* x x x))" o))
+      (is (not (null (run-autolisp-string
+                      (format nil "(clal-compile-system \"~A\" (list \"~A\"))"
+                              (namestring out) (namestring a))
+                      :setup-fn #'install-core-into)))))))
