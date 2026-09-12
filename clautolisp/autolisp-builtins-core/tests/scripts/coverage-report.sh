@@ -61,7 +61,10 @@ for g in "${test_globs[@]}"; do
   # right answer: those core operators ARE behaviourally tested. The bulk
   # registration sweeps use bare "NAME" strings (never (name), so
   # registration-only operators correctly stay uncounted.
-  grep -rhoE '\(([A-Za-z0-9_%~<>=+*/.:-]+)' "$g" \
+  # NB: the char class must include '$' — builtin names like BCAD$LICENSELEVELS
+  # and LISP$INSTALL carry it, and without it the form head is truncated at the
+  # '$' (e.g. "(bcad" ) and the operator is wrongly reported untested.
+  grep -rhoE '\(([A-Za-z0-9_%~<>=+*/.:$-]+)' "$g" \
     --include='*.lisp' --include='*.lsp' --include='*.sexp' 2>/dev/null \
     | sed -E 's/^\(//' >> "$tmp/tested-raw.txt" || true
   # (find-autolisp-symbol "NAME") lookups — a name looked up then called.

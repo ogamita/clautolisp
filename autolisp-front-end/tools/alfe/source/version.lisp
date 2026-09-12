@@ -26,4 +26,4 @@
 ;;;; rule at the head of this file -- keep at least in step -- is what
 ;;;; makes that automatic rather than a thing to remember.)
 
-(defparameter *version* "2.2.18")
+(defparameter *version* "2.2.19")
