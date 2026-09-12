@@ -5008,6 +5008,68 @@ the %vla fixture (as the drawing-data tests do)."
                 "(dictadd nod \"K\" xr)"
                 "(dictrename nod \"K\" \"K2\")"))))))
 
+;;;; ----- complete-unit-tests: CLAL-* UI / debug / codepage coverage -------
+;;;; (complete-unit-tests.issue) The last untested family. CLAL-MODULE-EXTENSION
+;;;; returns a real module suffix. The UI / debugger / binding / frame / window /
+;;;; face / nav ops are hook-forwarders: with no debug UI attached (the headless
+;;;; session) they return the documented nil; when a *ui-object-hook* /
+;;;; *ui-binding-hook* / *debug-*-hook* is installed they forward to it. The nil
+;;;; contract is pinned here; the forwarding is additionally exercised below and
+;;;; by the clal-*-forward-to-the-hook direct-call tests.
+
+(test clal-module-extension-returns-the-module-suffix
+  "CLAL-MODULE-EXTENSION maps a module class to its on-disk suffix
+(complete-unit-tests.issue)."
+  (reset-autolisp-symbol-table)
+  (is (string= ".lap" (%reg-str (run-autolisp-string "(clal-module-extension \"compiled-app\")"
+                                                      :setup-fn #'install-core-into))))
+  ;; native-module resolves to the platform shared-object suffix (.so on Linux).
+  (is (member (%reg-str (run-autolisp-string "(clal-module-extension \"native-module\")"
+                                             :setup-fn #'install-core-into))
+              '(".so" ".dll" ".dylib") :test #'string=)))
+
+(test clal-ui-and-debug-builtins-return-nil-without-a-ui
+  "The CLAL-* UI / debugger / binding / frame / window / face / nav builtins
+return the documented nil when no debug UI is attached (complete-unit-tests.issue
+headless contract; their forwarding is covered separately)."
+  (reset-autolisp-symbol-table)
+  (dolist (form '("(clal-invoke-debugger)"
+                  "(clal-define-debugger-command '(\"q\" \"quit\") '(lambda () nil))"
+                  "(clal-define-ui-command \"greet\" '(lambda (s) s))"
+                  "(clal-map-bindings '(lambda (k c) nil))"
+                  "(clal-face-parameters \"default\")"
+                  "(clal-list-faces)"
+                  "(clal-frame-name nil)"
+                  "(clal-window-name nil)"
+                  "(clal-window-list)"
+                  "(clal-selected-frame)"
+                  "(clal-selected-window)"
+                  "(clal-select-frame nil)"
+                  "(clal-select-window nil)"
+                  "(clal-delete-frame nil)"
+                  "(clal-delete-window nil)"
+                  "(clal-nav-directory)"
+                  "(clal-select-file \"/tmp/x.lsp\" 1)"
+                  "(clal-load-aldo-configuration)"))
+    (is (null (run-autolisp-string form :setup-fn #'install-core-into))
+        "~A should return nil with no UI attached" form)))
+
+(test clal-ui-object-builtins-forward-to-the-ui-object-hook
+  "With a *ui-object-hook* installed, the CLAL UI-object builtins forward their
+operation keyword to it (complete-unit-tests.issue)."
+  (reset-autolisp-symbol-table)
+  (let ((clautolisp.autolisp-runtime:*ui-object-hook*
+          (lambda (op &rest args) (declare (ignore args)) (format nil "OP=~A" op))))
+    (is (string= "OP=SELECTED-WINDOW"
+                 (%reg-str (run-autolisp-string "(clal-selected-window)"
+                                                :setup-fn #'install-core-into))))
+    (is (string= "OP=WINDOW-LIST"
+                 (%reg-str (run-autolisp-string "(clal-window-list)"
+                                                :setup-fn #'install-core-into))))
+    (is (string= "OP=SELECTED-FRAME"
+                 (%reg-str (run-autolisp-string "(clal-selected-frame)"
+                                                :setup-fn #'install-core-into))))))
+
 ;;;; ----- LOAD honours the AutoLISP-level *AUTOLISP-FILE-ENCODING* -----
 
 (test load-honours-autolisp-file-encoding-override

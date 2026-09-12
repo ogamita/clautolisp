@@ -80,6 +80,23 @@
   (ssgetfirst, entupd, dictobjname, dictrename via the %vla mock host).
   Coverage **92.2% → 94.0% (647 → 660 / 702)**. Remaining untested are
   the CLAL-* UI/clipboard/frame/window/codepage family.
+- 2026-09-12 (clautolisp 2.2.11 / alfe 2.2.19): backfilled the CLAL-* UI
+  family — =clal-module-extension-returns-the-module-suffix= (".lap" /
+  ".so"), =clal-ui-and-debug-builtins-return-nil-without-a-ui= (the 18
+  hook-forwarders — invoke-debugger, define-(debugger|ui)-command,
+  map-bindings, face/frame/window/select/delete/nav/select-file/
+  load-aldo-configuration — return the documented nil with no UI attached),
+  and =clal-ui-object-builtins-forward-to-the-ui-object-hook= (they forward
+  their op keyword when a *ui-object-hook* is installed). Also fixed a
+  SECOND coverage-tool defect: the TESTED form-head regex omitted '$', so
+  BCAD$* / LISP$* names were truncated at the '$' and wrongly reported
+  untested; added '$' to the char class. Coverage **94.0% → 97.4%
+  (660 → 684 / 702)**, clearing the ≥95% target. The remaining 18 untested
+  are CLAL-* ops (codepage/common-lisp/compile-file/-system/clipboard/
+  frame-list/binding/window-put/move-cursor) that ARE behaviourally tested
+  in clal-extensions-tests.lisp via direct =builtin-clal-*= calls — a
+  tool blind spot (it credits only literal =(clal-*= AutoLISP snippets), not
+  the CL homographs — not a true gap, and inside the epic's 5% slack.
 - Note: the tool is deliberately conservative — it counts only literal
   =(name= form heads, so DATA-DRIVEN / macro-generated tests are invisible
   to it; write explicit literal snippets when backfilling so the tool
