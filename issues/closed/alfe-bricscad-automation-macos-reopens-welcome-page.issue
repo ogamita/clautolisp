@@ -1,14 +1,16 @@
 Title: BricsCAD macOS automation: open -a app docPath knocks an already-running instance back to the Welcome page
-Status: THREE fixes implemented + partially verified live (2026-09-12):
-  the docPath/existing-document check, a document-init settle delay, and
-  startup-dialog dismissal (a stack of cold-launch modals — the original
-  parent ticket's long-standing "first-run dialog" hypothesis, confirmed
-  at last). Full end-to-end confirmation of all three together is
-  blocked by an unrelated, recurring BricsCAD hang under sustained
-  automated load (three occurrences today) — see Round 9 below
+Status: RESOLVED 2026-09-12. All four fixes here (docPath/existing-
+  document check, document-init settle delay, startup-dialog dismissal,
+  and the DETECT fix that made the fresh-per-run empty.dwg actually take
+  effect) confirmed together, live, unattended:
+  scripts/verify-bricscad-automation.sh phase 1 PASSED cleanly on the
+  first attempt with these in place, BricsCAD healthy afterward. Full
+  write-up on the parent ticket's Round 10,
+  issues/closed/alfe-bricscad-automation-macos-osascript.issue — closed
+  alongside it
 Priority: P3
 Type: bug
-Depends: issues/open/alfe-bricscad-automation-macos-osascript.issue
+Depends: issues/closed/alfe-bricscad-automation-macos-osascript.issue
 
 * What
 
@@ -84,7 +86,7 @@ attempted blindly against a session that may already have one.
 
 * References
 
-  - issues/open/alfe-bricscad-automation-macos-osascript.issue (Round 8:
+  - issues/closed/alfe-bricscad-automation-macos-osascript.issue (Round 8:
     how this was found, and the six-plus-two injection-layer fixes made
     in the same session)
   - autolisp-front-end/source/backend-bricscad.lisp
@@ -124,7 +126,7 @@ LAUNCHCOMMAND opens a fresh document, and the existing F2-fallback (from
 alfe-bricscad-automation-macos-osascript.issue Round 6) did not reliably
 reveal it in that exact sequence, even though the identical F2 keystroke
 sent by hand moments later worked immediately. Diagnosed as a timing
-issue: \"BricsCAD is the frontmost PROCESS\" says nothing about whether a
+issue: "BricsCAD is the frontmost PROCESS" says nothing about whether a
 just-opened DOCUMENT has finished initializing its UI (ribbon, console
 panel) enough to act on F2. Added a `delay 1.5` immediately after the
 frontmost-wait succeeds and before the console-finding logic runs — a
@@ -168,9 +170,9 @@ Ran scripts/verify-bricscad-automation.sh fresh (no BricsCAD running
 beforehand) to get a clean, minimal-interaction end-to-end read. Batch
 control PASSED (engine/runner healthy); automation still FAILED, status
 stuck at BOOTING. Live inspection found BricsCAD sitting on its own
-\"BricsCAD Launcher\" workspace-selection dialog — a genuinely cold launch
+"BricsCAD Launcher" workspace-selection dialog — a genuinely cold launch
 on this installation shows this BEFORE the Start page is even reachable.
-This is exactly the \"a modal or first-run dialog owns input\" hypothesis
+This is exactly the "a modal or first-run dialog owns input" hypothesis
 from the very first version of alfe-bricscad-automation-macos-osascript
 — not eliminated after all, just not reachable in earlier rounds because
 BricsCAD had already been run past it once already-running instances
@@ -178,8 +180,8 @@ were being reused throughout most of this investigation.
 
 Confirmed live that pressing Return dismisses it (via its own
 default/highlighted button, no button-name hard-coding needed) — and
-revealed a SECOND dialog right behind it: \"Fichier de verrouillage Dwl
-trouvé\" (lock-file-found), because this session's own repeated
+revealed a SECOND dialog right behind it: "Fichier de verrouillage Dwl
+trouvé" (lock-file-found), because this session's own repeated
 force-quits had left the Default-mm.dwt template's .dwl lock file
 behind. Also a realistic scenario in production, not just a testing
 artefact: any alfe automation run that gets killed abnormally while
@@ -225,9 +227,9 @@ recurring hang has not yet allowed to complete.
 ** Continued (same day, pjb): the lock-file dialog's ROOT cause was
 already meant to be fixed — and wasn't, because of a second bug
 
-pjb, on seeing the lock-file dialog: \"apparently there's a locked file
+pjb, on seeing the lock-file dialog: "apparently there's a locked file
 it tries to load at launch time (the drawing you give it?). I guess we
-must expect various different dialogs on launch.\" Right on both counts.
+must expect various different dialogs on launch." Right on both counts.
 On the first: autolisp-front-end already has empty-drawing.lisp
 (issues/open/empty-ressource.issue, 2026-08-30), built for EXACTLY this
 — write a FRESH empty.dwg into each run's own unique, cleaned-up-after
@@ -242,7 +244,7 @@ correctly workdir-aware call in START-ENGINE's automation branch checks
 that cached value FIRST (as it legitimately should, so a real override
 wins) and therefore never reached its own fresh-per-run discovery below
 it — dead code in practice, despite its own comment already correctly
-saying \"a drawing of this run's own, in this run's workdir\".
+saying "a drawing of this run's own, in this run's workdir".
 
 Net effect: every run, cold or warm, was silently sharing the ONE vendor
 Default-mm.dwt template all along — precisely the failure mode
@@ -260,11 +262,11 @@ downstream call site is UNCHANGED (still checks the cached value first,
 correctly) — with DETECT no longer polluting that slot, the fresh,
 workdir-aware discovery underneath is reached for real. Verified via
 `alfe --print-command` (no live BricsCAD needed to check this):
-docPath now resolves to \"<this run's own workdir>/empty.dwg\", not the
+docPath now resolves to "<this run's own workdir>/empty.dwg", not the
 shared vendor template.
 
 This does not replace DISMISSSTARTUPDIALOGS above — pjb's second point
-stands: \"various different dialogs\" on a cold launch (the workspace
+stands: "various different dialogs" on a cold launch (the workspace
 picker, at minimum) are a separate thing this fix does not touch, and
 Return-dismissal remains the reactive safety net for whatever modal
 still shows up despite the file itself no longer being shareable. The

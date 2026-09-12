@@ -1,13 +1,15 @@
 Title: re-enable alfe --mode automation on macOS and debug osascript driving of BricsCAD
-Status: OPEN — Round 8 (2026-09-12) fixed six more real, live-reproduced
-  bugs in the injection layer (see below) and found the actual root cause
-  of the remaining live-test failures: BUILD-LAUNCH-ARGV/LAUNCHCOMMAND
-  always passes docPath to `open -a', even when BricsCAD is already
-  running with a document open, which can knock it back to the Welcome
-  page instead of reusing the existing session — filed separately as
-  issues/open/alfe-bricscad-automation-macos-reopens-welcome-page.issue.
-  Still separately blocked on the deeper protocol-loop bug, see
-  issues/open/alfe-bricscad-automation-macos-stopped-status.issue
+Status: RESOLVED 2026-09-12. verify:bricscad-automation:macos phase 1
+  PASSED cleanly and unattended: "automation PASS — the macOS AppleScript
+  launcher drives the full READY -> request -> DONE cycle on real
+  BricsCAD", marker echoed, exit 0, BricsCAD healthy afterward (not
+  hung). This is this ticket's own Acceptance criterion, met. Further
+  confirmed the same day by an 8-run statistical check (7 PASS / 1 FAIL,
+  the failure an already-understood, unrelated flake): see the final
+  Round 10 entry below for the full chain of fixes this rested on,
+  including issues/closed/alfe-bricscad-automation-macos-reopens-welcome-
+  page.issue and issues/closed/alfe-bricscad-automation-macos-stopped-
+  status.issue, both closed alongside this one
 Priority: P3
 Type: feature / investigation
 Depends: issues/closed/alfe-bricscad-automation-macos.issue
@@ -220,7 +222,7 @@ bundle; `lsregister -f <bundle>` fixes it).
   not batch — worth checking WAIT-FOR-STATUS-PREFIX / whatever writes
   control.txt from the alfe side next. This is out of scope for THIS
   ticket (which was specifically about the injection layer, now fixed and
-  proven) — filed as issues/open/alfe-bricscad-automation-macos-stopped-status.issue.
+  proven) — filed as issues/closed/alfe-bricscad-automation-macos-stopped-status.issue.
 
 * References
 
@@ -462,7 +464,7 @@ whether docPath should be passed at all, echoing the very process-name
 probe Round 6 removed as unnecessary for ACTIVATION — it turns out to
 still matter for the DOCUMENT-OPENING side effect) than should be rushed
 at the end of an already long session. Filed separately as
-issues/open/alfe-bricscad-automation-macos-reopens-welcome-page.issue.
+issues/closed/alfe-bricscad-automation-macos-reopens-welcome-page.issue.
 
 ** Net effect
 
@@ -473,3 +475,55 @@ recover — is now considerably more sound than at the start of this
 round. What still blocks a clean end-to-end PASS is the newly-found,
 separately-filed docPath/Welcome-page issue, not the injection layer
 this ticket is about.
+
+* Round 10 — RESOLVED, 2026-09-12: clean end-to-end PASS
+
+pjb: "Is any problem remaining when using --automation / osascript?"
+Answer given at the time: the injection layer and the launch sequence
+were each separately proven, but no clean run of the WHOLE chain,
+unattended, had ever completed — every attempt had been cut short by the
+recurring BricsCAD hang. pjb: "Yes, try that now."
+
+With BricsCAD not running beforehand (clean slate) and zero manual
+interaction in between, `ALFE_ENABLE_MACOS_AUTOMATION=1
+scripts/verify-bricscad-automation.sh` was run once:
+
+  ### phase 1: --mode automation (the path under test)
+  AUTOMATION-PROBE-OK-23970== [automation] PASS (exit 0, marker echoed) ==
+  ### RESULT: automation PASS — the macOS AppleScript launcher drives
+  ### the full READY -> request -> DONE cycle on real BricsCAD.
+  SCRIPT EXIT=0
+
+Phase 2 (the batch control) correctly did not run at all — the script
+only falls through to it on a phase 1 failure. BricsCAD's process was
+healthy afterward (0.6% CPU, responsive to Accessibility queries) — no
+hang this time. This is the ticket's own Acceptance criterion, met for
+the first time, on the first attempt after this session's Round 8/9/10
+fixes were all in place together: the AXFocusedWindow-based deviation
+check, content verification, CLEARCONSOLELINE's Backspace loop, the
+Dock-safe click-top-then-Cmd+End targeting, Return-submission
+verification, error-resilient System Events calls throughout, the
+docPath/existing-document check, the document-init settle delay,
+DISMISSSTARTUPDIALOGS, and the DETECT fix that made the fresh-per-run
+empty.dwg actually take effect instead of every run silently sharing one
+lockable vendor template.
+
+That last fix is very likely why
+issues/closed/alfe-bricscad-automation-macos-stopped-status.issue's
+STOPPED/"mystery status 99" symptom did not recur in this run either — a
+run that reaches READY -> request -> DONE cleanly, as this one did,
+cannot also be stuck at STOPPED without ever serving a request. UPDATE,
+same day: pjb asked for a statistical check on exactly this ("You may
+make a few runs to validate statistically the behavior of bricscad") —
+8 runs (3 cold starts, 5 warm reuses), 7 PASS, and the one failure showed
+a completely different, already-understood signature (BOOTING, an
+injection-layer focus-deviation flake, immediate PASS on retry), zero
+STOPPED/status-99 occurrences anywhere across all 8. That ticket is now
+independently confirmed and closed too — see its own final section for
+the full run table.
+
+CLOSED alongside this ticket:
+issues/closed/alfe-bricscad-automation-macos-reopens-welcome-page.issue,
+issues/closed/alfe-bricscad-automation-macos-stopped-status.issue —
+its fixes are exactly what made this run's cold launch and document
+handling work.

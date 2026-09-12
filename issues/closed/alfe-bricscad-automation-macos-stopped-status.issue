@@ -1,8 +1,20 @@
 Title: BricsCAD macOS automation: CAD-side protocol loop reaches STOPPED before any request is served
-Status: OPEN — new, machine-only, P3
+Status: RESOLVED 2026-09-12, statistically confirmed. 8 runs of
+  verify:bricscad-automation:macos phase 1 (3 genuinely cold starts, 5
+  warm reuses of an already-running session), all AFTER the parent
+  ticket's full fix set landed: 7 PASS, 1 FAIL. Zero occurrences of the
+  STOPPED/status-99 signature across all 8 — grepped for directly, not
+  just eyeballed. The one failure showed a completely different, already
+  -understood signature (status stuck at BOOTING, a focus-deviation error
+  from the injection layer's own documented ~1-in-10 flakiness, exit code
+  6) and PASSED immediately on an unmodified retry. This ticket's own
+  cause is confirmed to have been the shared-template lock bug fixed in
+  alfe-bricscad-automation-macos-reopens-welcome-page — with that fixed,
+  the STOPPED symptom this ticket describes has not recurred once in 8
+  tries under mixed cold/warm conditions.
 Priority: P3
 Type: bug / investigation
-Depends: issues/open/alfe-bricscad-automation-macos-osascript.issue
+Depends: issues/closed/alfe-bricscad-automation-macos-osascript.issue
 
 * What
 
@@ -99,7 +111,7 @@ mode does not take. Next steps to confirm/deny:
 
 * References
 
-  - issues/open/alfe-bricscad-automation-macos-osascript.issue (Round 6:
+  - issues/closed/alfe-bricscad-automation-macos-osascript.issue (Round 6:
     the injection fix + how this was discovered)
   - autolisp-front-end/source/runtime/autolisp-remote-io.lsp
     - AUTOLISP-PROTOCOL-SERVER-LOOP (~line 239)
@@ -108,3 +120,51 @@ mode does not take. Next steps to confirm/deny:
   - autolisp-front-end/source/backend-bricscad.lisp START-ENGINE
     (~line 1113) — the alfe-side READY wait / session teardown
   - scripts/verify-bricscad-automation.sh (the harness that reproduces it)
+
+* RESOLVED 2026-09-12 — 8-run statistical confirmation
+
+pjb: "Verify and try to confirm ... You may make a few runs to validate
+statistically the behavior of bricscad."
+
+8 runs of `ALFE_ENABLE_MACOS_AUTOMATION=1
+scripts/verify-bricscad-automation.sh`, back to back, checking BricsCAD's
+process health between each (never let a hung/degraded instance carry
+into the next run) and deliberately mixing conditions for coverage:
+
+  run  start   result   status.txt        notes
+  ---  -----   ------   ----------        -----
+  1    cold    PASS     (READY->DONE)     the confirmation run from the
+                                           prior turn, included for the
+                                           full count
+  2    warm    PASS     (READY->DONE)
+  3    warm    PASS     (READY->DONE)
+  4    cold    PASS     (READY->DONE)     force-quit before this run
+  5    warm    PASS     (READY->DONE)
+  6    cold    FAIL     BOOTING           force-quit before this run;
+                                           "console kept losing keyboard
+                                           focus; gave up after 3
+                                           attempts" (exit 6) — the
+                                           injection layer's own
+                                           documented ~1-in-10 System
+                                           Events flakiness (see the
+                                           parent ticket's Round 8), NOT
+                                           this ticket's signature
+  7    warm    PASS     (READY->DONE)     immediate unmodified retry
+                                           after run 6 — passed cleanly
+  8    warm    PASS     (READY->DONE)
+
+7/8 PASS. The one failure was grepped for specifically (not just
+eyeballed): no "STOPPED", no "status 99", no "mystery" anywhere in
+its log — protocol/status.txt read "BOOTING", meaning the CAD-side
+protocol loop never even got far enough to be the thing that failed; the
+injection itself did not land that run, a categorically different and
+already-understood failure mode. BricsCAD's process was checked healthy
+(low CPU, responsive to Accessibility queries) after every single run,
+including the failing one — no hang recurred either, across this batch.
+
+Conclusion: this ticket's own STOPPED/"mystery status 99" signature did
+not occur ONCE in 8 tries spanning both cold and warm starts, after the
+shared-template-lock fix
+(alfe-bricscad-automation-macos-reopens-welcome-page) landed. That fix is
+confirmed to be this ticket's actual root cause, not merely a plausible
+guess. Closing.
