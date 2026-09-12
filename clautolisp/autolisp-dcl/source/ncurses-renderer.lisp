@@ -110,13 +110,51 @@ ok_cancel cluster), then finish with status 0."
 
 (defun %ncurses-activate (dialog tile key)
   "Activate the focused TILE (Enter/Space). Buttons fire their action and may
-return a terminal status (accept->1 / cancel->0); other interactive tiles flip /
+return a terminal status (accept->1 / cancel->0); toggle/radio/list flip or
 select via the shared value-tile helper (parity with the line renderer's bare
-key press). Returns a status integer to exit on, or NIL to keep looping."
+key press); an edit_box / slider COMMITS its current value (reason lost-focus)
+— we never route those through terminal-handle-value-tile with a nil value,
+which would block on a stdin prompt. Returns a status integer to exit on, or
+NIL to keep looping."
   (case (dcl-tile-type tile)
     ((:button :image-button) (terminal-handle-button dialog tile key))
-    (t (terminal-handle-value-tile dialog tile key nil :activate)
-       nil)))
+    ((:toggle :radio-button :list-box :popup-list)
+     (terminal-handle-value-tile dialog tile key nil :activate)
+     nil)
+    ((:edit-box :slider)
+     (terminal-set-and-fire dialog key
+                            (gethash key (dcl-dialog-state dialog) "")
+                            :reason-lost-focus)
+     nil)
+    (t nil)))
+
+;;; --- value-widget keyboard input (slice 2) ------------------------------
+
+(defun %ncurses-edit-insert (dialog key char)
+  "Append CHAR to edit_box KEY's value and fire reason-changed."
+  (terminal-set-and-fire dialog key
+                         (concatenate 'string
+                                      (gethash key (dcl-dialog-state dialog) "")
+                                      (string char))
+                         :reason-changed))
+
+(defun %ncurses-edit-backspace (dialog key)
+  "Delete the last character of edit_box KEY's value (reason-changed)."
+  (let ((cur (gethash key (dcl-dialog-state dialog) "")))
+    (when (plusp (length cur))
+      (terminal-set-and-fire dialog key (subseq cur 0 (1- (length cur)))
+                             :reason-changed))))
+
+(defun %ncurses-slider-step (dialog tile key delta)
+  "Move slider KEY by DELTA, clamped to its min_value/max_value (reason-changed)."
+  (let* ((mn (or (tile-attribute tile "min_value") 0))
+         (mx (or (tile-attribute tile "max_value") 100))
+         (cur (or (ignore-errors
+                    (parse-integer (gethash key (dcl-dialog-state dialog) "0")
+                                   :junk-allowed t))
+                  0))
+         (new (min mx (max mn (+ cur delta)))))
+    (terminal-set-and-fire dialog key (princ-to-string new) :reason-changed)))
 
 (defun ncurses-run-dialog (dialog screen)
   "Drive DIALOG's interaction as a full-screen modal loop over SCREEN (a tui-core
@@ -131,18 +169,33 @@ screen — real curses or a mock). Returns the dialog's terminal status (1 OK /
            (when (dcl-dialog-finished-p dialog)
              (return (dcl-dialog-status dialog)))
            (%ncurses-render screen dialog ring focus)
-           (let ((key (clautolisp.ui.tui:tui-read-key screen)))
+           (let* ((key (clautolisp.ui.tui:tui-read-key screen))
+                  (cell (and (plusp n) (nth focus ring)))
+                  (ftile (and cell (cdr cell)))
+                  (fkey (and cell (car cell)))
+                  (ftype (and ftile (dcl-tile-type ftile))))
              (cond
                ((eq key :eof) (return (%ncurses-finish dialog 0)))
                ((eq key :escape) (%ncurses-cancel dialog))
+               ;; edit_box: a printable character types into the value, Backspace
+               ;; deletes. (#\Tab is not graphic, so it still navigates; #\Space
+               ;; types a space here rather than activating.)
+               ((and (eq ftype :edit-box) (characterp key) (graphic-char-p key))
+                (%ncurses-edit-insert dialog fkey key))
+               ((and (eq ftype :edit-box) (eq key :backspace))
+                (%ncurses-edit-backspace dialog fkey))
+               ;; slider: Left/Right step within min/max.
+               ((and (eq ftype :slider) (member key '(:left :right)))
+                (%ncurses-slider-step dialog ftile fkey (if (eq key :right) 1 -1)))
+               ;; focus navigation.
                ((or (eq key :down) (and (characterp key) (char= key #\Tab)))
                 (when (plusp n) (setf focus (mod (1+ focus) n))))
                ((eq key :up)
                 (when (plusp n) (setf focus (mod (1- focus) n))))
+               ;; activate the focused tile.
                ((or (eq key :enter) (and (characterp key) (char= key #\Space)))
-                (when (plusp n)
-                  (let* ((cell (nth focus ring))
-                         (status (%ncurses-activate dialog (cdr cell) (car cell))))
+                (when cell
+                  (let ((status (%ncurses-activate dialog ftile fkey)))
                     (when status (%ncurses-finish dialog status)))))
                (t nil))))
       (clautolisp.ui.tui:tui-stop screen))))
