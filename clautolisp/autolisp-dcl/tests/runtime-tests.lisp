@@ -330,3 +330,47 @@ order."
              (install-default-renderer saved))
            (clautolisp.autolisp-dcl:dcl-runtime-unload-dialog source-id))
       (ignore-errors (delete-file path)))))
+
+;;;; --- ncurses DCL renderer (dcl-ncurses-renderer.issue, slice 1) ----------
+;;;; Headless, via a tui-core mock screen fed a scripted key list; the renderer
+;;;; draws into the mock's cell grid (assertable) and the modal loop ends on
+;;;; done_dialog or key-stream EOF.
+
+(test ncurses-accept-button-activates-and-returns-1
+  "A default button, focused and pressed (Enter), fires and exits with status 1;
+its tile renders as [ label ]."
+  (with-tui-dialog (id dialog ": button { key = \"accept\"; label = \"OK\"; is_default = true; }")
+    (declare (ignorable id))
+    (let* ((screen (clautolisp.ui.tui:make-mock-screen :rows 24 :cols 40
+                                                       :keys (list :enter)))
+           (status (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)))
+      (is (eql 1 status))
+      (is (clautolisp.ui.tui:mock-find-line screen "[ OK ]")))))
+
+(test ncurses-escape-cancels-with-status-0
+  "Esc cancels the dialog: status 0, loop terminates."
+  (with-tui-dialog (id dialog ": button { key = \"accept\"; label = \"OK\"; is_default = true; }")
+    (declare (ignorable id))
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :keys (list :escape))))
+      (is (eql 0 (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen))))))
+
+(test ncurses-focus-moves-down-then-activates
+  "Down moves focus to the second button (drawn with the :selection face) and
+Enter activates it (is_default -> status 1); both buttons are rendered."
+  (with-tui-dialog (id dialog ": column { : button { key = \"a\"; label = \"A\"; }
+                                           : button { key = \"b\"; label = \"B\"; is_default = true; } }")
+    (declare (ignorable id))
+    (let* ((screen (clautolisp.ui.tui:make-mock-screen :rows 24 :cols 40
+                                                       :keys (list :down :enter)))
+           (status (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)))
+      (is (eql 1 status))
+      (is (clautolisp.ui.tui:mock-find-line screen "[ A ]"))
+      (is (clautolisp.ui.tui:mock-find-line screen "[ B ]")))))
+
+(test ncurses-key-stream-eof-cancels
+  "Running out of scripted keys before done_dialog cancels (status 0) rather
+than looping forever."
+  (with-tui-dialog (id dialog ": button { key = \"accept\"; label = \"OK\"; }")
+    (declare (ignorable id))
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :keys '())))
+      (is (eql 0 (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen))))))

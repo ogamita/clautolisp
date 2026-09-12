@@ -231,7 +231,7 @@
   :description "Dialog Control Language (DCL) implementation for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-runtime")
+  :depends-on ("clautolisp/autolisp-runtime" "tui-core")
   :serial t
   :components
   ((:file "autolisp-dcl/source/package")
@@ -240,7 +240,8 @@
    (:file "autolisp-dcl/source/runtime")
    (:file "autolisp-dcl/source/sexp-wire")
    (:file "autolisp-dcl/source/subprocess-renderer")
-   (:file "autolisp-dcl/source/terminal"))
+   (:file "autolisp-dcl/source/terminal")
+   (:file "autolisp-dcl/source/ncurses-renderer"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-dcl/tests")))
   :perform (asdf:test-op (op system)

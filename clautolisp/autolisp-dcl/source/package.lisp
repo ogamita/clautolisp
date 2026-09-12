@@ -76,4 +76,5 @@
    #:read-sexp-message
    #:write-sexp-message
    #:tile->sexp
-   #:make-subprocess-renderer))
+   #:make-subprocess-renderer
+   #:make-ncurses-renderer))
