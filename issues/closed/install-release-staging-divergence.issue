@@ -1,10 +1,30 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: install-release-staging-divergence — `make install` and the release tarball produce different program layouts
-#+STATUS: OPEN
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
 #+BRANCH: -
+
+* RESOLVED (commit 674c656c, "build(install): unify install + release + staging on one dispatch layout")
+
+Done-by-construction (pjb, 2026-09-12). The proposed fix shipped verbatim: the
+top Makefile's =stage-programs= now stages each subproject then applies
+=$(call dispatch-layout,$(STAGE_PROGRAMS))=, writing the canonical
+=libexec/clautolisp/binaries/<os>/<arch>/= images + =bin/= dispatch launchers
+into the one staging tree; =install-programs= = =stage-programs= + =copy-stage=,
+and =release-programs= = =stage-programs= + =pack= (the bespoke release layout
+is gone). Install and the per-target release therefore derive from the SAME
+single staging and cannot diverge — exactly as the libraries phase already
+works (=stage-libraries= → install/release). Acceptance: (1) identical program
+tree per os/arch — yes, shared =stage-programs=; (2) =-all= union still works —
+collect phase unchanged, dispatch layout unions cleanly; (4) no =make install=
+regression — the harness / alref libs / benchmark stay in the shared staging
+(the issue's "KEEP" content decision), so the release carries them too.
+Acceptance (3), a dedicated install-vs-release diff test, is intentionally NOT
+added: the single-sourcing makes divergence structurally impossible, the same
+guarantee the libraries phase relies on without such a test; a belt-and-
+suspenders guard was offered and declined. Closed.
 
 * Symptom (pjb, 2026-08-23)
 
