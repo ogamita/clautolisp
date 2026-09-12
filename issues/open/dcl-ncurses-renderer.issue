@@ -1,0 +1,127 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: dcl-ncurses-renderer — a full-screen ncurses DCL renderer, parallel to the line TUI
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: dcl-tui-completion (TUI renderer DONE), grread (input model)
+#+BRANCH: feature-dcl-ncurses
+
+* Context / motivation (pjb, 2026-09-12)
+
+DCL should have THREE parallel UIs: the line-oriented terminal renderer (the
+"dumb" style), a full-screen ncurses renderer, and the Qt GUI (subprocess,
+opendcl epic). Today only ONE terminal renderer exists — =autolisp-dcl/source/
+terminal.lisp=, a line-oriented (cooked) renderer that paints the tile tree once
+then reads =key= / =key=value= / =key==value= / =key!= commands via =read-line=.
+It is UI-agnostic (runs the same under the dumb or ncurses DEBUGGER UI, or none):
+the dumb/ncurses distinction exists only for the debugger, not for DCL. There is
+NO ncurses-native DCL rendering. This issue builds it, so the line (dumb) and
+full-screen (ncurses) DCL paths are genuinely parallel, and documents how widget
+input is done in each.
+
+* Design
+
+** Behaviour parity is the invariant
+The ncurses renderer differs ONLY in presentation + input; the state machine is
+shared. It reuses the runtime's action/reason plumbing and the terminal
+renderer's value-tile helpers so tile values and =$reason= codes are byte-for-
+byte identical to the line renderer:
+- =dcl-runtime-fire-action (dialog key value reason)= (runtime.lisp:389),
+  =dcl-reason-code= (runtime.lisp:378): selected=1 / changed=2 / lost-focus=3 /
+  double-click=4.
+- =terminal-handle-value-tile= (terminal.lisp:229), =terminal-select-radio=
+  (:209), =terminal-handle-button= (:149), =terminal-fire-registered= (:323).
+- =done_dialog= loop: run until =(dcl-dialog-finished-p dialog)=, return
+  =(dcl-dialog-status dialog)= (1 OK / 0 Cancel).
+
+** Draws against tui-core only (no bad deps)
+The renderer targets the dependency-free =tui-core= screen protocol
+(=clautolisp.ui.tui=): =tui-put (screen row col string &key attr)= (the only
+string primitive; 0-based; =:attr= a face symbol), =tui-clear=, =tui-refresh=,
+=tui-size= (=> rows cols=), =tui-read-key= (char or keyword), =tui-move-cursor=;
+plus helpers =draw-box= / =pad-string= / =truncate-string=. It NEVER constructs
+a curses screen — it accepts a screen object (real =curses-screen= or a
+=mock-screen=). So =autolisp-dcl= gains a =tui-core= dependency (cycle-free;
+tui-core depends on nothing); the libncurses backend stays on-demand at the CLI
+(as the debugger already does via =ncurses-terminal-screen=, main.lisp:1229).
+
+** Modal loop (mirrors ncurses-ui.lisp:668 ui-await-command)
+=tui-start= → =unwind-protect= { redraw-all → =tui-read-key= → dispatch →
+return when done } → =tui-stop=. Redraw = =tui-clear= + =tui-size= + walk the
+tile tree drawing each tile, the focused one highlighted, + =tui-refresh=.
+
+** Focus + navigation (DECISIONS — confirm)
+- Focus ring = interactive tiles in source order, reusing
+  =terminal-collect-interactive-keys= (terminal.lisp:126): button, edit_box,
+  toggle, radio_button, list_box, popup_list, slider, image_button.
+- Keys: =:up=/=:down= and =Tab=/=Shift-Tab= move focus; =:enter=/=Space=
+  activate/toggle the focused tile; printable chars edit a focused edit_box
+  (=:backspace= deletes); =:left=/=:right= adjust a focused slider and move the
+  selection in a list/popup; =:escape= = cancel (is_cancel path). Enter on
+  accept → done_dialog(1); on cancel → done_dialog(0).
+- Focused tile drawn with a distinguishing face (new =:dcl-focus= face, or reuse
+  =:selection=).
+
+** Layout (DECISION — confirm)
+Start SIMPLE: one interactive tile per line, vertical stack, containers add a
+label + indentation (parallels the line renderer's presentation, full-screen
+with highlight + in-place editing). A richer 2-D layout honouring =:row= /
+=:column= geometry is a later enhancement, not this issue.
+
+** Selection / install (main.lisp select-and-install-dcl-renderer:1972)
+Add a =:ncurses= value to =--dcl tui|gui|ncurses|auto= (+ parser + help text).
+=:ncurses= → source a screen from =ncurses-terminal-screen= (main.lisp:1229);
+if curses is unavailable, warn + fall back to =make-terminal-renderer=. =:auto=
+policy: keep non-TTY → line TUI (the =-command= scenario); when TTY +
+=curses-available-p= + no GUI configured, =:auto= MAY prefer =:ncurses=
+(DECISION — confirm whether auto should prefer ncurses over the line TUI when
+interactive). =make-ncurses-renderer= must NOT self-install at load (unlike
+terminal.lisp:410) — installation stays opt-in via the CLI.
+
+* Slices (each: full `make -C clautolisp test-sbcl` green, own MR, version bump)
+
+1. Renderer skeleton + modal loop: =make-ncurses-renderer= (dcl-renderer struct,
+   runtime.lisp:74) + =ncurses-run-dialog=; draw text/label/button tiles + focus
+   ring; =:up/:down/:tab= navigation; Enter on accept/cancel → done_dialog;
+   Escape → cancel. Headless tests (mock-screen: assert rendered lines, focus
+   face via =mock-attr-at=, accept→1 / cancel→0).
+2. Interactive value tiles: toggle (Space flips [x]/[ ]), radio_button/column
+   (mutual exclusion), edit_box (type/backspace, reason=changed), slider
+   (Left/Right clamp). Reuse terminal value-tile helpers; assert value
+   round-trip via get_tile + rendered cell.
+3. Lists + images: list_box / popup_list (in-place selection, Enter selects),
+   image / image_button (activatable placeholder); wire set-tile / focus / mode
+   / populate-list / image-paint fns to trigger a redraw.
+4. CLI + docs: =--dcl ncurses= selection + auto gating (main.lisp), ASDF (new
+   =autolisp-dcl/source/ncurses-renderer.lisp= + =tui-core= dep), and the
+   DOCUMENTATION deliverable — extend the user manual "DCL dialogs" section with
+   a per-widget input reference for BOTH the line (dumb) TUI (what you type:
+   =key= / =key=value= / modifiers) AND the ncurses TUI (focus + activate/edit
+   keys), per widget, and how =$reason= is produced in each.
+
+* Acceptance
+
+- Under =--dcl ncurses=, greet + all-widgets run headlessly through the ncurses
+  renderer (mock-screen), every widget interactive, values round-trip through
+  get_tile, all four =$reason= codes reachable — identical results to the line
+  renderer.
+- =--dcl ncurses= selection documented; auto/non-TTY fallback to line TUI kept.
+- FiveAM tests (autolisp-dcl + builtins-core) cover each widget over the ncurses
+  renderer via the mock screen; whole suite green in the FULL image
+  (=make -C clautolisp test-sbcl=).
+- User-manual "DCL dialogs" gains the per-widget input reference for the line
+  and ncurses TUIs.
+
+* Notes / references (from the 2026-09-12 API map)
+- Screen protocol: =autolisp-debug-ui-tui/source/tui.lisp:9-26= (tui-put etc.),
+  faces =faces.lisp=; curses backend =autolisp-debug-ui-tui-curses/source/
+  curses.lisp= (every op real, libncurses on demand).
+- Mock screen captures a char grid + face grid: =tui.lisp:104=; helpers
+  =mock-grid-lines= / =mock-find-line= / =mock-attr-at= / =make-mock-screen
+  :keys= / =mock-feed-keys=; scripted driver =run-ncurses= (ncurses tests
+  package.lisp:47).
+- Renderer contract: =dcl-renderer= struct runtime.lisp:74; copy the shape of
+  =make-terminal-renderer= terminal.lisp:379 (do NOT copy its load-time
+  install). Tile model: =dcl-tile= model.lisp; =tile-attribute= model.lisp:31.
+- The Qt renderer (subprocess) is the third UI; its C++ side is the opendcl
+  epic and out of scope here.
