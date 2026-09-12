@@ -4816,6 +4816,49 @@ builtin-document-export-and-import / builtin-document-import-by-application)."
     (is (and imported (string= "CAR" (autolisp-symbol-name imported)))
         "vl-doc-import should return the CAR symbol, got ~S" imported)))
 
+;;;; ----- complete-unit-tests: VLE-* BricsCAD-extension stub coverage -----
+;;;; (complete-unit-tests.issue) Backfill the untested VLE-* stubs flagged by
+;;;; coverage-report.sh. These are pure no-op stubs (they (declare (ignore …))
+;;;; their args and never touch the host backend), so a bare run-autolisp-string
+;;;; exercises the call path. The tests pin the current documented return;
+;;;; promotion to real BricsCAD-extension behaviour lives in
+;;;; deferred-stubbed-functions.issue, out of scope for this coverage epic.
+;;;; NOTE: vle-nth<x> is the registered spec *template* name (a no-op so boundp
+;;;; probes succeed); the functional siblings are vle-nth0..vle-nth9, tested
+;;;; elsewhere (m3a-vle-nth-shortcuts).
+
+(test vle-stub-family-returns-nil
+  "The untested nil-returning VLE-* stubs each return nil under a
+representative call (complete-unit-tests.issue coverage backfill)."
+  (reset-autolisp-symbol-table)
+  (dolist (form '("(vle-alert \"hi\")"
+                  "(vle-compile-shape \"f.shp\")"
+                  "(vle-dictobjname nil \"X\")"
+                  "(vle-dictsearch nil \"X\")"
+                  "(vle-displaypause)"
+                  "(vle-displayupdate)"
+                  "(vle-edittextinplace nil)"
+                  "(vle-enableserverbusy t)"
+                  "(vle-end-transaction)"
+                  "(vle-start-transaction)"
+                  "(vle-entget-m nil)"
+                  "(vle-entget-massoc nil 0)"
+                  "(vle-entmod-m nil)"
+                  "(vle-getgeomextents nil)"
+                  "(vle-hidepromptmenu)"
+                  "(vle-showpromptmenu)"
+                  "(vle-nth<x>)"
+                  "(vle-safearray->list nil)"
+                  "(vle-table-list-all nil)"))
+    (is (null (run-autolisp-string form :setup-fn #'install-core-into))
+        "~A should return nil under the stub impl" form)))
+
+(test vle-sunid-returns-zero
+  "vle-sunid is the one VLE-* stub with a non-nil documented return: the
+stub yields integer 0 (complete-unit-tests.issue)."
+  (reset-autolisp-symbol-table)
+  (is (eql 0 (run-autolisp-string "(vle-sunid)" :setup-fn #'install-core-into))))
+
 ;;;; ----- LOAD honours the AutoLISP-level *AUTOLISP-FILE-ENCODING* -----
 
 (test load-honours-autolisp-file-encoding-override
