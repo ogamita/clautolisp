@@ -268,20 +268,25 @@ names/aliases, yielding the list of name strings."
              (nreverse names)))))
 
 (defun parse-dcl-mode (value option)
-  "The --dcl DCL-renderer selection: tui (force the terminal / command-line
-form — the clautolisp spelling of AutoCAD's `-command' convention), gui (the
-subprocess GUI renderer), or auto (GUI when a driver is configured and stdout
-is a TTY, otherwise the TUI — so every headless / piped run gets the TUI).
-`terminal' / `text' are accepted spellings of tui."
+  "The --dcl DCL-renderer selection: tui (force the line / command-line form —
+the clautolisp spelling of AutoCAD's `-command' convention), ncurses (the
+full-screen terminal dialog renderer), gui (the subprocess GUI renderer), or
+auto (GUI when a driver is configured and stdout is a TTY; else the ncurses
+renderer on a TTY when a curses backend is available; else the line TUI — so
+every headless / piped run gets the line form). `terminal' / `text' are
+accepted spellings of tui; `curses' is an accepted spelling of ncurses."
   (cond ((or (string-equal value "tui")
              (string-equal value "terminal")
              (string-equal value "text")) :tui)
+        ((or (string-equal value "ncurses")
+             (string-equal value "curses")) :ncurses)
         ((string-equal value "gui")  :gui)
         ((string-equal value "auto") :auto)
         (t (error 'cli-usage-error
                   :option option
                   :message
-                  (format nil "Unknown --dcl mode ~S (expected tui/gui/auto)" value)))))
+                  (format nil "Unknown --dcl mode ~S (expected tui/ncurses/gui/auto)"
+                          value)))))
 
 (defun parse-user-interface (value option)
   "The --debugger-ui selection. The canonical spellings are =dumb=, =ncurses=,

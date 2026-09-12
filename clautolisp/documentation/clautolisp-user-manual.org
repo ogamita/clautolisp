@@ -1021,33 +1021,47 @@ Example (headless, against the mock host):
 ** DCL dialogs — renderer selection and the "-" convention
 An AutoLISP program that puts up a DCL dialog (~load_dialog~ /
 ~new_dialog~ / ~action_tile~ / ~start_dialog~) is driven by a
-*renderer*. clautolisp ships two:
+*renderer*. clautolisp ships three:
 
-- the *terminal (TUI) renderer* — a pure line-oriented rendering of the
-  dialog, so a dialog runs headless (piped stdin, CI, a script); and
+- the *line (TUI) renderer* — a pure line-oriented rendering of the dialog
+  (paint the tiles, read one command per line), so a dialog runs headless
+  (piped stdin, CI, a script);
+- the *ncurses renderer* — a full-screen terminal rendering of the dialog:
+  the tiles are laid out in 2-D (honouring the ~:row~ / ~:column~ geometry),
+  one tile is focused, and you navigate and edit with keystrokes. It behaves
+  identically to the line renderer — same tile values, same ~$reason~ codes —
+  only the presentation and input differ. Needs a curses backend
+  (~clautolisp-tui-curses~); on a terminal without one it falls back to the
+  line renderer; and
 - the *GUI renderer* — a subprocess GUI driver (e.g. the Qt app in
   ~tools/clautolisp-gui-qt~) selected with ~--gui CMD~ or the
   ~$CLAUTOLISP_GUI~ environment variable, speaking a sexp wire protocol.
 
 ~--dcl MODE~ chooses between them:
 
-- ~--dcl tui~   :: Force the terminal / command-line form, even when a GUI
+- ~--dcl tui~   :: Force the line / command-line form, even when a GUI
                    driver is configured. This is clautolisp's spelling of
                    AutoCAD's ~-command~ convention: in AutoCAD, prefixing a
                    command with ~-~ runs its command-line (non-dialog)
                    form; clautolisp has no per-command dispatcher, so the
                    whole-session ~--dcl tui~ flag requests that form for
-                   every dialog the run puts up.
+                   every dialog the run puts up. (~terminal~ / ~text~ are
+                   accepted spellings.)
+- ~--dcl ncurses~ :: Force the full-screen ncurses dialog renderer.
+                   (~curses~ is an accepted spelling.) Falls back to the line
+                   renderer when no curses backend is present.
 - ~--dcl gui~   :: Use the subprocess GUI driver. If none is configured
                    (~--gui~ / ~$CLAUTOLISP_GUI~), clautolisp warns and
-                   falls back to the TUI.
+                   falls back to the line TUI.
 - ~--dcl auto~  :: (default) Use the GUI when a driver is configured *and*
-                   stdout is a terminal; otherwise the TUI. So every
-                   headless / piped / redirected run — exactly the
-                   ~-command~ scenario — automatically gets the
-                   command-line form with no extra flag.
+                   stdout is a terminal; else the ncurses renderer when stdout
+                   is a terminal and a curses backend is available; else the
+                   line TUI. So every headless / piped / redirected run —
+                   exactly the ~-command~ scenario — automatically gets the
+                   command-line form with no extra flag, while an interactive
+                   terminal gets the full-screen dialog.
 
-*Driving the TUI.* The terminal renderer paints the tile tree, then reads
+*Driving the line TUI.* The line renderer paints the tile tree, then reads
 one command per line until a button's action calls ~done_dialog~ (or EOF,
 which cancels). A command is:
 
@@ -1067,6 +1081,32 @@ returns the selected ~radio_button~'s key from ~get_tile~. The predefined
 clusters (~ok_cancel~, ~ok_only~, ~ok_cancel_help~, …) expand into real
 ~accept~ / ~cancel~ / ~help~ button tiles, so ~(action_tile "accept" …)~
 is reachable.
+
+*Driving the ncurses dialog.* The ncurses renderer draws the tiles
+full-screen with one tile *focused* (shown in the selection face), and you
+interact with keystrokes. The focus ring is the interactive tiles in source
+order. Keys common to every widget: ~Tab~ (and ~Down~, except inside a list)
+move focus forward, ~Up~ moves it back, ~Esc~ cancels the dialog (status 0),
+and running out of input (EOF) also cancels. Per widget, the focused tile
+responds to:
+
+| widget              | keys                          | effect / ~$reason~                         |
+|---------------------+-------------------------------+--------------------------------------------|
+| button / image_button | ~Enter~ / ~Space~           | fire its action (accept → 1, cancel → 0)   |
+| toggle              | ~Enter~ / ~Space~             | flip ~[ ]~ ↔ ~[x]~ (selection, ~$reason~ 1) |
+| radio_button        | ~Enter~ / ~Space~             | select (mutually exclusive in its cluster) |
+| edit_box            | printable keys / ~Backspace~  | type / delete a character (~$reason~ 2);   |
+|                     |                               | ~Enter~ commits (lost focus, ~$reason~ 3)  |
+| slider              | ~Left~ / ~Right~              | step, clamped to min/max (~$reason~ 2)     |
+| list_box            | ~Up~ / ~Down~                 | move the selection (stores the index);     |
+|                     |                               | the selected row is marked ~>~; ~Tab~ leaves |
+| popup_list          | ~Up~ / ~Down~                 | cycle the selection (shows the item text)  |
+
+The stored tile values and ~$reason~ codes are exactly those of the line
+renderer above — ~get_tile~ returns the same index string for a list, the
+selected key for a ~radio_column~, and so on — so an AutoLISP program behaves
+identically under either terminal renderer. (A ~Space~ typed in a focused
+~edit_box~ is text, not an activation; leave the box with ~Tab~ then act.)
 
 See ~examples/all-widgets/~ (one of every tile type, with a labelled
 value report you can diff against AutoCAD / BricsCAD) and

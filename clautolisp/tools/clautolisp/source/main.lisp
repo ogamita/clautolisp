@@ -36,11 +36,12 @@
   (format t "                         Lines are consumed by GETSTRING / GETPOINT / etc. in order.~%")
   (format t "  --gui CMD              DCL GUI driver: subprocess CMD speaking the sexp wire protocol.~%")
   (format t "                         Also read from $CLAUTOLISP_GUI when --gui is omitted.~%")
-  (format t "  --dcl MODE             DCL renderer selection: tui (force the terminal / command-line~%")
+  (format t "  --dcl MODE             DCL renderer selection: tui (force the line / command-line~%")
   (format t "                         form — clautolisp's spelling of AutoCAD's `-command' convention),~%")
-  (format t "                         gui (the --gui subprocess driver), or auto (default: GUI when a~%")
-  (format t "                         driver is configured and stdout is a TTY, else the TUI, so every~%")
-  (format t "                         headless / piped run gets the command-line form).~%")
+  (format t "                         ncurses (full-screen terminal dialogs), gui (the --gui subprocess~%")
+  (format t "                         driver), or auto (default: GUI when configured and stdout is a TTY,~%")
+  (format t "                         else ncurses on a TTY when a curses backend is present, else the~%")
+  (format t "                         line TUI, so every headless / piped run gets the command-line form).~%")
   (format t "  --trace                Print every AutoLISP function call (entry args + exit value),~%")
   (format t "                         indented by call depth. Output goes to *trace-output* (stderr).~%")
   (format t "Optimization:~%")
@@ -1969,6 +1970,15 @@ headless or `-command'-style invocation) selects the TUI renderer."
         (clautolisp.autolisp-runtime:output-stream-is-tty-p *standard-output*))
       nil))
 
+(defun %ncurses-dcl-screen-available-p ()
+  "True when a curses backend is loaded AND usable on this host — a quiet probe
+(no warning) for --dcl auto's ncurses preference. The explicit --dcl ncurses
+path uses NCURSES-TERMINAL-SCREEN, which warns and falls back."
+  (let ((sym (and (find-package '#:clautolisp.ui.tui.curses)
+                  (find-symbol (string '#:curses-available-p)
+                               '#:clautolisp.ui.tui.curses))))
+    (and sym (fboundp sym) (funcall sym))))
+
 (defun select-and-install-dcl-renderer (dcl-mode gui-command)
   "Install the DCL renderer chosen by --dcl DCL-MODE (:tui / :gui / :auto):
 
@@ -1988,25 +1998,40 @@ so a re-entrant run resets a previously-installed subprocess renderer)."
          (tty (%stdout-is-tty-p))
          (debug-p (let ((env (uiop:getenv "CLAUTOLISP_DCL_DEBUG")))
                     (and env (plusp (length env)))))
-         (use-gui
+         (target
            (ecase dcl-mode
-             (:tui  nil)
-             (:gui  (cond (gui t)
-                          (t (format *error-output*
-                                     "~&clautolisp: --dcl gui: no GUI driver ~
+             (:tui :tui)
+             (:ncurses :ncurses)
+             (:gui (cond (gui :gui)
+                         (t (format *error-output*
+                                    "~&clautolisp: --dcl gui: no GUI driver ~
 configured (--gui CMD or $CLAUTOLISP_GUI); using the terminal (TUI) ~
 renderer.~%")
-                             nil)))
-             (:auto (and gui tty)))))
+                            :tui)))
+             ;; auto: GUI when configured + a TTY; else the full-screen ncurses
+             ;; dialog renderer on a TTY when a curses backend is present; else
+             ;; the line TUI — so a non-TTY / piped run (the `-command' case)
+             ;; always gets the line form.
+             (:auto (cond ((and gui tty) :gui)
+                          ((and tty (%ncurses-dcl-screen-available-p)) :ncurses)
+                          (t :tui))))))
     (when debug-p
       (format *error-output*
               "~&[dcl-debug] select-renderer mode=~S gui=~S tty=~S -> ~A~%"
-              dcl-mode gui tty (if use-gui "GUI" "TUI")))
-    (cond
-      (use-gui
+              dcl-mode gui tty target))
+    (ecase target
+      (:gui
        (clautolisp.autolisp-dcl:install-default-renderer
         (clautolisp.autolisp-dcl:make-subprocess-renderer :command gui)))
-      (t
+      (:ncurses
+       ;; NCURSES-TERMINAL-SCREEN warns + returns NIL when no curses backend is
+       ;; in the image; fall back to the line renderer then.
+       (let ((screen (ncurses-terminal-screen)))
+         (clautolisp.autolisp-dcl:install-default-renderer
+          (if screen
+              (clautolisp.autolisp-dcl:make-ncurses-renderer :screen screen)
+              (clautolisp.autolisp-dcl:make-terminal-renderer)))))
+      (:tui
        (clautolisp.autolisp-dcl:install-default-renderer
         (clautolisp.autolisp-dcl:make-terminal-renderer))))))
 

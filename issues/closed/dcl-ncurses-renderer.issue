@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: dcl-ncurses-renderer — a full-screen ncurses DCL renderer, parallel to the line TUI
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: feature
 #+DEPENDS: dcl-tui-completion (TUI renderer DONE), grread (input model)
@@ -18,6 +18,25 @@ the dumb/ncurses distinction exists only for the debugger, not for DCL. There is
 NO ncurses-native DCL rendering. This issue builds it, so the line (dumb) and
 full-screen (ncurses) DCL paths are genuinely parallel, and documents how widget
 input is done in each.
+
+* RESOLVED (2026-09-13, clautolisp 2.2.19 / alfe 2.2.27)
+
+Shipped across four slices (MRs !183, !184, !185, and the slice-4 CLI+docs MR).
+The ncurses-native full-screen DCL renderer is parallel to the line renderer:
+same tile values and =$reason= codes (it reuses the runtime action plumbing and
+the terminal value-tile helpers), differing only in presentation (2-D
+:row/:column layout, focus highlight) and input (keystrokes). Selection:
+=--dcl ncurses= (alias =curses=); =--dcl auto= prefers ncurses on a TTY when a
+curses backend is available, else the line TUI (non-TTY stays the line /
+=-command= form). The renderer draws only against the cycle-free =tui-core=
+screen protocol and takes any screen (real curses or the test mock); the CLI
+sources a real screen via =ncurses-terminal-screen= with a line-renderer
+fallback when no curses backend is present. Per-widget input for BOTH terminal
+UIs is documented in the user manual "DCL dialogs" section. Tests: the
+autolisp-dcl mock-screen tests across slices 1–3 plus a parse-dcl-mode test
+(autolisp-cli); full =make -C clautolisp test-sbcl= green. Out of scope /
+elsewhere: the Qt GUI app (opendcl epic) and a richer list scroll viewport.
+Closed.
 
 * Design decisions (CONFIRMED by pjb, 2026-09-13)
 
