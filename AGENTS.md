@@ -253,7 +253,15 @@ manual in the real dir node instead.
 
 - Issues live as one file per issue under `issues/open/` (active) and
   `issues/closed/` (resolved); closing an issue means appending a
-  `Resolved` note and `git mv`-ing it from `open/` to `closed/`.
+  `Resolved` note, setting `#+STATUS: DONE`, and `git mv`-ing it from
+  `open/` to `closed/`.
+- **Close as part of finishing, in the same change.** When an issue is
+  implemented and its tests pass, its closure (the `Resolved` note + status,
+  the `git mv` to `issues/closed/`, and the TRIAGE.org row flip to `DONE`)
+  goes in the SAME commit/branch/MR as the implementation and is merged along
+  with it — never deferred to a later sweep. An issue left under
+  `issues/open/` means "not done". See the **Issue triage workflow** section
+  in the Agent Operational Notes for the step list.
 - `issues/open/TRIAGE.org` is the triage index — the at-a-glance table of
   open issues with their status. **It replaced the former
   `issues/index.txt`**; there is no `index.txt` any more. Keep TRIAGE.org
@@ -997,8 +1005,24 @@ incidentally** gets its own `issues/open/<slug>.issue` ticket (symptom,
 repro, cause) — don't just mention it. Every issue file uses the org keyword
 header (`#+STATUS`/`#+PRIORITY`/`#+TYPE`/`#+DEPENDS`/`#+BRANCH`). Branch
 naming: `fix-<slug>` / `feat-<slug>`; an epic runs one long-lived branch;
-fetch + rebase before merging back. A completed issue is closed and moved to
-`issues/closed/`.
+fetch + rebase before merging back.
+
+**Closing an issue is part of finishing it, not a later sweep.** The moment an
+issue's work is implemented AND its tests pass, closing it belongs to the SAME
+change as the code — do all of this together, not in a follow-up:
+
+1. Update the issue file: append a `Resolved`/`DONE` note stating the version
+   and what shipped, and set `#+STATUS: DONE`.
+2. `git mv` the file from `issues/open/` to `issues/closed/`.
+3. Flip its row in `issues/open/TRIAGE.org` to `DONE` (keep the index in step).
+4. Stage all of that in the SAME commit as the implementation + tests, and
+   carry it through the SAME branch / MR — committed, pushed, and **merged
+   along with the code**.
+
+Never leave an implemented-and-tested issue sitting in `issues/open/` for a
+later pass: an issue still under `issues/open/` means "not done". (The only
+split is when a resolved issue spawns genuinely new, deferred work — file that
+as its OWN new `issues/open/<slug>.issue` and close the original.)
 
 ## Commit / push identity
 
