@@ -51,3 +51,21 @@ be loaded (from an init file or a charms-including build) in the first place.
 Surfaced while wiring =--debugger-ui ncurses= to a real terminal screen
 (debugger-ui-ncurses-aldb branch): before this, selecting ncurses crashed with
 an unbound SCREEN slot because nothing ever built a charms-screen for it.
+
+* Resolution (2026-09-12) — CLOSED by supersession
+
+The literal "rename clautolisp-charms.asd so its secondary system name
+matches the file" fix was NOT applied. Instead the broken cl-charms
+backend was RETIRED and replaced by a correctly-named standalone primary
+system: autolisp-debug-ui-tui-curses/clautolisp-tui-curses.asd (its header
+explicitly contrasts the old cl-charms backend "whose secondary name did
+not match its file"). (asdf:load-system "clautolisp-tui-curses") loads
+cleanly; tools/clautolisp/generate-clautolisp.lisp bakes it in, and
+main.lisp treats the old clautolisp.ui.tui.charms only as a "retired … if
+still loaded" fallback. So the issue's actual goal — a loadable,
+correctly-named ncurses backend — is met.
+
+Residual (optional, separate): the dead
+autolisp-debug-ui-tui-charms/clautolisp-charms.asd still carries the
+broken secondary name and a misleading header; nothing depends on it, so
+deleting it is trivial follow-up cleanup, not part of this fix.
