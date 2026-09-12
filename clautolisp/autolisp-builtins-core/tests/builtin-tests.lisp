@@ -4859,6 +4859,95 @@ stub yields integer 0 (complete-unit-tests.issue)."
   (reset-autolisp-symbol-table)
   (is (eql 0 (run-autolisp-string "(vle-sunid)" :setup-fn #'install-core-into))))
 
+;;;; ----- complete-unit-tests: VLAX-* coverage backfill -----
+;;;; (complete-unit-tests.issue) The untested VLAX-* operators. The pure
+;;;; safearray / variant / product-key ops are exercised headlessly via
+;;;; install-core-into; the curve-geometry and COM-object ops need the cador
+;;;; mock host (%vla / %curve fixtures, as the sibling vlax-curve-* tests use).
+
+(defun %reg-str (v)
+  "Coerce an autolisp-string result to a CL string (else return V as-is)."
+  (if (typep v 'autolisp-string) (autolisp-string-value v) v))
+
+(test vlax-product-keys-return-registry-paths
+  "vlax-product-key / vlax-user-product-key return the headless-CAD HKLM /
+HKCU registry-path strings (complete-unit-tests.issue)."
+  (reset-autolisp-symbol-table)
+  (is (string= "HKEY_LOCAL_MACHINE\\SOFTWARE\\clautolisp\\headless-cad\\R1.7"
+               (%reg-str (run-autolisp-string "(vlax-product-key)"
+                                              :setup-fn #'install-core-into))))
+  (is (string= "HKEY_CURRENT_USER\\SOFTWARE\\clautolisp\\headless-cad\\R1.7"
+               (%reg-str (run-autolisp-string "(vlax-user-product-key)"
+                                              :setup-fn #'install-core-into)))))
+
+(test vlax-safearray-bounds-type-and-put-element
+  "The untested safearray introspection/mutation ops, on a real 1-D safearray
+built headlessly via vlax-make-safearray (complete-unit-tests.issue)."
+  (reset-autolisp-symbol-table)
+  (is (string= "INTEGER"
+               (autolisp-symbol-name
+                (run-autolisp-string
+                 "(vlax-safearray-type (vlax-make-safearray 'integer '(0 . 2)))"
+                 :setup-fn #'install-core-into))))
+  (is (eql 0 (run-autolisp-string
+              "(vlax-safearray-get-l-bound (vlax-make-safearray 'integer '(0 . 2)) 1)"
+              :setup-fn #'install-core-into)))
+  (is (eql 2 (run-autolisp-string
+              "(vlax-safearray-get-u-bound (vlax-make-safearray 'integer '(0 . 2)) 1)"
+              :setup-fn #'install-core-into)))
+  ;; put-element returns the value it stored.
+  (is (eql 99 (run-autolisp-string
+               "(vlax-safearray-put-element (vlax-make-safearray 'integer '(0 . 2)) 1 99)"
+               :setup-fn #'install-core-into))))
+
+(test vlax-variant-change-type-preserves-value-sets-type
+  "vlax-variant-change-type keeps the value and re-tags the variant
+(complete-unit-tests.issue)."
+  (reset-autolisp-symbol-table)
+  (is (eql 42 (run-autolisp-string
+               "(vlax-variant-value (vlax-variant-change-type (vlax-make-variant 42) 'real))"
+               :setup-fn #'install-core-into)))
+  (is (string= "REAL"
+               (autolisp-symbol-name
+                (run-autolisp-string
+                 "(vlax-variant-type (vlax-variant-change-type (vlax-make-variant 42) 'real))"
+                 :setup-fn #'install-core-into)))))
+
+(test vlax-safearray-mode-is-a-nil-stub
+  "_vlax-safearray-mode is an internal policy-flag no-op stub returning nil
+(complete-unit-tests.issue)."
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string "(_vlax-safearray-mode)" :setup-fn #'install-core-into))))
+
+(test vlax-curve-param-distance-and-derivative-ops-on-a-line
+  "The untested VLAX-CURVE-* param / distance / 2nd-derivative / closest-point /
+planar ops, on the +curve-line+ fixture where param == arc length
+(complete-unit-tests.issue)."
+  (is (< (abs (- 0.0d0 (%curve +curve-line+ "(vlax-curve-getstartparam e)"))) 1d-9))
+  (is (< (abs (- 5.0d0 (%curve +curve-line+ "(vlax-curve-getdistatparam e 5.0)"))) 1d-9))
+  (is (< (abs (- 5.0d0 (%curve +curve-line+ "(vlax-curve-getparamatdist e 5.0)"))) 1d-9))
+  (is (< (abs (- 3.0d0 (%curve +curve-line+ "(vlax-curve-getdistatpoint e '(3.0 0.0 0.0))"))) 1d-9))
+  ;; a straight line has zero second derivative everywhere.
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getsecondderiv e 5.0)") '(0 0 0)))
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getclosestpointto e '(5.0 3.0 0.0))") '(5 0 0)))
+  ;; projection onto a Z-normal plane is the identity → same closest point;
+  ;; an oblique projection is unsupported and documented to return nil.
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getclosestpointtoprojection e '(5.0 3.0 0.0) '(0.0 0.0 1.0))") '(5 0 0)))
+  (is (null (%curve +curve-line+ "(vlax-curve-getclosestpointtoprojection e '(5.0 3.0 0.0) '(1.0 0.0 0.0))")))
+  ;; a line is planar.
+  (is (%curve +curve-line+ "(vlax-curve-isplanar e)")))
+
+(test vlax-com-object-and-property-method-introspection
+  "vlax-get-or-create-object returns a vla-object; vlax-property-available-p
+and vlax-method-applicable-p answer T/nil against the cador mock document
+(complete-unit-tests.issue)."
+  (is (typep (%vla "(vl-load-com)(vlax-get-or-create-object \"AutoCAD.Application\")")
+             'clautolisp.autolisp-runtime:autolisp-vla-object))
+  (is (%vla "(vl-load-com)(vlax-property-available-p (vla-get-activedocument (vlax-get-acad-object)) \"Name\")"))
+  (is (null (%vla "(vl-load-com)(vlax-property-available-p (vla-get-activedocument (vlax-get-acad-object)) \"BogusProp\")")))
+  (is (%vla "(vl-load-com)(vlax-method-applicable-p (vla-get-activedocument (vlax-get-acad-object)) \"Save\")"))
+  (is (null (%vla "(vl-load-com)(vlax-method-applicable-p (vla-get-activedocument (vlax-get-acad-object)) \"Regen\")"))))
+
 ;;;; ----- LOAD honours the AutoLISP-level *AUTOLISP-FILE-ENCODING* -----
 
 (test load-honours-autolisp-file-encoding-override
