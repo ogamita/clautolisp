@@ -70,7 +70,13 @@ Test / CI infrastructure (Linux-doable, high value):
   expiries) already live; collect:release now expire_in 30 days (was never) since
   release links default to the durable poseidon mirror; check (3) rewritten to
   assert that invariant. Closed.
-- TODO =install-release-staging-divergence= — P3: install vs release staging diverge.
+- DONE =install-release-staging-divergence= — RESOLVED (commit 674c656c,
+  "unify install + release + staging on one dispatch layout"): stage-programs
+  applies the dispatch layout; install-programs = stage + copy-stage,
+  release-programs = stage + pack, so install and release derive from ONE
+  staging and cannot diverge (the libraries-phase model). Verified + closed
+  done-by-construction 2026-09-12; the drift-guard test (acceptance 3) is moot
+  under single-sourcing and was declined.
 - TODO =version-invariants-broken-by-shakedown-release= — P3: shakedown-tag version invariants.
 Release / Windows (verification-bound to a Windows runner or a release tag):
 - BLOCKED =windows-artifact-upload-fails-on-release= — P1/machine.
