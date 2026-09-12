@@ -549,7 +549,8 @@ the whole thing; the traps below are what cost time the first time.
   and creates/updates the Release itself. Run `--dry-run` first (it verifies
   every link), then for real. `--links poseidon` (default, durable) needs the
   step-6 mirror up; from a box with NO poseidon shell, publish `--links gitlab`
-  (token-free; artefacts are `expire_in: never`) and upgrade the links in place
+  (token-free; artefacts are `expire_in: 30 days`, so do it within that window)
+  and upgrade the links in place
   later from poseidon: `make-gitlab-release.py release-M.m.d --update --links
   poseidon`.
 - *The collect:release manifest is the authority on what ships, not the
@@ -592,9 +593,16 @@ does not serve its file.
   and serves HTML; both answer `200`, so a consumer writes 40 KB of HTML to
   disk under the archive's name and only fails at extraction. Releases
   1.8.47 and 1.8.49 shipped that way, reported from another project's CI.
-- `collect:release` keeps its artefacts (`expire_in: never`) so a release
-  can always be re-mirrored, but the *published* links no longer depend on
-  them — purge them for storage and the poseidon-hosted release still works.
+- `collect:release` artefacts now `expire_in: 30 days` (was `never`): the
+  *published* links point at the durable poseidon mirror, not at them, so
+  they are only the re-mirror SOURCE and need not be permanent — which stops
+  the namespace growing ~1 GB per release for ever
+  (`namespace-storage-blocks-ci`). Re-mirror within the window; an older
+  release whose artefacts have expired is re-mirrored by re-running its tag
+  pipeline (or already lives on poseidon). The poseidon-default-links
+  invariant that makes a finite expiry safe is enforced by
+  `check-release-lane-integrity.py` check (3) — if that default is removed,
+  `collect:release` must go back to `expire_in: never`.
   To move an older release off GitLab artefacts: mirror it, then
   `make-gitlab-release.py release-M.m.d --update --links poseidon`, then the
   GitLab job artefacts are free to delete (1.8.49, 1.8.103 were moved this

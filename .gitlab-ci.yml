@@ -1432,12 +1432,20 @@ collect:release:
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-release"
     paths: [dist/combined/]
-    # NEVER, because the published release links AT these artefacts. This
-    # job only runs on a release tag, and its output is the release: with
-    # a 30-day expiry, every release older than a month became a catalogue
-    # of dead links, which is the opposite of what publishing one is for.
-    # A release is permanent, so its assets must be too.
-    expire_in: never
+    # FINITE, because the published release links now point at the POSEIDON
+    # mirror (durable, external), not at these artefacts:
+    # make-gitlab-release.py defaults to --links poseidon, and
+    # deploy-release-to-poseidon.sh rsyncs this set to the poseidon web area
+    # before the release is published. So these artefacts are only the
+    # re-mirror SOURCE (and the token-free --links gitlab fallback), not the
+    # live links — a finite expiry no longer rots a release, and it bounds
+    # the permanent namespace cost that otherwise grew ~1 GB per release for
+    # ever (namespace-storage-blocks-ci). 30 days is a generous window to
+    # (re-)mirror to poseidon after the tag. The durability invariant — that
+    # the published links default to poseidon — is enforced by
+    # check-release-lane-integrity.py check (3); if that default is ever
+    # removed, put `expire_in: never' back here.
+    expire_in: 30 days
 
 # --- deploy: publish the spec HTML manual to the poseidon web site -----
 #

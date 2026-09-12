@@ -150,24 +150,44 @@ def main():
               "updating")
         status = 1
 
-    # (3) a published release LINKS AT collect:release's artefacts, so an
-    #     expiry on them is an expiry on the release. With the default
-    #     30 days, every release older than a month turned into a catalogue
-    #     of dead links while still looking published
-    #     (release-asset-links-use-artifacts-file.issue).
+    # (3) a published release's asset links must be DURABLE. They used to
+    #     point AT collect:release's job artefacts, so those artefacts had to
+    #     live for ever (expire_in: never) or a release older than the expiry
+    #     rotted into a catalogue of dead links while still looking published
+    #     (release-asset-links-use-artifacts-file.issue). They now default to
+    #     the POSEIDON mirror (make-gitlab-release.py --links poseidon, the
+    #     default) — an external, durable host — so the job artefacts are only
+    #     a re-mirror source and MAY expire, which bounds the permanent
+    #     namespace cost (namespace-storage-blocks-ci). Enforce the invariant
+    #     that actually protects a release: the publisher defaults to durable
+    #     poseidon links. (If that default is ever removed, collect:release
+    #     must go back to expire_in: never -- this check says so.)
     bodies = dict(found)
     collect = bodies.get("collect:release:")
+    try:
+        with open("scripts/make-gitlab-release.py", encoding="utf-8") as stream:
+            publisher = stream.read()
+    except OSError:
+        publisher = ""
+    keeps_forever = collect is not None and re.search(
+        r"expire_in:\s*never", block(collect, "artifacts"))
+    poseidon_default = re.search(r'default\s*=\s*["\']poseidon["\']', publisher)
     if collect is None:
         print("FAIL: collect:release not found -- the parser needs updating")
         status = 1
-    elif re.search(r"expire_in:\s*never", block(collect, "artifacts")):
-        print("ok  collect:release keeps its artefacts (the release links "
-              "point at them)")
+    elif keeps_forever or poseidon_default:
+        if poseidon_default:
+            print("ok  published release links default to the durable poseidon "
+                  "mirror, so collect:release's artefacts may expire")
+        else:
+            print("ok  collect:release keeps its artefacts (expire_in: never), "
+                  "so links that point at them survive")
     else:
-        print("FAIL: collect:release lets its artefacts expire, and the")
-        print("      published release links AT those artefacts -- so the")
-        print("      release becomes dead links on expiry. Use `expire_in:")
-        print("      never'; a release is permanent, its assets must be too.")
+        print("FAIL: collect:release's artefacts expire AND the publisher does")
+        print("      not default to the durable poseidon mirror -- so a")
+        print("      published release would rot into dead links. Either keep")
+        print("      make-gitlab-release.py defaulting to --links poseidon, or")
+        print("      put `expire_in: never' back on collect:release.")
         status = 1
 
     # (4) `/artifacts/file/' is the artefact BROWSING page and serves HTML;
