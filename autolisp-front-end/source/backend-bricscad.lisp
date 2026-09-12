@@ -248,7 +248,8 @@ Ordering is deliberate rather than alphabetical:
                           ;; STRING>, which is the preference we want.
                           (t (string> a b)))))))))))
 
-(defun discover-bricscad-template (&key requested executable-path workdir)
+(defun discover-bricscad-template (&key requested executable-path workdir
+                                        (allow-vendor-fallback t))
   "Resolve the drawing to launch BricsCAD with.
 
 Order, and the reason for it:
@@ -258,7 +259,10 @@ Order, and the reason for it:
   2. A FRESH empty.dwg written into WORKDIR, from the copy carried in
      the image (alfe.drawing). This is the default.
   3. The vendor templates, and finally NIL (launch with no explicit
-     drawing), as a safety net if (2) could not be written.
+     drawing), as a safety net if (2) could not be written — unless
+     ALLOW-VENDOR-FALLBACK is NIL, in which case this step is skipped
+     and NIL is returned instead (see below for why a caller would ask
+     for that).
 
 Step 2 is new (issues/open/empty-ressource.issue, pjb 2026-08-30) and it
 replaces the previous default of pointing every run at ONE shared file.
@@ -275,7 +279,25 @@ engine refusing AC1032 would refuse it LOUDLY, and the file is one to
 replace rather than to maintain.
 
 $AUTOLISP_BRICSCAD_TEMPLATE remains the zero-code answer when a machine
-wants a specific blank drawing."
+wants a specific blank drawing.
+
+ALLOW-VENDOR-FALLBACK exists for DETECT (~below), which calls this with
+no WORKDIR (none exists yet at backend-construction time, before any
+per-invocation workdir has been created) purely to capture a genuine
+EXPLICIT override (an env var) onto the backend for later inspection.
+With the default T, that WORKDIR-less call would still fall through step
+2 (which needs a workdir) straight to step 3, caching a VENDOR template
+as if it were something the user asked for — and every later per-
+invocation caller that checks the cached value first (as callers
+legitimately should, so a real override wins) would then never reach
+its OWN, correctly workdir-aware call to this same function, silently
+defeating step 2's whole point for exactly the callers most likely to
+need it. Found live, 2026-09-12, alfe-bricscad-automation-macos-reopens-
+welcome-page: automation mode keeps BricsCAD running across invocations,
+so a killed run leaves a stale .dwl lock on that SAME cached, shared
+vendor file, and every subsequent run hits the modal dialog step 2 exists
+to avoid. DETECT passing NIL here is what keeps its cached value honestly
+NIL unless the user actually asked for something."
   (or (and requested
            (probe-file requested)
            (namestring (truename requested)))
@@ -284,12 +306,13 @@ wants a specific blank drawing."
       (and workdir
            (let ((fresh (alfe.drawing:fresh-empty-dwg workdir)))
              (and fresh (namestring fresh))))
-      (first-existing
-       (mapcar (lambda (p) (uiop:native-namestring p))
-               (list "~/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-mm.dwt"
-                     "~/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-m.dwt"
-                     "/Library/Application Support/Bricsys/BricsCAD/V26x64/Templates/Default-mm.dwt")))
-      (first-existing (bundle-template-candidates executable-path))))
+      (and allow-vendor-fallback
+           (or (first-existing
+                (mapcar (lambda (p) (uiop:native-namestring p))
+                        (list "~/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-mm.dwt"
+                              "~/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-m.dwt"
+                              "/Library/Application Support/Bricsys/BricsCAD/V26x64/Templates/Default-mm.dwt")))
+               (first-existing (bundle-template-candidates executable-path))))))
 
 (defun discover-bricscad-profile ()
   "Resolve the BricsCAD user profile to launch with (the /p or -P switch).
@@ -325,8 +348,22 @@ unnamed \"<<Profil sans nom>>\") rather than trust the default."
                                ((linux-p)   "/opt/bricsys/bricscad/V*/bricscad")
                                ((windows-p) "/c/Program Files*/Bricsys/*/bricscad.exe"))))))
     (setf (bricscad-backend-executable-path backend) binary
+          ;; ALLOW-VENDOR-FALLBACK NIL: DETECT runs before any
+          ;; per-invocation workdir exists, so it can never reach step 2
+          ;; (the fresh, safe-to-reuse empty.dwg) — without this, it
+          ;; would silently fall through to step 3 (a SHARED vendor
+          ;; template) and cache that as if the user had asked for it,
+          ;; permanently shadowing every later per-invocation caller's
+          ;; own, correctly workdir-aware discovery. See
+          ;; DISCOVER-BRICSCAD-TEMPLATE's docstring for the full story
+          ;; (alfe-bricscad-automation-macos-reopens-welcome-page,
+          ;; 2026-09-12). This keeps the cached value honestly NIL unless
+          ;; the user actually asked for something explicit ($AUTOLISP_
+          ;; BRICSCAD_TEMPLATE / $AUTOLISP_DWG), which every later caller
+          ;; still correctly prefers over its own fresh discovery.
           (bricscad-backend-template-path backend)
-          (discover-bricscad-template :executable-path binary)
+          (discover-bricscad-template :executable-path binary
+                                       :allow-vendor-fallback nil)
           (bricscad-backend-profile backend)
           (discover-bricscad-profile))
     backend))
@@ -617,15 +654,556 @@ if not focused then
   error \"BricsCAD never became frontmost within ${STARTUPWAIT}s (frontmost was \\\"\" & frontApp & \"\\\"); refusing to send keystrokes to another application.\" number 1
 end if
 
-tell application \"System Events\"
-  keystroke \"(load \\\"\" & runLspFile & \"\\\")\"
-  key code 36 -- Return
-end tell
+-- \"BricsCAD is the frontmost PROCESS\" (just confirmed) says nothing
+-- about whether a just-opened DOCUMENT has finished initializing — the
+-- process can become frontmost well before its UI (ribbon, console
+-- panel) has settled. Found live (2026-09-12): sending F2 to reveal a
+-- closed console panel immediately after LAUNCHCOMMAND opened a fresh
+-- document could fire before BricsCAD was ready to act on it, leaving
+-- the console still closed even though the SAME F2 keystroke worked
+-- correctly moments later run by hand. A short fixed settle delay here
+-- is a pragmatic bound, not a proof of readiness — genuine polling for
+-- document-readiness is a further refinement, not attempted this round.
+delay 1.5
+
+-- On a genuinely COLD launch this installation can show a STACK of
+-- startup dialogs before any document/console is usable at all —
+-- confirmed live (2026-09-12): a \"BricsCAD Launcher\" workspace-selection
+-- dialog first, then (specific to a template left locked by a PREVIOUS
+-- automation run that was killed abnormally while it had that template
+-- open — a realistic recovery scenario, not just a testing artefact) a
+-- \"Fichier de verrouillage Dwl trouvé\" (lock-file-found) dialog right
+-- after it. Neither is reachable by FINDCONSOLEWINDOW's own logic (both
+-- are correctly EXCLUDED from matching by name, since their titles do
+-- not contain \"bricscad\" the same way the real console's does not —
+-- they just never get treated as A console either), and the
+-- frontmost-wait loop above only confirms BRICSCAD ITSELF is frontmost —
+-- a dialog IS part of that same process, so the wait succeeds while a
+-- dialog still blocks everything underneath it.
+--
+-- Return reliably dismisses BOTH dialog types via whichever button is
+-- their own default/highlighted one, verified live, WITHOUT hard-coding
+-- either dialog's locale-specific button label (\"Lancer BricsCAD\",
+-- \"OK\"). Sending it here, bounded and only after the frontmost-wait
+-- above already confirmed BricsCAD is frontmost, is safe: if no dialog
+-- is actually present it lands on whatever BricsCAD's own console/prompt
+-- already has focus, which is a harmless no-op there (an empty Return at
+-- an idle prompt), not on some unrelated foreground application.
+on dismissStartupDialogs(procName)
+  repeat 5 times
+    if my findConsoleWindow(procName) is not missing value then return
+    try
+      tell application \"System Events\" to key code 36 -- Return
+    end try
+    delay 0.6
+  end repeat
+end dismissStartupDialogs
+
+my dismissStartupDialogs(\"bricscad\")
+
+-- ------------------------------------------------------------------
+-- Window-targeted, deviation-aware injection (alfe-bricscad-automation-
+-- macos-osascript, 2026-09-11 live BricsCAD V26/macOS session).
+--
+-- \"BricsCAD is frontmost\" (just checked above) is NECESSARY but NOT
+-- SUFFICIENT: BricsCAD Lite runs its command console as a window
+-- SEPARATE from the drawing window, and the app can be frontmost while
+-- the DRAWING window — not the console — holds actual keyboard focus.
+-- That silently swallowed every keystroke in all five earlier CI
+-- rounds, which only ever checked the app-level frontmost name.
+--
+-- Empirically, the console window is the one whose AXMain attribute is
+-- true; every other BricsCAD window (the drawing window, tooltips,
+-- palettes) reports AXMain = false. This is locale-independent — do
+-- NOT match by window title/name (it is translated, e.g. \"Historique
+-- des invites\" in French, \"Prompt History\" in English).
+--
+-- The console exposes NO accessible text value (no AXTextField /
+-- AXTextArea anywhere in its tree — it is one custom-painted widget
+-- combining scrollback and the live input line), so there is no way to
+-- read back how much of an injected string actually landed. That is
+-- why the retry logic below always discards and retypes the WHOLE
+-- command on a deviation rather than attempting a character-level
+-- resume: a resume would require reading state that provably does not
+-- exist here.
+
+on findConsoleWindow(procName)
+  -- NOT matched by AXMain: found live (2026-09-12) that AXMain migrates
+  -- to whichever window last held real OS focus, INCLUDING the drawing
+  -- window (e.g. right after opening a document via `open -a app
+  -- docPath') — the very first live investigation of this template
+  -- happened to catch AXMain on the console and that was mistakenly
+  -- generalized as a stable identifier. It was true then, not always.
+  --
+  -- NOT matched by subrole either: both the console and the drawing
+  -- window report AXStandardWindow.
+  --
+  -- Matched instead by EXCLUSION: the drawing window's title is the
+  -- PRODUCT name (\"BricsCAD Lite\" on this install) and stays that way
+  -- regardless of which document/tab is open — confirmed live across
+  -- many different open documents this session. \"BricsCAD\" is a brand
+  -- name and does not get translated by locale, so a window whose name
+  -- does NOT contain it, has a real (non-empty) name, and is a standard
+  -- window is the console, in any language, without hard-coding any of
+  -- its translated titles (\"Historique des invites\" in French,
+  -- \"Prompt History\" in English, etc.).
+  --
+  -- Outer `try' added alongside the per-window one already here: a
+  -- transient System Events hiccup enumerating `windows' itself (same
+  -- class documented on TYPEWATCHINGFOCUS) must degrade to \"not found
+  -- this attempt\" — handled by the caller's normal retry path — rather
+  -- than crash the whole script uncaught.
+  try
+    tell application \"System Events\"
+      tell process procName
+        repeat with w in windows
+          try
+            set wName to name of w
+            set wSubrole to subrole of w
+            if wSubrole is \"AXStandardWindow\" and wName is not missing value and (length of wName) > 0 and wName does not contain \"bricscad\" then
+              return w
+            end if
+          end try
+        end repeat
+      end tell
+    end tell
+  end try
+  return missing value
+end findConsoleWindow
+
+on clampNumber(v, lo, hi)
+  if v < lo then
+    return lo
+  else if v > hi then
+    return hi
+  else
+    return v
+  end if
+end clampNumber
+
+-- Click well inside the console window (never on its scrollbar or title
+-- bar) to give THAT WINDOW keyboard focus, as distinct from merely
+-- activating the app. Verified empirically: the app being frontmost
+-- alone was not enough, but a click at a point like this followed by
+-- `keystroke' delivered text that BricsCAD actually typed and evaluated.
+on focusConsoleWindow(cmdWin)
+  -- Property access on a UI-element reference returned out of a `tell'
+  -- block must itself be re-wrapped in the matching `tell application' —
+  -- the reference does not resolve on its own outside that context (macOS
+  -- error -1700, found by actually running this against live BricsCAD).
+  --
+  -- The whole body is inside a `try': a transient System Events hiccup
+  -- here (same class as the one documented on TYPEWATCHINGFOCUS) must not
+  -- crash the script uncaught. This handler has no return value the
+  -- caller checks, so swallowing is correct — a click that silently
+  -- failed to register is exactly the kind of misalignment
+  -- CONSOLESTILLFOCUSED / VERIFYTYPEDLINE are there to catch downstream,
+  -- which is a cleaner single place to react to it than duplicating that
+  -- logic here.
+  try
+    tell application \"System Events\"
+      set wPos to position of cmdWin
+      set wSize to size of cmdWin
+    end tell
+    -- Click NEAR THE TOP of the window, not the bottom, then use Cmd+End
+    -- (a standard Cocoa text-editing shortcut, moveToEndOfDocument: — NOT
+    -- the same as the Cmd+E isoplane mixup from earlier in this
+    -- investigation) to move the caret to the true end of the buffer
+    -- regardless of where the click landed.
+    --
+    -- Any offset measured from the window's BOTTOM (a fixed pixel amount,
+    -- or even a fraction of the window's own height) is fragile: found
+    -- live (2026-09-12) that this console can end up positioned low
+    -- enough on screen that its lower portion sits UNDER the macOS Dock —
+    -- a click there hits the Dock instead of the console, and nothing
+    -- lands at all, with no error to signal it (the Dock silently eats
+    -- the click). The window's TOP, by contrast, is never obscured by
+    -- the Dock regardless of how the window is positioned, so clicking
+    -- there is unconditionally safe — and Cmd+End then reaches the live
+    -- prompt from wherever the click actually put the caret, verified
+    -- live: typing after click-top + Cmd+End landed correctly at the
+    -- bottom prompt even though that exact screen region was itself
+    -- under the Dock and not fully visible in a screenshot — the
+    -- keyboard-level delivery is unaffected by the Dock, only mouse
+    -- clicks are.
+    set clickX to (item 1 of wPos) + my clampNumber(400, 40, (item 1 of wSize) - 40)
+    set clickY to (item 2 of wPos) + my clampNumber(30, 20, (item 2 of wSize) - 15)
+    tell application \"System Events\" to click at {clickX, clickY}
+    -- A delay HERE, not just a shared one at the caller, matters: found
+    -- live (2026-09-12) that sending Cmd+End in the SAME `tell' block
+    -- immediately after the click (no gap at all) could race ahead of
+    -- the click's own focus-transfer actually completing, silently
+    -- landing nowhere. The caller's own post-call delay is not a
+    -- substitute — it runs after BOTH of these, not between them.
+    delay 0.2
+    tell application \"System Events\" to key code 119 using command down -- Cmd+End
+  end try
+end focusConsoleWindow
+
+-- Guarantee an EMPTY prompt before typing anything, regardless of what
+-- (if anything) was already sitting there. Found necessary by actually
+-- running this against live BricsCAD (2026-09-11): the console is a real
+-- position-aware text field, not an append-only terminal — a click can
+-- land MID-STRING if something uncommitted is already present (e.g. a
+-- leftover fragment from an earlier interrupted script), and typing then
+-- INSERTS there instead of appending, corrupting both the old and the
+-- new text together.
+--
+-- NOT implemented as Shift+Home + one Backspace, even though that reads
+-- as the obvious way to delete a selection: found live (2026-09-12) that
+-- Backspace here deletes exactly ONE character regardless of an active
+-- selection's extent — the selection itself is real and correctly
+-- respected by Cmd+C (VERIFYTYPEDLINE's read-back has always worked),
+-- just not by Backspace. A single-Backspace clear reliably left the
+-- LAST character of whatever was there behind, which then prefixed
+-- itself onto the next typed command (observed: leftover \"AB\" ->
+-- Shift+Home+one Backspace -> \"A\" survives -> typing \"(load ...\"
+-- next produced the submitted, malformed \"A(load\"). Cmd+End (so the
+-- selection, and this loop, start from the true end regardless of where
+-- a prior click landed) followed by a BOUNDED loop of plain Backspaces
+-- is empirically reliable instead — verified live clearing exactly this
+-- kind of leftover. 250 is comfortably above any realistic command
+-- length for this use (a `(load \"<path>\")' form).
+on clearConsoleLine(procName)
+  -- Swallowed for the same reason as FOCUSCONSOLEWINDOW: no checked
+  -- return value, and a failure here manifests downstream as a
+  -- VERIFYTYPEDLINE mismatch anyway, which already has its own recovery
+  -- path.
+  try
+    tell application \"System Events\" to key code 119 using command down -- Cmd+End
+    delay 0.1
+    tell application \"System Events\"
+      repeat 250 times
+        key code 51 -- Backspace
+      end repeat
+    end tell
+  end try
+end clearConsoleLine
+
+-- Is the console window BOTH (a) in the frontmost PROCESS and (b) the
+-- FOCUSED window within that process? (a) alone is not enough: BricsCAD
+-- Lite has (at least) two windows, and the process staying frontmost
+-- while the DRAWING window silently takes over key-window status inside
+-- it — a click on the drawing area, an internal tooltip/autosave prompt,
+-- anything — is invisible to a process-level check alone. AXFocusedWindow
+-- is the process-relative primitive for \"which of MY OWN windows has
+-- the keyboard right now\" (verified live, 2026-09-11:
+-- `tell process \"bricscad\" to get value of attribute \"AXFocusedWindow\"'
+-- correctly reports the console window while it holds focus). Wrapped in
+-- `try' because a fully backgrounded process can raise resolving its own
+-- attributes; any error there means \"cannot confirm focus\", i.e. false.
+on consoleStillFocused(procName)
+  set ok to false
+  try
+    tell application \"System Events\"
+      if (name of first process whose frontmost is true) contains procName then
+        if (value of attribute \"AXMain\" of (value of attribute \"AXFocusedWindow\" of process procName)) then
+          set ok to true
+        end if
+      end if
+    end tell
+  end try
+  return ok
+end consoleStillFocused
+
+-- Type TXT in small bursts, RE-CHECKING after every burst with
+-- consoleStillFocused. A single `keystroke' of the whole string would be
+-- one blocking call with no chance to notice focus moved mid-string;
+-- bursts bound the damage of an undetected deviation to at most one
+-- chunk's worth of characters, and checking BOTH conditions above (not
+-- just process-frontmost, the earlier version's bug) is what actually
+-- catches a same-app window-focus change, not only a different app
+-- stealing focus outright.
+on typeWatchingFocus(txt, procName, chunkSize)
+  set n to length of txt
+  set i to 1
+  repeat while i <= n
+    set j to i + chunkSize - 1
+    if j > n then set j to n
+    try
+      tell application \"System Events\" to keystroke (text i thru j of txt)
+    on error
+      -- A transient System Events hiccup must not crash the whole script
+      -- uncaught. Observed live (2026-09-11): intermittent -25211 on a
+      -- fresh osascript invocation's FIRST action that sends input,
+      -- despite `UI elements enabled' reliably returning true moments
+      -- before and after, and despite dozens of repeated identical
+      -- invocations otherwise succeeding cleanly — genuinely rare
+      -- (roughly 1 in 10 across this investigation) and not reproducibly
+      -- tied to any specific script shape tried. Treated exactly like a
+      -- detected focus deviation, so the SAME recovery/retry path handles
+      -- it regardless of root cause, instead of the whole automation
+      -- attempt dying on one unlucky tick.
+      return false
+    end try
+    if not (my consoleStillFocused(procName)) then return false
+    set i to j + 1
+  end repeat
+  return true
+end typeWatchingFocus
+
+-- Content-level confirmation BEFORE committing with Return: select from
+-- the caret back to the start of the current line (Shift+Home) and copy
+-- it, so what is compared is what BricsCAD's own console actually holds
+-- — not merely \"focus looked right during typing\", which typeWatchingFocus
+-- already checked but cannot guarantee against every possible timing
+-- window. The console exposes no AXValue (verified: no AXTextField /
+-- AXTextArea anywhere in its tree), so pixel OCR would normally be the
+-- only alternative — but the widget DOES support ordinary text selection
+-- and Cmd+C despite that, which a live round-trip confirmed
+-- (2026-09-11): typing `(setq test-verif-marker 424242)', Shift+Home,
+-- Cmd+C, reading `the clipboard' back gave exactly
+-- `: (setq test-verif-marker 424242)' — prompt prefix + the typed form,
+-- verbatim. Matched by SUFFIX because the prompt text is not something
+-- this script controls or should hard-code. The trailing Right-arrow
+-- collapses the selection back to the caret so the Return that follows
+-- submits cleanly rather than acting on a lingering selection.
+on verifyTypedLine(expectedForm, procName)
+  try
+    tell application \"System Events\"
+      key code 115 using shift down -- Shift+Home
+      keystroke \"c\" using command down
+      key code 124 -- Right arrow: collapse selection
+    end tell
+  on error
+    -- Same reasoning as typeWatchingFocus's try: a transient System
+    -- Events hiccup here must fail the verification (treated as
+    -- \"could not confirm\", triggering recovery) rather than crash the
+    -- whole script uncaught.
+    return false
+  end try
+  delay 0.15
+  set copiedText to \"\"
+  try
+    set copiedText to (the clipboard as text)
+  end try
+  set expectedLength to length of expectedForm
+  set copiedLength to length of copiedText
+  if copiedLength < expectedLength then return false
+  return (text (copiedLength - expectedLength + 1) thru copiedLength of copiedText) is expectedForm
+end verifyTypedLine
+
+-- Recovery after a detected deviation (typing-time OR verification-time).
+-- Order matters, and getting it wrong was itself a bug found by actually
+-- running the first version of this template: Escape must be sent AFTER
+-- re-establishing frontmost + re-clicking the console, not before —
+-- Escape sent while some OTHER window is still key reaches THAT window,
+-- not BricsCAD's console, and never actually clears the partial fragment
+-- it was meant to discard. Re-activating via System Events' `set
+-- frontmost of process' (not `open -a appPath') works whether or not
+-- BricsCAD is a bundled .app, and cannot re-open docPath as a second
+-- document the way re-running LAUNCHCOMMAND could.
+on recoverConsole(procName)
+  -- Every System Events call in this handler is individually swallowed
+  -- (try, no re-raise) for the same reason as FOCUSCONSOLEWINDOW /
+  -- CLEARCONSOLELINE: this is a best-effort recovery step with no
+  -- checked return value, called right before the user sees a dialog
+  -- anyway — a transient hiccup here must not crash the script in the
+  -- one place that is already busy telling the human something went
+  -- wrong.
+  try
+    tell application \"System Events\" to set frontmost of process procName to true
+  end try
+  set w to my findConsoleWindow(procName)
+  if w is not missing value then
+    my focusConsoleWindow(w)
+    delay 0.2
+    -- Escape first: if BricsCAD is genuinely mid-command (e.g. awaiting a
+    -- point/click, not just idle at the base prompt), only Escape aborts
+    -- that — deleting characters cannot. Then CLEARCONSOLELINE: Escape
+    -- aborts a PENDING COMMAND, it does not reliably guarantee an idle
+    -- prompt is textually empty, and a raw leftover fragment sitting
+    -- there (not inside any command) is exactly what corrupted the very
+    -- first live run of this hardening (2026-09-11).
+    try
+      tell application \"System Events\" to key code 53 -- Escape
+    end try
+    delay 0.2
+    my clearConsoleLine(procName)
+  end if
+end recoverConsole
+
+set procName to \"bricscad\"
+set loadForm to \"(load \\\"\" & runLspFile & \"\\\")\"
+set attemptLimit to 3
+set attemptNum to 1
+set succeeded to false
+set triedF2 to false
+
+repeat while (attemptNum <= attemptLimit) and (not succeeded)
+  -- A transient failure finding the console window is now ALSO a
+  -- retryable condition, not an immediate fatal error — consistent with
+  -- every other step below. FINDCONSOLEWINDOW itself already degrades a
+  -- System Events hiccup to \"not found\" rather than raising.
+  set cmdWin to my findConsoleWindow(procName)
+  -- On a genuinely fresh BricsCAD profile the console panel starts
+  -- CLOSED, not merely unfocused — found live (2026-09-12) launching a
+  -- brand new instance after force-quitting a hung one: no
+  -- \"Historique des invites\" window existed at all until F2 (BricsCAD's
+  -- own text-window toggle) was sent by hand. Tried at most ONCE per
+  -- script run (repeating F2 would just re-hide it) — if the console
+  -- still isn't found afterward, that is a real failure, not something
+  -- to keep toggling blindly.
+  if cmdWin is missing value and not triedF2 then
+    set triedF2 to true
+    try
+      tell application \"System Events\" to tell process procName to key code 120 -- F2
+    end try
+    delay 0.5
+    set cmdWin to my findConsoleWindow(procName)
+  end if
+  set typedOK to false
+  set verifiedOK to false
+  set returnSentOK to false
+  if cmdWin is not missing value then
+    my focusConsoleWindow(cmdWin)
+    delay 0.2
+    -- Every attempt, not only after a detected deviation: this script
+    -- cannot assume the console starts empty. A leftover fragment from
+    -- an entirely UNRELATED earlier session (this script's own click
+    -- landing mid-string in it) is exactly what corrupted the first
+    -- live run of this hardening.
+    my clearConsoleLine(procName)
+    delay 0.1
+
+    set typedOK to my typeWatchingFocus(loadForm, procName, 8)
+    if typedOK then set verifiedOK to my verifyTypedLine(loadForm, procName)
+
+    -- The form is confirmed correct in the console at this point (if
+    -- TYPEDOK and VERIFIEDOK); a transient failure sending Return ITSELF
+    -- should not force a full retype — we already know the content is
+    -- right — so this retries just the Return keystroke a few times
+    -- before falling back to the general recovery path.
+    --
+    -- Success here is NOT \"key code 36 didn't throw\" — that is
+    -- necessary but NOT sufficient. Observed live (2026-09-11): a run
+    -- this script itself marked successful (no error thrown sending
+    -- Return) left the fully-verified-correct form sitting UNCOMMITTED
+    -- at the prompt, cursor blinking, nothing printed — BricsCAD never
+    -- actually processed the keystroke, and the AppleScript layer had no
+    -- way to know that on its own. So after each attempt, re-run
+    -- VERIFYTYPEDLINE's same select+copy check: if the SAME text is
+    -- STILL sitting there, Return did not register and this loops; once
+    -- it is gone (submitted — cleared to a new empty prompt, or replaced
+    -- by BricsCAD's own response), Return actually took effect. (Minor
+    -- accepted risk: AutoCAD-lineage command lines repeat the last
+    -- command on a bare Return at an EMPTY prompt, so a false negative
+    -- here could in principle resend Return once too often — harmless
+    -- for this specific idempotent (load ...) payload, but worth noting
+    -- for any future caller of this same pattern with a non-idempotent
+    -- form.)
+    if typedOK and verifiedOK then
+      repeat 3 times
+        try
+          tell application \"System Events\" to key code 36 -- Return
+        end try
+        delay 0.3
+        if not (my verifyTypedLine(loadForm, procName)) then
+          set returnSentOK to true
+          exit repeat
+        end if
+      end repeat
+    end if
+  end if
+
+  if cmdWin is not missing value and typedOK and verifiedOK and returnSentOK then
+    set succeeded to true
+  else
+    if cmdWin is not missing value then my recoverConsole(procName)
+    set dialogMessage to \"Attempt \" & attemptNum & \" of \" & attemptLimit & \".\"
+    if cmdWin is missing value then
+      set dialogMessage to \"alfe could not find BricsCAD's console window this attempt. Please leave BricsCAD alone until this finishes.\" & return & return & dialogMessage
+    else if not typedOK then
+      set dialogMessage to \"alfe is driving BricsCAD's command line and lost keyboard focus (another window became key mid-injection). Please leave BricsCAD alone until this finishes.\" & return & return & dialogMessage
+    else if not verifiedOK then
+      set dialogMessage to \"alfe typed into BricsCAD's command line but could not confirm the console received it correctly. Please leave BricsCAD alone until this finishes.\" & return & return & dialogMessage
+    else
+      set dialogMessage to \"alfe verified BricsCAD's command line was correct but could not submit it (Return kept failing). Please leave BricsCAD alone until this finishes.\" & return & return & dialogMessage
+    end if
+    set userDeclined to false
+    set userGaveUp to false
+    try
+      set dialogResult to (display dialog dialogMessage ¬
+        buttons {\"Cancel\", \"Retry\"} default button \"Retry\" with icon caution giving up after 60)
+      if button returned of dialogResult is \"Cancel\" then set userDeclined to true
+      if gave up of dialogResult then set userGaveUp to true
+    on error errMsg number errNum
+      -- `display dialog' raises -128 ITSELF (it does not return a normal
+      -- record) when its \"Cancel\" button is clicked, or when Escape /
+      -- Cmd-period is pressed while it is showing — both mean the same
+      -- thing here: the user declined to retry. Caught explicitly so
+      -- that path always produces OUR OWN clear error below, never a
+      -- bare, easily-misread native -128 that could be mistaken for a
+      -- bug (this is exactly what happened live, 2026-09-11: a -128 was
+      -- reported even though the user's own account was \"I clicked
+      -- Retry, not Cancel\" — the ambiguity itself was the problem, not
+      -- necessarily which button was actually clicked). Any OTHER error
+      -- is re-signalled unchanged, not swallowed.
+      if errNum is -128 then
+        set userDeclined to true
+      else
+        error errMsg number errNum
+      end if
+    end try
+    if userDeclined then
+      error \"macOS automation cancelled by the user after a focus deviation.\" number 4
+    end if
+    if userGaveUp then
+      error \"macOS automation timed out waiting for the user to acknowledge a focus deviation.\" number 5
+    end if
+  end if
+  set attemptNum to attemptNum + 1
+end repeat
+
+if not succeeded then
+  error \"BricsCAD console kept losing keyboard focus; gave up after \" & attemptLimit & \" attempts.\" number 6
+end if
 "
   "AppleScript template for macOS automation. Injects (load
-runLspFile) into BricsCAD's command line via System Events keystrokes —
-requires an interactive session and Accessibility permission for the
-process running osascript.")
+runLspFile) into BricsCAD's command line via System Events keystrokes,
+targeting the AXMain=true console window specifically (locale-independent
+— do not match by window title) rather than relying on the app merely
+being frontmost. Typing happens in small bursts, each followed by
+CONSOLESTILLFOCUSED — a conjunction of \"BricsCAD is the frontmost
+process\" AND \"the console is BricsCAD's own AXFocusedWindow\", so a
+same-app window-focus change (e.g. a click landing on the drawing window
+instead) is caught, not only a different app stealing focus outright.
+Before committing with Return, VERIFYTYPEDLINE does a CONTENT-level
+check — select-to-line-start (Shift+Home), copy, compare the clipboard
+against the intended text by suffix — since the console exposes no
+AXValue to read directly but does support ordinary text selection and
+Cmd+C. CLEARCONSOLELINE (End, Shift+Home, Backspace) runs before typing
+on EVERY attempt, not only after a detected deviation: the console is a
+real position-aware text field, not an append-only terminal, so a click
+can land MID-STRING if anything is already sitting there uncommitted
+(e.g. a leftover fragment from an unrelated earlier session) — corrupting
+old and new text together, which is exactly what a live run of an
+earlier version of this template did. On either kind of deviation,
+RECOVERCONSOLE re-establishes frontmost + re-focuses the console BEFORE
+sending Escape (Escape sent while some other window is still key would
+reach THAT window and never actually clear the partial fragment — a bug
+an earlier version of this template had) and then CLEARCONSOLELINE,
+discards the partial input, asks the user via a dialog to stop
+interfering (its \"Cancel\"/Escape/Cmd-period path is caught explicitly
+so a decline always raises OUR OWN clear error, never a bare, easily
+misread native -128), and the whole command is retried from scratch (not
+a character-level resume — the console's readable state, even via the
+clipboard trick, is only ever a snapshot taken by asking, not a live
+value that could be diffed against safely mid-stream). Bounded to a few
+attempts. On a genuinely fresh BricsCAD profile the console panel can
+start CLOSED rather than merely unfocused; F2 (BricsCAD's own text-window
+toggle) is tried once if FINDCONSOLEWINDOW comes up empty. Every System
+Events call that can throw is individually caught and treated as a
+retryable deviation rather than crashing the script uncaught — including
+Return itself, whose success is confirmed by re-checking the line is
+actually gone, not merely that the keystroke call didn't raise (a run
+that raised nothing still once left the verified-correct form sitting
+un-submitted at the prompt). FOCUSCONSOLEWINDOW's click targets a
+FRACTION of the console window's own height, not a fixed offset from its
+bottom edge, so it cannot land on the macOS Dock when the window happens
+to sit low on screen. Requires an interactive session and Accessibility
+permission for the process running osascript. See
+issues/open/alfe-bricscad-automation-macos-osascript.issue.")
 
 (defun macos-app-bundle-for (executable-path)
   "The .app bundle enclosing EXECUTABLE-PATH — e.g.
@@ -654,25 +1232,70 @@ bundle name, not by the unix binary's name."
                           :defaults path)))))))
 
 (defun %applescript-launch-command (executable-path &optional template-path)
-  "The `do shell script' line the launcher uses to bring BricsCAD up.
+  "The AppleScript fragment the launcher uses to bring BricsCAD up.
 Prefers the enclosing .app bundle with `open -a' (the supported way to
 launch a macOS GUI app); falls back to running the binary directly in
 the background when the executable is not inside a bundle. AppleScript's
 `quoted form of' does the shell quoting, so a path with spaces — the
 normal case, \"BricsCAD V26.app\" — is safe.
 
-When TEMPLATE-PATH is given it is opened WITH the app. That is not a
-nicety: `keystroke' types into the frontmost window, and a BricsCAD with
-no drawing open shows its Start page, which has no command line to
-receive the text. The 2026-08-01 macOS probe proved the keystrokes were
-reaching a focused BricsCAD (launcher-focus.txt said
-`frontmost=bricscad focused=true', osascript exit 0) and still executing
-nothing. The batch path never had this problem because it always passes
-a template on the command line."
+When TEMPLATE-PATH is given, it is opened WITH the app — but ONLY when
+no document is already open, checked at RUNTIME (the emitted
+AppleScript, not this Lisp function, decides that: BricsCAD's state can
+change between when this string is generated and when the launcher
+actually executes). Opening a document is not a nicety on a cold start:
+`keystroke' types into the frontmost window, and a BricsCAD with no
+drawing open shows its Start page, which has no command line to receive
+the text (2026-08-01 macOS probe: keystrokes reached a focused BricsCAD
+and still executed nothing, traced to exactly this). But it is actively
+HARMFUL when BricsCAD is already running WITH a document open: found
+live (2026-09-12, alfe-bricscad-automation-macos-reopens-welcome-page)
+that `open -a app docPath' against that state can knock its main window
+back to the Welcome/Start page instead of reusing the existing session —
+disconnecting the console from any active drawing context, with
+keystrokes then landing nowhere and no error surfaced anywhere.
+
+The check is NOT \"is BricsCAD running\" — found live that this is too
+coarse: a freshly-launched BricsCAD that is running but has not yet had
+any document opened (sitting on its own Start page, exactly the state a
+truly cold launch passes through) needs docPath just as much as no
+process at all does, and a bare running-process check would wrongly skip
+it there too, leaving no command line to type into — the very problem
+docPath exists to solve. The check is instead \"does a document/console
+window already exist\" — the SAME exclusion signal FINDCONSOLEWINDOW
+uses (a standard window whose name does not contain \"bricscad\", the
+product name, which stays constant and untranslated regardless of which
+document is open): if one already exists, skip docPath; otherwise pass
+it, whether that is because BricsCAD is not running yet or because it is
+running with nothing open. Nor is this a return to the reserved-word
+`running' process probe Round 6 removed for plain ACTIVATION — `open -a'
+alone stays genuinely idempotent there; this only decides the SEPARATE,
+non-idempotent docPath side effect on that same call."
   (let ((bundle (macos-app-bundle-for executable-path)))
     (cond
       ((and bundle template-path)
-       "do shell script \"open -a \" & quoted form of appPath & \" \" & quoted form of docPath")
+       "set alreadyHasDoc to false
+try
+  tell application \"System Events\"
+    if exists (processes whose name contains \"bricscad\") then
+      tell process \"bricscad\"
+        repeat with w in windows
+          try
+            if (subrole of w is \"AXStandardWindow\") and (name of w is not missing value) and ((length of (name of w)) > 0) and ((name of w) does not contain \"bricscad\") then
+              set alreadyHasDoc to true
+              exit repeat
+            end if
+          end try
+        end repeat
+      end tell
+    end if
+  end tell
+end try
+if alreadyHasDoc then
+  do shell script \"open -a \" & quoted form of appPath
+else
+  do shell script \"open -a \" & quoted form of appPath & \" \" & quoted form of docPath
+end if")
       (bundle
        "do shell script \"open -a \" & quoted form of appPath")
       (t
@@ -727,6 +1350,21 @@ and therefore a command line — to type into."
 
 ;;; --- launch argv ---------------------------------------------------
 
+(defun macos-automation-opt-in-p ()
+  "True only on macOS, when $ALFE_ENABLE_MACOS_AUTOMATION is set to a
+non-empty value other than \"0\". Does not affect Windows (already
+fully supported) or Linux (never implemented — BUILD-LAUNCH-ARGV's
+:automation branch still errors there regardless of this opt-in).
+
+This is OPTION B of alfe-bricscad-automation-macos: the macOS refusal
+in CHOOSE-EFFECTIVE-MODE stays the default, but can be explicitly
+relaxed to debug the osascript/AppleScript path against a real
+BricsCAD, interactively, at the machine. See
+issues/open/alfe-bricscad-automation-macos-osascript.issue."
+  (and (macos-p)
+       (let ((v (uiop:getenv "ALFE_ENABLE_MACOS_AUTOMATION")))
+         (and v (plusp (length v)) (not (string= v "0"))))))
+
 (defun choose-effective-mode (backend cli-mode)
   "Translate the CLI's :auto / :batch / :automation into the
 backend's variant slot. :auto picks :batch on every platform when the
@@ -757,21 +1395,29 @@ written.
 The AppleScript emitter, the Accessibility preflight and the launcher
 state reporting are DELIBERATELY KEPT. They are what made the five
 investigation rounds interpretable, and option B of the ticket — driving
-the emitted launcher by hand at the machine — is still open."
+the emitted launcher by hand at the machine — is still open, and is now
+reachable behind MACOS-AUTOMATION-OPT-IN-P ($ALFE_ENABLE_MACOS_AUTOMATION):
+with the opt-in unset, macOS behaves EXACTLY as before this function grew
+the check; with it set, this refusal is skipped and BUILD-LAUNCH-ARGV's
+existing macOS :automation branch (osascript launcher.applescript) is
+reached, now with a hardened launcher — see
+*BRICSCAD-APPLESCRIPT-TEMPLATE*."
   (let ((variant (case cli-mode
                    (:auto
                     (if (bricscad-backend-executable-path backend)
                         :batch
                         :automation))
                    ((:batch :automation) cli-mode))))
-    (when (and (eq variant :automation) (not (windows-p)))
+    (when (and (eq variant :automation)
+               (not (windows-p))
+               (not (macos-automation-opt-in-p)))
       (error 'backend-not-available
              :backend :bricscad
              :code :no-automation
              :message
              (if (eq cli-mode :automation)
-                 "BricsCAD --mode automation is not supported on this OS (Windows only). Use --mode batch, which is the default when the BricsCAD CLI is found."
-                 "BricsCAD CLI executable not found, and --mode automation is not supported on this OS (Windows only), so there is no fallback. Install BricsCAD or point alfe at it.")))
+                 "BricsCAD --mode automation is not supported on this OS (Windows only). Use --mode batch, which is the default when the BricsCAD CLI is found, or set ALFE_ENABLE_MACOS_AUTOMATION=1 to opt into the experimental macOS AppleScript path (see alfe-bricscad-automation-macos-osascript.issue)."
+                 "BricsCAD CLI executable not found, and --mode automation is not supported on this OS (Windows only), so there is no fallback. Install BricsCAD or point alfe at it, or set ALFE_ENABLE_MACOS_AUTOMATION=1 to opt into the experimental macOS AppleScript path.")))
     variant))
 
 (defun build-launch-argv (backend protocol-session
@@ -1058,6 +1704,19 @@ future ticket."
                        :executable-path (bricscad-backend-executable-path backend)
                        ;; Open a drawing with the app: no document, no command
                        ;; line, nowhere for the keystrokes to land.
+                       ;;
+                       ;; The backend's cached TEMPLATE-PATH wins first, as
+                       ;; before — the actual fix for the bug this comment
+                       ;; used to describe here lives in DETECT (~line 327),
+                       ;; not in this `or': DETECT no longer caches a VENDOR
+                       ;; template as a false "explicit" value, so this slot
+                       ;; is genuinely NIL unless the user actually asked for
+                       ;; something (env var or --dwg), and the workdir-aware
+                       ;; call below it — "a drawing of this run's own" — is
+                       ;; reached for real instead of being dead code behind
+                       ;; an always-non-nil cache. See DETECT's own comment
+                       ;; for the full story (alfe-bricscad-automation-macos-
+                       ;; reopens-welcome-page, 2026-09-12).
                        :template-path
                        (or (bricscad-backend-template-path backend)
                            (discover-bricscad-template

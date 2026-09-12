@@ -1523,6 +1523,69 @@ always passes a template."
     (is (not (search "quoted form of docPath" no-doc)))
     (is (search "open -a " no-doc))))
 
+(test macos-launcher-applescript-checks-already-running-before-opening-doc
+  "alfe-bricscad-automation-macos-reopens-welcome-page: `open -a app
+docPath' against a BricsCAD that already has a document/console window
+open can knock its main window back to the Welcome page instead of
+reusing the existing session — found live, 2026-09-12. docPath must
+therefore only be passed when no such window exists yet, decided at
+RUNTIME (the emitted script, not Lisp-side, since BricsCAD's state can
+change between generation and execution) — not by resurrecting the
+reserved-word `running' probe Round 6 removed for activation (that
+removal stays correct; only the document-opening side effect needed a
+check). And NOT by a bare \"is the process running\" check either: found
+live that this is too coarse — a freshly-launched, running-but-no-
+document-yet BricsCAD needs docPath exactly as much as no process at
+all, so the check must be \"does a document/console window already
+exist\", the same exclusion-by-product-name signal FINDCONSOLEWINDOW
+uses, not merely process existence."
+  (let ((script (%emitted-applescript
+                 "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad"
+                 :template-path "/tmp/tpl/Default-mm.dwt")))
+    ;; The check itself, and NOT the reserved word `running' as a bare
+    ;; variable name (Round 6's own fault, still guarded against).
+    (is (search "alreadyHasDoc" script))
+    (is (not (search "set running to" script)))
+    (is (search "exists (processes whose name contains" script))
+    ;; Must check for an existing DOCUMENT window, not merely that the
+    ;; process exists — the same exclusion-by-name signal as
+    ;; FINDCONSOLEWINDOW, so a running-but-doc-less BricsCAD still gets
+    ;; docPath.
+    (is (search "does not contain \"bricscad\"" script))
+    (is (search "AXStandardWindow" script))
+    ;; Both shapes of the launch line must be present...
+    (is (search "open -a \" & quoted form of appPath & \" \" & quoted form of docPath" script))
+    ;; ...but the doc-opening one must be reachable only via a runtime
+    ;; conditional, not unconditionally.
+    (is (search "if alreadyHasDoc then" script))
+    (is (search "else" script))))
+
+(test macos-launcher-applescript-dismisses-startup-dialogs
+  "A genuinely COLD BricsCAD launch on this installation can show a STACK
+of startup dialogs before any document/console is usable at all — found
+live, 2026-09-12: a workspace-selection \"BricsCAD Launcher\" dialog
+first, then (when a template was left locked by a previous automation
+run killed abnormally while it had that template open) a lock-file-found
+dialog right after it. The frontmost-wait above only confirms BricsCAD
+ITSELF is frontmost — a dialog is part of that same process, so the wait
+succeeds while a dialog still blocks everything underneath it, and
+FINDCONSOLEWINDOW correctly excludes both dialogs from ever being
+mistaken for the console, which means it also never finds anything while
+one is up. Return dismisses both dialog types via whichever button is
+their own default one — verified live — WITHOUT hard-coding either
+dialog's locale-specific button label."
+  (let ((script (%emitted-applescript
+                 "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad")))
+    (is (search "dismissStartupDialogs" script))
+    ;; Bounded, not an unconditional/infinite retry.
+    (is (search "repeat 5 times" script))
+    ;; Stops as soon as a console is found, rather than always spending
+    ;; the whole bound.
+    (is (search "findConsoleWindow(procName) is not missing value then return" script))
+    ;; The dismissal mechanism itself: Return, not a hard-coded button
+    ;; name in any language.
+    (is (search "key code 36 -- Return" script))))
+
 ;;; --- the emitted .vbs must be VALID VBScript ------------------------------
 ;;;
 ;;; alfe-autocad-vbscript-comments (pjb, 2026-08-12): the bridge templates
@@ -1661,6 +1724,50 @@ on every platform, and --mode auto still prefers it when the CLI is found."
     (is (eq :batch (alfe.backend.bricscad::choose-effective-mode backend :batch)))
     (is (eq :batch (alfe.backend.bricscad::choose-effective-mode backend :auto)))))
 
+;;; --- opt-in re-enable (alfe-bricscad-automation-macos-osascript, option B) -
+;;;
+;;; The refusal above stays the DEFAULT; $ALFE_ENABLE_MACOS_AUTOMATION lets it
+;;; be relaxed explicitly to debug the hardened AppleScript path against a
+;;; real BricsCAD, interactively, at the machine (verified live 2026-09-11).
+
+(test bricscad-automation-opt-in-relaxes-refusal-on-macos
+  "With the opt-in set, macOS resolves :automation instead of refusing —
+mirrors how Windows already behaves, unconditionally."
+  (let ((backend (alfe.backend.bricscad:make-bricscad-backend
+                  :executable-path "/fake/bricscad")))
+    (when (alfe.backend.cad-common:macos-p)
+      (with-env ("ALFE_ENABLE_MACOS_AUTOMATION" "1")
+        (is (eq :automation
+                (alfe.backend.bricscad::choose-effective-mode backend :automation)))))))
+
+(test bricscad-automation-opt-in-is-off-by-default
+  "Merely having the machinery does not change the default: with the env
+var ABSENT (the normal case, and every CI job), the refusal is exactly as
+before — this is the acceptance criterion that the opt-in must not weaken
+the honest immediate failure for the common \"no automation here\" case."
+  (let ((backend (alfe.backend.bricscad:make-bricscad-backend
+                  :executable-path "/fake/bricscad")))
+    (unless (alfe.backend.cad-common:windows-p)
+      (is (not (alfe.backend.bricscad::macos-automation-opt-in-p)))
+      (handler-case
+          (progn
+            (alfe.backend.bricscad::choose-effective-mode backend :automation)
+            (is nil "Expected BACKEND-NOT-AVAILABLE with the opt-in unset."))
+        (alfe.error:backend-not-available (condition)
+          (is (eq :no-automation (alfe.error:backend-error-code condition))))))))
+
+(test bricscad-automation-opt-in-string-forms
+  "$ALFE_ENABLE_MACOS_AUTOMATION=0 and an empty string do NOT opt in —
+only a genuinely truthy value does. Guards against a caller who sets the
+var to \"0\" meaning \"off\" accidentally enabling it."
+  (when (alfe.backend.cad-common:macos-p)
+    (with-env ("ALFE_ENABLE_MACOS_AUTOMATION" "0")
+      (is (not (alfe.backend.bricscad::macos-automation-opt-in-p))))
+    (with-env ("ALFE_ENABLE_MACOS_AUTOMATION" "")
+      (is (not (alfe.backend.bricscad::macos-automation-opt-in-p))))
+    (with-env ("ALFE_ENABLE_MACOS_AUTOMATION" "1")
+      (is (alfe.backend.bricscad::macos-automation-opt-in-p)))))
+
 (test bricscad-applescript-emitter-is-kept
   "The AppleScript emitter, the preflight and the launcher-state reporting are
 deliberately KEPT (the ticket: they are what made five investigation rounds
@@ -1757,6 +1864,65 @@ name, and far preferable to committing one."
                          (alfe.backend.bricscad:discover-bricscad-template
                           :requested path))))))
       (ignore-errors (delete-file path)))))
+
+;;; --- DETECT must not cache a vendor template as a false "explicit" value --
+;;; alfe-bricscad-automation-macos-reopens-welcome-page (2026-09-12). DETECT
+;;; runs before any per-invocation workdir exists, so a naive call used to
+;;; fall through empty-drawing.lisp's fresh-per-run step straight to the
+;;; SHARED vendor template and cache THAT — permanently shadowing every later
+;;; per-invocation caller's own correctly workdir-aware discovery, since
+;;; those callers legitimately check the cached value first (a real
+;;; override must win). Found live: automation mode keeps BricsCAD running
+;;; across invocations, so a killed run leaves a stale lock on that cached,
+;;; shared file, and every subsequent run hits the resulting modal dialog.
+
+(test discover-bricscad-template-skips-vendor-fallback-when-asked
+  "ALLOW-VENDOR-FALLBACK NIL must return NIL rather than a vendor template
+when nothing explicit was requested and no WORKDIR was given to try the
+fresh-per-run drawing — even on a host where a real vendor template
+exists on disk (this dev machine may well be one), proving the vendor
+step is genuinely skipped, not merely absent by coincidence."
+  (with-env ("AUTOLISP_BRICSCAD_TEMPLATE" "")
+    (with-env ("AUTOLISP_DWG" "")
+      (is (null (alfe.backend.bricscad:discover-bricscad-template
+                 :allow-vendor-fallback nil))))))
+
+(test detect-does-not-cache-a-vendor-template-path
+  "With no explicit override and a fake (but real, so DETECT does not
+error) executable, DETECT must leave TEMPLATE-PATH NIL — not a vendor
+template it found on its own, which would then permanently shadow every
+later per-invocation caller's own workdir-aware discovery."
+  (let ((fake-binary (or (probe-file "/usr/bin/true") (probe-file "/bin/true"))))
+    (when fake-binary
+      (with-env ("BRICSCAD_EXE" (namestring fake-binary))
+        (with-env ("AUTOLISP_BRICSCAD_TEMPLATE" "")
+          (with-env ("AUTOLISP_DWG" "")
+            (let ((backend (alfe.backend.bricscad:make-bricscad-backend)))
+              (alfe.backend:detect backend)
+              (is (null (alfe.backend.bricscad:bricscad-backend-template-path
+                         backend))))))))))
+
+(test detect-still-captures-an-explicit-template-override
+  "An explicit $AUTOLISP_BRICSCAD_TEMPLATE must still be captured onto the
+backend by DETECT — ALLOW-VENDOR-FALLBACK NIL only skips the VENDOR
+fallback step, not the explicit-override steps ahead of it."
+  (let ((fake-binary (or (probe-file "/usr/bin/true") (probe-file "/bin/true")))
+        (path (merge-pathnames (format nil "alfe-tpl-~D.dwt" (random 999999))
+                               (uiop:temporary-directory))))
+    (when fake-binary
+      (unwind-protect
+          (progn
+            (with-open-file (out path :direction :output :if-exists :supersede
+                                      :if-does-not-exist :create)
+              (write-string "x" out))
+            (with-env ("BRICSCAD_EXE" (namestring fake-binary))
+              (with-env ("AUTOLISP_BRICSCAD_TEMPLATE" (namestring path))
+                (let ((backend (alfe.backend.bricscad:make-bricscad-backend)))
+                  (alfe.backend:detect backend)
+                  (is (string= (namestring path)
+                                (alfe.backend.bricscad:bricscad-backend-template-path
+                                 backend)))))))
+        (ignore-errors (delete-file path))))))
 
 ;;; --- reaping a spawned engine (cad-runner-wedged-by-modal-dialog) ---------
 ;;;
