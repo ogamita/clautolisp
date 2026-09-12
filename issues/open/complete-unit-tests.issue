@@ -55,6 +55,21 @@
   vle-safearray->list, the vle-nth<x> template name, …) and
   =vle-sunid-returns-zero= (the one non-nil stub, integer 0). None need
   a host fixture. Coverage **86.8% → 89.6% (609 → 629 / 702)**.
+- 2026-09-12 (clautolisp 2.2.9 / alfe 2.2.17): backfilled the VLAX-*
+  family (18 ops). Pure ops run headlessly via install-core-into:
+  =vlax-product-keys-return-registry-paths= (vlax-product-key /
+  vlax-user-product-key), =vlax-safearray-bounds-type-and-put-element=
+  (get-l/u-bound, type, put-element on a vlax-make-safearray),
+  =vlax-variant-change-type-preserves-value-sets-type=,
+  =vlax-safearray-mode-is-a-nil-stub= (_vlax-safearray-mode). Host-coupled
+  ops use the cador mock fixture (%vla / %curve):
+  =vlax-curve-param-distance-and-derivative-ops-on-a-line= (getstartparam,
+  getdistatparam, getparamatdist, getdistatpoint, getsecondderiv,
+  getclosestpointto, getclosestpointtoprojection, isplanar on +curve-line+)
+  and =vlax-com-object-and-property-method-introspection=
+  (vlax-get-or-create-object, vlax-property-available-p /
+  vlax-method-applicable-p with T/nil cases). Coverage **89.6% → 92.2%
+  (629 → 647 / 702)**.
 - Note: the tool is deliberately conservative — it counts only literal
   =(name= form heads, so DATA-DRIVEN / macro-generated tests are invisible
   to it; write explicit literal snippets when backfilling so the tool
