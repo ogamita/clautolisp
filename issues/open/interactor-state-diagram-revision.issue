@@ -29,3 +29,17 @@ One INTERACTOR-LOOP; activations on =*interactor-stack*=; nested loops
 only for invoke-debugger (ui-await-command) and mid-evaluation entries
 (sedit-enter, %interactor-mode-loop); directives cascade via ON-RESULT
 + INTERACTOR-RETURN.
+
+* Draft diagram (2026-09-13) — for review
+
+A draft state diagram plus the verified current transition semantics is in
+=clautolisp/documentation/clautolisp-interactor-state-diagram.org= (MR
+pending). It records the mechanism as it actually is today (the single loop,
+the =floor=-based single-=q= return, the T4 "leaving ALDO is a directive"
+asymmetry, confirm-at-stop), gives a mermaid state diagram of REPL/ALDO/NAVI/
+LAVI/INSPECT/SEDIT as the base to edit, and lists the deltas to decide
+(whole-stack vs per-level =q=; install-on-return edge; navi↔lavi swap
+commands; the stacking-legality matrix; where the cadtui console sits). It
+also shows =navi-double-quit= no longer reproduces under current code and
+recommends closing it, folding its one design question into item 1 here.
+This issue stays OPEN: the diagram is pjb's to decide.
