@@ -1100,6 +1100,17 @@ detect:runners:
 
 native:pipeline:
   stage: test
+  # allow_failure: a bridge that CANNOT create its child must never hold a
+  # release (or any pipeline) hostage. Native tests are best-effort — the
+  # child's own jobs are already allow_failure — but the BRIDGE itself could
+  # still go red (downstream_pipeline_creation_failed) and fail the parent,
+  # which is exactly how ci-native-child-pipeline-creation-fails blocked
+  # master and releases (the active-jobs cap; a namespace over the storage
+  # quota; any future reason). Failing softly here lets the `release' stage
+  # proceed regardless of WHY the child could not be created. The child still
+  # runs independently when it can; this only stops its absence from being
+  # fatal. See ci-native-child-pipeline-creation-fails (durable fix #1).
+  allow_failure: true
   needs:
     - job: detect:runners
       artifacts: true

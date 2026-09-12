@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: ci-native-child-pipeline-creation-fails — native:pipeline cannot create its child, so every pipeline is red with zero failed jobs
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: infra
 #+DEPENDS: -
@@ -296,3 +296,40 @@ whole point is that native tests are best-effort. So:
 
 Filed 2026-08-22 after driving =release-1.9.3= through by hand. (1) is small and
 ends the release-blocking symptom; (2) removes the pressure that produces it.
+
+* DONE (2026-09-13) — durable fix #1 landed; #2 already closed; observation met
+
+All three named mechanisms are now in place, and the two observation
+criteria that held this ticket open are met:
+
+- *Durable fix #1 — =native:pipeline: allow_failure: true=* (.gitlab-ci.yml).
+  The bridge can no longer fail the parent pipeline when it cannot create its
+  child, for ANY reason (active-jobs cap, namespace over storage quota, or a
+  future third reason): it fails softly and the =release= stage proceeds. This
+  was the one piece of the 2026-08-22 recommendation still unimplemented; it
+  closes the release-blocking symptom for good. =glab ci lint= revalidated.
+- *Durable fix #2 — the storage half — shipped separately and is closed.*
+  =namespace-storage-blocks-ci= was resolved 2026-09-12 (=cecaf476=):
+  =documentation= artefacts at 1 day and =build:alfe:sbcl= at 3 days (usage
+  23 GB → ~14 GB), and =collect:release= moved from =expire_in: never= to
+  =30 days= because published release links now point at the durable poseidon
+  mirror (=make-gitlab-release.py= defaults to =--links poseidon=, enforced by
+  =check-release-lane-integrity.py= check 3). It self-heals toward steady
+  state; a manual bring-forward purge remains pjb's GitLab-admin option.
+- *Option 1 (interruptible default) + option 2 (nightly sweep) verified
+  working.* Schedule 4397979 (=0 3 * * *= UTC, ref master) is =active=, last
+  run =success= (2026-09-12 03:09Z). A live
+  =pipelines?source=parent_pipeline= check found exactly THREE active child
+  pipelines — one each for the three most recent refs (MRs !187/!188/!189) —
+  i.e. one child per ref, not one per push. That is precisely the steady
+  state options 1+2 were meant to produce; the pile-up of immortal children
+  is gone.
+
+Nothing named in this ticket remains unbuilt or unobserved. Closed.
+
+Note (not a blocker): a point-in-time =statistics= read on 2026-09-13 showed
+=storage_size ≈ 19.3 GB= (=job_artifacts ≈ 18.4 GB=). Per this ticket's own
+"Note", those statistics are flaky and do not reliably track the enforced
+namespace quota; with the finite expiries above the backlog ages out on its
+own, and pjb can run the Fix-#2 purge script if he wants the space back
+sooner. Flagged for visibility, not reopened.
