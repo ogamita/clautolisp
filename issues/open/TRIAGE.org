@@ -50,7 +50,10 @@ green on both engines — awaiting a decision on whether that probe coverage
 Test / CI infrastructure (Linux-doable, high value):
 - NEXT =timing-flakes-in-process-and-socket-tests= — ~P1: socket/child-process/thread
   races flake red; one defeated a release (merge-on-green). Headless; method in ticket.
-- TODO =namespace-storage-blocks-ci= — ~P2: namespace storage blocks CI.
+- DONE =namespace-storage-blocks-ci= — P1: RESOLVED 2026-09-12. Fix #1 (doc/build
+  expiries) already live; collect:release now expire_in 30 days (was never) since
+  release links default to the durable poseidon mirror; check (3) rewritten to
+  assert that invariant. Closed.
 - TODO =install-release-staging-divergence= — P3: install vs release staging diverge.
 - TODO =version-invariants-broken-by-shakedown-release= — P3: shakedown-tag version invariants.
 Release / Windows (verification-bound to a Windows runner or a release tag):

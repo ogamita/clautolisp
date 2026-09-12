@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: namespace-storage-blocks-ci — the CI cannot clone, because one artefact nobody reads fills a free namespace every fortnight
-#+STATUS: TODO
+#+STATUS: RESOLVED 2026-09-12 (see * Resolution)
 #+PRIORITY: P1
 #+TYPE: infra
 #+DEPENDS: -
@@ -122,3 +122,34 @@ tokens, which is where the first hour went here — and because the first
 measurement, taken over a 1500-job window that happened to cut across the
 expiry horizon, gave a confidently wrong answer that would have led to
 deleting a published release's assets for nothing.
+
+* Resolution (2026-09-12)
+
+Fix #1 (the recurrence-stopper) had already landed on master —
+=documentation= at 1 day and =build:alfe:sbcl= at 3 days — which is why
+usage fell from 23 GB to ~14 GB and CI no longer 403s. What remained was
+the PERMANENT =collect:release= cost (=expire_in: never=, ~1 GB/release,
+growing for ever).
+
+pjb, 2026-09-12: the release procedure already mirrors every release
+artefact to the durable poseidon web area
+(=https://poseidon.informatimago.com/ogamita/clautolisp/releases/=), and
+=make-gitlab-release.py= DEFAULTS to =--links poseidon= — so a published
+release's links no longer point at the GitLab job artefacts. That is
+exactly the issue's own "root fix" (assets outside job artefacts), already
+in place. The =never= was therefore protecting only a re-mirror SOURCE and
+the token-free =--links gitlab= fallback, not the live links.
+
+So =collect:release= now carries =expire_in: 30 days= (.gitlab-ci.yml),
+which bounds the permanent namespace cost. =check-release-lane-integrity.py=
+check (3) was rewritten: instead of mandating =never=, it asserts the
+invariant that actually protects a release — that =make-gitlab-release.py=
+defaults to the durable poseidon links (and it still accepts =never= as the
+alternative, so removing the poseidon default fails the check). AGENTS.md
+updated to match.
+
+Self-heals: the existing over-quota backlog is old =collect:release= sets
+that now expire within 30 days, so the namespace settles toward its steady
+state without a manual purge. pjb can still bring that forward with the
+Fix-#2 purge script (GitLab admin) if he wants the space back sooner.
+Closed.
