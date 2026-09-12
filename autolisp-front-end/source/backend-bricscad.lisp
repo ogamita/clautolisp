@@ -248,7 +248,8 @@ Ordering is deliberate rather than alphabetical:
                           ;; STRING>, which is the preference we want.
                           (t (string> a b)))))))))))
 
-(defun discover-bricscad-template (&key requested executable-path workdir)
+(defun discover-bricscad-template (&key requested executable-path workdir
+                                        (allow-vendor-fallback t))
   "Resolve the drawing to launch BricsCAD with.
 
 Order, and the reason for it:
@@ -258,7 +259,10 @@ Order, and the reason for it:
   2. A FRESH empty.dwg written into WORKDIR, from the copy carried in
      the image (alfe.drawing). This is the default.
   3. The vendor templates, and finally NIL (launch with no explicit
-     drawing), as a safety net if (2) could not be written.
+     drawing), as a safety net if (2) could not be written — unless
+     ALLOW-VENDOR-FALLBACK is NIL, in which case this step is skipped
+     and NIL is returned instead (see below for why a caller would ask
+     for that).
 
 Step 2 is new (issues/open/empty-ressource.issue, pjb 2026-08-30) and it
 replaces the previous default of pointing every run at ONE shared file.
@@ -275,7 +279,25 @@ engine refusing AC1032 would refuse it LOUDLY, and the file is one to
 replace rather than to maintain.
 
 $AUTOLISP_BRICSCAD_TEMPLATE remains the zero-code answer when a machine
-wants a specific blank drawing."
+wants a specific blank drawing.
+
+ALLOW-VENDOR-FALLBACK exists for DETECT (~below), which calls this with
+no WORKDIR (none exists yet at backend-construction time, before any
+per-invocation workdir has been created) purely to capture a genuine
+EXPLICIT override (an env var) onto the backend for later inspection.
+With the default T, that WORKDIR-less call would still fall through step
+2 (which needs a workdir) straight to step 3, caching a VENDOR template
+as if it were something the user asked for — and every later per-
+invocation caller that checks the cached value first (as callers
+legitimately should, so a real override wins) would then never reach
+its OWN, correctly workdir-aware call to this same function, silently
+defeating step 2's whole point for exactly the callers most likely to
+need it. Found live, 2026-09-12, alfe-bricscad-automation-macos-reopens-
+welcome-page: automation mode keeps BricsCAD running across invocations,
+so a killed run leaves a stale .dwl lock on that SAME cached, shared
+vendor file, and every subsequent run hits the modal dialog step 2 exists
+to avoid. DETECT passing NIL here is what keeps its cached value honestly
+NIL unless the user actually asked for something."
   (or (and requested
            (probe-file requested)
            (namestring (truename requested)))
@@ -284,12 +306,13 @@ wants a specific blank drawing."
       (and workdir
            (let ((fresh (alfe.drawing:fresh-empty-dwg workdir)))
              (and fresh (namestring fresh))))
-      (first-existing
-       (mapcar (lambda (p) (uiop:native-namestring p))
-               (list "~/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-mm.dwt"
-                     "~/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-m.dwt"
-                     "/Library/Application Support/Bricsys/BricsCAD/V26x64/Templates/Default-mm.dwt")))
-      (first-existing (bundle-template-candidates executable-path))))
+      (and allow-vendor-fallback
+           (or (first-existing
+                (mapcar (lambda (p) (uiop:native-namestring p))
+                        (list "~/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-mm.dwt"
+                              "~/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-m.dwt"
+                              "/Library/Application Support/Bricsys/BricsCAD/V26x64/Templates/Default-mm.dwt")))
+               (first-existing (bundle-template-candidates executable-path))))))
 
 (defun discover-bricscad-profile ()
   "Resolve the BricsCAD user profile to launch with (the /p or -P switch).
@@ -325,8 +348,22 @@ unnamed \"<<Profil sans nom>>\") rather than trust the default."
                                ((linux-p)   "/opt/bricsys/bricscad/V*/bricscad")
                                ((windows-p) "/c/Program Files*/Bricsys/*/bricscad.exe"))))))
     (setf (bricscad-backend-executable-path backend) binary
+          ;; ALLOW-VENDOR-FALLBACK NIL: DETECT runs before any
+          ;; per-invocation workdir exists, so it can never reach step 2
+          ;; (the fresh, safe-to-reuse empty.dwg) — without this, it
+          ;; would silently fall through to step 3 (a SHARED vendor
+          ;; template) and cache that as if the user had asked for it,
+          ;; permanently shadowing every later per-invocation caller's
+          ;; own, correctly workdir-aware discovery. See
+          ;; DISCOVER-BRICSCAD-TEMPLATE's docstring for the full story
+          ;; (alfe-bricscad-automation-macos-reopens-welcome-page,
+          ;; 2026-09-12). This keeps the cached value honestly NIL unless
+          ;; the user actually asked for something explicit ($AUTOLISP_
+          ;; BRICSCAD_TEMPLATE / $AUTOLISP_DWG), which every later caller
+          ;; still correctly prefers over its own fresh discovery.
           (bricscad-backend-template-path backend)
-          (discover-bricscad-template :executable-path binary)
+          (discover-bricscad-template :executable-path binary
+                                       :allow-vendor-fallback nil)
           (bricscad-backend-profile backend)
           (discover-bricscad-profile))
     backend))
@@ -1667,6 +1704,19 @@ future ticket."
                        :executable-path (bricscad-backend-executable-path backend)
                        ;; Open a drawing with the app: no document, no command
                        ;; line, nowhere for the keystrokes to land.
+                       ;;
+                       ;; The backend's cached TEMPLATE-PATH wins first, as
+                       ;; before — the actual fix for the bug this comment
+                       ;; used to describe here lives in DETECT (~line 327),
+                       ;; not in this `or': DETECT no longer caches a VENDOR
+                       ;; template as a false "explicit" value, so this slot
+                       ;; is genuinely NIL unless the user actually asked for
+                       ;; something (env var or --dwg), and the workdir-aware
+                       ;; call below it — "a drawing of this run's own" — is
+                       ;; reached for real instead of being dead code behind
+                       ;; an always-non-nil cache. See DETECT's own comment
+                       ;; for the full story (alfe-bricscad-automation-macos-
+                       ;; reopens-welcome-page, 2026-09-12).
                        :template-path
                        (or (bricscad-backend-template-path backend)
                            (discover-bricscad-template

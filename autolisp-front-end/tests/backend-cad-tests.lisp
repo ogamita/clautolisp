@@ -1865,6 +1865,65 @@ name, and far preferable to committing one."
                           :requested path))))))
       (ignore-errors (delete-file path)))))
 
+;;; --- DETECT must not cache a vendor template as a false "explicit" value --
+;;; alfe-bricscad-automation-macos-reopens-welcome-page (2026-09-12). DETECT
+;;; runs before any per-invocation workdir exists, so a naive call used to
+;;; fall through empty-drawing.lisp's fresh-per-run step straight to the
+;;; SHARED vendor template and cache THAT — permanently shadowing every later
+;;; per-invocation caller's own correctly workdir-aware discovery, since
+;;; those callers legitimately check the cached value first (a real
+;;; override must win). Found live: automation mode keeps BricsCAD running
+;;; across invocations, so a killed run leaves a stale lock on that cached,
+;;; shared file, and every subsequent run hits the resulting modal dialog.
+
+(test discover-bricscad-template-skips-vendor-fallback-when-asked
+  "ALLOW-VENDOR-FALLBACK NIL must return NIL rather than a vendor template
+when nothing explicit was requested and no WORKDIR was given to try the
+fresh-per-run drawing — even on a host where a real vendor template
+exists on disk (this dev machine may well be one), proving the vendor
+step is genuinely skipped, not merely absent by coincidence."
+  (with-env ("AUTOLISP_BRICSCAD_TEMPLATE" "")
+    (with-env ("AUTOLISP_DWG" "")
+      (is (null (alfe.backend.bricscad:discover-bricscad-template
+                 :allow-vendor-fallback nil))))))
+
+(test detect-does-not-cache-a-vendor-template-path
+  "With no explicit override and a fake (but real, so DETECT does not
+error) executable, DETECT must leave TEMPLATE-PATH NIL — not a vendor
+template it found on its own, which would then permanently shadow every
+later per-invocation caller's own workdir-aware discovery."
+  (let ((fake-binary (or (probe-file "/usr/bin/true") (probe-file "/bin/true"))))
+    (when fake-binary
+      (with-env ("BRICSCAD_EXE" (namestring fake-binary))
+        (with-env ("AUTOLISP_BRICSCAD_TEMPLATE" "")
+          (with-env ("AUTOLISP_DWG" "")
+            (let ((backend (alfe.backend.bricscad:make-bricscad-backend)))
+              (alfe.backend:detect backend)
+              (is (null (alfe.backend.bricscad:bricscad-backend-template-path
+                         backend))))))))))
+
+(test detect-still-captures-an-explicit-template-override
+  "An explicit $AUTOLISP_BRICSCAD_TEMPLATE must still be captured onto the
+backend by DETECT — ALLOW-VENDOR-FALLBACK NIL only skips the VENDOR
+fallback step, not the explicit-override steps ahead of it."
+  (let ((fake-binary (or (probe-file "/usr/bin/true") (probe-file "/bin/true")))
+        (path (merge-pathnames (format nil "alfe-tpl-~D.dwt" (random 999999))
+                               (uiop:temporary-directory))))
+    (when fake-binary
+      (unwind-protect
+          (progn
+            (with-open-file (out path :direction :output :if-exists :supersede
+                                      :if-does-not-exist :create)
+              (write-string "x" out))
+            (with-env ("BRICSCAD_EXE" (namestring fake-binary))
+              (with-env ("AUTOLISP_BRICSCAD_TEMPLATE" (namestring path))
+                (let ((backend (alfe.backend.bricscad:make-bricscad-backend)))
+                  (alfe.backend:detect backend)
+                  (is (string= (namestring path)
+                                (alfe.backend.bricscad:bricscad-backend-template-path
+                                 backend)))))))
+        (ignore-errors (delete-file path))))))
+
 ;;; --- reaping a spawned engine (cad-runner-wedged-by-modal-dialog) ---------
 ;;;
 ;;; alfe's --timeout bounds the PROTOCOL wait; it never bounded the

@@ -221,3 +221,69 @@ Return-dismissals were each individually confirmed live (by hand,
 in-sequence) — what remains is a live run of the mechanism as CALLED
 FROM the actual script back-to-back with everything else, which the
 recurring hang has not yet allowed to complete.
+
+** Continued (same day, pjb): the lock-file dialog's ROOT cause was
+already meant to be fixed — and wasn't, because of a second bug
+
+pjb, on seeing the lock-file dialog: \"apparently there's a locked file
+it tries to load at launch time (the drawing you give it?). I guess we
+must expect various different dialogs on launch.\" Right on both counts.
+On the first: autolisp-front-end already has empty-drawing.lisp
+(issues/open/empty-ressource.issue, 2026-08-30), built for EXACTLY this
+— write a FRESH empty.dwg into each run's own unique, cleaned-up-after
+workdir, specifically so no two runs ever share (and therefore can never
+lock each other out of) the same file. It was never actually taking
+effect for the automation path: DISCOVER-BRICSCAD-TEMPLATE (used by
+DETECT, which runs once at backend-construction time, before any
+per-invocation workdir exists) has no workdir to try the fresh-drawing
+step with, so it silently fell through to the SHARED vendor template —
+and DETECT cached that as the backend's TEMPLATE-PATH. Every later,
+correctly workdir-aware call in START-ENGINE's automation branch checks
+that cached value FIRST (as it legitimately should, so a real override
+wins) and therefore never reached its own fresh-per-run discovery below
+it — dead code in practice, despite its own comment already correctly
+saying \"a drawing of this run's own, in this run's workdir\".
+
+Net effect: every run, cold or warm, was silently sharing the ONE vendor
+Default-mm.dwt template all along — precisely the failure mode
+empty-ressource.issue was written to eliminate, just never actually
+wired up for this path. An automation run killed abnormally while that
+shared file was open (exactly what happened repeatedly this session)
+leaves it .dwl-locked for every subsequent run, cold or warm.
+
+Fixed at the root, not just reacted to: DISCOVER-BRICSCAD-TEMPLATE gained
+an ALLOW-VENDOR-FALLBACK keyword (default T); DETECT now passes NIL for
+it, so the backend's cached TEMPLATE-PATH is honestly NIL unless the user
+actually asked for something explicit (an env var), rather than DETECT's
+own non-explicit vendor-template guess masquerading as one. Every
+downstream call site is UNCHANGED (still checks the cached value first,
+correctly) — with DETECT no longer polluting that slot, the fresh,
+workdir-aware discovery underneath is reached for real. Verified via
+`alfe --print-command` (no live BricsCAD needed to check this):
+docPath now resolves to \"<this run's own workdir>/empty.dwg\", not the
+shared vendor template.
+
+This does not replace DISMISSSTARTUPDIALOGS above — pjb's second point
+stands: \"various different dialogs\" on a cold launch (the workspace
+picker, at minimum) are a separate thing this fix does not touch, and
+Return-dismissal remains the reactive safety net for whatever modal
+still shows up despite the file itself no longer being shareable. The
+two are complementary: this fix removes the MOST COMMON self-inflicted
+cause of a stray dialog (a shared, lockable file); DISMISSSTARTUPDIALOGS
+handles whatever else appears regardless.
+
+An existing test (BRICSCAD-WINDOWS-BATCH-ARGV-HAS-SINGLE-AUTOMATION-
+BEFORE-B) caught a first, wrong attempt at this fix immediately: naively
+reordering the `or' at each CALL SITE (fresh-discovery-first) broke the
+case where a caller legitimately sets an EXPLICIT template-path directly
+(as that test does, simulating a real override) — with workdir-first
+ordering, auto-discovery would have shadowed even a genuine explicit
+choice, and as a side effect the test run wrote a real file to /tmp
+outside its own sandbox. Reverted both call-site edits back to their
+original shape; the actual bug was never the `or' order, it was DETECT
+handing a non-explicit guess to slots every caller has to trust ARE
+explicit when non-nil.
+
+Tests: 3 new checks (DISCOVER-BRICSCAD-TEMPLATE-SKIPS-VENDOR-FALLBACK-
+WHEN-ASKED, DETECT-DOES-NOT-CACHE-A-VENDOR-TEMPLATE-PATH, DETECT-STILL-
+CAPTURES-AN-EXPLICIT-TEMPLATE-OVERRIDE), alfe SBCL suite 661/661 green.
