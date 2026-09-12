@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: windows-msys-paths-in-autolisp-load — findfile/load ne résolvent pas les chemins /c/... injectés par make
-#+STATUS: FIX-LANDED-AWAITING-CI
+#+STATUS: RESOLVED (clautolisp 2.2.4; merged to master, pipeline green 2026-09-11)
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: -
