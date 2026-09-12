@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-sbcl-windows-build-missing-exe-suffix — SAVE-LISP-AND-DIE :EXECUTABLE T does not append .exe on the Windows runner
-#+STATUS: OPEN
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: -
@@ -78,3 +78,33 @@ Filed while iterating on MR !111 (clautolisp/ogamita, gitlab.com) --
 two prior CI-script-only fixes were pushed to that MR and each was
 falsified by the pipeline itself before this root cause was found and
 fixed at the source instead of patched around in CI.
+
+* Resolved (2026-09-13)
+
+DONE. The root-cause fix described in the Fix section above shipped and
+is on master: EXECUTABLE-PROGRAM-NAME in
+clautolisp/autolisp-reader/tools/read-autolisp/generate.lisp (lines
+107/140) appends ".exe" on (uiop:os-windows-p) before both the CCL
+save-application and the SBCL save-lisp-and-die paths, so the producer
+no longer relies on the implementation to add the suffix.
+
+- Producer fix: commit b6751904 "generate.lisp: append .exe explicitly
+  on Windows saves (root cause)".
+- Consumer sweep (separate follow-up, since renaming a build artefact
+  breaks every caller that spells the old name): commit 04ed4245
+  "clautolisp 1.9.3: the .exe rename fixed the producer and left its
+  callers" — tracked and closed under
+  windows-exe-suffix-callers-not-swept.
+
+Both acceptance criteria are met and permanently gated in CI:
+- build:alfe:windows keeps a Get-ChildItem sanity check and runs
+  `& "…\alfe-sbcl.exe" --version', throwing on a non-zero exit
+  (.gitlab/native.yml:799-800); ALFE_BIN already points at
+  alfe-sbcl.exe (native.yml:716). With the Windows runner now
+  available, the next master pipeline's build:alfe:windows job confirms
+  the .exe is produced and the probe succeeds.
+- Linux/macOS builds never enter the Windows branch of
+  EXECUTABLE-PROGRAM-NAME, so they are unaffected.
+
+Verified the root-cause code and CI wiring present on master before
+closing; this close is docs-only (no engine change, no version bump).
