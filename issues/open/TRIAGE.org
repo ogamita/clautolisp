@@ -65,7 +65,7 @@ CAD (machine-bound):
 Debugger / ncurses UI (P3, pure-Lisp, this branch's workstream =debugger-ui-ncurses-aldb=):
 - DONE =ncurses-key-bindings= — keymap prefix-tree + 5 AutoLISP builtins (api.lisp ~5500) + user-binding test suite (verified 2026-09-12, closed).
 - DONE =aldb-commands= — aldb.el binds the full command table + 19 server tests (verified 2026-09-12, closed).
-- PARTIAL =ncurses-windows=, =window-scrolling= — core panes + scroll landed and tested; remaining: a few alternate key-bindings (=C-w s/w/l/d=, =C-v/M-v/kp-*=) and the =C-u N= count prefix.
+- DONE =ncurses-windows=, =window-scrolling= — RESOLVED 2026-09-12 (clautolisp 2.2.6 / alfe 2.2.14, MR !168): layout commands (=C-w s/w/l=, delete on =C-w k= — the =C-w d= spec double-binding was kept as swap-below per pjb), the =C-u N= count prefix for resize/scroll, =C-v=/=M-v= scroll aliases, and the page/keypad scroll keys (=<prior>/<next>/<kp-prior>/<kp-next>=, decoded in curses.lisp). ncurses-suite green. Both closed.
 - TODO =sedit-bugs-and-design= — sedit editor bugs + design.
 - DONE =charms-asd-secondary-name-unloadable= — superseded: the cl-charms backend was retired for the correctly-named standalone =clautolisp-tui-curses= system (verified 2026-09-12, closed; optional dead-file cleanup of the old charms.asd remains).
 - DRAFT =ncurses-misc= — broad "mini-emacs" vision / design reference, no
