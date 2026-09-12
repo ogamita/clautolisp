@@ -70,3 +70,79 @@ worker thread.
 Depends on cador-1 (the host must be named cador and own the entity DB
 first) and on the D1/D2 specification (cador-3) for the formal
 autolisp↔host protocol the scheduler and namespace model realise.
+
+* Implementation plan (proposed 2026-09-13, pending cador-3 sign-off)
+
+Grounded in a full read of the current tree. *The namespace/blackboard half
+is already ~80% built in the runtime; the new work is host-side per-document
+isolation and the cooperative scheduler.* What exists today:
+
+- =runtime-session= already owns =document-namespaces= (name→namespace), one
+  =blackboard-namespace=, =propagated-symbols=, =current-document=
+  (=autolisp-runtime/source/model.lisp:193=); =document-namespace= has
+  per-document =bindings=/=reactors= and a lifecycle =state=
+  (=:loading/:loaded/:active/:inactive/:closing/:closed=, =model.lisp:115=).
+- Document switching exists: =register-runtime-session-document=,
+  =set-runtime-session-current-document= (=autolisp-runtime/source/api.lisp:632,665=).
+- Blackboard shares by identity and rejects functions (C3):
+  =blackboard-ref/set= (=api.lisp:1012/1019=), =VL-BB-REF/VL-BB-SET=
+  (=autolisp-builtins-core/source/api.lisp:288-304=).
+- The =drawing= class is a self-contained, multi-instance-ready DB with
+  =COPY-DRAWING= (=clautolisp/drawing/source/model.lisp:71=).
+- The park/handoff primitive exists as the debugger's two-thread design
+  (=autolisp-debug/source/session.lisp=, =breakpoints.lisp:88-114=:
+  =run-debugged-thread=, =queue-hit-handler=, inbound/outbound blocking
+  queues, =thread-debug-info=).
+
+The gaps: the =cador= host holds ONE =active-drawing= plus session-global
+state (=model.lisp:64=; the code comments already call the next step
+"Phase 17f"); there is no cooperative coroutine scheduler outside the
+debugger; handles are not document-tagged; E1/E2 probes do not exist; and the
+normative =clautolisp-multidocument-analysis.org= (R1–R21/E1–E10) was not
+found in this worktree.
+
+** Slice 1 — host holds a set of drawings (the "Phase 17f" the code names)
+No scheduler; single-document behaviour stays byte-identical (one entry in the
+map). Pure implementation, not spec-gated.
+- Replace =cador='s =active-drawing= slot with a =documents= map (keyed by the
+  runtime =document-namespace=) + an =active-document= pointer
+  (=clautolisp/cador/source/model.lisp:63-69=). The delegation shims
+  =cador-entities/-tables/-sysvars/…= (=model.lisp:210-241=) are the single
+  seam to re-point at "the active document's drawing".
+- Move per-drawing session state (=ename-cache= — already tracks its drawing
+  at =:189=; =ldata-store=, =picksets=, =pickfirst=, =open-complex/block=
+  handles, iterators) into a per-document record.
+- Tag enames/picksets with their owning document; cross-document dereference
+  signals (C5).
+- Add minimal document-management host generics
+  (=host-open-document/host-activate-document/host-document-list=,
+  =autolisp-host/source/protocol.lisp=) and have
+  =set-runtime-session-current-document= drive =host-activate-document= in
+  lock-step (the runtime↔host document link).
+- Assert *E1* (symbol identity across documents — already testable via the
+  namespace model) and *E2* (blackboard sharing — already true by identity).
+- Lands acceptance bullets: N isolated documents, shared blackboard no-copy,
+  per-document drawing isolation, C1/C3/C5. Defers C2/C8.
+
+** Slice 2 — cooperative coroutine scheduler (spec-gated on cador-3 §13/D2 I.2)
+- Generalise the debugger's inbound/outbound blocking-queue handoff into a
+  single-runner scheduler: N parked contexts, at most one running (C2/C8),
+  park/resume on document switch.
+- Specify and honour the park-with-an-outstanding-host-call hazard (epic
+  §1.2b): what a resume restores, and that a host call in flight at a park is
+  either forbidden or completed-then-parked.
+- One aldo instance per document; the coroutine carrier reuses the two-thread
+  design (~2 threads/document, cooperatively).
+- Do this AFTER cador-3 pins the formal protocol (this slice realises it).
+
+** Slice 3 — conformance probes + CI
+- Land E1/E2 as runnable probes against cador (locate or recreate
+  =clautolisp-multidocument-analysis.org='s E-numbering first); wire into the
+  test aggregate. Verify with =make -C clautolisp test-sbcl= (full image, per
+  the "test the shipped artefact" rule).
+
+** Sequencing / dependencies
+Slice 1 can start now (no spec blocker). Slice 2 waits on cador-3 (!192,
+under review). Each slice is its own MR with its issue-flow close note; the
+epic-level acceptance is met only after Slice 3. This plan is provisional
+until cador-3's D2 §I.2 scheduler decision is signed off.
