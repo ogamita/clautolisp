@@ -1560,6 +1560,32 @@ uses, not merely process existence."
     (is (search "if alreadyHasDoc then" script))
     (is (search "else" script))))
 
+(test macos-launcher-applescript-dismisses-startup-dialogs
+  "A genuinely COLD BricsCAD launch on this installation can show a STACK
+of startup dialogs before any document/console is usable at all — found
+live, 2026-09-12: a workspace-selection \"BricsCAD Launcher\" dialog
+first, then (when a template was left locked by a previous automation
+run killed abnormally while it had that template open) a lock-file-found
+dialog right after it. The frontmost-wait above only confirms BricsCAD
+ITSELF is frontmost — a dialog is part of that same process, so the wait
+succeeds while a dialog still blocks everything underneath it, and
+FINDCONSOLEWINDOW correctly excludes both dialogs from ever being
+mistaken for the console, which means it also never finds anything while
+one is up. Return dismisses both dialog types via whichever button is
+their own default one — verified live — WITHOUT hard-coding either
+dialog's locale-specific button label."
+  (let ((script (%emitted-applescript
+                 "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad")))
+    (is (search "dismissStartupDialogs" script))
+    ;; Bounded, not an unconditional/infinite retry.
+    (is (search "repeat 5 times" script))
+    ;; Stops as soon as a console is found, rather than always spending
+    ;; the whole bound.
+    (is (search "findConsoleWindow(procName) is not missing value then return" script))
+    ;; The dismissal mechanism itself: Return, not a hard-coded button
+    ;; name in any language.
+    (is (search "key code 36 -- Return" script))))
+
 ;;; --- the emitted .vbs must be VALID VBScript ------------------------------
 ;;;
 ;;; alfe-autocad-vbscript-comments (pjb, 2026-08-12): the bridge templates

@@ -629,6 +629,41 @@ end if
 -- document-readiness is a further refinement, not attempted this round.
 delay 1.5
 
+-- On a genuinely COLD launch this installation can show a STACK of
+-- startup dialogs before any document/console is usable at all —
+-- confirmed live (2026-09-12): a \"BricsCAD Launcher\" workspace-selection
+-- dialog first, then (specific to a template left locked by a PREVIOUS
+-- automation run that was killed abnormally while it had that template
+-- open — a realistic recovery scenario, not just a testing artefact) a
+-- \"Fichier de verrouillage Dwl trouvé\" (lock-file-found) dialog right
+-- after it. Neither is reachable by FINDCONSOLEWINDOW's own logic (both
+-- are correctly EXCLUDED from matching by name, since their titles do
+-- not contain \"bricscad\" the same way the real console's does not —
+-- they just never get treated as A console either), and the
+-- frontmost-wait loop above only confirms BRICSCAD ITSELF is frontmost —
+-- a dialog IS part of that same process, so the wait succeeds while a
+-- dialog still blocks everything underneath it.
+--
+-- Return reliably dismisses BOTH dialog types via whichever button is
+-- their own default/highlighted one, verified live, WITHOUT hard-coding
+-- either dialog's locale-specific button label (\"Lancer BricsCAD\",
+-- \"OK\"). Sending it here, bounded and only after the frontmost-wait
+-- above already confirmed BricsCAD is frontmost, is safe: if no dialog
+-- is actually present it lands on whatever BricsCAD's own console/prompt
+-- already has focus, which is a harmless no-op there (an empty Return at
+-- an idle prompt), not on some unrelated foreground application.
+on dismissStartupDialogs(procName)
+  repeat 5 times
+    if my findConsoleWindow(procName) is not missing value then return
+    try
+      tell application \"System Events\" to key code 36 -- Return
+    end try
+    delay 0.6
+  end repeat
+end dismissStartupDialogs
+
+my dismissStartupDialogs(\"bricscad\")
+
 -- ------------------------------------------------------------------
 -- Window-targeted, deviation-aware injection (alfe-bricscad-automation-
 -- macos-osascript, 2026-09-11 live BricsCAD V26/macOS session).

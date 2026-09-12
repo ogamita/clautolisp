@@ -1,7 +1,11 @@
 Title: BricsCAD macOS automation: open -a app docPath knocks an already-running instance back to the Welcome page
-Status: FIX IMPLEMENTED + partially verified live (2026-09-12); full
-  end-to-end confirmation blocked by an unrelated, recurring BricsCAD
-  hang under sustained automated load — see Round 9 below
+Status: THREE fixes implemented + partially verified live (2026-09-12):
+  the docPath/existing-document check, a document-init settle delay, and
+  startup-dialog dismissal (a stack of cold-launch modals — the original
+  parent ticket's long-standing "first-run dialog" hypothesis, confirmed
+  at last). Full end-to-end confirmation of all three together is
+  blocked by an unrelated, recurring BricsCAD hang under sustained
+  automated load (three occurrences today) — see Round 9 below
 Priority: P3
 Type: bug
 Depends: issues/open/alfe-bricscad-automation-macos-osascript.issue
@@ -156,3 +160,64 @@ mechanism verified live (document correctly opened only when needed).
 The settle-delay addition is implemented and reasoned but not yet
 independently confirmed live due to the hang. Tests: alfe SBCL suite
 654/654 green.
+
+** Continued (same day): the ACTUAL acceptance script surfaced a third,
+distinct root cause — a stack of startup dialogs
+
+Ran scripts/verify-bricscad-automation.sh fresh (no BricsCAD running
+beforehand) to get a clean, minimal-interaction end-to-end read. Batch
+control PASSED (engine/runner healthy); automation still FAILED, status
+stuck at BOOTING. Live inspection found BricsCAD sitting on its own
+\"BricsCAD Launcher\" workspace-selection dialog — a genuinely cold launch
+on this installation shows this BEFORE the Start page is even reachable.
+This is exactly the \"a modal or first-run dialog owns input\" hypothesis
+from the very first version of alfe-bricscad-automation-macos-osascript
+— not eliminated after all, just not reachable in earlier rounds because
+BricsCAD had already been run past it once already-running instances
+were being reused throughout most of this investigation.
+
+Confirmed live that pressing Return dismisses it (via its own
+default/highlighted button, no button-name hard-coding needed) — and
+revealed a SECOND dialog right behind it: \"Fichier de verrouillage Dwl
+trouvé\" (lock-file-found), because this session's own repeated
+force-quits had left the Default-mm.dwt template's .dwl lock file
+behind. Also a realistic scenario in production, not just a testing
+artefact: any alfe automation run that gets killed abnormally while
+BricsCAD has a template open leaves exactly this behind for the NEXT
+run. Return dismisses this one too, via its own default button.
+
+Neither dialog is reachable by FINDCONSOLEWINDOW (both correctly
+EXCLUDED from ever being mistaken for the console by its own
+name-exclusion logic — they just never get treated as one either), and
+the existing frontmost-wait only confirms BricsCAD ITSELF is frontmost,
+which a dialog belonging to that same process already satisfies.
+
+Fixed: DISMISSSTARTUPDIALOGS, called once after the settle delay and
+before the main injection loop — up to 5 bounded Return presses, each
+followed by a FINDCONSOLEWINDOW check that stops the loop as soon as one
+succeeds. Safe when no dialog is actually present: Return then lands on
+BricsCAD's own idle console prompt, a harmless no-op there, never on
+some unrelated foreground application (it only runs after the
+frontmost-wait above already confirmed BricsCAD has focus).
+
+Live re-verification of the FULL fix stack (docPath check + settle delay
++ dialog dismissal together) was interrupted by a THIRD occurrence of the
+recurring hang documented above and in the parent ticket's Round 8 — this
+time within roughly two minutes of resumed scripted interaction. Three
+occurrences in one extended session, each following a burst of automated
+GUI activity regardless of what that activity specifically was (manual
+dialog probing, a full launcher run, simple typed tests), makes this look
+like a property of this specific BricsCAD Lite V26 installation/build
+under ANY sustained rapid interaction — worth checking in a future
+session whether it reproduces under rapid HUMAN interaction too (which
+would point at the build/installation rather than anything
+automation-specific), and whether inserting longer pauses between
+automated actions measurably delays it.
+
+Tests: 4 new checks (MACOS-LAUNCHER-APPLESCRIPT-DISMISSES-STARTUP-
+DIALOGS), alfe SBCL suite 658/658 green. The dialog-dismissal mechanism
+itself is implemented and logically sound, and its two constituent
+Return-dismissals were each individually confirmed live (by hand,
+in-sequence) — what remains is a live run of the mechanism as CALLED
+FROM the actual script back-to-back with everything else, which the
+recurring hang has not yet allowed to complete.
