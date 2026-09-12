@@ -50,6 +50,18 @@ docs, which are reference material, not triage items. (Note: the moved
 header line — stale, the resolution is recorded in its closed location and this
 index; a future pass may normalise the in-file header.)
 
+Re-synced 2026-09-13 (clautolisp 2.2.19 / alfe 2.2.27, after MRs !176–!186).
+Verification pass: a slug-by-slug diff of the active (TODO/NEXT/BLOCKED) rows
+against =issues/closed/= found ZERO stale markers, and every open issue (82
+files) is indexed — the board was kept in sync as each issue closed, per the
+AGENTS.md rule that an implemented+tested issue's closure (note + git mv +
+TRIAGE flip) ships in the SAME MR as its code. Closed/filed since the last
+resync: =sedit-bugs-and-design= (DONE), =sedit-save-forms-to-new-file-command=
+(filed + DONE, the `w' command), =install-release-staging-divergence= (DONE,
+done-by-construction), =grread-keyboard-event-is-a-list-not-a-dotted-pair=
+(DONE, keyboard grread), =dcl-ncurses-renderer= (filed + DONE, the full-screen
+DCL renderer epic, 4 slices) — all indexed DONE. No drift.
+
 ** Closed in this sweep (2026-09-12) — now under =issues/closed/=
 - =foreach-empty-body-return-diverges= — RÉSOLU (clautolisp 2.2.4): body-less
   foreach dialect-discriminated (bricscad/lax → the list + warning).
