@@ -1171,18 +1171,21 @@ the reader's confusion at finding a FASL where source was expected."
 
 (test clal-ui-builtins-invocable-from-autolisp
   "The CLAL UI / binding / window builtins are callable from AutoLISP and
-return the documented nil with no debug UI attached (complete-unit-tests.issue)."
+return the documented nil with no debug UI attached (complete-unit-tests.issue).
+Hooks forced nil so this holds in the full image too (the UI systems install
+them at load time) — see %with-no-ui-hooks in builtin-tests.lisp."
   (reset-autolisp-symbol-table)
-  (dolist (form '("(clal-frame-list)"
-                  "(clal-binding \"z\" \"continue\")"
-                  "(clal-binding-lookup \"z\")"
-                  "(clal-remove-binding \"z\")"
-                  "(clal-clear-window)"
-                  "(clal-move-cursor-to 1 1)"
-                  "(clal-window-put 1 1 \"x\")"
-                  "(clal-call-with-temp-window nil '(lambda (w) 1))"))
-    (is (null (run-autolisp-string form :setup-fn #'install-core-into))
-        "~A should return nil with no UI attached" form)))
+  (%with-no-ui-hooks
+    (dolist (form '("(clal-frame-list)"
+                    "(clal-binding \"z\" \"continue\")"
+                    "(clal-binding-lookup \"z\")"
+                    "(clal-remove-binding \"z\")"
+                    "(clal-clear-window)"
+                    "(clal-move-cursor-to 1 1)"
+                    "(clal-window-put 1 1 \"x\")"
+                    "(clal-call-with-temp-window nil '(lambda (w) 1))"))
+      (is (null (run-autolisp-string form :setup-fn #'install-core-into))
+          "~A should return nil with no UI attached" form))))
 
 (test clal-codepage-builtins-from-autolisp
   "clal-system-codepage / clal-drawing-codepage / clal-codepage-mismatch-p

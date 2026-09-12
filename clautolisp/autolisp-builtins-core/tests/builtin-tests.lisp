@@ -5028,31 +5028,49 @@ the %vla fixture (as the drawing-data tests do)."
                                              :setup-fn #'install-core-into))
               '(".so" ".dll" ".dylib") :test #'string=)))
 
+(defmacro %with-no-ui-hooks (&body body)
+  "Evaluate BODY with every debug-UI / interactor forwarding hook forced to NIL,
+so the \"no UI attached\" contract holds REGARDLESS of which debug-UI systems
+are loaded into the image. The ncurses UI and the debugger install these hooks
+at load time (ncurses-ui.lisp, autolisp-debug/poll.lisp, command-table.lisp),
+so a builtins-core suite run inside the full clautolisp image would otherwise
+see them non-nil and the forwarders would no longer return nil."
+  `(let ((clautolisp.autolisp-runtime:*ui-object-hook* nil)
+         (clautolisp.autolisp-runtime:*ui-binding-hook* nil)
+         (clautolisp.autolisp-runtime:*debug-break-hook* nil)
+         (clautolisp.autolisp-runtime:*debug-nav-hook* nil)
+         (clautolisp.autolisp-runtime:*debug-select-file-hook* nil)
+         (clautolisp.autolisp-runtime:*debug-define-command-hook* nil)
+         (clautolisp.autolisp-runtime:*define-interactor-command-hook* nil))
+     ,@body))
+
 (test clal-ui-and-debug-builtins-return-nil-without-a-ui
   "The CLAL-* UI / debugger / binding / frame / window / face / nav builtins
 return the documented nil when no debug UI is attached (complete-unit-tests.issue
-headless contract; their forwarding is covered separately)."
+headless contract; their forwarding is covered separately). The hooks are forced
+nil so this holds in the full image too, where the UI systems install them."
   (reset-autolisp-symbol-table)
-  (dolist (form '("(clal-invoke-debugger)"
-                  "(clal-define-debugger-command '(\"q\" \"quit\") '(lambda () nil))"
-                  "(clal-define-ui-command \"greet\" '(lambda (s) s))"
-                  "(clal-map-bindings '(lambda (k c) nil))"
-                  "(clal-face-parameters \"default\")"
-                  "(clal-list-faces)"
-                  "(clal-frame-name nil)"
-                  "(clal-window-name nil)"
-                  "(clal-window-list)"
-                  "(clal-selected-frame)"
-                  "(clal-selected-window)"
-                  "(clal-select-frame nil)"
-                  "(clal-select-window nil)"
-                  "(clal-delete-frame nil)"
-                  "(clal-delete-window nil)"
-                  "(clal-nav-directory)"
-                  "(clal-select-file \"/tmp/x.lsp\" 1)"
-                  "(clal-load-aldo-configuration)"))
-    (is (null (run-autolisp-string form :setup-fn #'install-core-into))
-        "~A should return nil with no UI attached" form)))
+  (%with-no-ui-hooks
+    (dolist (form '("(clal-invoke-debugger)"
+                    "(clal-define-debugger-command '(\"q\" \"quit\") '(lambda () nil))"
+                    "(clal-define-ui-command \"greet\" '(lambda (s) s))"
+                    "(clal-map-bindings '(lambda (k c) nil))"
+                    "(clal-face-parameters \"default\")"
+                    "(clal-list-faces)"
+                    "(clal-frame-name nil)"
+                    "(clal-window-name nil)"
+                    "(clal-window-list)"
+                    "(clal-selected-frame)"
+                    "(clal-selected-window)"
+                    "(clal-select-frame nil)"
+                    "(clal-select-window nil)"
+                    "(clal-delete-frame nil)"
+                    "(clal-delete-window nil)"
+                    "(clal-nav-directory)"
+                    "(clal-select-file \"/tmp/x.lsp\" 1)"
+                    "(clal-load-aldo-configuration)"))
+      (is (null (run-autolisp-string form :setup-fn #'install-core-into))
+          "~A should return nil with no UI attached" form))))
 
 (test clal-ui-object-builtins-forward-to-the-ui-object-hook
   "With a *ui-object-hook* installed, the CLAL UI-object builtins forward their
