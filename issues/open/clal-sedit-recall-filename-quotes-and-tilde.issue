@@ -1,0 +1,51 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: clal-sedit-recall-filename-quotes-and-tilde — recalled source path keeps its quotes and does not expand ~
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+
+* Symptom
+
+Found 2026-09-13 while investigating =navi-double-quit= (its trace shows it,
+but it is a distinct defect from the quit semantics). Recalling a file-loaded
+definition through =(CLAL-SEDIT 'FACT)= from the toplevel resolves the source
+file to, literally:
+
+: #P".../\"~/src/public/autolisp/fact.lsp\""
+
+Two things are wrong with that one path:
+
+1. The surrounding double-quote characters are KEPT inside the name — the
+   recorded source string was =~/src/public/autolisp/fact.lsp= written with
+   its reader quotes, and they were never stripped.
+2. The leading =~= is NOT expanded to the home directory, and the whole
+   (still-quoted) string is merged against the cwd, so it resolves nowhere.
+
+* Cause (located, not yet fixed)
+
+The symbol→recorded-file recall path:
+- =%clal-sedit-target= resolves the symbol arg to the keyword under which the
+  source file was recorded — =autolisp-builtins-core/source/api.lisp:5659=.
+- The bad pathname surfaces in =source-file-open=, which uses
+  =(merge-pathnames path)= — =autolisp-builtins-core/source/source-file.lisp:117-127=.
+  =cl:merge-pathnames= does not expand =~=, and the incoming =path= still
+  carries literal surrounding =\"= quote characters.
+
+So the fix is on the recall path: strip the reader quotes from the recorded
+source string and expand =~= (via =uiop:native-namestring= /
+=uiop:parse-native-namestring=, or the project's existing home-expansion
+helper) before handing it to =source-file-open=.
+
+* Acceptance criteria
+
+- =(clal-sedit 'fn)= for a function loaded from =~/…/fn.lsp= opens the real
+  file (quotes stripped, =~= expanded), and a test covers the recall path.
+- No change to opening a file given by an already-absolute/relative path.
+
+* Note
+
+Filed per the "write tickets for bugs found while doing something else" rule.
+Surfaced in the =navi-double-quit= trace; see
+=clautolisp/documentation/clautolisp-interactor-state-diagram.org= §3.
