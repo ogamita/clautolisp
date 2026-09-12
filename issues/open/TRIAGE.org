@@ -63,10 +63,18 @@ CAD (machine-bound):
 - BLOCKED =probes-suite-crashes-bricscad= — P1: the probe suite kills BricsCAD; see the
   closed bricscad-refuses-to-load ticket; needs the machine.
 Debugger / ncurses UI (P3, pure-Lisp, this branch's workstream =debugger-ui-ncurses-aldb=):
-- TODO =ncurses-windows=, =window-scrolling=, =ncurses-key-bindings=, =aldb-commands= — concretely specified.
+- DONE =ncurses-key-bindings= — keymap prefix-tree + 5 AutoLISP builtins (api.lisp ~5500) + user-binding test suite (verified 2026-09-12, closed).
+- DONE =aldb-commands= — aldb.el binds the full command table + 19 server tests (verified 2026-09-12, closed).
+- PARTIAL =ncurses-windows=, =window-scrolling= — core panes + scroll landed and tested; remaining: a few alternate key-bindings (=C-w s/w/l/d=, =C-v/M-v/kp-*=) and the =C-u N= count prefix.
 - TODO =sedit-bugs-and-design= — sedit editor bugs + design.
-- TODO =charms-asd-secondary-name-unloadable= — small =.asd= fix for the cl-charms backend.
-- DRAFT =ncurses-misc=, =windows-and-interactor-templates= — need pjb's spec before work.
+- DONE =charms-asd-secondary-name-unloadable= — superseded: the cl-charms backend was retired for the correctly-named standalone =clautolisp-tui-curses= system (verified 2026-09-12, closed; optional dead-file cleanup of the old charms.asd remains).
+- DRAFT =ncurses-misc= — broad "mini-emacs" vision / design reference, no
+  acceptance criteria; much of its API is already realized but it is not a
+  closable unit. Keep open.
+- PARTIAL =windows-and-interactor-templates= — pjb answered the spec (Q1-Q8);
+  make-*-window commands + per-window real-activation stacks landed and tested;
+  remaining: the singleton-split refactor of the lisp/aldo interactors and
+  layout persistence that recreates user-defined interactors.
 Docs / spec:
 - TODO =autolisp-spec-alref-commands= — spec: alref command listing.
 - TODO =grread-keyboard-event-is-a-list-not-a-dotted-pair= — doc-only: grread is a deliberate
