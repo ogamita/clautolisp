@@ -162,3 +162,14 @@ sexp file (UNIX backend), so registry reads/writes stay hermetic."
   ;; …and a genuine typo is still a usage error.
   (signals cli-usage-error
     (clautolisp.autolisp-cli:resolve-encoding-name "mac-romain" "-e")))
+
+(test parse-dcl-mode-accepts-ncurses
+  "--dcl ncurses (and the `curses' spelling) select the full-screen renderer,
+alongside tui/gui/auto; a typo is a usage error (dcl-ncurses-renderer.issue)."
+  (is (eq :ncurses (clautolisp.autolisp-cli:parse-dcl-mode "ncurses" "--dcl")))
+  (is (eq :ncurses (clautolisp.autolisp-cli:parse-dcl-mode "curses" "--dcl")))
+  (is (eq :tui (clautolisp.autolisp-cli:parse-dcl-mode "tui" "--dcl")))
+  (is (eq :gui (clautolisp.autolisp-cli:parse-dcl-mode "gui" "--dcl")))
+  (is (eq :auto (clautolisp.autolisp-cli:parse-dcl-mode "auto" "--dcl")))
+  (signals cli-usage-error
+    (clautolisp.autolisp-cli:parse-dcl-mode "nope" "--dcl")))
