@@ -62,6 +62,22 @@ done-by-construction), =grread-keyboard-event-is-a-list-not-a-dotted-pair=
 (DONE, keyboard grread), =dcl-ncurses-renderer= (filed + DONE, the full-screen
 DCL renderer epic, 4 slices) — all indexed DONE. No drift.
 
+Re-synced 2026-09-13 (verification pass, at =145d9c55=). Since the previous
+resync exactly one issue closed: =alfe-sbcl-windows-build-missing-exe-suffix=
+(DONE, done-by-construction — the root-cause =.exe= suffix fix shipped as
+=b6751904= and its consumer sweep as =04ed4245= / =windows-exe-suffix-callers-not-swept=,
+with both acceptance criteria permanently gated by =build:alfe:windows= in
+=.gitlab/native.yml=; MR !188). It never had its own table row, so there was
+nothing to flip — the slug now appears only in prose in the
+=windows-exe-suffix-callers-not-swept= row that describes it. A fresh
+slug-by-slug reconciliation of the open set (81 =*.issue= files) against this
+index found ZERO unindexed issues, ZERO active (TODO/NEXT/BLOCKED/DEFERRED)
+rows whose file is already in =issues/closed/=, and ZERO DONE/WONTFIX rows
+whose file is still in =issues/open/=. The only non-ticket entries under
+=issues/open/= are reference/scratch material (the two =cador-implementation-*.md=
+knowledge docs plus the =*.plan=/=*.lisp=/=*.lsp=/=*.dwg=/=*.txt=/=*.md= working
+files), not triage items. No drift.
+
 ** Closed in this sweep (2026-09-12) — now under =issues/closed/=
 - =foreach-empty-body-return-diverges= — RÉSOLU (clautolisp 2.2.4): body-less
   foreach dialect-discriminated (bricscad/lax → the list + warning).
