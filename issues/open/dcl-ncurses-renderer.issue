@@ -112,6 +112,16 @@ terminal.lisp:410) — installation stays opt-in via the CLI.
   renderer's stdin-prompting path. 4 headless tests (toggle flip, radio
   exclusivity, edit type+backspace, slider clamp); full test-sbcl green.
 
+- Slice 3 DONE (clautolisp 2.2.18 / alfe 2.2.26): lists + images — list_box
+  renders a label row + one row per item with the selected item marked ">";
+  Up/Down move the selection within a focused list (=%ncurses-list-move=, index
+  stored, reason-selected, Tab leaves the list); popup_list collapses to a line
+  showing the selected item's TEXT and cycles with Up/Down; image renders a
+  placeholder (image_button already activatable via slice 1's button path).
+  List items read from the runtime's KEY:items state (renderer-independent).
+  3 headless tests (list selection + ">" marker, popup cycle + item text, image
+  render); full test-sbcl green.
+
 * Slices (each: full `make -C clautolisp test-sbcl` green, own MR, version bump)
 
 1. Renderer skeleton + modal loop: =make-ncurses-renderer= (dcl-renderer struct,

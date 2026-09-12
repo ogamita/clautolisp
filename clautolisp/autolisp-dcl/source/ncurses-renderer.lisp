@@ -34,7 +34,12 @@ state. Mirrors the line renderer's tile vocabulary."
         (:edit-box (labelled (or val "")))
         (:toggle (format nil "[~A] ~A" (if (equal val "1") "x" " ") label))
         (:radio-button (format nil "(~A) ~A" (if (equal val "1") "*" " ") label))
-        (:popup-list (labelled (format nil "[~A]" (or val ""))))
+        (:popup-list
+         ;; show the selected item's TEXT (the stored value is its index).
+         (let* ((items (terminal-list-items dialog key))
+                (idx (and val (ignore-errors (parse-integer val :junk-allowed t))))
+                (sel (and idx (nth idx items))))
+           (labelled (format nil "[~A]" (or sel val "")))))
         (:list-box (if (plusp (length label)) (format nil "~A:" label) "(list)"))
         (:slider (labelled (or val "")))
         (:image (format nil "[image ~A]" (or key "")))
@@ -72,6 +77,28 @@ them side by side, splitting the width. Returns (values PLACEMENTS ROWS-USED)."
              (setf maxused (max maxused used))
              (incf col cw)))
          (values acc maxused)))
+      ((eq type :list-box)
+       ;; A list_box spans a label row (the focusable tile) plus one row per
+       ;; item; the currently-selected item (its index is the stored value) is
+       ;; prefixed ">".
+       (let* ((key (terminal-tile-key tile))
+              (label (or (tile-attribute tile "label") ""))
+              (items (terminal-list-items dialog key))
+              (sel (or (ignore-errors
+                         (parse-integer (gethash key (dcl-dialog-state dialog) "")
+                                        :junk-allowed t))
+                       0))
+              (acc (list (list top left width
+                               (if (plusp (length label)) (format nil "~A:" label) "(list)")
+                               tile)))
+              (row (1+ top)))
+         (loop for item in items for i from 0
+               do (setf acc (nconc acc (list (list row left width
+                                                    (format nil "~A ~A"
+                                                            (if (= i sel) ">" " ") item)
+                                                    nil))))
+                  (incf row))
+         (values acc (max 1 (- row top)))))
       ((eq type :spacer) (values '() 1))
       (t (values (list (list top left width (%ncurses-tile-line tile dialog) tile))
                  1)))))
@@ -156,6 +183,20 @@ NIL to keep looping."
          (new (min mx (max mn (+ cur delta)))))
     (terminal-set-and-fire dialog key (princ-to-string new) :reason-changed)))
 
+(defun %ncurses-list-move (dialog key delta)
+  "Move a list_box / popup_list KEY's selection by DELTA (clamped to the item
+range), storing the new index (reason-selected). Parity with the line renderer,
+whose stored value is the selected item's index."
+  (let* ((items (terminal-list-items dialog key))
+         (len (length items)))
+    (when (plusp len)
+      (let* ((cur (or (ignore-errors
+                        (parse-integer (gethash key (dcl-dialog-state dialog) "0")
+                                       :junk-allowed t))
+                      0))
+             (new (min (1- len) (max 0 (+ cur delta)))))
+        (terminal-set-and-fire dialog key (princ-to-string new) :reason-selected)))))
+
 (defun ncurses-run-dialog (dialog screen)
   "Drive DIALOG's interaction as a full-screen modal loop over SCREEN (a tui-core
 screen — real curses or a mock). Returns the dialog's terminal status (1 OK /
@@ -187,6 +228,10 @@ screen — real curses or a mock). Returns the dialog's terminal status (1 OK /
                ;; slider: Left/Right step within min/max.
                ((and (eq ftype :slider) (member key '(:left :right)))
                 (%ncurses-slider-step dialog ftile fkey (if (eq key :right) 1 -1)))
+               ;; list_box / popup_list: Up/Down move the selection within the
+               ;; focused list (Tab leaves it); they do NOT move tile focus here.
+               ((and (member ftype '(:list-box :popup-list)) (member key '(:up :down)))
+                (%ncurses-list-move dialog fkey (if (eq key :down) 1 -1)))
                ;; focus navigation.
                ((or (eq key :down) (and (characterp key) (char= key #\Tab)))
                 (when (plusp n) (setf focus (mod (1+ focus) n))))

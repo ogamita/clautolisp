@@ -415,3 +415,38 @@ get_tile (parity with the line renderer)."
     (let ((screen (clautolisp.ui.tui:make-mock-screen :keys (list :left))))
       (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
       (is (string= "0" (dcl-runtime-get-tile id "s"))))))
+
+;;;; --- ncurses DCL renderer lists + images (slice 3) -----------------------
+
+(test ncurses-list-box-down-moves-selection
+  "Down moves a focused list_box's selection (index stored, > marker redrawn);
+the stored value is the selected item's index (line-renderer parity)."
+  (with-tui-dialog (id dialog ": list_box { key = \"lst\"; label = \"Pick\"; }")
+    ;; populate the list the way start_list/end_list would (state key KEY:items).
+    (setf (gethash "lst:items" (clautolisp.autolisp-dcl::dcl-dialog-state dialog))
+          (list "Alpha" "Beta" "Gamma"))
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :rows 24 :cols 40
+                                                      :keys (list :down :down))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "2" (dcl-runtime-get-tile id "lst")))
+      (is (clautolisp.ui.tui:mock-find-line screen "> Gamma")))))
+
+(test ncurses-popup-list-down-cycles-and-shows-item
+  "Down cycles a focused popup_list; the collapsed line shows the selected
+item's text (not its index)."
+  (with-tui-dialog (id dialog ": popup_list { key = \"p\"; label = \"Choose\"; }")
+    (setf (gethash "p:items" (clautolisp.autolisp-dcl::dcl-dialog-state dialog))
+          (list "x" "y"))
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :rows 24 :cols 40
+                                                      :keys (list :down))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "1" (dcl-runtime-get-tile id "p")))
+      (is (clautolisp.ui.tui:mock-find-line screen "[y]")))))
+
+(test ncurses-image-tile-renders
+  "An image tile renders a placeholder; running with no keys cancels cleanly."
+  (with-tui-dialog (id dialog ": image { key = \"img\"; }")
+    (declare (ignorable id))
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :keys '())))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (clautolisp.ui.tui:mock-find-line screen "[image img]")))))
