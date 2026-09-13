@@ -5088,10 +5088,40 @@ nil so this holds in the full image too, where the UI systems install them."
                     "(clal-delete-frame nil)"
                     "(clal-delete-window nil)"
                     "(clal-nav-directory)"
-                    "(clal-select-file \"/tmp/x.lsp\" 1)"
-                    "(clal-load-aldo-configuration)"))
+                    "(clal-select-file \"/tmp/x.lsp\" 1)"))
       (is (null (run-autolisp-string form :setup-fn #'install-core-into))
           "~A should return nil with no UI attached" form))))
+
+(test clal-load-aldo-configuration-returns-nil-with-no-config-file
+  "CLAL-LOAD-ALDO-CONFIGURATION reads the XDG aldo.conf when one exists and
+returns its value, else nil — its result depends on the FILESYSTEM, not on
+whether a UI is attached, so it is NOT part of the no-UI invariant above and
+must be tested hermetically. Point XDG at a fresh empty directory so no
+clautolisp/aldo.conf is found; the builtin must then return nil. A persistent
+runner that carries a real ~/.config/clautolisp/aldo.conf (macOS) is exactly
+why the non-hermetic form used to fail here — see
+clal-load-aldo-configuration-not-hermetic.issue."
+  (reset-autolisp-symbol-table)
+  (let* ((empty (ensure-directories-exist
+                 (merge-pathnames
+                  (format nil "clautolisp-empty-xdg-~36R/" (random (expt 36 8)))
+                  (uiop:temporary-directory))))
+         (real (symbol-function 'clautolisp.configuration::config-getenv)))
+    (unwind-protect
+         (progn
+           ;; No injection point in config-load-path, so stub the env lookup:
+           ;; return the empty dir for both XDG vars (nil would fall back to
+           ;; ~/.config, which on a persistent host may hold a real aldo.conf).
+           (setf (symbol-function 'clautolisp.configuration::config-getenv)
+                 (lambda (name)
+                   (cond ((string= name "XDG_CONFIG_HOME") (namestring empty))
+                         ((string= name "XDG_CONFIG_DIRS") (namestring empty))
+                         (t (funcall real name)))))
+           (is (null (run-autolisp-string "(clal-load-aldo-configuration)"
+                                          :setup-fn #'install-core-into))
+               "clal-load-aldo-configuration returns nil when no aldo.conf exists"))
+      (setf (symbol-function 'clautolisp.configuration::config-getenv) real)
+      (ignore-errors (uiop:delete-directory-tree empty :validate t)))))
 
 (test clal-ui-object-builtins-forward-to-the-ui-object-hook
   "With a *ui-object-hook* installed, the CLAL UI-object builtins forward their

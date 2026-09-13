@@ -1,0 +1,72 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: windows-runner-commit-message-breaks-powershell — a commit message with punctuation fails get_sources on the Windows runner
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+
+* Symptom
+
+On the Windows runner, jobs fail in the built-in =get_sources= phase (before
+any project script runs) with a cascade of PowerShell parser errors that quote
+the *commit message* of the pipeline's HEAD commit. Seen on
+=build:alfe:windows= (job 16466188546, MR !192 pipeline 2843757118):
+
+: L'operateur << < >> est reserve a une utilisation future.
+: Au caractere Ligne:282 : 134
+: + ... m MR !43 (branch`ndocs-cador-3-host-interface-and-cador-spec, commit ...
+: Argument manquant dans la liste de parametres.
+: ...
+: Jeton inattendu << normative >> dans l'expression ou l'instruction.
+: ERROR: Job failed: exit status 1
+
+The quoted text is verbatim from the cador-3 spec commit body (em dashes,
+the section sign, backtick-adjacent tokens, apostrophes, =!43=/=!192=).
+
+* Cause
+
+GitLab Runner's PowerShell executor writes the job environment — including
+=CI_COMMIT_MESSAGE= and =CI_COMMIT_DESCRIPTION= — into a generated =.ps1=
+before =get_sources=. When the message contains characters that are special to
+PowerShell (backtick =`= is its escape char; =$=, ="=, =<=, and the em dash /
+section sign under the console codepage), an under-escaped assignment makes the
+generated script fail to *parse*, so the whole job dies before cloning. It is
+not the repo content or =.gitlab-ci.yml=; it is the runner turning a commit
+message into code.
+
+This is a known class fixed in newer GitLab Runner releases (proper here-string
+/ single-quote escaping of the CI_* env assignments). The Linux/macOS shells
+(bash) are unaffected because bash single-quoting is used.
+
+* Impact
+
+Low but recurring: it fires for *any* commit whose HEAD message carries such
+punctuation, on the one platform not run locally. =build:alfe:windows= is
+=allow_failure: true=, so it does not block a merge — but it reddens the job
+and, on a release tag, wastes a Windows run. Every punctuation-heavy commit
+hits it.
+
+* Fix (pjb — runner-side; not fixable from the repo)
+
+Upgrade GitLab Runner on the Windows box to a release that escapes the CI_*
+environment assignments for the PowerShell shell (or set the runner's shell to
+=pwsh= where the escaping is fixed). Confirm with a commit whose message
+contains an em dash and a backtick.
+
+* Workaround (in the repo's control, already adopted)
+
+Keep commit *messages* plain ASCII — hyphens not em dashes, "section 11" not
+"§11", straight quotes, no backticks, avoid the section sign — until the runner
+is upgraded. The cador-3 notes commit (35d8cef5) was re-done in plain ASCII for
+exactly this reason and its get_sources then parsed.
+
+* Acceptance criteria
+
+- A commit whose HEAD message contains =—=, =§=, and a backtick clones cleanly
+  on the Windows runner (get_sources green).
+
+* Note
+
+Filed 2026-09-13 after pjb flagged the failing job. The failure is cosmetic to
+merges (allow_failure) but is a real papercut and a foot-gun for release tags.
