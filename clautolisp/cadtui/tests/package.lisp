@@ -45,6 +45,12 @@
                 #:next-dump-number
                 #:*dump-counter*
                 #:make-application-tree
-                #:make-cador-tree)
+                #:make-cador-tree
+                ;; slice 3: addressing
+                #:find-node
+                #:resolve-target
+                #:target-not-found
+                #:ambiguous-target
+                #:ambiguous-target-candidates)
   (:export #:cadtui-suite
            #:run-all-tests))
