@@ -258,3 +258,126 @@ leaks across the FiveAM double run."
       (scheduler-activate sched b)
       (is (null (scheduled-context-thread a)))
       (is (null (scheduled-context-thread b))))))
+
+;;; --- Rendezvous folded into SCHEDULER-ACTIVATE (slice 3e) ----------
+;;;
+;;; A thread-backed context carries a THUNK; SCHEDULER-ACTIVATE dispatches on it.
+;;; From the driver it bootstraps (spawn + start); from a running context's own
+;;; thread it hands off through SCHEDULER-SWITCH. Env install runs on the woken
+;;; thread. All pops are timeout-guarded and all threads torn down.
+
+(test activate-bootstraps-and-runs-thread-backed-context
+  ;; A context with a THUNK, activated from the driver, is spawned and started:
+  ;; the thunk runs on its own thread as the :RUNNING current context.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (x (%make-doc-context session "X" "X"))
+           (results (make-park-mailbox)))
+      (setf (scheduled-context-thunk x)
+            (lambda ()
+              (park-mailbox-push
+               results
+               (list :ran
+                     (eq x (scheduler-current-context sched))
+                     (scheduled-context-status x)))))
+      (scheduler-register-context sched x)
+      (unwind-protect
+           (progn
+             (scheduler-activate sched x)             ; driver: spawn + start
+             (is (equal '(:ran t :running) (park-mailbox-pop results 5))))
+        (%park-teardown sched)))))
+
+(test activate-from-context-thread-hands-off-via-switch
+  ;; When a RUNNING thread-backed context activates another, the call routes
+  ;; through SCHEDULER-SWITCH (hand-off), not a driver start. The strict
+  ;; interleaving proves exactly one context runs at a time — the activate-driven
+  ;; analogue of scheduler-switch-hands-off-exactly-one-running.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (a (%make-doc-context session "A" "A"))
+           (b (%make-doc-context session "B" "B"))
+           (results (make-park-mailbox)))
+      (setf (scheduled-context-thunk a)
+            (lambda ()
+              (park-mailbox-push results :a-first)
+              (scheduler-activate sched b)            ; A's thread => hand off to B
+              (park-mailbox-push results :a-second)
+              (park-mailbox-push results :a-done)))
+      (setf (scheduled-context-thunk b)
+            (lambda ()
+              (park-mailbox-push results :b-first)
+              (scheduler-activate sched a)            ; B's thread => hand back to A
+              (park-mailbox-push results :b-done)))
+      (scheduler-register-context sched a)
+      (scheduler-register-context sched b)
+      (unwind-protect
+           (progn
+             (scheduler-activate sched a)             ; driver: bootstrap A
+             (is (eq :a-first  (park-mailbox-pop results 5)))
+             (is (eq :b-first  (park-mailbox-pop results 5)))
+             (is (eq :a-second (park-mailbox-pop results 5)))
+             (is (eq :a-done   (park-mailbox-pop results 5)))
+             ;; B is still parked inside its hand-off; resume it to finish.
+             (scheduler-resume sched b)
+             (is (eq :b-done   (park-mailbox-pop results 5))))
+        (%park-teardown sched)))))
+
+(test activate-installs-env-on-woken-thread
+  ;; Each woken context thread installs ITS OWN evaluation context (thread-local
+  ;; *active-evaluation-context*) before running — the §13.5 handoff install and
+  ;; the per-thread binding: each thread sees only its own context.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (a (%make-doc-context session "A" "A"))
+           (b (%make-doc-context session "B" "B"))
+           (results (make-park-mailbox)))
+      (setf (scheduled-context-thunk a)
+            (lambda ()
+              (park-mailbox-push results
+                                 (list :a (eq (scheduled-context-context a)
+                                              (current-evaluation-context))))
+              (scheduler-activate sched b)))
+      (setf (scheduled-context-thunk b)
+            (lambda ()
+              (park-mailbox-push results
+                                 (list :b (eq (scheduled-context-context b)
+                                              (current-evaluation-context))))))
+      (scheduler-register-context sched a)
+      (scheduler-register-context sched b)
+      (unwind-protect
+           (progn
+             (scheduler-activate sched a)
+             (is (equal '(:a t) (park-mailbox-pop results 5)))
+             (is (equal '(:b t) (park-mailbox-pop results 5))))
+        (%park-teardown sched)))))
+
+(test activate-mixes-bare-and-thread-backed
+  ;; A bare context (THUNK nil) activated after a thread-backed one still takes
+  ;; the synchronous path and spawns no thread; the mixed :runnable/:parked
+  ;; scheduler passes %assert-single-runner (one runner across the mix).
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (t1 (%make-doc-context session "T1" "T1"))
+           (bare (%make-doc-context session "BARE" "BARE"))
+           (results (make-park-mailbox)))
+      (setf (scheduled-context-thunk t1)
+            (lambda () (park-mailbox-push results :t1-ran)))
+      (scheduler-register-context sched t1)
+      (scheduler-register-context sched bare)
+      (unwind-protect
+           (progn
+             (scheduler-activate sched t1)            ; thread-backed: spawn + start
+             (is (eq :t1-ran (park-mailbox-pop results 5)))
+             (scheduler-activate sched bare)          ; bare: synchronous path
+             (is (eq bare (scheduler-current-context sched)))
+             (is (eq :running (scheduled-context-status bare)))
+             (is (null (scheduled-context-thread bare)))  ; bare spawned no thread
+             (let ((running (remove :running (scheduler-context-list sched)
+                                    :key #'scheduled-context-status
+                                    :test-not #'eq)))
+               (is (= 1 (length running)))))           ; single runner across the mix
+        (%park-teardown sched)))))

@@ -87,6 +87,8 @@
    #:scheduled-context-status
    #:scheduled-context-saved-env
    #:scheduled-context-pending-break
+   ;; slice 3e: the thunk SCHEDULER-ACTIVATE dispatches on (nil => synchronous)
+   #:scheduled-context-thunk
    #:scheduler-register-context
    #:scheduler-context-list
    #:scheduler-current-context

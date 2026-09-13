@@ -139,6 +139,7 @@
                 #:scheduler-observe-break
                 #:scheduled-context-thread
                 #:scheduled-context-mailbox
+                #:scheduled-context-thunk
                 #:scheduler-spawn-context
                 #:scheduler-start
                 #:scheduler-resume
