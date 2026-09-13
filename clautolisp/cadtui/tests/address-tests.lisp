@@ -132,3 +132,38 @@ grips, plus its own console."
     (register-dump (resolve-target app "/application/drawings[1]/cad-view"))
     (let ((grip1 (resolve-target app "1")))
       (is (eq :grip (ui-role grip1))))))
+
+;;;; Phase 5 slice 4: general dotted-relative addressing.
+
+(test resolve-root-relative-dotted-chain
+  (let* ((app (%make-addressing-tree))
+         (view (resolve-target app "/application/drawings[1]/cad-view")))
+    ;; drawings[1].cad-view is the same node as the absolute path.
+    (is (eq view (resolve-target app "drawings[1].cad-view")))
+    ;; and a longer chain down to a grip, via role[i] segments (a chain uses no
+    ;; ':' so a dotted key like a filename is never split; role:cle addressing
+    ;; stays a single segment or an absolute /path).
+    (let ((grip (resolve-target app "drawings[1].cad-view.entities[1].grips[2]")))
+      (is (eq :grip (ui-role grip)))
+      (is (string= "2" (ui-key grip))))
+    ;; active-drawing as the first part works too.
+    (is (eq view (resolve-target app "active-drawing.cad-view")))))
+
+(test resolve-last-dump-dotted-chain-vs-dotted-key
+  (reset-dump-registry)
+  (let* ((app (%make-addressing-tree))
+         (view (resolve-target app "/application/drawings[1]/cad-view")))
+    (register-dump view :path "/application/drawings[1]/cad-view")
+    ;; "2A.2" is a dotted chain in the last dump: entity 2A, then its grip 2.
+    (let ((grip (resolve-target app "2A.2")))
+      (is (eq :grip (ui-role grip)))
+      (is (string= "2" (ui-key grip))))))
+
+(test resolve-dotted-key-filename-not-split
+  (reset-dump-registry)
+  (let* ((app (%make-addressing-tree))
+         (d1 (resolve-target app "/application/drawings[1]")))
+    ;; a dump of /application records the drawing keyed "plan.dwg".
+    (register-dump app :path "/application")
+    ;; the dotted KEY resolves whole, not split into plan . dwg.
+    (is (eq d1 (resolve-target app "plan.dwg")))))
