@@ -24,13 +24,14 @@
 so a later dump can address the node by a path that does not depend on focus.")
    (role     :initarg :role     :reader ui-role
              :documentation "The node's kind, a keyword (:application :menu
-:bouton :entite ...). Set per subclass via :default-initargs; the dump renders
-it as the leading ROLE:KEY token.")
+:button :entity ...). These canonical role tokens are English; a locale layer
+(Phase 7, gated on LANG) maps localised surface tokens to them. Set per subclass
+via :default-initargs; the dump renders it as the leading ROLE:KEY token.")
    (label    :initarg :label    :initform nil :reader ui-label
              :documentation "A human-readable label for display, or NIL.")
    (state    :initarg :state    :initform :normal :accessor ui-state
-             :documentation "Display state: :normal :grise :coche :focus
-:selectionne ...")
+             :documentation "Display state (canonical English keyword):
+:normal :grayed :checked :focus :selected ...")
    (action   :initarg :action   :initform nil :reader ui-action
              :documentation "For executable nodes: the associated AutoLISP
 command name or a Lisp closure; NIL for inert nodes.")
@@ -56,7 +57,7 @@ mechanics act only on KEY/ROLE/LABEL/STATE/ACTION/CHILDREN."))
   (:documentation "The tree root, /application (spec §Architecture)."))
 
 (defclass ui-menubar (ui-node) ()
-  (:default-initargs :role :barre-menu))
+  (:default-initargs :role :menu-bar))
 
 (defclass ui-menu (ui-node) ()
   (:default-initargs :role :menu))
@@ -73,55 +74,55 @@ mechanics act only on KEY/ROLE/LABEL/STATE/ACTION/CHILDREN."))
    (dialogs       :initarg :dialogs       :initform nil :accessor ui-dialogs-slot)
    (console       :initarg :console       :initform nil :accessor ui-drawing-console-slot)
    (lisp-namespace :initarg :lisp-namespace :initform nil :accessor ui-lisp-namespace))
-  (:default-initargs :role :dessin)
+  (:default-initargs :role :drawing)
   (:documentation "One drawing (MDI document); its per-document Lisp namespace
 is strictly isolated from other drawings (spec §Communication inter-dessins)."))
 
 (defclass ui-band (ui-node)
   ((style :initarg :style :initform :toolbar :accessor ui-band-style))
-  (:default-initargs :role :bandeau)
+  (:default-initargs :role :band)
   (:documentation "A toolbar or ribbon band; STYLE is :toolbar or :ribbon."))
 
 (defclass ui-button (ui-node) ()
-  (:default-initargs :role :bouton))
+  (:default-initargs :role :button))
 
 (defclass ui-ribbon-tab (ui-node) ()
-  (:default-initargs :role :onglet))
+  (:default-initargs :role :ribbon-tab))
 
 (defclass ui-ribbon-panel (ui-node) ()
-  (:default-initargs :role :panneau))
+  (:default-initargs :role :ribbon-panel))
 
 (defclass ui-cad-view (ui-node)
   ((viewport  :initarg :viewport  :initform nil :accessor ui-viewport)
    (selection :initarg :selection :initform nil :accessor ui-selection))
-  (:default-initargs :role :vue-cad))
+  (:default-initargs :role :cad-view))
 
 (defclass ui-entity (ui-node)
   ((entity-type :initarg :entity-type :initform nil :accessor ui-entity-type)
    (layer       :initarg :layer       :initform nil :accessor ui-layer)
    (properties  :initarg :properties  :initform nil :accessor ui-properties)
    (handles     :initarg :handles     :initform nil :accessor ui-handles))
-  (:default-initargs :role :entite))
+  (:default-initargs :role :entity))
 
 (defclass ui-grip (ui-node)
   ((index :initarg :index :initform nil :accessor ui-grip-index)
    (point :initarg :point :initform nil :accessor ui-grip-point))
-  (:default-initargs :role :poignee))
+  (:default-initargs :role :grip))
 
 (defclass ui-alert (ui-node)
   ((severity :initarg :severity :initform nil :accessor ui-severity)
    (message  :initarg :message  :initform nil :accessor ui-message))
-  (:default-initargs :role :alerte))
+  (:default-initargs :role :alert))
 
 (defclass ui-dialog (ui-node)
   ((dcl-source :initarg :dcl-source :initform nil :accessor ui-dcl-source)
    (tiles      :initarg :tiles      :initform nil :accessor ui-tiles-slot))
-  (:default-initargs :role :dialogue))
+  (:default-initargs :role :dialog))
 
 (defclass ui-tile (ui-node)
   ((tile-type :initarg :tile-type :initform nil :accessor ui-tile-type)
    (value     :initarg :value     :initform nil :accessor ui-tile-value))
-  (:default-initargs :role :tuile))
+  (:default-initargs :role :tile))
 
 (defclass ui-console (ui-node)
   ((stream-buffer     :initarg :stream-buffer     :initform nil :accessor ui-stream-buffer)

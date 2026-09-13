@@ -7,16 +7,18 @@
 ;;;;   segment ::= role ":" cle | role "[" indice "]" | mot-cle
 ;;;; A segment is one of:
 ;;;;   - role:cle       one child with that (singular) role and key, e.g.
-;;;;                    entite:deadface, poignee:2, menu:Dessiner
+;;;;                    entity:deadface, grip:2, menu:Draw
 ;;;;   - role[indice]   the indice-th (1-based) child of a role, addressed by the
-;;;;                    container's plural name, e.g. dessins[2], alertes[1]
-;;;;   - a keyword      application (the root), dessin-actif (= dessins[1]),
+;;;;                    container's plural name, e.g. drawings[2], alerts[1]
+;;;;   - a keyword      application (the root), active-drawing (= drawings[1]),
 ;;;;                    or a bare node name matched by key or role (e.g. console,
-;;;;                    vue-cad)
-;;;; Addressing never depends on the keyboard focus — a path resolves the same
-;;;; whatever window is active (spec §5 principles 1-2). Deferred to Phase 2:
-;;;; the D<n>.cle relative references, a bare key resolved in the last dump, and
-;;;; the vue / selection-active shortcut keywords.
+;;;;                    cad-view)
+;;;; Tokens are canonical English; the spec §5.2 writes the fr_FR view, which a
+;;;; locale layer (Phase 7, gated on LANG) maps to these. Addressing never
+;;;; depends on the keyboard focus — a path resolves the same whatever window is
+;;;; active (spec §5 principles 1-2). Deferred to Phase 2: the D<n>.cle relative
+;;;; references, a bare key resolved in the last dump, and the view /
+;;;; active-selection shortcut keywords.
 
 ;;; --- Conditions ---------------------------------------------------
 
@@ -56,29 +58,30 @@ which PREDICATE returns true, or NIL when none matches."
 ;;; --- Segment resolution -------------------------------------------
 
 (defparameter *container-role-map*
-  '(("dessins"      . :dessin)
-    ("bandeaux"     . :bandeau)
-    ("boutons"      . :bouton)
-    ("onglets"      . :onglet)
-    ("panneaux"     . :panneau)
-    ("menus-locaux" . :menu)
-    ("menus"        . :menu)
-    ("items"        . :item)
-    ("entites"      . :entite)
-    ("poignees"     . :poignee)
-    ("alertes"      . :alerte)
-    ("dialogues"    . :dialogue)
-    ("tuiles"       . :tuile))
+  '(("drawings"      . :drawing)
+    ("bands"         . :band)
+    ("buttons"       . :button)
+    ("ribbon-tabs"   . :ribbon-tab)
+    ("ribbon-panels" . :ribbon-panel)
+    ("local-menus"   . :menu)
+    ("menus"         . :menu)
+    ("items"         . :item)
+    ("entities"      . :entity)
+    ("grips"         . :grip)
+    ("alerts"        . :alert)
+    ("dialogs"       . :dialog)
+    ("tiles"         . :tile))
   "Maps a container's plural path name (as used in ROLE[indice]) to the singular
-role keyword of the children it holds.")
+role keyword of the children it holds. Canonical English (a locale layer maps
+localised plurals to these).")
 
 (defun %role-keyword (role-string)
-  "The role keyword named by ROLE-STRING (case-insensitive), e.g. \"entite\" =>
-:ENTITE, \"vue-cad\" => :VUE-CAD."
+  "The role keyword named by ROLE-STRING (case-insensitive), e.g. \"entity\" =>
+:ENTITY, \"cad-view\" => :CAD-VIEW."
   (intern (string-upcase role-string) :keyword))
 
 (defun %role-name (node)
-  "NODE's role rendered as a lowercase string, e.g. :dessin => \"dessin\"."
+  "NODE's role rendered as a lowercase string, e.g. :drawing => \"drawing\"."
   (string-downcase (symbol-name (ui-role node))))
 
 (defun %indexed-segment (segment)
@@ -94,11 +97,11 @@ nil). INDEX is a 1-based integer."
         (values nil nil))))
 
 (defun %resolve-keyword-segment (node segment path)
-  "Resolve the keyword segments handled in Phase 1: dessin-actif (the first
-:dessin child). Returns a node or NIL when SEGMENT is not such a keyword."
+  "Resolve the keyword segments handled in Phase 1: active-drawing (the first
+:drawing child). Returns a node or NIL when SEGMENT is not such a keyword."
   (declare (ignore path))
-  (when (string-equal segment "dessin-actif")
-    (or (find :dessin (ui-children node) :key #'ui-role)
+  (when (string-equal segment "active-drawing")
+    (or (find :drawing (ui-children node) :key #'ui-role)
         :none)))       ; :none => a keyword that matched but has no target
 
 (defun %bare-candidates (node segment)
@@ -134,7 +137,7 @@ Signals TARGET-NOT-FOUND / AMBIGUOUS-TARGET (carrying PATH) on failure."
                                      (string= key (princ-to-string (ui-key c)))))
                               (ui-children node))))
          (or child (error 'target-not-found :path path :segment segment))))
-      ;; a Phase-1 keyword (dessin-actif).
+      ;; a Phase-1 keyword (active-drawing).
       (t
        (let ((kw (%resolve-keyword-segment node segment path)))
          (cond
