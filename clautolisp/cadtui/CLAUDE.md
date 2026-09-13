@@ -251,9 +251,26 @@ divergence assumée par rapport à la spec.)
   récupère les deux. Le loader lit les .sexp en UTF-8 forcé (noms accentués).
   Les commandes IDENTITY (français = anglais, ex. ARC/ZOOM) ne sont pas stockées :
   repli sur la forme internationale (le préfixe _ la force toujours). RESTE : les
-  alias .pgp (P3, dans default.pgp) ; les mots-clés d'option (P3) ; le drapeau CLI
-  --locale/--lang. (Note : le wrapper run-getcname-probe.ps1 pourrait décoder
-  l'UTF-16 AutoCAD avant d'écrire — non bloquant, le convertisseur l'absorbe.)
+  mots-clés d'option (P3) ; le drapeau CLI --locale/--lang. (Note : le wrapper
+  run-getcname-probe.ps1 pourrait décoder l'UTF-16 AutoCAD avant d'écrire — non
+  bloquant, le convertisseur l'absorbe.)
+- Phase 7 — alias clavier .pgp (issue cadtui-locale-probe-pgp-aliases) :
+  **FAIT — HARVEST AUTORITATIF** (MR !240 machinerie, MR !241 données).
+  data/locale/fr_FR/alias.sexp = 398 alias MESURÉS dans l'acad.pgp de l'AutoCAD
+  FRANÇAIS du runner (acad 24.1s, .../fra/support/acad.pgp, LOCALE FR, job
+  pgp:probe:autocad:windows), convertis par cadtui-pgp-to-sexp.py. Alias PUREMENT
+  LOCAUX (jamais _-préfixés), pointant vers le nom de commande LOCALISÉ (L→LIGNE,
+  Z→ZOOM, CP→COPIER, E→ETIRER, H→HACHURES…). Seuls les alias de COMMANDE (champ
+  valeur commençant par '*') sont gardés ; commandes externes + commentaires
+  écartés. Bug convertisseur corrigé : les lignes .pgp contiennent des TABS
+  internes (ALIAS,<tab>*CMD) — rejoindre parts[1:] (sinon 45/405 seulement).
+  NB le runner macOS (thalassa, BricsCAD français) était en panne DNS
+  ("Could not resolve host: gitlab.com" au git fetch) ; source française de repli
+  = l'AutoCAD Windows (français lui aussi). DETTE ASDF RÉSOLUE : locale.lisp
+  recharge aussi l'arbre de données au LOAD (eval-when + load-locale-data-from-
+  directory) en plus de l'embed compile-time, donc éditer un .sexp sans toucher
+  locale.lisp est bien pris en compte (build source + tests). MR !241 :
+  clautolisp 2.2.62 / alfe 2.2.69.
 - Phase 8 (backend de rendu visuel, OPTIONNEL) : **FAIT** (seam testable,
   2026-09-13). render.lisp : *screen-renderer* (indirection de backend) +
   text-screen-renderer headless déterministe (en-tête, ligne de menus, liste des

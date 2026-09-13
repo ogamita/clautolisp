@@ -92,6 +92,15 @@
   ;; a command not in the dictionary falls back to the international form.
   (is (string= "_FOOBARBAZ" (local-name "_FOOBARBAZ" "fr_FR" :command))))
 
+(test fr-alias-dictionary-carries-real-harvested-aliases
+  ;; the shipped fr_FR alias.sexp is the .pgp harvest off a French AutoCAD
+  ;; (acad.pgp): keyboard alias -> localised command name.
+  (is (string= "LIGNE" (local-name "L" "fr_FR" :alias)))
+  (is (string= "ZOOM"  (local-name "Z" "fr_FR" :alias)))
+  (is (string= "COPIER" (local-name "CP" "fr_FR" :alias)))
+  ;; an unknown alias falls back to itself (never _-prefixed — aliases are local).
+  (is (string= "ZZQ" (local-name "ZZQ" "fr_FR" :alias))))
+
 (test locale-data-loads-from-the-shipped-sexp-tree
   ;; the dictionaries are DATA files (spec §Format des dictionnaires): the loader
   ;; reads cadtui/data/locale/<locale>/<category>.sexp, and the shipped fr_FR
