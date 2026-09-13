@@ -167,3 +167,24 @@ RESULTS. Returns the ui-console."
              (is (eql 7 (document-namespace-ref (console-namespace c)
                                                 (intern-autolisp-symbol "Y")))))
         (%console-teardown session)))))
+
+;;;; Phase 4 slice 4a: active-drawing switch drives the runtime current document.
+
+(test activate-drawing-drives-current-document-and-focus
+  (let* ((session (make-runtime-session))
+         (app (make-application-tree))
+         (dA (make-instance 'ui-drawing :key "A")) (cA (make-instance 'ui-console :key "console"))
+         (dB (make-instance 'ui-drawing :key "B")) (cB (make-instance 'ui-console :key "console")))
+    (add-child app dA) (add-child dA cA)
+    (add-child app dB) (add-child dB cB)
+    (make-console-context session cA :document-key "A")
+    (make-console-context session cB :document-key "B")
+    ;; activate B: it becomes the active drawing (implicit-input target) and the
+    ;; runtime current document.
+    (interpret-line "=activate(drawings[2])" app)
+    (is (eq cB (implicit-input-target app)))
+    (is (eq (console-namespace cB) (runtime-session-current-document session)))
+    ;; switch back to A by key.
+    (interpret-line "=activate(drawing:A)" app)
+    (is (eq cA (implicit-input-target app)))
+    (is (eq (console-namespace cA) (runtime-session-current-document session)))))

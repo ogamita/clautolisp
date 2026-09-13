@@ -203,7 +203,9 @@ active-drawing (= drawings[1]) becomes DRAWING."
        (make-command-result :status :error :verb :activate
                             :text "activate needs a target"))
       (t
-       (when (eq :drawing (ui-role node)) (%activate-drawing node))
+       (when (eq :drawing (ui-role node))
+         (%activate-drawing node)                ; reorder: active-drawing = node
+         (activate-drawing-document node))       ; Phase 4: current document follows
        (make-command-result :status :ok :verb :activate
                             :text (format nil "activated ~A:~A"
                                           (%role-name node) (ui-key node))
