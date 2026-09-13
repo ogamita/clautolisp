@@ -61,6 +61,7 @@ grips, plus its own console."
             (resolve-target app "/application/drawings[1]/console")))))
 
 (test resolve-not-found
+  (reset-dump-registry)               ; no last dump => a bare key is not-found
   (let ((app (%make-addressing-tree)))
     ;; unknown bare segment
     (is (eq :nf (handler-case (resolve-target app "/application/nope")
@@ -88,3 +89,46 @@ grips, plus its own console."
     (is (eq :ambiguous outcome))
     (is (= 2 (length candidates)))
     (is (equal '("plan.dwg" "coupe.dwg") (mapcar #'ui-key candidates)))))
+
+;;;; Phase 2 slice 3: D<n>.cle and bare-key-in-last-dump addressing.
+
+(test resolve-d-reference-survives-later-dumps
+  (reset-dump-registry)
+  (let* ((app (%make-addressing-tree))
+         (view (resolve-target app "/application/drawings[1]/cad-view")))
+    ;; D1 dumps the entity subtree (records entity + grip keys)...
+    (register-dump view :path "/application/drawings[1]/cad-view")
+    ;; ...then an unrelated D2 dump happens.
+    (register-dump app :path "/application")
+    ;; D1.2A still resolves to the entity; D1.2A.grip2 to its 2nd grip.
+    (let ((ent (resolve-target app "D1.2A")))
+      (is (eq :entity (ui-role ent)))
+      (is (string= "2A" (ui-key ent))))
+    (let ((grip (resolve-target app "D1.2A.grip2")))
+      (is (eq :grip (ui-role grip)))
+      (is (string= "2" (ui-key grip))))))
+
+(test resolve-bare-key-in-last-dump
+  (reset-dump-registry)
+  (let* ((app (%make-addressing-tree))
+         (view (resolve-target app "/application/drawings[1]/cad-view")))
+    (register-dump view :path "/application/drawings[1]/cad-view")
+    ;; "2A" alone resolves in the last dump.
+    (let ((ent (resolve-target app "2A")))
+      (is (eq :entity (ui-role ent)))
+      (is (string= "2A" (ui-key ent))))))
+
+(test resolve-d-reference-errors
+  (reset-dump-registry)
+  (let ((app (%make-addressing-tree)))
+    ;; unknown dump number
+    (is (eq :nf (handler-case (resolve-target app "D9.2A")
+                  (target-not-found () :nf))))
+    ;; a bare key with no dump recorded
+    (is (eq :nf (handler-case (resolve-target app "2A")
+                  (target-not-found () :nf))))
+    ;; register a dump whose entries have two grips keyed "1"/"2" -> a bare key
+    ;; that appears twice would be ambiguous; here the cad-view dump has one 2A.
+    (register-dump (resolve-target app "/application/drawings[1]/cad-view"))
+    (let ((grip1 (resolve-target app "1")))
+      (is (eq :grip (ui-role grip1))))))

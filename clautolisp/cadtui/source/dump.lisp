@@ -105,12 +105,107 @@ dump for later relative addressing."
 (defvar *dump-counter* 0
   "Monotonic counter for paginated-dump numbers (the D<n> in a dump header).")
 
+(defstruct dump-descriptor
+  "A recorded dump, so its keys stay addressable as D<n>.cle after later dumps
+or window switches (spec §5.2). NUMBER is the D<n>; PATH the relative path
+shown; ROOT the node dumped; ENTRIES an alist (key-string . node) for every node
+the dump rendered. ITEMS/TOTAL/PAGE-SIZE/PAGE hold the pagination state of a
+list dump (nil for a structural tree dump)."
+  number path root
+  (entries '())
+  (items nil) (total nil) (page-size nil) (page nil))
+
+(defvar *dump-registry* (make-hash-table :test 'eql)
+  "Maps a D<n> number to its DUMP-DESCRIPTOR.")
+
 (defvar *last-dump* nil
-  "The last paginated dump's descriptor, for suite/precedent (Phase 2/5).")
+  "The most recent DUMP-DESCRIPTOR, for suite/previous and bare-key addressing.")
+
+(defun reset-dump-registry ()
+  "Clear the dump registry, the last-dump pointer, and the D<n> counter. Tests
+call this in a fixture so slices stay order-independent."
+  (clrhash *dump-registry*)
+  (setf *last-dump* nil *dump-counter* 0)
+  (values))
+
+(defun find-dump (number)
+  "The DUMP-DESCRIPTOR numbered NUMBER, or NIL."
+  (gethash number *dump-registry*))
 
 (defun next-dump-number ()
   "Allocate the next D<n> dump number."
   (incf *dump-counter*))
+
+(defun collect-dump-entries (node &key depth items)
+  "The (key-string . node) pairs a dump of NODE renders: when ITEMS is given,
+just those nodes; otherwise NODE and its descendants down to DEPTH (as
+DUMP-NODE walks). Every key appearing in the dump is thereby addressable by
+D<n>.cle."
+  (if items
+      (mapcar (lambda (n) (cons (princ-to-string (ui-key n)) n)) items)
+      (let ((acc '()))
+        (labels ((walk (n d)
+                   (push (cons (princ-to-string (ui-key n)) n) acc)
+                   (when (or (null d) (> d 0))
+                     (dolist (child (ui-children n))
+                       (walk child (and d (1- d)))))))
+          (walk node depth))
+        (nreverse acc))))
+
+(defun register-dump (root &key (path "") depth items total page page-size)
+  "Allocate a D<n>, record a DUMP-DESCRIPTOR for the dump of ROOT (entries from
+COLLECT-DUMP-ENTRIES), set it as *LAST-DUMP*, and return it."
+  (let* ((number (next-dump-number))
+         (descriptor (make-dump-descriptor
+                      :number number :path path :root root
+                      :entries (collect-dump-entries root :depth depth :items items)
+                      :items items :total total :page page :page-size page-size)))
+    (setf (gethash number *dump-registry*) descriptor
+          *last-dump* descriptor)
+    descriptor))
+
+(defun dump-list (node &key (page 1) (page-size 50) (path "")
+                            (stream *standard-output*))
+  "Render a PAGINATED list dump of NODE's children: a D<n> header then the
+page's rows, registered so its keys are D<n>-addressable. Pagination is
+mandatory for lists (a drawing may hold 5000+ entities). Returns the descriptor."
+  (let* ((children (ui-children node))
+         (total (length children))
+         (start (* (1- page) page-size))
+         (page-items (when (and (>= page 1) (< start total))
+                       (subseq children start (min total (+ start page-size)))))
+         (descriptor (register-dump node :path path :items page-items
+                                    :total total :page page :page-size page-size)))
+    (dump-header path total :shown (length page-items) :page-size page-size
+                 :number (dump-descriptor-number descriptor) :stream stream)
+    (dolist (n page-items)
+      (format stream "  ~A~%" (%node-dump-line n)))
+    descriptor))
+
+(defun dump-page (descriptor page &key (stream *standard-output*))
+  "Re-render an existing list DESCRIPTOR at PAGE under its own D<n> (the engine
+of suite/previous/page(n)); children are re-read (R13). Returns the descriptor,
+or NIL when PAGE is out of range."
+  (let* ((root (dump-descriptor-root descriptor))
+         (children (ui-children root))
+         (total (length children))
+         (page-size (dump-descriptor-page-size descriptor))
+         (start (* (1- page) page-size)))
+    (when (or (< page 1) (>= start total))
+      (return-from dump-page nil))
+    (let ((page-items (subseq children start (min total (+ start page-size)))))
+      (setf (dump-descriptor-page descriptor) page
+            (dump-descriptor-items descriptor) page-items
+            (dump-descriptor-total descriptor) total
+            (dump-descriptor-entries descriptor)
+            (collect-dump-entries root :items page-items)
+            *last-dump* descriptor)
+      (dump-header (dump-descriptor-path descriptor) total
+                   :shown (length page-items) :page-size page-size
+                   :number (dump-descriptor-number descriptor) :stream stream)
+      (dolist (n page-items)
+        (format stream "  ~A~%" (%node-dump-line n)))
+      descriptor)))
 
 (defun dump-header (relative-path total
                     &key (shown total) (page-size 50) (number (next-dump-number))

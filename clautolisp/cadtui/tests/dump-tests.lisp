@@ -79,3 +79,44 @@
                                 :shown 50 :page-size 50 :stream s))))
     ;; the number advances for the next distinct dump
     (is (= 2 (next-dump-number)))))
+
+;;;; Phase 2 slice 3: dump registry + pagination.
+
+(test register-dump-records-entries-and-allocates-number
+  (reset-dump-registry)
+  (let* ((app (make-instance 'ui-application :key "application"))
+         (dwg (make-instance 'ui-drawing :key "plan.dwg")))
+    (add-child app dwg)
+    (add-child dwg (make-instance 'ui-cad-view :key "cad-view"))
+    (let ((desc (register-dump app :path "/application")))
+      (is (= 1 (dump-descriptor-number desc)))
+      (is (eq desc (find-dump 1)))
+      (is (eq desc *last-dump*))
+      ;; every rendered node's key is recorded
+      (is (not (null (assoc "cad-view" (clautolisp.cadtui::dump-descriptor-entries desc)
+                            :test #'string=)))))))
+
+(test dump-list-paginates-and-pages-under-same-number
+  (reset-dump-registry)
+  (let ((view (make-instance 'ui-cad-view :key "cad-view")))
+    (dotimes (i 5)
+      (add-child view (make-instance 'ui-entity :key (format nil "e~D" (1+ i)))))
+    ;; page 1 of size 2: header (D1) + entities e1,e2
+    (let ((out (with-output-to-string (s)
+                 (dump-list view :page 1 :page-size 2
+                            :path "/application/drawings[1]/cad-view/entities"
+                            :stream s))))
+      (is (search "D1 /application/drawings[1]/cad-view/entities (2/5, 2 per page)" out))
+      (is (search "entity:e1" out))
+      (is (search "entity:e2" out))
+      (is (not (search "entity:e3" out))))
+    ;; page 2 under the SAME D1
+    (let ((out (with-output-to-string (s)
+                 (dump-page *last-dump* 2 :stream s))))
+      (is (search "D1 " out))                 ; same number
+      (is (= 2 (dump-descriptor-page *last-dump*)))
+      (is (search "entity:e3" out))
+      (is (search "entity:e4" out))
+      (is (not (search "entity:e1" out))))
+    ;; out-of-range page returns nil
+    (is (null (dump-page *last-dump* 9)))))

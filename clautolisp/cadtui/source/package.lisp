@@ -48,6 +48,24 @@ documentation/cadtui-specifications.org (normative).")
    #:next-dump-number
    #:*dump-counter*
    #:*last-dump*
+   ;; Phase 2 slice 3: dump registry + pagination + D<n> addressing.
+   #:dump-descriptor
+   #:dump-descriptor-p
+   #:dump-descriptor-number
+   #:dump-descriptor-path
+   #:dump-descriptor-root
+   #:dump-descriptor-entries
+   #:dump-descriptor-items
+   #:dump-descriptor-total
+   #:dump-descriptor-page
+   #:dump-descriptor-page-size
+   #:*dump-registry*
+   #:reset-dump-registry
+   #:find-dump
+   #:register-dump
+   #:collect-dump-entries
+   #:dump-list
+   #:dump-page
    #:make-application-tree
    #:make-cador-tree
    ;; Phase 1 slice 3: addressing.
