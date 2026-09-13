@@ -138,7 +138,20 @@ divergence assumée par rapport à la spec.)
   thread par une file d'événements pré-remplie (dispatch %drain-cadtui-dcl-
   events + run-fn), l'analogue headless du stdin pré-alimenté. cadtui dépend
   désormais de autolisp-dcl (pas de cycle). MRs !219–!221.
-- Phase courante : 4 (consoles + threads, sur le scheduler cador-2).
+- Phase 4 (consoles + threads) : **FAIT** (2026-09-13). Chaque console de dessin
+  a un scheduled-context isolé (namespace par-document) sur le scheduler cador-2
+  + une file park-mailbox (type-ahead) ; console-runtime.lisp : make-console-
+  context, console-read-line (lecture bloquante park-aware), la boucle read-eval
+  (règles §5.6 : ( = Lisp dans le namespace isolé, sinon commande CAD stand-in),
+  activate-drawing-document (le switch pilote le document courant runtime). La
+  console est un INTERACTOR (console-interactor.lisp : *cadtui-console*, reader =
+  classify-line sur l'échappement de l'état d'activation, s'empile comme
+  aldo/sedit). cadtui dépend désormais de autolisp-interactor (pas de cycle).
+  MRs !222–!226. Aucun second scheduler ni appel bordeaux-threads dans cadtui.
+  REFINEMENT DIFFÉRÉ (plan slice 5) : brancher le producteur de start_dialog sur
+  la console vivante (la file DCL pré-remplie de la Phase 3 fonctionne déjà) —
+  petit, non bloquant, à reprendre au besoin.
+- Phase courante : 5 (vue CAD + entités + pagination spatiale).
 
 ## Conventions de code héritées de clautolisp
 - Common Lisp, style du dépôt existant (voir fichiers déjà présents

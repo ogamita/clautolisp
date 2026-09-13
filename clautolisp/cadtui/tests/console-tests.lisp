@@ -188,3 +188,45 @@ RESULTS. Returns the ui-console."
     (interpret-line "=activate(drawing:A)" app)
     (is (eq cA (implicit-input-target app)))
     (is (eq (console-namespace cA) (runtime-session-current-document session)))))
+
+;;;; Phase 4 slice 4b: the console interactor.
+
+(test cadtui-console-is-a-registered-interactor
+  (is (interactor-p *cadtui-console*))
+  (is (eq *cadtui-console* (find-registered-interactor "CADTUI-CONSOLE"))))
+
+(test console-reader-classifies-with-activation-escape
+  ;; The reader classifies a line via classify-line over the activation's escape.
+  (let ((*command-activation*
+          (make-activation *cadtui-console*
+                           (clautolisp.cadtui::make-cadtui-console-state
+                            :root (make-application-tree) :escape #\=))))
+    (is (equal '(:meta-command "help()")
+               (clautolisp.cadtui::%cadtui-console-reader
+                (make-input-context :stream (make-string-input-stream "=help()")))))
+    (is (equal '(:pass-through "=x")
+               (clautolisp.cadtui::%cadtui-console-reader
+                (make-input-context :stream (make-string-input-stream "==x")))))
+    (is (equal '(:pass-through "(setq a 1)")
+               (clautolisp.cadtui::%cadtui-console-reader
+                (make-input-context :stream (make-string-input-stream "(setq a 1)")))))
+    ;; tui-command-escape reads the current activation's escape.
+    (is (char= #\= (tui-command-escape)))))
+
+(test console-evaluator-routes-meta-and-pass-through
+  (let* ((session (make-runtime-session))
+         (app (make-application-tree))
+         (d (make-instance 'ui-drawing :key "A"))
+         (c (make-instance 'ui-console :key "console")))
+    (add-child app d) (add-child d c)
+    (make-console-context session c :document-key "A")
+    (let ((*command-activation*
+            (make-activation *cadtui-console*
+                             (clautolisp.cadtui::make-cadtui-console-state
+                              :root app :escape #\=))))
+      ;; a meta-command runs immediately
+      (let ((r (clautolisp.cadtui::%cadtui-console-evaluate '(:meta-command "help()"))))
+        (is (eq :ok (command-result-status r))))
+      ;; a pass-through line is delivered to the active console's queue
+      (clautolisp.cadtui::%cadtui-console-evaluate '(:pass-through "(princ 1)"))
+      (is (string= "(princ 1)" (park-mailbox-pop (console-queue c) 5))))))

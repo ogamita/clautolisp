@@ -55,6 +55,19 @@
                 #:read-runtime-from-string
                 #:autolisp-eval-toplevel-progn
                 #:set-runtime-session-current-document)
+  ;; Phase 4 slice 4b: the interactor framework (the console is an interactor).
+  (:import-from #:clautolisp.interactor
+                #:define-interactor
+                #:make-activation
+                #:activation-state
+                #:*command-activation*
+                #:push-interactor
+                #:pop-interactor
+                #:read-line-from-input-context
+                #:make-input-context
+                #:interactor-return
+                #:interactor-p
+                #:find-registered-interactor)
   (:documentation
    "The cadtui host: a textual, keyboard-driven UI tree for CAD objects and
 the CAD application, for headless interactive/scriptable testing of DCL
@@ -179,6 +192,10 @@ documentation/cadtui-specifications.org (normative).")
    #:console-read-line
    #:start-console
    #:activate-drawing-document
+   ;; Phase 4 slice 4b: the console interactor.
+   #:*cadtui-console*
+   #:push-console-interactor
+   #:tui-command-escape
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key
