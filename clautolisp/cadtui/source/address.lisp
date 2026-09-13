@@ -253,10 +253,21 @@ of role NAME (e.g. grip2 = the 2nd grip child)."
       (dolist (cle (rest keys) node)
         (setf node (%resolve-dotted-key node cle path))))))
 
+(defun %relative-segment-p (path)
+  "True when PATH is a single relative segment naming a child of the root — a
+role[i], a role:cle, or the active-drawing keyword (spec verb examples, e.g.
+activate(drawings[2])). A plain bare key (no [ or :) is NOT one: it resolves in
+the last dump."
+  (or (find #\[ path)
+      (find #\: path)
+      (string-equal path "active-drawing")))
+
 (defun resolve-target (root path)
   "Resolve PATH to a node under ROOT, or signal TARGET-NOT-FOUND /
 AMBIGUOUS-TARGET. PATH is an absolute /application path, a D<n>.cle relative
-reference (against a recorded dump), or a bare key (resolved in the last dump)."
+reference (against a recorded dump), a single relative segment naming a child of
+the root (role[i] / role:cle / active-drawing), or a bare key (resolved in the
+last dump)."
   (cond
     ((zerop (length path))
      (error 'target-not-found :path path :segment path))
@@ -264,10 +275,12 @@ reference (against a recorded dump), or a bare key (resolved in the last dump)."
      (%resolve-absolute-path root path))
     (t
      (multiple-value-bind (number keys) (%parse-d-reference path)
-       (if number
-           (%resolve-d-reference number keys path)
-           ;; a bare key: resolve in the last dump.
-           (let ((descriptor *last-dump*))
-             (unless descriptor
-               (error 'target-not-found :path path :segment path))
-             (%resolve-in-dump descriptor path path)))))))
+       (cond
+         (number (%resolve-d-reference number keys path))
+         ;; a single relative segment resolved against the root.
+         ((%relative-segment-p path) (resolve-segment root path path))
+         ;; a bare key: resolve in the last dump.
+         (t (let ((descriptor *last-dump*))
+              (unless descriptor
+                (error 'target-not-found :path path :segment path))
+              (%resolve-in-dump descriptor path path))))))))

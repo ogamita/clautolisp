@@ -154,3 +154,196 @@ a D<n>.key reference, or a bare key from the last dump."
 
 (define-verb :help (mc root)
   (make-command-result :status :ok :verb :help :text *help-text*))
+
+;;; --- PARTIAL (tree-only) and STAND-IN verbs (Phase 2 slice 5) ------
+;;;
+;;; These change the tree state that is meaningful headlessly (the active
+;;; drawing order, a view's selection, a tile's value, a viewport request, node
+;;; detachment) and stand in for the effects that need threads / live CAD /
+;;; edit-mode geometry (Phase 4/5). Every handler still RESOLVES its target now,
+;;; so an unresolvable target errors in Phase 2; only the effect is deferred.
+
+(defun %positional-targets (mc root)
+  "Resolve each :target positional of MC to a node."
+  (loop for p in (meta-command-positionals mc)
+        when (and (consp p) (eq (car p) :target))
+          collect (resolve-target root (cdr p))))
+
+(defun %cad-view-of (node)
+  "The ui-cad-view at or above NODE, or NIL."
+  (loop for n = node then (ui-parent n)
+        while n
+        when (eq :cad-view (ui-role n)) return n))
+
+(defun %activate-drawing (drawing)
+  "Move DRAWING to the front of its parent's :drawing children, so
+active-drawing (= drawings[1]) becomes DRAWING."
+  (let ((parent (ui-parent drawing)))
+    (when parent
+      (setf (ui-children parent) (remove drawing (ui-children parent)))
+      (let ((pos (position :drawing (ui-children parent) :key #'ui-role)))
+        (setf (ui-children parent)
+              (if pos
+                  (append (subseq (ui-children parent) 0 pos)
+                          (list drawing)
+                          (subseq (ui-children parent) pos))
+                  (append (ui-children parent) (list drawing))))))
+    drawing))
+
+(define-verb :activate (mc root)
+  (let* ((target (%first-target mc))
+         (node (and target (resolve-target root target))))
+    (cond
+      ((null node)
+       (make-command-result :status :error :verb :activate
+                            :text "activate needs a target"))
+      (t
+       (when (eq :drawing (ui-role node)) (%activate-drawing node))
+       (make-command-result :status :ok :verb :activate
+                            :text (format nil "activated ~A:~A"
+                                          (%role-name node) (ui-key node))
+                            :data node)))))
+
+(defun %selection-command (verb mc root combine)
+  (let* ((nodes (%positional-targets mc root))
+         (view (and nodes (%cad-view-of (first nodes)))))
+    (if view
+        (progn
+          (setf (ui-selection view) (funcall combine (ui-selection view) nodes))
+          (make-command-result :status :ok :verb verb :data view
+                               :text (format nil "selection: ~D" (length (ui-selection view)))))
+        (make-command-result :status :error :verb verb
+                             :text "no cad-view for the selection"))))
+
+(define-verb :select (mc root)
+  (%selection-command :select mc root (lambda (old new) (declare (ignore old)) new)))
+
+(define-verb :add-selection (mc root)
+  (%selection-command :add-selection mc root
+                      (lambda (old new) (union old new))))
+
+(define-verb :remove-selection (mc root)
+  (%selection-command :remove-selection mc root
+                      (lambda (old new) (set-difference old new))))
+
+(define-verb :input (mc root)
+  (let* ((target (%first-target mc))
+         (node (and target (resolve-target root target)))
+         (text (second (meta-command-positionals mc))))
+    (cond
+      ((null node) (make-command-result :status :error :verb :input
+                                        :text "input needs a target"))
+      ((eq :tile (ui-role node))
+       (setf (ui-tile-value node) text)
+       (make-command-result :status :ok :verb :input :data node
+                            :text (format nil "input ~S into ~A" text (ui-key node))))
+      (t (make-command-result :status :error :verb :input
+                              :text "input target is not a tile")))))
+
+(define-verb :close (mc root)
+  (let* ((target (%first-target mc))
+         (node (and target (resolve-target root target))))
+    (cond
+      ((null node) (make-command-result :status :error :verb :close
+                                        :text "close needs a target"))
+      ((null (ui-parent node)) (make-command-result :status :error :verb :close
+                                                    :text "cannot close the root"))
+      (t (let ((parent (ui-parent node)))
+           (setf (ui-children parent) (remove node (ui-children parent))
+                 (ui-parent node) nil)
+           (make-command-result :status :ok :verb :close :data parent
+                                :text (format nil "closed ~A:~A"
+                                              (%role-name node) (ui-key node))))))))
+
+(define-verb :zoom (mc root)
+  (let* ((target (%first-target mc))
+         (node (and target (resolve-target root target)))
+         (view (and node (%cad-view-of node))))
+    (if view
+        (progn
+          (setf (ui-viewport view)
+                (cond ((%option mc :window) (list :window (%option mc :window)))
+                      ((%option mc :factor) (list :factor (%option mc :factor)))
+                      (t (list :zoom))))
+          (make-command-result :status :ok :verb :zoom :data view :text "zoomed"))
+        (make-command-result :status :error :verb :zoom :text "no cad-view to zoom"))))
+
+(define-verb :pan (mc root)
+  (let* ((target (%first-target mc))
+         (node (and target (resolve-target root target)))
+         (view (and node (%cad-view-of node)))
+         (dx (second (meta-command-positionals mc)))
+         (dy (third (meta-command-positionals mc))))
+    (if view
+        (progn (setf (ui-viewport view) (list :pan dx dy))
+               (make-command-result :status :ok :verb :pan :data view :text "panned"))
+        (make-command-result :status :error :verb :pan :text "no cad-view to pan"))))
+
+(defparameter *key-bindings*
+  '(("f2"     . :toggle-text-window)
+    ("escape" . "cancel-command()")
+    ("delete" . :delete-selection)
+    ("tab"    . :cycle-grips))
+  "Maps a key name to a prebuilt meta-command (a string, re-dispatched) or a
+native-action keyword (spec §Touches). Like AutoCAD's AcceleratorCollection, a
+key is a shortcut to an action already expressible another way.")
+
+(define-verb :key (mc root)
+  (let* ((p (first (meta-command-positionals mc)))
+         (name (cond ((and (consp p) (eq (car p) :target)) (cdr p))
+                     ((keywordp p) (string-downcase (symbol-name p)))
+                     ((null p) "")
+                     (t (princ-to-string p))))
+         (binding (cdr (assoc name *key-bindings* :test #'string-equal))))
+    (cond
+      ((null binding)
+       (make-command-result :status :error :verb :key
+                            :text (format nil "unbound key ~S" name)))
+      ;; f2 toggles the text window == activate the implicit-input console.
+      ((eq binding :toggle-text-window)
+       (let ((console (implicit-input-target root)))
+         (make-command-result :status :ok :verb :key :data console
+                              :text (format nil "activated ~A"
+                                            (and console (ui-key console))))))
+      ((stringp binding)
+       (dispatch-meta-command (parse-meta-command binding) root))
+      (t
+       (make-command-result :status :not-yet :verb :key
+                            :text (format nil "key ~A (~A) not yet wired" name binding))))))
+
+(define-verb :click (mc root)
+  (let* ((target (%first-target mc))
+         (node (and target (resolve-target root target))))
+    (cond
+      ((null node) (make-command-result :status :error :verb :click
+                                        :text "click needs a target"))
+      ;; clicking a menu unrolls it: print its contents (spec §5.3).
+      ((eq :menu (ui-role node))
+       (let ((descriptor (register-dump node :path (or target ""))))
+         (make-command-result :status :ok :verb :click :data descriptor
+                              :text (with-output-to-string (s)
+                                      (format s "D~D ~A~%"
+                                              (dump-descriptor-number descriptor)
+                                              (or target ""))
+                                      (dump-node node :stream s)))))
+      ;; clicking an executable node would run its action (needs the CAD runtime).
+      ((ui-action node)
+       (make-command-result :status :not-yet :verb :click :data node
+                            :text (format nil "would run action ~A" (ui-action node))))
+      (t (make-command-result :status :ok :verb :click :data node
+                              :text (format nil "clicked ~A:~A"
+                                            (%role-name node) (ui-key node)))))))
+
+(defun %stand-in (verb mc root)
+  "A verb whose real effect needs Phase 4/5 (edit-mode / active-command /
+geometry): resolve its first target now (so a bad target still errors), then
+return a :not-yet ack recording the intent."
+  (let ((target (%first-target mc)))
+    (when target (resolve-target root target))
+    (make-command-result :status :not-yet :verb verb
+                         :text (format nil "~(~A~) is not yet wired (Phase 4/5)" verb))))
+
+(define-verb :dclick (mc root) (%stand-in :dclick mc root))
+(define-verb :right-click (mc root) (%stand-in :right-click mc root))
+(define-verb :drag (mc root) (%stand-in :drag mc root))
+(define-verb :cancel-command (mc root) (%stand-in :cancel-command mc root))

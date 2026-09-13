@@ -77,3 +77,81 @@ dispatch tests."
     (is (eq :error (command-result-status (interpret-line "=dump(/application/nope)" app))))
     ;; unknown verb
     (is (eq :error (command-result-status (interpret-line "=frobnicate()" app))))))
+
+;;;; Phase 2 slice 5: PARTIAL (tree-only) and STAND-IN verbs.
+
+(defun %verbs-tree ()
+  "A tree with two drawings; drawing 1 has a cad-view + entity, a dialog with a
+tile, and a menu-bar menu with an item that carries an action."
+  (let ((app (make-application-tree))
+        (d1 (make-instance 'ui-drawing :key "plan.dwg"))
+        (d2 (make-instance 'ui-drawing :key "coupe.dwg")))
+    (add-child app d1)
+    (add-child app d2)
+    (let ((view (make-instance 'ui-cad-view :key "cad-view")))
+      (add-child d1 view)
+      (add-child view (make-instance 'ui-entity :key "2A")))
+    (let ((dlg (make-instance 'ui-dialog :key "d1")))
+      (add-child d1 dlg)
+      (add-child dlg (make-instance 'ui-tile :key "name" :tile-type "edit_box")))
+    (let ((menu (make-instance 'ui-menu :key "Draw")))
+      (add-child (ui-find-child app "menu-bar") menu)
+      (add-child menu (make-instance 'ui-menu-item :key "Line" :action "LINE")))
+    app))
+
+(test activate-drawing-reorders-to-front
+  (let* ((app (%verbs-tree))
+         (r (interpret-line "=activate(drawings[2])" app)))
+    (is (eq :ok (command-result-status r)))
+    ;; drawings[2] (coupe.dwg) is now the active drawing.
+    (is (string= "coupe.dwg" (ui-key (resolve-target app "/application/active-drawing"))))))
+
+(test select-sets-view-selection
+  (let* ((app (%verbs-tree))
+         (r (interpret-line "=select(/application/drawings[1]/cad-view/entity:2A)" app))
+         (view (resolve-target app "/application/drawings[1]/cad-view")))
+    (is (eq :ok (command-result-status r)))
+    (is (= 1 (length (clautolisp.cadtui::ui-selection view))))
+    (is (string= "2A" (ui-key (first (clautolisp.cadtui::ui-selection view)))))))
+
+(test input-sets-tile-value
+  (let* ((app (%verbs-tree))
+         (r (interpret-line "=input(/application/drawings[1]/dialog:d1/tile:name, \"hello\")" app))
+         (tile (resolve-target app "/application/drawings[1]/dialog:d1/tile:name")))
+    (is (eq :ok (command-result-status r)))
+    (is (string= "hello" (clautolisp.cadtui::ui-tile-value tile)))))
+
+(test close-detaches-node
+  (let* ((app (%verbs-tree))
+         (r (interpret-line "=close(/application/drawings[2])" app)))
+    (is (eq :ok (command-result-status r)))
+    ;; coupe.dwg is gone; only plan.dwg remains as a drawing.
+    (is (null (ui-find-child app "coupe.dwg")))))
+
+(test key-f2-activates-console
+  (let* ((app (make-application-tree))
+         (r (interpret-line "=key(f2)" app)))
+    (is (eq :ok (command-result-status r)))
+    (is (eq (ui-find-child app "console") (command-result-data r)))))
+
+(test click-menu-unrolls-it
+  (let* ((app (%verbs-tree))
+         (r (interpret-line "=click(/application/menu-bar/menu:Draw)" app)))
+    (is (eq :ok (command-result-status r)))
+    (is (search "item:Line" (command-result-text r)))))
+
+(test click-action-node-is-not-yet
+  (let* ((app (%verbs-tree))
+         (r (interpret-line "=click(/application/menu-bar/menu:Draw/item:Line)" app)))
+    (is (eq :not-yet (command-result-status r)))
+    (is (search "LINE" (command-result-text r)))))
+
+(test stand-in-verbs-return-not-yet
+  (let ((app (%verbs-tree)))
+    (is (eq :not-yet (command-result-status
+                      (interpret-line "=dclick(/application/drawings[1])" app))))
+    (is (eq :not-yet (command-result-status
+                      (interpret-line "=cancel-command()" app))))
+    ;; but a bad target still errors, even for a stand-in.
+    (is (eq :error (command-result-status
+                    (interpret-line "=drag(/application/nope, 1, 2)" app))))))

@@ -121,7 +121,15 @@ divergence assumée par rapport à la spec.)
   :dessin/:entite/:vue-cad…, `dessins[]`, `dessin-actif`) a été re-canonicalisé
   en anglais (:drawing/:entity/:cad-view…, `drawings[]`, `active-drawing`) avant
   de bâtir le parseur — la spec §5.2/§5.3 reste la vue fr_FR.
-- Phase courante : 2.
+- Phase 2 (interpréteur du langage) : **FAIT** (2026-09-13). classify.lisp
+  (classificateur de lignes / échappement `=`/`==`), parser.lisp (parseur
+  `verbe(args)` en tokens anglais canoniques), dump.lisp (registre de dumps
+  D<n> + pagination `dump-list`/`dump-page`) + address.lisp (`D<n>.cle` et clé
+  nue dans le dernier dump), dispatch.lisp (`interpret-line` pur + table de
+  verbes : dump/page/next/previous/help COMPLETS ; activate/select/input/close/
+  zoom/pan/key/click PARTIELS sur l'arbre ; dclick/right-click/drag/
+  cancel-command en attente Phase 4/5). MRs !213–!218.
+- Phase courante : 3 (intégration DCL).
 
 ## Conventions de code héritées de clautolisp
 - Common Lisp, style du dépôt existant (voir fichiers déjà présents
