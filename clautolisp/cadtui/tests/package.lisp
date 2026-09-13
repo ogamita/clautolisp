@@ -92,7 +92,18 @@
                 #:console-queue
                 #:deliver-line-to-console
                 #:console-read-line
-                #:start-console)
+                #:start-console
+                #:activate-drawing-document
+                #:*cadtui-console*
+                #:push-console-interactor
+                #:tui-command-escape)
+  (:import-from #:clautolisp.interactor
+                #:make-input-context
+                #:make-activation
+                #:activation-state
+                #:*command-activation*
+                #:interactor-p
+                #:find-registered-interactor)
   (:import-from #:clautolisp.autolisp-dcl
                 #:dcl-runtime-load-dialog
                 #:dcl-runtime-new-dialog
