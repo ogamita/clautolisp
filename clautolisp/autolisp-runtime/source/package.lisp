@@ -94,6 +94,16 @@
    #:scheduler-request-break
    #:scheduler-pending-break-p
    #:scheduler-observe-break
+   ;; slice 3d: continuations-as-threads parked on a condition variable
+   #:scheduled-context-thread
+   #:scheduled-context-mailbox
+   #:scheduler-spawn-context
+   #:scheduler-start
+   #:scheduler-resume
+   #:scheduler-switch
+   #:make-park-mailbox
+   #:park-mailbox-push
+   #:park-mailbox-pop
    #:autolisp-file
    #:make-autolisp-file
    #:autolisp-format-real

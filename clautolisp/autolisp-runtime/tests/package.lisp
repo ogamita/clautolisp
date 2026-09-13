@@ -137,6 +137,15 @@
                 #:scheduler-request-break
                 #:scheduler-pending-break-p
                 #:scheduler-observe-break
+                #:scheduled-context-thread
+                #:scheduled-context-mailbox
+                #:scheduler-spawn-context
+                #:scheduler-start
+                #:scheduler-resume
+                #:scheduler-switch
+                #:make-park-mailbox
+                #:park-mailbox-push
+                #:park-mailbox-pop
                 #:separate-vlx-namespace-name
                 #:set-default-evaluation-context
                 #:set-autolisp-errno

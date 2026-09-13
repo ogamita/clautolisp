@@ -179,3 +179,82 @@ SETF-then-restore-to-nil would clobber it for every later suite."
       (is (null (scheduler-observe-break sched)))    ; X runs, Y's break not due
       (scheduler-activate sched y)
       (is (eq t (scheduler-observe-break sched))))))  ; now Y runs -> due
+
+;;; --- Continuations as parked threads (slice 3d) -------------------
+
+(defun %park-teardown (scheduler)
+  "Unwind any still-parked context threads (push :exit, then join) so no thread
+leaks across the FiveAM double run."
+  (dolist (sc (scheduler-context-list scheduler))
+    (let ((th (scheduled-context-thread sc)))
+      (when (and th (bordeaux-threads:thread-alive-p th))
+        (ignore-errors (park-mailbox-push (scheduled-context-mailbox sc) :exit))
+        (ignore-errors (bordeaux-threads:join-thread th))))))
+
+(test scheduler-spawns-parked-thread-and-starts-it
+  ;; A spawned context is born parked (thread alive, nothing run); scheduler-start
+  ;; wakes it and it runs as the current context.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (x (%make-doc-context session "X" "X"))
+           (results (make-park-mailbox)))
+      (scheduler-register-context sched x)
+      (scheduler-spawn-context sched x
+        (lambda ()
+          (park-mailbox-push results
+                             (list :ran (eq x (scheduler-current-context sched))))))
+      (unwind-protect
+           (progn
+             (is (bordeaux-threads:thread-alive-p (scheduled-context-thread x)))
+             (scheduler-start sched x)
+             (is (equal '(:ran t) (park-mailbox-pop results 5))))
+        (%park-teardown sched)))))
+
+(test scheduler-switch-hands-off-exactly-one-running
+  ;; Two context threads hand control back and forth via the condvar rendezvous;
+  ;; the strict interleaving proves exactly one runs at a time.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (a (%make-doc-context session "A" "A"))
+           (b (%make-doc-context session "B" "B"))
+           (results (make-park-mailbox)))
+      (scheduler-register-context sched a)
+      (scheduler-register-context sched b)
+      (flet ((thunk (self other first second done)
+               (lambda ()
+                 (park-mailbox-push results first)
+                 (let ((tok (scheduler-switch sched self other)))
+                   (unless (eq tok :exit) (park-mailbox-push results second)))
+                 (park-mailbox-push results done))))
+        (scheduler-spawn-context sched a (thunk a b :a-first :a-second :a-done))
+        (scheduler-spawn-context sched b (thunk b a :b-first :b-second :b-done))
+        (unwind-protect
+             (progn
+               (scheduler-start sched a)
+               ;; A runs, parks at switch; B runs, parks at switch; A resumes+finishes.
+               (is (eq :a-first  (park-mailbox-pop results 5)))
+               (is (eq :b-first  (park-mailbox-pop results 5)))
+               (is (eq :a-second (park-mailbox-pop results 5)))
+               (is (eq :a-done   (park-mailbox-pop results 5)))
+               ;; B is still parked in its switch; resume it to let it finish.
+               (scheduler-resume sched b)
+               (is (eq :b-second (park-mailbox-pop results 5)))
+               (is (eq :b-done   (park-mailbox-pop results 5))))
+          (%park-teardown sched))))))
+
+(test scheduler-activate-spawns-no-thread
+  ;; No-regression: the synchronous activation path creates no threads (only
+  ;; scheduler-spawn-context does), so single-document behaviour stays thread-free.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (a (%make-doc-context session "A" "A"))
+           (b (%make-doc-context session "B" "B")))
+      (scheduler-register-context sched a)
+      (scheduler-register-context sched b)
+      (scheduler-activate sched a)
+      (scheduler-activate sched b)
+      (is (null (scheduled-context-thread a)))
+      (is (null (scheduled-context-thread b))))))
