@@ -60,6 +60,30 @@ not implement OPERATION."
 ;;; signatures must not change without a documented migration in
 ;;; the implementation roadmap.
 
+;; Session and document management (D1 Group 1 — cador-multidocument-host).
+;; A host holds zero or more open documents; each carries its own drawing
+;; database. These operations open/close/enumerate them and switch which one
+;; is CURRENT (the one the entity/table/sysvar surface then operates on). A
+;; single-document host is the degenerate case: one document, always current.
+(defgeneric host-open-document (host &optional name)
+  (:documentation "Open a new, empty document (optionally named NAME) and
+return an opaque document KEY identifying it. Does not change the current
+document."))
+(defgeneric host-close-document (host key)
+  (:documentation "Close the document identified by KEY. Returns T if a
+document was closed, NIL if KEY was unknown. Closing the current document is
+the host's decision to define (cador refuses to leave itself with none)."))
+(defgeneric host-activate-document (host key)
+  (:documentation "Make the document identified by KEY the CURRENT document —
+subsequent entity/table/sysvar operations act on it. Returns KEY. Signals if
+KEY is unknown."))
+(defgeneric host-current-document (host)
+  (:documentation "Return the KEY of the current document, or NIL if the host
+has none open."))
+(defgeneric host-document-list (host)
+  (:documentation "Return the list of open document KEYs, in the order they
+were opened (current or not)."))
+
 ;; Entity API (autolisp-spec ch.16)
 (defgeneric host-entget    (host ename &optional applist) (:documentation "Return the DXF group-code list for ENAME, or nil. With APPLIST (a list of registered application names, or the wildcard \"*\"), the matching xdata is appended as a trailing (-3 ...) cell; without it the xdata is suppressed."))
 (defgeneric host-entmod    (host group-code-list)     (:documentation "Apply changes to an existing entity from a DXF group-code list."))
@@ -176,6 +200,11 @@ not implement OPERATION."
 ;;; not-supported method for the rest. NullHost overrides every
 ;;; method explicitly to pin its behaviour.
 
+(defmethod host-open-document     ((host host) &optional name) (declare (ignore name)) (signal-host-not-supported host 'open-document))
+(defmethod host-close-document    ((host host) key)           (declare (ignore key)) (signal-host-not-supported host 'close-document))
+(defmethod host-activate-document ((host host) key)           (declare (ignore key)) (signal-host-not-supported host 'activate-document))
+(defmethod host-current-document  ((host host))               (signal-host-not-supported host 'current-document))
+(defmethod host-document-list     ((host host))               (signal-host-not-supported host 'document-list))
 (defmethod host-entget    ((host host) ename &optional applist) (declare (ignore ename applist)) (signal-host-not-supported host 'entget))
 (defmethod host-entmod    ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmod))
 (defmethod host-entmake   ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmake))

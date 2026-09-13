@@ -56,6 +56,11 @@
                 ;; (and the upcoming Phase-11 selection / sysvar files)
                 ;; so that defmethod attaches a method to the *host*
                 ;; package's generic, not a new same-named symbol.
+                #:host-open-document
+                #:host-close-document
+                #:host-activate-document
+                #:host-current-document
+                #:host-document-list
                 #:host-entget
                 #:host-entmod
                 #:host-entmake
@@ -157,6 +162,9 @@
    #:drawing-header-variables
    #:drawing-classes
    #:cador-active-drawing
+   ;; Document registry (cador-2 slice 1)
+   #:cador-documents
+   #:cador-active-document-key
    ;; Data structures
    #:entity-handle
    #:make-entity-handle

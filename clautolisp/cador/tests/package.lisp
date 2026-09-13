@@ -20,6 +20,11 @@
   (:import-from #:clautolisp.autolisp-host
                 #:host
                 #:host-name
+                #:host-open-document
+                #:host-close-document
+                #:host-activate-document
+                #:host-current-document
+                #:host-document-list
                 #:host-entget
                 #:host-entmod
                 #:host-entmake
@@ -90,6 +95,8 @@
                 #:*full-sysvar-catalogue*
                 #:cador-entities
                 #:cador-active-drawing
+                #:cador-documents
+                #:cador-active-document-key
                 #:cador-picksets
                 #:cador-tables
                 #:cador-named-object-dictionary
