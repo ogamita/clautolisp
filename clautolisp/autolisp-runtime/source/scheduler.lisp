@@ -58,14 +58,22 @@ cooperative coroutine carrier, never a concurrent worker. Both are NIL until the
 context is first spawned; a single-document session never spawns one.
 
 PENDING-BREAK is the deferred-break flag; SAVED-ENV the saved per-context
-dynamic environment."
+dynamic environment.
+
+THUNK is this context's evaluation entry, supplied at registration for a
+thread-backed context and NIL for a bare (synchronous) one. It is the switch
+SCHEDULER-ACTIVATE dispatches on: THUNK nil takes the pure synchronous state
+machine (single-document and every batch cador run), THUNK non-nil takes the
+thread rendezvous (real parking). A bare context spawns no thread, so
+single-document behaviour stays thread-free (slice 3e)."
   (context nil)
   (document-key nil)
   (status :runnable :type keyword)
   (thread nil)
   (mailbox nil)
   (pending-break nil)
-  (saved-env nil))
+  (saved-env nil)
+  (thunk nil))
 
 (defstruct document-scheduler
   "The single-runner cooperative scheduler: CONTEXTS is the ordered list of
@@ -137,26 +145,30 @@ single-document path are unaffected."
   scheduled-context)
 
 ;;; --- Activation (the core transition) -----------------------------
+;;;
+;;; SCHEDULER-ACTIVATE is the single entry every caller uses; slice 3e folds the
+;;; thread rendezvous in behind it so the caller never chooses between "activate"
+;;; and "switch". The fold dispatches on the target's THUNK:
+;;;
+;;;   THUNK nil  -> %SCHEDULER-ACTIVATE-SYNCHRONOUS: the pure state machine that
+;;;                 shipped in slices 2a-2c, byte-for-byte. This is what a
+;;;                 single-document session and every scripted/batch cador run
+;;;                 take (they park nowhere, D2 s I.2), so no thread is ever
+;;;                 spawned on that path.
+;;;   THUNK set  -> the rendezvous: from the driver thread, lazily spawn the
+;;;                 context's thread and START it; from a running context's OWN
+;;;                 thread, hand off via SCHEDULER-SWITCH (park self, wake target).
+;;;
+;;; The env install (active context + restore-env + current-document lock-step)
+;;; is factored into %SCHEDULER-INSTALL-CONTEXT so that on the thread path it
+;;; runs ON the woken thread (each context thread owns thread-local bindings of
+;;; the two process-globals — see SCHEDULER-SPAWN-CONTEXT), never on the driver.
 
-(defun scheduler-activate (scheduler scheduled-context)
-  "Make SCHEDULED-CONTEXT the single running context: demote the previously
-running one to :RUNNABLE, mark this one :RUNNING, install its
-EVALUATION-CONTEXT as the active one, and switch the runtime current document
-(and, via *DOCUMENT-ACTIVATION-HOOK*, the host document) in lock-step. Asserts
-the at-most-one-running invariant. Returns SCHEDULED-CONTEXT."
-  (unless (member scheduled-context (document-scheduler-contexts scheduler))
-    (signal-autolisp-runtime-error
-     :no-such-context
-     "Context ~S is not registered with this scheduler."
-     scheduled-context))
-  (let ((prev (document-scheduler-running scheduler)))
-    (when (and prev (not (eq prev scheduled-context)))
-      ;; Save the demoted runner's per-context globals before it stops running.
-      (%scheduler-save-env prev)
-      (setf (scheduled-context-status prev) :runnable)))
-  (setf (scheduled-context-status scheduled-context) :running
-        (document-scheduler-running scheduler) scheduled-context)
-  (%assert-single-runner scheduler)
+(defun %scheduler-install-context (scheduled-context)
+  "Install SCHEDULED-CONTEXT's EVALUATION-CONTEXT as the active one, restore its
+per-context globals, and switch the runtime current document (firing
+*DOCUMENT-ACTIVATION-HOOK* in lock-step). Run by whichever thread becomes the
+runner. Returns SCHEDULED-CONTEXT."
   (let ((context (scheduled-context-context scheduled-context)))
     (when context
       (setf clautolisp.autolisp-runtime.internal::*active-evaluation-context*
@@ -171,6 +183,65 @@ the at-most-one-running invariant. Returns SCHEDULED-CONTEXT."
           ;; activation hook, so runtime and host stay in lock-step.
           (set-runtime-session-current-document session document)))))
   scheduled-context)
+
+(defun %scheduler-activate-synchronous (scheduler scheduled-context)
+  "The pure, thread-free activation state machine (slices 2a-2c): demote the
+previous runner to :RUNNABLE, mark this one :RUNNING, assert the invariant, and
+install its environment on the calling thread. Returns SCHEDULED-CONTEXT."
+  (let ((prev (document-scheduler-running scheduler)))
+    (when (and prev (not (eq prev scheduled-context)))
+      ;; Save the demoted runner's per-context globals before it stops running.
+      (%scheduler-save-env prev)
+      (setf (scheduled-context-status prev) :runnable)))
+  (setf (scheduled-context-status scheduled-context) :running
+        (document-scheduler-running scheduler) scheduled-context)
+  (%assert-single-runner scheduler)
+  (%scheduler-install-context scheduled-context)
+  scheduled-context)
+
+(defun %on-context-thread-p (scheduler)
+  "True when the calling thread IS the scheduler's currently running context's
+thread — i.e. a running context is activating from inside its own evaluation, so
+the transition must be a hand-off (SCHEDULER-SWITCH), not a driver-side start."
+  (let ((running (document-scheduler-running scheduler)))
+    (and running
+         (scheduled-context-thread running)
+         (eq (bordeaux-threads:current-thread)
+             (scheduled-context-thread running)))))
+
+(defun scheduler-activate (scheduler scheduled-context)
+  "Make SCHEDULED-CONTEXT the single running context. The unified entry (slice
+3e): a bare context (THUNK nil) takes the synchronous state machine and installs
+its EVALUATION-CONTEXT as active, switching the runtime current document (and,
+via *DOCUMENT-ACTIVATION-HOOK*, the host document) in lock-step; a thread-backed
+context (THUNK set) is bootstrapped (lazy spawn + start) from the driver thread,
+or handed off via SCHEDULER-SWITCH when a running context activates from its own
+thread. Asserts the at-most-one-running invariant. Returns SCHEDULED-CONTEXT."
+  (unless (member scheduled-context (document-scheduler-contexts scheduler))
+    (signal-autolisp-runtime-error
+     :no-such-context
+     "Context ~S is not registered with this scheduler."
+     scheduled-context))
+  (cond
+    ;; No thunk => the pure synchronous path (single-document, batch cador):
+    ;; unchanged from slices 2a-2c, spawns no thread.
+    ((null (scheduled-context-thunk scheduled-context))
+     (%scheduler-activate-synchronous scheduler scheduled-context))
+    ;; Thread-backed, and we ARE the running context's thread => hand off.
+    ((%on-context-thread-p scheduler)
+     (let ((from (document-scheduler-running scheduler)))
+       (unless (eq from scheduled-context)
+         (scheduler-spawn-context scheduler scheduled-context
+                                  (scheduled-context-thunk scheduled-context))
+         (scheduler-switch scheduler from scheduled-context)))
+     scheduled-context)
+    ;; Thread-backed, driver thread => bootstrap or re-enter: spawn (if needed)
+    ;; and start.
+    (t
+     (scheduler-spawn-context scheduler scheduled-context
+                              (scheduled-context-thunk scheduled-context))
+     (scheduler-start scheduler scheduled-context)
+     scheduled-context)))
 
 ;;; --- Deferred-break discipline (slice 2c) -------------------------
 ;;;
@@ -276,10 +347,21 @@ context already carrying a thread is not respawned."
     (setf (scheduled-context-thread sc)
           (bordeaux-threads:make-thread
            (lambda ()
-             ;; born idle: wait for the first :run before doing anything.
-             (let ((token (park-mailbox-pop (scheduled-context-mailbox sc))))
-               (unless (eq token :exit)
-                 (funcall thunk))))
+             ;; Each context thread owns thread-local bindings of the two
+             ;; per-evaluation process-globals, so its install-on-wake SETFs are
+             ;; private (no cross-thread leak into the top-level value, and the
+             ;; FiveAM double-run stays isolated — %with-fresh-active-context
+             ;; only rebinds them in the driver thread).
+             (let ((clautolisp.autolisp-runtime.internal::*active-evaluation-context*
+                     clautolisp.autolisp-runtime.internal::*active-evaluation-context*)
+                   (*current-form* *current-form*))
+               ;; born idle: wait for the first :run before doing anything.
+               (let ((token (park-mailbox-pop (scheduled-context-mailbox sc))))
+                 (unless (eq token :exit)
+                   ;; This thread is now the runner: install its environment
+                   ;; here, on itself, before evaluating.
+                   (%scheduler-install-context sc)
+                   (funcall thunk)))))
            :name (format nil "cador-doc-~A"
                          (or (scheduled-context-document-key sc) "?")))))
   sc)
@@ -296,10 +378,16 @@ freshly spawned (parked) context, or to re-enter a parked one."
 (setf (fdefinition 'scheduler-resume) (fdefinition 'scheduler-start))
 
 (defun scheduler-switch (scheduler from to)
-  "Called by FROM's OWN thread to hand control to TO: mark the transition under
-the lock, wake TO's thread, then park FROM's thread on its mailbox until it is
-resumed. Returns the token FROM is resumed with (:run normally, :exit to unwind
-for teardown)."
+  "Called by FROM's OWN thread to hand control to TO: save FROM's per-context
+globals, mark the transition under the lock, wake TO's thread, then park FROM's
+thread on its mailbox until it is resumed. On resume with :run, reinstall FROM's
+environment (on FROM's own thread) before returning; on :exit, return without
+reinstalling so the thread can unwind for teardown. Returns the resume token."
+  (%scheduler-save-env from)
   (%scheduler-set-running scheduler to)
-  (park-mailbox-push (scheduled-context-mailbox to) :run)   ; wake TO
-  (park-mailbox-pop (scheduled-context-mailbox from)))       ; park FROM
+  (park-mailbox-push (scheduled-context-mailbox to) :run)         ; wake TO
+  (let ((token (park-mailbox-pop (scheduled-context-mailbox from)))) ; park FROM
+    (unless (eq token :exit)
+      ;; Resumed as the runner again: reinstall our environment on this thread.
+      (%scheduler-install-context from))
+    token))
