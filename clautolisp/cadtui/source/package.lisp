@@ -62,6 +62,9 @@ documentation/cadtui-specifications.org (normative).")
    #:ambiguous-target-segment
    #:ambiguous-target-candidates
    #:*container-role-map*
+   ;; Phase 2 slice 1: line classifier / escape mechanism.
+   #:*command-escape*
+   #:classify-line
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key

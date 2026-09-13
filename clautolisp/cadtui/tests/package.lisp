@@ -51,6 +51,9 @@
                 #:resolve-target
                 #:target-not-found
                 #:ambiguous-target
-                #:ambiguous-target-candidates)
+                #:ambiguous-target-candidates
+                ;; Phase 2 slice 1: classifier
+                #:*command-escape*
+                #:classify-line)
   (:export #:cadtui-suite
            #:run-all-tests))
