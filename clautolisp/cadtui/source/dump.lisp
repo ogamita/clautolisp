@@ -114,10 +114,14 @@ dump for later relative addressing."
 or window switches (spec §5.2). NUMBER is the D<n>; PATH the relative path
 shown; ROOT the node dumped; ENTRIES an alist (key-string . node) for every node
 the dump rendered. ITEMS/TOTAL/PAGE-SIZE/PAGE hold the pagination state of a
-list dump (nil for a structural tree dump)."
+list dump (nil for a structural tree dump). PROVIDER, when set, is a function
+of (PAGE PAGE-SIZE) returning (values page-items total): a re-page/next over a
+lazily-materialised source (the CAD view's entities) reads through it instead of
+over ROOT's static children."
   number path root
   (entries '())
-  (items nil) (total nil) (page-size nil) (page nil))
+  (items nil) (total nil) (page-size nil) (page nil)
+  (provider nil))
 
 (defvar *dump-registry* (make-hash-table :test 'eql)
   "Maps a D<n> number to its DUMP-DESCRIPTOR.")
@@ -156,14 +160,17 @@ D<n>.cle."
           (walk node depth))
         (nreverse acc))))
 
-(defun register-dump (root &key (path "") depth items total page page-size)
+(defun register-dump (root &key (path "") depth items total page page-size provider)
   "Allocate a D<n>, record a DUMP-DESCRIPTOR for the dump of ROOT (entries from
-COLLECT-DUMP-ENTRIES), set it as *LAST-DUMP*, and return it."
+COLLECT-DUMP-ENTRIES), set it as *LAST-DUMP*, and return it. PROVIDER, when
+given, makes the dump re-pageable over a lazily-materialised source (spec
+§Pagination): DUMP-PAGE reads through it instead of over ROOT's children."
   (let* ((number (next-dump-number))
          (descriptor (make-dump-descriptor
                       :number number :path path :root root
                       :entries (collect-dump-entries root :depth depth :items items)
-                      :items items :total total :page page :page-size page-size)))
+                      :items items :total total :page page :page-size page-size
+                      :provider provider)))
     (setf (gethash number *dump-registry*) descriptor
           *last-dump* descriptor)
     descriptor))
@@ -188,16 +195,23 @@ mandatory for lists (a drawing may hold 5000+ entities). Returns the descriptor.
 
 (defun dump-page (descriptor page &key (stream *standard-output*))
   "Re-render an existing list DESCRIPTOR at PAGE under its own D<n> (the engine
-of suite/previous/page(n)); children are re-read (R13). Returns the descriptor,
-or NIL when PAGE is out of range."
+of suite/previous/page(n)). A PROVIDER-backed dump (the CAD view's entities) is
+re-read through the provider; otherwise ROOT's children are re-read (R13).
+Returns the descriptor, or NIL when PAGE is out of range."
   (let* ((root (dump-descriptor-root descriptor))
-         (children (ui-children root))
-         (total (length children))
          (page-size (dump-descriptor-page-size descriptor))
+         (provider (dump-descriptor-provider descriptor))
          (start (* (1- page) page-size)))
-    (when (or (< page 1) (>= start total))
-      (return-from dump-page nil))
-    (let ((page-items (subseq children start (min total (+ start page-size)))))
+    (multiple-value-bind (page-items total)
+        (if provider
+            (funcall provider page page-size)
+            (let* ((children (ui-children root))
+                   (n (length children)))
+              (values (when (and (>= page 1) (< start n))
+                        (subseq children start (min n (+ start page-size))))
+                      n)))
+      (when (or (< page 1) (and (plusp total) (>= start total)))
+        (return-from dump-page nil))
       (setf (dump-descriptor-page descriptor) page
             (dump-descriptor-items descriptor) page-items
             (dump-descriptor-total descriptor) total

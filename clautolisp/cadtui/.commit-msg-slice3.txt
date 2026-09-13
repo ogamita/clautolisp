@@ -1,0 +1,23 @@
+clautolisp 2.2.51: cadtui phase 5 slice 3 — dump-entities (spatial cull + lazy pagination)
+
+dump-entities renders a CAD view's entities as a paginated, D<n>-addressable
+list without ever materialising all of them (a real drawing holds 5000+):
+
+- It iterates the pure entity VALUES (cheap) to count and spatially cull, then
+  mirrors ONLY the shown page into ui-entity nodes, which replace the cad-view's
+  children (the lazy one-page-at-a-time mirror the spec mandates).
+- The cull window is the explicit window: argument, else the view's viewport
+  bounds, else none (show all). Culling uses %bbox-intersects-p over each
+  entity's own bounding box; an entity with no coordinates is dropped when a
+  window is set.
+- A new provider slot on dump-descriptor holds a (page page-size) ->
+  (values page-nodes total) closure; dump-page re-reads through it for
+  next/previous/page(n), so re-paging stays lazy. A provider-less dump still
+  re-reads over the root's static children as before.
+
+Tests: cad-view-tests gains paginate+provider-repage, explicit-window cull,
+viewport-fallback cull, and no-window-no-viewport-shows-all. Full
+make -C clautolisp test-sbcl green. alfe 2.2.59 tracks.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01XDPCe5o6LJkv4CR2FvYauz

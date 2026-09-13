@@ -102,3 +102,61 @@
           (r (interpret-line "=dump(/application/drawings[1]/cad-view)" app)))
       (is (eq :ok (command-result-status r)))
       (is (equal before (viewport-bounds (ui-viewport view)))))))
+
+;;;; Phase 5 slice 3: dump-entities — spatial cull, pagination, provider reuse.
+
+(defun %entity-drawing ()
+  "A drawing of five LINE entities (handles 1..5) at x = 0,10,20,30,40, each a
+1x1 segment, so a window can pick a known prefix."
+  (let ((d (make-drawing)))
+    (dotimes (i 5)
+      (let ((x (* i 10)))
+        (add-entity d (list (cons 0 "LINE") (cons 8 "0")
+                            (list 10 x 0 0) (list 11 (+ x 1) 1 0))
+                    :handle (princ-to-string (1+ i)))))
+    d))
+
+(defun %sink () (make-broadcast-stream))
+
+(test dump-entities-paginates-and-provider-repages-lazily
+  (reset-dump-registry)
+  (let* ((d (%entity-drawing))
+         (view (make-instance 'ui-cad-view :key "cad-view" :drawing d))
+         (desc (dump-entities view :page 1 :page-size 2 :stream (%sink))))
+    (is (= 5 (dump-descriptor-total desc)))
+    ;; only the shown page is mirrored into nodes (lazy, one page at a time).
+    (is (equal '("1" "2") (mapcar #'ui-key (ui-children view))))
+    ;; page 2 re-reads through the provider; children become the new page only.
+    (is (dump-page desc 2 :stream (%sink)))
+    (is (equal '("3" "4") (mapcar #'ui-key (ui-children view))))
+    (is (dump-page desc 3 :stream (%sink)))
+    (is (equal '("5") (mapcar #'ui-key (ui-children view))))
+    ;; page 4 is out of range.
+    (is (null (dump-page desc 4 :stream (%sink))))))
+
+(test dump-entities-culls-to-an-explicit-window
+  (reset-dump-registry)
+  (let* ((d (%entity-drawing))
+         (view (make-instance 'ui-cad-view :key "cad-view" :drawing d))
+         (desc (dump-entities view :window '(0 0 5 100) :page-size 50 :stream (%sink))))
+    ;; only entity 1 (bbox 0..1) meets the x<=5 window.
+    (is (= 1 (dump-descriptor-total desc)))
+    (is (equal '("1") (mapcar #'ui-key (ui-children view))))))
+
+(test dump-entities-culls-to-the-viewport-when-no-window-given
+  (reset-dump-registry)
+  (let* ((d (%entity-drawing))
+         (view (make-instance 'ui-cad-view :key "cad-view" :drawing d
+                              :viewport (make-viewport :x1 0 :y1 0 :x2 25 :y2 100))))
+    (let ((desc (dump-entities view :page-size 50 :stream (%sink))))
+      ;; entities 1,2,3 (x 0,10,20) fall inside x<=25; 4,5 do not.
+      (is (= 3 (dump-descriptor-total desc)))
+      (is (equal '("1" "2" "3") (mapcar #'ui-key (ui-children view)))))))
+
+(test dump-entities-with-no-window-and-no-viewport-shows-all
+  (reset-dump-registry)
+  (let* ((d (%entity-drawing))
+         (view (make-instance 'ui-cad-view :key "cad-view" :drawing d))
+         (desc (dump-entities view :page-size 50 :stream (%sink))))
+    (is (= 5 (dump-descriptor-total desc)))
+    (is (equal '("1" "2" "3" "4" "5") (mapcar #'ui-key (ui-children view))))))
