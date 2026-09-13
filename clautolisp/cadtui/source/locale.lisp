@@ -219,3 +219,16 @@ dictionaries into the image so runtime needs no data files present."
 ;; ../data/locale/ from here. Re-run LOAD-LOCALE-DATA-FROM-DIRECTORY for a later
 ;; drop (e.g. fresh probe output converted to command.sexp).
 (%embed-locale-tree "../data/locale/*/*.sexp")
+
+;; ...and reload the tree from disk at LOAD/build time when it is reachable.
+;; ASDF does not track the embedded data files as dependencies of this source
+;; file, so a .sexp edited without also touching locale.lisp would otherwise be
+;; missed until the next full rebuild; reloading here means a source-tree build
+;; (and the test suite) always reflects the current .sexp files. In a dumped or
+;; installed image with no source tree the DIRECTORY glob simply finds nothing
+;; and the embedded data (above) stands. Guarded: a missing system/dir is a
+;; no-op, never an error.
+(eval-when (:load-toplevel :execute)
+  (ignore-errors
+    (load-locale-data-from-directory
+     (asdf:system-relative-pathname "clautolisp/cadtui" "cadtui/data/locale/"))))

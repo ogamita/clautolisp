@@ -55,7 +55,9 @@ def parse(path):
         if tag == "PGP-ENGINE":
             engine = parts[1:]
         elif tag == "PGP-RAW" and len(parts) >= 2:
-            line = parts[1].strip()
+            # The .pgp line itself may contain tabs (ALIAS,<tabs>*COMMAND), so
+            # rejoin everything after the PGP-RAW tag rather than taking one field.
+            line = "\t".join(parts[1:]).strip()
             if not line or line.startswith(";"):
                 continue
             m = ALIAS_RE.match(line)
