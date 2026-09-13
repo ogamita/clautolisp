@@ -477,3 +477,35 @@ driver may arbitrate among N parked contexts and carry a per-document
 correlation stack without changing these signatures.
 
 Remaining: the §13.4 per-document correlation forest (3g).
+
+** Slice 3g DONE (2026-09-13) — per-document correlation forest (§13.4)
+
+The last parking slice. A host request may nest (a host op triggers AutoLISP,
+e.g. a reactor callback), and that nesting can interleave across documents (A
+parked while the runner resumes B, which nests). So correlation state is ONE
+stack PER document context, keyed by document (never a global stack), and rides
+on the context so it is preserved across park/resume (§13.5).
+
+- =autolisp-runtime/source/scheduler.lisp=: =scheduled-context= gains
+  =correlation-stack= (a LIFO of (OP . ARGS) frames). Primitives
+  =scheduler-push-correlation= / =scheduler-pop-correlation= /
+  =scheduler-correlation-depth=, and a =with-host-request (scheduler frame)=
+  macro that records a frame on the RUNNING context for the dynamic extent of a
+  body (popping on unwind) and is inert when no context is running.
+- Scope: this lands the per-context stack and its discipline — the seam the wire
+  host's envelope discriminator (R10, §13.6) routes responses by. Wiring push/pop
+  into live host generics arrives with reactors / the wire host (deferred per
+  pjb); nothing to wire in the mock host yet, and forcing =scheduler-park='s
+  opaque REQUEST into an (OP . ARGS) was explicitly avoided (3f seam preserved).
+- Tests (=scheduler-tests.lisp=, +5): LIFO push/pop; with-host-request nests +
+  unwinds; with-host-request no-op without a runner; and the forest property —
+  while A is parked with a frame in flight, B runs and pushes its OWN frames
+  (A's depth seen as 1 from B, B reaches 2), and A's frame is intact on resume.
+- Verified: =make -C clautolisp test-sbcl= exit 0 (Fail: 0). MR !NNN.
+
+** Parking arc COMPLETE (3e–3g). The cooperative single-runner scheduler now
+folds the thread rendezvous into =scheduler-activate= (3e), parks real
+interactive reads to the driver (3f), and keeps a per-document correlation forest
+(3g). Deferred to the wire host (pjb): serialisation/envelope (§13.6), a full
+driver/event loop, prompting =host-command=, and wiring correlation frames into
+live host generics. Next: cadtui.

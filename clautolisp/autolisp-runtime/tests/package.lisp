@@ -145,6 +145,12 @@
                 #:scheduler-park
                 #:scheduler-await-park
                 #:scheduler-serve-park
+                ;; slice 3g: per-document correlation forest
+                #:scheduled-context-correlation-stack
+                #:scheduler-push-correlation
+                #:scheduler-pop-correlation
+                #:scheduler-correlation-depth
+                #:with-host-request
                 #:scheduler-spawn-context
                 #:scheduler-start
                 #:scheduler-resume
