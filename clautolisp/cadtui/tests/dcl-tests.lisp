@@ -131,3 +131,35 @@ disturbed)."
              (is (eq t (dcl-dialog-finished-p dcl)))
              (is (null (ui-find-child drawing (princ-to-string id)))))
         (ignore-errors (delete-file path))))))
+
+;;;; Phase 3 slice 3: headless start_dialog event-queue driver (end-to-end).
+
+(test dcl-start-dialog-drains-event-queue-headlessly
+  ;; A modal start_dialog is driven from a pre-filled queue of cadtui
+  ;; meta-command lines (the headless analog of pre-fed stdin -- no threads).
+  ;; Events address the dialog by dialogs[1] so no id is needed up front.
+  (reset-default-evaluation-context)
+  (reset-cadtui-dcl-events)
+  (%with-cadtui-dcl (root)
+    (let ((path (%write-temp-dcl
+                 "g"
+                 "colour : edit_box { key = \"colour\"; } accept : button { key = \"accept\"; }")))
+      (unwind-protect
+           (let* ((src (dcl-runtime-load-dialog path))
+                  (id (dcl-runtime-new-dialog src "g"))
+                  (uidlg (resolve-target root "/application/active-drawing/dialogs[1]")))
+             (dcl-runtime-action-tile id "colour" (make-autolisp-string "(setq pick $value)"))
+             (dcl-runtime-action-tile id "accept" (make-autolisp-string "(setq accepted 1)"))
+             (cadtui-dcl-enqueue
+              "=input(/application/active-drawing/dialogs[1]/tile:colour, \"CYAN\")")
+             (cadtui-dcl-enqueue
+              "=click(/application/active-drawing/dialogs[1]/tile:accept)")
+             (dcl-runtime-start-dialog id)     ; modal: run-fn drains the queue
+             ;; both queued events fired their callbacks during start_dialog ...
+             (is (string= "CYAN"
+                          (autolisp-string-value
+                           (autolisp-symbol-value (intern-autolisp-symbol "PICK")))))
+             (is (eql 1 (autolisp-symbol-value (intern-autolisp-symbol "ACCEPTED"))))
+             ;; ... and start_dialog tore the dialog down (close-fn detached it).
+             (is (null (ui-parent uidlg))))
+        (progn (reset-cadtui-dcl-events) (ignore-errors (delete-file path)))))))
