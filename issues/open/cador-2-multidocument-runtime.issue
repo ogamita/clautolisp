@@ -341,3 +341,29 @@ interactive/out-of-process host (cador-4), not deferrable-by-choice:
   protocol.
 These belong to cador-4 (the epic's wire-host sub-task), not cador-2's batch
 scheduler. cador-2 stays OPEN pending that decision.
+
+** Slice 3c DONE (2026-09-13) — per-document sysvars confirmed
+
+Per-document CMDECHO turned out to need no code: =cador-sysvar= reads
+=(cador-sysvars host)= = the ACTIVE drawing's header variables
+(=cador/source/sysvars.lisp:126=), so since slice 1a made each document its own
+drawing, every sysvar (CMDECHO included) is already per-document. Added
+=cador-sysvars-are-per-document= (=cador/tests/document-tests.lisp=): CMDECHO=0
+set in document A does not leak to B and survives a round-trip through B.
+=make -C clautolisp test-sbcl= exit 0. =vl-enable-user-cancel= is a deliberate
+no-op (SIGINT-based, holds no state by design), so there is nothing to make
+per-document there.
+
+** CORRECTION (pjb, 2026-09-13) — real parking is NOT wire-host-gated
+
+The "Slice 3 boundary" note above is superseded. pjb: *our continuations are
+our threads, parked on a condition variable* — a parked context is a thread
+blocked on its condition; to resume it, notify that condition and have the
+current thread wait on its own. That is the debugger's blocking-queue
+rendezvous (=autolisp-debug .../session.lisp=, =breakpoints.lisp= bq-push /
+bq-pop), and the condvar handoff itself enforces at-most-one-running (C2/C8 —
+the per-document thread is the cooperative coroutine carrier, not a concurrent
+worker). So real continuation-capture parking IS implementable in-image and is
+back IN SCOPE for cador-2 (thread + condition-variable handoff), being designed
+now. The correlation stack still follows the §13 park/resume protocol. cador-2
+is NOT being closed with parking deferred.

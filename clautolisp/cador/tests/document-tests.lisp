@@ -113,3 +113,21 @@
     (set-runtime-session-current-document session ns-a)
     (is (string= key-a (host-current-document host)))
     (is (eq drawing-a (cador-active-drawing host)))))
+
+;;; --- Sysvars are per-document (cador-2 slice 3c) ------------------
+
+(test cador-sysvars-are-per-document
+  ;; Sysvars live on the ACTIVE document's drawing header variables, so each
+  ;; document carries its own — a direct consequence of the document->drawing
+  ;; registry (slice 1a). A value set in document A does not leak to document B
+  ;; and survives a round-trip through B. (OSMODE is in the default sysvar set;
+  ;; CMDECHO likewise rides the active drawing, absent-means-on.)
+  (let* ((host (make-cador))
+         (key-a (host-current-document host))
+         (key-b (host-open-document host "B.dwg")))
+    (host-setvar host "OSMODE" 5)                     ; A's OSMODE := 5
+    (is (eql 5 (host-getvar host "OSMODE")))
+    (host-activate-document host key-b)               ; B active (its own drawing)
+    (is (not (eql 5 (ignore-errors (host-getvar host "OSMODE")))))  ; A's 5 not in B
+    (host-activate-document host key-a)               ; back to A
+    (is (eql 5 (host-getvar host "OSMODE")))))        ; A still 5
