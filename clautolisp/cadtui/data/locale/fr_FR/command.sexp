@@ -1,20 +1,28 @@
 ;;;; cadtui — CAD command-name dictionary (:command category).
-;;;; GENERATED from a getcname probe artifact by
+;;;; GENERATED from getcname probe artifact(s) by
 ;;;; scripts/cadtui-getcname-to-sexp.py — do not hand-edit; re-run the
-;;;; converter on a fresh artifact instead. getcname output is generated
+;;;; converter on fresh artifacts instead. getcname output is generated
 ;;;; fact (spec §Localisation). Key = international name (canonical, _-
 ;;;; prefixed); value = the localised name. Missing => international fallback.
-;;;; source engine: BRICSCAD  26.0 BricsCAD  Mac OS X Version 26.5 (x86_64)  fr_FR
-;;;; source artifact: dist/getcname/bricscad-Darwin.txt
-;;;; kept 107 command(s) whose round trip closes; dropped 0.
+;;;; When several vendors are merged the FIRST artifact wins a value
+;;;; conflict; each vendor's own extra commands are all kept (union).
+;;;; source: dist/getcname/autocad-Windows.txt  [acad  24.1s (LMS Tech)  Microsoft Windows NT Version 10.0 (x64)  FR]
+;;;; source: dist/getcname/bricscad-Darwin.txt  [BRICSCAD  26.0 BricsCAD  Mac OS X Version 26.5 (x86_64)  fr_FR]
+;;;; kept 118 command(s) whose round trip closes; dropped 1.
+;;;; value divergences across vendors (kept the first's):
+;;;;   STRETCH = ETIRER (kept) vs ÉTIRER (dist/getcname/bricscad-Darwin.txt)
+;;;; dropped (round trip did not close): VPORTS
 (
+  ("_3DORBIT" . "ORBITE3D")
   ("_ALIGN" . "ALIGNER")
   ("_AREA" . "AIRE")
   ("_ARRAY" . "RESEAU")
   ("_AUDIT" . "CONTROLE")
   ("_BEDIT" . "MODIFBLOC")
+  ("_BLEND" . "FUSIONNER")
   ("_BLOCK" . "BLOC")
   ("_BOUNDARY" . "CONTOUR")
+  ("_BOX" . "BOITE")
   ("_BREAK" . "COUPURE")
   ("_CHAMFER" . "CHANFREIN")
   ("_CIRCLE" . "CERCLE")
@@ -39,6 +47,7 @@
   ("_EXPLODE" . "DECOMPOS")
   ("_EXPORT" . "EXPORTER")
   ("_EXTEND" . "PROLONGE")
+  ("_EXTRUDE" . "EXTRUSION")
   ("_FIELD" . "CHAMP")
   ("_FILLET" . "RACCORD")
   ("_GRID" . "GRILLE")
@@ -55,6 +64,8 @@
   ("_LINE" . "LIGNE")
   ("_LINETYPE" . "TYPELIGNE")
   ("_LIST" . "LISTE")
+  ("_LOFT" . "LISSAGE")
+  ("_LTSCALE" . "ECHLTP")
   ("_MASSPROP" . "PROPMECA")
   ("_MATCHPROP" . "CORRESPROP")
   ("_MEASURE" . "MESURER")
@@ -62,6 +73,7 @@
   ("_MIRROR" . "MIROIR")
   ("_MLEADER" . "LIGNEDEREPMULT")
   ("_MLINE" . "MLIGNE")
+  ("_MODEL" . "OBJET")
   ("_MOVE" . "DEPLACER")
   ("_MSPACE" . "ESPACEO")
   ("_MTEXT" . "TEXTMULT")
@@ -89,18 +101,22 @@
   ("_REDRAWALL" . "REDESTOUT")
   ("_REFEDIT" . "EDITREF")
   ("_REVCLOUD" . "NUAGEREV")
+  ("_REVOLVE" . "REVOLUTION")
   ("_ROTATE" . "ROTATION")
   ("_SAVE" . "SAUVEGRD")
   ("_SAVEAS" . "SAUVENOM")
   ("_SCALE" . "ECHELLE")
   ("_SCALELISTEDIT" . "MODIFLISTECHELLE")
+  ("_SECTION" . "COUPE")
   ("_SKETCH" . "MAINLEV")
+  ("_SLICE" . "SECTION")
   ("_SNAP" . "RESOL")
   ("_SOLID" . "SOLIDE")
   ("_SPELL" . "ORTHOGRAPHE")
   ("_SPLINEDIT" . "EDITSPLINE")
-  ("_STRETCH" . "ÉTIRER")
+  ("_STRETCH" . "ETIRER")
   ("_SUBTRACT" . "SOUSTRACTION")
+  ("_SWEEP" . "BALAYAGE")
   ("_TABLE" . "TABLEAU")
   ("_TABLESTYLE" . "STYLETABLEAU")
   ("_TEXT" . "TEXTE")
@@ -109,10 +125,10 @@
   ("_UNDO" . "ANNULER")
   ("_UNITS" . "UNITES")
   ("_VIEW" . "VUE")
-  ("_VPORTS" . "FENETRES")
   ("_WBLOCK" . "WBLOC")
   ("_WEDGE" . "BISEAU")
   ("_WIPEOUT" . "NETTOYER")
   ("_XATTACH" . "XATTACHER")
+  ("_XBIND" . "XLIER")
   ("_XLINE" . "DROITE")
 )

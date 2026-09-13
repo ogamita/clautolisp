@@ -236,18 +236,24 @@ divergence assumée par rapport à la spec.)
   l'aller-retour boucle → command.sexp). Validé sur --clautolisp (143 lignes
   ABSENT bien formées + DONE). Le harvest fr_FR autoritatif tourne sur le runner
   français ; l'artefact converti REMPLACE command.sexp.
-- Phase 7 — dictionnaire fr_FR de COMMANDES CAD : **FAIT — HARVEST AUTORITATIF**
-  (MR !237). data/locale/fr_FR/command.sexp = 107 commandes MESURÉES par getcname
-  sur le BricsCAD FRANÇAIS du runner (BRICSCAD 26.0, LOCALE fr_FR, pipeline
-  2845013887 → enfant natif 2845014622, job getcname:probe:bricscad:macos), passé
-  par le convertisseur (aller-retour vérifié, 0 rejet). Remplace le seed doc de
-  26 entrées du MR !236. Le loader lit désormais les .sexp en UTF-8 forcé (les
-  noms accentués — ÉTIRER… — doivent se lire quelle que soit la locale de build).
+- Phase 7 — dictionnaire fr_FR de COMMANDES CAD : **FAIT — HARVEST AUTORITATIF
+  BRICSCAD + AUTOCAD (fusionné)** (MR !237 BricsCAD, MR !238 +AutoCAD).
+  data/locale/fr_FR/command.sexp = 118 commandes, UNION de deux mesures getcname :
+  BricsCAD FRANÇAIS (BRICSCAD 26.0, macOS, job getcname:probe:bricscad:macos) et
+  AutoCAD FRANÇAIS (acad 24.1s, Windows, job getcname:probe:autocad:windows,
+  pipeline 2845115733 → enfant 2845116121). Le convertisseur fusionne N artefacts
+  (le PREMIER gagne un conflit de valeur ; chaque éditeur apporte ses commandes
+  propres) : appelé autocad d'abord (éditeur de référence). UNE seule divergence
+  de valeur : _STRETCH = ETIRER (AutoCAD, retenu) vs ÉTIRER (BricsCAD, notée dans
+  l'en-tête). _VPORTS rejeté (l'aller-retour AutoCAD l'aliase vers _VIEWPORTS).
+  Le convertisseur détecte l'encodage : BricsCAD sort de l'UTF-8 propre, AutoCAD
+  de l'UTF-16 (voire un BOM UTF-8 collé à un corps UTF-16LE par PowerShell) — il
+  récupère les deux. Le loader lit les .sexp en UTF-8 forcé (noms accentués).
   Les commandes IDENTITY (français = anglais, ex. ARC/ZOOM) ne sont pas stockées :
-  repli sur la forme internationale (le préfixe _ la force toujours). RESTE : le
-  même harvest sur AutoCAD (les jobs getcname:probe:autocad/accoreconsole tournent
-  dans le même enfant) ; les alias .pgp (P3) ; les mots-clés d'option (P3) ; le
-  drapeau CLI --locale/--lang.
+  repli sur la forme internationale (le préfixe _ la force toujours). RESTE : les
+  alias .pgp (P3, dans default.pgp) ; les mots-clés d'option (P3) ; le drapeau CLI
+  --locale/--lang. (Note : le wrapper run-getcname-probe.ps1 pourrait décoder
+  l'UTF-16 AutoCAD avant d'écrire — non bloquant, le convertisseur l'absorbe.)
 - Phase 8 (backend de rendu visuel, OPTIONNEL) : **FAIT** (seam testable,
   2026-09-13). render.lisp : *screen-renderer* (indirection de backend) +
   text-screen-renderer headless déterministe (en-tête, ligne de menus, liste des
