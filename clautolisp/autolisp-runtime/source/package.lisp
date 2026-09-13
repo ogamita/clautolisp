@@ -232,6 +232,7 @@
    #:propagate-variable
    #:lookup-variable
    #:set-variable
+   #:callable-value-p
    #:lookup-function
    #:set-function
    #:lookup-documentation

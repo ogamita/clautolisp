@@ -311,3 +311,33 @@ Found while writing E1/E2 (flagged, deferred): *C3 is not enforced* —
 D2 §I.5 decides they must. A =callable-value-p= guard in those two is a small
 separate code change (a "Slice 3b" candidate), NOT added here so E1/E2 stay
 pure-observation.
+
+** Slice 3b DONE (2026-09-13) — C3 blackboard function-rejection enforced
+
+- =autolisp-builtins-core/source/api.lisp= =builtin-vl-bb-set=: after the
+  symbol-arg check, reject a callable value (=callable-value-p= — subr, user
+  function, or lambda-form) with :blackboard-function-value. Enforces C3 / D2
+  §I.5 "the blackboard is values-only; storing a function signals."
+- =callable-value-p= exported from autolisp-runtime + imported into
+  builtins-core.
+- Test =vl-bb-set-rejects-a-function-value-c3= (builtin-tests.lisp): a plain
+  value stores; a lambda-form value signals :blackboard-function-value.
+- Verified: =make -C clautolisp test-sbcl= exit 0.
+
+** Slice 3 boundary — what remains needs cador-4's interactive/wire host
+
+Batch-completable Slice 3 work done: E1/E2 (3a), C3 (3b). Still headless-doable
+and candidates for follow-up increments: per-document CMDECHO (host-side, behind
+=host-activate-document=) and =vl-enable-user-cancel= per-context state (the
+builtin is a no-op today). But two Slice-3 items are STRUCTURALLY gated on an
+interactive/out-of-process host (cador-4), not deferrable-by-choice:
+- *Real continuation-capture parking.* The spec models park = continuation
+  capture (D2 §I.2). Common Lisp has no portable first-class continuations, and
+  C8/R21 forbid cador from REQUIRING a worker thread (the debugger's two-thread
+  handoff is the hosted case only). A batch cador run has no park points at all
+  (D2 §I.2). So real parking has no in-image realization; it arrives with the
+  wire host, where suspension is the round-trip itself.
+- *The §13.4 correlation stack* rides in with that same §13 park/resume wire
+  protocol.
+These belong to cador-4 (the epic's wire-host sub-task), not cador-2's batch
+scheduler. cador-2 stays OPEN pending that decision.

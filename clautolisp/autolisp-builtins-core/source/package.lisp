@@ -5,6 +5,7 @@
                 #:autolisp-catch-all-error-message
                 #:blackboard-ref
                 #:blackboard-set
+                #:callable-value-p
                 #:current-document-namespace-ref
                 #:current-document-namespace-set
                 #:export-function-to-current-document
