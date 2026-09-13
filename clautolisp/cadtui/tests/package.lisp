@@ -70,6 +70,14 @@
                 #:dump-list
                 #:dump-page
                 #:dump-descriptor-number
-                #:dump-descriptor-page)
+                #:dump-descriptor-page
+                ;; Phase 2 slice 4: dispatch + interpret-line
+                #:interpret-line
+                #:dispatch-meta-command
+                #:implicit-input-target
+                #:command-result-status
+                #:command-result-verb
+                #:command-result-text
+                #:command-result-data)
   (:export #:cadtui-suite
            #:run-all-tests))

@@ -95,6 +95,20 @@ documentation/cadtui-specifications.org (normative).")
    #:meta-command-parse-error-text
    #:meta-command-parse-error-reason
    #:*meta-option-names*
+   ;; Phase 2 slice 4: dispatch + the non-modal line entry.
+   #:command-result
+   #:command-result-p
+   #:make-command-result
+   #:command-result-status
+   #:command-result-verb
+   #:command-result-text
+   #:command-result-data
+   #:*verb-table*
+   #:define-verb
+   #:dispatch-meta-command
+   #:interpret-line
+   #:implicit-input-target
+   #:*help-text*
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key
