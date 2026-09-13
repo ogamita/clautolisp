@@ -1,0 +1,29 @@
+cadtui localisation — CAD command-name probe via getcname (P2, CI/runner)
+
+Parent: cadtui.issue (Phase 7). Harvest the localised CAD COMMAND NAMES that
+cadtui's local-name/international-name need. This CANNOT be produced headless —
+it must be measured on localised AutoCAD/BricsCAD installs.
+
+What to collect
+- For each command in the command set, call getcname BOTH directions:
+  local -> _INTERNATIONAL and international -> local (spec lines ~122-140,
+  ~750-756). getcname output is generated fact and safe to import.
+- On BricsCAD also capture the COMMANDS listing (English + localised).
+
+How (mirror the alfe CAD probe pattern already in the repo)
+- A probe .lsp under probes/sources/ driven by alfe against the real CAD,
+  registered in probes/sources/manifest.txt.
+- New SOFT, cad-tagged jobs in .gitlab/native.yml (extend
+  .gate-windows-cad-soft / .gate-macos-cad-soft) — soft because a probe measures,
+  it must never gate a release. Emit artifacts under dist/getcname/.
+- Localised installs (one per target locale) are a runner-provisioning concern
+  (pjb), like BRICSCAD_PROFILE_CLEAN for the sysvar harvest. See memory
+  "alfe CAD probe jobs" (ogamita/rules alfe-cad-probe-rules.md) — BricsCAD is
+  GREEN on both macOS+Windows; AutoCAD on Windows.
+
+Matrix
+- BricsCAD on macOS AND Windows (a divergence is itself an answer), AutoCAD on
+  Windows. One run per locale (fr_FR first).
+
+Output feeds cadtui-locale-data-format-and-loader.issue (commands.sexp via the
+converter). Missing entries fall back to the international form.
