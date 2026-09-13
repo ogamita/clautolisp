@@ -3,6 +3,24 @@
   ;; AutoLISP semantics, and the cadtui dump layer must get the standard CL
   ;; printers, not the runtime's shadowed ones (see cadtui/CLAUDE.md).
   (:use #:cl)
+  ;; Phase 3: the DCL runtime API cadtui mirrors into ui-nodes. Imported by
+  ;; name (not :use) so cadtui keeps CL's printers, not the runtime's shadowed
+  ;; ones. cadtui depends on autolisp-dcl (exported API only) — no cycle.
+  (:import-from #:clautolisp.autolisp-dcl
+                #:dcl-tile-key
+                #:dcl-tile-type
+                #:dcl-tile-children
+                #:tile-attribute
+                #:dcl-dialog-id
+                #:dcl-dialog-tile
+                #:dcl-dialog-status
+                #:dcl-dialog-finished-p
+                #:dcl-runtime-fire-action
+                #:dcl-runtime-done-dialog
+                #:make-dcl-renderer
+                #:install-default-renderer
+                #:current-dcl-renderer
+                #:make-noop-renderer)
   (:documentation
    "The cadtui host: a textual, keyboard-driven UI tree for CAD objects and
 the CAD application, for headless interactive/scriptable testing of DCL
@@ -110,6 +128,10 @@ documentation/cadtui-specifications.org (normative).")
    #:implicit-input-target
    #:*help-text*
    #:*key-bindings*
+   ;; Phase 3: DCL integration (mirror the DCL runtime into ui-nodes).
+   #:*cadtui-dcl-root*
+   #:make-cadtui-dcl-renderer
+   #:install-cadtui-dcl-renderer
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key

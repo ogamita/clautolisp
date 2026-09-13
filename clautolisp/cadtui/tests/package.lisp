@@ -78,6 +78,24 @@
                 #:command-result-status
                 #:command-result-verb
                 #:command-result-text
-                #:command-result-data)
+                #:command-result-data
+                ;; Phase 3: DCL integration
+                #:*cadtui-dcl-root*
+                #:install-cadtui-dcl-renderer)
+  (:import-from #:clautolisp.autolisp-dcl
+                #:dcl-runtime-load-dialog
+                #:dcl-runtime-new-dialog
+                #:dcl-runtime-set-tile
+                #:dcl-runtime-get-tile
+                #:dcl-runtime-mode-tile
+                #:dcl-runtime-start-dialog
+                #:dcl-runtime-done-dialog
+                #:dcl-runtime-fire-action
+                #:dcl-dialog-status
+                #:dcl-dialog-finished-p
+                #:dcl-tile-type
+                #:current-dcl-renderer
+                #:install-default-renderer
+                #:make-noop-renderer)
   (:export #:cadtui-suite
            #:run-all-tests))

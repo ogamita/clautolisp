@@ -67,6 +67,8 @@
    #:install-default-renderer
    #:current-dcl-renderer
    #:make-noop-renderer
+   ;; Exported so a host (e.g. cadtui) can build its own presentation backend.
+   #:make-dcl-renderer
    ;; Terminal renderer
    #:make-terminal-renderer
    ;; Phase 15b — sexp wire protocol + subprocess renderer
