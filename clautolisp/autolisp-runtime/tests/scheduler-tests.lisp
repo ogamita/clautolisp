@@ -507,3 +507,97 @@ leaks across the FiveAM double run."
              (scheduler-start sched x)
              (is (equal '(:on t) (park-mailbox-pop results 5))))
         (%park-teardown sched)))))
+
+;;; --- Correlation forest: per-document request stacks (slice 3g) ---
+;;;
+;;; §13.4: correlation is one stack PER document context, never global, so
+;;; nested requests that interleave across documents never intermix; and the
+;;; per-context stack is preserved across park/resume (§13.5).
+
+(test correlation-stack-is-lifo-per-context
+  ;; Push/pop is a plain LIFO on the context; empty pops NIL.
+  (let* ((session (make-runtime-session))
+         (x (%make-doc-context session "X" "X")))
+    (is (= 0 (scheduler-correlation-depth x)))
+    (scheduler-push-correlation x '(entget "A"))
+    (scheduler-push-correlation x '(setvar "OSMODE" 1))
+    (is (= 2 (scheduler-correlation-depth x)))
+    (is (equal '(setvar "OSMODE" 1) (scheduler-pop-correlation x)))  ; innermost first
+    (is (equal '(entget "A") (scheduler-pop-correlation x)))
+    (is (= 0 (scheduler-correlation-depth x)))
+    (is (null (scheduler-pop-correlation x)))))
+
+(test with-host-request-records-frame-for-running-context
+  ;; WITH-HOST-REQUEST records a frame on the running context, nesting cleanly,
+  ;; and unwinds the stack to empty.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (x (%make-doc-context session "X" "X")))
+      (scheduler-register-context sched x)
+      (scheduler-activate sched x)                       ; bare synchronous: x runs
+      (is (= 0 (scheduler-correlation-depth x)))
+      (with-host-request (sched '(entget "A"))
+        (is (= 1 (scheduler-correlation-depth x)))
+        (with-host-request (sched '(setvar "OSMODE" 1))
+          (is (= 2 (scheduler-correlation-depth x)))))
+      (is (= 0 (scheduler-correlation-depth x))))))
+
+(test with-host-request-pops-on-unwind
+  ;; A non-local exit through the body still pops the frame.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (x (%make-doc-context session "X" "X")))
+      (scheduler-register-context sched x)
+      (scheduler-activate sched x)
+      (ignore-errors
+       (with-host-request (sched '(entget "A"))
+         (error "boom")))
+      (is (= 0 (scheduler-correlation-depth x))))))
+
+(test with-host-request-is-noop-without-running-context
+  ;; No running context: the body runs with no correlation bookkeeping.
+  (let ((sched (make-document-scheduler)))
+    (is (eq :ok (with-host-request (sched '(entget "A")) :ok)))))
+
+(test correlation-forest-per-document-across-park-resume
+  ;; §13.4 + §13.5: while A is parked with a frame in flight, the runner resumes
+  ;; B, which pushes its OWN frames; the two stacks never intermix, and A's frame
+  ;; is preserved when A resumes.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (a (%make-doc-context session "A" "A"))
+           (b (%make-doc-context session "B" "B"))
+           (results (make-park-mailbox)))
+      (scheduler-register-context sched a)
+      (scheduler-register-context sched b)
+      (setf (scheduled-context-thunk a)
+            (lambda ()
+              (scheduler-push-correlation a '(a-request))
+              (scheduler-park sched a (lambda () :a-resp))    ; park with frame in flight
+              (park-mailbox-push
+               results
+               (list :a-depth (scheduler-correlation-depth a)
+                     :a-top (first (scheduled-context-correlation-stack a))))))
+      (setf (scheduled-context-thunk b)
+            (lambda ()
+              (scheduler-push-correlation b '(b-request-1))
+              (scheduler-push-correlation b '(b-request-2))
+              (park-mailbox-push
+               results
+               (list :b-depth (scheduler-correlation-depth b)
+                     :a-depth-seen-from-b (scheduler-correlation-depth a)))))
+      (unwind-protect
+           (progn
+             (scheduler-activate sched a)                     ; bootstrap A; it parks
+             (let ((note (scheduler-await-park sched 5)))
+               (is (eq a (second note)))
+               (scheduler-activate sched b)                   ; run B while A parked
+               (is (equal '(:b-depth 2 :a-depth-seen-from-b 1)
+                          (park-mailbox-pop results 5)))
+               (scheduler-serve-park sched note)              ; resume A
+               (is (equal '(:a-depth 1 :a-top (a-request))
+                          (park-mailbox-pop results 5)))))
+        (%park-teardown sched)))))

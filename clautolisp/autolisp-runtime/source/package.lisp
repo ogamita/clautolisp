@@ -112,6 +112,12 @@
    #:scheduler-park
    #:scheduler-await-park
    #:scheduler-serve-park
+   ;; slice 3g: per-document correlation forest (§13.4)
+   #:scheduled-context-correlation-stack
+   #:scheduler-push-correlation
+   #:scheduler-pop-correlation
+   #:scheduler-correlation-depth
+   #:with-host-request
    #:autolisp-file
    #:make-autolisp-file
    #:autolisp-format-real

@@ -65,7 +65,14 @@ thread-backed context and NIL for a bare (synchronous) one. It is the switch
 SCHEDULER-ACTIVATE dispatches on: THUNK nil takes the pure synchronous state
 machine (single-document and every batch cador run), THUNK non-nil takes the
 thread rendezvous (real parking). A bare context spawns no thread, so
-single-document behaviour stays thread-free (slice 3e)."
+single-document behaviour stays thread-free (slice 3e).
+
+CORRELATION-STACK is this document's stack of in-flight host-request frames
+(D1 §13.4, slice 3g): a LIFO of (OP . ARGS) records for nested host requests.
+Correlation is ONE stack PER document context, never a global stack, so nested
+requests that interleave across documents (A parked while the runner resumes B,
+which nests) never intermix. Because it lives on the context, it is inherently
+preserved across park/resume (§13.5 restores the correlation stack)."
   (context nil)
   (document-key nil)
   (status :runnable :type keyword)
@@ -73,7 +80,8 @@ single-document behaviour stays thread-free (slice 3e)."
   (mailbox nil)
   (pending-break nil)
   (saved-env nil)
-  (thunk nil))
+  (thunk nil)
+  (correlation-stack '()))
 
 (defstruct document-scheduler
   "The single-runner cooperative scheduler: CONTEXTS is the ordered list of
@@ -473,3 +481,50 @@ Returns SC."
     (let ((response (funcall request)))
       (park-mailbox-push (scheduled-context-mailbox sc) response)
       sc)))
+
+;;; --- Correlation forest: per-document request stacks (slice 3g) ---
+;;;
+;;; A host request may nest — a host operation can itself trigger AutoLISP (a
+;;; reactor callback fired by setvar, say), which issues further host requests.
+;;; That nesting can INTERLEAVE across documents: while document A is parked
+;;; awaiting a response, the runner may resume document B, which starts a fresh
+;;; evaluation that itself nests (D1 §13.4). So correlation state is ONE STACK
+;;; PER DOCUMENT CONTEXT, keyed by document (the CORRELATION-STACK slot), never a
+;;; single global stack — the two documents' in-flight frames never intermix, and
+;;; because the stack rides on the context it is preserved across park/resume
+;;; (§13.5). A frame is a (OP . ARGS) host-request record.
+;;;
+;;; This slice lands the per-context stack and its push/pop discipline — the seam
+;;; the wire host's envelope discriminator (R10, §13.6) will route responses by,
+;;; and the machinery a reactor-driven nested request will use. Wiring push/pop
+;;; into live host generics arrives with reactors / the wire host; here the
+;;; discipline is complete and testable via WITH-HOST-REQUEST.
+
+(defun scheduler-push-correlation (context frame)
+  "Push FRAME (a (OP . ARGS) host-request record) onto CONTEXT's per-document
+correlation stack; return FRAME."
+  (push frame (scheduled-context-correlation-stack context))
+  frame)
+
+(defun scheduler-pop-correlation (context)
+  "Pop and return the innermost in-flight frame from CONTEXT's correlation stack,
+or NIL when it is empty."
+  (pop (scheduled-context-correlation-stack context)))
+
+(defun scheduler-correlation-depth (context)
+  "The number of in-flight host-request frames on CONTEXT's correlation stack."
+  (length (scheduled-context-correlation-stack context)))
+
+(defmacro with-host-request ((scheduler frame) &body body)
+  "Record FRAME as an in-flight host request on SCHEDULER's currently running
+context's correlation stack for the dynamic extent of BODY (D1 §13.4), popping
+it on exit even if BODY unwinds. When no context is running (single-document /
+batch with no scheduler context), BODY runs with no correlation bookkeeping —
+so the discipline is inert exactly where there is no forest to keep."
+  (let ((s (gensym "SCHEDULER")) (f (gensym "FRAME")) (c (gensym "CONTEXT")))
+    `(let* ((,s ,scheduler)
+            (,f ,frame)
+            (,c (and ,s (scheduler-current-context ,s))))
+       (when ,c (scheduler-push-correlation ,c ,f))
+       (unwind-protect (progn ,@body)
+         (when ,c (scheduler-pop-correlation ,c))))))
