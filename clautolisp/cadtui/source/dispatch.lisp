@@ -73,8 +73,13 @@ no threads. Parse/address errors become an :error result."
   (multiple-value-bind (kind payload) (classify-line line :escape escape)
     (ecase kind
       (:pass-through
-       (make-command-result :status :pass-through :verb nil
-                            :text payload :data (implicit-input-target root)))
+       ;; Deliver the line to the implicit-input console's type-ahead queue
+       ;; (Phase 4). A console with no live context/queue (a Phase 1-3 tree)
+       ;; drops it harmlessly, so the result is unchanged for those callers.
+       (let ((console (implicit-input-target root)))
+         (when console (deliver-line-to-console console payload))
+         (make-command-result :status :pass-through :verb nil
+                              :text payload :data console)))
       (:meta-command
        (handler-case
            (dispatch-meta-command (parse-meta-command payload) root)
