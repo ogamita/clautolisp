@@ -51,7 +51,9 @@
                 #:blackboard-ref
                 #:make-park-mailbox
                 #:park-mailbox-push
-                #:park-mailbox-pop)
+                #:park-mailbox-pop
+                #:read-runtime-from-string
+                #:autolisp-eval-toplevel-progn)
   (:documentation
    "The cadtui host: a textual, keyboard-driven UI tree for CAD objects and
 the CAD application, for headless interactive/scriptable testing of DCL

@@ -103,3 +103,67 @@ RESULTS. Returns the ui-console."
              (scheduler-serve-park sched note))
            (is (string= "world" (park-mailbox-pop results 5))))
       (%console-teardown session))))
+
+;;;; Phase 4 slice 3: pass-through delivery + REPL rules 2/3.
+
+(test interpret-line-delivers-pass-through-to-the-active-console
+  ;; A pass-through line is queued on the active drawing's console.
+  (let* ((session (make-runtime-session))
+         (app (make-application-tree))
+         (d (make-instance 'ui-drawing :key "A"))
+         (c (make-instance 'ui-console :key "console")))
+    (add-child app d) (add-child d c)
+    (make-console-context session c :document-key "A")
+    (interpret-line "(princ 1)" app)          ; ( => pass-through, routed to c
+    (is (string= "(princ 1)" (park-mailbox-pop (console-queue c) 5)))))
+
+(test console-repl-step-evaluates-lisp-in-its-isolated-namespace
+  ;; Rule 2: a Lisp line evaluates in the console's own namespace; another
+  ;; drawing's namespace is unaffected (anti-BricsCAD isolation).
+  (let* ((session (make-runtime-session))
+         (app (make-application-tree))
+         (dA (make-instance 'ui-drawing :key "A")) (cA (make-instance 'ui-console :key "console"))
+         (dB (make-instance 'ui-drawing :key "B")) (cB (make-instance 'ui-console :key "console")))
+    (add-child app dA) (add-child dA cA)
+    (add-child app dB) (add-child dB cB)
+    (make-console-context session cA :document-key "A")
+    (make-console-context session cB :document-key "B")
+    (clautolisp.cadtui::%console-repl-step cA "(setq x 42)")
+    (is (eql 42 (document-namespace-ref (console-namespace cA) (intern-autolisp-symbol "X"))))
+    (multiple-value-bind (v b)
+        (document-namespace-ref (console-namespace cB) (intern-autolisp-symbol "X"))
+      (declare (ignore v))
+      (is (null b)))))
+
+(test console-repl-step-records-a-cad-command-stand-in
+  ;; Rule 3: a non-Lisp line is a CAD command name (Phase 4 stand-in).
+  (let* ((session (make-runtime-session))
+         (app (make-application-tree))
+         (d (make-instance 'ui-drawing :key "A"))
+         (c (make-instance 'ui-console :key "console")))
+    (add-child app d) (add-child d c)
+    (make-console-context session c :document-key "A")
+    (clautolisp.cadtui::%console-repl-step c "LINE")
+    (is (member "CAD command (not yet): LINE"
+                (clautolisp.cadtui::ui-stream-buffer c) :test #'string=))))
+
+(test console-loop-reads-a-delivered-line-and-evaluates-it
+  ;; End-to-end on the thread: start the loop (parks), deliver + serve a Lisp
+  ;; line, and the console's namespace reflects the evaluation.
+  (let* ((session (make-runtime-session))
+         (app (make-application-tree))
+         (d (make-instance 'ui-drawing :key "A"))
+         (c (make-instance 'ui-console :key "console")))
+    (add-child app d) (add-child d c)
+    (make-console-context session c :document-key "A")
+    (let ((sched (session-scheduler session)))
+      (unwind-protect
+           (progn
+             (start-console c)                  ; loop parks on its first read
+             (let ((note (scheduler-await-park sched 5)))
+               (deliver-line-to-console c "(setq y 7)")
+               (scheduler-serve-park sched note))
+             (scheduler-await-park sched 5)     ; loop parked again => eval done
+             (is (eql 7 (document-namespace-ref (console-namespace c)
+                                                (intern-autolisp-symbol "Y")))))
+        (%console-teardown session)))))

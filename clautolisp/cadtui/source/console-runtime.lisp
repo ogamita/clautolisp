@@ -43,7 +43,9 @@ and stores the context in CONSOLE. Returns the scheduled-context."
          (scheduled-context (make-scheduled-context
                              :context evaluation-context
                              :document-key document-key
-                             :thunk thunk)))
+                             ;; default = the console read-eval loop (rules 2/3);
+                             ;; a caller may supply its own thunk (tests do).
+                             :thunk (or thunk (lambda () (%console-loop console))))))
     (setf (document-namespace-host-document-key namespace) document-key)
     (register-runtime-session-document session namespace :copy-propagated-p nil)
     (scheduler-register-context scheduler scheduled-context)
@@ -100,3 +102,47 @@ context must already carry a thunk (make-console-context). Returns the context."
     (scheduler-spawn-context scheduler sc (scheduled-context-thunk sc))
     (scheduler-start scheduler sc)
     sc))
+
+;;; --- REPL rules 2/3 + the read-eval loop (Phase 4 slice 3) --------
+;;;
+;;; Per popped pass-through line (spec §5.6): a line beginning with ( is a Lisp
+;;; expression evaluated in THIS console's isolated namespace (rule 2 — the
+;;; anti-BricsCAD isolation); anything else is a CAD command name (rule 3),
+;;; for which Phase 4 records a stand-in — live command execution is Phase 5/6.
+;;; Rule 1 (a blocked AutoLISP read taking priority) is console-read-line's park.
+
+(defun %console-record (console text)
+  "Append TEXT to CONSOLE's output buffer (a list of lines, in order)."
+  (setf (ui-stream-buffer console)
+        (append (ui-stream-buffer console) (list text)))
+  text)
+
+(defun %console-eval-lisp (console line)
+  "Evaluate LINE (a Lisp expression) in CONSOLE's isolated evaluation-context."
+  (let* ((sc (ui-context console))
+         (evaluation-context (scheduled-context-context sc))
+         (forms (read-runtime-from-string line :source-name "<cadtui-console>")))
+    (autolisp-eval-toplevel-progn forms evaluation-context)))
+
+(defun %console-repl-step (console line)
+  "Apply REPL rules 2/3 to one pass-through LINE on CONSOLE."
+  (let ((trimmed (string-left-trim '(#\Space #\Tab) line)))
+    (cond
+      ((zerop (length trimmed)) nil)
+      ;; rule 2: a Lisp expression, evaluated in this console's namespace.
+      ((char= (char trimmed 0) #\()
+       (%console-eval-lisp console trimmed)
+       (%console-record console (format nil "=> ~A" trimmed)))
+      ;; rule 3: a CAD command name (live execution is Phase 5/6).
+      (t (%console-record console (format nil "CAD command (not yet): ~A" trimmed))))))
+
+(defun %console-loop (console)
+  "The console's read-eval loop, run on its scheduled-context thread: read a
+pass-through line (parking when none) and apply the REPL rules, until :exit.
+An eval error is recorded and the loop survives (a REPL never dies on a slip)."
+  (loop
+    (let ((line (console-read-line console)))
+      (when (eq line :exit) (return))
+      (handler-case (%console-repl-step console line)
+        (error (condition)
+          (%console-record console (format nil "error: ~A" condition)))))))
