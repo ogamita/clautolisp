@@ -236,6 +236,7 @@ documentation/cadtui-specifications.org (normative).")
    #:resolve-locale
    #:set-current-locale
    #:init-locale-from-environment
+   #:load-locale-data-from-directory
    #:localise-meta-line
    ;; Phase 8: visual screen render backend seam (optional; reuses interpret-line).
    #:*screen-renderer*

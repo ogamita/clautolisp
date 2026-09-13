@@ -59,6 +59,7 @@
                 #:local-name
                 #:international-name
                 #:resolve-locale
+                #:load-locale-data-from-directory
                 #:localise-meta-line
                 ;; Phase 8: screen render backend seam
                 #:*screen-renderer*

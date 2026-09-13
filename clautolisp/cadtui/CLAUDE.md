@@ -214,6 +214,20 @@ divergence assumée par rapport à la spec.)
   --locale/--lang dans autolisp-cli (l'API + LANG/LC_ALL + le verbe locale()
   fonctionnent déjà ; le câblage du flag CLI est un petit ajout cross-module
   différé).
+- Phase 7 — dictionnaires DONNÉES + loader (issue cadtui-locale-data-format-and-
+  loader) : **FAIT** (2026-09-13, runners reconnectés). Les dictionnaires sont
+  désormais des FICHIERS de données sous cadtui/data/locale/<locale>/
+  <catégorie>.sexp (une alist (international . local) par fichier, le nom =
+  catégorie : verb/keyword pour l'interaction ; command/option-keyword/alias pour
+  les commandes CAD). locale.lisp : macro %embed-locale-tree qui LIT l'arbre au
+  COMPILE et le bake dans le fasl (aucune dépendance fichier à l'exécution) +
+  load-locale-data-from-directory pour recharger un drop ultérieur. Les 3
+  catégories CAD sont de vrais dictionnaires (moteur générique) ; entrée absente
+  → repli international. MR !234. (Note dette ASDF : éditer un .sexp ne
+  recompile pas locale.lisp automatiquement — rebuild propre en CI ; en dev,
+  toucher locale.lisp ou :force.) NB BricsCAD des runners = install FRANÇAIS
+  (getcname y donne les vrais noms fr_FR) ; getcname est un stub nil côté
+  clautolisp (donc --clautolisp = dry-run mécanique seulement).
 - Phase 8 (backend de rendu visuel, OPTIONNEL) : **FAIT** (seam testable,
   2026-09-13). render.lisp : *screen-renderer* (indirection de backend) +
   text-screen-renderer headless déterministe (en-tête, ligne de menus, liste des

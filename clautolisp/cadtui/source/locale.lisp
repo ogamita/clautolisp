@@ -150,52 +150,69 @@ lexical pre-pass; the parser only ever sees canonical English."
                                  out)))
                 (t (write-char ch out) (incf i)))))))))
 
-;;; --- The interaction-language dictionaries (data) -----------------
+;;; --- Loading dictionaries from the shipped data files -------------
 ;;;
-;;; fr_FR is the reference dictionary (spec §5.2/§5.3 write the fr_FR view);
-;;; de_DE / es_ES carry the spec's worked example plus a few, proving that a
-;;; PARTIAL dictionary coexists (missing entries fall back to international).
+;;; A locale dictionary is DATA, not code (spec §Format des dictionnaires): the
+;;; tables live under cadtui/data/locale/<locale>/<category>.sexp, one alist of
+;;; (international . local) per file, the file name naming the category (verb,
+;;; keyword for the interaction language; command, option-keyword, alias for the
+;;; CAD vocabulary — the last three are probe-measured, see the sibling issues).
+;;; Adding a language or a category = adding a file, never touching this code.
+;;;
+;;; The whole data tree is READ AT COMPILE TIME and baked into the fasl, so the
+;;; built image carries the dictionaries with no runtime file dependency (a
+;;; partial or absent tree just yields fewer entries — every lookup identity-
+;;; falls-back to the international form). LOAD-LOCALE-DATA-FROM-DIRECTORY reloads
+;;; a tree at runtime (e.g. after a fresh probe drop) without a rebuild.
 
-(register-locale-dictionary
- "fr_FR" :verb
- '(("activate" . "activer") ("dump" . "lister") ("page" . "page")
-   ("next" . "suivant") ("previous" . "precedent") ("help" . "aide")
-   ("select" . "selectionner") ("add-selection" . "ajouter-selection")
-   ("remove-selection" . "retirer-selection") ("input" . "saisir")
-   ("close" . "fermer") ("zoom" . "zoom") ("pan" . "panoramique")
-   ("key" . "touche") ("click" . "clic") ("dclick" . "double-clic")
-   ("right-click" . "clic-droit") ("drag" . "glisser")
-   ("cancel-command" . "annuler-commande") ("locale" . "locale")))
+;; These three helpers are used both at runtime (LOAD-LOCALE-DATA-FROM-DIRECTORY)
+;; and at macroexpansion time (%EMBED-LOCALE-TREE, below, in this same file), so
+;; they must exist when the compiler expands that macro — hence the eval-when.
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun %read-sexp-file (path)
+    "Read the single sexp datum from PATH with standard syntax and *read-eval*
+disabled (the data files are inert alists, never code)."
+    (with-open-file (in path :direction :input :if-does-not-exist :error)
+      (with-standard-io-syntax
+        (let ((*read-eval* nil) (*package* (find-package :keyword)))
+          (read in)))))
 
-(register-locale-dictionary
- "fr_FR" :keyword
- '(("drawing" . "dessin") ("drawings" . "dessins")
-   ("entity" . "entite") ("entities" . "entites")
-   ("grip" . "poignee") ("grips" . "poignees")
-   ("menu" . "menu") ("menus" . "menus")
-   ("item" . "element") ("items" . "elements")
-   ("button" . "bouton") ("buttons" . "boutons")
-   ("band" . "bandeau") ("bands" . "bandeaux")
-   ("cad-view" . "vue-cad") ("console" . "console")
-   ("dialog" . "dialogue") ("dialogs" . "dialogues")
-   ("tile" . "tuile") ("tiles" . "tuiles")
-   ("alert" . "alerte") ("alerts" . "alertes")
-   ("ribbon-tab" . "onglet") ("ribbon-panel" . "panneau")
-   ("active-drawing" . "dessin-actif") ("application" . "application")
-   ("menu-bar" . "barre-menu") ("separator" . "separateur")
-   ("depth" . "profondeur") ("size" . "taille")
-   ("window" . "fenetre") ("factor" . "facteur")))
+  (defun %locale-of-file (file)
+    "The locale string a data FILE belongs to: its parent directory name."
+    (car (last (pathname-directory file))))
 
-(register-locale-dictionary
- "de_DE" :verb '(("activate" . "aktivieren") ("close" . "schliessen")
-                 ("dump" . "auflisten") ("locale" . "locale")))
-(register-locale-dictionary
- "de_DE" :keyword '(("drawing" . "Zeichnung") ("drawings" . "Zeichnungen")
-                    ("entity" . "Objekt") ("cad-view" . "cad-ansicht")))
+  (defun %category-of-file (file)
+    "The category keyword a data FILE declares: its base name, upcased and
+interned (\"verb\" => :VERB, \"option-keyword\" => :OPTION-KEYWORD)."
+    (intern (string-upcase (pathname-name file)) :keyword)))
 
-(register-locale-dictionary
- "es_ES" :verb '(("activate" . "activar") ("close" . "cerrar")
-                 ("dump" . "listar") ("locale" . "locale")))
-(register-locale-dictionary
- "es_ES" :keyword '(("drawing" . "dibujo") ("drawings" . "dibujos")
-                    ("entity" . "entidad") ("cad-view" . "vista-cad")))
+(defun load-locale-data-from-directory (directory)
+  "Load every <locale>/<category>.sexp under DIRECTORY into the registry,
+registering each file's alist under its (locale, category). Returns the number of
+files loaded. Missing files/directories are simply skipped."
+  (let ((count 0))
+    (dolist (file (directory (merge-pathnames "*/*.sexp" directory)) count)
+      (register-locale-dictionary (%locale-of-file file)
+                                  (%category-of-file file)
+                                  (%read-sexp-file file))
+      (incf count))))
+
+(defmacro %embed-locale-tree (glob)
+  "At COMPILE (or load) time, read every locale data file matching GLOB (relative
+to this source file) and expand to code that registers them — baking the shipped
+dictionaries into the image so runtime needs no data files present."
+  (let* ((here (or *compile-file-truename* *load-truename*))
+         (files (directory (merge-pathnames glob here))))
+    `(progn
+       ,@(loop for file in files
+               collect `(register-locale-dictionary
+                         ,(%locale-of-file file)
+                         ,(%category-of-file file)
+                         ',(%read-sexp-file file)))
+       ,(length files))))
+
+;; Bake the shipped data tree (cadtui/data/locale/<locale>/<category>.sexp) into
+;; the image. This source file is cadtui/source/locale.lisp, so the data tree is
+;; ../data/locale/ from here. Re-run LOAD-LOCALE-DATA-FROM-DIRECTORY for a later
+;; drop (e.g. fresh probe output converted to command.sexp).
+(%embed-locale-tree "../data/locale/*/*.sexp")
