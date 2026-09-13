@@ -96,7 +96,19 @@
                 #:activate-drawing-document
                 #:*cadtui-console*
                 #:push-console-interactor
-                #:tui-command-escape)
+                #:tui-command-escape
+                ;; Phase 5: CAD view + entities
+                #:ui-cad-view-drawing
+                #:entity-bounding-box
+                #:entity->ui-entity
+                #:viewport
+                #:make-viewport
+                #:viewport-bounds)
+  (:import-from #:clautolisp.drawing
+                #:make-drawing
+                #:add-entity
+                #:find-entity
+                #:map-entities)
   (:import-from #:clautolisp.interactor
                 #:make-input-context
                 #:make-activation

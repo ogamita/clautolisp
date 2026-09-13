@@ -237,7 +237,7 @@ application for headless interactive/scriptable testing (generalises cador)."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-runtime" "clautolisp/autolisp-dcl"
-               "clautolisp/autolisp-interactor")
+               "clautolisp/autolisp-interactor" "clautolisp/drawing")
   :serial t
   :components
   ((:file "cadtui/source/package")
@@ -249,6 +249,7 @@ application for headless interactive/scriptable testing (generalises cador)."
    (:file "cadtui/source/parser")
    (:file "cadtui/source/dcl-bridge")
    (:file "cadtui/source/console-runtime")
+   (:file "cadtui/source/cad-view")
    (:file "cadtui/source/dispatch")
    (:file "cadtui/source/console-interactor"))
   :in-order-to ((asdf:test-op
@@ -573,6 +574,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "cadtui/tests/dispatch-tests")
    (:file "cadtui/tests/dcl-tests")
    (:file "cadtui/tests/console-tests")
+   (:file "cadtui/tests/cad-view-tests")
    (:file "cadtui/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
