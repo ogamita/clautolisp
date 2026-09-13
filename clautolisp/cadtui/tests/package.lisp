@@ -60,6 +60,10 @@
                 #:international-name
                 #:resolve-locale
                 #:localise-meta-line
+                ;; Phase 8: screen render backend seam
+                #:*screen-renderer*
+                #:render-screen-to-string
+                #:ui-step
                 ;; slice 3: addressing
                 #:find-node
                 #:resolve-target
