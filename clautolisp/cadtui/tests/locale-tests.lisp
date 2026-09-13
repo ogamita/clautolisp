@@ -81,13 +81,14 @@
   ;; a missing command falls back to the international form.
   (is (string= "_ERASE" (local-name "_ERASE" "zz_CMD" :command))))
 
-(test fr-command-dictionary-carries-real-doc-verified-names
-  ;; the shipped fr_FR command.sexp (doc-verified seed; getcname harvest
-  ;; supersedes) maps common CAD commands both ways.
-  (is (string= "LIGNE"  (local-name "_LINE" "fr_FR" :command)))
-  (is (string= "OUVRIR" (local-name "_OPEN" "fr_FR" :command)))
-  (is (string= "ETIRER" (local-name "_STRETCH" "fr_FR" :command)))
-  (is (string= "_LINE"  (international-name "LIGNE" "fr_FR" :command)))
+(test fr-command-dictionary-carries-real-harvested-names
+  ;; the shipped fr_FR command.sexp is the getcname harvest off a French
+  ;; BricsCAD (107 commands). Assert ASCII-stable entries both ways.
+  (is (string= "LIGNE"   (local-name "_LINE" "fr_FR" :command)))
+  (is (string= "OUVRIR"  (local-name "_OPEN" "fr_FR" :command)))
+  (is (string= "EFFACER" (local-name "_ERASE" "fr_FR" :command)))
+  (is (string= "CALQUE"  (local-name "_LAYER" "fr_FR" :command)))
+  (is (string= "_LINE"   (international-name "LIGNE" "fr_FR" :command)))
   ;; a command not in the dictionary falls back to the international form.
   (is (string= "_FOOBARBAZ" (local-name "_FOOBARBAZ" "fr_FR" :command))))
 

@@ -171,8 +171,11 @@ lexical pre-pass; the parser only ever sees canonical English."
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun %read-sexp-file (path)
     "Read the single sexp datum from PATH with standard syntax and *read-eval*
-disabled (the data files are inert alists, never code)."
-    (with-open-file (in path :direction :input :if-does-not-exist :error)
+disabled (the data files are inert alists, never code). Forced UTF-8: localised
+names carry accents (e.g. ÉTIRER), which must read identically whatever the
+build/runtime locale."
+    (with-open-file (in path :direction :input :if-does-not-exist :error
+                            :external-format :utf-8)
       (with-standard-io-syntax
         (let ((*read-eval* nil) (*package* (find-package :keyword)))
           (read in)))))

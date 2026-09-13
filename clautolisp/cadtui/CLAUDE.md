@@ -236,14 +236,18 @@ divergence assumée par rapport à la spec.)
   l'aller-retour boucle → command.sexp). Validé sur --clautolisp (143 lignes
   ABSENT bien formées + DONE). Le harvest fr_FR autoritatif tourne sur le runner
   français ; l'artefact converti REMPLACE command.sexp.
-- Phase 7 — dictionnaire fr_FR de COMMANDES CAD (seed) : **FAIT** (MR !236).
-  data/locale/fr_FR/command.sexp : 26 commandes courantes vérifiées sur l'aide
-  BricsCAD fr-fr (URL=anglais, titre=français) + recoupées avec les exemples
-  getcname de l'autolisp-spec. C'est un SEED : le harvest getcname le complète/
-  vérifie (aller-retour). RESTE : le harvest complet (toutes commandes) ; les
-  alias .pgp (issue cadtui-locale-probe-pgp-aliases, P3, dans default.pgp de
-  l'install) ; les mots-clés d'option (issue cadtui-locale-option-keywords, P3) ;
-  le drapeau CLI --locale/--lang.
+- Phase 7 — dictionnaire fr_FR de COMMANDES CAD : **FAIT — HARVEST AUTORITATIF**
+  (MR !237). data/locale/fr_FR/command.sexp = 107 commandes MESURÉES par getcname
+  sur le BricsCAD FRANÇAIS du runner (BRICSCAD 26.0, LOCALE fr_FR, pipeline
+  2845013887 → enfant natif 2845014622, job getcname:probe:bricscad:macos), passé
+  par le convertisseur (aller-retour vérifié, 0 rejet). Remplace le seed doc de
+  26 entrées du MR !236. Le loader lit désormais les .sexp en UTF-8 forcé (les
+  noms accentués — ÉTIRER… — doivent se lire quelle que soit la locale de build).
+  Les commandes IDENTITY (français = anglais, ex. ARC/ZOOM) ne sont pas stockées :
+  repli sur la forme internationale (le préfixe _ la force toujours). RESTE : le
+  même harvest sur AutoCAD (les jobs getcname:probe:autocad/accoreconsole tournent
+  dans le même enfant) ; les alias .pgp (P3) ; les mots-clés d'option (P3) ; le
+  drapeau CLI --locale/--lang.
 - Phase 8 (backend de rendu visuel, OPTIONNEL) : **FAIT** (seam testable,
   2026-09-13). render.lisp : *screen-renderer* (indirection de backend) +
   text-screen-renderer headless déterministe (en-tête, ligne de menus, liste des
