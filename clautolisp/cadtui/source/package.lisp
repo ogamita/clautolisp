@@ -68,6 +68,15 @@
                 #:interactor-return
                 #:interactor-p
                 #:find-registered-interactor)
+  ;; Phase 5: the pure drawing value entities are mirrored from.
+  (:import-from #:clautolisp.drawing
+                #:drawing-p
+                #:map-entities
+                #:entity-dxf
+                #:entity-kind
+                #:entity-handle-string
+                #:find-entity
+                #:drawing-entity-count)
   (:documentation
    "The cadtui host: a textual, keyboard-driven UI tree for CAD objects and
 the CAD application, for headless interactive/scriptable testing of DCL
@@ -196,6 +205,15 @@ documentation/cadtui-specifications.org (normative).")
    #:*cadtui-console*
    #:push-console-interactor
    #:tui-command-escape
+   ;; Phase 5: CAD view + entities + viewport.
+   #:ui-cad-view-drawing
+   #:viewport
+   #:make-viewport
+   #:viewport-x1 #:viewport-y1 #:viewport-x2 #:viewport-y2 #:viewport-scale
+   #:viewport-bounds
+   #:entity-bounding-box
+   #:entity->ui-entity
+   #:%bbox-intersects-p
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key

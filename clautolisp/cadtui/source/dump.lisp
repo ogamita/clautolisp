@@ -46,6 +46,10 @@ contributes only its own; the base method contributes the non-normal state."))
   (when (ui-severity node)
     (list (cons "severity" (ui-severity node)))))
 
+(defmethod node-dump-attributes append ((node ui-grip))
+  (append (when (ui-grip-index node) (list (cons "index" (ui-grip-index node))))
+          (when (ui-grip-point node) (list (cons "point" (ui-grip-point node))))))
+
 ;;; --- Line rendering -----------------------------------------------
 
 (defun %format-dump-value (value)

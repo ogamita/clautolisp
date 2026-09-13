@@ -94,7 +94,10 @@ is strictly isolated from other drawings (spec §Communication inter-dessins).")
 
 (defclass ui-cad-view (ui-node)
   ((viewport  :initarg :viewport  :initform nil :accessor ui-viewport)
-   (selection :initarg :selection :initform nil :accessor ui-selection))
+   (selection :initarg :selection :initform nil :accessor ui-selection)
+   ;; the backing clautolisp.drawing:drawing value entities are mirrored from,
+   ;; lazily and one page at a time (Phase 5); NIL for a pure tree.
+   (drawing   :initarg :drawing   :initform nil :accessor ui-cad-view-drawing))
   (:default-initargs :role :cad-view))
 
 (defclass ui-entity (ui-node)
