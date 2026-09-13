@@ -468,6 +468,11 @@ host adds config (b), D1 §2.4):
 - *Park/signal per context* — each parked context holds its own captured
   continuation; two documents can be parked in the debugger simultaneously
   (R19), which =aldo='s UI must present as *sibling* sessions, not nested levels.
+  *Each debugging context may route to a different user interface* (pjb,
+  2026-09-13): one document's stop can be driven by the dumb UI, another's by
+  ncurses, another's by aldb (the emacs/TCP UI) — the UI is a per-context
+  choice (=*clal-debugger-ui*= resolved per stop, D1 §2.4 configs (a)/(b)),
+  not one global UI for the whole session.
 - *Workspace snapshot with scope awareness* (R17) — the snapshot records each
   sysvar's *scope tier* (§I.6): restoring a Registry-scoped variable is visible
   in every document and survives the session; restoring a Drawing-scoped one is
@@ -476,11 +481,21 @@ host adds config (b), D1 §2.4):
   host-visible state (entities, picksets, tables, sysvars, pickfirst) as a
   =prin1=/=read= plist. [S: =cador/source/api.lisp:71–156=] The scope field must
   be added to =snapshot-sysvar= when the cell gains it.
-- *Breakpoint intent vs materialised filters* (R18) — authoritative breakpoint
-  *intent* is *session-level* (the blackboard is value-only and suffices for a
-  table); *materialised* poll-point filters are *per-document*, rebuilt when a
-  document opens and inherits the intent. =cador= supplies the per-document
-  filter tables; the session-level intent table lives on the session/blackboard.
+- *Breakpoint scope is a user choice, defaulting to the current document*
+  (R18, pjb 2026-09-13) — the authoritative decision: when the user sets a
+  breakpoint (or trace/watch) on a function, they must be able to choose
+  whether it is *global* — applying to that function in *whatever* document it
+  is loaded (e.g. via =vl-load-all=, or a separate load per document) — or
+  *current-document only*. *The default is current-document only*; an auxiliary
+  word =all= on the breakpoint command makes it apply to every occurrence of the
+  function / breakpoint in *all* documents (present and future). Mechanically:
+  a *current-document* breakpoint records its intent on that
+  =document-namespace= and materialises a poll-point filter only there; an =all=
+  breakpoint records session-level intent (on the session/blackboard, which is
+  value-only and suffices for a table) that every document's filter set inherits
+  when it opens. So =cador= keeps both a per-document filter table and a
+  session-level intent table; which one a given breakpoint writes to is decided
+  by the presence of =all= at set time, not fixed by the engine.
 
 *No CAD-side worker thread* (R21, C8): the two-thread exclusive-handoff design
 is the same-image hosted case; =cador= offers *no thread to hand off to* and

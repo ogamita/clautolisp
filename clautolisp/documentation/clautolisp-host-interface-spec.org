@@ -110,6 +110,12 @@ stated once here and only *deviations* are called out per operation:
   through capability query (§5). The wire host is *not implemented* (epic §11);
   its column states the *contract* it must meet, graded =S= only where the
   runtime already constrains it and otherwise left as design intent.
+- =cadtui= :: implements *all* CAD operations like =cador=, but presents the
+  documents and drives interaction through a full-screen *ncurses text UI*, so
+  operations =cador= refuses as headless (a live pointer, transient graphics,
+  =grread=) are served by the TUI instead of signalled. A text-UI CAD host.
+  [design intent; see =cadtui.issue= and
+  =clautolisp/cadtui/documentation/cadtui-specifications.org=]
 
 * 2. Naming and architecture note (deliverable D5)
   :PROPERTIES:
@@ -125,13 +131,18 @@ Everything that is not pure AutoLISP evaluation — documents, databases,
 entities, system variables, user interaction, drawing output — crosses the
 HAL. Nothing else in the interpreter may reach a CAD backend directly (C6).
 
-** 2.2 Three hosts
+** 2.2 The hosts
 
 | Host          | Nature                              | Purpose                                                                                             |
 |---------------+-------------------------------------+-----------------------------------------------------------------------------------------------------|
 | =nihil=       | No-op stubs                         | Keeps the interpreter running with no CAD backend. Implements nothing CAD-like *by contract* (C7).  |
 | =cador=       | Headless, in-process CAD core       | Real documents, databases, entities; no GUI. The analogue of AutoCAD Core Console (=accoreconsole=). |
+| =cadtui=      | In-process CAD core with an ncurses text UI | Implements all CAD operations like =cador=, but drives documents and interaction through a full-screen ncurses text UI — a TUI CAD host. |
 | =<wire-host>= | Wire protocol to a remote display server | Forwards host operations to a separate CAD/GUI process that owns the real editor and display.  |
+
+=cadtui= was added after epic §1's original three; it is a fourth host, a
+text-UI peer of =cador= (all CAD operations, presented through ncurses). See
+=cadtui.issue= and =clautolisp/cadtui/documentation/cadtui-specifications.org=.
 
 Consequences (verbatim from epic §1): =cador= is a *peer* of the wire host,
 not a family name. Entity handling begun in the former null host *belongs in
