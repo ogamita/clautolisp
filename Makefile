@@ -70,7 +70,7 @@ DEFAULT_LISP ?=
 # the top level should carry a `## ...` description so it appears in
 # `make help`.
 
-.PHONY: help all clean build build-sbcl build-ccl documentation test clean-pdf clean-diagrams docker-build-clautolisp-ci docker-push-clautolisp-ci install install-programs install-libraries install-documentation uninstall $(SUBPROJECTS) \
+.PHONY: help all clean build build-sbcl build-ccl documentation test benchmark clean-pdf clean-diagrams docker-build-clautolisp-ci docker-push-clautolisp-ci install install-programs install-libraries install-documentation uninstall $(SUBPROJECTS) \
         submodules build-documentation build-programs build-libraries \
         stage stage-programs stage-libraries stage-documentation clean-stage \
         release release-sources release-documentation release-programs release-libraries \
@@ -212,6 +212,21 @@ test:  ## Run the clautolisp test suite plus the autolisp-test conformance corpu
 	"$(MAKE)" -C autolisp-test test
 	"$(MAKE)" -C autolisp-front-end test
 	"$(MAKE)" -C autolisp-benchmark test
+
+# --- Benchmark (see autolisp-benchmark/README.org) ----------------------
+#
+# `autolisp-benchmark test` above is only a smoke run (proves the harness
+# loads); this is the actual measurement. `make benchmark` runs the
+# portable baseline — clautolisp via SBCL, ~5 s per operation class, no
+# CAD required — so it works on any dev machine. Override the per-class
+# budget with BENCH_SECONDS (e.g. `make benchmark BENCH_SECONDS=10`). To
+# compare against a real CAD on the same hardware, run the CAD-specific
+# targets directly: `make -C autolisp-benchmark run-bricscad-macos`
+# (or `run-bricscad-windows`, `run-autocad-windows`) — each is a no-op on
+# every other host, so they are not wired in here.
+
+benchmark:  ## Run the portable clautolisp benchmark suite (no CAD required); override with BENCH_SECONDS=N.
+	"$(MAKE)" -C autolisp-benchmark run
 
 # --- CAD ground-truth probes (see probes/README.org) -------------------
 #
