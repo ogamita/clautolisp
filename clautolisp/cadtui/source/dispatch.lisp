@@ -235,6 +235,12 @@ active-drawing (= drawings[1]) becomes DRAWING."
                                         :text "input needs a target"))
       ((eq :tile (ui-role node))
        (setf (ui-tile-value node) text)
+       ;; Phase 3: also record into the DCL runtime and fire the tile's
+       ;; action_tile callback (spec §5.3 requires both), when this tile mirrors
+       ;; a live DCL dialog. No-op for a non-DCL tile.
+       (let ((dcl (%live-dcl-dialog node)))
+         (when dcl
+           (dcl-runtime-fire-action dcl (ui-key node) text +dcl-reason-changed+)))
        (make-command-result :status :ok :verb :input :data node
                             :text (format nil "input ~S into ~A" text (ui-key node))))
       (t (make-command-result :status :error :verb :input
@@ -248,12 +254,17 @@ active-drawing (= drawings[1]) becomes DRAWING."
                                         :text "close needs a target"))
       ((null (ui-parent node)) (make-command-result :status :error :verb :close
                                                     :text "cannot close the root"))
-      (t (let ((parent (ui-parent node)))
-           (setf (ui-children parent) (remove node (ui-children parent))
-                 (ui-parent node) nil)
-           (make-command-result :status :ok :verb :close :data parent
-                                :text (format nil "closed ~A:~A"
-                                              (%role-name node) (ui-key node))))))))
+      (t
+       ;; Phase 3: closing a mirrored dialog ends it in the DCL runtime first
+       ;; (done_dialog), so a blocked start_dialog would return; then detach.
+       (let ((dcl (and (eq :dialog (ui-role node)) (ui-dcl-source node))))
+         (when dcl (dcl-runtime-done-dialog (dcl-dialog-id dcl) 1)))
+       (let ((parent (ui-parent node)))
+         (setf (ui-children parent) (remove node (ui-children parent))
+               (ui-parent node) nil)
+         (make-command-result :status :ok :verb :close :data parent
+                              :text (format nil "closed ~A:~A"
+                                            (%role-name node) (ui-key node))))))))
 
 (define-verb :zoom (mc root)
   (let* ((target (%first-target mc))
@@ -326,6 +337,13 @@ key is a shortcut to an action already expressible another way.")
                                               (dump-descriptor-number descriptor)
                                               (or target ""))
                                       (dump-node node :stream s)))))
+      ;; Phase 3: clicking a DCL tile fires its action_tile callback (e.g. an
+      ;; "accept" button whose callback runs (done_dialog 1)).
+      ((and (eq :tile (ui-role node)) (%live-dcl-dialog node))
+       (dcl-runtime-fire-action (%live-dcl-dialog node) (ui-key node)
+                                (ui-tile-value node) +dcl-reason-selected+)
+       (make-command-result :status :ok :verb :click :data node
+                            :text (format nil "clicked tile ~A" (ui-key node))))
       ;; clicking an executable node would run its action (needs the CAD runtime).
       ((ui-action node)
        (make-command-result :status :not-yet :verb :click :data node

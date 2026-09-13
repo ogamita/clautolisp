@@ -246,8 +246,8 @@ application for headless interactive/scriptable testing (generalises cador)."
    (:file "cadtui/source/address")
    (:file "cadtui/source/classify")
    (:file "cadtui/source/parser")
-   (:file "cadtui/source/dispatch")
-   (:file "cadtui/source/dcl-bridge"))
+   (:file "cadtui/source/dcl-bridge")
+   (:file "cadtui/source/dispatch"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/cadtui/tests")))
   :perform (asdf:test-op (op system)
