@@ -128,10 +128,15 @@
                 #:scheduled-context-context
                 #:scheduled-context-status
                 #:scheduled-context-document-key
+                #:scheduled-context-saved-env
+                #:scheduled-context-pending-break
                 #:scheduler-register-context
                 #:scheduler-context-list
                 #:scheduler-current-context
                 #:scheduler-activate
+                #:scheduler-request-break
+                #:scheduler-pending-break-p
+                #:scheduler-observe-break
                 #:separate-vlx-namespace-name
                 #:set-default-evaluation-context
                 #:set-autolisp-errno

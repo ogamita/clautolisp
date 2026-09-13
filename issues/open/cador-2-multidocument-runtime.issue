@@ -248,3 +248,37 @@ document switch actually drives the host.
 Remaining for the scheduler proper: real continuation-capture parking, the
 per-context dynamic-env save/restore, and the deferred-break discipline; then
 Slice 3.
+
+** Slice 2c DONE (2026-09-13) — per-context saved-env round-trip + deferred-break
+
+The two self-contained, synchronously-testable halves of the park/resume
+contract, without real continuation capture (a batch cador run parks nowhere,
+D2 §I.2).
+
+- =autolisp-runtime/source/scheduler.lisp=: =%scheduler-save-env= /
+  =%scheduler-restore-env= wired into =scheduler-activate= — the demoted runner
+  saves its per-context runtime globals into =saved-env=, the promoted context
+  restores them. Slice 2c carries exactly one such global, =*current-form*= (a
+  per-evaluation runtime global that lives OUTSIDE the evaluation-context);
+  everything already inside the context / namespace (current doc/ns, =*error*=,
+  dynamic-frame) keeps riding the existing =*active-evaluation-context*= swap. A
+  nil =saved-env= (a never-run context) restores nothing, so first activation
+  and the single-document path are untouched.
+- Deferred-break discipline (=pending-break=): =scheduler-request-break= sets
+  the flag on a target (or the running context); =scheduler-observe-break= is
+  the poll point — it clears and reports the running context's break once, and
+  a break on a non-running context is NOT observed until that context is
+  activated (the deferral). No async interrupt: this is the cooperative half of
+  the outstanding-host-call hazard (D1 §13.5).
+- Tests (=autolisp-runtime/tests/scheduler-tests.lisp=, +4): save/restore
+  round-trip of =*current-form*= across switches; restore is a no-op for a
+  never-run context; request-break on target and on the running context;
+  observe clears-once and defers a non-running context's break. The test macro
+  now also rebinds =*current-form*= so nothing leaks.
+- Verified: =make -C clautolisp test-sbcl= exit 0.
+
+Explicitly deferred to Slice 3: real continuation capture (the =continuation=
+slot); per-document CMDECHO (host/session-scoped today — belongs behind
+=host-activate-document=, not the runtime scheduler); vl-enable-user-cancel
+(no state exists to save until the builtin stores a flag); and the per-document
+correlation stack (§13.4 — not built; lands with the §13 park/resume protocol).
