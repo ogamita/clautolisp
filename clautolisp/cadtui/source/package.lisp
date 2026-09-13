@@ -109,6 +109,7 @@ documentation/cadtui-specifications.org (normative).")
    #:interpret-line
    #:implicit-input-target
    #:*help-text*
+   #:*key-bindings*
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key
