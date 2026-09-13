@@ -54,6 +54,12 @@
                 #:ambiguous-target-candidates
                 ;; Phase 2 slice 1: classifier
                 #:*command-escape*
-                #:classify-line)
+                #:classify-line
+                ;; Phase 2 slice 2: parser
+                #:parse-meta-command
+                #:meta-command-verb
+                #:meta-command-positionals
+                #:meta-command-options
+                #:meta-command-parse-error)
   (:export #:cadtui-suite
            #:run-all-tests))

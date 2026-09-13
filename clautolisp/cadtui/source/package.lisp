@@ -65,6 +65,18 @@ documentation/cadtui-specifications.org (normative).")
    ;; Phase 2 slice 1: line classifier / escape mechanism.
    #:*command-escape*
    #:classify-line
+   ;; Phase 2 slice 2: meta-command parser.
+   #:parse-meta-command
+   #:meta-command
+   #:meta-command-p
+   #:make-meta-command
+   #:meta-command-verb
+   #:meta-command-positionals
+   #:meta-command-options
+   #:meta-command-parse-error
+   #:meta-command-parse-error-text
+   #:meta-command-parse-error-reason
+   #:*meta-option-names*
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key
