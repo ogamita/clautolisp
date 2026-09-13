@@ -436,10 +436,20 @@ key is a shortcut to an action already expressible another way.")
                                 (ui-tile-value node) +dcl-reason-selected+)
        (make-command-result :status :ok :verb :click :data node
                             :text (format nil "clicked tile ~A" (ui-key node))))
-      ;; clicking an executable node would run its action (needs the CAD runtime).
+      ;; clicking an executable node runs its associated Lisp function (a menu
+      ;; item / band button carries a closure or a CAD command name, spec §6). A
+      ;; Lisp function runs now; a bare CAD command name still needs the active
+      ;; console runtime, so it stays a :not-yet stand-in recording the name.
       ((ui-action node)
-       (make-command-result :status :not-yet :verb :click :data node
-                            :text (format nil "would run action ~A" (ui-action node))))
+       (let ((action (ui-action node)))
+         (if (or (functionp action)
+                 (and (symbolp action) action (fboundp action)))
+             (let ((value (funcall action)))
+               (make-command-result :status :ok :verb :click :data value
+                                    :text (format nil "ran action of ~A:~A"
+                                                  (%role-name node) (ui-key node))))
+             (make-command-result :status :not-yet :verb :click :data node
+                                  :text (format nil "would run command ~A" action)))))
       (t (make-command-result :status :ok :verb :click :data node
                               :text (format nil "clicked ~A:~A"
                                             (%role-name node) (ui-key node)))))))

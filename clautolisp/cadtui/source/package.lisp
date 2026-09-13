@@ -143,6 +143,15 @@ documentation/cadtui-specifications.org (normative).")
    #:dump-page
    #:make-application-tree
    #:make-cador-tree
+   ;; Phase 6: menu bar + bands from a data description.
+   #:ui-band-style
+   #:build-menu-bar
+   #:build-band
+   #:install-menu-bar
+   #:add-band
+   #:ui-description-error
+   #:ui-description-error-form
+   #:ui-description-error-reason
    ;; Phase 1 slice 3: addressing.
    #:find-node
    #:resolve-target
