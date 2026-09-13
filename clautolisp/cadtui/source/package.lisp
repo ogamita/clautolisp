@@ -50,6 +50,18 @@ documentation/cadtui-specifications.org (normative).")
    #:*last-dump*
    #:make-application-tree
    #:make-cador-tree
+   ;; Phase 1 slice 3: addressing.
+   #:find-node
+   #:resolve-target
+   #:resolve-segment
+   #:target-not-found
+   #:target-not-found-path
+   #:target-not-found-segment
+   #:ambiguous-target
+   #:ambiguous-target-path
+   #:ambiguous-target-segment
+   #:ambiguous-target-candidates
+   #:*container-role-map*
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key
