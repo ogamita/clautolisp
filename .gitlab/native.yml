@@ -415,6 +415,57 @@ path-sysvars:probe:accoreconsole:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-path-sysvars-probe.ps1 -Backend accoreconsole
 
+# --- localised CAD command names: getcname harvest for cadtui ---------------
+#
+# cadtui-locale-probe-getcname.issue. cadtui translates CAD command names
+# international<->local; the localised forms can only be MEASURED on a localised
+# install. getcname is a nil stub in clautolisp, so this harvest is meaningful
+# only against a real CAD -- and the runners' BricsCAD is a French install, so
+# BricsCAD here yields real fr_FR names. Soft (a probe measures, never gates);
+# artifacts feed scripts/cadtui-getcname-to-sexp.py -> command.sexp.
+.getcname-artifacts:
+  artifacts:
+    name: "getcname-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/getcname/]
+    expire_in: 30 days
+
+getcname:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .getcname-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-getcname-probe.sh --backend bricscad
+
+getcname:probe:bricscad:windows:
+  extends: [.gate-windows-cad-soft, .getcname-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-getcname-probe.ps1 -Backend bricscad
+
+getcname:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .getcname-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-getcname-probe.ps1 -Backend autocad
+
+getcname:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .getcname-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-getcname-probe.ps1 -Backend accoreconsole
+
 .pathname-artifacts:
   interruptible: true
   artifacts:
