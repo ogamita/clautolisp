@@ -120,3 +120,22 @@ process-wide *dcl-renderer*. Returns the renderer."
   (let ((renderer (make-cadtui-dcl-renderer)))
     (install-default-renderer renderer)
     renderer))
+
+;;; --- Verb → runtime bridge helpers (Phase 3 slice 2) --------------
+
+(defun %ui-dialog-of (node)
+  "The enclosing ui-dialog at or above NODE, or NIL."
+  (loop for n = node then (ui-parent n)
+        while n
+        when (eq :dialog (ui-role n)) return n))
+
+(defun %live-dcl-dialog (node)
+  "The live dcl-dialog object backing NODE's enclosing ui-dialog (its dcl-source
+back-pointer), or NIL when NODE is not inside a mirrored dialog."
+  (let ((uidlg (%ui-dialog-of node)))
+    (and uidlg (ui-dcl-source uidlg))))
+
+;; DCL action reason keywords (mapped to $reason integers by dcl-reason-code):
+;; selected (buttons, most tiles) for click, changed (edit_box) for input.
+(defparameter +dcl-reason-selected+ :reason-selected)
+(defparameter +dcl-reason-changed+ :reason-changed)

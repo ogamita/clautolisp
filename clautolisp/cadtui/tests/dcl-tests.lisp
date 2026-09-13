@@ -74,3 +74,60 @@ disturbed)."
              (is (eq :normal (ui-state tile)))
              (dcl-runtime-done-dialog id 1))
         (ignore-errors (delete-file path))))))
+
+;;;; Phase 3 slice 2: input/click/close fire DCL callbacks + teardown.
+
+(test dcl-input-fires-action-and-records-value
+  (reset-default-evaluation-context)
+  (%with-cadtui-dcl (root)
+    (let ((path (%write-temp-dcl "g" "colour : edit_box { key = \"colour\"; }")))
+      (unwind-protect
+           (let* ((src (dcl-runtime-load-dialog path))
+                  (id (dcl-runtime-new-dialog src "g")))
+             (dcl-runtime-action-tile id "colour"
+                                      (make-autolisp-string "(setq pick $value)"))
+             (interpret-line
+              (format nil "=input(/application/active-drawing/dialog:~D/tile:colour, \"CYAN\")" id)
+              root)
+             ;; the action_tile callback ran ($value bound, pick set) ...
+             (is (string= "CYAN"
+                          (autolisp-string-value
+                           (autolisp-symbol-value (intern-autolisp-symbol "PICK")))))
+             ;; ... and get_tile reflects the entered value.
+             (is (string= "CYAN" (dcl-runtime-get-tile id "colour")))
+             (dcl-runtime-done-dialog id 1))
+        (ignore-errors (delete-file path))))))
+
+(test dcl-click-button-fires-callback
+  ;; The button's action_tile callback runs on click. Uses setq (a runtime
+  ;; special form) so the test does not depend on builtins-core being loaded.
+  (reset-default-evaluation-context)
+  (%with-cadtui-dcl (root)
+    (let ((path (%write-temp-dcl "g" "accept : button { key = \"accept\"; }")))
+      (unwind-protect
+           (let* ((src (dcl-runtime-load-dialog path))
+                  (id (dcl-runtime-new-dialog src "g")))
+             (dcl-runtime-action-tile id "accept" (make-autolisp-string "(setq clicked 1)"))
+             (interpret-line
+              (format nil "=click(/application/active-drawing/dialog:~D/tile:accept)" id)
+              root)
+             (is (eql 1 (autolisp-symbol-value (intern-autolisp-symbol "CLICKED"))))
+             (dcl-runtime-done-dialog id 1))
+        (ignore-errors (delete-file path))))))
+
+(test dcl-close-dialog-ends-and-detaches
+  (%with-cadtui-dcl (root)
+    (let ((path (%write-temp-dcl "g" "x : edit_box { key = \"x\"; }")))
+      (unwind-protect
+           (let* ((src (dcl-runtime-load-dialog path))
+                  (id (dcl-runtime-new-dialog src "g"))
+                  (uidlg (resolve-target
+                          root (format nil "/application/active-drawing/dialog:~D" id)))
+                  (dcl (clautolisp.cadtui::ui-dcl-source uidlg))
+                  (drawing (ui-parent uidlg)))
+             (interpret-line
+              (format nil "=close(/application/active-drawing/dialog:~D)" id) root)
+             ;; done_dialog fired (finished) and the ui-dialog is detached.
+             (is (eq t (dcl-dialog-finished-p dcl)))
+             (is (null (ui-find-child drawing (princ-to-string id)))))
+        (ignore-errors (delete-file path))))))

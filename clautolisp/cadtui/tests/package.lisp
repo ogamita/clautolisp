@@ -85,6 +85,7 @@
   (:import-from #:clautolisp.autolisp-dcl
                 #:dcl-runtime-load-dialog
                 #:dcl-runtime-new-dialog
+                #:dcl-runtime-action-tile
                 #:dcl-runtime-set-tile
                 #:dcl-runtime-get-tile
                 #:dcl-runtime-mode-tile
@@ -97,5 +98,12 @@
                 #:current-dcl-renderer
                 #:install-default-renderer
                 #:make-noop-renderer)
+  (:import-from #:clautolisp.autolisp-runtime
+                #:reset-default-evaluation-context
+                #:intern-autolisp-symbol
+                #:autolisp-symbol-value
+                #:autolisp-string-value
+                #:make-autolisp-string
+                #:run-autolisp-string)
   (:export #:cadtui-suite
            #:run-all-tests))
