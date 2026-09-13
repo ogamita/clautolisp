@@ -50,6 +50,7 @@ The handler mutates OPTS directly (typically via SETF on a slot).
 
 =*common-option-specs*= covers everything both tools accept:
 =--help= / =-h=, =--version= / =-V=, =--list-encodings=,
+=--list-hosts=,
 =--quiet= / =-q=, =--verbose= / =-v=, =--debug= / =-d=,
 =--dialect=, the dialect shorthands (=--strict= / =--autocad= /
 =--bricscad= / =--clautolisp=), =--host=, =--load= / =-l=,

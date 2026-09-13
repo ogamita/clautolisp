@@ -63,7 +63,21 @@ every extension available, no out-of-dialect diagnostic.
 .SS Host (HAL backend)
 .TP
 .BR \-\-host " " \fIBACKEND\fR
-.BR mock " (default) or " null .
+.BR cador " (default), " cadtui ", or " nihil .
+.B cador
+is the headless in-process CAD core;
+.B cadtui
+is the full textual UI-tree host on that core (menus, drawings, CAD view,
+DCL dialogs mirrored into an inspectable tree \(em cador is its degenerate
+.I /application/console
+configuration);
+.B nihil
+is the trivial backend.
+.B mock
+is a deprecated alias of cador;
+.BR null " / " none
+are deprecated aliases of nihil. See
+.BR \-\-list-hosts .
 .TP
 .BR \-\-mock-input " " \fIPATH\fR
 Feed the file at PATH to the MockHost as its prompt-stream.
@@ -192,6 +206,11 @@ exposes) and exit.
 Print every
 .B \-\-dialect
 name, strict first and lax last, and exit.
+.TP
+.B \-\-list-hosts
+Print the
+.B \-\-host
+backends, one per line with a short summary, and exit.
 .TP
 .B \-\-list-situations
 Print the encoding situations settable with

@@ -31,7 +31,11 @@
   (format t "                         extensions (e.g. variadic functions). Out-of-dialect~%")
   (format t "                         operators stay callable but emit a diagnostic at use.~%")
   (format t "Host:~%")
-  (format t "  --host NAME            HAL backend: cador (default), nihil. mock=alias of cador; null/none=aliases of nihil.~%")
+  (format t "  --host NAME            Host backend: cador (default), cadtui, nihil.~%")
+  (format t "                         cador = headless CAD core; cadtui = full textual UI-tree~%")
+  (format t "                         host on the cador core (menus/drawings/CAD view, DCL~%")
+  (format t "                         dialogs mirrored into an inspectable tree); nihil = trivial.~%")
+  (format t "                         mock=alias of cador; null/none=aliases of nihil. See --list-hosts.~%")
   (format t "  --mock-input PATH      Attach the file at PATH as the MockHost prompt-stream.~%")
   (format t "                         Lines are consumed by GETSTRING / GETPOINT / etc. in order.~%")
   (format t "  --gui CMD              DCL GUI driver: subprocess CMD speaking the sexp wire protocol.~%")
@@ -125,6 +129,8 @@
   (format t "                         (mandatory four + every encoding the running CL~%")
   (format t "                         implementation exposes) and exit. Encoding names~%")
   (format t "                         are case-insensitive on the CLI.~%")
+  (format t "  --list-hosts           Print the --host backends with a one-line summary~%")
+  (format t "                         of each and exit.~%")
   (format t "  --list-situations      Print the encoding situations settable with~%")
   (format t "                         -E<situation>[-<dir>] / --<situation>[-<dir>]-encoding,~%")
   (format t "                         with their defaults, and exit. Under a backend flag,~%")
@@ -139,10 +145,11 @@
          (string-equal name "none"))
      *nihil*)
     ((or (string-equal name "cador")
-         (string-equal name "mock"))     ; "mock" is the deprecated alias of cador
+         (string-equal name "mock")      ; "mock" is the deprecated alias of cador
+         (string-equal name "cadtui"))   ; cadtui runs on the cador core (UI layer atop)
      (make-cador))
     (t
-     (error "Unknown host backend ~S. Expected one of: cador, nihil (mock=alias of cador, null/none=aliases of nihil)." name))))
+     (error "Unknown host backend ~S. Expected one of: cador, cadtui, nihil (mock=alias of cador, null/none=aliases of nihil)." name))))
 
 (defun print-version ()
   (format t "~&clautolisp ~A~%" *version*))
@@ -167,12 +174,25 @@ so adding a dialect only touches dialect.lisp."
       (autolisp-dialect-strict)))
 
 (defun keyword->host (host-keyword)
-  "Map :cador / :mock / :null to a HAL backend instance. Defaults to
-cador (the headless CAD core) when HOST-KEYWORD is nil (the empty
-default for clautolisp omits --host). :mock is the deprecated alias."
+  "Map a --host keyword to a HAL backend instance. Defaults to cador (the
+headless CAD core) when HOST-KEYWORD is nil (clautolisp omits --host). :mock is
+the deprecated alias of :cador. :cadtui runs on the SAME cador CAD core — it is
+a UI-tree presentation layer over it (installed separately at startup, see
+MAYBE-INSTALL-CADTUI-HOST), so it maps to the cador backend here too."
   (case host-keyword
-    ((nil :cador :mock)  (make-cador))
+    ((nil :cador :mock :cadtui)  (make-cador))
     ((:nihil :null)      *nihil*)))
+
+(defun maybe-install-cadtui-host (host-keyword)
+  "When --host cadtui is selected, build the full cadtui application tree and
+install the cadtui DCL renderer over it, so DCL dialogs (and CAD objects) are
+mirrored into an inspectable UI tree during the session — the cadtui host layer
+over the shared cador core. A no-op for every other host. Returns the tree or
+NIL."
+  (when (eq host-keyword :cadtui)
+    (let ((root (clautolisp.cadtui:make-application-tree)))
+      (clautolisp.cadtui:install-cadtui-dcl-renderer root)
+      root)))
 
 (defun pop-required-argument (option arguments)
   "Pop the next argument off ARGUMENTS or signal a usage error
@@ -2089,6 +2109,12 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
           (clautolisp.autolisp-cli:print-dialects) (quit 0))
         (when (clautolisp.autolisp-cli:cli-options-list-situations-p options)
           (clautolisp.autolisp-cli:print-situations :backend :clautolisp) (quit 0))
+        (when (clautolisp.autolisp-cli:cli-options-list-hosts-p options)
+          (clautolisp.autolisp-cli:print-hosts) (quit 0))
+        ;; --host cadtui: install the cadtui UI-tree presentation layer (the DCL
+        ;; renderer over the full application tree) atop the shared cador core,
+        ;; before the session is built. A no-op for every other host.
+        (maybe-install-cadtui-host (clautolisp.autolisp-cli:cli-options-host options))
         (let* ((verbosity (clautolisp.autolisp-cli:cli-options-verbosity options))
                (verbose-p (member verbosity '(:verbose :debug)))
                (debug-p   (eq verbosity :debug))

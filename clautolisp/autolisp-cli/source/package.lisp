@@ -39,6 +39,7 @@
    #:cli-options-list-encodings-p ; AC
    #:cli-options-list-dialects-p ; AC
    #:cli-options-list-situations-p ; AC
+   #:cli-options-list-hosts-p    ; AC
    #:cli-options-list-cad-programs-p ; AC
    #:cli-options-dry-run-p       ; A
    #:cli-options-print-command-p ; A
@@ -111,4 +112,6 @@
    #:enumerate-implementation-encodings
    #:print-encodings
    #:print-dialects
-   #:print-situations))
+   #:print-situations
+   #:print-hosts
+   #:*host-descriptions*))
