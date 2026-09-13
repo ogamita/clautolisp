@@ -1,4 +1,4 @@
-;;; spec-texinfo-fast-node.el --- O(1) node naming for the ox-texinfo export.
+;;; spec-texinfo-fast-node.el --- O(1) node naming for the ox-texinfo export.  -*- lexical-binding: t; -*-
 ;;;
 ;;; WHY THIS EXISTS
 ;;;
