@@ -367,3 +367,36 @@ worker). So real continuation-capture parking IS implementable in-image and is
 back IN SCOPE for cador-2 (thread + condition-variable handoff), being designed
 now. The correlation stack still follows the §13 park/resume protocol. cador-2
 is NOT being closed with parking deferred.
+
+** Slice 3d DONE (2026-09-13) — continuations as parked threads (rendezvous)
+
+Real parking, in-image, per pjb's model: a context's continuation is its
+THREAD, parked on a condition variable.
+
+- =autolisp-runtime/source/scheduler.lisp=: =scheduled-context= gains =thread=
+  (the continuation) and =mailbox=; =document-scheduler= gains a =lock=. New
+  =park-mailbox= primitive (lock + condvar + token FIFO, timeout-capable) — a
+  private reimplementation of the debugger's blocking-queue, because
+  autolisp-debug depends on autolisp-runtime and reuse would invert the
+  dependency. =scheduler-spawn-context= makes a thread born PARKED (blocks on
+  its mailbox, then runs its thunk when resumed); =scheduler-start= /
+  =scheduler-resume= wake a context; =scheduler-switch= (called by the running
+  thread) marks the transition under the lock, wakes the target, then parks
+  itself — the condvar rendezvous is the single-runner mutual exclusion (C2/C8);
+  =%scheduler-set-running= asserts the invariant on every transition.
+- =bordeaux-threads= added to the autolisp-runtime system deps (already a
+  repo-wide dep; the test system inherits it).
+- Added ALONGSIDE the synchronous state machine: =scheduler-activate= is
+  untouched, so single-document (no scheduler) spawns no thread and the earlier
+  synchronous tests are unchanged.
+- Tests (=scheduler-tests.lisp=, +3, all timeout-guarded with unwind-protect
+  teardown so no thread leaks across the FiveAM double run): spawn-born-parked +
+  start-runs-it; two threads hand off with the strict interleaving that proves
+  exactly one runs at a time; scheduler-activate spawns no thread.
+- Verified: =make -C clautolisp test-sbcl= exit 0.
+
+Remaining to fully realise parking on the CAD path (later increments): fold the
+thread rendezvous INTO =scheduler-activate= (spawn/switch driven by the real
+document switch, with the global-vs-per-thread specials installed under the
+handoff lock), wire real park points (get-family prompts, prompting host-command)
+to =scheduler-switch=, and the §13.4 correlation stack.

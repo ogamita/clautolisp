@@ -112,7 +112,8 @@
   :description "Core AutoLISP runtime object model for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-reader" "clautolisp/autolisp-source-map" "uiop")
+  :depends-on ("clautolisp/autolisp-reader" "clautolisp/autolisp-source-map" "uiop"
+               "bordeaux-threads")
   :serial t
   :components
   ((:file "autolisp-runtime/source/package")

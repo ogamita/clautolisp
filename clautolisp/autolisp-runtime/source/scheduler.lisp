@@ -47,22 +47,33 @@ key), or NIL when no host document is linked."
 
 (defstruct scheduled-context
   "One document's slot in the cooperative scheduler. CONTEXT is its
-EVALUATION-CONTEXT; STATUS is :RUNNABLE, :RUNNING, or :PARKED. CONTINUATION,
-PENDING-BREAK and SAVED-ENV are reserved for real parking (slice 2/3): the
-captured continuation, the deferred-break flag for the outstanding-host-call
-hazard, and the saved per-context dynamic environment."
+EVALUATION-CONTEXT; STATUS is :RUNNABLE, :RUNNING, or :PARKED.
+
+THREAD is this context's continuation, made concrete as a thread (pjb: \"our
+continuations are our threads, parked on a condition variable\"): a parked
+context is its THREAD blocked on MAILBOX; resuming it pushes a token to MAILBOX
+and the previously-running thread then blocks on its own. The condition-variable
+rendezvous itself enforces at-most-one-running (C2/C8) — the thread is the
+cooperative coroutine carrier, never a concurrent worker. Both are NIL until the
+context is first spawned; a single-document session never spawns one.
+
+PENDING-BREAK is the deferred-break flag; SAVED-ENV the saved per-context
+dynamic environment."
   (context nil)
   (document-key nil)
   (status :runnable :type keyword)
-  (continuation nil)
+  (thread nil)
+  (mailbox nil)
   (pending-break nil)
   (saved-env nil))
 
 (defstruct document-scheduler
   "The single-runner cooperative scheduler: CONTEXTS is the ordered list of
-SCHEDULED-CONTEXTs; RUNNING is the one :RUNNING context, or NIL."
+SCHEDULED-CONTEXTs; RUNNING is the one :RUNNING context, or NIL. LOCK guards the
+status/running transition across the thread handoff."
   (contexts '())
-  (running nil))
+  (running nil)
+  (lock (bordeaux-threads:make-lock "document-scheduler")))
 
 ;;; --- Registry -----------------------------------------------------
 
@@ -196,3 +207,99 @@ deferral. No asynchronous interrupt is ever raised here."
     (when (and running (scheduled-context-pending-break running))
       (setf (scheduled-context-pending-break running) nil)
       t)))
+
+;;; --- Thread rendezvous: continuations as parked threads (slice 3d) ---
+;;;
+;;; A context's continuation is its THREAD, parked on a condition variable
+;;; (pjb). PARK-MAILBOX is a one-slot blocking token queue over a lock + condvar
+;;; (the shape of the debugger's blocking-queue, reimplemented here because
+;;; autolisp-debug depends on autolisp-runtime, not the reverse — reuse would
+;;; invert the dependency). Handing off = push a token to the target's mailbox
+;;; (waking its thread) then pop your own (blocking). The rendezvous guarantees
+;;; exactly one thread is ever off its mailbox, so it *is* the single-runner
+;;; mutual exclusion — no concurrent execution (C2/C8).
+;;;
+;;; Slice 3d adds this rendezvous ALONGSIDE the synchronous state machine and
+;;; does NOT touch SCHEDULER-ACTIVATE: a single-document session (no scheduler)
+;;; still spawns no thread. Wiring park points to real evaluation is a later
+;;; increment; here the thunks are caller-supplied.
+
+(defstruct park-mailbox
+  "A blocking one-token-at-a-time mailbox: a lock + condition variable over a
+FIFO of tokens. The parked thread POPs (blocks); a resumer PUSHes."
+  (tokens '())
+  (lock (bordeaux-threads:make-lock "park-mailbox"))
+  (cv (bordeaux-threads:make-condition-variable)))
+
+(defun park-mailbox-push (mailbox token)
+  "Enqueue TOKEN and wake one waiter. Non-blocking."
+  (bordeaux-threads:with-lock-held ((park-mailbox-lock mailbox))
+    (setf (park-mailbox-tokens mailbox)
+          (nconc (park-mailbox-tokens mailbox) (list token)))
+    (bordeaux-threads:condition-notify (park-mailbox-cv mailbox)))
+  token)
+
+(defun park-mailbox-pop (mailbox &optional timeout)
+  "Block until a token is available and return it; with TIMEOUT (seconds),
+return :TIMEOUT if none arrives in time. A token already present is returned at
+once (no lost-wakeup)."
+  (let ((deadline (and timeout (+ (get-internal-real-time)
+                                  (* timeout internal-time-units-per-second)))))
+    (bordeaux-threads:with-lock-held ((park-mailbox-lock mailbox))
+      (loop
+        (when (park-mailbox-tokens mailbox)
+          (return (pop (park-mailbox-tokens mailbox))))
+        (when (and deadline (>= (get-internal-real-time) deadline))
+          (return :timeout))
+        (bordeaux-threads:condition-wait
+         (park-mailbox-cv mailbox) (park-mailbox-lock mailbox)
+         :timeout 0.25)))))
+
+(defun %scheduler-set-running (scheduler sc)
+  "Under the scheduler lock: demote the current runner to :PARKED, make SC the
+:RUNNING one, and assert the single-runner invariant."
+  (bordeaux-threads:with-lock-held ((document-scheduler-lock scheduler))
+    (let ((prev (document-scheduler-running scheduler)))
+      (when (and prev (not (eq prev sc)))
+        (setf (scheduled-context-status prev) :parked)))
+    (setf (scheduled-context-status sc) :running
+          (document-scheduler-running scheduler) sc)
+    (%assert-single-runner scheduler)))
+
+(defun scheduler-spawn-context (scheduler sc thunk)
+  "Spawn SC's thread (its continuation), born PARKED: the thread first blocks on
+SC's mailbox, then runs THUNK when resumed. Returns SC. Idempotent-guarded: a
+context already carrying a thread is not respawned."
+  (unless (scheduled-context-thread sc)
+    (unless (scheduled-context-mailbox sc)
+      (setf (scheduled-context-mailbox sc) (make-park-mailbox)))
+    (setf (scheduled-context-thread sc)
+          (bordeaux-threads:make-thread
+           (lambda ()
+             ;; born idle: wait for the first :run before doing anything.
+             (let ((token (park-mailbox-pop (scheduled-context-mailbox sc))))
+               (unless (eq token :exit)
+                 (funcall thunk))))
+           :name (format nil "cador-doc-~A"
+                         (or (scheduled-context-document-key sc) "?")))))
+  sc)
+
+(defun scheduler-start (scheduler sc)
+  "Driver-side: make SC the running context and wake its thread. Used to kick a
+freshly spawned (parked) context, or to re-enter a parked one."
+  (%scheduler-set-running scheduler sc)
+  (park-mailbox-push (scheduled-context-mailbox sc) :run)
+  sc)
+
+;; scheduler-resume is scheduler-start under a name that reads right at a
+;; driver re-entering a parked context to let it finish.
+(setf (fdefinition 'scheduler-resume) (fdefinition 'scheduler-start))
+
+(defun scheduler-switch (scheduler from to)
+  "Called by FROM's OWN thread to hand control to TO: mark the transition under
+the lock, wake TO's thread, then park FROM's thread on its mailbox until it is
+resumed. Returns the token FROM is resumed with (:run normally, :exit to unwind
+for teardown)."
+  (%scheduler-set-running scheduler to)
+  (park-mailbox-push (scheduled-context-mailbox to) :run)   ; wake TO
+  (park-mailbox-pop (scheduled-context-mailbox from)))       ; park FROM
