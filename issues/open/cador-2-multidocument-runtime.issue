@@ -217,3 +217,34 @@ real runtime document switch drives =host-activate-document=) and its
 cross-system integration test; then real continuation-capture parking, the
 per-context dynamic-env save/restore, and the deferred-break discipline for the
 outstanding-host-call hazard; then Slice 3 (E1/E2 probes, wire host).
+
+** Slice 2b DONE (2026-09-13) — the runtime->host lock-step is now wired
+
+The =*document-activation-hook*= seam from 2a is now INSTALLED, so a runtime
+document switch actually drives the host.
+
+- =autolisp-host/source/nihil.lisp=: installs, at load (beside the existing
+  =*default-runtime-host*= / =*host-command-function*= installs), a
+  host-agnostic =*document-activation-hook*= —
+  =activate-host-document-for-namespace=: when the switched-to document carries
+  a =host-document-key= and the session carries a host, it calls the generic
+  =host-activate-document=. A no-op for single-document / host-less sessions
+  (key nil), so installing it globally is safe; it uses only the generic, so it
+  works for any host that implements activation (cador today).
+- Test (=cador/tests/document-tests.lisp=):
+  =runtime-current-document-switch-drives-cador-active-drawing= — two runtime
+  namespaces linked to two cador documents, in a session whose host is that
+  cador; switching the runtime current document flips
+  =cador-active-drawing= to the matching document, both ways. Proves the seam
+  end-to-end.
+- Fixed a cross-suite hazard 2b exposed: the 2a scheduler hook-test had
+  =setf=-then-restore-to-nil on =*document-activation-hook*=, which — now that
+  the host layer installs a real hook — would clobber it for every later suite.
+  =%with-fresh-active-context= now REBINDS the hook (and the active context), so
+  the installed hook survives; the =single-document-session-has-no-scheduler=
+  guard no longer asserts the hook is nil.
+- Verified: =make -C clautolisp test-sbcl= exit 0.
+
+Remaining for the scheduler proper: real continuation-capture parking, the
+per-context dynamic-env save/restore, and the deferred-break discipline; then
+Slice 3.

@@ -86,3 +86,30 @@
       (autolisp-runtime-error (e) (setf code (autolisp-runtime-error-code e))))
     (is (eq :cannot-close-last-document code))
     (is (= 1 (length (host-document-list host))))))
+
+;;; --- Runtime<->host document lock-step (cador-2 slice 2b) ----------
+
+(test runtime-current-document-switch-drives-cador-active-drawing
+  ;; The host layer installs *document-activation-hook* at load; a runtime
+  ;; document namespace linked (host-document-key) to a cador document, in a
+  ;; session whose host is that cador, makes cador's active drawing follow the
+  ;; runtime current document in lock-step.
+  (let* ((host (make-cador))
+         (key-a (host-current-document host))          ; the initial cador doc
+         (key-b (host-open-document host "B.dwg"))
+         (drawing-a (cdr (assoc key-a (cador-documents host) :test #'string=)))
+         (drawing-b (cdr (assoc key-b (cador-documents host) :test #'string=)))
+         (session (make-runtime-session))
+         (ns-a (make-document-namespace :name "A"))
+         (ns-b (make-document-namespace :name "B")))
+    (set-runtime-session-host session host)
+    (setf (document-namespace-host-document-key ns-a) key-a
+          (document-namespace-host-document-key ns-b) key-b)
+    ;; switch runtime current document to B -> cador activates B
+    (set-runtime-session-current-document session ns-b)
+    (is (string= key-b (host-current-document host)))
+    (is (eq drawing-b (cador-active-drawing host)))
+    ;; switch to A -> cador activates A
+    (set-runtime-session-current-document session ns-a)
+    (is (string= key-a (host-current-document host)))
+    (is (eq drawing-a (cador-active-drawing host)))))
