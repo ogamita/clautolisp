@@ -140,6 +140,11 @@
                 #:scheduled-context-thread
                 #:scheduled-context-mailbox
                 #:scheduled-context-thunk
+                ;; slice 3f: interactive-input parking
+                #:scheduler-on-context-thread-p
+                #:scheduler-park
+                #:scheduler-await-park
+                #:scheduler-serve-park
                 #:scheduler-spawn-context
                 #:scheduler-start
                 #:scheduler-resume

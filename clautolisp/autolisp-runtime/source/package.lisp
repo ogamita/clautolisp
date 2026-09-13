@@ -106,6 +106,12 @@
    #:make-park-mailbox
    #:park-mailbox-push
    #:park-mailbox-pop
+   ;; slice 3f: interactive-input parking (park-to-runner via the driver mailbox)
+   #:document-scheduler-driver-mailbox
+   #:scheduler-on-context-thread-p
+   #:scheduler-park
+   #:scheduler-await-park
+   #:scheduler-serve-park
    #:autolisp-file
    #:make-autolisp-file
    #:autolisp-format-real

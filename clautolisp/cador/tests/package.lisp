@@ -23,7 +23,25 @@
                 #:make-autolisp-ename
                 #:autolisp-string
                 #:autolisp-string-value
-                #:make-autolisp-string)
+                #:make-autolisp-string
+                ;; cador-2 slice 3f: interactive-input parking end-to-end
+                #:make-evaluation-context
+                #:evaluation-context-session
+                #:current-evaluation-context
+                #:make-document-scheduler
+                #:session-scheduler
+                #:scheduler-register-context
+                #:scheduler-current-context
+                #:make-scheduled-context
+                #:scheduled-context-thread
+                #:scheduled-context-mailbox
+                #:scheduler-spawn-context
+                #:scheduler-start
+                #:scheduler-await-park
+                #:scheduler-serve-park
+                #:make-park-mailbox
+                #:park-mailbox-push
+                #:park-mailbox-pop)
   (:import-from #:clautolisp.autolisp-host
                 #:host
                 #:host-name

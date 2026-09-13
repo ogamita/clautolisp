@@ -78,10 +78,18 @@ single-document behaviour stays thread-free (slice 3e)."
 (defstruct document-scheduler
   "The single-runner cooperative scheduler: CONTEXTS is the ordered list of
 SCHEDULED-CONTEXTs; RUNNING is the one :RUNNING context, or NIL. LOCK guards the
-status/running transition across the thread handoff."
+status/running transition across the thread handoff.
+
+DRIVER-MAILBOX is the arbiter rendezvous (slice 3f): a running context that
+parks with no specific successor (waiting for interactive input) notifies the
+driver here; the driver pops the notification, obtains the response, and resumes
+the context. Per-scheduler, so nothing global leaks across the FiveAM double
+run. Created lazily (PARK-MAILBOX is defined further down this file) via
+%SCHEDULER-DRIVER-MAILBOX so the constructor carries no forward reference."
   (contexts '())
   (running nil)
-  (lock (bordeaux-threads:make-lock "document-scheduler")))
+  (lock (bordeaux-threads:make-lock "document-scheduler"))
+  (driver-mailbox nil))
 
 ;;; --- Registry -----------------------------------------------------
 
@@ -208,6 +216,13 @@ the transition must be a hand-off (SCHEDULER-SWITCH), not a driver-side start."
          (scheduled-context-thread running)
          (eq (bordeaux-threads:current-thread)
              (scheduled-context-thread running)))))
+
+(defun scheduler-on-context-thread-p (scheduler)
+  "Public predicate: true when the caller runs on the scheduler's currently
+running context's own thread — i.e. it is a context that CAN park (slice 3f).
+Cador asks this before yielding at a real park point; false on the driver thread
+or when nothing is running, so those callers read synchronously."
+  (%on-context-thread-p scheduler))
 
 (defun scheduler-activate (scheduler scheduled-context)
   "Make SCHEDULED-CONTEXT the single running context. The unified entry (slice
@@ -391,3 +406,70 @@ reinstalling so the thread can unwind for teardown. Returns the resume token."
       ;; Resumed as the runner again: reinstall our environment on this thread.
       (%scheduler-install-context from))
     token))
+
+;;; --- Park-to-runner: interactive input parking (slice 3f) ---------
+;;;
+;;; SCHEDULER-SWITCH hands to a SPECIFIC successor context. A context that parks
+;;; waiting for interactive input has no known successor: it yields to the DRIVER
+;;; — the thread that launched the top context (the CLI/REPL loop, or, in tests,
+;;; the test body) — through the scheduler's DRIVER-MAILBOX. The parking context
+;;; notifies the driver with (:park sc REQUEST) then blocks on its own mailbox
+;;; (its continuation, per pjb). The driver obtains the response by running
+;;; REQUEST *on the driver thread* — the blocking read happens there, never on
+;;; the runner (D1 §13.1: a host request does not block the runner) — then
+;;; resumes the context by pushing the response to its mailbox. While the context
+;;; is parked and the driver reads, RUNNING is nil: zero contexts evaluating, so
+;;; C2 holds; the context re-promotes itself on resume. No new worker thread is
+;;; born (C8): the driver is the pre-existing launcher.
+;;;
+;;; REQUEST is opaque to the scheduler (a thunk producing the response), keeping
+;;; host knowledge out of the runtime and leaving the §13.4 correlation-forest
+;;; seam for slice 3g: the notification names WHICH sc parked and SERVE takes an
+;;; explicit sc, so a later driver may arbitrate among N parked contexts.
+
+(defun %scheduler-driver-mailbox (scheduler)
+  "The scheduler's DRIVER-MAILBOX, created on first use under the lock (the
+struct default cannot forward-reference MAKE-PARK-MAILBOX). Double-checked so the
+driver and a parking context agree on the same mailbox."
+  (or (document-scheduler-driver-mailbox scheduler)
+      (bordeaux-threads:with-lock-held ((document-scheduler-lock scheduler))
+        (or (document-scheduler-driver-mailbox scheduler)
+            (setf (document-scheduler-driver-mailbox scheduler)
+                  (make-park-mailbox))))))
+
+(defun scheduler-park (scheduler sc request)
+  "Called by SC's OWN thread at a park point: save SC's env, mark SC :PARKED and
+clear RUNNING (control returns to the runner), notify the driver with (:park sc
+REQUEST), then block on SC's mailbox until resumed. On resume with a response
+token, re-promote SC and reinstall its environment on this thread and return the
+token (the RESPONSE); on :exit, return :exit without reinstalling (teardown)."
+  (%scheduler-save-env sc)
+  (bordeaux-threads:with-lock-held ((document-scheduler-lock scheduler))
+    (setf (scheduled-context-status sc) :parked)
+    (when (eq (document-scheduler-running scheduler) sc)
+      (setf (document-scheduler-running scheduler) nil)))
+  (park-mailbox-push (%scheduler-driver-mailbox scheduler) (list :park sc request))
+  (let ((token (park-mailbox-pop (scheduled-context-mailbox sc))))
+    (unless (eq token :exit)
+      (%scheduler-set-running scheduler sc)
+      (%scheduler-install-context sc))
+    token))
+
+(defun scheduler-await-park (scheduler &optional timeout)
+  "Driver-side: block until a context parks (or TIMEOUT seconds elapse) and
+return its (:park sc REQUEST) notification, or :TIMEOUT. This is the \"control
+returns to the single runner\" step."
+  (park-mailbox-pop (%scheduler-driver-mailbox scheduler) timeout))
+
+(defun scheduler-serve-park (scheduler notification)
+  "Driver-side: given a (:park sc REQUEST) NOTIFICATION, obtain the response by
+running REQUEST on the DRIVER thread (where a blocking read is legitimate), then
+resume SC by pushing the response to its mailbox. Does NOT touch RUNNING — the
+resumed context re-promotes itself — so %ASSERT-SINGLE-RUNNER never trips.
+Returns SC."
+  (declare (ignore scheduler))
+  (destructuring-bind (tag sc request) notification
+    (assert (eq tag :park))
+    (let ((response (funcall request)))
+      (park-mailbox-push (scheduled-context-mailbox sc) response)
+      sc)))

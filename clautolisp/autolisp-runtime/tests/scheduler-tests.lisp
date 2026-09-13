@@ -381,3 +381,129 @@ leaks across the FiveAM double run."
                                     :test-not #'eq)))
                (is (= 1 (length running)))))           ; single runner across the mix
         (%park-teardown sched)))))
+
+;;; --- Park-to-runner: interactive-input parking (slice 3f) ---------
+;;;
+;;; A running context that parks waiting for input yields to the DRIVER via the
+;;; scheduler's driver-mailbox; the driver obtains the response (running the
+;;; request on its OWN thread) and resumes the context. All pops timeout-guarded,
+;;; all threads torn down.
+
+(test scheduler-park-notifies-driver-and-resumes-with-response
+  ;; A context parks with a request; the driver is notified (:park sc request),
+  ;; serves it, and the parked context resumes with the response value.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (x (%make-doc-context session "X" "X"))
+           (results (make-park-mailbox)))
+      (scheduler-register-context sched x)
+      (scheduler-spawn-context sched x
+        (lambda ()
+          (park-mailbox-push results :about-to-park)
+          (let ((resp (scheduler-park sched x (lambda () :resp))))
+            (park-mailbox-push results (list :resumed resp)))))
+      (unwind-protect
+           (progn
+             (scheduler-start sched x)
+             (is (eq :about-to-park (park-mailbox-pop results 5)))
+             (let ((note (scheduler-await-park sched 5)))
+               (is (eq :park (first note)))
+               (is (eq x (second note)))
+               (scheduler-serve-park sched note))
+             (is (equal '(:resumed :resp) (park-mailbox-pop results 5))))
+        (%park-teardown sched)))))
+
+(test scheduler-park-clears-runner-then-restores-on-resume
+  ;; While parked, RUNNING is nil and the context is :parked (single-runner holds
+  ;; with zero runners); after serve+resume the context is :running again.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (x (%make-doc-context session "X" "X"))
+           (results (make-park-mailbox)))
+      (scheduler-register-context sched x)
+      (scheduler-spawn-context sched x
+        (lambda ()
+          (scheduler-park sched x (lambda () :ok))
+          (park-mailbox-push results :done)))
+      (unwind-protect
+           (let ((note (progn (scheduler-start sched x)
+                              (scheduler-await-park sched 5))))
+             (is (null (scheduler-current-context sched)))   ; no runner while parked
+             (is (eq :parked (scheduled-context-status x)))
+             (scheduler-serve-park sched note)
+             (is (eq :done (park-mailbox-pop results 5)))
+             (is (eq x (scheduler-current-context sched)))   ; re-promoted on resume
+             (is (eq :running (scheduled-context-status x))))
+        (%park-teardown sched)))))
+
+(test scheduler-serve-park-runs-request-on-driver-thread
+  ;; The blocking request runs on the DRIVER thread (via serve-park), never on
+  ;; the context/runner thread (D1 §13.1 -- a host request does not block the
+  ;; runner).
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (x (%make-doc-context session "X" "X"))
+           (results (make-park-mailbox))
+           (driver (bordeaux-threads:current-thread)))
+      (scheduler-register-context sched x)
+      (scheduler-spawn-context sched x
+        (lambda ()
+          (scheduler-park sched x
+            (lambda ()
+              (park-mailbox-push
+               results
+               (list :req
+                     (eq (bordeaux-threads:current-thread) driver)
+                     (eq (bordeaux-threads:current-thread)
+                         (scheduled-context-thread x))))
+              :resp))))
+      (unwind-protect
+           (progn
+             (scheduler-start sched x)
+             (scheduler-serve-park sched (scheduler-await-park sched 5))
+             (is (equal '(:req t nil) (park-mailbox-pop results 5))))
+        (%park-teardown sched)))))
+
+(test scheduler-park-exit-token-unwinds-without-reinstall
+  ;; A parked context resumed with :exit returns :exit (no re-promote/reinstall)
+  ;; and unwinds -- the teardown contract.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (x (%make-doc-context session "X" "X"))
+           (results (make-park-mailbox)))
+      (scheduler-register-context sched x)
+      (scheduler-spawn-context sched x
+        (lambda ()
+          (let ((tok (scheduler-park sched x (lambda () :never))))
+            (park-mailbox-push results (list :exited tok)))))
+      (unwind-protect
+           (progn
+             (scheduler-start sched x)
+             (scheduler-await-park sched 5)                  ; ensure it parked
+             (park-mailbox-push (scheduled-context-mailbox x) :exit)
+             (is (equal '(:exited :exit) (park-mailbox-pop results 5))))
+        (%park-teardown sched)))))
+
+(test scheduler-on-context-thread-p-predicate
+  ;; NIL from the driver thread (or with nothing running); T from inside a
+  ;; running context's own thread.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (x (%make-doc-context session "X" "X"))
+           (results (make-park-mailbox)))
+      (scheduler-register-context sched x)
+      (is (null (scheduler-on-context-thread-p sched)))      ; driver, nothing running
+      (scheduler-spawn-context sched x
+        (lambda ()
+          (park-mailbox-push results
+                             (list :on (scheduler-on-context-thread-p sched)))))
+      (unwind-protect
+           (progn
+             (scheduler-start sched x)
+             (is (equal '(:on t) (park-mailbox-pop results 5))))
+        (%park-teardown sched)))))

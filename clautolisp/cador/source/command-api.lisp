@@ -45,6 +45,12 @@ so a host that never sets CMDECHO keeps echoing. system-variables.issue
         (not (eql (sysvar-cell-value cell) 0)))))
 
 (defmethod host-command ((host cador) arguments)
+  ;; NB (slice 3f): host-command never reads cador-prompt-stream -- every %cmd-*
+  ;; consumes only its token arguments and degrades to record-only on missing
+  ;; data, so no "prompting host-command" park point exists yet. D1 §13.5 lists
+  ;; it as a FUTURE park point; when a command is made to prompt for missing
+  ;; input it must route through read-prompt-line / %cador-maybe-park-read, so
+  ;; the parking seam is already in place and no work is owed here now.
   (push arguments (cador-command-log host))
   ;; The command log is always recorded (so CLAL-COMMAND-LOG and tests
   ;; can see what was "typed"); only the human-readable echo obeys
