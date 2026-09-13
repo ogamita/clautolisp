@@ -70,6 +70,27 @@
         ;; drawings[1] (active-drawing) is now b.dwg.
         (is (eq d2 (resolve-target app "drawings[1]")))))))
 
+(test cad-command-category-is-a-first-class-dictionary
+  ;; the three CAD dictionaries (command / option-keyword / alias) are separate
+  ;; categories on the same generic engine (spec "Trois dictionnaires distincts").
+  ;; a throwaway locale distinct from the unknown-locale ("zz_ZZ") the fallback
+  ;; tests rely on staying unregistered.
+  (register-locale-dictionary "zz_CMD" :command '(("_LINE" . "LIGNE_ZZ")))
+  (is (string= "LIGNE_ZZ" (local-name "_LINE" "zz_CMD" :command)))
+  (is (string= "_LINE" (international-name "LIGNE_ZZ" "zz_CMD" :command)))
+  ;; a missing command falls back to the international form.
+  (is (string= "_ERASE" (local-name "_ERASE" "zz_CMD" :command))))
+
+(test locale-data-loads-from-the-shipped-sexp-tree
+  ;; the dictionaries are DATA files (spec §Format des dictionnaires): the loader
+  ;; reads cadtui/data/locale/<locale>/<category>.sexp, and the shipped fr_FR
+  ;; verb dictionary is present (baked in at build; re-loadable at runtime).
+  (let ((dir (asdf:system-relative-pathname "clautolisp/cadtui"
+                                            "cadtui/data/locale/")))
+    (is (plusp (load-locale-data-from-directory dir))))
+  (is (string= "activer" (local-name "activate" "fr_FR" :verb)))
+  (is (string= "dessin" (local-name "drawing" "fr_FR" :keyword))))
+
 (test locale-verb-switches-the-active-locale
   (let ((*current-locale* "en"))
     (let ((r (interpret-line "=locale(fr_FR)" (make-application-tree))))
