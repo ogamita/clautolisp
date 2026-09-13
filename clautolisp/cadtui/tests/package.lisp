@@ -90,7 +90,9 @@
                 #:make-console-context
                 #:console-namespace
                 #:console-queue
-                #:deliver-line-to-console)
+                #:deliver-line-to-console
+                #:console-read-line
+                #:start-console)
   (:import-from #:clautolisp.autolisp-dcl
                 #:dcl-runtime-load-dialog
                 #:dcl-runtime-new-dialog
@@ -120,6 +122,13 @@
                 #:document-namespace-set
                 #:document-namespace-ref
                 #:scheduled-context-thread
-                #:park-mailbox-pop)
+                #:scheduled-context-mailbox
+                #:park-mailbox-pop
+                #:park-mailbox-push
+                #:make-park-mailbox
+                #:scheduler-context-list
+                #:scheduler-current-context
+                #:scheduler-await-park
+                #:scheduler-serve-park)
   (:export #:cadtui-suite
            #:run-all-tests))

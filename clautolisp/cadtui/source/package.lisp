@@ -35,6 +35,9 @@
                 #:make-scheduled-context
                 #:scheduled-context-context
                 #:scheduled-context-thread
+                #:scheduled-context-thunk
+                #:scheduler-spawn-context
+                #:scheduler-start
                 #:scheduler-register-context
                 #:scheduler-activate
                 #:scheduler-park
@@ -170,6 +173,8 @@ documentation/cadtui-specifications.org (normative).")
    #:console-namespace
    #:console-queue
    #:deliver-line-to-console
+   #:console-read-line
+   #:start-console
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key
