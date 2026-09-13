@@ -67,3 +67,36 @@ console with no queue silently drops the line (nothing is reading it)."
   (let ((queue (console-queue console)))
     (when queue (park-mailbox-push queue line)))
   line)
+
+;;; --- The park-aware blocked read (Phase 4 slice 2) ----------------
+;;;
+;;; Called ON the console's own scheduled-context thread. If a line is already
+;;; queued (type-ahead) it is returned at once; otherwise the context yields the
+;;; single-runner slot and PARKS until a line arrives — reusing the cador-2
+;;; park-to-driver machinery (scheduler-park), so the blocking pop runs on the
+;;; driver thread, never on the runner (D1 §13.1). Returns the line, or :exit
+;;; when the context is torn down while parked.
+
+(defun console-read-line (console)
+  "Read the next pass-through line delivered to CONSOLE, blocking (via a park) if
+the queue is empty. Must be called on CONSOLE's scheduled-context thread."
+  (let* ((sc (ui-context console))
+         (queue (console-queue console))
+         (session (evaluation-context-session (scheduled-context-context sc)))
+         (scheduler (session-scheduler session))
+         ;; non-blocking poll: return a queued line at once (type-ahead).
+         (immediate (park-mailbox-pop queue 0)))
+    (if (not (eq immediate :timeout))
+        immediate
+        ;; empty: park until the driver delivers a line and serves the read.
+        (scheduler-park scheduler sc (lambda () (park-mailbox-pop queue))))))
+
+(defun start-console (console)
+  "Spawn and start CONSOLE's scheduled-context thread (its read-eval loop). The
+context must already carry a thunk (make-console-context). Returns the context."
+  (let* ((sc (ui-context console))
+         (session (evaluation-context-session (scheduled-context-context sc)))
+         (scheduler (session-scheduler session)))
+    (scheduler-spawn-context scheduler sc (scheduled-context-thunk sc))
+    (scheduler-start scheduler sc)
+    sc))
