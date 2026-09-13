@@ -1,0 +1,47 @@
+(defpackage #:clautolisp.cadtui
+  ;; :use CL only, deliberately: clautolisp shadows PRINC/PRIN1/PRINT for
+  ;; AutoLISP semantics, and the cadtui dump layer must get the standard CL
+  ;; printers, not the runtime's shadowed ones (see cadtui/CLAUDE.md).
+  (:use #:cl)
+  (:documentation
+   "The cadtui host: a textual, keyboard-driven UI tree for CAD objects and
+the CAD application, for headless interactive/scriptable testing of DCL
+dialogs and CAD commands. Phase 1 lands the CLOS UI-node tree model only —
+no rendering, no interaction language, no threads. See
+documentation/cadtui-specifications.org (normative).")
+  (:export
+   ;; Phase 1: the UI-node model (spec §\"Modèle de données\").
+   #:ui-node
+   #:ui-application
+   #:ui-menubar
+   #:ui-menu
+   #:ui-menu-item
+   #:ui-drawing
+   #:ui-band
+   #:ui-button
+   #:ui-ribbon-tab
+   #:ui-ribbon-panel
+   #:ui-cad-view
+   #:ui-entity
+   #:ui-grip
+   #:ui-alert
+   #:ui-dialog
+   #:ui-tile
+   #:ui-console
+   ;; Generic node accessors — the ONLY slots the tree mechanics touch.
+   #:ui-key
+   #:ui-role
+   #:ui-label
+   #:ui-state
+   #:ui-action
+   #:ui-parent
+   #:ui-children
+   ;; Tree construction / navigation primitives.
+   #:add-child
+   #:ui-find-child
+   #:ui-root-p
+   ;; Conditions.
+   #:cadtui-error
+   #:duplicate-sibling-key
+   #:duplicate-sibling-key-parent
+   #:duplicate-sibling-key-key))
