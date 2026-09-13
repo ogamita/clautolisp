@@ -72,6 +72,23 @@
    #:find-runtime-session-vlx-namespace
    #:register-runtime-session-vlx-namespace
    #:set-runtime-session-current-document
+   ;; cador-2 slice 2a: cooperative single-runner document scheduler
+   #:*document-activation-hook*
+   #:session-scheduler
+   #:document-namespace-host-document-key
+   #:make-document-scheduler
+   #:document-scheduler-p
+   #:document-scheduler-contexts
+   #:document-scheduler-running
+   #:make-scheduled-context
+   #:scheduled-context-p
+   #:scheduled-context-context
+   #:scheduled-context-document-key
+   #:scheduled-context-status
+   #:scheduler-register-context
+   #:scheduler-context-list
+   #:scheduler-current-context
+   #:scheduler-activate
    #:autolisp-file
    #:make-autolisp-file
    #:autolisp-format-real

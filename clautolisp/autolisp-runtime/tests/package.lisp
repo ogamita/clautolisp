@@ -119,6 +119,19 @@
                 #:runtime-session-blackboard-namespace
                 #:runtime-session-current-document
                 #:set-runtime-session-current-document
+                ;; cador-2 slice 2a: cooperative scheduler
+                #:*document-activation-hook*
+                #:session-scheduler
+                #:document-namespace-host-document-key
+                #:make-document-scheduler
+                #:make-scheduled-context
+                #:scheduled-context-context
+                #:scheduled-context-status
+                #:scheduled-context-document-key
+                #:scheduler-register-context
+                #:scheduler-context-list
+                #:scheduler-current-context
+                #:scheduler-activate
                 #:separate-vlx-namespace-name
                 #:set-default-evaluation-context
                 #:set-autolisp-errno

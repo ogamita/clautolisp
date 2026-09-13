@@ -121,6 +121,7 @@
    (:file "autolisp-runtime/source/terminal-color")
    (:file "autolisp-runtime/source/portability")
    (:file "autolisp-runtime/source/api")
+   (:file "autolisp-runtime/source/scheduler")
    (:file "autolisp-runtime/source/ontology"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-runtime/tests")))
@@ -599,6 +600,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   ((:file "autolisp-runtime/tests/package")
    (:file "autolisp-runtime/tests/test-harness")
    (:file "autolisp-runtime/tests/model-tests")
+   (:file "autolisp-runtime/tests/scheduler-tests")
    (:file "autolisp-runtime/tests/evaluator-tests")
    (:file "autolisp-runtime/tests/ontology-tests")
    (:file "autolisp-runtime/tests/pathname-mapping-tests")
