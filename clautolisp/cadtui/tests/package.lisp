@@ -46,6 +46,13 @@
                 #:*dump-counter*
                 #:make-application-tree
                 #:make-cador-tree
+                ;; Phase 6: menu bar + bands from a description
+                #:build-menu-bar
+                #:build-band
+                #:install-menu-bar
+                #:add-band
+                #:ui-description-error
+                #:ui-band-style
                 ;; slice 3: addressing
                 #:find-node
                 #:resolve-target

@@ -180,7 +180,27 @@ divergence assumée par rapport à la spec.)
     `:` (l'adressage role:cle à clé pointée reste un segment unique ou un
     /chemin absolu — limitation assumée, documentée). MR !230.
     clautolisp 2.2.52 / alfe 2.2.60.
-  - Reste : slice 5 optionnel (bbox blocs/textes). Phase 5 sinon COMPLÈTE.
+  - Slice 5 optionnel (bbox blocs/textes) DÉLIBÉRÉMENT DIFFÉRÉ : l'extent réel
+    d'un INSERT/TEXT dépend de la table de blocs / du rendu de police, non
+    disponible headless ; le facteur d'approximation serait arbitraire (non
+    fondé sur la spec). entity-bounding-box reste l'approximation sur la
+    géométrie propre (points 10-13), déjà documentée dans cad-view.lisp. Phase 5
+    sinon COMPLÈTE.
+- Phase 6 (barre de menus + bandeaux depuis une description type CUIX/MNU) :
+  **FAIT** (2026-09-13). menu-band.lisp : DSL de données (listes à tête
+  mot-clé, libellés string, tokens anglais) — (:menu-bar (:menu LABEL (:item
+  LABEL :action A :state S) | (:menu ...) | (:separator))*), (:band LABEL
+  [:style :toolbar|:ribbon] boutons | onglets>panneaux>boutons). build-menu-bar
+  / build-band / install-menu-bar / add-band ; clé = libellé, action = nom de
+  commande CAD (string) ou fonction Lisp (closure/symbole). Erreurs de
+  description → ui-description-error. Le verbe click EXÉCUTE désormais une
+  action fonction Lisp (funcall, :ok + valeur en data) ; un nom de commande CAD
+  string reste un stand-in :not-yet (il faut le runtime console actif).
+  MR !231. clautolisp 2.2.53 / alfe 2.2.61.
+- Phase courante : 7 (localisation) — moteur headless + dictionnaire fr_FR
+  d'interaction faisables maintenant ; dictionnaires de COMMANDES CAD par
+  plate-forme nécessitent les runners macOS/Windows (sous-issues déposées).
+  Puis phase 8 optionnelle (backend curses).
 
 ## Conventions de code héritées de clautolisp
 - Common Lisp, style du dépôt existant (voir fichiers déjà présents

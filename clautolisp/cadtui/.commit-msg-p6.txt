@@ -1,0 +1,34 @@
+clautolisp 2.2.53: cadtui phase 6 — menu bar + bands from a data description
+
+A cadtui host loads its menu bar and its bands (toolbars/ribbons) from a DATA
+description — the simplified CUIX/MNU of the spec (roadmap 6): every interactive
+node associates a label with a Lisp function or a CAD command name (the
+PopMenuCollection / RibbonRoot / LspFileCollection idea). The description is
+data, never code — a nested list of keyword-headed forms, so a Phase-7 locale
+layer can translate the labels without touching a grammar.
+
+New menu-band.lisp:
+- Grammar (canonical, string labels, English keywords):
+  (:menu-bar (:menu LABEL (:item LABEL :action A :state S) | (:menu ...) |
+              (:separator))*)
+  (:band LABEL [:style :toolbar|:ribbon] element*) with toolbar = flat buttons,
+  ribbon = tabs > panels > buttons.
+- build-menu-bar / build-band build the ui-node subtrees (key = label,
+  action = CAD command string or Lisp function); install-menu-bar replaces an
+  application's menu-bar (kept first in tree order); add-band appends to a
+  drawing. A malformed description signals ui-description-error.
+- The click verb now RUNS a Lisp-function action (funcall, :ok + its value in
+  the result data). A bare CAD command name stays a :not-yet stand-in — it needs
+  the active console runtime.
+
+Also records in cadtui/CLAUDE.md that Phase 5 slice 5 (block/text bbox) is
+deliberately deferred (real INSERT/TEXT extent needs the block table / font
+metrics, unavailable headless; an invented factor would be un-spec-grounded).
+
+Tests: new menu-band-tests (menu nesting incl. separators + submenus, toolbar
+and ribbon bands, default style, malformed-description errors, install-menu-bar,
+add-band, and click running a closure action). Full make -C clautolisp test-sbcl
+green. alfe 2.2.61 tracks.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01XDPCe5o6LJkv4CR2FvYauz
