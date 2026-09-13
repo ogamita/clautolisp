@@ -282,3 +282,32 @@ slot); per-document CMDECHO (host/session-scoped today — belongs behind
 =host-activate-document=, not the runtime scheduler); vl-enable-user-cancel
 (no state exists to save until the builtin stores a flag); and the per-document
 correlation stack (§13.4 — not built; lands with the §13 park/resume protocol).
+
+** Slice 3a DONE (2026-09-13) — E1/E2 conformance probes against cador
+
+The remaining cador-2 acceptance criterion (conformance probes E1 symbol
+identity, E2 blackboard sharing) is met as deterministic FiveAM tests. E1/E2
+are defined in =clautolisp/documentation/clautolisp-multidocument-analysis.org=
+(E1 lines 452-454, E2 456-458) — the doc DOES exist (an earlier note in the
+cador-3 D2 reconciliation that it was "not found" was mistaken; to be corrected
+there).
+
+- =autolisp-runtime/tests/multidocument-conformance-tests.lisp= (new, 5 tests,
+  =autolisp-runtime-suite=):
+  - E1 symbol OBJECT is process-global (=eq= of the same interned name);
+  - E1 per-document VALUE cells are independent (=document-namespace-set/-ref=);
+  - E1 switching document switches the visible value (through the real
+    =scheduler-activate= path, wrapped in =%with-fresh-active-context=);
+  - E1/A1 the blackboard round-trips the symbol object across documents;
+  - E2 the blackboard SHARES by identity across documents (=eq=, no copy).
+- Pure runtime properties (per-document namespaces + the one per-session
+  blackboard), so they live in the runtime suite; cador holds drawings, not
+  lisp namespaces. Hermetic — most use explicit contexts / namespaces, no
+  global state; the one switch test uses the existing rebind macro.
+- Verified: =make -C clautolisp test-sbcl= exit 0.
+
+Found while writing E1/E2 (flagged, deferred): *C3 is not enforced* —
+=blackboard-set= / =builtin-vl-bb-set= do not reject a function value, though
+D2 §I.5 decides they must. A =callable-value-p= guard in those two is a small
+separate code change (a "Slice 3b" candidate), NOT added here so E1/E2 stay
+pure-observation.

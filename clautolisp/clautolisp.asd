@@ -601,6 +601,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-runtime/tests/test-harness")
    (:file "autolisp-runtime/tests/model-tests")
    (:file "autolisp-runtime/tests/scheduler-tests")
+   (:file "autolisp-runtime/tests/multidocument-conformance-tests")
    (:file "autolisp-runtime/tests/evaluator-tests")
    (:file "autolisp-runtime/tests/ontology-tests")
    (:file "autolisp-runtime/tests/pathname-mapping-tests")
