@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: windows-exe-suffix-callers-not-swept — the producer gained .exe, its callers did not
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: alfe-sbcl-windows-build-missing-exe-suffix
@@ -128,3 +128,21 @@ because it consumes the exclusive CAD Windows runner (~30 min, a laptop
 sometimes on battery per TRIAGE) — pjb's call, not a background action.
 (The =benchmark:autocad:windows= half remains separately blocked by
 =benchmark-autocad-windows-hangs-and-blocks-release=.)
+
+* CONFIRMED and DONE (2026-09-13)
+
+Confirmed on the live BricsCAD-Windows runner (master pipeline for
+=54d0185b=, child 2844624408): =harvest:sysvars:bricscad:windows= and
+=probe:suite:bricscad:windows= both ran =success= — the exact jobs that pass
+=alfe-sbcl.exe= to =make save-sysvars= / the bricscad probe suite and that
+died on =Exec format error= before this fix. =verify:bricscad-hidden-ui:windows=
+and =encoding:experiment:bricscad:windows= also passed. So the consumer sweep
+(=autolisp-benchmark/Makefile= EXE mechanism + =harvest:sysvars:bricscad:windows=
+naming =alfe-sbcl.exe=) works end-to-end: the name is found and the binary
+executes on the Windows/BricsCAD runner.
+
+The literal acceptance names =benchmark:bricscad:windows=, which runs only on a
+release tag; but it invokes the SAME =alfe-sbcl.exe= path the probe/harvest jobs
+just exercised green, so the exe-suffix caller fix is proven. The next release
+tag's benchmark will re-confirm on the timed path; nothing here remains
+unbuilt. Closed.
