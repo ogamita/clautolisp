@@ -11,6 +11,13 @@
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-runtime-error
                 #:autolisp-runtime-error-code
+                ;; cador-2 slice 2b: runtime<->host document lock-step
+                #:make-runtime-session
+                #:set-runtime-session-current-document
+                #:make-document-namespace
+                #:document-namespace-host-document-key
+                #:runtime-session-host
+                #:set-runtime-session-host
                 #:autolisp-ename
                 #:autolisp-ename-value
                 #:make-autolisp-ename

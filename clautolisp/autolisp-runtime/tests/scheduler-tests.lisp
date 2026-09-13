@@ -16,12 +16,16 @@
     (make-scheduled-context :context ctx :document-key key)))
 
 (defmacro %with-fresh-active-context (&body body)
-  "Rebind *ACTIVE-EVALUATION-CONTEXT* around BODY so a test that calls
-SCHEDULER-ACTIVATE (which SETFs the global active context, and calls
-SET-RUNTIME-SESSION-CURRENT-DOCUMENT) cannot leak a throwaway test context
-into later tests — the FiveAM shared-global hazard."
+  "Rebind *ACTIVE-EVALUATION-CONTEXT* and *DOCUMENT-ACTIVATION-HOOK* around
+BODY so a test that calls SCHEDULER-ACTIVATE (which SETFs the active context
+and SET-RUNTIME-SESSION-CURRENT-DOCUMENT, which fires the hook) or that
+installs its own hook cannot leak into later tests — the FiveAM shared-global
+hazard. Rebinding (not SETF) matters especially for the hook: in the full
+image the host layer installs a real *DOCUMENT-ACTIVATION-HOOK* at load, and a
+SETF-then-restore-to-nil would clobber it for every later suite."
   `(let ((clautolisp.autolisp-runtime.internal::*active-evaluation-context*
-           clautolisp.autolisp-runtime.internal::*active-evaluation-context*))
+           clautolisp.autolisp-runtime.internal::*active-evaluation-context*)
+         (*document-activation-hook* *document-activation-hook*))
      ,@body))
 
 (test scheduler-registers-and-lists-contexts
@@ -85,22 +89,21 @@ into later tests — the FiveAM shared-global hazard."
            (calls '()))
       (scheduler-register-context sched a)
       (scheduler-register-context sched b)
-      (unwind-protect
-           (progn
-             (setf *document-activation-hook*
-                   (lambda (s d) (push (cons s d) calls)))
-             (scheduler-activate sched a)
-             (scheduler-activate sched b)
-             (is (= 2 (length calls)))
-             (is (eq session (car (first calls))))
-             (is (eq (evaluation-context-current-document
-                      (scheduled-context-context b))
-                     (cdr (first calls)))))       ; newest call = document B
-        (setf *document-activation-hook* nil)))))
+      ;; Rebound by %with-fresh-active-context, so this SETF is local to the
+      ;; test — it does not clobber the host layer's installed hook.
+      (setf *document-activation-hook* (lambda (s d) (push (cons s d) calls)))
+      (scheduler-activate sched a)
+      (scheduler-activate sched b)
+      (is (= 2 (length calls)))
+      (is (eq session (car (first calls))))
+      (is (eq (evaluation-context-current-document (scheduled-context-context b))
+              (cdr (first calls)))))))            ; newest call = document B
 
 (test single-document-session-has-no-scheduler
-  ;; The no-regression guard: a fresh session has no scheduler and the hook is
-  ;; nil by default, so single-document behaviour is unchanged.
+  ;; The no-regression guard: a fresh session has no scheduler, so
+  ;; single-document behaviour is unchanged. (The activation hook may be nil,
+  ;; or, in the full image, the host layer's installed lock-step hook — either
+  ;; way it is a no-op for a document with no host-document-key, so it is not
+  ;; asserted here.)
   (let ((session (make-runtime-session)))
-    (is (null (session-scheduler session)))
-    (is (null *document-activation-hook*))))
+    (is (null (session-scheduler session)))))

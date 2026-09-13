@@ -254,3 +254,24 @@ backend share this instance.")
 ;;; this hook — installed once here, alongside the default-backend
 ;;; install above.
 (setf clautolisp.autolisp-runtime:*host-command-function* #'host-command)
+
+;;; cador-2 slice 2b: the runtime->host current-document lock-step. The
+;;; runtime flips its current document (SET-RUNTIME-SESSION-CURRENT-DOCUMENT)
+;;; and then calls *DOCUMENT-ACTIVATION-HOOK*; this host-agnostic hook makes
+;;; the host follow, so the active drawing tracks the current document. It is
+;;; a no-op for single-document / host-less sessions (a document with no
+;;; HOST-DOCUMENT-KEY), so installing it globally is safe; the runtime already
+;;; wraps the call in IGNORE-ERRORS. Uses only the generic HOST-ACTIVATE-DOCUMENT,
+;;; so it works for any host that implements it (cador today), not just nihil.
+(defun activate-host-document-for-namespace (session document)
+  "Activate the host document DOCUMENT is linked to, keeping the host's active
+document in step with the runtime's current document. No-op unless DOCUMENT
+carries a HOST-DOCUMENT-KEY and SESSION carries a host."
+  (let ((key (clautolisp.autolisp-runtime:document-namespace-host-document-key
+              document))
+        (host (clautolisp.autolisp-runtime:runtime-session-host session)))
+    (when (and key host)
+      (host-activate-document host key))))
+
+(setf clautolisp.autolisp-runtime:*document-activation-hook*
+      #'activate-host-document-for-namespace)
