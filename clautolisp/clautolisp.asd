@@ -251,6 +251,7 @@ application for headless interactive/scriptable testing (generalises cador)."
    (:file "cadtui/source/dcl-bridge")
    (:file "cadtui/source/console-runtime")
    (:file "cadtui/source/cad-view")
+   (:file "cadtui/source/locale")
    (:file "cadtui/source/dispatch")
    (:file "cadtui/source/console-interactor"))
   :in-order-to ((asdf:test-op
@@ -577,6 +578,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "cadtui/tests/console-tests")
    (:file "cadtui/tests/cad-view-tests")
    (:file "cadtui/tests/menu-band-tests")
+   (:file "cadtui/tests/locale-tests")
    (:file "cadtui/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

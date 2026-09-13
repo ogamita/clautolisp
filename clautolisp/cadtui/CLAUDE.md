@@ -197,10 +197,25 @@ divergence assumée par rapport à la spec.)
   action fonction Lisp (funcall, :ok + valeur en data) ; un nom de commande CAD
   string reste un stand-in :not-yet (il faut le runtime console actif).
   MR !231. clautolisp 2.2.53 / alfe 2.2.61.
-- Phase courante : 7 (localisation) — moteur headless + dictionnaire fr_FR
-  d'interaction faisables maintenant ; dictionnaires de COMMANDES CAD par
-  plate-forme nécessitent les runners macOS/Windows (sous-issues déposées).
-  Puis phase 8 optionnelle (backend curses).
+- Phase 7 (localisation) : **FAIT** headless (2026-09-13). locale.lisp : registre
+  de dictionnaires par (locale, catégorie) ; local-name/international-name
+  bidirectionnels (style getcname, repli identité) ; resolve-locale
+  (CLI>LC_ALL>LANG>en, normalisation .UTF-8@euro, repli région→langue, warn si
+  inconnu) ; localise-meta-line = passe LEXICALE (retokenise la ligne, traduit
+  chaque identifiant via la table inverse, laisse ponctuation/chemins/littéraux
+  "..." intacts, préfixe _ force l'international) branchée dans interpret-line
+  AVANT parse (identité sous en). Verbe locale(fr_FR) pour basculer à chaud +
+  init-locale-from-environment. Dictionnaires d'interaction fr_FR (complet-ish),
+  de_DE/es_ES (partiels, prouvent le repli). MR !232. clautolisp 2.2.54 /
+  alfe 2.2.62.
+  RESTE Phase 7 (hors scope headless) : (a) les 3 dictionnaires de COMMANDES CAD
+  (noms, mots-clés d'option, alias clavier) par locale/plate-forme — nécessitent
+  les runners macOS/Windows (issues/open/cadtui-locale-*) ; (b) le drapeau CLI
+  --locale/--lang dans autolisp-cli (l'API + LANG/LC_ALL + le verbe locale()
+  fonctionnent déjà ; le câblage du flag CLI est un petit ajout cross-module
+  différé).
+- Phase courante : 8 (backend curses OPTIONNEL) — rend l'arbre visuellement en
+  réutilisant l'interpréteur du §5 sans le modifier.
 
 ## Conventions de code héritées de clautolisp
 - Common Lisp, style du dépôt existant (voir fichiers déjà présents
