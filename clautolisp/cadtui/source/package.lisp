@@ -132,6 +132,9 @@ documentation/cadtui-specifications.org (normative).")
    #:*cadtui-dcl-root*
    #:make-cadtui-dcl-renderer
    #:install-cadtui-dcl-renderer
+   #:*cadtui-dcl-events*
+   #:cadtui-dcl-enqueue
+   #:reset-cadtui-dcl-events
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key

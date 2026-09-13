@@ -129,7 +129,16 @@ divergence assumée par rapport à la spec.)
   verbes : dump/page/next/previous/help COMPLETS ; activate/select/input/close/
   zoom/pan/key/click PARTIELS sur l'arbre ; dclick/right-click/drag/
   cancel-command en attente Phase 4/5). MRs !213–!218.
-- Phase courante : 3 (intégration DCL).
+- Phase 3 (intégration DCL) : **FAIT** (2026-09-13). cadtui installe son propre
+  =dcl-renderer= dans le point d'extension =*dcl-renderer*= du runtime
+  autolisp-dcl (jamais forké) ; ses callbacks reflètent le modèle dcl-dialog /
+  dcl-tile en nœuds ui-dialog / ui-tile (dcl-bridge.lisp). Les verbes
+  input/click/close déclenchent les callbacks action_tile via
+  dcl-runtime-fire-action / done_dialog. start_dialog modal est piloté sans
+  thread par une file d'événements pré-remplie (dispatch %drain-cadtui-dcl-
+  events + run-fn), l'analogue headless du stdin pré-alimenté. cadtui dépend
+  désormais de autolisp-dcl (pas de cycle). MRs !219–!221.
+- Phase courante : 4 (consoles + threads, sur le scheduler cador-2).
 
 ## Conventions de code héritées de clautolisp
 - Common Lisp, style du dépôt existant (voir fichiers déjà présents

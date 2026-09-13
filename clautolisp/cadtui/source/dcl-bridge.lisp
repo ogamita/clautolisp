@@ -95,12 +95,40 @@ under *cadtui-dcl-root*'s placement node. Returns the ui-dialog."
     (2 :focus)             ; set focus
     (t :normal)))          ; 0 enabled (and 3/4 focus-rect: treat as normal here)
 
+;;; --- Headless modal driver: the event queue (Phase 3 slice 3) -----
+;;;
+;;; start_dialog is modal: dcl-runtime-start-dialog calls the renderer's run-fn
+;;; and uses its return as the dialog's exit status (runtime.lisp). Phase 4 owns
+;;; the console/thread model, so Phase 3 drives a modal dialog HEADLESSLY and
+;;; deterministically from a pre-filled queue of cadtui meta-command lines --
+;;; the direct analog of the terminal renderer's pre-fed stdin, with no threads.
+;;; run-fn calls *cadtui-dcl-run-hook* (installed by dispatch, where interpret-
+;;; line lives) which drains the queue until the dialog finishes or it empties.
+
+(defvar *cadtui-dcl-events* '()
+  "FIFO of cadtui meta-command lines (e.g. \"=input(...)\") driving a modal
+dialog headlessly; drained by start_dialog's run-fn.")
+
+(defvar *cadtui-dcl-run-hook* nil
+  "Set by dispatch to the event-queue drainer (a function of the dcl-dialog
+returning its exit status). NIL => run-fn returns 0 (Cancel).")
+
+(defun cadtui-dcl-enqueue (line)
+  "Append a cadtui meta-command LINE to the modal-dialog event queue."
+  (setf *cadtui-dcl-events* (nconc *cadtui-dcl-events* (list line)))
+  line)
+
+(defun reset-cadtui-dcl-events ()
+  "Empty the modal-dialog event queue."
+  (setf *cadtui-dcl-events* '())
+  (values))
+
 ;;; --- The cadtui DCL renderer --------------------------------------
 
 (defun make-cadtui-dcl-renderer ()
-  "A dcl-renderer whose callbacks mirror the DCL runtime into the cadtui tree.
-run-fn is the no-op default in this slice (return the dialog status); the
-headless event-queue driver is slice 3."
+  "A dcl-renderer whose callbacks mirror the DCL runtime into the cadtui tree
+and whose run-fn drives a modal dialog from the cadtui event queue (slice 3),
+via *cadtui-dcl-run-hook*."
   (make-dcl-renderer
    :open-fn (lambda (dcl) (%mirror-dialog dcl) nil)
    :close-fn (lambda (dcl) (%unmirror-dialog dcl) nil)
@@ -111,7 +139,9 @@ headless event-queue driver is slice 3."
    :mode-fn (lambda (dcl key mode)
               (let ((tile (%find-ui-tile dcl key)))
                 (when tile (setf (ui-state tile) (%mode->state mode))))
-              nil)))
+              nil)
+   :run-fn (lambda (dcl)
+             (if *cadtui-dcl-run-hook* (funcall *cadtui-dcl-run-hook* dcl) 0))))
 
 (defun install-cadtui-dcl-renderer (root)
   "Make ROOT the DCL placement root and install the cadtui DCL renderer as the

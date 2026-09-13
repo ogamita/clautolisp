@@ -365,3 +365,22 @@ return a :not-yet ack recording the intent."
 (define-verb :right-click (mc root) (%stand-in :right-click mc root))
 (define-verb :drag (mc root) (%stand-in :drag mc root))
 (define-verb :cancel-command (mc root) (%stand-in :cancel-command mc root))
+
+;;; --- Headless modal-dialog driver (Phase 3 slice 3) ---------------
+;;;
+;;; The event-queue drainer start_dialog's run-fn calls (installed into the
+;;; dcl-bridge hook here, where interpret-line is defined). It applies each
+;;; queued cadtui meta-command line against the DCL placement root until the
+;;; dialog finishes or the queue empties, then returns the dialog's status. This
+;;; is the direct analog of the terminal renderer's pre-fed stdin -- fully
+;;; deterministic, single-threaded. Phase 4 replaces the pre-filled queue with a
+;;; live console interactor pushing events; the run-fn/queue seam is unchanged.
+
+(defun %drain-cadtui-dcl-events (dcl)
+  "Drain *cadtui-dcl-events*, interpreting each line against *cadtui-dcl-root*,
+until DCL is finished or the queue empties. Returns DCL's exit status."
+  (loop while (and *cadtui-dcl-events* (not (dcl-dialog-finished-p dcl)))
+        do (interpret-line (pop *cadtui-dcl-events*) *cadtui-dcl-root*))
+  (dcl-dialog-status dcl))
+
+(setf *cadtui-dcl-run-hook* #'%drain-cadtui-dcl-events)

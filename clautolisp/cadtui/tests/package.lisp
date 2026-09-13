@@ -81,7 +81,9 @@
                 #:command-result-data
                 ;; Phase 3: DCL integration
                 #:*cadtui-dcl-root*
-                #:install-cadtui-dcl-renderer)
+                #:install-cadtui-dcl-renderer
+                #:cadtui-dcl-enqueue
+                #:reset-cadtui-dcl-events)
   (:import-from #:clautolisp.autolisp-dcl
                 #:dcl-runtime-load-dialog
                 #:dcl-runtime-new-dialog
