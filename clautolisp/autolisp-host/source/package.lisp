@@ -11,6 +11,12 @@
    #:host-name
    ;; Predicates / introspection
    #:hostp
+   ;; --- Session and document management (D1 Group 1) -------------
+   #:host-open-document
+   #:host-close-document
+   #:host-activate-document
+   #:host-current-document
+   #:host-document-list
    ;; --- Entity API (autolisp-spec ch.16) -------------------------
    #:host-entget
    #:host-entmod

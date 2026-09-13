@@ -207,6 +207,7 @@
   :components
   ((:file "cador/source/package")
    (:file "cador/source/model")
+   (:file "cador/source/document-api")
    (:file "cador/source/sysvar-catalogue")
    (:file "cador/source/sysvars")
    (:file "cador/source/api")
@@ -509,6 +510,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   ((:file "cador/tests/package")
    (:file "cador/tests/test-harness")
    (:file "cador/tests/model-tests")
+   (:file "cador/tests/document-tests")
    (:file "cador/tests/entity-api-tests")
    (:file "cador/tests/selection-tests")
    (:file "cador/tests/dictionary-api-tests")

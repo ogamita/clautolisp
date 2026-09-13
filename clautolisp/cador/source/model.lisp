@@ -192,7 +192,20 @@ ENAME-CACHE-DRAWING. See HANDLE->ENAME. (ename-eq-identity.issue)")
 ENAME-CACHE is currently valid for. When the active drawing is replaced
  (a future multi-drawing session), HANDLE->ENAME notices the identity
 change and clears the cache so handles from a closed drawing can never
-alias a fresh drawing's entities."))
+alias a fresh drawing's entities.")
+   (documents                :initform '()
+                             :accessor cador-documents
+                             :documentation "Open documents as an ORDERED
+alist (KEY . DRAWING), KEY a string. cador-2 slice 1: the host holds a SET of
+open drawings; ACTIVE-DRAWING stays the pointer to the current one and every
+delegation shim reads it, so single-document behaviour is unchanged. Seeded by
+INITIALIZE-INSTANCE :after with the initial ACTIVE-DRAWING as the first (and
+current) document. Managed through HOST-OPEN/CLOSE/ACTIVATE-DOCUMENT.")
+   (active-document-key      :initform nil
+                             :accessor cador-active-document-key
+                             :documentation "The KEY (in DOCUMENTS) of the
+current document — the one ACTIVE-DRAWING points at. HOST-ACTIVATE-DOCUMENT
+swaps both together."))
   (:default-initargs :name "cador")
   (:documentation "In-memory deterministic CAD-database substitute
 backend for clautolisp. Holds an active CLAUTOLISP.DRAWING:DRAWING

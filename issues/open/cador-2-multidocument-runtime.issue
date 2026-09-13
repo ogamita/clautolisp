@@ -146,3 +146,35 @@ Slice 1 can start now (no spec blocker). Slice 2 waits on cador-3 (!192,
 under review). Each slice is its own MR with its issue-flow close note; the
 epic-level acceptance is met only after Slice 3. This plan is provisional
 until cador-3's D2 §I.2 scheduler decision is signed off.
+
+** Slice 1a DONE (2026-09-13) — the host document registry + Group-1 generics
+
+The first landable increment of Slice 1 is in: cador now holds a SET of open
+documents with an active pointer, and the D1 Group-1 document-management
+generics exist.
+
+- =autolisp-host/source/protocol.lisp=: new generics =host-open-document=,
+  =host-close-document=, =host-activate-document=, =host-current-document=,
+  =host-document-list=, each with the =:host-not-supported= base fallback
+  (so =nihil= correctly refuses them); exported from the package.
+- =cador/source/model.lisp=: added the =documents= slot (ordered
+  (KEY . DRAWING) alist) and =active-document-key=. =active-drawing= stays the
+  current pointer every delegation shim reads, so single-document behaviour is
+  unchanged.
+- =cador/source/document-api.lisp= (new): =initialize-instance :after= seeds
+  the registry with the initial drawing as the first current document; the five
+  generics manage it. Uniquifies colliding names; refuses to close the last
+  document; activating a closed current document reactivates a remaining one.
+- Tests: =cador/tests/document-tests.lisp= (8 tests) — one-current-at-start,
+  open-without-switching, name uniquification, activate switches the active
+  drawing, activate-unknown signals, *entity-database isolation between
+  documents* (E1/C5 core), close-and-reactivate, close-last-refused.
+- Verified with the full image: =make -C clautolisp test-sbcl= exit 0.
+
+Deliberately deferred to the next increment(s): migrating per-document
+*session* state (picksets, ldata-store, iterators) off the host into the
+per-document record; making cross-document handle dereference *signal* (C5's
+strong form — today it fails safe: an unknown handle in the current drawing
+returns nil, and =ename-cache-drawing= already prevents cross-drawing aliasing);
+the runtime =document-namespace= <-> host-document link; and the cooperative
+scheduler (Slice 2, spec-gated). cador-2 stays OPEN.
