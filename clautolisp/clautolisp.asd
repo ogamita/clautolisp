@@ -247,6 +247,7 @@ application for headless interactive/scriptable testing (generalises cador)."
    (:file "cadtui/source/classify")
    (:file "cadtui/source/parser")
    (:file "cadtui/source/dcl-bridge")
+   (:file "cadtui/source/console-runtime")
    (:file "cadtui/source/dispatch"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/cadtui/tests")))
@@ -557,7 +558,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :description "Tests for the cadtui UI-tree host."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/cadtui" "fiveam")
+  :depends-on ("clautolisp/cadtui" "fiveam" "bordeaux-threads")
   :serial t
   :components
   ((:file "cadtui/tests/package")
@@ -569,6 +570,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "cadtui/tests/parser-tests")
    (:file "cadtui/tests/dispatch-tests")
    (:file "cadtui/tests/dcl-tests")
+   (:file "cadtui/tests/console-tests")
    (:file "cadtui/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

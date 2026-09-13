@@ -83,7 +83,14 @@
                 #:*cadtui-dcl-root*
                 #:install-cadtui-dcl-renderer
                 #:cadtui-dcl-enqueue
-                #:reset-cadtui-dcl-events)
+                #:reset-cadtui-dcl-events
+                ;; Phase 4: per-console runtime
+                #:ui-context
+                #:ensure-session-scheduler
+                #:make-console-context
+                #:console-namespace
+                #:console-queue
+                #:deliver-line-to-console)
   (:import-from #:clautolisp.autolisp-dcl
                 #:dcl-runtime-load-dialog
                 #:dcl-runtime-new-dialog
@@ -106,6 +113,13 @@
                 #:autolisp-symbol-value
                 #:autolisp-string-value
                 #:make-autolisp-string
-                #:run-autolisp-string)
+                #:run-autolisp-string
+                ;; Phase 4
+                #:make-runtime-session
+                #:session-scheduler
+                #:document-namespace-set
+                #:document-namespace-ref
+                #:scheduled-context-thread
+                #:park-mailbox-pop)
   (:export #:cadtui-suite
            #:run-all-tests))

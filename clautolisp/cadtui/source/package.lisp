@@ -21,6 +21,34 @@
                 #:install-default-renderer
                 #:current-dcl-renderer
                 #:make-noop-renderer)
+  ;; Phase 4: the cador-2 scheduler + runtime namespaces the consoles run on.
+  ;; Imported by name so cadtui stays :use cl only.
+  (:import-from #:clautolisp.autolisp-runtime
+                #:session-scheduler
+                #:make-document-scheduler
+                #:make-document-namespace
+                #:make-evaluation-context
+                #:evaluation-context-current-namespace
+                #:evaluation-context-current-document
+                #:evaluation-context-session
+                #:current-evaluation-context
+                #:make-scheduled-context
+                #:scheduled-context-context
+                #:scheduled-context-thread
+                #:scheduler-register-context
+                #:scheduler-activate
+                #:scheduler-park
+                #:scheduler-await-park
+                #:scheduler-serve-park
+                #:document-namespace-host-document-key
+                #:register-runtime-session-document
+                #:document-namespace-set
+                #:document-namespace-ref
+                #:blackboard-set
+                #:blackboard-ref
+                #:make-park-mailbox
+                #:park-mailbox-push
+                #:park-mailbox-pop)
   (:documentation
    "The cadtui host: a textual, keyboard-driven UI tree for CAD objects and
 the CAD application, for headless interactive/scriptable testing of DCL
@@ -135,6 +163,13 @@ documentation/cadtui-specifications.org (normative).")
    #:*cadtui-dcl-events*
    #:cadtui-dcl-enqueue
    #:reset-cadtui-dcl-events
+   ;; Phase 4: per-console runtime (namespace + scheduled-context + line queue).
+   #:ui-context
+   #:ensure-session-scheduler
+   #:make-console-context
+   #:console-namespace
+   #:console-queue
+   #:deliver-line-to-console
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key

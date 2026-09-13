@@ -127,8 +127,14 @@ is strictly isolated from other drawings (spec §Communication inter-dessins).")
 (defclass ui-console (ui-node)
   ((stream-buffer     :initarg :stream-buffer     :initform nil :accessor ui-stream-buffer)
    (input-zone        :initarg :input-zone        :initform nil :accessor ui-input-zone)
-   ;; queue of pass-through lines awaiting a not-yet-reading thread (Phase 4).
+   ;; queue of pass-through lines awaiting a not-yet-reading thread (Phase 4):
+   ;; a runtime park-mailbox (blocking FIFO of whole lines) — the type-ahead
+   ;; buffer of spec §"Classification des lignes et tamponnage".
    (lignes-en-attente :initarg :lignes-en-attente :initform nil :accessor ui-lignes-en-attente)
+   ;; The runtime scheduled-context backing this console (Phase 4): its thread is
+   ;; the console's AutoLISP thread, its evaluation-context carries the isolated
+   ;; per-drawing document namespace. NIL until the console is given a context.
+   (context           :initarg :context           :initform nil :accessor ui-context)
    ;; suspended/woken, never killed (Phase 4, on the runtime scheduler).
    (lisp-thread       :initarg :lisp-thread       :initform nil :accessor ui-lisp-thread)
    (debug-thread      :initarg :debug-thread      :initform nil :accessor ui-debug-thread))
