@@ -16,6 +16,7 @@
                "clautolisp/drawing"
                "clautolisp/autolisp-host"
                "clautolisp/cador"
+               "clautolisp/cadtui"
                "clautolisp/autolisp-builtins-core"
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
@@ -230,6 +231,22 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/cadtui"
+  :description "Textual UI-tree host presenting CAD objects and the CAD
+application for headless interactive/scriptable testing (generalises cador)."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime")
+  :serial t
+  :components
+  ((:file "cadtui/source/package")
+   (:file "cadtui/source/model"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/cadtui/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
 (asdf:defsystem "clautolisp/autolisp-dcl"
   :description "Dialog Control Language (DCL) implementation for clautolisp."
   :author "Codex"
@@ -361,6 +378,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
                "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
                "clautolisp/cador"
+               "clautolisp/cadtui"
                "clautolisp/autolisp-builtins-core"
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
@@ -526,6 +544,22 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (uiop:symbol-call :clautolisp.cador.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/cadtui/tests"
+  :description "Tests for the cadtui UI-tree host."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/cadtui" "fiveam")
+  :serial t
+  :components
+  ((:file "cadtui/tests/package")
+   (:file "cadtui/tests/test-harness")
+   (:file "cadtui/tests/model-tests")
+   (:file "cadtui/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.cadtui.tests
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/autolisp-dcl/tests"
@@ -1059,6 +1093,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
                "clautolisp/drawing/tests"
                "clautolisp/autolisp-host/tests"
                "clautolisp/cador/tests"
+               "clautolisp/cadtui/tests"
                "clautolisp/autolisp-dcl/tests"
                "clautolisp/autolisp-builtins-core/tests"
                "clautolisp/autolisp-compiler/tests"
@@ -1089,6 +1124,8 @@ identity / TEMPPREFIX stamping, option value parsers)."
                            (uiop:symbol-call :clautolisp.autolisp-host.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.cador.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.cadtui.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-dcl.tests
                                              :run-all-tests)
