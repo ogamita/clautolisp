@@ -1,0 +1,22 @@
+clautolisp 2.2.57: cadtui fr_FR CAD command-name dictionary (doc-verified seed)
+
+data/locale/fr_FR/command.sexp — the :command dictionary for 26 common CAD
+commands (LINE->LIGNE, ERASE->EFFACER, OFFSET->DECALER, FILLET->RACCORD,
+LAYER->CALQUE, PLOT->TRACEUR, ...). Each French name was read from the official
+BricsCAD fr-fr command reference (the English name is the help URL, the French
+name the page title) and cross-checked against the autolisp-spec getcname
+examples (_LINE<->LIGNE, _OPEN<->OUVRIR, _STRETCH<->ETIRER).
+
+It is a DOC-VERIFIED SEED, not the full harvest: the getcname probe machinery
+(MR !235) supersedes it with a complete, round-trip-verified measurement off the
+runners' French BricsCAD, and re-running scripts/cadtui-getcname-to-sexp.py
+overwrites this file. Keys are _-prefixed international names; a command not in
+the dictionary falls back to the international form. Baked into the image by the
+loader (2.2.56).
+
+Tests: locale-tests asserts the shipped fr_FR :command dictionary maps
+_LINE->LIGNE / _OPEN->OUVRIR / _STRETCH->ETIRER both ways, with international
+fallback. Full make -C clautolisp test-sbcl green. alfe 2.2.65 tracks.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01XDPCe5o6LJkv4CR2FvYauz

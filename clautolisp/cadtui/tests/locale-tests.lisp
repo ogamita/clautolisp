@@ -81,6 +81,16 @@
   ;; a missing command falls back to the international form.
   (is (string= "_ERASE" (local-name "_ERASE" "zz_CMD" :command))))
 
+(test fr-command-dictionary-carries-real-doc-verified-names
+  ;; the shipped fr_FR command.sexp (doc-verified seed; getcname harvest
+  ;; supersedes) maps common CAD commands both ways.
+  (is (string= "LIGNE"  (local-name "_LINE" "fr_FR" :command)))
+  (is (string= "OUVRIR" (local-name "_OPEN" "fr_FR" :command)))
+  (is (string= "ETIRER" (local-name "_STRETCH" "fr_FR" :command)))
+  (is (string= "_LINE"  (international-name "LIGNE" "fr_FR" :command)))
+  ;; a command not in the dictionary falls back to the international form.
+  (is (string= "_FOOBARBAZ" (local-name "_FOOBARBAZ" "fr_FR" :command))))
+
 (test locale-data-loads-from-the-shipped-sexp-tree
   ;; the dictionaries are DATA files (spec §Format des dictionnaires): the loader
   ;; reads cadtui/data/locale/<locale>/<category>.sexp, and the shipped fr_FR
