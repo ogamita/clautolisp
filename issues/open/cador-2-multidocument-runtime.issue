@@ -178,3 +178,42 @@ strong form — today it fails safe: an unknown handle in the current drawing
 returns nil, and =ename-cache-drawing= already prevents cross-drawing aliasing);
 the runtime =document-namespace= <-> host-document link; and the cooperative
 scheduler (Slice 2, spec-gated). cador-2 stays OPEN.
+
+** Slice 2a DONE (2026-09-13) — single-runner scheduler skeleton + host lock-step seam
+
+The first increment of Slice 2 (the cooperative scheduler): the STATE MACHINE
+and the runtime->host current-document seam, modeled *without* threads or real
+parking. Legitimate because a batch cador run parks nowhere (D2 §I.2), so
+continuation capture and the park-with-outstanding-host-call hazard are
+deferred with the slots that will carry them.
+
+- =autolisp-runtime/source/scheduler.lisp= (new): =document-scheduler= (ordered
+  contexts + a RUNNING pointer) and =scheduled-context= (context, document-key,
+  status :runnable/:running/:parked, plus reserved CONTINUATION / PENDING-BREAK
+  / SAVED-ENV slots for later slices). =scheduler-register-context=,
+  =scheduler-context-list=, =scheduler-current-context=, and =scheduler-activate=
+  — the core transition that demotes the previous runner, promotes the target,
+  installs its evaluation context, and switches the runtime current document in
+  lock-step. =%assert-single-runner= is the executable form of C2 (signals
+  :scheduler-invariant if two contexts are ever :running). No thread is created
+  — the debugger's two-thread rendezvous is the hosted case; cador's model is
+  continuation capture (R21).
+- =autolisp-runtime/source/model.lisp=: added =scheduler= slot to
+  =runtime-session= and =host-document-key= to =document-namespace=, both nil by
+  default (single-document sessions unchanged).
+- =autolisp-runtime/source/api.lisp=: =*document-activation-hook*= (nil by
+  default) + a guarded call in =set-runtime-session-current-document=, the
+  dependency-inversion seam a host/driver layer installs to activate the
+  matching host document — the runtime never names cador. Returns the document.
+- Tests: =autolisp-runtime/tests/scheduler-tests.lisp= (5) — register/list,
+  single-runner enforcement across activations, activation follows the current
+  document, the activation hook fires in lock-step (hook restored via
+  unwind-protect), and the no-regression guard (a fresh session has no
+  scheduler and the hook is nil).
+- Verified: =make -C clautolisp test-sbcl= exit 0.
+
+Deferred to Slice 2b/next: INSTALLING the hook in the cador/driver layer (so a
+real runtime document switch drives =host-activate-document=) and its
+cross-system integration test; then real continuation-capture parking, the
+per-context dynamic-env save/restore, and the deferred-break discipline for the
+outstanding-host-call hazard; then Slice 3 (E1/E2 probes, wire host).

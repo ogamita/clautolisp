@@ -133,7 +133,14 @@ clautolisp-secureload-trust-model spec.")
   ;; register-runtime-session-document. Lets signal-document-event
   ;; locate the session reliably without scanning the active
   ;; evaluation context.
-  (session nil))
+  (session nil)
+  ;; cador-2 slice 2a: the opaque host document KEY this namespace maps to
+  ;; (e.g. cador's document key). NIL when no host document is linked, so
+  ;; single-document / host-less sessions are unaffected. The runtime->host
+  ;; document lock-step (set-runtime-session-current-document ->
+  ;; *document-activation-hook*) uses it to activate the matching host
+  ;; document. See cador-2-multidocument-runtime.
+  (host-document-key nil))
 
 (defstruct blackboard-namespace
   (name "BLACKBOARD" :type string)
@@ -258,7 +265,13 @@ clautolisp-secureload-trust-model spec.")
   ;; so a loop that opens the same `..' path warns once per run. Consed
   ;; per session like PORTABILITY-WARNINGS-SEEN. See
   ;; emit-dotdot-path-portability-warning / cad-path-dotdot-resolution.
-  (dotdot-path-warnings-seen (make-hash-table :test #'equal)))
+  (dotdot-path-warnings-seen (make-hash-table :test #'equal))
+  ;; cador-2 slice 2a: the cooperative single-runner scheduler, or NIL. A
+  ;; single-document session leaves this NIL and behaves exactly as before;
+  ;; a multi-document session (cador-2) installs a DOCUMENT-SCHEDULER holding
+  ;; the N per-document contexts with the at-most-one-running invariant
+  ;; (C2/C8). Defined in scheduler.lisp; slot kept here so the session owns it.
+  (scheduler nil))
 
 (defstruct evaluation-context
   session

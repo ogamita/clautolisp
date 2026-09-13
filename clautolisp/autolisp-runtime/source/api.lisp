@@ -662,6 +662,18 @@ divergence-D1 R13+ marker policy) need not reach into the reader."
         namespace)
   namespace)
 
+(defparameter *document-activation-hook* nil
+  "NIL, or a function (SESSION DOCUMENT) called by
+SET-RUNTIME-SESSION-CURRENT-DOCUMENT after it flips the runtime's current
+document, so a host layer can activate the matching host document in
+lock-step (cador-2). Dependency inversion — the runtime must not name
+clautolisp.cador — mirroring *DEFAULT-RUNTIME-HOST* / the debug hooks: the
+cador/driver layer installs it. NIL (the default) is a no-op, so
+single-document and host-less sessions are unaffected. Called through
+IGNORE-ERRORS so a host that refuses activation cannot break the runtime
+document switch (current == active in cador; the host follows, it does not
+veto).")
+
 (defun set-runtime-session-current-document (session document)
   (unless (typep document 'document-namespace)
     (signal-autolisp-runtime-error
@@ -670,7 +682,10 @@ divergence-D1 R13+ marker policy) need not reach into the reader."
      document))
   (register-runtime-session-document session document :copy-propagated-p t)
   (setf (clautolisp.autolisp-runtime.internal::runtime-session-current-document session)
-        document))
+        document)
+  (when *document-activation-hook*
+    (ignore-errors (funcall *document-activation-hook* session document)))
+  document)
 
 (defun autolisp-errno (&optional (context (current-evaluation-context)))
   (runtime-session-errno (evaluation-context-session context)))
