@@ -60,6 +60,16 @@
                 #:meta-command-verb
                 #:meta-command-positionals
                 #:meta-command-options
-                #:meta-command-parse-error)
+                #:meta-command-parse-error
+                ;; Phase 2 slice 3: dump registry + D<n> addressing
+                #:*dump-counter*
+                #:*last-dump*
+                #:reset-dump-registry
+                #:find-dump
+                #:register-dump
+                #:dump-list
+                #:dump-page
+                #:dump-descriptor-number
+                #:dump-descriptor-page)
   (:export #:cadtui-suite
            #:run-all-tests))

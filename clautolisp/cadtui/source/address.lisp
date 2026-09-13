@@ -165,12 +165,8 @@ Signals TARGET-NOT-FOUND / AMBIGUOUS-TARGET (carrying PATH) on failure."
         (if slash (setf start (1+ slash)) (return))))
     (nreverse segments)))
 
-(defun resolve-target (root path)
-  "Resolve the absolute PATH (from /application) to a node under ROOT, or signal
-TARGET-NOT-FOUND / AMBIGUOUS-TARGET. PATH must start with \"/\"; a relative or
-D<n> reference is deferred to Phase 2 and reported as not found."
-  (unless (and (plusp (length path)) (char= (char path 0) #\/))
-    (error 'target-not-found :path path :segment path))
+(defun %resolve-absolute-path (root path)
+  "Resolve an absolute /application PATH under ROOT."
   (let ((segments (%split-segments path)))
     (when (null segments)
       (error 'target-not-found :path path :segment path))
@@ -184,3 +180,94 @@ D<n> reference is deferred to Phase 2 and reported as not found."
     (let ((node root))
       (dolist (segment (rest segments) node)
         (setf node (resolve-segment node segment path))))))
+
+;;; --- Relative references: D<n>.cle and bare-key-in-last-dump ------
+;;;
+;;; A dump gets an increasing D<n> id; any key it showed stays addressable by
+;;; D<n>.cle even after other dumps or window switches (spec §5.2 lines 418-423).
+;;; A bare key (no path, no D<n>) resolves in the LAST dump if unique there
+;;; (lines 424-426).
+
+(defun %split-dots (s)
+  "The non-empty \".\"-separated parts of S."
+  (let ((parts '()) (start 0) (len (length s)))
+    (loop
+      (let* ((dot (position #\. s :start start))
+             (part (subseq s start (or dot len))))
+        (unless (string= part "") (push part parts))
+        (if dot (setf start (1+ dot)) (return))))
+    (nreverse parts)))
+
+(defun %parse-d-reference (path)
+  "If PATH is D<integer>.cle(.cle)*, return (values NUMBER (cle ...)); else NIL."
+  (when (and (> (length path) 1) (char-equal (char path 0) #\D))
+    (let ((dot (position #\. path)))
+      (when dot
+        (let ((number (ignore-errors (parse-integer path :start 1 :end dot))))
+          (when number
+            (values number (%split-dots (subseq path (1+ dot))))))))))
+
+(defun %split-trailing-integer (s)
+  "If S is NAME<digits> with a non-empty NAME, return (values NAME INTEGER);
+else (values nil nil). E.g. \"grip2\" => (values \"grip\" 2)."
+  (let ((pos (length s)))
+    (loop while (and (> pos 0) (digit-char-p (char s (1- pos)))) do (decf pos))
+    (if (and (< pos (length s)) (> pos 0))
+        (values (subseq s 0 pos) (parse-integer s :start pos))
+        (values nil nil))))
+
+(defun %resolve-in-dump (descriptor cle path)
+  "Resolve the key CLE within DESCRIPTOR's recorded entries: unique -> node;
+several -> AMBIGUOUS-TARGET; none -> TARGET-NOT-FOUND."
+  (let ((nodes (remove-duplicates
+                (loop for (k . node) in (dump-descriptor-entries descriptor)
+                      when (string= k cle) collect node))))
+    (cond
+      ((null nodes) (error 'target-not-found :path path :segment cle))
+      ((rest nodes) (error 'ambiguous-target :path path :segment cle
+                                             :candidates nodes))
+      (t (first nodes)))))
+
+(defun %resolve-dotted-key (node cle path)
+  "Resolve a further CLE of a D<n> reference within NODE's subtree: an exact
+bare-key descendant first, else a NAME<digits> split naming the digits-th child
+of role NAME (e.g. grip2 = the 2nd grip child)."
+  (or (find-node node (lambda (n)
+                        (and (not (eq n node))
+                             (string= cle (princ-to-string (ui-key n))))))
+      (multiple-value-bind (name index) (%split-trailing-integer cle)
+        (when (and name index)
+          (let ((matches (remove (%role-keyword name) (ui-children node)
+                                  :key #'ui-role :test-not #'eq)))
+            (when (<= 1 index (length matches))
+              (nth (1- index) matches)))))
+      (error 'target-not-found :path path :segment cle)))
+
+(defun %resolve-d-reference (number keys path)
+  (let ((descriptor (find-dump number)))
+    (unless descriptor
+      (error 'target-not-found :path path :segment (format nil "D~D" number)))
+    (when (null keys)
+      (error 'target-not-found :path path :segment path))
+    (let ((node (%resolve-in-dump descriptor (first keys) path)))
+      (dolist (cle (rest keys) node)
+        (setf node (%resolve-dotted-key node cle path))))))
+
+(defun resolve-target (root path)
+  "Resolve PATH to a node under ROOT, or signal TARGET-NOT-FOUND /
+AMBIGUOUS-TARGET. PATH is an absolute /application path, a D<n>.cle relative
+reference (against a recorded dump), or a bare key (resolved in the last dump)."
+  (cond
+    ((zerop (length path))
+     (error 'target-not-found :path path :segment path))
+    ((char= (char path 0) #\/)
+     (%resolve-absolute-path root path))
+    (t
+     (multiple-value-bind (number keys) (%parse-d-reference path)
+       (if number
+           (%resolve-d-reference number keys path)
+           ;; a bare key: resolve in the last dump.
+           (let ((descriptor *last-dump*))
+             (unless descriptor
+               (error 'target-not-found :path path :segment path))
+             (%resolve-in-dump descriptor path path)))))))
