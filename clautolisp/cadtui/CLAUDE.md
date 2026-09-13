@@ -214,8 +214,28 @@ divergence assumée par rapport à la spec.)
   --locale/--lang dans autolisp-cli (l'API + LANG/LC_ALL + le verbe locale()
   fonctionnent déjà ; le câblage du flag CLI est un petit ajout cross-module
   différé).
-- Phase courante : 8 (backend curses OPTIONNEL) — rend l'arbre visuellement en
-  réutilisant l'interpréteur du §5 sans le modifier.
+- Phase 8 (backend de rendu visuel, OPTIONNEL) : **FAIT** (seam testable,
+  2026-09-13). render.lisp : *screen-renderer* (indirection de backend) +
+  text-screen-renderer headless déterministe (en-tête, ligne de menus, liste des
+  dessins avec l'actif marqué *, détail du dessin actif : bandeaux, vue-cad
+  count+viewport, invite console ; sinon console d'application) + render-screen /
+  render-screen-to-string + ui-step (pilote UNE ligne via interpret-line INCHANGÉ
+  puis re-rend). Le vrai backend curses (widgets sur tui-core, gaté hors de
+  l'image de test comme l'UI ncurses du débogueur) est un drop-in sur
+  *screen-renderer* — non fait, faible valeur/non testable dans la lane standard.
+  MR !233. clautolisp 2.2.55 / alfe 2.2.63.
+
+## MODULE cadtui : COMPLET (scope headless)
+Phases 1-8 livrées et vertes (34+ suites, Fail:0). Restent, hors scope headless
+et explicitement différés (non bloquants pour l'usage principal — test
+scriptable de dialogues DCL et commandes CAD sans GUI) :
+- Phase 7 : les 3 dictionnaires de COMMANDES CAD par locale/plate-forme
+  (issues/open/cadtui-locale-*) — nécessitent les runners macOS/Windows.
+- Phase 7 : le drapeau CLI --locale/--lang dans autolisp-cli (petit ajout
+  cross-module ; l'API + LANG/LC_ALL + le verbe locale() marchent déjà).
+- Phase 5 slice 5 : bbox blocs/textes (extent non fondé headless).
+- Phase 4 slice 5 : brancher la console vivante comme producteur de start_dialog.
+- Phase 8 : le backend curses concret (widgets), drop-in sur *screen-renderer*.
 
 ## Conventions de code héritées de clautolisp
 - Common Lisp, style du dépôt existant (voir fichiers déjà présents
