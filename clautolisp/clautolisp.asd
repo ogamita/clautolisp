@@ -240,7 +240,9 @@ application for headless interactive/scriptable testing (generalises cador)."
   :serial t
   :components
   ((:file "cadtui/source/package")
-   (:file "cadtui/source/model"))
+   (:file "cadtui/source/model")
+   (:file "cadtui/source/dump")
+   (:file "cadtui/source/builders"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/cadtui/tests")))
   :perform (asdf:test-op (op system)
@@ -556,6 +558,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   ((:file "cadtui/tests/package")
    (:file "cadtui/tests/test-harness")
    (:file "cadtui/tests/model-tests")
+   (:file "cadtui/tests/dump-tests")
    (:file "cadtui/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

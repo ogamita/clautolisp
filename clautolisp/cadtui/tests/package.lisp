@@ -36,6 +36,15 @@
                 #:add-child
                 #:ui-find-child
                 #:ui-root-p
-                #:duplicate-sibling-key)
+                #:duplicate-sibling-key
+                ;; slice 2: dump + builders
+                #:dump-node
+                #:dump-node-to-string
+                #:node-dump-attributes
+                #:dump-header
+                #:next-dump-number
+                #:*dump-counter*
+                #:make-application-tree
+                #:make-cador-tree)
   (:export #:cadtui-suite
            #:run-all-tests))

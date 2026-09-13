@@ -40,6 +40,16 @@ documentation/cadtui-specifications.org (normative).")
    #:add-child
    #:ui-find-child
    #:ui-root-p
+   ;; Phase 1 slice 2: structured text dump + tree builders.
+   #:dump-node
+   #:dump-node-to-string
+   #:node-dump-attributes
+   #:dump-header
+   #:next-dump-number
+   #:*dump-counter*
+   #:*last-dump*
+   #:make-application-tree
+   #:make-cador-tree
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key
