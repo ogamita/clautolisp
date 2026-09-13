@@ -1,0 +1,27 @@
+cadtui localisation — command option-keyword probe (P3, CI/runner, hardest)
+
+Parent: cadtui.issue (Phase 7). Harvest the localised OPTION KEYWORDS of CAD
+commands and their per-locale abbreviation letters — the second distinct
+dictionary (spec lines ~128-140, ~671-676). This is the hardest to harvest
+because it requires driving each command's prompts to read back its keyword set
+(note the PROMPTOPTIONTRANSLATEKEYWORDS sysvar).
+
+What to collect
+- Per (command . international-keyword): the local keyword and its local
+  abbreviation letter.
+
+How
+- A probe suite (mirror the getcname probe pattern; soft cad-tagged jobs in
+  .gitlab/native.yml, artifacts under dist/option-keywords/) that, for a NARROW
+  set of common commands first, enters each command and captures its offered
+  keywords in the localised install. Scope narrowly and expand later — do not
+  attempt the whole command set at once.
+
+Matrix
+- Per vendor × locale × platform, aligned with the getcname probe; fr_FR first.
+
+Output feeds cadtui-locale-data-format-and-loader.issue (option-keywords.sexp).
+Missing entries fall back to the international keyword.
+
+Priority P3: cadtui phases 1-6 do not need this; it refines Phase 7 once command
+names (getcname) and aliases (.pgp) are in.

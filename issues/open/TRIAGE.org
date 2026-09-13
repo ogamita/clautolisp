@@ -148,6 +148,27 @@ Docs / spec:
 Needs triage:
 - =empty-ressource= — unclassified; read and tier (or close) at next pass.
 
+** Newly indexed 2026-09-13 (cadtui — Phase 1 shipped; localisation sub-issues filed)
+cadtui (big feature, in progress on the parking/cadtui workstream):
+- DONE cadtui Phase 1 (the CLOS =ui-node= tree model, the structured =dump-node=
+  + =make-application-tree=/=make-cador-tree= builders, and absolute-path
+  =find-node=/=resolve-target= addressing) — MRs !209/!210/!211, clautolisp
+  2.2.34. New systems =clautolisp/cadtui= (+ tests). Phase 2 (interaction
+  language) in progress.
+cadtui localisation research (Phase 7 DATA — machine-bound, filed to run on the
+macOS/Windows CAD runners; the ENGINE + fr_FR interaction dictionary are
+headless):
+- TODO =cadtui-locale-data-format-and-loader= — P2: the three per-locale sexp
+  dictionaries (commands / option-keywords / aliases), the fallback-to-
+  international loader, and the artifact→sexp converter. Headless.
+- TODO =cadtui-locale-probe-getcname= — P2/machine: harvest localised CAD command
+  names via getcname (both directions) on localised AutoCAD/BricsCAD; soft
+  cad-tagged probe jobs mirroring the alfe CAD probe pattern.
+- TODO =cadtui-locale-probe-pgp-aliases= — P3/machine: harvest keyboard aliases
+  from acad.pgp/default.pgp (the third, distinct dictionary; never =_=-prefixed).
+- TODO =cadtui-locale-option-keywords= — P3/machine: harvest localised command
+  option keywords + abbreviations (hardest; narrow to common commands first).
+
 ** Re-examine (block lifted 2026-08-15; await pjb confirm-close)
 - =drawing-data-structures-parity=, =selection-and-snapshot-parity= — headless work done
   (1.6.8–10); vendor probes ran green on real AutoCAD AND BricsCAD (14/08). Confirm the

@@ -1,0 +1,37 @@
+cadtui localisation — data-file schema + loader/converter (P2)
+
+Parent: cadtui.issue (Phase 7, localisation). cadtui has two localisable
+vocabularies (interaction-language verbs/keywords, which WE author, and the CAD
+command vocabulary, which must be MEASURED on localised CAD installs — see the
+sibling probe issues). This ticket defines the data format all locale
+dictionaries take (data, NOT code — spec §Localisation) and the loader.
+
+Goal
+- Per-locale sexp data files under clautolisp/cadtui/data/locale/<locale>/ :
+  - commands.sexp        — alist (international-name . local-name) for CAD
+                           command names (AutoCAD-style: international English is
+                           canonical, `_`-prefix forces it; getcname is the
+                           source of truth).
+  - option-keywords.sexp — alist ((command . international-keyword)
+                           . (local-keyword . local-abbrev)).
+  - aliases.sexp         — alist (keyboard-alias . command) from acad.pgp /
+                           default.pgp (purely local, never `_`-prefixed).
+  These are three DISTINCT dictionaries with different prefixing rules; never
+  merge them (spec "Trois dictionnaires distincts").
+- A loader in the (future) cadtui localisation layer: local-name /
+  international-name do a bidirectional lookup; ANY missing entry falls back to
+  the international form so partial data never fails (spec lines ~744-746).
+- The interaction-language dictionary (verbs + meta-command keywords) is
+  authored by us (fr_FR first), same sexp shape, under the same tree.
+
+Converter
+- Raw probe artifacts land under dist/getcname/ etc. (see probe issues). A
+  converter script (mirror scripts/classify-sysvar-diff.py) turns a reviewed
+  artifact into the committed sexp. getcname output is generated fact (safe to
+  import); bulk-copied vendor doc tables are NOT — verify per case.
+
+Notes
+- The interaction-language parser stays in canonical ENGLISH tokens; localisation
+  is a lexical pre-pass BEFORE parsing, never a grammar duplicated per language.
+- This ticket is headless (schema + loader + converter + fr_FR interaction
+  dictionary). The CAD-command DATA depends on the probe issues below.

@@ -1,0 +1,22 @@
+cadtui localisation — keyboard-alias probe from .pgp (P3, CI/runner)
+
+Parent: cadtui.issue (Phase 7). Harvest the keyboard command aliases (the third,
+distinct dictionary) from the CAD install's alias file — acad.pgp / default.pgp
+(spec lines ~674-677, ~756-758). These are purely LOCAL and are NEVER
+`_`-prefixed; keep them strictly apart from the command-name dictionary
+(cadtui-locale-probe-getcname).
+
+What to collect
+- The (alias . command) pairs from the shipped .pgp / .pgp-equivalent of each
+  localised install.
+
+How
+- Simplest: read the .pgp from the install as a probe-job artifact (it is a data
+  file; no CAD scripting needed beyond locating it). Mirror the soft cad-tagged
+  job pattern in .gitlab/native.yml; emit under dist/pgp/. May be foldable into
+  the getcname probe job's artifact collection.
+
+Matrix
+- Per vendor × locale × platform, aligned with the getcname probe.
+
+Output feeds cadtui-locale-data-format-and-loader.issue (aliases.sexp).
