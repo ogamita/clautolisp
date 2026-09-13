@@ -26,25 +26,44 @@ import argparse
 import sys
 
 
+def _decode(path):
+    """Read PATH as text, sniffing the encoding. BricsCAD emits clean UTF-8;
+    AutoCAD/AcCoreConsole emit UTF-16, and the PowerShell wrapper can further
+    mangle it into a UTF-8 BOM prepended to a UTF-16LE body with stray one-byte
+    newlines (odd length). Returns the decoded string with the GETCNAME lines
+    intact whatever the shape."""
+    with open(path, "rb") as fh:
+        data = fh.read()
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):        # clean UTF-16 (BOM)
+        return data.decode("utf-16")
+    for enc in ("utf-8-sig", "utf-8", "utf-16-le", "utf-16-be"):
+        try:
+            text = data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+        if "GETCNAME" in text:                        # the right codec yields tags
+            return text
+    # Franken-encoding: drop NULs + a leading UTF-8 BOM to recover the ASCII
+    # body (AutoCAD's localised command names are ASCII).
+    stripped = data.replace(b"\x00", b"")
+    if stripped[:3] == b"\xef\xbb\xbf":
+        stripped = stripped[3:]
+    return stripped.decode("utf-8", errors="replace")
+
+
 def parse(path):
     engine = None
     fwd = {}   # international (with _) -> local
     rt = {}    # local -> international (with _)
-    with open(path, encoding="utf-8", errors="replace") as fh:
-        for raw in fh:
-            line = raw.rstrip("\r\n")
-            parts = line.split("\t")
-            tag = parts[0] if parts else ""
-            if tag == "GETCNAME-ENGINE":
-                engine = parts[1:]
-            elif tag == "GETCNAME" and len(parts) >= 4:
-                _, intl, status, result = parts[0], parts[1], parts[2], parts[3]
-                if status == "VALUE":
-                    fwd[intl] = result
-            elif tag == "GETCNAME-RT" and len(parts) >= 4:
-                _, local, status, result = parts[0], parts[1], parts[2], parts[3]
-                if status == "VALUE":
-                    rt[local] = result
+    for raw in _decode(path).splitlines():
+        parts = raw.rstrip("\r\n").split("\t")
+        tag = parts[0] if parts else ""
+        if tag == "GETCNAME-ENGINE":
+            engine = parts[1:]
+        elif tag == "GETCNAME" and len(parts) >= 4 and parts[2] == "VALUE":
+            fwd[parts[1]] = parts[3]
+        elif tag == "GETCNAME-RT" and len(parts) >= 4 and parts[2] == "VALUE":
+            rt[parts[1]] = parts[3]
     return engine, fwd, rt
 
 
@@ -70,19 +89,26 @@ def lisp_escape(s):
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def emit(engine, pairs, dropped, source, lax):
+def emit(engines, pairs, dropped, sources, conflicts, lax):
     out = []
     out.append(";;;; cadtui — CAD command-name dictionary (:command category).")
-    out.append(";;;; GENERATED from a getcname probe artifact by")
+    out.append(";;;; GENERATED from getcname probe artifact(s) by")
     out.append(";;;; scripts/cadtui-getcname-to-sexp.py — do not hand-edit; re-run the")
-    out.append(";;;; converter on a fresh artifact instead. getcname output is generated")
+    out.append(";;;; converter on fresh artifacts instead. getcname output is generated")
     out.append(";;;; fact (spec §Localisation). Key = international name (canonical, _-")
     out.append(";;;; prefixed); value = the localised name. Missing => international fallback.")
-    if engine:
-        out.append(";;;; source engine: %s" % "  ".join(engine))
-    out.append(";;;; source artifact: %s" % source)
+    out.append(";;;; When several vendors are merged the FIRST artifact wins a value")
+    out.append(";;;; conflict; each vendor's own extra commands are all kept (union).")
+    for src, engine in zip(sources, engines):
+        out.append(";;;; source: %s%s"
+                   % (src, ("  [" + "  ".join(engine) + "]") if engine else ""))
     out.append(";;;; kept %d command(s) whose round trip closes%s; dropped %d."
                % (len(pairs), " (+lax one-way)" if lax else "", len(dropped)))
+    if conflicts:
+        out.append(";;;; value divergences across vendors (kept the first's):")
+        for k, kept, other, src in conflicts:
+            out.append(";;;;   %s = %s (kept) vs %s (%s)"
+                       % (strip_underscore(k), kept, other, src))
     if dropped:
         out.append(";;;; dropped (round trip did not close): %s"
                    % ", ".join(strip_underscore(i) for i, _l, _b in dropped))
@@ -94,21 +120,34 @@ def emit(engine, pairs, dropped, source, lax):
 
 
 def main(argv):
-    ap = argparse.ArgumentParser(description="getcname artifact -> cadtui command.sexp")
-    ap.add_argument("artifact", help="dist/getcname/<backend>-<os>.txt")
+    ap = argparse.ArgumentParser(description="getcname artifact(s) -> cadtui command.sexp")
+    ap.add_argument("artifacts", nargs="+",
+                    help="dist/getcname/<backend>-<os>.txt (first wins value conflicts)")
     ap.add_argument("-o", "--output", help="write here instead of stdout")
     ap.add_argument("--lax", action="store_true",
                     help="also keep VALUE lines with no round-trip line")
     args = ap.parse_args(argv)
 
-    engine, fwd, rt = parse(args.artifact)
-    pairs, dropped = build_pairs(fwd, rt, args.lax)
-    text = emit(engine, pairs, dropped, args.artifact, args.lax)
+    # Merge artifacts in order; the FIRST to define a key wins, and every
+    # vendor's own commands are unioned in (a divergent value is recorded).
+    merged_fwd, merged_rt, engines, conflicts = {}, {}, [], []
+    for path in args.artifacts:
+        engine, fwd, rt = parse(path)
+        engines.append(engine)
+        for k, v in fwd.items():
+            if k in merged_fwd and merged_fwd[k] != v:
+                conflicts.append((k, merged_fwd[k], v, path))
+            merged_fwd.setdefault(k, v)
+        for k, v in rt.items():
+            merged_rt.setdefault(k, v)
+
+    pairs, dropped = build_pairs(merged_fwd, merged_rt, args.lax)
+    text = emit(engines, pairs, dropped, args.artifacts, conflicts, args.lax)
     if args.output:
         with open(args.output, "w", encoding="utf-8") as fh:
             fh.write(text)
-        sys.stderr.write("wrote %d command(s) -> %s (dropped %d)\n"
-                         % (len(pairs), args.output, len(dropped)))
+        sys.stderr.write("wrote %d command(s) -> %s (dropped %d, %d divergence(s))\n"
+                         % (len(pairs), args.output, len(dropped), len(conflicts)))
     else:
         sys.stdout.write(text)
     return 0
