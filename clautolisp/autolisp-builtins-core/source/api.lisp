@@ -301,6 +301,15 @@ really is the implementation this file names for it. NIL otherwise."
      "VL-BB-SET"
      "VL-BB-SET expects an AutoLISP symbol, got ~S."
      symbol))
+  ;; C3 (cador-multidocument-host D2 §I.5): the blackboard is values-only.
+  ;; Storing a function (subr, user function, or lambda-form) is an error —
+  ;; the blackboard is one shared object per session, and sharing a callable
+  ;; across documents' namespaces is exactly what C3 forbids.
+  (when (callable-value-p value)
+    (signal-builtin-argument-error
+     :blackboard-function-value
+     "VL-BB-SET"
+     "VL-BB-SET stores values only; a function may not be put on the blackboard (C3)."))
   (blackboard-set symbol value))
 
 (defun builtin-vl-propagate (symbol)

@@ -229,6 +229,29 @@
       (set-default-evaluation-context context-b)
       (is (= 42 (autolisp-symbol-value symbol))))))
 
+(test vl-bb-set-rejects-a-function-value-c3
+  ;; C3 (cador-multidocument-host D2 §I.5): the blackboard is values-only, so
+  ;; storing a function (here a lambda-form value) signals, while a plain value
+  ;; stores fine.
+  (reset-autolisp-symbol-table)
+  (let* ((document (make-document-namespace :name "C3-DOC"))
+         (session (make-runtime-session :current-document document))
+         (context (make-evaluation-context
+                   :session session
+                   :current-document document
+                   :current-namespace document)))
+    (set-default-evaluation-context context)
+    (install-core-builtins)
+    (let* ((bb-set-fn (find-core-builtin "VL-BB-SET"))
+           (sym (intern-autolisp-symbol "C3-KEY"))
+           ;; a minimal lambda-form value: (LAMBDA …) — callable-value-p true.
+           (fn-value (list (intern-autolisp-symbol "LAMBDA")))
+           (code nil))
+      (is (= 7 (call-autolisp-function bb-set-fn sym 7)))   ; a plain value is fine
+      (handler-case (call-autolisp-function bb-set-fn sym fn-value)
+        (autolisp-runtime-error (e) (setf code (autolisp-runtime-error-code e))))
+      (is (eq :blackboard-function-value code)))))
+
 (test builtin-document-namespace-access
   (reset-autolisp-symbol-table)
   (let* ((document (make-document-namespace :name "DRAWING-DOC"))
