@@ -25,18 +25,18 @@ contributes only its own; the base method contributes the non-normal state."))
 (defmethod node-dump-attributes append ((node ui-node))
   ;; The one attribute every node may carry: a non-default display state.
   (unless (eq (ui-state node) :normal)
-    (list (cons "etat" (ui-state node)))))
+    (list (cons "state" (ui-state node)))))
 
 (defmethod node-dump-attributes append ((node ui-band))
   (list (cons "style" (ui-band-style node))))
 
 (defmethod node-dump-attributes append ((node ui-drawing))
   (when (ui-filename node)
-    (list (cons "fichier" (ui-filename node)))))
+    (list (cons "file" (ui-filename node)))))
 
 (defmethod node-dump-attributes append ((node ui-entity))
   (append (when (ui-entity-type node) (list (cons "type" (ui-entity-type node))))
-          (when (ui-layer node) (list (cons "calque" (ui-layer node))))))
+          (when (ui-layer node) (list (cons "layer" (ui-layer node))))))
 
 (defmethod node-dump-attributes append ((node ui-tile))
   (when (ui-tile-type node)
@@ -44,7 +44,7 @@ contributes only its own; the base method contributes the non-normal state."))
 
 (defmethod node-dump-attributes append ((node ui-alert))
   (when (ui-severity node)
-    (list (cons "severite" (ui-severity node)))))
+    (list (cons "severity" (ui-severity node)))))
 
 ;;; --- Line rendering -----------------------------------------------
 
@@ -116,7 +116,7 @@ dump for later relative addressing."
                     &key (shown total) (page-size 50) (number (next-dump-number))
                          (stream *standard-output*))
   "Write the paginated-dump header line: D<n> <relative-path> (<shown>/<total>,
-<page-size> par page). Returns the dump NUMBER."
-  (format stream "D~D ~A (~D/~D, ~D par page)~%"
+<page-size> per page). Returns the dump NUMBER."
+  (format stream "D~D ~A (~D/~D, ~D per page)~%"
           number relative-path shown total page-size)
   number)

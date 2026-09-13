@@ -20,20 +20,20 @@
 (test ui-node-roles-are-per-class
   ;; Each subclass defaults its role to the spec's canonical keyword.
   (is (eq :application (ui-role (make-instance 'ui-application :key "app"))))
-  (is (eq :barre-menu  (ui-role (make-instance 'ui-menubar :key "mb"))))
+  (is (eq :menu-bar  (ui-role (make-instance 'ui-menubar :key "mb"))))
   (is (eq :menu        (ui-role (make-instance 'ui-menu :key "m"))))
   (is (eq :item        (ui-role (make-instance 'ui-menu-item :key "i"))))
-  (is (eq :dessin      (ui-role (make-instance 'ui-drawing :key "d"))))
-  (is (eq :bandeau     (ui-role (make-instance 'ui-band :key "b"))))
-  (is (eq :bouton      (ui-role (make-instance 'ui-button :key "bt"))))
-  (is (eq :onglet      (ui-role (make-instance 'ui-ribbon-tab :key "t"))))
-  (is (eq :panneau     (ui-role (make-instance 'ui-ribbon-panel :key "p"))))
-  (is (eq :vue-cad     (ui-role (make-instance 'ui-cad-view :key "v"))))
-  (is (eq :entite      (ui-role (make-instance 'ui-entity :key "e"))))
-  (is (eq :poignee     (ui-role (make-instance 'ui-grip :key "g"))))
-  (is (eq :alerte      (ui-role (make-instance 'ui-alert :key "a"))))
-  (is (eq :dialogue    (ui-role (make-instance 'ui-dialog :key "dl"))))
-  (is (eq :tuile       (ui-role (make-instance 'ui-tile :key "tl")))))
+  (is (eq :drawing      (ui-role (make-instance 'ui-drawing :key "d"))))
+  (is (eq :band     (ui-role (make-instance 'ui-band :key "b"))))
+  (is (eq :button      (ui-role (make-instance 'ui-button :key "bt"))))
+  (is (eq :ribbon-tab      (ui-role (make-instance 'ui-ribbon-tab :key "t"))))
+  (is (eq :ribbon-panel     (ui-role (make-instance 'ui-ribbon-panel :key "p"))))
+  (is (eq :cad-view     (ui-role (make-instance 'ui-cad-view :key "v"))))
+  (is (eq :entity      (ui-role (make-instance 'ui-entity :key "e"))))
+  (is (eq :grip     (ui-role (make-instance 'ui-grip :key "g"))))
+  (is (eq :alert      (ui-role (make-instance 'ui-alert :key "a"))))
+  (is (eq :dialog    (ui-role (make-instance 'ui-dialog :key "dl"))))
+  (is (eq :tile       (ui-role (make-instance 'ui-tile :key "tl")))))
 
 (test add-child-links-parent-and-preserves-order
   ;; add-child appends in call order and back-links each child to its parent.

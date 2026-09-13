@@ -108,7 +108,20 @@ dump/pagination, et la roadmap de phases.
 les 8 listées dans la spec, ce qui est fait, ce qui reste, et toute
 divergence assumée par rapport à la spec.)
 
-- Phase courante : 1 (modèle d'arbre CLOS minimal) — pas encore démarrée.
+- Phase 1 (modèle d'arbre CLOS minimal) : **FAIT** (2026-09-13). Système
+  `clautolisp/cadtui` : `ui-node` + sous-classes, `add-child`, `dump-node` +
+  `make-application-tree`/`make-cador-tree`, `find-node`/`resolve-target`
+  (chemins absolus). MRs !209/!210/!211. clautolisp 2.2.34.
+- Phase 2 (interpréteur du langage) : **EN COURS**. Décision pjb (2026-09-13,
+  précise la note « anglais » figée ci-dessous) : les tokens canoniques —
+  verbes, mots-clés de méta-commande ET rôles/mots-clés d'adressage — sont en
+  ANGLAIS ; les autres langues ne sont disponibles que selon la locale courante
+  (LANG=fr_FR → tokens français, de_DE → allemands…), via une passe lexicale
+  Phase 7. Conséquence : le vocabulaire FRANÇAIS livré en Phase 1 (rôles
+  :dessin/:entite/:vue-cad…, `dessins[]`, `dessin-actif`) a été re-canonicalisé
+  en anglais (:drawing/:entity/:cad-view…, `drawings[]`, `active-drawing`) avant
+  de bâtir le parseur — la spec §5.2/§5.3 reste la vue fr_FR.
+- Phase courante : 2.
 
 ## Conventions de code héritées de clautolisp
 - Common Lisp, style du dépôt existant (voir fichiers déjà présents
