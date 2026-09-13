@@ -90,28 +90,71 @@ no threads. Parse/address errors become an :error result."
 
 ;;; --- FULL verbs: dump, pagination, help ---------------------------
 
+(defun %last-path-segment (path)
+  "PATH's final /-separated segment (the whole PATH when it has no slash)."
+  (let ((slash (position #\/ path :from-end t)))
+    (if slash (subseq path (1+ slash)) path)))
+
+(defun %strip-last-segment (path)
+  "PATH without its final /segment, e.g. /a/b/entities => /a/b; entities => \"\"."
+  (let ((slash (position #\/ path :from-end t)))
+    (if slash (subseq path 0 slash) "")))
+
+(defun %entities-requested-p (mc target)
+  "True when a dump asks for a CAD view's entities: TARGET ends in the container
+segment 'entities', or a positional :entities keyword is present."
+  (or (and target (string-equal "entities" (%last-path-segment target)))
+      (member :entities (meta-command-positionals mc))))
+
+(defun %cad-view-for-entities (root target)
+  "The ui-cad-view an entities-dump targets: TARGET's parent when it ends in
+/entities, else TARGET itself; NIL when it resolves to no CAD view."
+  (let* ((path (if (and target (string-equal "entities" (%last-path-segment target)))
+                   (%strip-last-segment target)
+                   target)))
+    (when (and path (plusp (length path)))
+      (let ((node (ignore-errors (resolve-target root path))))
+        (and node (%cad-view-of node))))))
+
 (define-verb :dump (mc root)
   (let* ((target (%first-target mc))
-         (node (if target (resolve-target root target) root))
          (depth (%option mc :depth))
          (page (%option mc :page))
          (size (%option mc :size))
          (path (or target "/application")))
-    ;; NB: window: is parsed and accepted here but the 2D spatial cull it selects
-    ;; needs entity bounding boxes = Phase 5; a batch/tree dump ignores it.
-    (if (or page size)
-        ;; a paginated list dump of NODE's children.
-        (let ((text (with-output-to-string (s)
+    (cond
+      ;; a paginated, spatially-culled ENTITY dump (Phase 5 slice 3/4).
+      ((%entities-requested-p mc target)
+       (let ((view (%cad-view-for-entities root target)))
+         (if view
+             (let* ((window (%tuple-numbers (%option mc :window)))
+                    (win (and window (= 4 (length window)) (every #'realp window) window))
+                    (text (with-output-to-string (s)
+                            (dump-entities view :page (or page 1)
+                                           :page-size (or size 50)
+                                           :window win :path path :stream s))))
+               (make-command-result :status :ok :verb :dump :text text
+                                    :data *last-dump*))
+             (make-command-result :status :error :verb :dump
+                                  :text "dump entities needs a cad-view target"))))
+      ;; NB: window: on a non-entity dump selects a 2D cull that only entities
+      ;; carry bounding boxes for; a batch/tree dump ignores it.
+      ((or page size)
+       ;; a paginated list dump of NODE's children.
+       (let* ((node (if target (resolve-target root target) root))
+              (text (with-output-to-string (s)
                       (dump-list node :page (or page 1) :page-size (or size 50)
                                  :path path :stream s))))
-          (make-command-result :status :ok :verb :dump :text text :data *last-dump*))
-        ;; a structural tree dump; still gets a D<n> for later addressing.
-        (let* ((descriptor (register-dump node :path path :depth depth))
-               (text (with-output-to-string (s)
-                       (format s "D~D ~A~%" (dump-descriptor-number descriptor) path)
-                       (dump-node node :depth depth :stream s))))
-          (make-command-result :status :ok :verb :dump :text text
-                               :data descriptor)))))
+         (make-command-result :status :ok :verb :dump :text text :data *last-dump*)))
+      (t
+       ;; a structural tree dump; still gets a D<n> for later addressing.
+       (let* ((node (if target (resolve-target root target) root))
+              (descriptor (register-dump node :path path :depth depth))
+              (text (with-output-to-string (s)
+                      (format s "D~D ~A~%" (dump-descriptor-number descriptor) path)
+                      (dump-node node :depth depth :stream s))))
+         (make-command-result :status :ok :verb :dump :text text
+                              :data descriptor))))))
 
 (defun %page-command (verb which)
   "Re-page the last dump: WHICH is :next, :previous, or a 1-based page integer."

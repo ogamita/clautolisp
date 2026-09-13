@@ -169,8 +169,18 @@ divergence assumée par rapport à la spec.)
     (fonction (page page-size)->(values page-nodes total)) est posé sur
     dump-descriptor ; dump-page re-lit via le provider quand il existe (sinon via
     les enfants statiques). MR !229. clautolisp 2.2.51 / alfe 2.2.59.
-  - Reste : slice 4 (adressage relatif pointé général + routage `:dump` `entities`
-    vers dump-entities + régressions), slice 5 optionnel (bbox blocs/textes).
+  - Slice 4 **FAIT** : (a) le verbe `dump` route vers dump-entities dès qu'on
+    demande les entités — chemin se terminant par `/entities`, ou mot-clé
+    positionnel `:entities` — en honorant `window:`/`page:`/`size:` ; (b)
+    adressage pointé général : chaîne pointée relative à la racine
+    (`drawings[1].cad-view.entities[1].grips[2]`) et chaîne pointée relative au
+    dernier dump (`2A.2` = entité puis poignée). Désambiguïsation des clés
+    pointées : le dernier-dump essaie d'abord la clé ENTIÈRE (donc `plan.dwg`
+    reste une clé, jamais scindée) ; la chaîne racine ne se déclenche que sans
+    `:` (l'adressage role:cle à clé pointée reste un segment unique ou un
+    /chemin absolu — limitation assumée, documentée). MR !230.
+    clautolisp 2.2.52 / alfe 2.2.60.
+  - Reste : slice 5 optionnel (bbox blocs/textes). Phase 5 sinon COMPLÈTE.
 
 ## Conventions de code héritées de clautolisp
 - Common Lisp, style du dépôt existant (voir fichiers déjà présents

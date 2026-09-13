@@ -160,3 +160,47 @@
          (desc (dump-entities view :page-size 50 :stream (%sink))))
     (is (= 5 (dump-descriptor-total desc)))
     (is (equal '("1" "2" "3" "4" "5") (mapcar #'ui-key (ui-children view))))))
+
+;;;; Phase 5 slice 4: the :dump verb routes entities requests to dump-entities.
+
+(defun %entities-view-tree ()
+  "An app whose drawings[1]/cad-view carries a five-entity drawing."
+  (let ((app (make-application-tree))
+        (dwg (make-instance 'ui-drawing :key "plan.dwg"))
+        (view (make-instance 'ui-cad-view :key "cad-view" :drawing (%entity-drawing))))
+    (add-child app dwg)
+    (add-child dwg view)
+    (values app view)))
+
+(test dump-verb-routes-an-entities-path-with-a-window
+  (reset-dump-registry)
+  (multiple-value-bind (app view) (%entities-view-tree)
+    (let ((r (interpret-line
+              "=dump(/application/drawings[1]/cad-view/entities, window: (0 0 5 100))"
+              app)))
+      (is (eq :ok (command-result-status r)))
+      (is (= 1 (dump-descriptor-total (command-result-data r))))
+      (is (equal '("1") (mapcar #'ui-key (ui-children view)))))))
+
+(test dump-verb-routes-the-entities-keyword-with-pagination
+  (reset-dump-registry)
+  (multiple-value-bind (app view) (%entities-view-tree)
+    (let ((r (interpret-line
+              "=dump(/application/drawings[1]/cad-view, :entities, size: 2)" app)))
+      (is (eq :ok (command-result-status r)))
+      (is (= 5 (dump-descriptor-total (command-result-data r))))
+      (is (equal '("1" "2") (mapcar #'ui-key (ui-children view)))))))
+
+(test entities-dump-grips-addressable-by-dotted-reference
+  (reset-dump-registry)
+  (let* ((d (%entity-drawing))
+         (view (make-instance 'ui-cad-view :key "cad-view" :drawing d)))
+    (dump-entities view :page-size 50 :stream (%sink))  ; registers D1
+    ;; D1.<handle>.<grip-key>: entity 3, then its 2nd grip.
+    (let ((g (resolve-target view "D1.3.2")))
+      (is (eq :grip (ui-role g)))
+      (is (string= "2" (ui-key g))))
+    ;; the same via the last-dump dotted form (no D prefix).
+    (let ((g2 (resolve-target view "3.2")))
+      (is (eq :grip (ui-role g2)))
+      (is (string= "2" (ui-key g2))))))

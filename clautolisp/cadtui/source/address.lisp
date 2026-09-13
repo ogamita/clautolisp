@@ -262,6 +262,46 @@ the last dump."
       (find #\: path)
       (string-equal path "active-drawing")))
 
+;;; --- General dotted-relative addressing ---------------------------
+;;;
+;;; A dotted address is either root-relative (drawings[1].cad-view.grips[2]) or
+;;; last-dump-relative (<key>.<cle>..., e.g. an entity handle then a grip). Both
+;;; must not swallow a dotted KEY (drawing filenames are keys with dots, e.g.
+;;; plan.dwg): so the last-dump form tries the WHOLE string as one key first,
+;;; and the root-relative form only fires when the first dotted part is itself a
+;;; relative segment (role[i]/active-drawing) and no ':' segment is present.
+
+(defun %root-dotted-p (path)
+  "True when PATH is a root-relative dotted chain: it has a dot, no ':' (so no
+role:cle segment whose dotted key we might split), several parts, and its first
+part is a relative segment naming a child of the root."
+  (and (find #\. path)
+       (not (find #\: path))
+       (let ((parts (%split-dots path)))
+         (and (rest parts) (%relative-segment-p (first parts))))))
+
+(defun %resolve-root-dotted (root path)
+  "Resolve a root-relative dotted chain (each part a segment of the previous
+node), starting from ROOT."
+  (let ((node root))
+    (dolist (part (%split-dots path) node)
+      (setf node (resolve-segment node part path)))))
+
+(defun %resolve-last-dump-dotted (descriptor path)
+  "Resolve PATH against the last DESCRIPTOR: the WHOLE string as one key first
+(so a dotted key like a filename resolves), else a dotted chain — the first part
+a key in the dump, each further part a dotted-key step into that node's subtree."
+  (let ((whole (ignore-errors (%resolve-in-dump descriptor path path))))
+    (if whole
+        whole
+        (let ((parts (%split-dots path)))
+          (if (rest parts)
+              (let ((node (%resolve-in-dump descriptor (first parts) path)))
+                (dolist (cle (rest parts) node)
+                  (setf node (%resolve-dotted-key node cle path))))
+              ;; single part that missed: re-signal the proper condition.
+              (%resolve-in-dump descriptor path path))))))
+
 (defun resolve-target (root path)
   "Resolve PATH to a node under ROOT, or signal TARGET-NOT-FOUND /
 AMBIGUOUS-TARGET. PATH is an absolute /application path, a D<n>.cle relative
@@ -277,10 +317,12 @@ last dump)."
      (multiple-value-bind (number keys) (%parse-d-reference path)
        (cond
          (number (%resolve-d-reference number keys path))
+         ;; a root-relative dotted chain, e.g. drawings[1].cad-view.grips[2].
+         ((%root-dotted-p path) (%resolve-root-dotted root path))
          ;; a single relative segment resolved against the root.
          ((%relative-segment-p path) (resolve-segment root path path))
-         ;; a bare key: resolve in the last dump.
+         ;; a bare key (or a dotted key/chain) resolved in the last dump.
          (t (let ((descriptor *last-dump*))
               (unless descriptor
                 (error 'target-not-found :path path :segment path))
-              (%resolve-in-dump descriptor path path))))))))
+              (%resolve-last-dump-dotted descriptor path))))))))
