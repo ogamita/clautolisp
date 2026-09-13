@@ -887,18 +887,32 @@ roadmap) decides where CAD-host effects land. The dialect descriptor
 controls the *language*; the host backend controls the *target*.
 Both axes are independent.
 
-- ~--host NAME~          :: Select the backend. Currently accepted:
+- ~--host NAME~          :: Select the host. Currently accepted:
                             ~cador~ (default): the headless in-process
                             CAD core — an in-memory deterministic
                             CAD-database capable of entget / ssget /
                             getvar / getstring etc. (~mock~ is a
-                            deprecated alias of ~cador~). ~nihil~: the
-                            trivial backend — every CAD-host operation
-                            signals ~:host-not-supported~ — useful for
-                            programs that should not touch a host at all
-                            (~null~ / ~none~ are deprecated aliases of
-                            ~nihil~). A remote wire host is reserved for
-                            a later phase.
+                            deprecated alias of ~cador~). ~cadtui~: the
+                            full textual UI-tree host layered on the
+                            cador core — it presents the CAD application
+                            (menu bar, drawings, CAD view with entities
+                            and grips, alerts, DCL dialogs, consoles) as
+                            an inspectable, keyboard-drivable tree, and
+                            installs the cadtui DCL renderer so
+                            ~new_dialog~ / ~start_dialog~ dialogs are
+                            mirrored into that tree for headless,
+                            scriptable testing (cador is cadtui's
+                            degenerate ~/application/console~
+                            configuration). ~nihil~: the trivial backend
+                            — every CAD-host operation signals
+                            ~:host-not-supported~ — useful for programs
+                            that should not touch a host at all (~null~ /
+                            ~none~ are deprecated aliases of ~nihil~). A
+                            remote wire host is reserved for a later
+                            phase. Run ~clautolisp --list-hosts~ for the
+                            list with a one-line summary of each.
+- ~--list-hosts~         :: Print the ~--host~ backends, one per line
+                            with a short summary, and exit.
 - ~--mock-input PATH~    :: Attach the file at PATH as the
                             MockHost's prompt-stream. Lines are
                             consumed in order by ~getstring~,

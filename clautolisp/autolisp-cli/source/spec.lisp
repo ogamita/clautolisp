@@ -256,6 +256,13 @@ specs without mutating the shared template."
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-list-situations-p opts) t)))
+   ;; --list-hosts prints the --host backends with a one-line summary, then
+   ;; exits — companion to --host.
+   (make-option-spec
+    :longs '("--list-hosts") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-list-hosts-p opts) t)))
 
    ;; --- verbosity -------------------------------------------------
    ;; The three verbosity flags compose ADDITIVELY: each handler raises

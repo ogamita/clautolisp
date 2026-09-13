@@ -45,6 +45,7 @@
   (list-encodings-p nil)              ; AC  --list-encodings
   (list-dialects-p  nil)              ; AC  --list-dialects
   (list-situations-p nil)             ; AC  --list-situations
+  (list-hosts-p     nil)              ; AC  --list-hosts
   (list-cad-programs-p nil)           ; AC  --list-cad-programs (alfe)
   (dry-run-p        nil)              ; A
   (print-command-p  nil)              ; A   --print-command: stage the workdir as
@@ -122,17 +123,43 @@
                           value)))))
 
 (defun parse-host (value option)
-  ;; cador = the headless CAD core (was named "mock"); null = the trivial
-  ;; backend. "mock" is kept as a deprecated alias of cador.
+  ;; cador  = the headless CAD core (was named "mock"); "mock" is a deprecated
+  ;;          alias of cador.
+  ;; cadtui = the full textual UI-tree host layered on the cador core (menus,
+  ;;          drawings, cad-view, DCL dialogs mirrored into the tree); cador is
+  ;;          its degenerate /application/console configuration.
+  ;; nihil  = the trivial backend; null/none are deprecated aliases of nihil.
   (cond ((string-equal value "cador") :cador)
         ((string-equal value "mock") :cador)
+        ((string-equal value "cadtui") :cadtui)
         ((string-equal value "nihil") :nihil)
         ((string-equal value "null") :null)
         ((string-equal value "none") :null)
         (t (error 'cli-usage-error
                   :option option
                   :message
-                  (format nil "Unknown --host ~S (expected cador/nihil; mock=alias of cador, null/none=aliases of nihil)" value)))))
+                  (format nil "Unknown --host ~S (expected cador/cadtui/nihil; mock=alias of cador, null/none=aliases of nihil; see --list-hosts)" value)))))
+
+(defparameter *host-descriptions*
+  '(("cador"  . "Headless CAD core: the /application/console tree (default).")
+    ("cadtui" . "Full textual UI-tree host on the cador core: menus, drawings,")
+    (""       . "          CAD view, and DCL dialogs mirrored into an inspectable tree.")
+    ("nihil"  . "Trivial backend: no CAD host at all.")
+    (";aliases" . "mock = cador; null, none = nihil."))
+  "Host name -> one-line summary, for --list-hosts (spec: cador is a degenerate
+cadtui). A key of \"\" continues the previous host's description; a key starting
+with ';' is a trailing note.")
+
+(defun print-hosts (&key (stream *standard-output*))
+  "Print the --host values with a one-line summary each, for --list-hosts."
+  (format stream "Available --host backends:~%")
+  (loop for (name . desc) in *host-descriptions*
+        do (cond ((string= name "")
+                  (format stream "  ~A~%" desc))
+                 ((and (plusp (length name)) (char= (char name 0) #\;))
+                  (format stream "  aliases: ~A~%" desc))
+                 (t (format stream "  ~8A ~A~%" name desc))))
+  (values))
 
 (defun parse-dialect (value option)
   "Validate a --dialect VALUE against the reader's dialect registry and
