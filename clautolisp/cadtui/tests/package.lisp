@@ -53,6 +53,13 @@
                 #:add-band
                 #:ui-description-error
                 #:ui-band-style
+                ;; Phase 7: localisation
+                #:*current-locale*
+                #:register-locale-dictionary
+                #:local-name
+                #:international-name
+                #:resolve-locale
+                #:localise-meta-line
                 ;; slice 3: addressing
                 #:find-node
                 #:resolve-target

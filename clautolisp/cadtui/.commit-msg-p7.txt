@@ -1,0 +1,43 @@
+clautolisp 2.2.54: cadtui phase 7 — localisation (LANG-gated lexical pre-pass)
+
+The interaction language is now localisable exactly as the spec fixes it: the §5
+parser still works ONLY on canonical English tokens, and localisation is a
+LEXICAL pre-pass applied to a meta-command line BEFORE syntactic analysis — one
+locale = one token-local -> token-international table, never a grammar duplicated
+per language.
+
+New locale.lisp:
+- A per-(locale, category) dictionary registry; dictionaries are DATA (alists),
+  so adding a language is adding a table, never touching the parser or tree.
+- local-name / international-name: bidirectional getcname-style lookup with an
+  identity fallback, so a PARTIAL dictionary coexists (unknown -> international).
+- resolve-locale: CLI > LC_ALL > LANG > "en", with .UTF-8/@modifier stripping, a
+  region->language partial fallback (fr_CA -> fr), and a warning (never a
+  failure) when a requested locale has no dictionary. Plus set-current-locale and
+  init-locale-from-environment.
+- localise-meta-line: re-tokenises the line and canonicalises each identifier via
+  the reverse table, leaving punctuation, paths and "..." string literals
+  untouched; a leading _ forces the international form (the AutoCAD convention).
+  Wired into interpret-line before parse (identity under the default "en").
+- A locale(fr_FR) meta-command verb switches the active locale at runtime.
+- Interaction dictionaries: fr_FR (reference), de_DE / es_ES (partial, proving
+  the fallback). The Lisp language is never localised — the pre-pass only runs on
+  an escaped meta-command.
+
+So the spec's equivalence holds:
+  activer(dessin("Dessin1.dwg")) = activate(drawing("Dessin1.dwg"))
+  = aktivieren(Zeichnung("Dessin1.dwg")) = activar(dibujo("Dessin1.dwg")).
+
+Out of headless scope (recorded in cadtui/CLAUDE.md): the three CAD-command
+dictionaries (command names, in-command option keywords, keyboard aliases) need
+live CAD runners (issues/open/cadtui-locale-*), and the --locale/--lang CLI flag
+is a small cross-module addition deferred (the API, LANG/LC_ALL, and the
+locale() verb already work).
+
+Tests: new locale-tests (bidirectional names + identity fallback, resolve-locale
+precedence/normalisation/fallback, localise-meta-line for fr/de/es + string
+literals + role[i]/options, _ forcing, interpret-line honouring the locale, the
+locale verb). Full make -C clautolisp test-sbcl green. alfe 2.2.62 tracks.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01XDPCe5o6LJkv4CR2FvYauz

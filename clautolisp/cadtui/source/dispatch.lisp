@@ -82,7 +82,12 @@ no threads. Parse/address errors become an :error result."
                               :text payload :data console)))
       (:meta-command
        (handler-case
-           (dispatch-meta-command (parse-meta-command payload) root)
+           ;; Phase 7: a lexical pre-pass canonicalises the localised tokens
+           ;; (verbs / role + option keywords) into English before parsing, so
+           ;; the parser only ever sees the canonical form. Under "en" (default)
+           ;; this is the identity.
+           (dispatch-meta-command
+            (parse-meta-command (localise-meta-line payload)) root)
          (cadtui-error (condition)
            (make-command-result :status :error :verb nil
                                 :text (princ-to-string condition)
@@ -202,6 +207,23 @@ a D<n>.key reference, or a bare key from the last dump."
 
 (define-verb :help (mc root)
   (make-command-result :status :ok :verb :help :text *help-text*))
+
+(define-verb :locale (mc root)
+  ;; Switch the active interaction locale at runtime (spec §Localisation:
+  ;; locale(fr_FR)). The requested locale resolves via the CLI>LC_ALL>LANG chain
+  ;; with region fallback; an unknown one falls back to en (with a warning).
+  (let* ((p (first (meta-command-positionals mc)))
+         (requested (cond ((and (consp p) (eq (car p) :target)) (cdr p))
+                          ((stringp p) p)
+                          ((keywordp p) (string-downcase (symbol-name p)))
+                          ((null p) nil)
+                          (t (princ-to-string p)))))
+    (if (null requested)
+        (make-command-result :status :ok :verb :locale :data *current-locale*
+                             :text (format nil "locale is ~A" *current-locale*))
+        (let ((selected (set-current-locale requested)))
+          (make-command-result :status :ok :verb :locale :data selected
+                               :text (format nil "locale set to ~A" selected))))))
 
 ;;; --- PARTIAL (tree-only) and STAND-IN verbs (Phase 2 slice 5) ------
 ;;;

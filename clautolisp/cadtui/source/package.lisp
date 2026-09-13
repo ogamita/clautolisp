@@ -227,6 +227,16 @@ documentation/cadtui-specifications.org (normative).")
    #:entity->ui-entity
    #:dump-entities
    #:%bbox-intersects-p
+   ;; Phase 7: localisation (LANG-gated lexical pre-pass over English tokens).
+   #:*current-locale*
+   #:*locale-dictionaries*
+   #:register-locale-dictionary
+   #:local-name
+   #:international-name
+   #:resolve-locale
+   #:set-current-locale
+   #:init-locale-from-environment
+   #:localise-meta-line
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key
