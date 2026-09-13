@@ -400,3 +400,80 @@ thread rendezvous INTO =scheduler-activate= (spawn/switch driven by the real
 document switch, with the global-vs-per-thread specials installed under the
 handoff lock), wire real park points (get-family prompts, prompting host-command)
 to =scheduler-switch=, and the §13.4 correlation stack.
+
+** Slice 3e DONE (2026-09-13) — thread rendezvous folded into scheduler-activate
+
+=scheduler-activate= becomes the single entry every caller uses and dispatches
+on the target context's new =thunk= slot:
+- =thunk= nil → the pure synchronous state machine of slices 2a-2c, byte-for-byte
+  (extracted as =%scheduler-activate-synchronous= over a shared
+  =%scheduler-install-context= helper). Single-document and every scripted/batch
+  cador run take this path — they park nowhere (D2 §I.2) — so NO thread is
+  spawned there. =scheduler-activate-spawns-no-thread= still passes verbatim.
+- =thunk= set → the thread rendezvous: from the driver thread, lazily
+  =scheduler-spawn-context= + =scheduler-start=; from a running context's OWN
+  thread (=%on-context-thread-p=), hand off via =scheduler-switch=.
+- Env install (active context + restore-env + current-document lock-step, firing
+  =*document-activation-hook*=) now runs ON the woken thread. Each context thread
+  establishes thread-local bindings of the two per-evaluation process-globals
+  (=*active-evaluation-context*=, =*current-form*=) at birth, so install-on-wake
+  SETFs are private — no cross-thread leak, and the FiveAM double run stays
+  isolated. =scheduler-switch= saves env before parking, reinstalls on :run
+  resume, returns without reinstalling on :exit (teardown).
+- Tests (=scheduler-tests.lisp=, +4, timeout-guarded, thread-torn-down): driver
+  bootstrap; activate-from-context-thread routes through switch with strict
+  interleaving; per-thread env install; mixed bare/thread-backed scheduler. The
+  9 synchronous scheduler tests + E1/E2 conformance pass verbatim.
+- Verified: =make -C clautolisp test-sbcl= exit 0 (33 suites, Fail: 0). MR !206.
+
+Remaining: wire real park points (get-family prompts / prompting host-command)
+to the rendezvous (3f), and the §13.4 correlation forest (3g).
+
+** Slice 3f DONE (2026-09-13) — interactive-input parking (park-to-runner)
+
+The real park points are cador's interactive reads. =scheduler-switch= hands to a
+SPECIFIC successor; a context parking for input has none, so it yields to the
+DRIVER (the launcher/REPL thread, or in tests the test body) via a new
+per-scheduler =driver-mailbox=.
+
+- =autolisp-runtime/source/scheduler.lisp=: =document-scheduler= gains
+  =driver-mailbox= (created lazily via =%scheduler-driver-mailbox= — the struct
+  default cannot forward-reference =make-park-mailbox=). New primitives:
+  =scheduler-park= (SC's own thread: save env, mark :parked + clear RUNNING so
+  zero contexts run — C2 holds with a nil runner — notify the driver with
+  =(:park sc request)=, then block on SC's mailbox; on resume re-promote +
+  reinstall and return the response, on :exit return :exit for teardown);
+  =scheduler-await-park= (driver: block for the next =(:park …)=);
+  =scheduler-serve-park= (driver: run REQUEST on the DRIVER thread — the blocking
+  read never touches the runner, D1 §13.1 — then resume SC; does not touch
+  RUNNING). =scheduler-on-context-thread-p= exposes the parking-capable check.
+- =cador/source/prompt-api.lisp=: new =%prompt-input-status= classifies a stream
+  =:eof= / =:ready= / =:would-block= via =read-char-no-hang= (which on a string
+  stream returns a char or :eof and NEVER nil → batch classifies :ready/:eof
+  only, never :would-block: the CI-determinism guard). =read-prompt-line= and
+  =host-grread= now park only on the interactive :would-block branch, through
+  =%cador-maybe-park-read=, which reaches the scheduler via the per-thread active
+  evaluation context (NOT a host back-pointer — one cador host is shared across
+  documents) and degrades to a plain synchronous read when there is no scheduler
+  or the caller is not on a context thread. No cador model slot, no api.lisp
+  hook, no cador package export change: cador calls INTO the runtime (the reverse
+  of the activation-hook inversion).
+- =cador/source/command-api.lisp=: comment at =host-command= — it reads no prompt
+  stream, so no prompting-host-command park point exists yet (D1 §13.5 future);
+  when added it routes through the same seam.
+- Tests: runtime (+5, =scheduler-tests.lisp=): notify+resume-with-response;
+  runner cleared while parked then restored; request runs on the driver thread
+  not the runner; :exit unwinds without reinstall; on-context-thread predicate.
+  cador (+4, =prompt-tests.lisp=): string streams classify synchronously (batch
+  parks nowhere); scripted read stays synchronous; bridge degrades without a
+  scheduler; end-to-end park+resume through =%cador-maybe-park-read= on a
+  scheduler-backed context thread. All timeout-guarded + thread-torn-down; all
+  existing tests unchanged.
+- Verified: =make -C clautolisp test-sbcl= exit 0 (Fail: 0). MR !NNN.
+
+Seam for 3g (correlation forest §13.4): REQUEST is opaque to the scheduler; the
+notification names WHICH sc parked and SERVE takes an explicit sc, so a later
+driver may arbitrate among N parked contexts and carry a per-document
+correlation stack without changing these signatures.
+
+Remaining: the §13.4 per-document correlation forest (3g).

@@ -49,14 +49,62 @@ initget is issued."
       ;; harmless no-op.
       (finish-output sink))))
 
-(defun read-prompt-line (host)
-  "Read one line from HOST's prompt-stream, returning the line as a
-CL string or :eof on end of stream / when no input was configured."
-  (let ((stream (cador-prompt-stream host)))
+(defun %prompt-input-status (stream)
+  "Classify STREAM for a prompt read WITHOUT consuming a usable character:
+:EOF at end of stream, :READY when a character is available now, :WOULD-BLOCK
+when the stream is open but no character is available yet.
+
+Uses READ-CHAR-NO-HANG: per ANSI, on a non-interactive stream (a string or file
+stream -- every scripted/batch/--mock-input source) it returns a character or
+:EOF and NEVER NIL, so such streams classify :READY or :EOF only and never
+:WOULD-BLOCK. That is the CI-determinism guard (slice 3f): a batch cador run
+parks nowhere. A character peeked on the :READY branch is unread, so no input is
+lost."
+  (let ((ch (read-char-no-hang stream nil :eof)))
     (cond
-      ((null stream) :eof)
-      (t (let ((line (read-line stream nil :eof)))
-           line)))))
+      ((eq ch :eof) :eof)
+      ((null ch) :would-block)
+      (t (unread-char ch stream) :ready))))
+
+(defun %cador-maybe-park-read (host reader)
+  "Bridge a cador prompt read to the runtime scheduler when -- and only when --
+the caller runs on a parking-capable context thread (slice 3f). When the active
+session has a scheduler and this thread IS its running context, yield to the
+driver via SCHEDULER-PARK: the driver performs the blocking READER on its own
+thread and resumes us with the value (D1 §13.1 -- a host request does not block
+the runner). Otherwise (no scheduler, or the single-document REPL driver thread)
+just call READER synchronously, so single-document behaviour is unchanged. HOST
+is accepted for symmetry with the readers; the scheduler is reached through the
+per-thread active evaluation context, not a host back-pointer (one cador host is
+shared across all documents)."
+  (declare (ignore host))
+  (let* ((ctx (clautolisp.autolisp-runtime:current-evaluation-context))
+         (session (and ctx (clautolisp.autolisp-runtime:evaluation-context-session
+                            ctx)))
+         (scheduler (and session
+                         (clautolisp.autolisp-runtime:session-scheduler session)))
+         (sc (and scheduler
+                  (clautolisp.autolisp-runtime:scheduler-current-context scheduler))))
+    (if (and scheduler sc
+             (clautolisp.autolisp-runtime:scheduler-on-context-thread-p scheduler))
+        (clautolisp.autolisp-runtime:scheduler-park scheduler sc reader)
+        (funcall reader))))
+
+(defun read-prompt-line (host)
+  "Read one line from HOST's prompt-stream, returning the line as a CL string or
+:eof on end of stream / when no input was configured. At a real park point -- an
+interactive stream with no input available yet -- yield to the scheduler driver
+(slice 3f); a scripted/batch string stream never blocks, so it is read
+synchronously exactly as before."
+  (let ((stream (cador-prompt-stream host)))
+    (if (null stream)
+        :eof
+        (ecase (%prompt-input-status stream)
+          (:eof :eof)
+          (:ready (read-line stream nil :eof))
+          (:would-block
+           (%cador-maybe-park-read host
+                                   (lambda () (read-line stream nil :eof))))))))
 
 (defmethod host-grread ((host cador) track key-press cursor)
   "clautolisp keyboard grread (grread-keyboard-event-is-a-list-not-a-dotted-pair
@@ -68,7 +116,12 @@ TRACK/KEY-PRESS/CURSOR are inert in a terminal."
   (declare (ignore track key-press cursor))
   (let ((stream (cador-prompt-stream host)))
     (when stream
-      (let ((ch (read-char stream nil :eof)))
+      (let ((ch (ecase (%prompt-input-status stream)
+                  (:eof :eof)
+                  (:ready (read-char stream nil :eof))
+                  (:would-block
+                   (%cador-maybe-park-read
+                    host (lambda () (read-char stream nil :eof)))))))
         (unless (eql ch :eof)
           (list 2 (char-code ch)))))))
 

@@ -152,3 +152,68 @@ degrees is not bit-exact)."
      mock (clautolisp.autolisp-runtime:make-autolisp-string "Enter: "))
     (is (search "Enter: "
                 (get-output-stream-string (cador-prompt-output mock))))))
+
+;;; --- Interactive-input parking (cador-2 slice 3f) -----------------
+
+(test prompt-input-status-classifies-string-streams-synchronously
+  ;; The CI-determinism guard: a string-input-stream -- every scripted / batch /
+  ;; --mock-input source -- classifies :ready or :eof and NEVER :would-block, so
+  ;; a batch cador run never reaches the park branch. The peeked char is unread,
+  ;; not lost.
+  (let ((s (make-string-input-stream "hi")))
+    (is (eq :ready (clautolisp.cador::%prompt-input-status s)))
+    (is (eql #\h (read-char s)))
+    (is (eql #\i (read-char s))))
+  (let ((empty (make-string-input-stream "")))
+    (is (eq :eof (clautolisp.cador::%prompt-input-status empty)))))
+
+(test read-prompt-line-scripted-stream-stays-synchronous
+  ;; A scripted host (no scheduler) reads exactly as before through the rewritten
+  ;; read-prompt-line -- get-family values unchanged, no thread, no park.
+  (let ((mock (cador-with-input '("hello" "42"))))
+    (is (string= "hello"
+                 (clautolisp.autolisp-runtime:autolisp-string-value
+                  (clautolisp.autolisp-host:host-getstring mock nil))))
+    (is (eql 42 (clautolisp.autolisp-host:host-getint mock nil)))))
+
+(test cador-maybe-park-read-degrades-synchronously-without-scheduler
+  ;; Off a context thread / with no scheduler on the active session, the bridge
+  ;; just calls the reader and returns its value.
+  (let ((mock (make-cador)))
+    (is (equal "sync"
+               (clautolisp.cador::%cador-maybe-park-read
+                mock (lambda () "sync"))))))
+
+(test cador-prompt-read-parks-via-bridge-and-resumes
+  ;; End-to-end: a scheduler-backed context on its own thread reads through the
+  ;; cador prompt bridge; the read yields to the driver (scheduler-park), which
+  ;; supplies the value on its own thread and resumes the context -- proving
+  ;; cador reaches the scheduler purely through the per-thread active context.
+  (let* ((mock (make-cador))
+         (session (make-runtime-session))
+         (sched (make-document-scheduler))
+         (ns (make-document-namespace :name "D"))
+         (ctx (make-evaluation-context :session session
+                                       :current-document ns
+                                       :current-namespace ns))
+         (x (make-scheduled-context :context ctx :document-key "D"))
+         (results (make-park-mailbox)))
+    (setf (document-namespace-host-document-key ns) "D")
+    (setf (session-scheduler session) sched)
+    (scheduler-register-context sched x)
+    (scheduler-spawn-context sched x
+      (lambda ()
+        (park-mailbox-push results
+                           (clautolisp.cador::%cador-maybe-park-read
+                            mock (lambda () "canned-line")))))
+    (unwind-protect
+         (progn
+           (scheduler-start sched x)
+           (let ((note (scheduler-await-park sched 5)))
+             (is (eq :park (first note)))
+             (scheduler-serve-park sched note))
+           (is (equal "canned-line" (park-mailbox-pop results 5))))
+      (let ((th (scheduled-context-thread x)))
+        (when (and th (bordeaux-threads:thread-alive-p th))
+          (ignore-errors (park-mailbox-push (scheduled-context-mailbox x) :exit))
+          (ignore-errors (bordeaux-threads:join-thread th)))))))
