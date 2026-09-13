@@ -161,9 +161,16 @@ divergence assumée par rapport à la spec.)
     zoom(factor: f) échelle en place autour du centre (met à jour viewport-scale) ;
     pan(dx, dy) translate les bornes ; dump(...) ne mute JAMAIS la viewport.
     Accesseur ui-viewport exporté. MR !228. clautolisp 2.2.50 / alfe 2.2.58.
-  - Reste : slice 3 (dump-entities : filtre spatial → pagination → registre via un
-    `provider` sur dump-descriptor), slice 4 (adressage relatif pointé général +
-    routage `:dump` `entities`), slice 5 optionnel (bbox blocs/textes).
+  - Slice 3 **FAIT** : dump-entities (cad-view.lisp) — itère les VALEURS d'entités
+    (pas de matérialisation en masse), cull spatial via %bbox-intersects-p contre
+    la fenêtre explicite `window:` ou, à défaut, les bornes de la viewport ou, à
+    défaut, aucune ; pagine ; ne matérialise en ui-entity QUE la page affichée
+    (mirror paresseux : remplace les enfants du cad-view). Un slot `provider`
+    (fonction (page page-size)->(values page-nodes total)) est posé sur
+    dump-descriptor ; dump-page re-lit via le provider quand il existe (sinon via
+    les enfants statiques). MR !229. clautolisp 2.2.51 / alfe 2.2.59.
+  - Reste : slice 4 (adressage relatif pointé général + routage `:dump` `entities`
+    vers dump-entities + régressions), slice 5 optionnel (bbox blocs/textes).
 
 ## Conventions de code héritées de clautolisp
 - Common Lisp, style du dépôt existant (voir fichiers déjà présents

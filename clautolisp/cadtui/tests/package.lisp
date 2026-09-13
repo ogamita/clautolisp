@@ -102,6 +102,8 @@
                 #:ui-viewport
                 #:entity-bounding-box
                 #:entity->ui-entity
+                #:dump-entities
+                #:dump-descriptor-total
                 #:viewport
                 #:make-viewport
                 #:viewport-bounds)

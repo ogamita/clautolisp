@@ -133,6 +133,7 @@ documentation/cadtui-specifications.org (normative).")
    #:dump-descriptor-total
    #:dump-descriptor-page
    #:dump-descriptor-page-size
+   #:dump-descriptor-provider
    #:*dump-registry*
    #:reset-dump-registry
    #:find-dump
@@ -215,6 +216,7 @@ documentation/cadtui-specifications.org (normative).")
    #:viewport-bounds
    #:entity-bounding-box
    #:entity->ui-entity
+   #:dump-entities
    #:%bbox-intersects-p
    ;; Conditions.
    #:cadtui-error
