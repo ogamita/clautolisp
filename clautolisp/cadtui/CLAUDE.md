@@ -228,6 +228,22 @@ divergence assumée par rapport à la spec.)
   toucher locale.lisp ou :force.) NB BricsCAD des runners = install FRANÇAIS
   (getcname y donne les vrais noms fr_FR) ; getcname est un stub nil côté
   clautolisp (donc --clautolisp = dry-run mécanique seulement).
+- Phase 7 — sonde getcname + convertisseur (issue cadtui-locale-probe-getcname) :
+  **MACHINERIE FAITE** (MR !235). getcname-probe.lsp (scenario alfe) + scripts
+  run-getcname-probe.{sh,ps1} + jobs SOFT cad dans .gitlab/native.yml (BricsCAD
+  macOS+Windows, AutoCAD+AcCoreConsole Windows, artefacts dist/getcname/) +
+  convertisseur scripts/cadtui-getcname-to-sexp.py (garde les lignes VALUE dont
+  l'aller-retour boucle → command.sexp). Validé sur --clautolisp (143 lignes
+  ABSENT bien formées + DONE). Le harvest fr_FR autoritatif tourne sur le runner
+  français ; l'artefact converti REMPLACE command.sexp.
+- Phase 7 — dictionnaire fr_FR de COMMANDES CAD (seed) : **FAIT** (MR !236).
+  data/locale/fr_FR/command.sexp : 26 commandes courantes vérifiées sur l'aide
+  BricsCAD fr-fr (URL=anglais, titre=français) + recoupées avec les exemples
+  getcname de l'autolisp-spec. C'est un SEED : le harvest getcname le complète/
+  vérifie (aller-retour). RESTE : le harvest complet (toutes commandes) ; les
+  alias .pgp (issue cadtui-locale-probe-pgp-aliases, P3, dans default.pgp de
+  l'install) ; les mots-clés d'option (issue cadtui-locale-option-keywords, P3) ;
+  le drapeau CLI --locale/--lang.
 - Phase 8 (backend de rendu visuel, OPTIONNEL) : **FAIT** (seam testable,
   2026-09-13). render.lisp : *screen-renderer* (indirection de backend) +
   text-screen-renderer headless déterministe (en-tête, ligne de menus, liste des
