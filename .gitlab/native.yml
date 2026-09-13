@@ -466,6 +466,47 @@ getcname:probe:accoreconsole:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-getcname-probe.ps1 -Backend accoreconsole
 
+# --- keyboard command aliases: the .pgp harvest for cadtui -------------------
+#
+# cadtui-locale-probe-pgp-aliases.issue. The third, distinct CAD locale
+# dictionary (purely local aliases, never _-prefixed). The probe just LOCATES
+# and reads the install's alias file (acad.pgp / default.pgp); on the localised
+# runner it yields the French aliases (L -> LIGNE). Soft. Artifacts feed
+# scripts/cadtui-pgp-to-sexp.py -> alias.sexp.
+.pgp-artifacts:
+  artifacts:
+    name: "pgp-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/pgp/]
+    expire_in: 30 days
+
+pgp:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .pgp-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-pgp-probe.sh --backend bricscad
+
+pgp:probe:bricscad:windows:
+  extends: [.gate-windows-cad-soft, .pgp-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pgp-probe.ps1 -Backend bricscad
+
+pgp:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .pgp-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pgp-probe.ps1 -Backend autocad
+
 .pathname-artifacts:
   interruptible: true
   artifacts:
