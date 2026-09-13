@@ -85,10 +85,15 @@
    #:scheduled-context-context
    #:scheduled-context-document-key
    #:scheduled-context-status
+   #:scheduled-context-saved-env
+   #:scheduled-context-pending-break
    #:scheduler-register-context
    #:scheduler-context-list
    #:scheduler-current-context
    #:scheduler-activate
+   #:scheduler-request-break
+   #:scheduler-pending-break-p
+   #:scheduler-observe-break
    #:autolisp-file
    #:make-autolisp-file
    #:autolisp-format-real

@@ -25,7 +25,10 @@ image the host layer installs a real *DOCUMENT-ACTIVATION-HOOK* at load, and a
 SETF-then-restore-to-nil would clobber it for every later suite."
   `(let ((clautolisp.autolisp-runtime.internal::*active-evaluation-context*
            clautolisp.autolisp-runtime.internal::*active-evaluation-context*)
-         (*document-activation-hook* *document-activation-hook*))
+         (*document-activation-hook* *document-activation-hook*)
+         ;; slice 2c: the per-context global the scheduler saves/restores.
+         (clautolisp.autolisp-runtime::*current-form*
+           clautolisp.autolisp-runtime::*current-form*))
      ,@body))
 
 (test scheduler-registers-and-lists-contexts
@@ -107,3 +110,72 @@ SETF-then-restore-to-nil would clobber it for every later suite."
   ;; asserted here.)
   (let ((session (make-runtime-session)))
     (is (null (session-scheduler session)))))
+
+;;; --- Per-context save/restore (slice 2c) --------------------------
+
+(test scheduler-activate-saves-and-restores-per-context-form
+  ;; *current-form* is a per-context runtime global carried through saved-env:
+  ;; demoting a context saves it, promoting a context restores it.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (x (%make-doc-context session "X" "X"))
+           (y (%make-doc-context session "Y" "Y")))
+      (scheduler-register-context sched x)
+      (scheduler-register-context sched y)
+      (scheduler-activate sched x)                             ; X runs
+      (setf clautolisp.autolisp-runtime::*current-form* :form-a)
+      (scheduler-activate sched y)                             ; demote X (saves A)
+      (is (eq :form-a (getf (scheduled-context-saved-env x) :current-form)))
+      (setf clautolisp.autolisp-runtime::*current-form* :form-b) ; Y's form
+      (scheduler-activate sched x)                             ; promote X -> restore A
+      (is (eq :form-a clautolisp.autolisp-runtime::*current-form*))
+      ;; and Y's B was saved when Y was demoted
+      (is (eq :form-b (getf (scheduled-context-saved-env y) :current-form))))))
+
+(test scheduler-activate-restore-is-noop-for-never-run-context
+  ;; First activation of a context (saved-env nil) must not clobber the global.
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (x (%make-doc-context session "X" "X")))
+      (scheduler-register-context sched x)
+      (setf clautolisp.autolisp-runtime::*current-form* :sentinel)
+      (scheduler-activate sched x)
+      (is (eq :sentinel clautolisp.autolisp-runtime::*current-form*))
+      (is (null (scheduled-context-saved-env x))))))
+
+;;; --- Deferred-break discipline (slice 2c) -------------------------
+
+(test scheduler-request-break-sets-flag-on-target-and-running
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (x (%make-doc-context session "X" "X"))
+           (y (%make-doc-context session "Y" "Y")))
+      (scheduler-register-context sched x)
+      (scheduler-register-context sched y)
+      (scheduler-request-break sched y)              ; explicit target
+      (is (scheduler-pending-break-p y))
+      (is (not (scheduler-pending-break-p x)))
+      (scheduler-activate sched x)
+      (scheduler-request-break sched)                ; default = running (X)
+      (is (scheduler-pending-break-p x)))))
+
+(test scheduler-observe-break-clears-and-defers
+  (%with-fresh-active-context
+    (let* ((session (make-runtime-session))
+           (sched (make-document-scheduler))
+           (x (%make-doc-context session "X" "X"))
+           (y (%make-doc-context session "Y" "Y")))
+      (scheduler-register-context sched x)
+      (scheduler-register-context sched y)
+      (scheduler-activate sched x)
+      (scheduler-request-break sched x)
+      (is (eq t (scheduler-observe-break sched)))    ; running context's break due
+      (is (null (scheduler-observe-break sched)))    ; cleared (observe-once)
+      ;; a break on a NON-running context is deferred until it is activated
+      (scheduler-request-break sched y)
+      (is (null (scheduler-observe-break sched)))    ; X runs, Y's break not due
+      (scheduler-activate sched y)
+      (is (eq t (scheduler-observe-break sched))))))  ; now Y runs -> due
