@@ -151,7 +151,19 @@ divergence assumée par rapport à la spec.)
   REFINEMENT DIFFÉRÉ (plan slice 5) : brancher le producteur de start_dialog sur
   la console vivante (la file DCL pré-remplie de la Phase 3 fonctionne déjà) —
   petit, non bloquant, à reprendre au besoin.
-- Phase courante : 5 (vue CAD + entités + pagination spatiale).
+- Phase 5 (vue CAD + entités + pagination spatiale) : **EN COURS**.
+  - Slice 1 **FAIT** : dépendance clautolisp/drawing, slot drawing de ui-cad-view,
+    cad-view.lisp (struct viewport + viewport-bounds, entity-bounding-box,
+    %bbox-intersects-p, entity->ui-entity), attributs de dump ui-grip. MR !227.
+    clautolisp 2.2.49.
+  - Slice 2 **FAIT** : viewport (fenetre-visualisation) réellement câblée aux
+    verbes zoom/pan. zoom(window: (x1 y1 x2 y2)) fixe les bornes du monde visible ;
+    zoom(factor: f) échelle en place autour du centre (met à jour viewport-scale) ;
+    pan(dx, dy) translate les bornes ; dump(...) ne mute JAMAIS la viewport.
+    Accesseur ui-viewport exporté. MR !228. clautolisp 2.2.50 / alfe 2.2.58.
+  - Reste : slice 3 (dump-entities : filtre spatial → pagination → registre via un
+    `provider` sur dump-descriptor), slice 4 (adressage relatif pointé général +
+    routage `:dump` `entities`), slice 5 optionnel (bbox blocs/textes).
 
 ## Conventions de code héritées de clautolisp
 - Common Lisp, style du dépôt existant (voir fichiers déjà présents

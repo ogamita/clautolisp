@@ -56,3 +56,49 @@
       (is (search "grip:1" line))
       (is (search "index=1" line))
       (is (search "point=(1.0 2.0 0.0)" line)))))
+
+;;;; Phase 5 slice 2: the viewport wired to the zoom/pan verbs.
+
+(defun %view-tree ()
+  "An app with one drawing whose cad-view is reachable at
+/application/drawings[1]/cad-view."
+  (let ((app (make-application-tree))
+        (dwg (make-instance 'ui-drawing :key "plan.dwg")))
+    (add-child app dwg)
+    (add-child dwg (make-instance 'ui-cad-view :key "cad-view"))
+    app))
+
+(test zoom-window-sets-viewport-bounds
+  (let* ((app (%view-tree))
+         (view (resolve-target app "/application/drawings[1]/cad-view"))
+         (r (interpret-line "=zoom(/application/drawings[1]/cad-view, window: (0 0 100 50))" app)))
+    (is (eq :ok (command-result-status r)))
+    (is (equal '(0 0 100 50) (viewport-bounds (ui-viewport view))))))
+
+(test zoom-factor-and-pan-return-ok-and-move-bounds
+  (let* ((app (%view-tree))
+         (view (resolve-target app "/application/drawings[1]/cad-view")))
+    ;; establish a known window first.
+    (interpret-line "=zoom(/application/drawings[1]/cad-view, window: (0 0 100 50))" app)
+    ;; factor: 2 halves the window about its centre (50,25).
+    (let ((r (interpret-line "=zoom(/application/drawings[1]/cad-view, factor: 2)" app)))
+      (is (eq :ok (command-result-status r))))
+    (let ((b (viewport-bounds (ui-viewport view))))
+      (is (= 25 (first b)))  (is (= (/ 25 2) (second b)))
+      (is (= 75 (third b)))  (is (= (/ 75 2) (fourth b))))
+    ;; pan shifts the window by (dx dy).
+    (let ((r (interpret-line "=pan(/application/drawings[1]/cad-view, 5, 5)" app)))
+      (is (eq :ok (command-result-status r))))
+    (let ((b (viewport-bounds (ui-viewport view))))
+      (is (= 30 (first b)))
+      (is (= 80 (third b))))))
+
+(test dump-does-not-mutate-the-viewport
+  (reset-dump-registry)
+  (let* ((app (%view-tree))
+         (view (resolve-target app "/application/drawings[1]/cad-view")))
+    (interpret-line "=zoom(/application/drawings[1]/cad-view, window: (0 0 100 50))" app)
+    (let ((before (viewport-bounds (ui-viewport view)))
+          (r (interpret-line "=dump(/application/drawings[1]/cad-view)" app)))
+      (is (eq :ok (command-result-status r)))
+      (is (equal before (viewport-bounds (ui-viewport view)))))))

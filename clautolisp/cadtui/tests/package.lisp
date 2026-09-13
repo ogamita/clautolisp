@@ -99,6 +99,7 @@
                 #:tui-command-escape
                 ;; Phase 5: CAD view + entities
                 #:ui-cad-view-drawing
+                #:ui-viewport
                 #:entity-bounding-box
                 #:entity->ui-entity
                 #:viewport

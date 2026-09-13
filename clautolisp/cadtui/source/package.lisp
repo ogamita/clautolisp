@@ -207,6 +207,8 @@ documentation/cadtui-specifications.org (normative).")
    #:tui-command-escape
    ;; Phase 5: CAD view + entities + viewport.
    #:ui-cad-view-drawing
+   #:ui-viewport
+   #:ui-selection
    #:viewport
    #:make-viewport
    #:viewport-x1 #:viewport-y1 #:viewport-x2 #:viewport-y2 #:viewport-scale

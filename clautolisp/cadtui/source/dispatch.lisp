@@ -273,18 +273,53 @@ active-drawing (= drawings[1]) becomes DRAWING."
                               :text (format nil "closed ~A:~A"
                                             (%role-name node) (ui-key node))))))))
 
+(defun %ensure-viewport (view)
+  "VIEW's viewport struct, creating (and installing) a fresh one if unset."
+  (or (ui-viewport view)
+      (setf (ui-viewport view) (make-viewport))))
+
+(defun %tuple-numbers (value)
+  "The numbers of a parsed tuple VALUE (:tuple n ...), or NIL for anything else."
+  (when (and (consp value) (eq (car value) :tuple))
+    (cdr value)))
+
 (define-verb :zoom (mc root)
   (let* ((target (%first-target mc))
          (node (and target (resolve-target root target)))
-         (view (and node (%cad-view-of node))))
-    (if view
-        (progn
-          (setf (ui-viewport view)
-                (cond ((%option mc :window) (list :window (%option mc :window)))
-                      ((%option mc :factor) (list :factor (%option mc :factor)))
-                      (t (list :zoom))))
-          (make-command-result :status :ok :verb :zoom :data view :text "zoomed"))
-        (make-command-result :status :error :verb :zoom :text "no cad-view to zoom"))))
+         (view (and node (%cad-view-of node)))
+         (window (%tuple-numbers (%option mc :window)))
+         (factor (%option mc :factor)))
+    (cond
+      ((null view)
+       (make-command-result :status :error :verb :zoom :text "no cad-view to zoom"))
+      ;; zoom(window:) sets the visible world rectangle (the display changes).
+      ((%option mc :window)
+       (if (and window (= 4 (length window)) (every #'realp window))
+           (destructuring-bind (x1 y1 x2 y2) window
+             (let ((vp (%ensure-viewport view)))
+               (setf (viewport-x1 vp) x1 (viewport-y1 vp) y1
+                     (viewport-x2 vp) x2 (viewport-y2 vp) y2))
+             (make-command-result :status :ok :verb :zoom :data view :text "zoomed"))
+           (make-command-result :status :error :verb :zoom
+                                :text "zoom window: expects a (x1 y1 x2 y2) tuple")))
+      ;; zoom(factor:) scales in place, about the window centre.
+      (factor
+       (if (and (realp factor) (plusp factor))
+           (let* ((vp (%ensure-viewport view))
+                  (cx (/ (+ (viewport-x1 vp) (viewport-x2 vp)) 2))
+                  (cy (/ (+ (viewport-y1 vp) (viewport-y2 vp)) 2))
+                  (hw (/ (- (viewport-x2 vp) (viewport-x1 vp)) 2 factor))
+                  (hh (/ (- (viewport-y2 vp) (viewport-y1 vp)) 2 factor)))
+             (setf (viewport-x1 vp) (- cx hw) (viewport-x2 vp) (+ cx hw)
+                   (viewport-y1 vp) (- cy hh) (viewport-y2 vp) (+ cy hh)
+                   (viewport-scale vp) (* (viewport-scale vp) factor))
+             (make-command-result :status :ok :verb :zoom :data view :text "zoomed"))
+           (make-command-result :status :error :verb :zoom
+                                :text "zoom factor: expects a positive number")))
+      ;; bare zoom() — a no-op focus request (zoom extents lands with slice 3).
+      (t
+       (%ensure-viewport view)
+       (make-command-result :status :ok :verb :zoom :data view :text "zoomed")))))
 
 (define-verb :pan (mc root)
   (let* ((target (%first-target mc))
@@ -292,10 +327,17 @@ active-drawing (= drawings[1]) becomes DRAWING."
          (view (and node (%cad-view-of node)))
          (dx (second (meta-command-positionals mc)))
          (dy (third (meta-command-positionals mc))))
-    (if view
-        (progn (setf (ui-viewport view) (list :pan dx dy))
-               (make-command-result :status :ok :verb :pan :data view :text "panned"))
-        (make-command-result :status :error :verb :pan :text "no cad-view to pan"))))
+    (cond
+      ((null view)
+       (make-command-result :status :error :verb :pan :text "no cad-view to pan"))
+      ((not (and (realp dx) (realp dy)))
+       (make-command-result :status :error :verb :pan
+                            :text "pan expects dx and dy numbers"))
+      (t
+       (let ((vp (%ensure-viewport view)))
+         (incf (viewport-x1 vp) dx) (incf (viewport-x2 vp) dx)
+         (incf (viewport-y1 vp) dy) (incf (viewport-y2 vp) dy))
+       (make-command-result :status :ok :verb :pan :data view :text "panned")))))
 
 (defparameter *key-bindings*
   '(("f2"     . :toggle-text-window)
