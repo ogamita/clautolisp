@@ -53,7 +53,8 @@
                 #:park-mailbox-push
                 #:park-mailbox-pop
                 #:read-runtime-from-string
-                #:autolisp-eval-toplevel-progn)
+                #:autolisp-eval-toplevel-progn
+                #:set-runtime-session-current-document)
   (:documentation
    "The cadtui host: a textual, keyboard-driven UI tree for CAD objects and
 the CAD application, for headless interactive/scriptable testing of DCL
@@ -177,6 +178,7 @@ documentation/cadtui-specifications.org (normative).")
    #:deliver-line-to-console
    #:console-read-line
    #:start-console
+   #:activate-drawing-document
    ;; Conditions.
    #:cadtui-error
    #:duplicate-sibling-key

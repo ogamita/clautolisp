@@ -146,3 +146,26 @@ An eval error is recorded and the loop survives (a REPL never dies on a slip)."
       (handler-case (%console-repl-step console line)
         (error (condition)
           (%console-record console (format nil "error: ~A" condition)))))))
+
+;;; --- Active-drawing switch (Phase 4 slice 4a) ---------------------
+;;;
+;;; Switching the active drawing changes focus and the runtime current document
+;;; in lock-step (firing *document-activation-hook*). It does NOT scheduler-start
+;;; the target's console thread: console threads are parked at their reads
+;;; (suspended by construction) and only ever run when the driver serves a line
+;;; for their drawing, so the single-runner invariant holds without any explicit
+;;; suspend/resume here (spec §"Modèle d'exécution"). A drawing whose console has
+;;; no live context (a pre-Phase-4 tree) is left as a pure tree reorder.
+
+(defun activate-drawing-document (drawing)
+  "If DRAWING's console has a live context, make its document namespace the
+runtime session's current document (lock-step with the host activation hook).
+Returns the namespace, or NIL when there is no live console context."
+  (let* ((console (find :console (ui-children drawing) :key #'ui-role))
+         (sc (and console (ui-context console))))
+    (when sc
+      (let* ((evaluation-context (scheduled-context-context sc))
+             (session (evaluation-context-session evaluation-context))
+             (namespace (evaluation-context-current-document evaluation-context)))
+        (set-runtime-session-current-document session namespace)
+        namespace))))

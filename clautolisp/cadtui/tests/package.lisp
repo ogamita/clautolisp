@@ -129,6 +129,7 @@
                 #:scheduler-context-list
                 #:scheduler-current-context
                 #:scheduler-await-park
-                #:scheduler-serve-park)
+                #:scheduler-serve-park
+                #:runtime-session-current-document)
   (:export #:cadtui-suite
            #:run-all-tests))
