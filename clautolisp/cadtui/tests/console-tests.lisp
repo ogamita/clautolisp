@@ -230,3 +230,50 @@ RESULTS. Returns the ui-console."
       ;; a pass-through line is delivered to the active console's queue
       (clautolisp.cadtui::%cadtui-console-evaluate '(:pass-through "(princ 1)"))
       (is (string= "(princ 1)" (park-mailbox-pop (console-queue c) 5))))))
+
+;;;; REPL-hosting seam: PASS-READER / PASS-EVALUATOR (spec §5.6 rule 0).
+
+(test console-reader-with-pass-reader-delegates-non-meta
+  ;; Hosting a live REPL: a `=' line is still intercepted as a meta-command, but
+  ;; every other line is unread and handed to the supplied PASS-READER — so
+  ;; ,-commands become an INPUT-COMMAND and AutoLISP source a (:SOURCE …) turn,
+  ;; exactly as at the bare REPL.
+  (let* ((pass-reader
+           (lambda (ic)
+             (clautolisp.interactor:comma-command-read
+              ic (lambda (ic2)
+                   (list :source (clautolisp.interactor:read-line-from-input-context ic2))))))
+         (*command-activation*
+           (make-activation *cadtui-console*
+                            (clautolisp.cadtui::make-cadtui-console-state
+                             :root (make-application-tree) :escape #\=
+                             :pass-reader pass-reader))))
+    ;; `=' meta-command is intercepted, not delegated.
+    (is (equal '(:meta-command "help()")
+               (clautolisp.cadtui::%cadtui-console-reader
+                (make-input-context :stream (make-string-input-stream "=help()")))))
+    ;; AutoLISP source is delegated and comes back as a (:SOURCE …) turn.
+    (is (equal '(:source "(setq a 1)")
+               (clautolisp.cadtui::%cadtui-console-reader
+                (make-input-context :stream (make-string-input-stream "(setq a 1)")))))
+    ;; a ,-command is delegated and comes back as an INPUT-COMMAND for the loop.
+    (is (clautolisp.interactor:input-command-p
+         (clautolisp.cadtui::%cadtui-console-reader
+          (make-input-context :stream (make-string-input-stream ",date")))))
+    ;; EOF while hosting a REPL returns :EOF (the loop leaves cleanly).
+    (is (eq :eof
+            (clautolisp.cadtui::%cadtui-console-reader
+             (make-input-context :stream (make-string-input-stream "")))))))
+
+(test console-evaluator-source-goes-to-pass-evaluator
+  ;; A (:SOURCE …) turn is evaluated + printed through the host's PASS-EVALUATOR.
+  (let* ((seen nil)
+         (*command-activation*
+           (make-activation *cadtui-console*
+                            (clautolisp.cadtui::make-cadtui-console-state
+                             :root (make-application-tree) :escape #\=
+                             :pass-evaluator (lambda (source)
+                                               (setf seen source) :evaluated)))))
+    (is (eq :evaluated
+            (clautolisp.cadtui::%cadtui-console-evaluate '(:source "(setq a 1)"))))
+    (is (string= "(setq a 1)" seen))))

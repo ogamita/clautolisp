@@ -282,6 +282,23 @@ divergence assumée par rapport à la spec.)
   *screen-renderer* — non fait, faible valeur/non testable dans la lane standard.
   MR !233. clautolisp 2.2.55 / alfe 2.2.63.
 
+- Phase 4 slice 5 — console interactor HÔTE du REPL (`--host cadtui`) : **FAIT**
+  (2026-09-14). Sous `--host cadtui`, la console cadtui (`*cadtui-console*`) est
+  l'interactor du HAUT du REPL (spec §5.6 : cador = son cas dégénéré à une seule
+  console). Son reader intercepte les méta-commandes `=` (=dump/=activate/…)
+  contre l'arbre UI et DÉLÈGUE toute autre ligne — commandes `,`, shell `!`,
+  AutoLISP multi-ligne équilibré — au même reader/évaluateur REPL en dessous, si
+  bien que l'évaluation ordinaire est INCHANGÉE. Le raccord est
+  PASS-READER/PASS-EVALUATOR posés sur l'activation console (constructeur exporté
+  `make-console-activation`) : le tool (main.lisp repl-loop) les câble sur
+  `comma-command-read`+`*repl-source-reader-hook*` et `*repl-eval-hook*`. Le
+  branche `:meta-command` imprime désormais `command-result-text` (via
+  `localise-meta-line`+`dispatch-meta-command`) — la boucle interactor n'imprime
+  pas la valeur de retour d'un évaluateur. PASS-READER/PASS-EVALUATOR NIL (défaut)
+  conserve le comportement Phase-4 pur (file type-ahead de la console). Fumée
+  vérifiée sur le binaire : `=dump(/application)` rend l'arbre, `(setq a (+ 1 2))`
+  puis `(* a 10)` évaluent (3, 30). clautolisp 2.2.64.
+
 ## MODULE cadtui : COMPLET (scope headless)
 Phases 1-8 livrées et vertes (34+ suites, Fail:0). Restent, hors scope headless
 et explicitement différés (non bloquants pour l'usage principal — test

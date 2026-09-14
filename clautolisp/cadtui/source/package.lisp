@@ -64,6 +64,7 @@
                 #:push-interactor
                 #:pop-interactor
                 #:read-line-from-input-context
+                #:unread-line-from-input-context
                 #:make-input-context
                 #:interactor-return
                 #:interactor-p
@@ -214,6 +215,7 @@ documentation/cadtui-specifications.org (normative).")
    ;; Phase 4 slice 4b: the console interactor.
    #:*cadtui-console*
    #:push-console-interactor
+   #:make-console-activation
    #:tui-command-escape
    ;; Phase 5: CAD view + entities + viewport.
    #:ui-cad-view-drawing
