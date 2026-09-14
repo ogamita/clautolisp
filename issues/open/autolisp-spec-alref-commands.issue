@@ -1,7 +1,143 @@
-Commands are missing from alref reference, and indeed, from autolisp-spec.
+# AutoCAD / BricsCAD commands: collect, specify, classify, and implement
 
-As we included sysvar in the spec and alref, We should add the
-specifications of the commands of briscad and autocad (and specific
-commands of clautolisp we already virtually have a few actually!) in a
-specific chapter of the autolisp-spec.
-       
+Status: open
+Baseline: origin/master
+Spec: autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+
+## Summary
+
+Commands are missing from the alref reference, and indeed from
+autolisp-spec. As we included system variables in the spec and alref, we
+should add the specifications of the commands of BricsCAD and AutoCAD
+(and the specific commands of clautolisp — we already virtually have a
+few) in a specific chapter of the autolisp-spec.
+
+CAD *commands* (the things typed at the command prompt, or driven by
+`(command "NAME" ...)` / `(command-s ...)` / `(vl-cmdf ...)`) are a
+namespace *distinct from* both AutoLISP functions and system variables:
+they live in the host/engine, are addressed by (localisable) name, take
+an option/keyword grammar and a positional input sequence rather than a
+Lisp lambda list, and many are package- or version-specific. AutoCAD
+ships ~1000+; BricsCAD ships its own overlapping-but-not-identical set.
+
+clautolisp today has NO command specification and only a token engine:
+
+  - Spec: `command` / `command-s` / `vl-cmdf` / `initcommandversion` are
+    documented as Function Entries; individual commands appear only as
+    prose inside those entries. There is NO command chapter and no
+    per-command entry analogous to a Function or System Variable Entry.
+  - Implementation: the cador MockHost EXECUTES exactly 10 commands
+    against the drawing model — LINE, CIRCLE, TEXT, DONUT, SOLID, ERASE,
+    MOVE, COPY, ROTATE, BLOCK/-BLOCK (`clautolisp/cador/source/command-api.lisp`
+    `%execute-command-tokens`). Every other command name is recorded on
+    the command log but not executed (the interpreter stops at the first
+    unknown name). cadtui has no command→tree layer at all (NEW does not
+    create a drawing, MENULOAD does not load a ribbon).
+  - The only enumerated command *name* list is the cadtui localisation
+    dictionary `cadtui/data/locale/fr_FR/command.sexp` (118 names).
+
+This issue covers four phases, mirroring the system-variables pass:
+(1) collect commands from the AutoCAD and BricsCAD ONLINE references
+into a machine-readable inventory; (2) add a "Commands" chapter to
+autolisp-spec built from that inventory; (3) classify them (domain
+category + support tier — some commands are package-specialised and out
+of near-term scope); (4) implement the categories cador and cadtui need.
+
+## Goals / deliverables
+
+  1. `autolisp-spec/documentation/commands-inventory.sexp` — one record
+     per command, per the schema below, sourced from the vendor ONLINE
+     references (NOT invented).
+  2. A new spec chapter specifying commands (entry template below),
+     generated/curated from the inventory. Bump the spec minor version.
+  3. A classification: each command tagged with a domain category and a
+     support tier (core-now / package-specific / deferred).
+  4. clautolisp implementation of the categories cador (execute against
+     the drawing) and cadtui (tree effects: NEW→drawing, OPEN→drawing,
+     MENULOAD/CUILOAD→bands) actually need, data-driven from the
+     inventory where possible.
+  5. A generated coverage report (analogue of builtins-coverage.md):
+     per-category implemented / specified / total.
+
+Non-goal: implementing the full ~1000-command surface, or matching a
+specific CAD build byte-for-byte. Package-specialised commands are
+specified-and-classified but not necessarily implemented.
+
+## Phase 1 — Data collection
+
+### Sources (ONLINE vendor references)
+
+  - AutoCAD 2026: the "Commands Reference" (alphabetical) in the Autodesk
+    online help. Per-command pages are fetchable as static cloudhelp
+    HTML: `https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-<GUID>.htm`
+    (the `?guid=` SPA form returns no content; the `/files/GUID-*.htm`
+    form works). Locate each GUID from the master command list / search.
+    Harvest across the versions we care about; note version deltas.
+  - BricsCAD V25: `https://help.bricsys.com/document/_commandreference--CMD_<name>/V25/EN_US`
+    — verbatim description, aliases, and command-line options.
+  - Cross-check localised NAMES against the runners' getcname probes
+    (already feeding cadtui `command.sexp`), and aliases against acad.pgp
+    (already feeding `alias.sexp`).
+
+### Inventory schema (`commands-inventory.sexp`)
+
+One plist per command, sorted by :name:
+
+    (:name "LINE"
+     :category :draw            ; :draw :modify :view :file :customization
+                               ; :block :query :dimension :3d :render :...
+     :aliases ("L" "3DLINE")   ; documented short names (may be ())
+     :intl-name "_LINE"        ; the international, _-forced spelling
+     :synopsis "Creates a series of straight line segments."
+     :options ("Close" "Undo") ; command-line keywords (may be ())
+     :arguments "point; point; ...; RETURN"  ; the (command ...) input seq
+     :description "..."
+     :availability :both        ; :both :autocad-only :bricscad-only :clautolisp
+     :autocad-versions "all"
+     :bricscad-versions "all"
+     :source-autocad  "https://help.autodesk.com/cloudhelp/.../GUID-....htm"
+     :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_line/V25/EN_US")
+
+## Phase 2 — Spec chapter
+
+New chapter `Commands` in the draft org, each command a subsection:
+
+    ** Command Entry: LINE
+    *** Name
+    *** Aliases
+    *** Synopsis
+    *** Options
+    *** Argument Sequence
+    *** Description
+    *** Category
+    *** Compatibility          ; AutoCAD & BricsCAD availability + versions
+    *** clautolisp             ; implementation status: cador / cadtui / not-yet
+    *** Source Notes           ; vendor URLs
+    #+LATEX: \newpage
+
+Pages are emitted one-per-subsection by `scripts/build-paged-spec.el`;
+add "Command" to its entry-type regex for consistent slugging.
+
+## Phase 3 — Classification
+
+Domain categories (initial): draw, modify, view, file, customization,
+block, query, dimension, 3d, render, and a catch-all. Support tiers:
+  - core-now: implement in cador/cadtui in this initiative.
+  - package-specific: AutoCAD-only or BricsCAD-only surface we won't
+    support immediately (specified + classified, not implemented).
+  - deferred: in scope eventually, not now.
+
+## Phase 4 — Implementation (cador + cadtui)
+
+  - cador: extend `%execute-command-tokens` (or a data-driven dispatch)
+    for the core-now draw/modify set beyond the current 10.
+  - cadtui: a command→tree layer for file/customization (NEW/OPEN create
+    a ui-drawing; MENULOAD/CUILOAD populate bands), and wire spec §5.6
+    rule 3 so a bare command name at the `cad>` console dispatches.
+  - autolisp-test conformance records for the commands we implement.
+
+## Progress
+
+  - Pilot (2026-09-14): ~25 core commands harvested end-to-end
+    (draw/modify/view/file/customization/block) to validate the pipeline
+    inventory→pages→build→coverage before scaling to the full surface.
