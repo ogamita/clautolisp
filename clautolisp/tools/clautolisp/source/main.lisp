@@ -183,15 +183,26 @@ MAYBE-INSTALL-CADTUI-HOST), so it maps to the cador backend here too."
     ((nil :cador :mock :cadtui)  (make-cador))
     ((:nihil :null)      *nihil*)))
 
+(defvar *active-host-label* nil
+  "Banner/label override for the active --host when the UI-layer host differs
+from the underlying HAL backend — cadtui runs ON the cador backend, so
+HOST-NAME would say \"cador\". NIL means use the backend's own HOST-NAME.")
+
+(defvar *cadtui-root* nil
+  "The cadtui application tree when --host cadtui is active, else NIL.")
+
 (defun maybe-install-cadtui-host (host-keyword)
   "When --host cadtui is selected, build the full cadtui application tree and
 install the cadtui DCL renderer over it, so DCL dialogs (and CAD objects) are
 mirrored into an inspectable UI tree during the session — the cadtui host layer
-over the shared cador core. A no-op for every other host. Returns the tree or
-NIL."
+over the shared cador core. Records the tree and the \"cadtui\" banner label so
+the session reports the selected host, not the underlying backend. A no-op for
+every other host. Returns the tree or NIL."
   (when (eq host-keyword :cadtui)
     (let ((root (clautolisp.cadtui:make-application-tree)))
       (clautolisp.cadtui:install-cadtui-dcl-renderer root)
+      (setf *cadtui-root* root
+            *active-host-label* "cadtui")
       root)))
 
 (defun pop-required-argument (option arguments)
@@ -713,7 +724,7 @@ any non-default knobs so the user sees exactly what they are typing into."
     (format t "http://gitlab.com/ogamita/clautolisp/~%")
     (format t "AUTOLISP REPL (~A dialect, ~A host) — Ctrl-D to exit.~%"
             (autolisp-dialect-name dialect)
-            (host-name host))
+            (or *active-host-label* (host-name host)))
     (when *verbose-p*
       (let ((knobs (remove nil
                            (list (when mock-input
