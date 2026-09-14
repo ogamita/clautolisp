@@ -25,3 +25,30 @@ Missing entries fall back to the international keyword.
 
 Priority P3: cadtui phases 1-6 do not need this; it refines Phase 7 once command
 names (getcname) and aliases (.pgp) are in.
+
+--- FINDING (2026-09-14): batch prompt-driving does NOT work ---
+
+First attempt (MR !242 machinery, optkw-probe.lsp): drive each command with
+PROMPTOPTIONTRANSLATEKEYWORDS on and capture the "[option/list]" from its prompt.
+Run on the runners (pipeline 2845988706):
+
+- AutoCAD / AcCoreConsole (fr): `(setvar "PROMPTOPTIONTRANSLATEKEYWORDS" 1)` is
+  REJECTED ("paramètre de la variable AutoCAD rejeté") and the error escapes
+  vl-catch-all-apply at the alfe protocol level, aborting the probe at that form
+  before any command runs.
+- BricsCAD /b (fr_FR, BRICSCAD 25.0): the setvar is accepted and all 13 command
+  blocks run, but every block is EMPTY — `(command "_OFFSET")` in batch does not
+  echo its option prompt to captured stdout (BricsCAD /b stdout is silent — the
+  alfe-cad-probe playbook's known limitation; a LOGFILE is needed, itself broken
+  on V26 macOS).
+
+So option keywords are NOT harvestable by driving commands in a batch engine.
+Viable directions to try instead:
+  1. LOGFILE capture: LOGFILEMODE/LOGFILEON, run the commands, read the log back
+     with a LISP-opened file (works around silent /b stdout).
+  2. GUI automation (--mode automation) reading the prompt via a reactor/grread
+     instead of stdout — heavier, Windows-only, dialog-risk.
+  3. Parse the localised keyword tables out of the CUIX / resource files, if a
+     readable mapping exists there (no command-driving, but vendor-specific).
+The probe + wrapper + converter framework stays (MR !242); the CAPTURE mechanism
+is what needs to change. No data landed (empty/aborted transcripts, not noise).
