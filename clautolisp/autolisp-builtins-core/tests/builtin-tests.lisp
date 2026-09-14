@@ -6551,6 +6551,20 @@ Variable Entry: T), matching AutoCAD."
     (is (and (typep v 'clautolisp.autolisp-runtime:autolisp-symbol)
              (string= "T" (clautolisp.autolisp-runtime:autolisp-symbol-name v))))))
 
+(test boundp-reports-subrs-and-special-operators-as-bound
+  "AutoLISP is a Lisp-1: a subr (CAR) and a special operator (SETQ, COMMAND,
+IF) are bound to their function, so BOUNDP returns T for them — matching
+AutoCAD/BricsCAD. This is what a headless-safety guard `(boundp 'command)'
+relies on. An undefined ordinary symbol is still NIL."
+  (dolist (name '("CAR" "SETQ" "COMMAND" "IF" "WHILE"))
+    (reset-autolisp-symbol-table)
+    (is (run-autolisp-string (format nil "(boundp '~A)" name)
+                             :setup-fn #'install-core-into)
+        "(boundp '~A) is T" name))
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string "(boundp 'no-such-symbol-xyz)"
+                                 :setup-fn #'install-core-into))))
+
 (test vl-cmdf-returns-t-on-cador-and-shares-the-log
   (reset-autolisp-symbol-table)
   (multiple-value-bind (result mock)
