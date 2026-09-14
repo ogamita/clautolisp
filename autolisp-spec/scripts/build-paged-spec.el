@@ -102,7 +102,8 @@ unmodified string when no chapter number is present."
   "When SUBSECTION-TITLE matches one of the documented entry-type
 patterns ('Function Entry: NAME', 'Reader Syntax Entry: NAME',
 'Special Form Entry: NAME', 'Special Operator Entry: NAME',
-'Variable Entry: NAME', 'Macro Entry: NAME', 'Type Entry: NAME'),
+'Variable Entry: NAME', 'Macro Entry: NAME', 'Type Entry: NAME',
+'Command Entry: NAME'),
 return (KIND . NAME) — both strings, NAME uppercased. Returns nil
 otherwise.
 
@@ -113,7 +114,7 @@ draft says 'Special Form'). The runtime alref library treats a
 'Special Form' KIND or a hardcoded special-operator name as the
 'Operator' apropos kind."
   (when (string-match
-         "^\\(Function\\|Reader Syntax\\|Special Form\\|Special Operator\\|Variable\\|Macro\\|Type\\)\\s-+Entry:\\s-+\\(.+\\)$"
+         "^\\(Function\\|Reader Syntax\\|Special Form\\|Special Operator\\|Variable\\|Macro\\|Type\\|Command\\)\\s-+Entry:\\s-+\\(.+\\)$"
          subsection-title)
     (cons (match-string 1 subsection-title)
           (upcase (string-trim (match-string 2 subsection-title))))))
