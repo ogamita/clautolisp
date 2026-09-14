@@ -507,6 +507,48 @@ pgp:probe:autocad:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pgp-probe.ps1 -Backend autocad
 
+# --- command OPTION KEYWORDS: the hardest CAD locale dictionary --------------
+#
+# cadtui-locale-option-keywords.issue. No getcname-equivalent exists, so the
+# probe DRIVES each command and captures the localised keywords from its prompt
+# (PROMPTOPTIONTRANSLATEKEYWORDS). BATCH engines only (accoreconsole /
+# bricscad -b) — prompts echo to stdout and no GUI dialog can wedge the runner;
+# the probe also cancels each command with a bounded ESC loop. Soft. Artifacts
+# feed scripts/cadtui-optkw-to-sexp.py -> option-keyword.sexp (first cut).
+.optkw-artifacts:
+  artifacts:
+    name: "optkw-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/optkw/]
+    expire_in: 30 days
+
+optkw:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .optkw-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-optkw-probe.ps1 -Backend accoreconsole
+
+optkw:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .optkw-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-optkw-probe.sh --backend bricscad
+
+optkw:probe:bricscad:windows:
+  extends: [.gate-windows-cad-soft, .optkw-artifacts]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-optkw-probe.ps1 -Backend bricscad
+
 .pathname-artifacts:
   interruptible: true
   artifacts:
