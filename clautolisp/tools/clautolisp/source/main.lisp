@@ -1068,12 +1068,36 @@ one, both listed)."
                ;; repl.issue) so a subset of aldo's breakpoint commands is
                ;; reachable from the REPL — shadowed by any same-name lisp
                ;; command, reached explicitly via the ALDO/DEBUG prefix.
+               ;; Under --host cadtui the cadtui console is the TOP interactor
+               ;; (spec §5.6: cador is its degenerate one-console case): its
+               ;; reader intercepts `=' meta-commands (=dump/=activate/…) against
+               ;; the UI tree, and delegates every other line — ,-commands,
+               ;; !shell, balanced AutoLISP — to the same REPL reader/eval below,
+               ;; so ordinary evaluation is unchanged. The seam is the console
+               ;; activation's PASS-READER / PASS-EVALUATOR (console-interactor).
                (*interactor-stack*
-                 (list (make-activation *autolisp*
-                                        (make-repl-state :context context
-                                                         :session session
-                                                         :break-on-error break-on-error))
-                       (make-sleeping-aldo-activation session))))
+                 (let ((base (list (make-activation *autolisp*
+                                                    (make-repl-state
+                                                     :context context
+                                                     :session session
+                                                     :break-on-error break-on-error))
+                                   (make-sleeping-aldo-activation session))))
+                   (if *cadtui-root*
+                       (cons (clautolisp.cadtui:make-console-activation
+                              *cadtui-root*
+                              :pass-reader
+                              (lambda (input-context)
+                                (comma-command-read
+                                 input-context
+                                 (funcall clautolisp.repl:*repl-source-reader-hook*
+                                          (current-evaluation-dialect context))))
+                              :pass-evaluator
+                              (lambda (source)
+                                (funcall clautolisp.repl:*repl-eval-hook*
+                                         source context session break-on-error
+                                         (lambda () (interactor-return :terminated)))))
+                             base)
+                       base))))
            (when (null (interactor-loop))
              ;; EOF (Ctrl-D): a fresh line before leaving. ,quit / (quit) return
              ;; markers through INTERACTOR-RETURN and print nothing extra.
