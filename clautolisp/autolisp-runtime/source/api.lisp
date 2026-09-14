@@ -2438,15 +2438,22 @@ so ordinary non-debug runs keep defining plain, allocation-free bodies."
   (multiple-value-bind (value boundp origin)
       (lookup-variable object context)
     (declare (ignore origin))
-    (unless boundp
-      ;; Autodesk documents that testing an undefined symbol with BOUNDP
-      ;; creates the symbol and assigns it NIL, while still returning NIL.
-      (set-variable object nil context)
-      (setf value nil
-            boundp t))
-    (if value
-        (autolisp-true-symbol)
-        nil)))
+    (cond
+      ;; A non-NIL variable value is bound. (AutoLISP reads a NIL value as
+      ;; unbound, so a value of NIL falls through to the clauses below.)
+      ((and boundp value) (autolisp-true-symbol))
+      ;; AutoLISP is a Lisp-1: a subr or special operator is bound to its
+      ;; function even with no value cell, so (boundp 'car), (boundp 'setq)
+      ;; and (boundp 'command) are all T in real AutoCAD/BricsCAD. Report
+      ;; those as bound, and do NOT manufacture a NIL variable for them.
+      ((or (autolisp-symbol-function-bound-p object)
+           (known-special-operator-p (autolisp-symbol-name object)))
+       (autolisp-true-symbol))
+      ;; Otherwise an ordinary symbol with no (non-NIL) value. Autodesk
+      ;; documents that testing an undefined symbol with BOUNDP creates the
+      ;; symbol and assigns it NIL, while still returning NIL.
+      (t (unless boundp (set-variable object nil context))
+         nil))))
 
 (defun autolisp-null (object)
   (if (null object)
