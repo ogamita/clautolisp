@@ -28,38 +28,39 @@ is implemented (`issues/open/autolisp-spec-alref-commands.issue`).
 |---|---:|---:|---:|
 | Pilot (2026-09-14) | 25 | 10 | 0 |
 | Both-vendor core (2026-09-15) | 563 | 10 | 0 |
-| **cador command engine (2026-09-15)** | **563** | **18** | **6** |
+| cador command engine (2026-09-15) | 563 | 18 | 6 |
+| **+ AutoCAD-only (2026-09-15)** | **915** | **18** | **6** |
 | Full catalogue (enumerated) | 1621 | 18 | 6 |
 
-The **563** specified now = the 561 commands present in BOTH AutoCAD 2026 and
-BricsCAD V25 (the portable core, most relevant to cador/cadtui) plus MENULOAD
-and MENUUNLOAD. The remaining catalogued commands (352 AutoCAD-only, 708
-BricsCAD-only — many BricsCAD-specific verticals: civil, mechanical, BIM,
-point-cloud) are enumerated in `command-names.sexp` but not yet detailed.
+The **915** specified now = the 561 commands present in BOTH AutoCAD 2026 and
+BricsCAD V25, plus the **352 AutoCAD-only** commands, plus MENULOAD/MENUUNLOAD.
+The remaining **708 BricsCAD-only** commands (many BricsCAD-specific verticals:
+civil, mechanical, BIM, point-cloud) are enumerated in `command-names.sexp` but
+not yet detailed — the next harvest wave.
 
-## Specified commands by category (563)
+## Specified commands by category (915)
 
 | Category | Count | Category | Count |
 |---|---:|---|---:|
-| modify | 65 | text | 22 |
-| view | 58 | edit | 21 |
-| file | 44 | inquiry | 16 |
-| 3d | 40 | render | 15 |
-| system | 36 | annotation | 15 |
-| draw | 36 | attribute | 14 |
-| customization | 34 | plot | 12 |
-| block | 32 | other | 12 |
-| dimension | 28 | selection | 8 |
-| parametric | 24 | table | 8 |
-| layer | 23 | | |
+| view | 106 | dimension | 33 |
+| modify | 85 | text | 31 |
+| 3d | 82 | parametric | 30 |
+| file | 78 | edit | 29 |
+| block | 77 | annotation | 25 |
+| system | 62 | plot | 23 |
+| customization | 53 | other | 20 |
+| draw | 41 | attribute | 16 |
+| render | 36 | selection | 11 |
+| inquiry | 35 | table | 8 |
+| layer | 34 | | |
 
-## Availability (of the 563 specified)
+## Availability (of the 915 specified)
 
 | Availability | Count |
 |---|---:|
 | both (AutoCAD & BricsCAD) | 561 |
+| AutoCAD-only | 352 |
 | BricsCAD-only | 2 (MENULOAD, MENUUNLOAD) |
-| AutoCAD-only | 0 |
 
 ## Implemented in cador (`%execute-command-tokens`)
 
