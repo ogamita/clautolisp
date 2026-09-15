@@ -7,6 +7,22 @@
 ;;;; Keys, in order: NAME CATEGORY ALIASES INTL-NAME SYNOPSIS OPTIONS ARGUMENTS DESCRIPTION AVAILABILITY AUTOCAD-VERSIONS BRICSCAD-VERSIONS SOURCE-AUTOCAD SOURCE-BRICSCAD
 
 (
+(:name "-3DOSNAP"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_-3DOSNAP"
+ :synopsis "Toggles entity snap modes for 3D entities."
+ :options ("nearest (ZNEA)" "vertex (ZVER)" "midpoint (ZMID)" "center (ZCEN)"
+           "perpendicular (ZPER)" "Knot (ZKNO)" "intersection (ZINT)"
+           "PointCloud Nearest" "NON" "ON" "OFF")
+ :arguments "Object snap mode keyword(s) to toggle (see options; e.g. ON, OFF, NON, or a specific mode)."
+ :description "Toggles 3D entity snap modes for drawing and editing entities in 3D space at the Command line (short for \"3D object snap\")."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-3dosnap/V25/EN_US")
+
 (:name "-ACTUSERMESSAGE"
  :category :CUSTOMIZATION
  :aliases NIL
@@ -20,6 +36,20 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-240E7E85-69FC-4919-863E-4E041B7A460B.htm"
  :source-bricscad NIL)
+
+(:name "-ANIMATIONEDITORPLAYBACK"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_-ANIMATIONEDITORPLAYBACK"
+ :synopsis "Loads animation graphics via Command line."
+ :options ("Play" "paUse" "Stop" "Render" "Cancel")
+ :arguments "Zip-file or Folder to load, then a playback option (Play, paUse, Stop, Render, or Cancel)."
+ :description "Loads animation graphics data from a zip-archive or folder with the Animation Editor panel closed. Playback options for graphics are available at the command-line prompt until the command closes. Camera effect modifications are not supported in this playback mode."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-animationeditorplayback/V25/EN_US")
 
 (:name "-ARCHIVE"
  :category :FILE
@@ -48,6 +78,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8336B4CD-5375-4290-BD08-7D9E022741F6.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-array/V25/EN_US")
+
+(:name "-ARRAYCLOSE"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_-ARRAYCLOSE"
+ :synopsis "Exits the associative array editing state."
+ :options ("Yes" "No")
+ :arguments "Yes to save changes to the array's source entities, or No to discard them."
+ :description "Exits the associative array editing state and prompts the user at the Command line to save or discard changes made to the array's source entities. This command is only available after an associative array has been checked out using the ARRAYEDIT command with the Source option."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-arrayclose/V25/EN_US")
 
 (:name "-ATTACH"
  :category :BLOCK
@@ -107,6 +151,64 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8140793D-79BF-4A31-B062-3F1F6B6A2EB4.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-bedit/V25/EN_US")
 
+(:name "-BHATCH"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_-BHATCH"
+ :synopsis "Fills closed 2D areas with repeating patterns or solid colors."
+ :options NIL
+ :arguments NIL
+ :description "The command-line version for applying hatch patterns or solid fills to enclosed 2D regions. The page refers to the -HATCH command for additional details."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-bhatch/V25/EN_US")
+
+(:name "-BIMINSERT"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_-BIMINSERT"
+ :synopsis "Inserts sheet metal form features, and mechanical and BIM components in the command line."
+ :options NIL
+ :arguments NIL
+ :description "Inserts sheet metal form features and mechanical and BIM components via the command line. The page notes this command is deprecated, with -BMINSERT recommended as the replacement."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-biminsert/V25/EN_US")
+
+(:name "-BIMPROPAGATEFROMFILE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_-BIMPROPAGATEFROMFILE"
+ :synopsis "Propagates a saved detail on all suitable connections in a project."
+ :options NIL
+ :arguments "Full path and file name of the saved detail, then accept or reject the suggested propagations. The prompt sequence varies based on the detail type (planar, linear, pattern, edge, or corner)."
+ :description "Propagates a saved detail across all suitable connections within a project. The prompt sequence varies based on the selected detail type (planar, linear, pattern, edge, or corner). Users specify the full path and file name of the saved detail, then accept or reject suggestions using visual indicators."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-bimpropagatefromfile/V25/EN_US")
+
+(:name "-BIMWINDOWCREATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_-BIMWINDOWCREATE"
+ :synopsis "Creates a fully parametric window or opening based on a closed contour."
+ :options ("wIndow" "Opening" "Single" "Double Vertical" "Double Horizontal"
+           "Triple Vertical" "Triple Bottom" "Triple Top" "Triple Left"
+           "Triple Right" "Triple Horizontal")
+ :arguments "A profile entity (boundary, closed polyline, or grid) and window/opening type options at the command line."
+ :description "Creates parametric windows using any entity such as a boundary, closed polyline, or grid as a profile. An opening in the solid on which the profile entity lies is created automatically. The command operates at the command line."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-bimwindowcreate/V25/EN_US")
+
 (:name "-BLOCK"
  :category :BLOCK
  :aliases ("-B")
@@ -120,6 +222,114 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-816B2D9C-F518-4E8B-971F-08E0E43006E7.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-block/V25/EN_US")
+
+(:name "-BLOCKREPLACE"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_-BLOCKREPLACE"
+ :synopsis "Replaces block definitions."
+ :options ("Enter name of block to be replaced" "? (Lists block names)"
+           "select object (=)" "options (*)" "by block Name"
+           "Selected block instances" "SIMilar inserts"
+           "Enter block name or file to replace selected entities"
+           "Purge unreferenced when finished?")
+ :arguments "Name of block to be replaced; block name or file to replace selected entities; whether to purge unreferenced when finished."
+ :description "The command-line version for replacing block definitions in BricsCAD. Users can replace all block instances or particular block instances. The command handles various scenarios including dynamic blocks, annotative blocks, and blocks with attributes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-blockreplace/V25/EN_US")
+
+(:name "-BLOCKTOXREF"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_-BLOCKTOXREF"
+ :synopsis "Replaces all instances of a block with an Xref at the command line."
+ :options ("by block Name" "Selected block instances" "SIMilar inserts"
+           "with Conversion to xref" "Ask for filename for newly created Xref"
+           "Enter an xref file")
+ :arguments "Block name of the block to be replaced (or ?, =, *); block instance(s) to replace; conversion options; xref file name (or ~ for a file dialog)."
+ :description "Allows users to select one or more block references and convert them to external references (Xrefs). The Xref name is automatically generated from the file name. If an Xref with the same name already exists, the block is replaced using that existing Xref."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-blocktoxref/V25/EN_US")
+
+(:name "-BMBOMEXPORT"
+ :category :TABLE
+ :aliases NIL
+ :intl-name "_-BMBOMEXPORT"
+ :synopsis "Exports the content of a BOM table as a table with link, or to a CSV or XLSX file."
+ :options ("Bom table" "List tables" "Current bom" "template File"
+           "Table with link" "csv or excel File")
+ :arguments "Source BOM table selection and the target export format (table with link, CSV, or XLSX) at the command line."
+ :description "Exports Bill of Materials table content in multiple formats. Users can export to a linked table, CSV file, or Excel (XLSX) file. The command provides options for selecting the source BOM table and specifying the target export format."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-bmbomexport/V25/EN_US")
+
+(:name "-BMCREATECOMPONENT"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_-BMCREATECOMPONENT"
+ :synopsis "Creates and categorizes components via Command line."
+ :options NIL
+ :arguments NIL
+ :description "Creates and categorizes components via the Command line. The page states this command has been deprecated and replaced by the -CREATELIBRARYBLOCK command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-bmcreatecomponent/V25/EN_US")
+
+(:name "-BMHARDWARE"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_-BMHARDWARE"
+ :synopsis "Inserts a standard hardware part as a mechanical component in the current drawing."
+ :options ("Parametric" "create Custom" "Edit inserted entity" "SMART insert"
+           "Rotate component" "set Base point" "Name" "insertion Type" "Local"
+           "External" "Flip" "mUltiple" "Array" "Change target 3d solids"
+           "cleaR" "Select all affected 3d solids")
+ :arguments "Executed via the options in the Command line; the page does not enumerate a specific prompt sequence."
+ :description "Inserts standard hardware parts as mechanical components. The page notes it is obsolete and creates non-parametric parts; users are directed to the Library panel for parametric standard mechanical components instead. The mechanical structure must be initialized using the BMMECH command first."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-bmhardware/V25/EN_US")
+
+(:name "-BMINSERT"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_-BMINSERT"
+ :synopsis "Inserts sheet metal form features and components in the current drawing."
+ :options NIL
+ :arguments "Path of the file to be inserted and a choice among the available options; the page does not enumerate the prompt sequence."
+ :description "Inserts sheet metal form features, mechanical and BIM components into the current drawing. The command can insert *.RFA files as BIM components and operates at the command line, requiring users to enter the file path and select from available options."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-bminsert/V25/EN_US")
+
+(:name "-BMPARAMETERS"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_-BMPARAMETERS"
+ :synopsis "Allows to list and edit the parameters of inserted components and associative arrays."
+ :options ("Edit" "Delete" "Link to parameter" "?")
+ :arguments "Selection of an inserted component or associative array, then a parameter operation (Edit, Delete, Link to parameter, or ?)."
+ :description "Enables users to list and edit parameters of inserted components and associative arrays. Parameters can be changed by pressing Enter to modify the parameter expression. Parameters of components nested inside an array can also be changed or assigned to an expression."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-bmparameters/V25/EN_US")
 
 (:name "-BOUNDARY"
  :category :DRAW
@@ -180,6 +390,57 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-02DEB284-3E53-4AFA-8924-87864CBB330B.htm"
  :source-bricscad NIL)
 
+(:name "-CDORDER"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_-CDORDER"
+ :synopsis "Arranges the entities draw order based on their index color via the command line."
+ :options ("Draworder" "Enter one or more color number(s), comma-separated"
+           "Specify draworder location for entities" "Front" "Back"
+           "Redefine draworder inside selected blocks?" "Y" "N" "Handles")
+ :arguments "One or more color indices (comma-separated); draworder location (Front or Back); whether to redefine draworder inside selected blocks (Y/N)."
+ :description "This Express Tools command organizes entity display order according to color index values through command-line input. Users can specify multiple colors to control whether entities appear in front or behind other objects in the drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-cdorder/V25/EN_US")
+
+(:name "-CIVILPOINT"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_-CIVILPOINT"
+ :synopsis "Creates Civil Points via Command line."
+ :options ("Specify point location" "Enter point description"
+           "Enter point elevation" "Import points from file" "Enter file name"
+           "Enter file format name" "set Style"
+           "? (lists available point symbol styles)")
+ :arguments "Either a point location, description and elevation, or an import from file (file name and format); options are presented as alternatives rather than a fixed sequence."
+ :description "Civil Points are BricsCAD Civil entities represented by symbols and labels, with graphical representation defined through Symbol and Label styles. They support XYZ coordinates and various attributes including point number, name, and descriptions. Civil Points can be organized into groups and serve as input for creating TIN Surfaces."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-civilpoint/V25/EN_US")
+
+(:name "-CIVILPOINTGROUP"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_-CIVILPOINTGROUP"
+ :synopsis "Creates Civil Point groups via Command line."
+ :options ("Enter point group name" "filter to Include" "filter to Exclude"
+           "? to list point groups" "Specify point numbers to include"
+           "Specify point numbers to exclude" "Name" "Elevation"
+           "Full description" "Raw description" "user attribute Key"
+           "user attribute Value" "Remove group" "reName group")
+ :arguments "Point group name (new or existing); filter type (Include/Exclude); Civil Point attribute selection; attribute value(s) or criteria; additional filter options as needed."
+ :description "Allows users to create new point groups with filters or edit existing ones. Points can be included or excluded based on specified criteria such as attributes, elevation, description, or user-defined properties."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-civilpointgroup/V25/EN_US")
+
 (:name "-COLOR"
  :category :SYSTEM
  :aliases ("-COL" "-COLOUR")
@@ -236,6 +497,23 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-4327BDE7-58FB-4199-93D4-ECD356C0E89E.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-copytolayer/V25/EN_US")
 
+(:name "-CREATELIBRARYBLOCK"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_-CREATELIBRARYBLOCK"
+ :synopsis "Creates and categorizes components via Command line."
+ :options ("Category (Annotation 2d, Bathroom, Bathroom 2d, Bedroom, Bedroom 2d, Dining room, Dining room 2d, Doors, Doors advanced, Fire protection 2d, Fixtures and fittings, Floor plan 2d, Garden 2d, Holes, Kitchen, Kitchen 2d, Lighting, Living room, Living room 2d, Mep flow connection points, Office, Office 2d, Outdoors, People, Roof, Sheet metal, Standard parts, Tools, Transport, Transport 2d, Vertical mobility, Windows, Windows advanced)"
+           "0 - Add a new category"
+           "rootCat (current category) - add component to current category"
+           "TFL" "TFR" "TBL" "TBR" "T")
+ :arguments "Target category selection (existing numbered category, 0 for a new category, or rootCat for the current category), plus a thumbnail view option; the page does not enumerate a full prompt sequence."
+ :description "Adds entities to the Library panel as categorized components with thumbnail displays. Intended for macro use. Components can be added to existing or new categories, with options dependent on the currently open Library panel category."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-createlibraryblock/V25/EN_US")
+
 (:name "-DATAEXTRACTION"
  :category :TABLE
  :aliases NIL
@@ -249,6 +527,22 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-FCF91624-D9DB-4D07-8958-6A8E823E3888.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-dataextraction/V25/EN_US")
+
+(:name "-DESIGNTABLEEDIT"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_-DESIGNTABLEEDIT"
+ :synopsis "Edits design tables."
+ :options ("eXport" "Replace" "Delete" "Configurations" "Save current" "Remove"
+           "? to list" "Parameters" "Unlink" "Link" "Clear expressions"
+           "? to list columns" "Apply configuration" "? to list")
+ :arguments "An operation on a design table (export, replace, delete, manage configurations or parameters, apply configuration, etc.); the page lists options rather than a fixed prompt sequence."
+ :description "Allows editing of design table entities in BricsCAD Pro, Mechanical, and BIM versions. The command can be entered transparently during other operations. It provides functionality to manage configurations, parameters, and design table content through various options."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-designtableedit/V25/EN_US")
 
 (:name "-DGNATTACH"
  :category :BLOCK
@@ -295,6 +589,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-9E309147-34D2-4222-8D91-BC8AF7383CA1.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-dgnexport/V25/EN_US")
 
+(:name "-DIGITALSIGN"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_-DIGITALSIGN"
+ :synopsis "Applies a digital signature (block of encrypted information) to the drawing via Command line."
+ :options ("Attach digital signature after saving" "Yes" "No")
+ :arguments "Whether to attach a digital signature after saving (Yes/No); if Yes, a certificate (by serial number or from a list) and a time server (by name or number)."
+ :description "Attaches encrypted information to validate the origin, authenticity, and unaltered state of a drawing file. The signature remains valid after renaming the drawing. Once applied, signatures are reattached on each save until the file is closed; reopening and modifying a signed drawing triggers a warning message."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-digitalsign/V25/EN_US")
+
 (:name "-DIMINSPECT"
  :category :DIMENSION
  :aliases NIL
@@ -339,6 +647,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8CBD320C-1A80-43A0-B8C1-BC9A35AC5960.htm"
  :source-bricscad NIL)
 
+(:name "-DWGHEALTH"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_-DWGHEALTH"
+ :synopsis "Combines the functionality of multiple stand-alone BricsCAD commands that help to improve overall drawing size and accuracy via command line."
+ :options ("2D cleanup" "3D cleanup" "Cleanup database" "Fix errors")
+ :arguments "Selection of a predefined cleanup routine; the page states you can press any character to list available routines but does not detail a fixed prompt sequence."
+ :description "Runs one of several predefined routines for drawing cleanup. Users can press any character to list available routines. It integrates multiple existing commands into a unified interface."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-dwghealth/V25/EN_US")
+
 (:name "-ETRANSMIT"
  :category :FILE
  :aliases NIL
@@ -372,6 +694,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-EC98464B-D222-4673-BBE1-AF4B20EBF150.htm"
  :source-bricscad NIL)
 
+(:name "-FBXEXPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_-FBXEXPORT"
+ :synopsis "Exports 3D entities in the current drawing to FBX format."
+ :options NIL
+ :arguments NIL
+ :description "Exports 3D entities in the current drawing to FBX format. The page provides minimal descriptive content beyond the synopsis and indicates the command is available across multiple BricsCAD product versions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-fbxexport/V25/EN_US")
+
 (:name "-FIND"
  :category :TEXT
  :aliases NIL
@@ -386,6 +722,29 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-F207F801-0111-49C1-9A79-2AD3C8746EE1.htm"
  :source-bricscad NIL)
+
+(:name "-GRADIENT"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_-GRADIENT"
+ :synopsis "Fills closed areas with a gradient fill."
+ :options ("hatch Properties" "Solid fill" "User defined" "Set Angle for lines"
+           "Space between standard pattern lines" "Cross-hatch area?"
+           "Gradient" "Enter a gradient name" "Enter an angle for the gradient"
+           "Center the gradient?" "Single color" "Enter a shade or tint value"
+           "Two color" "Truecolor" "COlorbook" "Select entities"
+           "Remove boundaries" "Advanced options" "Boundary set"
+           "Retain boundary" "Island detection" "Nested" "Outer" "Ignore"
+           "set Associativity" "boundary Tolerance" "separate Hatches"
+           "Draw order" "Origin" "ANnotative" "Layer" "Transparency" "ByLayer"
+           "ByBlock" "Use current" "Undo")
+ :arguments "Gradient definition (single or two colors, gradient name, angle, centering) and boundary/selection options; the page does not enumerate a fixed prompt sequence."
+ :description "Fills closed areas with solid fills in gradients of one or two colors in a variety of patterns. 3D entities cannot be filled with gradients. Two methods are available: single color and two colors."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-gradient/V25/EN_US")
 
 (:name "-GRAPHICSCONFIG"
  :category :SYSTEM
@@ -476,6 +835,36 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-27E2796C-642F-4649-A903-5FE6597263C4.htm"
  :source-bricscad NIL)
 
+(:name "-IMAGEATTACH"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_-IMAGEATTACH"
+ :synopsis "Attaches raster images to the drawing via Command line."
+ :options ("Full path" "Relative path" "No path" "use Geocoding info"
+           "Geocoding file path" "Embedded geocoding info" "Xy scales factors"
+           "Rotation angle")
+ :arguments "Path and filename of the image file, insertion point, scale factor, and rotation angle, plus path-handling and geocoding options."
+ :description "Users introduce the path and filename of an image file along with insertion point, scale factor, and rotation factor to insert a raster image into the drawing. The command allows flexible path handling options and supports geocoding data for positioning."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-imageattach/V25/EN_US")
+
+(:name "-IMPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_-IMPORT"
+ :synopsis "Imports geometry from external files at the command prompts."
+ :options NIL
+ :arguments "Full path and file name of an importable file, or ~ (tilde) to display the Import file dialog box."
+ :description "Allows users to import geometry from external files through command-line input. It supports all file formats that the IMPORT command handles. Users can specify the full path and file name of an importable file, or type a tilde (~) to open a file dialog."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-import/V25/EN_US")
+
 (:name "-INSERT"
  :category :BLOCK
  :aliases ("-I")
@@ -492,6 +881,34 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-BB831F94-6385-4490-8DE9-7C565CD1B639.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-insert/V25/EN_US")
+
+(:name "-INSERTLAYOUT"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_-INSERTLAYOUT"
+ :synopsis "Inserts a named layout of a drawing, as a Block Reference, in the current Paper Space."
+ :options NIL
+ :arguments "Drawing path name to export the layout from, the layout name, and an insertion point."
+ :description "Users specify a drawing path name to export the layout from and identify the layout name along with an insertion point. The system creates a Block reference replicating the layout's entities in the current Paper Space. This command functions exclusively in Paper Space environments."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-insertlayout/V25/EN_US")
+
+(:name "-INSERTMULTIPLELAYOUT"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_-INSERTMULTIPLELAYOUT"
+ :synopsis "Inserts multiple layouts, as Block References, in the current Paper Space via command line."
+ :options NIL
+ :arguments "Margin value between viewports; drawing path names one by one (empty string to finish); a layout name for each drawing; base point and second point for the Block References."
+ :description "Inserts named layouts from multiple drawings into the current Paper Space as Block References. The command is exclusively available in Paper Space and processes multiple drawing files sequentially."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-insertmultiplelayout/V25/EN_US")
 
 (:name "-INTERFERE"
  :category :|3D|
@@ -568,6 +985,21 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0976544F-76F9-444C-86D3-91BEAABECCD8.htm"
  :source-bricscad NIL)
 
+(:name "-LAYOUTMERGE"
+ :category :PLOT
+ :aliases NIL
+ :intl-name "_-LAYOUTMERGE"
+ :synopsis "Merges entities from specified layouts into a destination layout via Command line."
+ :options ("Select Layouts to merge" "Select Destination Layout"
+           "Remove empty layouts?")
+ :arguments "Layout names to merge (comma-separated); destination layout name; whether to delete empty layouts."
+ :description "An Express Tools utility that consolidates entities from multiple source layouts into a single destination layout. If the destination layout does not already exist, the system prompts whether to create it. Users can optionally remove empty layouts after the merge operation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-layoutmerge/V25/EN_US")
+
 (:name "-LINETYPE"
  :category :LAYER
  :aliases ("-LT")
@@ -581,6 +1013,78 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-A6089331-227F-44F1-BA0C-06BC1568C3BB.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-linetype/V25/EN_US")
+
+(:name "-LMAN"
+ :category :LAYER
+ :aliases NIL
+ :intl-name "_-LMAN"
+ :synopsis "Saves, edits and restores layer states via the Command line."
+ :options ("?" "Import" "Export" "Save" "Restore" "Delete" "reName")
+ :arguments "A layer-state operation (Save, Restore, Delete, reName, Import, Export, or ?) plus the associated state name; the page does not enumerate a fixed prompt sequence."
+ :description "An Express Tools utility for managing layer states in BricsCAD. It allows users to save the current layer configuration, restore previously saved states, and manage these states through command-line operations."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-lman/V25/EN_US")
+
+(:name "-LMANMODE"
+ :category :LAYER
+ :aliases NIL
+ :intl-name "_-LMANMODE"
+ :synopsis "Sets the layer manager options via the command line."
+ :options NIL
+ :arguments "A bit-code value specifying the LMAN mode setting."
+ :description "Sets the LMAN mode setting by specifying a bit-code. The command is part of Express Tools and is available in BricsCAD Lite, Pro, Mechanical, and BIM versions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-lmanmode/V25/EN_US")
+
+(:name "-LOGIN"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_-LOGIN"
+ :synopsis "Authenticates to Bricsys server."
+ :options ("E-mail address" "Password" "Remember me" "Forgot password?"
+           "Log in" "Log in as guest")
+ :arguments "Opens a dialog box rather than taking a command-line argument sequence; users enter an email address and password (optional \"Remember me\"), then Log in or Log in as guest."
+ :description "Opens the BricsCAD Analytics dialog box to authenticate to Bricsys server. The dialog allows users to login with their personal Bricsys account using email and password credentials."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-login/V25/EN_US")
+
+(:name "-LOGINUSAGEDATAPROGRAM"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_-LOGINUSAGEDATAPROGRAM"
+ :synopsis "Opens the BricsCAD Analytics dialog box."
+ :options ("E-mail address" "Password" "Remember me" "Forgot password?"
+           "Log in" "Log in as guest")
+ :arguments "Opens a dialog box; users enter an email address and password (optional \"Remember me\"), then Log in or Log in as guest. A login warning appears if already logged in."
+ :description "Launches the BricsCAD Analytics dialog, which enables users to authenticate using their personal Bricsys account credentials. A login warning message appears if the user is already logged in."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-loginusagedataprogram/V25/EN_US")
+
+(:name "-LOGOUT"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_-LOGOUT"
+ :synopsis "Logs out of the Bricsys account."
+ :options NIL
+ :arguments NIL
+ :description "Terminates the user's session with the Bricsys account that was used to access online services."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-logout/V25/EN_US")
 
 (:name "-LWEIGHT"
  :category :SYSTEM
@@ -638,6 +1142,24 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-92446C44-2F3B-464B-8F8E-6CD8D96BC8EC.htm"
  :source-bricscad NIL)
 
+(:name "-MODELERPROPERTIES"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_-MODELERPROPERTIES"
+ :synopsis "ACIS modeler settings."
+ :options ("view Properties" "USe facetres" "Surface tolerance"
+           "Normal tolerance" "Max grid lines" "Edge length"
+           "grid aspect Ratio" "Adjust mode" "Grid mode" "Triangulation mode"
+           "min U grid lines" "min V grid lines" "mass properties aCcuracy"
+           "check Level")
+ :arguments "One of the ACIS modeler property settings and its value; the page does not enumerate a fixed prompt sequence (enabling FACETRES disables all other settings)."
+ :description "Specifies settings for the ACIS modeler in BricsCAD Pro, Mechanical, and BIM. The command provides 14 methods to configure ACIS modeling properties, with the note that enabling FACETRES disables all other settings."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-modelerproperties/V25/EN_US")
+
 (:name "-MTEXT"
  :category :TEXT
  :aliases NIL
@@ -666,6 +1188,37 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-56A9DC12-D049-4384-BDD3-E8D60091AF36.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-objectscale/V25/EN_US")
+
+(:name "-OPENSHEETSET"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_-OPENSHEETSET"
+ :synopsis "Opens a sheet set file."
+ :options NIL
+ :arguments "The path and file name of a DST sheet set file (for example F:\\work\\Documentation\\project.dst)."
+ :description "Opens a DST sheet set file and displays the Sheet Sets panel listing all drawings and sheets associated with the set. The command is intended for macro use."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-opensheetset/V25/EN_US")
+
+(:name "-OSNAP"
+ :category :SYSTEM
+ :aliases ("-OS" "ESNAP")
+ :intl-name "_-OSNAP"
+ :synopsis "Toggles entity snap modes."
+ :options ("NEArest" "ENDpoint" "MIDpoint" "CENter" "GeometriC cEnter"
+           "PERpendicular" "TANgent" "QUAdrant" "INSertion point" "POInt"
+           "EXTension" "PARallel" "INTersection" "APParent intersection"
+           "NON (clear entity snaps)" "ON" "OFF")
+ :arguments "One or more entity snap mode keywords to toggle (see options; e.g. ON, OFF, NON, or specific modes)."
+ :description "Toggles entity snap modes at the Command line (short for \"object snap\"). Entity snaps help you draw and edit precisely by snapping the cursor to the nearest geometric feature."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-osnap/V25/EN_US")
 
 (:name "-OVERKILL"
  :category :MODIFY
@@ -836,6 +1389,50 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-E086391C-6CEA-4B70-A788-7630FD75469F.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-pointcloudattach/V25/EN_US")
 
+(:name "-POINTCLOUDDELETEITEM"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_-POINTCLOUDDELETEITEM"
+ :synopsis "Deletes point cloud files."
+ :options ("Comma-separated indexes (to delete multiple point clouds)"
+           "All (to delete all point clouds)")
+ :arguments "The index of the point cloud to delete (comma-separated indexes for several, or All for all point clouds)."
+ :description "Removes point cloud files from the cache via the Command line. This action also eliminates all insertions of that point cloud in the current drawing. Users input the index of the point cloud they wish to delete."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-pointclouddeleteitem/V25/EN_US")
+
+(:name "-POINTCLOUDPREPROCESS"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_-POINTCLOUDPREPROCESS"
+ :synopsis "Attaches point cloud files to the current drawing."
+ :options NIL
+ :arguments NIL
+ :description "Attaches point cloud files to the current drawing via the command line. The page states this command has been deprecated: since BricsCAD V20 it has been replaced by the -POINTCLOUDATTACH command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-pointcloudpreprocess/V25/EN_US")
+
+(:name "-POINTCLOUDREFERENCE"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_-POINTCLOUDREFERENCE"
+ :synopsis "Loads point clouds from cache or inserts new point clouds into the current drawing via Command line."
+ :options ("Cache" "New" "Inputdata" "Enter insertion point" "Rotation angle"
+           "Scale factor")
+ :arguments "Method (Cache or New); if Cache, the index of the cached point cloud; if New, the point cloud link (Inputdata); then insertion point, rotation angle, and scale factor."
+ :description "Enables users to attach point cloud data to their drawing through the command-line interface. It supports both loading previously cached point clouds and importing new ones from external sources."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-pointcloudreference/V25/EN_US")
+
 (:name "-PSETUPIN"
  :category :PLOT
  :aliases NIL
@@ -881,6 +1478,21 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-C3876E92-3478-449C-8FAB-DA760B2EDD09.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-purge/V25/EN_US")
+
+(:name "-REDIRMODE"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_-REDIRMODE"
+ :synopsis "Sets the type of entities you want to find and replace the directories from via the Command line."
+ :options ("Abbreviated entity type entries (e.g., s, x, i, r)"
+           "* (wildcard to specify all entity types)")
+ :arguments "Abbreviated entity type codes separated by commas, or * to select all entity types."
+ :description "Specifies which entity types to include when using the REDIR command. Users can enter abbreviated entity type codes separated by commas, or use a wildcard to select all entity types."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-redirmode/V25/EN_US")
 
 (:name "-REFEDIT"
  :category :BLOCK
@@ -941,6 +1553,21 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-BF3A0E9D-E009-45C1-A778-C6148C5CAEC8.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-scalelistedit/V25/EN_US")
 
+(:name "-SETBYLAYER"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_-SETBYLAYER"
+ :synopsis "Sets the property overrides of selected entities to ByLayer."
+ :options ("Color" "Linetype" "Lineweight" "Material" "Plot Style"
+           "Transparency")
+ :arguments "Selection of entities (or 'all' for all non-frozen entities in the current viewport), then a prompt whether blocks should have their properties changed."
+ :description "Changes overridden properties (color, linetype, lineweight, material, plot style, and transparency) back to their default BYLAYER values. Users select entities whose properties will be modified, or enter 'all' to select all non-frozen entities in the current viewport. The command prompts whether blocks should have their properties changed when entities contain them."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-setbylayer/V25/EN_US")
+
 (:name "-SHADEMODE"
  :category :VIEW
  :aliases NIL
@@ -956,6 +1583,37 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-A39F669D-DD11-46DD-BD20-7C41F2FF5326.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-shademode/V25/EN_US")
 
+(:name "-SIGVALIDATE"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_-SIGVALIDATE"
+ :synopsis "Displays the digital signature for the drawing via Command line."
+ :options NIL
+ :arguments NIL
+ :description "Presents digital signature information in the Command line and Prompt History window, including the Subject, Issuer, Expiration date, and Serial number of the drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-sigvalidate/V25/EN_US")
+
+(:name "-STYLE"
+ :category :TEXT
+ :aliases ("FONT")
+ :intl-name "_-STYLE"
+ :synopsis "Creates and modifies text styles."
+ :options ("? (list existing styles)" "Text style to create or modify"
+           "Font type (SHX or TTF)" "Height" "Width" "Obliquing angle"
+           "Draw text backwards" "Draw text upside-down" "Draw text vertically"
+           "Annotative")
+ :arguments "Text style name to create or modify, font, height, width, obliquing angle, and orientation/annotative options; the page does not enumerate a fixed prompt sequence."
+ :description "Establishes and alters text styles that control text appearance, including font and height, intended for macro use. Styles affect single-line text, mtext, attributes, tables, and dimensions/leaders, but not dimensional constraints."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-style/V25/EN_US")
+
 (:name "-TABLE"
  :category :TABLE
  :aliases NIL
@@ -970,6 +1628,72 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-B958B73F-E812-41DC-8AA3-074A1E125BF4.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-table/V25/EN_US")
 
+(:name "-TCASE"
+ :category :TEXT
+ :aliases NIL
+ :intl-name "_-TCASE"
+ :synopsis "Changes the case of the selected text entities via the Command line."
+ :options ("Sentence" "Lower" "Upper case" "Title" "toGgle")
+ :arguments "Selection of text entities, then a case mode (Sentence, Lower, Upper case, Title, or toGgle)."
+ :description "This Express Tools command allows users to modify the capitalization of selected text objects. Users select the text entities and choose from multiple case conversion options available within the command interface."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-tcase/V25/EN_US")
+
+(:name "-TEXT"
+ :category :TEXT
+ :aliases ("-T")
+ :intl-name "_-TEXT"
+ :synopsis "Places single-line text in drawings."
+ :options NIL
+ :arguments "Command-line prompts for single-line text; the page refers to the TEXT command and does not enumerate the sequence here."
+ :description "Places single lines of text in the drawing, unformatted; works at the Command line. See the TEXT command for additional details."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-text/V25/EN_US")
+
+(:name "-TIN"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_-TIN"
+ :synopsis "Creates a new TIN Surface from selected source data via Command line."
+ :options ("Import from file" "Enter file format name"
+           "? to list point file formats" "place Points" "create from Faces"
+           "create from point Cloud" "create from point Groups"
+           "create from cOntours" "Use weeding factors"
+           "Use supplementing factors" "cLip polygon"
+           "Simplify the TIN surface?" "Create TIN surface"
+           "Densify TIN surface" "Enter for entire TIN surface"
+           "Select polygons" "Draw polygon")
+ :arguments "Source data selection for the surface (import from file, points, faces, point cloud, point groups, or contours) and related options; the page does not enumerate a fixed prompt sequence."
+ :description "A TIN Surface is a 3D geometric representation of terrain using triangulation. The command connects nearest points into triangles forming a Triangular Irregular Network (TIN) using Delaunay triangulation. TIN Surfaces are dynamically linked to most input data and automatically create a snapshot after creation to preserve the triangulation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-tin/V25/EN_US")
+
+(:name "-TINEDIT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_-TINEDIT"
+ :synopsis "Edits a TIN surface via Command line."
+ :options ("Add Points" "Add Point Groups" "Add Breaklines" "Add bOundaries"
+           "Clip" "Remove Points" "Swap Edge" "Point Location"
+           "Point Elevation" "Add Line" "Delete Line" "Remove Outer Edges"
+           "Minimize Flat Areas" "Remove Elevations" "SMoothing")
+ :arguments "A TIN surface and an edit operation (add/remove points, breaklines, boundaries, edges, elevations, smoothing, etc.); the page presents a menu of options rather than a fixed prompt sequence."
+ :description "Allows editing of existing TIN Surfaces by modifying how TIN edges connect points to form triangles. Users can delete existing TIN points and edges, add new ones, or change the position and elevation of existing TIN points. Any editing operation can be modified afterward in the Civil Explorer panel."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-tinedit/V25/EN_US")
+
 (:name "-TOOLBAR"
  :category :CUSTOMIZATION
  :aliases NIL
@@ -983,6 +1707,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0CFBD067-D736-4198-BC09-3A9092ECE005.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-toolbar/V25/EN_US")
+
+(:name "-TOOLPANEL"
+ :category :CUSTOMIZATION
+ :aliases NIL
+ :intl-name "_-TOOLPANEL"
+ :synopsis "Toggles the display of panels."
+ :options ("Show" "Hide" "Toggle")
+ :arguments "The name of the panel (or ? to list all panels), then a display option (Show, Hide, or Toggle)."
+ :description "Turns the display of panels on and off, such as the Properties and Tips panels. Users can enter the panel name and choose a display option, or enter ? to list all available panels."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-toolpanel/V25/EN_US")
 
 (:name "-UNITS"
  :category :SYSTEM
@@ -999,6 +1737,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-D396FBFE-6171-4A89-9E68-6CB082EBE0E1.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-units/V25/EN_US")
+
+(:name "-VBALOAD"
+ :category :CUSTOMIZATION
+ :aliases NIL
+ :intl-name "_-VBALOAD"
+ :synopsis "Loads VBA projects."
+ :options NIL
+ :arguments "The VBA project to load at the Command line."
+ :description "Loads a VBA project; works in the Command line (short for \"Visual Basic for Applications\")."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-vbaload/V25/EN_US")
 
 (:name "-VBARUN"
  :category :CUSTOMIZATION
@@ -1100,6 +1852,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-C3391298-3F46-4CA3-BFB9-B0EEB75E292D.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-xbind/V25/EN_US")
 
+(:name "-XLIST"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_-XLIST"
+ :synopsis "Displays properties of entities nested in external references and blocks in the Command line."
+ :options NIL
+ :arguments "Select a nested xref or block entity; no additional prompts specified."
+ :description "Allows users to view properties of nested entities within external references (xrefs) and blocks. To use it, select a nested xref or block entity, and the properties of that selected entity are displayed on the Command line."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-xlist/V25/EN_US")
+
 (:name "-XREF"
  :category :BLOCK
  :aliases ("-XR")
@@ -1114,6 +1880,35 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-70599862-DF52-4291-B64B-8A4C45599F39.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_-xref/V25/EN_US")
+
+(:name "2DINTERSECTION"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_2DINTERSECTION"
+ :synopsis "Toggles the intersection entity snap."
+ :options NIL
+ :arguments NIL
+ :description "Toggles the apparent intersection entity snap, which snaps to the intersections of entities, even when they only appear to be intersecting in 3D space. This command can be entered transparently during other commands, but must be entered without the transparency apostrophe prefix."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_2dintersection/V25/EN_US")
+
+(:name "3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_3D"
+ :synopsis "Draws basic 3D mesh entities."
+ :options ("Wedge" "Pyramid" "Box" "Cone" "cyLinder" "Sphere" "DIsh" "DOme"
+           "Torus" "Mesh")
+ :arguments "A mesh primitive type (Box, Cone, cyLinder, Sphere, DIsh, DOme, Torus, Mesh, Wedge, Pyramid) followed by the parameters for that type (which vary by primitive, e.g. corner/center point, dimensions, segments)."
+ :description "Creates fundamental three-dimensional mesh objects including boxes, cones, cylinders, dishes, domes, meshes, pyramids, spheres, tori, and wedges in BricsCAD Lite, Pro, Mechanical, and BIM versions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_3d/V25/EN_US")
 
 (:name "3DALIGN"
  :category :MODIFY
@@ -1158,6 +1953,36 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-EB201BB0-E1DD-41C5-AF2D-F7EB97CF666B.htm"
  :source-bricscad NIL)
+
+(:name "3DCOMPARE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_3DCOMPARE"
+ :synopsis "Opens the Compare two models dialog box to compare solid and surface geometry between two drawing files."
+ :options ("Advanced Options (tolerance/threshold value for geometry comparison)"
+           "Compare block reference (Yes/No)"
+           "Compare entities on frozen layers (Yes/No)")
+ :arguments "Model 1 file name (or select the 1st drawing); Model 2 file name (or select the 2nd drawing); Advanced Options if needed."
+ :description "Performs geometric comparison of solids and surfaces between two drawing files. Results appear in a new drawing and are reported in the Mechanical Browser panel. The command creates a \"Comparison\" layout with two viewports illustrating differences using colors."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_3dcompare/V25/EN_US")
+
+(:name "3DCONVERT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_3DCONVERT"
+ :synopsis "Converts 3D solids to polyface meshes."
+ :options NIL
+ :arguments "Selection of the 3D ACIS entities to convert."
+ :description "Converts 3D ACIS selected entities to 3D polyface meshes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_3dconvert/V25/EN_US")
 
 (:name "3DCORBIT"
  :category :VIEW
@@ -1259,6 +2084,20 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8EE0E22A-1D66-40C6-9AEB-78F74AEB47E7.htm"
  :source-bricscad NIL)
+
+(:name "3DINTERSECTION"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_3DINTERSECTION"
+ :synopsis "Toggles the intersection entity snap."
+ :options NIL
+ :arguments NIL
+ :description "Toggles 3D intersection entity snap mode in BricsCAD. It snaps to locations where 3D entities physically intersect each other. The command can be entered transparently during other commands but without the apostrophe prefix."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_3dintersection/V25/EN_US")
 
 (:name "3DMESH"
  :category :|3D|
@@ -1502,6 +2341,90 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-6921516E-3158-43AF-9612-CA7A8BBD6FAC.htm"
  :source-bricscad NIL)
 
+(:name "ACETUCS-BACK"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_ACETUCS-BACK"
+ :synopsis "Changes the UCS so the XY-plane aligns with the back plane and Z-axis points away from it."
+ :options NIL
+ :arguments "None; the UCS changes automatically when the command runs, with no additional prompts."
+ :description "Automatically reorients the User Coordinate System when executed. It positions the XY-plane parallel to the back plane of the drawing while directing the Z-axis outward from that plane. Part of the Express Tools."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_acetucsback/V25/EN_US")
+
+(:name "ACETUCS-BOTTOM"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_ACETUCS-BOTTOM"
+ :synopsis "Changes the UCS so the XY-plane aligns with the bottom plane and Z-axis points away from it."
+ :options NIL
+ :arguments "None; the UCS changes automatically when the command runs, with no parameters required."
+ :description "Automatically adjusts the User Coordinate System (UCS) orientation. It repositions the XY-plane to be parallel with the drawing's bottom surface while directing the Z-axis outward. Part of the Express Tools."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_acetucsbottom/V25/EN_US")
+
+(:name "ACETUCS-FRONT"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_ACETUCS-FRONT"
+ :synopsis "Reorients the User Coordinate System so the XY-plane aligns with the front plane and Z-axis points outward."
+ :options NIL
+ :arguments "None; the UCS automatically changes when running the command, with no interactive prompts."
+ :description "Automatically adjusts the UCS upon execution. It is part of the Express Tools feature set available in BricsCAD Lite, Pro, Mechanical, and BIM versions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_acetucsfront/V25/EN_US")
+
+(:name "ACETUCS-LEFT"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_ACETUCS-LEFT"
+ :synopsis "Reorients the User Coordinate System (UCS) with the XY-plane parallel to the left plane and Z-axis pointing outward."
+ :options NIL
+ :arguments "None; the UCS automatically changes when running the command."
+ :description "Automatically adjusts the UCS when executed. It belongs to the Express Tools suite and enables users to align their coordinate system to the left side of their drawing for easier modeling and visualization from that perspective."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_acetucsleft/V25/EN_US")
+
+(:name "ACETUCS-RIGHT"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_ACETUCS-RIGHT"
+ :synopsis "Changes the UCS so that the XY-plane is parallel to the right plane of the drawing and the Z-axis points away from it."
+ :options NIL
+ :arguments NIL
+ :description "Express Tools command that automatically adjusts the User Coordinate System (UCS) when executed, reorienting it to align with the right plane of the drawing. The UCS automatically changes when running the command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_acetucsright/V25/EN_US")
+
+(:name "ACETUCS-TOP"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_ACETUCS-TOP"
+ :synopsis "Changes the UCS so the XY-plane is parallel to the top plane with the Z-axis pointing away from it."
+ :options NIL
+ :arguments NIL
+ :description "Express Tools utility that automatically adjusts the User Coordinate System (UCS) orientation. When executed, it realigns the coordinate system so the XY-plane becomes parallel to the drawing's top plane, with the Z-axis perpendicular and pointing outward."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_acetucstop/V25/EN_US")
+
 (:name "ACISIN"
  :category :FILE
  :aliases NIL
@@ -1543,6 +2466,34 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-F2AC63E6-7DA4-4501-A6A7-BC152392256C.htm"
  :source-bricscad NIL)
+
+(:name "ACTIVATESECTIONVIEW"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_ACTIVATESECTIONVIEW"
+ :synopsis "Sets viewpoint by section plane."
+ :options NIL
+ :arguments NIL
+ :description "Reorients the viewpoint to be head-on to a selected section plane, creates a UCS in that plane, and disables perspective view. It requires at least one section plane created with the SECTIONPLANE command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_activatesectionview/V25/EN_US")
+
+(:name "ACTIVATESTORY"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_ACTIVATESTORY"
+ :synopsis "Activates a named story."
+ :options ("Yes" "No")
+ :arguments "Building number, then story number (names appear in the Command line), then Yes/No whether to display the story in Top View Mode (default Yes)."
+ :description "Enables users to activate a designated story in a BricsCAD BIM project by entering building and story numbers (which appear in the Command line alongside their names). Users can optionally display the story in Top View Mode, with this feature enabled by default."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_activatestory/V25/EN_US")
 
 (:name "ACTIVITYINSIGHTSCLOSE"
  :category :SYSTEM
@@ -1684,6 +2635,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-FE421165-22DD-4030-AEC1-2A5B0934326A.htm"
  :source-bricscad NIL)
 
+(:name "ADDINMAN"
+ :category :CUSTOMIZATION
+ :aliases NIL
+ :intl-name "_ADDINMAN"
+ :synopsis "Opens the Add-in Manager dialog box."
+ :options ("Loaded/Unloaded" "Load on Startup" "Command line")
+ :arguments NIL
+ :description "Launches the Add-in Manager, which controls how Visual Basic for Applications COM modules are loaded in BricsCAD. Users can toggle modules between loaded and unloaded states or configure them to load automatically when the application starts."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_addinman/V25/EN_US")
+
 (:name "ADDSELECTED"
  :category :DRAW
  :aliases NIL
@@ -1698,6 +2663,21 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-771C0F16-58B6-4752-A05D-792FE5D76050.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_addselected/V25/EN_US")
 
+(:name "ADDSURFACELABELS"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_ADDSURFACELABELS"
+ :synopsis "Creates surface labels."
+ :options ("Contour" "Spot Elevation" "Grid" "Slope" "Single point"
+           "Two points")
+ :arguments "Select the label type, then apply it to the chosen surface."
+ :description "Generates spot elevation levels, slope labels, or contour labels on a surface. Users select the label type and apply it to their chosen surface."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_addsurfacelabels/V25/EN_US")
+
 (:name "ADJUST"
  :category :MODIFY
  :aliases NIL
@@ -1711,6 +2691,444 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0EB806F7-5FA0-4944-B39D-A7B2A5F6B346.htm"
  :source-bricscad NIL)
+
+(:name "AIDIMFLIPARROW"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AIDIMFLIPARROW"
+ :synopsis "Flips a dimension arrow."
+ :options NIL
+ :arguments "Select a point along the dimension or extension line nearest the arrow to flip (one arrow at a time)."
+ :description "Reverses the direction that dimension arrows point. Although the prompt references multiple entities, it operates on a single arrow at a time, specifically the one nearest to the user's selected point along the dimension or extension line."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_aidimfliparrow/V25/EN_US")
+
+(:name "AIDIMPREC"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AIDIMPREC"
+ :synopsis "Changes the display precision of dimension text."
+ :options NIL
+ :arguments NIL
+ :description "Adjusts how dimension values appear by altering the number of decimal places or fraction denominators. It rounds off dimension values up or down while keeping the actual measured precision unchanged; this can display potentially misleading values, for instance rounding a 3.525\" measurement to 4\" when precision is set to 0 decimal places."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_aidimprec/V25/EN_US")
+
+(:name "AIDIMSTYLE"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AIDIMSTYLE"
+ :synopsis "Applies and saves dimension styles."
+ :options ("Apply" "Save")
+ :arguments "Choose Apply or Save; then interact via the option workflow."
+ :description "Saves current dimension settings as a named style and applies preset styles to selected dimensions in the current drawing. It provides two primary workflows: applying existing dimension styles to drawing dimensions, or saving dimension properties as a named style."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_aidimstyle/V25/EN_US")
+
+(:name "AIMLEADEREDITADD"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_AIMLEADEREDITADD"
+ :synopsis "Adds and removes leaders to mleaders."
+ :options ("Add leaders" "Remove leaders")
+ :arguments NIL
+ :description "Allows users to add new leader lines to existing multileader entities or remove leaders from them. You can even remove all leaders while preserving the text content."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_aimleadereditadd/V25/EN_US")
+
+(:name "AIMLEADEREDITREMOVE"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_AIMLEADEREDITREMOVE"
+ :synopsis "Removes and adds leaders to mleaders."
+ :options ("Remove leaders" "Add leaders")
+ :arguments NIL
+ :description "Removes and adds one or more leader lines to and from multi-line leaders. It can eliminate all leaders from an mleader entity while preserving the text component."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_aimleadereditremove/V25/EN_US")
+
+(:name "AI_BOX"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_AI_BOX"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_CIRCTAN"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_AI_CIRCTAN"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_CONE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_AI_CONE"
+ :synopsis "Creates a 3D polygon mesh in the shape of a cone."
+ :options ("Center of base of cone" "Radius of base of cone" "Diameter"
+           "Radius of top of cone" "Diameter of top of cone" "Elliptical"
+           "Center" "Endpoint of axis" "Second end of ellipse axis"
+           "Other axis" "Apex" "Height of cone" "Number of segments")
+ :arguments "Choose a method (Center of base of cone, or Elliptical), then supply the corresponding points/values (center, radius/diameter, height or apex, top radius, and number of segments)."
+ :description "Generates a 3D polygon mesh in the shape of a circular or elliptical cone with customizable options for center, radius, diameter, height, axis endpoints, apex, and segment count. It offers two methods: Center of base of cone, and Elliptical."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ai_cone/V25/EN_US")
+
+(:name "AI_CYLINDER"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_AI_CYLINDER"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_DESELECT"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_AI_DESELECT"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_DIM_TEXTABOVE"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AI_DIM_TEXTABOVE"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_DIM_TEXTCENTER"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AI_DIM_TEXTCENTER"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_DIM_TEXTHOME"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AI_DIM_TEXTHOME"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_DISH"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_AI_DISH"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_DOME"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_AI_DOME"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_DRAWORDER"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_AI_DRAWORDER"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_EDGESURF"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_AI_EDGESURF"
+ :synopsis "Obsolete command maintained for backward compatibility."
+ :options NIL
+ :arguments NIL
+ :description "This command is obsolete. It still exists for backward compatibility only. Users should employ the EDGESURF command as an alternative."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ai_edgesurf/V25/EN_US")
+
+(:name "AI_FMS"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_AI_FMS"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_MOLC"
+ :category :LAYER
+ :aliases NIL
+ :intl-name "_AI_MOLC"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_MSPACE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_AI_MSPACE"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_PROPCHK"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_AI_PROPCHK"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_PSPACE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_AI_PSPACE"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_PYRAMID"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_AI_PYRAMID"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_REVSURF"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_AI_REVSURF"
+ :synopsis "Obsolete command retained for backward compatibility."
+ :options NIL
+ :arguments NIL
+ :description "This command is obsolete. It still exists for backward compatibility only. Users are directed to employ the REVSURF command as a replacement."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ai_revsurf/V25/EN_US")
+
+(:name "AI_RULESURF"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_AI_RULESURF"
+ :synopsis "Obsolete command retained for backward compatibility."
+ :options NIL
+ :arguments NIL
+ :description "This command is obsolete. It still exists for backward compatibility only. Users should employ the RULESURF command as a replacement."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ai_rulesurf/V25/EN_US")
+
+(:name "AI_SELALL"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_AI_SELALL"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_SPHERE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_AI_SPHERE"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_TABSURF"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_AI_TABSURF"
+ :synopsis "Obsolete command; use TABSURF instead."
+ :options NIL
+ :arguments NIL
+ :description "This command is obsolete. It still exists for backward compatibility only. Users should employ the TABSURF command as an alternative."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ai_tabsurf/V25/EN_US")
+
+(:name "AI_TILEMODE1"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_AI_TILEMODE1"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_TORUS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_AI_TORUS"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AI_WEDGE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_AI_WEDGE"
+ :synopsis "Creates a 3D polyface mesh in the shape of a wedge."
+ :options ("Corner of wedge" "Length of wedge" "Width of wedge"
+           "Height of wedge" "Rotation angle for wedge")
+ :arguments "Corner point, then length, then width, then height, then rotation angle."
+ :description "Generates a 3D polyface mesh wedge by specifying a corner point, length, width, height, and rotation angle. The wedge's base can be rotated in the xy-plane using the rotation angle parameter."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ai_wedge/V25/EN_US")
 
 (:name "ALIASEDIT"
  :category :CUSTOMIZATION
@@ -1740,6 +3158,141 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-D0FA10D5-76EE-4B80-A285-43C7F39916DB.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_align/V25/EN_US")
 
+(:name "ALIGNMENT"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_ALIGNMENT"
+ :synopsis "Creates Horizontal and 3D alignments to represent a reference system for positioning linear objects."
+ :options ("Select TIN surface" "Pick pi point" "Undo" "Specify start station")
+ :arguments "PI (point of intersection) coordinates for the horizontal alignment path; optionally a TIN surface selection and a start station value."
+ :description "Creates Horizontal and 3D alignments to represent a reference system used to position linear objects in space. Horizontal alignments are built by specifying points of intersection (PI) of a tangent polygon, with curves automatically drawn between tangents. The command can optionally drape alignments onto a TIN surface to generate 3D alignments."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_alignment/V25/EN_US")
+
+(:name "ALIGNMENT3D"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_ALIGNMENT3D"
+ :synopsis "Creates a 3D Alignment from a specified vertical alignment."
+ :options NIL
+ :arguments "Select a vertical alignment."
+ :description "Generates a 3D Alignment entity by allowing users to select a vertical alignment. This tool is available in BricsCAD Pro, BricsCAD Mechanical, and BricsCAD BIM versions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_alignment3d/V25/EN_US")
+
+(:name "ALIGNMENTCURVE"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_ALIGNMENTCURVE"
+ :synopsis "Creates unconstrained curve element on existing or new Horizontal Alignment."
+ :options ("Select existing horizontal alignment" "Create new alignment"
+           "Specify curve direction" "Points")
+ :arguments "First select a horizontal alignment (or create a new one), then either specify a curve center point and diameter, or choose the Points option to define three points (start, second, end)."
+ :description "Allows users to add curve elements to horizontal alignments in two ways: by adding to an existing alignment or creating a new alignment. Users can specify curves either by designating a center point and orientation, or by selecting three points that define the curve's start, middle, and end positions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_alignmentcurve/V25/EN_US")
+
+(:name "ALIGNMENTEDIT"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_ALIGNMENTEDIT"
+ :synopsis "Edits an alignment."
+ :options ("Continue with Pi" "Delete Element" "Add Pi" "Remove Pi"
+           "Change Tin surface" "Add Station equation"
+           "Remove Station equation" "Add Pvi" "Remove Pvi")
+ :arguments "Select a Horizontal or Vertical alignment to edit, then choose an editing option appropriate to the alignment type."
+ :description "Allows users to modify existing Horizontal or Vertical alignments. Users first select the alignment they wish to edit, then access various editing options depending on the alignment type."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_alignmentedit/V25/EN_US")
+
+(:name "ALIGNMENTELEMENTBETWEEN"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_ALIGNMENTELEMENTBETWEEN"
+ :synopsis "Creates a new element between two selected alignment elements."
+ :options ("Line" "Curve" "Spiral" "SCS" "SS" "SLS" "Specify first entity"
+           "Specify second entity"
+           "Is curve solution angle (Greaterthan180 / Lessthan180)"
+           "spiral parameter A" "Spiral length" "Spiral in-length"
+           "Spiral out-length" "Specify radius")
+ :arguments NIL
+ :description "Draws a new element tangential to both selected attachment elements, with the tangency maintained during editing. Multiple element types can be created, including lines, curves, spirals, and various combinations like spiral-curve-spiral or spiral-line-spiral arrangements."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_alignmentelementbetween/V25/EN_US")
+
+(:name "ALIGNMENTELEMENTFROM"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_ALIGNMENTELEMENTFROM"
+ :synopsis "Attaches new alignment element before (to) or after (from) the existing alignment element."
+ :options ("Line" "Curve" "Spiral" "LS" "CS" "CSS" "Element" "element END"
+           "Is curve solution angle" "Is curve compound or reverse?" "Length"
+           "Specify spiral length" "Specify radius" "Specify curve direction")
+ :arguments "Select the attachment element; choose element type (Line, Curve, Spiral, LS, CS, or CSS); specify relevant parameters based on selection (radius, length, pass-through points, angle solutions, direction)."
+ :description "Enables users to attach various types of new alignment elements to existing ones, including lines, curves, spirals, and combinations thereof. The new element is always drawn tangentially to the specified point on the selected attachment element."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_alignmentelementfrom/V25/EN_US")
+
+(:name "ALIGNMENTLINE"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_ALIGNMENTLINE"
+ :synopsis "Creates unconstrained line element between two specified points on existing or on a new Horizontal Alignment."
+ :options ("Select existing horizontal alignment" "Create new alignment")
+ :arguments "Select an existing horizontal alignment (then specify two points), or directly specify two points to create a new alignment. Continue specifying additional point pairs until pressing Enter."
+ :description "Offers two workflow options. Users can either add a new line element to an existing horizontal alignment between two specified points, or create an entirely new horizontal alignment by drawing a line element. The command allows continuous drawing of multiple line elements until the user presses Enter."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_alignmentline/V25/EN_US")
+
+(:name "ALIGNMENTVERTICAL"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_ALIGNMENTVERTICAL"
+ :synopsis "Creates Vertical Alignment."
+ :options ("Undo" "Automatic 3d alignment")
+ :arguments NIL
+ :description "Generates a vertical alignment on a selected vertical alignment view and automatically creates the corresponding 3D alignment. Users can create it by picking PVI points individually or use an automatic method that calculates the vertical alignment based on terrain line tolerances."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_alignmentvertical/V25/EN_US")
+
+(:name "ALIGNMENTVIEW"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_ALIGNMENTVIEW"
+ :synopsis "Creates a vertical alignment view for the selected horizontal alignment."
+ :options NIL
+ :arguments "Select a horizontal alignment (previously created with ALIGNMENT), then specify a point as the origin for the vertical alignment view."
+ :description "Generates a vertical alignment view based on a previously created horizontal alignment. Users select a horizontal alignment (made with the ALIGNMENT command) and specify a point to serve as the origin for the vertical alignment view."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_alignmentview/V25/EN_US")
+
 (:name "ALIGNSPACE"
  :category :VIEW
  :aliases NIL
@@ -1754,6 +3307,62 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-D5F8E293-F8A9-4E45-9441-87A21487A68C.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_alignspace/V25/EN_US")
 
+(:name "AMBALLOON"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_AMBALLOON"
+ :synopsis "Adds balloon annotations for geometry, blocks or standard parts annotated with part references."
+ :options ("auTo" "Horizontal" "Vertical" "Angle" "One" "set Bom" "?")
+ :arguments NIL
+ :description "Adds balloon annotations to part references from the current BOM in a BricsCAD Mechanical drawing. These annotations are placed on the AM_5 layer and remain compatible with legacy AutoCAD Mechanical applications."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_amballoon/V25/EN_US")
+
+(:name "AMBOMSETTINGS"
+ :category :TABLE
+ :aliases NIL
+ :intl-name "_AMBOMSETTINGS"
+ :synopsis "Launches the BOM Settings dialog box."
+ :options NIL
+ :arguments NIL
+ :description "Opens a dialog to configure part references properties and establish default settings for parts lists and BOM data capture. It is exclusively available for drawings containing mechanical entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ambomsettings/V25/EN_US")
+
+(:name "AMCLEAN"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_AMCLEAN"
+ :synopsis "Saves a mechanical 2D drawing as a non-mechanical drawing."
+ :options NIL
+ :arguments NIL
+ :description "Cleans the drawing from Mechanical 2D data to be able to be exported to a DXF file. The command converts drawings containing mechanical 2D entities into non-mechanical format, enabling DXF export. It requires the LOADMECHANICAL2D system variable to be enabled and only functions on drawings with mechanical entities. It opens the Save file as non-mechanical dialog box to choose a file name for the non-mechanical drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_amclean/V25/EN_US")
+
+(:name "AMDATUMID"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_AMDATUMID"
+ :synopsis "Draws a datum identifier and attaches it to an entity."
+ :options NIL
+ :arguments "Select an object to attach the symbol to, specify location points (first leader segment perpendicular to the attached object), then configure parameters in the Datum Identifier dialog."
+ :description "Creates a datum identifier symbol in mechanical drawings. Users select an object to attach the symbol to, specify location points (with the first leader segment perpendicular to the attached object), and then configure parameters through the Datum Identifier dialog. Double-clicking an existing symbol allows parameter modification. This command functions only with mechanical entities in BricsCAD Mechanical drawings."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_amdatumid/V25/EN_US")
+
 (:name "AMECONVERT"
  :category :|3D|
  :aliases NIL
@@ -1767,6 +3376,274 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-3535641E-8090-41C7-A910-200C559D5720.htm"
  :source-bricscad NIL)
+
+(:name "AMEDGESYM"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_AMEDGESYM"
+ :synopsis "Draws an edge symbol and attaches it to an entity."
+ :options NIL
+ :arguments "Select the object to attach the edge symbol to and specify the points for its location; configure remaining settings via the Properties panel."
+ :description "Creates edge symbols for technical drawings. It works only with drawings containing mechanical entities and requires the mechanical environment to be set up. Users select an object and specify placement points for the symbol. Configuration occurs through the Properties panel after symbol creation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_amedgesym/V25/EN_US")
+
+(:name "AMFCFRAME"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_AMFCFRAME"
+ :synopsis "Creates a feature control frame and attaches it to an entity."
+ :options NIL
+ :arguments "Select the entity to attach the feature control frame; specify points for the frame's location; press Enter to open the Feature Control Frame dialog box."
+ :description "Allows users to create a rectangular feature control frame symbol divided into at least two sections, which can be attached to entities in mechanical drawings. The tool opens a dialog box for configuration after specifying the attachment point and location. This command functions only in BricsCAD Mechanical drawings with mechanical entities present."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_amfcframe/V25/EN_US")
+
+(:name "AMNOTE"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_AMNOTE"
+ :synopsis "Draws a leader note and attaches it to an entity."
+ :options NIL
+ :arguments "Select the object to attach the leader note; specify the points for the leader location; write the text note (formatted via the Text Formatting dialog)."
+ :description "Used in BricsCAD Mechanical to create leader notes attached to mechanical drawing entities. Users select an object, specify leader points, and enter text that opens in a Text Formatting dialog. After creation, note properties can be edited through the Properties panel. This command requires BricsCAD Mechanical and only functions in drawings containing mechanical entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_amnote/V25/EN_US")
+
+(:name "AMPARTLIST"
+ :category :TABLE
+ :aliases NIL
+ :intl-name "_AMPARTLIST"
+ :synopsis "Inserts in the drawing area a parts list, according to an indicated BOM."
+ :options ("Main" "?")
+ :arguments "Select which BOM to use, then configure the table's appearance and content through the Parts List dialog box."
+ :description "Enables users to generate a parts list table within their drawing based on a specified Bill of Materials (BOM). After invoking the command, users select which BOM to use, then configure the table's appearance and content through the Parts List dialog box. The resulting table is placed on the AM_5 layer."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ampartlist/V25/EN_US")
+
+(:name "AMPARTREF"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_AMPARTREF"
+ :synopsis "Creates a Part Reference symbol and places it in the drawing area."
+ :options ("Block" "Copy" "Reference")
+ :arguments "Select an object to attach a Part Reference symbol to it, or click empty space to create an unattached symbol; the Part Reference dialog box then opens for configuration."
+ :description "Generates Part Reference symbols for mechanical drawings in BricsCAD. Users select objects to attach the symbol, and an unattached Part Reference can be placed in empty spaces. The symbol is automatically added to the AM_12 layer."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ampartref/V25/EN_US")
+
+(:name "AMPARTREFEDIT"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_AMPARTREFEDIT"
+ :synopsis "Edits Part Reference properties."
+ :options NIL
+ :arguments "Select a Part Reference symbol, which triggers a dialog box for editing its properties."
+ :description "Allows users to modify Part Reference symbols in mechanical drawings. Users select a Part Reference symbol, which triggers a dialog box for editing its properties. The command highlights all Part References symbols throughout the entire drawing and adds them to the AM_12 layer."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ampartrefedit/V25/EN_US")
+
+(:name "AMPOWERDIM_ALI"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AMPOWERDIM_ALI"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AMPOWERDIM_ANG"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AMPOWERDIM_ANG"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AMPOWERDIM_DIA"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AMPOWERDIM_DIA"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AMPOWERDIM_HOR"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AMPOWERDIM_HOR"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AMPOWERDIM_RAD"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AMPOWERDIM_RAD"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AMPOWERDIM_ROT"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AMPOWERDIM_ROT"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AMPOWERDIM_VER"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AMPOWERDIM_VER"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "AMPOWEREDIT"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_AMPOWEREDIT"
+ :synopsis "Identifies the selected dimension or mechanical symbol entity and executes the most relevant command to edit it."
+ :options NIL
+ :arguments NIL
+ :description "The AMPOWEREDIT command recognizes any dimension or mechanical symbol entity you select and launches the appropriate editing command. When you double-click a dimension or mechanical symbol entity, this command activates automatically, opening relevant dialogs such as the Edit Dimensioning dialog box."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ampoweredit/V25/EN_US")
+
+(:name "AMRESCALE"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_AMRESCALE"
+ :synopsis "Rescales dimensions, symbols, tables and texts in both model space and layout."
+ :options NIL
+ :arguments "Enter the new symbol scale value, then select the entities to rescale."
+ :description "The AMRESCALE command adjusts the scale of mechanical drawing annotations including dimensions, symbols, hatches, and tables without affecting the underlying drawing geometry. It also adjusts offset distances between dimension lines and entities to prevent overlapping text. Requires BricsCAD Mechanical and only functions with drawings containing mechanical entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_amrescale/V25/EN_US")
+
+(:name "AMSETUPDWG"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_AMSETUPDWG"
+ :synopsis "Changes the current standard of a mechanical 2D drawing or sets up a mechanical 2D template for a non-mechanical drawing."
+ :options NIL
+ :arguments "Select a DWT Mechanical2D template file through the dialog interface."
+ :description "This BricsCAD Mechanical command lets users either change the standard of an existing mechanical drawing or establish mechanical 2D setup for non-mechanical drawings by selecting a DWT mechanical template file. The command initializes mechanical-related data such as dictionaries and style tables."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_amsetupdwg/V25/EN_US")
+
+(:name "AMSIMPLEWELD"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_AMSIMPLEWELD"
+ :synopsis "Creates caterpillars and side weld annotations."
+ :options ("Front" "Alignment" "Left" "Center" "Right" "Width" "Step"
+           "switch Orientation" "switch Direction" "Full" "Side" "Fillet"
+           "single-V butt" "change leg Width")
+ :arguments "Select weld type (Front or Side), alignment positioning, curve selection between two points, weld width, bead pitch (step), and orientation/direction toggles as needed."
+ :description "This command generates weld annotations for mechanical drawings, including caterpillar welds (front view fillet or single-V butt welds) and side view seam welds. It functions exclusively with drawings containing mechanical entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_amsimpleweld/V25/EN_US")
+
+(:name "AMSURFSYM"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_AMSURFSYM"
+ :synopsis "Creates a surface symbol."
+ :options NIL
+ :arguments "Select the object to attach the surface symbol, specify the points for the symbol's location, then configure parameters in the Surface texture dialog box."
+ :description "The AMSURFSYM command generates a surface symbol for mechanical drawings. After selecting an object to attach the symbol and specifying its location, a Surface texture dialog opens to configure the symbol's parameters. The symbol is placed on the AM_5 layer."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_amsurfsym/V25/EN_US")
+
+(:name "AMWELDSYM"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_AMWELDSYM"
+ :synopsis "Creates a welding symbol in the drawing space."
+ :options NIL
+ :arguments "Select the entity to attach the welding symbol, specify points for the symbol's location, then configure parameters in the Weld Symbol dialog box."
+ :description "The AMWELDSYM command allows users to add welding symbols to mechanical drawings. Users select an entity to attach the symbol to, specify its location points, and customize parameters via the Weld Symbol dialog box. The welding symbol is placed on the AM_5 layer. Only available for mechanical entity drawings; for placing symbols in drawing views (Paper space), use BMWELDSYMRETRIEVE instead."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_amweldsym/V25/EN_US")
 
 (:name "ANALYSISCURVATURE"
  :category :|3D|
@@ -1824,6 +3701,76 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-59583A47-B141-42FA-9B8D-E7591CB81F8B.htm"
  :source-bricscad NIL)
 
+(:name "ANALYTICS"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_ANALYTICS"
+ :synopsis "Opens the BricsCAD Analytics Program dialog box."
+ :options NIL
+ :arguments NIL
+ :description "This command launches a dialog that enables users to contribute to BricsCAD's development by sending pseudonymised diagnostics and usage data to Bricsys. Related system variable: DATACOLLECTION."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_analytics/V25/EN_US")
+
+(:name "ANIMATIONEDITORCLOSE"
+ :category :RENDER
+ :aliases NIL
+ :intl-name "_ANIMATIONEDITORCLOSE"
+ :synopsis "Closes the Animation editor panel."
+ :options NIL
+ :arguments NIL
+ :description "This command hides the Animation editor panel from the current workspace. If the panel is stacked with other panels, its tab or icon is removed from that stack."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_animationeditorclose/V25/EN_US")
+
+(:name "ANIMATIONEDITOROPEN"
+ :category :RENDER
+ :aliases NIL
+ :intl-name "_ANIMATIONEDITOROPEN"
+ :synopsis "Opens the Animation Editor panel to display it in the current workspace."
+ :options NIL
+ :arguments NIL
+ :description "The ANIMATIONEDITOROPEN command opens the Animation Editor panel in the current workspace. This panel enables users to develop multi-parametric animations with intricate camera movements and export them as video files. This functionality is unavailable on macOS and Linux platforms."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_animationeditoropen/V25/EN_US")
+
+(:name "ANIMATIONEDITORPLAYBACK"
+ :category :RENDER
+ :aliases NIL
+ :intl-name "_ANIMATIONEDITORPLAYBACK"
+ :synopsis "Loads animation graphics data from a zip-archive or folder."
+ :options NIL
+ :arguments NIL
+ :description "This command loads animation graphics data and switches the Animation Editor to playback mode. It only functions when the Animation Editor panel is active. A command-line variant exists: -ANIMATIONEDITORPLAYBACK."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_animationeditorplayback/V25/EN_US")
+
+(:name "ANIMATIONEDITORRECORD"
+ :category :RENDER
+ :aliases NIL
+ :intl-name "_ANIMATIONEDITORRECORD"
+ :synopsis "Records animation graphics."
+ :options ("Zip-file" "Folder")
+ :arguments "Select a save destination (zip-file or folder); recording then starts automatically based on that selection."
+ :description "Captures animation graphics and exports them to either a zip-archive or folder. The recording process duration depends on model complexity and may require significant time to complete."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_animationeditorrecord/V25/EN_US")
+
 (:name "ANIPATH"
  :category :RENDER
  :aliases NIL
@@ -1879,6 +3826,20 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-C8603032-7E55-4EEF-B2DF-CD2FD9EDEF91.htm"
  :source-bricscad NIL)
+
+(:name "APPARENT"
+ :category :SELECTION
+ :aliases ("PLANVIEWINT")
+ :intl-name "_APPARENT"
+ :synopsis "Toggles the Apparent intersection entity snap."
+ :options NIL
+ :arguments NIL
+ :description "This command enables or disables snapping to apparent intersections. When launched at the command line, it toggles a running entity snap and updates the OSMODE system variable. When used within another command, it temporarily disables the snap for that operation only without changing OSMODE."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_apparent/V25/EN_US")
 
 (:name "APPAUTOLOADER"
  :category :CUSTOMIZATION
@@ -1978,6 +3939,21 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0591351F-8750-425C-9F1C-98B1C73D9D55.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_area/V25/EN_US")
 
+(:name "ARRANGE"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_ARRANGE"
+ :synopsis "Spatially organizes entities by aligning and/or distributing them along UCS axes."
+ :options ("Direction" "X" "Y" "Z" "Align" "None" "Lower" "Center" "Upper"
+           "Distribute" "By gaps" "Equally spaced" "Reset all" "Apply")
+ :arguments "Select entities, specify direction (X, Y, or Z axis), choose alignment option, choose distribution option, then Apply or Reset all."
+ :description "The ARRANGE command rearranges selected 2D and/or 3D entities based on their bounding boxes. Users can perform multiple arrangement operations in a single command run using alignment and distribution options relative to the current User Coordinate System."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_arrange/V25/EN_US")
+
 (:name "ARRAY"
  :category :MODIFY
  :aliases ("AR")
@@ -2020,6 +3996,21 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-D3E79D10-2151-45F4-AD49-A598DAB80723.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_arrayclose/V25/EN_US")
 
+(:name "ARRAYDETECT"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_ARRAYDETECT"
+ :synopsis "Creates arrays of entities based on found patterns in selected entities."
+ :options ("select source Entities" "autodetect Single entity arrays"
+           "Convert selected" "convert Separately")
+ :arguments "Select entities containing patterns to detect, choose detection mode (multiple entity source or single entity source), then specify which patterns to convert to arrays."
+ :description "This command searches for entity patterns in a set of selected 2D and/or 3D entities and converts them into array entities. Using ARRAYDETECT replaces sets of entities with arrays to add structure to drawings and reduce file size."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_arraydetect/V25/EN_US")
+
 (:name "ARRAYEDIT"
  :category :MODIFY
  :aliases NIL
@@ -2035,6 +4026,21 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-BD2D21A1-ED66-4A1A-B1DE-551D41C5D7E3.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_arrayedit/V25/EN_US")
+
+(:name "ARRAYEDITEXT"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_ARRAYEDITEXT"
+ :synopsis "Provides additional editing of associative arrays."
+ :options ("SPacing" "REsizing" "Offset item" "Scale item" "Rotate item"
+           "Delete item" "BEdit Source")
+ :arguments "Interactive selections and coordinate inputs: for offset, pick points or enter x,y; for scaling, a numeric factor (>1 enlarges, <1 reduces); for rotation, numeric angles (positive = counter-clockwise, negative = clockwise)."
+ :description "Enables editing of all elements or individual items within associative arrays created by the ARRAY command. Users can adjust spacing, resize arrays, offset, scale, rotate, or delete specific elements interactively."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_arrayeditext/V25/EN_US")
 
 (:name "ARRAYPATH"
  :category :MODIFY
@@ -2136,6 +4142,35 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-928B7980-2174-4F1E-8059-9F1B1884E7C8.htm"
  :source-bricscad NIL)
+
+(:name "ATTACHMENTSPANELCLOSE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_ATTACHMENTSPANELCLOSE"
+ :synopsis "Closes the Attachments panel."
+ :options NIL
+ :arguments NIL
+ :description "Closes the Attachments panel to hide it from the current workspace. When the panel is stacked, its tab or icon gets removed from that stack."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_attachmentspanelclose/V25/EN_US")
+
+(:name "ATTACHMENTSPANELOPEN"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_ATTACHMENTSPANELOPEN"
+ :synopsis "Opens the Attachments panel."
+ :options ("Attach DWG" "Attach PDF" "Attach Image" "Attach Point Cloud"
+           "Refresh" "Detach" "Open" "Tree View" "Grid View")
+ :arguments NIL
+ :description "This command displays the Attachments panel in the current workspace, restoring it to its previous size and location. The panel provides a central location for viewing and managing attached drawings, images, PDF files, and point clouds. Like other dockable panels, it can be floating, docked, or stacked."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_attachmentspanelopen/V25/EN_US")
 
 (:name "ATTACHURL"
  :category :OTHER
@@ -2292,6 +4327,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-62DDB935-61B1-49DA-8238-3EF1CC45259B.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_audit/V25/EN_US")
 
+(:name "AUTOCOMPLETE"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_AUTOCOMPLETE"
+ :synopsis "Controls how the auto-complete function operates in the BricsCAD Command line."
+ :options ("Append" "List" "System Variables" "Delay" "ON" "OFF")
+ :arguments NIL
+ :description "The AUTOCOMPLETE command configures the behavior of auto-complete suggestions by defining how suggestions are appended and which commands and system variables display. The feature can also be accessed via right-click context menu in the Command line."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_autocomplete/V25/EN_US")
+
 (:name "AUTOCONSTRAIN"
  :category :PARAMETRIC
  :aliases NIL
@@ -2319,6 +4368,20 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-F51F83E2-304F-461F-9EA5-6DDB05321E65.htm"
  :source-bricscad NIL)
+
+(:name "BACKGROUND"
+ :category :VIEW
+ :aliases ("BACKGROUNDS")
+ :intl-name "_BACKGROUND"
+ :synopsis "Applies a background to the current viewport."
+ :options ("None" "Solid" "Gradient" "Image")
+ :arguments NIL
+ :description "Opens the Background dialog box to apply a background to the current viewport. Users can choose from four types: None, Solid, Gradient, and Image. The feature requires that Backgrounds = On be set in Visual Styles (available in all visual styles except 2DWIREFRAME)."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_background/V25/EN_US")
 
 (:name "BACTION"
  :category :BLOCK
@@ -2603,6 +4666,1049 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-6795C9A3-CB54-4513-9C77-32C967B49F7E.htm"
  :source-bricscad NIL)
 
+(:name "BHATCH"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_BHATCH"
+ :synopsis "Opens the Hatch and Gradient dialog box."
+ :options NIL
+ :arguments NIL
+ :description "The BHATCH command launches a dialog interface to create hatch entities with repeating patterns or solid colors in the current drawing. Related commands: HATCH, -HATCH, HATCHEDIT, -HATCHEDIT."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bhatch/V25/EN_US")
+
+(:name "BIMADDDETAILREFS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMADDDETAILREFS"
+ :synopsis "Creates a link between a master model and a detail file."
+ :options ("Existing solid" "Selection extents")
+ :arguments "First select a detail to insert, then choose between promoting existing solids to detail references or generating a bounding box around selected entities to be promoted to a detail reference."
+ :description "The BIMADDDETAILREFS command places detail references (solids with Detail BIM type) in a master model, establishing connections between locations in the master model and detail files. These references are positioned on the DETAIL_VOLUME layer."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimadddetailrefs/V25/EN_US")
+
+(:name "BIMADDECCENTRICITY"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMADDECCENTRICITY"
+ :synopsis "Controls relative positions of the axis of linear solids."
+ :options ("TR" "TM" "TL" "MR" "ML" "BR" "BM" "BL" "C" "Reset" "To centroid"
+           "Eccentricity")
+ :arguments "Select linear solids, then choose a base location (via widget or command-line text), with optional additional offset parameters."
+ :description "This command adds eccentricity to linear solids with respect to their axis. Users select one or multiple linear solids, choose a base location using a widget or command-line input, and can optionally insert an additional offset vector. The command works exclusively with structural elements."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimaddeccentricity/V25/EN_US")
+
+(:name "BIMALIGNSECTIONBLOCKS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMALIGNSECTIONBLOCKS"
+ :synopsis "Aligns section blocks in model space."
+ :options NIL
+ :arguments NIL
+ :description "This command realigns section results based on the SECTIONRESULTINTERVAL system variable. It aligns BIM section blocks in the model space of generated section drawing files. The BIMSECTIONUPDATE command will identify overlapping section blocks and recommend using this command to resolve them."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimalignsectionblocks/V25/EN_US")
+
+(:name "BIMANALYTICALMODEL"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMANALYTICALMODEL"
+ :synopsis "Creates an analytical model from a fully classified BIM model."
+ :options ("Visual settings" "Recalculate" "Export and exit"
+           "Select connected axes" "Remove" "Connect from axes"
+           "Disconnect from axes" "Auto split" "Split along axis" "Merge"
+           "Select connected nodes" "Connect to node" "Disconnect from node"
+           "Add restrictions" "Relax restrictions")
+ :arguments NIL
+ :description "This command generates an analytical model from a complete 3D structure model. It opens the Allowed Deviations From Center Axis dialog, providing an automatically generated proposal that users can further customize. The automatic proposal minimizes rigid links by adjusting axis lines, with deviation settings controlling the extent of changes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimanalyticalmodel/V25/EN_US")
+
+(:name "BIMAPPLYPROFILE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMAPPLYPROFILE"
+ :synopsis "Applies a profile to linear entities and linear solids."
+ :options ("Quarter turn" "Rotate" "Delete clippings" "LIbrary"
+           "convert solids to Line" "DEtach current profile(s)")
+ :arguments "Select path (linear entities or linear solids); select profile (closed 2D entity, region, existing linear solid, or press Enter for dialog); then apply the profile choosing from available options."
+ :description "This command allows you to add profiles to linear entities, detach current profiles, and convert solids to lines. Paths must be placed in the XY plane of the current UCS, and accepted path types include lines, polylines, arcs, circles, elliptical arcs, ellipses, and helixes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimapplyprofile/V25/EN_US")
+
+(:name "BIMATTACHCOMPOSITION"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMATTACHCOMPOSITION"
+ :synopsis "Attaches/detaches a BIM composition to solids."
+ :options ("Dialog" "Entity" "deTach" "Accept" "Reject" "Check individually"
+           "Yes" "No" "Confirm")
+ :arguments "Select a composition (name entry, Compositions dialog, or entity selection); select solids to attach the composition to; choose a reference face; then review and accept/reject automatically restored connections."
+ :description "This command enables users to attach selected compositions to chosen solids and detach them when needed. It automatically identifies and restores broken connections between selected solids and adjacent ones, with options to accept, reject, or review each restored connection individually."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimattachcomposition/V25/EN_US")
+
+(:name "BIMATTACHSPATIALLOCATION"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMATTACHSPATIALLOCATION"
+ :synopsis "Attaches or removes a spatial location to/from a selection of entities."
+ :options ("Auto attach locations" "Unattach current location" "Select space")
+ :arguments "Runs interactively, prompting to select a location number, attach locations automatically, unattach current locations, or select a space for assignment."
+ :description "This BricsCAD BIM command enables users to assign spatial locations to selected objects or remove existing assignments. It offers automatic location creation with optional building and story generation, manual space assignment, or removal of current location properties from selections."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimattachspatiallocation/V25/EN_US")
+
+(:name "BIMAUTOMATCH"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMAUTOMATCH"
+ :synopsis "Matches composition, properties, or parameters of example entities to similar entities in a project."
+ :options ("Autocomplete" "External file" "All" "Building")
+ :arguments "Displays the Auto Match dialog box prompting selection of Compositions, Window Parameters, BIM Properties, and Stair Parameters checkboxes, and source selection (Autocomplete or External file); when all entities have customized properties, a source entity must be selected to copy from."
+ :description "The BIMAUTOMATCH command finds similarities based on the type of element, interior/exterior property, orientation, spatial location, amount of windows in a wall and already defined properties. It enables bulk application of characteristics like compositions and parameters across similar entities without manual one-by-one assignment. The command works optimally when the project has been bimified."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimautomatch/V25/EN_US")
+
+(:name "BIMBEAM"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMBEAM"
+ :synopsis "Creates solids classified as Beam."
+ :options ("Single beam" "Poly beam" "Rectangular" "Library" "Composition"
+           "Profile height" "Profile width" "Base offset" "Justification"
+           "Spatial location" "Automatic")
+ :arguments "Launches the Beam context panel; select creation method, define beam profile and dimensions, set justification point, and place beams via dynamic input or command-line entry."
+ :description "The BIMBEAM command generates beams with various shapes, offering two creation methods: single beams constrained to X/Y axes, or polyline-shaped beams without axis constraints. Options are configurable through the command context panel or command line."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimbeam/V25/EN_US")
+
+(:name "BIMCHECKDETAILS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMCHECKDETAILS"
+ :synopsis "Inspects BIM Project details and their references."
+ :options NIL
+ :arguments NIL
+ :description "The command opens a context panel allowing users to identify which BIM Project details have references in a project's 3D model or sheet, display reference counts, and manage links between detail references and their DWG files. Users invoke it with a project's 3D model or sheet file open, then interact through the resulting context panel."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimcheckdetails/V25/EN_US")
+
+(:name "BIMCLASSIFY"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMCLASSIFY"
+ :synopsis "Classifies an entity and gets a name and an internal unique GUID (globally unique identifier)."
+ :options ("Wall" "Column" "Slab" "Beam" "wIndow" "Door" "sPace" "buiLding"
+           "sTory" "building Element" "Xref" "Other" "Auto" "stRuctural"
+           "Unclassify")
+ :arguments "Select entities to classify or press Enter to classify the entire drawing, then choose the appropriate classification option from the available keywords."
+ :description "The BIMCLASSIFY command assigns BIM classification to drawing entities, maintaining a globally unique identifier (GUID) throughout the classification lifecycle. Classifications can be applied to any .dwg entity, and a GUID persists even when the BIM classification changes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimclassify/V25/EN_US")
+
+(:name "BIMCOLLECTDETAILS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMCOLLECTDETAILS"
+ :synopsis "Collects all tagged BIM details from the active sheet and inserts their layouts on the sheet."
+ :options NIL
+ :arguments "Select from tagged BIM details on the active sheet, choose a layout when multiple options exist, designate a base insertion point, then specify a second insertion point for layout placement."
+ :description "After gathering tagged BIM details from the current sheet, this command inserts layouts of those details onto the sheet. When details have multiple layout options, users designate which layout to insert and specify base and second insertion points. The inserted layout maintains a connection to the detail source, enabling the BIMCHECKDETAILS command to catalog and manage inserted project details. This command functions exclusively within BIM Project sheets."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimcollectdetails/V25/EN_US")
+
+(:name "BIMCOLUMN"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMCOLUMN"
+ :synopsis "Creates solids classified as Column."
+ :options ("Circular" "Rectangular" "Library" "Pick a profile" "Composition"
+           "Profile Depth" "Profile Width" "Profile Radius" "Fixed height"
+           "Connect to ceiling" "Top offset" "Base offset" "Justification"
+           "Magnetic Snapping" "Spatial location" "Automatic")
+ :arguments "Interactive usage through the context panel and command line: define insertion points, adjust profile dimensions, and set justification, with dynamic dimensions and hotkey controls for placement and orientation."
+ :description "The BIMCOLUMN command generates columns with various shapes (circular or rectangular profiles) in BricsCAD BIM. Users configure options through a command context panel and place columns into the model by defining insertion points and adjusting profile dimensions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimcolumn/V25/EN_US")
+
+(:name "BIMCOPY"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMCOPY"
+ :synopsis "Creates copies from the planar faces of 3D solids."
+ :options ("Copy" "Repeat" "Number" "Accept")
+ :arguments "Specify a distance value (via dynamic dimension field or cursor movement) to create copies, then select from available options to execute single or multiple copies."
+ :description "The BIMCOPY command generates duplicates from planar faces of 3D solids and the sides/ends of linear solids. Users specify a distance to create the copy, with options to repeat the operation or generate multiple copies at once."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimcopy/V25/EN_US")
+
+(:name "BIMCREATEDETAIL"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMCREATEDETAIL"
+ :synopsis "Creates a 3D detail and saves it in the Details library."
+ :options ("Basic" "Advanced" "Bounded" "Extrudable" "Library" "Project")
+ :arguments "Select detail type (Basic or Advanced); select entities (basic) or reference solids/detail entities (advanced); set detail volume inflation (advanced only); then set save location and naming (Name, Detail file/Category, optional references)."
+ :description "Launches a context panel for defining BIM 3D details through a three-step process. Users can choose between creating a basic detail (saved to project, referenced in model space) or an advanced detail (saved to project or library, propagated in model space)."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimcreatedetail/V25/EN_US")
+
+(:name "BIMCURTAINWALL"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMCURTAINWALL"
+ :synopsis "Creates a curtain wall."
+ :options ("Length U panels" "Length V panels" "Number U panels"
+           "Number V panels" "Width" "Depth" "Glass thickness" "Straight"
+           "Smooth" "Nodes" "Delete defining entities")
+ :arguments "Select a face from a 3D Solid, then configure grid dimensions, frame properties, glass thickness, and connection types before generating the curtain wall block."
+ :description "This command generates a curtain wall as a block from the face of a 3D Solid, allowing users to select a face and create a grid."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimcurtainwall/V25/EN_US")
+
+(:name "BIMDECOMPOSE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMDECOMPOSE"
+ :synopsis "Decomposes compositions into their separate plies."
+ :options NIL
+ :arguments "Manually select BIM solids for decomposition after execution."
+ :description "The BIMDECOMPOSE command breaks down BIM compositions into individual plies, which are then grouped into a single block. Each resulting ply retains the BIM data from the original solid. Users can then further manipulate the plies using the BEDIT command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimdecompose/V25/EN_US")
+
+(:name "BIMDIMENSION"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_BIMDIMENSION"
+ :synopsis "Dimensions the selected entities in the viewport semi-automatically."
+ :options ("place Dimensions" "Undo" "deselect All" "Select direction"
+           "x-y align" "Angle")
+ :arguments "Select entities in the viewport, optionally apply filters through the panel, specify a direction preference (x-y aligned or custom angle), then pick a point to place the dimensions."
+ :description "This Paper Space-only command allows users to dimension BIM model entities by selecting one or multiple objects, applying optional filters, and specifying dimension placement. The Dimension command panel provides controls for entity selection, filtering by parameters, choosing dimension direction, and positioning dimensions in the drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimdimension/V25/EN_US")
+
+(:name "BIMEXTEND"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMEXTEND"
+ :synopsis "Extends a wall."
+ :options NIL
+ :arguments "Select 0-1 entities/subentities (the part of the wall that should be extended)."
+ :description "The command extends a side of a wall that doesn't intersect other walls by automatically detecting the nearest wall to extend it to."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimextend/V25/EN_US")
+
+(:name "BIMFLIP"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMFLIP"
+ :synopsis "Flips a starting face of a composition or mirrors/flips an insert."
+ :options ("Left-right" "In-out")
+ :arguments "Select BIM entity to flip (accepts inserts, walls, and slabs), then choose method: Left-right or In-out."
+ :description "The BIMFLIP command either flips the starting face from which composition layers are arranged, or mirrors an insert (such as a window or door) left/right or flips it inside/outside. The result appears in drawings generated by the BIMSECTIONUPDATE command when a multi-layered composition is attached to the sectioned solid. Only succeeds for solids that have a BIM composition attached, contain a BIM classification, and are in a calculated BIM section."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimflip/V25/EN_US")
+
+(:name "BIMFLOWCONNECT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMFLOWCONNECT"
+ :synopsis "Creates a connection between flow segments."
+ :options ("Switch")
+ :arguments "Select flow segments prior to execution, then use the Switch option to choose among available connection alternatives (circular or rectangular configurations, plus reducer types)."
+ :description "Establishes connections between flow segments like pipes or HVAC ducts. When multiple coplanar segments are selected, the command automatically generates connections. If segments have different cross-sections, reducer elements are inserted; non-coplanar selections introduce extra connection elements."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimflowconnect/V25/EN_US")
+
+(:name "BIMGENERATE2DSTAIR"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMGENERATE2DSTAIR"
+ :synopsis "Generates a symbolic 2D representation of a 3D stair by projecting the steps onto a plane."
+ :options ("Select Section Plane" "Continue without section plane")
+ :arguments "Accepts either a section plane selection or proceeds without one via the stated options."
+ :description "This command creates a 2D symbolic representation of 3D entities classified as stairs or slabs. The generated representation is automatically placed in BIM_2D_BACK+_Stair* layers, preserving the solid geometry visibility in section results. An arrow indicates the stair's upward direction, with a circle marking the first step and numbered steps beginning at 1."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimgenerate2dstair/V25/EN_US")
+
+(:name "BIMGRID"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMGRID"
+ :synopsis "Creates 2-dimensional grids."
+ :options ("offsetU" "offsetV" "offset Labels" "Radial")
+ :arguments "Specify two points to establish the grid. For radial grids, provide a center point, start lines, and end lines specifications."
+ :description "The BIMGRID command generates both rectangular and radial grids in BricsCAD BIM by specifying two points. Users can customize grid spacing, label positioning, and choose between standard rectangular or radial grid configurations."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimgrid/V25/EN_US")
+
+(:name "BIMIFY"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMIFY"
+ :synopsis "Analyzes the model and runs automatic classification and spatial location assignment for the entire model."
+ :options ("Auto Detect" "Architectural" "Structural" "MEP" "Mixed Model"
+           "Solids" "Block References" "Assign structural/MEP Profiles"
+           "Assign spatial locations" "Create spaces" "Create sections"
+           "Elevations" "Floor Plans" "Keep panel open and show results")
+ :arguments "Opens an interactive panel to select either specific entities or the entire drawing, then configure options before executing the analysis."
+ :description "The BIMIFY command performs automated analysis of a BricsCAD BIM model, classifying objects and assigning spatial locations. It can create buildings, stories, spaces, plan sections, and elevations as needed."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimify/V25/EN_US")
+
+(:name "BIMINSERT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMINSERT"
+ :synopsis "Inserts BIM components into the current drawing."
+ :options NIL
+ :arguments NIL
+ :description "The BIMINSERT command allows users to insert BIM components into their current drawing. However, this command is deprecated and users should use the BMINSERT command instead."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_biminsert/V25/EN_US")
+
+(:name "BIMINVERTSPACES"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMINVERTSPACES"
+ :synopsis "Converts 3D solids and closed polylines representing spaces into a building structure."
+ :options ("Select entities in the drawing" "Entire drawing" "Shell thickness"
+           "Assign spatial location")
+ :arguments "Launches a context panel for entity selection (manual selection of 3D solids/polylines or all drawing entities) and parameter configuration (shell thickness value and spatial location assignment option)."
+ :description "This command generates BIM elements (walls, openings, slabs, roofs) between input 3D solid entities and closed polylines, creating a complete building structure. It is primarily designed for Scan to BIM workflows and creates parametric opening components that can later be replaced with windows or doors."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_biminvertspaces/V25/EN_US")
+
+(:name "BIMLINEARSOLID"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMLINEARSOLID"
+ :synopsis "Creates a chain of linear solids."
+ :options ("Set start point" "Angle" "Length" "Undo" "Quarter turn" "Rotate"
+           "choose other Profile" "Last point" "Follow" "Rectangular"
+           "Circular" "Library" "select in Model" "adJust profile")
+ :arguments "Specify starting points, angles, and distances to construct connected linear solids; profile type and rotation adjustable via options."
+ :description "The BIMLINEARSOLID command enables users to construct connected linear solids by specifying starting points, angles, and distances. It supports various profile types including rectangular and circular defaults, with options to rotate profiles and adjust dimensions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimlinearsolid/V25/EN_US")
+
+(:name "BIMLIST"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_BIMLIST"
+ :synopsis "Lists the selected entities."
+ :options NIL
+ :arguments "Run the command, then select the BIM entities to list."
+ :description "The BIMLIST command displays all selected BIM entities in the command line, showing their handle, material, and GUID (globally unique identifier)."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimlist/V25/EN_US")
+
+(:name "BIMMULTISELECT"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_BIMMULTISELECT"
+ :synopsis "Selects linear solids."
+ :options ("all Coplanar axes" "coplAnar and parallel axes" "all Parallel axes")
+ :arguments "Select a linear solid (or its face), then filter results by axis relationship (coplanar, parallel, or both); press Ctrl to cycle through options or TAB to cycle through faces."
+ :description "The command selects linear solids with coplanar and/or parallel axes. When a face is selected, corresponding faces of related solids are also selected, with the ability to cycle through different faces using the TAB key."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimmultiselect/V25/EN_US")
+
+(:name "BIMPARAMETRIZEDETAIL"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMPARAMETRIZEDETAIL"
+ :synopsis "Generates parameters for a detail."
+ :options NIL
+ :arguments NIL
+ :description "Creates parametric controls for a detail file to facilitate easy modification of dimensions and angles. The command operates on detail files stored in the DETAILSPATH directory and allows parameters and constraints to be edited through the Mechanical Browser. It is intended for use within detail files rather than project files."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimparametrizedetail/V25/EN_US")
+
+(:name "BIMPATCH"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMPATCH"
+ :synopsis "Allows to replace part of a generated section."
+ :options NIL
+ :arguments NIL
+ :description "Enables users to specify a rectangular area on a previously generated block and modify it. The command cuts out geometry and replaces it with a block reference, creating a nested block in the BIM section. Patches can be edited using the REFEDIT command. The documentation states this command is no longer available as of version 21.2 because entity data linked to the 3D model are lost during the patching process."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimpatch/V25/EN_US")
+
+(:name "BIMPROFILES"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMPROFILES"
+ :synopsis "Opens the Profiles dialog box."
+ :options ("All" "HVAC" "Piping" "Structural Steel" "AISC" "AS" "BS" "CNS"
+           "EURO" "GOST" "JIS" "Pipe" "SAISC" "STO ASChM" "Circle"
+           "Circle Hollow" "Custom Shape" "I Shape" "L Shape" "Rectangle"
+           "Rectangle Hollow" "T Shape" "U Shape" "Save Profile" "New Profile"
+           "Delete Profile" "Project and Library Information")
+ :arguments NIL
+ :description "The BIMPROFILES command launches the Profiles dialog, enabling users to create and modify BIM profiles. The interface provides filtering capabilities, tools for profile management, and property configuration options."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimprofiles/V25/EN_US")
+
+(:name "BIMPROJECTINFO"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMPROJECTINFO"
+ :synopsis "Opens the BIM Project Info dialog box."
+ :options NIL
+ :arguments NIL
+ :description "This command launches a dialog box for viewing and modifying BIM project information, including properties, materials, compositions, profiles, and spatial structures. Users can manage both project and central databases, and choose whether to store databases as embedded (in the drawing file) or external (.bsyslib files)."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimprojectinfo/V25/EN_US")
+
+(:name "BIMPROPAGATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMPROPAGATE"
+ :synopsis "Maps details related to selected base solids to similar base solids in the model."
+ :options ("Block" "Copy" "Select search space" "Entire drawing" "No"
+           "Inflate first" "Save detail")
+ :arguments "Select reference solids and optionally detail entities (solids, block references, faces, edges, etc.), then accept or reject the displayed suggestions (green checkmark, question mark, or red X)."
+ :description "This command copies details (solids, holes, finishing geometry, etc.) from reference base solids to matching base solids throughout a BIM model, with optional grid outlining of the detail area."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimpropagate/V25/EN_US")
+
+(:name "BIMPROPAGATECORNER"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMPROPAGATECORNER"
+ :synopsis "Propagates details."
+ :options ("Select detail objects" "yes, copy as Block" "yes, plain Copy" "No"
+           "Inflate first" "Save detail" "Apply")
+ :arguments "Select at least three planar reference solids that form a 3D corner, then select detail objects, choose copying method (block or plain copy), optionally inflate the sensitive zone, save the detail, and apply suggestions."
+ :description "This command propagates details connected to three planar base solids, such as corners. Users select at least three planar reference solids forming a 3D corner, and the detail gets copied to similar corners in the model."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimpropagatecorner/V25/EN_US")
+
+(:name "BIMPROPAGATEEDGES"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMPROPAGATEEDGES"
+ :synopsis "Propagates a detail along the edge of a planar solid."
+ :options ("Inflate first" "Save detail" "Yes" "No" "Outside reference solid"
+           "Inside reference solid")
+ :arguments "Select a planar reference solid, then select the detail entities to be copied along the edges of that solid."
+ :description "Propagates railings, gutters, borders, wall caps, and similar edge details. It works by selecting a planar reference solid and the detail entities to copy, with the detail area displayed in blue and the reference contact area in purple."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimpropagateedges/V25/EN_US")
+
+(:name "BIMPROPAGATEFROMFILE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMPROPAGATEFROMFILE"
+ :synopsis "Opens the Select source file dialog box."
+ :options NIL
+ :arguments "Select a DWG file via the dialog box, then respond to command-line prompts that vary by detail type (Planar, Linear, Pattern, Edge, or Corner)."
+ :description "Opens a dialog to select a DWG file for propagation in the current drawing. After file selection, command-line prompts follow based on detail type (Planar, Linear, Pattern, Edge, or Corner), with behavior detailed in the related BIMPROPAGATE commands."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimpropagatefromfile/V25/EN_US")
+
+(:name "BIMPROPAGATELINEAR"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMPROPAGATELINEAR"
+ :synopsis "Propagates connections between linear elements."
+ :options ("Block" "Copy" "Inflate first" "Save detail")
+ :arguments "Select the linear or planar reference solids that form the connection, then select the detail entities to be copied; accept or reject the suggestions."
+ :description "Copies detailed connections between linear solids such as beams, columns, pipes, and ducts, including their connections to walls and slabs. Users select reference solids and detail entities to be copied, with visual feedback showing detail areas in blue and reference contact areas in purple."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimpropagatelinear/V25/EN_US")
+
+(:name "BIMPROPAGATEPATTERN"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMPROPAGATEPATTERN"
+ :synopsis "Propagates a single element on a flat surface to multiple locations and grids."
+ :options ("Inflate first" "Save detail")
+ :arguments "Select a planar solid to which the detail relates, then select the detail entities to be propagated; accept or reject the suggestions."
+ :description "Propagates architectural elements like lights, switches, windows, and air diffusers across planar surfaces. Users select a planar solid and detail entities to copy, then can accept or reject suggested propagation patterns shown with visual indicators."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimpropagatepattern/V25/EN_US")
+
+(:name "BIMPROPAGATEPLANAR"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMPROPAGATEPLANAR"
+ :synopsis "Propagates connections between planar elements."
+ :options ("Inflate first" "Save detail")
+ :arguments "Select the planar reference solids (walls, slabs, roofs) that form the connection, optionally select detail entities to be copied, then accept or reject the suggestions."
+ :description "Allows users to select planar reference solids (walls, slabs, roofs) that form connections and optionally copy detail entities as part of the connection. It enables copying detailed connections between two or more planar entities, with visual feedback showing detail areas in blue and reference contact areas in purple."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimpropagateplanar/V25/EN_US")
+
+(:name "BIMPROPERTIES"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMPROPERTIES"
+ :synopsis "Opens the BIM Properties dialog box."
+ :options NIL
+ :arguments "None; the command opens a dialog box with no command-line arguments."
+ :description "Opens the BIM Properties dialog to create, edit, and delete property definitions and organize properties in property sets. Users can work with namespaces including User-defined properties, IFC schemas, Quantity properties, and Classification Systems."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimproperties/V25/EN_US")
+
+(:name "BIMPYTHON"
+ :category :CUSTOMIZATION
+ :aliases NIL
+ :intl-name "_BIMPYTHON"
+ :synopsis "Allows Python Scripting and Querying of a BIM model."
+ :options NIL
+ :arguments "None on the command line; opens the Select Python script dialog box to choose the script to run."
+ :description "Opens the Select Python script dialog box and runs the chosen script. The Python version included with BricsCAD has been updated to 3.9.6."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimpython/V25/EN_US")
+
+(:name "BIMQUICKBUILDING"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMQUICKBUILDING"
+ :synopsis "Transforms solids into buildings."
+ :options ("change Selection" "Import" "sPaces")
+ :arguments "Select entities (or use the entire drawing by default), choose Buildings or Spaces mode, configure floor heights and quantities, set wall and slab thickness, then optionally add floors or import CSV configuration files."
+ :description "Creates a separate drawing for generated BIM buildings with automatically created walls, slabs, roofs, floors, and spaces. The command uses storey naming schemes and can be configured with custom floor heights and thicknesses."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimquickbuilding/V25/EN_US")
+
+(:name "BIMQUICKDRAW"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMQUICKDRAW"
+ :synopsis "Creates and edits spaces and buildings."
+ :options ("Wall placement (Next to slab / On top of slab)"
+           "Auto adopt sizes (ON/OFF)" "Snap to walls"
+           "Snap to walls extensions" "Snap to double lines"
+           "Snap to single lines" "Use entity snapping" "Cancel")
+ :arguments "Enter floor-to-floor distance, wall width, and slab thickness in the context panel, choose wall placement and snapping options, then place the QuickDraw cursor to define space corners."
+ :description "Quickly creates and edits rectangular and L-shaped spaces and buildings. The QuickDraw cursor layout represents the space being created and indicates alignment with existing walls and distances from solids. Dimensions display during creation when dynamic input is enabled."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimquickdraw/V25/EN_US")
+
+(:name "BIMREASSOCIATE"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_BIMREASSOCIATE"
+ :synopsis "Automatically re-associates invalid Tags and Dimensions to the underlying geometry."
+ :options NIL
+ :arguments "Select a BIM section viewport."
+ :description "Select a BIM section viewport to automatically re-assign invalid Tags and Dimensions to the underlying geometry. The BIM Associativity property indicates whether a tag is associated, and unassociated tags display in red when BIM Associative coloring is enabled."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimreassociate/V25/EN_US")
+
+(:name "BIMRECALCULATEAXIS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMRECALCULATEAXIS"
+ :synopsis "Recalculates and repositions the axis of linear building elements."
+ :options NIL
+ :arguments "Select all linear solids for which to recalculate the axis."
+ :description "Recalculates the axis of linear building elements and repositions it back on the center line of a linear element. Users select all linear solids for which to recalculate the axis."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimrecalculateaxis/V25/EN_US")
+
+(:name "BIMROOF"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMROOF"
+ :synopsis "Creates solids classified as Roof."
+ :options ("Creation mode (Rectangular, Polyline, Select entities)"
+           "Composition" "Thickness" "Overhang" "Default angle"
+           "Roof ending (horizontal, perpendicular, vertical)"
+           "Spatial location" "Assign to active story")
+ :arguments "Choose the creation method (rectangle, polyline, or select entities), define the roof boundary, set composition, thickness, overhang, and default angle, choose the roof ending type, then optionally assign a spatial location."
+ :description "Generates a roof based on a closed 2D curve or boundary. Users can configure options through a command context panel or command line. Three methods are available: drawing a rectangle, drawing a polyline, or selecting existing entities in the drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimroof/V25/EN_US")
+
+(:name "BIMROOM"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMROOM"
+ :synopsis "The BIMROOM command is obsolete and has been replaced by the BIMSPACE command."
+ :options NIL
+ :arguments "None; the command is obsolete and cannot create new BIM rooms."
+ :description "The BIMROOM command is no longer in active development. While existing BIM rooms can still be opened, users cannot create new ones or modify their geometry. The command has been superseded by BIMSPACE for current functionality."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimroom/V25/EN_US")
+
+(:name "BIMSECTION"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMSECTION"
+ :synopsis "Creates a BIM Section entity."
+ :options ("Select a point to place section" "Specify distance"
+           "set clipping oN" "set clipping Off" "Detail"
+           "Based on an existing section" "Interior" "Attach section" "Scale"
+           "Reflected ceiling")
+ :arguments "Select a point to place the section, then specify a distance (or point) for section line positioning; optionally select the method type and configure clipping, scale, or attachment properties."
+ :description "Creates a BIM Section entity with a section plane in the XY-plane of the current coordinate system and view direction in the negative Z-direction. Seven types can be created: Plan, Section, Elevation, Detail, Reflected Ceiling Plan, Interior Elevation, and Interior Floor Plan."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimsection/V25/EN_US")
+
+(:name "BIMSECTIONOPEN"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMSECTIONOPEN"
+ :synopsis "Opens the drawing file related to a BIM section entity."
+ :options NIL
+ :arguments "Select either a BIM Section entity in Model Space or a BIM Section result viewport in Paper Space; no typed arguments required."
+ :description "Opens the drawing file related to a BIM Section entity or the 3D BIM model connected to a BIM section drawing. Users can select either a BIM Section entity in Model Space to open its generated section drawing, or select a BIM Section result viewport in Paper Space to open the corresponding 3D model."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimsectionopen/V25/EN_US")
+
+(:name "BIMSECTIONUPDATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMSECTIONUPDATE"
+ :synopsis "Updates the result of a BIM section entity."
+ :options NIL
+ :arguments "Generate the result of a BIM Section entity (optionally selecting BIM Spaces if the Interior option was used), or update the result by selecting a BIM Section entity in Model Space or a viewport in a Paper Space layout."
+ :description "Generates or updates the drawing file associated with a BIM Section entity. When GENERATEASSOCVIEWS is enabled, the command will generate/update section indicators, grid callouts, and story callouts."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimsectionupdate/V25/EN_US")
+
+(:name "BIMSETLOADBEARINGDIRECTION"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMSETLOADBEARINGDIRECTION"
+ :synopsis "Sets the loadbearing direction for BIM slab solids."
+ :options ("None" "Short" "Long" "Both")
+ :arguments "Select a slab solid, then click the displayed icon to choose a loadbearing direction option (None, Short, Long, or Both)."
+ :description "An icon appears in the slab's center after selection. Users click the icon to set the loadbearing direction, choosing between None, Short, Long, or Both orientations."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimsetloadbearingdirection/V25/EN_US")
+
+(:name "BIMSETREFERENCEFACE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMSETREFERENCEFACE"
+ :synopsis "Defines a reference and an opposing face to control the ply layout of a composition."
+ :options ("Select manually")
+ :arguments "Select a reference face, then either accept the suggested opposing face or manually select an opposing face."
+ :description "Allows users to set a reference face manually by selecting a face on a solid. When the opposing face is parallel to the reference face, the system suggests an opposite face that can be accepted or changed. For compositions with variable thickness plies, the reference and opposing faces may be non-parallel."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimsetreferenceface/V25/EN_US")
+
+(:name "BIMSLAB"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMSLAB"
+ :synopsis "Creates solids classified as Slab."
+ :options ("Offset")
+ :arguments "Select a creation mode (Rectangular, Polyline, or Select entities), optionally configure composition, specify thickness, choose justification (top, center, or bottom), assign spatial location, and provide an offset distance if needed."
+ :description "Generates slabs from closed 2D curves or boundaries. Users can define options through a command context panel or command line. The tool offers three methods for establishing slab limits: drawing rectangles, drawing polylines, or selecting existing drawing entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimslab/V25/EN_US")
+
+(:name "BIMSLICEWALL"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMSLICEWALL"
+ :synopsis "Slices a selected wall vertically."
+ :options NIL
+ :arguments "Select a wall, wall-like solid, or linear solid, then indicate the slicing position using the dynamic cursor line."
+ :description "Select a wall, wall-like solid, or linear solid. The command automatically defines a vertical plane perpendicular to the solid's length direction. A blue line displays at the cursor to indicate the slicing position dynamically."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimslicewall/V25/EN_US")
+
+(:name "BIMSPACE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMSPACE"
+ :synopsis "Creates BIM Space entities from enclosed boundaries."
+ :options ("Edit")
+ :arguments "Pick a point inside an enclosed area; with the Edit option, click space bounding entities to add or remove them from the space."
+ :description "Creates BIM Space entities by selecting a point inside an enclosed area defined by space bounding entities (3D solids or 2D linear entities classified as BIM entities). A label is automatically generated at the space's geometric center, with height determined by the highest bounding entity or the Default Space Height preference for 2D-only boundaries."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimspace/V25/EN_US")
+
+(:name "BIMSPATIALLOCATIONS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMSPATIALLOCATIONS"
+ :synopsis "Creates and edits site, buildings and stories."
+ :options ("Dialog" "add Building" "Rename Building" "add Story" "Rename Story"
+           "sEt story elevation" "Point")
+ :arguments "Interact through the Spatial Locations Manager dialog box or select from the command-line options (add/rename building, add/rename story, set story elevation, point)."
+ :description "Displays the Spatial Locations Manager dialog box, which allows you to create and edit sites, buildings, and stories for BIM models."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimspatiallocations/V25/EN_US")
+
+(:name "BIMSPLIT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMSPLIT"
+ :synopsis "Splits segmented solids into separated solids."
+ :options NIL
+ :arguments "Either select an entire solid for automatic splitting, or select cutting faces manually for controlled splitting."
+ :description "Automatically splits segmented solids into separate entities and allows manual splitting using selected cutting faces. The tool is designed for planar and linear shapes like walls, slabs, and columns to facilitate BIM workflows."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimsplit/V25/EN_US")
+
+(:name "BIMSTAIR"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMSTAIR"
+ :synopsis "Creates stairs."
+ :options ("Quarter-turn" "Flip" "U-shape type")
+ :arguments "Select a horizontal face of a solid or a void area, adjust settings (stair width, head room, tread length, riser height, step thickness, nosing, landing extensions) in the command panel, then place the stair via cursor positioning."
+ :description "Creates stairs between floor slabs or empty spaces using the Z-value distance as height. Stairs display automatically as the cursor moves, and the type depends on cursor position relative to the start point. The resulting staircase is generated as a parametric block."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimstair/V25/EN_US")
+
+(:name "BIMSTRETCH"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_BIMSTRETCH"
+ :synopsis "Stretches the ends of linear solids."
+ :options ("Base Point" "Copy" "Undo" "Exit")
+ :arguments "Select the ends of entities to be modified, then choose from the available options (Base Point, Copy, Undo, or Exit)."
+ :description "Stretches the ends of linear solids while maintaining previously made connections between other linear solids in the overall structure. The command supports two methods: stretching structural connections (Beam, Column, Member elements) and stretching MEP connections (Flow segments)."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimstretch/V25/EN_US")
+
+(:name "BIMSTRUCTURALCONNECT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMSTRUCTURALCONNECT"
+ :synopsis "Connects structural profiles."
+ :options ("Select base solid" "Switch" "Connection cut type")
+ :arguments "Select either two solids or multiple solids as input; for L-connections, specify a base solid and switch between connection types using the Ctrl key or the Switch option."
+ :description "Connects structural profiles such as beams, columns and members. Users can select either two solids or multiple solids, with the requirement that the axes of the solids must be coplanar."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimstructuralconnect/V25/EN_US")
+
+(:name "BIMTAG"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_BIMTAG"
+ :synopsis "Creates associative tags."
+ :options ("change Tag type" "Update existing" "update existing and add New"
+           "Regenerate all")
+ :arguments "Choose a selection mode (Automatic, Box, or Manual), select a viewport or element, then select from tag type options (Tag, Load-bearing, Composition, or Spot Elevation)."
+ :description "Creates associative tags in generated BIM section drawings for building elements in a 3D BIM model. The tags possess an Associativity property and Associative coloring property, with unassociated tags visualized in red when the coloring property is enabled. This command operates only on section viewports."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimtag/V25/EN_US")
+
+(:name "BIMTRIM"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_BIMTRIM"
+ :synopsis "Trims a wall."
+ :options NIL
+ :arguments "Select the part of the wall that should be trimmed."
+ :description "Trims a part of a wall by automatically detecting other walls and using them as trim objects. Users select the portion of wall that should be trimmed."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimtrim/V25/EN_US")
+
+(:name "BIMUPDATESPACE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMUPDATESPACE"
+ :synopsis "Recalculates a BIM space which is out-of-date."
+ :options NIL
+ :arguments "Select all spaces to update."
+ :description "Recalculates BIM spaces that need updating, typically after modifying bounding entities. It applies only to spaces with the Update method property configured as Automatic."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimupdatespace/V25/EN_US")
+
+(:name "BIMUPDATETHICKNESS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMUPDATETHICKNESS"
+ :synopsis "Re-applies the overall thickness of a composition to the solid."
+ :options ("Symmetrical Update" "Accept" "Reject" "Check individually" "Yes"
+           "No" "Confirm")
+ :arguments "Select solids, choose the update method (symmetrical or reference face), accept or reject restored connections (all at once or individually), then confirm the selections."
+ :description "Selects solids and restores broken connections (mitered/butted) between selected and adjacent solids automatically. It processes only solids requiring updates and allows users to accept or reject restored connections individually or in bulk."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimupdatethickness/V25/EN_US")
+
+(:name "BIMWALL"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMWALL"
+ :synopsis "Creates solids classified as Wall."
+ :options ("Creation mode (Single wall, Poly wall, Select entities)"
+           "Composition" "Wall angle" "Wall thickness" "Wall height"
+           "Connect to ceiling" "Free wall length" "Wall top offset"
+           "Wall base offset" "Justification (left, center, right)"
+           "Snap to walls" "Snap to lines"
+           "Snap to walls detected from point clouds"
+           "Snap to X or Y directions only" "Connect to snapped walls"
+           "Spatial Location")
+ :arguments "Select the creation mode, set composition, define dimensions, choose justification, toggle snapping options, and assign a spatial location via the context panel or command line."
+ :description "Enables users to create walls from scratch or detect walls from point clouds, with alignment options for UCS X-/Y-axis or unconstrained placement. Users can define options through a context panel or command line, with three creation methods available: single walls, polyline walls, or extrusion of existing entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimwall/V25/EN_US")
+
+(:name "BIMWINDOWCREATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMWINDOWCREATE"
+ :synopsis "Creates a fully parametric window or opening based on a closed contour."
+ :options ("Window" "Opening")
+ :arguments "Provide a closed contour entity as the profile, then select a window style from the presented dialog."
+ :description "Creates parametric windows using any closed entity as a profile, such as a boundary, closed polyline, or grid. A series of editable parameters is automatically generated in the Properties panel. Rectangular windows and openings include Width (W) and Height (H) parameters."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimwindowcreate/V25/EN_US")
+
+(:name "BIMWINDOWUPDATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BIMWINDOWUPDATE"
+ :synopsis "Updates the opening made by a window or door in a solid."
+ :options ("MOde")
+ :arguments "Select the window or door; use the MOde option to choose the placement face (Automatic or Manual)."
+ :description "Updates openings created by windows or doors when their definitions change and automatic updates fail. The command allows users to manually correct opening geometry when needed."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bimwindowupdate/V25/EN_US")
+
+(:name "BLADE"
+ :category :CUSTOMIZATION
+ :aliases NIL
+ :intl-name "_BLADE"
+ :synopsis "Opens the BricsCAD LISP Advanced Development Environment (BLADE)."
+ :options NIL
+ :arguments "None; the command opens an external dialog box with no command-line arguments."
+ :description "Opens an external dialog box for interactively editing and debugging LISP applications. It remains open while working on drawings in BricsCAD and supports standard window controls for moving and resizing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_blade/V25/EN_US")
+
+(:name "BLCOMPOSITIONS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BLCOMPOSITIONS"
+ :synopsis "Opens the Compositions dialog box."
+ :options NIL
+ :arguments "None; this is a dialog-based command with no command-line arguments."
+ :description "Opens the Compositions dialog box to create and manage BIM compositions. The dialog allows creation, modification, and deletion of compositions with support for multiple plies, materials, and properties."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_blcompositions/V25/EN_US")
+
 (:name "BLEND"
  :category :MODIFY
  :aliases NIL
@@ -2616,6 +5722,34 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-9EF74C66-88CA-4C16-B761-CB1119C0F897.htm"
  :source-bricscad NIL)
+
+(:name "BLIPMODE"
+ :category :SYSTEM
+ :aliases ("BM")
+ :intl-name "_BLIPMODE"
+ :synopsis "Toggles the BLIPMODE system variable."
+ :options ("On" "Off" "Toggle")
+ :arguments "Enter one of the keyword options (On, Off, or Toggle); no additional input required."
+ :description "Controls display of marker blips indicating pick points in drawings. Can be invoked at the Command prompt or within another command using an apostrophe prefix. The command manages visibility of selection indicators."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_blipmode/V25/EN_US")
+
+(:name "BLMATERIALS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BLMATERIALS"
+ :synopsis "Opens the Physical Materials dialog box."
+ :options NIL
+ :arguments "None; the command opens a dialog box with no command-line arguments."
+ :description "Opens the Physical Materials dialog box to create and edit material definitions in the library or project. It provides access to both project-level materials and those in the central database."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_blmaterials/V25/EN_US")
 
 (:name "BLOCK"
  :category :BLOCK
@@ -2645,6 +5779,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-5DAE4FA4-808E-4E1F-8565-3D115B406226.htm"
  :source-bricscad NIL)
 
+(:name "BLOCKCONVERT"
+ :category :BLOCK
+ :aliases ("PBLOCKASSIST" "PARAMETRICBLOCKASSIST")
+ :intl-name "_BLOCKCONVERT"
+ :synopsis "Converts an AutoCAD Dynamic Block into a BricsCAD Parametric Block."
+ :options NIL
+ :arguments "Select blocks from the dialog list, review the preview and conversion details, choose output options (convert to current file, replace references, or export to folder), and specify a block name suffix if needed."
+ :description "Converts AutoCAD Dynamic Blocks into BricsCAD Parametric Blocks. When launched, it displays a dialog box listing all dynamic blocks in the current drawing. Users can select which blocks to convert and specify conversion details including location and naming suffix."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_blockconvert/V25/EN_US")
+
 (:name "BLOCKICON"
  :category :BLOCK
  :aliases NIL
@@ -2658,6 +5806,26 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-144172C9-FCC6-4326-B69B-39E269DF1F25.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_blockicon/V25/EN_US")
+
+(:name "BLOCKIFY"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BLOCKIFY"
+ :synopsis "Converts identical sets of entities (2D or 3D) to block references."
+ :options ("Detect matches with selected entities"
+           "Detect matches with existing blocks" "Detect equal 3D solids"
+           "Detect collections" "Compare geometry only"
+           "Use parameters and constraints" "Prevent loss of parametrics"
+           "Use auto tolerance" "Use custom tolerance"
+           "Select entities in the drawing" "Entire drawing"
+           "Convert unique solids" "Maximum gap" "Recalculate")
+ :arguments "Select a detection method, specify source entities or blocks, define the search space, set tolerance options, then select which matches to convert from a displayed list."
+ :description "Searches drawings for identical entity sets and replaces them with block references. It offers four methods: matching selected entities, matching existing blocks, detecting equal 3D solids, and detecting collections of solids and block references."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_blockify/V25/EN_US")
 
 (:name "BLOCKREPLACE"
  :category :BLOCK
@@ -2743,6 +5911,458 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-C894797E-3FC5-42AB-8C62-2971B68E6EB4.htm"
  :source-bricscad NIL)
 
+(:name "BMANIMATE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_BMANIMATE"
+ :synopsis "Runs a quick animation of an exploded view and exploded view steps."
+ :options ("Pause" "Play" "Stop" "Previous" "Show" "Finish")
+ :arguments "Open the exploded representation for editing via BEDIT, launch the command, select the exploded view and define the first and last animation steps, then close the block editing session with BCLOSE."
+ :description "Animates exploded representations after editing them with BEDIT. Users select an exploded view, define animation start and end steps, then close the editing session with BCLOSE. The animation follows parameters configured through BMEXPLODESTEPEDIT."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmanimate/V25/EN_US")
+
+(:name "BMASSEMBLYINSPECT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMASSEMBLYINSPECT"
+ :synopsis "Evaluates the capability of a mechanical assembly to be disassembled or assembled without collisions by respecting a given rule."
+ :options ("Run current routine" "Cancel" "Exit")
+ :arguments "Select an inspection routine from a dropdown, select a sequence to inspect, select specific steps within that sequence (individually or all together), then execute the inspection with the Inspect button."
+ :description "Evaluates criteria on a given assembly sequence to assess the ability to assemble a design. It uses the User Coordinate System for calculations throughout the command's lifetime, ensuring consistent results regardless of UCS toggling."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmassemblyinspect/V25/EN_US")
+
+(:name "BMBALLOON"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_BMBALLOON"
+ :synopsis "Creates associative balloon entities for assembly components."
+ :options ("select other Table" "select balloon Style" "Auto mode"
+           "placement Mode (Unique, All)"
+           "Number mode (Consecutive, Circle, by BOM table)" "Toggle direction"
+           "move start Forward" "move start Backward" "Circle" "Polyline"
+           "Back")
+ :arguments "Select the balloon options (table, style, placement and number modes) and place the balloons for the assembly components; the page does not specify a fixed input order."
+ :description "Creates associative balloon entities for mechanical and non-mechanical components in Model Space and Paper Space layouts. Each balloon contains an index of the component or an id string for non-mechanical solids/blocks from the associated BOM table."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmballoon/V25/EN_US")
+
+(:name "BMBOM"
+ :category :TABLE
+ :aliases NIL
+ :intl-name "_BMBOM"
+ :synopsis "Inserts a Bill of Materials (BOM) table."
+ :options ("Name" "Top level" "Bottom level" "Hierarchical"
+           "Load from template" "Save as template" "LAyout" "Configure"
+           "Description" "dEnsity" "Volume" "Mass" "parameterS" "mAterials"
+           "Thickness" "MOre" "Toggle column" "add Formula field"
+           "add Thumbnails" "Set sorting" "column Properties" "Footer type"
+           "Prefix" "Suffix" "Delimiter" "NumeraTion type" "Aggregate function"
+           "sEttings" "Units" "Role" "table sEttings" "fixed coRner" "Back")
+ :arguments "Navigate through interactive command-line prompts to configure the BOM table (name, level, columns, sorting, layout), then place the table; the page does not specify a fixed order."
+ :description "Inserts a Bill of Materials table in the current drawing. Users can configure the table with various options including layout selection, column customization, and sorting modes. The BOMFILTERSETTINGS system variable controls which components are included."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmbom/V25/EN_US")
+
+(:name "BMBOMEDIT"
+ :category :TABLE
+ :aliases NIL
+ :intl-name "_BMBOMEDIT"
+ :synopsis "Edits an existing Bill of Materials (BOM) table in the current drawing."
+ :options ("List tables" "Current bom" "Erase" "Update all" "Erase all" "APPLY"
+           "DISCARD")
+ :arguments "Select a table (or the current BOM), edit it, remove tables individually or in bulk, or update all tables, then apply or discard the changes."
+ :description "Allows users to modify existing BOM tables. It provides options to select from multiple tables, edit the current table, remove tables individually or in bulk, and update all tables with an apply/discard workflow."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmbomedit/V25/EN_US")
+
+(:name "BMBOMEXPORT"
+ :category :TABLE
+ :aliases NIL
+ :intl-name "_BMBOMEXPORT"
+ :synopsis "Exports the content of a BOM table as a table with link, or to a .csv or .xlsx file."
+ :options ("Bom table" "List tables" "Current bom" "template File"
+           "Table with link" "csv or excel File")
+ :arguments "Select a source BOM table (via List tables, Current bom, or template File), then choose an export target (Table with link, or csv or excel File) and complete the file dialogs."
+ :description "Enables users to export Bill of Materials table content to multiple formats. Users can export to another table with datalink functionality, or save to CSV/XLSX file formats. The command provides options for selecting the source BOM table and specifying the export destination."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmbomexport/V25/EN_US")
+
+(:name "BMBOMPANELCLOSE"
+ :category :TABLE
+ :aliases NIL
+ :intl-name "_BMBOMPANELCLOSE"
+ :synopsis "Closes the BOM Manager panel."
+ :options NIL
+ :arguments "None; the command closes the BOM Manager panel with no command-line arguments."
+ :description "Closes the BOM Manager panel to hide it from the current workspace. When the panel is stacked, its tab or icon is removed from the stack."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmbompanelclose/V25/EN_US")
+
+(:name "BMBOMPANELOPEN"
+ :category :TABLE
+ :aliases NIL
+ :intl-name "_BMBOMPANELOPEN"
+ :synopsis "Opens the BOM Manager panel."
+ :options NIL
+ :arguments "None; the command opens the BOM Manager panel with no command-line arguments."
+ :description "Opens the BOM Manager panel to display it in the current workspace at its previous size and location. The panel functions as a dockable element that can float, dock, or stack within the interface."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmbompanelopen/V25/EN_US")
+
+(:name "BMBOMTEMPLATEEDIT"
+ :category :TABLE
+ :aliases NIL
+ :intl-name "_BMBOMTEMPLATEEDIT"
+ :synopsis "Creates or edits a standalone Bill of Materials (BOM) template files using both the command line and the BOM Manager panel."
+ :options ("APPLY" "DISCARD" "OK" "Cancel")
+ :arguments "Supply a .bom template filename (non-existing for a new template), configure settings in the BOM Manager panel, then select OK or Cancel."
+ :description "Creates or edits BOM template (.bom) files. Users provide a non-existing filename for new templates, then the BOM Manager panel opens to configure the template using the current document as the object source. The command does not modify existing BOM tables in the document."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmbomtemplateedit/V25/EN_US")
+
+(:name "BMCONNECT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMCONNECT"
+ :synopsis "Connects two components to each other."
+ :options ("Flip" "complete flange Assembly" "Gasket" "BOlting assembly"
+           "SETtings" "Back" "Finish")
+ :arguments "Select the first component to connect, then the target component; optionally flip connection points and configure the complete flange assembly (gasket, bolting assembly), then Finish."
+ :description "Connects two components by creating 3D constraints between their connection entities. The command can also insert a gasket and bolting assembly for complete flange connections, automatically resizing and positioning them."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmconnect/V25/EN_US")
+
+(:name "BMCONVERT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMCONVERT"
+ :synopsis "Converts BIM Linear solids with circular profiles to Mechanical assemblies."
+ :options ("Pipe" "Elbow" "Reducer" "Splitter" "?" "Use current" "SETtings")
+ :arguments "Select entities to convert, then choose styles for pipe segments, elbows, reducers, and splitters (multiple styles selectable using semicolons)."
+ :description "Enables users to select entities and apply appropriate styles for pipes, elbows, reducers, and splitters when converting BIM linear solids with circular cross-sections into mechanical assemblies."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmconvert/V25/EN_US")
+
+(:name "BMCREATECOMPONENT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMCREATECOMPONENT"
+ :synopsis "Creates library blocks."
+ :options NIL
+ :arguments "None specified; the command is deprecated and recommends using CREATELIBRARYBLOCK instead."
+ :description "The BMCREATECOMPONENT command has been replaced by the CREATELIBRARYBLOCK command. This command is available in BricsCAD Shape, Pro, Mechanical, and BIM versions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmcreatecomponent/V25/EN_US")
+
+(:name "BMDEPENDENCIES"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_BMDEPENDENCIES"
+ :synopsis "Lists all files, containing component definitions inserted in the assembly, in the Command line."
+ :options NIL
+ :arguments "None; the command runs automatically and lists the files in the Command line."
+ :description "Automatically lists all referenced files containing component definitions that have been inserted into an assembly. When executed, the files are displayed directly in the Command line interface."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmdependencies/V25/EN_US")
+
+(:name "BMDISSOLVE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMDISSOLVE"
+ :synopsis "Dissolves a mechanical component inserted in the current drawing."
+ :options NIL
+ :arguments "Select the component inserts to dissolve; the selection set must contain only component inserts."
+ :description "Dissolves mechanical components by allowing manual selection of entities. Only first-level components in the mechanical hierarchy can be dissolved directly; lower-level components require their parent components to be dissolved first. Subcomponents move up one level in the hierarchy when their parent is dissolved."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmdissolve/V25/EN_US")
+
+(:name "BMEXPLODE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMEXPLODE"
+ :synopsis "Creates a block with a representation of the current assembly."
+ :options ("Table by types" "Linear" "2Points" "Object" "Last" "View" "Xaxis"
+           "Yaxis" "Zaxis" "Automatic" "enable Leader follower"
+           "use Current projection for gap" "Auto" "Manual" "Update"
+           "Convert to new format" "Settings" "Top" "Bottom" "set Name"
+           "set Mode" "ExClude components/Components"
+           "Xrefs/Xrefs as Transparent" "Xrefs as Transparent/EXclude xrefs"
+           "Others/Exclude Others" "Ignore bom status/Respect bom status"
+           "Transparent Leaf Parts/Stop at Leaf Parts" "BAck" "Edit"
+           "Generate drawing views" "Finish")
+ :arguments "Configure the exploded view options and generate the block representing the assembly; the page does not specify a fixed input sequence."
+ :description "Creates a block representing the current assembly that can be inserted at any location. Supports local mechanical components based on blocks and solids, mechanical external references, and non-mechanical entities for exploded views. Steps are automatically completed and displayed in the Mechanical Browser for customization and animation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmexplode/V25/EN_US")
+
+(:name "BMEXPLODECONFIG"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMEXPLODECONFIG"
+ :synopsis "Assigns preferable directions for entities during automatic generation of exploded views."
+ :options ("Set" "Root part" "Entire model" "Remove" "Select axial entity"
+           "2Points" "Xaxis" "Yaxis" "Zaxis")
+ :arguments "Select entities (via Set, Root part, or Entire model), optionally remove entities, then select a direction (via axial entity, 2Points, or an axis option)."
+ :description "Automatically converts directions defined in WCS to local directions of selected entities during generation of exploded views. Users select entities to set preferred directions for disassembly, then define the direction."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmexplodeconfig/V25/EN_US")
+
+(:name "BMEXPLODEMOVE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMEXPLODEMOVE"
+ :synopsis "Moves selected parts to form an exploded representation in a given direction."
+ :options ("Automatic" "Entire model" "Linear")
+ :arguments "Select the parts to move and specify a direction (or use Automatic mode); the page does not specify a fixed input sequence."
+ :description "Moves selected parts to form exploded representations while accounting for physical collisions between components. The command supports automatic mode that determines direction for each part automatically, similar to options in the BMEXPLODE command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmexplodemove/V25/EN_US")
+
+(:name "BMEXPLODESTEPEDIT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMEXPLODESTEPEDIT"
+ :synopsis "Manages the representation steps."
+ :options ("Add step" "cOpy step" "merGe" "Move step" "Remove step"
+           "reName step" "Save current state" "set CAMera position"
+           "Set current camera position" "Reset camera" "set Current step"
+           "sPlit step" "Hide parts" "SHow parts" "View options" "Direction"
+           "Assembling" "Disassembling" "autoHide" "duRation" "Interval"
+           "list steps (?)")
+ :arguments "Select a representation, open it for editing via the Mechanical Browser or -BEDIT, perform operations using the listed options, save the current step, then save changes with BCLOSE."
+ :description "Allows you to create, delete, merge, copy, split, and reorder representation steps in exploded views. Users select a representation created with BMEXPLODE, open it for editing, perform operations, and save changes using BCLOSE."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmexplodestepedit/V25/EN_US")
+
+(:name "BMEXTERNALIZE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMEXTERNALIZE"
+ :synopsis "Converts local components (Mechanical blocks) to external components."
+ :options ("ASk for file names (Yes/No toggle)" "Entire model")
+ :arguments "Select components to externalize, then enter file names when prompted (if Ask for file names = Yes) or allow automatic generation (if No)."
+ :description "Local components are converted to external components using the Save Mechanical Component dialog. The external component drawing inherits the template visual style, layers, and layouts from the parent document. This process repeats for each selected local component."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmexternalize/V25/EN_US")
+
+(:name "BMFORM"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMFORM"
+ :synopsis "Creates a new mechanical component or a mechanical block, and inserts it into the current drawing."
+ :options ("Local" "External" "mechanical Component" "mechanical Block"
+           "Template settings")
+ :arguments "Select the solids for the component and choose options (Local/External, mechanical Component/Block); the page does not specify a fixed input sequence."
+ :description "Creates a new mechanical component as an internal reference, removing selected solids from the current drawing. When the MECHANICALBLOCKS system variable is enabled, it creates mechanical blocks by default. The BMMECH command may need to be run first to initialize the mechanical structure."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmform/V25/EN_US")
+
+(:name "BMHARDWARE"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMHARDWARE"
+ :synopsis "Opens the Library panel in BricsCAD Mechanical."
+ :options NIL
+ :arguments "No command-line arguments; opens the Library panel as a dockable panel in the current workspace."
+ :description "Opens the Library panel to display it in the current workspace. The panel retains its previous size and location and functions as a standard dockable panel that can be floated, docked, or stacked."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmhardware/V25/EN_US")
+
+(:name "BMHIDE"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMHIDE"
+ :synopsis "Hides an inserted mechanical component."
+ :options ("COmponent name" "Insert name")
+ :arguments "Select component insert(s), then specify either the component name (hides all inserts of that component) or the insert name (parent/component notation for nested inserts)."
+ :description "Hides mechanical components inserted in the current drawing. The command only affects visibility of the selected inserts, and hidden components remain considered by commands like BMBOM and BMMASSPROP."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmhide/V25/EN_US")
+
+(:name "BMINSERT"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMINSERT"
+ :synopsis "Inserts a component into the current drawing."
+ :options ("Edit inserted entity" "SMART insert" "Rotate component"
+           "set Base point" "Name" "insertion Type" "Flip" "mUltiple" "Array"
+           "Change target 3d solids")
+ :arguments "Select the insertion file (DWG or RFA); choose the family type if applicable; specify the insertion point in the drawing; adjust properties via the Properties panel or command options."
+ :description "Inserts a component into the current drawing. Opens a file dialog to select a DWG or RFA file; when inserting Revit families with multiple types a selection dialog appears. The command then prompts for placement via the Properties panel and command line."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bminsert/V25/EN_US")
+
+(:name "BMLINK"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMLINK"
+ :synopsis "Changes target 3D solids of component-based features."
+ :options ("Change target 3d solids" "Append" "cleaR"
+           "Select all affected 3d solids")
+ :arguments "Select the available options to add or remove target 3D solids for component-based features; the page does not specify a fixed argument sequence."
+ :description "Modifies which 3D solids are targeted by component-based features through adding or removing target solids, allowing existing component relationships to be updated with new geometry."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmlink/V25/EN_US")
+
+(:name "BMLOCALIZE"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMLOCALIZE"
+ :synopsis "Converts external components to local components."
+ :options ("Entire model")
+ :arguments "Manually select external components to convert, or use the Entire model option to convert all external components in the model; the page does not specify the exact argument sequence."
+ :description "Converts external components into local components through manual selection or by converting all external components in the entire model at once. It supports both mechanical external references and traditional mechanical components, automatically converting all instances of the same external component."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmlocalize/V25/EN_US")
+
+(:name "BMMASSPROP"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_BMMASSPROP"
+ :synopsis "Computes mass properties for the current model using densities of materials assigned to its components."
+ :options ("Yes" "No")
+ :arguments "Select 3D solids, subcomponents, or the entire model, then respond Yes/No to whether the UCS should be aligned with the principal moment axes."
+ :description "Calculates mass properties including mass, volume, centroid location, moments of inertia, and radii of gyration for 3D solids and assemblies. It requires all materials to have assigned non-zero densities and generates a detailed report in the Prompt History window."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmmassprop/V25/EN_US")
+
+(:name "BMMECH"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMMECH"
+ :synopsis "Converts the current drawing into a mechanical component."
+ :options ("create Legacy components" "create mechanical Blocks" "Yes" "Blocks"
+           "No")
+ :arguments "The listed options are presented as choices during command execution; the page does not specify a predetermined argument order."
+ :description "Transforms drawings containing block references, external references, or solids into mechanical components or blocks. If mechanical blocks are enabled, it can convert these entities to mechanical blocks and entities. The command does nothing if the drawing is already a mechanical component."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmmech/V25/EN_US")
+
+(:name "BMNEW"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMNEW"
+ :synopsis "Creates a mechanical component as a new drawing file."
+ :options NIL
+ :arguments "No command-line arguments; automatically opens a new drawing file to create the component."
+ :description "Automatically opens a new drawing file to create a mechanical component. When the MECHANICALBLOCKS system variable is enabled, a mechanical root block is created instead."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmnew/V25/EN_US")
+
+(:name "BMOPEN"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMOPEN"
+ :synopsis "Opens the source drawing of an external mechanical component."
+ :options NIL
+ :arguments "Select an external mechanical component within the model; the page does not detail further argument sequence."
+ :description "Enables users to access and edit the original drawing file of an external mechanical component by selecting it within the model, facilitating visualization and modification of component details."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmopen/V25/EN_US")
+
+(:name "BMOPENCOPY"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMOPENCOPY"
+ :synopsis "Opens a copy of a component insert as a new drawing."
+ :options NIL
+ :arguments "Select an external mechanical component insert; a copy opens as a new drawing. The page does not specify a further argument sequence."
+ :description "Opens a copy of a selected external mechanical component in a new drawing, applying current parameter values to parametric components. The newly created drawing can subsequently replace the original component using the BMREPLACE command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmopencopy/V25/EN_US")
+
 (:name "BMPOUT"
  :category :RENDER
  :aliases NIL
@@ -2756,6 +6376,205 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8E2BAC74-5B7E-4A50-A225-3C44AA126509.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmpout/V25/EN_US")
+
+(:name "BMPROPERTIES"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMPROPERTIES"
+ :synopsis "Creates, edits and deletes property definitions and organizes properties in property sets."
+ :options NIL
+ :arguments "No command-line arguments; opens the Mechanical Properties dialog box for managing property definitions."
+ :description "Opens the Mechanical Properties dialog box for managing property definitions in BricsCAD Mechanical. Users can create user-defined properties, organize them into property sets, and configure value definitions within the current namespace."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmproperties/V25/EN_US")
+
+(:name "BMRECOVER"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMRECOVER"
+ :synopsis "Recovers a broken mechanical structure."
+ :options NIL
+ :arguments "Select a mechanical component through the Select mechanical component dialog box that appears; no additional command-line arguments."
+ :description "Repairs damaged mechanical structures in MCAD drawings by recovering a selected component through a dialog box, then overwrites the original file. It is specifically designed for mechanical structures and differs from the basic AUDIT and RECOVER commands."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmrecover/V25/EN_US")
+
+(:name "BMREPLACE"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMREPLACE"
+ :synopsis "Replaces a component insert."
+ :options ("SIMilar inserts" "component Type" "Parameter changes" "from FIle")
+ :arguments "Interact with dialog boxes to select the replacement component and options; the page does not specify a command-line argument sequence."
+ :description "Substitutes a mechanical component in the current drawing with another component selected from a file dialog. It supports replacing mechanical blocks with other mechanical blocks of the same type, but does not allow cross-type replacement."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmreplace/V25/EN_US")
+
+(:name "BMSEQUENCE"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMSEQUENCE"
+ :synopsis "Creates and edits sequences for your assembly design."
+ :options ("Finish" "Entire drawing")
+ :arguments "With Experimental mode disabled: select entities for each step, press Enter, repeat, then enter a unique sequence name. With Experimental mode enabled: select entities, enter a unique sequence name, then edit steps in the Sequence Manager panel."
+ :description "Enables users to create and manage assembly sequences within BricsCAD Mechanical. It operates in two modes depending on whether Experimental mode is enabled, allowing either step-by-step entity selection followed by naming, or direct entity selection with subsequent editing in the Sequence Manager panel."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmsequence/V25/EN_US")
+
+(:name "BMSHOW"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMSHOW"
+ :synopsis "Shows hidden mechanical components from the drawing."
+ :options ("show ALl" "COmponent name" "Insert name")
+ :arguments "Choose one of: show all inserts, type a component name to show all its inserts, or type an insert name (Parent/Subcomponent for nested inserts)."
+ :description "Displays previously hidden mechanical components that were inserted in the current drawing, allowing users to make hidden component inserts visible again."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmshow/V25/EN_US")
+
+(:name "BMTRAILINGLINES"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_BMTRAILINGLINES"
+ :synopsis "Creates all necessary trailing lines for selected parts."
+ :options ("use Origin points" "use Center points" "Entire model"
+           "for current Step")
+ :arguments "Select entities (parts and optionally a 3D polyline) and choose from the available options; the page does not specify a fixed argument sequence. An exploded view must be open for editing."
+ :description "Generates trailing lines by selecting entities, including custom trailing lines based on 3D polylines when two parts and a polyline are selected. An exploded view must be open for editing before running the command, and generated trailing lines appear in the Mechanical Browser."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmtrailinglines/V25/EN_US")
+
+(:name "BMUNLINK"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMUNLINK"
+ :synopsis "Breaks the connection between a component insert and a 3D solid retaining the opening."
+ :options NIL
+ :arguments "Select the components to break the connection; the page does not detail the exact command-line argument sequence."
+ :description "Disconnects component inserts (such as windows) from 3D solids (such as walls) while preserving the opening."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmunlink/V25/EN_US")
+
+(:name "BMUNMECH"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMUNMECH"
+ :synopsis "Converts mechanical components."
+ :options ("Yes" "No")
+ :arguments "Respond Yes to remove the mechanical structure and convert the drawing, or No to abort."
+ :description "Transforms the current mechanical component into a plain drawing by removing its mechanical structure. Local component inserts become block references, while external component inserts convert to external references."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmunmech/V25/EN_US")
+
+(:name "BMUPDATE"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMUPDATE"
+ :synopsis "Reloads referenced components from external files and updates BOM tables."
+ :options ("MOde" "Entire model")
+ :arguments "Optionally choose the MOde option (Automatic or Manual) or Entire model; no additional arguments for standard invocation."
+ :description "Reloads component references from external files, rebuilds component-based and sheet metal features, updates Bill of Materials tables, and regenerates drawing views from 3D models. When the BMAUTOUPDATE system variable is enabled, external assembly components are automatically reloaded upon file opening."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmupdate/V25/EN_US")
+
+(:name "BMVSTYLE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_BMVSTYLE"
+ :synopsis "Applies a visual style to a mechanical component inserted."
+ :options ("by Viewport" "Wireframe" "Hidden" "Realistic" "Conceptual"
+           "Modeling" "by Name")
+ :arguments "Specify either ALL or individual component names separated by slashes (/), then select a visual style option (by Viewport, Wireframe, Hidden, Realistic, Conceptual, Modeling, or by Name). Component insert names are case sensitive."
+ :description "Lets users apply a chosen visual style to all or selected inserted components by specifying component names separated by slashes. Component insert names are case sensitive."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmvstyle/V25/EN_US")
+
+(:name "BMWELDANNOTATE"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_BMWELDANNOTATE"
+ :synopsis "Creates annotates for arbitrary 2D entity in the paper space with caterpillars and welding symbols."
+ :options ("Front" "Load linetype" "Select curve" "Partial" "Flip" "Scale"
+           "Side" "Fillet" "J-groove" "V-groove" "U-groove" "Seam")
+ :arguments "Select the welding symbol type (Front or Side variant), select the curve from paper space to annotate, then apply optional modifiers (Flip, Scale, Partial) as needed."
+ :description "Enables users to add welding annotations to 2D entities in paper space. It supports both caterpillar-style symbols and various side-view welding symbol types. The command allows customization through scaling, flipping, and partial application options."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmweldannotate/V25/EN_US")
+
+(:name "BMWELDING"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_BMWELDING"
+ :synopsis "Creates a fillet or groove welding for faces (or two sets of faces) of different 3D solids."
+ :options ("Fillet" "Input Z" "Input A" "Groove")
+ :arguments "Select faces of two 3D solids interactively, then choose fillet or groove welding mode, followed by optional size parameters (Z leg length and/or A throat size)."
+ :description "Allows users to apply welding features to 3D solid models. For fillet welding, select one face from the first member and one or more faces from the second member. For groove welding, select one or more faces from each member. Welding features appear in the Mechanical Browser panel."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmwelding/V25/EN_US")
+
+(:name "BMWELDSYMRETRIEVE"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_BMWELDSYMRETRIEVE"
+ :synopsis "Places welding symbols added to a welding feature in the drawing views."
+ :options ("Auto")
+ :arguments "Select a weld solid to retrieve its welding symbol, or use the Auto option to process all visible weld solids in selected viewports. Available only in Paper Space."
+ :description "Retrieves weld information and welding symbols from 3D weld bodies containing welding features that were created using the Add weld symbol properties option. It is exclusively available in Paper Space and only functions in drawings with mechanical entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmweldsymretrieve/V25/EN_US")
+
+(:name "BMXCONVERT"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_BMXCONVERT"
+ :synopsis "Converts X-Hardware solids to mechanical components."
+ :options NIL
+ :arguments "The page does not detail specific command-line arguments or input sequences."
+ :description "Transforms X-Hardware solids present in the current drawing into mechanical components. This functionality is available in BricsCAD Pro, Mechanical, and BIM versions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_bmxconvert/V25/EN_US")
 
 (:name "BOUNDARY"
  :category :DRAW
@@ -3052,6 +6871,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-335A5FC6-7D8F-47CA-B479-26655CDEA1AD.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_cal/V25/EN_US")
 
+(:name "CALLOUT"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_CALLOUT"
+ :synopsis "Internal service command for context menu operations."
+ :options NIL
+ :arguments "Not applicable; this command operates internally rather than through direct user input."
+ :description "A service command which is not supposed to be entered directly by the user. It functions automatically when users select items from context menus within the program."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_callout/V25/EN_US")
+
 (:name "CAMERA"
  :category :VIEW
  :aliases NIL
@@ -3080,6 +6913,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-06C097F8-0482-4675-8910-664BC87B4AC3.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_cdorder/V25/EN_US")
+
+(:name "CENTER"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_CENTER"
+ :synopsis "Toggles the Center entity snap."
+ :options NIL
+ :arguments "No specific arguments; invoking the command toggles the center snap on or off. Used at the prompt it toggles a running snap (updating OSMODE); used during another command it temporarily disables the snap for that operation."
+ :description "Enables or disables snapping to the center of entities. Invoked at the command prompt it toggles a running entity snap and updates the OSMODE system variable; used during another command it temporarily disables the snap for just that operation without changing OSMODE."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_center/V25/EN_US")
 
 (:name "CENTERDISASSOCIATE"
  :category :DIMENSION
@@ -3195,6 +7042,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0D1BC415-5CDC-449D-8019-885F654FB1B5.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_change/V25/EN_US")
 
+(:name "CHECKFORUPDATES"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_CHECKFORUPDATES"
+ :synopsis "Displays information about BricsCAD versions."
+ :options NIL
+ :arguments "The page does not specify a sequence of command-line arguments; selecting Yes opens the download page in the web browser."
+ :description "Shows your currently installed BricsCAD version and identifies the latest available version for download. When you select Yes, the download page opens in your web browser."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_checkforupdates/V25/EN_US")
+
 (:name "CHECKSTANDARDS"
  :category :INQUIRY
  :aliases NIL
@@ -3266,6 +7127,119 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-C60B6D5D-AAEB-420F-917F-6E6B47E92F48.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_circle/V25/EN_US")
+
+(:name "CIVIL3DIMPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_CIVIL3DIMPORT"
+ :synopsis "Creates BricsCAD civil entities from an Autodesk Civil 3D drawing."
+ :options NIL
+ :arguments "Dialog-driven: users select options and specify parameters through the Import Civil 3D dialog box (Convert from current drawing, Select drawing to import, Select All, Layer name template, Import native CAD objects, Import Civil 3D labels as blocks); no command-line argument sequence."
+ :description "Opens the Import Civil 3D dialog to import or convert AutoCAD Civil 3D entities including cogo points, TIN surfaces, grid surfaces, alignments, profile views, and profiles from a selected DWG file or the current drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_civil3dimport/V25/EN_US")
+
+(:name "CIVILDWGEXPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_CIVILDWGEXPORT"
+ :synopsis "Exports BricsCAD Civil entities as native CAD entities."
+ :options ("Flatten entities")
+ :arguments "The command launches the Save Drawing As dialog, after which the user responds to the Flatten entities option (Yes/No)."
+ :description "Opens a Save Drawing As dialog allowing users to export Civil entities as native CAD objects in a new drawing. Users can flatten all entities to zero elevation while preserving spot elevation and contour label annotations with correct visual representation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_civildwgexport/V25/EN_US")
+
+(:name "CIVILEXPLORERCLOSE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_CIVILEXPLORERCLOSE"
+ :synopsis "Closes the Civil Explorer panel."
+ :options NIL
+ :arguments "No arguments or inputs required."
+ :description "Hides the Civil Explorer panel from the current workspace. When the panel is stacked, the Civil Explorer tab or icon is removed from that stack."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_civilexplorerclose/V25/EN_US")
+
+(:name "CIVILEXPLOREROPEN"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_CIVILEXPLOREROPEN"
+ :synopsis "Opens the Civil Explorer panel for managing and accessing Civil entities."
+ :options NIL
+ :arguments "No user inputs or arguments are required; the command simply opens the panel."
+ :description "Displays the Civil Explorer panel in the current workspace at its previous size and location. This panel serves as the main interface for managing Civil entities arranged in a tree view, allowing users to access settings, edit existing entities, and add new Civil components."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_civilexploreropen/V25/EN_US")
+
+(:name "CIVILPOINT"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_CIVILPOINT"
+ :synopsis "Creates Civil Points."
+ :options ("Specify point location" "Enter point description"
+           "Enter point elevation" "Import points from file" "set Style" "?")
+ :arguments "The page does not provide a specific command-line argument sequence; it describes two methods (single point insertion or file import) via the prompts above."
+ :description "Civil Points are Civil entities represented by symbols and labels with customizable graphical representation. They can contain XYZ coordinates plus various attributes like point number, name, and descriptions. Points can be organized into groups and used as input for creating TIN Surfaces."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_civilpoint/V25/EN_US")
+
+(:name "CIVILPOINTATTRIBUTES"
+ :category :ATTRIBUTE
+ :aliases NIL
+ :intl-name "_CIVILPOINTATTRIBUTES"
+ :synopsis "Adds or removes user-defined attributes to Civil Points."
+ :options ("Select civil points" "?" "Add attribute" "Remove attribute")
+ :arguments "Select Civil Points to modify; choose to add or remove attributes; if adding, specify the attribute key (name) and value; if removing, specify the attribute keys to delete."
+ :description "Allows users to manage custom attributes on Civil Points. Users can add new attributes by specifying key-value pairs, view existing attributes, or remove attributes from selected Civil Points. Attributes appear in the Properties panel's User Attributes section."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_civilpointattributes/V25/EN_US")
+
+(:name "CIVILPOINTEDIT"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_CIVILPOINTEDIT"
+ :synopsis "Edits Civil points."
+ :options NIL
+ :arguments "Select Civil points and invoke the command; interact with the modeless Civil Point Editor dialog (click cells to edit, sort by properties, right-click for Zoom to, Pan to, Select, Copy to clipboard, Delete point). No command-line argument sequence."
+ :description "Opens the Civil Point Editor dialog box to modify selected Civil points and their properties in a table format. The dialog is modeless, allowing concurrent drawing work while the editor remains accessible on-screen."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_civilpointedit/V25/EN_US")
+
+(:name "CIVILPOINTGROUP"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_CIVILPOINTGROUP"
+ :synopsis "Creates a civil point group."
+ :options NIL
+ :arguments "Dialog-based: users input the point group name, description, filter criteria (elevation, name, descriptions, user attributes), and specific point numbers to include or exclude."
+ :description "Opens the Point Group dialog box, enabling users to create new or modify existing Civil Point Groups. Users can define filtering criteria based on various parameters to include or exclude specific points within their drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_civilpointgroup/V25/EN_US")
 
 (:name "CLASSICGROUP"
  :category :SELECTION
@@ -3351,6 +7325,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-7C9CDCC6-8B1E-471D-9F6F-E1160F9AC3A8.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_cleanscreenoff/V25/EN_US")
 
+(:name "CLEANSCREENON"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_CLEANSCREENON"
+ :synopsis "Makes the drawing area larger by hiding elements of the user interface."
+ :options NIL
+ :arguments "No arguments or user inputs are documented for this command."
+ :description "Expands the usable drawing space by concealing UI components. It operates by applying settings configured in the CLEANSCREENOPTIONS system variable to determine which interface elements become hidden."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_cleanscreenon/V25/EN_US")
+
+(:name "CLEANUNUSEDVARIABLES"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_CLEANUNUSEDVARIABLES"
+ :synopsis "Purges parametric variables not used by constraint expressions and not linked to dimensions."
+ :options NIL
+ :arguments "No arguments or inputs are specified; the command executes without requiring user input at the command line."
+ :description "Automatically removes unused parametric variables from drawings. It deletes variables that are neither referenced by constraint expressions nor associated with dimensions when executed."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_cleanunusedvariables/V25/EN_US")
+
 (:name "CLIP"
  :category :MODIFY
  :aliases NIL
@@ -3366,6 +7368,20 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-A8E1834D-2A1F-4C2A-92CF-B6A3424DB1B1.htm"
  :source-bricscad NIL)
+
+(:name "CLIPDISPLAY"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_CLIPDISPLAY"
+ :synopsis "Toggles the Clip Display property of section planes and BIM section entities."
+ :options NIL
+ :arguments "The page does not detail specific command-line arguments or user inputs required when invoking this command."
+ :description "Enables or disables the display clipping functionality for section planes and BIM section entities. Users can alternatively toggle this property through the Properties panel interface."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_clipdisplay/V25/EN_US")
 
 (:name "CLIPIT"
  :category :MODIFY
@@ -3493,6 +7509,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-72DD30DD-3618-433C-8FA8-1B2521908727.htm"
  :source-bricscad NIL)
 
+(:name "COMMANDS"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_COMMANDS"
+ :synopsis "Lists the names of the commands."
+ :options ("Internal" "External" "Both")
+ :arguments "The page does not specify a particular sequence of user inputs or arguments for this command."
+ :description "Displays the names of all available commands in BricsCAD based on your current license level, showing both English and localized command names."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_commands/V25/EN_US")
+
+(:name "COMMUNICATORINFO"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_COMMUNICATORINFO"
+ :synopsis "Checks whether the Communicator for BricsCAD add-on is correctly installed and provides a diagnostic report."
+ :options NIL
+ :arguments "No specific arguments or inputs are documented for this command. Available on Windows only."
+ :description "Switches to the Prompt History window and generates a diagnostic report about the Communicator for BricsCAD add-on. When the Communicator module is not installed, it reports a failure message. Available on Windows only."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_communicatorinfo/V25/EN_US")
+
 (:name "COMPARE"
  :category :INQUIRY
  :aliases NIL
@@ -3564,6 +7608,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-EF480870-AE25-4D6E-9E54-4708D711C127.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_cone/V25/EN_US")
 
+(:name "CONNECT"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_CONNECT"
+ :synopsis "Connects coplanar lines, arcs and/or polylines."
+ :options ("Select entities" "Entire drawing" "selection options")
+ :arguments "Select which entities to connect (individual selection or Entire drawing); the command then automatically processes the connections based on gap size distribution."
+ :description "Joins coplanar lines, arcs, and polylines by automatically trimming and extending them to close gaps between endpoints. The tool hierarchically closes smaller gaps first, then combines the connected entities into polylines where possible without altering the underlying geometric definitions of input elements."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_connect/V25/EN_US")
+
 (:name "CONSTRAINTBAR"
  :category :PARAMETRIC
  :aliases NIL
@@ -3591,6 +7649,34 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-BFDACE2C-1494-4275-B8A4-FAA143BFD5C4.htm"
  :source-bricscad NIL)
+
+(:name "CONTENTBROWSERCLOSE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_CONTENTBROWSERCLOSE"
+ :synopsis "Closes the Content Browser panel."
+ :options NIL
+ :arguments "No arguments or inputs are specified for this command."
+ :description "Closes the Content browser panel to hide it from the current workspace. When the panel is stacked, the Content Browser tab or icon is removed from the stack."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_contentbrowserclose/V25/EN_US")
+
+(:name "CONTENTBROWSEROPEN"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_CONTENTBROWSEROPEN"
+ :synopsis "Opens the Content Browser panel in BricsCAD."
+ :options NIL
+ :arguments "No command-line arguments or user inputs are documented; the command simply opens the panel."
+ :description "Opens the Content Browser panel to display it in the current workspace. The panel provides access to drawing management, block libraries, dimension styles, and model views, appearing at its previous size and location."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_contentbrowseropen/V25/EN_US")
 
 (:name "CONVERT"
  :category :MODIFY
@@ -3774,6 +7860,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8C693775-7BB2-48D6-9A6B-770F8A870707.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_copyclip/V25/EN_US")
 
+(:name "COPYEDATA"
+ :category :EDIT
+ :aliases NIL
+ :intl-name "_COPYEDATA"
+ :synopsis "Copies extended entity data from one entity to others."
+ :options ("?")
+ :arguments "Enter the application name to which the entity data belongs; select the entity from which to copy the edata; select one or more entities to receive the edata."
+ :description "Allows users to transfer extended entity data (edata) between entities. Users specify an application name, select a source entity containing the data, and designate one or more recipient entities to receive that edata. Such data can be created using the EDITEDATA command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_copyedata/V25/EN_US")
+
 (:name "COPYFROMTRACE"
  :category :EDIT
  :aliases NIL
@@ -3787,6 +7887,41 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-982D3DA5-3212-4A0F-8776-57C5B028CF50.htm"
  :source-bricscad NIL)
+
+(:name "COPYGUIDED"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_COPYGUIDED"
+ :synopsis "Copies entities using guide curves."
+ :options ("Polygonal" "Rectangular" "Region" "Entities" "Save detail"
+           "Flip entities" "choose base Point" "use Center point"
+           "switch to 3D mode" "Manually specify source faces" "Reset"
+           "Automatic detection of source faces" "specify Base point"
+           "Rotate detail" "Disable display of source faces"
+           "switch back to 2D mode")
+ :arguments "Select entities (either pre-pick or post-pick mode via selection window), optionally configure options, then click to place the copy or enter a distance value."
+ :description "Automatically aligns copied entities with relevant geometry using temporary guide curves. Polyline and multiline segments are accepted as guide lines. The command can be executed by pre-selecting entities or launching it first then selecting via a window."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_copyguided/V25/EN_US")
+
+(:name "COPYGUIDED3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_COPYGUIDED3D"
+ :synopsis "Copies 3D Solids, Block references or a set of faces from one location to another, using reference faces of the user's choice."
+ :options ("Manually specify source faces" "Reset"
+           "Automatic detection of source faces" "Specify Base point"
+           "Rotate detail" "Disable display of source faces")
+ :arguments "Interactive: select geometry, use dynamic dimensions for positioning, press Ctrl to cycle through alternatives and Shift to fix faces; the page does not specify a formal input sequence at the command prompt."
+ :description "Automatically detects connections and source faces when a solid, block, or face set is selected. It uses dynamic dimensions to position details and can transform them through translations, rotations, and mirrorings. Visual feedback indicates whether placement is possible (green) or unavailable (blue)."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_copyguided3d/V25/EN_US")
 
 (:name "COPYHIST"
  :category :EDIT
@@ -3843,6 +7978,96 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0A1C99AD-53BE-4272-AD32-DAFECAECD6F7.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_copytolayer/V25/EN_US")
+
+(:name "CORRIDOR"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_CORRIDOR"
+ :synopsis "Creates a corridor from a corridor template."
+ :options ("create Simple corridor" "Predefined" "Change template")
+ :arguments "3D alignment method: select the 3D alignment baseline, select the corridor template, enter the region start station, enter the region end station. Simple corridor method: select the TIN Surface, select the corridor template, pick horizontal alignment PI points then Enter to finish."
+ :description "Generates corridors using corridor templates along 3D alignment lines or paths. It supports two methods: creating corridors along predefined 3D alignments with specified stations, or building simple corridors by picking horizontal alignment points on a TIN surface."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_corridor/V25/EN_US")
+
+(:name "CORRIDOREDIT"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_CORRIDOREDIT"
+ :synopsis "Adds or removes regions for a selected corridor."
+ :options ("Add Baseline" "Remove Baseline" "Add Region" "Remove Region"
+           "Add Station" "Split Region" "Merge Region" "whole Baseline"
+           "by Index" "by Name" "by Range")
+ :arguments "No fixed linear sequence; select the desired operation (Add Baseline, Remove Baseline, Add Region, etc.), then supply corresponding inputs such as station values, baseline/region names, or index numbers as prompted."
+ :description "Enables users to modify corridor properties by adding or removing baselines and regions along a 3D alignment line. It supports adding stations, splitting regions, and merging regions for enhanced corridor design flexibility."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_corridoredit/V25/EN_US")
+
+(:name "CORRIDOREXTRACT"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_CORRIDOREXTRACT"
+ :synopsis "Extracts geometric entities from a corridor based on template elements."
+ :options ("Mesh" "All Shapes" "by Codes" "Solid" "Tin" "STrings"
+           "All Stringlines" "Polylines" "outer Boundaries"
+           "Create dynamic link")
+ :arguments "The page does not specify the exact argument sequence; it describes three general methods (extract all, extract individual, or extract by code) without detailing the specific input order or prompts."
+ :description "Extracts a 3D solid, 3D mesh, TIN surface, 3D polyline or outer boundaries from a corridor. The command processes corridor template elements defined by points, links, and shapes, stitching corresponding elements together across regions to form new entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_corridorextract/V25/EN_US")
+
+(:name "CORRIDORTEMPLATE"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_CORRIDORTEMPLATE"
+ :synopsis "Creates a corridor template."
+ :options ("Add template element")
+ :arguments "Pick a point to create the corridor template, then select corridor template elements to add to the existing template as needed."
+ :description "Allows users to establish a corridor template by selecting a point, then append additional corridor template elements to it for use in corridor modeling workflows."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_corridortemplate/V25/EN_US")
+
+(:name "CORRIDORTEMPLATEELEMENT"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_CORRIDORTEMPLATEELEMENT"
+ :synopsis "Creates a corridor template element from polylines with a specified base point and orientation (left, right, none)."
+ :options ("None" "Right" "Left")
+ :arguments "Select polylines to create a corridor template element and specify a base point, then select an orientation option (None, Right, or Left)."
+ :description "Generates corridor template geometry based on specified polylines, which can be edited later using CORRIDORTEMPLATEELEMENTEDIT. Input polylines may contain multiple segments (lines or arcs), with arc tessellation controlled by the CVARCTESSELLATIONTEMPLATEELEMENT system variable."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_corridortemplateelement/V25/EN_US")
+
+(:name "CORRIDORTEMPLATEELEMENTEDIT"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_CORRIDORTEMPLATEELEMENTEDIT"
+ :synopsis "Edits corridor template elements by adding or removing components and targets."
+ :options ("Add Point" "Remove Point" "Add Link" "Remove Link" "Add Shape"
+           "Remove Shape" "Add Target" "Remove Target" "insert bEfore"
+           "insert After" "Unset basepoint" "unset insertion Index")
+ :arguments "Select from the available options (Add/Remove Point, Link, Shape, or Target), then provide inputs such as point locations, basepoint references, index numbers, or target specifications depending on the chosen operation."
+ :description "Modifies existing corridor template elements by enabling users to add or remove components (points, links, shapes) and targets. The editing occurs within a visual interface where the selected point and link are highlighted, and a green square marks the template element's origin."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_corridortemplateelementedit/V25/EN_US")
 
 (:name "COUNT"
  :category :INQUIRY
@@ -3985,6 +8210,62 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-EA75F772-B340-4052-930E-9317EFC59DB6.htm"
  :source-bricscad NIL)
+
+(:name "CPAGESETUP"
+ :category :PLOT
+ :aliases NIL
+ :intl-name "_CPAGESETUP"
+ :synopsis "Opens the Page Setup dialog box."
+ :options NIL
+ :arguments "The page does not specify a command-line argument sequence; the command simply opens the Page Setup dialog box."
+ :description "Allows users to view and modify page setup settings for the current layout or model space, including printer configuration, paper size, plot area, scale, and orientation options."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_cpagesetup/V25/EN_US")
+
+(:name "CREATEBIMPROJECT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_CREATEBIMPROJECT"
+ :synopsis "Opens the New Project dialog box."
+ :options NIL
+ :arguments "No command-line arguments; opens an interactive dialog where the user specifies the project name, model name, and file path."
+ :description "Launches a dialog that enables users to create a new BIM Project, specifying the project name, model name, and file path for the new project."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_createbimproject/V25/EN_US")
+
+(:name "CREATELIBRARYBLOCK"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_CREATELIBRARYBLOCK"
+ :synopsis "Creates and categorizes components."
+ :options NIL
+ :arguments "Dialog-driven: users sequentially provide the selection set (entities to include), block name, category, save location, insertion units, and base point, then click Create to finalize."
+ :description "Opens the Add block to library dialog box, which creates a block definition and adds it to the block library for organizing reusable components in BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_createlibraryblock/V25/EN_US")
+
+(:name "CREATETHUMBNAIL"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_CREATETHUMBNAIL"
+ :synopsis "Creates a thumbnail image of the current drawing."
+ :options NIL
+ :arguments "Position the drawing through zooming and panning to the desired view, then accept the thumbnail frame; the command then opens the Save Drawing As dialog box to save the thumbnail image."
+ :description "Generates custom thumbnail views for displaying drawing file content in file managers and non-CAD programs. The thumbnails are small raster preview images, and usually are created automatically of the current view as the drawing is saved."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_createthumbnail/V25/EN_US")
 
 (:name "CUI"
  :category :CUSTOMIZATION
@@ -4142,6 +8423,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-7BF8CDE4-9440-4860-9D84-9341006E600A.htm"
  :source-bricscad NIL)
 
+(:name "CVSHOW"
+ :category :|3D|
+ :aliases ("POINTON")
+ :intl-name "_CVSHOW"
+ :synopsis "Displays the control vertices frame for the selected NURBS curves and/or surfaces."
+ :options NIL
+ :arguments "Select NURBS curves and/or surfaces after invoking the command to display their control vertices frame."
+ :description "Enables users to visualize control vertices frames associated with NURBS curves and surfaces. It operates by allowing selection of the desired NURBS objects to display their control vertex information."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_cvshow/V25/EN_US")
+
 (:name "CYLINDER"
  :category :|3D|
  :aliases ("CYL")
@@ -4199,6 +8494,62 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-1F8FE1F0-5229-4A5C-B69F-DA47CC9C25A9.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_datalinkupdate/V25/EN_US")
+
+(:name "DATASMITHCONNECT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_DATASMITHCONNECT"
+ :synopsis "Creates a connection for Twinmotion and/or Unreal Engine Direct Link integration."
+ :options NIL
+ :arguments "The page does not specify command-line arguments or an input sequence for this command."
+ :description "Creates a datasmith connection, which can be picked up by Twinmotion or Unreal Engine to establish a Direct Link. When invoked, any existing connection from another drawing is replaced. Models automatically synchronize upon initial Twinmotion connection."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_datasmithconnect/V25/EN_US")
+
+(:name "DATASMITHEXPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_DATASMITHEXPORT"
+ :synopsis "Exports the current drawing to a udatasmith file."
+ :options NIL
+ :arguments "Opens the Export drawing to dialog box; the page does not specify command-line arguments. Apply 3D visual styles rather than 2dWireframe when exporting."
+ :description "Opens an export dialog to save drawing data as an Unreal Engine file (*.udatasmith) for use in Twinmotion and/or Unreal Engine. Users should apply 3D visual styles rather than 2dWireframe when exporting."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_datasmithexport/V25/EN_US")
+
+(:name "DATASMITHSYNC"
+ :category :RENDER
+ :aliases NIL
+ :intl-name "_DATASMITHSYNC"
+ :synopsis "Synchronizes changes to Twinmotion and/or Unreal Engine since the last connection call."
+ :options NIL
+ :arguments NIL
+ :description "If a Datasmith connection for a Direct Link with Twinmotion and/or Unreal Engine exists, it synchronizes it to reflect the latest changes in the current drawing. The DATASMITHCONNECT command must be used first if no connection exists yet."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_datasmithsync/V25/EN_US")
+
+(:name "DATE"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_DATE"
+ :synopsis "Displays the date and time in the Command line."
+ :options NIL
+ :arguments NIL
+ :description "This Express Tools command outputs the current date and time information to the Command line without requiring any user input or options."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_date/V25/EN_US")
 
 (:name "DBCCLOSE"
  :category :SYSTEM
@@ -4396,6 +8747,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-E64A038C-0928-4E8E-BC60-356FDF86CFFB.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dclinear/V25/EN_US")
 
+(:name "DCRADIUS"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_DCRADIUS"
+ :synopsis "Constrains radii of circles, arcs, or polyline arc segments."
+ :options NIL
+ :arguments NIL
+ :description "This command applies radius constraints to circular and arc entities while allowing them to be moved, rotated, and otherwise repositioned. The radius value becomes fixed through the constraint, though the geometry retains mobility."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dcradius/V25/EN_US")
+
 (:name "DCVERTICAL"
  :category :PARAMETRIC
  :aliases NIL
@@ -4409,6 +8774,174 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-9ADCF482-CDFE-453E-A48E-BCDDDB801B42.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dcvertical/V25/EN_US")
+
+(:name "DDATTE"
+ :category :ATTRIBUTE
+ :aliases NIL
+ :intl-name "_DDATTE"
+ :synopsis "Edits the values of attributes through a dialog box."
+ :options NIL
+ :arguments NIL
+ :description "Opens the Edit Attributes dialog, allowing users to modify attribute values for block attributes. This command has been superseded by BATTMAN."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ddatte/V25/EN_US")
+
+(:name "DDEDIT"
+ :category :TEXT
+ :aliases ("ED")
+ :intl-name "_DDEDIT"
+ :synopsis "Edits single-line text, multi-line text (mtext), dimension text, attribute definition and leader text."
+ :options NIL
+ :arguments NIL
+ :description "Allows editing of various text entities. For multi-line text, dimension text, or leader text, it opens a Text formatting window. For attribute definitions, it opens the Edit Attribute Definition dialog box. For single-line text, an in-place editor is displayed. The command can also be invoked by double-clicking on these entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ddedit/V25/EN_US")
+
+(:name "DDEMODES"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_DDEMODES"
+ :synopsis "Sets default values for creating entities."
+ :options NIL
+ :arguments NIL
+ :description "Opens the Entity Creation section of the Settings dialog box, where users can configure default properties for new objects (color, linetype, linetype scale, lineweight, transparency, current layer, table style). This command is superseded by the SETTINGS command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ddemodes/V25/EN_US")
+
+(:name "DDFILTER"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_DDFILTER"
+ :synopsis "Creates a selection set of the entities."
+ :options NIL
+ :arguments NIL
+ :description "Generates a selection set containing selected entities for later access by entering P (previous) when prompted to select entities in subsequent commands. The SELECT command has superseded this functionality."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ddfilter/V25/EN_US")
+
+(:name "DDGRIPS"
+ :category :SYSTEM
+ :aliases ("GR")
+ :intl-name "_DDGRIPS"
+ :synopsis "Opens the Settings dialog box with the Grips category expanded."
+ :options NIL
+ :arguments NIL
+ :description "Provides access to the Settings dialog where users can view and modify system variables related to grip settings and behavior."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ddgrips/V25/EN_US")
+
+(:name "DDPTYPE"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_DDPTYPE"
+ :synopsis "Opens the Settings dialog box with the Points category expanded."
+ :options NIL
+ :arguments NIL
+ :description "Launches the Settings dialog, displaying the Points category to allow users to view and adjust related system variables for point configuration (PDMODE and PDSIZE)."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ddptype/V25/EN_US")
+
+(:name "DDSELECT"
+ :category :SELECTION
+ :aliases ("SE")
+ :intl-name "_DDSELECT"
+ :synopsis "Opens the Settings dialog box with the Entity selection category expanded."
+ :options NIL
+ :arguments NIL
+ :description "Launches the Settings dialog box to the Entity selection category, allowing users to view and modify associated system variables related to entity selection behavior."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ddselect/V25/EN_US")
+
+(:name "DDSETVAR"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_DDSETVAR"
+ :synopsis "Opens the Settings dialog box."
+ :options NIL
+ :arguments NIL
+ :description "Launches the Settings dialog box for viewing and modifying system variables. While most system variables are accessible through this dialog, the SETVAR command provides access to all system variables."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ddsetvar/V25/EN_US")
+
+(:name "DDSTRACK"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_DDSTRACK"
+ :synopsis "Opens the Settings dialog box with the Snap tracking category expanded."
+ :options NIL
+ :arguments NIL
+ :description "Provides access to the Settings dialog with the Snap tracking section already open, allowing users to view and adjust snap tracking-related system variables."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ddstrack/V25/EN_US")
+
+(:name "DDVPOINT"
+ :category :VIEW
+ :aliases ("SETVPOINT" "VIEWCTL" "VP")
+ :intl-name "_DDVPOINT"
+ :synopsis "Opens the Set Viewpoint dialog box."
+ :options ("Horizontal" "Vertical" "Angle Preset" "Plan" "Previous")
+ :arguments NIL
+ :description "Allows users to specify a 3D viewpoint for the current viewport through a dialog interface. The feature requires perspective mode to be disabled and enables navigation using both horizontal (angle from X-axis) and vertical (angle from XY plane) angle controls."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ddvpoint/V25/EN_US")
+
+(:name "DEACTIVATESTORY"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DEACTIVATESTORY"
+ :synopsis "Deactivates an active story."
+ :options NIL
+ :arguments NIL
+ :description "Removes the active status from a story without modifying the current view. Related to the ACTIVATESTORY command and STORYBAR system variable in BricsCAD BIM."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_deactivatestory/V25/EN_US")
+
+(:name "DEFAULTSCALELIST"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_DEFAULTSCALELIST"
+ :synopsis "Opens the Default Scale List dialog box."
+ :options NIL
+ :arguments NIL
+ :description "Allows users to view and manage the default scale list, which is stored in the registry. When a drawing's scale list is reset, it updates to match the default scale list. The dialog enables editing of scale factors used by commands like PRINT and PAGESETUP, as well as annotative scale factors."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_defaultscalelist/V25/EN_US")
 
 (:name "DELAY"
  :category :SYSTEM
@@ -4438,6 +8971,48 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-E47B6F79-C7DA-45ED-AFA6-6C0945DB6375.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_delconstraint/V25/EN_US")
 
+(:name "DELEDATA"
+ :category :EDIT
+ :aliases NIL
+ :intl-name "_DELEDATA"
+ :synopsis "Deletes extended entity data for specific applications from the selected entities."
+ :options ("?")
+ :arguments NIL
+ :description "Specifies an application name and allows users to select entities from which entity data will be removed. The ? option lists names of applications currently loaded in the drawing. Available across BricsCAD Lite, Pro, Mechanical, and BIM."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_deledata/V25/EN_US")
+
+(:name "DEPARAMETRIZE"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_DEPARAMETRIZE"
+ :synopsis "Deparametrizes the selected entities."
+ :options ("Select block references to make static" "Entire drawing")
+ :arguments NIL
+ :description "Converts parametrized entities to static (non-parametrized) form. It works with both 3D block references and 2D parametrized entities, though parametrized entities should be converted to blocks first. The user chooses between selecting specific block references individually or deparametrizing all entities in the current drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_deparametrize/V25/EN_US")
+
+(:name "DESIGNTABLE"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_DESIGNTABLE"
+ :synopsis "Imports CSV files that contain sets of parameter values or else creates them from scratch."
+ :options ("From file" "Empty")
+ :arguments NIL
+ :description "Enables users to either import parameter data from CSV files or build a design table from scratch. Parameters are subsequently integrated into the Mechanical Browser panel and parametric component properties. The From file option imports a CSV file; the Empty option creates a blank design table for manual parameter entry."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_designtable/V25/EN_US")
+
 (:name "DETACHURL"
  :category :EDIT
  :aliases NIL
@@ -4451,6 +9026,34 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-51D50D97-AA7F-4201-AB57-20424F7F2F07.htm"
  :source-bricscad NIL)
+
+(:name "DETAILSPANELCLOSE"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_DETAILSPANELCLOSE"
+ :synopsis "Closes the Details panel."
+ :options NIL
+ :arguments NIL
+ :description "Hides the Details panel from the current workspace. When the Details panel is stacked with other panels, closing it removes the Details tab or icon from that stack."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_detailspanelclose/V25/EN_US")
+
+(:name "DETAILSPANELOPEN"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_DETAILSPANELOPEN"
+ :synopsis "Opens the Details panel."
+ :options NIL
+ :arguments NIL
+ :description "Displays the Details panel in the current workspace at its previously saved size and location. This dockable panel enables users to view details, add tags, and manage detail libraries."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_detailspanelopen/V25/EN_US")
 
 (:name "DETECTCLOSE"
  :category :BLOCK
@@ -4593,6 +9196,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0B1EC8D0-A34C-4F4E-8E72-A71656F7EF55.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dgnimport/V25/EN_US")
 
+(:name "DGNIMPORTOPTIONS"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_DGNIMPORTOPTIONS"
+ :synopsis "Opens the Settings dialog with DGN import options expanded."
+ :options NIL
+ :arguments NIL
+ :description "Opens the Settings dialog box with the DGNIMPORT category expanded to view and modify relevant system variables. Allows users to configure how DGN files are imported into BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dgnimportoptions/V25/EN_US")
+
 (:name "DGNLAYERS"
  :category :LAYER
  :aliases NIL
@@ -4652,6 +9269,23 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-45C1A271-9650-4927-858F-B3BDB19B3E6C.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dim/V25/EN_US")
+
+(:name "DIM1"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_DIM1"
+ :synopsis "Executes a single dimension command at the Dimensioning command: prompt."
+ :options ("HORizontal" "VErtical" "ALigned" "ANgular" "Leader" "OBlique"
+           "ROtated" "CEnter" "Diameter" "RAdius" "Baseline" "COntinue"
+           "ORdinate" "Position" "DIStribute" "UPdate" "STatus" "OVerride"
+           "SEttings" "LAyer")
+ :arguments NIL
+ :description "Allows users to create a single dimension type as specified via the command line. It provides a streamlined workflow for applying one dimensioning operation without entering a continuous dimensioning mode."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dim1/V25/EN_US")
 
 (:name "DIMALIGNED"
  :category :DIMENSION
@@ -4743,6 +9377,21 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-A1362329-04E0-4715-B8DA-D1486C80D81F.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimcenter/V25/EN_US")
 
+(:name "DIMCONSTRAINT"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_DIMCONSTRAINT"
+ :synopsis "Applies a dimensional constraint to an entity or between constraint points on entities; converts associative dimensions to dynamic dimensions."
+ :options ("LInear" "Horizontal" "Vertical" "Aligned" "ANgular" "Radial"
+           "Diameter")
+ :arguments NIL
+ :description "Enables users to apply dimensional constraints to entities or between constraint points. It can also convert existing associative dimensions into dynamic constraints, functioning equivalently to the DCCONVERT command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimconstraint/V25/EN_US")
+
 (:name "DIMCONTINUE"
  :category :DIMENSION
  :aliases ("DCO" "DIMCONT")
@@ -4813,6 +9462,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-9DD96CAB-D7FE-4018-AA60-6309A2D4F6D3.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimex/V25/EN_US")
 
+(:name "DIMIM"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_DIMIM"
+ :synopsis "Imports dimension styles and their settings from an external file."
+ :options NIL
+ :arguments NIL
+ :description "This Express Tools command opens the Import DimensionStyles dialog, enabling users to import dimension styles previously exported via the DIMEX command. The import process includes associated text styles and linetypes from a DSE file format."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimim/V25/EN_US")
+
 (:name "DIMINSPECT"
  :category :DIMENSION
  :aliases NIL
@@ -4855,6 +9518,23 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0FC8D2AB-18BE-4E93-A697-5350FDBC4226.htm"
  :source-bricscad NIL)
 
+(:name "DIMLEADER"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_DIMLEADER"
+ :synopsis "Creates a leader."
+ :options ("Arrow" "None" "SPline" "STraight" "Exit" "Undo" "Block" "Copy"
+           "Tolerance" "MText")
+ :arguments ("Start of leader (point)" "Next point/To point (vertices)"
+             "Format options"
+             "Annotation option (Block, Copy, None, Tolerance, or MText)")
+ :description "Creates a leader by specifying a sequence of points based on the current dimension style. Users can configure the leader's format (arrow presence, spline vs. straight segments) and add various types of annotations including text, blocks, or geometric tolerances."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimleader/V25/EN_US")
+
 (:name "DIMLINEAR"
  :category :DIMENSION
  :aliases ("DIMHORIZONTAL" "DIMLIN" "DIMROTATED" "DIMVERTICAL" "DLI")
@@ -4870,6 +9550,21 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-E908848F-4621-43D2-B377-FD3FBC2B8848.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimlinear/V25/EN_US")
 
+(:name "DIMMARKOVERRIDES"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_DIMMARKOVERRIDES"
+ :synopsis "Adds or removes underline to dimensions with overridden dimtext."
+ :options ("Mark" "Unmark")
+ :arguments ("Select dimensions with overridden dimension text"
+             "Press Enter when selection is complete" "Choose Mark or Unmark")
+ :description "Modifies dimensions that have overridden text by applying or removing underlines through database changes. Users can select multiple dimensions and then choose to mark or unmark them accordingly."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimmarkoverrides/V25/EN_US")
+
 (:name "DIMORDINATE"
  :category :DIMENSION
  :aliases ("DIMORD" "DOR")
@@ -4884,6 +9579,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-7F5C4A2C-117A-486B-A26E-6F8AC2BD9D8A.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimordinate/V25/EN_US")
 
+(:name "DIMOVERRIDE"
+ :category :DIMENSION
+ :aliases ("DIMOVER" "DOV")
+ :intl-name "_DIMOVERRIDE"
+ :synopsis "Overrides the values of the current dimension style."
+ :options ("Clear")
+ :arguments NIL
+ :description "Allows override of dimension style values in a selected dimension. The Clear option resets dimension variable values and clears overrides. This command is superseded by the Override function of the DIMSTYLE command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimoverride/V25/EN_US")
+
 (:name "DIMRADIUS"
  :category :DIMENSION
  :aliases ("DIMRAD" "DRA")
@@ -4897,6 +9606,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-99EED401-D7DF-4CF3-95ED-BBD107A13855.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimradius/V25/EN_US")
+
+(:name "DIMREASSOC"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_DIMREASSOC"
+ :synopsis "Restores the measured value of a dimension text that has been previously modified or overwritten."
+ :options NIL
+ :arguments ("Select entities with non-associative text" "Press Enter")
+ :description "This Express Tools command allows users to recover original dimension values when the dimension text has been altered or overwritten. It functions by selecting entities containing non-associative text."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimreassoc/V25/EN_US")
 
 (:name "DIMREASSOCIATE"
  :category :DIMENSION
@@ -4968,6 +9691,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-39D6E54F-E12F-46A4-9DD1-68D9357289E4.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimstyle/V25/EN_US")
 
+(:name "DIMSTYLESET"
+ :category :DIMENSION
+ :aliases NIL
+ :intl-name "_DIMSTYLESET"
+ :synopsis "Reports the current dimension style in the Command line."
+ :options NIL
+ :arguments NIL
+ :description "Displays which dimension style is currently active. This information also appears in the BricsCAD application window's Status bar, labeled as Current Dimension Style."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimstyleset/V25/EN_US")
+
 (:name "DIMTEDIT"
  :category :DIMENSION
  :aliases ("DIMTED")
@@ -4981,6 +9718,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-B70E17BC-E284-4FD3-9F3D-A9F18C022BDE.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dimtedit/V25/EN_US")
+
+(:name "DISH"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DISH"
+ :synopsis "This command is obsolete and exists for backward compatibility only."
+ :options NIL
+ :arguments NIL
+ :description "An outdated function that has been superseded. Users are directed to employ the AI_DISH command as a modern alternative for creating 3D polygon mesh structures."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dish/V25/EN_US")
 
 (:name "DIST"
  :category :INQUIRY
@@ -5025,6 +9776,606 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-3427CA9F-831C-4B53-A903-49EB6378335C.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_divide/V25/EN_US")
 
+(:name "DMANGLE3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMANGLE3D"
+ :synopsis "Creates an angle constraint between faces and/or edges of 3D solids, WCS subentities, and subentities of a coordinate system of a block."
+ :options ("cone" "WOrld" "BLock" "Set reference entity" "Keep as is" "None"
+           "Geometry-driven")
+ :arguments NIL
+ :description "Establishes planar angle constraints by default, using World Coordinate System planes as reference objects when available. It enables control of a cone's top angle and supports the TAB key for selecting obscured geometry."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmangle3d/V25/EN_US")
+
+(:name "DMAUDIT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMAUDIT"
+ :synopsis "Analyzes and repairs errors in 3D geometry."
+ :options ("Check" "Fix" "Audit level" "Low" "Medium" "High"
+           "Check and fix coincident faces"
+           "Check and fix entities in nested blocks" "Redirect output to panel"
+           "Copy output to file")
+ :arguments NIL
+ :description "A tool that analyzes and automatically fixes problems in 3D geometry supported by the ACIS kernel, including 3D solids and surfaces. The documentation recommends running this command whenever 3D geometry is imported into a drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmaudit/V25/EN_US")
+
+(:name "DMAUDITALL"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMAUDITALL"
+ :synopsis "Analyzes and repairs errors in drawings inserted as external references."
+ :options ("Check" "Fix" "Back" "report Panel" "copy to File" "audit Level"
+           "Low" "Medium" "High" "Coincident faces")
+ :arguments NIL
+ :description "A powerful tool to analyze and automatically fix problems in 3D geometry supported by the ACIS kernel, including 3D solids and surfaces. It is recommended to run DMAUDITALL whenever 3D geometry is imported."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmauditall/V25/EN_US")
+
+(:name "DMBEND"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMBEND"
+ :synopsis "Bends a 3D solid around an axis."
+ :options ("Select a line to be used as a bend axis" "New line" "Left" "Middle"
+           "Right" "Settings" "Accept model")
+ :arguments ("Select or draw a bend line on the 3D solid's face"
+             "Choose fixed side option (Left, Middle, or Right)"
+             "Set bend angle value" "Set bend radius value" "Accept the model")
+ :description "Enables users to bend 3D solids by selecting or creating a bend line on the solid's face, then specifying the bend angle and radius through either mouse interaction or direct value entry."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmbend/V25/EN_US")
+
+(:name "DMCHAMFER"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMCHAMFER"
+ :synopsis "Creates equal and variable distance chamfers between adjacent faces sharing a sharp edge."
+ :options ("ASymmetrical" "ANgular" "Variable Symmetrical"
+           "VAriable aSymmetrical" "VAriable aNgular")
+ :arguments NIL
+ :description "Allows users to create both constant symmetrical and advanced variable chamfers on 3D solids. After selecting edges, users specify offset values and/or angles, with dynamic preview and manipulator display. When CREATESKETCHFEATURE is enabled, chamfer features appear in the Mechanical Browser panel."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmchamfer/V25/EN_US")
+
+(:name "DMCOINCIDENT3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMCOINCIDENT3D"
+ :synopsis "Applies a coincident constraint between two subentities of 3D entities."
+ :options ("Autoconstrain" "WOrld" "BLock")
+ :arguments NIL
+ :description "Creates coincident constraints between various 3D geometric elements. It can constrain two edges, two faces, an edge with a face, or a vertex with a face or edge across different solids or surfaces."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmcoincident3d/V25/EN_US")
+
+(:name "DMCONCENTRIC3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMCONCENTRIC3D"
+ :synopsis "Applies a concentric constraint between two circular subentities of 3D entities."
+ :options ("WOrld" "BLock")
+ :arguments ("Select first circular subentity"
+             "Select second circular subentity")
+ :description "Constrains two circular surfaces or edges (from cylindrical, spherical, or conical entities) to share the same center point. Users select the two circular subentities that will be constrained, with support for selecting obscured geometry using the TAB key."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmconcentric3d/V25/EN_US")
+
+(:name "DMCONSTRAINT3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMCONSTRAINT3D"
+ :synopsis "Applies geometric and dimensional constraints for 3D entities."
+ :options ("New" "Fix" "Multiple" "BLock" "Coincident" "Autoconstrain" "WOrld"
+           "PAth" "CONcentric" "Parallel" "PErpendicular" "Tangent" "RIgidset"
+           "Distance" "Radius" "Angle" "Edit" "NodeId" "Enable"
+           "change Arguments" "Replace argument" "Exclude argument"
+           "Add arguments" "Append arguments" "Edit Arguments" "Value"
+           "Lower Bound" "Upper Bound" "eXpose" "Geometry-driven" "Properties"
+           "Placements" "Direction" "Use as" "Rename" "Delete" "?")
+ :arguments NIL
+ :description "Applies geometric and dimensional constraints between faces, surfaces, or edges of 3D entities. Geometric constraints establish relationships like parallelism and tangency, while dimensional constraints restrain values such as radius or distance, with optional bounds."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmconstraint3d/V25/EN_US")
+
+(:name "DMCOPYFACES"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMCOPYFACES"
+ :synopsis "Copies a feature from a 3D solid."
+ :options ("Select entities" "Base point" "Insertion point" "Rotate" "mUltiple"
+           "MOde" "Placement Face" "Select Faces" "No Cut")
+ :arguments ("Select all faces of the entire feature" "Specify the base point"
+             "Select an insertion point" "Optionally rotate around Z axis"
+             "Choose insertion mode (single or multiple copies)"
+             "Select cutting option (Placement Face, Select Faces, or No Cut)")
+ :description "Duplicates a set of 3D solid faces that form features like holes, pockets, extrusions, and ribs, either within the same solid or between different solids."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmcopyfaces/V25/EN_US")
+
+(:name "DMDEFORMCURVE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMDEFORMCURVE"
+ :synopsis "Deforms 3D solids or surfaces by replacing their edges with given curves."
+ :options ("add Faces" "Multiple edges")
+ :arguments NIL
+ :description "Modifies one or more connected faces of a 3D solid or surface by substituting their edges with target curves. Users select edges to be replaced to generate the new geometry."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmdeformcurve/V25/EN_US")
+
+(:name "DMDEFORMMOVE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMDEFORMMOVE"
+ :synopsis "Deforms 3D solids, surfaces or regions by moving and/or rotating their edges."
+ :options ("Base point" "Direction" "Additional Faces")
+ :arguments NIL
+ :description "Modifies connected faces of 3D solids or surfaces through edge manipulation. Users can specify deformation by designating points, entering values in dynamic fields, or using the TAB key to toggle between distance and angle parameters. The deformation rotates edges around an axis passing through a base point."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmdeformmove/V25/EN_US")
+
+(:name "DMDEFORMPOINT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMDEFORMPOINT"
+ :synopsis "Deforms a region, face(s) of a 3D solid or a surface by moving a point lying on one of them in arbitrary 3D direction."
+ :options ("change Parameters" "set Target Point" "set Direction"
+           "change Base point")
+ :arguments ("Select a region, face, or connected faces of a 3D solid or surface"
+             "Specify the deformation point"
+             "Specify the deformation value/direction")
+ :description "Enables deformation of regions, connected faces of 3D solids, or surfaces by repositioning a point on them. The deformation maintains smooth transitions and preserves continuity characteristics (G1 tangency or G2 curvature) between affected faces."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmdeformpoint/V25/EN_US")
+
+(:name "DMDELETE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMDELETE"
+ :synopsis "Erases entities from the drawing."
+ :options NIL
+ :arguments NIL
+ :description "The DMDELETE command was integrated into the ERASE command. It is available in BricsCAD Pro, Mechanical, and BIM versions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmdelete/V25/EN_US")
+
+(:name "DMDISTANCE3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMDISTANCE3D"
+ :synopsis "Applies a distance constraint between two entities."
+ :options ("Use as" "WOrld" "BLock" "Geometry-driven")
+ :arguments NIL
+ :description "Constrains the distance between two subentities of the same or different solids, WCS entities, points, cylinders, and spheres by specifying a distance value. Users can press TAB to select obscured geometry."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmdistance3d/V25/EN_US")
+
+(:name "DMEXTRUDE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMEXTRUDE"
+ :synopsis "Creates 3D solids or surfaces by extruding entities."
+ :options NIL
+ :arguments NIL
+ :description "The DMEXTRUDE command has been unified with the EXTRUDE command. Users should employ the EXTRUDE command instead of DMEXTRUDE."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmextrude/V25/EN_US")
+
+(:name "DMFILLET"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMFILLET"
+ :synopsis "Creates a smooth fillet between adjacent faces sharing a sharp edge."
+ :options ("Constant radius" "Variable radius" "Intermediate radius"
+           "Erase points")
+ :arguments NIL
+ :description "Generates constant or variable radius fillets on edges where adjacent faces meet. Users select edges and choose between constant radius or advanced options, with the fillet applied dynamically and a manipulator displayed for adjustment."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmfillet/V25/EN_US")
+
+(:name "DMFIX3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMFIX3D"
+ :synopsis "Applies a fixed constraint to 3D entity."
+ :options ("Multiple" "BLock")
+ :arguments NIL
+ :description "Applies a fixed constraint to solids or their subentities (edges/faces). When applied to a 3D entity, all faces and edges become fixed. Face constraints prevent movement or rotation, while edge constraints allow adjacent face rotation but prevent movement."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmfix3d/V25/EN_US")
+
+(:name "DMGROUP"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMGROUP"
+ :synopsis "Creates group features, which are named persistent collections of faces and edges of 3D solids and surfaces."
+ :options ("New" "Edit" "Dissolve")
+ :arguments NIL
+ :description "Group features are named collections that can be coupled with descriptions for storing manufacturing instructions or model information. These features typically persist after 3D solid/surface modifications and can be accessed via Lisp scripts and BRX applications. Group feature names are case-sensitive."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmgroup/V25/EN_US")
+
+(:name "DMMOVE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMMOVE"
+ :synopsis "Moves entities or sub-entities."
+ :options NIL
+ :arguments ("Select one or more entities" "Press Enter to stop selecting"
+             "Specify a base point" "Specify an endpoint")
+ :description "Moves solids, faces, edges, or vertices of a solid or inserts using a vector. Users can select multiple entities and specify movement via mouse clicks or dynamic input fields, with geometric and dimensional constraints automatically considered during the operation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmmove/V25/EN_US")
+
+(:name "DMPARALLEL3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMPARALLEL3D"
+ :synopsis "Applies a parallel constraint between subentities of 3D entities."
+ :options ("WOrld" "BLock")
+ :arguments NIL
+ :description "Enables users to establish parallel constraints between two faces of solids, faces of different solids/surfaces, or a face and edge across different solids. Users can press TAB to select obscured geometry."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmparallel3d/V25/EN_US")
+
+(:name "DMPATH3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMPATH3D"
+ :synopsis "Allows a point to move along a curve by specifying the curve's parameters."
+ :options ("WOrld" "BLock" "Geometry-driven")
+ :arguments ("Select a curve entity (polyline, 3D polyline, spline, or helix) as the path"
+             "Select a point/vertex from a 3D solid"
+             "Specify the curve parameter value")
+ :description "Enables users to constrain a point or vertex from a 3D solid to follow a path along a curve entity (polyline, 3D polyline, spline, or helix) by defining the curve's parameter value."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmpath3d/V25/EN_US")
+
+(:name "DMPERPENDICULAR3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMPERPENDICULAR3D"
+ :synopsis "Applies a perpendicular constraint between two subentities of two 3D entities."
+ :options ("WOrld" "BLock")
+ :arguments NIL
+ :description "Constrains faces or edges of solids, different solids, or surfaces to be perpendicular to each other. Users select two subentities from 3D entities, with the TAB key available for selecting obscured geometry."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmperpendicular3d/V25/EN_US")
+
+(:name "DMPUSHPULL"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMPUSHPULL"
+ :synopsis "Adds or removes volume from a solid by moving highlighted faces."
+ :options ("Enable subtract" "Disable subtract")
+ :arguments ("Select face(s)" "Press Enter to complete selection"
+             "Move geometry via cursor movement, direct distance input, or point clicking")
+ :description "Allows users to add or remove volume from 3D solids and surfaces by moving selected faces. The geometry moves dynamically using a manipulator, and users can input values through cursor movement, direct distance entry, or clicking points in the model."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmpushpull/V25/EN_US")
+
+(:name "DMRADIUS3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMRADIUS3D"
+ :synopsis "Applies a radius constraint to circular 3d entities or subentities."
+ :options ("Rotation radius" "Tube radius" "Geometry-driven")
+ :arguments NIL
+ :description "Constrains radius values on cylindrical surfaces, spheres, tori, and circular edges. Users can either specify a custom radius value or accept the current geometry value. For torus surfaces, both rotation and tube radius can be constrained independently."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmradius3d/V25/EN_US")
+
+(:name "DMREPAIR"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMREPAIR"
+ :synopsis "Analyzes and repairs errors."
+ :options NIL
+ :arguments NIL
+ :description "A tool for identifying and fixing errors in BricsCAD drawings. This functionality has been superseded; the DMREPAIR command has been replaced by the DMAUDIT command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmrepair/V25/EN_US")
+
+(:name "DMREVOLVE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMREVOLVE"
+ :synopsis "Creates 3D solids or surfaces by revolving 2D entities about an axis."
+ :options NIL
+ :arguments NIL
+ :description "The DMREVOLVE command has been unified with the REVOLVE command, and users are advised to use REVOLVE instead."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmrevolve/V25/EN_US")
+
+(:name "DMRIGIDSET3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMRIGIDSET3D"
+ :synopsis "Allows to define a set of entities or subentities as a rigid body."
+ :options ("WOrld" "BLock")
+ :arguments NIL
+ :description "Enables users to select edges, faces, or 3D entities to link as a rigid body. Members move and rotate together while maintaining their relative positions within the set."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmrigidset3d/V25/EN_US")
+
+(:name "DMROTATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMROTATE"
+ :synopsis "Rotates the selected geometry around an axis."
+ :options NIL
+ :arguments NIL
+ :description "This command is deprecated and users should utilize the ROTATE3D command instead for rotating entities around an axis in 3D space."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmrotate/V25/EN_US")
+
+(:name "DMSELECT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMSELECT"
+ :synopsis "Selects edges and faces of 3D solids or surfaces based on their geometric properties."
+ :options ("Radius" "Area" "Length" "Type" "Offset" "Exclude short fillets"
+           "Coincident" "Parallel" "coAxial" "Smooth" "Face" "Edge" "Loop"
+           "edge Network" "Protrusion" "Depression" "Fillet" "fillet Network"
+           "Chamfer" "Chamfer Network" "Select seed" "Subset" "sKip" "Finish")
+ :arguments NIL
+ :description "Allows users to select groups of faces that form geometric features like protrusions or depressions. Multiple selection options can be combined, for instance filtering fillets by radius constraints or selecting faces by their geometric type."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmselect/V25/EN_US")
+
+(:name "DMSELECTEDGES"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMSELECTEDGES"
+ :synopsis "Selects the edges of faces and solids."
+ :options NIL
+ :arguments ("Select faces or solids (their edges are added to the selection)"
+             "Hold CTRL and click to remove specific edges")
+ :description "Selects all edges from chosen faces or solid objects. Edges are added to the selection set by selecting faces or solids, then specific edges can be removed by holding CTRL while clicking them."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmselectedges/V25/EN_US")
+
+(:name "DMSIMPLIFY"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMSIMPLIFY"
+ :synopsis "Simplifies the geometry and topology of 3D solid entities."
+ :options ("Topology" "Geometry" "Use auto tolerance" "Use custom"
+           "Preview changes")
+ :arguments ("Select 3D solid entities to simplify")
+ :description "Removes unnecessary edges and vertices, merges seam edges, and replaces geometry with analytic surfaces and curves where possible within a user-specified tolerance. It is recommended for imported 3D solid geometry."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmsimplify/V25/EN_US")
+
+(:name "DMSIMPLIFYALL"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMSIMPLIFYALL"
+ :synopsis "Simplifies the geometry in solids, within drawings inserted as external references."
+ :options ("Topology" "Geometry" "Use auto tolerance" "Use custom"
+           "Preview changes")
+ :arguments NIL
+ :description "Removes unnecessary edges and vertices, merges seam edges, and replaces geometry with analytic surfaces and curves where possible. It is recommended for imported drawings with external references to optimize their structure based on user-specified tolerances."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmsimplifyall/V25/EN_US")
+
+(:name "DMSTITCH"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMSTITCH"
+ :synopsis "Converts a set of region and surface entities that bound a watertight area to a 3D solid."
+ :options ("MOde" "Auto" "SOlid" "SUrface" "Tolerance")
+ :arguments ("Select the surfaces to stitch")
+ :description "Transforms selected surfaces and regions into 3D solids or surfaces by processing watertight boundaries. It can validate the resulting geometry either automatically or manually, identifying and reporting issues such as free or non-manifold edges."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmstitch/V25/EN_US")
+
+(:name "DMSTRETCH"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMSTRETCH"
+ :synopsis "Stretches one or more 3D solids along an axis."
+ :options ("set Continuity" "G0" "G1" "Swap fixed side")
+ :arguments ("Select 3D solids to stretch" "Define the axis"
+             "Move the mouse or enter a new value for the length")
+ :description "Stretches 3D solids along a user-defined axis by creating two perpendicular intersection surfaces and isolating the region between them. The length of this region can then be modified by moving the mouse or entering a new value; features like holes retain their original properties."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmstretch/V25/EN_US")
+
+(:name "DMTANGENT3D"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMTANGENT3D"
+ :synopsis "Applies a tangent constraint between circular subentities of 3D entities."
+ :options ("WOrld" "BLock")
+ :arguments ("Select circular subentities of 3D entities to constrain (TAB selects hidden geometry)")
+ :description "Establishes tangency between a face and curved surface of different 3D objects, or between a surface and either the world coordinate system or a block's reference coordinate system. The TAB key facilitates selection of hidden geometry."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmtangent3d/V25/EN_US")
+
+(:name "DMTHICKEN"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMTHICKEN"
+ :synopsis "Creates 3D solids by thickening surfaces, their faces, faces of 3D solids, regions and wire entities."
+ :options ("Single side" "Both sides")
+ :arguments ("Select surfaces, faces, regions or wire entities"
+             "Specify thickness value")
+ :description "Thickens surfaces, solid faces, regions, and wire entities (lines, polylines, circles, ellipses, arcs, helices, splines) by a specified thickness value. When applied to wire entities, a circle with the specified radius is swept along the path; unlike DMEXTRUDE, adjacent faces on multi-face surfaces remain adjacent on the opposite side of the resulting solid."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmthicken/V25/EN_US")
+
+(:name "DMTHREAD"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMTHREAD"
+ :synopsis "Creates thread features on cylindrical faces that display according to drafting standards in drawing views."
+ :options NIL
+ :arguments ("Select a cylindrical face" "Specify the pitch value"
+             "Specify the length value")
+ :description "Creates a thread feature in the model that is represented according to drafting standards in drawing views or section views created with the VIEWBASE and VIEWSECTION commands. It supports both male and female thread types and operates only in Model Space."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmthread/V25/EN_US")
+
+(:name "DMTWIST"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMTWIST"
+ :synopsis "Twists a portion of an entity around an axis."
+ :options ("Continuity" "G0" "G1" "G2")
+ :arguments ("Specify start point of twisting axis"
+             "Specify end point of twisting axis"
+             "Specify start point of twisting" "Specify twist angle"
+             "Select continuity method (G0/G1/G2)")
+ :description "Modifies 3D solids, surfaces, or regions by applying a twisting deformation to a defined portion. The twist angle can be specified, and the continuity transition between deformed and undeformed areas is controlled using G0, G1, or G2 continuity options."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmtwist/V25/EN_US")
+
+(:name "DMUPDATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DMUPDATE"
+ :synopsis "Forces 3D constraints to update."
+ :options NIL
+ :arguments NIL
+ :description "Updates all 3D constraints applied to all 3D entities existing in the drawing. This command ensures that geometric and dimensional constraints are refreshed across the entire design."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dmupdate/V25/EN_US")
+
+(:name "DOME"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DOME"
+ :synopsis "This command is obsolete and exists for backward compatibility only."
+ :options NIL
+ :arguments NIL
+ :description "The DOME command is deprecated in BricsCAD. Users should employ the AI_DOME command instead, which generates a 3D polygon mesh forming the upper hemisphere of a sphere."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dome/V25/EN_US")
+
 (:name "DONUT"
  :category :DRAW
  :aliases ("DO" "DOUGHNUT")
@@ -5052,6 +10403,21 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-76354652-821C-449D-A950-68FE08CDC2F2.htm"
  :source-bricscad NIL)
+
+(:name "DRAG"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_DRAG"
+ :synopsis "Moves 3D solids perpendicular to a selected face by dragging that face."
+ :options ("Disable connectivity mode" "Enable connectivity mode")
+ :arguments ("Select planar face(s)"
+             "Input distance value or adjust via cursor movement")
+ :description "Repositions 3D solids by selecting and dragging planar faces. The tool offers optional connectivity preservation to maintain relationships with adjacent solids during manipulation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_drag/V25/EN_US")
 
 (:name "DRAGMODE"
  :category :SYSTEM
@@ -5109,6 +10475,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-3DC76D6E-8F81-4803-8D0A-AA7541D6357E.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_draworder/V25/EN_US")
 
+(:name "DRAWORDERBYLAYER"
+ :category :EDIT
+ :aliases NIL
+ :intl-name "_DRAWORDERBYLAYER"
+ :synopsis "Controls the display order of drawing entities based on their assigned layers."
+ :options NIL
+ :arguments ("Select a LST file in the Open layer list file dialog box")
+ :description "Opens the Open layer list file dialog box to select a LST file that controls the display order of entities based on their layers. The LST file is a text document containing layer names in the desired drawing sequence, where the first listed layer appears at the bottom and the last appears on top."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_draworderbylayer/V25/EN_US")
+
 (:name "DSETTINGS"
  :category :SYSTEM
  :aliases ("DDRMODES" "RM")
@@ -5122,6 +10502,34 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-22D029BC-354B-4D7D-B800-B5308C377D6C.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dsettings/V25/EN_US")
+
+(:name "DTEXT"
+ :category :TEXT
+ :aliases ("DT")
+ :intl-name "_DTEXT"
+ :synopsis "Creates a single-line text entity."
+ :options NIL
+ :arguments NIL
+ :description "Generates a single-line text object as an alternative to the TEXT command. It is available across multiple BricsCAD editions including Lite, Pro, Mechanical, and BIM versions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dtext/V25/EN_US")
+
+(:name "DUMPSTATE"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_DUMPSTATE"
+ :synopsis "Writes information about the current state of the command history."
+ :options NIL
+ :arguments NIL
+ :description "A diagnostics tool that generates a report file containing details about command history and internal structures, to be run immediately after encountering issues with repeating the last command. The output file (dumpstate_report.txt) is placed in the current working directory and overwrites previous versions with each execution."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dumpstate/V25/EN_US")
 
 (:name "DVIEW"
  :category :VIEW
@@ -5195,6 +10603,77 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-AED4E528-9976-4716-91F8-A849956F128E.htm"
  :source-bricscad NIL)
 
+(:name "DWFOUT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_DWFOUT"
+ :synopsis "Saves the drawing in DWF and other formats."
+ :options NIL
+ :arguments NIL
+ :description "Exports drawings to DWF (drawing Web format) and other file formats. The command functions as an alias for EXPORT, and generated files can be viewed using the free DesignReview software from Autodesk."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dwfout/V25/EN_US")
+
+(:name "DWGCODEPAGE"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_DWGCODEPAGE"
+ :synopsis "Changes the language code for text in drawings."
+ :options NIL
+ :arguments NIL
+ :description "Modifies the code number that specifies which alphabet is used to display text in a drawing (such as English or Turkish). It does not affect the language of the user interface itself, as text rendering relies on the Unicode system."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dwgcodepage/V25/EN_US")
+
+(:name "DWGCOMPARE"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_DWGCOMPARE"
+ :synopsis "Compares a selected drawing with the current drawing."
+ :options ("Select" "Limit")
+ :arguments ("Choose a drawing to compare against the current one via the file selection dialog"
+             "Optionally set comparison entity limits")
+ :description "Opens a Compare panel that displays differences between two drawings using color-coded entities: green for added items, red for removed items, gray for changes in the original, and yellow for changes in the comparison file. Differences can also be viewed in the Structure panel."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dwgcompare/V25/EN_US")
+
+(:name "DWGCOMPARECLOSE"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_DWGCOMPARECLOSE"
+ :synopsis "Closes the Compare panel."
+ :options NIL
+ :arguments NIL
+ :description "Hides the Compare panel from the current workspace. When the Compare panel is stacked, closing it removes the Compare tab or icon from that stack."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dwgcompareclose/V25/EN_US")
+
+(:name "DWGCOMPAREOPEN"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_DWGCOMPAREOPEN"
+ :synopsis "Opens the Compare panel to enable comparison between the current drawing and a selected drawing file."
+ :options NIL
+ :arguments ("Select a comparison file through the Select a file button")
+ :description "Launches the Compare panel within the current workspace, allowing analysis of differences between two CAD drawings. The panel displays at its previous size and location, functioning as a dockable element that can float, dock, or stack with other panels."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dwgcompareopen/V25/EN_US")
+
 (:name "DWGCONVERT"
  :category :FILE
  :aliases NIL
@@ -5208,6 +10687,21 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-1C2163A6-29CC-4EC2-974C-5B6017B948C4.htm"
  :source-bricscad NIL)
+
+(:name "DWGHEALTH"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_DWGHEALTH"
+ :synopsis "Combines the functionality of multiple stand-alone BricsCAD commands that help to improve overall drawing size and accuracy."
+ :options NIL
+ :arguments ("Select a routine (Fix errors, Reduce drawing size, Repair 3D imports)"
+             "Optionally enable Interactive mode" "Click Start to execute")
+ :description "Merges the capabilities of nine related commands (PURGE, AUDIT, FINDOUTLIERS, SOLIDIFY, SIMPLIFY, OVERKILL, BLOCKIFY, OPTIMIZE, ARRAYDETECT) into a single interface. It reduces file size, eliminates unused styles and layers, and enhances drawing quality through predefined or custom routines that can run automatically or interactively."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dwghealth/V25/EN_US")
 
 (:name "DWGLOG"
  :category :FILE
@@ -5250,6 +10744,35 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-9EB8FC2A-50E9-4555-8ADD-80DB8D4DE8AB.htm"
  :source-bricscad NIL)
+
+(:name "DXFIN"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_DXFIN"
+ :synopsis "Opens the Load DXF file dialog box."
+ :options NIL
+ :arguments ("Select a DXF file to import in the Load DXF file dialog box")
+ :description "Launches a file dialog that enables users to select and import a DXF file into their current drawing project."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dxfin/V25/EN_US")
+
+(:name "DXFOUT"
+ :category :FILE
+ :aliases ("DX")
+ :intl-name "_DXFOUT"
+ :synopsis "Opens the Select DXF file dialog box to export drawing data to DXF format."
+ :options ("Decimal places of accuracy" "Entities" "Binary" "Version")
+ :arguments ("Specify the DXF file name in the Select DXF file dialog box"
+             "Set decimal places of accuracy (0-16), entities, binary and version options")
+ :description "Saves the current drawing as a DXF file with customizable export settings. It provides options for controlling decimal precision, selecting specific entities, choosing file format, and specifying DXF version compatibility."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_dxfout/V25/EN_US")
 
 (:name "EATTEDIT"
  :category :ATTRIBUTE
@@ -5307,6 +10830,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8AFC0220-D8D8-49B1-8820-4380586364E6.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_edgesurf/V25/EN_US")
 
+(:name "EDITEDATA"
+ :category :EDIT
+ :aliases NIL
+ :intl-name "_EDITEDATA"
+ :synopsis "Edits extended entity data."
+ :options NIL
+ :arguments ("Select an entity to open the Create or Edit Entity Data dialog box")
+ :description "Allows users to select an entity and access a dialog box for creating or editing its extended entity data (XData) properties."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_editedata/V25/EN_US")
+
 (:name "EDITTIME"
  :category :OTHER
  :aliases NIL
@@ -5349,6 +10886,48 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-45F9C588-2BA9-414D-8AFD-FB6B448BF273.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ellipse/V25/EN_US")
 
+(:name "ENABLEASSOCVIEWS"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_ENABLEASSOCVIEWS"
+ :synopsis "Adds the service data to the drawing and its Xrefs."
+ :options NIL
+ :arguments NIL
+ :description "Enables associativity for section results in BricsCAD drawings. When invoked, it prepares the drawing environment so that subsequent operations like BIMSECTIONUPDATE and VIEWBASE maintain associative relationships between 2D drawings and 3D models, rather than producing static visual copies."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_enableassocviews/V25/EN_US")
+
+(:name "ENDCOMPARE"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_ENDCOMPARE"
+ :synopsis "Exits a drawing that was in comparison mode."
+ :options NIL
+ :arguments NIL
+ :description "Terminates comparison mode that was initiated by the DWGCOMPARE command, allowing the user to exit the side-by-side drawing analysis feature."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_endcompare/V25/EN_US")
+
+(:name "ENDPOINT"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_ENDPOINT"
+ :synopsis "Toggles the Endpoint entity snap to enable or disable snapping to endpoints."
+ :options NIL
+ :arguments NIL
+ :description "Toggles endpoint snapping functionality. When launched at the command prompt, it modifies the OSMODE system variable; when used during another operation, it temporarily disables the snap without altering the OSMODE value."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_endpoint/V25/EN_US")
+
 (:name "ERASE"
  :category :MODIFY
  :aliases ("DELETE" "E")
@@ -5377,6 +10956,62 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-413A58AD-C86F-432F-A4AC-A2737237001A.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_etransmit/V25/EN_US")
 
+(:name "EXC"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_EXC"
+ :synopsis "Selects all entities outside a specified rectangle."
+ :options NIL
+ :arguments ("Specify first corner point" "Specify second corner point")
+ :description "Selects all drawing entities that fall outside or do not intersect a temporary rectangular selection window. After specifying two corner points, all entities are selected except those within or touching the rectangle boundaries."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_exc/V25/EN_US")
+
+(:name "EXCP"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_EXCP"
+ :synopsis "Selects entities outside a specified polygon."
+ :options NIL
+ :arguments ("Specify polygon points defining the boundary")
+ :description "Draws a temporary dashed polygon and selects all entities in the drawing that fall outside or do not intersect with that polygon boundary."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_excp/V25/EN_US")
+
+(:name "EXECUTETOOL"
+ :category :CUSTOMIZATION
+ :aliases NIL
+ :intl-name "_EXECUTETOOL"
+ :synopsis "Repeats the last tool used from the Tool Palettes panel."
+ :options NIL
+ :arguments NIL
+ :description "Allows users to quickly re-execute whichever tool was most recently accessed through the Tool Palettes panel, providing a convenient shortcut for repeated operations."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_executetool/V25/EN_US")
+
+(:name "EXF"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_EXF"
+ :synopsis "Selects all entities that do not intersect a specified fence line."
+ :options NIL
+ :arguments ("Draw a fence line by specifying points")
+ :description "Allows users to draw a dashed fence line across a drawing. All entities are selected except those that intersect with the fence line itself."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_exf/V25/EN_US")
+
 (:name "EXOFFSET"
  :category :MODIFY
  :aliases NIL
@@ -5391,6 +11026,90 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-1D9AD685-C0BC-48D8-A978-3BAAFA2E8138.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_exoffset/V25/EN_US")
 
+(:name "EXP"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_EXP"
+ :synopsis "Selects all entities in the drawing except the previous selection."
+ :options NIL
+ :arguments NIL
+ :description "Functions as an inverted selection tool that selects all drawing entities while excluding those from the most recent selection. This previous selection may originate from the last-used command or sets created via API calls."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_exp/V25/EN_US")
+
+(:name "EXPBLOCKS"
+ :category :BLOCK
+ :aliases ("XB")
+ :intl-name "_EXPBLOCKS"
+ :synopsis "Opens the Blocks category of the Drawing Explorer dialog box for managing blocks."
+ :options NIL
+ :arguments NIL
+ :description "Opens the Blocks category of the Drawing Explorer dialog box for inserting, deleting, and creating blocks. The interface provides options to create new blocks, delete definitions, insert blocks into drawings, and export blocks as DWG files, along with additional management capabilities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_expblocks/V25/EN_US")
+
+(:name "EXPFOLDERS"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_EXPFOLDERS"
+ :synopsis "Opens the Drawing Explorer dialog box with the Folders tab selected."
+ :options NIL
+ :arguments NIL
+ :description "Launches the Drawing Explorer interface focused on the Folders tab, allowing users to manage folder-related drawing resources. Categories like Layers and Blocks can be copied from the Folders tab to the Open Drawings tab."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_expfolders/V25/EN_US")
+
+(:name "EXPIMAGES"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_EXPIMAGES"
+ :synopsis "Opens the Drawing Explorer dialog box with Images selected."
+ :options NIL
+ :arguments NIL
+ :description "Displays the Images category within the Drawing Explorer, enabling users to manage raster images in their drawings. It supports numerous image formats including BMP, JPG, PNG, TIF, and others; users can attach, delete, or modify image properties through the resulting dialog interface."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_expimages/V25/EN_US")
+
+(:name "EXPLAN"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_EXPLAN"
+ :synopsis "Displays the plan viewpoint of drawings, without changing the zoom factor."
+ :options ("UCS" "?" "World" "Current")
+ :arguments ("Specify the coordinate system (named UCS, Dynamic UCS, World, or Current)")
+ :description "An Express Tools function that shows the plan view of drawings while preserving the current zoom level. It can be applied to various coordinate systems including named UCS, Dynamic UCS, World Coordinate System, or the current UCS."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_explan/V25/EN_US")
+
+(:name "EXPLAYERS"
+ :category :LAYER
+ :aliases NIL
+ :intl-name "_EXPLAYERS"
+ :synopsis "Opens the Drawing Explorer dialog box with Layers selected."
+ :options NIL
+ :arguments NIL
+ :description "Provides access to the Drawing Explorer interface specifically configured for layer management. Users can view and modify layers in their current drawing, with additional viewport-specific layer properties available when working in paper space."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_explayers/V25/EN_US")
+
 (:name "EXPLODE"
  :category :MODIFY
  :aliases ("X")
@@ -5404,6 +11123,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-E98BCEF4-DED6-48A6-87EB-10FE87188083.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_explode/V25/EN_US")
+
+(:name "EXPLORER"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_EXPLORER"
+ :synopsis "Opens the Drawing Explorer dialog box to manage definitions and reference content in drawings."
+ :options NIL
+ :arguments NIL
+ :description "Opens the Drawing Explorer dialog box on the last used tab or category to manage definitions and reference content that is used in the drawing. The dialog provides access to various drawing elements through an organized interface with customizable display options."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_explorer/V25/EN_US")
 
 (:name "EXPORT"
  :category :FILE
@@ -5448,6 +11181,21 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-DF787DAC-2A78-43E6-82F2-7604F91C26FC.htm"
  :source-bricscad NIL)
 
+(:name "EXPORTLAYOUT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_EXPORTLAYOUT"
+ :synopsis "Opens the Export layout to drawing dialog box to save current drawing data to a .dwg file."
+ :options NIL
+ :arguments ("Specify the .dwg file name in the Export layout to drawing dialog box"
+             "Confirm whether to open the newly created drawing")
+ :description "Launches a dialog allowing users to export the current layout's data from the active drawing into a new .dwg file. Upon completion, BricsCAD prompts whether to open the newly created drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_exportlayout/V25/EN_US")
+
 (:name "EXPORTPDF"
  :category :FILE
  :aliases NIL
@@ -5477,6 +11225,21 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-F71C40AA-7B9F-4ACC-BC8D-A67C396C58EE.htm"
  :source-bricscad NIL)
 
+(:name "EXPORTSVG"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_EXPORTSVG"
+ :synopsis "Generates SVG files for each step of the selected exploded view."
+ :options ("?")
+ :arguments ("Specify the exploded view by name or index"
+             "Select a folder for saving the SVG files")
+ :description "Creates SVG format files from an exploded view's individual steps. Users select an exploded view and designate a folder where the SVG files will be saved, with output controlled by settings accessible through the SVGOPTIONS command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_exportsvg/V25/EN_US")
+
 (:name "EXPORTTOAUTOCAD"
  :category :FILE
  :aliases NIL
@@ -5492,6 +11255,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-86C80CA1-F237-4AE6-8A43-2E9CA06A03A8.htm"
  :source-bricscad NIL)
 
+(:name "EXPPDFS"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_EXPPDFS"
+ :synopsis "Attaches PDF files as underlays to the current drawing through the Drawing Explorer."
+ :options NIL
+ :arguments NIL
+ :description "Displays the PDF Underlays category within the Drawing Explorer dialog, allowing users to manage PDF attachments. Users can attach, detach, and configure PDF files as underlays in their drawings, with options to toggle visibility, handle missing files, and manage multi-page PDFs."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_exppdfs/V25/EN_US")
+
+(:name "EXPRESSMENU"
+ :category :CUSTOMIZATION
+ :aliases NIL
+ :intl-name "_EXPRESSMENU"
+ :synopsis "Activates the EXPRESSTOOLS menu and ribbon."
+ :options NIL
+ :arguments NIL
+ :description "Enables users to access Express Tools functionality through both menu and ribbon interfaces within BricsCAD. This feature is available across multiple product editions including Lite, Pro, Mechanical, and BIM versions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_expressmenu/V25/EN_US")
+
 (:name "EXPRESSTOOLS"
  :category :CUSTOMIZATION
  :aliases NIL
@@ -5505,6 +11296,34 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-87BF0045-6446-48C6-8413-DE025596396E.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_expresstools/V25/EN_US")
+
+(:name "EXPUCS"
+ :category :VIEW
+ :aliases ("DDUCS" "UC")
+ :intl-name "_EXPUCS"
+ :synopsis "Creates, renames and deletes named UCS's through the Drawing Explorer dialog box."
+ :options NIL
+ :arguments NIL
+ :description "Opens the Drawing Explorer dialog box focused on the Coordinate systems category, allowing users to manage User Coordinate Systems (UCS) in their drawing by creating new ones, modifying names, or removing existing definitions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_expucs/V25/EN_US")
+
+(:name "EXPXREFS"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_EXPXREFS"
+ :synopsis "Combines several xref-related commands through the Drawing Explorer."
+ :options NIL
+ :arguments NIL
+ :description "Manages external references (xrefs) by allowing users to attach DWG files to drawings and control their state. It provides a centralized interface within the Drawing Explorer for viewing and manipulating xref properties and settings."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_expxrefs/V25/EN_US")
 
 (:name "EXTEND"
  :category :MODIFY
@@ -5520,6 +11339,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-89DD7B0F-F4F1-410D-9A3A-5847CA5F8744.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_extend/V25/EN_US")
+
+(:name "EXTENSION"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_EXTENSION"
+ :synopsis "Toggles the Extension entity snap to enable or disable snapping to extension lines."
+ :options NIL
+ :arguments NIL
+ :description "Activates or deactivates the Extension entity snap feature. When launched at the Command prompt, it modifies the OSMODE system variable; when used within another command, it temporarily disables the snap for that operation only without changing OSMODE settings."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_extension/V25/EN_US")
 
 (:name "EXTERNALREFERENCES"
  :category :BLOCK
@@ -5549,6 +11382,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-3E60812F-8EFA-4D94-8DAE-B8A20AC3B411.htm"
  :source-bricscad NIL)
 
+(:name "EXTRACTBLOCKS"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_EXTRACTBLOCKS"
+ :synopsis "Extracts blocks to individual files."
+ :options NIL
+ :arguments ("Select a block" "Choose the output folder in the folder dialog")
+ :description "Enables users to extract a block instance from a drawing and create a separate DWG file in a user-specified location. Once a block is selected, a folder dialog appears allowing the user to designate where the new file will be saved."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_extractblocks/V25/EN_US")
+
 (:name "EXTRIM"
  :category :MODIFY
  :aliases NIL
@@ -5577,6 +11424,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-85FD1106-8F10-4EE8-B0FB-99F1E3AEE405.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_extrude/V25/EN_US")
 
+(:name "EXW"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_EXW"
+ :synopsis "Selects all entities of your drawing except the ones inside a specified rectangle."
+ :options NIL
+ :arguments ("Specify first corner point" "Specify second corner point")
+ :description "An Express Tools utility that inverts selection by excluding entities within a defined rectangular area. Users designate two corner points to establish a temporary rectangle, and the command selects all drawing entities outside that boundary."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_exw/V25/EN_US")
+
+(:name "EXWP"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_EXWP"
+ :synopsis "Selects all entities in the drawing except the ones inside a specified polygon."
+ :options NIL
+ :arguments ("Draw the polygon by specifying points to define the exclusion area")
+ :description "Allows users to select all drawing entities while excluding those contained within a temporary polygon boundary. Users draw the polygon to define the exclusion area, and all entities outside that region become selected."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_exwp/V25/EN_US")
+
 (:name "FADEMARKUP"
  :category :ANNOTATION
  :aliases NIL
@@ -5590,6 +11465,38 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-D8793553-96C2-4177-A082-5359A4A85F45.htm"
  :source-bricscad NIL)
+
+(:name "FASTSEL"
+ :category :SELECTION
+ :aliases ("FS")
+ :intl-name "_FASTSEL"
+ :synopsis "Selects all entities that touch the selected entity."
+ :options NIL
+ :arguments ("Select an entity")
+ :description "An Express Tools utility that identifies and selects all entities touching a user-selected entity. Its behavior is controlled through the FSMODE command, which manages chain selection parameters during operation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_fastsel/V25/EN_US")
+
+(:name "FBXEXPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_FBXEXPORT"
+ :synopsis "Exports 3D entities in the current drawing to FBX format."
+ :options ("Selected" "Visible" "Select" "All" "Embedded" "Reference to file"
+           "Copy to file")
+ :arguments ("Choose selection method (Selected/Visible entities)"
+             "Choose entity type (Select/All)"
+             "Choose texture handling method (Embedded/Reference to file/Copy to file)"
+             "Enter path to export fbx file")
+ :description "Exports 3D content from BricsCAD drawings into FBX format. The command supports exporting either all visible entities or only selected ones, with flexible options for handling textures; note that 2D entities require thickness assignment before export."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_fbxexport/V25/EN_US")
 
 (:name "FIELD"
  :category :TEXT
@@ -5605,6 +11512,35 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-742C92C3-1284-4722-B650-C46F9191C701.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_field/V25/EN_US")
+
+(:name "FILEOPEN"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_FILEOPEN"
+ :synopsis "Opens drawing (DWG), template (DWT), and interchange (DXF) files from the command line."
+ :options ("~")
+ :arguments ("Save changes to drawing file? (yes/no)"
+             "Open Drawing (type filename including path, or ~ for dialog)")
+ :description "Replaces the current drawing with a new file opened via command-line input. Users can specify whether to save changes before opening the new file."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_fileopen/V25/EN_US")
+
+(:name "FILES"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_FILES"
+ :synopsis "Opens the operating system's file manager to access files."
+ :options NIL
+ :arguments NIL
+ :description "Launches the operating system's native file manager, allowing users to browse and interact with files directly from within BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_files/V25/EN_US")
 
 (:name "FILETAB"
  :category :VIEW
@@ -5735,6 +11671,73 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-578736D2-2CC8-4971-9C2B-688771C127B8.htm"
  :source-bricscad NIL)
 
+(:name "FINDOUTLIERS"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_FINDOUTLIERS"
+ :synopsis "Locates entities positioned at extreme coordinates outside a specified valid area in the drawing."
+ :options ("Dimension" "Keep all dimension identical" "draw new Area"
+           "change Show valid area" "Back")
+ :arguments ("Select mode (2D/3D)" "Set dimension settings for valid area"
+             "Optionally define the area by picking points"
+             "Inspect results and choose outlier management actions")
+ :description "Finds entities positioned at extreme coordinates outside a specified area. These entities are often hard to detect and can make it difficult to manipulate the view because it depends on the total extent of the drawing. The command operates in both 2D and 3D modes, helping users identify and manage misplaced drawing elements."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_findoutliers/V25/EN_US")
+
+(:name "FITARC"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_FITARC"
+ :synopsis "Fits an arc or a circle to entities."
+ :options ("Use Entire drawing" "Fit in 3d"
+           "Delete original entities after fitting" "Maximum Gap angle")
+ :arguments ("Select entities to fit")
+ :description "Draws an arc or circle fitted to one or more selected entities by minimizing perpendicular distances to their points. It is particularly useful for converting polylines with many small segments into smooth arc geometry, such as preparing CAD files for cutting machines, and can work in 2D or 3D space depending on whether input entities lie in a single plane."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_fitarc/V25/EN_US")
+
+(:name "FITLINE"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_FITLINE"
+ :synopsis "Fits a line to entities."
+ :options ("Use Entire drawing" "Fit in 3d"
+           "Delete original entities after fitting")
+ :arguments ("Select entities to fit")
+ :description "Draws a line fitted to one or more selected entities by minimizing accumulated perpendicular distances to their points. It works on any input entity type and can be applied to scanned points, polylines, or spline curves."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_fitline/V25/EN_US")
+
+(:name "FITPOLYLINE"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_FITPOLYLINE"
+ :synopsis "Fits polylines to entities."
+ :options ("use Entire drawing" "Select fitting entities"
+           "change section crop mOde" "Start the polyline" "fit Lines"
+           "fit Arcs" "Best fit" "Undo" "Close polyline" "start New polyline"
+           "Finish")
+ :arguments ("Select input entities (or use entire drawing)"
+             "Pick a start point for the polyline"
+             "Iteratively select fit method (Lines, Arcs, or Best fit) and position the cursor to define segments"
+             "Finish the command")
+ :description "Draws one or multiple polyline entities fitted to characteristic points of input entities, minimizing accumulated perpendicular distances. It works with any entity type that has characteristic points."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_fitpolyline/V25/EN_US")
+
 (:name "FLATSHOT"
  :category :|3D|
  :aliases NIL
@@ -5763,6 +11766,36 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-84039380-7A83-4969-9465-73C6C8784C1E.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_flatten/V25/EN_US")
+
+(:name "FLIPLINE"
+ :category :PARAMETRIC
+ :aliases ("PFLIP" "PARAMETRICFLIP")
+ :intl-name "_FLIPLINE"
+ :synopsis "Creates a line, used to flip the entities of a block."
+ :options ("Select entities to flip" "flip Everything")
+ :arguments ("Draw the reference axis line (start and end points)"
+             "Select entities to flip")
+ :description "Used with 2D parametric blocks to draw a reference axis line for flipping selected block entities. It automatically creates a special parameter with two values (Not Flipped and Flipped) that controls the flip operation around the drawn line."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_flipline/V25/EN_US")
+
+(:name "FLIPLINEEDIT"
+ :category :PARAMETRIC
+ :aliases ("PFLIPEDIT" "PARAMETRICFLIPEDIT")
+ :intl-name "_FLIPLINEEDIT"
+ :synopsis "Edits parametric flip operations."
+ :options ("Selection" "Line")
+ :arguments ("Select the flip operation to edit"
+             "Modify element selection or redefine the flip line by specifying new start and end points")
+ :description "Allows users to modify existing flip operations within parametric blocks. It enables editing of element selections and redefining flip lines by specifying new start and end points. All editing options are accessible via the command interface or through right-click context menus in the Parameters Manager and Mechanical Browser panels."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_fliplineedit/V25/EN_US")
 
 (:name "FREESPOT"
  :category :RENDER
@@ -5794,6 +11827,21 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-3AC71AD8-911F-43FC-8A94-47018B7281F5.htm"
  :source-bricscad NIL)
 
+(:name "FROM"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_FROM"
+ :synopsis "Allows you to enter relative coordinates with respect to a reference point whenever a command prompts you to enter a point."
+ :options ("Base point")
+ :arguments ("Pick or enter coordinates for the base point"
+             "Enter the offset using relative coordinates in @x,y,z format")
+ :description "A command modifier that enables offset point entry during drawing or editing operations. It proves particularly useful for positioning entities relative to existing geometry, such as placing a door offset from a wall's endpoint."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_from/V25/EN_US")
+
 (:name "FS"
  :category :SELECTION
  :aliases ("FASTSEL")
@@ -5807,6 +11855,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-A4FBF4EC-DE23-46A2-A576-AEED0E9847D4.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_fs/V25/EN_US")
+
+(:name "FSMODE"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_FSMODE"
+ :synopsis "Controls the chain selection during the FS or FASTSEL commands."
+ :options ("OFF" "ON")
+ :arguments "Supplies the mode keyword: ON (selects all touching entities and those recursively connected) or OFF (selects only entities that touch the selected entity)."
+ :description "The FSMODE command manages how entities are selected when using the FS or FASTSEL commands. When OFF, only directly touching entities are selected; when ON, the selection expands to include all connected entities throughout the chain."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_fsmode/V25/EN_US")
 
 (:name "GATTE"
  :category :ATTRIBUTE
@@ -5837,6 +11899,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0309B988-6BDF-4AF5-8386-E04D68DC30D8.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_gccoincident/V25/EN_US")
 
+(:name "GCCOLINEAR"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_GCCOLINEAR"
+ :synopsis "Creates a colinear geometric constraint on 2D entities."
+ :options ("Multiple")
+ :arguments "Select the first entity, then select subsequent entities to make colinear; the Multiple option selects several entities."
+ :description "Establishes a colinear constraint ensuring two or more linear entities remain aligned. The first entity maintains its position while subsequent entities adjust as needed to become colinear."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_gccolinear/V25/EN_US")
+
 (:name "GCCOLLINEAR"
  :category :PARAMETRIC
  :aliases NIL
@@ -5864,6 +11940,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-4591668B-A351-4652-AEF4-6DCF956FAE79.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_gcconcentric/V25/EN_US")
+
+(:name "GCENTER"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_GCENTER"
+ :synopsis "Toggles the Geometric center entity snap."
+ :options NIL
+ :arguments NIL
+ :description "Enables or disables snapping to geometric centers. It can be launched at the Command prompt to toggle a running entity snap (modifying OSMODE), or within another command to disable the snap for only that operation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_gcenter/V25/EN_US")
 
 (:name "GCEQUAL"
  :category :PARAMETRIC
@@ -5991,6 +12081,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-C0A6EF16-473C-4C63-9A3B-C312520EACF2.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_gcvertical/V25/EN_US")
 
+(:name "GENERATEBOUNDARY"
+ :category :DRAW
+ :aliases NIL
+ :intl-name "_GENERATEBOUNDARY"
+ :synopsis "Generates a closed polyline or spline around the boundary of a flat, closed area."
+ :options NIL
+ :arguments "Select a point inside a planar enclosed area, 3D solid face, or hatch pattern."
+ :description "Creates a closed polyline (for polygonal boundaries with corners) or spline (for curved boundaries) by selecting a point inside a planar enclosed area, 3D solid face, or hatch pattern."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_generateboundary/V25/EN_US")
+
 (:name "GEOGRAPHICLOCATION"
  :category :SYSTEM
  :aliases ("GEO")
@@ -6004,6 +12108,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-10A3B776-A0FA-4438-B29B-EA22C070A27E.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_geographiclocation/V25/EN_US")
+
+(:name "GEOIMPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_GEOIMPORT"
+ :synopsis "Imports a drawing with respect to the geographic location."
+ :options NIL
+ :arguments "Displays an Open drawing file dialog to select a .dwg or .dxf file; both source and target drawings must have geographic locations defined."
+ :description "The GEOIMPORT command imports drawings while preserving geographic location data between source and target files. Both drawings must have geographic locations defined."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_geoimport/V25/EN_US")
 
 (:name "GEOMAP"
  :category :VIEW
@@ -6034,6 +12152,35 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-092F0E5E-BBA9-4A4E-ACF0-4779808C4384.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_geomapimage/V25/EN_US")
 
+(:name "GEOMAPIMAGERESOLUTION"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_GEOMAPIMAGERESOLUTION"
+ :synopsis "Sets the resolution for a map image."
+ :options ("Coarse" "Optimal" "Fine" "VeryFine")
+ :arguments "Supplies the resolution keyword: Coarse, Optimal, Fine, or VeryFine."
+ :description "This command adjusts the resolution of map images created with the GEOMAPIMAGE command, allowing a choice between different levels of detail from less detailed to very high detail views."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_geomapimageresolution/V25/EN_US")
+
+(:name "GEOMAPIMAGETYPE"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_GEOMAPIMAGETYPE"
+ :synopsis "Sets the map style of a map image."
+ :options ("open street Map" "esri Imagery" "esri Streets" "esri Light"
+           "esri Dark" "bing Aerial" "bing Road" "bing Hybrid")
+ :arguments "Supplies the map-style keyword (one of the OpenStreetMap, Esri, or Bing provider styles)."
+ :description "This command modifies the visual style of map images created via the GEOMAPIMAGE command. Users can choose from multiple map style providers including OpenStreetMap, Esri, and Bing services."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_geomapimagetype/V25/EN_US")
+
 (:name "GEOMAPIMAGEUPDATE"
  :category :MODIFY
  :aliases NIL
@@ -6047,6 +12194,34 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-79DFA423-8546-4DD4-9A23-1C0F0B9DF607.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_geomapimageupdate/V25/EN_US")
+
+(:name "GEOMAPKEY"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_GEOMAPKEY"
+ :synopsis "Allows you to enter API keys to access online map services."
+ :options NIL
+ :arguments "Opens the Online Maps Support dialog box; no command-line arguments."
+ :description "Opens the Online Maps Support dialog box for configuring API keys. The command enables access to Esri and OpenStreetMaps services; Bing Maps are deprecated and no longer functional in BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_geomapkey/V25/EN_US")
+
+(:name "GEOMAPMODE"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_GEOMAPMODE"
+ :synopsis "Reports the online maps style."
+ :options NIL
+ :arguments "Takes no input; returns a numeric value (0-8) indicating the current map style, from no maps (0) to various providers (1-8)."
+ :description "This command displays which online maps style is currently active in the viewport. Users can modify the map style using the GEOMAP command instead."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_geomapmode/V25/EN_US")
 
 (:name "GEOMARKLATLONG"
  :category :ANNOTATION
@@ -6148,6 +12323,48 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-C5227693-40C1-4AB8-A84A-BD53AA6B7963.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_getsel/V25/EN_US")
 
+(:name "GISCONVERT"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_GISCONVERT"
+ :synopsis "Converts Object Data in the current drawing from Autodesk Civil 3D to BricsCAD GIS data."
+ :options NIL
+ :arguments NIL
+ :description "Transforms Object Data (lines, polylines, points, or blocks) and Mpolygons from Autodesk Map 3D or Civil 3D formats into BricsCAD GIS data. The converted data appears in the Properties panel and GIS Attribute table dialog, with a new GIS Layer created in the Civil Explorer panel's GIS tab."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_gisconvert/V25/EN_US")
+
+(:name "GISEXPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_GISEXPORT"
+ :synopsis "Exports vector geographic features to a SHP or KML/KMZ file formats."
+ :options NIL
+ :arguments "Select entities to export and press Enter; an export dialog then opens to save in SHP or KML/KMZ format."
+ :description "The GISEXPORT command exports selected entities while preserving their original location, shape, and attributes. After selecting entities and pressing Enter, an export dialog opens to save vector geographic features in SHP or KML/KMZ formats."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_gisexport/V25/EN_US")
+
+(:name "GISIMPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_GISIMPORT"
+ :synopsis "Imports vector geographic features from SHP, KML/KMZ, or Geodatabase file formats."
+ :options NIL
+ :arguments "Uses a dialog-based interface to import features onto specified layers; a -GISIMPORT command-line variant also exists."
+ :description "Allows importing vector geographic features with their original location, shape, and attributes from SHP, KML/KMZ, or Geodatabase files into the current drawing. Features are imported as CAD entities (points, lines, polylines) on specified layers, with support for coordinate system transformation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_gisimport/V25/EN_US")
+
 (:name "GOTOSTART"
  :category :VIEW
  :aliases NIL
@@ -6189,6 +12406,92 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-1AE69094-DFEF-4361-9B1D-E3F5448CCB02.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_gradient/V25/EN_US")
+
+(:name "GRADIENTBKGOFF"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_GRADIENTBKGOFF"
+ :synopsis "Turns off the background gradient."
+ :options NIL
+ :arguments NIL
+ :description "This command disables the gradient background colors used by visual styles (excluding 2D Wireframe), restoring the default background color instead."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_gradientbkgoff/V25/EN_US")
+
+(:name "GRADIENTBKGON"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_GRADIENTBKGON"
+ :synopsis "Turns on the background gradient."
+ :options NIL
+ :arguments NIL
+ :description "This command enables background gradient colors used by all visual styles except 2D Wireframe mode in BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_gradientbkgon/V25/EN_US")
+
+(:name "GRADING"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_GRADING"
+ :synopsis "Creates a graded surface on existing TIN surfaces."
+ :options ("slOpe/offset" "Entire length")
+ :arguments "Select the input entity, choose the target TIN surface, and set the grading slope; options include slOpe/offset and Entire length."
+ :description "Enables creating a graded surface between a selected entity and a TIN surface, or generating an offset/slope graded surface from a selected entity. Users select the input entity, choose the target TIN surface, and adjust the grading slope by moving the mouse. Gradings can span the entire input entity length or be defined between specific start and end points, with support for transitions and sharp corners."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_grading/V25/EN_US")
+
+(:name "GRADINGBALANCE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_GRADINGBALANCE"
+ :synopsis "Balances grading cut and fill volumes."
+ :options NIL
+ :arguments NIL
+ :description "The command balances grading cut and fill volumes within a specified tolerance by adjusting the elevation of the grading input entity, resulting in grading with a net volume near zero."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_gradingbalance/V25/EN_US")
+
+(:name "GRADINGEDIT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_GRADINGEDIT"
+ :synopsis "Splits or merges gradings."
+ :options ("Split" "Merge" "Switch")
+ :arguments "Select a grading to be split into multiple regions, or to be merged with another grading."
+ :description "The command allows you to either split a grading into multiple regions for individual slope editing, or merge two gradings into one with automatic transition calculations."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_gradingedit/V25/EN_US")
+
+(:name "GRAPHICOVERRIDE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_GRAPHICOVERRIDE"
+ :synopsis "Temporarily modifies the appearance of entities in 3D model space."
+ :options ("Filter" "Override" "Color" "Transparency" "Draw edges"
+           "Hide entities" "Other entities" "Show" "Hide" "Transparent" "Live"
+           "Apply" "Clear" "Cancel")
+ :arguments "Filter entities by criteria, then override their appearance (Color, Transparency, Draw edges, Hide entities) and set Other entities to Show, Hide, or Transparent; Apply, Clear, or Cancel."
+ :description "A 3D drawing customization feature allowing temporary visual overrides of specific objects based on BIM properties. Users can filter entities by criteria, then modify their appearance through color, transparency, edge display, or visibility settings. The command provides options to show, hide, or make transparent all non-filtered entities for visual context."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_graphicoverride/V25/EN_US")
 
 (:name "GRAPHICSCONFIG"
  :category :SYSTEM
@@ -6289,6 +12592,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-2424838A-4B9D-4577-84E7-AE7949DA31AF.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_hatchedit/V25/EN_US")
 
+(:name "HATCHEDITEXT"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_HATCHEDITEXT"
+ :synopsis "Edits the vertices of a hatch or gradient entity."
+ :options ("Add vertex" "Remove vertex" "convert to Line" "convert to ARc")
+ :arguments "Interactively edit hatch/gradient vertices via keywords: Add vertex, Remove vertex, convert to Line, convert to ARc."
+ :description "Allows interactive editing of hatch and gradient entity vertices through the command line interface in BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_hatcheditext/V25/EN_US")
+
 (:name "HATCHGENERATEBOUNDARY"
  :category :DRAW
  :aliases NIL
@@ -6372,6 +12689,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-60C67B97-FC11-4FCD-BE40-A16E82D55076.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_help/V25/EN_US")
+
+(:name "HELPSEARCH"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_HELPSEARCH"
+ :synopsis "Searches online help from the Command line."
+ :options NIL
+ :arguments "Supplies the search term; results open in the default web browser."
+ :description "The HELPSEARCH command searches BricsCAD's online help pages and displays results in your default web browser, accessible directly from the command line."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_helpsearch/V25/EN_US")
 
 (:name "HIDE"
  :category :|3D|
@@ -6484,6 +12815,48 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-F258AC00-5E9F-4B6B-A670-33F7708E3FB6.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_id/V25/EN_US")
+
+(:name "IEMBED"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_IEMBED"
+ :synopsis "Embeds an attached bitonal .tiff image file to the current drawing."
+ :options NIL
+ :arguments "Select the attached image to embed; reverse with IUNEMBED."
+ :description "The IEMBED command saves a render image within the current drawing file rather than maintaining it as a separate attached file. To reverse this embedding process, use the IUNEMBED command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_iembed/V25/EN_US")
+
+(:name "IFCEXPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_IFCEXPORT"
+ :synopsis "Exports a BIM model to IFC."
+ :options NIL
+ :arguments "Select entities to export or press Enter to export the entire model, then choose the export format (IFC2x3, IFC4 Design Transfer View, IFC4 Reference View, or IFC4x3)."
+ :description "Exports BIM models to IFC format (partially or entirely) with dynamic IFC attribute management. The command supports IFC2x3, IFC4, and IFC4x3 formats, with optional model validation against buildingSMART specifications."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ifcexport/V25/EN_US")
+
+(:name "IFCVALIDATE"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_IFCVALIDATE"
+ :synopsis "Checks the quality of an existing IFC file."
+ :options ("Yes" "No")
+ :arguments "Opens a file dialog to select the IFC file; after the validation report is shown, answer Yes to import the file or No to skip importing."
+ :description "The command validates an IFC file before importing it. It opens a file dialog to select the IFC file, then displays a validation report in the command line. Users can then choose whether to proceed with importing the file, and the report is also saved to a log file alongside the IFC file."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ifcvalidate/V25/EN_US")
 
 (:name "IGESEXPORT"
  :category :FILE
@@ -6612,6 +12985,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-D57BD5D4-FA6E-483E-BB72-6747964CC5B5.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_imageedit/V25/EN_US")
 
+(:name "IMAGEFRAME"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_IMAGEFRAME"
+ :synopsis "Toggles the IMAGEFRAME system variable."
+ :options ("0" "1" "2")
+ :arguments "Supplies the value 0, 1, or 2 to set the IMAGEFRAME system variable."
+ :description "This command changes the visibility and plotting behavior of image frames in the drawing. It can be invoked at the command prompt or within another command when preceded by an apostrophe."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_imageframe/V25/EN_US")
+
+(:name "IMAGEOVERLAP"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_IMAGEOVERLAP"
+ :synopsis "Changes the overlap distance for image tiling in superhatch."
+ :options NIL
+ :arguments "Supplies the overlap distance for image tiling within superhatch operations."
+ :description "The IMAGEOVERLAP command allows users to enter the overlap distance for image tiling within superhatch operations in BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_imageoverlap/V25/EN_US")
+
 (:name "IMAGEQUALITY"
  :category :SYSTEM
  :aliases NIL
@@ -6639,6 +13040,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-81A5EE76-39A7-40A4-A5C5-E4921C03B33A.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_import/V25/EN_US")
+
+(:name "IMPRINT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_IMPRINT"
+ :synopsis "Imprints 2D entities onto planar faces of 3D solids and surfaces to create additional edges."
+ :options NIL
+ :arguments "Select a 3D solid with at least one planar face, choose the 2D source objects, then decide whether to retain or delete each source entity."
+ :description "The IMPRINT command projects 2D entities onto flat surfaces of 3D solids or surfaces. After selecting a 3D solid with at least one planar face and choosing 2D source objects, users decide whether to retain or delete each source entity. The newly created edges enable further manipulation using commands like EXTRUDE or DMPUSHPULL."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_imprint/V25/EN_US")
 
 (:name "INPUTSEARCHOPTIONS"
  :category :SYSTEM
@@ -6668,6 +13083,49 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-B840AB4A-91E2-4FEC-900A-33E40D1E1925.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_insert/V25/EN_US")
+
+(:name "INSERTALIGNED"
+ :category :BLOCK
+ :aliases ("INSAL")
+ :intl-name "_INSERTALIGNED"
+ :synopsis "Inserts blocks aligned to entities."
+ :options ("Block to insert" "Block mirroring control point" "X Scale"
+           "Y Scale" "Z Scale" "Multiple")
+ :arguments "Enter the block to insert (name, ~ for external drawing dialog, or ? to list blocks), set the block mirroring control point, X/Y/Z Scale, and optionally Multiple; hover over an entity to align the block to its geometry."
+ :description "The INSERTALIGNED command inserts blocks that align with existing entities in the drawing, with optional mirroring capability. Hovering the cursor over an entity aligns the block to its geometry; while entity snap is not required, it improves placement accuracy."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_insertaligned/V25/EN_US")
+
+(:name "INSERTION"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_INSERTION"
+ :synopsis "Toggles the Insertion entity snap."
+ :options NIL
+ :arguments NIL
+ :description "Enables or disables snapping to the insertion point of objects. It can be launched at the Command prompt to toggle a running entity snap (changing the OSMODE system variable), or within another command to disable the snap for the current operation only."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_insertion/V25/EN_US")
+
+(:name "INSERTLAYOUT"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_INSERTLAYOUT"
+ :synopsis "Inserts a named layout of a drawing, as a Block Reference, in the current Paper Space."
+ :options NIL
+ :arguments "Select a drawing, specify a layout name and an insertion point; only available in Paper Space."
+ :description "The command allows users to select a drawing and specify a layout name and insertion point. A Block reference replicating the layout's entities is inserted into the current Paper Space. This functionality is restricted to Paper Space environments only."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_insertlayout/V25/EN_US")
 
 (:name "INSERTOBJ"
  :category :BLOCK
@@ -6711,6 +13169,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-904008EB-D92A-4B69-B79F-6C3A033DB3DF.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_intersect/V25/EN_US")
 
+(:name "INTERSECTION"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_INTERSECTION"
+ :synopsis "Toggles the Intersection entity snap."
+ :options NIL
+ :arguments NIL
+ :description "Enables or disables snapping to intersection points. It can be launched at the command line to toggle a running entity snap, which updates the OSMODE system variable, or within another command to disable the snap for just that operation without changing OSMODE."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_intersection/V25/EN_US")
+
+(:name "ISAVEAS"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_ISAVEAS"
+ :synopsis "Saves images."
+ :options NIL
+ :arguments "Opens the Save Image File dialog box to save an image."
+ :description "The ISAVEAS command allows users to save images to their computer through the Save Image File dialog box."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_isaveas/V25/EN_US")
+
 (:name "ISODRAFT"
  :category :DRAW
  :aliases NIL
@@ -6752,6 +13238,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-9B1EEA63-BEC1-413E-B69F-541B5865F1A1.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_isoplane/V25/EN_US")
+
+(:name "IUNEMBED"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_IUNEMBED"
+ :synopsis "Converts an embedded image to an attached one."
+ :options NIL
+ :arguments "Select the embedded image to convert; it is exported to a file that the image entity then references."
+ :description "Transforms an embedded image into an attached image by exporting the embedded image to a file, which the image entity then references. This command reverses the functionality of the IEMBED command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_iunembed/V25/EN_US")
 
 (:name "JOIN"
  :category :MODIFY
@@ -6809,6 +13309,49 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-72F7D0C0-20B3-4F70-998A-794ABEAE431C.htm"
  :source-bricscad NIL)
+
+(:name "KEEPME"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_KEEPME"
+ :synopsis "Adds changed entities to the source drawing, when two somewhat different drawings are being compared visually."
+ :options ("ALL")
+ :arguments "Select one or more modified entities, or use the ALL keyword to select all entities, to incorporate them into the source drawing; works only within a DWGCOMPARE session."
+ :description "The KEEPME command operates exclusively within a drawing comparison session initiated by DWGCOMPARE. It allows users to select one or more modified entities (or all entities via the ALL keyword) to incorporate them into the source drawing during a visual comparison between two drawings."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_keepme/V25/EN_US")
+
+(:name "LANDXMLEXPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_LANDXMLEXPORT"
+ :synopsis "Exports Civil entities to a LandXML file."
+ :options ("Select all" "Select objects in drawing" "Export")
+ :arguments "Choose Civil entities (Select all, or Select objects in drawing), then Export to a LandXML file via the save dialog."
+ :description "This command allows users to select BricsCAD Civil entities such as Civil points, TIN surfaces, Horizontal Alignments, 3D Alignments, and Strings for export to a LandXML file format."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_landxmlexport/V25/EN_US")
+
+(:name "LANDXMLIMPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_LANDXMLIMPORT"
+ :synopsis "Creates TIN surfaces or alignments from a LandXML file."
+ :options ("Draw Breaklines as Polylines" "Scale" "Import without scaling"
+           "Cancel")
+ :arguments "Opens a file dialog to select the LandXML file; options control Draw Breaklines as Polylines, Scale, Import without scaling, or Cancel."
+ :description "This command opens a file dialog to import Civil entities from LandXML XML files, including Civil Points, TIN Surfaces, Horizontal Alignments, 3D Alignments, and Strings."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_landxmlimport/V25/EN_US")
 
 (:name "LAYCUR"
  :category :LAYER
@@ -6907,6 +13450,34 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-249DBD51-2A59-4932-9E63-591C293D7FE9.htm"
  :source-bricscad NIL)
+
+(:name "LAYERSPANELCLOSE"
+ :category :LAYER
+ :aliases NIL
+ :intl-name "_LAYERSPANELCLOSE"
+ :synopsis "Closes the Layers panel."
+ :options NIL
+ :arguments NIL
+ :description "The command conceals the Layers panel from the current workspace. When the panel is part of a stacked arrangement, its tab or icon is removed from that stack."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_layerspanelclose/V25/EN_US")
+
+(:name "LAYERSPANELOPEN"
+ :category :LAYER
+ :aliases NIL
+ :intl-name "_LAYERSPANELOPEN"
+ :synopsis "Opens the Layers panel."
+ :options NIL
+ :arguments NIL
+ :description "This command displays the Layers panel in the current workspace at its previous size and location. The panel functions as a dockable element that can float, dock, or stack within the interface, enabling users to manage layer properties, create and delete layers, and control layer states and filters."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_layerspanelopen/V25/EN_US")
 
 (:name "LAYERSTATE"
  :category :LAYER
@@ -7065,6 +13636,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-BCE3AD90-9DE0-488C-9CA4-5FDB9401DCE0.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_layout/V25/EN_US")
 
+(:name "LAYOUTMANAGER"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_LAYOUTMANAGER"
+ :synopsis "Opens the Layout manager dialog box."
+ :options NIL
+ :arguments NIL
+ :description "Opens the Layout manager dialog box to manage layouts in the current drawing. Users can view, create, copy, delete, and organize layouts. The dialog provides access to search functionality, publishing options, layout reordering, page setup configuration, and the ability to set the current layout."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_layoutmanager/V25/EN_US")
+
 (:name "LAYOUTMERGE"
  :category :VIEW
  :aliases NIL
@@ -7121,6 +13706,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-83CFD677-78F3-492F-A5A3-5A0197D2FA2C.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_laytrans/V25/EN_US")
 
+(:name "LAYULK"
+ :category :LAYER
+ :aliases NIL
+ :intl-name "_LAYULK"
+ :synopsis "Unlocks the layer of a selected entity."
+ :options NIL
+ :arguments "Select an entity on the layer to be unlocked; the command line displays which layers are locked before unlocking them."
+ :description "The LAYULK command enables editing of entities on a locked layer by unlocking that layer. Users select an entity, and the command line displays which layers are locked before unlocking them."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_layulk/V25/EN_US")
+
 (:name "LAYUNISO"
  :category :LAYER
  :aliases NIL
@@ -7163,6 +13762,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-5682CC98-D131-43B0-9E46-3A403E6FC087.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_laywalk/V25/EN_US")
 
+(:name "LCONNECT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_LCONNECT"
+ :synopsis "Creates or modifies an L-connection between solids."
+ :options ("Switch")
+ :arguments "Select the entities to connect; the Switch option cycles between connection types (butted, mitered, or touching/disconnected)."
+ :description "The command establishes L-shaped connections between solids, with options for different connection styles and the ability to disconnect previously connected solids. When HOTKEYASSISTANT is enabled, pressing Ctrl cycles through connection types during the command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_lconnect/V25/EN_US")
+
 (:name "LEADER"
  :category :ANNOTATION
  :aliases ("LE" "LEAD")
@@ -7191,6 +13804,48 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-76C74C62-DBAA-41E7-8422-F0EE7E769638.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_lengthen/V25/EN_US")
+
+(:name "LIBRARYPANELCLOSE"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_LIBRARYPANELCLOSE"
+ :synopsis "Closes the Library panel."
+ :options NIL
+ :arguments NIL
+ :description "Closes the Library panel to hide it from the current workspace. If the Library panel is stacked when you close it, the Library tab or icon is removed from the stack."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_librarypanelclose/V25/EN_US")
+
+(:name "LIBRARYPANELOPEN"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_LIBRARYPANELOPEN"
+ :synopsis "Opens the Library panel."
+ :options NIL
+ :arguments NIL
+ :description "This command displays the Library panel in the current workspace at its previous size and location. The panel provides centralized access to 2D and 3D block libraries and can be configured as floating, docked, or stacked."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_librarypanelopen/V25/EN_US")
+
+(:name "LICENSEMANAGER"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_LICENSEMANAGER"
+ :synopsis "Opens the BricsCAD License Manager dialog box."
+ :options NIL
+ :arguments NIL
+ :description "Provides access to license activation, deactivation, and management functions for BricsCAD and Communicator for BricsCAD products through a dedicated dialog interface."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_licensemanager/V25/EN_US")
 
 (:name "LIGHT"
  :category :RENDER
@@ -7304,6 +13959,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-2913E7CC-0542-45FB-ADEA-06B991C38696.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_livesection/V25/EN_US")
 
+(:name "LMAN"
+ :category :LAYER
+ :aliases NIL
+ :intl-name "_LMAN"
+ :synopsis "Saves, edits and restores layer states."
+ :options NIL
+ :arguments "Opens a dialog box; the -LMAN variant provides command-line functionality."
+ :description "The LMAN command opens a dialog box allowing users to manage layer states in their drawings. These states can be saved, edited, restored, and exported to or imported from .lay files for later use."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_lman/V25/EN_US")
+
+(:name "LMANMODE"
+ :category :LAYER
+ :aliases NIL
+ :intl-name "_LMANMODE"
+ :synopsis "Sets the layer manager options."
+ :options NIL
+ :arguments "Opens the LayerManager Options dialog box; a -LMANMODE variant sets the options via the command line."
+ :description "The LMANMODE command opens the LayerManager Options dialog box, allowing users to select layer properties for restoration. It provides a graphical interface for configuring layer manager settings within BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_lmanmode/V25/EN_US")
+
 (:name "LOAD"
  :category :FILE
  :aliases NIL
@@ -7362,6 +14045,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-2FB60E75-7926-4344-91DC-B2A1D9F52163.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_logfileon/V25/EN_US")
 
+(:name "LOOKFROM"
+ :category :VIEW
+ :aliases ("NAVVCUBE")
+ :intl-name "_LOOKFROM"
+ :synopsis "Toggles the LookFrom widget display on and off."
+ :options ("ON" "OFF" "Settings")
+ :arguments "Supplies ON/OFF to toggle the widget's visibility, or Settings to open the LookFrom Control section in the Settings dialog."
+ :description "The command changes the display state of the LookFrom widget and provides access to its visual settings through the Settings dialog box."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_lookfrom/V25/EN_US")
+
 (:name "LSP"
  :category :CUSTOMIZATION
  :aliases NIL
@@ -7418,6 +14115,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-DFDA9EE3-D303-44AE-973F-1AA57A9BB06E.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_lweight/V25/EN_US")
 
+(:name "MAIL"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_MAIL"
+ :synopsis "Opens the default email client."
+ :options NIL
+ :arguments NIL
+ :description "The MAIL command launches your system's default email application to automatically create a new message with the current drawing file attached. The email client runs in a separate window that you can manage independently while continuing work in BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_mail/V25/EN_US")
+
 (:name "MAKELISPAPP"
  :category :CUSTOMIZATION
  :aliases NIL
@@ -7431,6 +14142,50 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-1A8B50AA-1DEA-4853-AAA8-09AF0827A0ED.htm"
  :source-bricscad NIL)
+
+(:name "MANIPULATE"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_MANIPULATE"
+ :synopsis "Launches the manipulator widget to rotate, move, copy, mirror, and/or scale 2D entities and 3D models."
+ :options ("Select an axis" "Select a plane" "Select an arrowhead"
+           "Select a rotation arc" "Select the anchor handle")
+ :arguments "Select entities and press Enter to launch the manipulator widget, then use its handles: Select an axis, Select a plane, Select an arrowhead, Select a rotation arc, or Select the anchor handle; hold Ctrl for copies."
+ :description "The MANIPULATE command activates an interactive manipulator widget that allows users to transform selected objects through multiple operations. Users select entities and press enter to launch the tool, then use the widget's visual handles to perform transformations. The widget supports unrestricted movement when holding Ctrl to create copies of original entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_manipulate/V25/EN_US")
+
+(:name "MAPCONNECT"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_MAPCONNECT"
+ :synopsis "Allows to set up a connection with a Web Map Service."
+ :options NIL
+ :arguments "Opens the Map Connect dialog box; GEOGRAPHICLOCATION must be run first to define the drawing's geographic location."
+ :description "The command displays the Map Connect dialog box to establish a Web Map Service (WMS) connection. Users must first run GEOGRAPHICLOCATION to define the drawing's geographic location before adding map data. The dialog enables users to create WMS connections, specify server details, manage user accounts, select data layers, configure tile resolution, and download map tiles as image files to the drawing folder."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_mapconnect/V25/EN_US")
+
+(:name "MAPTRIM"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_MAPTRIM"
+ :synopsis "Trims entities by a selected boundary."
+ :options ("Select a trim boundary" "Define" "Undo" "Select entities to trim"
+           "Automatic" "Inside" "Outside" "Ignore" "Delete")
+ :arguments "Select a trim boundary (closed entity) or Define a polygon, then select entities to trim; options Automatic, Inside, Outside, Ignore, Delete, and Undo control the operation."
+ :description "This command provides a method for trimming drawing entities either inside or outside a specified boundary. Users can define the boundary by selecting an existing closed entity (polyline, circle, spline, or ellipse) or by defining a custom polygon. The command can automatically process all entities or allow manual selection, and it offers options to ignore or delete entities that cannot be trimmed."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_maptrim/V25/EN_US")
 
 (:name "MARKUP"
  :category :ANNOTATION
@@ -7529,6 +14284,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-905808B6-5A00-44D4-9C93-914B41688250.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_matbrowseropen/V25/EN_US")
+
+(:name "MATCHPERSPECTIVE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_MATCHPERSPECTIVE"
+ :synopsis "Matches the current model space view with a background image."
+ :options NIL
+ :arguments "Select three or more pairs of matching points to align the model space viewpoint with the background image; requires an image placed with BACKGROUND and perspective mode via the PERSPECTIVE variable."
+ :description "The command aligns the viewpoint of model space with the perspective view provided by a background image after selecting three or more pairs of matching points. Users must first place an image in the drawing using the BACKGROUND command and switch to perspective mode via the PERSPECTIVE variable."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_matchperspective/V25/EN_US")
 
 (:name "MATCHPROP"
  :category :MODIFY
@@ -7643,6 +14412,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-6ECF14D2-7642-4997-8FE3-E6F6F6313E22.htm"
  :source-bricscad NIL)
 
+(:name "MATLIB"
+ :category :RENDER
+ :aliases NIL
+ :intl-name "_MATLIB"
+ :synopsis "Opens the Render materials panel."
+ :options NIL
+ :arguments NIL
+ :description "The MATLIB command displays the Render materials panel in the current workspace at its previously saved size and location. Like other dockable panels in BricsCAD, it can be configured as floating, docked, or stacked."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_matlib/V25/EN_US")
+
 (:name "MEASURE"
  :category :DRAW
  :aliases NIL
@@ -7670,6 +14453,34 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-5D5B0EE1-DD90-47AE-8A55-642FBFF5E4E4.htm"
  :source-bricscad NIL)
+
+(:name "MECHANICALBROWSERCLOSE"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_MECHANICALBROWSERCLOSE"
+ :synopsis "Closes the Mechanical Browser panel."
+ :options NIL
+ :arguments NIL
+ :description "This command hides the Mechanical Browser panel from the current workspace. When the panel is stacked with other panels, closing it removes the Mechanical Browser tab or icon from that stack."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_mechanicalbrowserclose/V25/EN_US")
+
+(:name "MECHANICALBROWSEROPEN"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_MECHANICALBROWSEROPEN"
+ :synopsis "Opens the Mechanical Browser panel."
+ :options NIL
+ :arguments NIL
+ :description "The command displays the Mechanical Browser panel in the current workspace at its previous size and location. This dockable panel provides a centralized interface for viewing and modifying parametric properties of mechanical parts and assemblies, including 3D constraints, parameters, and components."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_mechanicalbrowseropen/V25/EN_US")
 
 (:name "MENU"
  :category :CUSTOMIZATION
@@ -7882,6 +14693,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-CD7FDDA6-DC23-4E1C-9607-45CB2DDC8434.htm"
  :source-bricscad NIL)
 
+(:name "MIDPOINT"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_MIDPOINT"
+ :synopsis "Toggles the Midpoint entity snap."
+ :options NIL
+ :arguments NIL
+ :description "This command enables or disables snapping to midpoints of entities. When launched at the Command prompt, it toggles a running entity snap and updates the OSMODE system variable. When used within another command, it temporarily disables the snap for just that operation without changing OSMODE."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_midpoint/V25/EN_US")
+
 (:name "MIGRATEMATERIALS"
  :category :RENDER
  :aliases NIL
@@ -8024,6 +14849,21 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-9B157447-A952-42A2-AF68-98CC7B6F12FD.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_mleaderedit/V25/EN_US")
 
+(:name "MLEADEREDITEXT"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_MLEADEREDITEXT"
+ :synopsis "Edit leaders from multileader entities."
+ :options ("Add vertex" "add vertex at ENd" "Remove vertex" "Stretch vertex"
+           "add Leader" "rEmove Leader" "lengthen LAnding")
+ :arguments "Select a multileader, then edit with keywords: Add vertex, add vertex at ENd, Remove vertex, Stretch vertex, add Leader, rEmove Leader, lengthen LAnding."
+ :description "The MLEADEREDITEXT command (multiline leader edit extended) allows users to add and remove leader lines, manage vertices, and adjust the landing length of multileader entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_mleadereditext/V25/EN_US")
+
 (:name "MLEADERSTYLE"
  :category :ANNOTATION
  :aliases NIL
@@ -8108,6 +14948,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-2FC06AB4-8085-407E-A54B-D44057AEDC3B.htm"
  :source-bricscad NIL)
 
+(:name "MODELERPROPERTIES"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_MODELERPROPERTIES"
+ :synopsis "Opens the Settings dialog with Modeler properties for ACIS category expanded."
+ :options NIL
+ :arguments NIL
+ :description "This command launches the Settings dialog box to view and modify system variables related to the ACIS modeler properties, enabling users to adjust modeling parameters and precision settings."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_modelerproperties/V25/EN_US")
+
 (:name "MOVE"
  :category :MODIFY
  :aliases ("M")
@@ -8135,6 +14989,35 @@
  :bricscad-versions "all"
  :source-autocad NIL
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_movebak/V25/EN_US")
+
+(:name "MOVEEDATA"
+ :category :EDIT
+ :aliases NIL
+ :intl-name "_MOVEEDATA"
+ :synopsis "Moves extended entity data (edata) from one entity to one or more other entities."
+ :options ("?")
+ :arguments "Application name (or ? to list loaded applications); source entity containing the edata; one or more destination entities to receive it."
+ :description "The MOVEEDATA command transfers extended entity data between objects. You specify an application name, select a source entity containing the data, and designate one or more destination entities to receive it. Extended Entity Data can be created using the EDITEDATA command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_moveedata/V25/EN_US")
+
+(:name "MOVEGUIDED"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_MOVEGUIDED"
+ :synopsis "Moves entities using guide curves."
+ :options ("Polygonal" "Rectangular" "Region" "Entities" "Save detail"
+           "Flip entities" "choose base Point" "use Center point")
+ :arguments "Guide curve/detail selection and entities to move; guide curves (polyline segments) determine alignment. Works in pre-pick or post-pick mode."
+ :description "The MOVEGUIDED command automatically aligns entities with relevant geometry using temporary guide curves, accepting polyline segments as guide lines. It can be executed in pre-pick mode (select entities first) or post-pick mode (launch the command then select entities). Moved entities align only with matching geometry based on guide curve numbers and distances."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_moveguided/V25/EN_US")
 
 (:name "MPEDIT"
  :category :MODIFY
@@ -8164,6 +15047,20 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-B7FA1535-51E4-4980-A6F7-CDF98C86B3B6.htm"
  :source-bricscad NIL)
+
+(:name "MSLIDE"
+ :category :VIEW
+ :aliases ("MSNAPSHOT")
+ :intl-name "_MSLIDE"
+ :synopsis "Opens the Create Snapshot dialog box."
+ :options NIL
+ :arguments "Displays the Create Snapshot dialog box for saving current drawing data to an SLD file; no command-line arguments documented."
+ :description "The MSLIDE command launches a dialog for saving current drawing data to an SLD (slide/snapshot) file format. This functionality is available across BricsCAD Lite, Pro, Mechanical, and BIM."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_mslide/V25/EN_US")
 
 (:name "MSPACE"
  :category :VIEW
@@ -8222,6 +15119,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-E6BCE05D-B9E3-4875-BBBC-29134EA6FD51.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_mtext/V25/EN_US")
 
+(:name "MTP"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_MTP"
+ :synopsis "Allows to specify a point as the midpoint between two points."
+ :options ("First point of mid" "Second point of mid")
+ :arguments "First reference point; second reference point. The midpoint between the two is used. Used transparently during any operation requiring point entry."
+ :description "The MTP command enables users to designate a point as the midpoint between two reference points during any operation requiring point entry. It functions as a transparent command and configures entity snaps similarly to the OSNAP command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_mtp/V25/EN_US")
+
 (:name "MULTIPLE"
  :category :OTHER
  :aliases NIL
@@ -8279,6 +15190,24 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-90981580-5028-4E74-A117-21EFA734017F.htm"
  :source-bricscad NIL)
 
+(:name "NAVIGATE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_NAVIGATE"
+ :synopsis "Changes the way you navigate in BricsCAD (real-time 3D walk/fly navigation)."
+ :options ("A/Left arrow (move left)" "W/Up arrow (move forward)"
+           "S/Down arrow (move backward)" "D/Right arrow (move right)"
+           "F (toggle flight mode)" "ESC (exit)"
+           "Left mouse button + drag (look around)"
+           "Right-click (Navigate Settings)")
+ :arguments "Interactive real-time navigation using keyboard and mouse; no scripted argument sequence documented."
+ :description "The NAVIGATE command enables real-time 3D navigation through models using keyboard and mouse controls similar to computer games. Users can walk or fly through drawings, with walk mode restricting movement to the xy-plane and flight mode allowing full 3D movement."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_navigate/V25/EN_US")
+
 (:name "NAVSMOTION"
  :category :VIEW
  :aliases NIL
@@ -8334,6 +15263,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-12FCCFDF-9B3B-48D0-AC46-DF1D3519B0E5.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ncopy/V25/EN_US")
+
+(:name "NEAREST"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_NEAREST"
+ :synopsis "Toggles the Nearest entity snap."
+ :options NIL
+ :arguments "No arguments; acts as a toggle. Invoked at the command prompt it toggles the running snap and modifies OSMODE; used within another command it temporarily disables the snap without changing OSMODE."
+ :description "The NEAREST command enables or disables snapping to the nearest point on an entity. It can be invoked at the command prompt to toggle a running entity snap while modifying the OSMODE system variable, or within another command to temporarily disable the snap without changing OSMODE."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_nearest/V25/EN_US")
 
 (:name "NETLOAD"
  :category :CUSTOMIZATION
@@ -8405,6 +15348,65 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-F465283F-5208-4E6C-970E-C7460C3ECBB6.htm"
  :source-bricscad NIL)
+
+(:name "NEWWIZ"
+ :category :FILE
+ :aliases ("DDNEW")
+ :intl-name "_NEWWIZ"
+ :synopsis "Opens the Create New Drawing dialog box."
+ :options ("Start from Scratch" "Start from Template"
+           "Start from Default Template" "Use a Wizard" "Help")
+ :arguments "No command-line arguments; opens an interactive dialog where the user selects a creation method (scratch, template, default template, or wizard) and follows the wizard workflow."
+ :description "The NEWWIZ command launches a dialog enabling users to create new drawings through multiple methods including starting from scratch, selecting templates, or using a guided wizard that configures measurement systems, units, precision, and visual aids."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_newwiz/V25/EN_US")
+
+(:name "NODE"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_NODE"
+ :synopsis "Toggles the Node entity snap."
+ :options NIL
+ :arguments "No arguments; acts as a toggle. At the command prompt it toggles the running snap and updates OSMODE; within another command it temporarily disables the snap without changing OSMODE."
+ :description "The NODE command enables or disables snapping to nodes (points). When launched at the Command prompt, it toggles a running entity snap and updates the OSMODE system variable accordingly. Within another command, it temporarily disables the snap for that operation only, without changing OSMODE."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_node/V25/EN_US")
+
+(:name "NONE"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_NONE"
+ :synopsis "Disables all 2D entity snaps."
+ :options NIL
+ :arguments "No arguments and no prompts. At the command prompt it sets OSMODE to zero; within another command it temporarily disables snaps for that operation without changing OSMODE."
+ :description "The NONE command turns off running entity snaps to prevent the cursor snapping to 2D entities. When executed at the command prompt, it sets the OSMODE system variable to zero. It can also be invoked within another command to temporarily disable snaps for that operation without changing OSMODE."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_none/V25/EN_US")
+
+(:name "NUMBER"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_NUMBER"
+ :synopsis "Creates incremental number tags for BIM entities."
+ :options ("Increment" "Prefix" "Suffix" "Number style" "Field Width"
+           "Entities sorting" "Tolerance" "Overwrite Numbers"
+           "Change Selection")
+ :arguments "Select BIM entities; configure numbering parameters (starting value, increment, prefix, suffix, number style, field width, sorting, tolerance, overwrite behavior); apply. Interactive panel-based workflow."
+ :description "The NUMBER command assigns sequential numbering to selected BIM entities in BricsCAD. It allows customization of starting values, increments, prefixes, suffixes, and formatting styles while supporting various sorting methods based on spatial coordinates."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_number/V25/EN_US")
 
 (:name "OBJECTSCALE"
  :category :ANNOTATION
@@ -8504,6 +15506,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-DE1FEACE-92AA-4B3C-B896-1A899C79EE5B.htm"
  :source-bricscad NIL)
 
+(:name "ONWEB"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_ONWEB"
+ :synopsis "Opens the default Web browser."
+ :options NIL
+ :arguments "No arguments; launches the default web browser to the BricsCAD home page in a separate window."
+ :description "The ONWEB command launches the user's default web browser to the BricsCAD home page in a separate window. This external application can remain open simultaneously while working on drawings in BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_onweb/V25/EN_US")
+
 (:name "OOPS"
  :category :EDIT
  :aliases ("UNDELETE" "UNERASE")
@@ -8574,6 +15590,23 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-F22CB49D-7F81-4EBE-A6F0-8EBC55C9721A.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_opensheetset/V25/EN_US")
 
+(:name "OPTIMIZE"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_OPTIMIZE"
+ :synopsis "Corrects inaccuracies in the drawing, for 2D entities or 3D entities."
+ :options ("change reference Angles" "change Tolerances" "change Options"
+           "change Input selection" "apply settings and PReview"
+           "Keep selection" "switch to 3d Mode" "change reference Plane"
+           "switch to 2d Mode")
+ :arguments "Select 2D or 3D entities; configure reference angles/planes, tolerances, and correction options; preview and apply. Operates in a 2D mode and a 3D mode."
+ :description "The OPTIMIZE command fixes drawing imprecisions in 2D entities (lines, arcs, polylines) and 3D entities (solids, regions, surfaces). It performs corrections such as closing small gaps, aligning near-vertical/horizontal/diagonal lines, and making faces coplanar or properly oriented to reference planes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_optimize/V25/EN_US")
+
 (:name "OPTIONS"
  :category :SYSTEM
  :aliases ("CFG" "CONFIG" "OP" "PREFERENCES" "PREFS")
@@ -8601,6 +15634,20 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-128AC5D7-72B0-498F-958D-7F619A73EC5F.htm"
  :source-bricscad NIL)
+
+(:name "ORTHOGONAL"
+ :category :SYSTEM
+ :aliases ("OR" "ORTHO")
+ :intl-name "_ORTHOGONAL"
+ :synopsis "Toggles the ORTHOMODE system variable."
+ :options ("On" "Off" "Toggle")
+ :arguments "Optionally On, Off, or Toggle to set orthogonal mode. Can be used transparently within another command when preceded by an apostrophe."
+ :description "The ORTHOGONAL command controls whether the cursor is constrained to 90-degree angles during drawing operations by toggling the ORTHOMODE system variable. It can be executed at the command prompt or within another command when preceded by an apostrophe."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_orthogonal/V25/EN_US")
 
 (:name "OSNAP"
  :category :SYSTEM
@@ -8632,6 +15679,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-44B9ECFC-752C-4CC5-9DA3-84DBF3B17CA6.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_overkill/V25/EN_US")
 
+(:name "PACKAGE"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_PACKAGE"
+ :synopsis "Creates a package ZIP file of the drawing and its dependencies."
+ :options NIL
+ :arguments "Interactive; packages the drawing and dependent files into a single ZIP file. See -ETRANSMIT for command-line functionality."
+ :description "The PACKAGE command packages a drawing and all dependent files into a single ZIP file for distribution or archiving purposes. Refer to the -ETRANSMIT command for command-line functionality."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_package/V25/EN_US")
+
 (:name "PAGESETUP"
  :category :PLOT
  :aliases NIL
@@ -8660,6 +15721,35 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-E7E03AF4-6AEA-405E-8FC4-4C271E6F599A.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pan/V25/EN_US")
 
+(:name "PANELIZE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_PANELIZE"
+ :synopsis "Creates a grid on the face of a 3D Solid, as a block reference or mesh."
+ :options ("Length U panels" "Length V panels" "Number U panels"
+           "Number V panels" "Result" "Polylines" "Mesh")
+ :arguments "Select a 3D Solid face; specify panel lengths and counts in the U and V directions; choose the output result (Polylines/block references or Mesh)."
+ :description "The PANELIZE command generates a custom grid pattern on 3D Solid faces by specifying panel dimensions and quantities. Users define the grid through length measurements and panel counts in two directions, with output options for either block references or mesh entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_panelize/V25/EN_US")
+
+(:name "PARALLEL"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_PARALLEL"
+ :synopsis "Toggles the Parallel entity snap."
+ :options NIL
+ :arguments "No arguments; acts as a toggle. At the command prompt it toggles the running snap and modifies OSMODE; within another command it temporarily disables the snap without changing OSMODE."
+ :description "The PARALLEL command enables or disables snapping to parallel lines. It can be launched at the command prompt to toggle a running entity snap and modify the OSMODE system variable, or within another command to temporarily disable the snap for that operation only."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parallel/V25/EN_US")
+
 (:name "PARAMETERS"
  :category :PARAMETRIC
  :aliases NIL
@@ -8687,6 +15777,202 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-9D53789F-0468-45F9-ABD9-8CA78827878D.htm"
  :source-bricscad NIL)
+
+(:name "PARAMETERSPANELCLOSE"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_PARAMETERSPANELCLOSE"
+ :synopsis "Closes the Parameters Manager panel."
+ :options NIL
+ :arguments "No arguments; hides the Parameters Manager panel."
+ :description "The PARAMETERSPANELCLOSE command hides the Parameters Manager panel from the current workspace. When the panel is stacked, its tab or icon is removed from the stack upon closure."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parameterspanelclose/V25/EN_US")
+
+(:name "PARAMETERSPANELOPEN"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_PARAMETERSPANELOPEN"
+ :synopsis "Opens the Parameters Manager panel."
+ :options NIL
+ :arguments "No arguments; displays the Parameters Manager panel at its previous size and location."
+ :description "The PARAMETERSPANELOPEN command displays the Parameters Manager panel in the current workspace at its previous size and location. This dockable panel serves as the primary tool for viewing and modifying parameters and constraints within a drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parameterspanelopen/V25/EN_US")
+
+(:name "PARAMETRICBLOCKIFY"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_PARAMETRICBLOCKIFY"
+ :synopsis "Automatically replaces sets of entities matching a selected parametric block or set of parametrized entities by parametric block references."
+ :options ("Detect matches with selected entities"
+           "Detect matches with existing blocks" "Detect equal 3D solids"
+           "Detect collections" "Compare geometry only"
+           "Use parameters and constraints" "Prevent loss of parametrics"
+           "Use auto tolerance" "Use custom tolerance"
+           "Select entities in the drawing" "Entire drawing")
+ :arguments "Choose a detection method; select entities in the drawing or use the entire drawing; configure comparison and tolerance options. Interactive workflow."
+ :description "The PARAMETRICBLOCKIFY command searches a drawing for identical sets of 2D or 3D entities and converts them to (parametric) block references. It offers four distinct methods of operation to detect matching geometry patterns and consolidate them into reusable block definitions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parametricblockify/V25/EN_US")
+
+(:name "PARAMETRICMOVE"
+ :category :PARAMETRIC
+ :aliases ("PMOVE")
+ :intl-name "_PARAMETRICMOVE"
+ :synopsis "Defines a parameter to be used by a move operation on entities of a parametric block."
+ :options ("Base point of displacement" "Second point of displacement"
+           "Select entities which can be affected by the operation"
+           "Change Linked behavior" "Enter name for the action parameter")
+ :arguments "Base point (origin of move vector); second point (head of move vector); selection of entities affected by the operation; Linked behavior setting (ON/OFF); name for the action parameter."
+ :description "The PARAMETRICMOVE command works with 2D parametric blocks to enable moving entities within block references. Users specify displacement points and select affected entities, with the ability to control whether selected entities maintain linked behavior with other operations."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parametricmove/V25/EN_US")
+
+(:name "PARAMETRICMOVEEDIT"
+ :category :PARAMETRIC
+ :aliases ("PMOVEEDIT")
+ :intl-name "_PARAMETRICMOVEEDIT"
+ :synopsis "Edits parametric move operations."
+ :options ("Shownames" "Selection" "Direction" "Linked behavior")
+ :arguments "Operation name; then select the parametric operation data to edit (elements, direction points, or linked behavior settings depending on the option chosen). Supports dynamic editing via operation grip points."
+ :description "The PARAMETRICMOVEEDIT command allows users to edit an existing move operation by entering the operation name and selecting the parametric operation data to modify. It supports dynamic editing within parametric blocks by selecting and dragging operation grip points."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parametricmoveedit/V25/EN_US")
+
+(:name "PARAMETRICROTATE"
+ :category :PARAMETRIC
+ :aliases ("PROTATE")
+ :intl-name "_PARAMETRICROTATE"
+ :synopsis "Defines a parameter to be used by a rotate operation on entities of a parametric block."
+ :options ("Select rotation center point" "Select rotation arc start point"
+           "Select rotation arc end point" "Select/deselect entities"
+           "Enter name for the operation parameter" "Change Linked behavior")
+ :arguments "Rotation center point; rotation arc start point; rotation arc end point; entity selection; parameter name; Linked behavior setting (ON/OFF)."
+ :description "The PARAMETRICROTATE command enables rotation of entities within a 2D parametric block by specifying a rotation center point and arc endpoints. The rotated entities adjust their positions based on the parameter value, which can be modified through grip points or the Parameters Manager panel."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parametricrotate/V25/EN_US")
+
+(:name "PARAMETRICROTATEEDIT"
+ :category :PARAMETRIC
+ :aliases ("PROTATEEDIT")
+ :intl-name "_PARAMETRICROTATEEDIT"
+ :synopsis "Edits parametric rotate operations."
+ :options ("Shownames" "Selection" "Geometry" "Linked behavior")
+ :arguments "Enter the name of the rotate operation, then select the parametric operation data to edit; or dynamically edit by selecting the block and dragging its grip point."
+ :description "The PARAMETRICROTATEEDIT command allows users to modify existing rotate operations within parametric blocks. You can dynamically edit a rotate operation by selecting the block and dragging its grip point, or enter the operation name and select specific parametric data to edit."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parametricrotateedit/V25/EN_US")
+
+(:name "PARAMETRICSCALE"
+ :category :PARAMETRIC
+ :aliases ("PSCALE")
+ :intl-name "_PARAMETRICSCALE"
+ :synopsis "Defines a parameter to be used by a scale operation on entities of a parametric block."
+ :options ("Base point of displacement" "Second point of displacement"
+           "Select/deselect entities affected by operation"
+           "Change Linked behavior" "Enter name for operation parameter")
+ :arguments "Base point; second point (defining the scale vector); entity selection; Linked behavior setting (ON/OFF); parameter name."
+ :description "The PARAMETRICSCALE command enables users to scale entities within a block by establishing a parametric control. The operation requires selecting a base point, a second point defining the scale vector, and the entities to be affected. The resulting parameter can be adjusted dynamically to resize selected block entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parametricscale/V25/EN_US")
+
+(:name "PARAMETRICSCALEEDIT"
+ :category :PARAMETRIC
+ :aliases ("PSCALEEDIT")
+ :intl-name "_PARAMETRICSCALEEDIT"
+ :synopsis "Edits parametric scale operations."
+ :options ("Shownames" "Selection" "Direction" "Linked behavior")
+ :arguments "Enter the scale operation name, then select the parametric data to modify (scale frame, selection, direction, linked behavior); or dynamically edit by selecting the block and dragging the operation grip point."
+ :description "The PARAMETRICSCALEEDIT command allows you to modify an existing scale operation by editing its scale frame, elements selection, direction, and linked behavior. You enter the scale operation name, then select the parametric data to modify. Within parametric blocks, you can also dynamically edit by selecting the block and dragging the operation's grip point."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parametricscaleedit/V25/EN_US")
+
+(:name "PARAMETRICSTRETCH"
+ :category :PARAMETRIC
+ :aliases ("PSTRETCH")
+ :intl-name "_PARAMETRICSTRETCH"
+ :synopsis "Defines a parameter to be used by a stretch operation on some entities of a parametric block."
+ :options ("Base point of displacement" "Second point of displacement"
+           "Construct stretch frame" "Opposite corner" "Polygonal"
+           "Select/deselect entities" "Change Linked behavior"
+           "Enter name for the action parameter")
+ :arguments "Base point; second point; stretch frame corners (rectangular) or polygon vertices; entity selection; Linked behavior setting (ON/OFF); parameter name."
+ :description "The PARAMETRICSTRETCH command simplifies stretching entities within blocks by establishing a parametric operation. It achieves functionality typically requiring multiple parameters and constraints, but with less effort. The block's appearance can be controlled by adjusting the associated parameter value through grip points or the Parameters Manager panel."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parametricstretch/V25/EN_US")
+
+(:name "PARAMETRICSTRETCHEDIT"
+ :category :PARAMETRIC
+ :aliases ("PSTRETCHEDIT")
+ :intl-name "_PARAMETRICSTRETCHEDIT"
+ :synopsis "Edits parametric stretch operations."
+ :options ("Shownames" "Selection" "Direction" "Linked behavior")
+ :arguments "Enter the name of the stretch operation, then select the parametric operation data to modify; or dynamically edit by selecting the block and dragging the stretch operation grip point."
+ :description "The PARAMETRICSTRETCHEDIT command allows users to edit existing stretch operations within parametric blocks. Users enter the stretch operation name and select the parametric operation data to modify. Alternatively, stretch operations can be dynamically edited by selecting the block and dragging the stretch operation's grip point."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parametricstretchedit/V25/EN_US")
+
+(:name "PARAMETRIZE"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_PARAMETRIZE"
+ :synopsis "Applies constraints automatically."
+ :options NIL
+ :arguments "Interactive; automatically adds geometric and parametric constraints to 3D solid geometry. No command-line arguments documented."
+ :description "The PARAMETRIZE command automatically adds geometric and parametric constraints to 3D solid geometry. Parameters and constraints can be viewed and edited in the Mechanical Browser panel, or via Rollover Tips in Model Space when the ROLLOVERPARAMS system variable is enabled."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parametrize/V25/EN_US")
+
+(:name "PARAMETRIZE2D"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_PARAMETRIZE2D"
+ :synopsis "Automatically applies 2D geometric and dimensional constraints to selected 2D geometry."
+ :options NIL
+ :arguments "Select 2D entities; dimensional and geometric constraints are added automatically. No command-line arguments documented."
+ :description "The PARAMETRIZE2D command selects 2D entities and automatically adds dimensional and geometric constraints to them. Parameters and constraints can be edited through the Properties panel, Parameters Manager panel, or Mechanical Browser panel. When ROLLOVERPARAMS is enabled, parameters are also editable via Rollover Tips in Model Space."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_parametrize2d/V25/EN_US")
 
 (:name "PARTIALOAD"
  :category :FILE
@@ -8787,6 +16073,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0223840C-D96F-41E9-8D33-1CEFA8D07B3C.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pastespec/V25/EN_US")
 
+(:name "PBLOCKOPERATIONSDISPLAY"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_PBLOCKOPERATIONSDISPLAY"
+ :synopsis "Shows/hides parametric block operation definition lines."
+ :options ("Show" "Hide")
+ :arguments "Select entities; choose to Show or Hide the parametric block operation definition lines attached to them."
+ :description "The PBLOCKOPERATIONSDISPLAY command toggles visibility of parametric block operation definition lines attached to selected entities. These geometries are non-database-resident, created on anonymous layers. By default, local parametric block operation geometry is hidden when opening new drawings but becomes visible when operations are copied or during BEDIT sessions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pblockoperationsdisplay/V25/EN_US")
+
 (:name "PCEXTRACTCENTERLINE"
  :category :DRAW
  :aliases NIL
@@ -8842,6 +16142,34 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8C66CA40-AA84-439F-9A4F-0D675F2578A9.htm"
  :source-bricscad NIL)
+
+(:name "PCNEAREST"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_PCNEAREST"
+ :synopsis "Toggles the Point Cloud Nearest Point entity snap."
+ :options NIL
+ :arguments "No arguments; acts as a toggle. At the command prompt it toggles the running snap (modifying 3DOSMODE); within another command it temporarily disables the snap for that operation only."
+ :description "The PCNEAREST command enables or disables snapping to the nearest point within point clouds. It can be invoked at the command prompt to toggle the running entity snap (modifying the 3DOSMODE system variable), or within another command to temporarily disable the snap for that operation only."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pcnearest/V25/EN_US")
+
+(:name "PDF"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_PDF"
+ :synopsis "Opens the Attachments panel."
+ :options NIL
+ :arguments "No arguments; displays the Attachments panel at its previous size and location."
+ :description "The PDF command displays the Attachments panel in the current workspace at its previous size and location. Like other dockable panels, it can be floating, docked, or stacked."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pdf/V25/EN_US")
 
 (:name "PDFADJUST"
  :category :OTHER
@@ -8914,6 +16242,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-3BD29D3C-B645-486F-B88A-E282F3F64A22.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pdflayers/V25/EN_US")
 
+(:name "PDFOPTIONS"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_PDFOPTIONS"
+ :synopsis "Opens the Settings dialog box with the PDF export category expanded."
+ :options NIL
+ :arguments "No arguments; opens the Settings dialog showing PDF export options and related system variables."
+ :description "The PDFOPTIONS command launches the Settings dialog, specifically displaying PDF export options. Users can view and modify relevant system variables that control PDF export behavior in BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pdfoptions/V25/EN_US")
+
 (:name "PDFSHXTEXT"
  :category :TEXT
  :aliases NIL
@@ -8927,6 +16269,21 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-A0F80ABD-0F1C-47FB-B7E3-E4C699DAEE83.htm"
  :source-bricscad NIL)
+
+(:name "PDIM"
+ :category :DIMENSION
+ :aliases ("AMPOWERDIM")
+ :intl-name "_PDIM"
+ :synopsis "Creates multiple types of dimensions as ACM entities in a single workflow."
+ :options ("Linear" "Angle" "Text" "Horizontal" "Vertical" "Rotated" "Aligned"
+           "Angular" "Radial" "Diameter" "Radius" "Placement options")
+ :arguments "Select two points for a linear dimension, or select an entity plus a location point; cursor movement determines horizontal, vertical, or aligned orientation. An Edit Dimensioning dialog then opens to configure parameters. Mechanical only."
+ :description "The PDIM command is a power dimensioning tool for BricsCAD Mechanical that allows users to create various dimension types through a unified interface. After selecting points or entities, an Edit Dimensioning dialog opens to configure dimension parameters. The command works exclusively with mechanical drawings."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pdim/V25/EN_US")
 
 (:name "PEDIT"
  :category :MODIFY
@@ -8942,6 +16299,23 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0C422AA9-23DD-4650-AD66-68E9D7989E3F.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pedit/V25/EN_US")
+
+(:name "PEDITEXT"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_PEDITEXT"
+ :synopsis "Edits vertices and segments of a polyline."
+ :options ("Add vertex" "Add vertex at End" "Add Multiple vertices"
+           "Adjust Bulge" "Remove segment" "Remove mulTiple segments"
+           "Remove verteX" "Remove multiple vertiCes" "Stretch segment"
+           "Stretch Vertex")
+ :arguments "Interactive editing of polyline vertices and segments (via the Quad cursor), without pre-selecting the polyline; supports multiple editing operations per session. No scripted argument sequence documented."
+ :description "The PEDITEXT command allows interactive editing of polyline vertices and segments without pre-selecting the polyline. The command is designed for use with the Quad cursor interface and supports multiple editing operations in single sessions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_peditext/V25/EN_US")
 
 (:name "PERFANALYZER"
  :category :SYSTEM
@@ -8971,6 +16345,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-58E00F25-8B26-42B1-922B-802C18CD9DB8.htm"
  :source-bricscad NIL)
 
+(:name "PERPENDICULAR"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_PERPENDICULAR"
+ :synopsis "Toggles the Perpendicular entity snap."
+ :options NIL
+ :arguments "No arguments; acts as a toggle. At the command prompt it toggles the running snap (affecting OSMODE); within another command it temporarily disables the snap for that operation only."
+ :description "The PERPENDICULAR command enables or disables snapping to perpendicular points. It can be launched at the command prompt to toggle a running entity snap (affecting the OSMODE system variable) or within another command to temporarily disable the snap for just that operation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_perpendicular/V25/EN_US")
+
 (:name "PFACE"
  :category :|3D|
  :aliases NIL
@@ -8984,6 +16372,21 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-3779DF52-AA24-47D2-B72C-018D4A9011DD.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pface/V25/EN_US")
+
+(:name "PLACEVIEW"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_PLACEVIEW"
+ :synopsis "Imports named views from a source drawing."
+ :options ("Enter file name" "Enter view name to place" "?"
+           "Enter view origin point")
+ :arguments "Source file name; view name to import (? lists named views); view origin point (lower-left corner location). Works only in paper space, intended for sheet sets."
+ :description "The PLACEVIEW command places named views from a source drawing into a paper space layout of the current drawing. The command works only in paper space and is intended for use with sheet sets. Users cannot place a named view in a layout of the source drawing itself."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_placeview/V25/EN_US")
 
 (:name "PLAN"
  :category :VIEW
@@ -9069,6 +16472,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-F77C31FE-9266-4293-A251-A8BA1F91D818.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_plotstyle/V25/EN_US")
 
+(:name "PLOTTERMANAGER"
+ :category :PLOT
+ :aliases NIL
+ :intl-name "_PLOTTERMANAGER"
+ :synopsis "Create and edit plotter settings."
+ :options NIL
+ :arguments "No arguments; opens a dialog to select plotter configuration files or create/modify PC3 files for printers and output devices."
+ :description "The PLOTTERMANAGER command opens a dialog box enabling users to select plotter configuration files or create and modify customized PC3 files for printers and output devices."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_plottermanager/V25/EN_US")
+
 (:name "PLT2DWG"
  :category :FILE
  :aliases NIL
@@ -9082,6 +16499,34 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-2D2ECCF3-1CD4-4115-A823-E4B7EC165A0F.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_plt2dwg/V25/EN_US")
+
+(:name "PLUS-STRUCTUREPANEL"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_PLUS-STRUCTUREPANEL"
+ :synopsis "Opens the Structure tree configuration file dialog box (the +STRUCTUREPANEL command)."
+ :options NIL
+ :arguments "No arguments; opens a dialog to select a .cst configuration file; the Structure panel then displays that configuration."
+ :description "The +STRUCTUREPANEL command launches a dialog to select a .cst file for inclusion in the Structure panel. Once a file is chosen, the Structure panel displays the configuration."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_plusstructurepanel/V25/EN_US")
+
+(:name "PNGOUT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_PNGOUT"
+ :synopsis "Saves the entities from the current drawing to a PNG file."
+ :options NIL
+ :arguments "Opens a Save PNG dialog; exports the current drawing view (all entities visible in the active viewport) to a PNG image file. No command-line arguments documented."
+ :description "The PNGOUT command opens a Save PNG dialog to export the current drawing view to a PNG image file, including all entities visible in the active viewport."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pngout/V25/EN_US")
 
 (:name "POINT"
  :category :DRAW
@@ -9097,6 +16542,37 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-3F5861A1-9A63-42A6-8F12-3395771BAA6D.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_point/V25/EN_US")
 
+(:name "POINTCLOUD"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_POINTCLOUD"
+ :synopsis "Manages Point Cloud files."
+ :options ("Name" "Load" "Size" "References" "Saved Path" "Found Path" "New"
+           "Delete" "Insert" "Select all" "Invert selection"
+           "Run extended search for missing attachments")
+ :arguments "Displays the Point Clouds category within the Drawing Explorer; manage file attachments interactively (load/unload, view info, handle missing references). No scripted argument sequence documented."
+ :description "The POINTCLOUD command displays the Point Clouds category within the Drawing Explorer, enabling users to manage point cloud file attachments. It provides functionality to load/unload files, view file information, and handle missing file references through a dedicated interface panel."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloud/V25/EN_US")
+
+(:name "POINTCLOUDALIGN"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDALIGN"
+ :synopsis "Rotates the point cloud to optimally align it with the X and Y axes."
+ :options ("Select point cloud entity" "First corner point"
+           "Specify opposite corner" "Ucs" "Rotate")
+ :arguments "Select the point cloud entity; specify a first corner point and opposite corner; optionally create an aligned UCS (Yes/No) or Rotate."
+ :description "The POINTCLOUDALIGN command rotates a point cloud to align optimally with the X and Y axes in the world coordinate system, or creates an aligned UCS. This facilitates efficient entity creation and editing using standard tools like orthogonal and polar tracking."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudalign/V25/EN_US")
+
 (:name "POINTCLOUDATTACH"
  :category :OTHER
  :aliases NIL
@@ -9110,6 +16586,36 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-E086391C-6CEA-4B70-A788-7630FD75469F.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudattach/V25/EN_US")
+
+(:name "POINTCLOUDBUBBLEVIEWER"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_POINTCLOUDBUBBLEVIEWER"
+ :synopsis "Opens the Bubble viewer."
+ :options NIL
+ :arguments "Indicate a bubble index (or double-click a bubble in model space) to open the Bubble viewer for that point cloud bubble."
+ :description "The POINTCLOUDBUBBLEVIEWER command launches the Bubble viewer for a point cloud bubble at a specified index, displaying the active scan name in the title bar. Users can navigate the point cloud from the scan location and access nearby scans, making it useful for detailed inspection of scanned data."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudbubbleviewer/V25/EN_US")
+
+(:name "POINTCLOUDCLASSIFY"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_POINTCLOUDCLASSIFY"
+ :synopsis "Assigns classes to each point in a point cloud."
+ :options ("Select model" "indoorBasic" "indoorFull" "indoorSimplified"
+           "Outdoor" "Roads" "Construction" "Select classification mode"
+           "Speed" "Quality")
+ :arguments "Select a classification model (indoorBasic, indoorFull, indoorSimplified, Outdoor, Roads, Construction) and a classification mode (Speed or Quality); the classifier runs in the background."
+ :description "The POINTCLOUDCLASSIFY command classifies points in point cloud models using AI-powered algorithms. The classifier runs in the background and displays results in the Point Cloud Manager panel. It supports multiple classification models tailored for indoor, outdoor, roads, and construction environments."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudclassify/V25/EN_US")
 
 (:name "POINTCLOUDCOLORMAP"
  :category :OTHER
@@ -9126,6 +16632,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8EB71740-97AD-415F-AAC7-F6D8006CDFC9.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudcolormap/V25/EN_US")
 
+(:name "POINTCLOUDCOMPRESS"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_POINTCLOUDCOMPRESS"
+ :synopsis "Compresses a point cloud cache entry."
+ :options NIL
+ :arguments "Select a point cloud cache folder (via dialog, or via the command line if FILEDIA=0); data files are compressed from .pnt to .pnz."
+ :description "The POINTCLOUDCOMPRESS command opens a dialog to select a point cloud cache folder and compresses data files within it, changing the file extension from .pnt to .pnz while displaying the compression ratio. Manual compression/decompression may be necessary when exchanging data between BricsCAD V21 and V22, since V21 only supports uncompressed data while V22 handles both formats."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudcompress/V25/EN_US")
+
 (:name "POINTCLOUDCROP"
  :category :MODIFY
  :aliases NIL
@@ -9139,6 +16659,179 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-BDD08C89-13C3-4AD4-B3F9-D73965DDA28E.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudcrop/V25/EN_US")
+
+(:name "POINTCLOUDCROPSOLID"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDCROPSOLID"
+ :synopsis "Converts an extruded solid/polysolid to a crop solid."
+ :options ("Inside" "Outside")
+ :arguments "Select solid(s)/polysolid(s); choose Inside or Outside cropping mode. The resulting crop solids can be applied to point clouds in 3D."
+ :description "The POINTCLOUDCROPSOLID command transforms existing solids or polysolids into crop solids that can be applied to point clouds in 3D. The resulting crop solids are fully editable like any standard BricsCAD solid and support both inclusion and exclusion cropping modes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudcropsolid/V25/EN_US")
+
+(:name "POINTCLOUDDECOMPRESS"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_POINTCLOUDDECOMPRESS"
+ :synopsis "Decompress a point cloud cache entry."
+ :options NIL
+ :arguments "Select a point cloud cache folder (via dialog, or via the command line if FILEDIA=0); PNZ data files are decompressed to PNT format."
+ :description "The POINTCLOUDDECOMPRESS command opens a dialog to select a point cloud cache folder and decompresses PNZ data files to PNT format. The tool displays compression ratio information and is particularly useful for data exchange between BricsCAD V21 (which requires uncompressed data) and V22 (which handles both formats)."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointclouddecompress/V25/EN_US")
+
+(:name "POINTCLOUDDELETEITEM"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_POINTCLOUDDELETEITEM"
+ :synopsis "Deletes point cloud files."
+ :options NIL
+ :arguments "Opens the Point Cloud Reference Manager dialog to remove point cloud files from the cache; deleting a file also removes any instances of that point cloud in the drawing. No scripted argument sequence documented."
+ :description "The POINTCLOUDDELETEITEM command opens the Point Cloud Reference Manager dialog to remove point cloud files from the cache. When deleting a file, any instances of that point cloud currently in the drawing are also removed."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointclouddeleteitem/V25/EN_US")
+
+(:name "POINTCLOUDDETECTFLOORS"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_POINTCLOUDDETECTFLOORS"
+ :synopsis "Assigns selected points to detected floors."
+ :options ("Full" "Selection" "Create spatial elements")
+ :arguments "Choose Full or Selection mode; choose whether to create spatial elements (Yes/No). Part of the Scan to BIM workflow."
+ :description "The POINTCLOUDDETECTFLOORS command detects floors and ceilings in point clouds representing buildings by identifying regions with similar Z-coordinates, then assigns points to those detected floors. This command is part of the Scan to BIM workflow."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointclouddetectfloors/V25/EN_US")
+
+(:name "POINTCLOUDDETECTROOMS"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_POINTCLOUDDETECTROOMS"
+ :synopsis "Assigns each point to a room."
+ :options NIL
+ :arguments "Operates on all floors or a single specified floor; detected rooms appear in the Point Cloud Manager panel. No scripted argument sequence documented."
+ :description "The POINTCLOUDDETECTROOMS command identifies enclosed spaces within point cloud data and automatically categorizes points into distinct rooms. It operates on all floors or a single specified floor, and serves as a key step in the Scan to BIM workflow. Detected rooms appear in the Point Cloud Manager panel for further editing and management."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointclouddetectrooms/V25/EN_US")
+
+(:name "POINTCLOUDDEVIATION"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_POINTCLOUDDEVIATION"
+ :synopsis "Identifies and visually transposes the closeness of fit of point cloud points with respect to their closest selected planar (sub)entity or TIN surface."
+ :options ("Entities" "Entire drawing" "Use Crops" "Crop Thickness"
+           "Good fit tolerance" "Bad fit tolerance" "Color Mode"
+           "Keep Deviation Colors on Close" "Auto Apply")
+ :arguments "Select reference geometry (planar surface, TIN surface, or solid), or use the entire drawing; a Command Context panel opens to adjust tolerances, color mode, and other settings; deviation results are shown as percentages and color distributions."
+ :description "The POINTCLOUDDEVIATION command assigns colors to point cloud points to visualize their proximity to a selected planar surface, TIN surface, or solid. After selecting the reference geometry, a Command Context panel opens allowing users to adjust settings and view deviation results displayed as percentages and color distributions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointclouddeviation/V25/EN_US")
+
+(:name "POINTCLOUDEXPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_POINTCLOUDEXPORT"
+ :synopsis "Exports the visible parts of a point cloud to a .pts, .Hspc or a .laz file."
+ :options NIL
+ :arguments "Saves visible point cloud data to a Pts, Hspc, or Laz file. See -POINTCLOUDEXPORT for command-line export. No scripted argument sequence documented on this page."
+ :description "The POINTCLOUDEXPORT command saves point cloud data from the current drawing to specified file formats (Pts, Hspc, or Laz). The HSPC format is proprietary technology developed by Hexagon VCH."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudexport/V25/EN_US")
+
+(:name "POINTCLOUDFITCYLINDER"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDFITCYLINDER"
+ :synopsis "Creates cylinders in Point Clouds."
+ :options ("Accept" "Decline")
+ :arguments "Within the Bubble Viewer, select two points along a cylinder's axis to generate the cylinder; Accept or Decline the result. The object is inserted into model space."
+ :description "The POINTCLOUDFITCYLINDER command operates exclusively within the Bubble Viewer environment. Users select two points along a cylinder's axis to generate the geometric object, which is then inserted into model space and can be synchronized with the drawing view."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudfitcylinder/V25/EN_US")
+
+(:name "POINTCLOUDFITPLANAR"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDFITPLANAR"
+ :synopsis "Creates a planar surface or a solid from a point cloud point."
+ :options ("Data type" "Noisy" "Regular" "Solid mode" "Disable" "Enable" "Mode"
+           "rectangle" "contour" "solid" "adJust borders" "Stitch surfaces"
+           "Fit tolerances" "Accept" "Decline" "Undo" "Switch Bubbles"
+           "Select Opening")
+ :arguments "Select seed point(s) in the point cloud; configure data type, mode (rectangle/contour/solid), tolerances and options; Accept or Decline. Works in model view and bubble view modes."
+ :description "The POINTCLOUDFITPLANAR command searches a point cloud for dense sets of planar points around selected seed point(s) and generates planar surfaces or solids. It enables creation of multiple surfaces or solids sequentially and operates in both model view and bubble view modes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudfitplanar/V25/EN_US")
+
+(:name "POINTCLOUDFITROOMS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDFITROOMS"
+ :synopsis "Creates solids corresponding to detected rooms in a point cloud."
+ :options ("All" "Id" "Restrict detection to perpendicular (90 degree) walls")
+ :arguments "Choose All or specify an Id; optionally restrict detection to perpendicular walls. Requires normal vector information. Part of the Scan to BIM workflow."
+ :description "The POINTCLOUDFITROOMS command generates 3D solid entities representing rooms automatically detected within point cloud data. It requires normal vector information to function, which can be calculated during preprocessing or imported from unstructured point cloud sources. This tool serves as a component in the Scan to BIM workflow."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudfitrooms/V25/EN_US")
+
+(:name "POINTCLOUDGEOGRAPHICLOCATION"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_POINTCLOUDGEOGRAPHICLOCATION"
+ :synopsis "Sets the geographic location based on point cloud."
+ :options ("Geolocation" "Transform" "Relative")
+ :arguments "Choose an approach: Geolocation (set markers from point clouds), Transform (update transforms based on geographic locations), or Relative (align multiple point clouds). Only LAS and LAZ formats are supported."
+ :description "The POINTCLOUDGEOGRAPHICLOCATION command establishes geographic positioning using point cloud data and supports three operational approaches: setting geographic markers from point clouds, updating transforms based on geographic locations, and relatively aligning multiple point clouds. Only LAS and LAZ file formats support this functionality."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudgeographiclocation/V25/EN_US")
+
+(:name "POINTCLOUDIMPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_POINTCLOUDIMPORT"
+ :synopsis "Opens the Please provide a point cloud cache dialog box."
+ :options NIL
+ :arguments "No arguments; opens a dialog to select a point cloud cache folder for use in BricsCAD."
+ :description "The POINTCLOUDIMPORT command launches a dialog allowing users to select a point cloud cache folder for use in BricsCAD. It is available in BricsCAD Pro, Mechanical, and BIM only, not in BricsCAD Lite."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudimport/V25/EN_US")
 
 (:name "POINTCLOUDMANAGER"
  :category :VIEW
@@ -9169,6 +16862,151 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-D2D62D65-B03E-4BD9-80E3-6B924E5E7A28.htm"
  :source-bricscad NIL)
 
+(:name "POINTCLOUDMANAGERPANELCLOSE"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_POINTCLOUDMANAGERPANELCLOSE"
+ :synopsis "Closes the Point Cloud Manager panel."
+ :options NIL
+ :arguments "No arguments; hides the Point Cloud Manager panel."
+ :description "The POINTCLOUDMANAGERPANELCLOSE command hides the Point Cloud Manager panel from the current workspace. When the panel is stacked with other panels, closing it removes the Point Cloud Manager tab or icon from that stack."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudmanagerpanelclose/V25/EN_US")
+
+(:name "POINTCLOUDMANAGERPANELOPEN"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_POINTCLOUDMANAGERPANELOPEN"
+ :synopsis "Opens the Point Cloud Manager panel."
+ :options NIL
+ :arguments "No arguments; displays the Point Cloud Manager panel at its previous size and location."
+ :description "The POINTCLOUDMANAGERPANELOPEN command displays the Point Cloud Manager panel in the current workspace at its previous size and location. This dockable panel enables creation and management of point cloud regions while controlling display based on scans, classifications, and regions. It supports structured point clouds preprocessed in HSPC format for full functionality."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudmanagerpanelopen/V25/EN_US")
+
+(:name "POINTCLOUDNORMALS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDNORMALS"
+ :synopsis "Calculates normals using the structured normal calculation after preprocessing."
+ :options NIL
+ :arguments "Operates on pre-loaded/cached point cloud data (HSPC format); no user-supplied arguments documented."
+ :description "Calculates normal vectors for structured point clouds that are cached in HSPC format but lack normals. Once computed, these normals are saved to the HSPC file, and a confirmation message appears upon completion."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudnormals/V25/EN_US")
+
+(:name "POINTCLOUDPOINTSIZE_MINUS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDPOINTSIZE_MINUS"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "POINTCLOUDPOINTSIZE_PLUS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDPOINTSIZE_PLUS"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description NIL
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad NIL)
+
+(:name "POINTCLOUDPREPROCESS"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDPREPROCESS"
+ :synopsis "Attaches point cloud files to the current drawing."
+ :options NIL
+ :arguments "Point cloud file to attach (deprecated since V20; replaced by POINTCLOUDATTACH)."
+ :description "Allows users to attach point cloud files to the current drawing. This command has been deprecated since BricsCAD V20 and replaced by the POINTCLOUDATTACH command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudpreprocess/V25/EN_US")
+
+(:name "POINTCLOUDPROJECTSECTION"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDPROJECTSECTION"
+ :synopsis "Automatically generates a 2D raster image with optional contour lines from a defined section box."
+ :options ("Selection" "Pixel size" "Attach to (Same.dwg, Destination file)"
+           "Resolution (Finest, Adaptive)"
+           "aTtachment point (Section plane, X-y plane, Back plane)"
+           "detect Walls (Yes, No)"
+           "toLerances (Search area, Wall distance, Gap, Angular, Minimum length)"
+           "Overwrite (Yes, No)" "reMove old (Yes, No)")
+ :arguments "Opens the Command Context panel; user selects section, sets pixel size, attachment target, resolution, attachment point, wall detection and tolerances, overwrite and remove-old options."
+ :description "Opens the Command Context panel to project point cloud data into 2D raster images. Users can customize resolution, attachment points, and optionally generate wall detection lines with various tolerance parameters."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudprojectsection/V25/EN_US")
+
+(:name "POINTCLOUDREFERENCE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDREFERENCE"
+ :synopsis "Loads point clouds from cache or inserts new point clouds to the current drawing."
+ :options NIL
+ :arguments "Dialog-based (Point Cloud Reference Manager): preprocess a new scan, review cached scans, then Insert to attach or Delete to remove from cache."
+ :description "Opens the Point Cloud Reference Manager dialog box, enabling users to load preprocessed point cloud scans from cache or attach new point cloud files to their drawing. The interface displays cache usage, available storage space, and a table listing available scans with their status and properties."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudreference/V25/EN_US")
+
+(:name "POINTCLOUDREGION"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDREGION"
+ :synopsis "Creates regions in a point cloud."
+ :options ("Draw" "Rectangular" "Polygonal" "Select" "Finish" "Convert")
+ :arguments "Select a point cloud entity (if multiple exist); choose a drawing method (rectangular or polygonal) or conversion option; make selections within the point cloud; finish; enter a region name."
+ :description "Enables users to generate regions within point cloud data by selecting portions to convert into regions, or by converting existing solids and crop solids into regions instead."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudregion/V25/EN_US")
+
+(:name "POINTCLOUDSHOWBUBBLES"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDSHOWBUBBLES"
+ :synopsis "Toggles the display of point cloud bubbles."
+ :options ("Yes" "No")
+ :arguments "Select either Yes or No when prompted."
+ :description "Controls the visibility of point cloud bubbles. Users can enable or disable the bubble display, and adjust bubble size through the Properties panel."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointcloudshowbubbles/V25/EN_US")
+
 (:name "POINTCLOUDSTYLIZE"
  :category :VIEW
  :aliases NIL
@@ -9183,6 +17021,20 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-D07C9957-EAF1-4BA7-93F9-CF26AE4376EA.htm"
  :source-bricscad NIL)
+
+(:name "POINTCLOUDUNCROP"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_POINTCLOUDUNCROP"
+ :synopsis "Removes the crop display of a point cloud."
+ :options NIL
+ :arguments "No argument sequence documented."
+ :description "Undoes the cropping effect previously applied to a point cloud using the POINTCLOUDCROP command, restoring the full display of the point cloud data."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_pointclouduncrop/V25/EN_US")
 
 (:name "POINTLIGHT"
  :category :RENDER
@@ -9255,6 +17107,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-C66B4986-DEB5-46DE-817A-1D5990FC61DA.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_preview/V25/EN_US")
 
+(:name "PRINT"
+ :category :PLOT
+ :aliases NIL
+ :intl-name "_PRINT"
+ :synopsis "Prints the drawing to printers, plotters or files."
+ :options NIL
+ :arguments "Dialog-based (Print dialog box): select page setup, printer/plotter, paper size, plot area (View, Extents, Layout, Window), plot scale, plot style table, orientation, offset and plot options."
+ :description "Opens the Print dialog box to specify print options and to preview or print the current drawing. The dialog allows users to print and preview drawings to plotters and files; Academic licenses add a watermark to print output."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_print/V25/EN_US")
+
+(:name "PROFILEMANAGER"
+ :category :CUSTOMIZATION
+ :aliases NIL
+ :intl-name "_PROFILEMANAGER"
+ :synopsis "Opens the User profile manager dialog box."
+ :options ("Create" "Set Current" "Copy" "Delete" "Export" "Import" "Start")
+ :arguments "Dialog-based (User Profile Manager): select an existing profile or create/import a new one, then perform the desired operation."
+ :description "Enables users to manage BricsCAD user profiles through a dedicated dialog interface. This tool allows creation, modification, backup, and restoration of custom user settings and preferences across different BricsCAD installations."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_profilemanager/V25/EN_US")
+
 (:name "PROJECTGEOMETRY"
  :category :|3D|
  :aliases NIL
@@ -9312,6 +17192,21 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-BD03320F-3430-4C2F-80A3-AAC1167AF019.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_propulate/V25/EN_US")
 
+(:name "PROXYINFO"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_PROXYINFO"
+ :synopsis "Opens the Proxy information dialog box."
+ :options ("Don't show proxy graphics" "Show proxy graphics"
+           "Show proxy bounding box")
+ :arguments "No user-supplied arguments; opens a dialog box."
+ :description "Opens a dialog to view information about proxy entities and toggle their display in the current drawing. Users can control proxy graphics visibility through three display options."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_proxyinfo/V25/EN_US")
+
 (:name "PSBSCALE"
  :category :BLOCK
  :aliases NIL
@@ -9325,6 +17220,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-20C3AD1E-34CC-471C-9842-2C8A3F622907.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_psbscale/V25/EN_US")
+
+(:name "PSETUPIN"
+ :category :PLOT
+ :aliases NIL
+ :intl-name "_PSETUPIN"
+ :synopsis "Opens the Import Page Setups dialog box."
+ :options NIL
+ :arguments "Execute the command; select a source file (DWG, DWT, or DXF); choose which page setups to import from the displayed list."
+ :description "Launches a dialog allowing users to select a DWG, DWT, or DXF file and import specific page setups from that file into the current drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_psetupin/V25/EN_US")
 
 (:name "PSOUT"
  :category :FILE
@@ -9496,6 +17405,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-1FB628B7-C2AF-4B6D-B83E-20ADDD70614D.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_qdim/V25/EN_US")
 
+(:name "QLATTACH"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_QLATTACH"
+ :synopsis "Associates a leader to an annotation entity."
+ :options NIL
+ :arguments "Select a leader entity; select an MText, Tolerance, or Block entity."
+ :description "Links a leader entity to an annotation element such as MText, Tolerance, or Block by first selecting the leader, then selecting the annotation entity to attach it to."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_qlattach/V25/EN_US")
+
 (:name "QLATTACHSET"
  :category :ANNOTATION
  :aliases NIL
@@ -9552,6 +17475,62 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-CF3C039B-CF22-4933-928A-93A3AA71C4FA.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_qnew/V25/EN_US")
 
+(:name "QPRINT"
+ :category :PLOT
+ :aliases NIL
+ :intl-name "_QPRINT"
+ :synopsis "Prints the drawing using the default print configuration."
+ :options NIL
+ :arguments "No user-supplied arguments; prints using the default configuration (a warning appears if no default printer is configured)."
+ :description "Enables quick printing without displaying the Print dialog box. A warning appears if no default printer is configured, and users should pre-configure print properties using the PAGESETUP command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_qprint/V25/EN_US")
+
+(:name "QQUIT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_QQUIT"
+ :synopsis "Quickly closes all drawings and exits."
+ :options NIL
+ :arguments "No user inputs required; dialogs appear per drawing only for unsaved files."
+ :description "An Express Tools utility that closes all open drawings and exits BricsCAD. If all files are already saved, the application closes immediately without prompts. For unsaved files, a dialog appears for each drawing, allowing the user to save or discard changes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_qquit/V25/EN_US")
+
+(:name "QRLEADER"
+ :category :ANNOTATION
+ :aliases NIL
+ :intl-name "_QRLEADER"
+ :synopsis "Creates a leader and displays its text as a QR code."
+ :options NIL
+ :arguments "The command-line options and input sequence are identical to the LEADER command (not detailed on this page)."
+ :description "Generates a leader with text represented as a QR code by default. The QR code appears as a raster image. Users can use the Properties panel to convert any text or mtext into a QR code and configure encoding options for specific scanner hints."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_qrleader/V25/EN_US")
+
+(:name "QRTEXT"
+ :category :TEXT
+ :aliases NIL
+ :intl-name "_QRTEXT"
+ :synopsis "Creates an MText and displays it as a QR code."
+ :options NIL
+ :arguments "The command-line options and input sequence are identical to the MTEXT command (not detailed on this page)."
+ :description "Generates an MText object that is represented as a QR code by default. Users can modify QR code properties through the Properties panel, including enabling/disabling the feature, adjusting optical image size, and selecting from seven QR code hint types (EMail, Phone, vCard, MeCard, Sms, Mms, Geolocation)."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_qrtext/V25/EN_US")
+
 (:name "QSAVE"
  :category :FILE
  :aliases NIL
@@ -9593,6 +17572,34 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-DFBE6C48-893B-4CE1-9B28-0656FABFAAB7.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_qtext/V25/EN_US")
+
+(:name "QUADRANT"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_QUADRANT"
+ :synopsis "Toggles the Quadrant entity snap."
+ :options NIL
+ :arguments "No arguments documented; toggles the running quadrant snap (modifying OSMODE), or temporarily disables the snap when used within another command."
+ :description "Enables or disables snapping to quadrant points. When launched at the command prompt, it toggles a running entity snap and modifies the OSMODE system variable. It can also be used within another command to temporarily disable the snap without changing OSMODE."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_quadrant/V25/EN_US")
+
+(:name "QUESTIONMARK"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_QUESTIONMARK"
+ :synopsis "Opens the Bricsys Help Center."
+ :options NIL
+ :arguments "No arguments required; opens the help center directly."
+ :description "Launches the main page of the Bricsys Help Center website in your default web browser. It provides access to information about BricsCAD commands, system variables, and workflows while allowing the help window to remain open during drawing work."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_questionmark/V25/EN_US")
 
 (:name "QUICKCALC"
  :category :INQUIRY
@@ -9720,6 +17727,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-A7A32623-24A4-453C-B3DD-877A6E4D6216.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ray/V25/EN_US")
 
+(:name "REASSOCAPP"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_REASSOCAPP"
+ :synopsis "Opens the Reassociate entity data dialog box."
+ :options ("Skip" "Remove the existing application before reassociating")
+ :arguments "Specify the original application name, the new application name, and select an option (Skip or Remove existing application)."
+ :description "Opens a dialog to associate extended entity data with a specific application. Users can reassociate entities from one application name to another."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_reassocapp/V25/EN_US")
+
 (:name "RECOVER"
  :category :FILE
  :aliases NIL
@@ -9747,6 +17768,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-3925BB47-5AB2-4BDB-A5D7-54CF8008B18C.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_recoverall/V25/EN_US")
+
+(:name "RECSCRIPT"
+ :category :CUSTOMIZATION
+ :aliases NIL
+ :intl-name "_RECSCRIPT"
+ :synopsis "Records keystrokes in the current drawing and saves them to an SCR script file."
+ :options NIL
+ :arguments "Run the command; select/name an SCR file in the dialog; click Save; perform drawing operations (recorded until STOPSCRIPT is issued)."
+ :description "Opens a dialog for selecting an SCR file. Once saved, all subsequent commands and pick points entered in the drawing editor are recorded until the STOPSCRIPT command is executed. To replay the recorded actions, use the SCRIPT command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_recscript/V25/EN_US")
 
 (:name "RECTANG"
  :category :DRAW
@@ -9847,6 +17882,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8CCABD96-4B68-4678-8E69-0335928DAEF9.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_redrawall/V25/EN_US")
 
+(:name "REDSDKINFO"
+ :category :INQUIRY
+ :aliases NIL
+ :intl-name "_REDSDKINFO"
+ :synopsis "Displays rendering related hardware and driver specifications in the Command line."
+ :options NIL
+ :arguments "No arguments documented; prints a report in the command window (press F2 for the prompt history window)."
+ :description "Prints a report in the command window showing information about your computer's graphics capabilities. Users can press F2 to access the prompt history window."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_redsdkinfo/V25/EN_US")
+
 (:name "REFCLOSE"
  :category :BLOCK
  :aliases NIL
@@ -9874,6 +17923,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-C2F74110-2DA4-46DA-99EB-E89CF32D30B9.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_refedit/V25/EN_US")
+
+(:name "REFERENCECURVES"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_REFERENCECURVES"
+ :synopsis "Creates reference geometry to automatically align a block during insertion."
+ :options ("Parametrize" "Accept")
+ :arguments "Select entities to use as reference geometry, then choose between parametrizing the curves or accepting them directly."
+ :description "Allows users to designate entities as reference curves that will be moved to a REFERENCE_CURVES layer, enabling automatic alignment of blocks or drawings upon insertion. Reference curves can align blocks with matching geometry and can be parametrized to support flexible insertion in varying contexts like walls of different thicknesses."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_referencecurves/V25/EN_US")
 
 (:name "REFSET"
  :category :BLOCK
@@ -9973,6 +18036,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-F68C58E5-9C43-447B-85F0-3918CC346DA0.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_reinit/V25/EN_US")
 
+(:name "REMOVESKETCHFEATURE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_REMOVESKETCHFEATURE"
+ :synopsis "Removes all sketch features at once but keeps the corresponding 3D solid."
+ :options NIL
+ :arguments "Specify whether or not to remove all existing sketch features (detailed sequence not documented)."
+ :description "Eliminates all existing sketch features that were created when the CREATESKETCHFEATURE system variable was enabled, while preserving the associated 3D solids. Users can specify whether to remove all sketch features or not."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_removesketchfeature/V25/EN_US")
+
 (:name "RENAME"
  :category :EDIT
  :aliases ("DDRENAME" "REN")
@@ -9986,6 +18063,21 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-99C5072C-C71E-4BF7-9B3B-69B3BEA07940.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rename/V25/EN_US")
+
+(:name "RENDER"
+ :category :RENDER
+ :aliases ("RR")
+ :intl-name "_RENDER"
+ :synopsis "Opens the Render dialog box to create photo-realistic renderings of the current drawing."
+ :options ("Render destination: Window, File"
+           "Output size: Width, Height, Same as viewport size")
+ :arguments "Select render destination (Window or File with optional browse); specify output dimensions (width and height in pixels, or match viewport size)."
+ :description "Opens the Render dialog box to create a photo-realistic rendering of the current drawing. The dialog allows users to specify render destination (window or file) and output size in pixels."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_render/V25/EN_US")
 
 (:name "RENDERCROP"
  :category :RENDER
@@ -10058,6 +18150,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-551FE653-C249-41B4-80A9-8462EB8CD88A.htm"
  :source-bricscad NIL)
 
+(:name "RENDERWINCLOSE"
+ :category :RENDER
+ :aliases NIL
+ :intl-name "_RENDERWINCLOSE"
+ :synopsis "Closes the Render window."
+ :options NIL
+ :arguments "No user inputs or arguments required."
+ :description "Closes the Render window that displays results from the Render command. This command has no additional parameters or options documented."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_renderwinclose/V25/EN_US")
+
 (:name "RENDERWINDOW"
  :category :RENDER
  :aliases NIL
@@ -10086,6 +18192,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8C78739A-A90D-4A01-B665-77E116D595EC.htm"
  :source-bricscad NIL)
 
+(:name "REPORTPANELCLOSE"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_REPORTPANELCLOSE"
+ :synopsis "Closes the Report panel."
+ :options NIL
+ :arguments "No arguments specified."
+ :description "Closes the Report panel to hide it from the current workspace. If the Report panel is stacked when you close it, the Report tab or icon is removed from the stack."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_reportpanelclose/V25/EN_US")
+
+(:name "REPORTPANELOPEN"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_REPORTPANELOPEN"
+ :synopsis "Opens the Report panel."
+ :options NIL
+ :arguments "No user-supplied arguments required."
+ :description "Opens the Report panel to display it in the current workspace at its previously saved size and location. The panel provides feedback for relevant commands including DMAUDIT, DMSIMPLIFY, DMSIMPLIFYALL, DMSTITCH, and sheet metal commands."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_reportpanelopen/V25/EN_US")
+
 (:name "REPURLS"
  :category :EDIT
  :aliases NIL
@@ -10099,6 +18233,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0F9B7467-74F3-4884-8DFA-747F0D6952E2.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_repurls/V25/EN_US")
+
+(:name "RESETASSOCVIEWS"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_RESETASSOCVIEWS"
+ :synopsis "Removes associativity between 2D drawings and 3D models."
+ :options NIL
+ :arguments "No arguments or inputs specified."
+ :description "Removes the link between 2D drawings and 3D models that were created by commands like VIEWBASE. This feature allows users to preserve drawing layouts at specific points during 3D model development, such as for archival purposes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_resetassocviews/V25/EN_US")
 
 (:name "RESETBLOCK"
  :category :BLOCK
@@ -10341,6 +18489,132 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-28585C1C-65B8-41E0-90A3-7C043123EF7A.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtext/V25/EN_US")
 
+(:name "RTEXTAPP"
+ :category :TEXT
+ :aliases NIL
+ :intl-name "_RTEXTAPP"
+ :synopsis "Assigns a specific text file editor used for the RTEXT command."
+ :options NIL
+ :arguments "Not documented on the page (specifies the text editor for RTEXT)."
+ :description "Assigns a specific text file editor used for the RTEXT command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtextapp/V25/EN_US")
+
+(:name "RTLOOK"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_RTLOOK"
+ :synopsis "Looks around in a 3D scene."
+ :options ("Pan" "Zoom" "Constrained sphere" "Sphere")
+ :arguments "Mouse interaction only: hold the left mouse button and move the mouse; right-click for context menu (Pan, Zoom, Constrained sphere, Sphere)."
+ :description "Enables real-time viewing manipulation in 3D drawings. Users hold the left mouse button and move the mouse to navigate the scene dynamically."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtlook/V25/EN_US")
+
+(:name "RTPAN"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_RTPAN"
+ :synopsis "Pans the drawing in real-time."
+ :options ("Pan" "Zoom" "Constrained sphere" "Sphere")
+ :arguments "Mouse interaction only: hold the left mouse button and move the mouse (optionally with Shift to restrict to X/Y viewport directions)."
+ :description "Enables real-time panning of drawings. Users hold down the mouse's left button and move the mouse to pan. Pressing Shift restricts panning to the X and Y viewport directions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtpan/V25/EN_US")
+
+(:name "RTROT"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_RTROT"
+ :synopsis "Rotates 3D drawings in a constrained manner, in real-time."
+ :options ("Pan" "Zoom" "Constrained sphere" "Sphere")
+ :arguments "Mouse interaction only: left-click to initiate rotation, then move the mouse; right-click for context menu options."
+ :description "Enables users to rotate 3D drawings by holding the mouse's left button and moving the mouse. The rotation behavior is influenced by the ORBITAUTOTARGET system variable, which determines whether rotation occurs around the pick point or the object center. The RTISOLATESELECTION variable controls whether selected objects are automatically isolated during rotation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtrot/V25/EN_US")
+
+(:name "RTROTCTR"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_RTROTCTR"
+ :synopsis "Rotates 3D drawings about a center point that you pick in the drawing, in real-time."
+ :options ("Pan" "Zoom" "Constrained sphere" "Sphere")
+ :arguments "Pick a center point in the drawing, then hold the left mouse button and move the mouse; right-click for context menu options."
+ :description "Enables real-time 3D rotation by holding the left mouse button and moving the mouse. A constrained rotation cursor appears during the operation, and users can access a context menu to switch between viewing modes including pan, zoom, and different rotation types."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtrotctr/V25/EN_US")
+
+(:name "RTROTF"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_RTROTF"
+ :synopsis "Rotates 3D drawings about a fixed point, in real-time."
+ :options ("Pan" "Zoom" "Constrained sphere" "Sphere")
+ :arguments "Mouse interaction only: left-click to initiate, then move the mouse to rotate; right-click for context menu options."
+ :description "Enables real-time rotation of 3D drawings around a selected point. Users hold the left mouse button and move the mouse to rotate the view. The ORBITAUTOTARGET system variable controls whether rotation occurs around the picked point or the object's center."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtrotf/V25/EN_US")
+
+(:name "RTROTX"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_RTROTX"
+ :synopsis "Rotates 3D drawings in real-time about the x axis."
+ :options ("Pan" "Zoom" "Constrained sphere" "Sphere")
+ :arguments "Mouse interaction only: hold the left mouse button and move the mouse to rotate; right-click for context menu options."
+ :description "Enables real-time rotation of 3D drawings around the x axis. Users hold the left mouse button and move the mouse to rotate. The ORBITAUTOTARGET system variable determines whether rotation occurs around the pick point or the object's center."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtrotx/V25/EN_US")
+
+(:name "RTROTY"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_RTROTY"
+ :synopsis "Rotates 3D drawings in real-time about the y axis."
+ :options ("Pan" "Zoom" "Constrained sphere" "Sphere")
+ :arguments "Mouse interaction only: hold the left mouse button and move the mouse to rotate; right-click for context menu options."
+ :description "Enables real-time rotation of 3D drawings along the y-axis. Users hold the left mouse button and move the mouse to perform the rotation. A rotation cursor appears during the operation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtroty/V25/EN_US")
+
+(:name "RTROTZ"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_RTROTZ"
+ :synopsis "Rotates 3D drawings in real-time about the z axis."
+ :options ("Pan" "Zoom" "Constrained sphere" "Sphere")
+ :arguments "Mouse interaction only: hold the left mouse button and move the mouse to rotate; right-click for context menu options."
+ :description "Enables real-time rotation of 3D drawings specifically around the z-axis. Users hold down the mouse's left button and move the mouse to rotate, with a rotation cursor displayed during this operation. A context menu accessible via right-click allows switching to other viewing modes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtrotz/V25/EN_US")
+
 (:name "RTUCS"
  :category :VIEW
  :aliases NIL
@@ -10356,6 +18630,62 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-2750036B-5E46-4D54-8023-8CB263294FE8.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtucs/V25/EN_US")
 
+(:name "RTUPDOWN"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_RTUPDOWN"
+ :synopsis "Moves the viewpoint up and down, and left and right in a 3D scene, in real time."
+ :options ("Pan" "Zoom" "Constrained sphere" "Sphere")
+ :arguments "Mouse interaction only: hold the left mouse button and move the mouse to navigate; right-click for context menu options."
+ :description "Enables real-time viewpoint navigation by holding the left mouse button and moving the mouse to adjust the view vertically and horizontally. A context menu accessible via right-click allows switching between different viewing modes including pan, zoom, and rotation options."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtupdown/V25/EN_US")
+
+(:name "RTWALK"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_RTWALK"
+ :synopsis "Walks left-right and forward-backwards through 3D scenes, in real-time."
+ :options ("Pan" "Zoom" "Constrained sphere" "Sphere")
+ :arguments "Mouse interaction only: hold the left mouse button and move the mouse to walk; right-click for context menu options."
+ :description "Enables real-time navigation through 3D drawings by holding the left mouse button and moving the mouse to walk in different directions. A walk cursor displays during movement, and users can access a context menu by right-clicking to switch between viewing modes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtwalk/V25/EN_US")
+
+(:name "RTZOOM"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_RTZOOM"
+ :synopsis "Zooms the viewpoint in and out of the drawing in real-time."
+ :options ("Pan" "Zoom" "Constrained sphere" "Sphere")
+ :arguments "Mouse interaction only: hold the left mouse button and move the mouse to zoom, release to finish; right-click for context menu options."
+ :description "Enables real-time zoom functionality by displaying a zoom cursor. Users hold down the mouse's left button and move the mouse to zoom in or out of their drawing interactively. A right-click context menu allows switching between viewing modes including pan, zoom, and rotation operations."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rtzoom/V25/EN_US")
+
+(:name "RULESURF"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_RULESURF"
+ :synopsis "Creates 3D polygon mesh by connecting two separate linear entities (short for 'ruled surfaces')."
+ :options NIL
+ :arguments "Select the first boundary entity (an open linear object such as line, arc, polyline, or spline); select the second boundary entity."
+ :description "Generates a 3D polygon mesh in the shape of a ruled surface. Users specify two separate boundary entities, where the first boundary must be an open object such as a line, arc, polyline, or spline. The command does not accept closed or 3D entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_rulesurf/V25/EN_US")
+
 (:name "SAVE"
  :category :FILE
  :aliases ("SA")
@@ -10369,6 +18699,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-155255B4-ADFA-4C21-958F-601DE09260EB.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_save/V25/EN_US")
+
+(:name "SAVE-CLOSEALL"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_SAVE-CLOSEALL"
+ :synopsis "Saves and closes all open drawings."
+ :options NIL
+ :arguments "No user inputs required; a Save Copy As dialog appears per modified drawing, and a save-before-closing dialog for the final drawing."
+ :description "Automatically saves any modified drawings before closing them. If changes exist since the last save, a Save Copy As dialog appears for each drawing. For the final open drawing, BricsCAD presents a dialog offering the option to save before closing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_savecloseall/V25/EN_US")
 
 (:name "SAVEALL"
  :category :FILE
@@ -10397,6 +18741,34 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-1FF801F9-7FEE-4494-854D-4704A7784232.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_saveas/V25/EN_US")
+
+(:name "SAVEASR12"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_SAVEASR12"
+ :synopsis "Opens the Save drawing as dialog box."
+ :options NIL
+ :arguments "Dialog-based; no typed command-line argument sequence documented."
+ :description "Opens the Save drawing as dialog box to save data from the current drawing to an R11/12 DWG file. This allows users to export their current drawing in the older R11/R12 DWG format."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_saveasr12/V25/EN_US")
+
+(:name "SAVEFILEFOLDER"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_SAVEFILEFOLDER"
+ :synopsis "Opens the default file explorer."
+ :options NIL
+ :arguments "No user inputs or arguments specified."
+ :description "Launches the system file explorer in a separate window, providing quick access to automatic save and backup files. This external window remains open while working on drawings in BricsCAD and can be moved and resized using standard window controls."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_savefilefolder/V25/EN_US")
 
 (:name "SAVETOWEBMOBILE"
  :category :FILE
@@ -10456,6 +18828,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-A6C97247-F81C-4D83-BF2B-BE9F6BD55EB0.htm"
  :source-bricscad NIL)
 
+(:name "SCREENSHOT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_SCREENSHOT"
+ :synopsis "Opens the Save image file dialog box."
+ :options NIL
+ :arguments "Dialog-based; no typed argument sequence documented (the current view determines the saved image)."
+ :description "Opens the Save image file dialog box to save data from the current drawing to a PNG file. The current view determines what gets included in the saved image."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_screenshot/V25/EN_US")
+
 (:name "SCRIPT"
  :category :SYSTEM
  :aliases ("SCR")
@@ -10483,6 +18869,20 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-77FF5E24-4ECD-41D6-BD8A-9DD5AAD468EE.htm"
  :source-bricscad NIL)
+
+(:name "SCROLLBAR"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_SCROLLBAR"
+ :synopsis "Toggles the WNDLSCRL system variable."
+ :options ("ON" "OFF" "TOGGLE")
+ :arguments "Select one option (ON, OFF, or TOGGLE) at the command prompt."
+ :description "Shows or hides the drawing window scroll bars by toggling the WNDLSCRL system variable. It can be launched at the command line or within another command using the apostrophe prefix ('SCROLLBAR)."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_scrollbar/V25/EN_US")
 
 (:name "SECTION"
  :category :|3D|
@@ -10540,6 +18940,23 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-D061EB7A-6B8D-4CB9-9C2F-6C68B711FA33.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_sectionplanesettings/V25/EN_US")
 
+(:name "SECTIONPLANETOBLOCK"
+ :category :|3D|
+ :aliases ("GENERATESECTION")
+ :intl-name "_SECTIONPLANETOBLOCK"
+ :synopsis "Opens the Create section/elevation dialog box."
+ :options ("Destination (Insert new block, Replace existing block, Export to file)"
+           "Source geometry (Include all entities, Select entities)"
+           "Section plane (selection)"
+           "Section type (2D cross section/elevation, 3D cutaway section)")
+ :arguments "Select the section plane; choose destination options (insertion point, scale, rotation if inserting); specify source geometry; select section type; confirm via the dialog box."
+ :description "Converts section planes into blocks that can be inserted into the current drawing or exported as DWG files. It provides options for creating either 2D cross-sections/elevations or 3D cutaway sections based on predefined section plane settings."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_sectionplanetoblock/V25/EN_US")
+
 (:name "SECTIONSPINNERS"
  :category :|3D|
  :aliases NIL
@@ -10553,6 +18970,20 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-D8F761E3-BA9F-4DAE-8BAA-71170B015F6F.htm"
  :source-bricscad NIL)
+
+(:name "SECURITY"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_SECURITY"
+ :synopsis "Opens the Security dialog box."
+ :options ("Very High" "High" "Medium" "Low" "Trusted Publishers")
+ :arguments "Dialog-based; select a VBA macro security level and manage trusted publishers via the dialog interface."
+ :description "Allows users to configure VBA macro security settings in BricsCAD by selecting from five security levels that control whether macros run automatically, require user approval, or are disabled entirely."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_security/V25/EN_US")
 
 (:name "SECURITYOPTIONS"
  :category :SYSTEM
@@ -10583,6 +19014,62 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0DD5DA73-9DC5-4424-8FED-7BBE3BE52A4D.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_select/V25/EN_US")
 
+(:name "SELECTALIGNEDFACES"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_SELECTALIGNEDFACES"
+ :synopsis "Selects all faces in a model that are coplanar with a selected face."
+ :options NIL
+ :arguments "Select one face from the model; the command then automatically selects all coplanar faces."
+ :description "Identifies and highlights all faces within a 3D model that share the same plane as a user-selected face. The matching faces are displayed with outlines to indicate their selection status."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_selectalignedfaces/V25/EN_US")
+
+(:name "SELECTALIGNEDSOLIDS"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_SELECTALIGNEDSOLIDS"
+ :synopsis "Selects all solids in a model that have faces coplanar with the selected face."
+ :options NIL
+ :arguments "Select one face; the command then automatically selects all coplanar solids."
+ :description "Identifies and highlights solids whose faces are positioned in the same plane as a user-selected face. The matching solids appear outlined in the model view."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_selectalignedsolids/V25/EN_US")
+
+(:name "SELECTCONNECTEDFACES"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_SELECTCONNECTEDFACES"
+ :synopsis "Selects all faces in a model that are connected to a selected face."
+ :options NIL
+ :arguments "Select one face; the command then automatically selects all connected faces."
+ :description "Identifies and selects all faces within a 3D model that share connectivity with a user-specified face. The connected faces are displayed with an outline highlighting. The operation requires the user to pick a single face, after which the tool automatically selects all adjacent faces."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_selectconnectedfaces/V25/EN_US")
+
+(:name "SELECTCONNECTEDSOLIDS"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_SELECTCONNECTEDSOLIDS"
+ :synopsis "Selects all solids in a model that are connected to a selected face."
+ :options NIL
+ :arguments "Select one face; the command then automatically selects all solids connected to that face."
+ :description "Enables users to identify and select solid objects that are physically connected to a chosen face. The selection is visually highlighted with an outline showing all connected solids as one group."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_selectconnectedsolids/V25/EN_US")
+
 (:name "SELECTCOUNT"
  :category :SELECTION
  :aliases NIL
@@ -10612,6 +19099,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-C160A9C9-1287-4111-8D27-05AFBAA7C29F.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_selectsimilar/V25/EN_US")
 
+(:name "SELGRIPS"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_SELGRIPS"
+ :synopsis "Displays entity grips for editing."
+ :options NIL
+ :arguments "Select entities (or press Ctrl+A for all), then interact with the displayed grips by dragging to edit."
+ :description "Selects entities and then displays their grips. Users can edit selected entities by dragging the grips. The command highlights selected items in the drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_selgrips/V25/EN_US")
+
 (:name "SETBYLAYER"
  :category :MODIFY
  :aliases NIL
@@ -10627,6 +19128,63 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-A9D9FF14-4EF6-4A25-B0F4-506C6B792E9E.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_setbylayer/V25/EN_US")
 
+(:name "SETLICENSELEVEL"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_SETLICENSELEVEL"
+ :synopsis "Changes the available commands by setting the license type."
+ :options ("Lite" "Pro" "Bim" "Mechanical" "Ultimate" "No license" "Trial"
+           "Full")
+ :arguments "Specify the BricsCAD license level (Lite, Pro, Bim, Mechanical, Ultimate) or Communicator license level (No license, Trial, Full); exact command-line syntax not documented. Restart BricsCAD for the change to take effect."
+ :description "Allows users to run BricsCAD and Communicator at different license levels, which affects available functionality. Users must exit and restart BricsCAD for the new license level to take effect."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_setlicenselevel/V25/EN_US")
+
+(:name "SETTINGS"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_SETTINGS"
+ :synopsis "Opens the Settings dialog box."
+ :options NIL
+ :arguments "No user-supplied arguments; opens a dialog box to view and modify system variables."
+ :description "Opens the Settings dialog box to view and modify system variables. Most system variables are available here, though the SETVAR command allows modification of all variables. Changed values display in blue, with an option to restore defaults via right-click."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_settings/V25/EN_US")
+
+(:name "SETTINGSSEARCH"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_SETTINGSSEARCH"
+ :synopsis "Opens the Settings dialog box only for a list of words specified by the user."
+ :options NIL
+ :arguments "Supply a comma- or semicolon-separated list of search words, matched against settings to filter results in the Settings dialog box."
+ :description "Searches the Settings dialog box for user-specified keywords separated by commas or semicolons, displaying only filtered system variables that match the search terms. The search matches against category titles, variable titles, names, values, and help text."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_settingssearch/V25/EN_US")
+
+(:name "SETUCS"
+ :category :SYSTEM
+ :aliases ("DDUCSP" "UCP")
+ :intl-name "_SETUCS"
+ :synopsis "Opens the User Coordinate System dialog box."
+ :options NIL
+ :arguments "Dialog-based: set the selected UCS relative to (Current UCS or World Coordinate System), toggle change view to plan view (Yes/No), select UCS (Previous, Current View, Set to WCS), and choose a planar UCS (Top, Left, Front, Bottom, Right, Back)."
+ :description "Enables users to specify a viewpoint for the current UCS (User Coordinate System) through an interactive dialog, allowing selection from predefined orthographic views or custom coordinate system options."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_setucs/V25/EN_US")
+
 (:name "SETVAR"
  :category :SYSTEM
  :aliases ("SET")
@@ -10640,6 +19198,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-01E38833-6D3A-4AA5-A446-C03B44E7AB56.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_setvar/V25/EN_US")
+
+(:name "SHADE"
+ :category :VIEW
+ :aliases ("SHA")
+ :intl-name "_SHADE"
+ :synopsis "Generates shaded images of 3D drawings."
+ :options NIL
+ :arguments NIL
+ :description "The SHADE command creates shaded representations of the current 3D drawing based on the active SHADEMODE setting. These shaded images serve as simplified alternatives to visual styles and rendered images."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_shade/V25/EN_US")
 
 (:name "SHADEMODE"
  :category :VIEW
@@ -10839,6 +19411,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-C28D46C3-4C3D-4D37-86B9-E0D235F82EC6.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_sigvalidate/V25/EN_US")
 
+(:name "SIMPLIFY"
+ :category :MODIFY
+ :aliases NIL
+ :intl-name "_SIMPLIFY"
+ :synopsis "Simplifies entities."
+ :options ("Apply" "Finish" "Back" "change Input selection" "change Settings")
+ :arguments NIL
+ :description "Reduces the number of vertices in polylines, splines, and non-associative hatches while preserving their general shape. The result is easier manipulation and smaller file sizes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_simplify/V25/EN_US")
+
+(:name "SINGLETON"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_SINGLETON"
+ :synopsis "Determines whether (or not) multiple copies of BricsCAD can run at the same time."
+ :options ("Yes" "No")
+ :arguments NIL
+ :description "Controls whether BricsCAD operates in single-instance or multi-instance mode. The command can be invoked transparently during other operations. Note that certain third-party integrations may require single-instance operation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_singleton/V25/EN_US")
+
 (:name "SKETCH"
  :category :DRAW
  :aliases ("FREEHAND")
@@ -10866,6 +19466,637 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-27593C5E-4B89-41F2-872B-927D69517CBF.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_slice/V25/EN_US")
+
+(:name "SMASSEMBLYEXPORT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_SMASSEMBLYEXPORT"
+ :synopsis "Searches the assembly structure of the current drawing for 3D solids, mechanical blocks and external references within a component and applies the SMCONVERT and SMEXPORT2D commands."
+ :options ("Output folder" "Bend Table" "DXF version")
+ :arguments NIL
+ :description "This command processes assembly structures to identify and convert sheet metal parts. It generates DXF files organized by thickness in a user-defined output folder and produces an HTML report documenting solid classifications and processing status."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smassemblyexport/V25/EN_US")
+
+(:name "SMBEAD"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMBEAD"
+ :synopsis "Creates associative bead features along a curve lying on the flange."
+ :options ("Select control curve" "Profile radius" "Round radius")
+ :arguments NIL
+ :description "Creates associative bead features on sheet metal parts from 2D profiles that update automatically when the defining profile changes. Unlike linear form features from the library, bead features created by this command can follow arbitrary trajectories."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smbead/V25/EN_US")
+
+(:name "SMBEND"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMBEND"
+ :synopsis "Converts hard edges (sharp edges between flange faces) or junctions into bends."
+ :options ("Entire Model")
+ :arguments NIL
+ :description "This BricsCAD Mechanical command transforms sharp edges and junctions in sheet metal models into bend features. Users can select specific edges, junctions, flanges, or 3D solids, or apply the operation to the entire model to automatically detect and convert all qualifying edges."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smbend/V25/EN_US")
+
+(:name "SMBENDCREATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMBENDCREATE"
+ :synopsis "Converts hard edges (sharp edges between flange faces) or junctions into bends."
+ :options NIL
+ :arguments NIL
+ :description "This command is now obsolete and users should employ the SMBEND command as its replacement instead."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smbendcreate/V25/EN_US")
+
+(:name "SMBENDSWITCH"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMBENDSWITCH"
+ :synopsis "Converts bends to lofted bends."
+ :options NIL
+ :arguments NIL
+ :description "The command allows selection of bend faces that will be transformed into lofted bends within sheet metal design."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smbendswitch/V25/EN_US")
+
+(:name "SMCONVERT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMCONVERT"
+ :synopsis "Automatically recognizes sheet metal features."
+ :options ("Entire Model")
+ :arguments NIL
+ :description "This command analyzes 3D solids and converts them to Sheet Metal bodies by identifying flanges, bends, lofted bends, ribs, form features, and holes in the input geometry."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smconvert/V25/EN_US")
+
+(:name "SMDELETE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMDELETE"
+ :synopsis "Removes features from sheet metal elements."
+ :options NIL
+ :arguments NIL
+ :description "The command eliminates bends or junctions by restoring hard edges between flanges. It can delete flanges along with adjacent bends and remove miters by restoring cut geometry. Adjacent flanges extend to junction configuration with the deleted flange."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smdelete/V25/EN_US")
+
+(:name "SMDISSOLVE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMDISSOLVE"
+ :synopsis "Removes the sheet metal data from the selected features."
+ :options ("Select faces on model" "Remove from the entire drawing")
+ :arguments NIL
+ :description "The command dissolves sheet metal features on 3D solid faces. Once dissolved, these features no longer appear in the Mechanical Browser, and their faces can be freely moved, rotated, or modified using push-pull operations."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smdissolve/V25/EN_US")
+
+(:name "SMEXPLODE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMEXPLODE"
+ :synopsis "Converts bends, forms, hems, jogs, junctions and tabs into their possibly primitive features and removes the original feature."
+ :options NIL
+ :arguments NIL
+ :description "The command decomposes complex sheet metal features into simpler primitive components. For example, it can break down a form into flanges and bends, or separate a multi-component bend into individual bend features. The original feature is removed after decomposition."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smexplode/V25/EN_US")
+
+(:name "SMEXPORT2D"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_SMEXPORT2D"
+ :synopsis "Exports the unfolded representation of a sheet metal body."
+ :options NIL
+ :arguments NIL
+ :description "Exports a sheet metal body's unfolded representation as a 2D profile in .dxf or .dwg formats. The command displays a save dialog where users can specify the output file location and name."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smexport2d/V25/EN_US")
+
+(:name "SMEXPORTOSM"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_SMEXPORTOSM"
+ :synopsis "Exports a sheet metal solid to an Open Sheet Metal (.osm) file format."
+ :options ("add Decorations" "add 2D entities" "set Layer")
+ :arguments NIL
+ :description "The command reinterprets a sheet metal model as an OSM part and saves it in *.osm format. It unfolds and scales unfolded planes for each feature, then connects these plane parts according to the original model. The resulting file uses mm or inch units based on the document's MEASUREMENT system variable, with proper scaling via INSUNITS."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smexportosm/V25/EN_US")
+
+(:name "SMEXTRUDE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMEXTRUDE"
+ :synopsis "Creates sheet metal part by extruding a planar polyline."
+ :options NIL
+ :arguments "1. Select a planar polyline  2. Specify the height of extrusion"
+ :description "Generates a sheet metal part from a planar polyline through orthogonal extrusion perpendicular to the polyline's plane. The thickening direction applies separately to each flange to preserve overall dimensions. Users select a planar polyline and specify the extrusion height."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smextrude/V25/EN_US")
+
+(:name "SMFLANGE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMFLANGE"
+ :synopsis "Creates a base (initial) flange."
+ :options ("Up" "Middle" "Down" "Accept model")
+ :arguments NIL
+ :description "Creates a base flange of a sheet metal part from a closed planar profile. A body and flange are added to the Mechanical Browser for each selected closed polyline or region."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smflange/V25/EN_US")
+
+(:name "SMFLANGEBASE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMFLANGEBASE"
+ :synopsis "Creates a base (initial) flange."
+ :options NIL
+ :arguments NIL
+ :description "This command is now obsolete; users should employ the SMFLANGE command as its replacement."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smflangebase/V25/EN_US")
+
+(:name "SMFLANGEBEND"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMFLANGEBEND"
+ :synopsis "Allows to bend an existing flange along a line, obeying the k-factor for given bend radius."
+ :options ("New line" "Angle" "Radius" "Switch sides" "Toggle bend extents"
+           "ACcept")
+ :arguments NIL
+ :description "This BricsCAD Mechanical command bends existing flanges along a specified line while respecting the k-factor for the configured bend radius. Users can define bend location, angle, and radius parameters before creating the bend."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smflangebend/V25/EN_US")
+
+(:name "SMFLANGECONNECT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMFLANGECONNECT"
+ :synopsis "Closes gaps between two arbitrarily oriented non-coplanar flanges."
+ :options NIL
+ :arguments NIL
+ :description "This sheet metal command connects two flanges by closing gaps between them, even when the flanges are not coplanar. Users select the planar thickness faces of two flanges to establish the connection."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smflangeconnect/V25/EN_US")
+
+(:name "SMFLANGECONTOUR"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMFLANGECONTOUR"
+ :synopsis "Creates a new flange from a closed contour and attaches it to an existing sheet metal part."
+ :options NIL
+ :arguments NIL
+ :description "The command extrudes a flange from a contour and connects it with selected flanges via bends. This operation allows users to build complex sheet metal geometries by adding flanged features based on user-defined closed contours."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smflangecontour/V25/EN_US")
+
+(:name "SMFLANGEEDGE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMFLANGEEDGE"
+ :synopsis "Creates flanges to a sheet metal part."
+ :options ("Dynamic dimensions" "Material Outside" "Material Inside" "Angle"
+           "Length" "Radius" "Taper Angle" "Back" "Skip" "Width"
+           "Toggle connection" "Set Direction" "2Points" "Object" "Last" "View"
+           "Xaxis" "Yaxis" "Zaxis")
+ :arguments NIL
+ :description "The command generates one or more flanges on sheet metal parts by pulling edges from existing flanges or lofted bends. Users can define flanges through dynamic dimensions specifying height and angle, or by positioning the location directly."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smflangeedge/V25/EN_US")
+
+(:name "SMFLANGEROTATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMFLANGEROTATE"
+ :synopsis "Rotates a selected flange of a sheet metal part."
+ :options NIL
+ :arguments NIL
+ :description "This command is obsolete and has been superseded by the SMROTATE command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smflangerotate/V25/EN_US")
+
+(:name "SMFLIP"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMFLIP"
+ :synopsis "Swaps sides of a selected flange."
+ :options ("Flip reference side only" "Entire Model")
+ :arguments NIL
+ :description "This command exchanges the reference faces of a flange to the opposite geometric side of the sheet metal part. It can optionally shift flanges by the sheet metal thickness, which proves useful for resolving collisions between flanges and other solids in the model."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smflip/V25/EN_US")
+
+(:name "SMFORM"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMFORM"
+ :synopsis "Converts a selected set of faces to a form feature."
+ :options ("Create new form feature" "Explode form feature" "COnvert to form")
+ :arguments NIL
+ :description "The SMFORM command enables manual creation of form features by selecting faces or dissolves existing form features into flanges and bends. This proves useful when automatic recognition fails or produces incorrect results."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smform/V25/EN_US")
+
+(:name "SMHEM"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMHEM"
+ :synopsis "Creates one or more hem features on a sheet metal part by pulling one or more edges of an existing flange."
+ :options ("Length" "Width" "Skip" "Back" "Toggle tapering" "Open Hem" "Radius"
+           "Teardrop" "Round")
+ :arguments NIL
+ :description "The SMHEM command enables users to generate hem features in sheet metal design by selecting and manipulating edges of existing flanges. By default, it creates closed hems, but supports multiple variations including open, round, and teardrop shapes with customizable dimensions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smhem/V25/EN_US")
+
+(:name "SMHEMCREATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMHEMCREATE"
+ :synopsis "Creates one or more hem features on a sheet metal part by pulling one or more edges of an existing flange."
+ :options NIL
+ :arguments NIL
+ :description "This command is obsolete and has been superseded by the SMHEM command. Users should employ the newer SMHEM command instead for creating hem features on sheet metal components."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smhemcreate/V25/EN_US")
+
+(:name "SMIMPRINT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMIMPRINT"
+ :synopsis "Splits thickness faces of a sheet metal part by imprinted edges, according to adjacent flanges and bends."
+ :options NIL
+ :arguments NIL
+ :description "This command imprints edges onto thickness faces to divide them into distinct areas that can be subsequently reworked in an automated manner. The process creates separated regions based on adjacent flange and bend features."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smimprint/V25/EN_US")
+
+(:name "SMJOG"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMJOG"
+ :synopsis "Creates a jog on a flange or on cylindrical lofted bends that avoid the collision with the other extent."
+ :options ("Angle" "Length" "Height" "Radius")
+ :arguments "1. Select an edge (flange or cylindrical lofted bend edge)  2. Enter jog length (via Dynamic Input Mode when active)  3. Optionally specify: angle, height, or radius parameters"
+ :description "The SMJOG command is a BricsCAD Mechanical feature that generates jogs on flanges or cylindrical lofted bends. This operation helps prevent collisions while minimizing material removal. Users can apply jogs to external edges or, optionally, to internal edges of sheet metal features."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smjog/V25/EN_US")
+
+(:name "SMJUNCTION"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMJUNCTION"
+ :synopsis "Creates a junction feature on hard edges (sharp edges between flange faces) and bends or curved hard edges between two bends (or lofts)."
+ :options ("Entire model")
+ :arguments NIL
+ :description "This command establishes junction features at hard edges and curved connections in sheet metal designs. The \"Heal coincident junction\" setting controls how BricsCAD recognizes and converts junction designs with coincident faces into regular junctions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smjunction/V25/EN_US")
+
+(:name "SMJUNCTIONCREATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMJUNCTIONCREATE"
+ :synopsis "Creates a junction feature on hard edges and curved sections between bends."
+ :options NIL
+ :arguments NIL
+ :description "This command is obsolete. Use the SMJUNCTION command instead. The original functionality involved creating junction features on sharp edges between flange faces and curved hard edges between two bends or lofts."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smjunctioncreate/V25/EN_US")
+
+(:name "SMJUNCTIONSWITCH"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMJUNCTIONSWITCH"
+ :synopsis "Allows changing a symmetrical junction feature to one with overlapping faces."
+ :options NIL
+ :arguments NIL
+ :description "This BricsCAD Mechanical command enables users to transform a symmetrical junction by selecting the junction face, which converts it to a configuration with overlapping faces."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smjunctionswitch/V25/EN_US")
+
+(:name "SMLOFT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMLOFT"
+ :synopsis "Creates sheet metal part."
+ :options ("fillets Radius" "Thickness" "Single bend" "Flanges with bends"
+           "Alignment" "thicken Inside" "Both sides" "thicken Outside")
+ :arguments NIL
+ :description "Creates sheet metal parts featuring lofted bends and flanges constructed from two non-coplanar curves. The command offers options to generate only lofted bends or combinations with flanges, along with customizable thickness and fillet radius settings."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smloft/V25/EN_US")
+
+(:name "SMPARAMETRIZE"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_SMPARAMETRIZE"
+ :synopsis "Creates a consistent set of 3D constraint for a selected sheet metal part."
+ :options NIL
+ :arguments NIL
+ :description "This command automatically generates 3D constraints for sheet metal parts while recognizing rectangular hole arrays on flanges. It accounts for implicit constraints from sheet metal features and prevents overdefined constraint systems. Optimal results occur with complete feature sets including flanges, bends, junctions, and relief details."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smparametrize/V25/EN_US")
+
+(:name "SMQUICK"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMQUICK"
+ :synopsis "Suggests the optimal set of splits/junctions/bends for a shelled solid."
+ :options ("Shell offset distance" "Skip" "Off" "Auto" "Interactive")
+ :arguments "Prompts for: (1) shell offset distance, (2) option to skip shell creation, and (3) optimization mode selection (Off/Auto/Interactive)."
+ :description "The SMQUICK command works with 3D solids and sheet metal solids to create shelled solids, reliefs, and convert hard edges into junctions and bends. When applied to sheet metal solids, it recognizes existing features and generates appropriate reliefs, junctions, and bends."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smquick/V25/EN_US")
+
+(:name "SMRELIEF"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMRELIEF"
+ :synopsis "Creates proper corner and bend reliefs."
+ :options ("Entire model" "force Bend reliefs" "Auto")
+ :arguments NIL
+ :description "The SMRELIEF command generates corner and bend reliefs on sheet metal parts. It automatically detects whether reliefs are needed at corners with multiple flanges and at flange edges, with relief sizes determined from the Mechanical Browser settings or command-line input. The tool can force relief creation even when the system wouldn't normally require them."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smrelief/V25/EN_US")
+
+(:name "SMRELIEFCREATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMRELIEFCREATE"
+ :synopsis "Creates proper corner and bend reliefs."
+ :options NIL
+ :arguments NIL
+ :description "The command is obsolete; users are directed to use the SMRELIEF command instead as the replacement tool."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smreliefcreate/V25/EN_US")
+
+(:name "SMRELIEFSWITCH"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMRELIEFSWITCH"
+ :synopsis "Converts corner reliefs."
+ :options ("V-type" "RECtangular" "CIrcular" "SMooth" "RIp" "ROund"
+           "relief Diameter" "relief EXtension" "REference point"
+           "Entire model" "Auto" "Middle" "Corner" "from Global settings")
+ :arguments NIL
+ :description "This command converts corner reliefs to circular, rectangular, or V-shaped types, and converts bend reliefs to smooth, round, rip, or rectangular variants. It also enables modification of parameters for existing corner reliefs."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smreliefswitch/V25/EN_US")
+
+(:name "SMREPAIR"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMREPAIR"
+ :synopsis "SmRepair restores the 3D solid model of a sheet metal part."
+ :options ("Local repairing" "Global repairing" "Scan for lost details")
+ :arguments NIL
+ :description "The SMREPAIR command repairs sheet metal parts using one of three methods: thickening one side to restore the 3D model, fixing lofted bend features, or converting incorrect bends to regular bends. It includes options for local repairs (single element), global repairs (entire solid), and scanning for retained details after repair."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smrepair/V25/EN_US")
+
+(:name "SMREPLACE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMREPLACE"
+ :synopsis "Replaces form features in sheet metal parts."
+ :options ("Yes" "No" "Component Defaults" "Inherit from replaced features"
+           "Edit parameters")
+ :arguments NIL
+ :description "The SMREPLACE command allows users to replace form features (including recognized ones) in sheet metal parts with alternatives from built-in or user libraries. When invoked, it displays a file selection dialog for choosing replacement form features."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smreplace/V25/EN_US")
+
+(:name "SMRIBCREATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMRIBCREATE"
+ :synopsis "Creates associative Rib form features on sheet metal."
+ :options NIL
+ :arguments NIL
+ :description "This command is obsolete and has been superseded by the SMBEAD command for creating associative bead features."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smribcreate/V25/EN_US")
+
+(:name "SMROLLEDEDGE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMROLLEDEDGE"
+ :synopsis "Creates rolled edges on curved flanges."
+ :options ("Angle" "Radius")
+ :arguments "1. Select edges on flanges or the flange face  2. Specify the length of the rolled edge  3. (Optional) Adjust angle parameter  4. (Optional) Adjust radius parameter"
+ :description "The SMROLLEDEDGE command enables users to add rolled edges to sheet metal flanges by selecting edges or flange faces and specifying the desired length. The tool includes options to customize the angle (default 90 degrees) and radius (default equals flange thickness) of the rolled edge."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smrollededge/V25/EN_US")
+
+(:name "SMROTATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMROTATE"
+ :synopsis "Rotates a selected flange of a sheet metal part."
+ :options NIL
+ :arguments NIL
+ :description "The command rotates a selected flange of a sheet metal part with automatic selection of the rotation axis based on design intent. A dynamic field displays the angle between the selected flange and base flange, with the ability to press TAB to view the absolute rotation angle."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smrotate/V25/EN_US")
+
+(:name "SMSELECT"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_SMSELECT"
+ :synopsis "Selects all identical form features in the sheet metal model."
+ :options ("Hard edges" "Same form features" "Similar form features"
+           "Non-orthogonal thickness faces" "Side of sheet metal part"
+           "Flat edges")
+ :arguments NIL
+ :description "The command selects hard edges, same form features, non-orthogonal thickness edges, flat edges, and the side of a sheet metal part in BricsCAD Mechanical."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smselect/V25/EN_US")
+
+(:name "SMSPLIT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMSPLIT"
+ :synopsis "Splits a flange."
+ :options ("Select lines or edges to split the flange" "Center" "Left" "Right"
+           "Accept" "SMart split" "Flange propagate" "vertex Propagate"
+           "draw a New line")
+ :arguments NIL
+ :description "Splits a flange along a polyline drawn on a face, including lofted bends along ruled surfaces. The command name stands for Sheet Metal Split."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smsplit/V25/EN_US")
+
+(:name "SMTAB"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMTAB"
+ :synopsis "Creates tab features on sheet metal parts."
+ :options ("Single tab" "Array tab" "Flip tab" "Length" "Central point"
+           "Slot Number" "Distance" "Round radius" "CHamfer distance")
+ :arguments NIL
+ :description "The SMTAB command enables users to add tab features to sheet metal components through two primary workflows: converting junctions into tabbed junctions (single or multiple tabs) or converting curved hard edges into tabbed connections between flanges and bends."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smtab/V25/EN_US")
+
+(:name "SMTABCREATE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMTABCREATE"
+ :synopsis "Creates tab features on sheet metal parts."
+ :options NIL
+ :arguments NIL
+ :description "This command is obsolete and has been superseded by the SMTAB command for creating tab features on sheet metal parts."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smtabcreate/V25/EN_US")
+
+(:name "SMUNFOLD"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_SMUNFOLD"
+ :synopsis "Creates an unfolded 2D or 3D representation of a sheet metal part."
+ :options ("Associative" "save 2D geometry" "save 3D geometry"
+           "Place view to layout" "Optimize bend annotations" "Keep")
+ :arguments NIL
+ :description "The SMUNFOLD command generates unfolded representations of sheet metal parts. Users select the base flange, specify a placement point, and can save the geometry in 2D or 3D formats. The command supports bidirectional associativity between folded and unfolded models."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_smunfold/V25/EN_US")
 
 (:name "SNAP"
  :category :SYSTEM
@@ -11026,6 +20257,23 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-5530922C-6828-48B1-804C-EDD9053535BD.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_splinedit/V25/EN_US")
 
+(:name "SPOTLIGHT"
+ :category :RENDER
+ :aliases NIL
+ :intl-name "_SPOTLIGHT"
+ :synopsis "Creates a spotlight."
+ :options ("Specify source position" "Specify target position" "Name"
+           "Intensity factor" "Status" "Photometry" "Color" "Kelvin" "Hotspot"
+           "Falloff" "Shadow" "Shape" "Samples" "Visible" "Attenuation"
+           "filterColor" "eXit")
+ :arguments NIL
+ :description "Creates a spotlight that casts a narrow beam toward a target point. The command's options are influenced by the LIGHTUNITS system variable value."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_spotlight/V25/EN_US")
+
 (:name "SSX"
  :category :SELECTION
  :aliases NIL
@@ -11041,6 +20289,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-386ADF5E-C709-4940-8DB4-909C2760A23F.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_ssx/V25/EN_US")
 
+(:name "STANDARDPARTSPANELCLOSE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_STANDARDPARTSPANELCLOSE"
+ :synopsis NIL
+ :options NIL
+ :arguments NIL
+ :description "This command is obsolete. Use LIBRARYPANELCLOSE instead."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_standardpartspanelclose/V25/EN_US")
+
+(:name "STANDARDPARTSPANELOPEN"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_STANDARDPARTSPANELOPEN"
+ :synopsis "This command is obsolete."
+ :options NIL
+ :arguments NIL
+ :description "This command is obsolete. Use LIBRARYPANELOPEN instead."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_standardpartspanelopen/V25/EN_US")
+
 (:name "STANDARDS"
  :category :CUSTOMIZATION
  :aliases NIL
@@ -11054,6 +20330,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-6AE2A5E5-651F-4C3B-8E3C-DE8DED6AA94C.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_standards/V25/EN_US")
+
+(:name "STATBAR"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_STATBAR"
+ :synopsis "Toggles the STATUSBAR system variable."
+ :options ("On" "Off" "Toggle")
+ :arguments NIL
+ :description "The command controls display of the status bar in BricsCAD. It can be invoked at the command prompt or within another command using the apostrophe prefix ('STATBAR)."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_statbar/V25/EN_US")
 
 (:name "STATUS"
  :category :INQUIRY
@@ -11083,6 +20373,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-5E9946B5-D769-4881-BC0F-21F54840683D.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_stlout/V25/EN_US")
 
+(:name "STOPSCRIPT"
+ :category :CUSTOMIZATION
+ :aliases NIL
+ :intl-name "_STOPSCRIPT"
+ :synopsis "Stops the recording of scripts."
+ :options NIL
+ :arguments NIL
+ :description "Terminates script recording that was initiated using the RECSCRIPT command. This allows users to end the capture of keyboard and mouse actions in BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_stopscript/V25/EN_US")
+
 (:name "STRETCH"
  :category :MODIFY
  :aliases ("S")
@@ -11096,6 +20400,34 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-F000A502-D39E-4D31-A8E2-4A626473FB72.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_stretch/V25/EN_US")
+
+(:name "STRUCTUREPANEL"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_STRUCTUREPANEL"
+ :synopsis "Opens the Structure panel."
+ :options NIL
+ :arguments NIL
+ :description "The STRUCTUREPANEL command displays the Structure panel in the current workspace at its previous size and location. This dockable panel enables users to view drawing content as a hierarchical tree, configure how entities are displayed using predefined or custom rules, and select entities to modify their properties while identifying them in model space."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_structurepanel/V25/EN_US")
+
+(:name "STRUCTUREPANELCLOSE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_STRUCTUREPANELCLOSE"
+ :synopsis "Closes the Structure panel."
+ :options NIL
+ :arguments NIL
+ :description "Hides the Structure panel from the current workspace. If stacked, the Structure tab or icon is removed from the stack."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_structurepanelclose/V25/EN_US")
 
 (:name "STYLE"
  :category :TEXT
@@ -11180,6 +20512,34 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-89FB15FE-28B9-4A51-BACA-A393469EE1A6.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_superhatch/V25/EN_US")
+
+(:name "SUPPORTFOLDER"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_SUPPORTFOLDER"
+ :synopsis "Opens the operating system's file manager at the Support folder."
+ :options NIL
+ :arguments NIL
+ :description "The command displays a file manager dialog showing the Support folder's contents, which stores files that drawings and commands require, such as linetype patterns and tool palette libraries."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_supportfolder/V25/EN_US")
+
+(:name "SUPPRESS"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_SUPPRESS"
+ :synopsis "Suppresses the display of entities."
+ :options ("New" "Edit" "Dissolve")
+ :arguments NIL
+ :description "Creates named groups of entities whose display can be toggled off. The display of suppressed entities can be restored through the Mechanical Browser or Parameters Manager panels."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_suppress/V25/EN_US")
 
 (:name "SURFBLEND"
  :category :|3D|
@@ -11307,6 +20667,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-9EB95641-0E3E-45F3-89E6-0ED6CDCC9B05.htm"
  :source-bricscad NIL)
 
+(:name "SVGOPTIONS"
+ :category :SYSTEM
+ :aliases NIL
+ :intl-name "_SVGOPTIONS"
+ :synopsis "Opens the Settings dialog box with the SVG export category expanded."
+ :options NIL
+ :arguments NIL
+ :description "This command launches the Settings dialog, specifically displaying SVG export options so users can view and modify related system variables."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_svgoptions/V25/EN_US")
+
 (:name "SWEEP"
  :category :|3D|
  :aliases NIL
@@ -11391,6 +20765,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-44D79B63-B21B-4F1D-9E0D-1C3B69970BF3.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tabledit/V25/EN_US")
 
+(:name "TABLEEXPORT"
+ :category :TABLE
+ :aliases NIL
+ :intl-name "_TABLEEXPORT"
+ :synopsis "Exports the contents of a table."
+ :options NIL
+ :arguments NIL
+ :description "The TABLEEXPORT command exports table data to CSV or XML file formats through an Export Data dialog box. CSV files can be imported into spreadsheet and database applications for further processing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tableexport/V25/EN_US")
+
+(:name "TABLEMOD"
+ :category :TABLE
+ :aliases NIL
+ :intl-name "_TABLEMOD"
+ :synopsis "Formats the properties of table cells and inserts blocks."
+ :options NIL
+ :arguments NIL
+ :description "The TABLEMOD command allows users to modify table cell properties and insert block references. It provides a toolbar interface for editing table structure, formatting cells, managing content, and applying styles to selected cells. Toolbar and context-menu options include Insert Row Above/Below, Delete Row, Insert Column Left/Right, Delete Column, Merge Cells, Unmerge Cells, Set Border style, Set Cell alignment, Toggle Lock/Unlock Cell, Set Cell Format, Insert block reference, Manage cell content, Cell Style, and Cell Background Color."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tablemod/V25/EN_US")
+
 (:name "TABLESTYLE"
  :category :TABLE
  :aliases NIL
@@ -11433,6 +20835,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-59FB536E-3597-4BFB-B89A-13D9903D3749.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tabsurf/V25/EN_US")
 
+(:name "TANGENT"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_TANGENT"
+ :synopsis "Toggles the Tangent entity snap to enable or disable snapping to tangent."
+ :options NIL
+ :arguments NIL
+ :description "Toggles the Tangent entity snap to enable or disable snapping to tangent. Used at the Command prompt it toggles a running entity snap and adjusts the OSMODE system variable accordingly; launched during another command it temporarily disables the snap for that operation only."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tangent/V25/EN_US")
+
 (:name "TASKBAR"
  :category :SYSTEM
  :aliases NIL
@@ -11446,6 +20862,20 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-C72AE884-5FDE-4F67-8549-0A6183AC04BB.htm"
  :source-bricscad NIL)
+
+(:name "TCASE"
+ :category :TEXT
+ :aliases ("-TCASE")
+ :intl-name "_TCASE"
+ :synopsis "Changes the case of selected text entities."
+ :options ("Standard case" "lowercase" "UPPERCASE" "Title" "tOGGLE cASE")
+ :arguments "Select text entities; the Change Text Case dialog opens to choose the case."
+ :description "Opens the Change Text Case dialog box to modify the case of selected text entities. Five options are available: Standard case (capitalizes first letter of first word), lowercase, UPPERCASE, Title (capitalizes first letter of each word), and tOGGLE cASE (inverts capitalization of each word)."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tcase/V25/EN_US")
 
 (:name "TCIRCLE"
  :category :TEXT
@@ -11461,6 +20891,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-DEB79D5D-671A-437E-9C0F-3DE44F9C92A5.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tcircle/V25/EN_US")
 
+(:name "TCONNECT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_TCONNECT"
+ :synopsis "Connects solid faces and edges of planar surfaces to other solids, planar surfaces or regions."
+ :options ("Connect to nearest" "Disconnect" "Connect")
+ :arguments "Select solid faces or edges of planar surfaces, then select target surfaces or solids to connect to."
+ :description "Joins selected solid faces or edges of planar surfaces to other solid faces, planar surfaces, or regions. When the KEEPCONNECTIONS system variable is enabled, connected solids are automatically subtracted from interfering solids."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tconnect/V25/EN_US")
+
 (:name "TCOUNT"
  :category :TEXT
  :aliases NIL
@@ -11474,6 +20918,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-4B92219C-DA94-4D71-B308-D3818D3C6B8F.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tcount/V25/EN_US")
+
+(:name "TEMPLATEFOLDER"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_TEMPLATEFOLDER"
+ :synopsis "Accesses the folder holding template files."
+ :options NIL
+ :arguments NIL
+ :description "Opens the Templates folder where DWT template files are stored and displays it through the operating system's file manager. Users can double-click any file to open it as a new drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_templatefolder/V25/EN_US")
 
 (:name "TEXT"
  :category :DRAW
@@ -11616,6 +21074,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-50CAFB97-22BA-4224-9B48-60D6E7ABFCF1.htm"
  :source-bricscad NIL)
 
+(:name "TIFFOUT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_TIFFOUT"
+ :synopsis "Saves selected entities to a TIF file."
+ :options NIL
+ :arguments "Select entities to include, then specify the output TIF file in the save dialog."
+ :description "Opens a save dialog allowing users to export drawn entities to a TIFF format file. The TIF file reflects what is shown on the screen, and users must select the entities they wish to include before saving."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tiffout/V25/EN_US")
+
 (:name "TIFOUT"
  :category :FILE
  :aliases NIL
@@ -11643,6 +21115,153 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-990C8D36-CD20-48C0-A711-4F03B33C084C.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_time/V25/EN_US")
+
+(:name "TIN"
+ :category :|3D|
+ :aliases ("-TIN")
+ :intl-name "_TIN"
+ :synopsis "Creates a new TIN (Triangular Irregular Network) Surface from selected source data."
+ :options ("Select entities to create TIN surface" "Import from file"
+           "place Points" "create from Faces" "create from point Cloud"
+           "create from point Groups" "create from cOntours" "create from Mesh"
+           "cLip polygon" "Simplify TIN surface" "Densify TIN surface")
+ :arguments "Select a source data type, then specify input elements; depending on the option, it may request elevation data, file formats, simplification parameters, or polygon selections."
+ :description "Creates a TIN Surface, a three-dimensional geometric representation of a terrain or civil feature that uses Delaunay triangulation to connect points into triangles. The command supports multiple input types and can be modified with boundaries and breaklines."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tin/V25/EN_US")
+
+(:name "TINASSIGNIMAGE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_TINASSIGNIMAGE"
+ :synopsis "Assigns a raster image as a TIN surface material."
+ :options NIL
+ :arguments "Select the TIN surface, then select an attached raster image to assign."
+ :description "Lets users select a TIN surface and attach a raster image to it as material. The system warns when very large raster images are assigned and offers automatic reduction options."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tinassignimage/V25/EN_US")
+
+(:name "TINEDIT"
+ :category :|3D|
+ :aliases ("-TINEDIT")
+ :intl-name "_TINEDIT"
+ :synopsis "Edits a TIN surface."
+ :options ("Add Points" "Add Point Groups" "Add Breaklines" "Add Boundaries"
+           "Remove Points" "Swap Edge" "Point Location" "Point Elevation"
+           "Add Line" "Delete Line" "Remove Outer Edges" "Minimize Flat Areas"
+           "Remove Elevations" "Smoothing")
+ :arguments "Interactive selections of TIN surfaces and geometric objects (points, lines, polygons) depending on the chosen editing operation; specific parameters vary by option (elevation values, distances, angles, boundary types)."
+ :description "Modifies existing TIN Surfaces by adjusting how edges connect points to form triangles. Users can delete existing points and edges, add new ones, or change positions and elevations of current TIN points. Any editing operation can be subsequently modified in the Civil Explorer panel."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tinedit/V25/EN_US")
+
+(:name "TINEXTRACT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_TINEXTRACT"
+ :synopsis "Extracts meshes, solids, points, faces, contours, borders or intersection lines from TIN surfaces, Gradings, or Volume Surfaces."
+ :options ("Major contours" "Minor contours" "Points" "Triangles" "Borders")
+ :arguments "Opens the Extract from dialog box to select which entity type to extract; no command-line argument sequence is documented."
+ :description "Opens the Extract from dialog box allowing users to select which entity type to extract from a TIN surface, Grading, or Volume Surface. Available extraction options include major contours, minor contours, points, triangular faces, and outer boundaries."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tinextract/V25/EN_US")
+
+(:name "TINMERGE"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_TINMERGE"
+ :synopsis "Combines two or more TIN surfaces (or gradings) into a new TIN surface."
+ :options ("Remove merged TIN surfaces (Yes/No)")
+ :arguments "Select base TIN surface, select one or more TIN surfaces to merge, then specify whether to keep or delete original surfaces."
+ :description "Merges a base TIN surface with one or more additional TIN surfaces, replacing the portion of the base surface that the merged surfaces cover. Users select which original surfaces to retain or delete after merging."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tinmerge/V25/EN_US")
+
+(:name "TINMODIFY"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_TINMODIFY"
+ :synopsis "Deforms or smoothens a selected TIN surface."
+ :options ("Deform (specify Contour, select Entity, draw Polygon)"
+           "Smoothen (create circular boundary, select Entity, draw Polygon)")
+ :arguments "Select a TIN surface, choose between Deform or Smoothen operations, then provide specific inputs depending on the selected method (contour specifications, entity selection, or polygon points)."
+ :description "Modifies a TIN surface through deformation or smoothing operations, either altering the existing surface or creating a new modified version."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tinmodify/V25/EN_US")
+
+(:name "TINPROJECT"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_TINPROJECT"
+ :synopsis "Projects a point-based entities or linear entities to a TIN surface."
+ :options NIL
+ :arguments "Select the TIN surface, choose entities to project, then decide whether to retain or remove the original entities."
+ :description "Projects point entities (Point, Block, Text) or linear entities (Line, Polyline, Circle) onto a TIN Surface. Users select the TIN surface, then choose entities to project, and decide whether to retain or remove the original entities."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tinproject/V25/EN_US")
+
+(:name "TINSERT"
+ :category :TABLE
+ :aliases NIL
+ :intl-name "_TINSERT"
+ :synopsis "Inserts blocks into the cell of a table."
+ :options NIL
+ :arguments "Select a table cell; the Insert Block in Cell dialog box opens. If blocks contain attributes, you are prompted to enter values based on the ATTDIA variable setting."
+ :description "Opens the Insert Block in Cell dialog box after you select a table cell. This feature allows you to place blocks, DWG files, or DXF files into table cells, with support for both text and blocks coexisting in a single cell."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tinsert/V25/EN_US")
+
+(:name "TINVOLUME"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_TINVOLUME"
+ :synopsis "Creates a TIN volume surface between a base and comparison TIN surfaces or an elevation."
+ :options ("Elevation")
+ :arguments "Select base TIN surface, select comparison TIN surface (or enter elevation value), then select bounding area for the TIN volume surface."
+ :description "Generates volume surfaces by comparing two TIN surfaces or a TIN surface against a specified elevation. When associativity is enabled, these surfaces automatically update when source surfaces change. The command provides access to volume statistics including cut/fill volumes and areas."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tinvolume/V25/EN_US")
+
+(:name "TINWATERDROP"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_TINWATERDROP"
+ :synopsis "Creates water drop paths on TIN surfaces as 3D polylines."
+ :options NIL
+ :arguments "Select TIN surface(s), move the cursor over the surface (a preview line appears), then click the left mouse button to create the polyline."
+ :description "Enables real-time visualization of water flow paths across a TIN Surface. As you move the cursor over the surface, a line preview displays the potential drop path. Clicking the left mouse button converts this preview into a permanent 3D polyline representing the actual water flow trajectory."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tinwaterdrop/V25/EN_US")
 
 (:name "TJUST"
  :category :TEXT
@@ -11912,6 +21531,35 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-D0836C0C-FC99-4521-8220-06D42D9F46FE.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tscale/V25/EN_US")
 
+(:name "TSPACEINVADERS"
+ :category :SELECTION
+ :aliases NIL
+ :intl-name "_TSPACEINVADERS"
+ :synopsis "Creates a selection set of text entities that have overlapping entities."
+ :options ("all" "Yes" "No")
+ :arguments "Select entities to check (or 'all' for the entire drawing), then answer a Yes/No option for individual entity querying before results are returned."
+ :description "This Express Tools command identifies and selects text entities that are obscured or overlapped by other drawing entities. Users can check selected entities or an entire drawing, with the count of overlapping instances displayed in the command line."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tspaceinvaders/V25/EN_US")
+
+(:name "TUTORIALSOPEN"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_TUTORIALSOPEN"
+ :synopsis "Provides direct access to in-product tutorials."
+ :options ("Start from the beginning" "Start" "Continue" "Restart"
+           "Buy license")
+ :arguments "Opens a dialog box prompting user experience questions, then displays available lessons based on responses."
+ :description "Launches interactive tutorials teaching BricsCAD fundamentals and unique features through step-by-step instructions, animated images, and tailored sample drawings. Users answer experience-level questions to access customized lessons. An internet connection is required."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_tutorialsopen/V25/EN_US")
+
 (:name "TXT2MTXT"
  :category :TEXT
  :aliases ("COMBINETEXT")
@@ -11939,6 +21587,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-80BE94B9-2ECE-438E-AEF8-984F7D27E0F9.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_txtexp/V25/EN_US")
+
+(:name "TYPEDPLANS"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_TYPEDPLANS"
+ :synopsis "Opens the BIM Typed Plans dialog box for managing and editing typed plans."
+ :options NIL
+ :arguments NIL
+ :description "Launches a dialog that lists all Typed Plans available in the Support folder, enabling users to search, edit, clone, rename, and create new typed plans for BIM documentation purposes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_typedplans/V25/EN_US")
 
 (:name "U"
  :category :EDIT
@@ -12039,6 +21701,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-2729A466-B199-4840-B92B-4D8A38A8ADB8.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_undo/V25/EN_US")
 
+(:name "UNDOENT"
+ :category :EDIT
+ :aliases NIL
+ :intl-name "_UNDOENT"
+ :synopsis "Undoes revisions to entities."
+ :options ("Number of steps to undo" "rEvisions" "eXit" "Redo")
+ :arguments NIL
+ :description "Reverses editing changes made to individual entities, functioning similarly to UNDO but targeting specific objects. Treats blocks, xrefs, and 3D solids as single entities, but processes groups as individual components."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_undoent/V25/EN_US")
+
 (:name "UNGROUP"
  :category :MODIFY
  :aliases NIL
@@ -12095,6 +21771,48 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-1DAE2080-84E4-413E-BB4E-F5D2A96CB14A.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_units/V25/EN_US")
 
+(:name "UPDATEFIELD"
+ :category :TEXT
+ :aliases NIL
+ :intl-name "_UPDATEFIELD"
+ :synopsis "Updates the display values of fields."
+ :options NIL
+ :arguments NIL
+ :description "Fields are dynamic text elements that change as drawing conditions change. The UPDATEFIELD command forces selected field text to refresh and reflect current changes. Related to the FIELDEVAL system variable."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_updatefield/V25/EN_US")
+
+(:name "UPDATELAYOUTBLOCK"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_UPDATELAYOUTBLOCK"
+ :synopsis "Updates an inserted layout block reference."
+ :options ("Select inserted block")
+ :arguments "Select the inserted layout block reference to be updated."
+ :description "Refreshes a layout block reference that was inserted via the INSERTLAYOUT command, applying any changes made to the source drawing's layout. The source file name must remain unchanged from when the layout was originally inserted for the update to function properly."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_updatelayoutblock/V25/EN_US")
+
+(:name "UPDATESKETCH"
+ :category :PARAMETRIC
+ :aliases NIL
+ :intl-name "_UPDATESKETCH"
+ :synopsis "Changes the parameters of sketch features."
+ :options NIL
+ :arguments "Specify the feature name, then the parameter name, and set the new value for it."
+ :description "Allows you to modify a parameter of a sketch feature. This command works with sketch features created by EXTRUDE, LOFT, SWEEP, and REVOLVE commands when the CREATESKETCHFEATURE system variable is enabled."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_updatesketch/V25/EN_US")
+
 (:name "UPDATETHUMBSNOW"
  :category :SYSTEM
  :aliases NIL
@@ -12108,6 +21826,34 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-99DAEB10-7364-4B0B-809B-1E75DED6981E.htm"
  :source-bricscad NIL)
+
+(:name "URL"
+ :category :OTHER
+ :aliases ("BROWSER" "ONWEB")
+ :intl-name "_URL"
+ :synopsis "Opens the default Web browser."
+ :options NIL
+ :arguments NIL
+ :description "Opens the default Web browser to browse the internet starting from a specified URL. The browser window remains separate, allowing continued work in BricsCAD while browsing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_url/V25/EN_US")
+
+(:name "USAVE-CLOSEALL"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_USAVE-CLOSEALL"
+ :synopsis "Closes all drawings without saving them, except for the active one."
+ :options NIL
+ :arguments NIL
+ :description "This Express Tools command closes all open drawings in BricsCAD without saving changes, while preserving the currently active drawing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_usavecloseall/V25/EN_US")
 
 (:name "VBAIDE"
  :category :CUSTOMIZATION
@@ -12151,6 +21897,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-E8DE3E52-F249-4147-94E3-C5436319846F.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_vbaman/V25/EN_US")
 
+(:name "VBANEW"
+ :category :CUSTOMIZATION
+ :aliases NIL
+ :intl-name "_VBANEW"
+ :synopsis "Begins a new VBA project."
+ :options NIL
+ :arguments NIL
+ :description "Initiates a new Visual Basic for Applications project within BricsCAD, allowing users to start developing VBA code for automation and customization purposes."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_vbanew/V25/EN_US")
+
 (:name "VBAPREF"
  :category :CUSTOMIZATION
  :aliases NIL
@@ -12179,6 +21939,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-9711DBC3-3A4C-4B38-93B9-AE7CD854CAB8.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_vbarun/V25/EN_US")
 
+(:name "VBASECURITY"
+ :category :CUSTOMIZATION
+ :aliases NIL
+ :intl-name "_VBASECURITY"
+ :synopsis "Opens the Security dialog box."
+ :options NIL
+ :arguments NIL
+ :description "Launches the Security dialog box, allowing users to specify if VBA macros are allowed to run automatically. Related to the SECURITY command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_vbasecurity/V25/EN_US")
+
 (:name "VBAUNLOAD"
  :category :CUSTOMIZATION
  :aliases NIL
@@ -12192,6 +21966,21 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-F60C4525-DA15-47A1-8107-1C5CF107A958.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_vbaunload/V25/EN_US")
+
+(:name "VERSIONCONTROL"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_VERSIONCONTROL"
+ :synopsis "Enables multi-user collaboration for managing projects in the cloud."
+ :options ("Init" "CReate local" "check Out" "CHeck In" "Commit" "Update"
+           "Revert" "History" "REname")
+ :arguments "Log into the Bricsys account, then supply a project name; subsequent options require specifying folders, selecting files, or entering check-in messages as applicable."
+ :description "Enables multi-user collaboration by storing and managing projects in the cloud. Drawings are stored in the cloud using Bricsys 24/7 and checked in and out from each user's local machine."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_versioncontrol/V25/EN_US")
 
 (:name "VIEW"
  :category :VIEW
@@ -12237,6 +22026,21 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-E0F79E2F-8838-4470-B8D0-8626343A22D2.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_viewbase/V25/EN_US")
 
+(:name "VIEWBREAK"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_VIEWBREAK"
+ :synopsis "Creates a broken view on drawing views generated by the VIEWBASE command in a paper space layout."
+ :options ("Type (Straight, Spline, Zigzag, sMall zigzag, Current)" "Vertical"
+           "Horizontal")
+ :arguments "Select the drawing view, select the first point (first cut plane), then select the second point (second cut plane)."
+ :description "Generates broken views from existing drawing views in paper space. It operates by selecting a drawing view and specifying two cut planes. The broken symbol direction adapts automatically based on viewport proportions."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_viewbreak/V25/EN_US")
+
 (:name "VIEWCOMPONENT"
  :category :VIEW
  :aliases NIL
@@ -12267,6 +22071,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-EDA005E8-85E5-40DB-AB8E-B664B01627C4.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_viewdetail/V25/EN_US")
 
+(:name "VIEWDETAILSTYLE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_VIEWDETAILSTYLE"
+ :synopsis "Opens the Drawing explorer dialog box with View Detail Styles selected."
+ :options NIL
+ :arguments NIL
+ :description "Displays the Drawing Explorer dialog to create and modify view detail styles, allowing users to configure identifier properties (text style, color, height, position), symbol properties (appearance, color, size), and boundary properties (line color, linetype, lineweight) for detail viewports."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_viewdetailstyle/V25/EN_US")
+
 (:name "VIEWEDIT"
  :category :VIEW
  :aliases NIL
@@ -12282,6 +22100,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-3DAE7BC9-8F39-484F-B0F8-C039510E4F22.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_viewedit/V25/EN_US")
 
+(:name "VIEWEXPORT"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_VIEWEXPORT"
+ :synopsis "Exports drawing views to various destinations."
+ :options ("Clipboard" "File" "Model space")
+ :arguments "Click inside one or more viewports or select all views, then choose the export destination."
+ :description "Exports drawing views generated by the VIEWBASE, VIEWSECTION or VIEWDETAIL commands to the model space, clipboard, or disc as file formats."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_viewexport/V25/EN_US")
+
 (:name "VIEWGO"
  :category :VIEW
  :aliases NIL
@@ -12295,6 +22127,34 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8747BD5F-B7C0-49F7-A2DF-E796BD51A76B.htm"
  :source-bricscad NIL)
+
+(:name "VIEWHORIZONTAL"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_VIEWHORIZONTAL"
+ :synopsis "Rotates viewpoint to the horizontal."
+ :options NIL
+ :arguments NIL
+ :description "Adjusts the 3D viewpoint by setting the Z component of the 3D viewpoint to 0 in the current UCS, so that the viewpoint rotates to the horizontal. It functions equivalently to using the VIEWPOINT command with Z set to 0."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_viewhorizontal/V25/EN_US")
+
+(:name "VIEWLABEL"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_VIEWLABEL"
+ :synopsis "Service command for context menu operations."
+ :options NIL
+ :arguments NIL
+ :description "An internal service command that users should not enter directly. The system executes it automatically when a context menu item is selected."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_viewlabel/V25/EN_US")
 
 (:name "VIEWPLAY"
  :category :VIEW
@@ -12323,6 +22183,20 @@
  :bricscad-versions NIL
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-23072042-6A25-448A-8567-0354E5636EF5.htm"
  :source-bricscad NIL)
+
+(:name "VIEWPOINT"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_VIEWPOINT"
+ :synopsis "Changes the 3D viewpoint."
+ :options NIL
+ :arguments NIL
+ :description "VIEWPOINT is an alias for the VPOINT command, which modifies the three-dimensional perspective in BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_viewpoint/V25/EN_US")
 
 (:name "VIEWPROJ"
  :category :VIEW
@@ -12452,6 +22326,77 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8C6FECB1-F8FA-4AD4-8843-A94D02119514.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_viewupdate/V25/EN_US")
 
+(:name "VISIBILITYSTATES"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_VISIBILITYSTATES"
+ :synopsis "Creates and edits visibility states in the Command line."
+ :options ("New parameter" "Add entities" "Remove entities"
+           "make entities Visible" "make entities Invisible" "Select state")
+ :arguments "Supply parameter name, then state name, then entity selection (using any selection method), then subsequent edits via numbered parameter/state references or new names."
+ :description "Enables users to create and manage visibility states for parametric blocks through the command-line interface. It also opens the Visibility States panel if previously closed. Note that BricsCAD visibility states are incompatible with AutoCAD visibility states."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_visibilitystates/V25/EN_US")
+
+(:name "VISIBILITYSTATESPANELCLOSE"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_VISIBILITYSTATESPANELCLOSE"
+ :synopsis "Closes the Visibility States panel."
+ :options NIL
+ :arguments NIL
+ :description "Provides a way to dismiss the Visibility States panel in BricsCAD. This command works in conjunction with the VISIBILITYSTATESPANELOPEN command to manage access to visibility parameters and states."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_visibilitystatespanelclose/V25/EN_US")
+
+(:name "VISIBILITYSTATESPANELOPEN"
+ :category :BLOCK
+ :aliases NIL
+ :intl-name "_VISIBILITYSTATESPANELOPEN"
+ :synopsis "Opens the Visibility States panel in the current workspace."
+ :options NIL
+ :arguments NIL
+ :description "Displays the Visibility States panel, which allows users to manage visibility parameters and states for blocks. The panel can be floated, docked, or stacked within the workspace and reopens at its previous size and location."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_visibilitystatespanelopen/V25/EN_US")
+
+(:name "VISIBLE"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_VISIBLE"
+ :synopsis "A service command used internally by the program when context menu items are selected."
+ :options NIL
+ :arguments NIL
+ :description "This is a service command which is not supposed to be entered directly by the user. It is used by the program when a context menu item is selected."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_visible/V25/EN_US")
+
+(:name "VISUALSTYLES"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_VISUALSTYLES"
+ :synopsis "Opens the Drawing explorer dialog box with Visual Styles selected."
+ :options NIL
+ :arguments NIL
+ :description "Displays the Drawing Explorer dialog with the Visual Styles category active, allowing users to view and modify visual styles in the current drawing. Users can adjust face settings, edge settings, lighting, environment parameters, and apply or reset visual styles to control how 3D models appear in viewports."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_visualstyles/V25/EN_US")
+
 (:name "VISUALSTYLESCLOSE"
  :category :VIEW
  :aliases NIL
@@ -12466,6 +22411,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-4ED2D58F-043A-4F82-A483-79FA3E0E32B6.htm"
  :source-bricscad NIL)
 
+(:name "VLIDE"
+ :category :CUSTOMIZATION
+ :aliases ("VLISP")
+ :intl-name "_VLIDE"
+ :synopsis "Opens the BricsCAD LISP Advanced Development Environment (BLADE)."
+ :options NIL
+ :arguments NIL
+ :description "Launches an external window for the BricsCAD LISP Advanced Development Environment, enabling interactive editing and debugging of LISP applications. The window remains open independently while you continue working on drawings in BricsCAD and can be moved and resized using standard controls."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_vlide/V25/EN_US")
+
 (:name "VLISP"
  :category :CUSTOMIZATION
  :aliases ("VLIDE")
@@ -12479,6 +22438,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-5601ACC6-C4F6-4375-9C2C-3DBCAE2880B1.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_vlisp/V25/EN_US")
+
+(:name "VMLOUT"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_VMLOUT"
+ :synopsis "Exports drawings in VML format, embedded in an HTML file."
+ :options NIL
+ :arguments NIL
+ :description "Opens the Create HTML file dialog box to save data from the current drawing to an HTM file. The data is stored in VML format and embedded in an HTML file."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_vmlout/V25/EN_US")
 
 (:name "VPCLIP"
  :category :VIEW
@@ -12666,6 +22639,48 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-297ED4C5-DADC-4C3B-B4FA-94C56A04721B.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_wblock/V25/EN_US")
 
+(:name "WCASCADE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_WCASCADE"
+ :synopsis "Arranges windows in a cascading fashion."
+ :options NIL
+ :arguments NIL
+ :description "Overlaps all windows in a cascading fashion, with the current drawing the topmost one (short for 'window cascade'). Windows only command."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_wcascade/V25/EN_US")
+
+(:name "WCLOSE"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_WCLOSE"
+ :synopsis "Closes the current drawing."
+ :options NIL
+ :arguments NIL
+ :description "Terminates the active drawing file after saving. Users are presented with a save dialog if unsaved changes exist."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_wclose/V25/EN_US")
+
+(:name "WCLOSEALL"
+ :category :FILE
+ :aliases ("CLOSEALL")
+ :intl-name "_WCLOSEALL"
+ :synopsis "Closes all drawings."
+ :options NIL
+ :arguments NIL
+ :description "Closes all open drawings after saving them. If any drawings have unsaved changes, BricsCAD prompts the user to save each one before closing."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_wcloseall/V25/EN_US")
+
 (:name "WEBLIGHT"
  :category :RENDER
  :aliases NIL
@@ -12723,6 +22738,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-7E20A4D7-EB74-4354-8ADE-7EF172F0E16D.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_whohas/V25/EN_US")
 
+(:name "WHTILE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_WHTILE"
+ :synopsis "Tiles windows horizontally."
+ :options NIL
+ :arguments NIL
+ :description "Arranges drawing windows in a horizontal tiling layout, tiling the drawing windows horizontally to maximize their width (short for 'window horizontal tile')."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_whtile/V25/EN_US")
+
+(:name "WIARRANGE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_WIARRANGE"
+ :synopsis "Lines up iconized drawing windows."
+ :options NIL
+ :arguments NIL
+ :description "Arranges the icons of minimized windows at the bottom of the graphical screen. This command functions only when windows are minimized as icons and is available exclusively on the Windows platform."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_wiarrange/V25/EN_US")
+
 (:name "WIPEOUT"
  :category :DRAW
  :aliases NIL
@@ -12765,6 +22808,34 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-6B7ECC84-F2D5-402C-8719-E8FE2171AE96.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_wmfout/V25/EN_US")
 
+(:name "WNEXT"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_WNEXT"
+ :synopsis "Switches to the next window."
+ :options NIL
+ :arguments NIL
+ :description "Brings another drawing window to the foreground when multiple drawings are open. It cycles through windows in the order they were created and is primarily intended for use in macros."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_wnext/V25/EN_US")
+
+(:name "WORKSETS"
+ :category :FILE
+ :aliases NIL
+ :intl-name "_WORKSETS"
+ :synopsis "Opens the Working sets dialog box."
+ :options ("Load Last Session" "Load Working Set" "Save Working Set" "Help")
+ :arguments NIL
+ :description "Enables users to create and load sets of drawing files, allowing an entire group of drawings to be opened simultaneously. This feature streamlines workflow by saving and restoring groups of related documents."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_worksets/V25/EN_US")
+
 (:name "WORKSPACE"
  :category :CUSTOMIZATION
  :aliases NIL
@@ -12778,6 +22849,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-8B5DFCAD-7CE6-4C57-9CA3-5243E54D5EB1.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_workspace/V25/EN_US")
+
+(:name "WPREV"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_WPREV"
+ :synopsis "Displays the previous drawing window."
+ :options NIL
+ :arguments NIL
+ :description "Switches to the previous drawing window when multiple drawings are open in BricsCAD."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_wprev/V25/EN_US")
 
 (:name "WSSAVE"
  :category :CUSTOMIZATION
@@ -12806,6 +22891,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-97AAABD6-8232-43CD-9D97-ED13F13D2D80.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_wssettings/V25/EN_US")
+
+(:name "WVTILE"
+ :category :VIEW
+ :aliases NIL
+ :intl-name "_WVTILE"
+ :synopsis "Tiles windows vertically."
+ :options NIL
+ :arguments NIL
+ :description "Arranges all open drawing windows in a vertical tiling layout to maximize their height, with the most recently active window highlighted."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_wvtile/V25/EN_US")
 
 (:name "XATTACH"
  :category :BLOCK
@@ -12893,6 +22992,20 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-F0299B36-232F-446E-9F81-98F300B36991.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_xdata/V25/EN_US")
 
+(:name "XDEDIT"
+ :category :EDIT
+ :aliases NIL
+ :intl-name "_XDEDIT"
+ :synopsis "Edits extended entity data (xdata) associated with an entity."
+ :options ("APP Name" "DXF Code" "DXF Value" "Pick <<")
+ :arguments NIL
+ :description "Opens the XDATA Editor dialog box which allows you to edit the extended entity data (xdata) associated with an entity. The dialog provides fields for selecting an application name, modifying DXF codes and values, and picking new values."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_xdedit/V25/EN_US")
+
 (:name "XDLIST"
  :category :INQUIRY
  :aliases NIL
@@ -12920,6 +23033,20 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-6B6E69D0-62C1-4D96-B568-1818E3C997F4.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_xedges/V25/EN_US")
+
+(:name "XFACES"
+ :category :|3D|
+ :aliases NIL
+ :intl-name "_XFACES"
+ :synopsis "Extracts faces from 3D entities."
+ :options ("Move")
+ :arguments "Select 3D solids or surfaces, then optionally process the Move option using two points or a displacement vector."
+ :description "Creates copies of one or more faces extracted from 3D solids and 3D surfaces, with an optional ability to reposition the extracted geometry."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_xfaces/V25/EN_US")
 
 (:name "XLINE"
  :category :DRAW
@@ -12992,6 +23119,90 @@
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-7DD70C3C-B8AD-40F1-8A69-5D1EECEAB013.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_xref/V25/EN_US")
 
+(:name "ZCENTER"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_ZCENTER"
+ :synopsis "Toggles the Center of a Face 3D entity snap."
+ :options NIL
+ :arguments NIL
+ :description "Enables or disables snapping to the center point of a face on 3D entities. It can be launched at the command prompt to toggle a running entity snap, or within another command to temporarily disable the snap for that operation only."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_zcenter/V25/EN_US")
+
+(:name "ZINTERSECTION"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_ZINTERSECTION"
+ :synopsis "Toggles the Intersection 3D entity snap."
+ :options NIL
+ :arguments NIL
+ :description "Enables or disables snapping to intersection points in 3D drawings. It can be used at the command prompt to toggle a running entity snap, which updates the OSMODE system variable, or within another command to temporarily disable the snap for just that operation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_zintersection/V25/EN_US")
+
+(:name "ZKNOT"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_ZKNOT"
+ :synopsis "Toggles the Knot 3D entity snap."
+ :options NIL
+ :arguments NIL
+ :description "Enables or disables snapping to spline knots in BricsCAD. It can be launched at the command prompt to toggle a running entity snap, which updates the OSMODE system variable accordingly, or used within another command to temporarily disable the snap for just that operation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_zknot/V25/EN_US")
+
+(:name "ZMIDPOINT"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_ZMIDPOINT"
+ :synopsis "Toggles the Midpoint 3D entity snap."
+ :options NIL
+ :arguments NIL
+ :description "Enables or disables snapping to the midpoint of 3D entities. It can be invoked at the command prompt to toggle a running entity snap (modifying the OSMODE system variable), or within another command to temporarily disable the snap without changing OSMODE."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_zmidpoint/V25/EN_US")
+
+(:name "ZNEAREST"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_ZNEAREST"
+ :synopsis "Toggles the Nearest 3D entity snap."
+ :options NIL
+ :arguments NIL
+ :description "Enables or disables snapping to the nearest 3D entity. It can be launched at the command prompt to toggle a running entity snap, which updates the OSMODE system variable, or used within another command to temporarily disable the snap for just that operation."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_znearest/V25/EN_US")
+
+(:name "ZNONE"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_ZNONE"
+ :synopsis "Disables all 3D entity snaps."
+ :options NIL
+ :arguments NIL
+ :description "Turns off running 3D entity snaps to prevent cursor snapping to 3D objects. It can be used independently to change the 3DOSMODE system variable to zero, or within another command to temporarily disable snaps for that operation only."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_znone/V25/EN_US")
+
 (:name "ZOOM"
  :category :VIEW
  :aliases ("Z")
@@ -13006,5 +23217,33 @@
  :bricscad-versions "all"
  :source-autocad "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-66E7DB72-B2A7-4166-9970-9E19CC06F739.htm"
  :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_zoom/V25/EN_US")
+
+(:name "ZPERPENDICULAR"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_ZPERPENDICULAR"
+ :synopsis "Toggles the Perpendicular on a face 3D entity snap."
+ :options NIL
+ :arguments NIL
+ :description "Toggles the Perpendicular on a face 3D entity snap to enable or disable snapping to extension. This command can be executed at the Command prompt to toggle a running entity snap, adjusting the OSMODE system variable accordingly, or launched within another command to disable the snap for only that operation without modifying OSMODE."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_zperpendicular/V25/EN_US")
+
+(:name "ZVERTEX"
+ :category :OTHER
+ :aliases NIL
+ :intl-name "_ZVERTEX"
+ :synopsis "Toggles the Vertex 3D entity snap."
+ :options NIL
+ :arguments NIL
+ :description "Enables or disables snapping to vertices in 3D space. It can be invoked at the command prompt to toggle a running entity snap while updating the OSMODE system variable, or within another command to disable the snap for just that operation without changing OSMODE."
+ :availability :BRICSCAD-ONLY
+ :autocad-versions NIL
+ :bricscad-versions "V25"
+ :source-autocad NIL
+ :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_zvertex/V25/EN_US")
 
 )

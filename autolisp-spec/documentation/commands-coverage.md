@@ -13,7 +13,10 @@ Sources of truth:
   BricsCAD-only 708), from the vendors' machine-readable indexes.
 - `commands-inventory.sexp` — the per-command detail (options, argument
   sequence, aliases, description, provenance URLs) harvested from the online
-  vendor references, for the commands specified so far.
+  vendor references. **All 1621 are now detailed** — the catalogue is complete.
+  29 are obsolete/removed names the vendor index still lists but that have no
+  live reference page (BricsCAD `AI_*`/`AMPOWERDIM_*`/`POINTCLOUDPOINTSIZE_*`);
+  these carry name + category + availability only, with source NIL.
 
 "Implemented" means the cador MockHost executes the command against the
 drawing model. A second tier, "recognised no-op", is consumed by the dispatch
@@ -29,38 +32,39 @@ is implemented (`issues/open/autolisp-spec-alref-commands.issue`).
 | Pilot (2026-09-14) | 25 | 10 | 0 |
 | Both-vendor core (2026-09-15) | 563 | 10 | 0 |
 | cador command engine (2026-09-15) | 563 | 18 | 6 |
-| **+ AutoCAD-only (2026-09-15)** | **915** | **18** | **6** |
-| Full catalogue (enumerated) | 1621 | 18 | 6 |
+| + AutoCAD-only (2026-09-15) | 915 | 18 | 6 |
+| **+ BricsCAD-only — COMPLETE (2026-09-15)** | **1621** | **18** | **6** |
 
-The **915** specified now = the 561 commands present in BOTH AutoCAD 2026 and
-BricsCAD V25, plus the **352 AutoCAD-only** commands, plus MENULOAD/MENUUNLOAD.
-The remaining **708 BricsCAD-only** commands (many BricsCAD-specific verticals:
-civil, mechanical, BIM, point-cloud) are enumerated in `command-names.sexp` but
-not yet detailed — the next harvest wave.
+The catalogue is now **complete**: all 1621 AutoCAD 2026 + BricsCAD V25 commands
+are specified — 561 present in both vendors, 352 AutoCAD-only, 708 BricsCAD-only
+(heavy on BricsCAD verticals: BIM, mechanical/sheet-metal, civil, point-cloud,
+direct-modeling). Implementation in cador (18 executed + 6 recognised no-ops)
+covers all 21 commands the SCHMS+ corpus drives; the rest are specified and
+recorded-only until their category is implemented.
 
-## Specified commands by category (915)
+## Specified commands by category (1621)
 
 | Category | Count | Category | Count |
 |---|---:|---|---:|
-| view | 106 | dimension | 33 |
-| modify | 85 | text | 31 |
-| 3d | 82 | parametric | 30 |
-| file | 78 | edit | 29 |
-| block | 77 | annotation | 25 |
-| system | 62 | plot | 23 |
-| customization | 53 | other | 20 |
-| draw | 41 | attribute | 16 |
-| render | 36 | selection | 11 |
-| inquiry | 35 | table | 8 |
-| layer | 34 | | |
+| 3d | 298 | annotation | 49 |
+| view | 177 | render | 45 |
+| file | 130 | layer | 43 |
+| block | 118 | text | 40 |
+| system | 111 | edit | 36 |
+| modify | 109 | selection | 32 |
+| other | 72 | plot | 29 |
+| customization | 66 | table | 20 |
+| draw | 64 | attribute | 18 |
+| parametric | 57 | dimension | 56 |
+| inquiry | 51 | | |
 
-## Availability (of the 915 specified)
+## Availability (of the 1621 specified)
 
 | Availability | Count |
 |---|---:|
 | both (AutoCAD & BricsCAD) | 561 |
 | AutoCAD-only | 352 |
-| BricsCAD-only | 2 (MENULOAD, MENUUNLOAD) |
+| BricsCAD-only | 708 |
 
 ## Implemented in cador (`%execute-command-tokens`)
 
