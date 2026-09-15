@@ -699,36 +699,45 @@ Distinguer **spécifiée** (page de référence dans la spec) de **implémentée
 LINE, LINETYPE, MIRROR, MOVE, MTEXT, PLINE, SOLID, TEXT, WIPEOUT ; nues :
 ZOOM, PEDIT, SHELL, SCU (= UCS localisé français).
 
-| Commande | Spécifiée | Implémentée (cador) | Note |
-|---|:--:|:--:|---|
-| LINE | ✓ | ✓ | |
-| CIRCLE | ✓ | ✓ | |
-| TEXT | ✓ | ✓ | |
-| DONUT | ✓ | ✓ | |
-| SOLID | ✓ | ✓ | |
-| ERASE | ✓ | ✓ | |
-| MOVE | ✓ | ✓ | |
-| ARC | ✓ | — | à ajouter au dispatch cador |
-| PLINE | ✓ | — | LWPOLYLINE |
-| MTEXT | ✓ | — | |
-| MIRROR | ✓ | — | |
-| BREAK | ✓ | — | |
-| PEDIT | ✓ | — | |
-| WIPEOUT | ✓ | — | |
-| INSERT / -INSERT | ✓ | — | réf. de bloc (objet SCHMS dominant) |
-| LAYER | ✓ | — | table LAYER |
-| LINETYPE | ✓ | — | table LTYPE |
-| ZOOM | ✓ | — | verbe viewport cadtui |
-| UCS (SCU) | ✓ | — | contexte SCU/`trans` |
-| BROWSER | ✓ | — | no-op headless (lance un navigateur) |
-| SHELL | ✓ | — | no-op headless (lance un shell) |
+Statut d'implémentation cador mis à jour le 2026-09-15 (clautolisp 2.2.66) :
+les 14 manquantes sont désormais gérées par le moteur de commandes
+(`cador/source/command-api.lisp` `%execute-command-tokens`) — soit avec un
+effet modèle réel (géométrie / tables), soit comme *no-op reconnu* qui
+consomme sa ligne d'entrée pour que la séquence pilotée continue (correctif du
+bug « le dispatch s'arrête à la première commande inconnue »).
 
-**Bilan** : 21/21 spécifiées ; **7/21 implémentées** dans cador
-(LINE, CIRCLE, TEXT, DONUT, SOLID, ERASE, MOVE). Les 14 restantes sont
-spécifiées mais non exécutées — c'est l'écart d'implémentation « model-only »
-du §7, à combler en Phase 4 de `autolisp-spec-alref-commands.issue`
-(BROWSER/SHELL devenant des no-op headless). Les commandes maison `C:RESOL`,
-`C:SAUVEGRD` sont définies par l'application (pas des commandes fournisseur) :
-hors périmètre de la spec, à charge de l'application. Aucune commande
-fournisseur pilotée par SCHMS n'est absente de l'inventaire.
+| Commande | Spécifiée | cador | Effet |
+|---|:--:|:--:|---|
+| LINE | ✓ | ✓ | entité LINE |
+| CIRCLE | ✓ | ✓ | entité CIRCLE |
+| TEXT | ✓ | ✓ | entité TEXT |
+| DONUT | ✓ | ✓ | LWPOLYLINE (2 arcs) |
+| SOLID | ✓ | ✓ | entité SOLID |
+| ERASE | ✓ | ✓ | efface la sélection |
+| MOVE | ✓ | ✓ | translate la sélection |
+| ARC | ✓ | ✓ | entité ARC (3 points → centre/rayon/angles CCW) |
+| PLINE | ✓ | ✓ | LWPOLYLINE (sommets ; Close ; largeur/arc consommés) |
+| MTEXT | ✓ | ✓ | entité MTEXT (point + texte ; largeur en 41) |
+| MIRROR | ✓ | ✓ | clone réfléchi ; efface la source si Oui |
+| WIPEOUT | ✓ | ✓ | entité WIPEOUT (sommets de contour) |
+| INSERT / -INSERT | ✓ | ✓ | réf. de bloc (2/10/41/42/50) ; valeurs d'attribut consommées (tags non modélisés, différé) |
+| LAYER / -LAYER | ✓ | ✓ | crée/active des calques (New/Make/Set), listes à virgules |
+| LINETYPE / -LINETYPE | ✓ | ✓ | Load crée un enreg. LTYPE ; Set règle CELTYPE |
+| ZOOM | ✓ | ◐ | no-op reconnu (viewport ; cador model-only) |
+| UCS (SCU) | ✓ | ◐ | no-op reconnu (contexte SCU/WCS) |
+| PEDIT | ✓ | ◐ | no-op reconnu (édition différée) |
+| BREAK | ✓ | ◐ | no-op reconnu (édition différée) |
+| BROWSER | ✓ | ◐ | no-op reconnu (lance un navigateur) |
+| SHELL | ✓ | ◐ | no-op reconnu (lance un shell) |
+
+**Bilan** : 21/21 spécifiées ; **21/21 gérées** par le dispatch cador — 15 avec
+effet modèle (✓), 6 no-op reconnus (◐) corrects/différés pour un moteur
+model-only (ZOOM/UCS = viewport/repère, BROWSER/SHELL = processus externes,
+PEDIT/BREAK = édition différée). Le point clé : une commande reconnue (même
+no-op) consomme ses arguments, donc une séquence `(command "._zoom" "_e"
+"._line" …)` n'est plus interrompue. Restes différés : les attributs d'INSERT
+(nécessitent les attdefs du bloc), la géométrie d'arc de PLINE (bulge), et
+l'édition PEDIT/BREAK. Les commandes maison `C:RESOL`, `C:SAUVEGRD` sont
+définies par l'application (hors périmètre spec). Aucune commande fournisseur
+pilotée par SCHMS n'est absente de l'inventaire.
 
