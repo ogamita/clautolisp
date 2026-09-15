@@ -292,3 +292,130 @@
       ;; x spread is the donut's, centred on the insertion.
       (is (< (abs (- 99.5d0 (first min-corner))) 1d-9))
       (is (< (abs (- 100.5d0 (first max-corner))) 1d-9)))))
+
+;;; --- The 14 SCHMS-driven commands (schms-call-inventory §9) -------
+;;; ARC / PLINE / MTEXT / WIPEOUT / MIRROR / INSERT / LAYER / LINETYPE
+;;; mutate the model; ZOOM / UCS / PEDIT / BREAK / BROWSER / SHELL are
+;;; recognised so a driven sequence keeps flowing past them.
+
+(defun %ct-last-data (mock)
+  "The entget data of MOCK's most recently created entity."
+  (host-entget mock (host-entlast mock)))
+
+(defun %ct-group (data code)
+  (cdr (assoc code data)))
+
+(test command-arc-draws-an-arc-through-three-points
+  (let ((mock (make-cador)))
+    ;; (1,0) (0,1) (-1,0): the unit circle centred at the origin.
+    (clautolisp.autolisp-host:host-command
+     mock '("._arc" "1,0" "0,1" "-1,0" ""))
+    (let ((data (%ct-last-data mock)))
+      (is (string= "ARC" (autolisp-string-value (%ct-group data 0))))
+      (is (< (abs (- 1.0d0 (%ct-group data 40))) 1d-6))       ; radius
+      (let ((center (%ct-group data 10)))
+        (is (< (abs (first center)) 1d-6))
+        (is (< (abs (second center)) 1d-6)))
+      (is (< (abs (- 0.0d0 (%ct-group data 50))) 1d-6))        ; start angle
+      (is (< (abs (- pi (%ct-group data 51))) 1d-6)))))        ; end angle
+
+(test command-pline-draws-a-closed-lwpolyline
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command
+     mock '("._pline" "0,0" "1,0" "1,1" "_c"))
+    (let ((data (%ct-last-data mock)))
+      (is (string= "LWPOLYLINE" (autolisp-string-value (%ct-group data 0))))
+      (is (= 3 (%ct-group data 90)))                           ; vertex count
+      (is (= 1 (%ct-group data 70)))                           ; closed
+      (is (= 3 (count 10 data :key #'car))))))                 ; one 10 per vertex
+
+(test command-mtext-draws-an-mtext
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command
+     mock '("._mtext" "0,0" "10,5" "Hello" ""))
+    (let ((data (%ct-last-data mock)))
+      (is (string= "MTEXT" (autolisp-string-value (%ct-group data 0))))
+      (is (string= "Hello" (autolisp-string-value (%ct-group data 1))))
+      (is (< (abs (- 10.0d0 (%ct-group data 41))) 1d-9)))))    ; reference width
+
+(test command-wipeout-draws-a-wipeout
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command
+     mock '("._wipeout" "0,0" "2,0" "2,2" "0,2" ""))
+    (let ((data (%ct-last-data mock)))
+      (is (string= "WIPEOUT" (autolisp-string-value (%ct-group data 0))))
+      (is (= 4 (%ct-group data 90))))))
+
+(test command-mirror-reflects-and-keeps-the-source
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("._line" "1,0" "1,2" ""))
+    ;; Mirror the last entity across the Y axis, keeping the original.
+    (clautolisp.autolisp-host:host-command
+     mock '("._mirror" "_l" "" "0,0" "0,1" "_n"))
+    (is (equal '("LINE" "LINE") (%ct-types mock)))
+    ;; The clone (entlast) sits at x = -1.
+    (let ((data (%ct-last-data mock)))
+      (is (< (abs (- -1.0d0 (first (%ct-group data 10)))) 1d-6))
+      (is (< (abs (- -1.0d0 (first (%ct-group data 11)))) 1d-6)))))
+
+(test command-mirror-yes-erases-the-source
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("._line" "1,0" "1,2" ""))
+    (clautolisp.autolisp-host:host-command
+     mock '("._mirror" "_l" "" "0,0" "0,1" "_y"))
+    ;; Original erased, only the reflected clone remains.
+    (is (equal '("LINE") (%ct-types mock)))
+    (is (< (abs (- -1.0d0 (first (%ct-group (%ct-last-data mock) 10)))) 1d-6))))
+
+(test command-insert-creates-a-block-reference
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command
+     mock '("._insert" "MYBLK" "5,5" "2" "3" "0" ""))
+    (let ((data (%ct-last-data mock)))
+      (is (string= "INSERT" (autolisp-string-value (%ct-group data 0))))
+      (is (string= "MYBLK" (autolisp-string-value (%ct-group data 2))))
+      (let ((p (%ct-group data 10)))
+        (is (and (< (abs (- 5.0d0 (first p))) 1d-9)
+                 (< (abs (- 5.0d0 (second p))) 1d-9))))
+      (is (< (abs (- 2.0d0 (%ct-group data 41))) 1d-9))        ; xscale
+      (is (< (abs (- 3.0d0 (%ct-group data 42))) 1d-9))        ; yscale
+      (is (= 0 (%ct-group data 66))))))                        ; no attributes
+
+(test command-insert-consumes-attribute-values-and-keeps-flowing
+  ;; Attribute values are swallowed (not modelled — schms §9), and a command
+  ;; that follows them still runs.
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command
+     mock '("._insert" "BLK" "0,0" "1" "1" "0" "V1" "V2" "" "._circle" "9,9" "1"))
+    (is (equal '("INSERT" "CIRCLE") (%ct-types mock)))))
+
+(test command-layer-make-creates-and-sets-current
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("._layer" "_m" "MURS" ""))
+    (is (not (null (cador-find-table-record mock :layer "MURS"))))
+    (is (string= "MURS" (sysvar-cell-value (cador-sysvar mock "CLAYER"))))
+    ;; A subsequent LINE lands on the new current layer.
+    (clautolisp.autolisp-host:host-command mock '("._line" "0,0" "1,1" ""))
+    (is (string= "MURS" (autolisp-string-value
+                         (%ct-group (%ct-last-data mock) 8))))))
+
+(test command-layer-new-accepts-a-comma-list
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("._layer" "_n" "A,B,C" ""))
+    (is (not (null (cador-find-table-record mock :layer "A"))))
+    (is (not (null (cador-find-table-record mock :layer "B"))))
+    (is (not (null (cador-find-table-record mock :layer "C"))))))
+
+(test command-linetype-load-registers-an-ltype
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command
+     mock '("._linetype" "_l" "DASHED" "acad.lin" ""))
+    (is (not (null (cador-find-table-record mock :ltype "DASHED"))))))
+
+(test command-recognised-noop-keeps-the-sequence-flowing
+  ;; The key dispatch fix: a recognised no-op in the MIDDLE of a driven
+  ;; sequence must not stop the commands that follow it.
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command
+     mock '("._zoom" "_e" "._line" "0,0" "1,1" "" "._ucs" "_w" "._circle" "5,5" "2"))
+    (is (equal '("LINE" "CIRCLE") (%ct-types mock)))))
