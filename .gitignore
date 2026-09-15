@@ -177,3 +177,4 @@ clautolisp/drawing-dwg/source/clal_dwg.so
 # tracked .org. install-documentation / release-documentation collect from build/.
 *.pdf
 
+autolisp-spec/documentation/.harvest/

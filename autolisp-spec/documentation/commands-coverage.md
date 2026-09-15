@@ -7,49 +7,67 @@ chapter) and the cador command engine
 (invoked via `(command "NAME" …)` or the command prompt), a namespace
 distinct from AutoLISP functions and system variables.
 
-Source of truth: `commands-inventory.sexp` (harvested from
-help.autodesk.com 2026 ENU + help.bricsys.com V25). "Implemented" means the
-cador MockHost executes the command against the drawing model; every other
-specified command is recorded on the command log without side effects until
-its category is implemented (see `issues/open/autolisp-spec-alref-commands.issue`).
+Sources of truth:
+- `command-names.sexp` — the full enumerated catalogue: **1621** distinct
+  AutoCAD 2026 + BricsCAD V25 command names (both 561, AutoCAD-only 352,
+  BricsCAD-only 708), from the vendors' machine-readable indexes.
+- `commands-inventory.sexp` — the per-command detail (options, argument
+  sequence, aliases, description, provenance URLs) harvested from the online
+  vendor references, for the commands specified so far.
 
-## Status — pilot slice (2026-09-14)
+"Implemented" means the cador MockHost executes the command against the
+drawing model; every other specified command is recorded on the command log
+without side effects until its category is implemented
+(`issues/open/autolisp-spec-alref-commands.issue`).
 
-The commands surface is being populated incrementally. This first slice
-specifies **25** core commands end-to-end (inventory → Command Entry pages
-→ paged build → this report). The full AutoCAD/BricsCAD surface (~1000+)
-is future work.
+## Status
 
-| Category | Specified | Implemented (cador) |
+| Milestone | Commands specified | Implemented (cador) |
 |---|---:|---:|
-| draw | 8 | 6 |
-| modify | 6 | 3 |
-| view | 3 | 0 |
-| file | 4 | 0 |
-| block | 2 | 1 |
-| customization | 2 | 0 |
-| **Total** | **25** | **10** |
+| Pilot (2026-09-14) | 25 | 10 |
+| **Both-vendor core (2026-09-15)** | **563** | **10** |
+| Full catalogue (enumerated) | 1621 | 10 |
 
-Implemented (cador executes): LINE, CIRCLE, ARC?†, TEXT, DONUT, SOLID,
-ERASE, MOVE, COPY, ROTATE, BLOCK. †ARC is specified but not yet executed —
-the executed set is exactly LINE, CIRCLE, TEXT, DONUT, SOLID, ERASE, MOVE,
-COPY, ROTATE, BLOCK/-BLOCK (10).
+The **563** specified now = the 561 commands present in BOTH AutoCAD 2026 and
+BricsCAD V25 (the portable core, most relevant to cador/cadtui) plus MENULOAD
+and MENUUNLOAD. The remaining catalogued commands (352 AutoCAD-only, 708
+BricsCAD-only — many BricsCAD-specific verticals: civil, mechanical, BIM,
+point-cloud) are enumerated in `command-names.sexp` but not yet detailed.
 
-## Availability (of the 25 specified)
+## Specified commands by category (563)
 
-| Availability | Count | Commands |
-|---|---:|---|
-| both | 23 | (all except the two below) |
-| BricsCAD-only | 2 | MENULOAD, MENUUNLOAD (AutoCAD 2026 has no command-reference page; it directs users to CUILOAD/CUIUNLOAD, MENU retained only for script compatibility) |
-| AutoCAD-only | 0 | — |
+| Category | Count | Category | Count |
+|---|---:|---|---:|
+| modify | 65 | text | 22 |
+| view | 58 | edit | 21 |
+| file | 44 | inquiry | 16 |
+| 3d | 40 | render | 15 |
+| system | 36 | annotation | 15 |
+| draw | 36 | attribute | 14 |
+| customization | 34 | plot | 12 |
+| block | 32 | other | 12 |
+| dimension | 28 | selection | 8 |
+| parametric | 24 | table | 8 |
+| layer | 23 | | |
 
-## Not-yet-implemented, by need
+## Availability (of the 563 specified)
 
-- **file** (NEW, OPEN, QSAVE, QNEW) and **customization** (MENULOAD,
-  MENUUNLOAD) are the commands the cadtui host needs first: NEW/OPEN should
-  create a `ui-drawing`; MENULOAD/CUILOAD should populate `bands`. Tracked
-  as Phase 4 of the commands initiative.
-- **view** (ZOOM, PAN, REGEN) map onto the cadtui viewport verbs already in
-  the tree model.
-- **modify** (SCALE, OFFSET) and **draw** (ARC, PLINE, RECTANG) extend the
-  existing cador drawing-command dispatch.
+| Availability | Count |
+|---|---:|
+| both (AutoCAD & BricsCAD) | 561 |
+| BricsCAD-only | 2 (MENULOAD, MENUUNLOAD) |
+| AutoCAD-only | 0 |
+
+## Implemented in cador (10)
+
+LINE, CIRCLE, TEXT, DONUT, SOLID (draw/text) and ERASE, MOVE, COPY, ROTATE
+(modify) and BLOCK/-BLOCK (block) — `%execute-command-tokens`. Everything
+else is specified but records its tokens without side effects.
+
+## Next (Phase 4 — implement the categories cador/cadtui need)
+
+- **file** (NEW, OPEN, QSAVE, QNEW): cadtui NEW/OPEN → create a `ui-drawing`.
+- **customization** (MENULOAD/MENUUNLOAD, CUILOAD/CUIUNLOAD): populate `bands`.
+- **view** (ZOOM, PAN, REGEN): map onto the cadtui viewport verbs.
+- **modify/draw** extensions to the cador drawing-command dispatch.
+- spec §5.6 rule 3: a bare command name at the `cad>` console dispatches.
