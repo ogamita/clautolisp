@@ -1,0 +1,143 @@
+Title: alfe's AutoCAD automation mode never quits the acad.exe it starts
+Status: open
+Found: 2026-09-15 (pjb: "CI jobs on the windows runner leave autocad open,
+       with a Dessin1.dwg, and no activity")
+Related: issues/open/cad-runner-wedged-by-modal-dialog.issue ("the engine
+         outliving its job")
+
+SYMPTOM
+
+After CI jobs on the Windows laptop runner (PF5S26B), AutoCAD stays open
+on a default new drawing -- "Dessin1.dwg" -- doing nothing.
+
+IT IS NOT A SCRIPT THAT FORGETS _QUIT, AND IT IS NOT CANCELLED JOBS.
+Every alfe run in AutoCAD AUTOMATION mode (GUI acad.exe driven through
+COM) leaves AutoCAD running, successful runs included. Two independent
+lines of evidence agree.
+
+CAUSE, from the code (master 2e5657b5)
+
+ 1. scripts/run-vendor-probes.ps1 defaults -Dwg to "", so for AutoCAD it
+    calls `alfe --no-init --autocad -l PROBE` with no --mode; --mode
+    batch is only added for BricsCAD or when a drawing is given.
+    run-path-sysvars-probe.ps1:72, run-getcname-probe.ps1 and
+    run-pgp-probe.ps1:42 pass `--mode automation` explicitly.
+
+ 2. With no mode, CHOOSE-EFFECTIVE-MODE (backend-autocad.lisp:451-457)
+    picks :AUTOMATION whenever acad.exe is found; :batch is only the
+    fallback.
+
+ 3. Automation does not run AutoCAD: it runs
+    `cscript //nologo bridge-autocad.vbs` (backend-autocad.lisp:468-470).
+    The VBScript tries GetObject(, "AutoCAD.Application"), else
+    CreateObject; sets app.Visible = True; and calls
+    app.Documents.Add("") when nothing is open -- which is Dessin1.dwg,
+    since a drawing is only resolved for :batch (:463-466).
+
+ 4. It then exits with:
+       ' Don't call app.Quit here - the runtime publishes its own status
+       ' and the alfe-side poller decides on the lifecycle.
+       WScript.Quit 0
+
+ 5. The alfe side never decides it. On SHUTDOWN the in-AutoCAD runtime
+    only sets STOPPING and a stop flag (runtime/autolisp-remote-io.lsp:
+    136-139); the server loop reports STOPPED and returns. SHUTDOWN in
+    backend-autocad.lisp:846-863 then calls KILL-ENGINE-PROCESS on the
+    process it launched -- which is CSCRIPT, not AutoCAD. The
+    start-abort UNWIND-PROTECT (:742-755) kills the same cscript.
+
+ 6. The quit machinery exists and is dead: AUTOLISP-FINISH
+    (runtime/autolisp-bootstrap.lsp:207) would call AUTOLISP-HOST-QUIT
+    -> (command "_QUIT" "_Y") when *AUTOLISP_QUIT_ON_FINISH*, and
+    NOTHING CALLS AUTOLISP-FINISH.
+
+ 7. The specification asked for app.Quit gated on `created And
+    statusReadyFlag`, plus a taskkill helper
+    (documentation/alfe--specifications.org:1303-1340,
+    issues/closed/alfe-backend-autocad.issue:59,67-69). Neither was
+    implemented.
+
+A COM-activated acad.exe is started by Windows' COM service, not as a
+child of cscript, alfe or the job shell. So no job ending -- success,
+failure, cancel, timeout -- takes it down, and a whole-process-tree kill
+from the job would not reach it either.
+
+EVIDENCE, from 10 days of CI (2026-09-05 to 09-15, 1,758 jobs on PF5S26B)
+
+WARM STARTS ARE THE PROOF. In 100 of 108 vendor:probes:autocad runs the
+FIRST alfe run reached READY in ~0.4-0.8 s -- AutoCAD was ALREADY
+running when the job began. Only 5 were cold 11-15 s starts. Within one
+job, job 16507445872:
+
+    11:12:16  backend AUTOCAD: READY after 11.50 s   (cold: CreateObject)
+    11:12:19  [CAD] server-loop returned normally
+    11:12:20  backend AUTOCAD: READY after 0.38 s    (warm: GetObject)
+    11:12:24  backend AUTOCAD: READY after 0.37 s
+    11:12:28  backend AUTOCAD: READY after 0.38 s
+
+No shutdown, kill or quit line for AutoCAD appears in any trace.
+
+THE KILL KILLS CSCRIPT. Job 16333910198, 09-06:
+
+    spawned, process-info-pid = 23116
+    READY timeout after 60.06 s; last status = "BOOTING"
+    start aborted; terminating spawned engine (pid 23116)
+    ... later:
+    READY after 53.71 s
+    READY after 0.78 s
+
+pid 23116 was cscript; the AutoCAD that COM started carried on booting
+and was attached to later.
+
+CANCELS AND TIMEOUTS ARE NOT THE MECHANISM. Only ONE GUI-mode AutoCAD
+job was cancelled mid-script in ten days (16463865287); no job ended in
+job_execution_timeout; the one 1800 s AutoCAD job hung in `git fetch`
+before any CAD ran. (This was worth checking: pushes had cancelled many
+Windows jobs during the probe work, and it would have been an easy,
+wrong explanation.)
+
+AFFECTED JOBS: the four automation-mode ones -- vendor:probes:autocad,
+path-sysvars:probe:autocad:windows, getcname:probe:autocad:windows,
+pgp:probe:autocad:windows. The batch AutoCAD jobs (encoding, pathname,
+probe:suite, every *:accoreconsole) use accoreconsole.exe with a drawing
+and `._QUIT _Y`, and cannot show a Dessin1 window.
+
+SIDE EFFECTS ALREADY SEEN, likely consequences of a persistent instance:
+  - jobs 16389774660 and 16442007951 failed with "L'appel a été rejeté
+    par l'appelé" -- COM call rejected by callee -- i.e. the leftover
+    AutoCAD was busy or showing a dialog when a new job attached to it;
+  - GetObject attaches to ANY running AutoCAD, including one a human
+    opened on the laptop, and the probes would then run inside it.
+
+FIX -- two parts, and two decisions that are pjb's
+
+ A. QUIT WHAT WE CREATED, AND ONLY THAT. The bridge already records
+    `created` versus `attached` (EmitFlags). Quitting an ATTACHED
+    instance could close a session pjb has open on that laptop. For a
+    CREATED one: close each document WITHOUT saving, then app.Quit,
+    through COM. Not (command "_QUIT" "_Y"): Dessin1 is unnamed, and a
+    save prompt there is itself a modal-dialog hang.
+
+    Decision: should an instance the bridge ATTACHED to be left alone
+    (safe for a human user) or also quit (tidier for an unattended
+    runner)?
+
+ B. A RUNNER-SIDE SAFETY NET for the endings alfe cannot see -- a killed
+    alfe, a cancelled job -- since a COM-activated acad.exe is outside
+    the job's process tree. The laptop is also pjb's own machine, so a
+    blanket `taskkill /IM acad.exe` could kill his AutoCAD. The safe
+    scope is acad.exe whose command line contains /Automation, which a
+    hand-started AutoCAD does not have:
+      Get-CimInstance Win32_Process -Filter "Name='acad.exe'" |
+        Where-Object CommandLine -match '/Automation'
+
+    Decision: is that scoping acceptable on the laptop, and should it
+    run before each job, after each job, or both?
+
+ Also worth deciding: vendor:probes:autocad reaches automation only by
+ DEFAULT (no -Dwg, no --mode). If those probes do not need the GUI,
+ `--mode batch` removes this job from the affected set outright.
+
+WHY NOT FIXED IN THE SAME CHANGE: part A is a COM change that can only
+be verified on a Windows host with AutoCAD, and both decisions above
+change what happens on a machine a human uses.
