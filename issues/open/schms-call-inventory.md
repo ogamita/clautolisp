@@ -683,3 +683,52 @@ références de bloc attribuées portant des XData.
 - [ ] `acad_helpdlg` — 1
 - [ ] `acet-ui-pickdir` — 1
 
+---
+
+## 9. Commandes CAD pilotées par `command` — couverture spec (vérifié 2026-09-15)
+
+Les commandes CAD que SCHMS+ pilote via `(command …)` sont désormais TOUTES
+*spécifiées* dans le chapitre « Commands » de l'autolisp-spec (v0.11.0,
+`commands-inventory.sexp`, cœur des 561 commandes communes AutoCAD∩BricsCAD).
+Distinguer **spécifiée** (page de référence dans la spec) de **implémentée**
+(exécutée par le host cador contre le modèle de dessin) — cf.
+`autolisp-spec/documentation/commands-coverage.md`.
+
+**Ensemble complet piloté par SCHMS** (§7/§8) — 21 commandes fournisseur :
+`._`-préfixées : ARC, BREAK, BROWSER, CIRCLE, DONUT, ERASE, INSERT, LAYER,
+LINE, LINETYPE, MIRROR, MOVE, MTEXT, PLINE, SOLID, TEXT, WIPEOUT ; nues :
+ZOOM, PEDIT, SHELL, SCU (= UCS localisé français).
+
+| Commande | Spécifiée | Implémentée (cador) | Note |
+|---|:--:|:--:|---|
+| LINE | ✓ | ✓ | |
+| CIRCLE | ✓ | ✓ | |
+| TEXT | ✓ | ✓ | |
+| DONUT | ✓ | ✓ | |
+| SOLID | ✓ | ✓ | |
+| ERASE | ✓ | ✓ | |
+| MOVE | ✓ | ✓ | |
+| ARC | ✓ | — | à ajouter au dispatch cador |
+| PLINE | ✓ | — | LWPOLYLINE |
+| MTEXT | ✓ | — | |
+| MIRROR | ✓ | — | |
+| BREAK | ✓ | — | |
+| PEDIT | ✓ | — | |
+| WIPEOUT | ✓ | — | |
+| INSERT / -INSERT | ✓ | — | réf. de bloc (objet SCHMS dominant) |
+| LAYER | ✓ | — | table LAYER |
+| LINETYPE | ✓ | — | table LTYPE |
+| ZOOM | ✓ | — | verbe viewport cadtui |
+| UCS (SCU) | ✓ | — | contexte SCU/`trans` |
+| BROWSER | ✓ | — | no-op headless (lance un navigateur) |
+| SHELL | ✓ | — | no-op headless (lance un shell) |
+
+**Bilan** : 21/21 spécifiées ; **7/21 implémentées** dans cador
+(LINE, CIRCLE, TEXT, DONUT, SOLID, ERASE, MOVE). Les 14 restantes sont
+spécifiées mais non exécutées — c'est l'écart d'implémentation « model-only »
+du §7, à combler en Phase 4 de `autolisp-spec-alref-commands.issue`
+(BROWSER/SHELL devenant des no-op headless). Les commandes maison `C:RESOL`,
+`C:SAUVEGRD` sont définies par l'application (pas des commandes fournisseur) :
+hors périmètre de la spec, à charge de l'application. Aucune commande
+fournisseur pilotée par SCHMS n'est absente de l'inventaire.
+
