@@ -16,17 +16,20 @@ Sources of truth:
   vendor references, for the commands specified so far.
 
 "Implemented" means the cador MockHost executes the command against the
-drawing model; every other specified command is recorded on the command log
-without side effects until its category is implemented
-(`issues/open/autolisp-spec-alref-commands.issue`).
+drawing model. A second tier, "recognised no-op", is consumed by the dispatch
+so a driven command sequence keeps flowing but has no drawing-model effect
+(viewport/coordinate context or external process). Every other specified
+command is recorded on the command log without side effects until its category
+is implemented (`issues/open/autolisp-spec-alref-commands.issue`).
 
 ## Status
 
-| Milestone | Commands specified | Implemented (cador) |
-|---|---:|---:|
-| Pilot (2026-09-14) | 25 | 10 |
-| **Both-vendor core (2026-09-15)** | **563** | **10** |
-| Full catalogue (enumerated) | 1621 | 10 |
+| Milestone | Commands specified | Executed (cador) | Recognised no-op |
+|---|---:|---:|---:|
+| Pilot (2026-09-14) | 25 | 10 | 0 |
+| Both-vendor core (2026-09-15) | 563 | 10 | 0 |
+| **cador command engine (2026-09-15)** | **563** | **18** | **6** |
+| Full catalogue (enumerated) | 1621 | 18 | 6 |
 
 The **563** specified now = the 561 commands present in BOTH AutoCAD 2026 and
 BricsCAD V25 (the portable core, most relevant to cador/cadtui) plus MENULOAD
@@ -58,16 +61,25 @@ point-cloud) are enumerated in `command-names.sexp` but not yet detailed.
 | BricsCAD-only | 2 (MENULOAD, MENUUNLOAD) |
 | AutoCAD-only | 0 |
 
-## Implemented in cador (10)
+## Implemented in cador (`%execute-command-tokens`)
 
-LINE, CIRCLE, TEXT, DONUT, SOLID (draw/text) and ERASE, MOVE, COPY, ROTATE
-(modify) and BLOCK/-BLOCK (block) — `%execute-command-tokens`. Everything
-else is specified but records its tokens without side effects.
+**Executed against the drawing model (18):** LINE, CIRCLE, ARC, TEXT, MTEXT,
+DONUT, SOLID, PLINE, WIPEOUT (draw/text); ERASE, MOVE, COPY, ROTATE, MIRROR
+(modify); INSERT/-INSERT (block); LAYER/-LAYER, LINETYPE/-LINETYPE (tables).
 
-## Next (Phase 4 — implement the categories cador/cadtui need)
+**Recognised model-only no-ops (6):** ZOOM, UCS (viewport/coordinate context —
+cador is model-only, WCS); BROWSER, SHELL (external processes, inert headless);
+PEDIT, BREAK (edit geometry deferred). These consume their input so a driven
+sequence keeps flowing.
+
+Everything else is specified but records its tokens without side effects. This
+covers all 21 commands the SCHMS+ corpus drives via `(command …)`
+(`issues/open/schms-call-inventory.md` §9).
+
+## Next (Phase 4 — the categories cadtui needs, and deferred refinements)
 
 - **file** (NEW, OPEN, QSAVE, QNEW): cadtui NEW/OPEN → create a `ui-drawing`.
 - **customization** (MENULOAD/MENUUNLOAD, CUILOAD/CUIUNLOAD): populate `bands`.
-- **view** (ZOOM, PAN, REGEN): map onto the cadtui viewport verbs.
-- **modify/draw** extensions to the cador drawing-command dispatch.
+- INSERT **attribute** modelling (needs the block's attdef tags), PLINE arc
+  **bulges**, and PEDIT/BREAK **edit geometry** — the documented deferrals.
 - spec §5.6 rule 3: a bare command name at the `cad>` console dispatches.

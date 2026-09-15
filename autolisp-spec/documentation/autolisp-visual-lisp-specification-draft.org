@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.11.0
+#+VERSION: 0.11.1
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.11.0*.
+The current document version is *0.11.1*.
 
 Any modification of this document must increment its version number.
 
@@ -95870,7 +95870,7 @@ block
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-816B2D9C-F518-4E8B-971F-08E0E43006E7.htm
@@ -96278,7 +96278,7 @@ block
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-BB831F94-6385-4490-8DE9-7C565CD1B639.htm
@@ -96346,7 +96346,7 @@ layer
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-2C75A883-10CA-4B6C-96AC-BCD7A7794614.htm
@@ -96380,7 +96380,7 @@ layer
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-A6089331-227F-44F1-BA0C-06BC1568C3BB.htm
@@ -97944,7 +97944,7 @@ draw
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-30ECFD30-A1D6-4D60-9DD1-B487603F6772.htm
@@ -99100,7 +99100,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Recognised by the cador host as a model-only no-op: its input is consumed so a driven command sequence keeps flowing, but it has no drawing-model effect (viewport/coordinate context or external process).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-36A1CDE0-3871-4B25-AC98-93235FA83863.htm
@@ -99168,7 +99168,7 @@ system
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Recognised by the cador host as a model-only no-op: its input is consumed so a driven command sequence keeps flowing, but it has no drawing-model effect (viewport/coordinate context or external process).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-261973D6-B582-4584-9175-37500A336A20.htm
@@ -104540,7 +104540,7 @@ block
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-B840AB4A-91E2-4FEC-900A-33E40D1E1925.htm
@@ -104846,7 +104846,7 @@ layer
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-9123091A-2DCB-4DE8-983C-F7CA38FA67BE.htm
@@ -105628,7 +105628,7 @@ system
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-1D3817A0-C5C7-4D52-99A9-F0922F09D4CD.htm
@@ -106373,7 +106373,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-595277C8-9B87-4CFB-A3AF-769537A22F3D.htm
@@ -106950,7 +106950,7 @@ text
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-E6BCE05D-B9E3-4875-BBBC-29134EA6FD51.htm
@@ -107936,7 +107936,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Recognised by the cador host as a model-only no-op: its input is consumed so a driven command sequence keeps flowing, but it has no drawing-model effect (viewport/coordinate context or external process).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0C422AA9-23DD-4650-AD66-68E9D7989E3F.htm
@@ -108038,7 +108038,7 @@ draw
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-11883C70-6435-4F80-8FB4-F6E933B8FD94.htm
@@ -110996,7 +110996,7 @@ system
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Recognised by the cador host as a model-only no-op: its input is consumed so a driven command sequence keeps flowing, but it has no drawing-model effect (viewport/coordinate context or external process).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-675A6BDA-681C-445E-9A32-B8D3713F258A.htm
@@ -113002,7 +113002,7 @@ view
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Recognised by the cador host as a model-only no-op: its input is consumed so a driven command sequence keeps flowing, but it has no drawing-model effect (viewport/coordinate context or external process).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-0BE49DA1-B323-4758-B49B-4C497D194C7A.htm
@@ -114294,7 +114294,7 @@ draw
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-4AD79F4F-A759-4310-A62D-4792FAA7B0EA.htm
@@ -114838,7 +114838,7 @@ view
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Recognised by the cador host as a model-only no-op: its input is consumed so a driven command sequence keeps flowing, but it has no drawing-model effect (viewport/coordinate context or external process).
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-66E7DB72-B2A7-4166-9970-9E19CC06F739.htm
