@@ -16,10 +16,17 @@
 (in-package #:gen-command-entries)
 
 ;;; The CAD commands the cador MockHost actually EXECUTES against the drawing
-;;; (clautolisp/cador/source/command-api.lisp %execute-command-tokens). Keep in
-;;; sync with that dispatch; everything else is "not yet implemented".
+;;; model (clautolisp/cador/source/command-api.lisp %execute-command-tokens),
+;;; and the ones it RECOGNISES as model-only no-ops (consumed so a driven
+;;; sequence keeps flowing, but with no drawing-model effect). Keep both lists
+;;; in sync with that dispatch; everything else is "not yet implemented".
 (defparameter *cador-implemented*
-  '("LINE" "CIRCLE" "TEXT" "DONUT" "SOLID" "ERASE" "MOVE" "COPY" "ROTATE" "BLOCK"))
+  '("LINE" "CIRCLE" "TEXT" "DONUT" "SOLID" "ERASE" "MOVE" "COPY" "ROTATE"
+    "BLOCK" "-BLOCK" "ARC" "PLINE" "MTEXT" "WIPEOUT" "MIRROR"
+    "INSERT" "-INSERT" "LAYER" "-LAYER" "LINETYPE" "-LINETYPE"))
+
+(defparameter *cador-recognised-noop*
+  '("ZOOM" "UCS" "PEDIT" "BREAK" "BROWSER" "SHELL"))
 
 (defun read-inventory (path)
   (with-open-file (in path :external-format :utf-8)
@@ -46,9 +53,13 @@
         (:clautolisp "clautolisp-specific.")))))
 
 (defun clautolisp-line (name)
-  (if (member name *cador-implemented* :test #'string=)
-      "Implemented in the cador host (executed against the drawing model)."
-      "Not yet implemented; the command name is recorded on the command log without side effects."))
+  (cond
+    ((member name *cador-implemented* :test #'string=)
+     "Implemented in the cador host (executed against the drawing model).")
+    ((member name *cador-recognised-noop* :test #'string=)
+     "Recognised by the cador host as a model-only no-op: its input is consumed so a driven command sequence keeps flowing, but it has no drawing-model effect (viewport/coordinate context or external process).")
+    (t
+     "Not yet implemented; the command name is recorded on the command log without side effects.")))
 
 (defun category-name (kw)
   (string-downcase (symbol-name kw)))
