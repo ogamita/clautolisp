@@ -316,6 +316,7 @@
    #:set-autolisp-current-directory
    #:autolisp-support-paths
    #:set-autolisp-support-paths
+   #:synchronize-process-environment
    #:autolisp-trusted-paths
    #:set-autolisp-trusted-paths
    #:autolisp-trusted-init-files

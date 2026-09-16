@@ -399,23 +399,21 @@ SHUTDOWN."
                 (session-handle (evaluation-context-session context)))
            (set-runtime-session-host session-handle host-instance)
            (install-core-builtins)
-           ;; Re-anchor path resolution to the LIVE process cwd. The runtime's
-           ;; *autolisp-current-directory* / support paths are DEFPARAMETER'd
-           ;; from (truename ".") at BUILD time — baked to the image's build
-           ;; directory. The standalone clautolisp tool re-reads getcwd at
-           ;; startup (clautolisp-boot-cwd-pwd-pathname-defaults.issue); the
-           ;; in-process alfe backend must do the same, or a relative
-           ;; (open "rel/path" ...) resolves against the build dir and returns
-           ;; nil instead of opening the file under the user's cwd — where
-           ;; BricsCAD/AutoCAD resolve it (cad-open-relative-path-not-resolved
-           ;; -vs-cwd.issue). Also keep CL's *default-pathname-defaults* in
-           ;; agreement so bare CL merges match.
-           (let ((cwd (ignore-errors (uiop:getcwd))))
-             (when cwd
-               (setf *default-pathname-defaults* cwd)
-               (clautolisp.autolisp-runtime:set-autolisp-current-directory cwd)
-               (clautolisp.autolisp-runtime:set-autolisp-support-paths
-                (list cwd))))
+           ;; Anchor the engine to the live process: cwd AND run frame.
+           ;;
+           ;; This used to be a COPY of the cwd half of the clautolisp
+           ;; tool's startup — and only that half. The run-frame half was
+           ;; left behind, so on a mingw-SBCL-under-MSYS2 host
+           ;; *RUN-ENVIRONMENT* stayed the BUILD frame (native drive
+           ;; style) and an MSYS2 path mapped to nothing: `clautolisp'
+           ;; loaded /c/Users/... and `alfe --clautolisp' answered
+           ;; LOAD-FILE-NOT-FOUND for the same path
+           ;; (windows-msys-paths-in-autolisp-load-alfe.issue).
+           ;;
+           ;; Both halves now live in ONE runtime function that every
+           ;; entry point calls, because the semantics of the embedded
+           ;; engine must not depend on which front end started it.
+           (clautolisp.autolisp-runtime:synchronize-process-environment)
            ;; Install the *AUTOLISP-…* globals derived from alfe's
            ;; CLI options. The in-process engine IS the clautolisp
            ;; runtime, so *AUTOLISP-BACKEND* = CLAUTOLISP. alfe is

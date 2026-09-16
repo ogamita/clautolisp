@@ -2,6 +2,31 @@
 
 (in-suite autolisp-runtime-suite)
 
+(test synchronize-process-environment-does-both-halves
+  "One function, because the two halves must not be separable.
+
+They were written out in the clautolisp tool's startup, alfe copied the
+cwd half and missed the run-frame half, and `alfe --clautolisp' then
+failed to load an MSYS2 /c/... path that `clautolisp' loaded
+(windows-msys-paths-in-autolisp-load-alfe.issue). An embedder that
+copies half of a startup is the failure this pins."
+  ;; the RUN-FRAME half: a sentinel must be replaced by a real
+  ;; classification, which is what the alfe backend never did.
+  (let ((sentinel (list :not-a-real-environment)))
+    (setf clautolisp.pathname-mapping:*run-environment* sentinel)
+    (clautolisp.autolisp-runtime:synchronize-process-environment)
+    (is (not (eq sentinel clautolisp.pathname-mapping:*run-environment*))))
+  ;; the CWD half: current directory and support paths follow the live
+  ;; process, not the directory the image was dumped in.
+  (let ((cwd (uiop:getcwd)))
+    (clautolisp.autolisp-runtime:synchronize-process-environment)
+    (is (equal (namestring cwd)
+               (namestring *default-pathname-defaults*)))
+    (is (equal (namestring cwd)
+               (namestring
+                (clautolisp.autolisp-runtime:autolisp-current-directory))))))
+
+
 ;;; Tests for the cross-environment path/pathname mapping layer
 ;;; (clautolisp-windows-pathname-mapping spec).  The synthetic frames make
 ;;; the Windows-only translation logic exercisable on Linux/macOS.
