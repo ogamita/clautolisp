@@ -19,6 +19,138 @@
 
 ;;; --- VBS / AppleScript escape helpers ------------------------------
 
+;;; --- quitting the AutoCAD we created -------------------------------
+;;;
+;;; The bug these pin (alfe-autocad-automation-never-quits-acad.issue):
+;;; in automation mode alfe launches CSCRIPT, which asks COM for an
+;;; AutoCAD; the acad.exe that answers belongs to Windows' COM service,
+;;; so killing the launched process never touched it and every run left
+;;; AutoCAD idle on an unnamed Dessin1.dwg.
+;;;
+;;; None of this can be run against a real AutoCAD here, so what is
+;;; tested is the DECISION and the emitted script — the two halves that
+;;; do not need Windows. The launcher is injected, so the test can say
+;;; whether alfe would have launched the quit bridge at all.
+
+(defun %quit-test-workdir (&key attached created)
+  "A workdir holding a bridge flags file, or none when both are NIL."
+  (let* ((dir (uiop:ensure-directory-pathname
+               (uiop:with-temporary-file (:pathname p :keep t)
+                 (uiop:delete-file-if-exists p)
+                 p))))
+    (ensure-directories-exist dir)
+    (when (or attached created)
+      (with-open-file (out (merge-pathnames "com-flags.txt" dir)
+                           :direction :output :if-exists :supersede
+                           :if-does-not-exist :create)
+        (format out "ATTACHED=~D~%CREATED=~D~%"
+                (if attached 1 0) (if created 1 0))))
+    dir))
+
+(test autocad-com-flags-are-read-from-the-workdir
+  "The bridge reported CREATED / ATTACHED on stdout and NOTHING read
+them, which is why the decision could not be made. They are written to
+a file in the workdir now, and this is the reader."
+  (multiple-value-bind (att cre)
+      (alfe.backend.autocad::read-com-flags
+       (%quit-test-workdir :created t))
+    (is (null att))
+    (is (eq t cre)))
+  (multiple-value-bind (att cre)
+      (alfe.backend.autocad::read-com-flags
+       (%quit-test-workdir :attached t))
+    (is (eq t att))
+    (is (null cre)))
+  ;; No flags file at all — a bridge that died before reporting. Both
+  ;; NIL, which is what makes the safe default safe.
+  (multiple-value-bind (att cre)
+      (alfe.backend.autocad::read-com-flags (%quit-test-workdir))
+    (is (null att))
+    (is (null cre))))
+
+(test autocad-quit-runs-only-for-an-instance-we-created
+  "pjb, 2026-09-16: alfe should only quit a CAD it created itself. An
+AutoCAD the bridge ATTACHED to was already running — on this runner it
+may be a person's own session — so alfe must leave it alone. The
+launcher is injected: the test asserts whether the quit bridge would
+have been launched AT ALL, which is the whole decision."
+  ;; created -> the quit bridge is launched, with cscript and the script
+  (let* ((launched '())
+         (session (alfe.backend.autocad::%make-autocad-session
+                   :workdir (%quit-test-workdir :created t)
+                   :variant :automation))
+         (result (alfe.backend.autocad::quit-created-autocad
+                  session
+                  :launcher (lambda (argv &rest ignored)
+                              (declare (ignore ignored))
+                              (push argv launched)
+                              nil))))
+    (is (eq t result))
+    (is (= 1 (length launched)))
+    (let ((argv (first launched)))
+      (is (equal "cscript" (first argv)))
+      (is (search "quit-autocad.vbs" (format nil "~{~A ~}" argv)))))
+  ;; attached -> nothing is launched. This is the case that protects a
+  ;; human's AutoCAD, so it is asserted on the LAUNCHER, not the result.
+  (let* ((launched '())
+         (session (alfe.backend.autocad::%make-autocad-session
+                   :workdir (%quit-test-workdir :attached t)
+                   :variant :automation))
+         (result (alfe.backend.autocad::quit-created-autocad
+                  session
+                  :launcher (lambda (argv &rest ignored)
+                              (declare (ignore ignored))
+                              (push argv launched)
+                              nil))))
+    (is (null result))
+    (is (null launched) "alfe tried to quit an AutoCAD it only attached to"))
+  ;; no flags at all -> nothing is launched either
+  (let* ((launched '())
+         (session (alfe.backend.autocad::%make-autocad-session
+                   :workdir (%quit-test-workdir)
+                   :variant :automation))
+         (result (alfe.backend.autocad::quit-created-autocad
+                  session
+                  :launcher (lambda (argv &rest ignored)
+                              (declare (ignore ignored))
+                              (push argv launched)
+                              nil))))
+    (is (null result))
+    (is (null launched))))
+
+(test autocad-quit-bridge-closes-documents-without-saving
+  "The document the bridge adds is UNNAMED (Dessin1/Drawing1), so
+app.Quit alone would raise the Save-changes dialog — a modal dialog on
+an unattended runner being the very hang this is meant to end. Each
+document is closed with SaveChanges = False first, downwards because
+closing shortens the collection."
+  (let ((text alfe.backend.autocad::*quit-autocad-vbs-template*))
+    (is (search "GetObject(, \"AutoCAD.Application\")" text))
+    (is (search "doc.Close False" text))
+    (is (search "app.Quit" text))
+    (is (search "Step -1" text)
+        "the close loop must run downwards")
+    ;; It must never CREATE one while trying to quit.
+    (is (not (search "CreateObject(\"AutoCAD.Application\")" text)))))
+
+(test autocad-bridge-writes-its-flags-to-a-file
+  "The flags reach alfe through a file in the workdir: cscript is
+short-lived and the answer is needed later, at shutdown."
+  (uiop:with-temporary-file (:pathname run :keep t)
+    (let* ((dir (uiop:pathname-directory-pathname run))
+           (vbs (merge-pathnames "bridge-flags-test.vbs" dir)))
+      (alfe.backend.autocad::emit-bridge-vbs
+       vbs
+       :runtime-load-path run
+       :status-path (merge-pathnames "status.txt" dir)
+       :error-path (merge-pathnames "err.txt" dir)
+       :flags-path (merge-pathnames "com-flags.txt" dir))
+      (let ((text (uiop:read-file-string vbs)))
+        (is (search "flagsFile" text))
+        (is (search "com-flags.txt" text))
+        (is (search "AppendLine flagsFile" text))))))
+
+
 (test cad-common-vbs-escape-doubles-internal-quotes
   "The VBScript double-quoted literal escape rule: every \" becomes
 \"\" while backslashes stay verbatim (Windows paths embed them)."
