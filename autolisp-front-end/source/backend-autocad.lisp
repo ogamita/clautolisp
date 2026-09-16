@@ -61,6 +61,7 @@
                 #:vbs-escape
                 #:discover-runtime-lsp
                 #:discover-bootstrap-lsp
+                #:require-runtime-assets
                 #:drive-protocol-actions
                 #:kill-engine-process)
   (:import-from #:alfe.logging
@@ -712,8 +713,12 @@ pipe read, so the default stays the robust total decoder (G2)."
   (log-debug "backend AUTOCAD: dwg = ~A; ready-timeout = ~A s; wait-for-ready = ~A"
              dwg ready-timeout wait-for-ready)
   (handler-case
-      (let* ((runtime-source (discover-runtime-lsp))
-             (bootstrap-source (discover-bootstrap-lsp))
+      (let* (;; Both assets, or a BACKEND-BOOTSTRAP-ERROR naming what is
+             ;; missing and where it was looked for -- before the engine
+             ;; is launched (alfe-installed-runtime-prefix-discovery).
+             (assets (multiple-value-list (require-runtime-assets :autocad)))
+             (runtime-source (first assets))
+             (bootstrap-source (second assets))
              (protocol (alfe.protocol.file:init-session
                         workdir
                         :runtime-lsp-source runtime-source
@@ -742,6 +747,8 @@ pipe read, so the default stays the robust total decoder (G2)."
         ;; ignored); the GUI path honours the user's request, else :AUTO.
         (setf (alfe.protocol.file:protocol-session-console-encoding protocol)
               (%autocad-console-decode-encoding cli-options variant))
+        (log-debug "backend AUTOCAD: bootstrap LSP source = ~A" bootstrap-source)
+        (log-debug "backend AUTOCAD: runtime LSP source = ~A" runtime-source)
         (cond
           (staged-bootstrap
            (log-debug "backend AUTOCAD: staged bootstrap -> ~A" staged-bootstrap))
@@ -749,7 +756,7 @@ pipe read, so the default stays the robust total decoder (G2)."
            (log-warn "backend AUTOCAD: bootstrap source ~A resolved but staging returned NIL"
                      bootstrap-source))
           (t
-           (log-warn "backend AUTOCAD: no bootstrap LSP found; set $ALFE_BOOTSTRAP_LSP or install autolisp-bootstrap.lsp")))
+           (log-warn "backend AUTOCAD: bootstrap LSP not staged")))
         (cond
           (staged-runtime
            (log-debug "backend AUTOCAD: staged runtime -> ~A" staged-runtime))
@@ -757,7 +764,7 @@ pipe read, so the default stays the robust total decoder (G2)."
            (log-warn "backend AUTOCAD: runtime source ~A resolved but staging returned NIL"
                      runtime-source))
           (t
-           (log-warn "backend AUTOCAD: no runtime LSP found; set $ALFE_RUNTIME_LSP or install autolisp-remote-io.lsp")))
+           (log-warn "backend AUTOCAD: runtime LSP not staged")))
         (log-debug "backend AUTOCAD: emitted run-common.lsp -> ~A" run-common)
         (log-verbose "backend AUTOCAD: effective mode = ~A" variant)
         (case variant

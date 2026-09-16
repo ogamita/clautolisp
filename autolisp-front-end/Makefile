@@ -438,11 +438,12 @@ INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
 MAN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/man/man1
 # CAD-side runtime assets. The automation/batch backends stage
 # autolisp-bootstrap.lsp + autolisp-remote-io.lsp into the engine workdir;
-# DISCOVER-{BOOTSTRAP,RUNTIME}-LSP (backend-cad-common.lisp) look for them
-# under $(PREFIX)/share/alfe/runtime/ once $ALFE_*_LSP is unset and the
-# vendored copy is unavailable (a dumped image has no source tree beside it).
-# The path is share/alfe/runtime (not share/$(SUBPROJECT_NAME)) to match the
-# *-lsp-fallback-paths* the code consults.
+# DISCOVER-{BOOTSTRAP,RUNTIME}-LSP (backend-cad-common.lisp) find them under
+# <prefix>/share/alfe/runtime/, the prefix being derived AT RUN TIME from the
+# running executable's location (bin/ or below libexec/), after $ALFE_*_LSP
+# and before the source tree (alfe-installed-runtime-prefix-discovery.issue).
+# The path is share/alfe/runtime (not share/$(SUBPROJECT_NAME)): the code
+# and the fixed *-lsp-fallback-paths* both name it.
 RUNTIME_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/alfe/runtime
 
 INSTALL_BINARIES_sbcl := $(ALFE_SBCL)

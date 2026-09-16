@@ -2176,3 +2176,180 @@ can fail is worse than no check."
       ;; why this looks for the engine variable specifically.
       (is (notany (lambda (l) (search "(uiop:wait-process info)" l)) code)
           "~A still issues an UNBOUNDED wait-process on its engine" file))))
+
+;;; --- installed runtime assets (alfe-installed-runtime-prefix-discovery) ---
+;;;
+;;; A release is staged, zipped and unpacked under any prefix, and the
+;;; binary is reached through a trampoline from $PREFIX/bin or lives in
+;;; $PREFIX/bin itself; the prefix is known only at run time. The running
+;;; executable is injected here, so a pretend installation is enough:
+;;; nothing needs to be dumped, and no CAD is involved.
+
+(defparameter *asset-names* '("autolisp-bootstrap.lsp" "autolisp-remote-io.lsp"))
+
+(defun %pretend-install (root layout &key (assets *asset-names*)
+                                          (exe-name "alfe-sbcl"))
+  "Lay out an installation under ROOT (a directory pathname) and return
+the pathname its alfe executable would have. LAYOUT is :LIBEXEC or :BIN."
+  (dolist (a assets)
+    (touch-file (merge-pathnames (concatenate 'string "share/alfe/runtime/" a)
+                                 root)
+                (format nil ";; installed ~A~%" a)))
+  (merge-pathnames
+   (ecase layout
+     (:libexec (concatenate 'string
+                            "libexec/clautolisp/binaries/linux/x86-64/" exe-name))
+     (:bin (concatenate 'string "bin/" exe-name)))
+   root))
+
+(defun %dir-token (directory)
+  "The last component of DIRECTORY: unique per test directory, and
+unchanged by symlink resolution (/var on macOS) or native separators."
+  (car (last (pathname-directory directory))))
+
+(defmacro with-installed-alfe ((exe) &body body)
+  "Run BODY as if EXE were the running alfe, with the build tree and the
+fixed fallbacks unavailable -- the situation on the Windows runner --
+and both $ALFE_*_LSP overrides unset. Restores the environment."
+  (let ((saved (gensym)))
+    `(let ((alfe.backend.cad-common:*executable-pathname-function*
+             (let ((e ,exe)) (lambda () e)))
+           (alfe.backend.cad-common:*vendored-asset-system*
+             "no-such-system/for-alfe-tests")
+           (alfe.backend.cad-common:*runtime-lsp-fallback-paths* '())
+           (alfe.backend.cad-common:*bootstrap-lsp-fallback-paths* '())
+           (,saved (mapcar (lambda (v) (cons v (uiop:getenv v)))
+                           '("ALFE_RUNTIME_LSP" "ALFE_BOOTSTRAP_LSP"))))
+       (unwind-protect
+            (progn
+              (dolist (v ,saved) (setf (uiop:getenv (car v)) ""))
+              ,@body)
+         (dolist (v ,saved) (setf (uiop:getenv (car v)) (or (cdr v) "")))))))
+
+(test installation-prefixes-covers-both-layouts
+  "The prefix is the parent of the libexec directory the binary is
+below, or of the bin directory it is in -- on any drive, in any case,
+with spaces; and nothing for a Lisp that is not alfe."
+  (flet ((prefix-of (namestring)
+           (mapcar #'namestring
+                   (alfe.backend.cad-common:installation-prefixes
+                    (pathname namestring)))))
+    (is (equal '("/opt/my tools/")
+               (prefix-of "/opt/my tools/libexec/clautolisp/binaries/linux/x86-64/alfe-sbcl")))
+    (is (equal '("/opt/my tools/")
+               (prefix-of "/opt/my tools/libexec/alfe/alfe-ccl")))
+    (is (equal '("/opt/my tools/") (prefix-of "/opt/my tools/bin/alfe-ccl")))
+    (is (equal '("/opt/my tools/") (prefix-of "/opt/my tools/bin/alfe")))
+    ;; Windows: upper-case components and the .exe suffix
+    (is (= 1 (length (alfe.backend.cad-common:installation-prefixes
+                      (make-pathname
+                       :directory '(:absolute "Tools" "LIBEXEC" "clautolisp"
+                                    "binaries" "windows" "x86-64")
+                       :name "alfe-sbcl" :type "exe")))))
+    ;; a development image: its prefix says nothing about alfe
+    (is (null (prefix-of "/usr/local/bin/sbcl")))
+    (is (null (prefix-of "/usr/local/libexec/ccl/lx86cl64")))
+    ;; not installed at all (the build tree's tools/alfe/bin/): a bin
+    ;; prefix is proposed, and simply holds no share/alfe/runtime/
+    (is (equal '("/src/tools/alfe/") (prefix-of "/src/tools/alfe/bin/alfe-sbcl")))))
+
+(test installed-alfe-finds-both-assets-without-overrides
+  "The SCHMS runner: installed files present, build tree and fixed
+prefixes unavailable, no overrides. Both layouts, in a prefix with a
+space, and the files are the INSTALLED ones."
+  (with-cad-test-directories
+    (dolist (layout '(:libexec :bin))
+      (let* ((root (merge-pathnames "unpacked here/" (%fresh-test-directory)))
+             (exe (%pretend-install root layout)))
+        (with-installed-alfe (exe)
+          (let ((runtime (alfe.backend.cad-common:discover-runtime-lsp))
+                (bootstrap (alfe.backend.cad-common:discover-bootstrap-lsp)))
+            (is (and runtime (search "unpacked here" runtime)
+                     (search "share" runtime))
+                "~A layout: runtime not found under the prefix: ~S" layout runtime)
+            (is (and bootstrap (search "unpacked here" bootstrap))
+                "~A layout: bootstrap not found under the prefix: ~S" layout bootstrap)
+            (multiple-value-bind (r b)
+                (alfe.backend.cad-common:require-runtime-assets :bricscad)
+              (is (equal runtime r))
+              (is (equal bootstrap b)))))))))
+
+(test installed-assets-precede-the-source-tree-and-overrides-precede-both
+  "An installed alfe uses its own copies even when a source tree is
+reachable; an explicit override still wins over the installed copies."
+  (with-cad-test-directories
+    (let* ((root (%fresh-test-directory))
+           (exe (%pretend-install root :libexec))
+           (override (touch-file (merge-pathnames "mine.lsp"
+                                                  (%fresh-test-directory)))))
+      (with-installed-alfe (exe)
+        ;; the source tree is back: the installed copy still comes first
+        (let ((alfe.backend.cad-common:*vendored-asset-system*
+                "autolisp-front-end/backend-cad-common"))
+          (is (search (%dir-token root)
+                      (alfe.backend.cad-common:discover-runtime-lsp)))
+          (setf (uiop:getenv "ALFE_RUNTIME_LSP") (namestring override))
+          (is (equal (namestring (truename override))
+                     (alfe.backend.cad-common:discover-runtime-lsp)))
+          ;; an override naming nothing is passed over, as before
+          (setf (uiop:getenv "ALFE_RUNTIME_LSP")
+                (namestring (merge-pathnames "absent.lsp" root)))
+          (is (search (%dir-token root)
+                      (alfe.backend.cad-common:discover-runtime-lsp))))))))
+
+(test missing-runtime-asset-fails-before-launching
+  "Missing assets fail at once, naming the file and every path searched,
+and the CAD is never launched -- no READY timeout is waited out."
+  (with-cad-test-directories
+    (let* ((root (%fresh-test-directory))
+           (exe (%pretend-install root :libexec
+                                  :assets '("autolisp-bootstrap.lsp"))))
+      (with-installed-alfe (exe)
+        (let ((condition
+                (handler-case
+                    (progn (alfe.backend.cad-common:require-runtime-assets :bricscad)
+                           nil)
+                  (alfe.error:backend-bootstrap-error (c) c))))
+          (is (typep condition 'alfe.error:backend-bootstrap-error))
+          (when condition
+            (let ((message (alfe.error:backend-error-message condition)))
+              (is (eq :runtime-asset-missing
+                      (alfe.error:backend-error-code condition)))
+              (is (search "autolisp-remote-io.lsp" message))
+              (is (search "ALFE_RUNTIME_LSP" message))
+              ;; the searched installed path is reported
+              (is (search (%dir-token root) message))
+              ;; the bootstrap WAS found, so it is not reported missing
+              (is (not (search "autolisp-bootstrap.lsp" message))))))
+        ;; through both backends: an error, and the launcher never runs
+        (dolist (backend (list (alfe.backend.bricscad:make-bricscad-backend
+                                :executable-path "/usr/bin/true"
+                                :variant :batch)
+                               (alfe.backend.autocad:make-autocad-backend)))
+          (let* ((workdir (%fresh-test-directory))
+                 (launched nil)
+                 (condition
+                   (handler-case
+                       (progn
+                         (alfe.backend:start-engine
+                          backend workdir
+                          :dialect :strict :host :mock :mock-input nil
+                          :bootstrap-phase :full :interactive-p nil
+                          :mode :batch
+                          :launcher (lambda (&rest ignored)
+                                      (declare (ignore ignored))
+                                      (setf launched t)
+                                      nil)
+                          :wait-for-ready t
+                          :ready-timeout 60)
+                         nil)
+                     (alfe.error:backend-error (c) c))))
+            (is (typep condition 'alfe.error:backend-bootstrap-error)
+                "~A: ~S" (type-of backend) condition)
+            (when condition
+              (is (eq :runtime-asset-missing
+                      (alfe.error:backend-error-code condition))
+                  "~A: ~A" (type-of backend)
+                  (alfe.error:backend-error-message condition)))
+            (is (not launched) "~A launched a CAD without its runtime"
+                (type-of backend))))))))

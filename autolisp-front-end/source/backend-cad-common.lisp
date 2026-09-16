@@ -34,6 +34,13 @@
            ;; runtime LSP discovery
            #:discover-runtime-lsp
            #:discover-bootstrap-lsp
+           #:require-runtime-assets
+           #:installation-prefixes
+           #:asset-search-candidates
+           #:*executable-pathname-function*
+           #:*vendored-asset-system*
+           #:*runtime-lsp-fallback-paths*
+           #:*bootstrap-lsp-fallback-paths*
            ;; protocol-driven eval-plan
            #:drive-protocol-actions
            ;; launcher liveness during the READY wait
@@ -179,25 +186,11 @@ quote both have to be escaped."
 ;;;   2. autolisp-remote-io.lsp  — the file-IPC server loop, which
 ;;;                                 calls into the helpers from (1).
 ;;;
-;;; Both files are shared by every CAD backend, both ship vendored
-;;; under source/runtime/, and users can override their location via
-;;; $ALFE_BOOTSTRAP_LSP / $ALFE_RUNTIME_LSP for advanced setups (e.g.
-;;; a system-wide /opt/local/share/alfe/runtime/ install).
-
-(defun %vendored-asset-pathname (basename)
-  "Resolve a vendored runtime asset by BASENAME (e.g.
-\"autolisp-remote-io.lsp\", \"autolisp-bootstrap.lsp\") under
-source/runtime/ next to this code. Returns NIL if the asset isn't on
-disk. ASDF's system registry is the source of truth so the answer
-survives fasl caching and frozen executable builds — *load-pathname*
-alone would point at the cached .fasl, not the source tree."
-  (let ((candidate
-          (ignore-errors
-           (asdf:system-relative-pathname
-            "autolisp-front-end/backend-cad-common"
-            (concatenate 'string "source/runtime/" basename)))))
-    (when (and candidate (probe-file candidate))
-      (namestring (truename candidate)))))
+;;; Both files are shared by every CAD backend. They ship vendored under
+;;; source/runtime/, `make install' copies them to
+;;; <PREFIX>/share/alfe/runtime/, and $ALFE_BOOTSTRAP_LSP /
+;;; $ALFE_RUNTIME_LSP override both. ASSET-SEARCH-CANDIDATES below is the
+;;; one statement of the search order.
 
 (defparameter *runtime-lsp-fallback-paths*
   '("/opt/local/share/alfe/runtime/autolisp-remote-io.lsp"
@@ -219,54 +212,192 @@ NOT ship this file standalone — the bash wrapper inlines its content
 into the generated run-common.lsp at run time — so there is no
 SNCF-tree fallback here (only the vendored copy + install prefixes).")
 
-(defun %resolve-asset (env-name vendored-fn fallback-paths)
-  "Return the first asset path found by: env var ENV-NAME, the
-vendored copy via VENDORED-FN, then the FALLBACK-PATHS list. Each
-candidate is PROBE-FILE-checked; the empty-string env value is
-treated as unset. Returns NIL when no candidate exists."
+;;; --- the installation prefix of the RUNNING executable ------------
+;;;
+;;; An installed alfe is a dumped image: the ASDF source location it was
+;;; built from need not exist on the machine it runs on, and the fixed
+;;; prefixes above do not name an arbitrary Windows install. The copies
+;;; `make install' puts under <PREFIX>/share/alfe/runtime/ are found from
+;;; where the executable itself lives (alfe-installed-runtime-prefix-
+;;; discovery.issue) -- never from the current directory, and never from
+;;; the build location.
+
+(defun executable-pathname ()
+  "The truename of the running executable, or NIL when it cannot be
+determined. Symlinks are resolved, so a bin/alfe link finds the tree it
+points into. The implementation-specific part is this one form."
+  (ignore-errors
+   (let ((path #+sbcl sb-ext:*runtime-pathname*
+               #+ccl (ccl::kernel-path)
+               #-(or sbcl ccl) nil))
+     (when path
+       (truename path)))))
+
+(defvar *executable-pathname-function* 'executable-pathname
+  "Function of no argument returning the running executable's pathname.
+A variable so the tests can place a pretend executable in a pretend
+installation; production never rebinds it.")
+
+(defun alfe-executable-p (exe)
+  "True when EXE is an alfe program: alfe, alfe-sbcl, alfe-ccl, with or
+without .exe. A development image runs as `sbcl' or `ccl', whose own
+prefix (/usr, /usr/local) says nothing about where alfe's assets are --
+and must not shadow the source tree's copies; the fixed fallbacks still
+cover a system-wide install."
+  (let ((name (and exe (pathname-name exe))))
+    (and (stringp name)
+         (or (string-equal name "alfe")
+             (and (> (length name) 5)
+                  (string-equal "alfe-" name :end2 5))))))
+
+(defun %components-equal (a b)
+  (and (= (length a) (length b))
+       (every (lambda (x y) (and (stringp x) (stringp y) (string-equal x y)))
+              a b)))
+
+(defun installation-prefixes (&optional
+                                (exe (funcall *executable-pathname-function*)))
+  "The installation prefixes EXE can belong to, most specific first, as
+directory pathnames. The prefix is only known at run time -- a release
+is staged, zipped, and unpacked under any path -- and alfe's binary sits
+in one of two places in it:
+
+  <PREFIX>/libexec/.../alfe-<lisp>[.exe]
+      below libexec, per platform and processor
+      (libexec/clautolisp/binaries/<os>/<arch>/ today), reached through
+      the bin/alfe[.cmd] trampoline, which does not pass the prefix on
+  <PREFIX>/bin/alfe-<lisp>[.exe]
+      the autolisp-front-end `make install' layout
+
+Components compare case-insensitively: on Windows LIBEXEC and libexec
+are the same directory. NIL when EXE is not an alfe executable."
+  (when (alfe-executable-p exe)
+    (let* ((dir (pathname-directory exe))
+           (n (length dir))
+           (prefixes '()))
+      (flet ((prefix (drop)
+               (make-pathname :directory (subseq dir 0 (- n drop))
+                              :name nil :type nil :version nil
+                              :defaults exe)))
+        ;; Anywhere below a libexec directory: the prefix is its parent.
+        ;; The deepest libexec wins, so a prefix that itself contains a
+        ;; libexec component (/opt/libexec/x/libexec/...) still resolves.
+        (let ((pos (position-if (lambda (c)
+                                  (and (stringp c) (string-equal c "libexec")))
+                                dir :from-end t)))
+          (when (and pos (> pos 0) (< pos (1- n)))
+            (push (prefix (- n pos)) prefixes)))
+        (when (and (> n 1)
+                   (stringp (car (last dir)))
+                   (string-equal (car (last dir)) "bin"))
+          (push (prefix 1) prefixes)))
+      (nreverse prefixes))))
+
+(defun installed-asset-paths (basename)
+  "<PREFIX>/share/alfe/runtime/BASENAME for every prefix the running
+executable can belong to."
+  (mapcar (lambda (prefix)
+            (merge-pathnames
+             (make-pathname :directory '(:relative "share" "alfe" "runtime")
+                            :name (pathname-name basename)
+                            :type (pathname-type basename))
+             prefix))
+          (installation-prefixes)))
+
+(defvar *vendored-asset-system* "autolisp-front-end/backend-cad-common"
+  "The ASDF system whose source tree holds source/runtime/. A variable so
+the tests can make the source tree unavailable, as it is to an
+installed executable on another machine.")
+
+(defun asset-search-candidates (env-name basename fallback-paths)
+  "Every place an asset is looked for, in precedence order, as a list of
+(ORIGIN PATH), PATH a namestring:
+
+  1. :environment  $ENV-NAME, when set and non-empty
+  2. :installed    <PREFIX>/share/alfe/runtime/, from the executable
+  3. :vendored     source/runtime/ in the ASDF source tree
+  4. :fallback     the fixed FALLBACK-PATHS
+
+This is also what a missing-asset error reports, so it lists candidates
+that do not exist."
   (let ((env (uiop:getenv env-name))
-        (vendored (funcall vendored-fn)))
-    (cond
-      ((and env (plusp (length env)) (probe-file env))
-       (namestring (truename env)))
-      (vendored vendored)
-      (t
-       (first-existing
-        (mapcar (lambda (p) (uiop:native-namestring p))
-                fallback-paths))))))
+        (vendored (ignore-errors
+                   (asdf:system-relative-pathname
+                    *vendored-asset-system*
+                    (concatenate 'string "source/runtime/" basename)))))
+    (append
+     (when (and env (plusp (length env)))
+       (list (list :environment env)))
+     (mapcar (lambda (p) (list :installed (uiop:native-namestring p)))
+             (installed-asset-paths basename))
+     (when vendored
+       (list (list :vendored (uiop:native-namestring vendored))))
+     (mapcar (lambda (p) (list :fallback (uiop:native-namestring p)))
+             fallback-paths))))
+
+(defun %resolve-asset (env-name basename fallback-paths)
+  "The first existing file among ASSET-SEARCH-CANDIDATES, as an absolute
+namestring, or NIL. An $ENV-NAME naming no file is passed over, as it
+always was."
+  (loop for (nil path) in (asset-search-candidates env-name basename
+                                                   fallback-paths)
+        for found = (ignore-errors (probe-file path))
+        when (and found (pathname-name found))
+          do (return (namestring found))))
 
 (defun discover-runtime-lsp ()
-  "Resolve the CAD-side runtime LSP path. Order of precedence:
-
-  1. $ALFE_RUNTIME_LSP (when the file exists)
-  2. The vendored copy under source/runtime/ next to this code
-  3. Built-in fallback search list (/opt/local/share/alfe/runtime/, …)
-
-Returns an absolute namestring, or NIL when no copy is found — in
-which case the caller leaves the runtime unstaged and run-common.lsp
-will not LOAD it (the historical broken behavior)."
-  (%resolve-asset "ALFE_RUNTIME_LSP"
-                  (lambda () (%vendored-asset-pathname
-                              "autolisp-remote-io.lsp"))
+  "Resolve the CAD-side runtime LSP path (autolisp-remote-io.lsp):
+$ALFE_RUNTIME_LSP, then the running alfe's installation prefix, then the
+vendored source/runtime/ copy, then the fixed fallbacks -- see
+ASSET-SEARCH-CANDIDATES. Returns an absolute namestring, or NIL."
+  (%resolve-asset "ALFE_RUNTIME_LSP" "autolisp-remote-io.lsp"
                   *runtime-lsp-fallback-paths*))
 
 (defun discover-bootstrap-lsp ()
   "Resolve the CAD-side bootstrap LSP path (autolisp-bootstrap.lsp),
-which defines the autolisp-* helpers that the runtime's server loop
-calls. Order of precedence matches DISCOVER-RUNTIME-LSP:
-
-  1. $ALFE_BOOTSTRAP_LSP (when the file exists)
-  2. The vendored copy under source/runtime/ next to this code
-  3. Built-in fallback search list (/opt/local/share/alfe/runtime/, …)
-
-Returns an absolute namestring, or NIL when no copy is found. When NIL
-the caller leaves the bootstrap unstaged and the runtime's server loop
-will fail at the first eval (autolisp-eval-request-form undefined) —
-the deferred-autolisp-runtime-helpers symptom this asset closes."
-  (%resolve-asset "ALFE_BOOTSTRAP_LSP"
-                  (lambda () (%vendored-asset-pathname
-                              "autolisp-bootstrap.lsp"))
+which defines the autolisp-* helpers the runtime's server loop calls.
+Same order as DISCOVER-RUNTIME-LSP. Returns an absolute namestring, or
+NIL."
+  (%resolve-asset "ALFE_BOOTSTRAP_LSP" "autolisp-bootstrap.lsp"
                   *bootstrap-lsp-fallback-paths*))
+
+(defun require-runtime-assets (backend)
+  "Resolve both CAD-side assets, or signal BACKEND-BOOTSTRAP-ERROR (code
+:RUNTIME-ASSET-MISSING) naming each missing one and every path searched
+for it. Returns (values RUNTIME-PATH BOOTSTRAP-PATH).
+
+Called BEFORE anything is launched. A CAD started without them boots and
+never reaches READY; the whole READY timeout (120 s on the Windows
+runner) used to be spent waiting for a runtime that was never staged."
+  (let ((runtime (discover-runtime-lsp))
+        (bootstrap (discover-bootstrap-lsp))
+        (missing '()))
+    (unless bootstrap
+      (push (list "autolisp-bootstrap.lsp" "ALFE_BOOTSTRAP_LSP"
+                  (asset-search-candidates "ALFE_BOOTSTRAP_LSP"
+                                           "autolisp-bootstrap.lsp"
+                                           *bootstrap-lsp-fallback-paths*))
+            missing))
+    (unless runtime
+      (push (list "autolisp-remote-io.lsp" "ALFE_RUNTIME_LSP"
+                  (asset-search-candidates "ALFE_RUNTIME_LSP"
+                                           "autolisp-remote-io.lsp"
+                                           *runtime-lsp-fallback-paths*))
+            missing))
+    (when missing
+      (setf missing (nreverse missing))
+      (error 'backend-bootstrap-error
+             :backend backend
+             :code :runtime-asset-missing
+             :message
+             (format nil "~A not launched: required CAD runtime file~P not found.~
+~:{~%  ~A (set $~A to override); searched:~:{~%    ~(~11A~) ~A~}~}~
+~%  running executable: ~A"
+                     backend (length missing)
+                     missing
+                     (or (funcall *executable-pathname-function*) "unknown"))
+             :details (list :missing missing)))
+    (values runtime bootstrap)))
 
 ;;; --- protocol-driven eval-plan ------------------------------------
 
