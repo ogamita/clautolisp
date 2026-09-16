@@ -1,0 +1,71 @@
+Title: on CCL, alfe hands BricsCAD "C\:/t.dwt" instead of "C:/t.dwt"
+Status: open
+Found: 2026-09-16
+Related: issues/open/ccl-test-lanes-cannot-fail.issue (why nobody saw it)
+
+NOT FLAKY. This was reported as a flaky CCL test. It is not: it fails
+identically on every run -- on a feature branch and on clean master
+alike, 2026-09-16 -- and it looked intermittent only because the CCL
+lane never reports a failure (related ticket). A deterministic failure
+that CI cannot see and a flaky one look the same from the dashboard.
+
+SYMPTOM
+
+    BRICSCAD-WINDOWS-BATCH-ARGV-HAS-SINGLE-AUTOMATION-BEFORE-B
+      (MEMBER "C:/t.dwt" ARGV :TEST #'STRING=)  was NIL.
+
+Passes on SBCL, fails on CCL.
+
+CAUSE -- measured on both implementations
+
+The test builds the BricsCAD batch argv with :template-path "C:/t.dwt"
+and a simulated Windows host. The argv, as each Lisp produces it:
+
+    SBCL  "/fake/bricscad.exe" "/Automation" "C:/t.dwt"   "/p" "clean" "/b" ...
+    CCL   "/fake/bricscad.exe" "/Automation" "C\\:/t.dwt"  "/p" "clean" "/b" ...
+
+The template is ALREADY A STRING, and BUILD-LAUNCH-ARGV
+(backend-bricscad.lisp, the `(when template (list (namestring
+template)))' line) calls NAMESTRING on it. NAMESTRING of a string first
+PARSES it as a pathname OF THE LISP ALFE IS RUNNING ON, then renders it.
+The two implementations parse "C:/t.dwt" differently on a Unix host:
+
+    SBCL  directory (:RELATIVE "C:")    namestring "C:/t.dwt"
+    CCL   directory (:RELATIVE "C\\:")   namestring "C\\:/t.dwt"
+
+CCL escapes the colon, because on its Unix side a colon in a namestring
+is significant. The round trip is therefore not the identity, and the
+escaped text goes to BricsCAD.
+
+THE REAL DEFECT is not the escaping; it is that a path meant for the CAD
+is parsed by alfe's own Lisp at all. It names a file on the CAD's host,
+under the CAD's rules, and this Lisp's pathname syntax has no business
+reinterpreting it. That is the same lesson as the MSYS path work
+(windows-msys-paths-in-autolisp-load-alfe.issue, closed): a path's
+meaning belongs to the frame that will use it.
+
+WHO IS ACTUALLY AFFECTED
+
+Any CCL build of alfe handling a Windows drive path it did not parse
+itself -- a --dwg argument, $AUTOLISP_BRICSCAD_TEMPLATE, $AUTOLISP_DWG.
+On a CCL build running natively on Windows the parse of "C:" may well
+differ again (CCL treats a drive there as a device), so the production
+exposure depends on where CCL alfe is built and run; the shipped
+Windows alfe is the SBCL build. The test is right to catch it either
+way: the argv must not depend on which Lisp built alfe.
+
+FIX
+
+Pass a string through untouched; render only a real pathname object:
+
+    (when template
+      (list (if (stringp template) template (namestring template))))
+
+Worth checking the neighbouring NAMESTRING calls in the same function
+-- the run.scr and bridge .vbs paths -- which are built by
+MERGE-PATHNAMES from the workdir and so ARE pathname objects, and
+belong to this host rather than the CAD's. They are probably fine, but
+they should be looked at with this in mind rather than assumed.
+
+ORDER: fix this BEFORE, or together with, the CCL-lane ticket. Once the
+CCL lane can fail, this failure turns master red.
