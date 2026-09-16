@@ -1,0 +1,57 @@
+Title: test:clautolisp:windows red since 2.2.72 -- a test leaks the MSYS2 run frame
+Status: open -- fix in clautolisp 2.2.73 (fix-sync-env-test-leak); close
+        once test:clautolisp:windows is seen green with it
+Found: 2026-09-16, while checking the Windows jobs of the MR !260 pipeline
+Introduced: clautolisp 2.2.72 (093c6395, fix-msys-paths-alfe-parity) --
+            my own test
+Related: issues/closed/windows-msys-paths-in-autolisp-load-alfe.issue
+
+SYMPTOM
+
+test:clautolisp:windows (native child pipeline, allow_failure) has
+failed on EVERY master pipeline since 093c6395, and passed on the two
+before it. allow_failure kept the pipelines green, so nobody saw it.
+
+    PHASE7-FINDFILE-HANDLES-ABSOLUTE-PATHS
+      "/c/msys64/tmp/tmpVCVIWLRX-tmp.txt"  does not satisfy PROBE-FILE
+    BUILTIN-FILE-PRIMITIVES
+      FINDFILE        "/c/tmp/clautolisp-builtins-core-.../sample.txt"
+                      is not STRING= "C:/tmp/clautolisp-builtins-core-.../sample.txt"
+      FINDTRUSTEDFILE "/c/tmp/.../trusted.txt"  vs  "C:/tmp/.../trusted.txt"
+
+(job 16531846195, pipeline 2853737956.) test:alfe:windows is red on the
+same pipelines too, but that is a different thing -- the intermittent
+"couldn't rename ... status.txt: Acces refuse" of the mock CAD runtime,
+already red before 2.2.72.
+
+CAUSE
+
+SYNCHRONIZE-PROCESS-ENVIRONMENT-DOES-BOTH-HALVES
+(autolisp-runtime/tests/pathname-mapping-tests.lisp), added in 2.2.72,
+calls SYNCHRONIZE-PROCESS-ENVIRONMENT for real and restores nothing. That
+function SETFs *RUN-ENVIRONMENT* to the DETECTED run frame, plus the cwd,
+the AutoLISP current directory and the support paths.
+
+On the MSYS2 Windows runner the detected run frame is MSYS2, so every
+suite that runs afterwards -- builtins-core included -- renders the paths
+it returns in MSYS2 form: FINDFILE answers "/c/tmp/..." where the tests,
+written for the build frame the test image otherwise keeps, expect
+"C:/tmp/...". On Linux and macOS the run frame is the identity, which is
+why no local run could show it.
+
+This is a test defect, not an engine one: the clautolisp and alfe
+executables call the function once at startup, which is its purpose.
+
+FIX
+
+The test binds *RUN-ENVIRONMENT*, *DEFAULT-PATHNAME-DEFAULTS*,
+*AUTOLISP-CURRENT-DIRECTORY* and *AUTOLISP-SUPPORT-PATHS* around its body,
+so the calls it makes stay inside it. clautolisp SBCL and CCL: 34 suites
+each, 0 failures. The proof that matters is Windows-only: the MR
+pipeline's test:clautolisp:windows.
+
+LESSON
+
+A lane that is allow_failure is invisible in exactly the way the old CCL
+lanes were (ccl-test-lanes-cannot-fail.issue): its red does not reach the
+pipeline status. Check the native child's JOBS, not only its status.

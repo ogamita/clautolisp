@@ -9,22 +9,36 @@ They were written out in the clautolisp tool's startup, alfe copied the
 cwd half and missed the run-frame half, and `alfe --clautolisp' then
 failed to load an MSYS2 /c/... path that `clautolisp' loaded
 (windows-msys-paths-in-autolisp-load-alfe.issue). An embedder that
-copies half of a startup is the failure this pins."
-  ;; the RUN-FRAME half: a sentinel must be replaced by a real
-  ;; classification, which is what the alfe backend never did.
-  (let ((sentinel (list :not-a-real-environment)))
-    (setf clautolisp.pathname-mapping:*run-environment* sentinel)
-    (clautolisp.autolisp-runtime:synchronize-process-environment)
-    (is (not (eq sentinel clautolisp.pathname-mapping:*run-environment*))))
-  ;; the CWD half: current directory and support paths follow the live
-  ;; process, not the directory the image was dumped in.
-  (let ((cwd (uiop:getcwd)))
-    (clautolisp.autolisp-runtime:synchronize-process-environment)
-    (is (equal (namestring cwd)
-               (namestring *default-pathname-defaults*)))
-    (is (equal (namestring cwd)
-               (namestring
-                (clautolisp.autolisp-runtime:autolisp-current-directory))))))
+copies half of a startup is the failure this pins.
+
+Everything the function sets is BOUND here, not left behind. It used to
+be left behind, and on the MSYS2 Windows runner the run frame it
+installed made every later suite see MSYS2 paths: FINDFILE answered
+\"/c/tmp/...\" where the builtins-core tests expect \"C:/tmp/...\"
+(sync-env-test-leaks-run-frame.issue). Linux never showed it, because
+its run frame is the identity."
+  (let ((clautolisp.pathname-mapping:*run-environment*
+          clautolisp.pathname-mapping:*run-environment*)
+        (*default-pathname-defaults* *default-pathname-defaults*)
+        (clautolisp.autolisp-runtime.internal::*autolisp-current-directory*
+          clautolisp.autolisp-runtime.internal::*autolisp-current-directory*)
+        (clautolisp.autolisp-runtime.internal::*autolisp-support-paths*
+          clautolisp.autolisp-runtime.internal::*autolisp-support-paths*))
+    ;; the RUN-FRAME half: a sentinel must be replaced by a real
+    ;; classification, which is what the alfe backend never did.
+    (let ((sentinel (list :not-a-real-environment)))
+      (setf clautolisp.pathname-mapping:*run-environment* sentinel)
+      (clautolisp.autolisp-runtime:synchronize-process-environment)
+      (is (not (eq sentinel clautolisp.pathname-mapping:*run-environment*))))
+    ;; the CWD half: current directory and support paths follow the live
+    ;; process, not the directory the image was dumped in.
+    (let ((cwd (uiop:getcwd)))
+      (clautolisp.autolisp-runtime:synchronize-process-environment)
+      (is (equal (namestring cwd)
+                 (namestring *default-pathname-defaults*)))
+      (is (equal (namestring cwd)
+                 (namestring
+                  (clautolisp.autolisp-runtime:autolisp-current-directory)))))))
 
 
 ;;; Tests for the cross-environment path/pathname mapping layer
