@@ -1,0 +1,78 @@
+Title: AutoCAD orphaned when alfe is killed or the job is cancelled (runner-side sweep)
+Status: DEFERRED (pjb, 2026-09-16: "fais une issue deferee pour l'instant")
+Split from: issues/open/alfe-autocad-automation-never-quits-acad.issue
+            (its FIX part B; part A shipped in alfe 2.2.71)
+
+WHAT REMAINS
+
+alfe 2.2.71 makes a run quit the AutoCAD it CREATED, at shutdown. That
+closes the path that was leaving one behind every time -- including
+after successful runs -- but it can only act when shutdown is REACHED.
+
+Two endings never reach it:
+
+  - alfe is killed (the runner kills the job's process on cancel);
+  - the job is cancelled or times out while alfe is mid-run.
+
+And nothing the job can do reaches the process anyway. In automation
+mode alfe runs CSCRIPT, which asks Windows' COM service for an
+AutoCAD.Application; the acad.exe that answers is a child of THAT
+SERVICE. It is not in the job's process tree, so even a tree kill from
+the runner would not touch it. Only something that goes looking for it
+by name can.
+
+WHY IT IS DEFERRED AND NOT DROPPED
+
+  - INCIDENCE IS LOW. Over 2026-09-05..09-15, 1,758 jobs on PF5S26B:
+    exactly ONE GUI-mode AutoCAD job was cancelled mid-script
+    (16463865287, 09-12), and NO job ended in job_execution_timeout.
+    The one 1800 s AutoCAD job hung in `git fetch` before any CAD ran.
+    So this is the rare path; the common one is fixed.
+  - THE SCOPE IS A JUDGEMENT ABOUT SOMEONE ELSE'S MACHINE. The Windows
+    runner is pjb's laptop, which he also uses. A sweep is the first
+    thing here that would kill a process alfe did not start, and
+    getting its scope wrong closes his AutoCAD. That is worth deciding
+    deliberately rather than shipping alongside a bug fix.
+
+WHAT IT WOULD LOOK LIKE, WHEN TAKEN UP
+
+The distinguishing mark is the command line: an AutoCAD started by COM
+carries /Automation; one a person launched does not.
+
+    Get-CimInstance Win32_Process -Filter "Name='acad.exe'" |
+      Where-Object CommandLine -match '/Automation'
+
+Open questions, all of them decisions rather than facts:
+
+  - BEFORE or AFTER each job, or both? Before is safer (it cleans up
+    after the PREVIOUS job's bad ending, and cannot kill an AutoCAD the
+    current job is using). After is tidier but must not race the
+    session that just ended.
+  - Which jobs carry it -- only the four automation ones
+    (vendor:probes:autocad, path-sysvars / getcname / pgp:probe:
+    autocad:windows), or every Windows CAD job?
+  - Is /Automation enough of a guarantee on that laptop? If pjb ever
+    drives AutoCAD from a script of his own, it would carry the same
+    mark.
+  - An `after_script` does NOT run when a job is cancelled hard, which
+    is precisely the case this exists for -- so a before-job sweep is
+    probably the only one that covers the motivating case.
+
+HOW TO TELL WHETHER THIS STILL MATTERS
+
+After 2.2.71 is on the runner, an orphaned AutoCAD means ONE of two
+things, and they are distinguishable:
+
+  - the preceding job ended in cancel/kill  -> this ticket's path, and
+    evidence that the sweep is worth building;
+  - the preceding job ended NORMALLY        -> 2.2.71 did not do what
+    it claims, and THAT is the bug to chase, not this one.
+
+Check the last job on PF5S26B before the orphan appeared. Do not assume
+the first; the whole of the parent ticket was spent on mistaking one
+explanation for another.
+
+ALSO WORTH KNOWING: 2.2.71 quits only an instance alfe CREATED. While a
+stale AutoCAD is still running on the laptop, every new run ATTACHES to
+it and so will never quit it. The existing leftover has to be closed by
+hand ONCE; after that each job creates and quits its own.

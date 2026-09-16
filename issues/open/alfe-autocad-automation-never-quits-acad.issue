@@ -1,5 +1,5 @@
 Title: alfe's AutoCAD automation mode never quits the acad.exe it starts
-Status: open
+Status: part A DONE in alfe 2.2.71; part B DEFERRED (split out)
 Found: 2026-09-15 (pjb: "CI jobs on the windows runner leave autocad open,
        with a Dessin1.dwg, and no activity")
 Related: issues/open/cad-runner-wedged-by-modal-dialog.issue ("the engine
@@ -109,7 +109,30 @@ SIDE EFFECTS ALREADY SEEN, likely consequences of a persistent instance:
   - GetObject attaches to ANY running AutoCAD, including one a human
     opened on the laptop, and the probes would then run inside it.
 
-FIX -- two parts, and two decisions that are pjb's
+RESOLUTION SO FAR
+
+ PART A -- DONE, alfe 2.2.71. A run now quits the AutoCAD it CREATED,
+ at shutdown: the bridge's CREATED flag reaches alfe through a file in
+ the workdir (it was reported on stdout and nobody read it), documents
+ are closed WITHOUT saving before app.Quit so an unnamed Dessin1 cannot
+ raise the save dialog, and the quit is bounded like every other
+ shutdown step. An instance alfe merely ATTACHED to is left alone --
+ pjb, 2026-09-16: "alfe should only quit a CAD it created itself."
+
+   NOTE for the runner: while a stale AutoCAD is still up, every run
+   ATTACHES to it and therefore will not quit it. Close the existing
+   one by hand ONCE; after that each job creates and quits its own.
+
+ PART B -- DEFERRED, and split out to
+ issues/open/autocad-orphaned-by-killed-or-cancelled-jobs.issue
+ (pjb, 2026-09-16). It covers the endings alfe never reaches -- a
+ killed alfe, a cancelled job -- where no fix inside alfe can help,
+ because a COM-activated acad.exe is not in the job's process tree.
+ Deferred because the incidence is low (ONE GUI job cancelled mid-run
+ in ten days, no job timeouts) and because scoping a sweep is a
+ judgement about a machine pjb also uses.
+
+ORIGINAL FIX NOTES -- two parts, and two decisions that are pjb's
 
  A. QUIT WHAT WE CREATED, AND ONLY THAT. The bridge already records
     `created` versus `attached` (EmitFlags). Quitting an ATTACHED
