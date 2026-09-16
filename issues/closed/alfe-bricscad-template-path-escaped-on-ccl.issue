@@ -1,7 +1,7 @@
 Title: on CCL, alfe hands BricsCAD "C\:/t.dwt" instead of "C:/t.dwt"
-Status: open
+Status: RESOLVED (alfe 2.2.73, 2026-09-16)
 Found: 2026-09-16
-Related: issues/open/ccl-test-lanes-cannot-fail.issue (why nobody saw it)
+Related: issues/closed/ccl-test-lanes-cannot-fail.issue (why nobody saw it)
 
 NOT FLAKY. This was reported as a flaky CCL test. It is not: it fails
 identically on every run -- on a feature branch and on clean master
@@ -69,3 +69,17 @@ they should be looked at with this in mind rather than assumed.
 
 ORDER: fix this BEFORE, or together with, the CCL-lane ticket. Once the
 CCL lane can fail, this failure turns master red.
+
+RESOLUTION -- 2026-09-16, alfe 2.2.73
+
+New CAD-ARGUMENT-PATH (backend-cad-common.lisp, exported): a STRING goes
+to the CAD untouched; a PATHNAME object is rendered with
+UIOP:NATIVE-NAMESTRING, which is the host's native syntax without CL
+escapes. BUILD-LAUNCH-ARGV uses it for the template -- and, per the
+note above, for the run.scr, bridge .vbs and macOS launcher .applescript paths too: those ARE this
+host's pathname objects, but NAMESTRING would still escape a colon or
+wildcard character in the workdir on CCL, and an external program wants
+native text.
+
+Verified: alfe CCL 681 checks, 0 failures; reverting the one template
+line makes the (now able to fail) CCL lane exit 2 on this test alone.

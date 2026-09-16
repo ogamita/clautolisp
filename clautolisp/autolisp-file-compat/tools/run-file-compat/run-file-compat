@@ -54,7 +54,7 @@ elif [ "$runner" = "ccl" ]; then
   env XDG_CACHE_HOME="$XDG_CACHE_HOME" \
       CLAUTOLISP_ROOT="$SUBPROJECT_DIR/" \
       CLAUTOLISP_FILE_COMPAT_ARGS_FILE="$args_file" \
-      ccl --no-init --quiet \
+      ccl --no-init --quiet --batch \
           --load "$SCRIPT_DIR/launch.lisp" \
           --eval '(ccl:quit)'
 else

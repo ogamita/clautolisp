@@ -90,7 +90,10 @@ runs:
       if: inputs.ccl == 'true'
       shell: bash
       run: |
-        ccl --no-init --quiet \
+        # --batch: without it CCL does not exit on an error in an --eval,
+        # and the trailing (ccl:quit) turns a failed quickload into a
+        # green step (issues/closed/ccl-test-lanes-cannot-fail.issue).
+        ccl --no-init --quiet --batch \
             --eval '(load #P"~/quicklisp/setup.lisp")' \
             --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket") :silent t)' \
             --eval '(ccl:quit)'

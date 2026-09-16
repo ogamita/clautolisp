@@ -17,8 +17,6 @@
 ;;;; Real-CAD end-to-end tests are gated behind BRICSCAD_SMOKE=1 and
 ;;;; AUTOCAD_SMOKE=1 env vars per the issue; not run in CI.
 
-;;; --- VBS / AppleScript escape helpers ------------------------------
-
 ;;; --- quitting the AutoCAD we created -------------------------------
 ;;;
 ;;; The bug these pin (alfe-autocad-automation-never-quits-acad.issue):
@@ -32,13 +30,56 @@
 ;;; do not need Windows. The launcher is injected, so the test can say
 ;;; whether alfe would have launched the quit bridge at all.
 
+(defvar *cad-test-random* (make-random-state t)
+  "A random state seeded ONCE PER PROCESS, for naming test directories.
+
+Not *RANDOM-STATE*. CCL starts every fresh process with the SAME random
+state, so UIOP:WITH-TEMPORARY-FILE hands out the SAME name sequence run
+after run (measured: /tmp/tmpGYSY3UZ5.tmp in two separate processes).
+Tests that reuse a temporary name as a DIRECTORY and never remove it
+therefore collide with their own leftovers on the SECOND run -- which is
+exactly how these tests passed once and then failed with `Is a
+directory: /tmp/tmpKW2VXSR3.tmp' (ccl-test-lanes-cannot-fail.issue).")
+
+(defvar *cad-test-directories* '()
+  "Directories made during the current WITH-CAD-TEST-DIRECTORIES.")
+
+(defun %fresh-test-directory ()
+  "Make and return a NEW, empty directory under the system temp dir.
+
+NEW is checked, not assumed: a name that already exists is skipped, so
+a leftover from an earlier run can never be mistaken for this one."
+  (loop
+    (let ((dir (uiop:ensure-directory-pathname
+                (uiop:subpathname
+                 (uiop:temporary-directory)
+                 (format nil "alfe-cad-test-~36R"
+                         (random (expt 36 12) *cad-test-random*))))))
+      (unless (uiop:directory-exists-p dir)
+        (ensure-directories-exist dir)
+        (push dir *cad-test-directories*)
+        (return dir)))))
+
+(defmacro with-cad-test-directories (&body body)
+  "Run BODY, then remove every directory %FRESH-TEST-DIRECTORY made.
+
+The removal is what the earlier helper lacked: it left a directory in
+/tmp per call — 42 had accumulated — and those leftovers are what the
+next run collided with."
+  `(let ((*cad-test-directories* '()))
+     (unwind-protect (progn ,@body)
+       (dolist (dir *cad-test-directories*)
+         (ignore-errors
+          (uiop:delete-directory-tree
+           dir
+           ;; only ever a directory THIS helper made, under the temp dir
+           :validate (lambda (d)
+                       (search "alfe-cad-test-" (namestring d)))))))))
+
 (defun %quit-test-workdir (&key attached created)
-  "A workdir holding a bridge flags file, or none when both are NIL."
-  (let* ((dir (uiop:ensure-directory-pathname
-               (uiop:with-temporary-file (:pathname p :keep t)
-                 (uiop:delete-file-if-exists p)
-                 p))))
-    (ensure-directories-exist dir)
+  "A fresh workdir holding a bridge flags file, or none when both are NIL.
+Call inside WITH-CAD-TEST-DIRECTORIES, which removes it afterwards."
+  (let ((dir (%fresh-test-directory)))
     (when (or attached created)
       (with-open-file (out (merge-pathnames "com-flags.txt" dir)
                            :direction :output :if-exists :supersede
@@ -51,22 +92,38 @@
   "The bridge reported CREATED / ATTACHED on stdout and NOTHING read
 them, which is why the decision could not be made. They are written to
 a file in the workdir now, and this is the reader."
-  (multiple-value-bind (att cre)
-      (alfe.backend.autocad::read-com-flags
-       (%quit-test-workdir :created t))
-    (is (null att))
-    (is (eq t cre)))
-  (multiple-value-bind (att cre)
-      (alfe.backend.autocad::read-com-flags
-       (%quit-test-workdir :attached t))
-    (is (eq t att))
-    (is (null cre)))
-  ;; No flags file at all — a bridge that died before reporting. Both
-  ;; NIL, which is what makes the safe default safe.
-  (multiple-value-bind (att cre)
-      (alfe.backend.autocad::read-com-flags (%quit-test-workdir))
-    (is (null att))
-    (is (null cre))))
+  (with-cad-test-directories
+    (multiple-value-bind (att cre)
+        (alfe.backend.autocad::read-com-flags
+         (%quit-test-workdir :created t))
+      (is (null att))
+      (is (eq t cre)))
+    (multiple-value-bind (att cre)
+        (alfe.backend.autocad::read-com-flags
+         (%quit-test-workdir :attached t))
+      (is (eq t att))
+      (is (null cre)))
+    ;; No flags file at all — a bridge that died before reporting. Both
+    ;; NIL, which is what makes the safe default safe.
+    (multiple-value-bind (att cre)
+        (alfe.backend.autocad::read-com-flags (%quit-test-workdir))
+      (is (null att))
+      (is (null cre)))))
+
+(defun %quit-launches (workdir)
+  "Run QUIT-CREATED-AUTOCAD on a session in WORKDIR with a recording
+launcher. Returns (values RESULT LAUNCHED-ARGVS)."
+  (let* ((launched '())
+         (session (alfe.backend.autocad::%make-autocad-session
+                   :workdir workdir
+                   :variant :automation))
+         (result (alfe.backend.autocad::quit-created-autocad
+                  session
+                  :launcher (lambda (argv &rest ignored)
+                              (declare (ignore ignored))
+                              (push argv launched)
+                              nil))))
+    (values result launched)))
 
 (test autocad-quit-runs-only-for-an-instance-we-created
   "pjb, 2026-09-16: alfe should only quit a CAD it created itself. An
@@ -74,49 +131,26 @@ AutoCAD the bridge ATTACHED to was already running — on this runner it
 may be a person's own session — so alfe must leave it alone. The
 launcher is injected: the test asserts whether the quit bridge would
 have been launched AT ALL, which is the whole decision."
-  ;; created -> the quit bridge is launched, with cscript and the script
-  (let* ((launched '())
-         (session (alfe.backend.autocad::%make-autocad-session
-                   :workdir (%quit-test-workdir :created t)
-                   :variant :automation))
-         (result (alfe.backend.autocad::quit-created-autocad
-                  session
-                  :launcher (lambda (argv &rest ignored)
-                              (declare (ignore ignored))
-                              (push argv launched)
-                              nil))))
-    (is (eq t result))
-    (is (= 1 (length launched)))
-    (let ((argv (first launched)))
-      (is (equal "cscript" (first argv)))
-      (is (search "quit-autocad.vbs" (format nil "~{~A ~}" argv)))))
-  ;; attached -> nothing is launched. This is the case that protects a
-  ;; human's AutoCAD, so it is asserted on the LAUNCHER, not the result.
-  (let* ((launched '())
-         (session (alfe.backend.autocad::%make-autocad-session
-                   :workdir (%quit-test-workdir :attached t)
-                   :variant :automation))
-         (result (alfe.backend.autocad::quit-created-autocad
-                  session
-                  :launcher (lambda (argv &rest ignored)
-                              (declare (ignore ignored))
-                              (push argv launched)
-                              nil))))
-    (is (null result))
-    (is (null launched) "alfe tried to quit an AutoCAD it only attached to"))
-  ;; no flags at all -> nothing is launched either
-  (let* ((launched '())
-         (session (alfe.backend.autocad::%make-autocad-session
-                   :workdir (%quit-test-workdir)
-                   :variant :automation))
-         (result (alfe.backend.autocad::quit-created-autocad
-                  session
-                  :launcher (lambda (argv &rest ignored)
-                              (declare (ignore ignored))
-                              (push argv launched)
-                              nil))))
-    (is (null result))
-    (is (null launched))))
+  (with-cad-test-directories
+    ;; created -> the quit bridge is launched, with cscript and the script
+    (multiple-value-bind (result launched)
+        (%quit-launches (%quit-test-workdir :created t))
+      (is (eq t result))
+      (is (= 1 (length launched)))
+      (let ((argv (first launched)))
+        (is (equal "cscript" (first argv)))
+        (is (search "quit-autocad.vbs" (format nil "~{~A ~}" argv)))))
+    ;; attached -> nothing is launched. This is the case that protects a
+    ;; human's AutoCAD, so it is asserted on the LAUNCHER, not the result.
+    (multiple-value-bind (result launched)
+        (%quit-launches (%quit-test-workdir :attached t))
+      (is (null result))
+      (is (null launched) "alfe tried to quit an AutoCAD it only attached to"))
+    ;; no flags at all -> nothing is launched either
+    (multiple-value-bind (result launched)
+        (%quit-launches (%quit-test-workdir))
+      (is (null result))
+      (is (null launched)))))
 
 (test autocad-quit-bridge-closes-documents-without-saving
   "The document the bridge adds is UNNAMED (Dessin1/Drawing1), so
@@ -136,12 +170,12 @@ closing shortens the collection."
 (test autocad-bridge-writes-its-flags-to-a-file
   "The flags reach alfe through a file in the workdir: cscript is
 short-lived and the answer is needed later, at shutdown."
-  (uiop:with-temporary-file (:pathname run :keep t)
-    (let* ((dir (uiop:pathname-directory-pathname run))
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
            (vbs (merge-pathnames "bridge-flags-test.vbs" dir)))
       (alfe.backend.autocad::emit-bridge-vbs
        vbs
-       :runtime-load-path run
+       :runtime-load-path (merge-pathnames "run-common.lsp" dir)
        :status-path (merge-pathnames "status.txt" dir)
        :error-path (merge-pathnames "err.txt" dir)
        :flags-path (merge-pathnames "com-flags.txt" dir))
@@ -150,6 +184,7 @@ short-lived and the answer is needed later, at shutdown."
         (is (search "com-flags.txt" text))
         (is (search "AppendLine flagsFile" text))))))
 
+;;; --- VBS / AppleScript escape helpers ------------------------------
 
 (test cad-common-vbs-escape-doubles-internal-quotes
   "The VBScript double-quoted literal escape rule: every \" becomes

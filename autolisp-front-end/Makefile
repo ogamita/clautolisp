@@ -263,9 +263,19 @@ test-sbcl:  ## Run the alfe FiveAM suite under SBCL.
 		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)'
 
+# CCL EXIT STATUS (issues/open/ccl-test-lanes-cannot-fail.issue).
+# Without --batch, CCL does not exit on an unhandled error in an --eval:
+# it carries on, and a trailing (ccl:quit) then exits 0 -- so a failing
+# test, a failing load, or a failing build all looked GREEN. Measured:
+# that invocation exits 0 on an error; with --batch it exits 255.
+#   - every CCL invocation below takes --batch, so an error ANYWHERE
+#     fails the step;
+#   - the test lanes also quit with an explicit status (pjb), which
+#     turns a signalled test failure into exit 1 rather than relying on
+#     the error path alone.
 test-ccl:  ## Run the alfe FiveAM suite under CCL.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	"$(CCL)" --no-init --quiet \
+	"$(CCL)" --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
@@ -274,8 +284,7 @@ test-ccl:  ## Run the alfe FiveAM suite under CCL.
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
-		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)' \
-		--eval '(ccl:quit)'
+		--eval '(ccl:quit (handler-case (progn (asdf:test-system "$(TEST_SYSTEM)" :verbose t) 0) (error (e) (format *error-output* "~&~A~%" e) 1)))'
 
 # ---------------------------------------------------------------------
 # Executable build — mirrors clautolisp/Makefile's build-clautolisp-*
@@ -294,7 +303,7 @@ build-alfe-sbcl:  ## Build tools/alfe/bin/alfe-sbcl via save-lisp-and-die.
 
 build-alfe-ccl:  ## Build tools/alfe/bin/alfe-ccl via save-application.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	"$(CCL)" --no-init --quiet \
+	"$(CCL)" --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(ALFE_GENERATE)" \

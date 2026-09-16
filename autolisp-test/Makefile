@@ -232,7 +232,7 @@ test-asdf-sbcl-debug:
 
 test-asdf-ccl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	"$(CCL)" --no-init --quiet \
+	"$(CCL)" --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \

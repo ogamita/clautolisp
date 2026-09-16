@@ -94,6 +94,7 @@
                 #:launcher-failure-details
                 #:launcher-state-description
                 #:kill-engine-process
+                #:cad-argument-path
                 #:launcher-exit-code)
   (:import-from #:alfe.logging
                 #:log-debug
@@ -1446,7 +1447,10 @@ typically hands it to UIOP:LAUNCH-PROGRAM."
                  ;; `bricscad.exe /automation /B <script.scr>'.
                  ;; See alfe-bricscad-batch-hidden-ui.issue.
                  (when (windows-p) (list "/Automation"))
-                 (when template (list (namestring template)))
+                 ;; NOT (namestring template): the template is usually a
+                 ;; STRING already, and NAMESTRING re-parses it with this
+                 ;; Lisp's rules -- on CCL "C:/t.dwt" came out "C\:/t.dwt".
+                 (when template (list (cad-argument-path template)))
                  ;; User profile: the /p (Windows) or -P (Unix) switch. This
                  ;; is how a pure-CAD run avoids the runner's default profile
                  ;; auto-loading a heavy vertical application (EPURE/SCHMS+),
@@ -1460,15 +1464,17 @@ typically hands it to UIOP:LAUNCH-PROGRAM."
                  ;; -B on Windows opens the GUI but silently ignores the
                  ;; script -- the "drawing shows but run.scr never runs,
                  ;; stuck at BOOTING" symptom.
-                 (list (if (windows-p) "/b" "-B") (namestring scr)))))
+                 (list (if (windows-p) "/b" "-B") (cad-argument-path scr)))))
       (:automation
        (cond
          ((windows-p)
           (list "cscript" "//nologo"
-                (namestring (merge-pathnames "bridge-bricscad.vbs" workdir))))
+                (cad-argument-path
+                 (merge-pathnames "bridge-bricscad.vbs" workdir))))
          ((macos-p)
           (list "osascript"
-                (namestring (merge-pathnames "launcher.applescript" workdir))))
+                (cad-argument-path
+                 (merge-pathnames "launcher.applescript" workdir))))
          (t
           (error 'backend-not-available
                  :backend :bricscad

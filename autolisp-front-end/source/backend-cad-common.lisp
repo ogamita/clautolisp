@@ -42,6 +42,7 @@
            #:launcher-state-description
            #:launcher-failure-details
            #:kill-engine-process
+           #:cad-argument-path
            ;; CAD program discovery + denotation (backend selection)
            #:cad-program
            #:cad-program-kind
@@ -416,6 +417,28 @@ a process already known to be dead, so it cannot block on a live pipe."
                   code
                   (when (plusp (length err)) (string-trim '(#\Newline #\Space) err))
                   (when (plusp (length out)) (string-trim '(#\Newline #\Space) out))))))))
+
+(defun cad-argument-path (path)
+  "The text to hand an EXTERNAL CAD process for PATH.
+
+A STRING is passed through UNTOUCHED. It already names a file under the
+CAD's rules -- a --dwg argument, $AUTOLISP_BRICSCAD_TEMPLATE -- and this
+Lisp has no business reinterpreting it. Calling NAMESTRING on it did
+exactly that: NAMESTRING of a string first PARSES it as a pathname of
+the Lisp alfe happens to be running on, and the two implementations
+disagree. On a Unix host SBCL renders \"C:/t.dwt\" back unchanged; CCL
+escapes the colon and produced \"C\\\\:/t.dwt\", which then went to
+BricsCAD (alfe-bricscad-template-path-escaped-on-ccl.issue).
+
+A PATHNAME object -- the per-run workdir's run.scr, a bridge script --
+belongs to THIS host, so it IS rendered here, but with
+UIOP:NATIVE-NAMESTRING: the operating system's spelling, with none of
+the Lisp's namestring escapes, because the reader is a separate program
+and not this Lisp. On SBCL that is the same string NAMESTRING gives for
+an ordinary path."
+  (etypecase path
+    (string path)
+    (pathname (uiop:native-namestring path))))
 
 (defun kill-engine-process (info &key (timeout 6))
   "Best-effort terminate the launched engine within TIMEOUT seconds, NEVER
