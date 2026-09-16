@@ -34,6 +34,32 @@ no workdir (we exercise the captured-output path)."
                                :bootstrap-phase :full
                                :interactive-p nil)))
 
+(test clautolisp-backend-start-classifies-the-run-frame
+  "THE REGRESSION (windows-msys-paths-in-autolisp-load-alfe.issue).
+
+Starting the engine anchors it to the live process in TWO ways: the
+cwd, and the path RUN FRAME. alfe's backend copied the first half out
+of the clautolisp tool's startup and not the second, so
+*RUN-ENVIRONMENT* stayed the BUILD frame. On a mingw-SBCL-under-MSYS2
+host the build frame carries the native drive-style override, so an
+MSYS2 path mapped to nothing and `alfe --clautolisp' answered
+LOAD-FILE-NOT-FOUND for a /c/Users/... path that `clautolisp' opened
+fine.
+
+This host is not Windows, so the two frames are the SAME identity
+environment here and no value comparison could see the bug. What CAN
+be seen is whether the backend classified the run frame AT ALL: the
+slot is set to a sentinel first, and starting must replace it. That is
+exactly the step alfe was skipping."
+  (let ((sentinel (list :not-a-real-environment)))
+    (setf clautolisp.pathname-mapping:*run-environment* sentinel)
+    (start-clautolisp-direct-session)
+    (is (not (eq sentinel clautolisp.pathname-mapping:*run-environment*))
+        "alfe started the engine without classifying the run frame — an ~
+MSYS2 /c/... path will not map")
+    ;; and it is a real descriptor, not merely something else
+    (is (not (null clautolisp.pathname-mapping:*run-environment*)))))
+
 (test clautolisp-backend-is-registered
   "The clautolisp backend self-registers on load under :clautolisp,
 so the CLI default-resolver finds it without an explicit init call."

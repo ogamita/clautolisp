@@ -3428,6 +3428,47 @@ flag only."
         (autolisp-trace-exit function result))
       result)))
 
+(defun synchronize-process-environment ()
+  "Anchor the engine to the LIVE process: its cwd, and its path frame.
+
+TWO HALVES, AND THEY MUST NOT BE SEPARATED -- which is exactly what
+went wrong (windows-msys-paths-in-autolisp-load-alfe.issue).
+
+  1. THE CWD. *AUTOLISP-CURRENT-DIRECTORY* and the support paths are
+     captured from (truename \".\") at image-DUMP time, so a saved
+     executable would resolve relative LOAD / OPEN / FINDFILE against
+     the BUILD directory rather than where the user launched it.
+     Common Lisp's *DEFAULT-PATHNAME-DEFAULTS* is kept in agreement so
+     bare CL merges match.
+
+  2. THE RUN FRAME. The mapping layer distinguishes the frame the Lisp
+     was BUILT in from the one it RUNS in. *RUN-ENVIRONMENT* defaults
+     to the build frame, and on a mingw-SBCL-under-MSYS2 host the build
+     frame carries the native drive-style override -- so until the run
+     frame is detected, an MSYS2 path like \"/c/Users/...\" maps to
+     nothing and LOAD reports it missing.
+
+WHY THIS IS ONE FUNCTION AND NOT TWO. Both halves used to live in the
+clautolisp TOOL's startup, where an embedder could not call them. alfe
+mirrored the first half into its own backend -- comment and issue
+reference included -- and not the second, so `alfe --clautolisp' could
+not open a /c/... path that `clautolisp' opened fine. pjb, 2026-09-16:
+\"In general we should get strictly the same semantics, unless an
+exception is specified and documented.\" Duplicated startup is how the
+semantics drifted; one function that every entry point calls is the
+repair. Adding a third entry point should mean calling this, not
+copying it.
+
+Safe and idempotent on every host: on macOS and Linux the run frame is
+the identity environment and the mapping layer short-circuits."
+  (let ((cwd (ignore-errors (uiop:getcwd))))
+    (when cwd
+      (setf *default-pathname-defaults* cwd)
+      (set-autolisp-current-directory cwd)
+      (set-autolisp-support-paths (list (namestring cwd)))))
+  (ignore-errors (clautolisp.pathname-mapping:initialize-run-environment))
+  (values))
+
 (defun self-evaluating-runtime-value-p (object)
   (or (null object)
       (typep object '(signed-byte 32))

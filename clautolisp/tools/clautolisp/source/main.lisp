@@ -2102,18 +2102,13 @@ launched it from. Re-reading the cwd here — and keeping Common Lisp's
 `*default-pathname-defaults*` in agreement — makes a relative path
 resolve against the live cwd / $PWD, matching POSIX and the CAD hosts.
 See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
-  (let ((cwd (ignore-errors (uiop:getcwd))))
-    (when cwd
-      (setf *default-pathname-defaults* cwd)
-      (clautolisp.autolisp-runtime:set-autolisp-current-directory cwd)
-      (clautolisp.autolisp-runtime:set-autolisp-support-paths
-       (list (namestring cwd)))))
-  ;; Classify the RUN frame (native / cygwin / msys2 / wsl / posix) and
-  ;; install the run-frame mount table (clautolisp-windows-pathname-mapping
-  ;; spec §4.3, §5.2).  On macOS/Linux this yields the identity
-  ;; environment, so the whole mapping layer short-circuits and the boot
-  ;; cwd sync above is the only path handling that takes effect.
-  (ignore-errors (clautolisp.pathname-mapping:initialize-run-environment))
+  ;; The cwd sync AND the run-frame classification, from the runtime, so
+  ;; that an EMBEDDER gets the same startup as this tool. They were both
+  ;; written out here, and alfe copied only the first half — which is how
+  ;; `alfe --clautolisp' came to fail on an MSYS2 /c/... path that
+  ;; `clautolisp' loaded fine
+  ;; (windows-msys-paths-in-autolisp-load-alfe.issue).
+  (clautolisp.autolisp-runtime:synchronize-process-environment)
   ;; W1/W2 inspection hook: CLAUTOLISP_DEBUG_PATHMAP dumps the (frozen)
   ;; build frame recorded in the image and the freshly-detected run frame.
   ;; Handy on the Windows conformance runner to see how a real host is
