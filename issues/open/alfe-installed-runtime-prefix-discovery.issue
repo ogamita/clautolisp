@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-installed-runtime-prefix-discovery — installed Windows alfe cannot find its CAD runtime assets
-#+STATUS: TODO
+#+STATUS: FIXED in alfe 2.2.74 -- awaiting confirmation on the Windows runner
 #+PRIORITY: P1
 #+TYPE: alfe-backend
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: process-installed-runtime-prefix
 #+DATE: 2026-09-16
 
 * Observed failure
@@ -118,3 +118,77 @@ timeout waiting for a runtime that was never staged.
   that no CAD process is launched and no READY timeout is entered.
 - Confirm the deployed Windows install reaches READY with BricsCAD;
   cover the shared AutoCAD discovery/staging path too.
+
+* Resolution — alfe 2.2.74 (2026-09-16)
+
+** What changed (=backend-cad-common.lisp=)
+
+- =executable-pathname= returns the truename of the running binary.
+  SBCL gives it as =sb-ext:*runtime-pathname*=, CCL as
+  =ccl::kernel-path=. Taking the truename resolves symlinks.
+- =installation-prefixes= works out the prefix from the binary's
+  location at run time, since that is the only point at which it is
+  known. It handles two layouts:
+  - below a =libexec= directory, at any depth; the prefix is the parent
+    of =libexec= (=libexec/clautolisp/binaries/<os>/<arch>/= today, the
+    trampoline case);
+  - directly in =bin/=; the prefix is the parent of =bin=.
+
+  Directory names compare case-insensitively. Only a binary named
+  =alfe=, =alfe-<lisp>= (optionally =.exe=) counts. A development
+  =sbcl=/=ccl= must not make =/usr/local/share/...= shadow the source
+  tree.
+- =asset-search-candidates= is the one place the search order is
+  written down:
+  1. =$ALFE_*_LSP=;
+  2. =<prefix>/share/alfe/runtime/=;
+  3. the source tree, through ASDF;
+  4. the fixed fallbacks.
+- =require-runtime-assets= resolves both files. If either is missing it
+  signals =backend-bootstrap-error= with code =:runtime-asset-missing=
+  (exit status 4). The message names each missing file and its override
+  variable, lists every path searched, and names the running
+  executable. The BricsCAD and AutoCAD =start-engine= call it first,
+  before any launch, so the READY timeout is no longer spent waiting.
+  =--print-command= fails the same way.
+- Both backends now log each file's source path under =--debug=.
+
+** Checks (poseidon, Linux x86-64)
+
+- alfe SBCL and CCL suites: 712 checks, 0 failures. The new tests are
+  in =tests/backend-cad-tests.lisp=:
+  - prefixes for both layouts, upper-case =LIBEXEC=, =.exe=, a space in
+    the prefix, and non-alfe images;
+  - both files found without overrides in both layouts, with the source
+    tree and the fallbacks made unavailable;
+  - the installed copy wins over the source tree, and an override wins
+    over both;
+  - a missing file fails at once, through both the BricsCAD and AutoCAD
+    =start-engine=, and the launcher is never called.
+- The real executables =alfe-sbcl= and =alfe-ccl=, installed as an
+  unpacked release under a prefix containing a space and run from an
+  unrelated directory with no overrides. Each installed file carried a
+  marker comment, and the kept workdir was checked for it. Both
+  installed copies were staged via:
+  - the =bin/alfe= launcher (=dispatch.sh=) into =libexec/=;
+  - a symbolic link to the =libexec/= binary;
+  - the =bin/= layout;
+  - the whole prefix after renaming it.
+
+  With the installed =autolisp-remote-io.lsp= deleted, the search fell
+  through to the next candidate.
+
+** Not verified here
+
+- =alfe.cmd= and a real Windows install reaching READY with BricsCAD
+  and AutoCAD. That needs the Windows runner: the SCHMS job, or an
+  unpacked release run without =$ALFE_*_LSP=.
+- The dumped =alfe-ccl= prints no =alfe[...]= log lines at all. This is
+  a separate existing bug, filed as
+  =alfe-ccl-executable-drops-log-output.issue=. The CCL check above
+  therefore relied on the staged files rather than the log.
+- The =:subprocess= clautolisp variant (=--backend subprocess=, not the
+  default) still looks for =clautolisp-sbcl= through
+  =$ALFE_CLAUTOLISP_BIN=, the build checkout, =PATH= and =/usr/local/bin=,
+  but not under the prefix. The discovered prefix is used only for
+  =share/alfe/runtime/= so far.

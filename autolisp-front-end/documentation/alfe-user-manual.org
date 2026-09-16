@@ -52,6 +52,30 @@ alfe -l script.lsp             # load a file, default backend
 alfe                           # interactive REPL, default backend
 #+end_src
 
+** The CAD runtime files
+
+The AutoCAD and BricsCAD backends load two AutoLISP files into the CAD:
+=autolisp-bootstrap.lsp= and =autolisp-remote-io.lsp=. =make install=
+puts them in =$(PREFIX)/share/alfe/runtime/=. A release archive has the
+same tree, and can be unpacked under any directory.
+
+alfe finds them from where its own executable is, when it runs. This
+works whether the binary is =$(PREFIX)/bin/alfe-sbcl= or sits under
+=$(PREFIX)/libexec/= behind the =bin/alfe= launcher, and through a
+symbolic link. The current directory plays no part. Neither does the
+directory alfe was built in. The search order is:
+
+1. =$ALFE_BOOTSTRAP_LSP= / =$ALFE_RUNTIME_LSP=, when they name an
+   existing file;
+2. =share/alfe/runtime/= under the installation prefix;
+3. the copies in the source tree, for a development build;
+4. =/opt/local=, =/usr/local= and =/usr= (=share/alfe/runtime/=).
+
+If either file cannot be found, the CAD is not started. alfe exits
+with status 4 and lists every path it tried (see /Troubleshooting/).
+
+** Backend flags
+
 The =--clautolisp= / =--bricscad= / =--autocad= flags select a
 specific backend; absent a flag, the in-process clautolisp engine
 is used (see [[#backend-selection][Backend selection]]).
@@ -514,6 +538,10 @@ always wins.
 - =$ALFE_CLAUTOLISP_BIN= :: the =clautolisp= executable the clautolisp
   backend runs as a subprocess. Set it to test a build that is not the
   installed one.
+- =$ALFE_BOOTSTRAP_LSP=, =$ALFE_RUNTIME_LSP= :: the two CAD runtime
+  files, =autolisp-bootstrap.lsp= and =autolisp-remote-io.lsp=, in
+  place of the installed ones. A value naming no file is ignored. See
+  /The CAD runtime files/ above.
 - =$AUTOCAD_EXE=, =$AUTOCAD_ACCORECONSOLE=, =$BRICSCAD_EXE= :: explicit
   engine binaries, bypassing detection.
 - =$AUTOCAD_COM_MODE=, =$BRICSCAD_COM_MODE= :: =auto= (default) or
@@ -586,6 +614,15 @@ Yes — see the [[#backend-selection][Backend selection]] section.
 Auto-detection of installed CADs has been removed. Set
 =$ALFE_BACKEND_OVERRIDE= in your shell init if you want a CAD
 backend by default.
+
+** "not launched: required CAD runtime file not found"
+alfe could not find =autolisp-bootstrap.lsp= or =autolisp-remote-io.lsp=,
+so it did not start the CAD. Without these files the CAD would boot
+and never answer. The message lists each missing file and every path
+tried, starting with =share/alfe/runtime/= under the prefix alfe
+derived from its own location, and it names the running executable.
+Either install the files there, or point =$ALFE_BOOTSTRAP_LSP= /
+=$ALFE_RUNTIME_LSP= at them.
 
 ** A long =(eval …)= on a CAD backend is aborted after ~30 s
 
