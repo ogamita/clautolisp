@@ -1,7 +1,157 @@
 (in-package "COMMON-LISP-USER")
 
+;;; THE CCL KERNEL EATS SOME OF THE PROGRAM'S ARGUMENTS
+;;; (alfe-ccl-executable-drops-log-output.issue).
+;;;
+;;; Before any Lisp code runs, the CCL kernel (pmcl-kernel.c,
+;;; process_options) scans the whole argv of EVERY executable, a
+;;; save-application image with a prepended kernel included, and removes
+;;; its own options:
+;;;   -d --debug  -b --batch  --no-sigtrap  --avx  --no-avx
+;;;   -I --image-name, -R --heap-reserve, -S --stack-size,
+;;;   -Z --thread-stack-size  (each with a value; -I/-R/-S/-Z also match
+;;;                            as prefixes: -Sfoo)
+;;; It stops only at `--'. Every argument that starts with `-' is
+;;; checked, including values given to our own options. So `alfe-ccl -d'
+;;; and `clautolisp-ccl --debug' never saw their -d/--debug, which is a
+;;; shared CLI option, and ran at the default verbosity.
+;;;
+;;; The kernel only rewrites its pointer array; the OS keeps the
+;;; original command line:
+;;;   - procfs: /proc/self/cmdline (Linux), /proc/curproc/cmdline
+;;;     (FreeBSD, when procfs is mounted);
+;;;   - macOS has no /proc: sysctl KERN_PROCARGS2 returns the same bytes
+;;;     behind a header.
+;;; Where neither is available (Windows), the kernel's list is used as
+;;; before.
+
+(defun %split-nul-strings (octets decode &key (start 0) (end (length octets))
+                                              count)
+  "The NUL-terminated strings in OCTETS from START to END, decoded with
+DECODE (octets start end -> string). A final string without a NUL counts
+too. Stops after COUNT strings when COUNT is given."
+  (let ((strings '())
+        (from start))
+    (loop for i from start below end
+          while (or (null count) (< (length strings) count))
+          when (zerop (aref octets i))
+            do (push (funcall decode octets from i) strings)
+               (setf from (1+ i)))
+    (when (and (< from end)
+               (or (null count) (< (length strings) count)))
+      (push (funcall decode octets from end) strings))
+    (nreverse strings)))
+
+(defun %parse-procargs2 (octets decode)
+  "The argv in a macOS KERN_PROCARGS2 block:
+  argc (a native-endian 32-bit int), the executable path and its NUL,
+  NUL padding, then argc NUL-terminated strings (the environment after).
+Returns NIL when the block does not have that shape."
+  (when (>= (length octets) 4)
+    (let* ((argc #+(or little-endian-target little-endian)
+                 (logior (aref octets 0) (ash (aref octets 1) 8)
+                         (ash (aref octets 2) 16) (ash (aref octets 3) 24))
+                 #-(or little-endian-target little-endian)
+                 (logior (aref octets 3) (ash (aref octets 2) 8)
+                         (ash (aref octets 1) 16) (ash (aref octets 0) 24)))
+           (path-end (position 0 octets :start 4))
+           (args-start (and path-end
+                            (position-if #'plusp octets :start path-end))))
+      (when (and args-start (< 0 argc 100000))
+        (let ((args (%split-nul-strings octets decode
+                                        :start args-start :count argc)))
+          (when (= (length args) argc)
+            args))))))
+
+#+ccl
+(defun %utf-8-decoder (octets start end)
+  (ccl:decode-string-from-octets octets :start start :end end
+                                        :external-format :utf-8))
+
+#+ccl
+(defun %read-file-octets (path)
+  (with-open-file (in path :element-type '(unsigned-byte 8))
+    ;; procfs files report length 0: read to EOF.
+    (let ((buffer (make-array 256 :element-type '(unsigned-byte 8)
+                                  :adjustable t :fill-pointer 0)))
+      (loop for byte = (read-byte in nil)
+            while byte
+            do (vector-push-extend byte buffer))
+      (coerce buffer '(simple-array (unsigned-byte 8) (*))))))
+
+#+(and ccl darwin)
+(defun %darwin-procargs2 ()
+  "The raw KERN_PROCARGS2 block of this process, or NIL."
+  (let ((ctl-kern 1)
+        (kern-procargs2 49))
+    (ccl:%stack-block ((mib 12) (size 8))
+      (setf (ccl:%get-signed-long mib 0) ctl-kern
+            (ccl:%get-signed-long mib 4) kern-procargs2
+            (ccl:%get-signed-long mib 8) (ccl::getpid))
+      (setf (ccl:%get-unsigned-long size 0) 0
+            (ccl:%get-unsigned-long size 4) 0)
+      ;; First call: the size of the block.
+      (when (zerop (ccl:external-call "sysctl"
+                                      :address mib :unsigned-fullword 3
+                                      :address (ccl:%null-ptr) :address size
+                                      :address (ccl:%null-ptr)
+                                      :unsigned-doubleword 0
+                                      :signed-fullword))
+        (let ((n (ccl:%get-unsigned-long size 0)))
+          ;; kern.argmax is about 1 MB: heap, not stack.
+          (when (< 0 n (* 16 1024 1024))
+            (let ((buffer (ccl::malloc n)))
+              (unless (ccl:%null-ptr-p buffer)
+                (unwind-protect
+                     (when (zerop (ccl:external-call "sysctl"
+                                                     :address mib
+                                                     :unsigned-fullword 3
+                                                     :address buffer
+                                                     :address size
+                                                     :address (ccl:%null-ptr)
+                                                     :unsigned-doubleword 0
+                                                     :signed-fullword))
+                       (let* ((got (min n (ccl:%get-unsigned-long size 0)))
+                              (octets (make-array got
+                                                  :element-type '(unsigned-byte 8))))
+                         (dotimes (i got octets)
+                           (setf (aref octets i)
+                                 (ccl:%get-unsigned-byte buffer i)))))
+                  (ccl:free buffer))))))))))
+
+#+ccl
+(defun %ccl-os-argv ()
+  "The command line as the OS received it, as a list of strings, or NIL
+when it cannot be read."
+  (or (loop for path in '("/proc/self/cmdline" "/proc/curproc/cmdline")
+            for args = (ignore-errors
+                        (%split-nul-strings (%read-file-octets path)
+                                            #'%utf-8-decoder))
+            when args return args)
+      #+darwin
+      (ignore-errors
+       (let ((block (%darwin-procargs2)))
+         (and block (%parse-procargs2 block #'%utf-8-decoder))))))
+
+(defun %subsequence-p (short long)
+  "True when SHORT is LONG with some elements removed, order kept."
+  (loop for item in short
+        for tail = (member item long :test #'string=)
+          then (member item (rest tail) :test #'string=)
+        always tail))
+
 (defun argv ()
-  #+ccl ccl:*command-line-argument-list*
+  #+ccl
+  (let ((kernel-argv ccl:*command-line-argument-list*)
+        (os-argv (%ccl-os-argv)))
+    ;; Only when the OS list is recognisably the same command line, with
+    ;; the kernel's removals the only difference. Otherwise (unreadable,
+    ;; undecodable, or anything unexpected) keep the kernel's list.
+    (if (and os-argv
+             (string= (first os-argv) (first kernel-argv))
+             (%subsequence-p kernel-argv os-argv))
+        os-argv
+        kernel-argv))
   #+sbcl sb-ext:*posix-argv*
   #-(or ccl sbcl) (error "Unsupported Lisp implementation."))
 

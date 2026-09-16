@@ -260,9 +260,17 @@ check-docstrings:  ## Fail if any definition body holds dead forms — the signa
 
 test-shipped-compiler: build-clautolisp-sbcl  ## Assert the BUILT executable has a compiler in it: .lap round-trip + -O. Nothing else in the corpus runs the program that ships.
 	tools/clautolisp/tests/shipped-compiler-test.sh
+	"$(MAKE)" test-shipped-debug-flag
 
 test-shipped-compiler-ccl: build-clautolisp-ccl  ## Same, against the CCL executable. A .lap is a native host FASL, so each host ships its own compiler and each has to be asked.
 	tools/clautolisp/tests/shipped-compiler-test.sh tools/clautolisp/bin/clautolisp-ccl
+	"$(MAKE)" test-shipped-debug-flag-ccl
+
+test-shipped-debug-flag: build-clautolisp-sbcl  ## Assert the BUILT executable receives -d/--debug.
+	tools/clautolisp/tests/shipped-debug-flag-test.sh tools/clautolisp/bin/clautolisp-sbcl -x '(/ 1 0)'
+
+test-shipped-debug-flag-ccl: build-clautolisp-ccl  ## Same for CCL, whose kernel removes -d/--debug from argv (alfe-ccl-executable-drops-log-output).
+	tools/clautolisp/tests/shipped-debug-flag-test.sh tools/clautolisp/bin/clautolisp-ccl -x '(/ 1 0)'
 
 # CCL EXIT STATUS (issues/open/ccl-test-lanes-cannot-fail.issue).
 # Without --batch, CCL does not exit on an unhandled error in an --eval:
