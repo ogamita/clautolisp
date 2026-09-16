@@ -374,6 +374,16 @@ test-alfe-sbcl-clautolisp: $(ALFE_SBCL)  ## alfe-sbcl --clautolisp smoke test (a
 test-alfe-ccl-clautolisp: $(ALFE_CCL)  ## alfe-ccl --clautolisp smoke test (any OS).
 	"$(ALFE_CCL)" --no-init --clautolisp -x '(+ 1 2)'
 
+# The CCL kernel removes -d/--debug from argv before alfe runs; the built
+# executable must still see them (alfe-ccl-executable-drops-log-output).
+SHIPPED_DEBUG_FLAG_TEST := ../clautolisp/tools/clautolisp/tests/shipped-debug-flag-test.sh
+
+test-alfe-sbcl-debug-flag: $(ALFE_SBCL)  ## Assert the built alfe-sbcl receives -d/--debug.
+	"$(SHIPPED_DEBUG_FLAG_TEST)" "$(ALFE_SBCL)" --no-init --clautolisp -x '(princ 1)'
+
+test-alfe-ccl-debug-flag: $(ALFE_CCL)  ## Assert the built alfe-ccl receives -d/--debug.
+	"$(SHIPPED_DEBUG_FLAG_TEST)" "$(ALFE_CCL)" --no-init --clautolisp -x '(princ 1)'
+
 test-alfe-sbcl-bricscad-macos: $(ALFE_SBCL)  ## alfe-sbcl --bricscad smoke test (macOS).
 	@$(call require-os-darwin,$@); \
 	 "$(ALFE_SBCL)" --no-init --bricscad -x '(princ (+ 1 2))'
