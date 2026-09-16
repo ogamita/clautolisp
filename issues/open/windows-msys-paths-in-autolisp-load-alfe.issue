@@ -1,0 +1,108 @@
+cf. issues/closed/windows-msys-paths-in-autolisp-load.issue
+
+The fix works in clautolisp, but not in alfe --clautolisp:
+
+How come we get a different behavior between alfe --clautolisp and clautolisp ?
+In general we should get strictly the same semantics, unless an exception is specified and documented.
+
+
+In alfe, the msys path IS NOT resoved to windows, hence the could not locate error:
+
+/c/Users/PPBN02261/works/sncf-reseau/src/schms
+feat-eamoa-24679-pb-tests-cad-migration-sigfic
+09:10[COMMUN+PPBN02261@PF5S26BT w32 schms 40G]$ TRUSTEDPATHS="$trusted_paths" \
+OUTFILE="/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire/test-unitaire.out" \
+ERRFILE="/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire/test-unitaire.err" \
+STATUSFILE="/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire/test-unitaire.status" \
+            alfe -norc --clautolisp --host cador --dialect bricscad-v26 --timeout 120 -Esource WINDOWS-1252 --on-error debug \
+            -x '(setq *AUTOLISP_OUTFILE* "/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire/test-unitaire.out")' \
+            -x '(setq *AUTOLISP_ERRFILE* "/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire/test-unitaire.err")' \
+            -x '(setq *AUTOLISP_STATUSFILE* "/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire/test-unitaire.status")' \
+            -x '(setq *AUTOLISP_WORKDIR* "/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire")' \
+            -x '(setq *tu:self-override* "/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/test-unitaire.lsp")'  -i
+> > > > > > > > > alfe> (load "/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/test-unitaire.lsp")
+
+; runtime error: LOAD-FILE-NOT-FOUND: LOAD could not locate /c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/test-unitaire.lsp.
+alfe> (quit)
+
+
+
+While in clautolisp, the msys path IS resoved to windows path, and loading the file works:
+
+
+/c/Users/PPBN02261/works/sncf-reseau/src/schms
+feat-eamoa-24679-pb-tests-cad-migration-sigfic
+09:10[COMMUN+PPBN02261@PF5S26BT w32 schms 40G]$ TRUSTEDPATHS="$trusted_paths" \
+OUTFILE="/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire/test-unitaire.out" \
+ERRFILE="/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire/test-unitaire.err" \
+STATUSFILE="/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire/test-unitaire.status" \
+            clautolisp -norc --host cador --dialect bricscad-v26 -Esource WINDOWS-1252 --on-error debug \
+            -x '(setq *AUTOLISP_OUTFILE* "/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire/test-unitaire.out")' \
+            -x '(setq *AUTOLISP_ERRFILE* "/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire/test-unitaire.err")' \
+            -x '(setq *AUTOLISP_STATUSFILE* "/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire/test-unitaire.status")' \
+            -x '(setq *AUTOLISP_WORKDIR* "/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/.autolisp-workdir/unitaire")' \
+            -x '(setq *tu:self-override* "/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/test-unitaire.lsp")'  -i
+> > > > > > > > > DBG> clautolisp debugger attached (h for help)
+Welcome to clautolisp Version 2.2.65
+Copyright 2026-2026 Ogamita Ltd
+Licensed under AGPL; source codes available at:
+http://gitlab.com/ogamita/clautolisp/
+AUTOLISP REPL (BRICSCAD-V26 dialect, cador host) — Ctrl-D to exit.
+_$ (load "/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/test-unitaire.lsp")
+
+[tu:paths] getenv PWD (herite du shell)=C:/Users/PPBN02261/works/sncf-reseau/src/schms
+[tu:paths] self-override=/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/test-unitaire.lsp
+[tu:paths] self=/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/test-unitaire.lsp
+[tu:paths] dir=/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests
+[tu:paths] repo-dir=/c/Users/PPBN02261/works/sncf-reseau/src/schms
+[tu:paths] runner load argument=/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/test-runner-commun.lsp
+[tu:paths] findfile relatif Makefile=/c/Users/PPBN02261/works/sncf-reseau/src/schms/Makefile
+[tu:paths] findfile relatif harnais=/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/test-runner-commun.lsp
+[tu:paths] findfile chemin calcule harnais=/c/Users/PPBN02261/works/sncf-reseau/src/schms/tests/test-runner-commun.lsp
+[path-dotdot] in TU:FIND-FIRST-FILE: FINDFILE "/c/Users/PPBN02261/works/sncf-reseau/src/schms/../outils-autolisp/autolisp-test/test-framework.lsp": `..' resolves differently on POSIX and Windows
+Command: ._STYLE iso es_isocp 0 1 0 _n _n
+; in: LAMBDA (CLAUTOLISP.AUTOLISP-COMPILER::%CONTEXT)
+;     (RETURN-FROM CLAUTOLISP.AUTOLISP-COMPILER::%OPEN-CODED
+;       (IF (= CLAUTOLISP.AUTOLISP-COMPILER::%OPEN-CODED-ARG-1
+;              CLAUTOLISP.AUTOLISP-COMPILER::%OPEN-CODED-ARG-2)
+;           NIL
+;           (CLAUTOLISP.AUTOLISP-RUNTIME:AUTOLISP-TRUE-SYMBOL)))
+; 
+; note: deleting unreachable code
+; 
+; compilation unit finished
+;   printed 1 note
+; in: LAMBDA (CLAUTOLISP.AUTOLISP-COMPILER::%CONTEXT)
+;     (RETURN-FROM CLAUTOLISP.AUTOLISP-COMPILER::%OPEN-CODED
+;       (IF (= CLAUTOLISP.AUTOLISP-COMPILER::%OPEN-CODED-ARG-1
+;              CLAUTOLISP.AUTOLISP-COMPILER::%OPEN-CODED-ARG-2)
+;           (CLAUTOLISP.AUTOLISP-RUNTIME:AUTOLISP-TRUE-SYMBOL)
+;           NIL))
+; 
+; note: deleting unreachable code
+; 
+; note: deleting unreachable code
+; 
+; note: deleting unreachable code
+; 
+; note: deleting unreachable code
+; 
+; note: deleting unreachable code
+; 
+; note: deleting unreachable code
+; 
+; note: deleting unreachable code
+; 
+; note: deleting unreachable code
+; 
+; compilation unit finished
+;   printed 8 notes
+nil
+_$ 
+DBG> detached
+
+/c/Users/PPBN02261/works/sncf-reseau/src/schms
+feat-eamoa-24679-pb-tests-cad-migration-sigfic
+09:11[COMMUN+PPBN02261@PF5S26BT w32 schms 40G]$ exit
+
+Process shell<1> finished
