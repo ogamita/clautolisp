@@ -264,15 +264,24 @@ test-shipped-compiler: build-clautolisp-sbcl  ## Assert the BUILT executable has
 test-shipped-compiler-ccl: build-clautolisp-ccl  ## Same, against the CCL executable. A .lap is a native host FASL, so each host ships its own compiler and each has to be asked.
 	tools/clautolisp/tests/shipped-compiler-test.sh tools/clautolisp/bin/clautolisp-ccl
 
+# CCL EXIT STATUS (issues/open/ccl-test-lanes-cannot-fail.issue).
+# Without --batch, CCL does not exit on an unhandled error in an --eval:
+# it carries on, and a trailing (ccl:quit) then exits 0 -- so a failing
+# test, a failing load, or a failing build all looked GREEN. Measured:
+# that invocation exits 0 on an error; with --batch it exits 255.
+#   - every CCL invocation below takes --batch, so an error ANYWHERE
+#     fails the step;
+#   - the test lanes also quit with an explicit status (pjb), which
+#     turns a signalled test failure into exit 1 rather than relying on
+#     the error path alone.
 test-ccl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	ccl --no-init --quiet \
+	ccl --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))' \
-		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)' \
-		--eval '(ccl:quit)'
+		--eval '(ccl:quit (handler-case (progn (asdf:test-system "$(TEST_SYSTEM)" :verbose t) 0) (error (e) (format *error-output* "~&~A~%" e) 1)))'
 
 build-read-autolisp-sbcl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
@@ -284,7 +293,7 @@ build-read-autolisp-sbcl:
 
 build-read-autolisp-ccl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	ccl --no-init --quiet \
+	ccl --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(READ_AUTOLISP_TOOL_DIR)/generate-read-autolisp.lisp" \
@@ -300,7 +309,7 @@ build-clautolisp-sbcl:
 
 build-clautolisp-ccl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	ccl --no-init --quiet \
+	ccl --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(CLAUTOLISP_TOOL_DIR)/generate-clautolisp.lisp" \

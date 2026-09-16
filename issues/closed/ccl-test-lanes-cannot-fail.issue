@@ -1,7 +1,7 @@
 Title: the CCL test lanes exit 0 even when tests fail
-Status: open
+Status: RESOLVED (alfe 2.2.73, together with the related ticket, 2026-09-16)
 Found: 2026-09-16, while filing what was reported as a "flaky" alfe CCL test
-Related: issues/open/alfe-bricscad-template-path-escaped-on-ccl.issue
+Related: issues/closed/alfe-bricscad-template-path-escaped-on-ccl.issue
          (the failure this has been hiding)
 Affects: clautolisp/Makefile test-ccl, autolisp-front-end/Makefile test-ccl
 
@@ -76,7 +76,7 @@ steps added later that nobody remembers to wrap.)
 ORDER MATTERS -- DO NOT LAND THIS ALONE
 
 The moment the alfe CCL lane can fail, it WILL: the failure in
-issues/open/alfe-bricscad-template-path-escaped-on-ccl.issue is real and
+issues/closed/alfe-bricscad-template-path-escaped-on-ccl.issue is real and
 deterministic. Landing this first turns master red. Fix that one first,
 or in the same change.
 
@@ -89,3 +89,38 @@ GITHUB MIRROR
 .github/workflows/ci.yml mirrors the Linux lanes by hand. If it invokes
 CCL the same way, it has the same blindness; check it when fixing, per
 the parity rule.
+
+RESOLUTION -- 2026-09-16, alfe 2.2.73
+
+Both halves, as proposed:
+
+  - test-ccl (clautolisp/Makefile, autolisp-front-end/Makefile) ends with
+      (ccl:quit (handler-case (progn (asdf:test-system ...) 0)
+                  (error (e) (format *error-output* ...) 1)))
+  - --batch on EVERY ccl invocation in those Makefiles (tests and
+    builds), in run-file-compat, in autolisp-test's test-asdf-ccl, and in
+    the GitHub setup-lisp quickload step. The -debug targets stay
+    interactive on purpose.
+
+.github/workflows/ci.yml calls the Makefile targets, so the mirror is
+covered without an edit of its own. .gitlab-ci.yml's CCL quickload
+already used -b.
+
+SEEN RED, not assumed: with the template fix reverted, the alfe CCL lane
+exits 2 with exactly that one failure. With it in place: alfe CCL 681
+checks, 0 failures, exit 0 -- twice in a row; clautolisp CCL 34 suites, 0
+failures, exit 0 (the expected green, now actually able to say
+otherwise); both SBCL lanes green.
+
+A SECOND THING THE BLIND LANE HID. The red run also showed three
+AutoCAD tests from 2.2.71 (backend-cad-tests.lisp) failing on CCL on
+every run but the first:
+
+    Is a directory : #P"/tmp/tmpKW2VXSR3.tmp"
+
+Their helper turned a UIOP temporary FILE name into a DIRECTORY and never
+removed it (42 had piled up in /tmp), and CCL starts each process with
+the same random state, so UIOP:WITH-TEMPORARY-FILE hands out the same
+names run after run -- the next run collided with the last run's
+leftovers. Fixed in the tests: a per-process seeded random state, a
+checked-new directory, and WITH-CAD-TEST-DIRECTORIES removing them all.
