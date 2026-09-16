@@ -1,3 +1,61 @@
+# -*- mode:org; coding:utf-8 -*-
+#+STATUS: RESOLVED (clautolisp 2.2.72 / alfe 2.2.72; confirme sur le
+#+        portable Windows par pjb, 2026-09-16 : "The first test on
+#+        windows laptop validates alfe synch with clautolisp on msys
+#+        paths. Success.")
+
+* Cause et correction
+
+La correction 2.2.4 (issues/closed/windows-msys-paths-in-autolisp-load.issue)
+etait presente et correcte. Le defaut etait AILLEURS : dans QUI la
+declenche.
+
+=*RUN-ENVIRONMENT*= vaut la trame BUILD tant que personne n'a classe la
+trame RUN, et =INITIALIZE-RUN-ENVIRONMENT= n'avait qu'UN SEUL appelant :
+=SYNCHRONIZE-PROCESS-CWD=, dans le demarrage de l'OUTIL clautolisp --
+la ou aucun embarqueur ne peut l'atteindre. alfe ne l'appelait jamais.
+Sur l'hote mingw-SBCL-sous-MSYS2 la trame build porte l'override
+drive-style natif : sous alfe, =/c/...= ne correspondait donc a aucun
+montage, alors que le MEME moteur, demarre par l'outil, le resolvait.
+
+CE QUI L'A RENDU POSSIBLE EST LA FORME, PAS L'OUBLI. Ce demarrage
+faisait DEUX choses -- synchroniser le cwd, classer la trame run -- et
+alfe en a RECOPIE LA PREMIERE MOITIE dans son propre backend,
+commentaire et reference d'issue compris, sans la seconde. Un demarrage
+qu'il faut dupliquer sera duplique incompletement.
+
+CORRECTION : les deux moities sont desormais UNE fonction du runtime,
+=SYNCHRONIZE-PROCESS-ENVIRONMENT=, appelee par l'outil clautolisp ET
+par le backend clautolisp d'alfe. Aucun des deux ne reecrit les etapes.
+Un troisieme frontal devra l'appeler, pas la recopier.
+
+* Verification
+
+Le test reproduit le defaut au lieu de le decrire : la machine de
+developpement n'est pas Windows, les deux trames y sont la meme trame
+identite, et aucune comparaison de valeur ne pouvait voir le bogue. Ce
+qui SE VOIT est si la trame run a ete classee DU TOUT -- sentinelle
+posee, moteur demarre via le backend alfe, sentinelle qui doit avoir
+disparu. Verifie ROUGE en retablissant l'ancien demi-demarrage :
+"alfe started the engine without classifying the run frame -- an MSYS2
+/c/... path will not map".
+
+CONFIRMATION DE BOUT EN BOUT par pjb sur le portable Windows
+(2026-09-16), seule chose que la machine de developpement ne pouvait
+pas fournir. Test sur le serveur Windows a suivre ; aucune difference
+attendue -- la trame run est classee d'apres l'ENVIRONNEMENT dans
+lequel tourne le processus (MSYS2), pas d'apres la machine.
+
+* Principe retenu
+
+pjb : « In general we should get strictly the same semantics [between
+alfe --clautolisp and clautolisp], unless an exception is specified and
+documented. » Le moyen de le tenir n'est pas la vigilance mais la
+structure : un seul demarrage, appele par tous les frontaux.
+
+----------------------------------------------------------------------
+RAPPORT D'ORIGINE
+
 cf. issues/closed/windows-msys-paths-in-autolisp-load.issue
 
 The fix works in clautolisp, but not in alfe --clautolisp:
