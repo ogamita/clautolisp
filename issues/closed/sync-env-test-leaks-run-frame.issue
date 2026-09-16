@@ -1,6 +1,6 @@
 Title: test:clautolisp:windows red since 2.2.72 -- a test leaks the MSYS2 run frame
-Status: open -- fix in clautolisp 2.2.73 (fix-sync-env-test-leak); close
-        once test:clautolisp:windows is seen green with it
+Status: RESOLVED (clautolisp 2.2.73, MR !261; test:clautolisp:windows
+        green on the MR pipeline, job 16533656460, 2026-09-16)
 Found: 2026-09-16, while checking the Windows jobs of the MR !260 pipeline
 Introduced: clautolisp 2.2.72 (093c6395, fix-msys-paths-alfe-parity) --
             my own test
