@@ -282,7 +282,7 @@ machine has no template I can find\", and now alfe brings one."
 
 Option Explicit
 Dim fso, app, doc, runFile, statusFile, errFile, commode, debugFile, waitSecs
-Dim attached, created, rc, statusReadyFlag
+Dim attached, created, rc, statusReadyFlag, flagsFile
 
 Set fso = CreateObject(\"Scripting.FileSystemObject\")
 runFile     = \"${RUNLSPFILE}\"
@@ -290,6 +290,7 @@ statusFile  = \"${STATUSFILE}\"
 errFile     = \"${ERRFILE}\"
 commode     = \"${COMMODE}\"
 debugFile   = \"${DEBUGFILE}\"
+flagsFile   = \"${FLAGSFILE}\"
 waitSecs    = ${WAIT_SECS}
 attached    = False
 created     = False
@@ -319,6 +320,15 @@ Sub EmitFlags(att, cre)
   If cre Then c = \"1\" Else c = \"0\"
   WScript.StdOut.WriteLine \"ATTACHED=\" & a
   WScript.StdOut.WriteLine \"CREATED=\"  & c
+  ' ... and to a FILE, because stdout is not where alfe can read them.
+  ' cscript is short-lived and its pipe is drained on exit, but the
+  ' answer is needed LATER, at shutdown, to decide whether this run
+  ' owns the AutoCAD it is about to quit. A file in the workdir
+  ' outlives the process and needs no stream timing.
+  If flagsFile <> \"\" Then
+    AppendLine flagsFile, \"ATTACHED=\" & a
+    AppendLine flagsFile, \"CREATED=\" & c
+  End If
 End Sub
 
 Sub WaitQuiescent(a, secs)
@@ -406,11 +416,72 @@ EMIT-BRIDGE-VBS.")
                         (vbs-escape value))))
     out))
 
+(defparameter *quit-autocad-vbs-template*
+  "' Quit the AutoCAD this alfe run CREATED. Never called for an
+' instance the bridge merely ATTACHED to: that one was already running
+' — it may be a person's session on the same laptop — and closing it
+' would be alfe reaching outside its own work.
+Option Explicit
+Dim app, doc, i
+On Error Resume Next
+Set app = GetObject(, \"AutoCAD.Application\")
+If Err.Number <> 0 Then WScript.Quit 0
+If app Is Nothing Then WScript.Quit 0
+Err.Clear
+
+' Close every document WITHOUT saving, downwards because closing
+' shortens the collection. Not app.Quit on its own: the document this
+' bridge added is UNNAMED (Dessin1/Drawing1), so a quit with unsaved
+' changes raises the Save-changes dialog — and a modal dialog on an
+' unattended runner is the very hang this is meant to end.
+For i = app.Documents.Count - 1 To 0 Step -1
+  Set doc = app.Documents.Item(i)
+  If Err.Number = 0 Then
+    doc.Close False
+  End If
+  Err.Clear
+Next
+
+app.Quit
+Err.Clear
+WScript.Quit 0
+"
+  "VBScript that attaches to the running AutoCAD and quits it.")
+
+(defun emit-quit-vbs (path)
+  "Write the quit bridge to PATH and return it."
+  (with-open-file (out path :direction :output
+                            :if-exists :supersede
+                            :if-does-not-exist :create
+                            :external-format :utf-8)
+    (write-string *quit-autocad-vbs-template* out))
+  path)
+
+(defun read-com-flags (workdir)
+  "Return (values ATTACHED-P CREATED-P) from the bridge's flags file.
+
+Both NIL when the file is missing or unreadable — which is the SAFE
+default: alfe quits only what it can SHOW it created, so a bridge that
+died before reporting leaves AutoCAD alone."
+  (let ((path (merge-pathnames "com-flags.txt" workdir))
+        (attached nil)
+        (created nil))
+    (when (probe-file path)
+      (ignore-errors
+       (with-open-file (in path :direction :input :external-format :utf-8)
+         (loop for line = (read-line in nil nil)
+               while line
+               do (let ((trimmed (string-trim '(#\Space #\Tab #\Return) line)))
+                    (cond ((string= trimmed "ATTACHED=1") (setf attached t))
+                          ((string= trimmed "CREATED=1")  (setf created t))))))))
+    (values attached created)))
+
 (defun emit-bridge-vbs (path
                         &key runtime-load-path
                              status-path
                              error-path
                              debug-path
+                             flags-path
                              (com-mode "auto")
                              (wait-secs 60))
   (let ((text (substitute-placeholders
@@ -420,6 +491,7 @@ EMIT-BRIDGE-VBS.")
                  ("ERRFILE"     . ,(namestring error-path))
                  ("COMMODE"     . ,com-mode)
                  ("DEBUGFILE"   . ,(if debug-path (namestring debug-path) ""))
+                 ("FLAGSFILE"   . ,(if flags-path (namestring flags-path) ""))
                  ("WAIT_SECS"   . ,(format nil "~D" wait-secs))))))
     (with-open-file (out path :direction :output
                               :if-exists :supersede
@@ -696,6 +768,7 @@ pipe read, so the default stays the robust total decoder (G2)."
               :runtime-load-path run-common
               :status-path (alfe.protocol.file:protocol-session-status-path protocol)
               :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)
+              :flags-path  (merge-pathnames "com-flags.txt" workdir)
               :com-mode    (or (uiop:getenv "AUTOCAD_COM_MODE") "auto"))
              (log-debug "backend AUTOCAD: wrote bridge-autocad.vbs -> ~A" vbs)))
           (:batch
@@ -843,6 +916,58 @@ unwind-protect that reaps the engine when it does not get there."
     (:shutdown  :stopped)
     (:interrupt :interrupted)))
 
+(defun quit-created-autocad (session &key (timeout 20)
+                                          (launcher #'uiop:launch-program))
+  "Quit the AutoCAD this session CREATED, if it created one.
+
+WHY THIS EXISTS. In automation mode alfe does not run AutoCAD: it runs
+CSCRIPT, which asks Windows' COM service for an AutoCAD.Application.
+The acad.exe that answers is a child of that service, not of cscript,
+alfe, or the CI job — so KILL-ENGINE-PROCESS, which kills the process
+alfe launched, has never been able to reach it, and neither can a
+process-tree kill from the job. The bridge ends with `Don't call
+app.Quit here - ... the alfe-side poller decides on the lifecycle';
+this is the alfe side finally deciding. Until now nothing did, and
+every automation run left AutoCAD idle on an unnamed Dessin1.dwg
+(issues/open/alfe-autocad-automation-never-quits-acad.issue).
+
+ONLY WHAT WE CREATED (pjb, 2026-09-16). The bridge attaches to a
+running AutoCAD when there is one, and on this runner that may be a
+person's own session. Quitting it would be alfe reaching outside its
+own work, so the CREATED flag — which the bridge already reported, and
+which nothing read — is what licenses the quit.
+
+BOUNDED, like every other shutdown step here: the quit is itself a
+cscript, so it gets the same treatment as the engine — poll, then
+KILL-ENGINE-PROCESS. A CAD that hangs on a dialog while being asked to
+quit must not hang alfe, or the cure becomes the disease."
+  (let ((workdir (session-workdir session)))
+    (when workdir
+      (multiple-value-bind (attached created) (read-com-flags workdir)
+        (declare (ignore attached))
+        (cond
+          ((not created)
+           (log-debug "backend AUTOCAD: not quitting AutoCAD (this run did ~
+not create it)")
+           nil)
+          (t
+           (log-verbose "backend AUTOCAD: quitting the AutoCAD this run created")
+           (ignore-errors
+            (let* ((vbs (emit-quit-vbs (merge-pathnames "quit-autocad.vbs"
+                                                        workdir)))
+                   (info (funcall launcher
+                                  (list "cscript" "//nologo" (namestring vbs))
+                                  :output :stream :error-output :stream))
+                   (start (get-internal-real-time)))
+              (loop while (and (uiop:process-alive-p info)
+                               (< (/ (float (- (get-internal-real-time) start))
+                                     internal-time-units-per-second)
+                                  timeout))
+                    do (sleep 0.2))
+              (kill-engine-process info)
+              (log-debug "backend AUTOCAD: quit bridge finished")))
+           t))))))
+
 (defmethod shutdown ((session autocad-session) &key reason)
   (declare (ignore reason))
   (unless (eq (session-state session) :stopped)
@@ -858,6 +983,14 @@ unwind-protect that reaps the engine when it does not get there."
       ;; and with it the whole CI job. The BricsCAD backend learned this
       ;; and grew a bounded killer; AutoCAD had kept the unbounded call.
       ;; KILL-ENGINE-PROCESS is now shared by both.
+      ;;
+      ;; The AutoCAD itself is quit FIRST, and only when this run created
+      ;; it: in automation mode the process killed below is cscript, and
+      ;; acad.exe is a child of Windows' COM service that no kill here can
+      ;; reach. Order matters only in that the quit needs COM alive; the
+      ;; kill below is unaffected either way.
+      (when (eq (autocad-session-variant session) :automation)
+        (ignore-errors (quit-created-autocad session)))
       (kill-engine-process info))
     (session-state-set session :stopped))
   session)
