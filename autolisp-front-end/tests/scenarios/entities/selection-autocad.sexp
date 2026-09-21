@@ -21,7 +21,7 @@
 ;;;; they test semantic set MEMBERSHIP, never raw enumeration order.
 ;;;;
 ;;;; Run it:
-;;;;   clautolisp:            clautolisp --clautolisp --host mock -l selection-probe.lsp
+;;;;   clautolisp:            clautolisp --clautolisp --host cador -l selection-probe.lsp
 ;;;;   via alfe on BricsCAD:  alfe --bricscad -l selection-probe.lsp
 ;;;;   via alfe on AutoCAD:   alfe --autocad  -l selection-probe.lsp
 ;;;;

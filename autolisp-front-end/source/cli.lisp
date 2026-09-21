@@ -304,7 +304,11 @@ Dialect, host, encoding:
                          (acad-2026, accoreconsole-2022, bricscad-v25-fr_FR,
                          or a bare/partial acad / bricscad / autocad → latest;
                          autocad honours --mode: batch→accoreconsole, else acad).
-  --host {cador,nihil}   HAL backend, --clautolisp only (mock=cador, null/none=nihil aliases).
+  --host NAME            Host backend of --clautolisp: cador (default: the headless
+                         CAD core), cadtui (the textual UI-tree host) or nihil (no
+                         host). cadtui runs in the clautolisp executable, so alfe
+                         starts it as --backend subprocess. Ignored under
+                         --autocad/--bricscad, where the CAD is the host.
   -E ENC                 Encoding for every situation (shorthand).
   -Esource ENC           Encoding of .lsp files loaded (-l and (load ...)).
   -Efile[-read|-write] ENC   Encoding of files the program opens.
@@ -462,6 +466,18 @@ parser's mutual-exclusion semantics for --bricscad/--autocad/
                             (cli-options-backend opts) kind)))
   (setf (cli-options-backend opts) kind))
 
+(defparameter +alfe-hosts+
+  '(("cador" . :cador) ("cadtui" . :cadtui) ("nihil" . :nihil))
+  "The --host names alfe accepts, with the keyword each stands for. The
+keyword is what the rest of alfe, and *AUTOLISP-HOST*, see.")
+
+(defun %parse-alfe-host (value option)
+  (or (cdr (assoc value +alfe-hosts+ :test #'string-equal))
+      (error 'cli-usage-error
+             :option option
+             :message (format nil "Unknown --host ~S (expected ~{~A~^, ~})"
+                              value (mapcar #'car +alfe-hosts+)))))
+
 (defun %make-alfe-option-specs ()
   "Build the alfe-only option-spec list: --mode/--backend/--dwg/
 --workdir/--keep-workdir/--write-workdir-path/--timeout/
@@ -536,6 +552,14 @@ error rather than silently last-winning."
                      (cli-options-actions opts)
                      (append (cli-options-actions opts)
                              (list (cons :quit t))))))
+   ;; --host: alfe knows three hosts, cador (the default), cadtui and nihil,
+   ;; and passes the choice on to clautolisp as is. This spec comes before
+   ;; the shared one, which still tolerates the retired spellings of the
+   ;; same hosts for the clautolisp executable's sake; alfe does not.
+   (make-option-spec
+    :longs '("--host") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-host opts) (%parse-alfe-host value name))))
    (make-option-spec
     :longs '("--dwg") :takes-arg-p t
     :handler (lambda (opts value name)
@@ -649,7 +673,7 @@ action objects so the rest of alfe (PLAN-FROM-OPTIONS, EVAL-PLAN,
 etc.) sees the legacy shape. The transmit-options installer reads
 through CLI-OPTIONS->TRANSMIT-BINDINGS-FOR-ALFE which translates
 the action objects back to conses on the fly."
-  (let* ((options (make-cli-options)))
+  (let* ((options (make-cli-options :host :cador)))
     (apply-env-defaults options)
     (parse-arguments-with-spec
      (append *alfe-option-specs* (plugin-option-specs) *common-option-specs*)
@@ -709,6 +733,20 @@ it here. USAGE-TEXT becomes *AUTOLISP-HELP*."
 ;; uniformly across both tools.
 
 ;;; --- backend resolution ---------------------------------------------
+
+(defun %clautolisp-variant (options)
+  "The clautolisp engine variant OPTIONS ask for: the --backend one, except
+that the cadtui host is the clautolisp executable's — it installs the UI-tree
+layer, which the embedded runtime does not have — so --host cadtui means the
+subprocess variant. Asking for cadtui and --backend direct together is a
+contradiction, and a usage error."
+  (let ((variant (cli-options-backend-variant options)))
+    (cond ((not (eq (cli-options-host options) :cadtui)) variant)
+          ((eq variant :direct)
+           (error 'cli-usage-error
+                  :option "--host"
+                  :message "--host cadtui runs in the clautolisp executable, not in alfe's embedded engine: it cannot be combined with --backend direct"))
+          (t :subprocess))))
 
 (defun resolve-backend (options &key (detect-p t))
   "Apply the spec's backend-defaulting algorithm to OPTIONS. Returns
@@ -770,7 +808,9 @@ conformance scenarios under tests/scenarios/{bricscad,cli}/."
         ;; backend is the clautolisp one, swap in a fresh instance
         ;; tagged with the requested variant. The registered backend
         ;; is the :direct default; we don't mutate it.
-        (let ((variant (cli-options-backend-variant options)))
+        (let ((variant (if (eq selected :clautolisp)
+                           (%clautolisp-variant options)
+                           (cli-options-backend-variant options))))
           (when (and (eq selected :clautolisp)
                      (member variant '(:subprocess :direct)))
             (when (find-symbol "MAKE-CLAUTOLISP-BACKEND"

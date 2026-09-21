@@ -122,7 +122,7 @@
     :classification :clautolisp-only
     ;; Runs under the normative dialect (strict, the --clautolisp default),
     ;; so entmod on an XRECORD entry is a no-op -> "payload" -> CONFORMS.
-    :argv '("--clautolisp" "--host" "mock" "-l" "drawing-data-probe.lsp")
+    :argv '("--clautolisp" "--host" "cador" "-l" "drawing-data-probe.lsp")
     :lsp-file dd-lsp :lsp-text dd-text :observations dd-obs-normative
     :covers '("--clautolisp" "--host" "-l"))
   (write-scenario "drawing-data-bricscad.sexp"
@@ -144,7 +144,7 @@
     :name "selection-clautolisp"
     :description "Portable selection + snapshot probe (selection-probe.lsp) run under the clautolisp backend with the mock host: the non-interactive whole-database scan (ssget \"X\") with the full filter grammar — entity type (0), comma-alternation, the -4 logical operators (<OR/<AND/<NOT) and relational comparison, and the -3 XData application filter — plus sslength/ssname/ssadd/ssdel/ssmemb membership semantics and entnext/entlast traversal. Every scan is fenced to the probe's own entities by an XData application filter, so the assertions hold on a non-empty drawing too. The identical .lsp runs unchanged on BricsCAD/AutoCAD via alfe."
     :classification :clautolisp-only
-    :argv '("--clautolisp" "--host" "mock" "-l" "selection-probe.lsp")
+    :argv '("--clautolisp" "--host" "cador" "-l" "selection-probe.lsp")
     :lsp-file sel-lsp :lsp-text sel-text :observations-default "yes"
     :covers '("--clautolisp" "--host" "-l"))
   (write-scenario "selection-bricscad.sexp"
@@ -166,7 +166,7 @@
     :name "entities-lifecycle-clautolisp"
     :description "Portable entity CRUD lifecycle probe (entity-lifecycle-probe.lsp) run under the clautolisp backend with the mock host. Create -> read -> modify -> read -> delete -> restore for LINE POINT CIRCLE ARC ELLIPSE TEXT LWPOLYLINE SOLID 3DFACE RAY XLINE, plus the entmakex/entmake return contract, xdata applist filtering, and entnext traversal. The R13+ entities carry their (100 . \"AcDb...\") subclass markers, so the probe is portable across every dialect and both vendors. The identical .lsp runs unchanged on BricsCAD/AutoCAD via alfe."
     :classification :clautolisp-only
-    :argv '("--clautolisp" "--host" "mock" "-l" "entity-lifecycle-probe.lsp")
+    :argv '("--clautolisp" "--host" "cador" "-l" "entity-lifecycle-probe.lsp")
     :lsp-file el-lsp :lsp-text el-text
     :observations el-obs-normative :observations-default "yes"
     :covers '("--clautolisp" "--host" "-l"))

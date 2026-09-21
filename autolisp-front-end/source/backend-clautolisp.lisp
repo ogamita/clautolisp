@@ -120,15 +120,23 @@ upstream by EFFECTIVE-DIALECT, not by collapsing the keyword here."
              :details (list :dialect dialect-keyword))))
 
 (defun resolve-clautolisp-host (host-keyword)
-  "Map an alfe host keyword (:cador / :nihil, or the deprecated aliases
-:mock / :null) to the HAL backend instance the clautolisp runtime
-expects. Defaults to a fresh cador (the headless CAD core) when
-unspecified — same default as the standalone clautolisp executable.
-Honoured for the --clautolisp backend only; under --autocad / --bricscad
-the real CAD is the host and --host is ignored."
+  "Map an alfe host keyword (:cador or :nihil) to the HAL backend instance
+the embedded clautolisp runtime expects. Defaults to a fresh cador (the
+headless CAD core) when unspecified — same default as the standalone
+clautolisp executable. :cadtui is not served here: its UI-tree layer is
+installed by the clautolisp executable, so alfe runs it as the subprocess
+variant (ALFE.CLI:RESOLVE-BACKEND arranges that). Honoured for the
+--clautolisp backend only; under --autocad / --bricscad the real CAD is the
+host and --host is ignored."
   (case host-keyword
-    ((nil :cador :mock) (make-cador))
-    ((:nihil :null)     *nihil*)
+    ((nil :cador) (make-cador))
+    (:nihil       *nihil*)
+    (:cadtui
+     (error 'backend-bootstrap-error
+            :backend :clautolisp
+            :code :host-needs-subprocess
+            :message "The in-process engine has no cadtui host; cadtui runs in the clautolisp executable (--backend subprocess)."
+            :details (list :host host-keyword)))
     (otherwise
      (error 'backend-bootstrap-error
             :backend :clautolisp
@@ -343,7 +351,7 @@ underlying files we mirror live stdout/stderr into."
   "Subprocess-variant session. The Phase 1 implementation fork-execs
 clautolisp-sbcl once per EVAL-PLAN with the resolved CLI flags (one
 flag per action); PROCESS-INFO is bound during that call and reset
-to NIL on completion. HOST is the alfe host keyword (:mock/:null)
+to NIL on completion. HOST is the alfe host keyword (:cador/:cadtui/:nihil)
 resolved at START-ENGINE time."
   (process-info nil)
   (host         nil)
@@ -770,10 +778,9 @@ subprocess variant."
          (binary  (clautolisp-backend-executable-path backend))
          (dialect (session-dialect session))
          (host    (clautolisp-subprocess-session-host session))
-         (host-name (case host
-                      (:null "null")
-                      ((nil :mock) "mock")
-                      (otherwise (string-downcase (symbol-name host))))))
+         ;; The three hosts clautolisp has, by their own names: cador,
+         ;; cadtui, nihil. alfe hands the choice over unchanged.
+         (host-name (if host (string-downcase (symbol-name host)) "cador")))
     (append (list binary
                   "--quiet"
                   ;; The front-end owns bootstrap/init policy.  Loading the
@@ -801,16 +808,32 @@ subprocess variant."
     (log-debug "backend CLAUTOLISP (subprocess): launching: ~{~A~^ ~}" argv)
     (handler-case
         (multiple-value-bind (stdout stderr exit-code)
-            (uiop:run-program argv
-                              :output :string
-                              :error-output :string
-                              :ignore-error-status t)
+            (if (some (lambda (action) (eq (action-kind action) :interactive))
+                      plan)
+                ;; A REPL — or the cadtui console — reads the keyboard and
+                ;; writes the screen, which captured pipes cannot serve: the
+                ;; child gets alfe's own terminal. Nothing is captured then,
+                ;; so OUTPUT / ERROR-OUTPUT of the result stay empty.
+                (progn
+                  (finish-output *standard-output*)
+                  (finish-output *error-output*)
+                  (uiop:run-program argv
+                                    :input :interactive
+                                    :output :interactive
+                                    :error-output :interactive
+                                    :ignore-error-status t))
+                (uiop:run-program argv
+                                  :output :string
+                                  :error-output :string
+                                  :ignore-error-status t))
           (log-verbose "backend CLAUTOLISP (subprocess): exit ~A" exit-code)
-          (write-string stdout captured-stdout)
-          (write-string stderr captured-stderr)
-          ;; Echo live, same contract as the direct variant.
-          (write-string stdout *standard-output*)
-          (write-string stderr *error-output*)
+          (let ((stdout (or stdout ""))
+                (stderr (or stderr "")))
+            (write-string stdout captured-stdout)
+            (write-string stderr captured-stderr)
+            ;; Echo live, same contract as the direct variant.
+            (write-string stdout *standard-output*)
+            (write-string stderr *error-output*))
           (unless (zerop exit-code)
             (setf status :failed)))
       (error (probe)

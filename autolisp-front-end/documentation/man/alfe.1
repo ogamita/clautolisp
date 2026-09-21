@@ -81,23 +81,21 @@ Force the engine to shut down after the queue.
 .BR \-\-dialect " " \fINAME\fR
 .BR strict " (default), " autocad-2026 ", " bricscad-v26 ", " clautolisp .
 .TP
-.BR \-\-host " " \fI{cador,cadtui,nihil}\fR
-HAL backend (clautolisp backend only; the CAD backends are their own host).
+.BR \-\-host " " \fINAME\fR
+Host backend of the clautolisp backend (the CAD backends are their own host):
 .B cador
-(default) is the headless in-memory CAD core;
-.B nihil
-refuses every host operation;
-.B cadtui
-is the textual UI-tree host, which the in-process engine does not have and
-which needs
-.BR "\-\-backend subprocess" .
-Deprecated aliases:
-.B mock
-for cador,
-.B null
-and
-.B none
-for nihil.
+(default), the headless in-memory CAD core;
+.BR cadtui ,
+the textual UI-tree host; or
+.BR nihil ,
+no host at all. alfe passes the choice on to clautolisp. Because cadtui is
+provided by the clautolisp executable rather than by alfe's embedded engine,
+.B \-\-host cadtui
+runs the engine as a child process, as
+.BR "\-\-backend subprocess" ;
+with
+.B \-\-backend direct
+it is a usage error.
 .TP
 .BR \-e " " \fIENC\fR
 Source-file encoding (case-insensitive). Accepts

@@ -1,0 +1,31 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-list-hosts-ignored — alfe --list-hosts is accepted and does nothing
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-alfe-list-hosts-ignored
+
+* Symptom
+
+Split out of =alfe-host-selection-gaps= (alfe 2.2.77). The shared parser
+accepts =--list-hosts= and sets =list-hosts-p=, but =alfe.cli:run= has no
+branch for it, so with no other action alfe opens its REPL (=alfe> =) instead
+of printing the hosts as =clautolisp --list-hosts= does. =--help= does not
+list the option, and the user manual says alfe accepts it and does nothing.
+
+* Proposal
+
+Print the hosts and exit 0, like =--list-encodings= / =--list-dialects=. The
+shared =clautolisp.autolisp-cli:print-hosts= prints a line about the retired
+spellings of two hosts; alfe, which dropped them, should not repeat it, so
+either alfe prints its own three lines or the shared list loses that note
+(clautolisp-visible). Then: =--help=, the man page, the manual's "Host
+selection" (the "Two clautolisp options alfe does not have" paragraph), a
+scenario.
+
+* Acceptance criteria
+
+- =alfe --list-hosts= prints cador, cadtui, nihil with a one-line summary
+  each and exits 0, opening no REPL.
+- Documented in =--help=, the man page and the user manual.

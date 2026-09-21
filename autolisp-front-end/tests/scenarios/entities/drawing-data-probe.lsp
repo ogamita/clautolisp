@@ -9,7 +9,7 @@
 ;;;; provide, so it runs UNCHANGED on every target.
 ;;;;
 ;;;; Run it:
-;;;;   clautolisp:            clautolisp --clautolisp --host mock -l drawing-data-probe.lsp
+;;;;   clautolisp:            clautolisp --clautolisp --host cador -l drawing-data-probe.lsp
 ;;;;   via alfe on BricsCAD:  alfe --bricscad -l drawing-data-probe.lsp
 ;;;;   via alfe on AutoCAD:   alfe --autocad  -l drawing-data-probe.lsp
 ;;;;

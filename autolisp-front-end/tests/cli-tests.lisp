@@ -219,29 +219,78 @@ suffix is accepted on any situation option, preserved on the slot."
 (test cli-bootstrap-and-host-and-dialect
   "Phase truncation, host, and dialect are routed onto the right slots."
   (let ((opts (parse-arguments '("--bootstrap-phase" "core"
-                                 "--host" "null"
+                                 "--host" "nihil"
                                  "--dialect" "autocad-2026"))))
     (is (eq :core (cli-options-bootstrap-phase opts)))
-    (is (eq :null (cli-options-host opts)))
+    (is (eq :nihil (cli-options-host opts)))
     (is (eq :autocad-2026 (cli-options-dialect opts)))))
 
-(test cli-host-cador-and-nihil
-  "alfe --host accepts cador and nihil (the canonical clautolisp hosts)."
-  (is (eq :cador (cli-options-host (parse-arguments '("--host" "cador")))))
-  (is (eq :nihil (cli-options-host (parse-arguments '("--host" "nihil")))))
-  ;; deprecated aliases still parse
-  (is (eq :cador (cli-options-host (parse-arguments '("--host" "mock")))))
-  (is (eq :null  (cli-options-host (parse-arguments '("--host" "null"))))))
+(test cli-host-cador-cadtui-and-nihil
+  "alfe --host takes cador, cadtui and nihil, and nothing else: cador is
+the default, and the historical spellings are gone."
+  (is (eq :cador  (cli-options-host (parse-arguments '()))))
+  (is (eq :cador  (cli-options-host (parse-arguments '("--host" "cador")))))
+  (is (eq :cadtui (cli-options-host (parse-arguments '("--host" "cadtui")))))
+  (is (eq :nihil  (cli-options-host (parse-arguments '("--host" "nihil")))))
+  (is (eq :cadtui (cli-options-host (parse-arguments '("--host=CADTUI")))))
+  (dolist (retired '("mock" "null" "none" "bogus" ""))
+    (handler-case (progn (parse-arguments (list "--host" retired))
+                         (fail "--host ~S was accepted" retired))
+      (cli-usage-error (condition)
+        (is (search "cador, cadtui, nihil"
+                    (alfe.error:cli-usage-error-message condition)))
+        (is (= 2 (exit-code-for-condition condition)))))))
 
 (test cli-host-resolves-to-the-right-backend-under-clautolisp
   "resolve-clautolisp-host maps the host keyword to a cador / nihil
-instance (cador for the default and cador/mock; nihil for nihil/null)."
+instance (cador for cador and the default, nihil for nihil). cadtui is not
+the embedded engine's: it asks for the clautolisp executable."
   (flet ((host-class (k) (class-name (class-of (alfe.backend.clautolisp:resolve-clautolisp-host k)))))
     (is (eq 'clautolisp.cador:cador (host-class :cador)))
     (is (eq 'clautolisp.cador:cador (host-class nil)))
-    (is (eq 'clautolisp.cador:cador (host-class :mock)))
     (is (eq 'clautolisp.autolisp-host:nihil (host-class :nihil)))
-    (is (eq 'clautolisp.autolisp-host:nihil (host-class :null)))))
+    (handler-case (progn (host-class :cadtui) (fail "cadtui was served in-process"))
+      (alfe.error:backend-bootstrap-error (condition)
+        (is (eq :host-needs-subprocess (alfe.error:backend-error-code condition)))
+        (is (search "--backend subprocess"
+                    (alfe.error:backend-error-message condition)))))
+    ;; The retired keywords are not alfe's any more.
+    (signals alfe.error:backend-bootstrap-error (host-class :mock))
+    (signals alfe.error:backend-bootstrap-error (host-class :null))))
+
+(defun %variant-for (&rest argv)
+  "The clautolisp engine variant RESOLVE-BACKEND picks for ARGV, undetected."
+  (alfe.backend.clautolisp:clautolisp-backend-variant
+   (alfe.cli:resolve-backend (parse-arguments (cons "--clautolisp" argv))
+                             :detect-p nil)))
+
+(test cli-cadtui-runs-in-the-clautolisp-executable
+  "--host cadtui is transmitted to the clautolisp executable: alfe picks the
+subprocess variant for it, on its own. The other hosts stay in-process.
+Cadtui with an explicit --backend direct is a contradiction."
+  (is (eq :direct (%variant-for)))
+  (is (eq :direct (%variant-for "--host" "cador")))
+  (is (eq :direct (%variant-for "--host" "nihil")))
+  (is (eq :subprocess (%variant-for "--host" "cadtui")))
+  (is (eq :subprocess (%variant-for "--host" "cadtui" "--backend" "subprocess")))
+  (is (eq :subprocess (%variant-for "--host" "cador" "--backend" "subprocess")))
+  (handler-case (progn (%variant-for "--host" "cadtui" "--backend" "direct")
+                       (fail "cadtui with --backend direct was accepted"))
+    (cli-usage-error (condition)
+      (is (search "--backend direct" (alfe.error:cli-usage-error-message condition)))
+      (is (= 2 (exit-code-for-condition condition))))))
+
+(test cli-host-changes-nothing-for-the-cad-backends
+  "Under --bricscad and --autocad the CAD is the host: --host cadtui is
+accepted and the backend is still the CAD one."
+  (is (eq :bricscad (alfe.backend:backend-name
+                     (alfe.cli:resolve-backend
+                      (parse-arguments '("--bricscad" "--host" "cadtui"))
+                      :detect-p nil))))
+  (is (eq :autocad (alfe.backend:backend-name
+                    (alfe.cli:resolve-backend
+                     (parse-arguments '("--autocad" "--host" "cadtui"))
+                     :detect-p nil)))))
 
 (test cli-verbosity-flags-single
   "Each verbosity flag in isolation yields its documented level."

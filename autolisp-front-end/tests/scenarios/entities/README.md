@@ -50,7 +50,7 @@ The scenarios key on that string.
 Under clautolisp (headless, mock host):
 
 ```
-clautolisp --clautolisp --host mock -l entity-lifecycle-probe.lsp
+clautolisp --clautolisp --host cador -l entity-lifecycle-probe.lsp
 ```
 
 Under a real CAD via alfe (this is the **vendor-verification tail**,

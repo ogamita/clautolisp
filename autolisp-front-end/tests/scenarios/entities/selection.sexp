@@ -1,7 +1,7 @@
 (:name "selection-clautolisp"
  :description "Portable selection + snapshot probe (selection-probe.lsp) run under the clautolisp backend with the mock host: the non-interactive whole-database scan (ssget \"X\") with the full filter grammar — entity type (0), comma-alternation, the -4 logical operators (<OR/<AND/<NOT) and relational comparison, and the -3 XData application filter — plus sslength/ssname/ssadd/ssdel/ssmemb membership semantics and entnext/entlast traversal. Every scan is fenced to the probe's own entities by an XData application filter, so the assertions hold on a non-empty drawing too. The identical .lsp runs unchanged on BricsCAD/AutoCAD via alfe."
  :classification :clautolisp-only
- :argv ("--clautolisp" "--host" "mock" "-l" "selection-probe.lsp")
+ :argv ("--clautolisp" "--host" "cador" "-l" "selection-probe.lsp")
  :setup-files (("selection-probe.lsp" ";;;; selection-probe.lsp — selection-set + snapshot PROBE
 ;;;;
 ;;;; A probe EXERCISES a feature and reports the EXHIBITED behaviour to be
@@ -21,7 +21,7 @@
 ;;;; they test semantic set MEMBERSHIP, never raw enumeration order.
 ;;;;
 ;;;; Run it:
-;;;;   clautolisp:            clautolisp --clautolisp --host mock -l selection-probe.lsp
+;;;;   clautolisp:            clautolisp --clautolisp --host cador -l selection-probe.lsp
 ;;;;   via alfe on BricsCAD:  alfe --bricscad -l selection-probe.lsp
 ;;;;   via alfe on AutoCAD:   alfe --autocad  -l selection-probe.lsp
 ;;;;

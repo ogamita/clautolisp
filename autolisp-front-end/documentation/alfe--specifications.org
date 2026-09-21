@@ -1418,7 +1418,7 @@ is detected, and it is usable without any CAD installation.
 All other backends are meant to converge on this baseline: the
 evaluation of =-l= / =-x= actions goes through the same internal
 structures (=run-autolisp-file=, =run-autolisp-string=); only the
-effective HAL changes (=NullHost=, =MockHost=, =LiveHost=).
+effective host changes (=nihil=, =cador=, =cadtui=, or the CAD itself).
 
 ** =clautolisp= modules used
 
@@ -1428,7 +1428,7 @@ effective HAL changes (=NullHost=, =MockHost=, =LiveHost=).
 | =autolisp-runtime=        | Evaluator, contexts, environment, structured error handling.                  |
 | =autolisp-builtins-core=  | Builtins (numeric, list, string, file, stream).                               |
 | =autolisp-host=           | HAL: backend contract.                                                        |
-| =autolisp-mock-host=      | Mock host for =--host mock= (the default).                                    |
+| =cador=                   | The =cador= host, for =--host cador= (the default).                           |
 
 ** Dialect
 
@@ -1459,6 +1459,22 @@ The =alfe= binary can:
   talk to it via stdin/stdout pipes (the /subprocess/ mode, useful
   for isolating the engine or for running the engine under a
   different Lisp).
+
+*Hosts.* =--host NAME= takes =cador= (the default), =cadtui= or =nihil=,
+and nothing else (a usage error, exit 2, listing the three); the keyword is
+what =*AUTOLISP-HOST*= shows (=CADOR=, =CADTUI=, =NIHIL=) in both modes. alfe
+does not interpret the choice, it transmits it to clautolisp, which
+supports the three. The embedded engine serves =cador= and =nihil=. =cadtui=
+is the clautolisp executable's — its UI-tree layer is installed by that tool
+— so =--host cadtui= selects the subprocess mode by itself, and combined
+with an explicit =--backend direct= is a usage error. In the subprocess mode
+the engine is started with =--quiet --no-init --dialect D --host H=, the
+source encoding and one flag per action; the CAD backends ignore =--host=,
+the CAD being the host. In a batch run the child's output is captured and
+replayed when it exits; when the plan holds an =:interactive= action the
+child is given alfe's own terminal (input, output and error), so that a
+REPL or the cadtui console works. Nothing else arbitrates the terminal: a
+full-screen text UI and alfe's own terminal settings are not reconciled yet.
 
 ** Encodings
 
@@ -2424,7 +2440,7 @@ and prints only the action plan.
   override (real CADs: =alfe-plugin-epure-windows-validation=).
 - =fake-cad= backend validating =run-common.lsp= generation and
   action sequencing without a real CAD (historical).
-- =clautolisp --host mock= backend (new) covering =-x=, =-l=,
+- =clautolisp --host cador= backend (new) covering =-x=, =-l=,
   =--main=, =--interactive= actions, and multi-line reading via
   the =autolisp-reader= reader.
 - Encodings: round-trip =utf-8=, =iso-8859-1=, =windows-1252= with

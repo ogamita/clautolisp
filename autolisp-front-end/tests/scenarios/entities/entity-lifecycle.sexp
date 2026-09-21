@@ -1,7 +1,7 @@
 (:name "entities-lifecycle-clautolisp"
  :description "Portable entity CRUD lifecycle probe (entity-lifecycle-probe.lsp) run under the clautolisp backend with the mock host. Create -> read -> modify -> read -> delete -> restore for LINE POINT CIRCLE ARC ELLIPSE TEXT LWPOLYLINE SOLID 3DFACE RAY XLINE, plus the entmakex/entmake return contract, xdata applist filtering, and entnext traversal. The R13+ entities carry their (100 . \"AcDb...\") subclass markers, so the probe is portable across every dialect and both vendors. The identical .lsp runs unchanged on BricsCAD/AutoCAD via alfe."
  :classification :clautolisp-only
- :argv ("--clautolisp" "--host" "mock" "-l" "entity-lifecycle-probe.lsp")
+ :argv ("--clautolisp" "--host" "cador" "-l" "entity-lifecycle-probe.lsp")
  :setup-files (("entity-lifecycle-probe.lsp" ";;;; entity-lifecycle-probe.lsp — entity CRUD lifecycle PROBE
 ;;;;
 ;;;; A probe EXERCISES a feature and reports the EXHIBITED behaviour to be
@@ -15,7 +15,7 @@
 ;;;; UNCHANGED on every target.
 ;;;;
 ;;;; Run it:
-;;;;   clautolisp:            clautolisp --host mock -l entity-lifecycle-probe.lsp
+;;;;   clautolisp:            clautolisp --host cador -l entity-lifecycle-probe.lsp
 ;;;;   via alfe on BricsCAD:  alfe --bricscad -l entity-lifecycle-probe.lsp
 ;;;;   via alfe on AutoCAD:   alfe --autocad  -l entity-lifecycle-probe.lsp
 ;;;;

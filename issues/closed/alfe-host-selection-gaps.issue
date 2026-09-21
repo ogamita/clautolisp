@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-host-selection-gaps — --host cadtui, --list-hosts and *AUTOLISP-HOST* disagree between alfe and clautolisp
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
@@ -61,3 +61,30 @@ alfe does not have", the cadtui caveat) in the same commit.
   REPL.
 - =*AUTOLISP-HOST*= is the same symbol for the same host under both
   variants, and the manual says so.
+
+* Resolved (alfe 2.2.77)
+
+pjb's ruling, 2026-09-21: alfe --autocad and --bricscad start CADs with
+different GUIs, so alfe --clautolisp --host cadtui may start clautolisp with
+a TUI; --host is documented and transmitted transparently to clautolisp,
+which supports the three hosts; the historical labels go, keeping nihil,
+cador, cadtui; terminal I/O conflicts between alfe and cadtui are dealt with
+when met.
+
+- Point 1 (=--host cadtui= failed in-process): alfe hands cadtui to the
+  clautolisp executable — =--host cadtui= selects the subprocess variant by
+  itself, =--backend direct= with it is a usage error — and the subprocess
+  variant gives the child alfe's terminal when the plan holds =-i=.
+  Verified on a built alfe-sbcl (batch, =-i= with piped stdin: the cadtui
+  console answers) and by tests (variant choice; a guarded end-to-end run).
+- Point 3 (=*AUTOLISP-HOST*=): always CADOR / CADTUI / NIHIL, in-process and
+  in the child (alfe's =--host= now has its own spec, canonical keywords, and
+  cador as its default).
+- Point 4: =--help=, the man page, the spec and the user manual speak the
+  three names; alfe's scenarios use them. alfe REJECTS mock / null / none
+  (usage error, exit 2). The shared parser in clautolisp/autolisp-cli still
+  accepts them as deprecated aliases for the clautolisp executable's own
+  users: dropping them there is a clautolisp-wide change (its manual, the
+  roadmap, its tests) not made here.
+- Point 2 (=--list-hosts= accepted and ignored) is NOT done: split out as
+  =alfe-list-hosts-ignored=.

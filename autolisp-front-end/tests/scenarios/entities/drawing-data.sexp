@@ -1,7 +1,7 @@
 (:name "drawing-data-clautolisp"
  :description "Portable drawing-data-structures probe (drawing-data-probe.lsp) run under the clautolisp backend with the mock host: REGAPP; the full XData group-code set (1000/1002/1003/1005/1040/1070/1071) round-tripped through entget/entmod preserving order and multiplicity; multi-application xdata filtering; the named-object-dictionary tree with an XRECORD create/read/mutate/remove lifecycle; and tblsearch/tblnext over LAYER/LTYPE/STYLE/APPID. The identical .lsp runs unchanged on BricsCAD/AutoCAD via alfe."
  :classification :clautolisp-only
- :argv ("--clautolisp" "--host" "mock" "-l" "drawing-data-probe.lsp")
+ :argv ("--clautolisp" "--host" "cador" "-l" "drawing-data-probe.lsp")
  :setup-files (("drawing-data-probe.lsp" ";;;; drawing-data-probe.lsp — drawing-data-structures PROBE
 ;;;;
 ;;;; A probe EXERCISES a feature and reports the EXHIBITED behaviour to be
@@ -13,7 +13,7 @@
 ;;;; provide, so it runs UNCHANGED on every target.
 ;;;;
 ;;;; Run it:
-;;;;   clautolisp:            clautolisp --clautolisp --host mock -l drawing-data-probe.lsp
+;;;;   clautolisp:            clautolisp --clautolisp --host cador -l drawing-data-probe.lsp
 ;;;;   via alfe on BricsCAD:  alfe --bricscad -l drawing-data-probe.lsp
 ;;;;   via alfe on AutoCAD:   alfe --autocad  -l drawing-data-probe.lsp
 ;;;;

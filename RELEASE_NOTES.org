@@ -1261,6 +1261,15 @@ file or COM), and forwards the workload.
   ~epure~ plug-in, with ~--epure-profile~ and ~--epure-script~; the
   ~epuree~ plug-in adds ~--epuree~, ~--epuree-path~ and ~--epuree-alpm~.
 
+** Hosts: cador, cadtui, nihil (alfe-user-manual § /Host selection/)
+
+- ~--host~ takes ~cador~ (the default), ~cadtui~ or ~nihil~, and alfe passes
+  the choice on to clautolisp. ~--host cadtui~ now works: alfe runs the
+  clautolisp executable as a child process (~--backend subprocess~, chosen
+  by itself), which is given your terminal under ~-i~. The old spellings
+  ~mock~, ~null~ and ~none~ are no longer accepted by alfe (usage error,
+  exit 2), and ~*AUTOLISP-HOST*~ is always ~CADOR~, ~CADTUI~ or ~NIHIL~.
+
 ** Image-introspection variables
 
 - alfe publishes the same ~*AUTOLISP-…*~ globals as clautolisp, plus

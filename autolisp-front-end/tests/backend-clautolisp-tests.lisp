@@ -23,7 +23,7 @@ the shared registry entry so tests can't accidentally mutate each
 other's session state."
   (alfe.backend.clautolisp:make-clautolisp-backend :variant variant))
 
-(defun start-clautolisp-direct-session (&key (dialect :strict) (host :mock))
+(defun start-clautolisp-direct-session (&key (dialect :strict) (host :cador))
   "Common test scaffolding: spin up a fresh in-process session with
 no workdir (we exercise the captured-output path)."
   (let ((backend (make-fresh-clautolisp-backend :direct)))
@@ -398,7 +398,7 @@ isn't on disk (a fresh checkout's `make test` runs before
                       (make-fresh-clautolisp-backend :subprocess)))
             (session (alfe.backend:start-engine backend nil
                                                 :dialect :strict
-                                                :host :mock
+                                                :host :cador
                                                 :mock-input nil
                                                 :bootstrap-phase :full
                                                 :interactive-p nil))
@@ -412,3 +412,51 @@ isn't on disk (a fresh checkout's `make test` runs before
                 (alfe.backend:eval-plan session plan))))
        (is (eq :success (alfe.backend:eval-result-status result)))
        (alfe.backend:shutdown session)))))
+
+;;; --- --host: transmitted to clautolisp by its own names -------------
+
+(test clautolisp-subprocess-passes-the-host-on-by-its-own-name
+  "The subprocess variant hands --host to the clautolisp executable as
+cador, cadtui or nihil — the names clautolisp has — cador when there is none."
+  (dolist (spec '((:cador "cador") (:cadtui "cadtui") (:nihil "nihil") (nil "cador")))
+    (destructuring-bind (host name) spec
+      (let* ((backend (alfe.backend.clautolisp:make-clautolisp-backend
+                       :variant :subprocess
+                       :executable-path "/x/clautolisp-sbcl"))
+             (session (alfe.backend.clautolisp::%make-subprocess-session
+                       :backend backend :dialect :strict :host host))
+             (argv (alfe.backend.clautolisp::build-subprocess-argv
+                    session (list (alfe.backend:action-eval "(+ 1 2)")))))
+        (is (equal name (nth (1+ (position "--host" argv :test #'string=)) argv))
+            "host ~S is passed as ~S" host name)))))
+
+(defun cadtui-binary-available-p ()
+  "True iff a clautolisp-sbcl the subprocess variant can spawn exists AND
+knows the cadtui host (an old build does not)."
+  (let ((backend (make-fresh-clautolisp-backend :subprocess)))
+    (handler-case
+        (progn
+          (alfe.backend:detect backend)
+          (let ((hosts (uiop:run-program
+                        (list (alfe.backend.clautolisp::clautolisp-backend-executable-path
+                               backend)
+                              "--list-hosts")
+                        :output :string :ignore-error-status t)))
+            (and (search "cadtui" hosts) t)))
+      (error () nil))))
+
+(test clautolisp-runs-the-cadtui-host-through-the-subprocess-variant
+  "alfe --clautolisp --host cadtui (no --backend): the run is the clautolisp
+executable's, with the cadtui host — *AUTOLISP-HOST* says so. Skipped when no
+clautolisp-sbcl that has cadtui is installed."
+  (if (not (cadtui-binary-available-p))
+      (is (not (cadtui-binary-available-p))
+          "no clautolisp-sbcl with cadtui here; end-to-end test skipped")
+      (let* ((out (make-string-output-stream))
+             (err (make-string-output-stream))
+             (code (let ((*standard-output* out) (*error-output* err))
+                     (run '("--no-init" "--no-plugins" "--clautolisp" "--host" "cadtui"
+                            "-x" "(princ *autolisp-host*)")
+                          :version "9.9.9"))))
+        (is (= 0 code) "stderr: ~A" (get-output-stream-string err))
+        (is (search "CADTUI" (get-output-stream-string out))))))

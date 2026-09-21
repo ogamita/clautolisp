@@ -23,7 +23,7 @@ drives three backends behind a single command-line shape:
 - =autocad= — AutoCAD 2026+, via =accoreconsole= batch or COM
   automation (MS-Windows only).
 
-The same =-x EXPR=, =-l FILE=, =--dialect NAME= and =--host MODE=
+The same =-x EXPR=, =-l FILE=, =--dialect NAME= and =--host NAME=
 options work against every backend. Programs written for alfe run
 unchanged whether you point them at the local clautolisp engine
 or at a real CAD session.
@@ -204,26 +204,22 @@ program land — =(getvar …)=, =(command …)=, =(ssget …)=, the ActiveX
 object model. The dialect (see /Dialect selection/) controls the
 /language/, the host controls the /target/; the two are independent.
 
-=--host= only matters with the =clautolisp= backend. Under =--bricscad=
-and =--autocad= the host is the CAD itself: the option is accepted and
-ignored there.
+alfe knows three hosts and does not interpret the choice: it passes it on
+to clautolisp, which supports all three.
 
 | Option          | Host     | What it is                                            |
 |-----------------+----------+-------------------------------------------------------|
 | =--host cador=  | =cador=  | Default. The headless CAD core: an in-memory, deterministic CAD application. |
-| =--host cadtui= | =cadtui= | The full textual UI-tree host, layered on the cador core. |
+| =--host cadtui= | =cadtui= | The textual UI-tree host, layered on the cador core.  |
 | =--host nihil=  | =nihil=  | No host at all: every host operation is refused.      |
 
-Two spellings of older names still work and mean the same thing as
-above; they are deprecated:
+Any other name is a usage error (exit status 2) that lists these three.
 
-| Deprecated spelling            | Means   |
-|--------------------------------+---------|
-| =--host mock=                  | =cador= |
-| =--host null=, =--host none=   | =nihil= |
-
-An unknown name is a usage error (exit status 2) that lists the accepted
-ones.
+=--host= only matters with the =clautolisp= backend. Under =--bricscad=
+and =--autocad= the host is the CAD itself and the option is accepted and
+ignored. That is coherent: =--bricscad= and =--autocad= each start a CAD
+with its own GUI, and =--clautolisp --host cadtui= starts clautolisp with
+a text UI.
 
 ** =cador=
 
@@ -260,37 +256,47 @@ keyboard-drivable tree, and mirrors DCL dialogs (=new_dialog= /
 tested headless and scripted. cador is cadtui's degenerate,
 application-and-console-only configuration.
 
-*alfe's in-process engine does not know cadtui.* That is the default way
-alfe runs the clautolisp backend, and =alfe --host cadtui …= then stops
-with exit status 4 and =Unknown clautolisp HAL backend :CADTUI=. To use
-cadtui from alfe, run the engine in a child process instead:
+alfe does not embed cadtui: the clautolisp executable provides it. So
+=alfe --clautolisp --host cadtui …= runs the installed =clautolisp-sbcl=
+as a child process — alfe selects =--backend subprocess= by itself — and
+gives it the dialect, =--host cadtui=, the source encoding (=-Esource=)
+and one =-l= / =-x= / =-i= per action of the plan, plus =--quiet= and
+=--no-init= (alfe owns the init policy). Other alfe options are not passed
+on. The executable is looked for in =$ALFE_CLAUTOLISP_BIN=, in the
+=tools/clautolisp/bin/= of the checkout alfe was built from, on =$PATH=,
+and in =/usr/local/bin=, in that order; when it is nowhere alfe exits with
+status 3. Asking for cadtui together with =--backend direct=, the
+in-process engine, is a usage error.
 
 #+begin_src sh
-alfe --clautolisp --backend subprocess --host cadtui -l dialog-test.lsp
+alfe --clautolisp --host cadtui -l dialog-test.lsp     # batch: the output comes back when the child ends
+alfe --clautolisp --host cadtui -i                     # the cadtui console, on your terminal
 #+end_src
 
-=--backend subprocess= makes alfe run the installed =clautolisp-sbcl=
-executable, handing it the dialect, =--host= and one =-l= / =-x= per
-action of the plan (plus =--quiet= and =--no-init=: alfe owns the init
-policy). It needs that executable to be installed; the child is an ordinary
-clautolisp run. How cadtui is
-driven, and what it offers, is documented in the clautolisp user manual
-(=clautolisp-user-manual.org=, /Host backend/); alfe does not repeat it.
+In a batch run alfe collects the child's output and prints it when the
+child exits. When the plan holds =-i= — or has no action at all, which is an
+implicit =-i= — the child is given alfe's own terminal, keyboard and
+screen, instead of pipes, so that the cadtui console (or a text UI) talks to
+you directly. alfe does nothing else about the terminal while the child
+runs: what happens when alfe's terminal settings and a full-screen text UI
+disagree is not settled yet, and will be dealt with as it is met. How
+cadtui is driven, and what it offers, is documented in the clautolisp user
+manual (=clautolisp-user-manual.org=, /Host backend/); alfe does not repeat
+it.
 
 ** What a program sees
 
 =*AUTOLISP-HOST*= (see the chapter on the =*AUTOLISP-…*= globals) holds
-the host that was selected, as a symbol:
+the host that was selected, as a symbol, the same in the in-process engine
+and in the child process:
 
-| Selected                       | =*AUTOLISP-HOST*= |
-|--------------------------------+-------------------|
-| =--host cador=, =--host mock=  | =CADOR=           |
-| =--host cadtui=                | =CADTUI=          |
-| =--host nihil=                 | =NIHIL=           |
-| =--host null=, =--host none=   | =NULL=            |
+| Selected        | =*AUTOLISP-HOST*= |
+|-----------------+-------------------|
+| =--host cador=  | =CADOR=           |
+| =--host cadtui= | =CADTUI=          |
+| =--host nihil=  | =NIHIL=           |
 
-With no =--host= at all, the host is cador, but the in-process engine
-reports =MOCK= (cador's old name); the subprocess engine reports =CADOR=.
+With no =--host= the host is cador.
 
 ** Two clautolisp options alfe does not have
 
@@ -1055,7 +1061,7 @@ state:
 | =*AUTOLISP-BACKEND*=           | The engine running user code: =CLAUTOLISP= / =BRICSCAD= / =AUTOCAD=. |
 | =*AUTOLISP-HELP*=              | The --help banner of the front-end as a string.        |
 | =*AUTOLISP-DIALECT*=           | =:strict= / =:autocad-2026= / =:bricscad-v26= / =:clautolisp=. |
-| =*AUTOLISP-HOST*=              | The selected host: =CADOR= / =CADTUI= / =NIHIL= (=NULL= for the deprecated =--host null= / =none=). Under the in-process engine with no =--host=, =MOCK=. See /Host selection/. |
+| =*AUTOLISP-HOST*=              | The selected host: =CADOR= (the default), =CADTUI= or =NIHIL=. See /Host selection/. |
 | =*AUTOLISP-FILE-ENCODING*=     | Active source-file encoding (always a string). Empty string =""= means "no preference; fall through to the dialect default" — the documented degenerate case when neither =-Esource= nor any =LC_*= env var resolves an encoding. |
 | =*AUTOLISP-TERMINAL-ENCODING*= | Active terminal encoding (always a string, never empty — falls back to =US-ASCII= in the degenerate case). |
 | =*AUTOLISP-VERSION*=           | Version string of the running engine.                  |

@@ -14,7 +14,7 @@
 ;;;; console encoding on the way back.
 ;;;;
 ;;;; Run it:
-;;;;   alfe --clautolisp --host mock -l encoding-probe.lsp
+;;;;   alfe --clautolisp --host cador -l encoding-probe.lsp
 ;;;;   alfe --bricscad --mode batch      -l encoding-probe.lsp
 ;;;;   alfe --autocad  --mode batch      -l encoding-probe.lsp
 
