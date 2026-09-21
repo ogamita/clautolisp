@@ -50,6 +50,10 @@
            #:launcher-failure-details
            #:kill-engine-process
            #:cad-argument-path
+           ;; plug-in support: launcher script slots, launch options
+           #:expand-plugin-slots
+           #:launcher-lines
+           #:call-launcher
            ;; CAD program discovery + denotation (backend selection)
            #:cad-program
            #:cad-program-kind
@@ -616,6 +620,66 @@ warns about. Shared here so both use it."
                              2))
                do (sleep 0.02))))))
   nil)
+
+;;; --- plug-in support ---------------------------------------------------
+;;;
+;;; The launcher scripts alfe writes for the CAD (run.scr, the VBScript
+;;; bridges) have named slots that plug-ins fill through the hook
+;;; :launcher-lines (see the spec chapter "Plug-ins"), and the spawn takes
+;;; the working directory and environment a plug-in asks for through the
+;;; hook :launch-options. With no active plug-in every function here is the
+;;; identity on what it is given.
+
+(defun launcher-lines (slot kind variant)
+  "The lines the active plug-ins put in SLOT of a launcher script of KIND
+(:scr or :vbs) for VARIANT (:batch or :automation)."
+  (alfe.plugin:run-hook :launcher-lines slot :kind kind :variant variant))
+
+(defun expand-plugin-slots (template variant)
+  "TEMPLATE with each of its two VBScript plug-in slot lines,
+${PLUGIN_AFTER_APP} and ${PLUGIN_BEFORE_LOAD}, replaced by the lines the
+active plug-ins provide for it, or removed with its newline when there are
+none — so a run with no plug-in emits the template byte for byte."
+  (let ((out template))
+    (loop for (placeholder slot) in '(("${PLUGIN_AFTER_APP}"   :after-app)
+                                      ("${PLUGIN_BEFORE_LOAD}" :before-load))
+          do (let ((lines (launcher-lines slot :vbs variant)))
+               ;; A string replaces the placeholder; NIL removes it, and with
+               ;; it the newline of the line it stood alone on.
+               (setf out (uiop:frob-substrings
+                          out
+                          (list (if lines
+                                    placeholder
+                                    (format nil "~A~%" placeholder)))
+                          (and lines (format nil "~{~A~^~%~}" lines))))))
+    out))
+
+(defun %call-with-environment (environment thunk)
+  "Call THUNK with the (NAME . VALUE) pairs of ENVIRONMENT set in the
+process environment, restoring the previous values afterwards. A NIL VALUE
+sets the variable to the empty string (the portable form of \"unset\")."
+  (let ((previous (mapcar (lambda (pair) (cons (car pair) (uiop:getenv (car pair))))
+                          environment)))
+    (unwind-protect
+         (progn
+           (dolist (pair environment)
+             (setf (uiop:getenv (car pair)) (or (cdr pair) "")))
+           (funcall thunk))
+      (dolist (pair previous)
+        (setf (uiop:getenv (car pair)) (or (cdr pair) ""))))))
+
+(defun call-launcher (launcher argv launch-options &rest keys)
+  "Call LAUNCHER as (LAUNCHER ARGV . KEYS), adding :DIRECTORY and applying
+the :ENVIRONMENT that LAUNCH-OPTIONS, the result of the :launch-options
+hook, carries. The mock launchers of the test suite ignore extra keys."
+  (let ((directory (getf launch-options :directory))
+        (environment (getf launch-options :environment)))
+    (flet ((launch ()
+             (apply launcher argv
+                    (append (when directory (list :directory directory)) keys))))
+      (if environment
+          (%call-with-environment environment #'launch)
+          (launch)))))
 
 (defun drive-protocol-actions (protocol-session plan
                                &key

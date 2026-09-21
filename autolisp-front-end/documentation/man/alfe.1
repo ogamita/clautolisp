@@ -34,9 +34,12 @@ file-IPC protocol. It accepts the standard option vocabulary
 .RB ( \-l ", " \-x ", " \-i ", " \-\-dialect ", " \-\-host ", "
 .BR \-e ", " \-E ", " \-\-no-init ", " \-\-no-color "), "
 plus a handful of CAD-specific knobs
-.RB ( \-\-mode ", " \-\-backend ", " \-\-dwg ", " \-\-epure ", "
+.RB ( \-\-mode ", " \-\-backend ", " \-\-dwg ", "
 .BR \-\-workdir ", " \-\-keep-workdir ", " \-\-timeout ", "
 .BR \-\-bootstrap-phase ", " \-\-main ", " \-\-quit ", " \-\-dry-run ).
+Behaviour that belongs to one site, one CAD product or one user is added by
+plug-ins, which define options of their own (see
+.BR PLUG-INS ).
 .SH OPTIONS
 .SS Backend selection (mutually exclusive)
 .TP
@@ -104,9 +107,6 @@ Pick a specific installed CAD by its canonical denotation
 Scan the host for installed CADs, print each with its canonical
 denotation, and exit.
 .TP
-.B \-\-epure
-Enable the EPURE plugin hook.
-.TP
 .B \-\-print-command
 Stage the workdir for real, print the CAD command line that would be
 launched, and launch nothing. CAD backends only.
@@ -144,6 +144,102 @@ equivalently via
 .TP
 .B \-\-dry-run
 Print the resolved action plan and exit 0.
+.SS Plug-ins
+.TP
+.BR \-\-plugin " " \fINAME\fR
+Activate the installed plug-in NAME (repeatable). Mirrors
+.BR $ALFE_PLUGINS .
+.TP
+.BR \-\-plugin-path " " \fIDIR\fR
+Add DIR to the plug-in search path (repeatable). Mirrors
+.BR $ALFE_PLUGIN_PATH .
+.TP
+.B \-\-no-plugins
+Load no plug-in. Mirrors
+.BR $ALFE_NO_PLUGINS .
+.TP
+.B \-\-list-plugins
+Print the installed plug-ins and the search path, then exit.
+.TP
+.BR \-\-compile-plugin " " \fIFILE\fR
+Compile the plug-in source FILE for this alfe, then exit. The result is
+written next to FILE; the exit status is 0, or 1 on a compile error.
+.PP
+.B \-\-help
+ends with a generated
+.RB \(lq "Plug-in options" \(rq
+section listing every option of every installed plug-in. The options below
+are defined by the plug-ins that ship with alfe. Apart from the one that
+activates its plug-in, each is a usage error while that plug-in is not
+active.
+.SS "EPURE plug-in options"
+.TP
+.B \-\-epure
+Activate the
+.B epure
+plug-in: launch BricsCAD or AutoCAD under the EPURE profile, from the CAD's
+.B UserDataCache
+directory, and run EPURE's control script before alfe's own runtime is
+loaded. MS-Windows only, with
+.B \-\-bricscad
+or
+.BR \-\-autocad ;
+silently ignored on other systems and under
+.BR \-\-clautolisp .
+With
+.B \-\-autocad
+it refuses
+.BR "\-\-mode batch" .
+Mirrors
+.BR $AUTOLISP_EPURE .
+.TP
+.BR \-\-epure-profile " " \fINAME\fR
+CAD user profile to run under (default:
+.BR Epure ).
+Mirrors
+.BR $AUTOLISP_EPURE_PROFILE .
+.TP
+.BR \-\-epure-script " " \fIFILE\fR
+EPURE control script. Default, for BricsCAD:
+.br
+.B %APPDATA%\esncf\eepure\eepure\ 2022_b\econtrol_path_epure_2022.scr
+.br
+and for AutoCAD:
+.br
+.B %APPDATA%\esncf\eepure\eepure\ 2022\econtrol_path_epure_2022.scr
+.br
+Mirrors
+.BR $AUTOLISP_EPURE_SCRIPT .
+.SS "EPUREE plug-in options"
+.TP
+.B \-\-epuree
+Activate the
+.B epuree
+plug-in: load the EPUREE emulation of the EPURE API, through ALPM, before
+anything else the action plan does (it shows in
+.BR \-\-dry-run ).
+Every backend, every system. Mirrors
+.BR $AUTOLISP_EPUREE .
+.TP
+.BR \-\-epuree-path " " \fIDIR\fR
+Register DIR, searched recursively, with ALPM as holding
+.BR epuree.alpm
+(repeatable). Mirrors
+.BR $EPUREE_PATH ,
+a PATH-style list.
+.TP
+.BR \-\-epuree-alpm " " \fIFILE\fR
+The
+.B alpm.lsp
+to load. By default it is looked for in
+.BR $ALPM_LSP ,
+.BR PREFIX/share/autolisp/ ,
+.BR /opt/local/share/autolisp/ ,
+.B /usr/local/share/autolisp/
+and
+.BR ~/.local/share/autolisp/ ;
+when it is nowhere, alfe exits 2 listing the places tried. Mirrors
+.BR $ALPM_LSP .
 .SS Diagnostics
 .TP
 .BR \-v ", " \-\-verbose
@@ -193,8 +289,45 @@ Backend selector defaults; explicit
 .BR \-\-clautolisp " / " \-\-bricscad " / " \-\-autocad
 overrides.
 .TP
-.B AUTOLISP_BOOTSTRAP_PHASE\fR, \fBAUTOLISP_DWG\fR, \fBAUTOLISP_EPURE
+.B AUTOLISP_BOOTSTRAP_PHASE\fR, \fBAUTOLISP_DWG
 CAD-side defaults.
+.TP
+.B ALFE_PLUGIN_PATH
+Extra plug-in roots, a PATH-style list (separated by colons, or by
+semicolons on MS-Windows), searched after the
+.B \-\-plugin-path
+directories.
+.TP
+.B ALFE_PLUGINS
+Comma-separated names of the plug-ins to activate in every run, like
+.B \-\-plugin
+once per name.
+.TP
+.B ALFE_NO_PLUGINS
+When set to a true value, load no plug-in, like
+.BR \-\-no-plugins .
+.TP
+.B AUTOLISP_EPURE\fR, \fBAUTOLISP_EPURE_PROFILE\fR, \fBAUTOLISP_EPURE_SCRIPT
+Defaults for
+.BR \-\-epure ", " \-\-epure-profile ", " \-\-epure-script .
+A true value in
+.B AUTOLISP_EPURE
+activates the
+.B epure
+plug-in.
+.TP
+.B AUTOLISP_EPUREE\fR, \fBEPUREE_PATH\fR, \fBALPM_LSP
+Defaults for
+.BR \-\-epuree ", " \-\-epuree-path ", " \-\-epuree-alpm .
+A true value in
+.B AUTOLISP_EPUREE
+activates the
+.B epuree
+plug-in.
+.TP
+.B XDG_DATA_HOME\fR, \fBXDG_DATA_DIRS
+Read for the plug-in roots (see
+.BR PLUG-INS ).
 .TP
 .B BRICSCAD_EXE\fR, \fBAUTOCAD_EXE\fR, \fBAUTOCAD_ACCORECONSOLE
 Explicit Windows CAD binary overrides. When unset,
@@ -209,6 +342,82 @@ Keep the engine workdir after run.
 .TP
 .B NO_COLOR
 Disable ANSI colour output.
+.SH PLUG-INS
+A plug-in is a Common Lisp file, loaded when alfe starts, that defines
+command-line options and may intervene, through named hooks, at every stage
+of a run: read and change the parsed options, veto a backend, rewrite the
+action plan, add lines to the scripts alfe generates for the CAD, change the
+command line and working directory the CAD is launched with, and observe
+every action, the shutdown, the exit code and every error.
+.PP
+Every installed plug-in is loaded, so that its options exist when the command
+line is parsed, but only an active plug-in takes part in a run. A plug-in is
+active when its own option is given (for instance
+.BR \-\-epure ),
+or its environment variable holds a true value, or
+.B \-\-plugin
+names it, or
+.B $ALFE_PLUGINS
+lists it. With no plug-in active, alfe behaves as if plug-ins did not exist.
+An option of a plug-in that is not active is a usage error (exit status 2)
+naming the option that activates it.
+.B \-\-no-plugins
+loads none. A plug-in that fails to load is reported on standard error as
+.RB \(lq "alfe: warning: plug-in NAME (PATH): MESSAGE" \(rq
+and skipped; an error raised by one of its hooks during a run exits with
+status 4. A plug-in runs with alfe's own privileges: there is no sandbox.
+.PP
+The plug-in
+.I NAME
+is installed in a plug-in root, a directory with one sub-directory per
+plug-in, as
+.B NAME/NAME.lisp
+(source) or
+.B NAME/NAME.VERSION\-IMPL.plugin
+(compiled by
+.BR \-\-compile-plugin
+for alfe version VERSION and the Common Lisp implementation IMPL,
+.B sbcl
+or
+.BR ccl ).
+The compiled file is loaded when it is at least as new as the source;
+a compiled file for another version or implementation is ignored.
+The roots are searched in this order, and the first plug-in of a given name
+wins:
+.IP 1. 3
+each
+.B \-\-plugin-path
+directory, in command-line order;
+.IP 2. 3
+each entry of
+.BR $ALFE_PLUGIN_PATH ;
+.IP 3. 3
+.B $XDG_DATA_HOME/clautolisp/plug-in
+.RB ( ~/.local/share/clautolisp/plug-in
+if unset;
+.B %APPDATA%\eclautolisp\eplug\-in
+on MS-Windows);
+.IP 4. 3
+.B clautolisp/plug-in
+under each entry of
+.B $XDG_DATA_DIRS
+.RB ( /usr/local/share:/usr/share
+if unset);
+.IP 5. 3
+.B PREFIX/share/clautolisp/plug-in\fR,
+PREFIX being the installation prefix of the running executable.
+.B make install
+puts the plug-ins that ship with alfe there, and compiles them.
+.PP
+The plug-ins that ship with alfe are
+.B epure
+(BricsCAD and AutoCAD under the EPURE profile, MS-Windows only) and
+.B epuree
+(the EPUREE emulation of the EPURE API, loaded through ALPM). The
+.B epure
+plug-in has not been validated on real CAD installations.
+See the user manual for the complete description, and for how to write a
+plug-in.
 .SH "EXIT STATUS"
 .TP
 .B 0
@@ -226,7 +435,7 @@ Backend not available
 .RB ( BACKEND-NOT-AVAILABLE ).
 .TP
 .B 4
-Backend bootstrap or protocol error.
+Backend bootstrap or protocol error, or an error raised by a plug-in hook.
 .SH "SEE ALSO"
 .BR clautolisp (1).
 .PP

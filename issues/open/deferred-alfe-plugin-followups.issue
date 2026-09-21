@@ -1,0 +1,52 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: deferred-alfe-plugin-followups — what the first plug-in system left for later
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: alfe-plugin-epure-windows-validation
+#+BRANCH: feature-alfe-plugin-followups
+
+Split out of =alfe-plugin-model= when it closed (alfe 2.2.76).
+
+* 1. A compile cache for source plug-ins
+
+A source plug-in is compiled at every start (SBCL compiles each top-level
+form of a =load=ed source). Small for EPURE and EPUREE, not free. Cache the
+result in =$XDG_CACHE_HOME/clautolisp/plug-in/NAME.VERSION-IMPL.plugin=
+keyed by the source's write date, best effort. Not done: an explicit
+=--compile-plugin= plus =make install-plugins= covers the shipped ones, and a
+cache is one more thing to invalidate.
+
+* 2. The installed EPUREE bundle
+
+=epuree.alpm= describes the /source tree/ (=src/{load_epuree,loader,core,comu}=).
+The installed bundle (=make install= in the epuree repository ->
+=/opt/epuree/{load_epuree.lsp,lisp/,ES/,COM/,…}=) is found through
+=epuree:*bundle-root*=, which =load_epuree.lsp= derives from where it sits.
+Loaded through ALPM from the source tree it prints "could not find
+lisp/loader.lsp" / "core not found" and runs without the upstream resources.
+Fix in the epuree repository: install =epuree.alpm= with the bundle (and let
+it set =*bundle-root*=), or ship a second system for the bundle layout.
+
+* 3. Hook timing at the edges
+
+- =:cli-parsed= sees the backend /requested/; an =$ALFE_BACKEND_OVERRIDE=
+  applies only when the backend is resolved, so a plug-in that needs the real
+  one uses =:backend-selected= (EPURE does).
+- Errors before the run context exists (parse errors, =--cad= resolution)
+  reach no plug-in's =:error= hook; the plug-ins are not known active yet.
+- =--dry-run= runs =:backend-selected= with =:dry-run-p t=; a plug-in must not
+  demand the CAD there.
+
+* 4. API stability
+
+A compiled plug-in is tied to one alfe version by its file name; a source
+plug-in is not, and the hook signatures are alfe's to change. A
+=:requires-alfe= version range in =define-plugin= would let a source plug-in
+say what it needs, and =--list-plugins= flag the ones that will not work.
+
+* 5. Windows
+
+The XDG lookups on Windows (=%APPDATA%\clautolisp\plug-in=, no default
+=$XDG_DATA_DIRS=), =;= path lists and the =cd DIR &&= form of
+=--print-command= are written and reasoned about, not run on Windows.

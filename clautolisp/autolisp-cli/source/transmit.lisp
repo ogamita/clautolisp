@@ -165,9 +165,13 @@ derived value."
               (intern-autolisp-symbol (string-upcase (cli-options-main options)))))
    (list "*AUTOLISP-DRAWING*"
          (autolisp-string-or-nil (cli-options-dwg options)))
+   ;; One symbol per ACTIVE plug-in, in activation order: (EPURE) for
+   ;; --epure. The plug-ins themselves are alfe's (alfe.plugin); this
+   ;; library only carries their names.
    (list "*AUTOLISP-PLUGIN-OPTIONS*"
-         (when (cli-options-epure-p options)
-           (list (intern-autolisp-symbol "EPURE"))))
+         (mapcar (lambda (name)
+                   (intern-autolisp-symbol (string-upcase name)))
+                 (cli-options-plugins-active options)))
    (list "*AUTOLISP-WORKDIR*"
          (autolisp-string-or-nil (cli-options-workdir options)))
    (list "*AUTOLISP-KEEP-WORKDIR*"

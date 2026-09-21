@@ -29,7 +29,10 @@
    #:cli-situation-encoding      ; AC — resolver: (opts situation &optional direction)
    #:*encoding-situations*       ; AC — the situation registry
    #:cli-options-dwg             ; A
-   #:cli-options-epure-p         ; A
+   #:cli-options-plugin-options  ; A — alist (PLUGIN-NAME . plist of resolved option values)
+   #:cli-options-plugins-active  ; A — names of the active plug-ins, in activation order
+   #:cli-options-list-plugins-p  ; A — --list-plugins
+   #:cli-options-compile-plugin  ; A — --compile-plugin FILE
    #:cli-options-bootstrap-phase ; A
    #:cli-options-verbosity       ; AC — :debug/:verbose/:info/:warn
    #:cli-options-workdir         ; A

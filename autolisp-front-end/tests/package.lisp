@@ -65,7 +65,8 @@
                 #:cli-situation-encoding
                 #:terminal-encoding-plan
                 #:cli-options-dwg
-                #:cli-options-epure-p
+                #:cli-options-plugin-options
+                #:cli-options-plugins-active
                 #:cli-options-bootstrap-phase
                 #:cli-options-workdir
                 #:cli-options-keep-workdir-p

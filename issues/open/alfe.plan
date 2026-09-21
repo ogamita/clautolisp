@@ -93,7 +93,7 @@ index. V2 work (the plug-in system, epic `alfe-plugin-model.issue`) lives in
                                        against the bash wrapper, spec
                                        maintenance)
 
-  Phase 5 — V2 plug-in system [OPEN, epic alfe-plugin-model.issue]
+  Phase 5 — V2 plug-in system [CLOSED, alfe 2.2.76; real-CAD validation open]
     alfe-plugin-spec-and-manual.issue  (design in the spec, user manual,
                                         man page, release notes)
     alfe-plugin-loader.issue           (discovery, source/compiled

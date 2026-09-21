@@ -277,11 +277,10 @@ introduced to replace the original \"last-wins\" behaviour."
   (signals cli-usage-error
     (parse-arguments '("--timeout" "soon"))))
 
-(test cli-dwg-and-epure-and-noinit
+(test cli-dwg-and-noinit
   "Flag-shaped options flip their slots."
-  (let ((opts (parse-arguments '("--dwg" "/tmp/foo.dwg" "--epure" "--no-init"))))
+  (let ((opts (parse-arguments '("--dwg" "/tmp/foo.dwg" "--no-init"))))
     (is (string= "/tmp/foo.dwg" (cli-options-dwg opts)))
-    (is (cli-options-epure-p opts))
     (is (cli-options-no-init-p opts))))
 
 ;;; --- PARSE-ARGUMENTS: negative cases --------------------------------
@@ -373,7 +372,7 @@ change."
   "Every documented env-var key resolves through ENV-DEFAULT without
 error (the actual value may be NIL if the env-var is unset)."
   (dolist (key '(:workdir :timeout :mode :backend :os :bootstrap-phase
-                 :remote-io-mode :dwg :epure
+                 :remote-io-mode :dwg
                  :autocad-install :autocad-version
                  :bricscad-install :bricscad-version
                  :keep-workdir :override))

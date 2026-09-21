@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-plugin-epuree — the EPUREE plug-in (load the epuree ALPM package at the right time) + epuree.alpm
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: feature
 #+DEPENDS: alfe-plugin-hooks
@@ -43,3 +43,20 @@ backends, all OSes.
 - =epuree.alpm= is a valid ALPM definition (loaded by ALPM, plan computed).
 - The epuree repository change is *left uncommitted* (another repository,
   outside the delegation that covers this one).
+
+* Resolved (alfe 2.2.76)
+
+=plugins/epuree/epuree.lisp= puts three eval actions in front of the plan.
+=~/works/sncf-reseau/src/epuree/epuree.alpm= created (NOT committed: another
+repository). Named =epuree.alpm=, not =epure.alpm= as the request said: the
+ALPM system is =epuree= and ALPM finds =NAME.alpm= for system NAME — rename
+with one =git mv= if =epure= was meant.
+
+Verified end to end with the REAL ALPM 1.0.1 and the real epuree sources under
+clautolisp (=alfe --clautolisp --epuree --epuree-alpm …/alpm.lsp
+--epuree-path …/epuree=): =(alpm-loaded-systems)= => =((EPUREE . 0.1.0))=;
+also ALPM's own plan and encoding check on the =.alpm=. Known noise: from the
+source tree =load_epuree.lsp= prints "could not find lisp/loader.lsp" and
+=loader.lsp= "core not found" (they look for the installed-bundle layout);
+core and comu are then loaded by ALPM anyway. The installed bundle
+(=/opt/epuree=) is not covered: see =deferred-alfe-plugin-followups=.

@@ -1251,6 +1251,16 @@ file or COM), and forwards the workload.
   modals), not a substitute for a run. Distinct from ~--dry-run~,
   which resolves nothing, touches no disk, and prints only the plan.
 
+** Plug-ins (alfe-user-manual § /Plug-ins/)
+
+- alfe has a plug-in system: Common Lisp files under
+  ~$PREFIX/share/clautolisp/plug-in/~ (or the user's XDG data directory)
+  that add command-line options and hook into every stage of a run —
+  ~--plugin~, ~--plugin-path~, ~--no-plugins~, ~--list-plugins~,
+  ~--compile-plugin~. ~--epure~ (formerly a no-op) now comes from the
+  ~epure~ plug-in, with ~--epure-profile~ and ~--epure-script~; the
+  ~epuree~ plug-in adds ~--epuree~, ~--epuree-path~ and ~--epuree-alpm~.
+
 ** Image-introspection variables
 
 - alfe publishes the same ~*AUTOLISP-…*~ globals as clautolisp, plus

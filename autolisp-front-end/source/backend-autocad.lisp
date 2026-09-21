@@ -59,6 +59,9 @@
                 #:first-existing
                 #:windows-glob-existing-files
                 #:vbs-escape
+                #:expand-plugin-slots
+                #:launcher-lines
+                #:call-launcher
                 #:discover-runtime-lsp
                 #:discover-bootstrap-lsp
                 #:require-runtime-assets
@@ -383,6 +386,7 @@ End If
 app.Visible = True
 EmitFlags attached, created
 
+${PLUGIN_AFTER_APP}
 WaitQuiescent app, waitSecs
 
 If app.Documents.Count = 0 Then
@@ -390,6 +394,7 @@ If app.Documents.Count = 0 Then
 End If
 Set doc = app.ActiveDocument
 
+${PLUGIN_BEFORE_LOAD}
 VBSDebug \"SendCommand (load ...)\"
 Dim cmd
 cmd = \"(load \"\"\" & Replace(runFile, \"\\\", \"/\") & \"\"\") \"
@@ -485,15 +490,22 @@ died before reporting leaves AutoCAD alone."
                              flags-path
                              (com-mode "auto")
                              (wait-secs 60))
-  (let ((text (substitute-placeholders
-               *bridge-autocad-vbs-template*
-               `(("RUNLSPFILE"  . ,(namestring runtime-load-path))
-                 ("STATUSFILE"  . ,(namestring status-path))
-                 ("ERRFILE"     . ,(namestring error-path))
-                 ("COMMODE"     . ,com-mode)
-                 ("DEBUGFILE"   . ,(if debug-path (namestring debug-path) ""))
-                 ("FLAGSFILE"   . ,(if flags-path (namestring flags-path) ""))
-                 ("WAIT_SECS"   . ,(format nil "~D" wait-secs))))))
+  (let ((text (alfe.plugin:run-hook
+               :launcher-script
+               ;; The plug-in slots are filled AFTER the placeholders: their
+               ;; lines are VBScript already and must not be quote-doubled.
+               (expand-plugin-slots
+                (substitute-placeholders
+                 *bridge-autocad-vbs-template*
+                 `(("RUNLSPFILE"  . ,(namestring runtime-load-path))
+                   ("STATUSFILE"  . ,(namestring status-path))
+                   ("ERRFILE"     . ,(namestring error-path))
+                   ("COMMODE"     . ,com-mode)
+                   ("DEBUGFILE"   . ,(if debug-path (namestring debug-path) ""))
+                   ("FLAGSFILE"   . ,(if flags-path (namestring flags-path) ""))
+                   ("WAIT_SECS"   . ,(format nil "~D" wait-secs))))
+                :automation)
+               :kind :vbs :variant :automation :path path)))
     (with-open-file (out path :direction :output
                               :if-exists :supersede
                               :if-does-not-exist :create
@@ -507,11 +519,21 @@ died before reporting leaves AutoCAD alone."
   "Write the accoreconsole SCR. Loads run-common.lsp; the runtime
 publishes its own DONE/STOPPED transitions, so the SCR itself
 doesn't need a _QUIT — accoreconsole exits when the script finishes."
-  (let ((text (with-output-to-string (out)
-                (format out "(load ~S)~%"
-                        (namestring (truename runtime-load-path)))
-                (format out "._QSAVE~%")
-                (format out "._QUIT _Y~%"))))
+  (let ((text (alfe.plugin:run-hook
+               :launcher-script
+               (with-output-to-string (out)
+                 ;; Plug-in lines (hook :launcher-lines), as in the BricsCAD
+                 ;; run.scr: before the load, and after it (the load only
+                 ;; returns when the session ends).
+                 (dolist (line (launcher-lines :before-load :scr :batch))
+                   (write-line line out))
+                 (format out "(load ~S)~%"
+                         (namestring (truename runtime-load-path)))
+                 (dolist (line (launcher-lines :after-load :scr :batch))
+                   (write-line line out))
+                 (format out "._QSAVE~%")
+                 (format out "._QUIT _Y~%"))
+               :kind :scr :variant :batch :path path)))
     (with-open-file (out path :direction :output
                               :if-exists :supersede
                               :if-does-not-exist :create
@@ -729,6 +751,7 @@ pipe read, so the default stays the robust total decoder (G2)."
              (staged-bootstrap
                (when bootstrap-source
                  (alfe.protocol.file:stage-bootstrap-lsp protocol)))
+             (variant (choose-effective-mode backend mode))
              (run-common
                (alfe.protocol.file:emit-run-common-lsp
                 protocol
@@ -740,8 +763,8 @@ pipe read, so the default stays the robust total decoder (G2)."
                                   (alfe.cli:cli-options-verbosity cli-options)))
                 :cli-options cli-options
                 :version-text version-text
-                :backend-name "AUTOCAD"))
-             (variant (choose-effective-mode backend mode)))
+                :backend-name "AUTOCAD"
+                :variant variant)))
         ;; G2: how the drain decodes AutoCAD's console output. accoreconsole
         ;; (batch) is UTF-16LE, product-fixed (conflicting -Econsole warned +
         ;; ignored); the GUI path honours the user's request, else :AUTO.
@@ -782,7 +805,14 @@ pipe read, so the default stays the robust total decoder (G2)."
            (let ((scr (merge-pathnames "run.scr" workdir)))
              (emit-batch-scr scr run-common)
              (log-debug "backend AUTOCAD: wrote run.scr -> ~A" scr))))
-        (let* ((argv (build-launch-argv backend protocol :mode mode :dwg dwg))
+        (let* ((argv (alfe.plugin:run-hook
+                      :launch-argv
+                      (build-launch-argv backend protocol :mode mode :dwg dwg)
+                      :variant variant :workdir workdir))
+               (launch-options (alfe.plugin:run-hook
+                                :launch-options
+                                (list :directory nil :environment nil)
+                                :variant variant :argv argv :workdir workdir))
                (session (%make-autocad-session
                          :backend backend
                          :workdir workdir
@@ -794,7 +824,7 @@ pipe read, so the default stays the robust total decoder (G2)."
                (_ (log-verbose "backend AUTOCAD: launching: ~{~A~^ ~}" argv))
                (process-info
                  (when launcher
-                   (funcall launcher argv
+                   (call-launcher launcher argv launch-options
                             :input :stream
                             :output :stream
                             :error-output :stream

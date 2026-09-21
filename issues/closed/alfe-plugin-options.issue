@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-plugin-options — plug-in-defined CLI options with arguments; activation
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: feature
 #+DEPENDS: alfe-plugin-loader
@@ -41,3 +41,16 @@ alfe-only =epure-p= slot of =clautolisp.autolisp-cli:cli-options=.
 - =tests/scenarios/cli/dwg-and-epure.sexp= and the option-coverage scenario
   pass with =--epure= supplied by the plug-in.
 - =--help= lists plug-in options; the man page and user manual agree.
+
+* Resolved (alfe 2.2.76)
+
+Option kinds =:flag= / =:value= / =:repeat=, =:parser=, =:choices=, =:env=,
+=:default=, =:activates=; the namespacing rule; collisions refused at
+registration; activation by flag, environment, =--plugin NAME= and
+=$ALFE_PLUGINS=; an option of an inactive plug-in is a usage error naming the
+flag to add. =cli-options= has =plugin-options=, =plugins-active=,
+=list-plugins-p=, =compile-plugin=; =epure-p= and the built-in =--epure= are
+gone (the plug-in defines it; no legacy alias). =*AUTOLISP-PLUGIN-OPTIONS*=
+is one symbol per active plug-in. =--help= gets a generated section.
+Deviation from the sketch: a =:repeat= option's command line REPLACES the
+environment's list (documented).

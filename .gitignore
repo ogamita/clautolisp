@@ -16,6 +16,8 @@
 *.fas
 *.fasl
 *.fasl*
+# alfe compiled plug-ins (NAME.VERSION-IMPL.plugin): made by --compile-plugin, never committed
+*.plugin
 *.fsl
 *.gcda
 *.gcno

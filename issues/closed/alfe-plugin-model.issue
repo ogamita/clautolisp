@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-plugin-model — the alfe plug-in system (epic); EPURE and EPUREE are the first two plug-ins
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: epic
 #+DEPENDS: -
@@ -120,3 +120,23 @@ The normative text is the spec chapter "Plug-ins"
 When each sub-issue closes, update the "Deferred items" notes of
 =issues/closed/alfe-backend-bricscad.issue= and
 =issues/closed/alfe-backend-autocad.issue= to name the closing commit.
+
+* Resolved (alfe 2.2.76, clautolisp 2.2.76)
+
+Shipped: the plug-in system (=source/plugin.lisp=), the =epure= and =epuree=
+plug-ins (=plugins/=), 18 hook points, plug-in-defined options with
+arguments, discovery / source / compiled =.plugin= / =--compile-plugin= /
+=make install-plugins=, spec + user manual + man page + release notes.
+Removed: =cli-options-epure-p= and the built-in =--epure= (no legacy alias).
+
+Left open, as their own issues:
+- =alfe-plugin-epure-windows-validation= (BLOCKED, windows-access): the
+  nested-._SCRIPT and COM-SendCommand-order assumptions, and dropping
+  =/Automation=.
+- =deferred-alfe-plugin-followups=: a compile cache for source plug-ins,
+  hook-timing subtleties, the installed EPUREE bundle, API versioning.
+- =ccl-protocol-write-atomic-file-contention-hangs= (found on the way,
+  unrelated).
+
+Test counts: alfe suite 716 -> 1017 checks (SBCL); the 110 plug-in / CLI /
+conformance tests also pass under CCL; conformance 49 pass / 7 skipped.

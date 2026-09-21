@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-plugin-loader — discover and load plug-ins (source and compiled), install layout
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: feature
 #+DEPENDS: alfe-plugin-spec-and-manual
@@ -49,3 +49,18 @@ the user's XDG data directory. Plug-ins are Common Lisp.
   a broken plug-in (alfe still runs), =--no-plugins=, =--list-plugins=,
   =--compile-plugin= are covered by unit tests and scenarios.
 - =make install= puts plug-ins under =$(PREFIX)/share/clautolisp/plug-in/=.
+
+* Resolved (alfe 2.2.76)
+
+=source/plugin.lisp= part 5 and =alfe.cli:run=. Search path as specified plus
+a sixth root, the source tree's =plugins/= (last; what makes the shipped
+plug-ins work from a checkout, as =:vendored= does for the CAD runtime files).
+A process-wide cache of loaded files (path + write date) keeps the test suite,
+which calls =run= hundreds of times, from recompiling a plug-in per call; it
+is never read by a process that runs alfe once.
+
+Verified: 110 plug-in / CLI / conformance tests under SBCL and CCL (the
+compiled =.plugin= loads under both); a built =alfe-sbcl= installed with
+=make install-programs install-plugins= into a scratch prefix loads the
+compiled forms in preference to the source tree's. The full CCL suite could
+not be run to the end: see =ccl-protocol-write-atomic-file-contention-hangs=.

@@ -456,14 +456,21 @@ MAN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/man/man1
 # and the fixed *-lsp-fallback-paths* both name it.
 RUNTIME_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/alfe/runtime
 
+# The plug-ins alfe ships (plugins/NAME/NAME.lisp), installed as plug-in
+# roots' NAME/ directories: alfe finds them from PREFIX (see the spec
+# chapter "Plug-ins"). Each also gets its compiled form,
+# NAME.VERSION-IMPL.plugin, made by the alfe just installed.
+PLUGIN_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/clautolisp/plug-in
+
 INSTALL_BINARIES_sbcl := $(ALFE_SBCL)
 INSTALL_BINARIES_ccl  := $(ALFE_CCL)
 INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARIES_$(impl)))
 
-.PHONY: install install-programs install-documentation uninstall
+.PHONY: install install-programs install-plugins install-documentation uninstall
 
-install: build  ## Install built alfe binaries + docs into $$PREFIX (build first; sudo-friendly).
+install: build  ## Install built alfe binaries + plug-ins + docs into $$PREFIX (build first; sudo-friendly).
 	"$(MAKE)" install-programs
+	"$(MAKE)" install-plugins
 	"$(MAKE)" install-documentation
 
 install-programs:  ## Install just the alfe executables (no docs).
@@ -514,6 +521,30 @@ install-programs:  ## Install just the alfe executables (no docs).
 	done
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
+install-plugins:  ## Install the plug-ins alfe ships (epure, epuree) and compile them with the installed alfe.
+	@for dir in plugins/*/ ; do \
+	  name="$$(basename "$$dir")" ; \
+	  install -d "$(PLUGIN_INSTALL_DIR)/$$name" ; \
+	  install -m 0644 "$$dir$$name.lisp" "$(PLUGIN_INSTALL_DIR)/$$name/" ; \
+	  echo "installed: $$dir$$name.lisp -> $(PLUGIN_INSTALL_DIR)/$$name/" ; \
+	done
+	@# A compiled plug-in is valid for one alfe version and one Common Lisp
+	@# implementation, so compile with each alfe that was installed. --no-plugins:
+	@# compiling must not depend on what happens to be installed already.
+	@for exe in $(INSTALL_BINARIES); do \
+	  installed="$(BIN_INSTALL_DIR)/$$(basename "$$exe")" ; \
+	  case "$$installed" in *.exe) ;; *) installed="$$installed$(EXE)" ;; esac ; \
+	  if [ -x "$$installed" ]; then \
+	    for source in plugins/*/*.lisp ; do \
+	      name="$$(basename "$$source" .lisp)" ; \
+	      "$$installed" --no-init --no-plugins --compile-plugin "$(PLUGIN_INSTALL_DIR)/$$name/$$name.lisp" || exit 1 ; \
+	    done ; \
+	  else \
+	    echo "[skip]     compiled plug-ins for $$exe (not installed)" ; \
+	  fi ; \
+	done
+	@echo "plug-ins installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+
 install-documentation:  ## Install just the alfe documentation (org/pdf/info/man). PDFs/Info come from build/.
 	install -d "$(DOC_INSTALL_DIR)"
 	@for f in documentation/*.org $(BUILD_DIR)/documentation/*.pdf; do \
@@ -550,4 +581,5 @@ uninstall:  ## Remove the alfe install from $$PREFIX.
 	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename "$$f")" ; fi ; \
 	done
 	rm -f "$(RUNTIME_INSTALL_DIR)/autolisp-bootstrap.lsp" "$(RUNTIME_INSTALL_DIR)/autolisp-remote-io.lsp"
+	@for dir in plugins/*/ ; do rm -rf "$(PLUGIN_INSTALL_DIR)/$$(basename "$$dir")" ; done
 	rm -rf "$(LIBEXEC_INSTALL_DIR)" "$(DOC_INSTALL_DIR)" "$(RUNTIME_INSTALL_DIR)"

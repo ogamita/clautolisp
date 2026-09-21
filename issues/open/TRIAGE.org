@@ -412,14 +412,16 @@ opendcl-conformance. All =TODO=.
 ** alfe plug-in system (epic alfe-plugin-model; pjb 2026-09-21: EPURE, then EPUREE)
 | Issue                                | Status  | Note |
 |--------------------------------------+---------+------|
-| alfe-plugin-model                    | NEXT    | EPIC. Was DEFERRED with 3 open design decisions; settled 2026-09-21 (pjb: plug-ins are CL, installed under ${PREFIX}/share/clautolisp/plug-in/NAME/ or the XDG data dir, source NAME.lisp or compiled NAME.<alfe-version>-<impl>.plugin; they define CLI options with arguments and hook every stage; EPURE first, EPUREE second). Design summary in the issue, normative text in the spec chapter "Plug-ins" |
-| alfe-plugin-spec-and-manual          | NEXT    | design + spec + user manual + man page + release notes (docs first, per pjb's order) |
-| alfe-plugin-loader                   | TODO    | discovery / search path / source+compiled loading / --plugin-path --no-plugins --list-plugins --compile-plugin / install layout |
-| alfe-plugin-options                  | TODO    | plug-in-defined CLI options with arguments, activation, --help; drops cli-options-epure-p |
-| alfe-plugin-hooks                    | TODO    | alfe.plugin API + 18 hook points across parse → backend → plan → launch → actions → shutdown |
-| alfe-plugin-epure                    | TODO    | /p Epure, control script chained in run.scr / VBS, AutoCAD forced to COM, Windows only |
-| alfe-plugin-epuree                   | TODO    | --epuree loads the epuree ALPM package in front of the plan; creates epuree.alpm in the epuree repo |
+| alfe-plugin-model                    | DONE    | EPIC closed, alfe/clautolisp 2.2.76: plug-in system + EPURE + EPUREE shipped; open follow-ups are alfe-plugin-epure-windows-validation, deferred-alfe-plugin-followups. issues/closed/ |
+| alfe-plugin-spec-and-manual          | DONE    | spec chapters Plug-ins/EPURE/EPUREE, user manual, man page, release notes (2.2.76). issues/closed/ |
+| alfe-plugin-loader                   | DONE    | discovery, source/compiled .plugin, --plugin-path/--no-plugins/--list-plugins/--compile-plugin, make install-plugins (2.2.76). issues/closed/ |
+| alfe-plugin-options                  | DONE    | plug-in-defined options with arguments, activation, --help; cli-options-epure-p removed (2.2.76). issues/closed/ |
+| alfe-plugin-hooks                    | DONE    | alfe.plugin API + 18 hook points, plan built before the engine starts (2.2.76). issues/closed/ |
+| alfe-plugin-epure                    | DONE    | EPURE plug-in, mock-verified only (2.2.76); real CADs in alfe-plugin-epure-windows-validation. issues/closed/ |
+| alfe-plugin-epuree                   | DONE    | EPUREE plug-in + epuree.alpm (uncommitted, epuree repo), verified with the real ALPM under clautolisp (2.2.76). issues/closed/ |
 | alfe-plugin-epure-windows-validation | BLOCKED | needs the Windows runner + EPURE + real CADs (windows-access): nested ._SCRIPT return, COM SendCommand order |
+| deferred-alfe-plugin-followups       | DEFERRED | NOUVEAU 2026-09-21 : compile cache for source plug-ins, installed EPUREE bundle, hook-timing edges, API versioning, Windows-only paths never run |
+| ccl-protocol-write-atomic-file-contention-hangs | TODO | NOUVEAU 2026-09-21 (P3) : PROTOCOL-WRITE-ATOMIC-FILE-CONTENTION never returns under x86 CCL on the macOS dev box (killed after 120 s alone); passes under SBCL; parent commit not re-measured |
 
 ** Big features / environment
 | Issue                    | Status   | Note |

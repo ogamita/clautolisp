@@ -1105,7 +1105,8 @@ emits as ALFE here — only alfe ships run-common.lsp."
                                  (log-name "autolisp-session.log")
                                  cli-options
                                  version-text
-                                 (backend-name "CLAUTOLISP"))
+                                 (backend-name "CLAUTOLISP")
+                                 (variant nil))
   "Write the run-common.lsp init script the CAD-side runtime sources
 at startup. Substitutes the spec's placeholders with absolute paths
 drawn from SESSION; the remaining knobs (BOOTSTRAP-PHASE, DEBUG-P,
@@ -1239,6 +1240,12 @@ Returns the path of the emitted file."
           (setq f (open path \"a\"))~%~
           (if f (progn (write-line (strcat \"[CAD] \" msg) f) (close f))))))))~%~
 (alfe-debug-log \"run-common.lsp evaluated; about to bootstrap runtime\")~%")
+            ;; --- Plug-in text, before anything is bootstrapped ---
+            ;; Hook :run-common-prelude — AutoLISP source a plug-in wants the
+            ;; engine to run first (alfe.plugin; nothing when none is active).
+            (dolist (text (alfe.plugin:run-hook :run-common-prelude nil
+                                                :variant variant))
+              (format out "~%~A~%" text))
             ;; --- Source the CAD-side bootstrap helpers FIRST ---
             ;; autolisp-bootstrap.lsp defines the ~67 autolisp-* helper
             ;; functions (autolisp-eval-request-form, autolisp-log-err,
@@ -1519,6 +1526,12 @@ Returns the path of the emitted file."
                ;; aborts cleanly instead of hanging until READY-timeout. Both
                ;; writes are themselves guarded so a broken runtime can't
                ;; re-throw here.
+               ;; Hook :run-common-epilogue — plug-in AutoLISP source, run with
+               ;; the runtime loaded and its I/O bridged, just before the
+               ;; server loop takes over the session.
+               (dolist (text (alfe.plugin:run-hook :run-common-epilogue nil
+                                                   :variant variant))
+                 (format out "~%~A~%" text))
                (format out
                        "~%(alfe-debug-log \"entering autolisp-protocol-server-loop\")~%~
 (setq *AUTOLISP-PROTOCOL-LOOP-RESULT*~%  ~

@@ -81,6 +81,9 @@
                 #:windows-glob-existing-files
                 #:vbs-escape
                 #:applescript-escape
+                #:expand-plugin-slots
+                #:launcher-lines
+                #:call-launcher
                 #:discover-runtime-lsp
                 #:discover-bootstrap-lsp
                 #:require-runtime-assets
@@ -383,7 +386,7 @@ on a save-changes dialog.
 Returns the path of the emitted file."
   (let* ((path (merge-pathnames "run.scr" workdir))
          (marker (namestring (merge-pathnames "run-scr-started.txt" workdir)))
-         (text (with-output-to-string (out)
+         (raw (with-output-to-string (out)
                  ;; Prove the script actually ran: drop a marker file as the
                  ;; very first action. If run-scr-started.txt exists in a kept
                  ;; workdir but debug.log is empty, the (load) is the problem;
@@ -398,14 +401,24 @@ Returns the path of the emitted file."
                  ;; so probe it via getvar; vl-catch-all-apply keeps a host
                  ;; that rejects the sysvar from aborting the script.
                  (format out "(if (getvar \"SECURELOAD\") (vl-catch-all-apply 'setvar '(\"SECURELOAD\" 0)))~%")
+                 ;; Plug-in lines (hook :launcher-lines): EPURE runs its
+                 ;; control script here, before alfe's runtime is loaded.
+                 (dolist (line (launcher-lines :before-load :scr :batch))
+                   (write-line line out))
                  (format out "(load ~S)~%"
                          (namestring (truename runtime-load-path)))
+                 ;; The load only returns when the session ends, so these
+                 ;; run after it, before the final _QUIT.
+                 (dolist (line (launcher-lines :after-load :scr :batch))
+                   (write-line line out))
                  (when quit-on-finish-p
                    ;; The trailing space-then-newline on FILEDIA is
                    ;; intentional — BricsCAD's SCR parser treats the
                    ;; newline as the command terminator.
                    (format out "._FILEDIA 0~%")
-                   (format out "._QUIT _N~%")))))
+                   (format out "._QUIT _N~%"))))
+         (text (alfe.plugin:run-hook :launcher-script raw
+                                     :kind :scr :variant :batch :path path)))
     (with-open-file (out path :direction :output
                               :if-exists :supersede
                               :if-does-not-exist :create
@@ -499,6 +512,7 @@ End If
 app.Visible = True
 EmitFlags attached, created
 
+${PLUGIN_AFTER_APP}
 On Error Resume Next
 VBSDebug \"app.Name=\" & app.Name & \" ver=\" & app.Version & \" docs=\" & app.Documents.Count
 Err.Clear
@@ -525,6 +539,7 @@ VBSDebug \"SECURELOAD 0 dispatched: Err=\" & Err.Number
 Err.Clear
 On Error GoTo 0
 
+${PLUGIN_BEFORE_LOAD}
 Dim cmd
 cmd = \"(load \"\"\" & Replace(runFile, \"\\\", \"/\") & \"\"\") \"
 VBSDebug \"SendCommand load: \" & cmd
@@ -574,13 +589,20 @@ turned it into the un-runnable `do shell script \"\"open -a \"\" & ...'."
                              (com-mode "auto"))
   "Write the BricsCAD VBScript bridge to PATH, with placeholders
 substituted from the provided session paths."
-  (let ((text (substitute-placeholders
-               *bridge-bricscad-vbs-template*
-               `(("RUNLSPFILE"  . ,(namestring runtime-load-path))
-                 ("STATUSFILE"  . ,(namestring status-path))
-                 ("ERRFILE"     . ,(namestring error-path))
-                 ("COMMODE"     . ,com-mode)
-                 ("DEBUGFILE"   . ,(if debug-path (namestring debug-path) ""))))))
+  (let ((text (alfe.plugin:run-hook
+               :launcher-script
+               ;; The plug-in slots are filled AFTER the placeholders: their
+               ;; lines are VBScript already and must not be quote-doubled.
+               (expand-plugin-slots
+                (substitute-placeholders
+                 *bridge-bricscad-vbs-template*
+                 `(("RUNLSPFILE"  . ,(namestring runtime-load-path))
+                   ("STATUSFILE"  . ,(namestring status-path))
+                   ("ERRFILE"     . ,(namestring error-path))
+                   ("COMMODE"     . ,com-mode)
+                   ("DEBUGFILE"   . ,(if debug-path (namestring debug-path) ""))))
+                :automation)
+               :kind :vbs :variant :automation :path path)))
     (with-open-file (out path :direction :output
                               :if-exists :supersede
                               :if-does-not-exist :create
@@ -1657,7 +1679,8 @@ future ticket."
                                   (alfe.cli:cli-options-verbosity cli-options)))
                 :cli-options cli-options
                 :version-text version-text
-                :backend-name "BRICSCAD")))
+                :backend-name "BRICSCAD"
+                :variant (choose-effective-mode backend mode))))
         ;; G2: how the drain decodes BricsCAD's console output. :AUTO
         ;; (default) keeps the robust cascade — behaviour-preserving.
         (setf (alfe.protocol.file:protocol-session-console-encoding protocol)
@@ -1739,8 +1762,15 @@ future ticket."
                             ;; workdir -- see DISCOVER-BRICSCAD-TEMPLATE.
                             :workdir workdir)))
                   (log-debug "backend BRICSCAD: wrote launcher.applescript -> ~A" apl))))))
-          (let ((argv (build-launch-argv backend protocol :mode mode))
-                (session (%make-bricscad-session
+          (let* ((argv (alfe.plugin:run-hook
+                        :launch-argv
+                        (build-launch-argv backend protocol :mode mode)
+                        :variant variant :workdir workdir))
+                 (launch-options (alfe.plugin:run-hook
+                                  :launch-options
+                                  (list :directory nil :environment nil)
+                                  :variant variant :argv argv :workdir workdir))
+                 (session (%make-bricscad-session
                           :backend backend
                           :workdir workdir
                           :request-timeout (and cli-options
@@ -1751,10 +1781,10 @@ future ticket."
             (log-verbose "backend BRICSCAD: launching: ~{~A~^ ~}" argv)
             (let ((process-info
                     (when launcher
-                      (funcall launcher argv
-                               :input :stream
-                               :output :stream
-                               :error-output :stream))))
+                      (call-launcher launcher argv launch-options
+                                     :input :stream
+                                     :output :stream
+                                     :error-output :stream))))
               (when process-info
                 (log-debug "backend BRICSCAD: spawned, process-info-pid = ~A"
                            (ignore-errors (uiop:process-info-pid process-info))))

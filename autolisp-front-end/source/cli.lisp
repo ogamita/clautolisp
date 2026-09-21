@@ -47,6 +47,7 @@
                 #:action-main
                 #:action-interactive
                 #:action-quit
+                #:make-eval-result
                 #:eval-result-status
                 #:eval-result-value
                 #:eval-result-output
@@ -63,6 +64,20 @@
                 #:log-debug
                 #:log-verbose
                 #:log-info)
+  ;; The plug-in system. alfe.cli drives it (loading, option parsing,
+  ;; hook call sites); alfe.plugin never depends on alfe.cli.
+  (:import-from #:alfe.plugin
+                #:run-hook
+                #:hook-active-p
+                #:with-run-context
+                #:plugin-option-specs
+                #:resolve-plugin-options
+                #:activate-plugin-by-name
+                #:plugin-usage-text
+                #:load-plugins
+                #:prescan-plugin-arguments
+                #:print-plugins
+                #:compile-plugin)
   (:import-from #:clautolisp.autolisp-init-files
                 #:*default-alfe-stems*
                 #:find-init-files
@@ -94,7 +109,10 @@
                 #:cli-situation-encoding
                 #:encoding-keyword
                 #:cli-options-dwg
-                #:cli-options-epure-p
+                #:cli-options-plugin-options
+                #:cli-options-plugins-active
+                #:cli-options-list-plugins-p
+                #:cli-options-compile-plugin
                 #:cli-options-bootstrap-phase
                 #:cli-options-verbosity
                 #:cli-options-workdir
@@ -114,6 +132,7 @@
                 #:cli-options-main
                 #:cli-options-positional
                 #:make-option-spec
+                #:option-spec-longs
                 #:*common-option-specs*
                 #:parse-arguments-with-spec
                 #:parse-mode
@@ -146,7 +165,10 @@
            #:apply-terminal-encoding
            #:resolved-console-encoding
            #:cli-options-dwg
-           #:cli-options-epure-p
+           #:cli-options-plugin-options
+           #:cli-options-plugins-active
+           #:cli-options-list-plugins-p
+           #:cli-options-compile-plugin
            #:cli-options-bootstrap-phase
            #:cli-options-verbosity
            #:cli-options-workdir
@@ -185,6 +207,11 @@
 
 (in-package #:alfe.cli)
 
+;; The plug-ins are loaded, and their options parsed, before anything else
+;; knows the CLI's own option set, so alfe.plugin needs to be told what the
+;; core options are to refuse a plug-in option that collides with one. Set
+;; below, once *ALFE-OPTION-SPECS* exists.
+
 (defvar *on-error* :quit
   "The --on-error policy in force for the current RUN. alfe has no
 interactive debugger of its own (the CAD backends run no aldo), so the
@@ -219,7 +246,6 @@ a rebuild. Bound per RUN and set by the --on-error option handler.")
     (:bootstrap-phase  . "AUTOLISP_BOOTSTRAP_PHASE")
     (:remote-io-mode   . "AUTOLISP_REMOTE_IO_MODE")
     (:dwg              . "AUTOLISP_DWG")
-    (:epure            . "AUTOLISP_EPURE")
     (:autocad-install  . "AUTOCAD_INSTALL")
     (:autocad-version  . "AUTOCAD_VERSION")
     (:bricscad-install . "BRICSCAD_INSTALL")
@@ -292,7 +318,15 @@ Dialect, host, encoding:
 
 CAD-specific options:
   --dwg FILE             Drawing to open before running the script.
-  --epure                Enable the EPURE plugin hook.
+
+Plug-ins:
+  --plugin NAME          Activate the installed plug-in NAME (repeatable).
+                         Mirrors $ALFE_PLUGINS.
+  --plugin-path DIR      Add DIR to the plug-in search path (repeatable).
+                         Mirrors $ALFE_PLUGIN_PATH.
+  --no-plugins           Load no plug-in. Mirrors $ALFE_NO_PLUGINS.
+  --list-plugins         Print the installed plug-ins and the search path, then exit.
+  --compile-plugin FILE  Compile the plug-in source FILE for this alfe, then exit.
 
 Bootstrap and runtime:
   --bootstrap-phase {marker,core,log,full}   Truncate the bootstrap.
@@ -349,6 +383,10 @@ Informational:
 
 (defun print-usage (&optional (stream *standard-output*))
   (write-string *usage-banner* stream)
+  ;; The options of the installed plug-ins, generated from what they
+  ;; registered (empty when none is installed or --no-plugins was given).
+  (let ((plugins (plugin-usage-text)))
+    (when plugins (write-string plugins stream)))
   (finish-output stream))
 
 (defun usage-string ()
@@ -374,7 +412,6 @@ argument parsing so explicit CLI options always win."
         (env-backend (env-default :backend))
         (env-bootstrap (env-default :bootstrap-phase))
         (env-dwg     (env-default :dwg))
-        (env-epure   (env-default :epure))
         (env-keep-workdir (env-default :keep-workdir))
         (env-write-workdir-path (env-default :write-workdir-path)))
     (when env-workdir
@@ -397,8 +434,6 @@ argument parsing so explicit CLI options always win."
             (parse-bootstrap-phase env-bootstrap "AUTOLISP_BOOTSTRAP_PHASE")))
     (when env-dwg
       (setf (cli-options-dwg options) env-dwg))
-    (when env-epure
-      (setf (cli-options-epure-p options) t))
     (when env-keep-workdir
       (setf (cli-options-keep-workdir-p options) t))
     (when env-write-workdir-path
@@ -429,8 +464,9 @@ parser's mutual-exclusion semantics for --bricscad/--autocad/
 
 (defun %make-alfe-option-specs ()
   "Build the alfe-only option-spec list: --mode/--backend/--dwg/
---epure/--workdir/--keep-workdir/--write-workdir-path/--timeout/
---bootstrap-phase/--dry-run/--main/--quit. Also wraps the common dialect-shorthand
+--workdir/--keep-workdir/--write-workdir-path/--timeout/
+--bootstrap-phase/--dry-run/--main/--quit/--plugin*/--list-plugins/
+--compile-plugin. Also wraps the common dialect-shorthand
 specs (--autocad/--bricscad/--clautolisp) with conflict-checking
 handlers so a `--bricscad --autocad` invocation signals cli-usage-
 error rather than silently last-winning."
@@ -505,11 +541,35 @@ error rather than silently last-winning."
     :handler (lambda (opts value name)
                (declare (ignore name))
                (setf (cli-options-dwg opts) value)))
+   ;; --plugin NAME activates an installed plug-in that has no flag of its
+   ;; own (or that the caller prefers to name). --plugin-path and
+   ;; --no-plugins are consumed by PRESCAN-PLUGIN-ARGUMENTS in RUN, before
+   ;; the parser exists: what they say decides what is loaded, and the
+   ;; loaded plug-ins are what tell the parser which options are legal. The
+   ;; parser accepts them so that they are not "unknown".
    (make-option-spec
-    :longs '("--epure") :takes-arg-p nil
+    :longs '("--plugin") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (activate-plugin-by-name opts value)))
+   (make-option-spec
+    :longs '("--plugin-path") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore opts value name))))
+   (make-option-spec
+    :longs '("--no-plugins") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore opts value name))))
+   (make-option-spec
+    :longs '("--list-plugins") :takes-arg-p nil
     :handler (lambda (opts value name)
                (declare (ignore value name))
-               (setf (cli-options-epure-p opts) t)))
+               (setf (cli-options-list-plugins-p opts) t)))
+   (make-option-spec
+    :longs '("--compile-plugin") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-compile-plugin opts) value)))
    (make-option-spec
     :longs '("--bootstrap-phase") :takes-arg-p t
     :handler (lambda (opts value name)
@@ -558,6 +618,11 @@ error rather than silently last-winning."
 
 (defparameter *alfe-option-specs* (%make-alfe-option-specs))
 
+(setf alfe.plugin:*core-option-names-function*
+      (lambda ()
+        (loop for spec in (append *alfe-option-specs* *common-option-specs*)
+              append (option-spec-longs spec))))
+
 (defun %translate-action-cons (cons load-encoding)
   "Convert one (:KIND . PAYLOAD) cons produced by the shared parser
 into the alfe.backend action object the rest of alfe consumes."
@@ -575,7 +640,9 @@ caller can inspect the result, validate it (RESOLVE-BACKEND), or
 build the action plan (PLAN-FROM-OPTIONS).
 
 Internally delegates to clautolisp.autolisp-cli's spec-driven
-parser with the union of *common-option-specs* + *alfe-option-specs*.
+parser with the union of *common-option-specs* + *alfe-option-specs* + the
+options of the registered plug-ins (which the caller has loaded: see
+LOAD-PLUGINS).
 Post-translation steps fold env-var defaults in and rewrite the
 action conses produced by the shared parser into alfe.backend
 action objects so the rest of alfe (PLAN-FROM-OPTIONS, EVAL-PLAN,
@@ -585,7 +652,7 @@ the action objects back to conses on the fly."
   (let* ((options (make-cli-options)))
     (apply-env-defaults options)
     (parse-arguments-with-spec
-     (append *alfe-option-specs* *common-option-specs*)
+     (append *alfe-option-specs* (plugin-option-specs) *common-option-specs*)
      argv
      :initial-options options)
     (setf (cli-options-actions options)
@@ -593,6 +660,9 @@ the action objects back to conses on the fly."
                     (%translate-action-cons
                      a (cli-options-load-encoding options)))
                   (cli-options-actions options)))
+    ;; Command line, then environment, then default; the options of a
+    ;; plug-in that is not active are refused here, as a usage error.
+    (resolve-plugin-options options)
     options))
 
 (defun %action-object-to-cons (action)
@@ -796,8 +866,12 @@ backend: init-file loads first (when the lookup is not gated),
 then PLAN-FROM-OPTIONS. Touches the filesystem (via
 RESOLVE-INIT-FILE-ACTIONS); intended for the live run path and
 the dry-run renderer."
-  (append (resolve-init-file-actions options)
-          (plan-from-options options)))
+  ;; Hook :plan sees the whole plan — init files, user actions and the
+  ;; terminator — so a plug-in can put actions in front of everything (EPUREE
+  ;; does), and --dry-run shows what it did.
+  (run-hook :plan
+            (append (resolve-init-file-actions options)
+                    (plan-from-options options))))
 
 ;;; --- dry-run renderer ----------------------------------------------
 
@@ -821,6 +895,8 @@ the dry-run renderer."
   (format stream "  actions:~%")
   (dolist (action (effective-plan options))
     (format stream "    - ~A~%" (render-action action)))
+  (dolist (line (run-hook :dry-run-report nil))
+    (format stream "  ~A~%" line))
   (finish-output stream))
 
 ;;; --- --print-command ------------------------------------------------
@@ -1053,6 +1129,45 @@ no-op note elsewhere."
    (format stream "  (no backtrace: unsupported CL implementation)~%"))
   (finish-output stream))
 
+(defun %load-installed-plugins (argv version)
+  "Load the plug-ins ARGV allows: --no-plugins (or $ALFE_NO_PLUGINS) loads
+none and forgets any registered before; --plugin-path adds roots."
+  (multiple-value-bind (directories none) (prescan-plugin-arguments argv)
+    (cond ((alfe.plugin:plugins-disabled-p none)
+           (alfe.plugin:reset-plugins))
+          (t
+           (load-plugins :directories directories
+                         :version (or version "0.0.0"))))))
+
+(defun %compile-plugin-command (file version)
+  "--compile-plugin FILE: compile FILE for this alfe, print where, exit code."
+  (handler-case
+      (let ((output (compile-plugin file :version (or version "0.0.0"))))
+        (format t "~&~A~%" (uiop:native-namestring output))
+        (finish-output)
+        0)
+    (error (condition)
+      (format *error-output* "~&alfe: --compile-plugin: ~A~%" condition)
+      1)))
+
+(defun %condition-phase (condition)
+  (typecase condition
+    (cli-usage-error :usage)
+    (backend-error (alfe.error:backend-error-phase condition))
+    (t :internal)))
+
+(defun %report-error-to-plugins (condition)
+  "Hook :error, at the point of the error (before any unwinding, so the
+--on-error backtrace is untouched). A failing handler must not mask the
+error it was told about."
+  (handler-case (run-hook :error condition :phase (%condition-phase condition))
+    (error (failure)
+      (log-debug "cli: hook :error failed: ~A" failure))))
+
+(defmacro %with-error-hook (&body body)
+  `(handler-bind ((error #'%report-error-to-plugins))
+     ,@body))
+
 (defun run (argv &key version)
   "alfe entry point. ARGV is the argument list *without* the program
 name; VERSION is the version string printed by --version. Returns an
@@ -1071,7 +1186,11 @@ The handler chain matches alfe-cli.issue's exit-code table:
             ((error (lambda (condition)
                       (when (member *on-error* '(:debug :ignore))
                         (%print-alfe-backtrace condition *error-output*)))))
-        (let ((options (parse-arguments argv)))
+        (let ((options (progn
+                         ;; Plug-ins first: their options are what the
+                         ;; parser must accept.
+                         (%load-installed-plugins argv version)
+                         (parse-arguments argv))))
         (cond
           ((cli-options-help-p options)
            (print-usage)
@@ -1095,6 +1214,11 @@ The handler chain matches alfe-cli.issue's exit-code table:
            ;; resolve PRINT-CAD-PROGRAMS at call time.
            (uiop:symbol-call :alfe.backend.cad-common :print-cad-programs)
            0)
+          ((cli-options-list-plugins-p options)
+           (print-plugins)
+           0)
+          ((cli-options-compile-plugin options)
+           (%compile-plugin-command (cli-options-compile-plugin options) version))
           (t
            (set-level (cli-options-verbosity options))
            ;; G1: apply the resolved `terminal` encoding to alfe's OWN
@@ -1147,17 +1271,28 @@ The handler chain matches alfe-cli.issue's exit-code table:
                ;; the action plan and exits 0 — matching the user
                ;; intent of "show me what would happen" rather than
                ;; "verify the engine works".
-               (let ((backend (resolve-backend
-                               options
-                               :detect-p (not (cli-options-dry-run-p options)))))
-                 (cond
-                   ((cli-options-dry-run-p options)
-                    (emit-dry-run options backend)
-                    0)
-                   ((cli-options-print-command-p options)
-                    (print-command-plan options backend :version-text version))
-                   (t
-                    (run-plan options backend :version-text version)))))))))))
+               (with-run-context (options :version version)
+                 (%with-error-hook
+                   (run-hook :cli-parsed options)
+                   (let ((backend (resolve-backend
+                                   options
+                                   :detect-p (not (cli-options-dry-run-p options)))))
+                     ;; From here the run's backend is the one really chosen
+                     ;; (an $ALFE_BACKEND_OVERRIDE, a default), which is what
+                     ;; a plug-in's :applies-to is matched against.
+                     (setf (alfe.plugin:context-backend alfe.plugin:*context*)
+                           (alfe.backend:backend-name backend))
+                     (run-hook :backend-selected backend
+                               :options options
+                               :dry-run-p (cli-options-dry-run-p options))
+                     (cond
+                       ((cli-options-dry-run-p options)
+                        (emit-dry-run options backend)
+                        0)
+                       ((cli-options-print-command-p options)
+                        (print-command-plan options backend :version-text version))
+                       (t
+                        (run-plan options backend :version-text version)))))))))))))
     (cli-usage-error (condition)
       (format *error-output* "~&alfe: ~A~%" condition)
       2)
@@ -1207,6 +1342,43 @@ run must proceed even if the caller's path-capture file is unwritable."
         (error (e)
           (log-verbose "cli: could not write workdir path to ~S: ~A" path e))))))
 
+(defun %safe-hook (name value &rest details)
+  "Run the hook NAME during teardown. An error in a handler is reported, not
+propagated: shutdown and cleanup must still happen, and the run's own
+outcome must not be replaced by a plug-in's teardown failure."
+  (handler-case (apply #'run-hook name value details)
+    (error (condition)
+      (format *error-output* "~&alfe: warning: hook ~S failed: ~A~%"
+              name condition)
+      nil)))
+
+(defun %eval-plan-with-hooks (session plan)
+  "Evaluate PLAN one action at a time so that :pre-action and :post-action
+can see each. Stops at the first action that does not succeed, as the
+backends do inside one EVAL-PLAN call. Used only when an active plug-in
+registered one of the two hooks."
+  (let ((count (length plan))
+        (results '()))
+    (loop for action in plan
+          for index from 1
+          do (run-hook :pre-action action :index index :count count
+                                          :session session)
+             (let ((result (eval-plan session (list action))))
+               (push result results)
+               (run-hook :post-action action :index index :count count
+                                             :session session :result result)
+               (unless (eq (eval-result-status result) :success)
+                 (return))))
+    (setf results (nreverse results))
+    (let ((last (car (last results))))
+      (make-eval-result
+       :status (if last (eval-result-status last) :success)
+       :value (and last (eval-result-value last))
+       :output (apply #'concatenate 'string (mapcar #'eval-result-output results))
+       :error-output (apply #'concatenate 'string
+                            (mapcar #'eval-result-error-output results))
+       :condition (and last (eval-result-condition last))))))
+
 (defun run-plan (options backend &key version-text)
   "Drive a real backend through the action plan. Returns the exit code.
 VERSION-TEXT propagates the alfe version string from RUN so backends
@@ -1216,9 +1388,14 @@ engine."
                (cli-options-load-encoding options)
                (cli-options-io-encoding options))
   (let* ((started-at (get-internal-real-time))
+         ;; The plan first, before a workdir exists or a CAD is launched: a
+         ;; plug-in that cannot build its part of it (EPUREE without ALPM)
+         ;; says so at once, not after a two-minute CAD start.
+         (plan (effective-plan options))
          (workdir (let ((wd (prepare-workdir backend
                                              (cli-options-workdir options))))
                     (%write-workdir-path-file options wd)
+                    (run-hook :workdir-prepared wd)
                     wd))
          (session (start-engine backend workdir
                                 :dialect (effective-dialect options)
@@ -1237,13 +1414,17 @@ engine."
                                 :cli-options options
                                 :version-text version-text)))
     (unwind-protect
-         (let* ((plan (effective-plan options)))
+         (progn
+           (run-hook :engine-started session)
            (log-verbose "cli: resolved plan with ~D action~:P" (length plan))
            (loop for action in plan
                  for i from 1
                  do (log-verbose "cli: plan[~D] = ~A"
                                  i (render-action action)))
-           (let ((result (eval-plan session plan)))
+           (let ((result (if (or (hook-active-p :pre-action)
+                                 (hook-active-p :post-action))
+                             (%eval-plan-with-hooks session plan)
+                             (eval-plan session plan))))
              ;; The backend contract is: EVAL-PLAN writes live output
              ;; to *STANDARD-OUTPUT* / *ERROR-OUTPUT* during the call,
              ;; AND captures a copy in EVAL-RESULT-{OUTPUT,ERROR-OUTPUT}
@@ -1276,16 +1457,20 @@ engine."
              ;; with (print …).
              (finish-output)
              (finish-output *error-output*)
-             (let ((exit-code (ecase (eval-result-status result)
-                                (:success  0)
-                                (:failed   1)
-                                (:aborted  1)))
+             (let ((exit-code (run-hook :exit-code
+                                        (ecase (eval-result-status result)
+                                          (:success  0)
+                                          (:failed   1)
+                                          (:aborted  1))
+                                        :result result))
                    (elapsed (/ (float (- (get-internal-real-time) started-at))
                                internal-time-units-per-second)))
                (log-verbose "cli: plan finished status=~S exit=~D elapsed=~,2Fs"
                             (eval-result-status result) exit-code elapsed)
                exit-code)))
+      (%safe-hook :pre-shutdown session :reason :cli-exit)
       (ignore-errors (shutdown session :reason :cli-exit))
+      (%safe-hook :post-shutdown session :workdir workdir)
       (ignore-errors (cleanup-workdir backend workdir
                                       :keep-p (cli-options-keep-workdir-p options))))))
 
@@ -1322,10 +1507,12 @@ longer exists unless the user asked to keep it. That is deliberate:
 backend ~(~A~) runs in-process and has no external command line."
                      backend-name)))
     (let ((captured nil)
+          (directory nil)
           (keep-p (cli-options-keep-workdir-p options))
           (workdir (let ((wd (prepare-workdir backend
                                               (cli-options-workdir options))))
                      (%write-workdir-path-file options wd)
+                     (run-hook :workdir-prepared wd)
                      wd)))
       (unwind-protect
            (progn
@@ -1342,9 +1529,9 @@ backend ~(~A~) runs in-process and has no external command line."
                            :cli-options options
                            :version-text version-text
                            :wait-for-ready nil
-                           :launcher (lambda (argv &rest ignored)
-                                       (declare (ignore ignored))
-                                       (setf captured argv)
+                           :launcher (lambda (argv &rest keys)
+                                       (setf captured argv
+                                             directory (getf keys :directory))
                                        nil))
              (unless captured
                (error 'alfe.error:backend-bootstrap-error
@@ -1357,7 +1544,13 @@ no launch command line." backend-name)))
                           backend-name workdir)
              (log-debug "cli: --print-command argv = ~S" captured)
              ;; The command line, alone, on stdout: this is the deliverable.
-             (format stream "~&~A~%" (format-launch-command captured))
+             ;; A working directory chosen by a plug-in is part of the command:
+             ;; running the line elsewhere would not start the same thing.
+             (format stream "~&~@[cd ~A && ~]~A~%"
+                     (and directory
+                          (quote-command-argument
+                           (uiop:native-namestring directory)))
+                     (format-launch-command captured))
              (finish-output stream)
              (unless keep-p
                (log-verbose "cli: --print-command removing workdir ~A ~

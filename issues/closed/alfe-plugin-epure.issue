@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-plugin-epure — the EPURE plug-in (BricsCAD and AutoCAD launched under the EPURE profile)
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: feature
 #+DEPENDS: alfe-plugin-hooks
@@ -67,3 +67,14 @@ and whether the GUI stays usable, are the two questions the real-CAD run
 - =--autocad --epure= selects automation; =--autocad --mode batch --epure=
   is refused; the staged VBS carries the profile and script lines.
 - Off Windows, and under =--clautolisp=, =--epure= changes nothing.
+
+* Resolved (alfe 2.2.76) — mock-verified only
+
+=plugins/epure/epure.lisp=. Decided from the legacy wrapper: /p Epure before
+/b, no /Automation, cd to UserDataCache (or the CAD's directory), run.scr
+chains ._SCRIPT before the load, AutoCAD forced to COM and accoreconsole
+refused, VBS slots for the profile and the script. Off Windows, and under
+other backends, it deactivates itself (so =*AUTOLISP-PLUGIN-OPTIONS*= stays
+true). Choice worth reviewing: =/Automation= is DROPPED (the legacy wrapper
+never passed it; EPURE loads a CUIX). Real CADs: see
+=alfe-plugin-epure-windows-validation= (still open, BLOCKED).

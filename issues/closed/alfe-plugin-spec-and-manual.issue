@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-plugin-spec-and-manual — document the plug-in system (spec, user manual, man page, release notes)
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: doc
 #+DEPENDS: alfe-plugin-model
@@ -45,3 +45,17 @@ document, 4 implement, 5 the two first plug-ins").
   code; the docs land first).
 - The spec's EPURE section no longer claims behaviour alfe does not have,
   and says what has *not* been validated on real CADs.
+
+* Resolved (alfe 2.2.76)
+
+Spec: chapters "Plug-ins", "EPURE" (rewritten, with what is NOT validated on
+real CADs) and "EPUREE" in =documentation/alfe--specifications.org=, plus the
+env table rows and the legacy VBScript listing now showing the two plug-in
+slots. User manual: chapter "Plug-ins" (roots, source/compiled, activation,
+EPURE, EPUREE, "Writing a plug-in"), the =--epure= rows fixed, environment
+variables, troubleshooting, =--print-command='s =cd DIR &&=. Man page:
+OPTIONS / ENVIRONMENT / PLUG-INS. =RELEASE_NOTES.org=: one entry.
+=make check-spec-coverage= (44/44) and =make check-user-visible-documentation=
+green. The user manual and man page were drafted from the spec by a separate
+agent and reconciled with the code afterwards (source-tree root, the exact
+refusal message, =$ALFE_PLUGINS= unknown names, the =cd= prefix).

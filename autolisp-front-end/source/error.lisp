@@ -38,6 +38,9 @@
            #:backend-bootstrap-error
            #:backend-protocol-error
            #:backend-eval-error
+           #:plugin-error
+           #:plugin-error-plugin
+           #:plugin-error-hook
            #:cli-usage-error
            #:cli-usage-error-message
            #:cli-usage-error-option
@@ -100,6 +103,23 @@ on a subsequent request."))
 escaped to the top level, --main exited with a non-zero result, etc.).
 Maps to exit code 1."))
 
+(define-condition plugin-error (backend-error)
+  ((plugin :initarg :plugin :reader plugin-error-plugin :initform nil)
+   (hook   :initarg :hook   :reader plugin-error-hook   :initform nil))
+  (:default-initargs :phase :plugin :code :plugin-failed)
+  (:documentation
+   "A plug-in's hook handler signalled an ordinary Lisp error. The plug-in
+is named so the user knows whose code failed, and the condition is a
+BACKEND-ERROR so the CLI maps it like the other run-time failures: exit
+code 4. (A handler that signals CLI-USAGE-ERROR or a BACKEND-ERROR itself
+is not wrapped: it chose its exit code.)")
+  (:report
+   (lambda (condition stream)
+     (format stream "plug-in ~A~@[, hook ~S~]: ~A"
+             (plugin-error-plugin condition)
+             (plugin-error-hook condition)
+             (backend-error-message condition)))))
+
 ;; CLI-USAGE-ERROR moved to clautolisp.autolisp-cli; alfe re-exports
 ;; the same condition class via this package's defpackage above.
 
@@ -112,6 +132,7 @@ exits 0 on an error path."
     (backend-not-available    3)
     (backend-bootstrap-error  4)
     (backend-protocol-error   4)
+    (plugin-error             4)
     (backend-eval-error       1)
     (backend-error            1)
     (t                        1)))

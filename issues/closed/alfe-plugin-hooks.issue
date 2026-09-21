@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-plugin-hooks — the alfe.plugin API and the hook points at every stage
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: feature
 #+DEPENDS: alfe-plugin-options
@@ -49,3 +49,18 @@ EPUREE needs the plan; a future plug-in may want any of the others.
   lifecycle order for the clautolisp backend and for the mock CAD.
 - Hook errors, unknown hook names at registration and =applies-to= gating
   are tested.
+
+* Resolved (alfe 2.2.76)
+
+18 hook points (event / filter / collect), =alfe.plugin:run-hook=, the run
+context, =plugin-error= (exit 4). Call sites: =alfe.cli:run= / =run-plan= /
+=print-command-plan= / =effective-plan= / =emit-dry-run=, both CAD backends'
+=start-engine= and script emitters, =emit-run-common-lsp=. The plan is now
+built BEFORE the workdir and the engine (a plug-in that cannot build its part
+says so at once, not after a CAD start). =:error= runs inside a =handler-bind=
+so the =--on-error= backtrace is still the original one.
+
+Verified: with no active plug-in the run is unchanged (the 716 pre-existing
+checks pass untouched; the generated VBScript is the template byte for byte
+minus the two slot lines); the recorder fixture asserts the lifecycle order;
+one =eval-plan= call unless a plug-in asked for per-action hooks.

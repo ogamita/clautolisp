@@ -388,7 +388,7 @@ specs without mutating the shared template."
   (append (%make-common-option-specs) (%encoding-option-specs))
   "The intersection of CLI options accepted by both clautolisp and
 alfe. Each tool builds its full spec list by appending its
-tool-specific specs (alfe's --mode/--backend/--dwg/--epure/etc.;
+tool-specific specs (alfe's --mode/--backend/--dwg/etc.;
 clautolisp's --mock-input/--gui/--trace). Tools may also append
 duplicate handlers — the first match wins, so prepending a custom
 handler replaces the common one without removing it.")

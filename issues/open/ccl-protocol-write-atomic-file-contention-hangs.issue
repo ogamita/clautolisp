@@ -1,0 +1,38 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: ccl-protocol-write-atomic-file-contention-hangs — PROTOCOL-WRITE-ATOMIC-FILE-CONTENTION never returns under CCL on the macOS dev box
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-ccl-protocol-write-atomic-file-contention-hangs
+
+* Symptom
+
+2026-09-21, macOS arm64, CCL =/usr/local/src/ccl/dx86cl64= (x86-64, so under
+Rosetta): =make -C autolisp-front-end test-ccl= stops making progress at
+
+  Running test PROTOCOL-WRITE-ATOMIC-FILE-CONTENTION
+
+with the process idle (0 % CPU) for over ten minutes. The test alone,
+=(fiveam:run! 'protocol-write-atomic-file-contention)= in a fresh CCL, is
+killed by a 120 s =timeout=. The same test passes under SBCL (part of the
+suite's green run).
+
+* What is known / not known
+
+- Found while running the alfe suite for the plug-in system
+  (=alfe-plugin-model=). The plug-in work does not touch it
+  (=write-atomic-file= and its threads are unchanged; only
+  =emit-run-common-lsp= changed in that file).
+- NOT verified at the parent commit: the tree was not stashed (there are
+  unrelated stashes on this box), so "pre-existing" is the strong suspicion,
+  not a measurement.
+- Related closed issue: =write-atomic-file-concurrent-rename-windows=.
+
+* Proposal
+
+Run the test at =HEAD~= on the same box to settle "pre-existing"; then find
+out whether it is Rosetta / the x86 CCL (an arm64 CCL is a separate issue,
+=cecil-native-arm64-runner=) or a real deadlock in the contention path
+(=bordeaux-threads= under CCL). Until then =make test-ccl= cannot be used to
+completion on this machine; run subsets by test name.

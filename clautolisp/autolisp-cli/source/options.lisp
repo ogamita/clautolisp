@@ -27,9 +27,18 @@
   (io-encoding      nil)              ; AC  = the `terminal' situation (-Eterminal); mirrored for downstream
   (situation-encodings nil)           ; AC  alist (KEY . canonical-enc): KEY = "all" | "<situation>" | "<situation>/<dir>"
                                       ;     built by the -E<situation>[-<dir>] / --<situation>-encoding family
-  ;; Drawing + plugin
+  ;; Drawing
   (dwg              nil)              ; A
-  (epure-p          nil)              ; A
+  ;; Plug-ins (alfe). The options a plug-in defines are parsed into
+  ;; PLUGIN-OPTIONS, an alist (NAME . PLIST) of plug-in name -> plist of
+  ;; option key -> value, resolved (command line, then environment, then
+  ;; default) once parsing is done; PLUGINS-ACTIVE lists the names of the
+  ;; plug-ins in force for the run, in activation order. Both are filled by
+  ;; alfe.plugin; clautolisp itself has no plug-ins and leaves them NIL.
+  (plugin-options   nil)              ; A
+  (plugins-active   nil)              ; A
+  (list-plugins-p   nil)              ; A   --list-plugins
+  (compile-plugin   nil)              ; A   --compile-plugin FILE (string)
   ;; Bootstrap
   (bootstrap-phase  :full)            ; A   :marker / :core / :log / :full
   ;; REPL + lifecycle

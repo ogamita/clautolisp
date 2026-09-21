@@ -74,6 +74,13 @@ directory alfe was built in. The search order is:
 If either file cannot be found, the CAD is not started. alfe exits
 with status 4 and lists every path it tried (see /Troubleshooting/).
 
+** The installed plug-ins
+
+The =install= rule also places the plug-ins that ship with alfe —
+=epure= and =epuree= — under =$(PREFIX)/share/clautolisp/plug-in/= and
+compiles them with the alfe it has just installed. =alfe --list-plugins=
+shows what alfe finds; see [[#plugins][Plug-ins]].
+
 ** Backend flags
 
 The =--clautolisp= / =--bricscad= / =--autocad= flags select a
@@ -216,7 +223,7 @@ neither a launch nor a workdir handshake.
 | =--backend attach\vert{}launch=      | Attach to an already-running CAD, or launch a fresh one. |
 | =--workdir DIR=               | Override the exchange directory (default: =$AUTOLISP_WORKDIR=). |
 | =--bootstrap-phase PHASE=     | Truncate the bootstrap at =marker=, =core=, =log= or =full=. |
-| =--epure=                     | Enable the EPURE plugin hook (default: =$AUTOLISP_EPURE=). |
+| =--epure=                     | Run BricsCAD or AutoCAD under the EPURE profile (MS-Windows only). Defined by the =epure= plug-in, not by alfe itself: see [[#plugin-epure][The EPURE plug-in]]. |
 
 =--workdir= names the directory through which alfe and the CAD engine
 exchange files — the file-IPC channel the CAD backends run on. Point it
@@ -242,13 +249,18 @@ Two consequences worth knowing before you use a truncated phase: under
 is not installed. =--interactive= requires =full= — combined with any
 other phase, alfe exits with code =2=.
 
-=--epure= turns on the EPURE plugin hook. Note that BricsCAD's EPURE
-profile is not selected by this option — it requires its own explicit
-launch options.
+=--epure= is not one of alfe's own options: the =epure= plug-in, which
+ships with alfe, defines it ([[#plugin-epure][The EPURE plug-in]]). Before the plug-in system
+alfe accepted =--epure= and did nothing with it. It now launches
+BricsCAD or AutoCAD under the =Epure= profile and runs EPURE's control
+script before alfe's run-time is loaded. It works on MS-Windows only;
+elsewhere, and under =--clautolisp=, it is silently ignored. Its
+companions =--epure-profile= and =--epure-script= are described with the
+plug-in.
 
-The three environment variables =$AUTOLISP_WORKDIR=,
-=$AUTOLISP_BOOTSTRAP_PHASE= and =$AUTOLISP_EPURE= supply the defaults;
-an explicit option always wins.
+The environment variables =$AUTOLISP_WORKDIR=, =$AUTOLISP_BOOTSTRAP_PHASE=
+and, for the plug-in option =--epure=, =$AUTOLISP_EPURE= supply the
+defaults; an explicit option always wins.
 
 * Actions
 
@@ -437,6 +449,512 @@ it is not neutral either. A BricsCAD profile named with
 *clean* profile is precisely how you keep a vertical application out of
 a pure-CAD run. See /Environment variables/ above.
 
+* Plug-ins
+:PROPERTIES:
+:CUSTOM_ID: plugins
+:END:
+
+Behaviour that belongs to one site, one CAD product or one user —
+starting EPURE, loading a package before your script — does not belong
+in alfe's backends. A /plug-in/ is a Common Lisp file that alfe loads at
+start-up and that
+
+1. defines command-line options, possibly taking arguments;
+2. intervenes, through named /hooks/, at any stage of a run: it can read
+   and change the parsed options, veto a backend, rewrite the action
+   plan, add lines to the scripts alfe generates for the CAD, change the
+   command line and working directory the CAD is launched with, and
+   observe every action, the shutdown, the exit code and every error.
+
+Two plug-ins ship with alfe: =epure= runs BricsCAD or AutoCAD under the
+EPURE profile ([[#plugin-epure][The EPURE plug-in]]), and =epuree= loads the EPUREE emulation
+of the EPURE API before your script ([[#plugin-epuree][The EPUREE plug-in]]). Writing your
+own is described in [[#plugin-writing][Writing a plug-in]].
+
+What you can rely on:
+
+- *Load all, activate by flag.* Every installed plug-in is loaded at
+  start-up, so that its options exist when the command line is parsed.
+  Only an /active/ plug-in has its hooks called.
+- *Zero active plug-ins, zero behaviour change.* Every hook call site
+  returns its input unchanged when no active plug-in registered that
+  hook.
+- *No silent shadowing.* A plug-in cannot redefine an alfe option or an
+  option of another plug-in. That is a registration error and the
+  plug-in is skipped.
+- *A plug-in that fails to load is a warning.* =--help=, =--version= and
+  every run that does not need the plug-in keep working.
+- *A plug-in is trusted.* It runs inside alfe's image with alfe's
+  privileges; there is no sandbox. Install one as you would install a
+  program.
+
+** Where plug-ins are installed
+
+A /plug-in root/ is a directory holding one sub-directory per plug-in,
+named for it. The plug-in =NAME= is one or both of
+
+| File                            | Form                                                                   |
+|---------------------------------+------------------------------------------------------------------------|
+| =NAME/NAME.lisp=                | source                                                                 |
+| =NAME/NAME.VERSION-IMPL.plugin= | compiled, for alfe version VERSION and Common Lisp implementation IMPL |
+
+IMPL is =sbcl= or =ccl=. NAME matches =[a-z][a-z0-9-]*= and is the name
+the plug-in registers under.
+
+alfe searches the roots in this order, and *the first plug-in of a given
+name wins*, so a local install shadows a system one:
+
+1. every =--plugin-path DIR=, in command-line order;
+2. every entry of =$ALFE_PLUGIN_PATH=, a PATH-style list (separated by
+   =:=, or by =;= on MS-Windows);
+3. =$XDG_DATA_HOME/clautolisp/plug-in= (=~/.local/share/clautolisp/plug-in=
+   when the variable is unset; =%APPDATA%\clautolisp\plug-in= on
+   MS-Windows);
+4. =clautolisp/plug-in= under every entry of =$XDG_DATA_DIRS=
+   (=/usr/local/share:/usr/share= when unset; none on MS-Windows unless the
+   variable is set);
+5. =PREFIX/share/clautolisp/plug-in=, PREFIX being the installation prefix
+   the running executable belongs to — derived the same way as for the
+   CAD runtime files (see /The CAD runtime files/);
+6. the =plugins/= directory of alfe's source tree, when alfe runs from a
+   checkout. It is what makes =epure= and =epuree= work before anything is
+   installed; it comes last, so an installed plug-in shadows it.
+
+=make install= puts the plug-ins that ship with alfe in
+=$(PREFIX)/share/clautolisp/plug-in/= and compiles them with the alfe it
+has just installed. Your own belong in the user-level root (item 3), or
+in any directory you name with =--plugin-path=.
+
+*Which form is loaded.* When the compiled file for this alfe version and
+this Common Lisp implementation exists and is at least as new as the
+source — or there is no source — it is loaded; otherwise the source is.
+Editing a source therefore retires an older compiled file by itself. A
+compiled file that fails to load falls back to the source, with a
+warning. A compiled file whose VERSION or IMPL is not the running alfe's
+is ignored (=--verbose= logs it).
+
+** Compiling a plug-in
+
+=alfe --compile-plugin FILE.lisp= compiles the plug-in source =FILE.lisp=
+for the running alfe version and implementation into
+=NAME.VERSION-IMPL.plugin= next to the source, prints its path and exits
+0 (1 on a compile error, or when FILE is not there). NAME is the name of
+FILE. Compiling is optional: a plug-in works from its source alone.
+
+alfe is built for two implementations (=alfe-sbcl= and =alfe-ccl=, see
+/Installation/), and a compiled file is valid for one of them and one
+alfe version only. Compile once for each implementation you run, and
+again after upgrading alfe.
+
+#+begin_src sh
+alfe --compile-plugin ~/.local/share/clautolisp/plug-in/hello/hello.lisp
+#+end_src
+
+** Listing plug-ins
+
+=alfe --list-plugins= prints the plug-ins alfe found (name, version, the
+form loaded — source or compiled —, path and description), those that
+failed to load with the reason, and the search path, then exits 0.
+
+** Activating a plug-in
+
+An installed plug-in does nothing until it is /active/. It is active
+when
+
+- you gave its own activating option (=--epure= for =epure=, =--epuree=
+  for =epuree=); or
+- the environment variable that supplies the default of that option is
+  set to a true value (=1=, =y=, =yes=, =true= or =on=), for instance
+  =$AUTOLISP_EPURE=1=; or
+- you gave =--plugin NAME=, which may be repeated; or
+- =$ALFE_PLUGINS=, a comma-separated list of plug-in names, lists it.
+
+=--plugin NAME= — or a name in =$ALFE_PLUGINS= — that is not installed is a usage error that
+lists the installed plug-ins.
+
+An active plug-in's other options take their value from the command
+line, else from their environment variable, else from their default.
+Giving an option of a plug-in that is *not* active is a usage error (exit
+status 2) that names the option activating the plug-in: =alfe
+--epure-profile Epure …= fails and points at =--epure=.
+
+A plug-in declares the backends it takes part in. Under another backend
+it is still loaded and its options still parse, but its hooks are not
+called.
+
+=alfe --help= ends with a generated /Plug-in options/ section listing
+every option of every installed plug-in, active or not.
+
+#+begin_src sh
+alfe --bricscad --epure -x '(princ "ok")'          # the plug-in's own option
+alfe --bricscad --plugin epure -x '(princ "ok")'   # the same, by name
+export ALFE_PLUGINS=epure                          # every run, from your shell init
+#+end_src
+
+** Choosing the plug-in roots
+
+=--plugin-path DIR= adds DIR to the search path; repeat it for several
+roots. The directories given this way are searched first, in
+command-line order, then the entries of =$ALFE_PLUGIN_PATH=, then the
+standard places listed above. DIR is a plug-in /root/: it holds
+=NAME/NAME.lisp=, not =NAME.lisp= itself.
+
+#+begin_src sh
+alfe --plugin-path ./my-plugins --plugin hello -x '(+ 1 2)'
+export ALFE_PLUGIN_PATH=$HOME/plugins:/srv/site/plugins
+#+end_src
+
+** Loading no plug-in
+
+=--no-plugins=, or =$ALFE_NO_PLUGINS= set to a true value, makes alfe
+load no plug-in at all. It is the way to rule a plug-in out when you
+suspect it.
+
+Plug-ins are loaded before the command line is parsed, since their
+options must exist for the parser. Two options decide what is loaded,
+=--plugin-path= and =--no-plugins=, so alfe finds them in a first pass
+over the raw command line; the parser still accepts them.
+
+** When a plug-in fails to load
+
+Each plug-in file is loaded with the package set to =CL-USER=, and the
+compiler and loader chatter is captured (shown with =--debug=). A
+plug-in that signals an error while loading — a read or compile error, a
+registration error — is reported on standard error as
+
+#+begin_example
+alfe: warning: plug-in NAME (PATH): MESSAGE
+#+end_example
+
+and skipped; alfe carries on, and =--list-plugins= shows the failure and
+its reason. Registration fails when NAME does not match the file the
+plug-in was loaded from, when one of its options breaks the naming rules
+(see [[#plugin-writing][Writing a plug-in]]), or when it names a hook this alfe does not
+have — a plug-in written for another alfe version finds that out when it
+is loaded, not in the middle of a run.
+
+** The EPURE plug-in
+:PROPERTIES:
+:CUSTOM_ID: plugin-epure
+:END:
+
+EPURE is the SNCF Réseau vertical application (menus, profile, SCHMS+)
+that the site's CAD sessions run under. The =epure= plug-in launches
+BricsCAD or AutoCAD the way the site's =scripts/bricscad-epure= and
+=scripts/autocad-epure= do: with the =Epure= user profile, from the CAD's
+=UserDataCache= directory, running EPURE's control script; and it
+arranges for that script to run before alfe's own runtime is loaded. It
+replaces the legacy =autolisp --epure=. (Before the plug-in system,
+alfe accepted =--epure= and did nothing with it.)
+
+It applies to =--bricscad= and =--autocad= and is *MS-Windows only*. On
+another OS, and under =--clautolisp=, =--epure= is silently ignored (a
+=--verbose= message says so), so the option stays harmless in scripts
+shared between machines.
+
+| Option / variable                                 | Meaning                                                   |
+|---------------------------------------------------+-----------------------------------------------------------|
+| =--epure=, =$AUTOLISP_EPURE=                      | Activate the plug-in (the variable: set to a true value). |
+| =--epure-profile NAME=, =$AUTOLISP_EPURE_PROFILE= | The CAD user profile to run under (default =Epure=).      |
+| =--epure-script FILE=, =$AUTOLISP_EPURE_SCRIPT=   | EPURE's control script (default below).                   |
+
+An explicit option wins over its variable. =--epure-profile= and
+=--epure-script= are usage errors unless the plug-in is active (see
+[[#plugins][Plug-ins]], /Activating a plug-in/).
+
+The default control script is
+
+- =%APPDATA%\sncf\epure\epure 2022_b\control_path_epure_2022.scr= for
+  BricsCAD;
+- =%APPDATA%\sncf\epure\epure 2022\control_path_epure_2022.scr= for
+  AutoCAD.
+
+When the script does not exist the run stops with a
+=backend-bootstrap-error= naming the path (exit status 4) — unless it is
+a =--dry-run=.
+
+*Why the mode matters.* EPURE is a full-GUI application: it needs the
+CAD's profile, menus and CUIX. accoreconsole (AutoCAD's batch mode) has
+neither a GUI nor profiles. So:
+
+| Backend, mode                           | What =--epure= does                                                                                                                                                                                                             |
+|-----------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| BricsCAD, =batch= (the default)         | Starts =bricscad.exe [template] /p PROFILE /b run.scr= from =UserDataCache=. The =/Automation= switch, which hides the main window, is *dropped*. =run.scr= runs =._SCRIPT= on the control script, then loads =run-common.lsp=. |
+| BricsCAD, =--mode automation= (COM)     | The bridge tries to activate the profile through =Preferences.Profiles= (a failure is written to the errors file and the run carries on with the current profile), and sends =._SCRIPT= before the load.                        |
+| AutoCAD, =automation= (COM)             | The default under =--epure=. The bridge activates the profile and sends =._SCRIPT= before the load.                                                                                                                             |
+| AutoCAD, =--mode batch= (accoreconsole) | Refused: usage error (exit status 2), "EPURE requires the full AutoCAD GUI; accoreconsole (--mode batch) has no profile support. Use --mode automation."                                                                                                              |
+
+Under COM the run-time is loaded into the GUI session, and its server
+loop keeps the CAD's UI thread busy for as long as alfe drives it: the
+GUI is blocked for the duration of the run. That is acceptable for a
+scripted run, not for an interactive one.
+
+#+begin_src sh
+alfe --bricscad --epure -x '(princ "ok")'
+alfe --autocad --epure --epure-profile Epure -l check.lsp
+alfe --bricscad --epure --epure-script 'D:\epure\control_path.scr' -l check.lsp
+#+end_src
+
+*Not validated on real CADs.* The plug-in was written and tested against
+the mock CAD, =--print-command= and an OS override, not against EPURE
+itself. Two assumptions come from the legacy wrapper and have not been
+re-checked on a real installation: that a =._SCRIPT= nested in a =/b=
+script returns control to the outer script (so the =(load …)= after it
+runs), and that two consecutive COM =SendCommand= calls run in order. If
+the first does not hold, =--mode automation= (COM) is the fallback under
+BricsCAD too. Also unchecked: that dropping =/Automation= is right, that
+the default control-script paths — which name EPURE 2022 — match your
+installation (use =--epure-script= when they do not), and that the GUI
+stays usable after the run-time is loaded. The validation on real CADs
+is tracked as =alfe-plugin-epure-windows-validation=.
+
+** The EPUREE plug-in
+:PROPERTIES:
+:CUSTOM_ID: plugin-epuree
+:END:
+
+EPUREE is an AutoLISP emulation of the public EPURE API, for BricsCAD on
+macOS and Linux, where EPURE itself does not exist, and for tests. It is
+packaged as the ALPM (AutoLISP package manager) system =epuree=:
+=epuree.alpm= at the root of the EPUREE repository. The =epuree= plug-in
+loads it into the engine before anything else the plan does. It applies
+to every backend and every OS.
+
+| Option / variable                   | Meaning                                                                                                                         |
+|-------------------------------------+---------------------------------------------------------------------------------------------------------------------------------|
+| =--epuree=, =$AUTOLISP_EPUREE=      | Activate the plug-in (the variable: set to a true value).                                                                       |
+| =--epuree-path DIR=, =$EPUREE_PATH= | A directory, searched recursively, that ALPM is told holds =epuree.alpm=. May be repeated; =$EPUREE_PATH= is a PATH-style list. |
+| =--epuree-alpm FILE=, =$ALPM_LSP=   | The =alpm.lsp= to load (default below).                                                                                         |
+
+An explicit option wins over its variable. =--epuree-path= and
+=--epuree-alpm= are usage errors unless the plug-in is active.
+
+Without =--epuree-alpm=, =alpm.lsp= is looked for in =$ALPM_LSP=,
+=PREFIX/share/autolisp/= (PREFIX being the installation prefix of the
+running executable), =/opt/local/share/autolisp/=,
+=/usr/local/share/autolisp/= and =~/.local/share/autolisp/=. When it is
+nowhere, the run stops with a usage error listing the places tried.
+
+The plug-in puts three =eval= actions in front of the action plan — so in
+front of your init files and actions — and they show in =--dry-run=:
+
+1. load =alpm.lsp=;
+2. one =(alpm-register-directory DIR T)= for each =--epuree-path=
+   directory;
+3. =(alpm-load-system "epuree" nil)=.
+
+Because these are ordinary plan actions, the engine evaluates them
+itself, identically under clautolisp, BricsCAD and AutoCAD, and a failure
+fails the run before your script starts.
+
+#+begin_src sh
+alfe --epuree --epuree-path ~/src/epuree -l check.lsp
+alfe --epuree --epuree-path ~/src/epuree --dry-run -x '(princ 1)'   # see the three actions
+alfe --bricscad --epuree --epuree-alpm /opt/alpm/alpm.lsp -l check.lsp
+#+end_src
+
+** Writing a plug-in
+:PROPERTIES:
+:CUSTOM_ID: plugin-writing
+:END:
+
+A plug-in is one Common Lisp file. It defines its own package, registers
+itself with =define-plugin= and adds hooks with =define-plugin-hook=. The
+API is the set of exported symbols of the package =ALFE.PLUGIN=. The two
+plug-ins that ship with alfe (=plugins/epure/epure.lisp= and
+=plugins/epuree/epuree.lisp= in the alfe source tree) are written with
+it.
+
+*** A first plug-in
+
+This plug-in defines a flag and an option with an argument, and greets
+before the action plan runs. The option names ~--hello~ and
+~--hello-name~ exist only in this example.
+
+#+begin_src lisp
+(defpackage #:alfe.plugin.hello (:use #:cl #:alfe.plugin))
+(in-package #:alfe.plugin.hello)
+
+(define-plugin "hello"
+  :version "1.0.0"
+  :description "Greet before the plan runs."
+  :options ((:flag  "--hello"      :activates t :doc "Enable the greeting.")
+            (:value "--hello-name" :key :name :arg "NAME" :default "world"
+                                   :doc "Whom to greet.")))
+
+(define-plugin-hook "hello" :plan (ctx plan &key backend)
+  (declare (ignore backend))
+  (cons (alfe.backend:action-eval
+         (format nil "(princ ~A)"
+                 (autolisp-string-literal
+                  (format nil "Hello, ~A!~%" (plugin-option :name)))))
+        plan))
+#+end_src
+
+Save it as ~$HOME/.local/share/clautolisp/plug-in/hello/hello.lisp~ — the
+directory and the file are named for the plug-in, and registration fails
+when the name in =define-plugin= is not the name of the file. Then:
+
+#+begin_src sh
+alfe --list-plugins                            # hello is listed
+alfe --hello --hello-name Ada -x '(+ 1 2)'     # prints "Hello, Ada!" first
+alfe --compile-plugin ~/.local/share/clautolisp/plug-in/hello/hello.lisp
+#+end_src
+
+In the example, ~--hello~ has =:activates t=, so giving it activates the
+plug-in; ~--hello-name~ stores its value under the key =:name=, which
+=(plugin-option :name)= reads back. Giving ~--hello-name~ without ~--hello~
+(or =--plugin hello=) is a usage error naming ~--hello~. The =:plan= hook
+is a /filter/: it receives the action plan and returns a new one, here
+with one =eval= action added in front. What =--dry-run= prints is that
+plan.
+
+*** Registering: =define-plugin=
+
+#+begin_src lisp
+(define-plugin NAME
+  :version     "1.0.0"                 ; string, shown by --list-plugins
+  :description "one line"
+  :applies-to  (:bricscad :autocad)    ; or :all (the default)
+  :priority    0                       ; lower runs first; ties: load order
+  :options     (OPTION-SPEC ...))
+#+end_src
+
+NAME is a string (a symbol or keyword is downcased). Registering a name
+already registered replaces the earlier registration, which is how tests
+reload a plug-in; two /files/ of the same name are never both loaded.
+=:applies-to= lists the backends (=:clautolisp=, =:bricscad=, =:autocad=)
+whose runs the plug-in's hooks are called for; the plug-in is still
+loaded, and its options still parse, under any backend.
+
+*** Options a plug-in defines
+
+An =OPTION-SPEC= is =(KIND "--long" . PLIST)=. The values in the plist
+are evaluated, so quote list literals.
+
+| Kind      | Meaning                                                          |
+|-----------+------------------------------------------------------------------|
+| =:flag=   | takes no argument; its value is =t=                              |
+| =:value=  | takes one argument (~--opt V~ or ~--opt=V~)                      |
+| =:repeat= | like =:value=, may be given several times; its value is the list |
+
+| Key          | Meaning                                                                                                                         |
+|--------------+---------------------------------------------------------------------------------------------------------------------------------|
+| =:key=       | keyword under which the value is stored (default: the option name without the ~--NAME-~ prefix, =:enabled= for ~--NAME~ itself) |
+| =:activates= | true: giving this option, or its environment default, activates the plug-in                                                     |
+| =:arg=       | metavariable shown by =--help=                                                                                                  |
+| =:doc=       | one-line description shown by =--help= and =--list-plugins=                                                                     |
+| =:env=       | environment variable supplying a default                                                                                        |
+| =:default=   | value used when neither the command line nor the environment gave one                                                           |
+| =:parser=    | function from string to value; signals =cli-usage-error= on a bad value                                                         |
+| =:choices=   | list of accepted strings, checked before =:parser=                                                                              |
+
+*Naming rules.* A plug-in ~NAME~ may define only the long options ~--NAME~
+and ~--NAME-…~, and no short option: single-dash options are reserved to
+alfe. A name that collides with an alfe option, or with an option of a
+plug-in registered earlier, is a registration error naming both.
+
+*Resolution and activation* are as described in /Activating a plug-in/:
+right after the command line is parsed, for each active plug-in, the
+command line wins, then the environment variable, then the default.
+=(plugin-option KEY)= returns the resolved value stored under =:key= KEY.
+
+*** Hooks
+
+A hook point has a name, a /kind/, a primary /value/ and keyword
+/details/. A handler is =(lambda (ctx value &key … &allow-other-keys) …)=,
+defined with =define-plugin-hook=, which adds =&allow-other-keys= itself:
+name only the keywords you use. The kind says what a handler's result
+means.
+
+| Kind      | Handler's result                                                      |
+|-----------+-----------------------------------------------------------------------|
+| /event/   | ignored; the handler acts by side effect, or by signalling            |
+| /filter/  | the new value, passed to the next handler; the last one is the result |
+| /collect/ | a list; the lists of all handlers are concatenated                    |
+
+Handlers run in =:priority= order (ties: registration order), and only
+for plug-ins that are active and whose =:applies-to= holds the run's
+backend. A handler may call =(deactivate-plugin ctx)=: the remaining
+handlers of that plug-in are then skipped. The hooks, in the order a run
+meets them:
+
+| Hook                   | Kind    | Called                                                                                          | Value received; what a handler can change                     |
+|------------------------+---------+-------------------------------------------------------------------------------------------------+---------------------------------------------------------------|
+| =:cli-parsed=          | event   | after parsing and =--cad= selection, before the backend is resolved                             | the parsed options: mutate them, or signal =cli-usage-error=  |
+| =:backend-selected=    | event   | after the backend is resolved (and detected, unless a dry run)                                  | the backend object: veto it by signalling                     |
+| =:plan=                | filter  | on the effective plan: init files, user actions, terminator; it is also what =--dry-run= prints | the list of actions: return another one                       |
+| =:dry-run-report=      | collect | after the plan, under =--dry-run=                                                               | NIL: return strings to print                                  |
+| =:workdir-prepared=    | event   | once the workdir exists                                                                         | the workdir                                                   |
+| =:run-common-prelude=  | collect | CAD backends: in =run-common.lsp=, after the injected globals, before the bootstrap is loaded   | NIL: return AutoLISP source to insert                         |
+| =:run-common-epilogue= | collect | CAD backends: after the runtime is loaded, before its server loop                               | NIL: return AutoLISP source to insert                         |
+| =:launcher-lines=      | collect | CAD backends: once per launcher-script slot (below)                                             | the slot: return lines for it                                 |
+| =:launcher-script=     | filter  | CAD backends: the whole launcher script, just before it is written                              | the script text: return another one                           |
+| =:launch-argv=         | filter  | CAD backends: the command line, just before the process is spawned                              | the argument list: return another one                         |
+| =:launch-options=      | filter  | CAD backends: just before the spawn                                                             | the plist =(:directory D :environment E)=: return another one |
+| =:engine-started=      | event   | the engine reached READY                                                                        | the session                                                   |
+| =:pre-action=          | event   | before each action                                                                              | the action                                                    |
+| =:post-action=         | event   | after each action                                                                               | the action; its result is in the details                      |
+| =:pre-shutdown=        | event   | before the engine is shut down                                                                  | the session; the reason is in the details                     |
+| =:post-shutdown=       | event   | after the shutdown, before the workdir is removed                                               | the session; the workdir is in the details                    |
+| =:exit-code=           | filter  | for a run that reached the end of its plan                                                      | the exit code, an integer: return another one                 |
+| =:error=               | event   | an error is about to be reported and turned into an exit code                                   | the condition; the phase is in the details                    |
+
+In the =:launch-options= plist, =:directory= is the working directory
+the CAD is spawned in (a pathname, or NIL) and =:environment= the changes
+to its environment, as =(NAME . VALUE)= pairs, VALUE NIL to unset.
+
+The keyword details each hook receives (=:backend=, =:variant=, =:index=,
+=:result=, …) are listed in the specification, chapter /Plug-ins/.
+
+=:pre-action= and =:post-action= make alfe evaluate the plan one action
+at a time and stop at the first failed action — but only when an active
+plug-in registered one of them. Otherwise the whole plan goes to the
+backend in one call. =:launcher-lines=, =:launcher-script=,
+=:launch-argv= and =:launch-options= are called by the CAD backends only:
+the clautolisp backend has no launch step.
+
+*** The run context
+
+A handler receives the /context/ of the run as its first argument. The
+special variable =*CONTEXT*= holds it for the whole run (NIL outside a
+run, which makes every hook call site a no-op).
+
+| Accessor                  | Meaning                                                     |
+|---------------------------+-------------------------------------------------------------|
+| =(context-options ctx)=   | the parsed options                                          |
+| =(context-backend ctx)=   | the backend keyword (=:clautolisp= when none was requested) |
+| =(context-version ctx)=   | alfe's version string                                       |
+| =(plugin-option KEY)=     | the calling plug-in's resolved value for =:key= KEY         |
+| =(plugin-state ctx KEY)=  | a =setf=-able per-run scratch value of the calling plug-in  |
+| =(deactivate-plugin ctx)= | the calling plug-in takes no further part in this run       |
+
+*** Launcher script slots
+
+The engine-side launcher is a script alfe writes in the workdir and
+hands to the CAD. =:launcher-lines= is called once per slot, with the
+slot as its value and the kind of script (=:scr= or =:vbs=) as the =:kind=
+detail; return its lines when the slot is one you care about.
+
+| Kind   | File                                              | Slot           | Position                                                                                      |
+|--------+---------------------------------------------------+----------------+-----------------------------------------------------------------------------------------------|
+| =:scr= | =run.scr= (BricsCAD batch), the accoreconsole SCR | =:before-load= | immediately before the =(load run-common.lsp)= line                                           |
+|        |                                                   | =:after-load=  | after it, before the final =_QUIT= (the load only returns when the session ends)              |
+| =:vbs= | =bridge-bricscad.vbs=, =bridge-autocad.vbs=       | =:after-app=   | once the COM application object exists, before waiting for it and before the document is used |
+|        |                                                   | =:before-load= | once the document is active, immediately before the =(load run-common.lsp)= is sent           |
+
+SCR lines are script lines: a command, its answers, or an AutoLISP form.
+VBS lines are VBScript statements: ASCII only (=cscript= reads the file
+as ANSI), variables declared with =Dim=, strings quoted with the helper
+=vbs-escape=.
+
+*** Errors raised by a hook
+
+A =cli-usage-error= or a =backend-error= signalled by a handler passes
+through unchanged, with its usual exit status. Any other Lisp error
+becomes an =alfe.error:plugin-error=, reported as =plug-in NAME, hook
+:HOOK: …= with exit status 4.
+
 * The *AUTOLISP-…* globals
 
 User AutoLISP code can read these globals to branch on session
@@ -455,6 +973,7 @@ state:
 | =*AUTOLISP-LOAD-PATHNAME*=     | Set by =LOAD= during evaluation of the loaded file.    |
 | =*AUTOLISP-EXPRESSION*=        | Set during evaluation of a =-x= expression.            |
 | =*AUTOLISP-INTERACTIVE*=       | =T= when the REPL is active, =NIL= otherwise.          |
+| =*AUTOLISP-PLUGIN-OPTIONS*=    | One symbol per /active/ plug-in, in activation order: =(EPURE)= under =--epure=. The empty list when no plug-in is active (see [[#plugins][Plug-ins]]). |
 
 The specifications document the full set and their lifetimes.
 
@@ -481,6 +1000,10 @@ quoted for the host shell — so it can be captured directly:
 #+begin_src sh
 cmd=$(alfe --bricscad --print-command --keep-workdir -x "(princ)")
 #+end_src
+
+When a plug-in makes the CAD start in a particular directory (the =epure=
+plug-in does: the CAD's =UserDataCache=), the line begins with
+=cd DIR &&=, since the command means nothing run from elsewhere.
 
 Everything else (backend, workdir, the raw argv list) is logged at
 =--verbose= / =--debug=.
@@ -527,12 +1050,23 @@ always wins.
 | =$AUTOLISP_MODE=             | =--mode=            |
 | =$AUTOLISP_DWG=              | =--dwg=             |
 | =$AUTOLISP_EPURE=            | =--epure=           |
+| =$AUTOLISP_EPURE_PROFILE=    | =--epure-profile=   |
+| =$AUTOLISP_EPURE_SCRIPT=     | =--epure-script=    |
+| =$AUTOLISP_EPUREE=           | =--epuree=          |
+| =$EPUREE_PATH=               | =--epuree-path=     |
+| =$ALPM_LSP=                  | =--epuree-alpm=     |
 | =$AUTOLISP_WORKDIR=          | =--workdir=         |
 | =$AUTOLISP_KEEP_WORKDIR=     | =--keep-workdir=    |
 | =$AUTOLISP_WRITE_WORKDIR_PATH= | =--write-workdir-path= |
 | =$AUTOLISP_BOOTSTRAP_PHASE=  | =--bootstrap-phase= |
 | =$AUTOLISP_WAIT_SECS=        | =--timeout=         |
 | =$AUTOLISP_NO_INIT=          | =--no-init=         |
+
+The =--epure…= and =--epuree…= options are defined by plug-ins
+([[#plugin-epure][The EPURE plug-in]], [[#plugin-epuree][The EPUREE plug-in]]). =$AUTOLISP_EPURE= and
+=$AUTOLISP_EPUREE=, set to a true value (=1=, =y=, =yes=, =true= or =on=),
+activate their plug-in; the other four variables are read once the
+plug-in is active.
 
 ** Engine location and launch
 - =$ALFE_CLAUTOLISP_BIN= :: the =clautolisp= executable the clautolisp
@@ -567,6 +1101,17 @@ always wins.
   deletes) so BricsCAD regenerates it, because the alternative is a
   startup dialog that stalls a batch launch with nobody to dismiss it.
 
+** Plug-in loading
+See [[#plugins][Plug-ins]].
+
+- =$ALFE_PLUGIN_PATH= :: extra plug-in roots, a PATH-style list
+  (separated by =:=, or by =;= on MS-Windows), searched after the
+  directories given with =--plugin-path=.
+- =$ALFE_PLUGINS= :: comma-separated names of the plug-ins to activate in
+  every run, like =--plugin= given once per name.
+- =$ALFE_NO_PLUGINS= :: set to a true value (=1=, =yes=, …), loads no
+  plug-in, like =--no-plugins=.
+
 ** Encoding
 - =$ALFE_AUTOCAD_CONSOLE_ENCODING= :: the AutoCAD console encoding used
   when =-Ecadstdio= is not given, before falling back to the robust
@@ -586,7 +1131,8 @@ lane stays green on a machine with no CAD at all.
 
 ** Consulted, not configured
 =$HOME=, =$PATH=, =$TMPDIR=, =$TEMP=, =$TMP= and =$APPDATA= are read for
-the usual platform locations, and =$NO_COLOR= disables ANSI colour.
+the usual platform locations, =$XDG_DATA_HOME= and =$XDG_DATA_DIRS= for
+the plug-in roots ([[#plugins][Plug-ins]]), and =$NO_COLOR= disables ANSI colour.
 
 * Troubleshooting
 
@@ -637,11 +1183,64 @@ bound (or need to raise a slow-launch handshake window), pass
 ten minutes. (Before alfe 1.7.3 =--timeout= was parsed but ignored on
 the CAD backends, so a long eval was aborted at the fixed 30 s default.)
 
+** A plug-in option is refused: it requires its plug-in
+
+=--epure-profile=, =--epure-script=, =--epuree-path=, =--epuree-alpm=
+and every other option a plug-in defines are usage errors (exit status
+2) while their plug-in is not active. The message names the option that
+activates it — for =--epure-profile=, that is =--epure=. Add that
+option, or activate the plug-in by name: =--plugin epure=, or
+=$ALFE_PLUGINS=epure= in your shell init. See /Activating a plug-in/.
+
+** =--list-plugins= shows nothing, or reports a plug-in as failed
+
+/Nothing./ alfe found no plug-in in any root. Read the search path that
+=--list-plugins= prints, and check that the plug-in sits in a directory
+named for it (=NAME/NAME.lisp=, not =NAME.lisp= directly under the root),
+that =$ALFE_NO_PLUGINS= is not set to a true value, and, for the two
+plug-ins that ship with alfe, that alfe was installed with =make install=
+(they go under =$(PREFIX)/share/clautolisp/plug-in/=). A root that is not
+on the standard path can be added with =--plugin-path= or
+=$ALFE_PLUGIN_PATH=.
+
+/Failed./ The listing gives the reason, and every run repeats it on
+standard error as =alfe: warning: plug-in NAME (PATH): MESSAGE=. The
+usual causes are a read or compile error in the file, a name that
+differs from the file's, an option that breaks the naming rules
+(=--NAME= or =--NAME-…= only, no short option) or collides with another
+option, and a hook name this alfe does not know — typically a plug-in
+written for another alfe version. Run with =--debug= to see the compiler
+and loader output alfe captured. A compiled file made for another alfe
+version or the other implementation is ignored without a word unless you
+give =--verbose=; recompile it with =--compile-plugin=.
+
+** =--epure= is given and nothing happens
+
+The =epure= plug-in acts only on MS-Windows and only with =--bricscad=
+or =--autocad=. On any other system, and under =--clautolisp= — the
+default when nothing names a backend — alfe ignores =--epure= silently.
+Run with =--verbose= to see the message saying so, and name the backend.
+
+** A run under EPURE or EPUREE stops before the script starts
+
+- EPURE control script not found (exit status 4): the message names the
+  path looked at. Install EPURE, or point =--epure-script= (or
+  =$AUTOLISP_EPURE_SCRIPT=) at the script. A =--dry-run= does not check.
+- =--autocad --mode batch --epure= is refused (exit status 2):
+  accoreconsole has no profile support. Drop =--mode batch=; AutoCAD
+  then runs under COM automation.
+- =alpm.lsp= not found under =--epuree=: a usage error listing the places
+  tried. Give =--epuree-alpm FILE=, or set =$ALPM_LSP=.
+- =plug-in NAME, hook :HOOK: …= (exit status 4): a plug-in's hook raised
+  an error that is not a usage or backend error. It is a defect of that
+  plug-in.
+
 * See also
 
 - =alfe(1)= — short man page summarising the same options.
 - =alfe--specifications.org= — the full specification (algorithms,
-  exit codes, file-protocol wire format, per-backend constraints).
+  exit codes, file-protocol wire format, per-backend constraints, the
+  plug-in hook catalogue).
 - =clautolisp(1)= / =clautolisp-user-manual.org= — the in-process
   engine that powers the =--clautolisp= backend.
 

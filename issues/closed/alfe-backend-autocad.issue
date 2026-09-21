@@ -10,7 +10,8 @@ Deferred items moved to other tickets:
   - EPURE gating (section 4) — moved to alfe-plugin-model.issue
     (no plugin model exists yet; the --epure flag parses but no
     backend acts on it, the VBS template does not yet activate
-    the Epure profile).
+    the Epure profile). DONE in alfe 2.2.76: the epure plug-in
+    (plugins/epure/), see issues/closed/alfe-plugin-epure.issue.
   - vlisp-compile routing — confirmed out of scope per the issue's
     "Out of scope" note; the flag is accepted in argv and routed
     through to the engine, but alfe does not validate it.
