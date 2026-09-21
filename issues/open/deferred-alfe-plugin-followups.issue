@@ -17,16 +17,25 @@ keyed by the source's write date, best effort. Not done: an explicit
 =--compile-plugin= plus =make install-plugins= covers the shipped ones, and a
 cache is one more thing to invalidate.
 
-* 2. The installed EPUREE bundle
+* 2. What =load_epuree.lsp= does besides loading, and the installed bundle
 
-=epuree.alpm= describes the /source tree/ (=src/{load_epuree,loader,core,comu}=).
-The installed bundle (=make install= in the epuree repository ->
-=/opt/epuree/{load_epuree.lsp,lisp/,ES/,COM/,…}=) is found through
-=epuree:*bundle-root*=, which =load_epuree.lsp= derives from where it sits.
-Loaded through ALPM from the source tree it prints "could not find
-lisp/loader.lsp" / "core not found" and runs without the upstream resources.
-Fix in the epuree repository: install =epuree.alpm= with the bundle (and let
-it set =*bundle-root*=), or ship a second system for the bundle layout.
+=epuree.alpm= (pjb, 2026-09-21) lists the sources of the /source tree/ in load
+order — =src/{core,comu}= — and REPLACES the two loaders, =load_epuree.lsp=
+and =loader.lsp=, which it does not list (a loader can be generated from it:
+=alpm-generate-loader=, checked). But =load_epuree.lsp= is not only a loader.
+Four things in it are not loading and are therefore NOT done when EPUREE is
+loaded through ALPM: the path-separator shims (=findfile=, =load=, =open=,
+=vl-file-*= accept "\"), the Windows environment shim (=APPDATA=,
+=USERPROFILE=, …), the bundle-root anchoring (=epuree:*bundle-root*=,
+=EPUREE_ROOT=, =com_racdao=) and the support-path injection. =core.lsp= copes
+without them (=*root*= / =*bundle-root*= default to "." and follow
+=EPUREE_ROOT= / =EPUREE_BUNDLE_ROOT=), but EPUREE on macOS/Linux loses the
+shims. Fix in the epuree repository: move those four out of =load_epuree.lsp=
+into source files, list them in =epuree.alpm=, and let the build install the
+=.alpm= with the bundle (=make install= -> =/opt/epuree/{load_epuree.lsp,lisp/,
+ES/,COM/,…}=, whose bundle root =load_epuree.lsp= derives from where it sits).
+About forty scripts and the build load =load_epuree.lsp=: it stays until the
+generated loader replaces it.
 
 * 3. Hook timing at the edges
 
