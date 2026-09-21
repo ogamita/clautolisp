@@ -1,0 +1,63 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-host-selection-gaps — --host cadtui, --list-hosts and *AUTOLISP-HOST* disagree between alfe and clautolisp
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-alfe-host-selection-gaps
+
+* Context
+
+Found 2026-09-21 while updating the alfe user manual's "Host selection"
+chapter to describe cador / cadtui / nihil. Every point below was measured
+on a built =alfe-sbcl= (2.2.75, plug-in build) before it was written into the
+manual; the manual documents the CURRENT behaviour and names the gaps, so it
+changes with each fix here.
+
+* Problems
+
+1. *=--host cadtui= parses and then fails.* The shared parser
+   (=clautolisp.autolisp-cli:parse-host=) accepts it, but alfe's in-process
+   clautolisp engine (=resolve-clautolisp-host=, =backend-clautolisp.lisp=)
+   knows only =:cador= / =:mock= / =:nihil= / =:null=:
+   =alfe --clautolisp --host cadtui -x '(princ 1)'= exits 4 with
+   "Unknown clautolisp HAL backend :CADTUI [UNKNOWN-HOST]". Through
+   =--backend subprocess= the same host works (the child is a clautolisp
+   that has cadtui; =*AUTOLISP-HOST*= is =CADTUI=). Options: wire cadtui
+   into the in-process engine (adds the cadtui system to alfe's image),
+   or refuse it up front as a usage error pointing at =--backend
+   subprocess=, or switch to the subprocess variant by itself.
+2. *=--list-hosts= is accepted and ignored.* =alfe --list-hosts= sets
+   =list-hosts-p= (shared spec) but =alfe.cli:run= has no branch for it, so
+   with no action alfe drops into its REPL (=alfe> =) instead of printing
+   =print-hosts= as clautolisp does. The unknown-host error text ends "see
+   --list-hosts", which in alfe leads nowhere. =--help= does not list the
+   option.
+3. *=*AUTOLISP-HOST*= is not one thing.* In-process, no =--host=: =MOCK=
+   (the struct default is =:mock=, rendered verbatim by
+   =host-name-symbol-keyword=, whose docstring says "MOCK, NULL, or nil").
+   In-process =--host mock=: =CADOR= (the parser canonicalises). Subprocess,
+   no =--host=: =CADOR=. =--host null= / =none=: =NULL=, not =NIHIL=. One
+   canonical mapping (cador / cadtui / nihil) would make the variable mean
+   the same in both variants.
+4. *Other tracks still speak the old names.* =--help= says =--host
+   {cador,nihil}= (no cadtui); the spec (=alfe--specifications.org=, the
+   module table and the test list) still calls =mock= the default; the
+   clautolisp-only =--mock-input= is rightly rejected by alfe.
+
+* Proposal
+
+Decide 1 (it is a product decision: does alfe embed cadtui?), then 2 and 3
+are small: implement =--list-hosts= like =--list-encodings=, canonicalise the
+transmitted host name. Update =--help=, the man page, the spec and the
+manual's "Host selection" ("What a program sees", "Two clautolisp options
+alfe does not have", the cadtui caveat) in the same commit.
+
+* Acceptance criteria
+
+- =alfe --host cadtui …= either works or is refused with a usage error that
+  says what to do; never exit 4 =UNKNOWN-HOST=.
+- =alfe --list-hosts= prints the hosts (or is rejected) and never starts a
+  REPL.
+- =*AUTOLISP-HOST*= is the same symbol for the same host under both
+  variants, and the manual says so.

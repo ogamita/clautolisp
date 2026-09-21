@@ -81,8 +81,23 @@ Force the engine to shut down after the queue.
 .BR \-\-dialect " " \fINAME\fR
 .BR strict " (default), " autocad-2026 ", " bricscad-v26 ", " clautolisp .
 .TP
-.BR \-\-host " " \fI{mock,null}\fR
-HAL backend (clautolisp only).
+.BR \-\-host " " \fI{cador,cadtui,nihil}\fR
+HAL backend (clautolisp backend only; the CAD backends are their own host).
+.B cador
+(default) is the headless in-memory CAD core;
+.B nihil
+refuses every host operation;
+.B cadtui
+is the textual UI-tree host, which the in-process engine does not have and
+which needs
+.BR "\-\-backend subprocess" .
+Deprecated aliases:
+.B mock
+for cador,
+.B null
+and
+.B none
+for nihil.
 .TP
 .BR \-e " " \fIENC\fR
 Source-file encoding (case-insensitive). Accepts

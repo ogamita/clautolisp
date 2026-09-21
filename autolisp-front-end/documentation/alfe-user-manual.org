@@ -198,18 +198,107 @@ issue tracker).
 
 * Host selection
 
-=--host MODE= picks the HAL (host abstraction layer) backend the
-clautolisp engine talks to. Defaults to =mock= (a recording host
-that consumes =--mock-input PATH= for =GETSTRING= /
-=GETPOINT= prompts).
+=--host NAME= picks the HAL (host abstraction layer) backend the
+clautolisp engine talks to: it decides where the CAD-host effects of a
+program land — =(getvar …)=, =(command …)=, =(ssget …)=, the ActiveX
+object model. The dialect (see /Dialect selection/) controls the
+/language/, the host controls the /target/; the two are independent.
 
-| Option        | Host                                           |
-|---------------+------------------------------------------------|
-| =--host mock= | MockHost (default). Drives prompts from a file or stdin. |
-| =--host null= | NullHost. All host calls return nil immediately.        |
+=--host= only matters with the =clautolisp= backend. Under =--bricscad=
+and =--autocad= the host is the CAD itself: the option is accepted and
+ignored there.
 
-For the CAD backends the host is the CAD itself — =--host= has no
-effect there.
+| Option          | Host     | What it is                                            |
+|-----------------+----------+-------------------------------------------------------|
+| =--host cador=  | =cador=  | Default. The headless CAD core: an in-memory, deterministic CAD application. |
+| =--host cadtui= | =cadtui= | The full textual UI-tree host, layered on the cador core. |
+| =--host nihil=  | =nihil=  | No host at all: every host operation is refused.      |
+
+Two spellings of older names still work and mean the same thing as
+above; they are deprecated:
+
+| Deprecated spelling            | Means   |
+|--------------------------------+---------|
+| =--host mock=                  | =cador= |
+| =--host null=, =--host none=   | =nihil= |
+
+An unknown name is a usage error (exit status 2) that lists the accepted
+ones.
+
+** =cador=
+
+The default. It behaves as a small CAD with no window: system
+variables have values (=(getvar "CLAYER")= is ="0"=), entities and
+selection sets live in memory, and the ActiveX object model
+(=vlax-get-acad-object=, =vla-*=) runs against an in-memory object
+graph. It has no CAD command engine: =(command …)= does not draw, it
+/records/ the command line's tokens, and =(clal-command-log)= returns
+what was recorded. That makes it the host for running and testing
+programs on a machine with no CAD.
+
+** =nihil=
+
+The trivial host, for programs that must not touch a CAD at all: any
+host operation signals =HOST-NOT-SUPPORTED=, for instance
+
+#+begin_example
+$ alfe --clautolisp --host nihil -x '(getvar "CLAYER")'
+; clautolisp runtime error: HOST-NOT-SUPPORTED: Host backend nihil does not support GETVAR.
+#+end_example
+
+Pure computation — lists, strings, arithmetic — is unaffected, so running
+a supposedly pure program under =--host nihil= is a way to find out
+whether it reaches for a CAD after all.
+
+** =cadtui=
+
+The textual counterpart of a CAD application, built on the cador core.
+It presents the CAD — menu bar, drawings, the CAD view with its entities
+and grips, alerts, DCL dialogs, consoles — as an inspectable,
+keyboard-drivable tree, and mirrors DCL dialogs (=new_dialog= /
+=start_dialog=) into that tree, so that programs with dialogs can be
+tested headless and scripted. cador is cadtui's degenerate,
+application-and-console-only configuration.
+
+*alfe's in-process engine does not know cadtui.* That is the default way
+alfe runs the clautolisp backend, and =alfe --host cadtui …= then stops
+with exit status 4 and =Unknown clautolisp HAL backend :CADTUI=. To use
+cadtui from alfe, run the engine in a child process instead:
+
+#+begin_src sh
+alfe --clautolisp --backend subprocess --host cadtui -l dialog-test.lsp
+#+end_src
+
+=--backend subprocess= makes alfe run the installed =clautolisp-sbcl=
+executable, handing it the dialect, =--host= and one =-l= / =-x= per
+action of the plan (plus =--quiet= and =--no-init=: alfe owns the init
+policy). It needs that executable to be installed; the child is an ordinary
+clautolisp run. How cadtui is
+driven, and what it offers, is documented in the clautolisp user manual
+(=clautolisp-user-manual.org=, /Host backend/); alfe does not repeat it.
+
+** What a program sees
+
+=*AUTOLISP-HOST*= (see the chapter on the =*AUTOLISP-…*= globals) holds
+the host that was selected, as a symbol:
+
+| Selected                       | =*AUTOLISP-HOST*= |
+|--------------------------------+-------------------|
+| =--host cador=, =--host mock=  | =CADOR=           |
+| =--host cadtui=                | =CADTUI=          |
+| =--host nihil=                 | =NIHIL=           |
+| =--host null=, =--host none=   | =NULL=            |
+
+With no =--host= at all, the host is cador, but the in-process engine
+reports =MOCK= (cador's old name); the subprocess engine reports =CADOR=.
+
+** Two clautolisp options alfe does not have
+
+=--list-hosts= (print the available hosts with a one-line summary each)
+and =--mock-input PATH= (a file of answers for the cador host's
+=getstring= / =getpoint= prompts) belong to clautolisp. alfe rejects
+=--mock-input= as an unknown option and accepts =--list-hosts= without
+doing anything with it; use =clautolisp --list-hosts= to see the list.
 
 * CAD engine control
 
@@ -966,7 +1055,7 @@ state:
 | =*AUTOLISP-BACKEND*=           | The engine running user code: =CLAUTOLISP= / =BRICSCAD= / =AUTOCAD=. |
 | =*AUTOLISP-HELP*=              | The --help banner of the front-end as a string.        |
 | =*AUTOLISP-DIALECT*=           | =:strict= / =:autocad-2026= / =:bricscad-v26= / =:clautolisp=. |
-| =*AUTOLISP-HOST*=              | =:mock= / =:null= / a CAD-specific keyword.            |
+| =*AUTOLISP-HOST*=              | The selected host: =CADOR= / =CADTUI= / =NIHIL= (=NULL= for the deprecated =--host null= / =none=). Under the in-process engine with no =--host=, =MOCK=. See /Host selection/. |
 | =*AUTOLISP-FILE-ENCODING*=     | Active source-file encoding (always a string). Empty string =""= means "no preference; fall through to the dialect default" — the documented degenerate case when neither =-Esource= nor any =LC_*= env var resolves an encoding. |
 | =*AUTOLISP-TERMINAL-ENCODING*= | Active terminal encoding (always a string, never empty — falls back to =US-ASCII= in the degenerate case). |
 | =*AUTOLISP-VERSION*=           | Version string of the running engine.                  |
