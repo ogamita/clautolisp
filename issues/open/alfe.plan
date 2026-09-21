@@ -67,7 +67,7 @@ Phasing and dependencies
 
 All five phases of the V1 rollout have landed; their tickets live
 under `issues/closed/`. The plan stays here as the historical
-index. V2 work (currently `alfe-plugin-model.issue`) lives in
+index. V2 work (the plug-in system, epic `alfe-plugin-model.issue`) lives in
 `issues/open/`.
 
   Phase 0 — Foundations [CLOSED, commit 1a4872b]
@@ -93,12 +93,20 @@ index. V2 work (currently `alfe-plugin-model.issue`) lives in
                                        against the bash wrapper, spec
                                        maintenance)
 
-  Phase 5 — V2 plugin model [OPEN]
-    alfe-plugin-model.issue          (the plugin contract EPURE and
-                                       similar user-specific
-                                       customisations ride on; --epure
-                                       currently parses but no backend
-                                       acts on it)
+  Phase 5 — V2 plug-in system [OPEN, epic alfe-plugin-model.issue]
+    alfe-plugin-spec-and-manual.issue  (design in the spec, user manual,
+                                        man page, release notes)
+    alfe-plugin-loader.issue           (discovery, source/compiled
+                                        .plugin, --plugin-path,
+                                        --no-plugins, --list-plugins,
+                                        --compile-plugin, install layout)
+    alfe-plugin-options.issue          (plug-in-defined CLI options with
+                                        arguments, activation)
+    alfe-plugin-hooks.issue            (alfe.plugin API, hook points at
+                                        every stage)
+    alfe-plugin-epure.issue            (EPURE: first plug-in)
+    alfe-plugin-epuree.issue           (EPUREE + epuree.alpm: second)
+    alfe-plugin-epure-windows-validation.issue  (real CADs; needs Windows)
 
 Migration path from the bash wrapper
 ------------------------------------
@@ -136,9 +144,9 @@ V2 / out of scope here
 
   - GUI front-end for alfe (DCL or OpenDCL). Distinct subproject.
   - `vlisp-compile` outside `--autocad --mode automation` on Windows.
-  - EPURE-style user-specific plugin features — has its own ticket
-    now (`alfe-plugin-model.issue`); --epure parses but no backend
-    consumes it until the plugin model lands.
+  - EPURE-style user-specific plugin features — now a plug-in system
+    (epic `alfe-plugin-model.issue`, Phase 5 above); EPURE and EPUREE are
+    its first two plug-ins.
   - Native Windows COM-without-shell path. The Windows backends keep
     their VBScript bridges in V1; a future ticket can move them to a
     pure-CL COM client (`cffi` + `OAIDispatch`).

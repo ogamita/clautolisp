@@ -1,0 +1,47 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-plugin-spec-and-manual — document the plug-in system (spec, user manual, man page, release notes)
+#+STATUS: NEXT
+#+PRIORITY: P2
+#+TYPE: doc
+#+DEPENDS: alfe-plugin-model
+#+BRANCH: master
+
+* Context
+
+Part of the epic =alfe-plugin-model=. Per AGENTS.md ("Documentation
+Synchronisation"): a user-visible feature is documented in the user manual
+of the tool concerned *before its issue is closed*, and a spec change is
+reviewed against code, user manual and man page. The design comes first
+(pjb, 2026-09-21: "1 reorganise the issues, 2 design the plug-ins, 3
+document, 4 implement, 5 the two first plug-ins").
+
+* Proposal
+
+- =documentation/alfe--specifications.org=: a new chapter "Plug-ins"
+  (layout and search path, source/compiled forms, registration, options,
+  activation, the hook catalogue with each hook's kind, arguments and call
+  site, error handling, the =alfe.plugin= API) and a rewritten "EPURE"
+  section (the plug-in's behaviour per backend and OS, replacing the
+  description of the bash wrapper) plus a new "EPUREE" section. The old
+  =--epure= row of the option/env tables becomes a plug-in row.
+- =documentation/alfe-user-manual.org=: a "Plug-ins" chapter (what they
+  are, where to install one, =--list-plugins=, =--plugin=, =--plugin-path=,
+  =--no-plugins=, =--compile-plugin=, =$ALFE_PLUGIN_PATH=, =$ALFE_PLUGINS=,
+  =$ALFE_NO_PLUGINS=), the EPURE and EPUREE plug-ins with every option and
+  environment variable, a "writing a plug-in" tutorial.
+- =documentation/man/alfe.1=: OPTIONS and ENVIRONMENT entries, a short
+  PLUG-INS section.
+- =RELEASE_NOTES.org=: one 1–3 line entry under alfe.
+- =--help= text (=*usage-banner*=) and the man page stay one vocabulary.
+
+* Acceptance criteria
+
+- Every option, environment variable, file and directory the plug-in
+  system reads or writes is mentioned in the user manual
+  (=make check-user-visible-documentation=).
+- Every option the spec names is covered by a scenario
+  (=make check-spec-coverage=) — satisfied together with
+  =alfe-plugin-options= / =alfe-plugin-loader= (the scenarios land with the
+  code; the docs land first).
+- The spec's EPURE section no longer claims behaviour alfe does not have,
+  and says what has *not* been validated on real CADs.

@@ -1,0 +1,51 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-plugin-hooks — the alfe.plugin API and the hook points at every stage
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: feature
+#+DEPENDS: alfe-plugin-options
+#+BRANCH: master
+
+* Context
+
+Sub-issue of =alfe-plugin-model=: a plug-in must be able to "intervene,
+modify or complete alfe's behaviour at every stage of the process"
+(pjb, 2026-09-21). EPURE needs the stages between argv and process spawn
+(launch argv, working directory, the generated =run.scr= / VBScript);
+EPUREE needs the plan; a future plug-in may want any of the others.
+
+* Proposal
+
+- API (=alfe.plugin=): =define-plugin=, =define-plugin-hook=,
+  =register-plugin=, =run-hook=, the per-run =context= (options, backend,
+  session, workdir, version, per-plug-in state), =plugin-option=,
+  =plugin-state=, =plugin-error=, small utilities (AutoLISP string literal,
+  VBScript quoting is already =vbs-escape=).
+- Three hook kinds: *event* (results ignored), *filter* (threads a value),
+  *collect* (concatenates lists). Handlers run in plug-in priority order,
+  only for active plug-ins whose =applies-to= contains the running backend.
+- Catalogue (call sites in =cli.lisp=, =backend-bricscad.lisp=,
+  =backend-autocad.lisp=, =file-protocol.lisp=): =:cli-parsed=,
+  =:backend-selected=, =:plan=, =:dry-run-report=, =:workdir-prepared=,
+  =:run-common-prelude=, =:run-common-epilogue=, =:launcher-lines=,
+  =:launcher-script=, =:launch-argv=, =:launch-options=, =:engine-started=,
+  =:pre-action=, =:post-action=, =:pre-shutdown=, =:post-shutdown=,
+  =:exit-code=, =:error=. Signatures and call sites: spec chapter "Plug-ins".
+- VBScript bridge templates (BricsCAD and AutoCAD) gain two slots, after the
+  application object exists and before the =(load …)= is sent, for the
+  =:launcher-lines= fragments; the SCR emitters gain before/after-load slots.
+- =:pre-action= / =:post-action= make alfe evaluate the plan one action at a
+  time; *only when an active plug-in registered one of them* — otherwise
+  the plan goes to =eval-plan= in one call, exactly as today.
+- A CL error in a handler becomes =alfe.error:plugin-error= (exit 4); a
+  =cli-usage-error= or =backend-error= signalled by the handler passes
+  through unchanged.
+
+* Acceptance criteria
+
+- With no active plug-in every call site returns its input unchanged; the
+  existing 716 checks are untouched.
+- A fixture plug-in records each hook it sees; a test asserts the
+  lifecycle order for the clautolisp backend and for the mock CAD.
+- Hook errors, unknown hook names at registration and =applies-to= gating
+  are tested.

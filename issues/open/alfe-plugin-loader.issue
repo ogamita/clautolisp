@@ -1,0 +1,51 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-plugin-loader — discover and load plug-ins (source and compiled), install layout
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: feature
+#+DEPENDS: alfe-plugin-spec-and-manual
+#+BRANCH: master
+
+* Context
+
+Sub-issue of =alfe-plugin-model=. Layout decided by pjb (2026-09-21):
+=${PREFIX}/share/clautolisp/plug-in/${name}/${name}.lisp= (source) or
+=${name}.${alfe-version}-${impl}.plugin= (compiled), or the equivalent under
+the user's XDG data directory. Plug-ins are Common Lisp.
+
+* Proposal
+
+- New file =source/plugin.lisp= (package =alfe.plugin=, in
+  =autolisp-front-end/core=, before =cli=).
+- *Search path*, first plug-in of a given name wins (so a local install
+  shadows a system one): =--plugin-path DIR= (repeatable), =$ALFE_PLUGIN_PATH=
+  (a PATH-style list), =$XDG_DATA_HOME/clautolisp/plug-in= (default
+  =~/.local/share=), each =$XDG_DATA_DIRS= entry + =/clautolisp/plug-in=
+  (default =/usr/local/share:/usr/share=), =<PREFIX>/share/clautolisp/plug-in=
+  from the running executable (=installation-prefixes=).
+- *Forms.* Compiled file =NAME.<alfe-version>-<impl>.plugin= where impl is
+  =sbcl= / =ccl=; loaded when it exists and is at least as new as the
+  source; otherwise the source is loaded. A compiled file for another
+  version or implementation is ignored (logged at -v). A compiled file that
+  fails to load falls back to the source with a warning.
+- *Compiling.* =alfe --compile-plugin FILE.lisp= writes the compiled form
+  next to the source, for the running alfe version and implementation, and
+  exits. =make install= installs the shipped plug-ins and compiles them with
+  the just-built alfe.
+- *Failure isolation.* A plug-in that fails to load (read error, compile
+  error, =register-plugin= error) is reported on stderr as a warning and
+  skipped; alfe carries on.
+- Options: =--plugin-path DIR=, =--no-plugins= (=$ALFE_NO_PLUGINS=),
+  =--list-plugins= (name, version, form loaded, path, description),
+  =--compile-plugin FILE=. =--plugin-path= and =--no-plugins= are found by a
+  pre-scan of argv because they decide what is loaded *before* the parser
+  learns the plug-in options; the parser still accepts them.
+
+* Acceptance criteria
+
+- A source plug-in and a compiled plug-in each load, under SBCL and CCL
+  (the compiled file has a =.plugin= type, which CCL's =load= must accept).
+- Shadowing order, wrong-version and wrong-implementation compiled files,
+  a broken plug-in (alfe still runs), =--no-plugins=, =--list-plugins=,
+  =--compile-plugin= are covered by unit tests and scenarios.
+- =make install= puts plug-ins under =$(PREFIX)/share/clautolisp/plug-in/=.

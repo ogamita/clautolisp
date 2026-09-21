@@ -1,0 +1,45 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-plugin-epuree — the EPUREE plug-in (load the epuree ALPM package at the right time) + epuree.alpm
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: feature
+#+DEPENDS: alfe-plugin-hooks
+#+BRANCH: master
+
+* Context
+
+Second plug-in of =alfe-plugin-model=, simpler than EPURE. EPUREE
+(=~/works/sncf-reseau/src/epuree/=) is an AutoLISP emulation of the public
+EPURE API, for BricsCAD on macOS/Linux and for testing. It is to be packaged
+as an ALPM system (=~/src/ogamita/alpm=: =(alpm-load-system "epuree" nil)=
+after =(load ".../alpm.lsp")=).
+
+* Proposal
+
+Plug-in =epuree= (=autolisp-front-end/plugins/epuree/epuree.lisp=), all
+backends, all OSes.
+
+- Options: =--epuree= (activation), =--epuree-path DIR= (repeatable:
+  registered with =alpm-register-directory=, recursive), =--epuree-alpm FILE=
+  (the =alpm.lsp= to load). Env: =$AUTOLISP_EPUREE=, =$EPUREE_PATH=,
+  =$ALPM_LSP=. Without =--epuree-alpm=, =alpm.lsp= is looked for in
+  =$ALPM_LSP=, =<PREFIX>/share/autolisp/=, =/opt/local/share/autolisp/=,
+  =/usr/local/share/autolisp/=, =~/.local/share/autolisp/=; not found is a
+  usage error listing the places tried.
+- =:plan= filter: three =eval= actions in front of the user's actions —
+  load =alpm.lsp=; register each =--epuree-path=; =(alpm-load-system
+  "epuree" nil)=. Engine-side, so identical for clautolisp, BricsCAD and
+  AutoCAD, and visible in =--dry-run=.
+- The package: =~/works/sncf-reseau/src/epuree/epuree.alpm= (the user wrote
+  =epure.alpm=; the project and the system are named =epuree=, so the file
+  is =epuree.alpm= — one =git mv= if that was deliberate), derived from
+  =src/epuree.prj= (=loader=, =core=, =comu=).
+
+* Acceptance criteria
+
+- With a fixture ALPM system, =--dry-run --epuree= shows the three actions
+  before the user's; on the clautolisp backend the fixture really loads
+  through ALPM (=alpm-load-system= observed).
+- =epuree.alpm= is a valid ALPM definition (loaded by ALPM, plan computed).
+- The epuree repository change is *left uncommitted* (another repository,
+  outside the delegation that covers this one).

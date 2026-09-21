@@ -1,0 +1,69 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-plugin-epure — the EPURE plug-in (BricsCAD and AutoCAD launched under the EPURE profile)
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: feature
+#+DEPENDS: alfe-plugin-hooks
+#+BRANCH: master
+
+* Context
+
+First plug-in of =alfe-plugin-model=. What the legacy tools did
+(=~/works/sncf-reseau/scripts/autocad-epure=, =bricscad-epure=, and the old
+=autolisp-script/autolisp-deprecated= wrapper, functions
+=windows_epure_control_script=, =run_windows_bricscad=,
+=run_windows_autocad=, and the VBS bridge):
+
+- =cd "<CAD install dir>\UserDataCache"= then
+  =acad.exe /p Epure /b "%APPDATA%\sncf\epure\epure 2022\control_path_epure_2022.scr"=
+  (AutoCAD) or
+  =bricscad.exe /p Epure /b "%APPDATA%\sncf\epure\epure 2022_b\control_path_epure_2022.scr"=
+  (BricsCAD): the profile is =Epure= and EPURE is started by *running its
+  control script*.
+- The wrapper's =run.scr= began with =._SCRIPT= + that script's path, then
+  =(load run-common.lsp)=. BricsCAD was forced to batch (COM off);
+  AutoCAD under COM activated the profile with
+  =app.Preferences.Profiles.ActiveProfile= and sent =._SCRIPT= before the
+  load; =--epure= with accoreconsole was refused (no profile support).
+- Windows only; ignored elsewhere.
+
+* Proposal
+
+Plug-in =epure= (=autolisp-front-end/plugins/epure/epure.lisp=), applies to
+=:bricscad= and =:autocad= on Windows.
+
+- Options: =--epure= (activation), =--epure-profile NAME= (default =Epure=),
+  =--epure-script FILE= (default: the =%APPDATA%= path above, per CAD).
+  Env: =$AUTOLISP_EPURE=, =$AUTOLISP_EPURE_PROFILE=, =$AUTOLISP_EPURE_SCRIPT=.
+- =:cli-parsed=: not Windows or backend clautolisp → deactivate quietly
+  (verbose log; the documented "silently ignored"). AutoCAD: default the
+  mode to =automation= (COM); an explicit =--mode batch= (accoreconsole)
+  is a usage error. BricsCAD: default =batch=; =--mode automation= is
+  honoured.
+- =:backend-selected=: the control script must exist, else
+  =backend-bootstrap-error= naming the path searched (exit 4).
+- =:launch-argv= (BricsCAD batch): drop =/Automation= (EPURE is a full-GUI
+  application), replace any =/p PROFILE= pair by =/p Epure=.
+- =:launch-options=: working directory =<exe dir>\UserDataCache= when it
+  exists.
+- =:launcher-lines= (SCR): =._SCRIPT= then the control script's path, before
+  the =(load run-common.lsp)=. (VBS): profile activation after the
+  application exists, =._SCRIPT= via =SendCommand= before the load.
+- =run-common.lsp= is not touched.
+
+* Not verifiable here
+
+No Windows, no EPURE, no CAD: everything is asserted with the mock CAD,
+=--print-command= and =*host-os-override*= = =:windows=. Whether a
+=._SCRIPT= nested in a =/b= script returns control to the outer script,
+and whether the GUI stays usable, are the two questions the real-CAD run
+(=alfe-plugin-epure-windows-validation=) answers.
+
+* Acceptance criteria
+
+- =--print-command --bricscad --epure= (Windows override) prints
+  =bricscad.exe … /p Epure /b …\run.scr= without =/Automation=, and the
+  staged =run.scr= chains the control script before the load.
+- =--autocad --epure= selects automation; =--autocad --mode batch --epure=
+  is refused; the staged VBS carries the profile and script lines.
+- Off Windows, and under =--clautolisp=, =--epure= changes nothing.

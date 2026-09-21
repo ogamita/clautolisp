@@ -1,0 +1,37 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-plugin-epure-windows-validation — run --epure against real AutoCAD and BricsCAD on the Windows runner
+#+STATUS: BLOCKED
+#+PRIORITY: P2
+#+TYPE: cad-runtime
+#+DEPENDS: windows-access, alfe-plugin-epure
+#+BRANCH: fix-alfe-plugin-epure-windows
+
+* Context
+
+=alfe-plugin-epure= is asserted only against the mock CAD, =--print-command=
+and an OS override: no Windows, no EPURE install, no CAD in the session that
+wrote it. Two assumptions came from the legacy wrapper and were never
+re-verified:
+
+1. a =._SCRIPT= nested in a =/b= script gives control back to the outer
+   script, so the line after it — =(load run-common.lsp)= — runs;
+2. under AutoCAD COM, =SendCommand("._SCRIPT …")= followed by
+   =SendCommand("(load …)")= runs them in that order.
+
+Also unverified: dropping =/Automation= for EPURE is right (EPURE loads a
+CUIX and menus); the default control-script paths for the current EPURE
+year; the GUI staying usable after the run-time is loaded.
+
+* Proposal
+
+On the Windows runner with EPURE installed: run =alfe --bricscad --epure
+-x '(princ "ok")'= and the AutoCAD equivalent; keep the workdir
+(=--keep-workdir=) and read =run.scr= / =bridge-*.vbs= / =debug.log=. Fix
+the plug-in accordingly (the alternative to a nested =._SCRIPT= is COM
+=SendCommand=, already supported by the same hooks). Record the outcome in
+the user manual's EPURE section.
+
+* Acceptance criteria
+
+- Both CADs run an =-x= under EPURE and exit with the script's status.
+- The manual states what was verified, on which CAD/EPURE versions.

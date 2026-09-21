@@ -1,0 +1,43 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-plugin-options — plug-in-defined CLI options with arguments; activation
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: feature
+#+DEPENDS: alfe-plugin-loader
+#+BRANCH: master
+
+* Context
+
+Sub-issue of =alfe-plugin-model=: "a plug-in can define CLI options with
+arguments" (pjb, 2026-09-21). Replaces the built-in =--epure= spec and the
+alfe-only =epure-p= slot of =clautolisp.autolisp-cli:cli-options=.
+
+* Proposal
+
+- Option kinds: =:flag= (no argument), =:value= (one argument; =--opt V= and
+  =--opt=V=), repeatable variants (accumulate a list), optional =:parser=
+  (string → value, signals =cli-usage-error=), =:choices=, =:env= (default
+  from an environment variable) and =:default=. Resolution order: command
+  line, then environment, then default — done once, right after parsing.
+- *Namespacing rule:* a plug-in =NAME= may define only =--NAME= and
+  =--NAME-…=; no short options; a collision with a core option or another
+  plug-in's option is a registration error.
+- *Activation.* A plug-in is active when its activation flag is given (or
+  its env default is truthy), or =--plugin NAME=, or it is named in
+  =$ALFE_PLUGINS=. A plug-in option given while its plug-in is inactive is
+  a usage error naming the flag to add.
+- =cli-options= gains =plugin-options= (alist plug-in name → plist of
+  resolved values) and =plugins-active= (names, activation order);
+  =epure-p= goes away. =*AUTOLISP-PLUGIN-OPTIONS*= becomes the list of
+  symbols naming the active plug-ins (=(EPURE)= for =--epure=, as before).
+- =--help= gains a "Plug-in options" section generated from the registered
+  options (installed plug-ins, whether or not active), and =--plugin NAME=.
+- The removed built-in =--epure= keeps working: the EPURE plug-in defines it.
+
+* Acceptance criteria
+
+- Unit tests: parsing each option kind, env/default precedence, the
+  namespacing rule, collisions, activation and the "requires" error.
+- =tests/scenarios/cli/dwg-and-epure.sexp= and the option-coverage scenario
+  pass with =--epure= supplied by the plug-in.
+- =--help= lists plug-in options; the man page and user manual agree.
