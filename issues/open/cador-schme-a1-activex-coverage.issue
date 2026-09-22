@@ -1,0 +1,47 @@
+Cador: implement the ActiveX surface required by SCHME+ A1 tests
+
+== Context ==
+
+SCHME+ now has an A1 test batch for its thin ActiveX adapters. Running it with
+ALFE/Cador exposes four missing parts of the mock AutoCAD object model. The
+same tests are intended to run without skips on AutoCAD and BricsCAD.
+
+    cd ../schme
+    make test-cad-activex-alfe CAD=clautolisp
+
+The entry point is `tests/test-cad-activex-adaptateurs.lsp`.
+
+== Missing surface ==
+
+1. `AutoCAD.Documents.Add`, followed by `Document.SaveAs` and `Close`, for
+   `util_creer_dwg_vide`.
+
+       VLA-OBJECT AutoCAD.Documents has no method named ADD.
+
+2. Read/write `AutoCAD.Layer.Color` (and the layer operations used beside it:
+   `Layers.Add`, `Document.ActiveLayer`, entity `Layer`, `Layer.Delete`) for
+   `util_cree_calque`, selection and entity moves.
+
+       VLA-OBJECT AutoCAD.Layer has no property named COLOR.
+
+3. Attributed block support after the already-working `Blocks.Add`:
+   `Block.AddAttribute`, `ModelSpace.InsertBlock`,
+   `BlockReference.HasAttributes/GetAttributes`, attribute
+   `TagString/TextString`, rotation and deletion.
+
+4. `Document.Linetypes`, `Linetypes.Load`, `ModelSpace.AddLine` and entity
+   `Linetype`, so a small `.lin` fixture can be loaded and applied.
+
+`vlax-method-applicable-p` and `vlax-property-available-p` correctly report
+the currently missing capabilities. SCHME+ uses these predicates to mark the
+four scenarios SKIP under Cador until this issue is implemented.
+
+== Acceptance ==
+
+- Implement the object graph and mutations above against Cador's in-memory
+  drawing/document model.
+- Add focused Cador tests for every new method/property.
+- Run the SCHME+ command above: the four A1 scenarios must execute their full
+  assertions, with no `SKIP [adaptateurs-activex-a1]` line.
+- Preserve the created/modified entities in `entget`/table state so the A1
+  assertions observe the same data through DXF and ActiveX.
