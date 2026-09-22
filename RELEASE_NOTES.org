@@ -1277,6 +1277,11 @@ file or COM), and forwards the workload.
 - The ~epuree~ plug-in ends its actions with ~(epuree-initialize)~, which does
   what ~(load "load_epuree")~ does besides loading — the path and environment
   shims, the bundle root — so loading EPUREE through ALPM no longer skips them.
+- The shipped plug-ins now install (and compile against the alfe just
+  installed) as part of ~make install-programs~ / ~install~, at every level —
+  alfe's own, and the root Makefile's ~stage-programs~ / ~release-programs~ —
+  instead of needing a separate ~install-plugins~ step (§ /Installing never
+  builds as root/ below).
 
 ** Hosts: cador, cadtui, nihil (alfe-user-manual § /Host selection/)
 
@@ -1531,7 +1536,12 @@ exception is the binaries artefact: it ships a ~bin/~ of dispatch
 wrappers over ~libexec/clautolisp/binaries/<os>/<arch>/~ so CI can
 union several platforms into one archive, whereas ~install-programs~
 installs this host's binaries directly into ~bin/~ along with the
-harnesses and helpers no end-user tarball carries.
+harnesses and helpers no end-user tarball carries. ~install-programs~
+also installs and compiles alfe's plug-ins (~share/clautolisp/plug-in/~):
+they need the alfe just installed to compile against, so they are the
+last step of alfe's own ~install-programs~, not a separate phase — the
+~programs~ artefact and its ~stage-programs~/~release-programs~
+counterparts pick them up for free.
 
 ** Which build am I running?
 

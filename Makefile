@@ -814,7 +814,7 @@ endef
 
 stage: stage-programs stage-libraries stage-documentation  ## Build + stage everything under $(STAGE)/ (unprivileged; this is the half that compiles).
 
-stage-programs: build-programs  ## Build the programs and stage them (bin/, libexec/, the harnesses and the alref libs) under $(STAGE)/programs.
+stage-programs: build-programs  ## Build the programs and stage them (bin/, libexec/, the harnesses, the alref libs and alfe's plug-ins) under $(STAGE)/programs.
 	rm -rf "$(STAGE_PROGRAMS)"
 	install -d "$(STAGE_PROGRAMS)"
 	"$(MAKE)" -C autolisp-spec      install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
@@ -855,7 +855,7 @@ install: install-programs install-libraries install-documentation  ## Install ev
 # slow documentation phase entirely — as must any host that lacks the
 # documentation toolchain (Emacs + TeX/xelatex + makeinfo), since the
 # global `install' target now covers all three phases.
-install-programs:  ## Install only the program binaries (clautolisp/alfe/read-autolisp + the test harness) + the alref reference libs — no docs. The CI fast path.
+install-programs:  ## Install only the program binaries (clautolisp/alfe/read-autolisp + the test harness) + the alref reference libs + alfe's plug-ins — no docs. The CI fast path.
 	@$(call stage-as-user,stage-programs)
 	@$(call copy-stage,$(STAGE_PROGRAMS))
 

@@ -470,10 +470,9 @@ INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARI
 
 install: build  ## Install built alfe binaries + plug-ins + docs into $$PREFIX (build first; sudo-friendly).
 	"$(MAKE)" install-programs
-	"$(MAKE)" install-plugins
 	"$(MAKE)" install-documentation
 
-install-programs:  ## Install just the alfe executables (no docs).
+install-programs:  ## Install the alfe executables + the plug-ins it ships (no docs). `make install-programs` alone is now the complete "programs" phase: the root Makefile's stage-programs / release-programs, which invoke only this target per subproject, pick the plug-ins up for free.
 	install -d "$(BIN_INSTALL_DIR)"
 	install -d "$(LIBEXEC_INSTALL_DIR)"
 	@for exe in $(INSTALL_BINARIES); do \
@@ -520,6 +519,11 @@ install-programs:  ## Install just the alfe executables (no docs).
 	  fi ; \
 	done
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+	@# Plug-ins compile against the alfe just installed above (install-plugins
+	@# runs "$$installed --compile-plugin ...") — a prerequisite would run it
+	@# too early, before the binaries exist, so it is a recursive make call
+	@# at the end of this recipe instead, after everything else here.
+	"$(MAKE)" install-plugins
 
 install-plugins:  ## Install the plug-ins alfe ships (epure, epuree) and compile them with the installed alfe.
 	@for dir in plugins/*/ ; do \
