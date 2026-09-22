@@ -1159,6 +1159,20 @@ file or COM), and forwards the workload.
   ~accoreconsole~ per ~--mode~. Among same-version BricsCAD locales the
   host language preference (macOS ~AppleLanguages~; ~LANG~ / ~LC_*~)
   breaks the tie.
+- *A selected AutoCAD release now also selects its COM server.* Under
+  ~--mode automation~ the bridge asks for that release's own ProgID
+  (~AutoCAD.Application.24.1~ for AutoCAD 2022) instead of the generic
+  ~AutoCAD.Application~, which belongs to whichever AutoCAD registered
+  it last. An explicitly selected release whose registration is missing
+  or unusable is an error naming every ProgID tried, never a silent
+  fallback to another release; ~$AUTOCAD_PROGID~ names a server
+  outright. Attach, create and quit all use the same ProgID; ~--mode
+  batch~ (accoreconsole) needs no COM registration.
+- *A failed COM activation now says what failed.* The bootstrap error
+  carries the stage (~getobject~ / ~createobject~), the ProgID and the
+  COM error in decimal and hexadecimal with its description, and it
+  names ~cscript~ — the bridge — as the process that exited, rather
+  than claiming AutoCAD itself did.
 
 ** Encoding (alfe-user-manual § /Encoding/)
 

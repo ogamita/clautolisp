@@ -350,6 +350,18 @@ searches the standard
 roots for BricsCAD, AutoCAD and
 .BR accoreconsole.exe .
 .TP
+.B AUTOCAD_PROGID
+The COM ProgID
+.B \-\-mode automation
+asks Windows for, used verbatim. Unset,
+.B alfe
+resolves the selected release's own ProgID
+.RB ( AutoCAD.Application.24.1
+for AutoCAD 2022) and refuses to fall back to the generic
+.B AutoCAD.Application
+when a release was named explicitly, since that registration may belong
+to a different release.
+.TP
 .B AUTOLISP_KEEP_WORKDIR
 Keep the engine workdir after run.
 .TP

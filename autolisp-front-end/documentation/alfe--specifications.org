@@ -998,6 +998,10 @@ exits cleanly with code =3= and an error message.
 |-------------------------+------------------------------------------------------------------------|
 | =AUTOCAD_EXE=           | Explicit path to =acad.exe= or =acadlt.exe=.                           |
 | =AUTOCAD_ACCORECONSOLE= | Explicit path to =accoreconsole.exe= (=batch= mode only).              |
+| =AUTOCAD_PROGID=        | Explicit COM ProgID for =automation= mode; used verbatim.              |
+
+Discovering an executable does not determine which AutoCAD serves an
+=automation= run: COM does, through the ProgID (see below).
 
 Failing that, search the Windows Program Files roots advertised by
 =%ProgramW6432%=, =%ProgramFiles%= and =%ProgramFiles(x86)%= for:
@@ -1027,6 +1031,33 @@ cscript //nologo <WORKDIR>/bridge-autocad.vbs \
 
 COM mode is selected by =AUTOCAD_COM_MODE=: values =auto= (default),
 =attach=, =launch=, =off=. The =--mode= option takes priority.
+
+**** The ProgID the bridge asks for
+
+The bridge's =GetObject= / =CreateObject= — and the quit bridge's
+=GetObject= — name a ProgID, and Windows resolves it through the
+registry to whatever release that registration points at. Selecting an
+executable constrains nothing. Resolution order:
+
+1. =AUTOCAD_PROGID=, verbatim, unchecked;
+2. the selected release's own ProgID (=AutoCAD.Application.24.1= for
+   AutoCAD 2022), accepted only when its registration is usable: a
+   CLSID under =HKCR\<progid>\CLSID= whose =LocalServer32= is readable;
+3. the generic =AutoCAD.Application=.
+
+Step 3 is unreachable when the release was named explicitly
+(=--cad autocad-YYYY=): a missing or unusable registration is an error
+(=backend-not-available=, code =:autocad-progid-unavailable=) listing
+each ProgID tried and why it was rejected. The release → interface
+version relation is a table (2019–2026), not a formula; an unknown
+release is resolved from the registered ProgIDs, matched against the
+release named in their =LocalServer32=.
+
+A failed activation records, in the bridge's error file,
+=COM.PROGID=, =COM.STAGE= (=getobject= / =createobject=),
+=COM.ERROR.DECIMAL=, =COM.ERROR.HEX= and =COM.ERROR.DESCRIPTION=; the
+bootstrap error reports them. =batch= mode uses =accoreconsole= and
+involves no COM registration.
 
 Verbatim VBScript (=bridge-autocad.vbs=):
 

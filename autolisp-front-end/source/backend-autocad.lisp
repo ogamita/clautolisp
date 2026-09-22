@@ -76,6 +76,9 @@
            #:autocad-backend-executable-path
            #:autocad-backend-accoreconsole-path
            #:autocad-session
+           #:resolve-autocad-progid
+           #:*generic-autocad-progid*
+           #:*autocad-release-com-versions*
            #:emit-bridge-vbs
            #:emit-batch-scr
            #:build-launch-argv
@@ -266,6 +269,195 @@ machine has no template I can find\", and now alfe brings one."
           (autocad-backend-accoreconsole-path backend) acc)
     backend))
 
+;;; --- which COM server an AutoCAD release means ---------------------
+;;;
+;;; Choosing acad.exe does NOT choose the COM server
+;;; (alfe-autocad-cad-selection-ignores-com-progid). Automation runs
+;;; cscript, and the ProgID it asks for is what Windows resolves --
+;;; through the registry, to whatever release that registration names.
+;;; `--cad autocad-2022' therefore has to ask for AutoCAD 2022's OWN
+;;; ProgID, AutoCAD.Application.24.1, and not for the generic
+;;; AutoCAD.Application: on the SCHMS runner the generic one resolves to
+;;; a CLSID whose LocalServer32 cannot be read, so CreateObject fails
+;;; 429 while the versioned one starts AutoCAD 2022 in 41 s.
+
+(defparameter *generic-autocad-progid* "AutoCAD.Application"
+  "The unversioned ProgID. Whichever release Windows last registered
+answers to it -- which is why an explicitly requested release never
+settles for it.")
+
+(defparameter *autocad-release-com-versions*
+  '(("2019" . "23.0") ("2020" . "23.1") ("2021" . "24.0") ("2022" . "24.1")
+    ("2023" . "24.2") ("2024" . "24.3") ("2025" . "25.0") ("2026" . "25.1"))
+  "Product year -> AutoCAD COM interface version, the ProgID suffix.
+A LOOKUP TABLE, NOT A FORMULA: the year/version relation has changed
+shape before (2020 is 23.1, 2021 is 24.0, 2025 is 25.0) and Autodesk
+owes us no arithmetic. It only proposes a candidate -- the registry
+decides, and a release missing from the table is resolved by asking the
+registry what is installed.")
+
+(defvar *registry-value-function* '%registry-default-value
+  "Function (KEY) -> the key's default value as a string, or NIL.
+The tests bind it to describe a registry without a Windows host.")
+
+(defvar *registry-progids-function* '%registered-autocad-progids
+  "Function () -> the AutoCAD.Application* ProgIDs registered on this
+host. Bound by the tests, as *REGISTRY-VALUE-FUNCTION* is.")
+
+(defun %reg-query (&rest arguments)
+  "Run reg.exe with ARGUMENTS and return its output, or NIL. Windows
+only; any failure (missing reg.exe, absent key) is NIL, not an error."
+  (when (windows-p)
+    (ignore-errors
+     (uiop:run-program (cons "reg" arguments)
+                       :output :string :error-output nil
+                       :ignore-error-status t))))
+
+(defun %parse-reg-default-value (output)
+  "The default value in `reg query KEY /ve' OUTPUT, or NIL."
+  (with-input-from-string (in output)
+    (loop for line = (read-line in nil nil)
+          while line
+          for type = (search "REG_" line)
+          when type
+            do (let* ((rest (subseq line type))
+                      (space (position #\Space rest)))
+                 (when space
+                   (let ((value (string-trim '(#\Space #\Tab #\Return)
+                                             (subseq rest space))))
+                     (when (plusp (length value))
+                       (return value))))))))
+
+(defun %registry-default-value (key)
+  (let ((output (%reg-query "query" key "/ve")))
+    (when output (%parse-reg-default-value output))))
+
+(defun %registered-autocad-progids ()
+  "The AutoCAD.Application ProgIDs registered under HKEY_CLASSES_ROOT."
+  (let ((output (%reg-query "query" "HKCR" "/f" "AutoCAD.Application" "/k")))
+    (when output
+      (with-input-from-string (in output)
+        (loop for line = (read-line in nil nil)
+              while line
+              for trimmed = (string-trim '(#\Space #\Tab #\Return) line)
+              for backslash = (position #\\ trimmed :from-end t)
+              when (and backslash
+                        (let ((name (subseq trimmed (1+ backslash))))
+                          (and (>= (length name) (length *generic-autocad-progid*))
+                               (string= *generic-autocad-progid* name
+                                        :end2 (length *generic-autocad-progid*)))))
+                collect (subseq trimmed (1+ backslash)))))))
+
+(defun autocad-progid-registration (progid)
+  "(values CLSID LOCAL-SERVER32) for PROGID. A usable registration has
+both: the failing generic ProgID in the ticket HAS a CLSID and no
+readable LocalServer32, and that is exactly the case to reject."
+  (let* ((clsid (funcall *registry-value-function*
+                         (format nil "HKCR\\~A\\CLSID" progid)))
+         (server (when clsid
+                   (funcall *registry-value-function*
+                            (format nil "HKCR\\CLSID\\~A\\LocalServer32" clsid)))))
+    (values clsid server)))
+
+(defun %progid-for-com-version (version)
+  (format nil "~A.~A" *generic-autocad-progid* version))
+
+(defun %release-progid-candidates (release)
+  "The ProgIDs that could be RELEASE's, table entry first, then whatever
+is registered (which covers a release the table does not know)."
+  (let* ((from-table (cdr (assoc release *autocad-release-com-versions*
+                                 :test #'string=)))
+         (registered (remove *generic-autocad-progid*
+                             (ignore-errors (funcall *registry-progids-function*))
+                             :test #'string=)))
+    (remove-duplicates (if from-table
+                           (cons (%progid-for-com-version from-table) registered)
+                           registered)
+                       :test #'string= :from-end t)))
+
+(defun %registered-progid-for-release (release)
+  "(values PROGID TRIED), PROGID being RELEASE's usable COM server or
+NIL. TRIED lists (PROGID REASON DETAIL) for the diagnostic."
+  (let ((tried '())
+        (fallback nil))
+    (dolist (progid (%release-progid-candidates release))
+      (multiple-value-bind (clsid server) (autocad-progid-registration progid)
+        (cond
+          ((null clsid)
+           (push (list progid :not-registered nil) tried))
+          ((null server)
+           (push (list progid :no-local-server clsid) tried))
+          ((search release server)
+           ;; The registration itself names the release: strongest evidence.
+           (return-from %registered-progid-for-release
+             (values progid (nreverse (cons (list progid :ok server) tried)))))
+          (t
+           ;; Usable, but its LocalServer32 does not name the release. Good
+           ;; enough only if nothing better turns up -- and only for the
+           ;; table's own candidate, whose version IS the release evidence.
+           (push (list progid :version-not-confirmed server) tried)
+           (unless fallback
+             (let ((from-table (cdr (assoc release *autocad-release-com-versions*
+                                           :test #'string=))))
+               (when (and from-table
+                          (string= progid (%progid-for-com-version from-table)))
+                 (setf fallback progid))))))))
+    (values fallback (nreverse tried))))
+
+(defun %progid-diagnostic (release tried)
+  (format nil "AutoCAD ~A was requested, but no COM server for it is registered.~
+~:[~;~:*~%  Tried:~{~%    ~{~A: ~(~A~)~@[ (~A)~]~}~}~]~
+~%  Not falling back to ~A: it is registered to whichever release Windows~
+~%  last claimed it, so it may start a different AutoCAD.~
+~%  Repair the AutoCAD ~A installation's COM registration, or name the~
+~%  server outright with $AUTOCAD_PROGID (e.g. AutoCAD.Application.24.1)."
+          release tried *generic-autocad-progid* release))
+
+(defun resolve-autocad-progid (&key release executable-path explicit-p)
+  "The COM ProgID the automation bridges ask for. Precedence:
+
+  1. $AUTOCAD_PROGID, verbatim -- the escape hatch for a release this
+     alfe has never heard of; no registry check, none is possible.
+  2. RELEASE (from --cad autocad-YYYY) or the release of
+     EXECUTABLE-PATH: that release's OWN ProgID, confirmed against the
+     registry.
+  3. The generic ProgID.
+
+EXPLICIT-P says the user named the release. Then step 2 must succeed:
+an unregistered release is an error (BACKEND-NOT-AVAILABLE, code
+:AUTOCAD-PROGID-UNAVAILABLE) naming what was tried, never a quiet step
+3 that could drive another release. Without EXPLICIT-P the release is
+only alfe's own discovery, so step 3 is a legitimate answer."
+  (let ((override (uiop:getenv "AUTOCAD_PROGID")))
+    (cond
+      ((and override (plusp (length override)))
+       (log-debug "backend AUTOCAD: $AUTOCAD_PROGID = ~A" override)
+       override)
+      (t
+       (let ((release (or release
+                          (and executable-path
+                               (alfe.backend.cad-common:autocad-release-in-path
+                                executable-path)))))
+         (cond
+           ((null release) *generic-autocad-progid*)
+           (t
+            (multiple-value-bind (progid tried) (%registered-progid-for-release release)
+              (cond
+                (progid
+                 (log-debug "backend AUTOCAD: release ~A -> ProgID ~A" release progid)
+                 progid)
+                (explicit-p
+                 (error 'backend-not-available
+                        :backend :autocad
+                        :code :autocad-progid-unavailable
+                        :message (%progid-diagnostic release tried)
+                        :details (list :release release :tried tried)))
+                (t
+                 (log-warn "backend AUTOCAD: no COM registration for AutoCAD ~A; ~
+using ~A (set $AUTOCAD_PROGID to pin one)"
+                           release *generic-autocad-progid*)
+                 *generic-autocad-progid*))))))))))
+
 ;;; --- emitter: bridge-autocad.vbs (Windows automation) -------------
 
 (defparameter *bridge-autocad-vbs-template*
@@ -279,14 +471,15 @@ machine has no template I can find\", and now alfe brings one."
   ;; of ever moving one of these characters into code.
   "' AutoCAD COM bridge - emitted by alfe.backend.autocad
 ' Placeholders: ${RUNLSPFILE}, ${STATUSFILE}, ${ERRFILE},
-' ${COMMODE}, ${DEBUGFILE}, ${WAIT_SECS}.
+' ${COMMODE}, ${DEBUGFILE}, ${WAIT_SECS}, ${PROGID}.
 ' Mirrors the legacy bash wrapper's bridge-autocad.vbs; preserve
 ' the WaitQuiescent + GetAcadState handshake - it's the hard-won
 ' piece that keeps the bridge from racing AutoCAD's UI init.
 
 Option Explicit
 Dim fso, app, doc, runFile, statusFile, errFile, commode, debugFile, waitSecs
-Dim attached, created, rc, statusReadyFlag, flagsFile
+Dim attached, created, rc, statusReadyFlag, flagsFile, progId
+Dim errNumber, errDescription
 
 Set fso = CreateObject(\"Scripting.FileSystemObject\")
 runFile     = \"${RUNLSPFILE}\"
@@ -295,6 +488,10 @@ errFile     = \"${ERRFILE}\"
 commode     = \"${COMMODE}\"
 debugFile   = \"${DEBUGFILE}\"
 flagsFile   = \"${FLAGSFILE}\"
+' The COM server to ask for. A VERSIONED ProgID when a release was
+' selected: the generic one is registered to whichever AutoCAD claimed
+' it last (alfe-autocad-cad-selection-ignores-com-progid).
+progId      = \"${PROGID}\"
 waitSecs    = ${WAIT_SECS}
 attached    = False
 created     = False
@@ -316,6 +513,19 @@ End Sub
 
 Sub VBSDebug(msg)
   If debugFile <> \"\" Then AppendLine debugFile, \"[VBS] \" & msg
+End Sub
+
+' What a failed activation actually was. Err.Number and Err.Description
+' are cleared by the next statement, so the caller captures them into
+' errNumber/errDescription FIRST and passes them in here. Without these
+' lines the run reported only cscript's \"ATTACHED=0 CREATED=0\" and the
+' COM error -- 429, the whole diagnosis -- was lost.
+Sub RecordComError(stage, num, desc)
+  AppendLine errFile, \"COM.PROGID=\" & progId
+  AppendLine errFile, \"COM.STAGE=\" & stage
+  AppendLine errFile, \"COM.ERROR.DECIMAL=\" & num
+  AppendLine errFile, \"COM.ERROR.HEX=0x\" & Hex(num)
+  AppendLine errFile, \"COM.ERROR.DESCRIPTION=\" & desc
 End Sub
 
 Sub EmitFlags(att, cre)
@@ -357,24 +567,38 @@ Sub WaitQuiescent(a, secs)
   Loop
 End Sub
 
+errNumber = 0
+errDescription = \"\"
+
 If commode = \"attach\" Or commode = \"auto\" Then
   On Error Resume Next
-  Set app = GetObject(, \"AutoCAD.Application\")
-  If Err.Number = 0 And Not (app Is Nothing) Then attached = True
+  Set app = GetObject(, progId)
+  errNumber = Err.Number
+  errDescription = Err.Description
+  If errNumber = 0 And Not (app Is Nothing) Then attached = True
   Err.Clear
   On Error GoTo 0
+  ' Under \"auto\" a miss is ordinary -- no AutoCAD is running yet -- so it
+  ' goes to the debug trace, not to the error file the user reads.
+  If Not attached Then
+    VBSDebug \"GetObject(\" & progId & \") failed: \" & errNumber & \" \" & errDescription
+  End If
 End If
 
 If app Is Nothing Then
   If commode = \"attach\" Then
-    AppendLine errFile, \"ERROR COM bridge: no running AutoCAD to attach to.\"
+    AppendLine errFile, \"ERROR COM bridge: no running \" & progId & \" to attach to.\"
+    RecordComError \"getobject\", errNumber, errDescription
     EmitFlags False, False
     WScript.Quit 4
   End If
   On Error Resume Next
-  Set app = CreateObject(\"AutoCAD.Application\")
-  If Err.Number <> 0 Then
-    AppendLine errFile, \"ERROR COM bridge: could not launch AutoCAD: \" & Err.Description
+  Set app = CreateObject(progId)
+  errNumber = Err.Number
+  errDescription = Err.Description
+  If errNumber <> 0 Then
+    AppendLine errFile, \"ERROR COM bridge: could not launch \" & progId & \": \" & errDescription
+    RecordComError \"createobject\", errNumber, errDescription
     EmitFlags False, False
     WScript.Quit 4
   End If
@@ -427,10 +651,14 @@ EMIT-BRIDGE-VBS.")
 ' instance the bridge merely ATTACHED to: that one was already running
 ' — it may be a person's session on the same laptop — and closing it
 ' would be alfe reaching outside its own work.
+' ${PROGID} is the SAME server the start bridge asked for: quitting
+' \"AutoCAD.Application\" could close a different release than the one
+' this run created (alfe-autocad-cad-selection-ignores-com-progid).
 Option Explicit
-Dim app, doc, i
+Dim app, doc, i, progId
+progId = \"${PROGID}\"
 On Error Resume Next
-Set app = GetObject(, \"AutoCAD.Application\")
+Set app = GetObject(, progId)
 If Err.Number <> 0 Then WScript.Quit 0
 If app Is Nothing Then WScript.Quit 0
 Err.Clear
@@ -454,13 +682,17 @@ WScript.Quit 0
 "
   "VBScript that attaches to the running AutoCAD and quits it.")
 
-(defun emit-quit-vbs (path)
-  "Write the quit bridge to PATH and return it."
+(defun emit-quit-vbs (path &key progid)
+  "Write the quit bridge to PATH and return it. PROGID is the server the
+start bridge used, so the instance quit is the instance created."
   (with-open-file (out path :direction :output
                             :if-exists :supersede
                             :if-does-not-exist :create
                             :external-format :utf-8)
-    (write-string *quit-autocad-vbs-template* out))
+    (write-string (substitute-placeholders
+                   *quit-autocad-vbs-template*
+                   `(("PROGID" . ,(or progid *generic-autocad-progid*))))
+                  out))
   path)
 
 (defun read-com-flags (workdir)
@@ -488,6 +720,7 @@ died before reporting leaves AutoCAD alone."
                              error-path
                              debug-path
                              flags-path
+                             progid
                              (com-mode "auto")
                              (wait-secs 60))
   (let ((text (alfe.plugin:run-hook
@@ -503,6 +736,7 @@ died before reporting leaves AutoCAD alone."
                    ("COMMODE"     . ,com-mode)
                    ("DEBUGFILE"   . ,(if debug-path (namestring debug-path) ""))
                    ("FLAGSFILE"   . ,(if flags-path (namestring flags-path) ""))
+                   ("PROGID"      . ,(or progid *generic-autocad-progid*))
                    ("WAIT_SECS"   . ,(format nil "~D" wait-secs))))
                 :automation)
                :kind :vbs :variant :automation :path path)))
@@ -646,8 +880,38 @@ pipe read, so the default stays the robust total decoder (G2)."
           :stdout stdout
           :stderr stderr)))
 
+(defun %com-field (text name)
+  "The value of a NAME=… line in TEXT (the bridge's error file), or NIL."
+  (when text
+    (with-input-from-string (in text)
+      (loop with prefix = (concatenate 'string name "=")
+            for line = (read-line in nil nil)
+            while line
+            for trimmed = (string-trim '(#\Return #\Space #\Tab) line)
+            when (and (>= (length trimmed) (length prefix))
+                      (string= prefix trimmed :end2 (length prefix)))
+              do (let ((value (subseq trimmed (length prefix))))
+                   (when (plusp (length value))
+                     (return value)))))))
+
 (defun summarize-process-exit (details)
+  "The bootstrap message for a launch that ended before READY.
+
+In automation mode the process that exits is CSCRIPT, the COM bridge --
+not acad.exe, which COM starts on its own. Saying `AutoCAD process
+exited' there claimed something unobserved, and the message carried only
+cscript's `ATTACHED=0 CREATED=0' stdout while the COM error that
+explains it went unread (alfe-autocad-cad-selection-ignores-com-progid).
+The ProgID, the stage and Err.Number/Description are reported when the
+bridge recorded them."
   (let* ((exit-code (getf details :exit-code))
+         (automation-p (eq (getf details :variant) :automation))
+         (bridge (getf details :bridge-errors))
+         (progid (%com-field bridge "COM.PROGID"))
+         (stage (%com-field bridge "COM.STAGE"))
+         (number (%com-field bridge "COM.ERROR.DECIMAL"))
+         (hex (%com-field bridge "COM.ERROR.HEX"))
+         (description (%com-field bridge "COM.ERROR.DESCRIPTION"))
          (stderr (string-trim '(#\Return #\Newline #\Space #\Tab)
                               (or (getf details :stderr) "")))
          (stdout (string-trim '(#\Return #\Newline #\Space #\Tab)
@@ -655,11 +919,25 @@ pipe read, so the default stays the robust total decoder (G2)."
          (snippet (cond ((plusp (length stderr)) stderr)
                         ((plusp (length stdout)) stdout)
                         (t ""))))
-    (if (plusp (length snippet))
-        (format nil "AutoCAD process exited before READY (exit ~A): ~A"
-                exit-code snippet)
-        (format nil "AutoCAD process exited before READY (exit ~A)."
-                exit-code))))
+    (with-output-to-string (out)
+      (format out "~A exited before READY (exit ~A)"
+              (if automation-p "AutoCAD COM bridge (cscript)" "AutoCAD process")
+              exit-code)
+      (when stage
+        (format out " at ~A(~@[~A~])" stage progid))
+      (cond
+        ((or number description)
+         (format out ": COM error~@[ ~A~]~@[ (~A)~]~@[ ~A~]"
+                 number hex description))
+        ((plusp (length snippet))
+         (format out ": ~A" snippet))
+        (t (write-char #\. out)))
+      (when (and automation-p (or number description))
+        (format out "~%  The COM bridge is what exited; whether acad.exe ~
+started is what ATTACHED/CREATED say.")
+        (when progid
+          (format out "~%  Server asked for: ~A (override with $AUTOCAD_PROGID)."
+                  progid))))))
 
 (defun wait-for-ready-or-process-exit (protocol process-info timeout)
   (let ((start (get-internal-real-time))
@@ -702,7 +980,10 @@ pipe read, so the default stays the robust total decoder (G2)."
             (:copier nil))
   (protocol-session nil)
   (process-info     nil)
-  (variant          nil))
+  (variant          nil)
+  ;; The COM server this run asked for, kept so SHUTDOWN quits the same
+  ;; one (alfe-autocad-cad-selection-ignores-com-progid).
+  (progid           nil))
 
 (defmethod prepare-workdir ((backend autocad-backend) workdir-root &key)
   (let ((workdir (if workdir-root
@@ -752,6 +1033,9 @@ pipe read, so the default stays the robust total decoder (G2)."
                (when bootstrap-source
                  (alfe.protocol.file:stage-bootstrap-lsp protocol)))
              (variant (choose-effective-mode backend mode))
+             ;; Filled by the :AUTOMATION branch below; the session keeps
+             ;; it so SHUTDOWN quits the server this run started.
+             (progid nil)
              (run-common
                (alfe.protocol.file:emit-run-common-lsp
                 protocol
@@ -793,12 +1077,22 @@ pipe read, so the default stays the robust total decoder (G2)."
         (case variant
           (:automation
            (let ((vbs (merge-pathnames "bridge-autocad.vbs" workdir)))
+             (setf progid
+                   (resolve-autocad-progid
+                    :executable-path (autocad-backend-executable-path backend)
+                    ;; --cad autocad-YYYY is a claim about WHICH AutoCAD;
+                    ;; it must not be satisfied by another one.
+                    :explicit-p (and cli-options
+                                     (alfe.cli:cli-options-cad cli-options)
+                                     t)))
+             (log-verbose "backend AUTOCAD: COM server = ~A" progid)
              (emit-bridge-vbs
               vbs
               :runtime-load-path run-common
               :status-path (alfe.protocol.file:protocol-session-status-path protocol)
               :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)
               :flags-path  (merge-pathnames "com-flags.txt" workdir)
+              :progid      progid
               :com-mode    (or (uiop:getenv "AUTOCAD_COM_MODE") "auto"))
              (log-debug "backend AUTOCAD: wrote bridge-autocad.vbs -> ~A" vbs)))
           (:batch
@@ -820,7 +1114,8 @@ pipe read, so the default stays the robust total decoder (G2)."
                                                (alfe.cli:cli-options-timeout
                                                 cli-options))
                          :protocol-session protocol
-                         :variant variant))
+                         :variant variant
+                         :progid progid))
                (_ (log-verbose "backend AUTOCAD: launching: ~{~A~^ ~}" argv))
                (process-info
                  (when launcher
@@ -892,14 +1187,26 @@ unwind-protect that reaps the engine when it does not get there."
                 ((eq state :exited)
                  (log-warn "backend AUTOCAD: process exited after ~,2F s; last status = ~S"
                            elapsed last)
-                 (error 'backend-bootstrap-error
-                        :backend :autocad
-                        :code :process-exited-before-ready
-                        :message (summarize-process-exit details)
-                        :details (append
-                                  (list :workdir workdir
-                                        :last-status last)
-                                  details)))
+                 ;; The COM failure is in the bridge's error FILE, not in
+                 ;; cscript's pipes: read it before reporting, or the
+                 ;; diagnosis is lost (see SUMMARIZE-PROCESS-EXIT).
+                 (let ((details (append
+                                 (list :variant (and session
+                                                     (autocad-session-variant session))
+                                       :bridge-errors
+                                       (ignore-errors
+                                        (uiop:read-file-string
+                                         (alfe.protocol.file:protocol-session-stderr-path
+                                          protocol))))
+                                 details)))
+                   (error 'backend-bootstrap-error
+                          :backend :autocad
+                          :code :process-exited-before-ready
+                          :message (summarize-process-exit details)
+                          :details (append
+                                    (list :workdir workdir
+                                          :last-status last)
+                                    details))))
                 (t
                  (log-warn "backend AUTOCAD: READY timeout after ~,2F s; last status = ~S"
                            elapsed last)
@@ -991,7 +1298,8 @@ not create it)")
            (log-verbose "backend AUTOCAD: quitting the AutoCAD this run created")
            (ignore-errors
             (let* ((vbs (emit-quit-vbs (merge-pathnames "quit-autocad.vbs"
-                                                        workdir)))
+                                                        workdir)
+                                       :progid (autocad-session-progid session)))
                    (info (funcall launcher
                                   (list "cscript" "//nologo" (namestring vbs))
                                   :output :stream :error-output :stream))

@@ -62,6 +62,7 @@
            #:cad-program-path
            #:cad-program-denotation
            #:discover-cad-programs
+           #:autocad-release-in-path
            #:print-cad-programs
            #:resolve-cad-denotation))
 
@@ -1045,6 +1046,14 @@ digit on either side, so \"AutoCAD 2026\" yields \"2026\"."
                   (or (zerop i) (not (digit-char-p (char path (1- i)))))
                   (or (>= (+ i 4) (length path)) (not (digit-char-p (char path (+ i 4))))))
           return (subseq path i (+ i 4))))
+
+(defun autocad-release-in-path (path)
+  "The AutoCAD product year named by PATH (\"2022\"), or NIL. The
+install directory is where the release is written down, and the COM
+ProgID resolution reads it from there
+(alfe-autocad-cad-selection-ignores-com-progid)."
+  (when path
+    (%find-autocad-year (namestring path))))
 
 (defun %find-bricscad-version (path)
   "The BricsCAD version token in PATH — \"V\" then digits (e.g. \"V26\"),

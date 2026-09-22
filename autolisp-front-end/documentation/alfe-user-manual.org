@@ -161,6 +161,38 @@ Denotation grammar:
 | =autocad= / =autocad-2022= | =acad= or =accoreconsole= per =--mode= (batch → accoreconsole, else acad) |
 | =clautolisp=              | the embedded engine                                 |
 
+*** Which AutoCAD automation actually talks to
+
+Choosing =acad.exe= does not by itself choose the AutoCAD that answers.
+=--mode automation= runs a COM bridge (=cscript=), and Windows resolves
+the *ProgID* it asks for through the registry — to whatever release that
+registration names. The unversioned =AutoCAD.Application= belongs to
+whichever AutoCAD registered it last, which need not be the one you
+selected, and on a damaged installation it may resolve to a CLSID that
+cannot start anything at all.
+
+So an explicitly selected release asks for *its own* ProgID:
+
+| Selection                          | COM server asked for                          |
+|------------------------------------+-----------------------------------------------|
+| =--cad autocad-2022 --mode automation= | =AutoCAD.Application.24.1= (AutoCAD 2022's)   |
+| =--autocad --mode automation=      | the discovered install's versioned ProgID when it is registered, else =AutoCAD.Application= |
+| =$AUTOCAD_PROGID= set              | exactly that, unchanged                       |
+| =--mode batch=                     | none: =accoreconsole= needs no COM at all     |
+
+alfe confirms the registration before using it (a CLSID *and* a readable
+=LocalServer32=). When you named the release and its COM server is not
+registered, alfe stops and says so — it will not quietly fall back to the
+generic ProgID and drive a different AutoCAD. See /Troubleshooting/.
+
+The same ProgID is used to attach, to create, and to quit at the end of
+the run, so alfe never closes an instance of another release.
+
+The release → version table alfe knows covers AutoCAD 2019–2026 (2022 is
+24.1, 2025 is 25.0); the relation is not arithmetic, so a release outside
+it is resolved by asking the registry what is installed, and
+=$AUTOCAD_PROGID= names one outright.
+
 So =alfe --cad bricscad-v25-fr_FR -l script.lsp= runs a specific
 BricsCAD, and =alfe --cad autocad-2022 --mode batch= selects
 accoreconsole 2022. =--cad= sets the backend (a conflicting
@@ -1181,6 +1213,11 @@ plug-in is active.
   engine binaries, bypassing detection.
 - =$AUTOCAD_COM_MODE=, =$BRICSCAD_COM_MODE= :: =auto= (default) or
   =off=. =off= is the batch path, without COM.
+- =$AUTOCAD_PROGID= :: the COM ProgID =--mode automation= asks for, used
+  verbatim and without a registry check — the way to name a release alfe
+  does not know, or to pin one on a host with several. Unset, alfe
+  resolves the selected release's own ProgID. See /Which AutoCAD
+  automation actually talks to/.
 - =$AUTOLISP_BRICSCAD_PROFILE=, =$BRICSCAD_PROFILE= :: the BricsCAD
   profile to launch under; the first takes precedence. Unset means the
   engine's own default profile.
@@ -1236,6 +1273,29 @@ the usual platform locations, =$XDG_DATA_HOME= and =$XDG_DATA_DIRS= for
 the plug-in roots ([[#plugins][Plug-ins]]), and =$NO_COLOR= disables ANSI colour.
 
 * Troubleshooting
+
+** "AutoCAD 2022 was requested, but no COM server for it is registered"
+
+=--mode automation= needs that release's COM registration, and it is
+either absent or unusable (a CLSID whose =LocalServer32= cannot be
+read). The message lists every ProgID tried and why each was rejected.
+alfe stops rather than fall back to the generic =AutoCAD.Application=,
+which may belong to another release.
+
+Repair the AutoCAD installation's COM registration (a repair install, or
+=acad.exe /regserver= from an elevated prompt), or name the server
+yourself with =$AUTOCAD_PROGID=AutoCAD.Application.24.1=. =--mode batch=
+uses =accoreconsole= and needs no COM registration at all.
+
+** "AutoCAD COM bridge (cscript) exited before READY"
+
+The COM bridge failed to attach to or create an AutoCAD. The message
+carries the stage (=getobject= / =createobject=), the ProgID asked for,
+and the COM error in decimal and hexadecimal with its description —
+=429 (0x1AD) ActiveX component can't create object= is a registration
+that resolves to no runnable server; try the versioned ProgID as above.
+What exited is =cscript=, the bridge: whether =acad.exe= itself started
+is what the =ATTACHED= / =CREATED= flags report.
 
 ** =alfe= prints "Backend ... is not registered"
 
