@@ -1,0 +1,74 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cador-vl-directory-files — un répertoire Windows exige un séparateur final
+#+STATUS: OPEN
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+
+Signalé depuis SCHME+ le 2026-09-22.
+
+Le problème
+-----------
+
+Sous ALFE/Cador, `vl-directory-files` et `vl-file-directory-p` ne reconnaissent
+un chemin de répertoire Windows provenant du mapping ALFE que si celui-ci se
+termine par un séparateur. AutoCAD et BricsCAD acceptent les deux formes. Cela
+bloque la recherche ascendante du dossier `BORNAGE` de SCHME+ après un
+`vl-string-right-trim` légitime.
+
+Reproduction
+------------
+
+Lancer SCHME+ depuis MSYS2 :
+
+    make test-cad-activex-alfe CAD=clautolisp
+
+Le répertoire existe et contient notamment le sous-répertoire `BORNAGE` :
+
+    $SRC/schme/dev/tests/
+
+Les appels avec le sélecteur de fichiers fonctionnent dans les trois tests de
+bornage précédents :
+
+    (vl-directory-files dossier "*.dwg" 1)
+    (vl-directory-files dossier "!bornage*.inf" 1)
+
+Le sélecteur `-1` fonctionne lorsque le séparateur final est présent :
+
+    (vl-directory-files
+      "$SRC\\schme\\dev\\tests\\"
+      nil
+      -1)
+    ;; obtenu : ("BORNAGE" "tests_lsp")
+
+Après suppression du séparateur final, le même appel retourne `nil` :
+
+    (vl-directory-files
+      "$SRC\\schme\\dev\\tests"
+      nil
+      -1)
+    ;; obtenu : nil ; attendu : ("BORNAGE" "tests_lsp")
+
+`vl-file-directory-p` présente la même différence entre les deux formes.
+
+Impact
+------
+
+Le scénario `bornage-historique / recherche du dossier de bornage` échoue
+alors que les 12 autres scénarios de la suite ActiveX passent sous Cador.
+
+Piste
+-----
+
+Les tests unitaires de `autolisp-builtins-core` couvrent déjà `-1`, mais avec
+un pathname natif terminé par `/`. Ajouter une régression qui compare les
+formes avec et sans séparateur final après le mapping d'un chemin Windows dans
+le host Cador. Le défaut semble être dans `resolve-directory-pathname` ou la
+normalisation map-in, plutôt que dans le sélecteur.
+
+Environnement observé
+---------------------
+
+- alfe 1.9.0 ;
+- host Cador via `--clautolisp --host cador --dialect bricscad-v26` ;
+- Windows/MSYS2, dépôt sur `C:`.
