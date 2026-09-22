@@ -830,13 +830,19 @@ running executable), =/opt/local/share/autolisp/=,
 =/usr/local/share/autolisp/= and =~/.local/share/autolisp/=. When it is
 nowhere, the run stops with a usage error listing the places tried.
 
-The plug-in puts three =eval= actions in front of the action plan — so in
-front of your init files and actions — and they show in =--dry-run=:
+The plug-in puts =eval= actions in front of the action plan — so in front of
+your init files and actions — and they show in =--dry-run=:
 
 1. load =alpm.lsp=;
 2. one =(alpm-register-directory DIR T)= for each =--epuree-path=
    directory;
-3. =(alpm-load-system "epuree" nil)=.
+3. =(alpm-load-system "epuree" nil)=;
+4. =(epuree-initialize)=.
+
+Loading the system only defines; =(epuree-initialize)= is what does the rest
+of what =(load "load_epuree")= does: it installs the path-separator and
+Windows-environment shims and anchors the bundle root. Steps 3 and 4 together
+are equivalent to =(load "load_epuree")=.
 
 Because these are ordinary plan actions, the engine evaluates them
 itself, identically under clautolisp, BricsCAD and AutoCAD, and a failure
@@ -844,7 +850,7 @@ fails the run before your script starts.
 
 #+begin_src sh
 alfe --epuree --epuree-path ~/src/epuree -l check.lsp
-alfe --epuree --epuree-path ~/src/epuree --dry-run -x '(princ 1)'   # see the three actions
+alfe --epuree --epuree-path ~/src/epuree --dry-run -x '(princ 1)'   # see the actions
 alfe --bricscad --epuree --epuree-alpm /opt/alpm/alpm.lsp -l check.lsp
 #+end_src
 

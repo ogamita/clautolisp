@@ -4,7 +4,11 @@
 ;;;; (~/works/sncf-reseau/src/epuree), for BricsCAD on macOS and Linux and
 ;;;; for tests. It is packaged as the ALPM system `epuree' (epuree.alpm at
 ;;;; the root of its repository). This plug-in puts the loading of that
-;;;; system in front of the action plan, on every backend.
+;;;; system, and its initialization, in front of the action plan, on every
+;;;; backend. Loading the system only defines; (epuree-initialize) is what
+;;;; acts on the host -- the path and environment shims, the bundle root --
+;;;; and (alpm-load-system "epuree" nil) followed by it is equivalent to
+;;;; (load "load_epuree").
 ;;;;
 ;;;; Specified by documentation/alfe--specifications.org, chapter "EPUREE",
 ;;;; and issues/closed/alfe-plugin-epuree.issue.
@@ -17,8 +21,8 @@
 (in-package #:alfe.plugin.epuree)
 
 (define-plugin "epuree"
-  :version "1.0.0"
-  :description "Load the EPUREE emulation of the EPURE API (ALPM system epuree) before the plan runs."
+  :version "1.1.0"
+  :description "Load and initialize the EPUREE emulation of the EPURE API (ALPM system epuree) before the plan runs."
   :options ((:flag   "--epuree" :activates t :env "AUTOLISP_EPUREE"
                      :doc "Load EPUREE before anything else.")
             (:repeat "--epuree-path" :key :paths :arg "DIR" :env "EPUREE_PATH"
@@ -78,14 +82,16 @@ exist, else the first of the usual places that does."
   (alfe.backend:action-eval (apply #'format nil control arguments)))
 
 (define-plugin-hook "epuree" :plan (ctx plan)
-  ;; Three actions in front of everything (init files included), evaluated
-  ;; by the engine itself: load ALPM, tell it where epuree.alpm is, load the
-  ;; system. A failure fails the run before the user's script starts.
+  ;; Four kinds of action in front of everything (init files included),
+  ;; evaluated by the engine itself: load ALPM, tell it where epuree.alpm is,
+  ;; load the system, initialize it. A failure fails the run before the user's
+  ;; script starts.
   (append
    (list (eval-form "(load ~A)" (autolisp-string-literal (absolute (alpm-lsp)))))
    (mapcar (lambda (directory)
              (eval-form "(alpm-register-directory ~A T)"
                         (autolisp-string-literal (absolute directory))))
            (plugin-option :paths))
-   (list (eval-form "(alpm-load-system \"epuree\" nil)"))
+   (list (eval-form "(alpm-load-system \"epuree\" nil)")
+         (eval-form "(epuree-initialize)"))
    plan))

@@ -1918,13 +1918,18 @@ Without =--epuree-alpm=, =alpm.lsp= is looked for in =$ALPM_LSP=,
 =/usr/local/share/autolisp/= and =~/.local/share/autolisp/=; when it is
 nowhere, the run stops with a usage error listing the places tried.
 
-The plug-in's =:plan= filter puts three =eval= actions in front of the plan
-(so in front of the user's init files and actions, and visible in
+The plug-in's =:plan= filter puts four kinds of =eval= action in front of the
+plan (so in front of the user's init files and actions, and visible in
 =--dry-run=): load =alpm.lsp=; one =(alpm-register-directory DIR T)= per
-=--epuree-path= directory; =(alpm-load-system "epuree" nil)=. Because they are
-ordinary plan actions the engine evaluates them itself, identically under
-clautolisp, BricsCAD and AutoCAD; a failure fails the run before the user's
-script starts.
+=--epuree-path= directory; =(alpm-load-system "epuree" nil)=;
+=(epuree-initialize)=. Loading the system only defines: =(epuree-initialize)=,
+which the system defines (=src/initialize.lsp= in the EPUREE repository), is
+what acts on the host -- the path-separator and Windows-environment shims, the
+bundle root (=epuree:*bundle-root*=, =EPUREE_ROOT=, =com_racdao=) -- so that
+the last two actions together are equivalent to =(load "load_epuree")=.
+Because they are ordinary plan actions the engine evaluates them itself,
+identically under clautolisp, BricsCAD and AutoCAD; a failure fails the run
+before the user's script starts.
 
 * Remote REPL protocol
 :PROPERTIES:

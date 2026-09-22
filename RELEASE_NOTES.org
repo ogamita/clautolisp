@@ -1260,6 +1260,9 @@ file or COM), and forwards the workload.
   ~--compile-plugin~. ~--epure~ (formerly a no-op) now comes from the
   ~epure~ plug-in, with ~--epure-profile~ and ~--epure-script~; the
   ~epuree~ plug-in adds ~--epuree~, ~--epuree-path~ and ~--epuree-alpm~.
+- The ~epuree~ plug-in ends its actions with ~(epuree-initialize)~, which does
+  what ~(load "load_epuree")~ does besides loading — the path and environment
+  shims, the bundle root — so loading EPUREE through ALPM no longer skips them.
 
 ** Hosts: cador, cadtui, nihil (alfe-user-manual § /Host selection/)
 

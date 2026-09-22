@@ -379,9 +379,13 @@ templates: the slot lines are removed, nothing else changes."
   dir)
 (defun alpm-load-system (name force)
   (setq *alpm-calls* (append *alpm-calls* (list (list 'load name force))))
+  (defun epuree-initialize ()
+    (setq *alpm-calls* (append *alpm-calls* (list (list 'initialize))))
+    \"\")
   name)
 "
-  "A stand-in for ALPM's alpm.lsp that records what it is asked to do.")
+  "A stand-in for ALPM's alpm.lsp that records what it is asked to do; loading
+the system defines epuree-initialize, as the real epuree.alpm does.")
 
 (test epuree-plugin-loads-and-defines-its-options
   (with-shipped-plugins
@@ -402,9 +406,9 @@ templates: the slot lines are removed, nothing else changes."
                                    :test #'string=))
                        :paths))))))
 
-(test epuree-puts-three-actions-in-front-of-the-plan
-  "ALPM is loaded, each --epuree-path is registered, the system is loaded —
-before the init files and the user's actions, on every backend."
+(test epuree-puts-its-actions-in-front-of-the-plan
+  "ALPM is loaded, each --epuree-path is registered, the system is loaded and
+initialized — before the init files and the user's actions, on every backend."
   (with-shipped-plugins
     (with-plugin-temp-directory (dir)
       (let* ((alpm (namestring (%write-file (merge-pathnames "alpm.lsp" dir) *fake-alpm*)))
@@ -417,18 +421,20 @@ before the init files and the user's actions, on every backend."
                               (let ((payload (alfe.backend:action-payload action)))
                                 (if (stringp payload) payload (list payload))))
                             plan)))
-        (is (= 6 (length plan)) "4 plug-in actions, the user's, the terminator")
+        (is (= 7 (length plan)) "5 plug-in actions, the user's, the terminator")
         (is (eq :eval (alfe.backend:action-kind (first plan))))
         (is (search "(load \"" (first texts)))
         (is (search "alpm.lsp\")" (first texts)))
         (is (string= "(alpm-register-directory \"/a/one\" T)" (second texts)))
         (is (string= "(alpm-register-directory \"/b/two\" T)" (third texts)))
         (is (string= "(alpm-load-system \"epuree\" nil)" (fourth texts)))
-        (is (string= "(+ 1 2)" (fifth texts)))))))
+        (is (string= "(epuree-initialize)" (fifth texts)))
+        (is (string= "(+ 1 2)" (sixth texts)))))))
 
 (test epuree-loads-the-system-through-alpm-on-the-clautolisp-backend
   "End to end against a real engine: the fake ALPM records the calls the
-plug-in's actions made, in order, before the user's own action ran."
+plug-in's actions made, in order — the initialization after the loading —
+before the user's own action ran."
   (with-shipped-plugins
     (with-plugin-temp-directory (dir)
       (let ((alpm (namestring (%write-file (merge-pathnames "alpm.lsp" dir) *fake-alpm*))))
@@ -438,7 +444,7 @@ plug-in's actions made, in order, before the user's own action ran."
                        "-x" "(princ (cadr (car *alpm-calls*)))")
           (declare (ignore err))
           (is (= 0 code))
-          (is (search "(REGISTER LOAD)" out))
+          (is (search "(REGISTER LOAD INITIALIZE)" out))
           (is (search "/lisp/tree" out)))))))
 
 (test epuree-needs-an-alpm-lsp
@@ -472,4 +478,6 @@ places the run is refused with the places tried."
               (%run-alfe "--epuree" "--dry-run" "-x" "(+ 1 2)")
             (is (= 0 code))
             (is (search "alpm-load-system" out))
-            (is (< (search "alpm-load-system" out) (search "(+ 1 2)" out)))))))))
+            (is (search "(epuree-initialize)" out))
+            (is (< (search "alpm-load-system" out) (search "(epuree-initialize)" out)))
+            (is (< (search "(epuree-initialize)" out) (search "(+ 1 2)" out)))))))))

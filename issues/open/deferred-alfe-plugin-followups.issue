@@ -17,25 +17,33 @@ keyed by the source's write date, best effort. Not done: an explicit
 =--compile-plugin= plus =make install-plugins= covers the shipped ones, and a
 cache is one more thing to invalidate.
 
-* 2. What =load_epuree.lsp= does besides loading, and the installed bundle
+* 2. The installed EPUREE bundle, through ALPM
 
-=epuree.alpm= (pjb, 2026-09-21) lists the sources of the /source tree/ in load
-order — =src/{core,comu}= — and REPLACES the two loaders, =load_epuree.lsp=
-and =loader.lsp=, which it does not list (a loader can be generated from it:
-=alpm-generate-loader=, checked). But =load_epuree.lsp= is not only a loader.
-Four things in it are not loading and are therefore NOT done when EPUREE is
-loaded through ALPM: the path-separator shims (=findfile=, =load=, =open=,
-=vl-file-*= accept "\"), the Windows environment shim (=APPDATA=,
-=USERPROFILE=, …), the bundle-root anchoring (=epuree:*bundle-root*=,
-=EPUREE_ROOT=, =com_racdao=) and the support-path injection. =core.lsp= copes
-without them (=*root*= / =*bundle-root*= default to "." and follow
-=EPUREE_ROOT= / =EPUREE_BUNDLE_ROOT=), but EPUREE on macOS/Linux loses the
-shims. Fix in the epuree repository: move those four out of =load_epuree.lsp=
-into source files, list them in =epuree.alpm=, and let the build install the
-=.alpm= with the bundle (=make install= -> =/opt/epuree/{load_epuree.lsp,lisp/,
-ES/,COM/,…}=, whose bundle root =load_epuree.lsp= derives from where it sits).
-About forty scripts and the build load =load_epuree.lsp=: it stays until the
-generated loader replaces it.
+DONE in the EPUREE repository (2026-09-21, alfe 2.2.78; the epuree change is
+UNCOMMITTED there, another repository): what =load_epuree.lsp= did besides
+loading — the path-separator shims, the Windows environment shim, the
+bundle-root anchoring, the support-path injection — moved into =src/portability.lsp=
+and =src/initialize.lsp=, both listed in =epuree.alpm= with =core= and =comu=
+(=serial T=, the loaders are not listed). =(epuree-initialize)= does it, and
+=(alpm-load-system "epuree" nil)= then =(epuree-initialize)= is equivalent to
+=(load "load_epuree")= (compared headless under clautolisp, old loader against
+new against ALPM, four configurations). The =epuree= plug-in runs
+=(epuree-initialize)= after loading the system.
+
+Left:
+- Install the =.alpm= with the bundle: =make install= puts
+  =/opt/epuree/{load_epuree.lsp,lisp/,ES/,COM/,…}=, and the ALPM route has no
+  baked =epuree:*install-root*= (only =load_epuree.lsp= is baked by the
+  Makefile's sed): on an installed bundle the caller must set
+  =epuree:*bundle-root*= before =(epuree-initialize)=, or have =load_epuree.lsp=
+  findable.
+- =epuree:add-to-support-path= (a baked install root only) fails under
+  clautolisp: =vla-get-Preferences= is undefined or returns nil there, and it
+  aborts the load. Before and after the move; not reached on the ALPM route
+  unless =epuree:*install-root*= is set by hand.
+- Nothing here has run in BricsCAD or AutoCAD.
+- About forty scripts and the build load =load_epuree.lsp=: it stays until the
+  generated loader replaces it.
 
 * 3. Hook timing at the edges
 
