@@ -221,6 +221,7 @@ retrofitted as they are touched.
 
 | Issue                                         | Type            | Status   | Note |
 |-----------------------------------------------+-----------------+----------+------|
+| alfe-autocad-cad-selection-ignores-com-progid | bug | TODO | P1: --cad AutoCAD release selection must reach the attach/create/quit COM ProgID; generic registration fails while AutoCAD.Application.24.1 works (SCHMS job 507862). |
 | alfe-installed-runtime-prefix-discovery | alfe-backend | NEXT | FIXED alfe 2.2.74: the prefix is derived at run time from the executable (bin/ or below libexec/), and a missing asset now fails before launch. Awaiting Windows runner confirmation (SCHMS job 506371). |
 | alfe-ccl-executable-drops-log-output | alfe-cli | DONE | clautolisp/alfe 2.2.75, read-autolisp 1.9.1: the CCL kernel removed -d/--debug (and -b, -I/-R/-S/-Z, …) from argv. argv is now read from /proc (or sysctl on macOS); the built executables are checked by make test-shipped-debug-flag[-ccl]. Moved to issues/closed/. |
 | vendor-probe-autocad-bricscad-divergences     | divergence-cat  | TODO     | canonical AutoCAD⇄BricsCAD divergence register; anchor for the rest. All three divergences RESOLVED in clautolisp: D1 DONE (1.6.16), D2 closed (contamination), D3 DONE (1.6.17, entmod-on-XRECORD per-dialect, verified green 2026-08-06). Remaining is NOT clautolisp code: the D1/D3 cadaptor forks (external repo) + selection re-verify blocked on regenerating a clean empty.dwg on the Windows runner |

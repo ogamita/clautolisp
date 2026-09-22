@@ -1,0 +1,127 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-autocad-cad-selection-ignores-com-progid — explicit AutoCAD selection must select the versioned COM server
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-alfe-autocad-cad-selection-ignores-com-progid
+
+* Context
+
+Reported 2026-09-17 while investigating SCHMS
+[[https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/507862][job 507862: test-cad-activex:autocad:windows]].
+The job invokes =make test-cad-activex-alfe CAD=autocad=, which selects
+=--autocad --mode automation=. It fails before loading the tests:
+
+#+begin_example
+AutoCAD process exited before READY (exit 4): ATTACHED=0
+CREATED=0 [PROCESS-EXITED-BEFORE-READY]
+#+end_example
+
+The exiting child is the =cscript.exe= COM bridge, not necessarily
+=acad.exe=. This failure does not involve accoreconsole or execution of
+AutoLISP ActiveX tests.
+
+* Reproduction and evidence
+
+Under the Windows runner account, in the same RDP session, the standalone
+=dev/scripts/cad/test-autocad-com.vbs= diagnostic in the sibling SCHMS
+repository tests registration, GetObject and CreateObject.
+
+#+begin_src powershell
+cscript.exe //nologo ../schms/dev/scripts/cad/test-autocad-com.vbs AutoCAD.Application.24.1
+cscript.exe //nologo ../schms/dev/scripts/cad/test-autocad-com.vbs
+#+end_src
+
+The versioned ProgID succeeds:
+
+#+begin_example
+PROGID=AutoCAD.Application.24.1
+CLSID={AA46BA8A-9825-40FD-8493-0BA3C4D5CEB5}
+ATTACHED=0
+CREATEOBJECT.START=17/09/2026 18:02:41
+CREATEOBJECT.END=17/09/2026 18:03:22
+CREATED=1
+AUTOCAD.VERSION=24.1s (LMS Tech)
+RESULT=SUCCESS
+#+end_example
+
+Its LocalServer32 points to AutoCAD 2022's =acad.exe /Automation=.
+The 41-second activation is a successful cold start, not the CI failure.
+An initial GetObject error is expected when no accessible instance exists.
+
+The generic ProgID fails immediately:
+
+#+begin_example
+PROGID=AutoCAD.Application
+CLSID={0DECFB78-73C3-47C7-9630-A1B55B3ACA1C}
+LOCALSERVER32.ERROR.HEX=0x80070002
+ATTACHED=0
+GETOBJECT.ERROR.DECIMAL=429
+GETOBJECT.ERROR.DESCRIPTION=ActiveX component can't create object
+CREATEOBJECT.START=17/09/2026 18:05:08
+CREATEOBJECT.END=17/09/2026 18:05:08
+CREATED=0
+CREATEOBJECT.ERROR.DECIMAL=429
+CREATEOBJECT.ERROR.DESCRIPTION=ActiveX component can't create object
+#+end_example
+
+The generic registration resolves to a different CLSID with no readable
+LocalServer32 entry; selecting the working versioned registration avoids it.
+The successful RDP probe does not independently establish that the CI job
+uses the same Windows session, but the generic creation failure reproduces
+its bootstrap symptoms under the runner account.
+
+* Problem and cause
+
+=apply-cad-selection= in =autolisp-front-end/source/cli.lisp= resolves
+=--cad autocad-2022= to the installed =acad-2022= executable, exports
+=AUTOCAD_EXE= and defaults to automation mode. It does not select a COM ProgID.
+
+The VBScript templates in
+=autolisp-front-end/source/backend-autocad.lisp= hardcode
+=AutoCAD.Application= in GetObject/CreateObject, including the quit bridge.
+Automation starts =cscript.exe=; COM registration determines the application
+server. Thus choosing an executable does not actually constrain the COM
+server to the requested AutoCAD release. With several installations it may
+also attach to or create a different release.
+
+* Proposal
+
+Carry the resolved AutoCAD selection through to the automation backend and
+resolve its versioned COM ProgID. For AutoCAD 2022, use
+=AutoCAD.Application.24.1= consistently for attach, create and cleanup.
+Resolve against installed registration/version metadata rather than assuming
+all product years follow one arithmetic version mapping.
+
+An explicit release selection must not silently fall back to the generic
+ProgID or attach to another release. If no matching COM registration exists,
+report the requested release, ProgID and reason clearly. Define and document
+the behavior of unversioned =--autocad= and any explicit ProgID override.
+
+Preserve the bridge's COM error number (decimal and hexadecimal) and
+Err.Description in the bootstrap error even when activation exits before
+READY. Name the failed bridge/activation stage accurately; do not describe
+cscript's exit as proof that acad.exe exited.
+
+* Acceptance criteria
+
+- =alfe --cad autocad-2022 --mode automation= selects
+  =AutoCAD.Application.24.1= for GetObject and CreateObject, even when the
+  generic =AutoCAD.Application= registration is broken or targets another
+  release.
+- Cleanup uses the same resolved ProgID and retains existing ownership rules
+  for attached versus created instances.
+- An explicit release never silently selects another AutoCAD COM server.
+  Missing/mismatched registration fails with an actionable diagnostic.
+- Batch selection remains unchanged: =--cad autocad-2022 --mode batch= uses
+  =accoreconsole-2022= and does not depend on COM registration.
+- Add failing regression coverage before implementation for CLI selection,
+  emitted attach/create/quit bridges, unavailable registration and preservation
+  of the original COM failure details. Pure tests run without installed CAD
+  on both SBCL and CCL.
+- Validate on the Windows runner with broken generic registration and valid
+  AutoCAD 2022 registration; record the actual application version and
+  executable and run the SCHMS ActiveX tests beyond bootstrap.
+- Document selection/fallback/override behavior in alfe's user manual, help,
+  man page and specifications as applicable before closing the issue.
