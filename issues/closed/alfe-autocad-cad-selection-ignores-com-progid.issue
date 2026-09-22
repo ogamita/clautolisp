@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-autocad-cad-selection-ignores-com-progid — explicit AutoCAD selection must select the versioned COM server
-#+STATUS: TODO
+#+STATUS: DONE (alfe 2.2.79, 2026-09-22) -- pending Windows-runner validation
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
-#+BRANCH: fix-alfe-autocad-cad-selection-ignores-com-progid
+#+BRANCH: fix-autocad-cad-selection-progid
 
 * Context
 
@@ -125,3 +125,102 @@ cscript's exit as proof that acad.exe exited.
   executable and run the SCHMS ActiveX tests beyond bootstrap.
 - Document selection/fallback/override behavior in alfe's user manual, help,
   man page and specifications as applicable before closing the issue.
+
+* Resolution -- alfe 2.2.79
+
+** The COM server follows the selected release
+
+=resolve-autocad-progid= (=source/backend-autocad.lisp=) answers what
+the bridges ask COM for:
+
+1. =$AUTOCAD_PROGID=, verbatim and unchecked -- the escape hatch for a
+   release alfe has never heard of;
+2. the release's own ProgID -- from =--cad autocad-YYYY=, or failing
+   that from the release named in the discovered executable's path --
+   confirmed against the registration: a CLSID whose =LocalServer32= is
+   readable. That is exactly what the evidence above distinguishes: the
+   generic ProgID HAS a CLSID and no readable LocalServer32;
+3. the generic =AutoCAD.Application=.
+
+=*autocad-release-com-versions*= maps 2019-2026 to 23.0-25.1. It is a
+TABLE, not a formula (2020 is 23.1, 2021 is 24.0, 2025 is 25.0), and it
+only proposes: the registry decides, and a release outside the table is
+resolved from the registered ProgIDs whose =LocalServer32= names it.
+
+Step 3 is unreachable when the user named the release: that is
+=BACKEND-NOT-AVAILABLE=, code =:AUTOCAD-PROGID-UNAVAILABLE=, listing
+each ProgID tried with its reason (=not-registered=, =no-local-server=,
+=version-not-confirmed=) and pointing at =$AUTOCAD_PROGID=. Explicitness
+is read from =cli-options-cad=, so =--autocad= alone still falls back
+rather than failing.
+
+The registry is read through =*registry-value-function*= and
+=*registry-progids-function*= (reg.exe on Windows), which is what lets
+the tests describe registrations on any host.
+
+** Both bridges, one server
+
+=emit-bridge-vbs= and =emit-quit-vbs= take =:progid=; the templates
+carry the ProgID placeholder where the generic ProgID was hardcoded.
+The session keeps the resolved ProgID, so SHUTDOWN quits the instance
+this run created and not another release's.
+
+** The COM failure is no longer thrown away
+
+The bridge writes =COM.PROGID=, =COM.STAGE= (=getobject= /
+=createobject=), =COM.ERROR.DECIMAL=, =COM.ERROR.HEX= and
+=COM.ERROR.DESCRIPTION= to its error file, capturing =Err.Number= /
+=Err.Description= into locals first -- the next statement clears them.
+An expected attach miss under =auto= goes to the debug trace, not to
+the error file. =%autocad-await-ready= reads that file and
+=summarize-process-exit= reports it:
+
+#+begin_example
+AutoCAD COM bridge (cscript) exited before READY (exit 4) at createobject(AutoCAD.Application.24.1): COM error 429 (0x1AD) ActiveX component can't create object
+  The COM bridge is what exited; whether acad.exe started is what ATTACHED/CREATED say.
+  Server asked for: AutoCAD.Application.24.1 (override with $AUTOCAD_PROGID).
+#+end_example
+
+The old message -- "AutoCAD process exited before READY (exit 4):
+ATTACHED=0 CREATED=0" -- both lost the diagnosis and claimed something
+unobserved about acad.exe.
+
+** Tests (alfe suite, SBCL and CCL, no CAD required)
+
+- the requested release resolves to its versioned ProgID, from =--cad=
+  and from the executable's own path;
+- an explicit release with no usable registration signals, naming the
+  release, the ProgID and =$AUTOCAD_PROGID= -- and does NOT return the
+  generic one;
+- =--autocad= without a release never fails: versioned when registered,
+  generic otherwise;
+- =$AUTOCAD_PROGID= is used verbatim, registry or no registry;
+- both emitted bridges carry the resolved ProgID and no bare generic
+  COM call;
+- the bridge template records the COM stage/number/hex/description;
+- the bootstrap message reports 429 / 0x1AD / the description / the
+  ProgID / the stage, says "bridge", and no longer says "AutoCAD
+  process exited";
+- batch emission reads no registry at all (the readers are bound to
+  functions that signal if called).
+
+Seen RED before the fix: with the resolver short-circuited to the
+generic ProgID, 4 checks fail across those tests.
+
+** Documentation
+
+alfe user manual: /Which AutoCAD automation actually talks to/ (the
+resolution table and the no-fallback rule), =$AUTOCAD_PROGID= among the
+environment variables, and two troubleshooting entries. Man page:
+=AUTOCAD_PROGID=. alfe specifications: the ProgID resolution order and
+the recorded COM failure fields. RELEASE_NOTES.org under /CAD
+selection/.
+
+** Still open -- the Windows runner
+
+The acceptance criterion "validate on the Windows runner with broken
+generic registration and valid AutoCAD 2022 registration, record the
+actual application version and executable, run the SCHMS ActiveX tests
+beyond bootstrap" needs the machine and the SCHMS job (507862). Nothing
+here was exercised against a real AutoCAD; what is proven is the
+selection, the emitted bridges and the diagnostics.

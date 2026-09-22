@@ -159,13 +159,16 @@ an unattended runner being the very hang this is meant to end. Each
 document is closed with SaveChanges = False first, downwards because
 closing shortens the collection."
   (let ((text alfe.backend.autocad::*quit-autocad-vbs-template*))
-    (is (search "GetObject(, \"AutoCAD.Application\")" text))
+    ;; The server is the resolved ProgID now, not a hardcoded generic one
+    ;; (alfe-autocad-cad-selection-ignores-com-progid).
+    (is (search "GetObject(, progId)" text))
+    (is (search "${PROGID}" text))
     (is (search "doc.Close False" text))
     (is (search "app.Quit" text))
     (is (search "Step -1" text)
         "the close loop must run downwards")
     ;; It must never CREATE one while trying to quit.
-    (is (not (search "CreateObject(\"AutoCAD.Application\")" text)))))
+    (is (not (search "CreateObject(" text)))))
 
 (test autocad-bridge-writes-its-flags-to-a-file
   "The flags reach alfe through a file in the workdir: cscript is
@@ -2353,3 +2356,188 @@ and the CAD is never launched -- no READY timeout is waited out."
                   (alfe.error:backend-error-message condition)))
             (is (not launched) "~A launched a CAD without its runtime"
                 (type-of backend))))))))
+
+;;; --- the COM ProgID an explicit AutoCAD release selects -------------
+;;;
+;;; alfe-autocad-cad-selection-ignores-com-progid: choosing an executable
+;;; does NOT constrain the COM server. `--cad autocad-2022 --mode
+;;; automation' resolved acad.exe of AutoCAD 2022 and then asked COM for
+;;; the GENERIC "AutoCAD.Application", whose registration on the SCHMS
+;;; runner resolves to a different CLSID with no readable LocalServer32:
+;;; CreateObject failed 429 and the run died at bootstrap. The versioned
+;;; "AutoCAD.Application.24.1" works there.
+;;;
+;;; The registry is behind two injectable functions, so these tests
+;;; describe real registrations without a Windows host.
+
+(defun %fake-registry (&key (versioned t) (generic-clsid t) (generic-server nil)
+                            (release "2022") (com-version "24.1"))
+  "A registry the AutoCAD ProgID resolver can read, shaped like the one
+in the ticket: the versioned ProgID complete, the generic one resolving
+to another CLSID whose LocalServer32 is unreadable."
+  (let* ((versioned-clsid "{AA46BA8A-9825-40FD-8493-0BA3C4D5CEB5}")
+         (other-clsid "{0DECFB78-73C3-47C7-9630-A1B55B3ACA1C}")
+         (exe (format nil "C:\\Program Files\\Autodesk\\AutoCAD ~A\\acad.exe /Automation"
+                      release))
+         (entries '()))
+    (when versioned
+      (push (cons (format nil "HKCR\\AutoCAD.Application.~A\\CLSID" com-version)
+                  versioned-clsid)
+            entries)
+      (push (cons (format nil "HKCR\\CLSID\\~A\\LocalServer32" versioned-clsid) exe)
+            entries))
+    (when generic-clsid
+      (push (cons "HKCR\\AutoCAD.Application\\CLSID" other-clsid) entries))
+    (when generic-server
+      (push (cons (format nil "HKCR\\CLSID\\~A\\LocalServer32" other-clsid) exe)
+            entries))
+    entries))
+
+(defmacro with-fake-registry ((entries &key (progids nil progids-p)) &body body)
+  "Run BODY with the AutoCAD registry readers answering from ENTRIES."
+  `(let* ((%entries ,entries)
+          (alfe.backend.autocad::*registry-value-function*
+            (lambda (key) (cdr (assoc key %entries :test #'string-equal))))
+          (alfe.backend.autocad::*registry-progids-function*
+            ,(if progids-p
+                 `(lambda () ,progids)
+                 `(lambda ()
+                    (loop for (key . nil) in %entries
+                          for p = (search "\\AutoCAD.Application" key)
+                          when (and p (search "\\CLSID" key :start2 p))
+                            collect (subseq key 6 (search "\\CLSID" key :start2 p)))))))
+     ,@body))
+
+(test autocad-progid-resolves-the-requested-release
+  "An explicitly requested release resolves to ITS versioned ProgID,
+verified against the registration (a CLSID with a readable
+LocalServer32), not to the generic one."
+  (with-fake-registry ((%fake-registry))
+    (is (equal "AutoCAD.Application.24.1"
+               (alfe.backend.autocad:resolve-autocad-progid :release "2022")))
+    ;; and the executable's own release is enough, without --cad
+    (is (equal "AutoCAD.Application.24.1"
+               (alfe.backend.autocad:resolve-autocad-progid
+                :executable-path "C:/Program Files/Autodesk/AutoCAD 2022/acad.exe")))))
+
+(test autocad-progid-explicit-release-never-falls-back
+  "The bug itself: an explicit release whose COM server is not
+registered must FAIL, naming the release, the ProgID and the reason --
+never quietly use the generic ProgID, which may start another release."
+  (with-fake-registry ((%fake-registry :versioned nil :generic-server t))
+    (let ((condition
+            (handler-case (progn (alfe.backend.autocad:resolve-autocad-progid
+                                  :release "2022" :explicit-p t)
+                                 nil)
+              (alfe.error:backend-error (c) c))))
+      (is (typep condition 'alfe.error:backend-error))
+      (when condition
+        (let ((message (alfe.error:backend-error-message condition)))
+          (is (eq :autocad-progid-unavailable
+                  (alfe.error:backend-error-code condition)))
+          (is (search "2022" message))
+          (is (search "AutoCAD.Application.24.1" message))
+          ;; actionable: how to override
+          (is (search "AUTOCAD_PROGID" message)))))))
+
+(test autocad-progid-unversioned-does-not-fail
+  "`--autocad' without a release is not a claim about which one: the
+versioned ProgID is used when the discovered executable's release is
+registered, and the generic one otherwise -- no error either way."
+  (with-fake-registry ((%fake-registry :versioned nil :generic-server t))
+    (is (equal "AutoCAD.Application"
+               (alfe.backend.autocad:resolve-autocad-progid
+                :executable-path "C:/Program Files/Autodesk/AutoCAD 2022/acad.exe"))))
+  (with-fake-registry ((%fake-registry))
+    (is (equal "AutoCAD.Application"
+               (alfe.backend.autocad:resolve-autocad-progid)))))
+
+(test autocad-progid-override-is-taken-as-given
+  "$AUTOCAD_PROGID names the COM server outright: it is used verbatim,
+registry or no registry, so an unknown release stays usable."
+  (let ((saved (uiop:getenv "AUTOCAD_PROGID")))
+    (unwind-protect
+         (progn
+           (setf (uiop:getenv "AUTOCAD_PROGID") "AutoCAD.Application.99.9")
+           (with-fake-registry ('())
+             (is (equal "AutoCAD.Application.99.9"
+                        (alfe.backend.autocad:resolve-autocad-progid
+                         :release "2022" :explicit-p t)))))
+      (setf (uiop:getenv "AUTOCAD_PROGID") (or saved "")))))
+
+(test autocad-bridges-use-the-resolved-progid
+  "Both bridges ask COM for the SAME resolved ProgID: the attach/create
+bridge and the quit bridge. A quit bridge on the generic ProgID could
+quit another release."
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (vbs (merge-pathnames "bridge-autocad.vbs" dir))
+           (quit (merge-pathnames "quit-autocad.vbs" dir))
+           (progid "AutoCAD.Application.24.1"))
+      (alfe.backend.autocad:emit-bridge-vbs
+       vbs
+       :runtime-load-path (merge-pathnames "run-common.lsp" dir)
+       :status-path (merge-pathnames "status.txt" dir)
+       :error-path (merge-pathnames "err.txt" dir)
+       :progid progid)
+      (alfe.backend.autocad::emit-quit-vbs quit :progid progid)
+      (dolist (path (list vbs quit))
+        (let ((text (read-back path)))
+          (is (search progid text) "~A does not name the resolved ProgID" path)
+          ;; no bare generic ProgID left in a COM call
+          (is (not (search "GetObject(, \"AutoCAD.Application\")" text)))
+          (is (not (search "CreateObject(\"AutoCAD.Application\")" text))))))))
+
+(test autocad-bridge-records-the-com-failure-details
+  "The COM error number and description are what diagnose a failed
+activation, and they were thrown away: the run reported only cscript's
+`ATTACHED=0 CREATED=0' stdout. The bridge now writes the ProgID, the
+stage, and Err.Number in decimal AND hex with Err.Description."
+  (let ((text alfe.backend.autocad::*bridge-autocad-vbs-template*))
+    (is (search "COM.PROGID=" text))
+    (is (search "COM.STAGE=" text))
+    (is (search "COM.ERROR.DECIMAL=" text))
+    (is (search "COM.ERROR.HEX=" text))
+    (is (search "COM.ERROR.DESCRIPTION=" text))
+    ;; Err.Number must be captured into a local before anything can clear it
+    (is (search "errNumber" text))))
+
+(test autocad-bridge-exit-message-reports-the-com-failure
+  "The bootstrap error must carry the COM failure and name the stage
+accurately: cscript exiting is not proof that acad.exe exited."
+  (let ((message
+          (alfe.backend.autocad::summarize-process-exit
+           (list :exit-code 4
+                 :variant :automation
+                 :stdout "ATTACHED=0
+CREATED=0"
+                 :stderr ""
+                 :bridge-errors "ERROR COM bridge: could not launch AutoCAD
+COM.PROGID=AutoCAD.Application.24.1
+COM.STAGE=createobject
+COM.ERROR.DECIMAL=429
+COM.ERROR.HEX=0x1AD
+COM.ERROR.DESCRIPTION=ActiveX component can't create object"))))
+    (is (search "429" message))
+    (is (search "0x1AD" message))
+    (is (search "ActiveX component can't create object" message))
+    (is (search "AutoCAD.Application.24.1" message))
+    (is (search "createobject" (string-downcase message)))
+    ;; the COM bridge is what exited; do not assert acad.exe did
+    (is (search "bridge" (string-downcase message)))
+    (is (not (search "AutoCAD process exited" message)))))
+
+(test autocad-batch-needs-no-com-registration
+  "Batch selection is unchanged and independent of COM: emitting the
+accoreconsole SCR must not consult the registry at all."
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (scr (merge-pathnames "run.scr" dir))
+           (alfe.backend.autocad::*registry-value-function*
+             (lambda (key) (error "the batch path read the registry: ~A" key)))
+           (alfe.backend.autocad::*registry-progids-function*
+             (lambda () (error "the batch path enumerated COM ProgIDs"))))
+      (alfe.backend.autocad::emit-batch-scr
+       scr (touch-file (merge-pathnames "run-common.lsp" dir) "(princ)"))
+      (let ((text (read-back scr)))
+        (is (not (search "AutoCAD.Application" text)))))))
