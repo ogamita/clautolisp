@@ -1,0 +1,54 @@
+Cador: warn when ENTMAKEX accepts an INSERT rejected by AutoCAD and BricsCAD
+
+== Symptom ==
+
+Cador accepts this incomplete INSERT and returns an ename without a warning:
+
+    (entmakex
+      '((0 . "INSERT")
+        (2 . "SCHME_TEST_C1")
+        (8 . "0")
+        (66 . 1)
+        (10 0.0 0.0 0.0)))
+
+No block named `SCHME_TEST_C1` has been defined, and group 66 announces an
+attribute sequence although no ATTRIB/SEQEND sequence follows. AutoCAD and
+BricsCAD reject the same data. This made a SCHME+ C1 test pass with Cador and
+fail on both real CAD jobs:
+
+- AutoCAD: Fabrik job 511433, `test-cad:autocad:windows`;
+- BricsCAD: Fabrik job 511434, `test-cad:bricscad:windows`.
+
+The SCHME+ test has been corrected to stop creating an invalid INSERT, but the
+permissive Cador behaviour remains dangerous: it hides invalid DXF fixtures
+and production code until the suite reaches a real CAD.
+
+== Expected behaviour ==
+
+Preferred: under the AutoCAD and BricsCAD dialects, `host-entmakex` validates
+the immediately checkable INSERT invariants and returns nil as the vendors do.
+At least the referenced group-2 block name must resolve to a BLOCK_RECORD.
+
+If Cador deliberately keeps a permissive construction mode, accepting this
+entity must emit a registered dialect warning on stderr, for example:
+
+    [entmakex-invalid-insert] Cador accepted an INSERT rejected by AutoCAD and BricsCAD: block SCHME_TEST_C1 is undefined and group 66 announces an unfinished attribute sequence.
+
+The tag must follow the standard dialect-warning catalogue so consumers can
+extract it with:
+
+    ^\[[a-z0-9]+(?:-[a-z0-9]+)+\](?: |:).*$
+
+== Acceptance ==
+
+1. Add Cador regression tests for an INSERT whose block name is absent and for
+   group 66 without a completed ATTRIB/SEQEND sequence.
+2. Measure and encode the AutoCAD/BricsCAD return contract (nil, no entity
+   added to the database).
+3. Prefer matching that contract under `--dialect autocad-*` and
+   `--dialect bricscad-*`.
+4. If a permissive Clautolisp dialect continues to return an ename, register
+   and emit `[entmakex-invalid-insert]`, with an entry in the generated dialect
+   warnings annex.
+5. Verify that no invalid entity becomes visible through ENTGET, ENTLAST or
+   ENTNEXT when the vendor-compatible path returns nil.
