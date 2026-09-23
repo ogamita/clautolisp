@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cador-vl-directory-files — un répertoire Windows exige un séparateur final
-#+STATUS: OPEN
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -72,3 +72,23 @@ Environnement observé
 - alfe 1.9.0 ;
 - host Cador via `--clautolisp --host cador --dialect bricscad-v26` ;
 - Windows/MSYS2, dépôt sur `C:`.
+
+Résolu (clautolisp 2.2.79)
+--------------------------
+
+~vl-directory-files~ et ~vl-file-directory-p~ reconnaissent désormais un
+répertoire nommé AVEC ou SANS son séparateur final, comme AutoCAD et BricsCAD.
+Le défaut était dans la normalisation en amont du mapping : la forme sans
+séparateur laissait le dernier segment être plié/mappé comme un NOM DE FICHIER,
+d'où l'échec du sélecteur ~-1~ sur un chemin Windows après un
+~vl-string-right-trim~ légitime.
+
+- ~ensure-directory-string~ (clautolisp/autolisp-builtins-core/source/api.lisp)
+  ajoute un ~/~ final à une chaîne de répertoire non vide (et plie les
+  antislashs) avant ~%map-in-safe~, dans ~resolve-directory-pathname~ (donc
+  ~vl-directory-files~, ~vl-mkdir~, …) et dans ~builtin-vl-file-directory-p~.
+- Tests : autolisp-builtins-core/tests/builtin-tests.lisp —
+  ~ensure-directory-string-appends-a-trailing-separator~ (mécanisme) et
+  ~builtin-vl-directory-selector-ignores-trailing-separator~ (le sélecteur
+  ~-1~ et ~vl-file-directory-p~ donnent le même résultat avec et sans
+  séparateur final).

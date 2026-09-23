@@ -1411,6 +1411,63 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
                            :builtin)))))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))))
 
+;;; cador-vl-directory-files-windows-directory-selector: a directory named with
+;;; OR without its final separator must list the same subdirectories via the
+;;; `-1' selector and be recognised by vl-file-directory-p alike — AutoCAD and
+;;; BricsCAD accept both forms. The un-suffixed form previously let the last
+;;; segment fold/map as a filename, so `-1' missed a Windows-mapped path.
+
+(test ensure-directory-string-appends-a-trailing-separator
+  ;; The mechanism: a non-empty directory string gains a trailing `/' (and
+  ;; backslashes fold), while an already-terminated / empty string is left as
+  ;; is, so map-in always sees a directory-form path.
+  (is (string= "C:/schme/dev/tests/"
+               (clautolisp.autolisp-builtins-core::ensure-directory-string "C:\\schme\\dev\\tests")))
+  (is (string= "C:/schme/dev/tests/"
+               (clautolisp.autolisp-builtins-core::ensure-directory-string "C:\\schme\\dev\\tests\\")))
+  (is (string= "/abs/dir/"
+               (clautolisp.autolisp-builtins-core::ensure-directory-string "/abs/dir")))
+  (is (string= "/abs/dir/"
+               (clautolisp.autolisp-builtins-core::ensure-directory-string "/abs/dir/")))
+  (is (string= "" (clautolisp.autolisp-builtins-core::ensure-directory-string ""))))
+
+(test builtin-vl-directory-selector-ignores-trailing-separator
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((dirfiles (autolisp-symbol-function (find-autolisp-symbol "VL-DIRECTORY-FILES")))
+         (isdir (autolisp-symbol-function (find-autolisp-symbol "VL-FILE-DIRECTORY-P")))
+         (directory (namestring
+                     (uiop:ensure-directory-pathname
+                      (merge-pathnames
+                       (format nil "clautolisp-dirsel-~D/" (random 1000000000))
+                       (uiop:temporary-directory)))))
+         (subdirectory (concatenate 'string directory "bornage/"))
+         (dir-no-sep (subseq directory 0 (1- (length directory))))
+         (subdir-no-sep (subseq subdirectory 0 (1- (length subdirectory)))))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))
+    (ensure-directories-exist subdirectory)
+    (unwind-protect
+         (flet ((dirs (path)
+                  (sort (mapcar #'autolisp-string-value
+                                (call-autolisp-function
+                                 dirfiles
+                                 (clautolisp.autolisp-runtime:make-autolisp-string path)
+                                 nil -1))
+                        #'string<))
+                (dir-p (path)
+                  (call-autolisp-function
+                   isdir (clautolisp.autolisp-runtime:make-autolisp-string path))))
+           ;; `-1' selector: same subdir list with and without the trailing sep.
+           (is (equal '("bornage") (dirs directory)))
+           (is (equal '("bornage") (dirs dir-no-sep))
+               "vl-directory-files -1 must list subdirs without a trailing separator; got ~S"
+               (dirs dir-no-sep))
+           ;; vl-file-directory-p: true for the subdir with and without the sep.
+           (is (string= "T" (autolisp-symbol-name (dir-p subdirectory))))
+           (is (string= "T" (autolisp-symbol-name (dir-p subdir-no-sep)))
+               "vl-file-directory-p must recognise a directory without a trailing separator"))
+      (ignore-errors (uiop:delete-directory-tree directory :validate t)))))
+
 (test builtin-vl-file-mutation-and-size-helpers
   (reset-autolisp-symbol-table)
   (install-core-builtins)

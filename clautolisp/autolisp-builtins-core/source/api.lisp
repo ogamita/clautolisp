@@ -1449,6 +1449,20 @@ when no debug session is active (the hook declines)."
   ;; AutoLISP accepts both slash and backslash delimiters in pathname-oriented APIs.
   (substitute #\/ #\\ string))
 
+(defun ensure-directory-string (string)
+  "STRING as a DIRECTORY-form path: separators normalised, and a trailing `/'
+appended when the (non-empty) string lacks one, so its last segment parses as
+a directory component rather than a file NAME. AutoCAD and BricsCAD treat a
+directory named with or without its final separator alike; clautolisp must too
+\(cador-vl-directory-files-windows-directory-selector.issue) — the un-suffixed
+form otherwise let the last segment be folded/mapped as a filename, so the
+directory selector `-1' missed a Windows-mapped path after a legitimate
+vl-string-right-trim. Empty string is returned unchanged (a relative default)."
+  (let ((s (normalize-path-string string)))
+    (if (and (plusp (length s)) (not (char= (char s (1- (length s))) #\/)))
+        (concatenate 'string s "/")
+        s)))
+
 (defun directory-prefix-p (string)
   (let ((normalized (normalize-path-string string)))
     (or (absolute-path-string-p normalized)
@@ -1764,7 +1778,7 @@ walks the support search below."
   ;; same directory the vl-file-* builtins reach through
   ;; RESOLVE-OPEN-PATHNAME (windows-msys-paths-in-autolisp-load.issue); a
   ;; relative name is passed through unchanged by MAP-IN.
-  (let ((normalized (%map-in-safe (normalize-path-string directory-string))))
+  (let ((normalized (%map-in-safe (ensure-directory-string directory-string))))
     (handler-case
         (%fold-pathname-case
          (uiop:ensure-directory-pathname
@@ -2790,9 +2804,15 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
         nil))))
 
 (defun builtin-vl-file-directory-p (filename)
+  ;; Resolve the DIRECTORY form (trailing separator ensured) so a directory
+  ;; named with OR without its final separator is recognised alike, as AutoCAD
+  ;; and BricsCAD do (cador-vl-directory-files-windows-directory-selector).
+  ;; A file path with a trailing separator is still not a directory, so
+  ;; directory-exists-p correctly returns nil for it.
   (let* ((value (autolisp-string-value
                  (require-string filename "VL-FILE-DIRECTORY-P")))
-         (resolved (resolve-open-pathname value "VL-FILE-DIRECTORY-P")))
+         (resolved (resolve-open-pathname (ensure-directory-string value)
+                                          "VL-FILE-DIRECTORY-P")))
     (if (uiop:directory-exists-p resolved)
         (autolisp-true)
         nil)))
