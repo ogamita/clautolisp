@@ -1037,18 +1037,20 @@ actually persist. Returns DOC."
   (let ((methods (mock-com-object-methods doc)))
     (setf (gethash "SaveAs" methods)
           (lambda (host object args)
-            (let ((path (%require-com-string-argument args "SaveAs"))
-                  ;; Last-resort format when neither the drawing nor the
-                  ;; path extension determines one: the
-                  ;; CLAUTOLISPDEFAULTDRAWINGFORMAT sysvar (default DXF).
-                  (clautolisp.drawing:*default-drawing-format*
-                    (cador-default-drawing-format host)))
-              (handler-case
-                  (clautolisp.drawing:write-drawing (cador-active-drawing host) path)
-                (error (condition)
-                  (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
-                   :com-save-failed
-                   "SaveAs could not write ~A: ~A." path condition)))
+            (let ((path (%require-com-string-argument args "SaveAs")))
+              ;; Last-resort format+version when neither the drawing nor the
+              ;; path extension determines one: SAVEFORMAT (BricsCAD dialect)
+              ;; or CLAUTOLISPDEFAULTDRAWINGFORMAT (default DXF).
+              (multiple-value-bind (container version)
+                  (cador-default-drawing-format host)
+                (let ((clautolisp.drawing:*default-drawing-format* container)
+                      (clautolisp.drawing:*default-drawing-version* version))
+                  (handler-case
+                      (clautolisp.drawing:write-drawing (cador-active-drawing host) path)
+                    (error (condition)
+                      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                       :com-save-failed
+                       "SaveAs could not write ~A: ~A." path condition)))))
               (let ((props (mock-com-object-properties object)))
                 (setf (gethash "Name" props) path
                       (gethash "FullName" props) path

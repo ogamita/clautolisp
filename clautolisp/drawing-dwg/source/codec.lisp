@@ -27,6 +27,9 @@ in a temp file, which the DXF codec parses. DRAWING-FORMAT is set to
   "Write DRAWING to the DWG file DESTINATION: the DXF codec emits a
 temp DXF which libredwg converts to DWG. VERSION is reserved (the DWG
 version is taken from the DXF/libredwg defaults for now)."
+  ;;; STUB: VERSION is ignored — libredwg writes a fixed DWG version.
+  ;;; Per-version DWG output is deferred; see
+  ;;; issues/open/drawing-codec-version-output.issue.
   (declare (ignore version))
   (ensure-shim-loaded)
   ;; libredwg's dwg_write_file errors (IOERROR) if the target already

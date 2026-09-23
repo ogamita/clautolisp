@@ -175,16 +175,22 @@ separate binary for tool integrators.
 ** Standalone CLI (clautolisp-sbcl / clautolisp-ccl)
 
 - Default drawing write format. A new clautolisp system variable
-  ~CLAUTOLISPDEFAULTDRAWINGFORMAT~ (string, ~DXF~ by default, or ~DWG~)
-  names the format a drawing is *written* in when neither the destination
-  extension nor the drawing itself determines one — e.g. ~vla-saveas~ to a
-  path with no ~.dxf~ / ~.dwg~ suffix, which previously errored with "cannot
-  determine the output format". A recognised extension still wins. It is
-  seeded from the environment variable of the same name and is shared by
-  ~--host cador~ and ~--host cadtui~. Documented in the autolisp-spec §
-  /System Variable Entry: CLAUTOLISPDEFAULTDRAWINGFORMAT/ and the clautolisp
-  user manual (/Environment variables/, /Host backend/);
-  ~issues/closed/cador-default-drawing-format.issue~.
+  ~CLAUTOLISPDEFAULTDRAWINGFORMAT~ names the container (~DXF~ default,
+  ~DXFB~, ~DWG~) and, optionally, version (~DWG-2013~, ~DXF2000~) a drawing
+  is *written* in when neither the destination extension nor the drawing
+  itself determines one — e.g. ~vla-saveas~ to a path with no ~.dxf~ /
+  ~.dwg~ suffix, which previously errored with "cannot determine the output
+  format". A recognised extension still wins. Under a ~--bricscad~ dialect
+  BricsCAD's ~SAVEFORMAT~ integer (1–30, container+version) is honoured
+  instead — AutoCAD has no save-format system variable, so
+  ~CLAUTOLISPDEFAULTDRAWINGFORMAT~ is the cross-dialect knob. Seeded from
+  the environment variable of the same name; shared by ~--host cador~ and
+  ~--host cadtui~. The version axis is recorded on the drawing but the
+  DXF/DWG writers still emit a fixed version
+  (~issues/open/drawing-codec-version-output.issue~). Documented in the
+  autolisp-spec §§ /SAVEFORMAT/ and /CLAUTOLISPDEFAULTDRAWINGFORMAT/ and the
+  clautolisp user manual (/Environment variables/, /Host backend/);
+  ~issues/closed/saveformat-default-drawing-format.issue~.
 - Host compiler diagnostics are quiet by default. When clautolisp
   compiles a hot AutoLISP function (or at ~-O3~, or in ~CLAL-COMPILE-FILE~)
   the underlying Common Lisp compiler's style warnings, notes and
