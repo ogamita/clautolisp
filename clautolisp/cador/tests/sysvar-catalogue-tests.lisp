@@ -33,9 +33,11 @@
 
 (test full-sysvar-catalogue-count-matches-source
   ;; Sanity: every entry in *full-sysvar-catalogue* shows up in the
-  ;; mock's sysvar table after population.
+  ;; mock's sysvar table after population, plus the clautolisp extension
+  ;; sysvars (no vendor counterpart) installed on top of it.
   (let ((mock (make-cador)))
-    (is (= (length clautolisp.cador:*full-sysvar-catalogue*)
+    (is (= (+ (length clautolisp.cador:*full-sysvar-catalogue*)
+              (length clautolisp.cador:*clautolisp-extension-sysvar-names*))
            (hash-table-count (cador-sysvars mock))))))
 
 ;;; --- Host-derived flag and non-literal defaults -------------------
@@ -241,7 +243,8 @@
 (test populate-default-sysvars-full-installs-1836
   (let ((mock (make-instance 'cador)))
     (populate-default-sysvars mock :catalogue :full)
-    (is (= (length clautolisp.cador:*full-sysvar-catalogue*)
+    (is (= (+ (length clautolisp.cador:*full-sysvar-catalogue*)
+              (length clautolisp.cador:*clautolisp-extension-sysvar-names*))
            (hash-table-count (cador-sysvars mock))))))
 
 ;;; --- Snapshot/restore round-trips the new flag ------------------

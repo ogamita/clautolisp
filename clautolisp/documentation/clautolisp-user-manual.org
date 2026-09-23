@@ -1001,7 +1001,10 @@ provides that surface through the host backend:
   / Linetypes / ModelSpace / PaperSpace; ~(vla-saveas doc "path.dwg")~
   writes the drawing (the format follows the extension) and records the
   new ~Name~; ~Save~ and ~Close~ are no-ops that mark the document
-  saved / released (the drawing stays in memory).
+  saved / released (the drawing stays in memory). When the path carries
+  no recognised drawing extension, the format falls back to the
+  ~CLAUTOLISPDEFAULTDRAWINGFORMAT~ system variable — ~DXF~ by default,
+  seedable from the environment (see /Environment variables/).
 - ~ModelSpace.AddLine~ and ~Block.AddAttribute~ create entities through
   the object model: ~(vla-addline space start end)~ adds a LINE on the
   current layer, and ~(vla-addattribute block height mode prompt tag
@@ -1468,6 +1471,14 @@ correct a wrong guess — but it is not its purpose.
   system variable are spelled here, as against clautolisp's own
   ~$CLAUTOLISP_*~ knobs. Honoured under every dialect but ~--strict~,
   the CAD emulation dialects included.
+- ~$CLAUTOLISPDEFAULTDRAWINGFORMAT~ :: initial value of the system
+  variable of the same name — the file format a drawing is *written* in
+  when neither the destination extension nor the drawing itself selects
+  one (~SaveAs~ to a path with no ~.dxf~ / ~.dwg~ suffix, or a
+  never-saved drawing). ~DXF~ (ASCII DXF, the default) or ~DWG~,
+  case-insensitive; an unrecognised value is taken as ~DXF~. A recognised
+  extension always wins over it. Shared by ~--host cador~ and ~--host
+  cadtui~. Precedence: ~setvar~ > this variable > the ~DXF~ default.
 - ~$AUTOLISP_NO_INIT~, ~$CLAUTOLISP_NO_INIT~ :: equivalent to
   ~-norc~ / ~--no-init~.
 - ~$NO_COLOR~ :: disable ANSI colour ([[https://no-color.org][no-color.org]]).

@@ -18,11 +18,14 @@
 
 ;;; --- clal-sysvar-list ---------------------------------------------
 
-(test clal-sysvar-list-returns-1836-entries-on-default-mock
+(test clal-sysvar-list-returns-the-full-catalogue-plus-extensions
+  ;; 1836 vendor sysvars + the clautolisp extension sysvars
+  ;; (CLAUTOLISPDEFAULTDRAWINGFORMAT and any future ones).
   (setup-cador-context)
   (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-list)))
     (is (listp result))
-    (is (= 1836 (length result)))
+    (is (= (+ 1836 (length clautolisp.cador:*clautolisp-extension-sysvar-names*))
+           (length result)))
     (is (every (lambda (x)
                  (typep x 'clautolisp.autolisp-runtime:autolisp-string))
                result))))
@@ -69,11 +72,14 @@
     (is (= (length upper) (length lower)))
     (is (= (length upper) (length mixed)))))
 
-(test clal-sysvar-apropos-empty-string-returns-all-1836
+(test clal-sysvar-apropos-empty-string-returns-all
+  ;; The empty pattern matches every sysvar: 1836 vendor entries plus the
+  ;; clautolisp extension sysvars.
   (setup-cador-context)
   (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-apropos
                  (clautolisp.autolisp-runtime:make-autolisp-string ""))))
-    (is (= 1836 (length result)))))
+    (is (= (+ 1836 (length clautolisp.cador:*clautolisp-extension-sysvar-names*))
+           (length result)))))
 
 (test clal-sysvar-apropos-no-match-returns-nil
   (setup-cador-context)

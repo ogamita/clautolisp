@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.13.0
+#+VERSION: 0.13.1
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -60434,6 +60434,52 @@ so a program building a path from user input has a wider surface.
   ~issues/closed/case-insensitive-paths-ignored-in-cad-dialects.issue~:
   SCHMS+ runs its suites under ~--dialect bricscad-v26~, to exercise the
   code as it will run, and there the variable did not exist at all.
+
+#+LATEX: \newpage
+
+** System Variable Entry: CLAUTOLISPDEFAULTDRAWINGFORMAT
+*** Name
+CLAUTOLISPDEFAULTDRAWINGFORMAT
+
+*** Type
+string
+
+*** Default
+~"DXF"~
+
+*** Read-Only
+no
+
+*** Scope
+session
+
+*** Description
+clautolisp-only. The file format a drawing is *written* in when nothing
+else selects one — the destination path has no recognised drawing
+extension, and the drawing does not already know its own format (a
+freshly created drawing that never came from disk). Accepted values are
+~"DXF"~ (ASCII DXF, the portable form) and ~"DWG"~, case-insensitively;
+an unrecognised value is treated as ~"DXF"~. It is a *last resort* only:
+a recognised destination extension (~.dxf~, ~.dwg~) and a drawing that
+already carries a format both take precedence over it. Shared by the
+~cador~ and ~cadtui~ hosts.
+
+*** Read/Written By
+- the drawing writer reached through the ActiveX object model
+  (~Document.SaveAs~) and any other clautolisp path that writes a drawing
+  without a determinable format.
+
+*** Compatibility
+clautolisp extension; absent on AutoCAD and BricsCAD. Unlike the
+language-surface clautolisp sysvars, it governs the *engine's* file
+output rather than AutoLISP semantics, so it is present and honoured in
+every dialect (not gated to ~:clautolisp~). Seedable from the environment
+variable of the same name, ~CLAUTOLISPDEFAULTDRAWINGFORMAT~ (precedence
+~setvar~ > env > default ~"DXF"~).
+
+*** Source Notes
+- No vendor reference. clautolisp implementation; see the clautolisp user
+  manual (/Host backend/).
 
 #+LATEX: \newpage
 

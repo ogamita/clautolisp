@@ -1,0 +1,50 @@
+#+TITLE: cador/cadtui default drawing write format (CLAUTOLISPDEFAULTDRAWINGFORMAT)
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: feature
+#+BRANCH: feat-default-drawing-format
+
+cador/cadtui default drawing write format (CLAUTOLISPDEFAULTDRAWINGFORMAT)
+
+== Context ==
+
+cador had no default drawing file format. Writing a drawing whose destination
+extension names no known format — e.g. Document.SaveAs to a path with no
+.dxf / .dwg suffix, or a freshly created drawing that never came from disk —
+signalled DRAWING-FORMAT-ERROR ("cannot determine the output format"), because
+clautolisp.drawing:write-drawing derives the format from
+(or format (drawing-format drawing) (probe-drawing-format destination)) and all
+three can be nil.
+
+pjb's decision: default to DXF, driven by a clautolisp-specific system variable
+initialised from an environment variable, shared by cador and cadtui, named
+CLAUTOLISPDEFAULTDRAWINGFORMAT.
+
+== Design (clautolisp 2.2.83) ==
+
+- clautolisp.drawing:*default-drawing-format* (defvar, default NIL) — a
+  host-agnostic last-resort fallback folded into write-drawing's format
+  resolution, AFTER the extension probe, so a recognised extension or a
+  drawing that already knows its format still wins.
+
+- CLAUTOLISPDEFAULTDRAWINGFORMAT system variable (cador) — string, not
+  read-only, values "DXF" (-> :dxf-ascii) / "DWG" (-> :dwg), case-insensitive,
+  unrecognised -> DXF. Installed on every cador host (both the :full 1836-entry
+  vendor catalogue and the :seed subset) by install-clautolisp-extension-sysvars.
+  Its initial value is the environment variable of the same name when that
+  names an accepted format, else "DXF". It is engine-level (governs file
+  output), so it is present and honoured in every dialect — unlike the
+  language-surface CLAUTOLISP* sysvars, which are gated to :clautolisp.
+
+- cador's ActiveX SaveAs binds clautolisp.drawing:*default-drawing-format* from
+  cador-default-drawing-format around write-drawing.
+
+== Resolved ==
+
+DONE — clautolisp 2.2.83 (2026-09-23). Tests: drawing suite (the
+*default-drawing-format* last-resort + extension-precedence test) 290/290;
+cador suite (default-drawing-format-sysvar-*, vlax-saveas-writes-dxf-by-default,
+extension-wins) 1039/1039; the clal-sysvar count tests updated for the +1
+extension sysvar. Docs: autolisp-spec § System Variable Entry (doc version
+0.13.0 -> 0.13.1), clautolisp user manual (Environment variables + Host
+backend), RELEASE_NOTES.org.

@@ -1037,7 +1037,12 @@ actually persist. Returns DOC."
   (let ((methods (mock-com-object-methods doc)))
     (setf (gethash "SaveAs" methods)
           (lambda (host object args)
-            (let ((path (%require-com-string-argument args "SaveAs")))
+            (let ((path (%require-com-string-argument args "SaveAs"))
+                  ;; Last-resort format when neither the drawing nor the
+                  ;; path extension determines one: the
+                  ;; CLAUTOLISPDEFAULTDRAWINGFORMAT sysvar (default DXF).
+                  (clautolisp.drawing:*default-drawing-format*
+                    (cador-default-drawing-format host)))
               (handler-case
                   (clautolisp.drawing:write-drawing (cador-active-drawing host) path)
                 (error (condition)

@@ -70,6 +70,73 @@ tables so tblsearch / tblnext have a sensible baseline."
     ("PLATFORM"  :string "Mock CAD" t)
     ("LISPSYS"   :integer 1 nil)))
 
+;;; --- clautolisp-specific default drawing format ----------------
+;;;
+;;; CLAUTOLISPDEFAULTDRAWINGFORMAT (a clautolisp extension system variable —
+;;; no vendor counterpart; documented in the autolisp-spec clautolisp
+;;; deviation note and in the clautolisp user manual) names the file format
+;;; a drawing is written in when nothing else determines one: SaveAs to a
+;;; path whose extension is not a known drawing type, or a freshly created
+;;; drawing that has never been read from disk. It is shared by cador and
+;;; cadtui (cadtui runs on the cador core). Its initial value comes from the
+;;; environment variable of the same name, and is DXF (ASCII DXF, the
+;;; portable form) when that is unset or invalid. A recognised extension or
+;;; a drawing that already knows its own format still wins over it.
+
+(defparameter +default-drawing-format-sysvar+ "CLAUTOLISPDEFAULTDRAWINGFORMAT"
+  "Name of the clautolisp default-drawing-format system / environment
+variable.")
+
+(defparameter *clautolisp-extension-sysvar-names*
+  (list +default-drawing-format-sysvar+)
+  "The clautolisp-specific system variables with no vendor counterpart, which
+INSTALL-CLAUTOLISP-EXTENSION-SYSVARS adds on top of whichever vendor catalogue
+was loaded. Their count is why a populated mock carries
+(length *full-sysvar-catalogue*) + (length *clautolisp-extension-sysvar-names*)
+sysvar cells.")
+
+(defparameter *default-drawing-format-values*
+  '(("DXF" . :dxf-ascii)
+    ("DWG" . :dwg))
+  "Accepted CLAUTOLISPDEFAULTDRAWINGFORMAT values: the sysvar string (upcased)
+mapped to a clautolisp.drawing codec keyword. DXF is ASCII DXF.")
+
+(defun %canonical-default-drawing-format (raw)
+  "The accepted format NAME (\"DXF\" / \"DWG\") RAW denotes, case- and
+whitespace-insensitively, or NIL if RAW is not one of them."
+  (and (stringp raw)
+       (car (assoc (string-upcase (string-trim '(#\Space #\Tab) raw))
+                   *default-drawing-format-values* :test #'string=))))
+
+(defun %default-drawing-format-initial-value ()
+  "The initial CLAUTOLISPDEFAULTDRAWINGFORMAT value: the environment variable
+of the same name when it names an accepted format, otherwise \"DXF\"."
+  (or (%canonical-default-drawing-format
+       (uiop:getenv +default-drawing-format-sysvar+))
+      "DXF"))
+
+(defun install-clautolisp-extension-sysvars (mock)
+  "Install the clautolisp-specific system variables that have no vendor
+counterpart, on top of whichever vendor catalogue was loaded. Currently just
+CLAUTOLISPDEFAULTDRAWINGFORMAT. Returns MOCK."
+  (setf (gethash +default-drawing-format-sysvar+ (cador-sysvars mock))
+        (make-sysvar-cell :name +default-drawing-format-sysvar+
+                          :kind :string
+                          :value (%default-drawing-format-initial-value)
+                          :read-only-p nil
+                          :host-derived-p nil))
+  mock)
+
+(defun cador-default-drawing-format (mock)
+  "The clautolisp.drawing codec keyword MOCK writes a drawing in when nothing
+else determines the format — parsed from the CLAUTOLISPDEFAULTDRAWINGFORMAT
+system variable, or :dxf-ascii when it is unset or holds an unrecognised
+value."
+  (let* ((cell (cador-sysvar mock +default-drawing-format-sysvar+))
+         (name (and cell (%canonical-default-drawing-format
+                          (sysvar-cell-value cell)))))
+    (cdr (assoc (or name "DXF") *default-drawing-format-values* :test #'string=))))
+
 (defun populate-default-sysvars (mock &key (catalogue :full))
   "Pre-populate MOCK's sysvar table.
 
@@ -91,7 +158,7 @@ with HOST-DERIVED-P defaulting to NIL for the :SEED list."
         (entries (ecase catalogue
                    (:full *full-sysvar-catalogue*)
                    (:seed *default-sysvars*))))
-    (dolist (spec entries mock)
+    (dolist (spec entries)
       ;; Tolerate both the 4-tuple (legacy) and 5-tuple (full) shapes.
       (let* ((name        (first spec))
              (kind        (second spec))
@@ -103,7 +170,9 @@ with HOST-DERIVED-P defaulting to NIL for the :SEED list."
                                 :kind kind
                                 :value default
                                 :read-only-p read-only-p
-                                :host-derived-p host-derived-p))))))
+                                :host-derived-p host-derived-p))))
+    ;; The clautolisp extension sysvars sit on top of either catalogue.
+    (install-clautolisp-extension-sysvars mock)))
 
 ;;; --- Convenience accessors -------------------------------------
 
