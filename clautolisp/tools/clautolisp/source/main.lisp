@@ -2231,6 +2231,13 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
           (let ((*aldb-listener-address* aldb-listener-address)
                 (*verbose-p* verbose-p)
                 (*debug-p* debug-p)
+                ;; The host Common Lisp compiler's diagnostics (style
+                ;; warnings, notes, redefinition chatter) from compiling
+                ;; transpiled AutoLISP are muffled by default — they name
+                ;; generated CL an AutoLISP author never wrote. --verbose /
+                ;; --debug let them through, for debugging the compiler.
+                (clautolisp.autolisp-runtime:*emit-host-compiler-diagnostics*
+                  (and verbose-p t))
                 ;; The event policies (debugger §10 / Part B): user code may
                 ;; rebind the CL variables; the AutoLISP mirrors of the
                 ;; interrupt / quit policies are re-read live.

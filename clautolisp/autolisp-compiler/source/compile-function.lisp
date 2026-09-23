@@ -42,10 +42,11 @@ Installed as *COMPILE-USUBR-HOOK*; the runtime handles the failure case
 by storing :FAILED, so this is free to signal."
   (let ((compiled
           (let ((*transpiler-fallbacks* nil))
-            (compile nil `(lambda (%context)
-                            (declare (ignorable %context))
-                            ,(transpile-body (autolisp-usubr-body usubr)
-                                             '%context))))))
+            (with-muffled-host-compiler
+              (compile nil `(lambda (%context)
+                              (declare (ignorable %context))
+                              ,(transpile-body (autolisp-usubr-body usubr)
+                                               '%context)))))))
     (setf (autolisp-usubr-compiled-body usubr) compiled)))
 
 (defun compile-instrumented-usubr (usubr)
@@ -70,11 +71,12 @@ Installed as *COMPILE-INSTRUMENTED-USUBR-HOOK*; as with COMPILE-USUBR the
 runtime handles failure by storing :FAILED, so this is free to signal."
   (let ((compiled
           (let ((*transpiler-fallbacks* nil))
-            (compile nil `(lambda (%context)
-                            (declare (ignorable %context))
-                            ,(transpile-body
-                              (autolisp-usubr-instrumented-body usubr)
-                              '%context))))))
+            (with-muffled-host-compiler
+              (compile nil `(lambda (%context)
+                              (declare (ignorable %context))
+                              ,(transpile-body
+                                (autolisp-usubr-instrumented-body usubr)
+                                '%context)))))))
     (setf (autolisp-usubr-compiled-instrumented-body usubr) compiled)))
 
 (defun autolisp-function-instrumented-compiled-p (usubr)

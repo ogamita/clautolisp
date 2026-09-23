@@ -175,6 +175,9 @@
    #:+poll-operator-name+
    #:*compiled-poll-hook*
    #:call-with-compiled-poll-point
+   #:*emit-host-compiler-diagnostics*
+   #:with-muffled-host-compiler
+   #:call-with-muffled-host-compiler
    #:*autolisp-compilation-enabled*
    #:*autolisp-compilation-threshold*
    #:*autolisp-speed-level*

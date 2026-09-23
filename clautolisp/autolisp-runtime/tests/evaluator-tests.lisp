@@ -1770,3 +1770,66 @@ in the namespace, an accident rather than a rule."
   (is (null (%run-under-dialect
              :clautolisp
              "(progn (defun f (l) (foreach fresh-name l nil)) (f '(1 2)) fresh-name)"))))
+
+;;; --- Host compiler diagnostics muffling ---------------------------
+;;; (host-compiler-diagnostics-leak.issue) The runtime compiles hot
+;;; AutoLISP bodies with the host CL compiler; its style warnings /
+;;; notes must not reach the terminal unless the user asked for them.
+
+(test with-muffled-host-compiler-suppresses-warnings-by-default
+  ;; A WARNING signalled inside the body is muffled — no output —
+  ;; when *emit-host-compiler-diagnostics* is NIL (the default).
+  (let ((output (make-string-output-stream)))
+    (let ((*error-output* output)
+          (clautolisp.autolisp-runtime:*emit-host-compiler-diagnostics* nil))
+      (clautolisp.autolisp-runtime:with-muffled-host-compiler
+        (warn "muffled boom")))
+    (let ((captured (get-output-stream-string output)))
+      (is (string= "" captured)))))
+
+(test with-muffled-host-compiler-emits-warnings-under-the-flag
+  ;; With the flag set (--verbose / --debug), the same warning reaches
+  ;; *error-output*.
+  (let ((output (make-string-output-stream)))
+    (let ((*error-output* output)
+          (clautolisp.autolisp-runtime:*emit-host-compiler-diagnostics* t))
+      (clautolisp.autolisp-runtime:with-muffled-host-compiler
+        (warn "loud boom")))
+    (let ((captured (get-output-stream-string output)))
+      (is (search "loud boom" captured)))))
+
+(test with-muffled-host-compiler-passes-values-through
+  ;; The macro is transparent to the body's return values.
+  (is (eql 42
+           (clautolisp.autolisp-runtime:with-muffled-host-compiler
+             (+ 40 2)))))
+
+(test with-muffled-host-compiler-does-not-swallow-errors
+  ;; Only diagnostics are muffled; a genuine error still propagates so
+  ;; the caller's handler (compile-usubr stores :FAILED) can see it.
+  (let ((clautolisp.autolisp-runtime:*emit-host-compiler-diagnostics* nil))
+    (is (eq :caught
+            (handler-case
+                (clautolisp.autolisp-runtime:with-muffled-host-compiler
+                  (error "real error"))
+              (error () :caught))))))
+
+#+sbcl
+(test with-muffled-host-compiler-suppresses-host-compile-notes
+  ;; The host compiler's own style warning for a compiled lambda (SBCL
+  ;; warns that X is unused) is suppressed by default and shown under
+  ;; the flag — the actual leak this fixes.
+  (let ((quiet (make-string-output-stream))
+        (loud  (make-string-output-stream)))
+    (let ((*error-output* quiet)
+          (clautolisp.autolisp-runtime:*emit-host-compiler-diagnostics* nil))
+      (clautolisp.autolisp-runtime:with-muffled-host-compiler
+        (compile nil '(lambda (x) 1))))
+    (let ((*error-output* loud)
+          (clautolisp.autolisp-runtime:*emit-host-compiler-diagnostics* t))
+      (clautolisp.autolisp-runtime:with-muffled-host-compiler
+        (compile nil '(lambda (x) 1))))
+    (let ((quiet-text (get-output-stream-string quiet))
+          (loud-text  (get-output-stream-string loud)))
+      (is (string= "" quiet-text))
+      (is (plusp (length loud-text))))))

@@ -844,6 +844,16 @@ Note that ~--optimize debug=0~ and ~--debug~ are unrelated: ~--debug~
 is a verbosity flag, while ~debug~ here is an optimization quality —
 whether your functions keep the instrumented fork the debugger needs.
 
+*Host compiler diagnostics are quiet by default.* When a function
+becomes hot (or at ~-O3~, or when ~CLAL-COMPILE-FILE~ writes an
+artefact) clautolisp compiles it with the underlying Common Lisp
+compiler, which would otherwise print its own style warnings, notes and
+progress lines — about *generated* Common Lisp you never wrote — to
+standard error. These are suppressed by default. Passing ~--verbose~ (
+~-v~) or ~--debug~ (~-d~) lets them through, for when you are debugging
+the compiler or a transpilation itself; a genuine compilation *failure*
+is never suppressed, at any verbosity.
+
 ** Debugger (aldo)
 See § /Debugger/ for the semantics; the options in brief:
 

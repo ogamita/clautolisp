@@ -835,9 +835,10 @@ Never fails: an unhandled form becomes an interpreter call on itself."
 that evaluates it. The counterpart of (autolisp-eval FORM context), and
 the thing the equivalence test compares against."
   (let ((*transpiler-fallbacks* nil))
-    (values (compile nil `(lambda (%context)
-                            (declare (ignorable %context))
-                            ,(transpile-form form '%context)))
+    (values (with-muffled-host-compiler
+              (compile nil `(lambda (%context)
+                              (declare (ignorable %context))
+                              ,(transpile-form form '%context))))
             *transpiler-fallbacks*)))
 
 (defun transpiler-coverage (form)

@@ -198,7 +198,13 @@ Returns the artefact's truename, or NIL if the host compiler failed."
           ;; Quiet by default: compiling an artefact is something the USER
           ;; asked for, not something to narrate, and the host's chatter
           ;; would name a generated temporary the user cannot act on.
-          (compile-file generated :verbose nil :print nil)
+          ;; :VERBOSE / :PRINT NIL stop the progress lines; the style
+          ;; warnings and notes the host prints on *error-output* regardless
+          ;; are what WITH-MUFFLED-HOST-COMPILER suppresses (shown under
+          ;; --verbose / --debug). FAILUREP is still returned, so a real
+          ;; compilation failure is not hidden.
+          (with-muffled-host-compiler
+            (compile-file generated :verbose nil :print nil))
         (declare (ignore warningsp))
         (cond
           ((or failurep (null fasl)) nil)
