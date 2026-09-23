@@ -1310,6 +1310,12 @@ file or COM), and forwards the workload.
   are now retried briefly and, failing that, read as empty — the same
   "not published yet, try again next tick" contract already used for the
   delete-gap. Dormant on POSIX (atomic rename never triggers it).
+- ~vl-directory-files~ and ~vl-file-directory-p~ now recognise a directory
+  named with OR without its final separator, as AutoCAD and BricsCAD do.
+  The un-suffixed form previously let the last path segment fold/map as a
+  file name, so the directory selector ~-1~ missed a Windows-mapped path
+  after a legitimate ~vl-string-right-trim~ (surfaced from SCHME+ bornage
+  search on the MSYS2 runner).
 
 ---
 
