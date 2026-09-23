@@ -280,6 +280,51 @@ measurement.
 - clautolisp: issue: issues/closed/vl-catch-all-apply-optional-arglist.issue
 - BricsCAD: the vendor file that uses it: BricsCAD V26.app/Contents/MacOS/vle-extension.lsp
 
+** =[entmakex-invalid-insert]= --- ENTMAKE / ENTMAKEX of an INSERT referencing an undefined block
+
+*** Message
+
+: [entmakex-invalid-insert] cador accepted an INSERT rejected by AutoCAD and BricsCAD: block SCHME_TEST_C1 is undefined (its group-2 name resolves to no BLOCK_RECORD); the create returns nil under the autocad and bricscad dialects.
+
+The part after the location is built from the template
+=cador accepted an INSERT rejected by AutoCAD and BricsCAD: its group-2 block is undefined. The create returns nil under the autocad and bricscad dialects.=, whose arguments are: the group-2 block name.
+
+*** How the dialects diverge
+
+An INSERT whose group-2 block name does not resolve to a BLOCK_RECORD is
+rejected by BOTH AutoCAD and BricsCAD: entmake / entmakex return nil and
+nothing is added to the database (a block reference must reference a block).
+This is NOT a vendor divergence -- the two engines agree. Evidence: SCHME+ C1
+made cador pass on an INSERT to the undefined block SCHME_TEST_C1 while both
+real-CAD jobs failed (AutoCAD Fabrik job 511433, BricsCAD job 511434).
+
+cador historically kept a permissive construction mode that accepted the
+invalid INSERT, which hid invalid DXF fixtures until the suite reached a real
+CAD. The per-dialect resolution:
+
+- --dialect autocad-* / bricscad-* -- REJECT (return nil), matching the
+  vendor; silent.
+- --dialect clautolisp -- keep the permissive mode (return the ename), and
+  WARN: the acceptance is a cador leniency, not portable.
+- --strict -- accept but WARN (a divergence of any kind is unsafe to rely on).
+- --lax -- accept, silent.
+
+*** Why it matters
+
+A DXF fixture or production path that entmakes an INSERT to a block it never
+defined is broken everywhere except cador's permissive mode; catching it at
+create time -- by rejecting under the vendor dialects and warning under
+clautolisp/strict -- stops the error hiding until a real CAD job fails. The
+immediately checkable invariant is that the group-2 name resolves to a
+BLOCK_RECORD; group 66 announcing an attribute sequence that no ATTRIB/SEQEND
+completes is the related, deferred check.
+
+*** References
+
+- clautolisp: emitted by: clautolisp/cador/source/entity-api.lisp, EMIT-ENTMAKEX-INVALID-INSERT-WARNING
+- clautolisp: issue: issues/closed/cador-entmakex-invalid-insert-dialect-warning.issue
+- clautolisp: normative rules: autolisp-spec chapter 25, "Normative Rules: Dialect Portability Warnings"
+
 * Extension notices --- a clautolisp extension used outside =--dialect clautolisp=
 
 ** =[exit-status-extension]= --- Exit-status operator
