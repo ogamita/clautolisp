@@ -45,3 +45,37 @@ four scenarios SKIP under Cador until this issue is implemented.
   assertions, with no `SKIP [adaptateurs-activex-a1]` line.
 - Preserve the created/modified entities in `entget`/table state so the A1
   assertions observe the same data through DXF and ActiveX.
+
+== Resolved ==
+
+DONE — clautolisp 2.2.80 (2026-09-23). The mock AutoCAD object model in
+`clautolisp/cador/source/vlax-api.lisp` now covers the A1 surface:
+
+- `AutoCAD.Documents.Add` returns a document wired to the live Blocks /
+  Layers / Linetypes / ModelSpace / PaperSpace, with a persisting
+  `Document.SaveAs` (writes the drawing via `clautolisp.drawing:write-drawing`)
+  and `Save` / `Close`.
+- `AutoCAD.Layer` gains read/write `Color` and `Linetype`, backed by the
+  `:layer` table record's DXF groups 62 / 6 (so `tblsearch`, `entget` and
+  ActiveX observe the same value); `Layer.Delete` drops the record (layer 0
+  and the current layer are protected); `Document.ActiveLayer` reads and
+  writes CLAYER dynamically.
+- `Block.AddAttribute` appends an ATTDEF to the block definition;
+  `ModelSpace.AddLine` creates a LINE on the current layer; entity
+  `Layer` / `Linetype` / `Color` / `TagString` / `TextString` were already
+  bridged.
+- `Document.Linetypes` + `Linetypes.Load` register a `:ltype` table record.
+- `vlax-method-applicable-p` / `vlax-property-available-p` report the new
+  surface, so SCHME+ runs the four A1 scenarios with no SKIP.
+
+DXF and ActiveX share the same in-memory drawing throughout: every new
+method mutates the table records / entity list that `entget` and the table
+walkers read. Focused regression tests live in
+`clautolisp/cador/tests/vlax-tests.lisp` (the `vlax-layer-*`,
+`vlax-document-*`, `vlax-documents-add-*`, `vlax-modelspace-addline-*`,
+`vlax-block-addattribute-*`, `vlax-linetypes-load-*`,
+`vlax-new-object-surface-*` group) — cador suite 1030/1030 green.
+
+The `.lin` fixture file is not parsed (the mock has no linetype-definition
+file reader); `Linetypes.Load` registers the named record so it resolves,
+which is what the A1 assertions require.

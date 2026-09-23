@@ -933,6 +933,19 @@ separate binary for tool integrators.
   property named BLOCKS" failure on ~--host mock~. See the user manual
   § /Host backend / The ActiveX / COM object model/ and
   ~issues/open/vla-accessor-family.issue~.
+- Layer, linetype and document object model (SCHME+ A1): an
+  ~AutoCAD.Layer~ carries read/write ~Color~ and ~Linetype~ backed by
+  the layer table record's DXF groups 62 / 6 — so ~tblsearch~,
+  ~entget~ and ActiveX read the same value — plus ~Layer.Delete~ (the
+  current layer and layer ~0~ are protected). ~Document.ActiveLayer~
+  reads and writes ~CLAYER~ live. ~Documents.Add~ opens a document
+  wired to the live Blocks / Layers / Linetypes / ModelSpace /
+  PaperSpace, whose ~SaveAs~ writes the drawing (format from the
+  extension) and whose ~Save~ / ~Close~ are the single-document mock's
+  no-ops. ~Block.AddAttribute~ appends an ATTDEF to a block definition,
+  ~ModelSpace.AddLine~ creates a LINE on the current layer, and
+  ~Document.Linetypes~ + ~Linetypes.Load~ register a linetype table
+  record. See ~issues/closed/cador-schme-a1-activex-coverage.issue~.
 - Block definitions through ~entmake~: an ~entmake~ of a
   ~(0 . "BLOCK")~ header opens a block-definition run — the entities
   entmade next belong to the block, not to model space — and the

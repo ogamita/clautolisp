@@ -607,6 +607,18 @@ RESULT T) when NAME was handled, (values NIL NIL) otherwise."
       ((and (consp kind) (eq (car kind) :block-entities)
             (string-equal name "Delete"))
        (values (%block-delete host object) t))
+      ((and (consp kind) (eq (car kind) :block-entities)
+            (string-equal name "AddLine"))
+       (values (%model-add-line host kind args) t))
+      ((and (consp kind) (eq (car kind) :block-entities)
+            (string-equal name "AddAttribute"))
+       (values (%block-add-attribute host kind args) t))
+      ((and (eq kind :documents) (string-equal name "Add"))
+       (values (%documents-add host) t))
+      ((and (eq kind :linetypes) (string-equal name "Load"))
+       (values (%linetypes-load host args) t))
+      ((and (%layer-object-p object) (string-equal name "Delete"))
+       (values (%layer-delete host object) t))
       (t (%entity-fallback-method host object name args)))))
 
 (defun %collection-fallback-method-p (host object name)
@@ -614,10 +626,13 @@ RESULT T) when NAME was handled, (values NIL NIL) otherwise."
   (let ((kind (mock-com-object-collection-kind object)))
     (or (and (mock-com-object-collection-p object) (string-equal name "Item"))
         (and (member kind '(:blocks :layers)) (string-equal name "Add") t)
+        (and (eq kind :documents) (string-equal name "Add") t)
+        (and (eq kind :linetypes) (string-equal name "Load") t)
         (and (consp kind) (eq (car kind) :block-entities)
-             (or (string-equal name "Delete")
-                 (string-equal name "InsertBlock"))
+             (member name '("Delete" "InsertBlock" "AddLine" "AddAttribute")
+                     :test #'string-equal)
              t)
+        (and (%layer-object-p object) (string-equal name "Delete") t)
         (%entity-fallback-method-p host object name))))
 
 ;;; --- Entity-backed COM properties (DXF-group bridge) --------------
@@ -863,6 +878,249 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
              (%entity-property-descriptor entity name))
          t)))
 
+;;; --- Layer / Linetype / Document object surface ------------------
+;;; (cador-schme-a1-activex-coverage.issue). The AutoCAD.Layer and
+;;; AutoCAD.Linetype table-record objects carry a Name in their property hash;
+;;; their mutable attributes (Layer.Color, Layer.Linetype) read and write the
+;;; live :layer table record's DXF groups, so getvar / tblsearch and ActiveX
+;;; observe the same value. Document.ActiveLayer is dynamic (CLAYER), and
+;;; Document.Linetypes is a live collection like Layers.
+
+(defun %linetype-object (host name)
+  "The identity-stable AutoCAD.Linetype COM object for linetype NAME."
+  (%live-com-object
+   host (concatenate 'string "LTYPE:" (string-upcase name))
+   (lambda ()
+     (let* ((object (make-mock-com-object :progid "AutoCAD.Linetype"))
+            (props (mock-com-object-properties object)))
+       (setf (gethash "Name" props)       (%al-string name)
+             (gethash "ObjectName" props) (%al-string "AcDbLinetypeTableRecord"))
+       object))))
+
+(defun %linetypes-collection (host)
+  "The document's live Linetypes collection object."
+  (%live-com-object
+   host "LINETYPES"
+   (lambda () (make-mock-com-object :progid "AutoCAD.Linetypes"
+                                    :collection-p t
+                                    :collection-kind :linetypes))))
+
+(defun %layer-record-group (host name code)
+  "The value of DXF group CODE in layer NAME's :layer table record, or NIL."
+  (let ((record (cador-find-table-record host :layer name)))
+    (and record (cdr (assoc code (symbol-table-record-data record))))))
+
+(defun %set-layer-record-group (host name code value)
+  "Set DXF group CODE of layer NAME's :layer table record to VALUE, so
+tblsearch \"LAYER\" and ActiveX read back the same value."
+  (let ((record (cador-find-table-record host :layer name)))
+    (when record
+      (let* ((data (symbol-table-record-data record))
+             (pair (assoc code data)))
+        (if pair
+            (setf (cdr pair) value)
+            (setf (symbol-table-record-data record)
+                  (append data (list (cons code value)))))))
+    value))
+
+(defun %layer-object-p (object)
+  (string-equal (mock-com-object-progid object) "AutoCAD.Layer"))
+
+(defun %table-object-name (object)
+  (%com-string (gethash "Name" (mock-com-object-properties object))))
+
+(defun %layer-com-property-get (host object name)
+  "Read a mutable AutoCAD.Layer property (Color, Linetype) off the layer's
+:layer table record. Returns (values VALUE T) when handled."
+  (if (%layer-object-p object)
+      (let ((layer (%table-object-name object)))
+        (cond
+          ((string-equal name "Color")
+           (values (or (%layer-record-group host layer 62) 7) t))
+          ((string-equal name "Linetype")
+           (values (%al-string (or (%layer-record-group host layer 6) "Continuous")) t))
+          (t (values nil nil))))
+      (values nil nil)))
+
+(defun %layer-com-property-put (host object name value)
+  "Write a mutable AutoCAD.Layer property (Color, Linetype) into the layer's
+:layer table record. Returns (values VALUE T) when handled."
+  (if (%layer-object-p object)
+      (let ((layer (%table-object-name object)))
+        (cond
+          ((string-equal name "Color")
+           (unless (integerp value)
+             (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+              :invalid-com-property-value
+              "Layer.Color expects an integer color index, got ~S." value))
+           (%set-layer-record-group host layer 62 value)
+           (values value t))
+          ((string-equal name "Linetype")
+           (let ((string (%com-string value)))
+             (unless string
+               (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                :invalid-com-property-value
+                "Layer.Linetype expects a string, got ~S." value))
+             (%set-layer-record-group host layer 6 string)
+             (values value t)))
+          (t (values nil nil))))
+      (values nil nil)))
+
+(defun %document-object-p (object)
+  (string-equal (mock-com-object-progid object) "AutoCAD.Document"))
+
+(defun %document-com-property-get (host object name)
+  "Document.ActiveLayer is the AutoCAD.Layer for the current CLAYER (dynamic,
+so it tracks setvar/ActiveLayer changes). Returns (values VALUE T) when handled."
+  (if (and (%document-object-p object) (string-equal name "ActiveLayer"))
+      (values (com-object->vla (%layer-object host (%current-layer-name host))) t)
+      (values nil nil)))
+
+(defun %document-com-property-put (host object name value)
+  "Setting Document.ActiveLayer makes VALUE's layer current (CLAYER)."
+  (if (and (%document-object-p object) (string-equal name "ActiveLayer"))
+      (let* ((layer (resolve-vla-object host value 'vlax-put-property))
+             (layer-name (%table-object-name layer)))
+        (when layer-name (cador-set-sysvar host "CLAYER" layer-name))
+        (values value t))
+      (values nil nil)))
+
+;;; The object-property dispatch: entity-backed, then the Layer table record,
+;;; then the Document's dynamic properties.
+
+(defun %object-com-property-get (host object name)
+  (multiple-value-bind (value handled) (%entity-com-property-get host object name)
+    (if handled
+        (values value handled)
+        (multiple-value-bind (value2 handled2) (%layer-com-property-get host object name)
+          (if handled2
+              (values value2 handled2)
+              (%document-com-property-get host object name))))))
+
+(defun %object-com-property-put (host object name value)
+  (multiple-value-bind (result handled) (%entity-com-property-put host object name value)
+    (if handled
+        (values result handled)
+        (multiple-value-bind (result2 handled2) (%layer-com-property-put host object name value)
+          (if handled2
+              (values result2 handled2)
+              (%document-com-property-put host object name value))))))
+
+(defun %object-com-property-known-p (host object name)
+  (or (%entity-com-property-known-p host object name)
+      (and (%layer-object-p object)
+           (member name '("Color" "Linetype") :test #'string-equal)
+           t)
+      (and (%document-object-p object)
+           (string-equal name "ActiveLayer")
+           t)))
+
+;;; --- Layer.Delete / Document lifecycle / AddLine / AddAttribute / Load ---
+
+(defun %layer-delete (host object)
+  "Layer.Delete: drop the layer's :layer table record. Layer 0 and the current
+layer (CLAYER) cannot be deleted, as in vendor ActiveX. Returns nil."
+  (let ((name (%table-object-name object)))
+    (when (and name
+               (not (string-equal name "0"))
+               (not (string-equal name (%current-layer-name host))))
+      (remhash name (cador-table host :layer))
+      (setf (mock-com-object-released-p object) t))
+    nil))
+
+(defun %install-document-persistence (host doc)
+  "Override DOC's SaveAs / Save method closures so they reach the live
+drawing: SaveAs writes the drawing to its FullName argument (and records
+the new Name, as the vendor object does), Save is a no-op that clears the
+dirty flag. The bare template's SaveAs only renames — a live document must
+actually persist. Returns DOC."
+  (let ((methods (mock-com-object-methods doc)))
+    (setf (gethash "SaveAs" methods)
+          (lambda (host object args)
+            (let ((path (%require-com-string-argument args "SaveAs")))
+              (handler-case
+                  (clautolisp.drawing:write-drawing (cador-active-drawing host) path)
+                (error (condition)
+                  (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                   :com-save-failed
+                   "SaveAs could not write ~A: ~A." path condition)))
+              (let ((props (mock-com-object-properties object)))
+                (setf (gethash "Name" props) path
+                      (gethash "FullName" props) path
+                      (gethash "Saved" props) t))
+              nil))
+          (gethash "Save" methods)
+          (lambda (host object args)
+            (declare (ignore host args))
+            (setf (gethash "Saved" (mock-com-object-properties object)) t)
+            nil)))
+  doc)
+
+(defun %documents-add (host)
+  "AutoCAD.Documents.Add: a fresh AutoCAD.Document over the host's single
+in-memory drawing (the mock is single-document), wired to the live Blocks /
+Layers / Linetypes / ModelSpace / PaperSpace and to the persisting SaveAs /
+Save closures. Returns the new document's VLA-object."
+  (let* ((doc (%register-mock-com-object
+               host (build-mock-com-object host "AutoCAD.Document")))
+         (props (mock-com-object-properties doc)))
+    (setf (gethash "Blocks" props)     (com-object->vla (%blocks-collection host))
+          (gethash "Layers" props)     (com-object->vla (%layers-collection host))
+          (gethash "Linetypes" props)  (com-object->vla (%linetypes-collection host))
+          (gethash "ModelSpace" props) (com-object->vla (%block-object host "*Model_Space"))
+          (gethash "PaperSpace" props) (com-object->vla (%block-object host "*Paper_Space")))
+    (%install-document-persistence host doc)
+    (com-object->vla doc)))
+
+(defun %model-add-line (host collection-kind args)
+  "ModelSpace.AddLine(StartPoint, EndPoint): create a LINE on the current layer
+in the collection's space; return its VLA-object."
+  (let ((p1 (%unwrap-com-point (first args) "AddLine"))
+        (p2 (%unwrap-com-point (second args) "AddLine"))
+        (owner (%space-owner-name collection-kind)))
+    (multiple-value-bind (entity ename)
+        (%host-add-entity host
+                          (list (cons 0 "LINE")
+                                (cons 8 (%current-layer-name host))
+                                (cons 10 (copy-list p1))
+                                (cons 11 (copy-list p2)))
+                          'add-line owner)
+      (declare (ignore entity))
+      (host-vlax-ename->vla-object host ename))))
+
+(defun %block-add-attribute (host collection-kind args)
+  "Block.AddAttribute(Height, Mode, Prompt, Tag, InsertionPoint): add an ATTDEF
+to the block definition the collection wraps, so a later InsertBlock
+instantiates it. Returns the ATTDEF's VLA-object."
+  (destructuring-bind (&optional height mode prompt tag insertion-point &rest ignore) args
+    (declare (ignore ignore))
+    (let* ((owner (%space-owner-name collection-kind))
+           (ip (%unwrap-com-point insertion-point "AddAttribute"))
+           (data (list (cons 0 "ATTDEF") (cons 8 "0")
+                       (cons 10 (copy-list ip))
+                       (cons 40 (coerce (if (realp height) height 2.5) 'double-float))
+                       (cons 1 "")
+                       (cons 3 (or (%com-string prompt) ""))
+                       (cons 2 (or (%com-string tag) ""))
+                       (cons 70 (if (integerp mode) mode 0))
+                       (cons 7 "Standard"))))
+      (multiple-value-bind (entity ename)
+          (%host-add-entity host data 'add-attribute owner)
+        (declare (ignore entity))
+        (host-vlax-ename->vla-object host ename)))))
+
+(defun %linetypes-load (host args)
+  "Linetypes.Load(Name [, File]): register a :ltype table record so the linetype
+is available; the .lin file is not parsed (the mock has none). Returns nil."
+  (let ((name (%require-com-string-argument args "Linetypes.Load")))
+    (unless (cador-find-table-record host :ltype name)
+      (cador-add-table-record
+       host (make-symbol-table-record
+             :kind :ltype :name name
+             :data (list (cons 0 "LTYPE") (cons 2 name) (cons 70 0)
+                         (cons 3 "") (cons 72 65) (cons 73 0) (cons 40 0.0d0)))))
+    nil))
+
 ;;; --- Method definitions ------------------------------------------
 
 (defmethod host-vlax-create-object ((host cador) progid)
@@ -913,7 +1171,7 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
          ;; Entity-backed objects read their properties off the
          ;; entity's DXF groups.
          (multiple-value-bind (result handled-p)
-             (%entity-com-property-get host object string)
+             (%object-com-property-get host object string)
            (if handled-p
                result
                (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
@@ -929,7 +1187,7 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
         ;; Entity-backed objects write their properties into the
         ;; entity's DXF groups.
         (multiple-value-bind (result handled-p)
-            (%entity-com-property-put host object string value)
+            (%object-com-property-put host object string value)
           (declare (ignore result))
           (unless handled-p
             (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
@@ -959,7 +1217,7 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
     (or (and (nth-value 1 (gethash string (mock-com-object-properties object))) t)
         (and (mock-com-object-collection-p object)
              (string-equal string "Count"))
-        (%entity-com-property-known-p host object string))))
+        (%object-com-property-known-p host object string))))
 
 (defmethod host-vlax-method-applicable-p ((host cador) vla name)
   (let* ((object (resolve-vla-object host vla 'vlax-method-applicable-p))
@@ -992,6 +1250,8 @@ document. Repeated calls return the same application object."
                 (com-object->vla doc))
           (setf (gethash "Application" (mock-com-object-properties doc))
                 (com-object->vla app))
+          ;; The active document persists to the live drawing on SaveAs.
+          (%install-document-persistence host doc)
           ;; Drawing-backed collections: Blocks / Layers, and the
           ;; ModelSpace / PaperSpace layout blocks (replacing the
           ;; template's placeholder strings), so vla-get-blocks /
@@ -1001,16 +1261,20 @@ document. Repeated calls return the same application object."
                   (com-object->vla (%blocks-collection host))
                   (gethash "Layers" props)
                   (com-object->vla (%layers-collection host))
+                  (gethash "Linetypes" props)
+                  (com-object->vla (%linetypes-collection host))
                   (gethash "ModelSpace" props)
                   (com-object->vla (%block-object host "*Model_Space"))
                   (gethash "PaperSpace" props)
                   (com-object->vla (%block-object host "*Paper_Space"))))
           ;; A Documents collection holding the one open document, so
-          ;; vlax-for / vlax-map-collection have something to iterate.
+          ;; vlax-for / vlax-map-collection have something to iterate,
+          ;; and Documents.Add reaches the single-document mock.
           (let ((docs (%register-mock-com-object
                        host (make-mock-com-object
                              :progid "AutoCAD.Documents"
                              :collection-p t
+                             :collection-kind :documents
                              :collection-members (list (com-object->vla doc))))))
             (setf (gethash "Documents" (mock-com-object-properties app))
                   (com-object->vla docs)))
