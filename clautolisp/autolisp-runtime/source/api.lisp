@@ -2082,6 +2082,44 @@ system loads; NIL when the compiler is absent. Same dependency-inversion as
 *INSTRUMENT-USUBR-HOOK* and for the same reason: the runtime must be able to run
 compiled function bodies without depending on the compiler layer.")
 
+(defparameter *emit-host-compiler-diagnostics* nil
+  "Whether the host Common Lisp compiler's diagnostics reach the terminal.
+
+The runtime compiles AutoLISP function bodies to Common Lisp and hands them to
+the host compiler — lazily, when a function crosses the compilation threshold,
+and eagerly at SPEED 3 and when CLAL-COMPILE-FILE writes an artefact. SBCL and
+CCL narrate that compilation on *error-output*: style warnings for the shape of
+the generated code, notes about optimizations not taken, redefinition warnings.
+None of it is actionable by an AutoLISP author — it names generated Common Lisp
+they never wrote — so by default (NIL) it is muffled by WITH-MUFFLED-HOST-COMPILER
+around every host compile call. The clautolisp CLI raises this to T under
+--verbose / --debug, for someone debugging the compiler itself; bound only there
+and by tests.")
+
+(defun call-with-muffled-host-compiler (thunk)
+  "Run THUNK with the host compiler's diagnostics suppressed, unless
+*EMIT-HOST-COMPILER-DIAGNOSTICS* asks for them. Muffles warnings, style
+warnings and (on SBCL) compiler notes, and silences the *COMPILE-VERBOSE* /
+*COMPILE-PRINT* progress chatter. Errors are NOT muffled — a genuine
+compilation failure still signals, so the caller's handler sees it."
+  (if *emit-host-compiler-diagnostics*
+      (funcall thunk)
+      (flet ((muffle (condition)
+               (let ((restart (find-restart 'muffle-warning condition)))
+                 (when restart (invoke-restart restart)))))
+        (declare (dynamic-extent #'muffle))
+        (let ((*compile-verbose* nil)
+              (*compile-print* nil))
+          (handler-bind ((warning #'muffle)
+                         #+sbcl (sb-ext:compiler-note #'muffle))
+            (funcall thunk))))))
+
+(defmacro with-muffled-host-compiler (&body body)
+  "Evaluate BODY with the host Common Lisp compiler's diagnostics suppressed
+unless *EMIT-HOST-COMPILER-DIAGNOSTICS* is set. Wrap every host COMPILE /
+COMPILE-FILE / WITH-COMPILATION-UNIT the AutoLISP layers drive."
+  `(call-with-muffled-host-compiler (lambda () ,@body)))
+
 (defparameter *autolisp-compilation-enabled* t
   "Whether the runtime weaves compiled forks for AutoLISP functions. T by
 default, but that is only half the switch — with no compiler loaded
@@ -4579,7 +4617,8 @@ common literals, linking calls directly instead of through the symbol
 binding) belongs to COMPILE-FILE, not to a run of COMPILE calls, and
 arrives with the artefact writer."
   (if (autolisp-compile-eagerly-p)
-      (with-compilation-unit (:override nil) (funcall thunk))
+      (with-muffled-host-compiler
+        (with-compilation-unit (:override nil) (funcall thunk)))
       (funcall thunk)))
 
 (defun autolisp-load-file-in-context (path context &rest read-options)

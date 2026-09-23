@@ -23,6 +23,7 @@
                 #:*compile-usubr-hook*
                 #:*compile-files-to-artefact-hook*
                 #:*compile-instrumented-usubr-hook*
+                #:with-muffled-host-compiler
                 #:current-evaluation-context
                 #:intern-autolisp-symbol
                 #:autolisp-true-symbol
