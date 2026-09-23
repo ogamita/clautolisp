@@ -339,6 +339,13 @@ separate binary for tool integrators.
   quiet anyway, and the evidence behind the entry. Fixing a side
   effect of the old arrangement, ~let~ is now correctly silent under
   ~--dialect bricscad-v25~ as well as ~bricscad-v26~.
+- ~[entmakex-invalid-insert]~: an ~ENTMAKE~ / ~ENTMAKEX~ of an ~INSERT~
+  whose group-2 block is undefined is rejected by both AutoCAD and
+  BricsCAD. cador used to accept it, hiding a broken fixture until a
+  real-CAD job failed; now the ~--autocad~ / ~--bricscad~ dialects
+  return nil (nothing added), while ~--clautolisp~ keeps the permissive
+  construction mode and ~--strict~ accepts, each with the
+  ~[entmakex-invalid-insert]~ warning; ~--lax~ is silent.
 - Constructs clautolisp *deliberately* does not implement now say so.
   Calling BricsCAD's ~setf~ or ~let*~ is still an undefined-function
   error, but a ~[ext-bricscad-undocumented]~ note now precedes it

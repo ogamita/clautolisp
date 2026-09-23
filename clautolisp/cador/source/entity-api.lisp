@@ -407,6 +407,60 @@ but that divergence is not portable and not condoned: the create returns ~
 nil under autocad, clautolisp and strict.~%"
           type missing (length missing)))
 
+;;; --- Invalid INSERT (cador-entmakex-invalid-insert.issue) ---------
+;;;
+;;; An INSERT whose group-2 block name does not resolve to a BLOCK_RECORD is
+;;; rejected by BOTH AutoCAD and BricsCAD (entmake/entmakex return nil, nothing
+;;; is added to the database). This is NOT a vendor divergence — the vendors
+;;; agree. cador historically kept a permissive construction mode that accepted
+;;; such an INSERT, which hid invalid DXF fixtures until the suite reached a
+;;; real CAD. Now: the vendor dialects reject it (match the vendor); clautolisp
+;;; keeps the permissive mode but emits [entmakex-invalid-insert]; lax accepts
+;;; silently; strict accepts but warns (a divergence of any kind is unsafe).
+
+(defun %pure-group-string (data code)
+  "The string value of group CODE in the pure group-code list DATA, or NIL."
+  (dolist (pair data nil)
+    (when (and (consp pair) (group-code-equal-p (car pair) code)
+               (stringp (cdr pair)))
+      (return (cdr pair)))))
+
+(defun %vendor-dialect-p (dialect-name)
+  "True when DIALECT-NAME is an AutoCAD or BricsCAD dialect (any version)."
+  (let ((name (and (symbolp dialect-name) (symbol-name dialect-name))))
+    (and name (or (search "AUTOCAD" name) (search "BRICSCAD" name)) t)))
+
+(defun %invalid-insert-policy (dialect-name)
+  "For an INSERT whose group-2 block name is undefined, classify DIALECT-NAME.
+Returns (values ACTION WARN-P): ACTION is :reject (return nil, no entity — what
+AutoCAD and BricsCAD do) or :accept (cador's permissive construction mode).
+Vendor dialects reject; lax accepts silently; clautolisp and strict accept and
+warn (strict warns on any divergence)."
+  (cond
+    ((%vendor-dialect-p dialect-name) (values :reject nil))
+    ((eq dialect-name :lax)           (values :accept nil))
+    (t                                (values :accept t))))
+
+(defun emit-entmakex-invalid-insert-warning (block-name)
+  "Advisory to *ERROR-OUTPUT*: cador accepted an INSERT that AutoCAD and
+BricsCAD reject — its group-2 block BLOCK-NAME is undefined."
+  (format *error-output*
+          "~&[entmakex-invalid-insert] cador accepted an INSERT rejected by ~
+AutoCAD and BricsCAD: block ~A is undefined (its group-2 name resolves to no ~
+BLOCK_RECORD); the create returns nil under the autocad and bricscad ~
+dialects.~%"
+          (or block-name "(unnamed)")))
+
+(defun %invalid-insert-p (host pure)
+  "True when PURE is an INSERT whose group-2 block name does not resolve to a
+BLOCK_RECORD in HOST — the immediately checkable INSERT invariant the vendors
+enforce at create time."
+  (let ((type (%data-type-string pure)))
+    (and type (string-equal type "INSERT")
+         (let ((block-name (%pure-group-string pure 2)))
+           (or (null block-name)
+               (not (cador-find-table-record host :block-record block-name)))))))
+
 (defun %host-add-entity (host data operator-name &optional owner)
   "Shared worker for HOST-ENTMAKE / HOST-ENTMAKEX. Validate + normalise
 DATA against the entity-family registry (clautolisp.drawing), add the
@@ -425,6 +479,18 @@ and bricscad additionally warn."
   (let* ((pure (al-data->pure data operator-name))
          (drawing (cador-active-drawing host))
          (missing-markers (clautolisp.drawing:entity-dxf-missing-markers pure)))
+    ;; An INSERT referencing an undefined block is rejected by both vendors
+    ;; (cador-entmakex-invalid-insert.issue). Only ENTMAKE / ENTMAKEX are
+    ;; validated here — the command-engine INSERT stand-in stays permissive.
+    (when (and (member operator-name '(entmake entmakex))
+               (%invalid-insert-p host pure))
+      (multiple-value-bind (action warn-p)
+          (%invalid-insert-policy
+           (clautolisp.autolisp-runtime:current-evaluation-dialect-name))
+        (when warn-p
+          (emit-entmakex-invalid-insert-warning (%pure-group-string pure 2)))
+        (when (eq action :reject)
+          (return-from %host-add-entity (values nil nil)))))
     (when missing-markers
       (multiple-value-bind (action warn-p)
           (%resolved-divergence-policy

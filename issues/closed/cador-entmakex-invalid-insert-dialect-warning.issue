@@ -52,3 +52,23 @@ extract it with:
    warnings annex.
 5. Verify that no invalid entity becomes visible through ENTGET, ENTLAST or
    ENTNEXT when the vendor-compatible path returns nil.
+
+== Resolved (clautolisp 2.2.78) ==
+
+host-entmakex / host-entmake now validate the immediately-checkable INSERT
+invariant: an INSERT whose group-2 block name does not resolve to a
+BLOCK_RECORD is REJECTED (nil, nothing added) under the autocad-* and
+bricscad-* dialects, matching both vendors. clautolisp keeps its permissive
+construction mode and emits the registered [entmakex-invalid-insert] warning;
+--strict accepts but warns; --lax accepts silently. The command-engine INSERT
+stand-in is unaffected (only ENTMAKE / ENTMAKEX are validated).
+
+- Implementation: clautolisp/cador/source/entity-api.lisp (%invalid-insert-p,
+  %invalid-insert-policy, emit-entmakex-invalid-insert-warning, wired into
+  %host-add-entity gated to the entmake/entmakex operators).
+- Catalogue: [entmakex-invalid-insert] registered in
+  clautolisp/autolisp-runtime/source/portability.lisp (dialect-warnings annex).
+- Tests: autolisp-builtins-core/tests/drawing-data-tests.lisp
+  (dd-invalid-insert-*): vendor dialects reject, permissive dialects accept,
+  clautolisp/strict warn, defined-block INSERT creates everywhere, and ENTLAST
+  stays nil after a rejected INSERT (acceptance #5).

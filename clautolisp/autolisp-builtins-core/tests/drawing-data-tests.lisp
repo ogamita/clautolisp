@@ -105,6 +105,78 @@ dots go to *standard-output*, so rebinding *error-output* is clean."
       (is (eql 1 r) "markerless LINE should create under ~S" d)
       (is (string= "" w) "no warning expected for LINE under ~S; got: ~S" d w))))
 
+;;; --- Invalid INSERT: undefined block (cador-entmakex-invalid-insert) --
+;;;
+;;; An INSERT whose group-2 block is undefined is rejected by BOTH AutoCAD and
+;;; BricsCAD. cador's permissive construction mode accepted it; now the vendor
+;;; dialects reject it (nil, nothing added), clautolisp/strict accept + warn
+;;; [entmakex-invalid-insert], and lax accepts silently.
+
+;; An INSERT (with the block-reference subclass markers) to an UNDEFINED block.
+(defparameter *ii-insert-undefined-block*
+  "(if (= (type (entmakex (list (cons 0 \"INSERT\")
+                                (cons 100 \"AcDbEntity\") (cons 100 \"AcDbBlockReference\")
+                                (cons 2 \"NO_SUCH_BLOCK\")
+                                (cons 8 \"0\")
+                                (cons 10 (list 0.0 0.0 0.0)))))
+         'ENAME) 1 0)")
+
+;; The same INSERT, but the block MYBLK is defined first via a BLOCK/ENDBLK pair.
+(defparameter *ii-insert-defined-block*
+  "(progn
+     (entmake (list (cons 0 \"BLOCK\") (cons 2 \"MYBLK\") (cons 70 0)
+                    (cons 10 (list 0.0 0.0 0.0))))
+     (entmake (list (cons 0 \"ENDBLK\")))
+     (if (= (type (entmakex (list (cons 0 \"INSERT\")
+                                  (cons 100 \"AcDbEntity\") (cons 100 \"AcDbBlockReference\")
+                                  (cons 2 \"MYBLK\")
+                                  (cons 8 \"0\")
+                                  (cons 10 (list 0.0 0.0 0.0)))))
+            'ENAME) 1 0))")
+
+(test dd-invalid-insert-vendor-dialects-reject-undefined-block
+  (dolist (d '(:autocad-2026 :bricscad-v26))
+    (is (eql 0 (nth-value 0 (%d1-run *ii-insert-undefined-block* d)))
+        "INSERT to an undefined block should be rejected under ~S" d)))
+
+(test dd-invalid-insert-permissive-dialects-accept-undefined-block
+  (dolist (d '(:clautolisp :strict :lax))
+    (is (eql 1 (nth-value 0 (%d1-run *ii-insert-undefined-block* d)))
+        "INSERT to an undefined block should be accepted (permissive) under ~S" d)))
+
+(test dd-invalid-insert-warns-under-clautolisp-and-strict-only
+  (dolist (d '(:clautolisp :strict))
+    (multiple-value-bind (r w) (%d1-run *ii-insert-undefined-block* d)
+      (declare (ignore r))
+      (is (search "entmakex-invalid-insert" w)
+          "expected the [entmakex-invalid-insert] warning under ~S; got: ~S" d w)))
+  (dolist (d '(:autocad-2026 :bricscad-v26 :lax))
+    (multiple-value-bind (r w) (%d1-run *ii-insert-undefined-block* d)
+      (declare (ignore r))
+      (is (string= "" w) "no warning expected under ~S; got: ~S" d w))))
+
+(test dd-invalid-insert-defined-block-creates-everywhere
+  ;; A block reference to a DEFINED block is valid: it creates under every
+  ;; dialect, with no warning.
+  (dolist (d '(:autocad-2026 :bricscad-v26 :clautolisp :strict :lax))
+    (multiple-value-bind (r w) (%d1-run *ii-insert-defined-block* d)
+      (is (eql 1 r) "INSERT to a defined block should create under ~S" d)
+      (is (string= "" w) "no warning expected under ~S; got: ~S" d w))))
+
+(test dd-invalid-insert-reject-leaves-no-entity-visible
+  ;; Acceptance #5: when the vendor-compatible path returns nil, no invalid
+  ;; entity becomes visible through ENTLAST.
+  (dolist (d '(:autocad-2026 :bricscad-v26))
+    (is (eql 1 (nth-value 0
+                (%d1-run
+                 "(progn (entmakex (list (cons 0 \"INSERT\")
+                                         (cons 100 \"AcDbEntity\") (cons 100 \"AcDbBlockReference\")
+                                         (cons 2 \"NO_SUCH_BLOCK\") (cons 8 \"0\")
+                                         (cons 10 (list 0.0 0.0 0.0))))
+                         (if (entlast) 0 1))"
+                 d)))
+        "ENTLAST must stay nil after a rejected INSERT under ~S" d)))
+
 ;;; --- Divergence D3: entmod on a non-graphical XRECORD (dialect) --
 
 ;; Create an XRECORD under a dict key, entmod its group-1 value, read it
