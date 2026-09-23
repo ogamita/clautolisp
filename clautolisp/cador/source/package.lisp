@@ -224,6 +224,10 @@
    #:cador-sysvar
    #:cador-set-sysvar
    #:cador-remove-sysvar
+   ;; clautolisp default drawing format (CLAUTOLISPDEFAULTDRAWINGFORMAT)
+   #:cador-default-drawing-format
+   #:+default-drawing-format-sysvar+
+   #:*clautolisp-extension-sysvar-names*
    ;; BricsCAD-dialect sysvar overlay
    #:*bricscad-absent-sysvars*
    #:*bricscad-factory-defaults*

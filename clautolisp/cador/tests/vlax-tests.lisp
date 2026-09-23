@@ -787,3 +787,54 @@ comparison."
     (is (host-vlax-property-available-p host layer "Color"))
     (is (host-vlax-property-available-p host layer "Linetype"))
     (is (host-vlax-property-available-p host doc "ActiveLayer"))))
+
+;;; --- Default drawing write format (CLAUTOLISPDEFAULTDRAWINGFORMAT) ---
+;;; A drawing written to a path whose extension names no known drawing
+;;; format (or a fresh drawing that never came from disk) falls back to
+;;; the CLAUTOLISPDEFAULTDRAWINGFORMAT sysvar — DXF (ASCII) by default,
+;;; initialised from the environment variable of the same name. A known
+;;; extension still wins.
+
+(test default-drawing-format-sysvar-defaults-to-dxf
+  (let ((host (make-cador)))
+    (let ((cell (cador-sysvar host "CLAUTOLISPDEFAULTDRAWINGFORMAT")))
+      (is (typep cell 'sysvar-cell))
+      (is (string= "DXF" (sysvar-cell-value cell))))
+    (is (eq :dxf-ascii (clautolisp.cador:cador-default-drawing-format host)))))
+
+(test default-drawing-format-sysvar-maps-and-is-lenient
+  (let ((host (make-cador)))
+    (cador-set-sysvar host "CLAUTOLISPDEFAULTDRAWINGFORMAT" "DWG")
+    (is (eq :dwg (clautolisp.cador:cador-default-drawing-format host)))
+    ;; Case-insensitive.
+    (cador-set-sysvar host "CLAUTOLISPDEFAULTDRAWINGFORMAT" "dxf")
+    (is (eq :dxf-ascii (clautolisp.cador:cador-default-drawing-format host)))
+    ;; An unrecognised value falls back to DXF rather than erroring.
+    (cador-set-sysvar host "CLAUTOLISPDEFAULTDRAWINGFORMAT" "PDF")
+    (is (eq :dxf-ascii (clautolisp.cador:cador-default-drawing-format host)))))
+
+(test vlax-saveas-writes-dxf-by-default-for-unknown-extension
+  (let* ((host (make-cador))
+         (doc (%a1-active-document host))
+         (path (format nil "/tmp/cador-deffmt-~D.out" (get-internal-real-time))))
+    (unwind-protect
+         (progn
+           (host-vlax-invoke-method host doc "SaveAs" (list path))
+           (is (probe-file path))
+           ;; The active drawing now records the format it was written in.
+           (is (eq :dxf-ascii
+                   (clautolisp.drawing:drawing-format (cador-active-drawing host)))))
+      (ignore-errors (delete-file path)))))
+
+(test vlax-saveas-extension-wins-over-the-default-format
+  ;; Even with the default set to DWG, a .dxf destination writes DXF.
+  (let* ((host (make-cador))
+         (doc (%a1-active-document host))
+         (path (format nil "/tmp/cador-deffmt-~D.dxf" (get-internal-real-time))))
+    (cador-set-sysvar host "CLAUTOLISPDEFAULTDRAWINGFORMAT" "DWG")
+    (unwind-protect
+         (progn
+           (host-vlax-invoke-method host doc "SaveAs" (list path))
+           (is (eq :dxf-ascii
+                   (clautolisp.drawing:drawing-format (cador-active-drawing host)))))
+      (ignore-errors (delete-file path)))))

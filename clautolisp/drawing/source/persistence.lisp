@@ -19,6 +19,15 @@
 (defvar *drawing-codecs* (make-hash-table)
   "Format keyword -> plist (:reader fn :writer fn).")
 
+(defvar *default-drawing-format* nil
+  "The format WRITE-DRAWING falls back to when neither an explicit FORMAT,
+the drawing's own FORMAT, nor the destination's file type determines one — a
+codec keyword (e.g. :dxf-ascii or :dwg), or NIL for no policy (the default in
+this layer, which stays host-agnostic). A host binds it from its own default
+drawing-format policy: clautolisp sets it from the CLAUTOLISPDEFAULTDRAWINGFORMAT
+system variable (see cador). It is the LAST resort, so a recognised extension
+or a drawing that already knows its format still wins.")
+
 (defun register-drawing-codec (format &key reader writer)
   "Register READER and/or WRITER for FORMAT (a keyword). Either may be
 NIL. Returns FORMAT."
@@ -77,10 +86,12 @@ reader, DRAWING-READ-ERROR on a codec parse failure."
 
 (defun write-drawing (drawing destination &key format version)
   "Write DRAWING to DESTINATION. FORMAT defaults to the drawing's
-format then DESTINATION's type; VERSION defaults to the drawing's
-version then the codec's newest. Updates the drawing's PATH / FORMAT /
-VERSION and returns it. Signals DRAWING-FORMAT-ERROR / DRAWING-WRITE-ERROR."
-  (let* ((fmt (or format (drawing-format drawing) (probe-drawing-format destination)))
+format, then DESTINATION's type, then *DEFAULT-DRAWING-FORMAT* (a host's
+last-resort policy); VERSION defaults to the drawing's version then the
+codec's newest. Updates the drawing's PATH / FORMAT / VERSION and returns it.
+Signals DRAWING-FORMAT-ERROR / DRAWING-WRITE-ERROR."
+  (let* ((fmt (or format (drawing-format drawing) (probe-drawing-format destination)
+                  *default-drawing-format*))
          (codec (and fmt (find-drawing-codec fmt))))
     (unless fmt
       (error 'drawing-format-error :location destination :drawing drawing
