@@ -98,6 +98,7 @@ from the cador package before the Phase-17a extraction.")
    #:find-drawing-codec
    #:probe-drawing-format
    #:*default-drawing-format*
+   #:*default-drawing-version*
    #:read-drawing
    #:write-drawing
    #:*drawing-codecs*

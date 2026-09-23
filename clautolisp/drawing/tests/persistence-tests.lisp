@@ -95,3 +95,24 @@
           (d (make-drawing)))
       (write-drawing d "/tmp/x.dxf")
       (is (eq :dxf-ascii (drawing-format d))))))
+
+(test write-drawing-default-version-special-records-version
+  ;; *DEFAULT-DRAWING-VERSION* supplies the version the codec is asked for
+  ;; and the drawing records, unless an explicit VERSION or the drawing's
+  ;; own version overrides it.
+  (let ((*drawing-codecs* (make-hash-table))
+        (seen-version :unset))
+    (register-drawing-codec
+     :native :writer (lambda (drawing destination &key version)
+                       (declare (ignore drawing destination))
+                       (setf seen-version version)))
+    (let ((*default-drawing-version* :ac1027)
+          (d (make-drawing :format :native)))
+      (write-drawing d "/tmp/x.native")
+      (is (eq :ac1027 seen-version))
+      (is (eq :ac1027 (drawing-version d))))
+    ;; An explicit version wins over the special.
+    (let ((*default-drawing-version* :ac1027)
+          (d (make-drawing :format :native)))
+      (write-drawing d "/tmp/x.native" :version :ac1032)
+      (is (eq :ac1032 (drawing-version d))))))

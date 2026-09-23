@@ -70,50 +70,122 @@ tables so tblsearch / tblnext have a sensible baseline."
     ("PLATFORM"  :string "Mock CAD" t)
     ("LISPSYS"   :integer 1 nil)))
 
-;;; --- clautolisp-specific default drawing format ----------------
+;;; --- default drawing write format (container + version) --------
 ;;;
-;;; CLAUTOLISPDEFAULTDRAWINGFORMAT (a clautolisp extension system variable —
-;;; no vendor counterpart; documented in the autolisp-spec clautolisp
-;;; deviation note and in the clautolisp user manual) names the file format
-;;; a drawing is written in when nothing else determines one: SaveAs to a
-;;; path whose extension is not a known drawing type, or a freshly created
-;;; drawing that has never been read from disk. It is shared by cador and
-;;; cadtui (cadtui runs on the cador core). Its initial value comes from the
-;;; environment variable of the same name, and is DXF (ASCII DXF, the
-;;; portable form) when that is unset or invalid. A recognised extension or
-;;; a drawing that already knows its own format still wins over it.
+;;; The file format a drawing is written in when nothing else determines one
+;;; (SaveAs to a path whose extension names no known drawing type, or a fresh
+;;; drawing never read from disk) has two axes: the CONTAINER (ASCII DXF,
+;;; binary DXF, or DWG) and the VERSION (DWG 2018 down to R9). Two system
+;;; variables select it, and cador consults whichever suits the active dialect:
+;;;
+;;;   SAVEFORMAT — a *BricsCAD* system variable (integer 1..30, default 1 =
+;;;   DWG 2018), already in the vendor catalogue. AutoCAD has NO counterpart —
+;;;   its default save format lives in the Options dialog, not a sysvar — so
+;;;   under a BricsCAD dialect SAVEFORMAT is the authoritative knob.
+;;;
+;;;   CLAUTOLISPDEFAULTDRAWINGFORMAT — a clautolisp extension system variable
+;;;   (string, default "DXF"; e.g. "DWG", "DWG-2013", "DXFB-2000"). It is the
+;;;   cross-dialect knob (and the only one AutoCAD-emulation runs have, since
+;;;   AutoCAD offers no sysvar), seeded from the environment variable of the
+;;;   same name. Shared by cador and cadtui.
+;;;
+;;; A recognised destination extension or a drawing that already knows its own
+;;; format still wins over both. The VERSION axis is currently RECORDED (in the
+;;; drawing and the DXF $ACADVER header) but the DXF/DWG writers still emit a
+;;; fixed version — see the STUB in drawing/dxf.lisp / drawing-dwg/codec.lisp
+;;; and issues/open/drawing-codec-version-output.issue.
 
 (defparameter +default-drawing-format-sysvar+ "CLAUTOLISPDEFAULTDRAWINGFORMAT"
   "Name of the clautolisp default-drawing-format system / environment
 variable.")
 
+(defparameter +saveformat-sysvar+ "SAVEFORMAT"
+  "Name of BricsCAD's save-format system variable, honoured under a BricsCAD
+dialect.")
+
 (defparameter *clautolisp-extension-sysvar-names*
   (list +default-drawing-format-sysvar+)
   "The clautolisp-specific system variables with no vendor counterpart, which
 INSTALL-CLAUTOLISP-EXTENSION-SYSVARS adds on top of whichever vendor catalogue
-was loaded. Their count is why a populated mock carries
+was loaded (SAVEFORMAT is NOT here — it is a BricsCAD sysvar already in the
+catalogue). Their count is why a populated mock carries
 (length *full-sysvar-catalogue*) + (length *clautolisp-extension-sysvar-names*)
 sysvar cells.")
 
-(defparameter *default-drawing-format-values*
-  '(("DXF" . :dxf-ascii)
-    ("DWG" . :dwg))
-  "Accepted CLAUTOLISPDEFAULTDRAWINGFORMAT values: the sysvar string (upcased)
-mapped to a clautolisp.drawing codec keyword. DXF is ASCII DXF.")
+(defparameter *drawing-format-container-values*
+  ;; Longest keys first so DXFB is matched before DXF as a prefix.
+  '(("DXFB" . :dxf-binary)
+    ("BDXF" . :dxf-binary)
+    ("DWG"  . :dwg)
+    ("DXF"  . :dxf-ascii))
+  "CLAUTOLISPDEFAULTDRAWINGFORMAT container tokens -> clautolisp.drawing codec
+keyword. DXF is ASCII DXF; DXFB / BDXF are binary DXF.")
 
-(defun %canonical-default-drawing-format (raw)
-  "The accepted format NAME (\"DXF\" / \"DWG\") RAW denotes, case- and
-whitespace-insensitively, or NIL if RAW is not one of them."
-  (and (stringp raw)
-       (car (assoc (string-upcase (string-trim '(#\Space #\Tab) raw))
-                   *default-drawing-format-values* :test #'string=))))
+(defparameter *drawing-format-version-labels*
+  '(("2018" . :ac1032) ("2013" . :ac1027) ("2010" . :ac1024)
+    ("2007" . :ac1021) ("2004" . :ac1018) ("2000" . :ac1015)
+    ("R14"  . :ac1014) ("R13"  . :ac1012) ("R12"  . :ac1009)
+    ("R11"  . :ac1009) ("R10"  . :ac1006) ("R9"   . :ac1004))
+  "Version labels a CLAUTOLISPDEFAULTDRAWINGFORMAT value may carry, mapped to
+the DXF $ACADVER keyword the drawing model uses.")
+
+(defparameter *saveformat-decode*
+  ;; BricsCAD SAVEFORMAT integer -> (CONTAINER VERSION). Value 1 is the
+  ;; default (DWG 2018). Table per
+  ;; https://help.bricsys.com/en-us/document/system-variable-reference/s/saveformat-system-variable
+  '((1  :dwg :ac1032) (2  :dxf-ascii :ac1032) (3  :dxf-binary :ac1032)
+    (4  :dwg :ac1027) (5  :dxf-ascii :ac1027) (6  :dxf-binary :ac1027)
+    (7  :dwg :ac1024) (8  :dxf-ascii :ac1024) (9  :dxf-binary :ac1024)
+    (10 :dwg :ac1021) (11 :dxf-ascii :ac1021) (12 :dxf-binary :ac1021)
+    (13 :dwg :ac1018) (14 :dxf-ascii :ac1018) (15 :dxf-binary :ac1018)
+    (16 :dwg :ac1015) (17 :dxf-ascii :ac1015) (18 :dxf-binary :ac1015)
+    (19 :dwg :ac1014) (20 :dxf-ascii :ac1014) (21 :dxf-binary :ac1014)
+    (22 :dwg :ac1012) (23 :dxf-ascii :ac1012) (24 :dxf-binary :ac1012)
+    (25 :dwg :ac1009) (26 :dxf-ascii :ac1009) (27 :dxf-binary :ac1009)
+    (28 :dxf-ascii :ac1006) (29 :dxf-binary :ac1006)
+    (30 :dxf-ascii :ac1004))
+  "BricsCAD SAVEFORMAT integer decode: (INT CONTAINER VERSION).")
+
+(defun %string-prefix-p (prefix string)
+  (and (<= (length prefix) (length string))
+       (string= prefix string :end2 (length prefix))))
+
+(defun %parse-drawing-format-spec (raw)
+  "Parse a CLAUTOLISPDEFAULTDRAWINGFORMAT string into (values CONTAINER
+VERSION): a container token (DXF / DXFB / DWG) optionally followed by a
+version label (\"DWG-2013\", \"DXF2000\"), case- and separator-insensitive.
+CONTAINER is NIL when RAW names no known container."
+  (when (stringp raw)
+    (let* ((s (string-upcase (string-trim '(#\Space #\Tab #\-) raw)))
+           (entry (find-if (lambda (e) (%string-prefix-p (car e) s))
+                           *drawing-format-container-values*)))
+      (if (null entry)
+          (values nil nil)
+          (let* ((rest (string-trim '(#\Space #\Tab #\- #\_)
+                                    (subseq s (length (car entry)))))
+                 (version (and (plusp (length rest))
+                               (cdr (assoc rest *drawing-format-version-labels*
+                                           :test #'string=)))))
+            (values (cdr entry) version))))))
+
+(defun %decode-saveformat (value)
+  "Decode a BricsCAD SAVEFORMAT integer VALUE into (values CONTAINER VERSION),
+or (values NIL NIL) when it is not an integer in the documented 1..30 range."
+  (let ((row (and (integerp value) (assoc value *saveformat-decode*))))
+    (if row (values (second row) (third row)) (values nil nil))))
+
+(defun %bricscad-dialect-p (dialect-name)
+  "True when DIALECT-NAME (a keyword like :bricscad-v26) is a BricsCAD dialect."
+  (let ((name (and (symbolp dialect-name) (symbol-name dialect-name))))
+    (and name (search "BRICSCAD" name) t)))
 
 (defun %default-drawing-format-initial-value ()
   "The initial CLAUTOLISPDEFAULTDRAWINGFORMAT value: the environment variable
-of the same name when it names an accepted format, otherwise \"DXF\"."
-  (or (%canonical-default-drawing-format
-       (uiop:getenv +default-drawing-format-sysvar+))
-      "DXF"))
+of the same name when it names a known container, otherwise \"DXF\"."
+  (let ((env (uiop:getenv +default-drawing-format-sysvar+)))
+    (if (and env (nth-value 0 (%parse-drawing-format-spec env)))
+        (string-upcase (string-trim '(#\Space #\Tab) env))
+        "DXF")))
 
 (defun install-clautolisp-extension-sysvars (mock)
   "Install the clautolisp-specific system variables that have no vendor
@@ -128,14 +200,26 @@ CLAUTOLISPDEFAULTDRAWINGFORMAT. Returns MOCK."
   mock)
 
 (defun cador-default-drawing-format (mock)
-  "The clautolisp.drawing codec keyword MOCK writes a drawing in when nothing
-else determines the format — parsed from the CLAUTOLISPDEFAULTDRAWINGFORMAT
-system variable, or :dxf-ascii when it is unset or holds an unrecognised
-value."
-  (let* ((cell (cador-sysvar mock +default-drawing-format-sysvar+))
-         (name (and cell (%canonical-default-drawing-format
-                          (sysvar-cell-value cell)))))
-    (cdr (assoc (or name "DXF") *default-drawing-format-values* :test #'string=))))
+  "Return (values CONTAINER VERSION) — the clautolisp.drawing codec keyword and
+the DXF $ACADVER version keyword (or NIL for the codec's newest) MOCK writes a
+drawing in when nothing else determines the format. The source is
+dialect-dependent: under a BricsCAD dialect the vendor SAVEFORMAT integer
+(default 1 = DWG 2018); otherwise the CLAUTOLISPDEFAULTDRAWINGFORMAT string
+(default \"DXF\", version unspecified = codec newest)."
+  (let ((dialect (ignore-errors
+                   (clautolisp.autolisp-runtime:current-evaluation-dialect-name))))
+    (if (%bricscad-dialect-p dialect)
+        (multiple-value-bind (container version)
+            (%decode-saveformat (let ((cell (cador-sysvar mock +saveformat-sysvar+)))
+                                  (and cell (sysvar-cell-value cell))))
+          (if container
+              (values container version)
+              (values :dwg :ac1032)))       ; BricsCAD SAVEFORMAT default
+        (multiple-value-bind (container version)
+            (%parse-drawing-format-spec
+             (let ((cell (cador-sysvar mock +default-drawing-format-sysvar+)))
+               (and cell (sysvar-cell-value cell))))
+          (values (or container :dxf-ascii) version)))))
 
 (defun populate-default-sysvars (mock &key (catalogue :full))
   "Pre-populate MOCK's sysvar table.

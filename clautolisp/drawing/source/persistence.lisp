@@ -28,6 +28,14 @@ drawing-format policy: clautolisp sets it from the CLAUTOLISPDEFAULTDRAWINGFORMA
 system variable (see cador). It is the LAST resort, so a recognised extension
 or a drawing that already knows its format still wins.")
 
+(defvar *default-drawing-version* nil
+  "The version WRITE-DRAWING falls back to when neither an explicit VERSION nor
+the drawing's own VERSION is given — a DXF $ACADVER keyword (e.g. :ac1032 for
+DWG 2018, :ac1027 for 2013), or NIL for the codec's newest. The companion of
+*DEFAULT-DRAWING-FORMAT*: clautolisp binds it from SAVEFORMAT /
+CLAUTOLISPDEFAULTDRAWINGFORMAT (see cador). NOTE: the current DXF/DWG writers
+record this version but still emit a fixed one — see the STUB in the codecs.")
+
 (defun register-drawing-codec (format &key reader writer)
   "Register READER and/or WRITER for FORMAT (a keyword). Either may be
 NIL. Returns FORMAT."
@@ -87,11 +95,13 @@ reader, DRAWING-READ-ERROR on a codec parse failure."
 (defun write-drawing (drawing destination &key format version)
   "Write DRAWING to DESTINATION. FORMAT defaults to the drawing's
 format, then DESTINATION's type, then *DEFAULT-DRAWING-FORMAT* (a host's
-last-resort policy); VERSION defaults to the drawing's version then the
-codec's newest. Updates the drawing's PATH / FORMAT / VERSION and returns it.
+last-resort policy); VERSION defaults to the drawing's version, then
+*DEFAULT-DRAWING-VERSION*, then the codec's newest. Updates the drawing's
+PATH / FORMAT / VERSION and returns it.
 Signals DRAWING-FORMAT-ERROR / DRAWING-WRITE-ERROR."
   (let* ((fmt (or format (drawing-format drawing) (probe-drawing-format destination)
                   *default-drawing-format*))
+         (ver (or version (drawing-version drawing) *default-drawing-version*))
          (codec (and fmt (find-drawing-codec fmt))))
     (unless fmt
       (error 'drawing-format-error :location destination :drawing drawing
@@ -103,10 +113,10 @@ Signals DRAWING-FORMAT-ERROR / DRAWING-WRITE-ERROR."
              :format-arguments (list fmt)))
     (handler-case
         (progn
-          (funcall (getf codec :writer) drawing destination :version version)
+          (funcall (getf codec :writer) drawing destination :version ver)
           (setf (drawing-path drawing) (pathname destination)
                 (drawing-format drawing) fmt)
-          (when version (setf (drawing-version drawing) version))
+          (when ver (setf (drawing-version drawing) ver))
           drawing)
       (drawing-error (c) (error c))
       (error (c)

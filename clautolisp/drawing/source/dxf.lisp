@@ -683,6 +683,10 @@ Sets DRAWING-FORMAT precisely (READ-DRAWING leaves it as set)."
         drawing)))
 
 (defun dxf-write-drawing (drawing destination &key version)
+  ;;; STUB: VERSION is ignored — the writer emits one fixed DXF version
+  ;;; regardless (the $ACADVER header comes from the drawing's own version).
+  ;;; Per-version DXF output is deferred; see
+  ;;; issues/open/drawing-codec-version-output.issue.
   (declare (ignore version))
   (with-open-file (stream destination :direction :output
                                       :if-exists :supersede
@@ -691,6 +695,8 @@ Sets DRAWING-FORMAT precisely (READ-DRAWING leaves it as set)."
     (dxf-write-drawing-to-stream drawing stream)))
 
 (defun dxf-write-binary-drawing (drawing destination &key version)
+  ;;; STUB: VERSION is ignored — see dxf-write-drawing and
+  ;;; issues/open/drawing-codec-version-output.issue.
   (declare (ignore version))
   (with-open-file (stream destination :direction :output
                                       :if-exists :supersede

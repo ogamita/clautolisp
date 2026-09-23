@@ -838,3 +838,86 @@ comparison."
            (is (eq :dxf-ascii
                    (clautolisp.drawing:drawing-format (cador-active-drawing host)))))
       (ignore-errors (delete-file path)))))
+
+;;; --- SAVEFORMAT + container/version default (feat) ----------------
+;;; The default write format has two axes: container (DXF/DXFB/DWG) and
+;;; version (DWG 2018..R9). CLAUTOLISPDEFAULTDRAWINGFORMAT (string) selects
+;;; both under non-BricsCAD dialects; BricsCAD's SAVEFORMAT integer selects
+;;; both under a BricsCAD dialect. Version is recorded but codec output is
+;;; fixed for now (drawing-codec-version-output.issue).
+
+(test parse-drawing-format-spec-container-and-version
+  (flet ((p (s) (multiple-value-list
+                 (clautolisp.cador::%parse-drawing-format-spec s))))
+    (is (equal '(:dxf-ascii nil) (p "DXF")))
+    (is (equal '(:dwg nil) (p "dwg")))
+    (is (equal '(:dxf-binary nil) (p "DXFB")))
+    (is (equal '(:dwg :ac1027) (p "DWG-2013")))
+    (is (equal '(:dxf-ascii :ac1015) (p "DXF2000")))
+    (is (equal '(:dxf-binary :ac1015) (p "DXFB-2000")))
+    (is (equal '(:dwg :ac1009) (p "DWG-R12")))
+    ;; Unknown container -> (nil nil); unknown version -> container only.
+    (is (equal '(nil nil) (p "PDF")))
+    (is (equal '(:dwg nil) (p "DWG-9999")))))
+
+(test decode-saveformat-maps-container-and-version
+  (flet ((d (n) (multiple-value-list (clautolisp.cador::%decode-saveformat n))))
+    (is (equal '(:dwg :ac1032) (d 1)))        ; default: DWG 2018
+    (is (equal '(:dxf-ascii :ac1032) (d 2)))
+    (is (equal '(:dxf-binary :ac1032) (d 3)))
+    (is (equal '(:dxf-ascii :ac1027) (d 5)))  ; DXF 2013
+    (is (equal '(:dwg :ac1015) (d 16)))       ; DWG 2000
+    (is (equal '(:dxf-binary :ac1009) (d 27)))
+    (is (equal '(:dxf-ascii :ac1004) (d 30))) ; DXF R9
+    (is (equal '(nil nil) (d 99)))            ; out of range
+    (is (equal '(nil nil) (d nil)))))
+
+(test cador-default-drawing-format-version-via-clautolisp-sysvar
+  (let ((host (make-cador)))
+    (cador-set-sysvar host "CLAUTOLISPDEFAULTDRAWINGFORMAT" "DWG-2013")
+    (is (equal '(:dwg :ac1027)
+               (multiple-value-list (clautolisp.cador:cador-default-drawing-format host))))
+    (cador-set-sysvar host "CLAUTOLISPDEFAULTDRAWINGFORMAT" "DXFB-2000")
+    (is (equal '(:dxf-binary :ac1015)
+               (multiple-value-list (clautolisp.cador:cador-default-drawing-format host))))
+    ;; Default (no version) -> newest (nil).
+    (cador-set-sysvar host "CLAUTOLISPDEFAULTDRAWINGFORMAT" "DXF")
+    (is (equal '(:dxf-ascii nil)
+               (multiple-value-list (clautolisp.cador:cador-default-drawing-format host))))))
+
+(test cador-default-drawing-format-uses-saveformat-under-bricscad
+  (let* ((host (make-cador))
+         (session (clautolisp.autolisp-runtime:evaluation-context-session
+                   (clautolisp.autolisp-runtime:current-evaluation-context))))
+    (unwind-protect
+         (progn
+           (clautolisp.autolisp-runtime:set-runtime-session-dialect
+            session (clautolisp.autolisp-reader:find-autolisp-dialect :bricscad-v26))
+           ;; SAVEFORMAT default 1 = DWG 2018.
+           (is (equal '(:dwg :ac1032)
+                      (multiple-value-list
+                       (clautolisp.cador:cador-default-drawing-format host))))
+           ;; Set SAVEFORMAT to 5 (DXF 2013).
+           (cador-set-sysvar host "SAVEFORMAT" 5)
+           (is (equal '(:dxf-ascii :ac1027)
+                      (multiple-value-list
+                       (clautolisp.cador:cador-default-drawing-format host)))))
+      (clautolisp.autolisp-runtime:set-runtime-session-dialect
+       session (clautolisp.autolisp-reader:autolisp-dialect-strict)))))
+
+(test vlax-saveas-records-version-from-default
+  ;; A DXF-2013 default records both format and version on the drawing even
+  ;; when the path extension is unknown (container DXF is a real codec).
+  (let* ((host (make-cador))
+         (doc (%a1-active-document host))
+         (path (format nil "/tmp/cador-ver-~D.out" (get-internal-real-time))))
+    (cador-set-sysvar host "CLAUTOLISPDEFAULTDRAWINGFORMAT" "DXF-2013")
+    (unwind-protect
+         (progn
+           (host-vlax-invoke-method host doc "SaveAs" (list path))
+           (is (probe-file path))
+           (is (eq :dxf-ascii
+                   (clautolisp.drawing:drawing-format (cador-active-drawing host))))
+           (is (eq :ac1027
+                   (clautolisp.drawing:drawing-version (cador-active-drawing host)))))
+      (ignore-errors (delete-file path)))))

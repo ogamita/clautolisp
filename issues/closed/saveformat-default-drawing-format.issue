@@ -1,0 +1,54 @@
+#+TITLE: SAVEFORMAT + container/version default write format
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: feature
+#+BRANCH: feat-saveformat-drawing-version
+
+SAVEFORMAT (BricsCAD) + container/version default write format
+
+== Context ==
+
+The default drawing write format shipped in 2.2.83
+(CLAUTOLISPDEFAULTDRAWINGFORMAT, issues/closed/cador-default-drawing-format.issue)
+claimed "no vendor counterpart". That was wrong: BricsCAD has SAVEFORMAT, a
+system variable (integer 1..30, default 1 = DWG 2018) that selects both the
+container (DWG / DXF / Binary DXF) and the version. AutoCAD has NO such
+sysvar — its default save format is an Options-dialog / registry preference.
+pjb asked to check the references and honour the vendor mechanism, with the
+default carrying container + version.
+
+== Change (clautolisp 2.2.84) ==
+
+- SAVEFORMAT (already a cador sysvar cell from the vendor catalogue) is now
+  *functional*: under a BricsCAD dialect it selects the default write format.
+  Full 1..30 decode -> (container . version) per the BricsCAD reference.
+
+- CLAUTOLISPDEFAULTDRAWINGFORMAT extended to carry a version: the value is a
+  container token (DXF / DXFB / DWG) optionally followed by a version label
+  ("DWG-2013", "DXF2000", "DWG-R12"), case- and separator-insensitive.
+
+- cador-default-drawing-format now returns (values CONTAINER VERSION),
+  dialect-selected: BricsCAD dialect -> SAVEFORMAT; otherwise
+  CLAUTOLISPDEFAULTDRAWINGFORMAT (the cross-dialect / AutoCAD-emulation knob).
+
+- clautolisp.drawing:*default-drawing-version* (defvar nil) — the version
+  companion of *default-drawing-format*, folded into write-drawing's version
+  resolution (after explicit version and the drawing's own). cador's ActiveX
+  SaveAs binds both specials.
+
+The container axis is honoured for real (DXF-ascii / DXF-binary / DWG are
+registered codecs). The version axis is recorded on the drawing and the DXF
+$ACADVER header, but the DXF/DWG writers still emit a fixed version — a
+STUB, tracked by issues/open/drawing-codec-version-output.issue.
+
+Also corrected the harvested SAVEFORMAT inventory/spec note ("bit-coded" —
+the vendor help says it is NOT bit-coded) and added its value table.
+
+== Resolved ==
+
+DONE — clautolisp 2.2.84 (2026-09-23). Tests: drawing suite 293/293
+(*default-drawing-version* fallback), cador suite 1065/1065
+(%parse-drawing-format-spec, %decode-saveformat, dialect source selection
+under --bricscad, SaveAs records version). Docs: autolisp-spec §§ SAVEFORMAT
+(+ *** clautolisp deviation) and CLAUTOLISPDEFAULTDRAWINGFORMAT (doc version
+0.13.1 -> 0.13.2), clautolisp user manual, RELEASE_NOTES.org.

@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.13.1
+#+VERSION: 0.13.2
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -50062,10 +50062,10 @@ AutoCAD and BricsCAD. AutoCAD all; BricsCAD V20+.
 SAVEFORMAT
 
 *** Type
-short integer (bit-coded), range 1 to 39
+short integer, range 1 to 39 (documented values 1 to 30)
 
 *** Default
-1
+1 (DWG 2018)
 
 *** Read-Only
 no
@@ -50074,10 +50074,40 @@ no
 user preference; saved in user preference
 
 *** Description
-Save format: Controls the default save format. BricsCAD only
+Save format: Controls the default save format. BricsCAD only. The value
+selects both the container (DWG / DXF / Binary DXF) and the drawing
+version:
+
+| Value | Format          | Value | Format          | Value | Format        |
+|-------|-----------------|-------|-----------------|-------|---------------|
+| 1     | DWG 2018        | 11    | DXF 2007        | 21    | Binary DXF R14 |
+| 2     | DXF 2018        | 12    | Binary DXF 2007 | 22    | DWG R13        |
+| 3     | Binary DXF 2018 | 13    | DWG 2004        | 23    | DXF R13        |
+| 4     | DWG 2013        | 14    | DXF 2004        | 24    | Binary DXF R13 |
+| 5     | DXF 2013        | 15    | Binary DXF 2004 | 25    | DWG R11/R12    |
+| 6     | Binary DXF 2013 | 16    | DWG 2000        | 26    | DXF R11/R12    |
+| 7     | DWG 2010        | 17    | DXF 2000        | 27    | Binary DXF R11/R12 |
+| 8     | DXF 2010        | 18    | Binary DXF 2000 | 28    | DXF R10        |
+| 9     | Binary DXF 2010 | 19    | DWG R14         | 29    | Binary DXF R10 |
+| 10    | DWG 2007        | 20    | DXF R14         | 30    | DXF R9         |
 
 *** Compatibility
-BricsCAD only. AutoCAD: not present; BricsCAD V20+.
+BricsCAD only. AutoCAD: not present (AutoCAD's default save format is an
+Options-dialog / registry preference, not a system variable); BricsCAD V20+.
+
+*** clautolisp
+
+/clautolisp implementation deviation — not part of the normative
+specification above./
+
+clautolisp honours SAVEFORMAT under a BricsCAD dialect as the default
+write format when neither the destination extension nor the drawing itself
+determines one (see CLAUTOLISPDEFAULTDRAWINGFORMAT, the clautolisp
+cross-dialect equivalent). The *container* axis (DWG / DXF / Binary DXF) is
+selected for real; the *version* axis is recorded on the drawing and in the
+DXF ~$ACADVER~ header, but the current DXF/DWG writers still emit a single
+fixed version — per-version output is deferred
+(~issues/open/drawing-codec-version-output.issue~).
 
 *** Source Notes
 - BricsCAD: https://help.bricsys.com/en-us/document/system-variable-reference/s/saveformat-system-variable
@@ -60454,15 +60484,24 @@ no
 session
 
 *** Description
-clautolisp-only. The file format a drawing is *written* in when nothing
-else selects one — the destination path has no recognised drawing
-extension, and the drawing does not already know its own format (a
-freshly created drawing that never came from disk). Accepted values are
-~"DXF"~ (ASCII DXF, the portable form) and ~"DWG"~, case-insensitively;
-an unrecognised value is treated as ~"DXF"~. It is a *last resort* only:
-a recognised destination extension (~.dxf~, ~.dwg~) and a drawing that
-already carries a format both take precedence over it. Shared by the
-~cador~ and ~cadtui~ hosts.
+clautolisp extension. The file format a drawing is *written* in when
+nothing else selects one — the destination path has no recognised drawing
+extension, and the drawing does not already know its own format (a freshly
+created drawing that never came from disk). The value is a *container*
+token — ~"DXF"~ (ASCII DXF, the portable form), ~"DXFB"~ (binary DXF) or
+~"DWG"~ — optionally followed by a *version* label
+(~"DWG-2013"~, ~"DXF2000"~, ~"DWG-R12"~), case- and separator-insensitive;
+an unrecognised container is treated as ~"DXF"~, an absent version means
+the codec's newest. It is a *last resort* only: a recognised destination
+extension (~.dxf~, ~.dwg~) and a drawing that already carries a format both
+take precedence over it. Shared by the ~cador~ and ~cadtui~ hosts.
+
+This is the clautolisp cross-dialect equivalent of BricsCAD's ~SAVEFORMAT~:
+under a BricsCAD dialect the vendor ~SAVEFORMAT~ integer is consulted
+instead; under every other dialect (AutoCAD, which has *no* save-format
+system variable, and clautolisp/strict/lax) this variable is the source.
+As with ~SAVEFORMAT~, the version axis is currently recorded but the DXF/DWG
+writers emit a fixed version (~issues/open/drawing-codec-version-output.issue~).
 
 *** Read/Written By
 - the drawing writer reached through the ActiveX object model
@@ -60470,16 +60509,19 @@ already carries a format both take precedence over it. Shared by the
   without a determinable format.
 
 *** Compatibility
-clautolisp extension; absent on AutoCAD and BricsCAD. Unlike the
-language-surface clautolisp sysvars, it governs the *engine's* file
-output rather than AutoLISP semantics, so it is present and honoured in
-every dialect (not gated to ~:clautolisp~). Seedable from the environment
-variable of the same name, ~CLAUTOLISPDEFAULTDRAWINGFORMAT~ (precedence
-~setvar~ > env > default ~"DXF"~).
+clautolisp extension; no direct AutoCAD counterpart (AutoCAD's default save
+format is an Options-dialog preference, not a system variable). BricsCAD's
+~SAVEFORMAT~ is the vendor analogue, and takes precedence under a BricsCAD
+dialect. This variable governs the *engine's* file output rather than
+AutoLISP semantics, so it is present and honoured in every dialect (not
+gated to ~:clautolisp~). Seedable from the environment variable of the same
+name, ~CLAUTOLISPDEFAULTDRAWINGFORMAT~ (precedence ~setvar~ > env >
+default ~"DXF"~).
 
 *** Source Notes
-- No vendor reference. clautolisp implementation; see the clautolisp user
-  manual (/Host backend/).
+- No vendor reference for this name; the analogous vendor knob is
+  ~SAVEFORMAT~ (BricsCAD). clautolisp implementation; see the clautolisp
+  user manual (/Host backend/).
 
 #+LATEX: \newpage
 
