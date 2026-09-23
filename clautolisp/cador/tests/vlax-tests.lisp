@@ -639,3 +639,151 @@ the shape of the SCHMS sigfic fixtures."
          (box (host-vlax-invoke-method mock vla "GetBoundingBox" '())))
     (is (%tv~= 2.5d0 (second (first box))))
     (is (%tv~= 5.0d0 (second (second box))))))
+
+;;; --- SCHME A1 object-model surface (cador-schme-a1-activex-coverage) ---
+;;;
+;;; The ActiveX object model SCHME+ drives against: Layers.Add + a
+;;; mutable Layer.Color / Layer.Linetype backed by the layer table
+;;; record, Document.ActiveLayer tracking CLAYER, Layer.Delete,
+;;; Documents.Add, ModelSpace.AddLine, Block.AddAttribute,
+;;; Linetypes.Load and a persisting Document.SaveAs. Each new-surface
+;;; test asserts that DXF (the table record / entity list) and ActiveX
+;;; observe the same state.
+
+(defun %a1-str (value)
+  "Coerce a COM string-valued property (an AutoLISP string wrapper the
+mock hands back so user code can strcat it) to a CL string for
+comparison."
+  (if (typep value 'autolisp-string)
+      (autolisp-string-value value)
+      value))
+
+(defun %a1-active-document (host)
+  (let ((app (host-vlax-get-acad-object host)))
+    (host-vlax-get-property host app "ActiveDocument")))
+
+(defun %a1-layer-record-group (host name code)
+  (let ((record (cador-find-table-record host :layer name)))
+    (and record (cdr (assoc code (symbol-table-record-data record))))))
+
+(test vlax-layer-color-reads-and-writes-the-table-record
+  (let* ((host (make-cador))
+         (doc (%a1-active-document host))
+         (layers (host-vlax-get-property host doc "Layers"))
+         (layer (host-vlax-invoke-method host layers "Add" '("BORNAGE"))))
+    ;; The freshly-added layer defaults to colour 7 (white).
+    (is (= 7 (host-vlax-get-property host layer "Color")))
+    (host-vlax-put-property host layer "Color" 3)
+    ;; ActiveX and the DXF table record agree.
+    (is (= 3 (host-vlax-get-property host layer "Color")))
+    (is (= 3 (%a1-layer-record-group host "BORNAGE" 62)))))
+
+(test vlax-layer-linetype-reads-and-writes-the-table-record
+  (let* ((host (make-cador))
+         (doc (%a1-active-document host))
+         (linetypes (host-vlax-get-property host doc "Linetypes"))
+         (layers (host-vlax-get-property host doc "Layers"))
+         (layer (host-vlax-invoke-method host layers "Add" '("AXES"))))
+    (is (string= "Continuous" (%a1-str (host-vlax-get-property host layer "Linetype"))))
+    (host-vlax-invoke-method host linetypes "Load" '("DASHED"))
+    (host-vlax-put-property host layer "Linetype" "DASHED")
+    (is (string= "DASHED" (%a1-str (host-vlax-get-property host layer "Linetype"))))
+    (is (string= "DASHED" (%a1-layer-record-group host "AXES" 6)))))
+
+(test vlax-document-activelayer-tracks-and-sets-clayer
+  (let* ((host (make-cador))
+         (doc (%a1-active-document host))
+         (layers (host-vlax-get-property host doc "Layers")))
+    (host-vlax-invoke-method host layers "Add" '("WALLS"))
+    ;; ActiveLayer reflects the current CLAYER.
+    (cador-set-sysvar host "CLAYER" "WALLS")
+    (let ((active (host-vlax-get-property host doc "ActiveLayer")))
+      (is (string= "WALLS" (%a1-str (host-vlax-get-property host active "Name")))))
+    ;; Setting ActiveLayer to another layer makes it current.
+    (let ((other (host-vlax-invoke-method host layers "Add" '("GRID"))))
+      (host-vlax-put-property host doc "ActiveLayer" other)
+      (is (string= "GRID" (%a1-str (sysvar-cell-value
+                                    (cador-sysvar host "CLAYER"))))))))
+
+(test vlax-layer-delete-removes-the-record
+  (let* ((host (make-cador))
+         (doc (%a1-active-document host))
+         (layers (host-vlax-get-property host doc "Layers"))
+         (layer (host-vlax-invoke-method host layers "Add" '("SCRATCH"))))
+    (is (cador-find-table-record host :layer "SCRATCH"))
+    (host-vlax-invoke-method host layer "Delete" '())
+    (is (null (cador-find-table-record host :layer "SCRATCH")))))
+
+(test vlax-documents-add-yields-a-document-with-live-collections
+  (let* ((host (make-cador))
+         (app (host-vlax-get-acad-object host))
+         (docs (host-vlax-get-property host app "Documents"))
+         (new (host-vlax-invoke-method host docs "Add" '())))
+    (is (string= "AutoCAD.Document"
+                 (mock-com-object-progid (cador-find-com-object
+                                          host
+                                          (clautolisp.autolisp-runtime:autolisp-vla-object-value new)))))
+    ;; Its Blocks / Layers are live collections (answer Count).
+    (let ((blocks (host-vlax-get-property host new "Blocks")))
+      (is (< 0 (host-vlax-get-property host blocks "Count"))))))
+
+(test vlax-modelspace-addline-creates-an-entity
+  (let* ((host (make-cador))
+         (doc (%a1-active-document host))
+         (model (host-vlax-get-property host doc "ModelSpace"))
+         (before (host-vlax-get-property host model "Count"))
+         (line (host-vlax-invoke-method host model "AddLine"
+                                        (list '(0.0d0 0.0d0 0.0d0)
+                                              '(10.0d0 0.0d0 0.0d0)))))
+    (is (string= "AcDbLine" (%a1-str (host-vlax-get-property host line "ObjectName"))))
+    (is (= (1+ before) (host-vlax-get-property host model "Count")))))
+
+(test vlax-block-addattribute-adds-an-attdef-to-the-block
+  (let* ((host (make-cador))
+         (doc (%a1-active-document host))
+         (blocks (host-vlax-get-property host doc "Blocks"))
+         (block (host-vlax-invoke-method host blocks "Add"
+                                         (list '(0.0d0 0.0d0 0.0d0) "TITLE")))
+         (before (host-vlax-get-property host block "Count"))
+         (attdef (host-vlax-invoke-method host block "AddAttribute"
+                                          (list 2.5d0 0 "Enter name" "NAME"
+                                                '(1.0d0 1.0d0 0.0d0)))))
+    (is (string= "NAME" (%a1-str (host-vlax-get-property host attdef "TagString"))))
+    (is (= (1+ before) (host-vlax-get-property host block "Count")))))
+
+(test vlax-linetypes-load-registers-a-table-record
+  (let* ((host (make-cador))
+         (doc (%a1-active-document host))
+         (linetypes (host-vlax-get-property host doc "Linetypes")))
+    (is (null (cador-find-table-record host :ltype "CENTER")))
+    (host-vlax-invoke-method host linetypes "Load" '("CENTER"))
+    (is (cador-find-table-record host :ltype "CENTER"))))
+
+(test vlax-document-saveas-persists-the-drawing
+  (let* ((host (make-cador))
+         (doc (%a1-active-document host))
+         (path (format nil "/tmp/cador-a1-saveas-~D.dxf"
+                       (get-internal-real-time))))
+    (unwind-protect
+         (progn
+           (host-vlax-invoke-method host doc "SaveAs" (list path))
+           (is (probe-file path))
+           (is (string= path (host-vlax-get-property host doc "Name"))))
+      (ignore-errors (delete-file path)))))
+
+(test vlax-new-object-surface-is-reported-available
+  (let* ((host (make-cador))
+         (doc (%a1-active-document host))
+         (layers (host-vlax-get-property host doc "Layers"))
+         (linetypes (host-vlax-get-property host doc "Linetypes"))
+         (model (host-vlax-get-property host doc "ModelSpace"))
+         (layer (host-vlax-invoke-method host layers "Add" '("Q"))))
+    ;; Methods SCHME+ probes must resolve (no SKIP path).
+    (is (host-vlax-method-applicable-p host layers "Add"))
+    (is (host-vlax-method-applicable-p host linetypes "Load"))
+    (is (host-vlax-method-applicable-p host model "AddLine"))
+    (is (host-vlax-method-applicable-p host model "AddAttribute"))
+    (is (host-vlax-method-applicable-p host layer "Delete"))
+    (is (host-vlax-property-available-p host layer "Color"))
+    (is (host-vlax-property-available-p host layer "Linetype"))
+    (is (host-vlax-property-available-p host doc "ActiveLayer"))))

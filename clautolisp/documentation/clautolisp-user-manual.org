@@ -972,6 +972,33 @@ provides that surface through the host backend:
   entities it owns, so ~vlax-for~ walks block contents; its members
   are entity-backed VLA-objects that ~vlax-vla-object->ename~
   round-trips.
+- Layer and linetype objects carry mutable attributes backed by their
+  table records: a ~Layer~ object (from ~Layers.Add~ or ~vla-item~ on
+  the Layers collection) has read/write ~Color~ and ~Linetype~ — both
+  are live views of the layer's DXF groups (62 and 6), so a
+  ~(vla-put-color layer 3)~ is what ~tblsearch "LAYER"~ and ~entget~
+  read back — and ~Layer.Delete~ removes the record (layer ~0~ and the
+  current layer refuse, as in AutoCAD). ~(vla-get-activelayer doc)~
+  returns the current layer and ~(vla-put-activelayer doc layer)~ makes
+  it current (both are the ~CLAYER~ system variable, tracked live).
+  ~(vla-get-linetypes doc)~ is a live collection whose ~Load~ method
+  registers a linetype table record by name (the mock does not parse a
+  ~.lin~ definition file — it registers the name so the linetype
+  resolves).
+- Documents are created and saved through the object model:
+  ~(vla-add documents)~ opens a document over the in-memory drawing
+  (the mock is single-document) wired to the same live Blocks / Layers
+  / Linetypes / ModelSpace / PaperSpace; ~(vla-saveas doc "path.dwg")~
+  writes the drawing (the format follows the extension) and records the
+  new ~Name~; ~Save~ and ~Close~ are no-ops that mark the document
+  saved / released (the drawing stays in memory).
+- ~ModelSpace.AddLine~ and ~Block.AddAttribute~ create entities through
+  the object model: ~(vla-addline space start end)~ adds a LINE on the
+  current layer, and ~(vla-addattribute block height mode prompt tag
+  point)~ appends an ATTDEF to a block definition so a later
+  ~InsertBlock~ instantiates it. Both return the new entity's
+  VLA-object, and the entity is visible through ~entget~ / ~entlast~ /
+  the block walk exactly as if made with ~entmake~.
 - Block definitions are also created the AutoLISP way: ~entmake~ of a
   ~(0 . "BLOCK")~ header opens a definition run, the entities entmade
   next belong to it, and the closing ~(0 . "ENDBLK")~ registers the
