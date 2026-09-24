@@ -3581,41 +3581,60 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
      object))
   object)
 
-(defun numeric-order-p (arguments predicate operator-name)
+(defun numeric-order-p (arguments predicate operator-name
+                        &optional string-predicate)
   (declare (ignore operator-name))
-  ;; AutoLISP semantics (AutoCAD / BricsCAD): the relational
-  ;; operators <, <=, >, >= fold a non-numeric argument (including
-  ;; nil) to nil rather than signalling a type error. Loop-guard
-  ;; idioms depend on it:
+  ;; The relational operators <, <=, >, >= order NUMBERS by value and
+  ;; STRINGS lexicographically by character code point (autolisp-spec
+  ;; ch.5, Function Entry: <; confirmed on AutoCAD 2022 and BricsCAD
+  ;; V25: (< "a" "b") => T, (> "c" "b") => T). STRING-PREDICATE is the
+  ;; CL string comparison matching PREDICATE (string< for <, ...).
+  ;;
+  ;; AutoLISP semantics (AutoCAD / BricsCAD): any other argument
+  ;; (including nil) folds the comparison to nil rather than
+  ;; signalling a type error. Loop-guard idioms depend on it:
   ;;   (while (<= 48 (car chars) 57) ...)
   ;; where (car chars) becomes nil at end of list and the
   ;; comparison must yield nil to stop the loop. SCHMS+'s numeric
   ;; validators (validateur_reel / _naturel / _entier) rely on
   ;; exactly this shape — see
   ;; issues/closed/strict-dialect-autolisp-divergences.issue §2.
+  ;; A number/string mixture also folds to nil here, although the
+  ;; spec says it signals a type error — tracked by
+  ;; issues/open/relational-cross-type-arguments-should-signal.issue.
   (cond
     ((null arguments)
      (autolisp-true))
-    ((not (every #'numberp arguments))
-     nil)
-    ((or (null (rest arguments))
-         (loop for (left right) on arguments
+    ((every #'numberp arguments)
+     (if (or (null (rest arguments))
+             (loop for (left right) on arguments
+                   while right
+                   always (funcall predicate left right)))
+         (autolisp-true)
+         nil))
+    ((and string-predicate
+          (every (lambda (argument) (typep argument 'autolisp-string))
+                 arguments))
+     (if (loop for (left right) on arguments
                while right
-               always (funcall predicate left right)))
-     (autolisp-true))
+               always (funcall string-predicate
+                               (autolisp-string-value left)
+                               (autolisp-string-value right)))
+         (autolisp-true)
+         nil))
     (t nil)))
 
 (defun builtin-< (&rest arguments)
-  (numeric-order-p arguments #'< "<"))
+  (numeric-order-p arguments #'< "<" #'string<))
 
 (defun builtin-<= (&rest arguments)
-  (numeric-order-p arguments #'<= "<="))
+  (numeric-order-p arguments #'<= "<=" #'string<=))
 
 (defun builtin-> (&rest arguments)
-  (numeric-order-p arguments #'> ">"))
+  (numeric-order-p arguments #'> ">" #'string>))
 
 (defun builtin->= (&rest arguments)
-  (numeric-order-p arguments #'>= ">="))
+  (numeric-order-p arguments #'>= ">=" #'string>=))
 
 (defun builtin-abs (object)
   (abs (require-number object "ABS")))

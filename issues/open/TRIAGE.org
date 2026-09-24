@@ -268,6 +268,8 @@ retrofitted as they are touched.
 |------------------------------------------+---------------+----------+------|
 | pi-constant-unbound                      | builtin       | DONE     | PI evaluates to NIL in every dialect (vendors: 3.14159…); one-line fix, 97 uses in the SCHMS+ sources; error surfaces at the arithmetic, not at the constant — RESOLVED 1.7.25 (bind PI/T/PAUSE), issues/closed/ |
 | complete-unit-tests                      | coverage-epic | DONE     | RESOLVED 2026-09-12 (clautolisp 2.2.12 / alfe 2.2.20): behavioural builtin coverage 86.3% → 100% (702/702, 0 untested) across MRs !169–!174 (VL-*/VLE-*/VLAX-*/misc/CLAL-* families); two coverage-report.sh defects fixed (CRLF endings; a $-truncating regex). issues/closed/ |
+| relational-operators-ignore-strings      | bug           | DONE     | clautolisp 2.2.87: <, <=, >, >= now order strings by code point ((< "a" "b") => T, as AutoCAD 2022 / BricsCAD V25); nil still folds to nil. issues/closed/ |
+| relational-cross-type-arguments-should-signal | divergence | TODO   | (< 1 "a") / (< 1 'foo) fold to nil; spec says type error for non-nil cross-type arguments. Probe both vendors first. |
 | deferred-stubbed-functions               | builtins-epic | DEFERRED | promote stubbed-as-no-op builtins (registry section done 1.5.1) |
 | deferred-spec-research                   | builtins      | DEFERRED | vendor-validate uncertain builtins; needs cad-access |
 | xdroom-xdsize-not-implemented            | builtin/draw  | DEFERRED | XDROOM/XDSIZE still nil stubs (schms-data-selection) |

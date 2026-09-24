@@ -43,6 +43,8 @@
     ;; the relational fold: a NON-NUMBER makes < yield nil, NOT an error.
     ;; Loop guards depend on it, so the fast path must not "improve" it.
     "(< 1 nil)" "(< nil 1)" "(> \"a\" 1)" "(<= nil nil)"
+    ;; strings order by code point -- the builtin's case, never the fast path's
+    "(< \"a\" \"b\")" "(> \"c\" \"b\")" "(<= \"b\" \"b\")" "(>= \"a\" \"b\")"
     ;; arities the fast path is not written for
     "(+ 1 2 3)" "(+ 1)" "(+)" "(- 5)" "(* 2 3 4)" "(< 1 2 3)" "(< 1)"
     ;; and a type error, which must still be an error
