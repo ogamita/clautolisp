@@ -1124,7 +1124,7 @@ DXF reader's multiline-string handling and ~.dwt~ probe support.
 *** Phase 17e — libredwg submodule + DWG codec [DONE — read; write best-effort]
 *Goal:* read/write DWG via the vendored, self-built GNU libredwg.
 *Status:* libredwg is vendored as a pinned git submodule
-(~clautolisp/third-party/libredwg~ @ 0.13.3), built by us (cmake;
+(~clautolisp/third-party/libredwg~ @ 0.14), built by us (cmake;
 ~make build-libredwg~), and reached in-process through a thin CFFI'd
 C shim (~drawing-dwg/source/clal_dwg.c~) that converts DWG<->DXF —
 the Phase-17c DXF codec is the interchange. The optional

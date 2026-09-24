@@ -37,6 +37,10 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *The DWG codec is built on LibreDWG 0.14* (was a 0.13.4 development
+  snapshot). The vendored library gains r2004 DWG write support and many
+  decoder and DXF round-trip fixes; see LibreDWG's own =NEWS=.
+
 - *The system-variable table now follows a runtime dialect change.*
   =(setq *AUTOLISP-DIALECT* 'bricscad)= already moved the portability
   diagnostics, the reader options and the case resolver at once; the
