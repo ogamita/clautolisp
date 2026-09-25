@@ -835,12 +835,30 @@ When the script does not exist the run stops with a
 =backend-bootstrap-error= naming the path (exit status 4) — unless it is
 a =--dry-run=.
 
-Note the space in =epure 2022_b=: the control script's path normally
-contains one, and both ways alfe hands it to a CAD quote it — the
-=._SCRIPT= line of =run.scr= for BricsCAD, and =SendCommand= for
-AutoCAD's COM bridge. An unquoted answer to =SCRIPT='s prompt ends at
-the first space, which on the Windows runner left BricsCAD waiting at
-=BOOTING= until the timeout.
+*** How the control script is run
+
+Despite its =.scr= name, EPURE's control script is *AutoLISP source*: it
+reads =VENDORNAME= and loads EPURE's =.des= (BricsCAD) or =.vlx=
+(AutoCAD) accordingly. So alfe =LOAD=s it, and =run.scr= reads
+
+#+begin_example
+(load "C:/Users/.../AppData/Roaming/sncf/epure/epure 2022_b/control_path_epure_2022.scr")
+(load "C:/.../run-common.lsp")
+#+end_example
+
+=LOAD= returns, so the line after it — alfe's own runtime — runs. The
+earlier spelling nested a =._SCRIPT= inside =run.scr= instead, inherited
+from the legacy wrapper on the assumption that control comes back from
+one. On BricsCAD V25 it does not: =run.scr= began and stopped there,
+BricsCAD sitting at =BOOTING= until the timeout, while the same script
+without EPURE ran to completion. AutoCAD's COM bridge still sends
+=._SCRIPT= through =SendCommand=, where it works.
+
+The path is checked before anything is launched. It is stable for a
+given EPURE version, so a missing file means EPURE is not installed —
+or that its version moved and the directory (=epure 2022_b=) is no
+longer the right one. Either way alfe stops and says which path it
+looked for; =--epure-script FILE= names another.
 
 *** What has been verified, and where
 
@@ -850,8 +868,12 @@ with EPURE 2022_b installed:
 - =alfe --autocad --epure= runs the action and exits with its status
   (AutoCAD 2022, COM automation).
 - =alfe --bricscad --epure= (BricsCAD V25 fr_FR, =/b= batch script) is
-  what exposed the unquoted-path bug above; the quoting is in place, and
-  the run is being re-checked on the runner.
+  what exposed the nested-=._SCRIPT= problem above. With =LOAD= in its
+  place the run is being re-checked on the runner.
+- =--mode automation= is *not* the answer for BricsCAD, and is not
+  wanted in any case: =--epure= exists for GUI work. On the runner the
+  COM bridge hung at attach/create even *without* EPURE, so BricsCAD COM
+  automation is a separate matter from this plug-in.
 
 Two assumptions inherited from the legacy wrapper remain to be confirmed
 separately: that a =._SCRIPT= nested in a =/b= script gives control back

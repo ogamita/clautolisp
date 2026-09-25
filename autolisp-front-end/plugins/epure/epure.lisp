@@ -90,10 +90,18 @@ forward slashes."
               (error 'backend-bootstrap-error
                      :backend name :code :epure-script-unknown
                      :message "cannot locate the EPURE control script: %APPDATA% is not set; pass --epure-script FILE or set $AUTOLISP_EPURE_SCRIPT."))
+             ;; The path is fixed for a given EPURE version, so its
+             ;; absence says something definite: EPURE is not installed
+             ;; here, or its version moved and this directory is no
+             ;; longer the one (pjb, 2026-09-25). Either way, stop now --
+             ;; not at a READY timeout with a CAD already on screen.
              ((not (probe-file script))
               (error 'backend-bootstrap-error
                      :backend name :code :epure-script-missing
-                     :message (format nil "EPURE control script not found: ~A (pass --epure-script FILE or set $AUTOLISP_EPURE_SCRIPT)."
+                     :message (format nil "EPURE control script not found: ~A~
+~%  EPURE is not installed for this user, or its version changed and that~
+~%  directory is no longer the right one. Name the script with~
+~%  --epure-script FILE or $AUTOLISP_EPURE_SCRIPT."
                                       script))))))))))
 
 ;;; --- the launch: argv and working directory (BricsCAD batch) --------
@@ -165,19 +173,22 @@ to the errors file and the run goes on with the current profile."
 (define-plugin-hook "epure" :launcher-lines (ctx slot &key kind backend)
   (let ((script (control-script backend)))
     (ecase kind
-      ;; run.scr: EPURE's control script, then (next line of the script)
-      ;; alfe's own load. The script name is the answer to SCRIPT's prompt
-      ;; -- and it is QUOTED, because that answer is read the way a
-      ;; command-line answer is read, where a space ends it.
+      ;; run.scr: LOAD EPURE's control script, then (next line of the
+      ;; script) alfe's own runtime.
       ;;
-      ;; Measured on the Windows runner (verify:epure:windows, 2026-09-25):
-      ;; unquoted, EPURE's own path -- ...\sncf\epure\epure 2022_b\... --
-      ;; made BricsCAD sit at BOOTING until the 300 s timeout, while
-      ;; AutoCAD was fine because the COM branch below has always wrapped
-      ;; it in Chr(34). One path, two spellings, and only one of them met
-      ;; a space (alfe-plugin-epure-windows-validation.issue).
+      ;; NOT a nested ._SCRIPT. That was inherited from the legacy
+      ;; wrapper, on the assumption that control returns to the outer
+      ;; script afterwards, and on the Windows runner it does not: run.scr
+      ;; BEGAN and then stopped there, BricsCAD sitting at BOOTING until
+      ;; the timeout, while the same run.scr without EPURE completed
+      ;; (verify:epure:windows, 2026-09-25, BricsCAD V25).
+      ;;
+      ;; The file is AutoLISP SOURCE despite its .scr name -- it reads
+      ;; VENDORNAME and loads EPURE's .des (BricsCAD) or .vlx (AutoCAD)
+      ;; accordingly -- so LOAD is what it wants, and (load ...) simply
+      ;; returns, leaving the next line to run. pjb, 2026-09-25.
       (:scr (when (and (eq slot :before-load) script)
-              (list "._SCRIPT" (format nil "\"~A\"" script))))
+              (list (format nil "(load ~S)" script))))
       (:vbs (case slot
               (:after-app (profile-activation-lines (plugin-option :profile)))
               (:before-load (when script (send-script-lines script))))))))
