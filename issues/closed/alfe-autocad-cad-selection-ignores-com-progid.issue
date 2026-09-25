@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-autocad-cad-selection-ignores-com-progid — explicit AutoCAD selection must select the versioned COM server
-#+STATUS: DONE (alfe 2.2.79, 2026-09-22) -- pending Windows-runner validation
+#+STATUS: DONE (alfe 2.2.79, 2026-09-22) -- validated on the Windows runner 2026-09-25
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -216,11 +216,42 @@ environment variables, and two troubleshooting entries. Man page:
 the recorded COM failure fields. RELEASE_NOTES.org under /CAD
 selection/.
 
-** Still open -- the Windows runner
+** Validated on the Windows runner — 2026-09-25
 
-The acceptance criterion "validate on the Windows runner with broken
-generic registration and valid AutoCAD 2022 registration, record the
-actual application version and executable, run the SCHMS ActiveX tests
-beyond bootstrap" needs the machine and the SCHMS job (507862). Nothing
-here was exercised against a real AutoCAD; what is proven is the
-selection, the emitted bridges and the diagnostics.
+=verify:autocad-activex:windows=, job 16731030463 (alfe 2.2.88): a REAL
+AutoCAD, launched through the COM bridge, evaluating ActiveX. The job
+succeeded.
+
+#+begin_example
+alfe[verbose]: backend AUTOCAD: COM server = AutoCAD.Application.24.1
+alfe[verbose]: backend AUTOCAD: READY after 20.22 s (status "READY 0")
+alfe[debug]:   protocol: status now "DONE 1 OK" (elapsed 0.78 s)
+24.1s (LMS Tech)          <- (vla-get-Version (vlax-get-acad-object))
+Dessin1.dwg               <- (vla-get-Name (vla-get-ActiveDocument app))
+alfe[verbose]: cli: plan finished status=:SUCCESS exit=0 elapsed=23.47s
+alfe[verbose]: backend AUTOCAD: quitting the AutoCAD this run created
+--- alfe exit 0
+
+com-flags.txt:  ATTACHED=0  CREATED=1
+protocol/status.txt: STOPPED     protocol/stderr.txt: (empty)
+#+end_example
+
+Every part of the criterion, read off that run:
+
+- the versioned ProgID is what COM was asked for
+  (=AutoCAD.Application.24.1=), on a host whose generic registration
+  points elsewhere (see the registry table in
+  issues/closed/alfe-autocad-progid-registry-probe-fails.issue);
+- the application that answered is AutoCAD 2022: =24.1s (LMS Tech)=,
+  the same version string the hand-run =test-autocad-com.vbs= reported,
+  from =C:\Program Files\Autodesk\AutoCAD 2022\acad.exe /Automation=;
+- it went BEYOND bootstrap -- READY in 20 s, then AutoLISP evaluated
+  inside AutoCAD and ActiveX answered (=Dessin1.dwg=), which is where
+  SCHMS job 507862 used to stop;
+- =ATTACHED=0 CREATED=1=: this run created the instance, and quit the
+  one it created; stderr is empty and nothing was left running.
+
+The SCHMS job itself was not run: =fabrik.sncf.fr= is not reachable
+from the agent environment (404 unauthenticated, no credentials for
+that host). =verify:autocad-activex:windows= asks the same question in
+this repository, and is the check that now guards this behaviour.

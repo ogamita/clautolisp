@@ -77,6 +77,7 @@
            #:autocad-backend-accoreconsole-path
            #:autocad-session
            #:resolve-autocad-progid
+           #:release-named-by-denotation
            #:*generic-autocad-progid*
            #:*autocad-release-com-versions*
            #:emit-bridge-vbs
@@ -304,14 +305,43 @@ The tests bind it to describe a registry without a Windows host.")
   "Function () -> the AutoCAD.Application* ProgIDs registered on this
 host. Bound by the tests, as *REGISTRY-VALUE-FUNCTION* is.")
 
+(defparameter *reg-command-names* '("reg" "reg.exe")
+  "How to spell reg.exe, tried in order. A PATH where `reg' does not
+resolve (an MSYS2 shell environment is one) must not look like an empty
+registry.")
+
+(defun %run-capturing-text (command arguments)
+  "COMMAND's output as text, or NIL if it cannot be run.
+
+:EXTERNAL-FORMAT :LATIN-1 is the point of this function. A console
+program writes in the console codepage, not UTF-8, and the default
+decoder SIGNALS on a byte it cannot make sense of -- which is how a
+French Windows' `(Par defaut)' turned a readable registry into an empty
+one. Latin-1 decodes every byte and never signals."
+  (ignore-errors
+   (uiop:run-program (cons command arguments)
+                     :output :string :error-output nil
+                     :external-format :latin-1
+                     :ignore-error-status t)))
+
 (defun %reg-query (&rest arguments)
   "Run reg.exe with ARGUMENTS and return its output, or NIL. Windows
-only; any failure (missing reg.exe, absent key) is NIL, not an error."
+only; any failure (missing reg.exe, absent key) is NIL, not an error.
+
+DECODED AS LATIN-1, ALWAYS. reg.exe writes in the console codepage, and
+on a French Windows `reg query ... /ve' prints `(Par defaut)' with an
+accent that is not valid UTF-8 -- so the default decoder SIGNALLED, the
+error was swallowed here, and a registry that reads perfectly well
+looked empty: every ProgID came back `not-registered'
+(alfe-autocad-progid-registry-probe-fails.issue). Latin-1 is a total
+decoder; the part we parse (REG_SZ, a CLSID, a path) is ASCII anyway."
   (when (windows-p)
-    (ignore-errors
-     (uiop:run-program (cons "reg" arguments)
-                       :output :string :error-output nil
-                       :ignore-error-status t))))
+    (dolist (command *reg-command-names*)
+      (let ((output (%run-capturing-text command arguments)))
+        (when (and output (plusp (length output)))
+          (log-debug "backend AUTOCAD: ~A ~{~A ~}-> ~D character~:P"
+                     command arguments (length output))
+          (return output))))))
 
 (defun %parse-reg-default-value (output)
   "The default value in `reg query KEY /ve' OUTPUT, or NIL."
@@ -331,6 +361,22 @@ only; any failure (missing reg.exe, absent key) is NIL, not an error."
 (defun %registry-default-value (key)
   (let ((output (%reg-query "query" key "/ve")))
     (when output (%parse-reg-default-value output))))
+
+(defvar *registry-probe-usable-function* '%registry-probe-usable-p
+  "Function () -> true when this host's registry can actually be read.")
+
+(defun %registry-probe-usable-p ()
+  "True when a value that exists on EVERY Windows can be read.
+Distinguishes `this ProgID is not registered' from `alfe cannot read the
+registry at all' -- opposite conclusions that were the same answer (NIL)
+until the probe failed for real on the Windows runner. The control is a
+NAMED value: a key like HKCR\\CLSID has thousands of subkeys and no
+default value, so it answers neither quickly nor usefully."
+  (and (windows-p)
+       (let ((output (%reg-query "query"
+                                 "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
+                                 "/v" "ProductName")))
+         (and output (not (null (%parse-reg-default-value output)))))))
 
 (defun %registered-autocad-progids ()
   "The AutoCAD.Application ProgIDs registered under HKEY_CLASSES_ROOT."
@@ -404,7 +450,20 @@ NIL. TRIED lists (PROGID REASON DETAIL) for the diagnostic."
                  (setf fallback progid))))))))
     (values fallback (nreverse tried))))
 
-(defun %progid-diagnostic (release tried)
+(defun %release-table-progid (release)
+  "RELEASE's ProgID according to the table, or NIL when it is not in it."
+  (let ((version (cdr (assoc release *autocad-release-com-versions*
+                             :test #'string=))))
+    (when version (%progid-for-com-version version))))
+
+(defun %progid-diagnostic (release tried &key unreadable-p)
+  (when unreadable-p
+    (return-from %progid-diagnostic
+      (format nil "AutoCAD ~A was requested, and alfe cannot read this host's~
+~%  registry to find its COM server -- reg.exe did not answer. AutoCAD ~:*~A~
+~%  is not in alfe's release table either, so there is no ProgID to try.~
+~%  Name the server with $AUTOCAD_PROGID (e.g. AutoCAD.Application.24.1)."
+              release)))
   (format nil "AutoCAD ~A was requested, but no COM server for it is registered.~
 ~:[~;~:*~%  Tried:~{~%    ~{~A: ~(~A~)~@[ (~A)~]~}~}~]~
 ~%  Not falling back to ~A: it is registered to whichever release Windows~
@@ -412,6 +471,13 @@ NIL. TRIED lists (PROGID REASON DETAIL) for the diagnostic."
 ~%  Repair the AutoCAD ~A installation's COM registration, or name the~
 ~%  server outright with $AUTOCAD_PROGID (e.g. AutoCAD.Application.24.1)."
           release tried *generic-autocad-progid* release))
+
+(defun release-named-by-denotation (denotation)
+  "The release a --cad DENOTATION names (\"acad-2022\" -> \"2022\"), or
+NIL when it names none: \"autocad\" and \"acad\" mean `the latest one',
+which is alfe's choice to make and never a failure."
+  (when denotation
+    (alfe.backend.cad-common:autocad-release-in-path (string denotation))))
 
 (defun resolve-autocad-progid (&key release executable-path explicit-p)
   "The COM ProgID the automation bridges ask for. Precedence:
@@ -445,7 +511,42 @@ only alfe's own discovery, so step 3 is a legitimate answer."
               (cond
                 (progid
                  (log-debug "backend AUTOCAD: release ~A -> ProgID ~A" release progid)
+                 ;; Accepted on the table's authority, with a registration
+                 ;; that names something else. Measured on the Windows
+                 ;; runner: AutoCAD.Application.24.2 and .24.3 there are
+                 ;; DWG TrueView 2024, not AutoCAD 2023/2024. Using it is
+                 ;; still the best available answer -- it IS what Windows
+                 ;; would start -- but saying nothing would hide that.
+                 (let ((unconfirmed (find-if (lambda (entry)
+                                               (and (string= (first entry) progid)
+                                                    (eq (second entry)
+                                                        :version-not-confirmed)))
+                                             tried)))
+                   (when unconfirmed
+                     (log-warn "backend AUTOCAD: ~A is registered to ~A, which ~
+does not name AutoCAD ~A; using it anyway (set $AUTOCAD_PROGID to pin another)"
+                               progid (third unconfirmed) release)))
                  progid)
+                ;; Nothing found -- but WHY? An unreadable registry is not
+                ;; an absent registration, and answering as if it were is
+                ;; how a working AutoCAD 2022 was refused on the Windows
+                ;; runner (alfe-autocad-progid-registry-probe-fails).
+                ((not (funcall *registry-probe-usable-function*))
+                 (let ((unverified (%release-table-progid release)))
+                   (cond
+                     (unverified
+                      (log-warn "backend AUTOCAD: cannot read the registry; ~
+using ~A for AutoCAD ~A unverified (set $AUTOCAD_PROGID to pin one)"
+                                unverified release)
+                      unverified)
+                     (explicit-p
+                      (error 'backend-not-available
+                             :backend :autocad
+                             :code :autocad-progid-unavailable
+                             :message (%progid-diagnostic release tried :unreadable-p t)
+                             :details (list :release release :tried tried
+                                            :registry :unreadable)))
+                     (t *generic-autocad-progid*))))
                 (explicit-p
                  (error 'backend-not-available
                         :backend :autocad
@@ -1077,14 +1178,18 @@ started is what ATTACHED/CREATED say.")
         (case variant
           (:automation
            (let ((vbs (merge-pathnames "bridge-autocad.vbs" workdir)))
-             (setf progid
-                   (resolve-autocad-progid
-                    :executable-path (autocad-backend-executable-path backend)
-                    ;; --cad autocad-YYYY is a claim about WHICH AutoCAD;
-                    ;; it must not be satisfied by another one.
-                    :explicit-p (and cli-options
-                                     (alfe.cli:cli-options-cad cli-options)
-                                     t)))
+             (let ((named (release-named-by-denotation
+                           (and cli-options (alfe.cli:cli-options-cad cli-options)))))
+               (setf progid
+                     (resolve-autocad-progid
+                      :release named
+                      :executable-path (autocad-backend-executable-path backend)
+                      ;; Only `--cad autocad-2022' is a claim about WHICH
+                      ;; AutoCAD, and only such a claim may fail rather
+                      ;; than be met by another release. `--cad autocad'
+                      ;; asks for the latest one and must still run
+                      ;; (alfe-autocad-progid-registry-probe-fails).
+                      :explicit-p (and named t))))
              (log-verbose "backend AUTOCAD: COM server = ~A" progid)
              (emit-bridge-vbs
               vbs
