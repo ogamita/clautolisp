@@ -1,0 +1,59 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-cad-denotation-picks-dwg-trueview — --cad accoreconsole selects DWG TrueView's accoreconsole
+#+STATUS: DONE (alfe 2.2.81, 2026-09-24)
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: claude/dreamy-ptolemy-uj8mzd
+
+* Symptom
+
+Reported by pjb on the Windows host PF5S26BT, which has both AutoCAD 2022
+and the free DWG TrueView 2024 viewer (French) installed:
+
+#+begin_example
+$ alfe --list-cad-programs
+acad-2022                C:/Program Files/Autodesk/AutoCAD 2022/acad.exe
+accoreconsole-2022       C:/Program Files/Autodesk/AutoCAD 2022/accoreconsole.exe
+accoreconsole-2024       C:/Program Files/Autodesk/DWG TrueView 2024 - French/accoreconsole.exe
+bricscad-v25-fr_FR       C:/Program Files/Bricsys/BricsCAD V25 fr_FR/bricscad.exe
+clautolisp               (embedded in alfe)
+#+end_example
+
+Selecting accoreconsole ran the TrueView one, which aborts at bootstrap:
+
+#+begin_example
+alfe: alfe AUTOCAD backend error (phase BOOTSTRAP): AutoCAD process exited
+before READY (exit 1): ...
+Execution Path:
+C:\Program Files\Autodesk\DWG TrueView 2024 - French\accoreconsole.exe
+...
+Le fichier de configuration a peut-être été verrouillé par un autre
+processus ou défini en lecture seule (.cfg, .bak). Fichier: C:\Program
+Files\Autodesk\DWG TrueView 2024 - French\dwgviewr2024.cfg
+...
+ERREUR FATALE:  Impossible de traiter le fichier de configuration !
+#+end_example
+
+* Cause
+
+Two discovery paths exist. =discover-accoreconsole-binary= (plain
+=--autocad=) already ranks TrueView last (=%accoreconsole-preference=,
+alfe-cad-console-encoding.issue). But =discover-cad-programs= — behind
+=--list-cad-programs= and =--cad= — denoted TrueView's executable
+=accoreconsole-2024=, and =resolve-cad-denotation= picks the *latest*
+version among matches, so =--cad accoreconsole= and =--cad autocad --mode
+batch= chose TrueView 2024 over AutoCAD 2022.
+
+DWG TrueView is not AutoCAD: a read-only viewer that cannot create or
+modify entities, whose configuration file lives in Program Files (so it
+aborts for a normal user).
+
+* Resolution (alfe 2.2.81)
+
+The TrueView accoreconsole is now a distinct product in the listing, with
+its own denotation =dwgtrueview-YYYY= (=%dwg-trueview-path-p= in
+=backend-cad-common.lisp=). =accoreconsole[-YYYY]= and =autocad[-YYYY]=
+never match it; it remains selectable explicitly with =--cad dwgtrueview=.
+Regression tests: =cad-program-denotation-parsing= and
+=cad-denotation-resolution= (=autolisp-front-end/tests/backend-cad-tests.lisp=).

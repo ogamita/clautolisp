@@ -1,0 +1,30 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: relational-cross-type-arguments-should-signal — (< 1 "a") returns nil, spec says type error
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: fix-relational-cross-type-arguments
+
+* Symptom
+
+Found while fixing relational-operators-ignore-strings (clautolisp 2.2.87).
+=numeric-order-p= (=clautolisp/autolisp-builtins-core/source/api.lisp=)
+returns nil for any argument list that is neither all numbers nor all
+strings: =(< 1 "a")=, =(< 1 'foo)=, =(< "a" '(1))=.
+
+The spec (ch.5, Function Entries =<= =<== =>= =>==, and "⊥ propagation")
+says a non-nil cross-type argument *signals a type error*; only a =nil=
+argument yields nil without error.
+
+* Before changing it
+
+- Probe AutoCAD and BricsCAD: =(< 1 "a")=, =(< "a" 1)=, =(< 1 'foo)=,
+  =(< 'a 'b)=, =(< '(1) '(2))= — error text, or nil? The fold-to-nil
+  rule was introduced for SCHMS+ loop guards on *nil*; confirm no
+  production code relies on the non-nil cross-type fold.
+- Classify per AGENTS.md § Dialect Divergence (case 0 if both vendors
+  signal), add a =*** clautolisp= note to the spec entries if a
+  deviation remains, and update =numeric-order-folds-nil-to-nil= (it
+  currently asserts =(< 1 'foo)= => nil) and the compiler open-coded
+  corpus entry =(> "a" 1)=.

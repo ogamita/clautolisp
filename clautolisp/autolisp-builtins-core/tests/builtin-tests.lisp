@@ -6509,6 +6509,37 @@ the low half."
                  (autolisp-symbol-name
                   (call-autolisp-function le 5))))))
 
+;;; § 2b. Relational operators order strings by code point.
+
+(test relational-operators-order-strings
+  ;; autolisp-spec ch.5 Function Entry: < — numbers AND strings; strings
+  ;; lexicographically by character code point. Reported on PF5S26BT:
+  ;; clautolisp answered (nil nil nil) for (list (< "a" "b") (= "a" "b")
+  ;; (> "a" "b")) where AutoCAD 2022 and BricsCAD V25 answer (T nil nil).
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (flet ((fn (name) (autolisp-symbol-function (find-autolisp-symbol name)))
+         (str (text) (make-autolisp-string text))
+         (true-p (value) (and value (string= "T" (autolisp-symbol-name value)))))
+    (let ((lt (fn "<")) (le (fn "<=")) (gt (fn ">")) (ge (fn ">=")))
+      (is (true-p (call-autolisp-function lt (str "a") (str "b"))))
+      (is (null   (call-autolisp-function lt (str "b") (str "b"))))
+      (is (null   (call-autolisp-function lt (str "c") (str "b"))))
+      (is (null   (call-autolisp-function gt (str "a") (str "b"))))
+      (is (null   (call-autolisp-function gt (str "b") (str "b"))))
+      (is (true-p (call-autolisp-function gt (str "c") (str "b"))))
+      (is (true-p (call-autolisp-function le (str "b") (str "b"))))
+      (is (true-p (call-autolisp-function ge (str "b") (str "b"))))
+      (is (null   (call-autolisp-function ge (str "a") (str "b"))))
+      ;; chained, pairwise
+      (is (true-p (call-autolisp-function lt (str "a") (str "b") (str "c"))))
+      (is (null   (call-autolisp-function lt (str "a") (str "c") (str "b"))))
+      ;; prefix orders first; code point, so case-sensitive ("B" < "a")
+      (is (true-p (call-autolisp-function lt (str "ab") (str "abc"))))
+      (is (true-p (call-autolisp-function lt (str "B") (str "a"))))
+      ;; a nil among strings still folds to nil (bottom propagation)
+      (is (null   (call-autolisp-function lt (str "a") nil))))))
+
 ;;; § 3. (substr s start 0) returns the empty string.
 
 (test substr-zero-length-returns-empty-string

@@ -1,0 +1,43 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: relational-operators-ignore-strings — (< "a" "b") returns nil in clautolisp
+#+STATUS: DONE (clautolisp 2.2.87 / alfe 2.2.82, 2026-09-24)
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: claude/dreamy-ptolemy-uj8mzd
+
+* Symptom
+
+Reported by pjb on PF5S26BT (same output in every dialect: strict,
+clautolisp, bricscad, autocad, lax; and through =alfe --cad clautolisp=):
+
+| expression                                  | clautolisp    | BricsCAD V25 / AutoCAD 2022 |
+|---------------------------------------------+---------------+-----------------------------|
+| =(list (< "a" "b") (= "a" "b") (> "a" "b"))= | =(nil nil nil)= | =(T nil nil)=               |
+| =(list (< "b" "b") (= "b" "b") (> "b" "b"))= | =(nil T nil)=   | =(nil T nil)=               |
+| =(list (< "c" "b") (= "c" "b") (> "c" "b"))= | =(nil nil nil)= | =(nil nil T)=               |
+
+=== was right; =<=, =<==, =>=, =>== never compared strings.
+
+* Cause
+
+=numeric-order-p= (=autolisp-builtins-core/source/api.lisp=) folded ANY
+non-number to nil — the rule kept for the =(<= 48 (car chars) 57)=
+loop-guard idiom (strict-dialect-autolisp-divergences §2) — so strings,
+which the spec (ch.5, Function Entry: =<=) orders lexicographically by code
+point, fell into the same fold.
+
+* Resolution (clautolisp 2.2.87)
+
+All-string argument lists are now compared pairwise with =string<= /
+=string<== / =string>= / =string>== (code-point order, case-sensitive); a
+nil still folds the comparison to nil. Dialect classification: case 0
+(common — both reference documents and both products agree), so no
+warning. Regression test =relational-operators-order-strings=
+(=autolisp-builtins-core/tests/builtin-tests.lisp=); string cases added to
+the compiler's open-coded corpus (the integer fast path declines strings,
+so compiled and interpreted code agree).
+
+The remaining gap — a number/string mixture folds to nil where the spec
+says type error — is tracked separately by
+=issues/open/relational-cross-type-arguments-should-signal.issue=.

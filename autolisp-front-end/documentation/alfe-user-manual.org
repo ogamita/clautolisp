@@ -155,11 +155,19 @@ Denotation grammar:
 |---------------------------+-----------------------------------------------------|
 | =acad-2026=               | that exact AutoCAD (GUI =acad=)                     |
 | =accoreconsole-2022=      | that exact =accoreconsole=                          |
+| =dwgtrueview-2024=        | the =accoreconsole= of the DWG TrueView viewer (see below) |
 | =bricscad-v25-fr_FR=      | that exact BricsCAD version + locale                |
 | =bricscad-v25=            | V25 of any locale (host locale preference breaks ties) |
 | =acad= / =bricscad=       | the latest of that kind                             |
 | =autocad= / =autocad-2022= | =acad= or =accoreconsole= per =--mode= (batch → accoreconsole, else acad) |
 | =clautolisp=              | the embedded engine                                 |
+
+The free DWG TrueView viewer also ships an =accoreconsole.exe=. It is
+not AutoCAD — it is read-only, and its configuration file in Program
+Files makes it abort on launch for a normal user — so it is listed
+under its own name, =dwgtrueview-YYYY=, and =accoreconsole= / =autocad=
+never select it, even when it is newer than the installed AutoCAD.
+Name it explicitly (=--cad dwgtrueview=) to run it anyway.
 
 *** Which AutoCAD automation actually talks to
 
