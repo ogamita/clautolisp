@@ -28,23 +28,14 @@ Convention (project-wide, going forward):
 Open uncertainties (open this list as you add SPEC-UNCERTAIN
 markers — keep it sorted by function name):
 
-== < <= > >= (relational-cross-type-arguments-should-signal) ==
+== >= (comparison-operators-vendor-semantics) ==
 
-  * Non-nil incompatible arguments. Since clautolisp 2.2.88 the four
-    relational operators signal a type error (code
-    :invalid-comparison-argument) when the argument list is neither
-    all numbers nor all strings and holds no nil: the spec's
-    normative shared domain rule (ch.5, "The Comparison Operators").
-    Not yet probed. On AutoCAD and BricsCAD: does each of
-    (< 1 "a"), (< "a" 1), (< 1 'foo), (< 'a 'b), (< '(1) '(2)),
-    (< 'a) signal, and with what message? If either vendor returns
-    nil or coerces instead, re-classify per AGENTS.md § Dialect
-    Divergence.
-
-  * Precedence of nil over a type error in the same chain:
-    (< 1 "a" nil) returns nil here (the spec's "a nil anywhere
-    short-circuits the chain"). Does a vendor instead check left to
-    right and signal on 1 vs "a" first?
+  * BricsCAD rejects (>= 'a nil) with a type error where AutoCAD
+    returns T (and BricsCAD itself returns T for (> 'a nil)). Under
+    --dialect bricscad clautolisp reproduces the error for ANY left
+    argument that is neither nil, a number nor a string. Probed only
+    with a symbol: does BricsCAD also reject (>= '(1) nil) and
+    (>= T nil)? And does it reject (<= nil 'a), the mirror case?
 
 == TRANS (M2) ==
 
@@ -116,4 +107,8 @@ uncertainty).
 
 == Resolved ==
 
-(none yet)
+  * < <= > >= on non-nil incompatible arguments (opened 2.2.88):
+    resolved 2026-09-25 by the comparison-operators probe on AutoCAD
+    2022 and BricsCAD V25/V26 -- both signal a type error for a number
+    against a string, a symbol or a list; nil is the smallest value, not
+    bottom. See issues/closed/comparison-operators-vendor-semantics.issue.

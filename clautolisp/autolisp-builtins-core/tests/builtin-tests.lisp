@@ -649,7 +649,10 @@
     (is (string= "T" (autolisp-symbol-name (call-autolisp-function =-fn foo-string-1 foo-string-2))))
     (is (null (call-autolisp-function =-fn foo-string-1 bar-string)))
     (is (string= "T" (autolisp-symbol-name (call-autolisp-function /=-fn 1 2 3))))
-    (is (null (call-autolisp-function /=-fn 1 2 1)))
+    ;; /= compares ADJACENT pairs (AutoCAD 2022, BricsCAD V25/V26):
+    ;; 1/2 and 2/1 differ, so T; 1/1 is an equal adjacent pair, so nil.
+    (is (string= "T" (autolisp-symbol-name (call-autolisp-function /=-fn 1 2 1))))
+    (is (null (call-autolisp-function /=-fn 1 1 2)))
     (is (string= "T" (autolisp-symbol-name (call-autolisp-function /=-fn foo-string-1 bar-string))))
     (is (string= "T" (autolisp-symbol-name (call-autolisp-function zerop-fn 0))))
     (is (null (call-autolisp-function zerop-fn 7)))
@@ -6472,44 +6475,43 @@ the low half."
 
 ;;; § 2. Relational operators fold non-numeric arguments to nil.
 
-(test numeric-order-folds-nil-to-nil
-  ;; (<= 48 nil 57) and friends return nil rather than signalling.
-  ;; AutoLISP loop-guard idiom:
+(test numeric-order-nil-is-the-smallest-value
+  ;; AutoCAD 2022 and BricsCAD V25/V26 order NIL BELOW every other value
+  ;; in <, <=, >, >= -- nil equals nil -- rather than signalling or
+  ;; propagating nil (comparison-operators-vendor-semantics.issue). The
+  ;; AutoLISP loop-guard idiom
   ;;   (while (<= 48 (car chars) 57) ...)
-  ;; depends on it — (car chars) becomes nil at end of list and the
-  ;; comparison must yield nil to break the while.
+  ;; still stops: (car chars) becomes nil at end of list and 48 <= nil is
+  ;; false.
   (reset-autolisp-symbol-table)
   (install-core-builtins)
-  (let ((lt   (autolisp-symbol-function (find-autolisp-symbol "<")))
-        (le   (autolisp-symbol-function (find-autolisp-symbol "<=")))
-        (gt   (autolisp-symbol-function (find-autolisp-symbol ">")))
-        (ge   (autolisp-symbol-function (find-autolisp-symbol ">="))))
-    ;; The vendor-canonical SCHMS+ idiom: middle arg nil -> nil.
-    (is (null (call-autolisp-function le 48 nil 57)))
-    (is (null (call-autolisp-function lt 48 nil 57)))
-    ;; First / last position also nil.
-    (is (null (call-autolisp-function le nil 1)))
-    (is (null (call-autolisp-function ge 1 nil)))
-    ;; A nil anywhere wins over a type error elsewhere in the chain:
-    ;; ⊥ in, ⊥ out (autolisp-spec ch.5, shared domain rule).
-    (is (null (call-autolisp-function lt 1 (intern-autolisp-symbol "FOO") nil)))
-    (is (null (call-autolisp-function lt (make-autolisp-string "a") nil 1)))
-    ;; All-numeric ordered still T.
-    (is (string= "T"
-                 (autolisp-symbol-name
-                  (call-autolisp-function le 1 2 3))))
-    (is (string= "T"
-                 (autolisp-symbol-name
-                  (call-autolisp-function gt 3 2 1))))
-    ;; All-numeric unordered still nil.
-    (is (null (call-autolisp-function le 2 1)))
-    ;; Vacuous calls (0 or 1 argument) still T.
-    (is (string= "T"
-                 (autolisp-symbol-name
-                  (call-autolisp-function le))))
-    (is (string= "T"
-                 (autolisp-symbol-name
-                  (call-autolisp-function le 5))))))
+  (flet ((true-p (value) (and value (string= "T" (autolisp-symbol-name value)))))
+    (let ((lt   (autolisp-symbol-function (find-autolisp-symbol "<")))
+          (le   (autolisp-symbol-function (find-autolisp-symbol "<=")))
+          (gt   (autolisp-symbol-function (find-autolisp-symbol ">")))
+          (ge   (autolisp-symbol-function (find-autolisp-symbol ">="))))
+      ;; The vendor-canonical SCHMS+ idiom: middle arg nil -> nil.
+      (is (null (call-autolisp-function le 48 nil 57)))
+      (is (null (call-autolisp-function lt 48 nil 57)))
+      ;; nil is below a number, a string and a symbol ...
+      (is (true-p (call-autolisp-function lt nil 1)))
+      (is (true-p (call-autolisp-function le nil 1)))
+      (is (true-p (call-autolisp-function ge 1 nil)))
+      (is (true-p (call-autolisp-function gt (make-autolisp-string "a") nil)))
+      (is (true-p (call-autolisp-function gt (intern-autolisp-symbol "FOO") nil)))
+      (is (null   (call-autolisp-function lt (intern-autolisp-symbol "FOO") nil)))
+      ;; ... and equal to itself
+      (is (true-p (call-autolisp-function le nil nil)))
+      (is (null   (call-autolisp-function lt nil nil)))
+      ;; the chain stops at its first false pair, before 1 vs "a"
+      (is (null (call-autolisp-function lt (make-autolisp-string "a") nil 1)))
+      ;; all-numeric ordered / unordered
+      (is (true-p (call-autolisp-function le 1 2 3)))
+      (is (true-p (call-autolisp-function gt 3 2 1)))
+      (is (null (call-autolisp-function le 2 1)))
+      ;; one argument: T, whatever it is
+      (is (true-p (call-autolisp-function le 5)))
+      (is (true-p (call-autolisp-function le nil))))))
 
 ;;; § 2b. Relational operators order strings by code point.
 
@@ -6542,43 +6544,378 @@ the low half."
       ;; a nil among strings still folds to nil (bottom propagation)
       (is (null   (call-autolisp-function lt (str "a") nil))))))
 
-;;; § 2c. Relational operators signal on incompatible non-nil arguments.
+;;; § 2c. The comparison operators against the vendor probe.
 
-(test relational-operators-signal-on-incompatible-types
-  ;; autolisp-spec ch.5 "The Comparison Operators": the domain is numbers
-  ;; and strings; genuinely incompatible NON-nil arguments -- a number
-  ;; against a string, or anything outside the domain -- signal a type
-  ;; error. Only a nil argument folds the result to nil without error.
+(defparameter *comparison-probe-autocad-2022*
+  '(
+    ("eq" "arity0" :error)
+    ("eq" "arity1-int" :t)
+    ("eq" "arity1-nil" :t)
+    ("eq" "arity1-str" :t)
+    ("eq" "arity1-sym" :t)
+    ("eq" "chain-asc" :nil)
+    ("eq" "chain-mixed" :nil)
+    ("eq" "chain-repeat" :nil)
+    ("eq" "chain-str" :nil)
+    ("eq" "int-int-eq" :t)
+    ("eq" "int-int-lt" :nil)
+    ("eq" "int-nil" :nil)
+    ("eq" "int-real-eq" :t)
+    ("eq" "int-str-alpha" :nil)
+    ("eq" "int-str-digit" :nil)
+    ("eq" "int-str-nil" :nil)
+    ("eq" "int-sym" :nil)
+    ("eq" "list-equal" :nil)
+    ("eq" "list-int" :nil)
+    ("eq" "list-same" :t)
+    ("eq" "nil-int" :nil)
+    ("eq" "nil-int-str" :nil)
+    ("eq" "nil-nil" :t)
+    ("eq" "real-int-gt" :nil)
+    ("eq" "real-str" :nil)
+    ("eq" "str-case" :nil)
+    ("eq" "str-case-eq" :nil)
+    ("eq" "str-empty" :nil)
+    ("eq" "str-eq" :t)
+    ("eq" "str-gt" :nil)
+    ("eq" "str-int-digit" :nil)
+    ("eq" "str-lt" :nil)
+    ("eq" "str-nil" :nil)
+    ("eq" "str-prefix" :nil)
+    ("eq" "sym-diff" :nil)
+    ("eq" "sym-int" :nil)
+    ("eq" "sym-nil" :nil)
+    ("eq" "sym-same" :t)
+    ("eq" "sym-str" :nil)
+    ("eq" "t-t" :t)
+    ("ge" "arity0" :error)
+    ("ge" "arity1-int" :t)
+    ("ge" "arity1-nil" :t)
+    ("ge" "arity1-str" :t)
+    ("ge" "arity1-sym" :t)
+    ("ge" "chain-asc" :nil)
+    ("ge" "chain-mixed" :nil)
+    ("ge" "chain-repeat" :nil)
+    ("ge" "chain-str" :nil)
+    ("ge" "int-int-eq" :t)
+    ("ge" "int-int-lt" :nil)
+    ("ge" "int-nil" :t)
+    ("ge" "int-real-eq" :t)
+    ("ge" "int-str-alpha" :error)
+    ("ge" "int-str-digit" :error)
+    ("ge" "int-str-nil" :error)
+    ("ge" "int-sym" :error)
+    ("ge" "list-equal" :error)
+    ("ge" "list-int" :error)
+    ("ge" "list-same" :error)
+    ("ge" "nil-int" :nil)
+    ("ge" "nil-int-str" :nil)
+    ("ge" "nil-nil" :t)
+    ("ge" "real-int-gt" :t)
+    ("ge" "real-str" :error)
+    ("ge" "str-case" :nil)
+    ("ge" "str-case-eq" :t)
+    ("ge" "str-empty" :nil)
+    ("ge" "str-eq" :t)
+    ("ge" "str-gt" :t)
+    ("ge" "str-int-digit" :error)
+    ("ge" "str-lt" :nil)
+    ("ge" "str-nil" :t)
+    ("ge" "str-prefix" :nil)
+    ("ge" "sym-diff" :error)
+    ("ge" "sym-int" :error)
+    ("ge" "sym-nil" :t)
+    ("ge" "sym-same" :error)
+    ("ge" "sym-str" :error)
+    ("ge" "t-t" :error)
+    ("gt" "arity0" :error)
+    ("gt" "arity1-int" :t)
+    ("gt" "arity1-nil" :t)
+    ("gt" "arity1-str" :t)
+    ("gt" "arity1-sym" :t)
+    ("gt" "chain-asc" :nil)
+    ("gt" "chain-mixed" :nil)
+    ("gt" "chain-repeat" :nil)
+    ("gt" "chain-str" :nil)
+    ("gt" "int-int-eq" :nil)
+    ("gt" "int-int-lt" :nil)
+    ("gt" "int-nil" :t)
+    ("gt" "int-real-eq" :nil)
+    ("gt" "int-str-alpha" :error)
+    ("gt" "int-str-digit" :error)
+    ("gt" "int-str-nil" :error)
+    ("gt" "int-sym" :error)
+    ("gt" "list-equal" :error)
+    ("gt" "list-int" :error)
+    ("gt" "list-same" :error)
+    ("gt" "nil-int" :nil)
+    ("gt" "nil-int-str" :nil)
+    ("gt" "nil-nil" :nil)
+    ("gt" "real-int-gt" :t)
+    ("gt" "real-str" :error)
+    ("gt" "str-case" :nil)
+    ("gt" "str-case-eq" :t)
+    ("gt" "str-empty" :nil)
+    ("gt" "str-eq" :nil)
+    ("gt" "str-gt" :t)
+    ("gt" "str-int-digit" :error)
+    ("gt" "str-lt" :nil)
+    ("gt" "str-nil" :t)
+    ("gt" "str-prefix" :nil)
+    ("gt" "sym-diff" :error)
+    ("gt" "sym-int" :error)
+    ("gt" "sym-nil" :t)
+    ("gt" "sym-same" :error)
+    ("gt" "sym-str" :error)
+    ("gt" "t-t" :error)
+    ("le" "arity0" :error)
+    ("le" "arity1-int" :t)
+    ("le" "arity1-nil" :t)
+    ("le" "arity1-str" :t)
+    ("le" "arity1-sym" :t)
+    ("le" "chain-asc" :t)
+    ("le" "chain-mixed" :nil)
+    ("le" "chain-repeat" :nil)
+    ("le" "chain-str" :t)
+    ("le" "int-int-eq" :t)
+    ("le" "int-int-lt" :t)
+    ("le" "int-nil" :nil)
+    ("le" "int-real-eq" :t)
+    ("le" "int-str-alpha" :error)
+    ("le" "int-str-digit" :error)
+    ("le" "int-str-nil" :error)
+    ("le" "int-sym" :error)
+    ("le" "list-equal" :error)
+    ("le" "list-int" :error)
+    ("le" "list-same" :error)
+    ("le" "nil-int" :t)
+    ("le" "nil-int-str" :error)
+    ("le" "nil-nil" :t)
+    ("le" "real-int-gt" :nil)
+    ("le" "real-str" :error)
+    ("le" "str-case" :t)
+    ("le" "str-case-eq" :nil)
+    ("le" "str-empty" :t)
+    ("le" "str-eq" :t)
+    ("le" "str-gt" :nil)
+    ("le" "str-int-digit" :error)
+    ("le" "str-lt" :t)
+    ("le" "str-nil" :nil)
+    ("le" "str-prefix" :t)
+    ("le" "sym-diff" :error)
+    ("le" "sym-int" :error)
+    ("le" "sym-nil" :nil)
+    ("le" "sym-same" :error)
+    ("le" "sym-str" :error)
+    ("le" "t-t" :error)
+    ("lt" "arity0" :error)
+    ("lt" "arity1-int" :t)
+    ("lt" "arity1-nil" :t)
+    ("lt" "arity1-str" :t)
+    ("lt" "arity1-sym" :t)
+    ("lt" "chain-asc" :t)
+    ("lt" "chain-mixed" :nil)
+    ("lt" "chain-repeat" :nil)
+    ("lt" "chain-str" :t)
+    ("lt" "int-int-eq" :nil)
+    ("lt" "int-int-lt" :t)
+    ("lt" "int-nil" :nil)
+    ("lt" "int-real-eq" :nil)
+    ("lt" "int-str-alpha" :error)
+    ("lt" "int-str-digit" :error)
+    ("lt" "int-str-nil" :error)
+    ("lt" "int-sym" :error)
+    ("lt" "list-equal" :error)
+    ("lt" "list-int" :error)
+    ("lt" "list-same" :error)
+    ("lt" "nil-int" :t)
+    ("lt" "nil-int-str" :error)
+    ("lt" "nil-nil" :nil)
+    ("lt" "real-int-gt" :nil)
+    ("lt" "real-str" :error)
+    ("lt" "str-case" :t)
+    ("lt" "str-case-eq" :nil)
+    ("lt" "str-empty" :t)
+    ("lt" "str-eq" :nil)
+    ("lt" "str-gt" :nil)
+    ("lt" "str-int-digit" :error)
+    ("lt" "str-lt" :t)
+    ("lt" "str-nil" :nil)
+    ("lt" "str-prefix" :t)
+    ("lt" "sym-diff" :error)
+    ("lt" "sym-int" :error)
+    ("lt" "sym-nil" :nil)
+    ("lt" "sym-same" :error)
+    ("lt" "sym-str" :error)
+    ("lt" "t-t" :error)
+    ("ne" "arity0" :error)
+    ("ne" "arity1-int" :t)
+    ("ne" "arity1-nil" :t)
+    ("ne" "arity1-str" :t)
+    ("ne" "arity1-sym" :t)
+    ("ne" "chain-asc" :t)
+    ("ne" "chain-mixed" :t)
+    ("ne" "chain-repeat" :t)
+    ("ne" "chain-str" :t)
+    ("ne" "int-int-eq" :nil)
+    ("ne" "int-int-lt" :t)
+    ("ne" "int-nil" :t)
+    ("ne" "int-real-eq" :nil)
+    ("ne" "int-str-alpha" :t)
+    ("ne" "int-str-digit" :t)
+    ("ne" "int-str-nil" :t)
+    ("ne" "int-sym" :t)
+    ("ne" "list-equal" :t)
+    ("ne" "list-int" :t)
+    ("ne" "list-same" :nil)
+    ("ne" "nil-int" :t)
+    ("ne" "nil-int-str" :t)
+    ("ne" "nil-nil" :nil)
+    ("ne" "real-int-gt" :t)
+    ("ne" "real-str" :t)
+    ("ne" "str-case" :t)
+    ("ne" "str-case-eq" :t)
+    ("ne" "str-empty" :t)
+    ("ne" "str-eq" :nil)
+    ("ne" "str-gt" :t)
+    ("ne" "str-int-digit" :t)
+    ("ne" "str-lt" :t)
+    ("ne" "str-nil" :t)
+    ("ne" "str-prefix" :t)
+    ("ne" "sym-diff" :t)
+    ("ne" "sym-int" :t)
+    ("ne" "sym-nil" :t)
+    ("ne" "sym-same" :nil)
+    ("ne" "sym-str" :t)
+    ("ne" "t-t" :nil))
+  "(OPERATOR CASE OUTCOME) for every observation of
+autolisp-front-end/tests/scenarios/language/comparison-operators-probe.lsp
+as run on AutoCAD 2022 (French, Windows), 2026-09-25. OPERATOR is eq ne lt
+le gt ge for = /= < <= > >=; OUTCOME is :t, :nil or :error. AutoCAD is the
+normative vendor for the three rows where BricsCAD differs
+(comparison-operators-vendor-semantics.issue).")
+
+(defun %comparison-probe-arguments (case)
+  "The argument list the probe passes for CASE, built from clautolisp
+objects. The same list object twice for list-same, so identity can hold."
+  (flet ((str (text) (make-autolisp-string text))
+         (sym (name) (intern-autolisp-symbol name)))
+    (let ((shared (list 1 2)))
+      (cdr (assoc case
+                  `(("int-int-lt" 1 2) ("int-int-eq" 2 2) ("int-real-eq" 1 1.0d0)
+                    ("real-int-gt" 2.5d0 1)
+                    ("str-lt" ,(str "a") ,(str "b")) ("str-eq" ,(str "b") ,(str "b"))
+                    ("str-gt" ,(str "c") ,(str "b")) ("str-case" ,(str "B") ,(str "a"))
+                    ("str-prefix" ,(str "ab") ,(str "abc")) ("str-empty" ,(str "") ,(str "a"))
+                    ("str-case-eq" ,(str "a") ,(str "A"))
+                    ("int-str-digit" 1 ,(str "1")) ("str-int-digit" ,(str "1") 1)
+                    ("int-str-alpha" 1 ,(str "a")) ("real-str" 1.0d0 ,(str "1.0"))
+                    ("sym-same" ,(sym "A") ,(sym "A")) ("sym-diff" ,(sym "A") ,(sym "B"))
+                    ("sym-int" ,(sym "A") 1) ("int-sym" 1 ,(sym "A"))
+                    ("sym-str" ,(sym "A") ,(str "A")) ("t-t" ,(sym "T") ,(sym "T"))
+                    ("list-equal" ,(list 1 2) ,(list 1 2)) ("list-same" ,shared ,shared)
+                    ("list-int" ,(list 1) 1)
+                    ("nil-nil" nil nil) ("int-nil" 1 nil) ("nil-int" nil 1)
+                    ("str-nil" ,(str "a") nil) ("sym-nil" ,(sym "A") nil)
+                    ("int-str-nil" 1 ,(str "a") nil) ("nil-int-str" nil 1 ,(str "a"))
+                    ("arity0") ("arity1-int" 5) ("arity1-str" ,(str "a"))
+                    ("arity1-sym" ,(sym "A")) ("arity1-nil" nil)
+                    ("chain-asc" 1 2 3) ("chain-mixed" 1 3 2) ("chain-repeat" 1 2 1)
+                    ("chain-str" ,(str "a") ,(str "b") ,(str "c")))
+                  :test #'string=)))))
+
+(defun %comparison-outcome (function arguments)
+  "Call FUNCTION on ARGUMENTS: :t, :nil, or :error when it signals."
+  (handler-case
+      (let ((value (apply #'call-autolisp-function function arguments)))
+        (cond ((null value) :nil)
+              ((and (typep value 'autolisp-symbol)
+                    (string= "T" (autolisp-symbol-name value)))
+               :t)
+              (t :other)))
+    (autolisp-runtime-error () :error)))
+
+(test comparison-operators-match-autocad-probe
+  ;; All 240 observations of the comparison probe, under the default
+  ;; (strict) dialect, must match AutoCAD 2022: the spec now follows the
+  ;; vendors, which agree on 237 of them, and adopts AutoCAD for the other
+  ;; three. Warnings go to *error-output* and do not change the value.
   (reset-autolisp-symbol-table)
   (install-core-builtins)
-  (flet ((fn (name) (autolisp-symbol-function (find-autolisp-symbol name)))
-         (str (text) (make-autolisp-string text))
-         (sym (name) (intern-autolisp-symbol name)))
-    (dolist (name '("<" "<=" ">" ">="))
-      (let ((f (fn name)))
-        (flet ((expect-type-error (&rest arguments)
-                 (handler-case
-                     (progn (apply #'call-autolisp-function f arguments)
-                            (fail "(~A~{ ~S~}) did not signal" name arguments))
-                   (autolisp-runtime-error (condition)
-                     (is (eq :invalid-comparison-argument
-                             (autolisp-runtime-error-code condition)))
-                     (is (string= name
-                                  (getf (autolisp-runtime-error-details condition)
-                                        :builtin)))))))
-          (expect-type-error 1 (str "a"))
-          (expect-type-error (str "a") 1)
-          (expect-type-error 1.5 (str "a"))
-          (expect-type-error 1 (sym "FOO"))
-          (expect-type-error (sym "A") (sym "B"))
-          (expect-type-error (list 1) (list 2))
-          (expect-type-error 1 2 (str "c"))
-          ;; a single argument outside the domain is still outside it
-          (expect-type-error (sym "A"))
-          ;; ... but nil anywhere is bottom, never an error
-          (is (null (call-autolisp-function f 1 nil)))
-          (is (null (call-autolisp-function f nil (str "a"))))
-          (is (null (call-autolisp-function f 1 (str "a") nil))))))))
+  (let ((functions '(("eq" . "=") ("ne" . "/=") ("lt" . "<")
+                     ("le" . "<=") ("gt" . ">") ("ge" . ">="))))
+    (dolist (row *comparison-probe-autocad-2022*)
+      (destructuring-bind (op case expected) row
+        (let* ((function (autolisp-symbol-function
+                          (find-autolisp-symbol (cdr (assoc op functions :test #'string=)))))
+               (outcome (let ((*error-output* (make-broadcast-stream)))
+                          (%comparison-outcome function (%comparison-probe-arguments case)))))
+          (is (eq expected outcome)
+              "~A.~A: expected ~S (AutoCAD 2022), got ~S" op case expected outcome))))))
+
+(test comparison-operators-type-error-code
+  ;; The type error names the operator and carries a stable code.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (dolist (name '("<" "<=" ">" ">="))
+    (handler-case
+        (progn (call-autolisp-function
+                (autolisp-symbol-function (find-autolisp-symbol name))
+                1 (make-autolisp-string "a"))
+               (fiveam:fail "(~A 1 \"a\") did not signal" name))
+      (autolisp-runtime-error (condition)
+        (is (eq :invalid-comparison-argument
+                (autolisp-runtime-error-code condition)))
+        (is (string= name (getf (autolisp-runtime-error-details condition)
+                                :builtin)))))))
+
+(test comparison-operators-bricscad-divergences
+  ;; The three rows where BricsCAD differs from AutoCAD. --dialect
+  ;; bricscad reproduces BricsCAD (an error) and warns; strict performs
+  ;; AutoCAD's answer and warns; clautolisp / autocad / lax are silent.
+  (reset-autolisp-symbol-table)
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (install-core-builtins)
+  (let* ((session (clautolisp.autolisp-runtime:evaluation-context-session
+                   (clautolisp.autolisp-runtime:current-evaluation-context)))
+         (gt (autolisp-symbol-function (find-autolisp-symbol ">")))
+         (ge (autolisp-symbol-function (find-autolisp-symbol ">=")))
+         (lt (autolisp-symbol-function (find-autolisp-symbol "<")))
+         (rows (list (list ge (intern-autolisp-symbol "A") nil)
+                     (list gt nil 1 (make-autolisp-string "a"))
+                     (list ge nil 1 (make-autolisp-string "a")))))
+    (flet ((outcomes-under (dialect-name)
+             (clautolisp.autolisp-runtime:set-runtime-session-dialect
+              session (clautolisp.autolisp-reader:find-autolisp-dialect dialect-name))
+             (loop for (function . arguments) in rows
+                   collect (let* ((warn (make-string-output-stream))
+                                  (outcome (let ((*error-output* warn))
+                                             (%comparison-outcome function arguments))))
+                             (list outcome
+                                   (and (search "comparison-divergence"
+                                                (get-output-stream-string warn))
+                                        t))))))
+      (let ((bricscad (outcomes-under "bricscad"))
+            (strict (outcomes-under "strict"))
+            (autocad (outcomes-under "autocad"))
+            (clautolisp (outcomes-under "clautolisp"))
+            (lax (outcomes-under "lax"))
+            ;; a two-argument comparison diverges nowhere: never a warning
+            (plain (progn
+                     (clautolisp.autolisp-runtime:set-runtime-session-dialect
+                      session (clautolisp.autolisp-reader:find-autolisp-dialect "strict"))
+                     (let ((warn (make-string-output-stream)))
+                       (let ((*error-output* warn))
+                         (call-autolisp-function lt 1 2))
+                       (get-output-stream-string warn)))))
+        (is (equal '((:error t) (:error t) (:error t)) bricscad))
+        (is (equal '((:t t) (:nil t) (:nil t)) strict))
+        (is (equal '((:t nil) (:nil nil) (:nil nil)) autocad))
+        (is (equal '((:t nil) (:nil nil) (:nil nil)) clautolisp))
+        (is (equal '((:t nil) (:nil nil) (:nil nil)) lax))
+        (is (string= "" plain))))
+    (clautolisp.autolisp-runtime:set-runtime-session-dialect
+     session (clautolisp.autolisp-reader:find-autolisp-dialect "strict"))))
 
 ;;; § 3. (substr s start 0) returns the empty string.
 

@@ -40,9 +40,12 @@
     ;; floats: not the fast path's case, and the promotion rules are the
     ;; builtin's business
     "(+ 1.5 2)" "(- 1 0.25)" "(* 2 0.5)" "(< 1.0 2)" "(>= 2.0 2)"
-    ;; the relational fold: a NIL makes < yield nil, NOT an error.
-    ;; Loop guards depend on it, so the fast path must not "improve" it.
-    "(< 1 nil)" "(< nil 1)" "(<= nil nil)"
+    ;; NIL is the smallest value, NOT an error: (< 1 nil) is nil and
+    ;; (< nil 1) is T. Loop guards depend on it, so the fast path must not
+    ;; "improve" it.
+    "(< 1 nil)" "(< nil 1)" "(<= nil nil)" "(<= 48 nil 57)"
+    ;; /= compares ADJACENT pairs, like the vendors
+    "(/= 1 2 1)"
     ;; ... while a non-nil number/string mixture is a type error
     "(vl-catch-all-error-p (vl-catch-all-apply (function >) (list \"a\" 1)))"
     ;; strings order by code point -- the builtin's case, never the fast path's
@@ -132,9 +135,9 @@ of compiler bug -- a right-looking wrong answer."
         "an out-of-range sum came back as a number: ~S" compiled)))
 
 (test the-fast-path-declines-a-non-integer-and-keeps-the-fold
-  "`<' folds a non-numeric argument to nil instead of signalling, which
-loop idioms depend on. The fast path covers two integers only; everything
-else is the builtin's, including that rule."
+  "`<' orders nil below every value instead of signalling, which loop
+idioms depend on. The fast path covers two integers only; everything else
+is the builtin's, including that rule."
   (is (null (%run-with-compiled-bodies "(< 1 nil)")))
   (is (null (%run-with-compiled-bodies "(< nil nil)")))
   (is (%same-value-p (%run-interpreted "(< 1.5 2)")

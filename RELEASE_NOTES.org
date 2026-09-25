@@ -37,11 +37,22 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *The comparison operators behave like AutoCAD and BricsCAD.* Measured
+  on both (240 cases), and the autolisp-spec corrected to match:
+  - =<=, =<==, =>=, =>== treat =nil= as the *smallest* value:
+    =(< nil 1)= is =T=, =(<= nil nil)= is =T=, =(< 1 nil)= is =nil=.
+  - They compare adjacent pairs left to right and stop at the first false
+    one; =(<)= is an error and =(< x)= is =T= for any =x=.
+  - =/== compares adjacent pairs: =(/= 1 2 1)= is now =T=.
+  - =(>= 'a nil)=, =(> nil 1 "a")= and =(>= nil 1 "a")= follow AutoCAD;
+    =--dialect bricscad= reproduces BricsCAD's type error, and it and
+    =--strict= print a =[comparison-divergence]= warning.
+
 - *=<=, =<==, =>=, =>== signal a type error on incompatible arguments.*
   A number against a string, or a symbol or list, now fails with
   =:invalid-comparison-argument=, as the autolisp-spec requires:
   =(< 1 "a")= and =(< 'a 'b)= used to return =nil=. A =nil= argument
-  still makes the comparison =nil= without error.
+  is never a type error (it is the smallest value, see above).
 
 - *=<=, =<==, =>=, =>== compare strings.* They order strings
   lexicographically by character code, as AutoCAD and BricsCAD do:
