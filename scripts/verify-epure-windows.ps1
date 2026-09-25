@@ -41,6 +41,20 @@ $probe = Join-Path ([System.IO.Path]::GetTempPath()) 'alfe-epure-probe.lsp'
 
 $summary = @()
 
+Write-Host ""
+Write-Host "================ what the EPURE control scripts contain"
+foreach ($year in @('Epure 2022_b', 'Epure 2022', 'epure 2022_b', 'epure 2022')) {
+    $control = Join-Path $env:APPDATA "sncf\epure\$year\control_path_epure_2022.scr"
+    if (Test-Path $control) {
+        Write-Host ""
+        Write-Host "----- $control (first 40 lines)"
+        Get-Content $control -ErrorAction SilentlyContinue |
+            Select-Object -First 40 | Out-String | Write-Host
+    } else {
+        Write-Host "----- $control : absent"
+    }
+}
+
 # Each CAD runs TWICE: with --epure and without. The control run is what
 # makes the EPURE result mean anything. On 2026-09-25 BricsCAD sat at
 # BOOTING under --epure and run-scr-started.txt was never written, i.e.
@@ -124,6 +138,71 @@ foreach ($run in $runs) {
     } else {
         Write-Host "--- no workdir reported (the run did not get that far)"
     }
+}
+
+Write-Host ""
+Write-Host "================ experiment: (load control.scr) instead of ._SCRIPT"
+# pjb, 2026-09-25: "perhaps the simplest would be to do (load control)
+# (load run-common) in our run.scr". Nothing is changed in the plug-in to
+# try it: --print-command --keep-workdir stages the real workdir and
+# prints the real command line, the run.scr is rewritten here, and that
+# command is then run. If BricsCAD reaches READY this way, the plug-in
+# follows.
+$staged = & $alfe --no-init --debug --bricscad --epure --print-command `
+    --keep-workdir -l $probe 2>&1 | Out-String
+$command = ($staged -split "`n" | Where-Object { $_ -match 'bricscad.*run\.scr' } |
+            Select-Object -Last 1)
+$workdir = ($staged -split "`n" | Where-Object { $_ -match 'workdir = (\S+)' } |
+            Select-Object -First 1)
+if ($workdir -match 'workdir = (\S+)' -and $command) {
+    $dir = $Matches[1].Trim()
+    $scr = Join-Path $dir 'run.scr'
+    $lines = Get-Content $scr
+    $out = @()
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i].Trim() -eq '._SCRIPT') {
+            # the next line is the answer to SCRIPT's prompt: the path,
+            # quoted by the plug-in since 2.2.88
+            $path = $lines[$i + 1].Trim().Trim('"')
+            $out += ('(load "' + $path + '")')
+            $i++
+        } else {
+            $out += $lines[$i]
+        }
+    }
+    $out | Set-Content -Path $scr -Encoding ASCII
+    Write-Host "--- rewritten run.scr"
+    Get-Content $scr | Out-String | Write-Host
+
+    Write-Host "--- launching: $command"
+    $status = Join-Path $dir 'protocol\status.txt'
+    $proc = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $command -PassThru
+    $deadline = (Get-Date).AddSeconds([int]$bricscadTimeout)
+    $last = ''
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Seconds 5
+        if (Test-Path $status) {
+            $last = (Get-Content $status -ErrorAction SilentlyContinue | Select-Object -First 1)
+            if ($last -match '^(READY|DONE|STOPPED)') { break }
+        }
+    }
+    Write-Host "--- status reached: '$last'"
+    $loadWorked = ($last -match '^(READY|DONE|STOPPED)')
+    Write-Host ("--- (load control.scr): {0}" -f $(if ($loadWorked) { 'REACHED THE PROTOCOL' } else { 'no' }))
+    foreach ($name in @('run-scr-started.txt', 'protocol\stdout.txt', 'protocol\stderr.txt')) {
+        $file = Join-Path $dir $name
+        if (Test-Path $file) {
+            Write-Host "----- $name"
+            Get-Content $file -ErrorAction SilentlyContinue |
+                Select-Object -First 30 | Out-String | Write-Host
+        }
+    }
+    if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+    Get-Process bricscad -ErrorAction SilentlyContinue |
+        ForEach-Object { Write-Host "leftover bricscad pid $($_.Id), ending it"; Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+    Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+} else {
+    Write-Host "--- could not stage a BricsCAD EPURE workdir; experiment skipped"
 }
 
 Write-Host ""
