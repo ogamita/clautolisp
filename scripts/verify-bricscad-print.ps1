@@ -53,8 +53,10 @@ function Run-Alfe([string]$label, [string[]]$arguments) {
     }
     Write-Host ("--- exit {0}" -f $(if ($proc.HasExited) { $proc.ExitCode } else { 'killed' }))
     $text = if (Test-Path $out) { Get-Content $out -Raw } else { '' }
-    Write-Host ("--- alfe stdout ({0} bytes)" -f $text.Length)
-    Write-Host $text
+    $outBytes = if (Test-Path $out) { [System.IO.File]::ReadAllBytes($out) } else { @() }
+    Write-Host ("--- alfe stdout ({0} bytes)" -f $outBytes.Length)
+    Write-Host ("    hex  : {0}" -f (($outBytes | ForEach-Object { '{0:x2}' -f $_ }) -join ' '))
+    Write-Host ("    text : {0}" -f ($text -replace "`r", '\r' -replace "`n", '\n'))
     $errtext = if (Test-Path $err) { Get-Content $err -Raw } else { '' }
     if ($errtext) { Write-Host "--- alfe stderr"; Write-Host $errtext }
 
@@ -96,10 +98,50 @@ $booleans = Join-Path $work 'booleans.lsp'
 Write-Host "--- the file both runs load:"
 Get-Content $booleans | Out-String | Write-Host
 
-Run-Alfe "1. booleans, no EPURE" `
+function Run-Alfe-Raw([string]$label, [string]$argumentString) {
+    $out = Join-Path $work 'stdout.txt'
+    $err = Join-Path $work 'stderr.txt'
+    Remove-Item $out, $err -Force -ErrorAction SilentlyContinue
+    Write-Host ""
+    Write-Host "================ $label"
+    Write-Host "    alfe $argumentString"
+    $proc = Start-Process -FilePath $alfe -ArgumentList $argumentString -PassThru `
+        -RedirectStandardOutput $out -RedirectStandardError $err -WindowStyle Hidden
+    if (-not $proc) { Write-Host "    (alfe did not start)"; return }
+    $proc | Wait-Process -Timeout ([int]$timeout) -ErrorAction SilentlyContinue
+    $proc.Refresh()
+    if (-not $proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+        $proc.Refresh()
+    }
+    Write-Host ("--- exit {0}" -f $(if ($proc.HasExited) { $proc.ExitCode } else { 'killed' }))
+    $text = if (Test-Path $out) { Get-Content $out -Raw } else { '' }
+    $bytes = if (Test-Path $out) { [System.IO.File]::ReadAllBytes($out) } else { @() }
+    Write-Host ("--- alfe stdout ({0} bytes)" -f $bytes.Length)
+    Write-Host ("    hex  : {0}" -f (($bytes | ForEach-Object { '{0:x2}' -f $_ }) -join ' '))
+    Write-Host ("    text : {0}" -f ($text -replace "`r", '\r' -replace "`n", '\n'))
+    $errtext = if (Test-Path $err) { Get-Content $err -Raw } else { '' }
+    $actions = ($errtext -split "`n" | Where-Object { $_ -match 'actions = ' } | Select-Object -First 1)
+    Write-Host ("--- alfe saw: {0}" -f $actions.Trim())
+    Get-Process bricscad -ErrorAction SilentlyContinue |
+        ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 5
+}
+
+Run-Alfe "1. the same forms LOADED from a file" `
     @('--keep-workdir', '-norc', '--debug', '--bricscad', '-l', $booleans)
 
-Run-Alfe "2. booleans, under EPURE" `
+# The -x half of the comparison. ONE argument string, with the quoting
+# spelled out, because passing an array let PowerShell split each
+# expression on its spaces (alfe reported actions = 10 for three of
+# them). No string literal is used inside, so no nested quoting is
+# needed: the marker is a number.
+$xargs = '--keep-workdir -norc --debug --bricscad ' +
+         '-x "(print (= 1 1))" -x "(print (= 1 2))" -x "(princ 42)"'
+Run-Alfe-Raw "2. the same forms passed with -x" $xargs
+
+Run-Alfe "3. under EPURE, loaded from a file" `
     @('--keep-workdir', '-norc', '--debug', '--bricscad', '--epure', '-l', $booleans)
 
 Write-Host ""

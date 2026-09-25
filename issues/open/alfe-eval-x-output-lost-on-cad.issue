@@ -1,0 +1,101 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-eval-x-output-lost-on-cad — what an -x expression prints never reaches the user
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: alfe-backend
+#+DEPENDS: -
+#+BRANCH: feat-bricscad-print-check
+#+DATE: 2026-09-25
+
+* Observed
+
+pjb, on the Windows machine, alfe 2.2.90, BricsCAD V25 under EPURE:
+
+#+begin_example
+alfe --keep-workdir -norc --verbose --debug --bricscad --epure \
+  -x '(print (= "" (toutes_options nil)))' \
+  -x '(print (equal (quote ((enabled) (message))) (f_DateHeure_UTC 0)))'
+#+end_example
+
+The run is a success by every other measure: READY after 17 s, DONE 1 OK,
+DONE 2 OK, plan finished status=:SUCCESS exit=0, errors.txt empty. But
+NOTHING is printed. The workdir he kept holds the whole answer:
+
+#+begin_example
+$ od -c protocol/stdout.txt
+0000000  \r  \n  \r  \n
+#+end_example
+
+Two CRLF, one per =-x= action, and nothing else -- not even the trailing
+space that =print= always writes after its value. So the values of the
+two expressions were never shown, and a user cannot tell a working run
+from a broken one.
+
+* What it is NOT
+
+Three hypotheses were tested and are wrong:
+
+1. *print is broken.* pjb, same alfe, plain =--bricscad=:
+   =-x '(print 42)' -x '(princ 42)'= gives =newline: 42 42=.
+2. *Booleans do not render.* alfe's own renderer, copied out of that
+   workdir and run under clautolisp: =autolisp-readable-text= gives
+   ="T"= for T, ="nil"= for nil, ="42"= for 42.
+3. *The EPURE session intercepts print.* =verify:bricscad-print:windows=
+   on the runner, the same three forms LOADED FROM A FILE, with and
+   without =--epure=:
+
+   #+begin_example
+   1. booleans, no EPURE     exit 0, 13 bytes:  \nT \nnil end
+   2. booleans, under EPURE  exit 0, 17 bytes:  \nT \nnil end\n\n
+   #+end_example
+
+   T, nil and the marker all come through INSIDE an EPURE session.
+
+* What it is
+
+The difference is =-x= against =-l=. Everything that printed came
+through the LOAD path; everything that vanished went through the EVAL
+path. Note run 2 above: the file's own output, and then TWO BARE
+NEWLINES -- the same signature as pjb's run, which had only those.
+
+The runtime's two paths differ in more than the name
+(=source/runtime/autolisp-bootstrap.lsp=):
+
+- =autolisp-run-load= sets =*AUTOLISP_CAPTURE_STDOUT*= and calls
+  =autolisp-source-load= on the user's file, as written;
+- =autolisp-run-eval-file= also sets the capture, but first does
+  =(read form-text)= and hands the result to
+  =autolisp-eval-request-form=, which passes it through
+  =autolisp-normalize-princ-call=. alfe writes the expression into
+  =protocol/alfe-eval.lsp= wrapped in a =setq=, and re-printed: the file
+  in pjb's workdir reads
+
+  : (setq *AUTOLISP-EVAL-RESULT* (PRINT (EQUAL (QUOTE ((ENABLED) (MESSAGE))) (F_DATEHEURE_UTC 0))))
+
+  which is the user's form UPCASED and wrapped.
+
+Candidates to separate, in that order: the =read= round trip, the
+normaliser (a no-op when the host has =&rest=, an arity-padding rewrite
+otherwise), and the =setq= wrapper.
+
+* Why it matters
+
+=-x= is the documented way to ask a CAD a question. A user who types
+
+: alfe --bricscad -x '(print (foo))'
+
+gets exit 0 and a blank line whatever =foo= returns, so the command
+cannot answer anything. It also made an unrelated investigation much
+longer: the EPURE API validation
+(alfe-plugin-epure-windows-validation.issue) could not see its own
+results, and the emptiness was read three times over as a fault in
+EPURE.
+
+* Acceptance
+
+- =alfe --bricscad -x '(print (= 1 1))'= shows T, as the same form
+  loaded from a file does.
+- A regression test asserts the two paths agree. It need not involve a
+  CAD if the divergence is in the runtime's own code; that is one of
+  the things the confirmation run settles.
+- The behaviour of =-x= is documented as identical to =-l= for output.
