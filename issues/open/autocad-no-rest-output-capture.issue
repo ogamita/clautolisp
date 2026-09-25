@@ -194,3 +194,18 @@ setvar-shadow tee; if not, fall back to capturing accoreconsole's process stdout
 
 Related: [[accoreconsole-macos-headless-qt-blocker]] (a fresh macOS accoreconsole
 run first has to get past its Qt::AA_PluginApplication bootstrap abort).
+
+
+== 2026-09-25 comparison-probe report was a different bug ==
+
+The reported command using
+=-l ./autolisp-front-end/tests/scenarios/language/comparison-operators-probe.lsp=
+also produced no output, but it did NOT reproduce this capture defect.  alfe
+forwarded that relative pathname into accoreconsole's temporary workdir, so the
+file was never loaded; the padded =(load path nil)= then hid the missing file.
+Passing the same source as an absolute pathname produced all 240 observations
+through protocol/stdout.txt on AutoCAD 2022.  Fixed separately in alfe 2.2.84;
+see =issues/closed/alfe-cad-relative-cli-load-path.issue=.
+
+This issue remains open only for its narrower unresolved =-x= / native-load
+capture path described above.

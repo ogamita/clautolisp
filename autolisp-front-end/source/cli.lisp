@@ -284,7 +284,7 @@ Mode and variant:
   --backend {attach,launch}         Attach to a running CAD or launch a fresh one.
 
 Actions (processed in order):
-  -l, --load FILE        Load and evaluate FILE.
+  -l, --load FILE        Load FILE (relative to alfe's invocation directory).
   -x, --eval EXPR        Evaluate EXPR.
   --main FN              Call FN as the script entry point after loading.
   -i, --interactive      Drop into a REPL after the action queue.

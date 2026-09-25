@@ -76,6 +76,11 @@ Regardless of the backend, =alfe= exposes the same sequence:
    optional =--interactive=;
 5. Status collection, finalisation, cleanup.
 
+A relative =FILE= supplied by =-l= is resolved against alfe's invocation
+directory before it crosses a backend process boundary.  CAD engines run from
+the generated workdir, so forwarding the relative spelling itself would give
+it a different meaning under =--autocad= and =--bricscad=.
+
 Plug-ins (see [[#plugins]]) may intervene at every one of these steps
 through named hooks; with no active plug-in the sequence is exactly the
 one above.

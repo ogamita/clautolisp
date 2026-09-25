@@ -459,13 +459,21 @@ is handled, not just the built-in cp1252 cascade."
       v)))
 
 (defun stage-source-as-utf8-bom (protocol-session path encoding)
-  "If ENCODING is a non-Unicode codepage, decode PATH with babel and write a
-UTF-8-with-BOM copy into the workdir, returning that copy's path for the CAD to
-(load); otherwise return PATH unchanged."
-  (let ((babel-enc (%source-encoding->babel encoding)))
+  "Resolve PATH against alfe's invocation directory.  If ENCODING is a
+non-Unicode codepage, decode that absolute source with babel and write a
+UTF-8-with-BOM copy into the workdir, returning the copy's path for the CAD to
+(load); otherwise return the absolute source path itself.
+
+The absolutisation is required even without transcoding: CAD batch processes
+run from the generated workdir, not necessarily from alfe's current directory,
+so forwarding a relative -l pathname verbatim makes the CAD look in the wrong
+directory."
+  (let* ((absolute-path (namestring
+                         (uiop:ensure-absolute-pathname path (uiop:getcwd))))
+         (babel-enc (%source-encoding->babel encoding)))
     (if (null babel-enc)
-      path
-      (let* ((text (babel:octets-to-string (%read-file-octets path)
+      absolute-path
+      (let* ((text (babel:octets-to-string (%read-file-octets absolute-path)
                                            :encoding babel-enc :errorp nil))
              (staged (merge-pathnames
                       (format nil "esrc-~A" (file-namestring (pathname path)))
@@ -477,7 +485,7 @@ UTF-8-with-BOM copy into the workdir, returning that copy's path for the CAD to
           (write-char (code-char #xFEFF) out)   ; UTF-8 BOM -> EF BB BF
           (write-string text out))
         (log-debug "cad-common: staged UTF-8+BOM ~A -> ~A (from ~A source)"
-                   (file-namestring (pathname path))
+                   (file-namestring (pathname absolute-path))
                    (file-namestring staged) encoding)
         (namestring (truename staged))))))
 

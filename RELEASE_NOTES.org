@@ -1144,6 +1144,10 @@ file or COM), and forwards the workload.
 
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
+- Relative =-l FILE= paths now work on the CAD backends. alfe resolves them
+  from its invocation directory before handing them to AutoCAD or BricsCAD;
+  the CAD's temporary workdir no longer changes their meaning or produces a
+  silent successful run of no file.
 - ~--clautolisp~ (default) — drive the in-process clautolisp engine.
   ~--host cador|nihil~ selects that engine's HAL backend: ~cador~ (the
   headless CAD core, default) or ~nihil~ (no CAD; operations signal

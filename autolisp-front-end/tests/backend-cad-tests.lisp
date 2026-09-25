@@ -1298,6 +1298,27 @@ matters for the file drain."
   (is (eq :auto (alfe.backend.autocad::%autocad-console-decode-encoding
                  (parse-arguments '("--autocad")) :automation))))
 
+(test cad-cli-load-path-is-made-absolute-before-crossing-process-boundary
+  "A relative -l path is relative to alfe's invocation directory, not to the
+CAD workdir.  The CAD backend must therefore hand the remote process an
+absolute pathname even when no source transcoding was requested."
+  (let* ((workdir (uiop:ensure-directory-pathname
+                   (merge-pathnames
+                    (format nil "alfe-test-relative-load-~D/" (random 999999))
+                    (uiop:temporary-directory))))
+         (protocol (alfe.protocol.file:init-session workdir))
+         (relative "autolisp-front-end/tests/scenarios/entities/pathname-probe.lsp")
+         (expected (namestring
+                    (uiop:ensure-absolute-pathname relative (uiop:getcwd)))))
+    (unwind-protect
+         (let ((resolved
+                 (alfe.backend.cad-common::stage-source-as-utf8-bom
+                  protocol relative nil)))
+           (is (uiop:absolute-pathname-p (pathname resolved)))
+           (is (string= expected resolved)))
+      (uiop:delete-directory-tree workdir :validate t
+                                          :if-does-not-exist :ignore))))
+
 (test autocad-console-external-format-folds-cli-over-default
   "G2 send half: an explicit -Econsole/-Ecadstdio drives the pipe external-
 format; with nothing requested (and no env) it stays the robust :ISO-8859-1."

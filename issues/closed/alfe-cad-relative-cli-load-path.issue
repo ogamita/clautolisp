@@ -1,0 +1,45 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe CAD relative CLI load path resolves inside the workdir
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+BRANCH: fix-alfe-cad-relative-cli-load-path
+
+* Symptom
+
+On AutoCAD 2022, this command completed successfully but printed none of the
+probe's 240 observations:
+
+#+begin_example
+alfe --keep-workdir --verbose --debug --mode batch -norc --cad autocad \
+     -l ./autolisp-front-end/tests/scenarios/language/comparison-operators-probe.lsp
+#+end_example
+
+The same source printed normally when loaded directly in the AutoCAD console,
+and alfe printed it normally under BricsCAD and clautolisp.
+
+* Cause
+
+The CAD backend forwarded the relative =-l= spelling unchanged.  AutoCAD's
+=accoreconsole= process runs from alfe's generated workdir, not from alfe's
+invocation directory, so it searched for the source below the workdir and did
+not find it.  On AutoCAD's no-=(&rest)= runtime path the load normaliser pads
+the call with a =nil= on-failure value, which made that missing file look like
+a successful =DONE 1 OK= request with empty stdout and stderr.
+
+Passing the same file as an absolute pathname immediately produced all 240
+observations, proving that output capture was functioning and distinguishing
+this incident from =autocad-no-rest-output-capture.issue=.
+
+* Resolved (2026-09-25, alfe 2.2.84)
+
+=stage-source-as-utf8-bom= now resolves every CAD =-l= source against alfe's
+live invocation directory before either passing it through or transcoding it.
+Thus both AutoCAD and BricsCAD receive an absolute pathname, while the command
+line retains its normal caller-relative meaning.
+
+The regression test
+=cad-cli-load-path-is-made-absolute-before-crossing-process-boundary= first
+failed on the unchanged relative string and now pins the absolute pathname.
+The exact reported command was rerun against real AutoCAD 2022 after rebuilding
+alfe and produced =OBSERVATIONS 240=.
