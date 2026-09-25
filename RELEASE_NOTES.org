@@ -1155,6 +1155,15 @@ file or COM), and forwards the workload.
 
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
+- *A =-x= expression that fails on a CAD backend now fails the run.*
+  On =--bricscad= / =--autocad=, an expression that signalled -- an
+  undefined function, a wrong argument -- used to be reported as a
+  SUCCESS: exit 0, no diagnostic, and the expression's output simply
+  missing. alfe swallowed the CAD-side error inside its own guard, so
+  the protocol never saw it. Such an expression now exits non-zero and
+  prints =ERROR protocol request N: …= with the CAD's own message,
+  exactly as the same form loaded with =-l= already did. A run that
+  succeeds is unchanged.
 - Relative =-l FILE= paths now work on the CAD backends. alfe resolves them
   from its invocation directory before handing them to AutoCAD or BricsCAD;
   the CAD's temporary workdir no longer changes their meaning or produces a

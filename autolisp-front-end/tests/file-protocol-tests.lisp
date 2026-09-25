@@ -1044,3 +1044,146 @@ never signals."
     (is (string= "AB" (dec (%octets #x41 #x42) :ebcdic-us)))
     ;; empty stays empty
     (is (string= "" (dec (%octets) :cp1252)))))
+
+;;; --- a signalling -x form must be reported as a FAILURE --------------
+;;;
+;;; alfe-eval-x-output-lost-on-cad. alfe overrides the runtime's
+;;; AUTOLISP-EVAL-REQUEST-FORM (the override is emitted into
+;;; run-common.lsp) so a non-LOAD form is written to alfe-eval.lsp and
+;;; run through the host's native LOAD. That override used to call
+;;;
+;;;   (vl-catch-all-apply 'load (list path))
+;;;
+;;; and DISCARD the result. It runs INSIDE the protocol server loop's
+;;; own guard, so swallowing the error there left the loop with a clean
+;;; return: every -x form that signalled was published as `DONE N OK',
+;;; alfe exited 0, protocol/stderr.txt stayed empty and the form's
+;;; output was simply missing. pjb hit it against BricsCAD V25 under
+;;; EPURE -- two -x expressions, both wrong, reported as two successes
+;;; with a blank line for output.
+;;;
+;;; The first test pins the emitted text; the second actually RUNS the
+;;; emitted runtime. Nothing in this suite had ever executed
+;;; run-common.lsp in an AutoLISP engine before -- the mock CADs are
+;;; Lisp threads that publish status strings by hand, and none of them
+;;; has a FAIL branch, which is exactly why a runtime that never
+;;; reported a failure looked healthy. clautolisp IS an AutoLISP engine,
+;;; so it can host the emitted file and answer the question for real.
+
+(defun %vendored-runtime-source (basename)
+  (asdf:system-relative-pathname
+   "autolisp-front-end/backend-cad-common"
+   (concatenate 'string "source/runtime/" basename)))
+
+(defun emit-run-common-with-real-runtime (workdir)
+  "Emit run-common.lsp into WORKDIR with the REAL vendored bootstrap
+and runtime staged (the emit tests above use fakes). Returns the
+session and the emitted path."
+  (let ((session (alfe.protocol.file:init-session
+                  workdir
+                  :bootstrap-lsp-source (%vendored-runtime-source
+                                         "autolisp-bootstrap.lsp")
+                  :runtime-lsp-source (%vendored-runtime-source
+                                       "autolisp-remote-io.lsp"))))
+    (alfe.protocol.file:stage-bootstrap-lsp session)
+    (alfe.protocol.file:stage-runtime-lsp session)
+    (values session (alfe.protocol.file:emit-run-common-lsp session))))
+
+(defun clautolisp-engine-binary ()
+  "First existing clautolisp-sbcl among the documented search paths,
+or NIL. Same discovery the :subprocess backend variant uses."
+  (dolist (candidate (alfe.backend.clautolisp::candidate-clautolisp-binaries))
+    (when (and candidate (probe-file candidate))
+      (return (namestring (truename candidate))))))
+
+(test protocol-emitted-eval-override-resignals-the-load-error
+  "The emitted AUTOLISP-EVAL-REQUEST-FORM must not swallow the error
+LOAD raises for the user's form. It keeps the guard (the runtime flags
+are published even for a failing turn) and re-signals afterwards, by
+MESSAGE so the server loop's AUTOLISP-QUIT-SIGNAL-P test still
+recognises a quit."
+  (let ((workdir (make-test-workdir "emit-resignal")))
+    (unwind-protect
+        (multiple-value-bind (session path)
+            (emit-run-common-with-real-runtime workdir)
+          (declare (ignore session))
+          (let ((content (alfe.protocol.file:read-file-as-string path)))
+            ;; The outcome is bound, tested, and re-signalled.
+            (is (search "(setq err (vl-catch-all-apply 'load (list path)))"
+                        content))
+            (is (search "(vl-catch-all-error-p err)" content))
+            (is (search "(if err (error err) r)" content))
+            ;; ERR must be a local of the override, not a global left
+            ;; behind in the CAD's symbol table.
+            (is (search "(defun autolisp-eval-request-form (form / r err"
+                        content))
+            ;; The discarding shape must not come back: the ONLY
+            ;; occurrence of the load call is the one bound to ERR.
+            (let ((pos (search "(vl-catch-all-apply 'load (list path))"
+                               content)))
+              (is (not (null pos)))
+              (when pos
+                (is (string= "(setq err "
+                             (subseq content (- pos 10) pos))
+                    "the load call's value is dropped again")))))
+      (delete-workdir workdir))))
+
+(test protocol-signalling-form-is-reported-fail-not-ok
+  "Acceptance, with a real AutoLISP engine and no CAD: clautolisp
+hosts the emitted run-common.lsp, and a form that signals is published
+as `DONE 1 FAIL' with the diagnostic on protocol/stderr.txt -- not as
+`DONE 1 OK' with silence. A well-formed form still lands on OK and its
+printed value still reaches protocol/stdout.txt. Skipped when
+clautolisp-sbcl is not on disk (a fresh checkout runs `make test`
+before `make build-clautolisp-sbcl`)."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; hosted-runtime test skipped.")
+        (let ((workdir (make-test-workdir "hosted-fail"))
+              (engine nil))
+          (unwind-protect
+               (multiple-value-bind (session path)
+                   (emit-run-common-with-real-runtime workdir)
+                 (setf engine (uiop:launch-program
+                               (list binary "-norc" "-q" "-l"
+                                     (namestring path))
+                               :output nil :error-output nil))
+                 ;; The engine loads the bootstrap + runtime and enters
+                 ;; the protocol server loop.
+                 (is (alfe.protocol.file:wait-for-status-prefix
+                      session "READY" :timeout 60))
+                 ;; 1. a form that signals.
+                 (alfe.protocol.file:send-stdin session "(no_such_function 1)")
+                 (multiple-value-bind (ok elapsed last)
+                     (alfe.protocol.file:wait-for-status-prefix
+                      session "DONE 1" :timeout 30)
+                   (declare (ignore elapsed))
+                   (is (not (null ok)))
+                   (is (search "FAIL" last)
+                       "a signalling form must publish DONE 1 FAIL, got ~S"
+                       last))
+                 (let ((stderr (alfe.protocol.file:read-file-as-string
+                                (alfe.protocol.file:protocol-session-stderr-path
+                                 session))))
+                   (is (search "ERROR protocol request 1" stderr))
+                   (is (search "NO_SUCH_FUNCTION" stderr)))
+                 ;; 2. a form that works is unaffected: OK, and it prints.
+                 (alfe.protocol.file:send-stdin session "(print (= 1 1))")
+                 (multiple-value-bind (ok elapsed last)
+                     (alfe.protocol.file:wait-for-status-prefix
+                      session "DONE 2" :timeout 30)
+                   (declare (ignore elapsed))
+                   (is (not (null ok)))
+                   (is (search "OK" last)))
+                 (let ((stdout (alfe.protocol.file:read-file-as-string
+                                (alfe.protocol.file:protocol-session-stdout-path
+                                 session))))
+                   (is (search "T" stdout)))
+                 (alfe.protocol.file:send-control session :shutdown)
+                 (alfe.protocol.file:wait-for-status session "STOPPED"
+                                                     :timeout 30))
+            (when engine
+              (ignore-errors (uiop:terminate-process engine :urgent t))
+              (ignore-errors (uiop:wait-process engine)))
+            (delete-workdir workdir))))))

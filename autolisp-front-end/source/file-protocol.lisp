@@ -1356,7 +1356,7 @@ Returns the path of the emitted file."
 ;; full diagnosis. Performance: per-request file write + load adds~%~
 ;; a few ms on SSDs, well below the human perception threshold for~%~
 ;; a typed-form REPL turn.~%~
-(defun autolisp-eval-request-form (form / r path text f)~%~
+(defun autolisp-eval-request-form (form / r err path text f)~%~
   (setq form (autolisp-normalize-princ-call form))~%~
   (cond~%~
     ((autolisp-load-form-p form)~%~
@@ -1375,11 +1375,29 @@ Returns the path of the emitted file."
             (strcat \"(setq *AUTOLISP-EVAL-RESULT* \" text \")\") f)~%~
           (close f)~%~
           (setq *AUTOLISP-EVAL-RESULT* nil)~%~
-          (vl-catch-all-apply 'load (list path))~%~
-          (setq r *AUTOLISP-EVAL-RESULT*))~%~
+          ;; The load's outcome must NOT be discarded. This override~%~
+          ;; runs INSIDE the protocol server loop's own guard, and~%~
+          ;; that loop reports `DONE N FAIL' + an `ERROR protocol~%~
+          ;; request N: ...' line only for an error it sees itself.~%~
+          ;; Catching here and returning made every signalling -x~%~
+          ;; form report DONE N OK, exit 0, with no diagnostic~%~
+          ;; anywhere and the form's output missing -- a false~%~
+          ;; SUCCESS. See the issue file~%~
+          ;; alfe-eval-x-output-lost-on-cad. The guard stays, so~%~
+          ;; the runtime flags are still published for a failing~%~
+          ;; turn, and the error is re-signalled afterwards.~%~
+          ;; Re-signalling by MESSAGE keeps~%~
+          ;; the loop's quit test working: it recognises a quit with~%~
+          ;; autolisp-quit-signal-p on the message text.~%~
+          (setq err (vl-catch-all-apply 'load (list path)))~%~
+          (if (vl-catch-all-error-p err)~%~
+            (setq err (vl-catch-all-error-message err))~%~
+            (progn~%~
+              (setq err nil)~%~
+              (setq r *AUTOLISP-EVAL-RESULT*))))~%~
         (setq r nil))))~%~
   (alfe-publish-runtime-flags)~%~
-  r)~%~
+  (if err (error err) r))~%~
 ;;; --- alfe: explicit control sentinels via protocol/stdout.txt ---~%~
 ;; The polling mirror above (runtime-flags.txt) re-publishes after~%~
 ;; every eval and works for the (setq *autolisp-debug* …) case, but~%~

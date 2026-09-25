@@ -475,6 +475,26 @@ is read, evaluated and printed (read-eval-print loop). =-x= and
 =-l= actions issued alongside =-i= remain silent-by-default; only
 forms typed AT the REPL prompt print their values.
 
+*An action that signals ends the run.* When an expression fails --
+an undefined function, a wrong argument type, an error the code
+raises itself -- the action is a failure: alfe prints the engine's
+own message on =stderr= and exits non-zero, whether the form came
+from =-x=, =-l= or =--main=, and whatever backend ran it. On the CAD
+backends the message is prefixed with the request that produced it:
+
+#+begin_example
+$ alfe --bricscad -x '(no-such-function 1)' ; echo "exit $?"
+ERROR protocol request 1: Undefined AutoLISP function NO-SUCH-FUNCTION.
+exit 1
+#+end_example
+
+A batch script can therefore test alfe's exit status and trust it.
+(Up to alfe 2.2.90 a =-x= form that signalled on a CAD backend was
+reported as a success -- exit 0, no diagnostic, and the expression's
+output missing, which looked exactly like a form that printed
+nothing. If you have a script that took that silence for success,
+re-run it.)
+
 If you want a one-line shorthand for "evaluate and print", define a
 helper in your init file:
 
