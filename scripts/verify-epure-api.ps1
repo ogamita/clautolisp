@@ -55,16 +55,25 @@ function Run-Alfe([string]$label, [string[]]$arguments) {
     Write-Host "    alfe $($arguments -join ' ')"
     $proc = Start-Process -FilePath $alfe -ArgumentList $arguments -PassThru `
         -RedirectStandardOutput $out -RedirectStandardError $err -WindowStyle Hidden
-    if (-not $proc.WaitForExit([int]$timeout * 1000)) {
+    if (-not $proc) { Write-Host "    (alfe did not start at all)"; return }
+    Write-Host "    pid $($proc.Id)"
+    $proc | Wait-Process -Timeout ([int]$timeout) -ErrorAction SilentlyContinue
+    # Refresh(), or ExitCode reads as empty on a PassThru object -- which
+    # is how the first run of this script reported `exit ' and left no
+    # way to tell whether alfe had run at all.
+    $proc.Refresh()
+    if (-not $proc.HasExited) {
         Write-Host "    (still running after $timeout s; ending it)"
         Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+        $proc.Refresh()
     }
-    $status = $proc.ExitCode
+    $status = if ($proc.HasExited) { $proc.ExitCode } else { 'killed' }
     $stdout = if (Test-Path $out) { Get-Content $out -Raw } else { '' }
     $stderr = if (Test-Path $err) { Get-Content $err -Raw } else { '' }
-    Write-Host "--- stdout"
+    Write-Host ("--- stdout ({0} bytes)" -f $stdout.Length)
     Write-Host $stdout
-    Write-Host "--- stderr"
+    Write-Host ("--- stderr ({0} bytes)" -f $stderr.Length)
     Write-Host $stderr
     $ts = ([regex]::Matches("$stdout`n$stderr", '(?m)^\s*T\s*$')).Count
     Write-Host "--- exit $status, T printed $ts time(s)"
@@ -76,10 +85,13 @@ function Run-Alfe([string]$label, [string[]]$arguments) {
 }
 
 foreach ($cad in $cads) {
+    # As pjb types it.
     Run-Alfe "--$cad --epure, -x as typed" `
         @('-norc', '--quiet', "--$cad", '--epure', '-x', $expr1, '-x', $expr2)
-    Run-Alfe "--$cad --epure, from a file" `
-        @('-norc', '--quiet', "--$cad", '--epure', '-l', $apiFile)
+    # The same, from a file and with alfe's diagnostics on: --quiet hides
+    # exactly what is needed when the answer is not T.
+    Run-Alfe "--$cad --epure, from a file (verbose)" `
+        @('-norc', '--debug', "--$cad", '--epure', '-l', $apiFile)
 }
 
 Write-Host ""
