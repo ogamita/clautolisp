@@ -3,7 +3,7 @@
 #+STATUS: NEXT
 #+PRIORITY: P1
 #+TYPE: divergence
-#+DEPENDS: AutoCAD probe run
+#+DEPENDS: pjb decision on the proposal below
 #+BRANCH: claude/dreamy-ptolemy-uj8mzd
 
 * Context
@@ -24,10 +24,10 @@ Probe: =autolisp-front-end/tests/scenarios/language/comparison-operators-probe.l
 |-----------------------------+-------------------------------------------------|
 | BricsCAD, macOS (V26)       | 240 observations                                |
 | BricsCAD V25 fr_FR, Windows | 240 observations, IDENTICAL to macOS            |
-| AutoCAD 2022, Windows       | NO output — only the alfe COM-ProgID warning; to re-run (batch mode) |
+| AutoCAD 2022, Windows       | first run: NO output (only the alfe COM-ProgID warning); re-run: 240 observations |
 | clautolisp macOS / Windows  | an old build (before 2.2.87: no string ordering) — superseded by the Linux 2.2.89 run |
 
-* Findings (BricsCAD; AutoCAD pending)
+* Findings (BricsCAD, first pass)
 
 ** = and /=  — no type error at all
 
@@ -80,7 +80,39 @@ Other relational rows:
 - no argument: =(<)= → error "too few / too many arguments"; clautolisp
   returns T.
 
-* To decide once AutoCAD is in
+* AutoCAD 2022 (French, Windows) — 237/240 identical to BricsCAD
+
+AutoCAD agrees with BricsCAD everywhere except three rows:
+
+| case             | AutoCAD 2022 | BricsCAD V25/V26 |
+|------------------+--------------+------------------|
+| (>= 'a nil)      | T            | error            |
+| (> nil 1 "a")    | nil          | error            |
+| (>= nil 1 "a")   | nil          | error            |
+
+AutoCAD compares the chain pair by pair, left to right, and STOPS at the
+first false pair: (> nil 1 "a") never reaches 1 vs "a". BricsCAD raises
+the error anyway, and treats (>= 'a nil) differently from (> 'a nil).
+(< nil 1 "a") errors on both: nil < 1 is true, so 1 vs "a" is reached.
+
+AutoCAD error texts (French build):
+- "type d'argument de comparaison incorrect: 1 \"a\"" — names the pair.
+- "nombre d'arguments insuffisants" — for (=), (<), ...
+
+* The vendor model (both vendors, AutoCAD where they differ)
+
+- === / =/==: any types, never an error. Numbers by value across
+  int/real, strings by content (case-sensitive), anything else by
+  identity (eq). =(= nil nil)= → T. =/== tests ADJACENT pairs:
+  =(/= 1 2 1)= → T.
+- =<= =<== =>= =>==: nil is the SMALLEST value — below every number,
+  string and symbol; nil equals nil. Two non-nil arguments must both be
+  numbers or both strings, else a type error naming the pair.
+- All six: pairwise left to right, stopping at the first false pair;
+  no argument → error "too few arguments"; one argument → T, whatever its
+  type (no check).
+
+* To decide
 
 For each row: spec vs AutoCAD vs BricsCAD vs clautolisp → divergence case
 (AGENTS.md § Dialect Divergence), per-dialect behaviour + warning, and
