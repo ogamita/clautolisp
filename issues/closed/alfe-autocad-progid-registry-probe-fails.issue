@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-autocad-progid-registry-probe-fails — the ProgID probe read no registry, and refused a working AutoCAD
-#+STATUS: DONE (alfe 2.2.87, 2026-09-25) -- Windows-runner confirmation pending
+#+STATUS: DONE (alfe 2.2.87, 2026-09-25) -- confirmed on the Windows runner
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -108,3 +108,64 @@ issues/closed/alfe-autocad-cad-selection-ignores-com-progid.issue).
 A probe that cannot run must not answer the question it was asked. The
 failure was not the accented byte; it was that "no answer" and "the
 answer is no" were the same value.
+
+* Confirmed on the Windows runner — 2026-09-25
+
+=probe:com-registration:autocad:windows=, job 16730692413 (child
+pipeline 2881744658 of MR !272), alfe 2.2.87. The job succeeded and
+started no AutoCAD.
+
+** The cause, in the runner's own output
+
+The registry labels its values in French, exactly as suspected:
+
+#+begin_example
+--- reg query HKCR\AutoCAD.Application.24.1\CLSID /ve
+    (par défaut)    REG_SZ    {AA46BA8A-9825-40FD-8493-0BA3C4D5CEB5}
+--- exit 0
+--- reg query HKCR\CLSID\{AA46BA8A-9825-40FD-8493-0BA3C4D5CEB5}\LocalServer32 /ve
+    (par défaut)    REG_SZ    C:\Program Files\Autodesk\AutoCAD 2022\acad.exe /Automation
+#+end_example
+
+That =é= is the byte the old capture could not decode.
+
+** alfe now reads it
+
+#+begin_example
+alfe[debug]: backend AUTOCAD: reg query HKCR /f AutoCAD.Application /k -> 270 characters
+alfe[debug]: backend AUTOCAD: reg query HKCR\AutoCAD.Application.24.1\CLSID /ve -> 124 characters
+alfe[debug]: backend AUTOCAD: reg query HKCR\CLSID\{AA46BA8A-...}\LocalServer32 /ve -> 173 characters
+alfe[debug]: backend AUTOCAD: release 2022 -> ProgID AutoCAD.Application.24.1
+alfe[verbose]: backend AUTOCAD: COM server = AutoCAD.Application.24.1
+#+end_example
+
+Both selections resolve and exit 0: =--cad autocad= (which used to fail
+outright) and =--cad autocad-2022=.
+
+** What else the host holds
+
+#+begin_example
+HKEY_CLASSES_ROOT\AutoCAD.Application        {8B4929F8-076F-4AEC-AFEE-8928747B7AE3}
+HKEY_CLASSES_ROOT\AutoCAD.Application.24
+HKEY_CLASSES_ROOT\AutoCAD.Application.24.1   -> AutoCAD 2022\acad.exe /Automation
+HKEY_CLASSES_ROOT\AutoCAD.Application.24.2   -> DWG TrueView 2024 - French\dwgviewr.exe /Automation
+HKEY_CLASSES_ROOT\AutoCAD.Application.24.3   -> DWG TrueView 2024 - French\dwgviewr.exe /Automation
+#+end_example
+
+=24.2= and =24.3= are DWG TrueView, not AutoCAD 2023/2024 — the very
+reason the release is checked against =LocalServer32= rather than
+trusted from the table. Asking for those releases on this host now
+WARNS, naming what the registration actually points at, and uses it
+anyway: it is what Windows would start either way.
+
+Note also that the generic ProgID here resolves to
+{8B4929F8-076F-4AEC-AFEE-8928747B7AE3}, a third CLSID — neither AutoCAD
+2022's nor the {0DECFB78-...} seen when the first ticket was filed.
+Which release answers =AutoCAD.Application= on this machine is not
+stable, which is the whole argument for the versioned ProgID.
+
+** Still open
+
+The end-to-end run: =alfe --cad autocad -l probe.lsp= reaching READY and
+executing AutoLISP in AutoCAD 2022 (SCHMS job 507862). This probe stages
+the bridge and stops before launching, by design.

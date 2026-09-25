@@ -2737,3 +2737,31 @@ denotation to the resolver, so the whole path is exercised here."
                      (alfe.error:backend-error (c) c))
                    'alfe.error:backend-error)
             "--cad autocad-2022 accepted another release's COM server")))))
+
+(test autocad-progid-registered-to-another-product-is-reported
+  "Measured on the Windows runner: AutoCAD.Application.24.2 and .24.3
+are registered there to DWG TrueView 2024, not to AutoCAD 2023/2024.
+The table's candidate is still what Windows would start, so it is used
+-- but the mismatch is CLASSIFIED, not silently equated with a
+registration that names the release."
+  (let* ((clsid "{169B5B8E-E315-41C7-9574-66FC7E530D10}")
+         (server "C:\\Program Files\\Autodesk\\DWG TrueView 2024 - French\\dwgviewr.exe /Automation")
+         (entries (list (cons "HKCR\\AutoCAD.Application.24.2\\CLSID" clsid)
+                        (cons (format nil "HKCR\\CLSID\\~A\\LocalServer32" clsid) server))))
+    (with-fake-registry (entries)
+      (multiple-value-bind (progid tried)
+          (alfe.backend.autocad::%registered-progid-for-release "2023")
+        (is (equal "AutoCAD.Application.24.2" progid))
+        (let ((entry (assoc "AutoCAD.Application.24.2" tried :test #'string=)))
+          (is (eq :version-not-confirmed (second entry)))
+          (is (equal server (third entry)))))))
+  ;; a registration that DOES name the release is not flagged
+  (let ((matching (list (cons "HKCR\\AutoCAD.Application.24.1\\CLSID" "{AA}")
+                        (cons "HKCR\\CLSID\\{AA}\\LocalServer32"
+                              "C:\\Program Files\\Autodesk\\AutoCAD 2022\\acad.exe /Automation"))))
+    (with-fake-registry (matching)
+      (multiple-value-bind (progid tried)
+          (alfe.backend.autocad::%registered-progid-for-release "2022")
+        (is (equal "AutoCAD.Application.24.1" progid))
+        (is (eq :ok (second (assoc "AutoCAD.Application.24.1" tried
+                                   :test #'string=))))))))

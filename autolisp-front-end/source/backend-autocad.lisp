@@ -511,6 +511,21 @@ only alfe's own discovery, so step 3 is a legitimate answer."
               (cond
                 (progid
                  (log-debug "backend AUTOCAD: release ~A -> ProgID ~A" release progid)
+                 ;; Accepted on the table's authority, with a registration
+                 ;; that names something else. Measured on the Windows
+                 ;; runner: AutoCAD.Application.24.2 and .24.3 there are
+                 ;; DWG TrueView 2024, not AutoCAD 2023/2024. Using it is
+                 ;; still the best available answer -- it IS what Windows
+                 ;; would start -- but saying nothing would hide that.
+                 (let ((unconfirmed (find-if (lambda (entry)
+                                               (and (string= (first entry) progid)
+                                                    (eq (second entry)
+                                                        :version-not-confirmed)))
+                                             tried)))
+                   (when unconfirmed
+                     (log-warn "backend AUTOCAD: ~A is registered to ~A, which ~
+does not name AutoCAD ~A; using it anyway (set $AUTOCAD_PROGID to pin another)"
+                               progid (third unconfirmed) release)))
                  progid)
                 ;; Nothing found -- but WHY? An unreadable registry is not
                 ;; an absent registration, and answering as if it were is
