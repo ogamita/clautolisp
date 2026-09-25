@@ -110,7 +110,7 @@ Check-Install $moved (Join-Path $moved 'bin\alfe.exe') 'moved installation'
 
 # An explicit override still wins over the installed copies.
 Write-Host ""
-Write-Host "=== \$ALFE_RUNTIME_LSP still takes precedence"
+Write-Host "=== an explicit override still takes precedence"
 $own = Join-Path $root 'mine.lsp'
 Set-Content -Path $own -Value '(princ)' -Encoding ASCII
 $env:ALFE_RUNTIME_LSP = $own
@@ -119,7 +119,13 @@ $out = & (Join-Path $moved 'bin\alfe.exe') --no-init --debug --cad autocad `
     --mode automation --print-command -x '(princ 1)' 2>&1 | Out-String
 Pop-Location
 Remove-Item Env:\ALFE_RUNTIME_LSP -ErrorAction SilentlyContinue
-Assert ($out -match [regex]::Escape($own)) 'override: $ALFE_RUNTIME_LSP is the runtime source'
+Write-Host $out
+# Compare on a normalised path: alfe reports a namestring with forward
+# slashes, and the value handed to it here has backslashes. Comparing
+# them verbatim failed the check while the override itself worked.
+$wanted = $own.Replace('\', '/').ToLower()
+$seen = $out.Replace('\', '/').ToLower()
+Assert ($seen.Contains($wanted)) 'override: the named file is the runtime source'
 
 Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
 
