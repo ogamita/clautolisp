@@ -304,6 +304,25 @@ probe:com-registration:autocad:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-autocad-com-registration.ps1
 
+# The other half of the COM work: a REAL AutoCAD, launched through the
+# bridge, evaluating ActiveX. The registry probe above says which ProgID
+# alfe picks; only this says the bridge reaches READY and AutoLISP runs
+# inside AutoCAD. SCHMS's test-cad-activex:autocad:windows asks the same
+# question from another repository, which this project cannot reach.
+#
+# Manual, and CAD-tagged: it starts AutoCAD on the runner.
+verify:autocad-activex:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-autocad-activex.ps1
+
 # --- real-CAD BricsCAD automation checks (self-building) -------------------
 verify:bricscad-hidden-ui:windows:
   extends: .gate-windows-cad-hard
