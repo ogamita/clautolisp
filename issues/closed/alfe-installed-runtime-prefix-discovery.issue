@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-installed-runtime-prefix-discovery — installed Windows alfe cannot find its CAD runtime assets
-#+STATUS: FIXED in alfe 2.2.74 -- awaiting confirmation on the Windows runner
+#+STATUS: DONE (alfe 2.2.74; validated on the Windows runner 2026-09-25)
 #+PRIORITY: P1
 #+TYPE: alfe-backend
 #+DEPENDS: -
@@ -192,3 +192,56 @@ timeout waiting for a runtime that was never staged.
   =$ALFE_CLAUTOLISP_BIN=, the build checkout, =PATH= and =/usr/local/bin=,
   but not under the prefix. The discovered prefix is used only for
   =share/alfe/runtime/= so far.
+
+* Validated on the Windows runner — 2026-09-25
+
+=verify:installed-prefix:windows=, job 16733270761 and its follow-up
+(MR !273), on the runner where the original failure was reported. The
+job installs with =make install-programs= into a prefix CONTAINING A
+SPACE, runs from an unrelated working directory with =$ALFE_RUNTIME_LSP=
+and =$ALFE_BOOTSTRAP_LSP= unset, and checks the run each time.
+
+#+begin_example
+=== install into 'C:\msys64\tmp\alfe prefix check\install one'
+ok   installed: bin\alfe-sbcl.exe
+ok   installed: bin\alfe.exe
+ok   installed: share\alfe\runtime\autolisp-bootstrap.lsp
+ok   installed: share\alfe\runtime\autolisp-remote-io.lsp
+ok   installed alfe-sbcl.exe          : exit 0
+ok   installed alfe-sbcl.exe          : bootstrap resolved under the prefix
+ok   installed alfe-sbcl.exe          : runtime resolved under the prefix
+ok   installed alfe-sbcl.exe          : staged autolisp-bootstrap.lsp
+ok   installed alfe-sbcl.exe          : staged autolisp-remote-io.lsp
+ok   installed alfe.exe (bare launcher) : (the same five)
+=== move the whole installation to '...\install moved'
+ok   moved installation               : (the same five)
+ok   override: the named file is the runtime source
+=== 0 failure(s)
+#+end_example
+
+So, on Windows: both assets are found from the executable's own
+location, through =alfe-sbcl.exe= and through the bare =alfe.exe=,
+before and after MOVING the whole prefix, from a directory unrelated to
+either -- and the resolved paths lie UNDER THE PREFIX, which is the
+assertion that means something here, since the CI checkout sits on the
+same disk and would otherwise satisfy a weaker check. An explicit
+override still wins.
+
+Two failures on the way there, neither in this feature:
+
+- the first run used a binary built before
+  fix-autocad-progid-registry-probe merged, so it exited 3 on the COM
+  registration before reaching the marker. The prefix assertions passed
+  even then;
+- the override check compared a Windows path with backslashes against
+  the forward-slash namestring alfe prints, and swallowed alfe's output
+  so nothing could be diagnosed. That was the check, not the code.
+
+** Criteria not covered by this job
+
+- CCL: only the SBCL image is installed and run here.
+- "Reaches READY with BricsCAD": this job starts no CAD. The AutoCAD
+  half of that question was answered separately by
+  =verify:autocad-activex:windows= (issues/closed/alfe-autocad-cad-
+  selection-ignores-com-progid.issue), where an installed-layout alfe
+  reached READY and ran ActiveX inside AutoCAD 2022.
