@@ -854,6 +854,15 @@ BricsCAD sitting at =BOOTING= until the timeout, while the same script
 without EPURE ran to completion. AutoCAD's COM bridge still sends
 =._SCRIPT= through =SendCommand=, where it works.
 
+*** EPURE is slow to load, and alfe waits for it
+
+Loading EPURE's =.des= / =.vlx= and the vertical application's menus
+takes minutes: 174 s to READY on the project's Windows runner (BricsCAD
+V25, 2026-09-25), against a 30 s backend default. So when =--epure= is
+active and you named no =--timeout=, alfe waits *420 s* instead, and
+says so under =--verbose=. An explicit =--timeout= is yours and is left
+alone.
+
 The path is checked before anything is launched. It is stable for a
 given EPURE version, so a missing file means EPURE is not installed —
 or that its version moved and the directory (=epure 2022_b=) is no

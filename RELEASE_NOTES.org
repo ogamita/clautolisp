@@ -1246,6 +1246,11 @@ file or COM), and forwards the workload.
   fallback to another release; ~$AUTOCAD_PROGID~ names a server
   outright. Attach, create and quit all use the same ProgID; ~--mode
   batch~ (accoreconsole) needs no COM registration.
+- *=--epure= waits for EPURE.* Loading EPURE takes minutes (174 s to
+  READY, measured on BricsCAD V25) while the backend default is 30 s, so
+  a working run failed on the timeout. With ~--epure~ active and no
+  ~--timeout~ given, alfe now waits 420 s and says so under ~--verbose~;
+  an explicit ~--timeout~ is untouched.
 - *=--epure= LOADS EPURE's control script instead of nesting a
   ~._SCRIPT~ in ~run.scr~.* The file is AutoLISP source despite its
   ~.scr~ name (it reads ~VENDORNAME~ and loads EPURE's ~.des~ or

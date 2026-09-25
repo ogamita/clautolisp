@@ -24,7 +24,8 @@
                 #:windows-p
                 #:vbs-escape)
   (:import-from #:clautolisp.autolisp-cli
-                #:cli-options-mode))
+                #:cli-options-mode
+                #:cli-options-timeout))
 
 (in-package #:alfe.plugin.epure)
 
@@ -39,6 +40,13 @@
             (:value "--epure-script" :key :script :arg "FILE"
                     :env "AUTOLISP_EPURE_SCRIPT"
                     :doc "EPURE control script (default: the one under %APPDATA%/sncf/epure).")))
+
+(defparameter *epure-ready-timeout* 420
+  "Seconds to wait for READY when EPURE is loading, when the user named
+no --timeout. EPURE's control script loads a .des/.vlx and the vertical
+application's menus: 174 s on the Windows runner (BricsCAD V25,
+2026-09-25), against a 30 s backend default. 420 leaves room for a
+colder machine without waiting all day on a real failure.")
 
 ;;; --- the control script ---------------------------------------------
 
@@ -83,6 +91,18 @@ forward slashes."
            (:batch (error 'cli-usage-error
                           :option "--epure"
                           :message "EPURE requires the full AutoCAD GUI; accoreconsole (--mode batch) has no profile support. Use --mode automation."))))
+       ;; EPURE takes MINUTES to load, and the backends' READY timeout
+       ;; is tens of seconds (30 s for BricsCAD). Measured on the Windows
+       ;; runner, 2026-09-25: BricsCAD under EPURE published READY after
+       ;; 174.42 s. So `alfe --bricscad --epure -x ...' would fail on the
+       ;; default timeout for a run that was working perfectly well --
+       ;; the plug-in knows EPURE is being loaded, so it is the thing
+       ;; that should say so. An explicit --timeout is left alone.
+       (unless (cli-options-timeout options)
+         (setf (cli-options-timeout options) *epure-ready-timeout*)
+         (log-verbose "epure: READY timeout raised to ~A s (EPURE takes minutes ~
+to load; measured 174 s on BricsCAD V25). Pass --timeout to choose another."
+                      *epure-ready-timeout*))
        (unless dry-run-p
          (let ((script (control-script name)))
            (cond

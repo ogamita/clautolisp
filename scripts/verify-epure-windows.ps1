@@ -141,6 +141,62 @@ foreach ($run in $runs) {
 }
 
 Write-Host ""
+Write-Host "================ EPURE's own API, called from alfe"
+# pjb, 2026-09-25. Bootstrap is not the question any more: this is.
+# Loading EPURE and reaching READY says nothing about whether EPURE's
+# functions answer in that session, which is the whole point of --epure.
+#
+#   TRUSTEDPATHS=...  alfe -norc --quiet --$cad --epure \
+#     -x '(print (= "" (toutes_options nil)))' \
+#     -x '(print (equal (quote ((enabled) (message))) (f_DateHeure_UTC 0)))'
+#
+# must print T twice.
+#
+# It is run BOTH ways: with -x as pjb wrote it, and from a file. On this
+# host PowerShell has been seen to strip the double quotes out of a
+# native command's arguments (it silently emptied the ActiveX probe's
+# labels), and that artefact must not be read as EPURE failing.
+$epureDirs = @("$env:APPDATA\SNCF\Epure\Epure 2022_b",
+               "$env:APPDATA\SNCF\Epure\Epure 2022")
+$env:TRUSTEDPATHS = (@($env:TRUSTEDPATHS) + $epureDirs | Where-Object { $_ }) -join ';'
+Write-Host "--- TRUSTEDPATHS=$env:TRUSTEDPATHS"
+
+$apiFile = Join-Path ([System.IO.Path]::GetTempPath()) 'alfe-epure-api.lsp'
+@'
+(print (= "" (toutes_options nil)))
+(print (equal (quote ((enabled) (message))) (f_DateHeure_UTC 0)))
+'@ | Set-Content -Path $apiFile -Encoding ASCII
+
+foreach ($cad in $cads) {
+    $t = if ($cad -eq 'bricscad') { $bricscadTimeout } else { $timeout }
+
+    Write-Host ""
+    Write-Host "--- alfe -norc --quiet --$cad --epure -x ... -x ...   (as typed)"
+    $out = & $alfe -norc --quiet --$cad --epure --timeout $t `
+        -x '(print (= "" (toutes_options nil)))' `
+        -x '(print (equal (quote ((enabled) (message))) (f_DateHeure_UTC 0)))' 2>&1 | Out-String
+    $status = $LASTEXITCODE
+    Write-Host $out
+    $ts = ([regex]::Matches($out, '(?m)^\s*T\s*$')).Count
+    Write-Host "--- exit $status, T printed $ts time(s)"
+    $summary += [pscustomobject]@{
+        Label = "--$cad --epure EPURE API (-x)"; Exit = $status; Marker = ($ts -ge 2) }
+
+    Write-Host ""
+    Write-Host "--- the same two forms from a file (immune to argument quoting)"
+    $out = & $alfe -norc --quiet --$cad --epure --timeout $t -l $apiFile 2>&1 | Out-String
+    $status = $LASTEXITCODE
+    Write-Host $out
+    $ts = ([regex]::Matches($out, '(?m)^\s*T\s*$')).Count
+    Write-Host "--- exit $status, T printed $ts time(s)"
+    $summary += [pscustomobject]@{
+        Label = "--$cad --epure EPURE API (file)"; Exit = $status; Marker = ($ts -ge 2) }
+
+    Get-Process bricscad, acad -ErrorAction SilentlyContinue |
+        ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+}
+
+Write-Host ""
 Write-Host "================ experiment: (load control.scr) instead of ._SCRIPT"
 # pjb, 2026-09-25: "perhaps the simplest would be to do (load control)
 # (load run-common) in our run.scr". Nothing is changed in the plug-in to
@@ -208,13 +264,14 @@ if ($workdir -match 'workdir = (\S+)' -and $command) {
 Write-Host ""
 Write-Host "================ summary"
 foreach ($row in $summary) {
-    Write-Host ("  {0,-34} : exit {1}, marker {2}" -f `
-        $row.Label, $row.Exit, $(if ($row.Marker) { 'PRESENT' } else { 'ABSENT' }))
+    Write-Host ("  {0,-52} : exit {1}, ok {2}" -f `
+        $row.Label, $row.Exit, $(if ($row.Marker) { 'YES' } else { 'NO' }))
 }
 
 # The question asked of this job is "what happens", so a CAD that is not
 # installed is not a failure; a CAD that ran and did not reach the
 # marker is.
 $bad = @($summary | Where-Object {
-    $_.Label -match '--epure$' -and $_.Exit -eq 0 -and -not $_.Marker }).Count
+    ($_.Label -match '--epure$' -or $_.Label -match 'EPURE API') -and
+    $_.Exit -eq 0 -and -not $_.Marker }).Count
 exit $bad

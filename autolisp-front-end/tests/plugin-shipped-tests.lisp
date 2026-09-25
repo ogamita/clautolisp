@@ -135,6 +135,33 @@ explicit automation, and refuses accoreconsole (batch)."
                           (alfe.error:cli-usage-error-message condition)))
               (is (= 2 (exit-code-for-condition condition))))))))))
 
+(test epure-raises-the-ready-timeout
+  "EPURE takes MINUTES to load -- 174 s to READY on the Windows runner
+(BricsCAD V25, 2026-09-25) -- against a 30 s backend default. The
+plug-in knows EPURE is what is being loaded, so it is the thing that
+raises the wait; an explicit --timeout is the user's and is left alone."
+  (with-shipped-plugins
+    (with-plugin-temp-directory (dir)
+      (let ((script (namestring (%write-file (merge-pathnames "epure.scr" dir) "x")))
+            (backend (alfe.backend.bricscad:make-bricscad-backend
+                      :executable-path "/fake/bricscad.exe")))
+        (flet ((timeout-after (&rest extra)
+                 (with-epure-context (options (append (list "--bricscad" "--epure"
+                                                            "--epure-script" script)
+                                                      extra))
+                   (alfe.plugin:run-hook :backend-selected backend
+                                         :options options :dry-run-p nil)
+                   (cli-options-timeout options))))
+          ;; The plug-in's package exists only once the plug-in is
+          ;; LOADED, so its symbol is looked up at run time; naming it
+          ;; directly would be a read error when this file is compiled.
+          (let ((declared (let ((symbol (find-symbol "*EPURE-READY-TIMEOUT*"
+                                                     "ALFE.PLUGIN.EPURE")))
+                            (and symbol (boundp symbol) (symbol-value symbol)))))
+            (is (eql declared (timeout-after))))
+          (is (> (timeout-after) 100) "a 30 s default would fail a working run")
+          (is (eql 42 (timeout-after "--timeout" "42"))))))))
+
 (test epure-checks-its-control-script
   "The control script must exist — unless this is a dry run — and %APPDATA%
 gives the default one."
