@@ -1,0 +1,60 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: relational-cross-type-arguments-should-signal — (< 1 "a") returns nil, spec says type error
+#+STATUS: DONE (clautolisp 2.2.88 / alfe 2.2.83, 2026-09-25)
+#+PRIORITY: P2
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: claude/dreamy-ptolemy-uj8mzd
+
+* Symptom
+
+Found while fixing relational-operators-ignore-strings (clautolisp 2.2.87).
+=numeric-order-p= (=clautolisp/autolisp-builtins-core/source/api.lisp=)
+returns nil for any argument list that is neither all numbers nor all
+strings: =(< 1 "a")=, =(< 1 'foo)=, =(< "a" '(1))=.
+
+The spec (ch.5, Function Entries =<= =<== =>= =>==, and "⊥ propagation")
+says a non-nil cross-type argument *signals a type error*; only a =nil=
+argument yields nil without error.
+
+* Before changing it
+
+- Probe AutoCAD and BricsCAD: =(< 1 "a")=, =(< "a" 1)=, =(< 1 'foo)=,
+  =(< 'a 'b)=, =(< '(1) '(2))= — error text, or nil? The fold-to-nil
+  rule was introduced for SCHMS+ loop guards on *nil*; confirm no
+  production code relies on the non-nil cross-type fold.
+- Classify per AGENTS.md § Dialect Divergence (case 0 if both vendors
+  signal), add a =*** clautolisp= note to the spec entries if a
+  deviation remains, and update =numeric-order-folds-nil-to-nil= (it
+  currently asserts =(< 1 'foo)= => nil) and the compiler open-coded
+  corpus entry =(> "a" 1)=.
+
+* Resolution (clautolisp 2.2.88)
+
+pjb asked for the spec's rule to be implemented. =numeric-order-p= now:
+
+1. returns =T= for no argument;
+2. returns nil when any argument is nil (bottom propagation). This is
+   checked first, so a nil anywhere in the chain wins over a type error
+   elsewhere; the =(<= 48 (car chars) 57)= loop guard is unchanged;
+3. compares all-number and all-string argument lists as before;
+4. otherwise signals =:invalid-comparison-argument= (message: =< expects
+   numbers or strings, not a mixture or other types, got 1 "a".=). This
+   covers a number against a string and any argument outside the domain
+   (symbol, list), including a single one: =(< 'a)=.
+
+Classification: case 0 (common) per the spec, which states the type
+error for both vendors, so no dialect warning. The vendor confirmation
+is still owed: the source carries a =SPEC-UNCERTAIN= marker and the
+probe questions are in =deferred-spec-research.issue= under =< <= > >==.
+
+Tests: =relational-operators-signal-on-incompatible-types= (new);
+=numeric-order-folds-nil-to-nil= (its =(< 1 'foo) => nil= assertion is
+replaced by nil-wins-over-type-error cases); the compiler's open-coded
+corpus (=(> "a" 1)= is now checked as an error). The autolisp-test
+corpus gives identical per-test results before and after the change
+(3949 tests).
+
+Not in scope: === and =/== still accept any types (=comparison-equal-p=
+compares symbols and lists by identity, which production code relies
+on), although the spec also lists =(= 1 "1")= as a type error.

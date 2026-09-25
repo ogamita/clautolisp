@@ -6490,8 +6490,10 @@ the low half."
     ;; First / last position also nil.
     (is (null (call-autolisp-function le nil 1)))
     (is (null (call-autolisp-function ge 1 nil)))
-    ;; Non-nil non-numeric (a symbol) also folds to nil.
-    (is (null (call-autolisp-function lt 1 (intern-autolisp-symbol "FOO"))))
+    ;; A nil anywhere wins over a type error elsewhere in the chain:
+    ;; ⊥ in, ⊥ out (autolisp-spec ch.5, shared domain rule).
+    (is (null (call-autolisp-function lt 1 (intern-autolisp-symbol "FOO") nil)))
+    (is (null (call-autolisp-function lt (make-autolisp-string "a") nil 1)))
     ;; All-numeric ordered still T.
     (is (string= "T"
                  (autolisp-symbol-name
@@ -6539,6 +6541,44 @@ the low half."
       (is (true-p (call-autolisp-function lt (str "B") (str "a"))))
       ;; a nil among strings still folds to nil (bottom propagation)
       (is (null   (call-autolisp-function lt (str "a") nil))))))
+
+;;; § 2c. Relational operators signal on incompatible non-nil arguments.
+
+(test relational-operators-signal-on-incompatible-types
+  ;; autolisp-spec ch.5 "The Comparison Operators": the domain is numbers
+  ;; and strings; genuinely incompatible NON-nil arguments -- a number
+  ;; against a string, or anything outside the domain -- signal a type
+  ;; error. Only a nil argument folds the result to nil without error.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (flet ((fn (name) (autolisp-symbol-function (find-autolisp-symbol name)))
+         (str (text) (make-autolisp-string text))
+         (sym (name) (intern-autolisp-symbol name)))
+    (dolist (name '("<" "<=" ">" ">="))
+      (let ((f (fn name)))
+        (flet ((expect-type-error (&rest arguments)
+                 (handler-case
+                     (progn (apply #'call-autolisp-function f arguments)
+                            (fail "(~A~{ ~S~}) did not signal" name arguments))
+                   (autolisp-runtime-error (condition)
+                     (is (eq :invalid-comparison-argument
+                             (autolisp-runtime-error-code condition)))
+                     (is (string= name
+                                  (getf (autolisp-runtime-error-details condition)
+                                        :builtin)))))))
+          (expect-type-error 1 (str "a"))
+          (expect-type-error (str "a") 1)
+          (expect-type-error 1.5 (str "a"))
+          (expect-type-error 1 (sym "FOO"))
+          (expect-type-error (sym "A") (sym "B"))
+          (expect-type-error (list 1) (list 2))
+          (expect-type-error 1 2 (str "c"))
+          ;; a single argument outside the domain is still outside it
+          (expect-type-error (sym "A"))
+          ;; ... but nil anywhere is bottom, never an error
+          (is (null (call-autolisp-function f 1 nil)))
+          (is (null (call-autolisp-function f nil (str "a"))))
+          (is (null (call-autolisp-function f 1 (str "a") nil))))))))
 
 ;;; § 3. (substr s start 0) returns the empty string.
 

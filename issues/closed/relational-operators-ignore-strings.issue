@@ -40,4 +40,4 @@ so compiled and interpreted code agree).
 
 The remaining gap — a number/string mixture folds to nil where the spec
 says type error — is tracked separately by
-=issues/open/relational-cross-type-arguments-should-signal.issue=.
+=issues/closed/relational-cross-type-arguments-should-signal.issue=.

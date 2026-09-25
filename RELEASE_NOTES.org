@@ -37,6 +37,12 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *=<=, =<==, =>=, =>== signal a type error on incompatible arguments.*
+  A number against a string, or a symbol or list, now fails with
+  =:invalid-comparison-argument=, as the autolisp-spec requires:
+  =(< 1 "a")= and =(< 'a 'b)= used to return =nil=. A =nil= argument
+  still makes the comparison =nil= without error.
+
 - *=<=, =<==, =>=, =>== compare strings.* They order strings
   lexicographically by character code, as AutoCAD and BricsCAD do:
   =(< "a" "b")= is now =T= (it was =nil= in every dialect).
