@@ -44,16 +44,27 @@ $summary = @()
 # then the question, and only a control run answers it.
 $runs = @()
 foreach ($cad in $cads) {
-    $runs += [pscustomobject]@{ Cad = $cad; Epure = $true }
-    $runs += [pscustomobject]@{ Cad = $cad; Epure = $false }
+    $runs += [pscustomobject]@{ Cad = $cad; Epure = $true;  Mode = '' }
+    $runs += [pscustomobject]@{ Cad = $cad; Epure = $false; Mode = '' }
 }
+# BricsCAD under EPURE begins run.scr and then stops at the nested
+# ._SCRIPT: control never comes back, so the (load run-common.lsp) after
+# it never runs. COM SendCommand is the alternative the ticket names --
+# the one AutoCAD already takes, and the VBS branch of the plug-in has
+# always emitted it. Whether it works on BricsCAD has never been run, so
+# it is asked here rather than assumed, BEFORE the default is changed.
+$runs += [pscustomobject]@{ Cad = 'bricscad'; Epure = $true; Mode = 'automation' }
 
 foreach ($run in $runs) {
     $cad = $run.Cad
     $label = if ($run.Epure) { "--$cad --epure" } else { "--$cad (control, no --epure)" }
+    if ($run.Mode) { $label = "$label --mode $($run.Mode)" }
     Write-Host ""
     Write-Host "================ alfe $label"
-    $out = if ($run.Epure) {
+    $out = if ($run.Epure -and $run.Mode) {
+        & $alfe --no-init --debug --$cad --epure --mode $run.Mode --timeout $timeout `
+            --keep-workdir -l $probe 2>&1 | Out-String
+    } elseif ($run.Epure) {
         & $alfe --no-init --debug --$cad --epure --timeout $timeout `
             --keep-workdir -l $probe 2>&1 | Out-String
     } else {
