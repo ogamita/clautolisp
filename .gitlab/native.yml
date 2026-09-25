@@ -308,6 +308,28 @@ verify:vl-registry:windows:
   script:
     - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
 
+# alfe --epure against the real CADs, with EPURE installed on the runner
+# (pjb, 2026-09-25). The plug-in rests on two assumptions inherited from
+# the legacy wrapper -- that a nested ._SCRIPT returns control to the
+# outer /b script, and that COM SendCommand keeps the order -- and both
+# have only ever been asserted against a mock
+# (alfe-plugin-epure-windows-validation.issue).
+#
+# A PROBE: it keeps the workdir and prints the emitted run.scr /
+# bridge-*.vbs / protocol files, which is the evidence those assumptions
+# need. Manual and CAD-tagged, since it starts a real CAD.
+verify:epure:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-epure-windows.ps1
+
 # --- real-CAD BricsCAD automation checks (self-building) -------------------
 verify:bricscad-hidden-ui:windows:
   extends: .gate-windows-cad-hard
