@@ -3564,12 +3564,15 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
      :wrong-number-of-arguments
      "/="
      "/= expects at least one argument."))
-  ;; `/=` is true when no two arguments compare equal — pairwise.
+  ;; `/=` compares ADJACENT pairs, left to right, like < and the other
+  ;; relational operators: (/= 1 2 1) is T on AutoCAD 2022 and BricsCAD
+  ;; V25/V26 (comparison-operators-vendor-semantics.issue), because 1/2
+  ;; and 2/1 both differ -- it is not "all arguments distinct".
   (loop for tail on arguments
-        do (loop for other in (rest tail)
-                 when (comparison-equal-p (first tail) other)
-                   do (return-from builtin-/= nil))
-        finally (return (autolisp-true))))
+        while (rest tail)
+        when (comparison-equal-p (first tail) (second tail))
+          do (return-from builtin-/= nil))
+  (autolisp-true))
 
 (defun require-number (object operator-name)
   (unless (numberp object)
@@ -3581,71 +3584,174 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
      object))
   object)
 
-(defun numeric-order-p (arguments predicate operator-name
-                        &optional string-predicate)
-  ;; The relational operators <, <=, >, >= order NUMBERS by value and
-  ;; STRINGS lexicographically by character code point (autolisp-spec
-  ;; ch.5, "The Comparison Operators" and Function Entry: <; confirmed on
-  ;; AutoCAD 2022 and BricsCAD V25: (< "a" "b") => T, (> "c" "b") => T).
-  ;; STRING-PREDICATE is the CL string comparison matching PREDICATE
-  ;; (string< for <, ...).
-  ;;
-  ;; A NIL argument anywhere folds the comparison to nil without error
-  ;; (bottom propagation). Loop-guard idioms depend on it:
-  ;;   (while (<= 48 (car chars) 57) ...)
-  ;; where (car chars) becomes nil at end of list and the comparison
-  ;; must yield nil to stop the loop. SCHMS+'s numeric validators
-  ;; (validateur_reel / _naturel / _entier) rely on exactly this shape —
-  ;; see issues/closed/strict-dialect-autolisp-divergences.issue §2.
-  ;;
-  ;; Any other argument list — a number against a string, or an
-  ;; argument outside the number/string domain (a symbol, a list) — is a
-  ;; type error, per the spec's shared domain rule
-  ;; (issues/closed/relational-cross-type-arguments-should-signal.issue).
-  ;;; SPEC-UNCERTAIN: the type error on non-nil incompatible arguments is
-  ;;; the spec's normative rule, not yet confirmed by a vendor probe of
-  ;;; (< 1 "a") / (< 'a 'b) on AutoCAD and BricsCAD — see
+;;; --- < <= > >= -----------------------------------------------------
+;;;
+;;; The vendor semantics, probed on AutoCAD 2022 and BricsCAD V25 / V26
+;;; (autolisp-front-end/tests/scenarios/language/comparison-operators-
+;;; probe.lsp; comparison-operators-vendor-semantics.issue), and adopted
+;;; by the spec (ch.5, "The Comparison Operators"):
+;;;
+;;; - numbers order by value across int/real, strings by character code
+;;;   (case-sensitive, a prefix first);
+;;; - NIL is the SMALLEST value: below every number, string, symbol or
+;;;   list, and equal to itself. So (< nil 1) and (> "a" nil) are T, and
+;;;   the loop guard (<= 48 (car chars) 57) stops at the end of the list
+;;;   because 48 <= nil is false;
+;;; - any other pair of non-nil arguments -- a number against a string,
+;;;   a symbol, a list, T -- is a type error naming the pair;
+;;; - the pairs are compared LEFT TO RIGHT and the chain STOPS at its
+;;;   first false pair, so a later incompatible pair is never reached;
+;;; - no argument is an error; one argument is T, whatever it is.
+;;;
+;;; Where the vendors disagree (three probe rows), AutoCAD is normative:
+;;;   (>= 'a nil)            AutoCAD T      BricsCAD error
+;;;   (> nil 1 "a")          AutoCAD nil    BricsCAD error
+;;;   (>= nil 1 "a")         AutoCAD nil    BricsCAD error
+;;; i.e. BricsCAD raises the type error of EVERY pair, even past a false
+;;; one, and rejects a non-number/non-string left of nil under >= (not
+;;; under >). %RESOLVED-COMPARISON-POLICY picks the answer per dialect.
+
+(defun %comparison-pair (left right operator-kind)
+  "Compare one adjacent pair for OPERATOR-KIND (:< :<= :> :>=).
+Returns :TRUE, :FALSE, or :INCOMPATIBLE (two non-nil arguments that are
+not both numbers or both strings)."
+  (flet ((verdict (order)
+           ;; ORDER is -1, 0 or 1: LEFT below, equal to, or above RIGHT.
+           (if (ecase operator-kind
+                 (:<  (< order 0))
+                 (:<= (<= order 0))
+                 (:>  (> order 0))
+                 (:>= (>= order 0)))
+               :true
+               :false)))
+    (cond
+      ((and (null left) (null right)) (verdict 0))
+      ((null left)                    (verdict -1))
+      ((null right)                   (verdict 1))
+      ((and (numberp left) (numberp right))
+       (verdict (cond ((< left right) -1) ((> left right) 1) (t 0))))
+      ((and (typep left 'autolisp-string) (typep right 'autolisp-string))
+       (let ((a (autolisp-string-value left))
+             (b (autolisp-string-value right)))
+         (verdict (cond ((string< a b) -1) ((string> a b) 1) (t 0)))))
+      (t :incompatible))))
+
+(defun %bricscad-rejects-pair-p (left right operator-kind)
+  "True for the pair BricsCAD rejects although AutoCAD accepts it:
+(>= X nil) with X neither nil, a number nor a string."
+  ;;; SPEC-UNCERTAIN: probed only with a symbol on the left, (>= 'a nil);
+  ;;; a list or T in that position is assumed to behave the same. See
   ;;; issues/open/deferred-spec-research.issue, "< <= > >=".
+  (and (eq operator-kind :>=)
+       (null right)
+       left
+       (not (numberp left))
+       (not (typep left 'autolisp-string))))
+
+(defun %resolved-comparison-policy (dialect)
+  "Classify DIALECT for the comparison-operator divergence. Returns
+(values ACTION WARN-P): ACTION is :normative (AutoCAD's answer) or
+:deviant (BricsCAD's error); WARN-P is true iff a portability warning is
+due. bricscad -> deviant + warn; strict -> normative + warn; autocad /
+clautolisp / lax / unknown -> normative, silent."
+  (let ((name (and dialect (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+        (product (and dialect (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+    (cond
+      ((eq product :bricscad) (values :deviant t))
+      ((eq name :strict)      (values :normative t))
+      (t                      (values :normative nil)))))
+
+(defun emit-comparison-divergence-warning (operator-name dialect action)
+  "Advisory to *ERROR-OUTPUT*: this comparison answers differently on
+AutoCAD and BricsCAD."
+  (format *error-output*
+          "~&[comparison-divergence] (~A ...) here gives AutoCAD's answer ~
+(it stops at the first false pair, and accepts (>= x nil) for any x) but ~
+BricsCAD signals a type error. clautolisp ~A under --dialect ~(~A~); the ~
+two answers are not portable.~%"
+          operator-name
+          (if (eq action :deviant) "signals, as BricsCAD does," "follows AutoCAD")
+          (or (and dialect (clautolisp.autolisp-reader:autolisp-dialect-name dialect))
+              "default")))
+
+(defun signal-comparison-type-error (operator-name left right)
+  (signal-builtin-argument-error
+   :invalid-comparison-argument
+   operator-name
+   "~A: incompatible comparison arguments ~S ~S (expected two numbers or two strings)."
+   operator-name
+   left
+   right))
+
+(defun relational-order-p (arguments operator-kind operator-name)
+  "The value of (OPERATOR-NAME . ARGUMENTS) for < <= > >= (OPERATOR-KIND
+:< :<= :> :>=), per the vendor semantics described above."
   (cond
     ((null arguments)
-     (autolisp-true))
-    ((member nil arguments)
-     nil)
-    ((every #'numberp arguments)
-     (if (loop for (left right) on arguments
-               while right
-               always (funcall predicate left right))
-         (autolisp-true)
-         nil))
-    ((and string-predicate
-          (every (lambda (argument) (typep argument 'autolisp-string))
-                 arguments))
-     (if (loop for (left right) on arguments
-               while right
-               always (funcall string-predicate
-                               (autolisp-string-value left)
-                               (autolisp-string-value right)))
-         (autolisp-true)
-         nil))
-    (t
      (signal-builtin-argument-error
-      :invalid-comparison-argument
+      :wrong-number-of-arguments
       operator-name
-      "~A expects numbers or strings, not a mixture or other types, got~{ ~S~}."
-      operator-name
-      arguments))))
+      "~A expects at least one argument."
+      operator-name))
+    ((null (rest arguments))
+     (autolisp-true))
+    ;; Two arguments -- the common case -- cannot diverge: no pair lies
+    ;; beyond a false one, and only (>= x nil) needs the dialect.
+    ((and (null (cddr arguments))
+          (not (%bricscad-rejects-pair-p (first arguments) (second arguments)
+                                         operator-kind)))
+     (ecase (%comparison-pair (first arguments) (second arguments) operator-kind)
+       (:true (autolisp-true))
+       (:false nil)
+       (:incompatible (signal-comparison-type-error
+                       operator-name (first arguments) (second arguments)))))
+    (t
+     (let ((normative :true)          ; AutoCAD: stop at the first false pair
+           (normative-pair nil)
+           (deviant-pair nil)         ; BricsCAD: the first pair it rejects
+           (diverges nil))
+       (loop for tail on arguments
+             while (rest tail)
+             do (let* ((left (first tail))
+                       (right (second tail))
+                       (outcome (%comparison-pair left right operator-kind))
+                       (rejected (or (eq outcome :incompatible)
+                                     (%bricscad-rejects-pair-p left right operator-kind))))
+                  (when (and rejected (null deviant-pair))
+                    (setf deviant-pair (cons left right)))
+                  (when (eq normative :true)
+                    (case outcome
+                      (:false (setf normative :false))
+                      (:incompatible (setf normative :incompatible
+                                           normative-pair (cons left right)))))))
+       ;; The vendors disagree when BricsCAD rejects a pair that AutoCAD
+       ;; either never reaches or accepts.
+       (setf diverges (and deviant-pair (not (eq normative :incompatible))))
+       (let ((dialect (ignore-errors (current-evaluation-dialect))))
+         (multiple-value-bind (action warn-p) (%resolved-comparison-policy dialect)
+           (when (and diverges warn-p)
+             (emit-comparison-divergence-warning operator-name dialect action))
+           (cond
+             ((and diverges (eq action :deviant))
+              (signal-comparison-type-error
+               operator-name (car deviant-pair) (cdr deviant-pair)))
+             ((eq normative :incompatible)
+              (signal-comparison-type-error
+               operator-name (car normative-pair) (cdr normative-pair)))
+             ((eq normative :true) (autolisp-true))
+             (t nil))))))))
 
 (defun builtin-< (&rest arguments)
-  (numeric-order-p arguments #'< "<" #'string<))
+  (relational-order-p arguments :< "<"))
 
 (defun builtin-<= (&rest arguments)
-  (numeric-order-p arguments #'<= "<=" #'string<=))
+  (relational-order-p arguments :<= "<="))
 
 (defun builtin-> (&rest arguments)
-  (numeric-order-p arguments #'> ">" #'string>))
+  (relational-order-p arguments :> ">"))
 
 (defun builtin->= (&rest arguments)
-  (numeric-order-p arguments #'>= ">=" #'string>=))
+  (relational-order-p arguments :>= ">="))
 
 (defun builtin-abs (object)
   (abs (require-number object "ABS")))

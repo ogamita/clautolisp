@@ -17,6 +17,7 @@ scenarios/
 ├── actions/       — -x / -l / --main / --quit behaviour
 ├── encoding/      — UTF-8 / ISO-8859-1 / Windows-1252 × LF/CRLF
 ├── clautolisp/    — clautolisp-backend-specific invariants
+├── language/      — language-level probes run on every engine (comparison operators)
 ├── plugins/       — the plug-in system and the epure / epuree plug-ins
 ├── bricscad/      — BricsCAD-specific (skipped if no BricsCAD)
 └── autocad/       — AutoCAD-specific (skipped if not on Windows)
