@@ -71,3 +71,46 @@ before the fix on the fixed-arity path; green after.
 
 Carriage returns are stripped before comparing, so the assertion holds
 on the native MS-Windows lane where write-line ends a line with CRLF.
+
+* Follow-up — alfe 2.2.93: the TARGET chooses the alternative
+
+pjb, 2026-09-25: "the point is to use these dialect warnings to correct
+the code in a specific alternative for the corresponding CAD."
+
+Running alfe's whole CAD-side runtime under each dialect (clautolisp
+hosting the emitted run-common.lsp) gives the inventory:
+
+| dialect stamped                   | diagnostics from alfe's own runtime |
+|-----------------------------------+-------------------------------------|
+| bricscad                          | none                                |
+| autocad                           | 5 x [lambda-list-extension] &REST   |
+| autocad + the AutoCAD alternative | none                                |
+| strict                            | the same 5                          |
+
+So the warnings name exactly the code that needs a per-CAD
+alternative, and taking that alternative silences them. The defect they
+exposed: =assume-no-rest-p= was chosen by a HOST probe only, so an
+engine that accepts =&rest= while emulating AutoCAD installed shadows
+AutoCAD could never have. It now defaults to =AUTOCAD-TARGET-P= of the
+backend name AND the dialect -- backend name because START-ENGINE on a
+CAD backend ignores its :dialect argument (CLI-OPTIONS still holds the
+raw =--dialect=, =:strict= when the user gave none), dialect because a
+clautolisp-hosted session's backend name says nothing about the CAD
+being emulated.
+
+A neutral profile (strict / clautolisp / lax) keeps probing: with no
+product declared there is no alternative to select, and =&rest= there
+is genuinely guarded by the run-time probe, so the warning is a true
+statement rather than a defect.
+
+Gate: =protocol-cad-runtime-is-dialect-clean-for-its-target= hosts the
+emitted runtime once per CAD target and fails on ANY bracketed
+diagnostic, printing the offending lines -- each one naming a construct
+that needs an alternative. Red before this change, listing the five
+&REST lines.
+
+The harness exports TRUSTEDPATHS (pjb: "in the uses of the tool"),
+naming the workdir and its runtime/ and protocol/ subdirectories, so
+the SECURELOAD notices are DEALT WITH rather than exempted from the
+gate. What a REAL CAD needs is tracked by
+alfe-cad-workdir-not-in-trustedpaths.

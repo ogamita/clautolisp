@@ -1155,6 +1155,14 @@ file or COM), and forwards the workload.
 
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
+- *The CAD-side runtime adapts to the TARGET CAD, not only to what the
+  host happens to accept.* alfe picks between two implementations of
+  its printing shadows depending on whether the engine's =defun= takes
+  =&rest=; it now installs the AutoCAD implementation whenever the
+  session targets AutoCAD, instead of probing first. On a real AutoCAD
+  that is what the probe concluded anyway, and BricsCAD is unchanged;
+  what it fixes is an engine that accepts =&rest= while emulating
+  AutoCAD, which used to get shadows AutoCAD could never have.
 - *=princ= and =print= frame their output identically on AutoCAD and
   BricsCAD.* On AutoCAD -- whose =defun= has no =&rest=, so alfe keeps
   the fixed-arity shadows -- every =princ= used to terminate the line

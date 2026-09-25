@@ -1075,22 +1075,34 @@ never signals."
    "autolisp-front-end/backend-cad-common"
    (concatenate 'string "source/runtime/" basename)))
 
-(defun emit-run-common-with-real-runtime (workdir &key assume-no-rest-p)
+(defun emit-run-common-with-real-runtime (workdir &key assume-no-rest-p
+                                                       dialect
+                                                       (explicit-no-rest-p t))
   "Emit run-common.lsp into WORKDIR with the REAL vendored bootstrap
 and runtime staged (the emit tests above use fakes). Returns the
-session and the emitted path. ASSUME-NO-REST-P selects the shadow
-path AutoCAD takes instead of the one BricsCAD takes."
+session and the emitted path. ASSUME-NO-REST-P selects the shadow path
+AutoCAD takes instead of the one BricsCAD takes; with
+EXPLICIT-NO-REST-P NIL the keyword is not passed at all, so the
+emitter's target-derived default decides. DIALECT, a --dialect name,
+is stamped into the emitted file and is what the engine's
+portability warnings are judged against."
   (let ((session (alfe.protocol.file:init-session
                   workdir
                   :bootstrap-lsp-source (%vendored-runtime-source
                                          "autolisp-bootstrap.lsp")
                   :runtime-lsp-source (%vendored-runtime-source
-                                       "autolisp-remote-io.lsp"))))
+                                       "autolisp-remote-io.lsp")))
+        (options (when dialect
+                   (alfe.cli:parse-arguments (list "--dialect" dialect)))))
     (alfe.protocol.file:stage-bootstrap-lsp session)
     (alfe.protocol.file:stage-runtime-lsp session)
     (values session
-            (alfe.protocol.file:emit-run-common-lsp
-             session :assume-no-rest-p assume-no-rest-p))))
+            (if explicit-no-rest-p
+                (alfe.protocol.file:emit-run-common-lsp
+                 session :cli-options options
+                         :assume-no-rest-p assume-no-rest-p)
+                (alfe.protocol.file:emit-run-common-lsp
+                 session :cli-options options)))))
 
 (defun clautolisp-engine-binary ()
   "First existing clautolisp-sbcl among the documented search paths,
@@ -1098,6 +1110,34 @@ or NIL. Same discovery the :subprocess backend variant uses."
   (dolist (candidate (alfe.backend.clautolisp::candidate-clautolisp-binaries))
     (when (and candidate (probe-file candidate))
       (return (namestring (truename candidate))))))
+
+(defun set-environment-variable (name value)
+  "Set NAME to VALUE in THIS process's environment, so a process
+launched afterwards inherits it. UIOP exposes no portable setter and
+this UIOP's LAUNCH-PROGRAM takes no :ENVIRONMENT, so this is the one
+place with implementation-specific code; an `env NAME=V cmd' prefix
+would not work on the native MS-Windows lane. Returns the previous
+value, or NIL."
+  (let ((previous (uiop:getenv name)))
+    #+sbcl (progn (require :sb-posix)
+                  (funcall (find-symbol "SETENV" "SB-POSIX") name value 1))
+    #+ccl (ccl:setenv name value t)
+    #-(or sbcl ccl) (declare (ignore value))
+    previous))
+
+(defun trustedpaths-spec (workdir)
+  "A TRUSTEDPATHS value (semicolon-separated, AutoCAD syntax) naming
+WORKDIR and the two subdirectories alfe loads from. clautolisp seeds
+the TRUSTEDPATHS sysvar from the environment variable of the same name
+in every dialect, so exporting this before the engine starts is how an
+INVOCATION declares alfe's own staged runtime trusted -- SECURELOAD
+otherwise reports every one of those loads, and a host set to
+SECURELOAD=2 would refuse them outright
+\(alfe-cad-workdir-not-in-trustedpaths)."
+  (format nil "~A;~A;~A"
+          (namestring workdir)
+          (namestring (merge-pathnames "runtime/" workdir))
+          (namestring (merge-pathnames "protocol/" workdir))))
 
 (test protocol-emitted-eval-override-resignals-the-load-error
   "The emitted AUTOLISP-EVAL-REQUEST-FORM must not swallow the error
@@ -1148,6 +1188,8 @@ before `make build-clautolisp-sbcl`)."
           (unwind-protect
                (multiple-value-bind (session path)
                    (emit-run-common-with-real-runtime workdir)
+                 (set-environment-variable "TRUSTEDPATHS"
+                                           (trustedpaths-spec workdir))
                  (setf engine (uiop:launch-program
                                (list binary "-norc" "-q" "-l"
                                      (namestring path))
@@ -1205,21 +1247,39 @@ before `make build-clautolisp-sbcl`)."
 ;;; them by BYTES, with :assume-no-rest-p selecting the AutoCAD path on
 ;;; a host that does support &rest.
 
-(defun drive-hosted-engine (binary forms &key assume-no-rest-p)
+(defun drive-hosted-engine (binary forms &key assume-no-rest-p dialect
+                                              (explicit-no-rest-p t))
   "Host the emitted run-common.lsp in a clautolisp subprocess, send
-FORMS one at a time, and return (values statuses stdout stderr).
-STATUSES holds the DONE line of each request in order."
+FORMS one at a time, and return (values statuses stdout stderr
+engine-diagnostics). STATUSES holds the DONE line of each request in
+order; ENGINE-DIAGNOSTICS is what the ENGINE wrote on its own stderr,
+which is where clautolisp puts the dialect-portability warnings.
+
+DIALECT names the target the run-common.lsp is emitted for.
+EXPLICIT-NO-REST-P NIL passes no :assume-no-rest-p at all, so the
+emitter's own default — the target — decides the shadow path."
   (let ((workdir (make-test-workdir (if assume-no-rest-p
                                         "hosted-norest"
                                         "hosted-rest")))
-        (engine nil))
+        (engine nil)
+        (previous-trustedpaths nil))
     (unwind-protect
          (multiple-value-bind (session path)
              (emit-run-common-with-real-runtime
-              workdir :assume-no-rest-p assume-no-rest-p)
+              workdir
+              :dialect dialect
+              :assume-no-rest-p assume-no-rest-p
+              :explicit-no-rest-p explicit-no-rest-p)
+           ;; Declare alfe's own staged runtime trusted before starting
+           ;; the engine, the way an invocation of the tool does it.
+           (setf previous-trustedpaths
+                 (set-environment-variable "TRUSTEDPATHS"
+                                           (trustedpaths-spec workdir)))
            (setf engine (uiop:launch-program
                          (list binary "-norc" "-q" "-l" (namestring path))
-                         :output nil :error-output nil))
+                         :output nil
+                         :error-output (merge-pathnames "engine-stderr.txt"
+                                                        workdir)))
            (unless (alfe.protocol.file:wait-for-status-prefix
                     session "READY" :timeout 60)
              (error "the hosted engine never reached READY"))
@@ -1241,10 +1301,18 @@ STATUSES holds the DONE line of each request in order."
                (alfe.protocol.file:send-control session :shutdown)
                (alfe.protocol.file:wait-for-status session "STOPPED"
                                                    :timeout 30)
-               (values (nreverse statuses) out err))))
+               (ignore-errors (uiop:wait-process engine))
+               (values (nreverse statuses) out err
+                       (let ((p (merge-pathnames "engine-stderr.txt"
+                                                 workdir)))
+                         (if (probe-file p)
+                             (alfe.protocol.file:read-file-as-string p)
+                             ""))))))
       (when engine
         (ignore-errors (uiop:terminate-process engine :urgent t))
         (ignore-errors (uiop:wait-process engine)))
+      (set-environment-variable "TRUSTEDPATHS"
+                                (or previous-trustedpaths ""))
       (delete-workdir workdir))))
 
 (defun without-returns (string)
@@ -1291,3 +1359,62 @@ both paths. Skipped when clautolisp-sbcl is not on disk."
                   (car (last statuses))))
             (is (search "NO_SUCH_FUNCTION" rest-err))
             (is (search "NO_SUCH_FUNCTION" norest-err)))))))
+
+;;; --- the CAD-side runtime must be dialect-clean for its target -------
+;;;
+;;; pjb, 2026-09-25: the point of the dialect warnings is to CORRECT the
+;;; code with a specific alternative for the corresponding CAD. So they
+;;; are a gate, not decoration. clautolisp emits them (autolisp-spec
+;;; ch.25) for any construct the named target lacks, and it is the only
+;;; AutoLISP engine that can run alfe's CAD-side sources, so it is the
+;;; only instrument that can audit them.
+;;;
+;;; Emitted for a declared CAD target, alfe's bootstrap + runtime +
+;;; bridge must provoke NO portability warning: every construct the
+;;; target lacks has to be behind the alternative for that target. The
+;;; `&rest' shadows are the worked example -- BricsCAD takes them,
+;;; AutoCAD gets the fixed-arity shadows plus the normalize walk, and
+;;; the emitter now chooses by target instead of only probing the host
+;;; (a clautolisp engine accepts `&rest' in EVERY dialect: it warns and
+;;; runs on, so the probe alone answered for the wrong CAD).
+;;;
+;;; A neutral profile (strict / clautolisp / lax) is deliberately NOT
+;;; asserted here: with no product declared there is no alternative to
+;;; select, so alfe probes the host, and the resulting warnings are a
+;;; true statement about a construct that is guarded at run time.
+
+(defun dialect-warning-lines (text)
+  "Every bracket-tagged diagnostic line in TEXT. Nothing is exempted:
+the SECURELOAD notices about alfe's staged runtime are dealt with by
+exporting TRUSTEDPATHS before the engine starts (TRUSTEDPATHS-SPEC),
+which is how an invocation of the tool declares that directory
+trusted, so their reappearance is a finding too."
+  (remove-if-not
+   (lambda (line)
+     (let ((trimmed (string-left-trim " " line)))
+       (and (plusp (length trimmed))
+            (char= #\[ (char trimmed 0)))))
+   (uiop:split-string (without-returns text) :separator '(#\Newline))))
+
+(test protocol-cad-runtime-is-dialect-clean-for-its-target
+  "Acceptance: emitted for --dialect bricscad or --dialect autocad, the
+CAD-side runtime provokes no dialect-portability warning from the
+engine -- alfe's own AutoLISP stays inside what the declared CAD has.
+Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; dialect audit skipped.")
+        (dolist (dialect '("bricscad" "autocad"))
+          (multiple-value-bind (statuses out err engine-diagnostics)
+              (drive-hosted-engine binary (list "(princ 1)")
+                                   :dialect dialect
+                                   :explicit-no-rest-p nil)
+            (declare (ignore out err))
+            (is (search " OK" (first statuses))
+                "~A: the engine must answer a request" dialect)
+            (let ((warnings (dialect-warning-lines engine-diagnostics)))
+              (is (null warnings)
+                  "~A: alfe's CAD-side runtime is not portable to its own ~
+target; each line names the construct needing an alternative:~%~{  ~A~%~}"
+                  dialect warnings)))))))

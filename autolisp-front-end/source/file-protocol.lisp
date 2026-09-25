@@ -1091,6 +1091,33 @@ emits as ALFE here — only alfe ships run-common.lsp."
                    (substitute #\_ #\- name)
                    (%render-autolisp-literal value)))))))
 
+(defun autocad-target-p (backend-name cli-options)
+  "True when this session targets AutoCAD — the engine whose `defun'
+has no `&rest', so the fixed-arity shadows are the alternative to
+install.
+
+TWO signals, because neither alone covers every call. BACKEND-NAME is
+what a real run carries (\"AUTOCAD\" / \"BRICSCAD\"): START-ENGINE on a
+CAD backend IGNORES the :dialect argument, so CLI-OPTIONS still holds
+the raw --dialect, which is :strict whenever the user gave none. The
+dialect is what a clautolisp-hosted session carries, where the backend
+name says nothing about the CAD being emulated. NIL for BricsCAD and
+for the vendor-neutral profiles, which keep probing the host.
+
+The dialect keyword is resolved through the reader's registry, the
+single place that knows the product behind a name (`autocad',
+`autocad-2022', `autocad-mac', …)."
+  (let* ((name (and cli-options (alfe.cli:cli-options-dialect cli-options)))
+         (dialect (and name
+                       (clautolisp.autolisp-reader:find-autolisp-dialect name))))
+    (if (or (and backend-name (string-equal "AUTOCAD" backend-name))
+            (and dialect
+                 (eq :autocad
+                     (clautolisp.autolisp-reader:autolisp-dialect-product
+                      dialect))))
+        t
+        nil)))
+
 (defun emit-run-common-lsp (session
                             &key (path
                                    (merge-pathnames
@@ -1107,7 +1134,8 @@ emits as ALFE here — only alfe ships run-common.lsp."
                                  version-text
                                  (backend-name "CLAUTOLISP")
                                  (variant nil)
-                                 (assume-no-rest-p nil))
+                                 (assume-no-rest-p
+                                  (autocad-target-p backend-name cli-options)))
   "Write the run-common.lsp init script the CAD-side runtime sources
 at startup. Substitutes the spec's placeholders with absolute paths
 drawn from SESSION; the remaining knobs (BOOTSTRAP-PHASE, DEBUG-P,
@@ -1116,9 +1144,22 @@ drawn from SESSION; the remaining knobs (BOOTSTRAP-PHASE, DEBUG-P,
 ASSUME-NO-REST-P emits `(setq *ALFE-ASSUME-NO-REST* T)', which makes
 the bridge take the no-&rest branch — the fixed-arity shadows plus
 the walk-rewriting normalize — WITHOUT probing. That branch is the
-one AutoCAD runs (its `defun' has no `&rest'), so on any other host
-it is unreachable, and it stayed wrong for a whole release because
-of that. A production run leaves this NIL and probes.
+one AutoCAD runs, since its `defun' has no `&rest'.
+
+It DEFAULTS to the target (AUTOCAD-TARGET-P of BACKEND-NAME and the
+dialect): when the session targets AutoCAD, alfe installs the AutoCAD
+alternative instead of asking the host whether it happens to accept
+`&rest'. A CAD backend imposes its
+own dialect (EFFECTIVE-DIALECT), so this changes nothing for a real
+AutoCAD — its probe failed anyway — and nothing for BricsCAD, which
+keeps the variadic shadows. What it fixes is the case where the host
+is NOT the declared target: clautolisp accepts `&rest' in every
+dialect (it warns, per autolisp-spec ch.25, and runs on), so a
+clautolisp engine asked for AutoCAD used to install shadows AutoCAD
+could never have, and then warned five times about its own runtime.
+The dialect warnings are the instrument that says which construct
+needs a per-CAD alternative; honouring them here is what closes that
+loop. Pass the keyword explicitly to override in either direction.
 
 When CLI-OPTIONS is non-NIL, the CLI-derived *AUTOLISP-…* globals
 from transmit-options.issue are emitted at the *top* of the file
