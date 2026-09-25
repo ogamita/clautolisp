@@ -350,6 +350,26 @@ verify:bricscad-print:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-bricscad-print.ps1
 
+# Does EPURE's API answer inside an alfe session? (pjb, before closing
+# alfe-plugin-epure-windows-validation.) Reaching READY says EPURE
+# loaded; this says its functions answer, which is what --epure is for.
+#
+# Its own job, and 60 minutes: verify:epure:windows grew to six CAD
+# launches and hit the 30 minute cap before ever reaching these runs.
+# One launch per CAD here, twice -- as pjb types it, and from a file.
+verify:epure-api:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  timeout: 60m
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-epure-api.ps1
+
 verify:epure:windows:
   extends: .gate-windows-cad-soft
   stage: test
