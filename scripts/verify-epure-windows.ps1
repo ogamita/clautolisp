@@ -56,7 +56,12 @@ foreach ($cad in $cads) {
         $dir = $Matches[1].Trim()
         Write-Host ""
         Write-Host "--- artefacts in $dir"
-        foreach ($name in @('run.scr', 'bridge-autocad.vbs', 'bridge-bricscad.vbs',
+        # run-scr-started.txt is written by the FIRST line of run.scr, so
+        # its presence separates "the script never ran" from "the nested
+        # ._SCRIPT never gave control back" -- the two readings of a
+        # BricsCAD that sits at BOOTING.
+        foreach ($name in @('run.scr', 'run-scr-started.txt',
+                            'bridge-autocad.vbs', 'bridge-bricscad.vbs',
                             'bridge-vbs.log', 'run-common.lsp',
                             'protocol\status.txt', 'protocol\stdout.txt',
                             'protocol\stderr.txt')) {

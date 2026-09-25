@@ -223,8 +223,17 @@ directory when there is none."
                                          "--epure-profile" "Ep\"ure"))
         (flet ((lines (slot kind)
                  (alfe.plugin:run-hook :launcher-lines slot :kind kind :variant :batch)))
-          ;; run.scr: the script name is the answer to SCRIPT's prompt.
-          (is (equal (list "._SCRIPT" script) (lines :before-load :scr)))
+          ;; run.scr: the script name is the answer to SCRIPT's prompt,
+          ;; and that answer is QUOTED -- a space would otherwise end it.
+          ;; This test already used a path with a space in it (EPURE's
+          ;; own shape, `epure 2022_b'), and asserted the unquoted form:
+          ;; it encoded the bug. On the Windows runner that made BricsCAD
+          ;; sit at BOOTING until the timeout, while AutoCAD was fine
+          ;; because the COM branch always quoted
+          ;; (alfe-plugin-epure-windows-validation.issue, 2026-09-25).
+          (is (find #\Space script) "the path under test must contain a space")
+          (is (equal (list "._SCRIPT" (format nil "\"~A\"" script))
+                     (lines :before-load :scr)))
           (is (null (lines :after-load :scr)))
           ;; VBScript: ASCII, quotes doubled.
           (let ((after-app (format nil "~{~A~%~}" (lines :after-app :vbs)))
@@ -284,7 +293,9 @@ EPURE's control script before it loads alfe's run-common.lsp. Without
                           (load-at (position-if (lambda (l) (search "(load " l)) lines)))
                      (is (integerp script-at))
                      (is (integerp load-at))
-                     (is (string= script (nth (1+ script-at) lines)))
+                     ;; quoted in the emitted script, not only in the hook
+                     (is (string= (format nil "\"~A\"" script)
+                                  (nth (1+ script-at) lines)))
                      (is (< (1+ script-at) load-at))))
               (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))
         ;; Without it: the plug-in's registered, but the run is what it was.

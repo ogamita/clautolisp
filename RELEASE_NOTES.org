@@ -1246,6 +1246,12 @@ file or COM), and forwards the workload.
   fallback to another release; ~$AUTOCAD_PROGID~ names a server
   outright. Attach, create and quit all use the same ProgID; ~--mode
   batch~ (accoreconsole) needs no COM registration.
+- *=--epure= now quotes the control script for BricsCAD too.* The path
+  normally contains a space (~epure 2022_b~), and the ~._SCRIPT~ line of
+  ~run.scr~ left it unquoted, so BricsCAD read only as far as the space
+  and sat at ~BOOTING~ until the timeout. AutoCAD was unaffected: its COM
+  branch always quoted. Measured on the Windows runner with EPURE
+  installed; see /The EPURE plug-in/, /What has been verified/.
 - *An AutoCAD alfe could not close can be cleaned up later.* A run
   records each instance it creates — process id and creation time — in
   ~<temp>/alfe-created-cad.txt~, because a killed alfe (or a cancelled CI

@@ -835,6 +835,29 @@ When the script does not exist the run stops with a
 =backend-bootstrap-error= naming the path (exit status 4) — unless it is
 a =--dry-run=.
 
+Note the space in =epure 2022_b=: the control script's path normally
+contains one, and both ways alfe hands it to a CAD quote it — the
+=._SCRIPT= line of =run.scr= for BricsCAD, and =SendCommand= for
+AutoCAD's COM bridge. An unquoted answer to =SCRIPT='s prompt ends at
+the first space, which on the Windows runner left BricsCAD waiting at
+=BOOTING= until the timeout.
+
+*** What has been verified, and where
+
+On the project's Windows runner (=verify:epure:windows=, 2026-09-25),
+with EPURE 2022_b installed:
+
+- =alfe --autocad --epure= runs the action and exits with its status
+  (AutoCAD 2022, COM automation).
+- =alfe --bricscad --epure= (BricsCAD V25 fr_FR, =/b= batch script) is
+  what exposed the unquoted-path bug above; the quoting is in place, and
+  the run is being re-checked on the runner.
+
+Two assumptions inherited from the legacy wrapper remain to be confirmed
+separately: that a =._SCRIPT= nested in a =/b= script gives control back
+to the outer script, and that COM =SendCommand= preserves the order of
+two sends. AutoCAD's result above is consistent with the second.
+
 *Why the mode matters.* EPURE is a full-GUI application: it needs the
 CAD's profile, menus and CUIX. accoreconsole (AutoCAD's batch mode) has
 neither a GUI nor profiles. So:
