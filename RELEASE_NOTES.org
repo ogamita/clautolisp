@@ -1155,6 +1155,13 @@ file or COM), and forwards the workload.
 
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
+- *=princ= and =print= frame their output identically on AutoCAD and
+  BricsCAD.* On AutoCAD -- whose =defun= has no =&rest=, so alfe keeps
+  the fixed-arity shadows -- every =princ= used to terminate the line
+  (=(princ "a") (princ "b")= gave =a<newline>b<newline>= instead of
+  =ab=) and =print= ended with a newline instead of the documented
+  trailing space. BricsCAD was fixed for this earlier; AutoCAD now
+  matches it byte for byte.
 - *A =-x= expression that fails on a CAD backend now fails the run.*
   On =--bricscad= / =--autocad=, an expression that signalled -- an
   undefined function, a wrong argument -- used to be reported as a

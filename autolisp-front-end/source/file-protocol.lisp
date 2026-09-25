@@ -1106,11 +1106,19 @@ emits as ALFE here — only alfe ships run-common.lsp."
                                  cli-options
                                  version-text
                                  (backend-name "CLAUTOLISP")
-                                 (variant nil))
+                                 (variant nil)
+                                 (assume-no-rest-p nil))
   "Write the run-common.lsp init script the CAD-side runtime sources
 at startup. Substitutes the spec's placeholders with absolute paths
 drawn from SESSION; the remaining knobs (BOOTSTRAP-PHASE, DEBUG-P,
 …) come from the alfe CLI options.
+
+ASSUME-NO-REST-P emits `(setq *ALFE-ASSUME-NO-REST* T)', which makes
+the bridge take the no-&rest branch — the fixed-arity shadows plus
+the walk-rewriting normalize — WITHOUT probing. That branch is the
+one AutoCAD runs (its `defun' has no `&rest'), so on any other host
+it is unreachable, and it stayed wrong for a whole release because
+of that. A production run leaves this NIL and probes.
 
 When CLI-OPTIONS is non-NIL, the CLI-derived *AUTOLISP-…* globals
 from transmit-options.issue are emitted at the *top* of the file
@@ -1456,7 +1464,15 @@ Returns the path of the emitted file."
       (and (not (vl-catch-all-error-p call-result))~%~
            (listp call-result)~%~
            (= 3 (length call-result))))))~%~
-(if (alfe-host-supports-rest-p)~%~
+;; *ALFE-ASSUME-NO-REST* forces the no-&rest branch on a host that~%~
+;; does support it. The fallback shadows are the ones AutoCAD runs,~%~
+;; and a host that has &rest can otherwise never exercise them --~%~
+;; which is how they kept the spurious-newline framing for a whole~%~
+;; release after the &rest branch was fixed. alfe emits NIL here~%~
+;; unless asked for the other value, so a production run always~%~
+;; probes.~%~
+(setq *ALFE-ASSUME-NO-REST* ~:[nil~;T~])~%~
+(if (and (not *ALFE-ASSUME-NO-REST*) (alfe-host-supports-rest-p))~%~
   (progn~%~
     (alfe-debug-log~%~
       \"host supports &rest; installing variadic shadows + no-op normalize\")~%~
@@ -1521,12 +1537,44 @@ Returns the path of the emitted file."
     ;; reader-built cons cells intact (which BricsCAD's mapcar~%~
     ;; relies on to recognise embedded lambdas as functions).~%~
     (defun autolisp-normalize-princ-call (form) form))~%~
-  (alfe-debug-log~%~
-    \"host lacks &rest; keeping bootstrap 1-arg shadows + walk-rewriting normalize\"))~%~
+  (progn~%~
+    (alfe-debug-log~%~
+      \"host lacks &rest; keeping bootstrap 1-arg shadows + walk-rewriting normalize\")~%~
+    ;; The shadows stay 2-arg (obj file) and normalize keeps~%~
+    ;; padding the user's 1-arg calls -- but their OUTPUT framing~%~
+    ;; must match the variadic branch above, and the bootstrap's~%~
+    ;; own bodies route through autolisp-emit-user-line /~%~
+    ;; -user-out, which TERMINATE the line. On this path (the one~%~
+    ;; AutoCAD takes, since its defun has no &rest) that made~%~
+    ;; (princ \"a\") (princ \"b\") come out as \"a<nl>b<nl>\" instead of~%~
+    ;; \"ab\", and (print x) end with a newline instead of the~%~
+    ;; documented trailing space. Same defect as~%~
+    ;; alfe-princ-prin1-spurious-newlines, which was fixed for the~%~
+    ;; &rest branch only. Re-point the three at the RAW emitter so~%~
+    ;; both hosts produce identical bytes.~%~
+    (defun princ (obj file)~%~
+      (if file~%~
+        (progn (autolisp-write-string-to-file (autolisp-str obj) file) obj)~%~
+        (progn (autolisp-emit-user-str (autolisp-str obj)) obj)))~%~
+    (defun print (obj file)~%~
+      (if file~%~
+        (progn~%~
+          (autolisp-write-string-to-file~%~
+            (strcat \"\\n\" (autolisp-stdout-text obj) \" \") file)~%~
+          obj)~%~
+        (progn~%~
+          (autolisp-emit-user-str~%~
+            (strcat \"\\n\" (autolisp-stdout-text obj) \" \"))~%~
+          obj)))~%~
+    (defun prin1 (obj file)~%~
+      (if file~%~
+        (progn (autolisp-write-string-to-file (autolisp-stdout-text obj) file) obj)~%~
+        (progn (autolisp-emit-user-str (autolisp-stdout-text obj)) obj)))))~%~
 ;; Publish once at startup so alfe sees the initial values even~%~
 ;; before the first request lands.~%~
 (alfe-publish-runtime-flags)~%~
-(alfe-debug-log \"I/O bridged onto protocol/stdout.txt and protocol/stderr.txt\")~%")
+(alfe-debug-log \"I/O bridged onto protocol/stdout.txt and protocol/stderr.txt\")~%"
+                       assume-no-rest-p)
                ;; Drive the server loop. The runtime defines the
                ;; function but does not call it at top level; the
                ;; legacy bash wrapper emitted an autolisp-main-entry

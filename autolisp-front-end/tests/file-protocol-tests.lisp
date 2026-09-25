@@ -1075,10 +1075,11 @@ never signals."
    "autolisp-front-end/backend-cad-common"
    (concatenate 'string "source/runtime/" basename)))
 
-(defun emit-run-common-with-real-runtime (workdir)
+(defun emit-run-common-with-real-runtime (workdir &key assume-no-rest-p)
   "Emit run-common.lsp into WORKDIR with the REAL vendored bootstrap
 and runtime staged (the emit tests above use fakes). Returns the
-session and the emitted path."
+session and the emitted path. ASSUME-NO-REST-P selects the shadow
+path AutoCAD takes instead of the one BricsCAD takes."
   (let ((session (alfe.protocol.file:init-session
                   workdir
                   :bootstrap-lsp-source (%vendored-runtime-source
@@ -1087,7 +1088,9 @@ session and the emitted path."
                                        "autolisp-remote-io.lsp"))))
     (alfe.protocol.file:stage-bootstrap-lsp session)
     (alfe.protocol.file:stage-runtime-lsp session)
-    (values session (alfe.protocol.file:emit-run-common-lsp session))))
+    (values session
+            (alfe.protocol.file:emit-run-common-lsp
+             session :assume-no-rest-p assume-no-rest-p))))
 
 (defun clautolisp-engine-binary ()
   "First existing clautolisp-sbcl among the documented search paths,
@@ -1187,3 +1190,104 @@ before `make build-clautolisp-sbcl`)."
               (ignore-errors (uiop:terminate-process engine :urgent t))
               (ignore-errors (uiop:wait-process engine)))
             (delete-workdir workdir))))))
+
+;;; --- the two shadow paths must frame output alike --------------------
+;;;
+;;; The emitted bridge probes the host's defun for `&rest' and installs
+;;; either VARIADIC shadows (BricsCAD, and clautolisp) or keeps the
+;;; bootstrap's FIXED-ARITY (obj file) shadows plus the walk-rewriting
+;;; normalize (AutoCAD, whose defun has no &rest). Only the first path
+;;; is reachable on a host that has &rest -- which is how the second
+;;; kept the framing bug alfe-princ-prin1-spurious-newlines fixed for
+;;; the first: princ terminated the line ("a<nl>b<nl>" for two princ)
+;;; and print ended with a newline instead of the documented trailing
+;;; space. pjb asked for the two CADs to be compared; this compares
+;;; them by BYTES, with :assume-no-rest-p selecting the AutoCAD path on
+;;; a host that does support &rest.
+
+(defun drive-hosted-engine (binary forms &key assume-no-rest-p)
+  "Host the emitted run-common.lsp in a clautolisp subprocess, send
+FORMS one at a time, and return (values statuses stdout stderr).
+STATUSES holds the DONE line of each request in order."
+  (let ((workdir (make-test-workdir (if assume-no-rest-p
+                                        "hosted-norest"
+                                        "hosted-rest")))
+        (engine nil))
+    (unwind-protect
+         (multiple-value-bind (session path)
+             (emit-run-common-with-real-runtime
+              workdir :assume-no-rest-p assume-no-rest-p)
+           (setf engine (uiop:launch-program
+                         (list binary "-norc" "-q" "-l" (namestring path))
+                         :output nil :error-output nil))
+           (unless (alfe.protocol.file:wait-for-status-prefix
+                    session "READY" :timeout 60)
+             (error "the hosted engine never reached READY"))
+           (let ((statuses '()))
+             (loop for form in forms
+                   for i from 1
+                   do (alfe.protocol.file:send-stdin session form)
+                      (multiple-value-bind (ok elapsed last)
+                          (alfe.protocol.file:wait-for-status-prefix
+                           session (format nil "DONE ~D" i) :timeout 30)
+                        (declare (ignore elapsed))
+                        (push (if ok last "(timeout)") statuses)))
+             (let ((out (alfe.protocol.file:read-file-as-string
+                         (alfe.protocol.file:protocol-session-stdout-path
+                          session)))
+                   (err (alfe.protocol.file:read-file-as-string
+                         (alfe.protocol.file:protocol-session-stderr-path
+                          session))))
+               (alfe.protocol.file:send-control session :shutdown)
+               (alfe.protocol.file:wait-for-status session "STOPPED"
+                                                   :timeout 30)
+               (values (nreverse statuses) out err))))
+      (when engine
+        (ignore-errors (uiop:terminate-process engine :urgent t))
+        (ignore-errors (uiop:wait-process engine)))
+      (delete-workdir workdir))))
+
+(defun without-returns (string)
+  "STRING with every #\\Return dropped: write-line ends a line with CRLF
+on MS-Windows and LF elsewhere, and this comparison is about the
+FRAMING the shadows add, not about the host's line terminator."
+  (remove #\Return string))
+
+(test protocol-shadow-paths-agree-on-framing-and-failure
+  "Acceptance for the AutoCAD half: the fixed-arity shadows must frame
+output exactly as the variadic ones do -- (princ x) adds nothing,
+(print x) is a leading newline + the value + a trailing SPACE, and
+(princ) alone is a bare newline -- and a signalling form must fail on
+both paths. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary))
+        (forms (list "(print (= 1 1))" "(princ 42)" "(princ)"
+                     "(print \"s\")" "(no_such_function 1)")))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; shadow-path comparison skipped.")
+        (multiple-value-bind (rest-status rest-out rest-err)
+            (drive-hosted-engine binary forms)
+          (multiple-value-bind (norest-status norest-out norest-err)
+              (drive-hosted-engine binary forms :assume-no-rest-p t)
+            ;; The documented framing, spelled out once.
+            (let ((expected (concatenate 'string
+                                         (string #\Newline) "T "
+                                         "42"
+                                         (string #\Newline)
+                                         (string #\Newline) "\"s\" ")))
+              (is (string= expected (without-returns rest-out))
+                  "variadic path framing: ~S" rest-out)
+              (is (string= expected (without-returns norest-out))
+                  "fixed-arity path framing: ~S" norest-out))
+            (is (string= (without-returns rest-out)
+                         (without-returns norest-out))
+                "the two shadow paths must produce the same bytes")
+            ;; Four good forms, then the signalling one: OK, OK, OK, OK, FAIL.
+            (dolist (statuses (list rest-status norest-status))
+              (is (= 5 (length statuses)))
+              (is (every (lambda (s) (search " OK" s)) (butlast statuses)))
+              (is (search " FAIL" (car (last statuses)))
+                  "a signalling form must fail on both paths, got ~S"
+                  (car (last statuses))))
+            (is (search "NO_SUCH_FUNCTION" rest-err))
+            (is (search "NO_SUCH_FUNCTION" norest-err)))))))

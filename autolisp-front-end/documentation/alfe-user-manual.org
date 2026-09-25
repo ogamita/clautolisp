@@ -475,6 +475,16 @@ is read, evaluated and printed (read-eval-print loop). =-x= and
 =-l= actions issued alongside =-i= remain silent-by-default; only
 forms typed AT the REPL prompt print their values.
 
+*The printing primitives frame their output the same way on every
+backend.* =(princ X)= writes X and nothing else -- it does NOT end the
+line, so =(princ "a") (princ "b")= gives =ab= -- =(prin1 X)= writes the
+readable form, =(print X)= writes a newline, the readable form and a
+trailing space, and =(princ)= alone writes a bare newline. With a file
+descriptor from =(open path "w")= the text goes to that file instead of
+alfe's stdout. This is uniform across =--clautolisp=, =--bricscad= and
+=--autocad=; up to alfe 2.2.91 the AutoCAD backend added a newline
+after every =princ= and =print=.
+
 *An action that signals ends the run.* When an expression fails --
 an undefined function, a wrong argument type, an error the code
 raises itself -- the action is a failure: alfe prints the engine's
