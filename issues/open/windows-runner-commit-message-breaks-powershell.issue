@@ -70,3 +70,34 @@ exactly this reason and its get_sources then parsed.
 
 Filed 2026-09-13 after pjb flagged the failing job. The failure is cosmetic to
 merges (allow_failure) but is a real papercut and a foot-gun for release tags.
+
+* Seen again — 2026-09-25, and what it cost
+
+verify:installed-prefix:windows, job 16731301508 (MR !273): the same
+cascade, quoting this commit message, and then
+
+: make: Entering directory '/c/gitlab-runner'
+: make: *** autolisp-front-end: No such file or directory.  Stop.
+
+-- the clone never happened, so the job ran its script in the runner's
+own directory. That second line is worth knowing: the failure does NOT
+always stop at get_sources; it can go on to run the script somewhere
+unexpected, where a target that happens to exist would have done
+something meaningless.
+
+The quoted fragments were an em dash in the body and the
+=<noreply@...>= of the Co-Authored-By trailer:
+
+: + ... es and stops.`n`nCo-Authored-By: Claude Opus 5 (1M context) <noreply@ ...
+: L'operateur << < >> est reserve a une utilisation future.
+: + ...  pretend install tree, which is what let the fix ship -- but the fai ...
+: Jeton inattendu << but >> dans l'expression ou l'instruction.
+
+Rewriting the message in plain ASCII (same trailer, no em dash) let the
+job run. So the working rule, until the runner is upgraded: A COMMIT
+WHOSE PIPELINE RUNS WINDOWS JOBS TAKES A PLAIN-ASCII MESSAGE. The
+trailer alone is survivable; an em dash in the body was not.
+
+This is a workaround, not the fix. The fix is the runner version (its
+PowerShell executor escapes the CI_* assignments properly in later
+releases), which is pjb's call on his own machine.
