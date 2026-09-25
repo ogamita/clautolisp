@@ -196,6 +196,27 @@ generic ProgID and drive a different AutoCAD. See /Troubleshooting/.
 The same ProgID is used to attach, to create, and to quit at the end of
 the run, so alfe never closes an instance of another release.
 
+*** When alfe is killed before it can quit AutoCAD
+
+alfe quits the AutoCAD it created — but only if it reaches the end of
+the run. Killed, or its CI job cancelled, it never gets there, and the
+=acad.exe= that COM started belongs to the COM service rather than to
+alfe, so killing alfe's process tree does not reach it either.
+
+So each run writes down what it creates, in
+=<temp>/alfe-created-cad.txt=: the process id and its creation time, one
+line per instance. The file is outside the workdir on purpose — the
+workdir goes away with the run, and the run this serves is the one that
+cleaned nothing up.
+
+=scripts/sweep-orphaned-cad.ps1= reads that file and ends those
+instances, and only those: both the process id *and* the creation time
+must still match, because Windows reuses process ids. It never touches
+an AutoCAD alfe did not start. On the project's Windows CI it runs
+*before* every CAD job, which is the only moment that covers a hard
+cancel (nothing runs after one) and the only moment that cannot catch an
+AutoCAD the current job is using.
+
 The release → version table alfe knows covers AutoCAD 2019–2026 (2022 is
 24.1, 2025 is 25.0); the relation is not arithmetic, so a release outside
 it is resolved by asking the registry what is installed, and

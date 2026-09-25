@@ -1246,6 +1246,14 @@ file or COM), and forwards the workload.
   fallback to another release; ~$AUTOCAD_PROGID~ names a server
   outright. Attach, create and quit all use the same ProgID; ~--mode
   batch~ (accoreconsole) needs no COM registration.
+- *An AutoCAD alfe could not close can be cleaned up later.* A run
+  records each instance it creates — process id and creation time — in
+  ~<temp>/alfe-created-cad.txt~, because a killed alfe (or a cancelled CI
+  job) never reaches the quit it would otherwise perform, and the
+  ~acad.exe~ COM started is out of reach of a process-tree kill.
+  ~scripts/sweep-orphaned-cad.ps1~ ends exactly those instances, matching
+  id *and* creation time, and never an AutoCAD alfe did not start. See
+  /When alfe is killed before it can quit AutoCAD/.
 - *A failed COM activation now says what failed.* The bootstrap error
   carries the stage (~getobject~ / ~createobject~), the ProgID and the
   COM error in decimal and hexadecimal with its description, and it

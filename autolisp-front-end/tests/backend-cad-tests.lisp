@@ -2580,3 +2580,67 @@ accoreconsole SCR must not consult the registry at all."
        scr (touch-file (merge-pathnames "run-common.lsp" dir) "(princ)"))
       (let ((text (read-back scr)))
         (is (not (search "AutoCAD.Application" text)))))))
+
+;;; --- the AutoCAD instances a run created ---------------------------
+;;;
+;;; autocad-orphaned-by-killed-or-cancelled-jobs: alfe quits the AutoCAD
+;;; it created, but only when it REACHES shutdown. Killed, or its CI job
+;;; cancelled, it never does -- and the acad.exe belongs to the COM
+;;; service, not to the job, so no process-tree kill reaches it. The
+;;; bridge therefore writes down what it creates, and the runner-side
+;;; sweep (scripts/sweep-orphaned-cad.ps1) ends only those.
+
+(test autocad-bridge-records-the-instance-it-creates
+  "PID *and* creation time: Windows reuses PIDs, and a sweep that
+matched on PID alone could end an AutoCAD this run never started -- the
+one risk worth caring about on a machine somebody else also uses."
+  (let ((text alfe.backend.autocad::*bridge-autocad-vbs-template*))
+    (is (search "RecordCreatedProcesses" text))
+    (is (search "${CREATEDFILE}" text))
+    (is (search "Win32_Process" text)
+        "the created acad.exe is a child of the COM service, so WMI is ~
+how it is found")
+    (is (search "PID=" text))
+    (is (search "CREATED=" text))
+    ;; recorded only on the CREATE path: an attached instance is somebody
+    ;; else's and must never be swept
+    (let ((record (search "RecordCreatedProcesses createdFile" text))
+          (created (search "created = True" text)))
+      (is (and record created (< created record))
+          "the record must follow `created = True'"))))
+
+(test autocad-created-registry-outlives-the-workdir
+  "The file cannot live in the workdir: the case it serves is the run
+that never cleans anything up, workdir included."
+  (let ((path (alfe.backend.autocad:created-cad-registry-path)))
+    (is (equal alfe.backend.autocad::*created-cad-registry-name*
+               (file-namestring path)))
+    (is (equal (namestring (uiop:temporary-directory))
+               (namestring (uiop:pathname-directory-pathname path))))))
+
+(test autocad-bridge-carries-the-registry-path
+  "EMIT-BRIDGE-VBS substitutes the registry path, and an explicit NIL
+leaves the bridge recording nothing (the placeholder is emptied, never
+left unexpanded)."
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (vbs (merge-pathnames "bridge-autocad.vbs" dir))
+           (registry (merge-pathnames "created.txt" dir)))
+      (alfe.backend.autocad:emit-bridge-vbs
+       vbs
+       :runtime-load-path (merge-pathnames "run-common.lsp" dir)
+       :status-path (merge-pathnames "status.txt" dir)
+       :error-path (merge-pathnames "err.txt" dir)
+       :created-registry registry)
+      (let ((text (read-back vbs)))
+        (is (search (uiop:native-namestring registry) text))
+        (is (not (search "${CREATEDFILE}" text))))
+      (alfe.backend.autocad:emit-bridge-vbs
+       vbs
+       :runtime-load-path (merge-pathnames "run-common.lsp" dir)
+       :status-path (merge-pathnames "status.txt" dir)
+       :error-path (merge-pathnames "err.txt" dir)
+       :created-registry nil)
+      (let ((text (read-back vbs)))
+        (is (not (search "${CREATEDFILE}" text)))
+        (is (search "createdFile = \"\"" text))))))

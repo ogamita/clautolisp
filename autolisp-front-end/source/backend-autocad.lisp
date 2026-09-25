@@ -77,6 +77,8 @@
            #:autocad-backend-accoreconsole-path
            #:autocad-session
            #:resolve-autocad-progid
+           #:created-cad-registry-path
+           #:*created-cad-registry-name*
            #:*generic-autocad-progid*
            #:*autocad-release-com-versions*
            #:emit-bridge-vbs
@@ -458,6 +460,21 @@ using ~A (set $AUTOCAD_PROGID to pin one)"
                            release *generic-autocad-progid*)
                  *generic-autocad-progid*))))))))))
 
+;;; --- the AutoCAD instances this host created ----------------------
+
+(defparameter *created-cad-registry-name* "alfe-created-cad.txt"
+  "File, in the system temp directory, where each run writes down the
+AutoCAD it created: PID and creation time, one per line.")
+
+(defun created-cad-registry-path ()
+  "Where to record the AutoCAD instances alfe creates on this host.
+
+NOT in the workdir: the workdir dies with the run, and the case this
+serves is the run that never gets to clean anything up -- killed, or its
+CI job cancelled (autocad-orphaned-by-killed-or-cancelled-jobs.issue).
+The next job reads this file and can end what the last one left."
+  (merge-pathnames *created-cad-registry-name* (uiop:temporary-directory)))
+
 ;;; --- emitter: bridge-autocad.vbs (Windows automation) -------------
 
 (defparameter *bridge-autocad-vbs-template*
@@ -478,7 +495,7 @@ using ~A (set $AUTOCAD_PROGID to pin one)"
 
 Option Explicit
 Dim fso, app, doc, runFile, statusFile, errFile, commode, debugFile, waitSecs
-Dim attached, created, rc, statusReadyFlag, flagsFile, progId
+Dim attached, created, rc, statusReadyFlag, flagsFile, progId, createdFile
 Dim errNumber, errDescription
 
 Set fso = CreateObject(\"Scripting.FileSystemObject\")
@@ -488,6 +505,9 @@ errFile     = \"${ERRFILE}\"
 commode     = \"${COMMODE}\"
 debugFile   = \"${DEBUGFILE}\"
 flagsFile   = \"${FLAGSFILE}\"
+' Where this run writes down the AutoCAD it creates, so a later job can
+' clean up after a run that never reached shutdown.
+createdFile = \"${CREATEDFILE}\"
 ' The COM server to ask for. A VERSIONED ProgID when a release was
 ' selected: the generic one is registered to whichever AutoCAD claimed
 ' it last (alfe-autocad-cad-selection-ignores-com-progid).
@@ -520,6 +540,40 @@ End Sub
 ' errNumber/errDescription FIRST and passes them in here. Without these
 ' lines the run reported only cscript's \"ATTACHED=0 CREATED=0\" and the
 ' COM error -- 429, the whole diagnosis -- was lost.
+' Write down the AutoCAD this run CREATED, so a later job can clean it
+' up if this one never reaches shutdown -- killed, or its CI job
+' cancelled (autocad-orphaned-by-killed-or-cancelled-jobs.issue).
+'
+' A PID ALONE IS NOT AN IDENTITY: Windows reuses them. The creation time
+' is recorded with it, and the sweep kills only a process whose PID AND
+' creation time both still match -- so it can never kill an AutoCAD this
+' run did not start, which is the whole worry about sweeping someone's
+' own machine.
+'
+' The acad.exe that COM starts is a child of the COM service, not of
+' cscript, so there is no process tree to walk: WMI is how it is found.
+Sub RecordCreatedProcesses(path)
+  Dim wmi, processes, proc
+  If path = \"\" Then Exit Sub
+  On Error Resume Next
+  Set wmi = GetObject(\"winmgmts:\\\\.\\root\\cimv2\")
+  If Err.Number <> 0 Then
+    VBSDebug \"WMI unavailable; created AutoCAD not recorded: \" & Err.Description
+    Err.Clear
+    Exit Sub
+  End If
+  Set processes = wmi.ExecQuery( _
+    \"SELECT ProcessId, CreationDate, CommandLine FROM Win32_Process WHERE Name = 'acad.exe'\")
+  For Each proc In processes
+    If InStr(1, proc.CommandLine & \"\", \"/Automation\", 1) > 0 Then
+      AppendLine path, \"PID=\" & proc.ProcessId & \" CREATED=\" & proc.CreationDate
+      VBSDebug \"recorded created acad.exe pid \" & proc.ProcessId
+    End If
+  Next
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
 Sub RecordComError(stage, num, desc)
   AppendLine errFile, \"COM.PROGID=\" & progId
   AppendLine errFile, \"COM.STAGE=\" & stage
@@ -605,6 +659,7 @@ If app Is Nothing Then
   Err.Clear
   On Error GoTo 0
   created = True
+  RecordCreatedProcesses createdFile
 End If
 
 app.Visible = True
@@ -721,6 +776,7 @@ died before reporting leaves AutoCAD alone."
                              debug-path
                              flags-path
                              progid
+                             (created-registry (created-cad-registry-path))
                              (com-mode "auto")
                              (wait-secs 60))
   (let ((text (alfe.plugin:run-hook
@@ -737,6 +793,9 @@ died before reporting leaves AutoCAD alone."
                    ("DEBUGFILE"   . ,(if debug-path (namestring debug-path) ""))
                    ("FLAGSFILE"   . ,(if flags-path (namestring flags-path) ""))
                    ("PROGID"      . ,(or progid *generic-autocad-progid*))
+                   ("CREATEDFILE" . ,(if created-registry
+                                         (uiop:native-namestring created-registry)
+                                         ""))
                    ("WAIT_SECS"   . ,(format nil "~D" wait-secs))))
                 :automation)
                :kind :vbs :variant :automation :path path)))
