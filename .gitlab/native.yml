@@ -300,6 +300,20 @@ verify:vl-registry:macos:
   script:
     - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
 
+# The installed-prefix half of alfe-installed-runtime-prefix-discovery:
+# the unit tests use a pretend executable in a pretend install tree, and
+# only a real `make install-programs' on Windows can answer the ticket's
+# remaining criterion. Starts no CAD (--print-command stages and stops),
+# so it needs no cad tag.
+verify:installed-prefix:windows:
+  extends: .gate-windows-soft
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-installed-prefix.ps1
+
 verify:vl-registry:windows:
   extends: .gate-windows-hard
   stage: test
