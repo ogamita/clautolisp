@@ -2435,6 +2435,9 @@ to another CLSID whose LocalServer32 is unreadable."
 (defmacro with-fake-registry ((entries &key (progids nil progids-p)) &body body)
   "Run BODY with the AutoCAD registry readers answering from ENTRIES."
   `(let* ((%entries ,entries)
+          ;; A registry that answers at all: the tests below distinguish
+          ;; `this ProgID is absent' from `the registry cannot be read'.
+          (alfe.backend.autocad::*registry-probe-usable-function* (lambda () t))
           (alfe.backend.autocad::*registry-value-function*
             (lambda (key) (cdr (assoc key %entries :test #'string-equal))))
           (alfe.backend.autocad::*registry-progids-function*
@@ -2580,3 +2583,157 @@ accoreconsole SCR must not consult the registry at all."
        scr (touch-file (merge-pathnames "run-common.lsp" dir) "(princ)"))
       (let ((text (read-back scr)))
         (is (not (search "AutoCAD.Application" text)))))))
+
+;;; --- reading the registry, and what silence means ------------------
+;;;
+;;; alfe-autocad-progid-registry-probe-fails: on the Windows runner
+;;; `alfe --cad autocad -l probe.lsp' died with
+;;;
+;;;   AutoCAD 2022 was requested, but no COM server for it is registered.
+;;;     Tried:
+;;;       AutoCAD.Application.24.1: not-registered
+;;;
+;;; while that very ProgID activates AutoCAD 2022 there. Two defects:
+;;; the probe could not read the registry (reg.exe writes the console
+;;; codepage: `(Par defaut)' on a French Windows is not valid UTF-8, the
+;;; decoder signalled, and the error was swallowed), and `--cad autocad'
+;;; -- which asks for the LATEST AutoCAD, naming no release -- was
+;;; treated as an explicit release claim, so it failed instead of
+;;; falling back.
+
+(test autocad-registry-output-is-decoded-whatever-the-console-codepage
+  "reg.exe answers in the console codepage. The value is ASCII; the
+label around it need not be, and a French Windows writes `(Par
+defaut)' with an accent."
+  (let ((french (format nil "~%HKEY_CLASSES_ROOT\\AutoCAD.Application.24.1\\CLSID~%~
+    (Par d~cfaut)    REG_SZ    {AA46BA8A-9825-40FD-8493-0BA3C4D5CEB5}~%~%"
+                        (code-char 233))))
+    (is (equal "{AA46BA8A-9825-40FD-8493-0BA3C4D5CEB5}"
+               (alfe.backend.autocad::%parse-reg-default-value french))))
+  ;; a named value (/v ProductName), as the control probe reads
+  (is (equal "Windows 10 Pro"
+             (alfe.backend.autocad::%parse-reg-default-value
+              (format nil "~%HKEY_LOCAL_MACHINE\\SOFTWARE\\...~%~
+    ProductName    REG_SZ    Windows 10 Pro~%")))))
+
+(test autocad-unreadable-registry-is-not-an-absent-registration
+  "`alfe cannot read the registry' and `this release is not registered'
+are opposite conclusions. When the probe itself is down, an explicitly
+requested release still gets ITS OWN versioned ProgID -- unverified,
+with a warning -- rather than a refusal to run."
+  (let ((alfe.backend.autocad::*registry-value-function* (lambda (key)
+                                                           (declare (ignore key))
+                                                           nil))
+        (alfe.backend.autocad::*registry-progids-function* (lambda () nil))
+        (alfe.backend.autocad::*registry-probe-usable-function* (lambda () nil)))
+    (is (equal "AutoCAD.Application.24.1"
+               (alfe.backend.autocad:resolve-autocad-progid
+                :release "2022" :explicit-p t)))
+    ;; a release the table does not know, and no registry to ask: that
+    ;; one really cannot be resolved, and says so.
+    (let ((condition (handler-case
+                         (progn (alfe.backend.autocad:resolve-autocad-progid
+                                 :release "2044" :explicit-p t)
+                                nil)
+                       (alfe.error:backend-error (c) c))))
+      (is (typep condition 'alfe.error:backend-error))
+      (when condition
+        (is (search "AUTOCAD_PROGID"
+                    (alfe.error:backend-error-message condition)))))))
+
+(test autocad-registry-that-answers-still-refuses-an-unregistered-release
+  "The refusal must survive: a registry that READS and does not have the
+release is still a hard failure for an explicit request."
+  (with-fake-registry ((%fake-registry :versioned nil :generic-server t))
+    (let ((alfe.backend.autocad::*registry-probe-usable-function* (lambda () t)))
+      (is (typep (handler-case (progn (alfe.backend.autocad:resolve-autocad-progid
+                                       :release "2022" :explicit-p t)
+                                      nil)
+                   (alfe.error:backend-error (c) c))
+                 'alfe.error:backend-error)))))
+
+(test autocad-cad-denotation-names-a-release-only-when-it-does
+  "`--cad autocad' asks for the latest AutoCAD -- alfe's choice, never a
+failure. Only `--cad autocad-2022' claims a release."
+  (is (equal "2022" (alfe.backend.autocad:release-named-by-denotation "autocad-2022")))
+  (is (equal "2022" (alfe.backend.autocad:release-named-by-denotation "acad-2022")))
+  (is (null (alfe.backend.autocad:release-named-by-denotation "autocad")))
+  (is (null (alfe.backend.autocad:release-named-by-denotation "acad")))
+  (is (null (alfe.backend.autocad:release-named-by-denotation nil)))
+  ;; and the consequence: the executable's release, discovered rather
+  ;; than requested, falls back instead of failing
+  (with-fake-registry ((%fake-registry :versioned nil :generic-server t))
+    (let ((alfe.backend.autocad::*registry-probe-usable-function* (lambda () t)))
+      (is (equal "AutoCAD.Application"
+                 (alfe.backend.autocad:resolve-autocad-progid
+                  :release (alfe.backend.autocad:release-named-by-denotation "autocad")
+                  :executable-path "C:/Program Files/Autodesk/AutoCAD 2022/acad.exe"
+                  :explicit-p nil))))))
+
+(test autocad-registry-capture-survives-non-utf8-output
+  "The defect itself, reproduced without Windows: a console program
+whose output is NOT valid UTF-8. The default decoder signals, the
+caller's IGNORE-ERRORS swallows it, and the registry reads as empty.
+%RUN-CAPTURING-TEXT must return the bytes as text instead."
+  (if (uiop:os-unix-p)
+      ;; \351 is Latin-1 for the accent in a French `(Par defaut)'; it is
+      ;; not a valid UTF-8 sequence on its own.
+      (let ((text (alfe.backend.autocad::%run-capturing-text
+                   "/bin/sh" (list "-c" "printf 'a \\351 REG_SZ b'"))))
+        (is (stringp text) "no output captured at all")
+        (when (stringp text)
+          (is (find (code-char 233) text)
+              "the undecodable byte did not survive as a character")
+          (is (search "REG_SZ" text))))
+      (pass "POSIX-only: needs a shell that can emit a raw byte")))
+
+(test autocad-latest-selection-starts-even-when-its-progid-is-unregistered
+  "The runner's actual command: `--cad autocad', which asks for the
+LATEST AutoCAD and names no release. With AutoCAD 2022 discovered and
+its ProgID unregistered, that must still start -- on the generic
+ProgID -- instead of failing the run. START-ENGINE is what wires the
+denotation to the resolver, so the whole path is exercised here."
+  (with-cad-test-directories
+    (let* ((workdir (%fresh-test-directory))
+           (alfe.backend.cad-common:*host-os-override* :windows)
+           (backend (alfe.backend.autocad:make-autocad-backend
+                     :executable-path
+                     "C:/Program Files/Autodesk/AutoCAD 2022/acad.exe"))
+           (captured nil))
+      (with-fake-registry ((%fake-registry :versioned nil :generic-server t))
+        (let ((session (alfe.backend:start-engine
+                        backend workdir
+                        :dialect :strict :host :mock :mock-input nil
+                        :bootstrap-phase :full :interactive-p nil
+                        :mode :automation
+                        :cli-options (alfe.cli:make-cli-options :cad "autocad")
+                        :wait-for-ready nil
+                        :launcher (lambda (argv &rest ignored)
+                                    (declare (ignore ignored))
+                                    (setf captured argv)
+                                    nil))))
+          (is (not (null session)) "--cad autocad refused to start")
+          (is (consp captured) "no engine was launched")
+          (let ((text (read-back (merge-pathnames "bridge-autocad.vbs" workdir))))
+            (is (search "AutoCAD.Application" text)))))
+      ;; and the release-naming form still fails on the same registry
+      (with-fake-registry ((%fake-registry :versioned nil :generic-server t))
+        (is (typep (handler-case
+                       (progn (alfe.backend:start-engine
+                               (alfe.backend.autocad:make-autocad-backend
+                                :executable-path
+                                "C:/Program Files/Autodesk/AutoCAD 2022/acad.exe")
+                               (%fresh-test-directory)
+                               :dialect :strict :host :mock :mock-input nil
+                               :bootstrap-phase :full :interactive-p nil
+                               :mode :automation
+                               :cli-options (alfe.cli:make-cli-options
+                                             :cad "autocad-2022")
+                               :wait-for-ready nil
+                               :launcher (lambda (&rest ignored)
+                                           (declare (ignore ignored))
+                                           nil))
+                              nil)
+                     (alfe.error:backend-error (c) c))
+                   'alfe.error:backend-error)
+            "--cad autocad-2022 accepted another release's COM server")))))

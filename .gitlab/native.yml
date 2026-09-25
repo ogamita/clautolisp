@@ -285,6 +285,25 @@ verify:vl-registry:windows:
   script:
     - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
 
+# What the registry actually holds, and what alfe makes of it. Starts no
+# AutoCAD (--print-command stages without launching), so it needs no CAD
+# tag and cannot hang on a licence dialog. Manual: it is a diagnostic,
+# run when a COM resolution is in question
+# (alfe-autocad-progid-registry-probe-fails.issue).
+probe:com-registration:autocad:windows:
+  extends: .gate-windows-soft
+  stage: test
+  # A diagnostic, never automatic: the gate's rules would start it on
+  # every pipeline when the runner is online.
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-autocad-com-registration.ps1
+
 # --- real-CAD BricsCAD automation checks (self-building) -------------------
 verify:bricscad-hidden-ui:windows:
   extends: .gate-windows-cad-hard

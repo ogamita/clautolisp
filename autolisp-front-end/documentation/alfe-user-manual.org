@@ -184,14 +184,22 @@ So an explicitly selected release asks for *its own* ProgID:
 | Selection                          | COM server asked for                          |
 |------------------------------------+-----------------------------------------------|
 | =--cad autocad-2022 --mode automation= | =AutoCAD.Application.24.1= (AutoCAD 2022's)   |
-| =--autocad --mode automation=      | the discovered install's versioned ProgID when it is registered, else =AutoCAD.Application= |
+| =--cad autocad= / =--autocad=      | the discovered install's versioned ProgID when it is registered, else =AutoCAD.Application= |
 | =$AUTOCAD_PROGID= set              | exactly that, unchanged                       |
 | =--mode batch=                     | none: =accoreconsole= needs no COM at all     |
+
+Only =--cad autocad-2022= (or =acad-2022=) *names* a release. =--cad
+autocad= asks for the latest one, so the release is alfe's own choice
+and never a reason to refuse the run.
 
 alfe confirms the registration before using it (a CLSID *and* a readable
 =LocalServer32=). When you named the release and its COM server is not
 registered, alfe stops and says so — it will not quietly fall back to the
 generic ProgID and drive a different AutoCAD. See /Troubleshooting/.
+
+When alfe cannot read the registry *at all* — no =reg.exe=, a locked-down
+host — it says so and uses the named release's own ProgID unverified,
+rather than refusing: no answer is not the same as a negative answer.
 
 The same ProgID is used to attach, to create, and to quit at the end of
 the run, so alfe never closes an instance of another release.

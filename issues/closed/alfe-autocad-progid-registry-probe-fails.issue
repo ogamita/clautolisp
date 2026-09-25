@@ -1,0 +1,110 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-autocad-progid-registry-probe-fails — the ProgID probe read no registry, and refused a working AutoCAD
+#+STATUS: DONE (alfe 2.2.87, 2026-09-25) -- Windows-runner confirmation pending
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-autocad-progid-registry-probe
+
+* Observed
+
+pjb, on the Windows runner, with alfe 2.2.84:
+
+#+begin_example
+$ alfe --debug --verbose -norc --cad autocad -l $probe
+alfe[verbose]: cli: --cad "autocad" -> acad-2022 C:/Program Files/Autodesk/AutoCAD 2022/acad.exe
+...
+alfe: alfe AUTOCAD backend error (phase DETECT): AutoCAD 2022 was requested, but no COM server for it is registered.
+  Tried:
+    AutoCAD.Application.24.1: not-registered
+  Not falling back to AutoCAD.Application: ...
+#+end_example
+
+and, on another run, the softer form of the same wrong conclusion:
+
+#+begin_example
+alfe[warn]: backend AUTOCAD: no COM registration for AutoCAD 2022; using AutoCAD.Application (set $AUTOCAD_PROGID to pin one)
+#+end_example
+
+=AutoCAD.Application.24.1= IS registered on that host: the diagnostic in
+alfe-autocad-cad-selection-ignores-com-progid.issue activated AutoCAD
+2022 through it, CLSID {AA46BA8A-9825-40FD-8493-0BA3C4D5CEB5}. The
+feature that shipped in alfe 2.2.79 therefore refused a working
+installation -- worse than the bug it fixed, because it stops the run.
+
+* Cause -- two defects
+
+** 1. The probe could not read the registry at all
+
+=%reg-query= ran =reg.exe= with =:output :string= and the default
+external format. reg.exe writes in the CONSOLE CODE PAGE, and the runner
+is French: =reg query ... /ve= labels the value =(Par défaut)=, whose
+=é= is not valid UTF-8. The decoder signalled, the surrounding
+=ignore-errors= swallowed the error, and every query returned NIL.
+
+A NIL answer meant "not registered". It also means "reg.exe is not on
+PATH", "the query failed", "this is not Windows" -- and, here, "the
+output could not be decoded". Those are opposite conclusions and they
+shared one representation.
+
+** 2. =--cad autocad= was read as naming a release
+
+=--cad autocad= asks for the LATEST AutoCAD; the release is then alfe's
+own discovery, not a user claim. START-ENGINE passed
+=:explicit-p (and (cli-options-cad options) t)=, so any =--cad= at all
+turned a fallback into a hard failure. Only =--cad autocad-2022= (or
+=acad-2022=) names a release.
+
+* Fix — alfe 2.2.87
+
+- =%run-capturing-text= reads a console program's output with
+  =:external-format :latin-1=, a total decoder: every byte becomes a
+  character and nothing signals. The parsed part (REG_SZ, a CLSID, a
+  path) is ASCII regardless of the code page.
+- =reg= and =reg.exe= are both tried, and each query is logged at
+  =--debug= with the size of the answer.
+- =*registry-probe-usable-function*= answers whether the registry can be
+  read at all, by querying a value that exists on every Windows
+  (=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion= =ProductName=).
+  When it cannot, an explicitly requested release gets its own versioned
+  ProgID UNVERIFIED, with a warning, rather than a refusal; only a
+  registry that ANSWERS and lacks the release is a hard failure.
+- =RELEASE-NAMED-BY-DENOTATION= decides explicitness: =autocad-2022= ->
+  "2022", =autocad= -> NIL. START-ENGINE uses it, so =--cad autocad=
+  falls back and =--cad autocad-2022= still refuses another release.
+
+* Tests
+
+All three defects are covered, and each was seen RED before its fix:
+
+- =%run-capturing-text= against a program emitting a byte that is not
+  valid UTF-8 (=printf 'a \351 REG_SZ b'=) -- the defect reproduced
+  without Windows; with the old decoder the capture fails;
+- an unreadable registry yields the versioned ProgID for an explicit
+  release, and a hard error only for a release outside the table;
+- a registry that answers and lacks the release still fails;
+- =--cad autocad= starts through START-ENGINE on the generic ProgID with
+  AutoCAD 2022 discovered and unregistered, while =--cad autocad-2022=
+  on the same registry fails.
+
+alfe SBCL and CCL: 1103 checks, 0 failures.
+
+* Ground truth from the runner
+
+=probe:com-registration:autocad:windows= (manual, no CAD tag, starts no
+AutoCAD) runs =scripts/probe-autocad-com-registration.ps1=: the console
+code page, the control value, the generic ProgID, every registered
+=AutoCAD.Application*=, each candidate's CLSID and LocalServer32, and
+alfe's own resolution under =--print-command= for both =--cad autocad=
+and =--cad autocad-2022=.
+
+Still to do on the machine: run that job, confirm the ProgID resolves to
+=AutoCAD.Application.24.1= and that =-l probe.lsp= gets past bootstrap
+(the open acceptance criterion inherited from
+issues/closed/alfe-autocad-cad-selection-ignores-com-progid.issue).
+
+* Lesson
+
+A probe that cannot run must not answer the question it was asked. The
+failure was not the accented byte; it was that "no answer" and "the
+answer is no" were the same value.
