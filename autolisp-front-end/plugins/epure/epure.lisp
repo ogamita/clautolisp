@@ -24,7 +24,8 @@
                 #:windows-p
                 #:vbs-escape)
   (:import-from #:clautolisp.autolisp-cli
-                #:cli-options-mode))
+                #:cli-options-mode
+                #:cli-options-timeout))
 
 (in-package #:alfe.plugin.epure)
 
@@ -39,6 +40,13 @@
             (:value "--epure-script" :key :script :arg "FILE"
                     :env "AUTOLISP_EPURE_SCRIPT"
                     :doc "EPURE control script (default: the one under %APPDATA%/sncf/epure).")))
+
+(defparameter *epure-ready-timeout* 420
+  "Seconds to wait for READY when EPURE is loading, when the user named
+no --timeout. EPURE's control script loads a .des/.vlx and the vertical
+application's menus: 174 s on the Windows runner (BricsCAD V25,
+2026-09-25), against a 30 s backend default. 420 leaves room for a
+colder machine without waiting all day on a real failure.")
 
 ;;; --- the control script ---------------------------------------------
 
@@ -83,6 +91,18 @@ forward slashes."
            (:batch (error 'cli-usage-error
                           :option "--epure"
                           :message "EPURE requires the full AutoCAD GUI; accoreconsole (--mode batch) has no profile support. Use --mode automation."))))
+       ;; EPURE takes MINUTES to load, and the backends' READY timeout
+       ;; is tens of seconds (30 s for BricsCAD). Measured on the Windows
+       ;; runner, 2026-09-25: BricsCAD under EPURE published READY after
+       ;; 174.42 s. So `alfe --bricscad --epure -x ...' would fail on the
+       ;; default timeout for a run that was working perfectly well --
+       ;; the plug-in knows EPURE is being loaded, so it is the thing
+       ;; that should say so. An explicit --timeout is left alone.
+       (unless (cli-options-timeout options)
+         (setf (cli-options-timeout options) *epure-ready-timeout*)
+         (log-verbose "epure: READY timeout raised to ~A s (EPURE takes minutes ~
+to load; measured 174 s on BricsCAD V25). Pass --timeout to choose another."
+                      *epure-ready-timeout*))
        (unless dry-run-p
          (let ((script (control-script name)))
            (cond
@@ -90,10 +110,18 @@ forward slashes."
               (error 'backend-bootstrap-error
                      :backend name :code :epure-script-unknown
                      :message "cannot locate the EPURE control script: %APPDATA% is not set; pass --epure-script FILE or set $AUTOLISP_EPURE_SCRIPT."))
+             ;; The path is fixed for a given EPURE version, so its
+             ;; absence says something definite: EPURE is not installed
+             ;; here, or its version moved and this directory is no
+             ;; longer the one (pjb, 2026-09-25). Either way, stop now --
+             ;; not at a READY timeout with a CAD already on screen.
              ((not (probe-file script))
               (error 'backend-bootstrap-error
                      :backend name :code :epure-script-missing
-                     :message (format nil "EPURE control script not found: ~A (pass --epure-script FILE or set $AUTOLISP_EPURE_SCRIPT)."
+                     :message (format nil "EPURE control script not found: ~A~
+~%  EPURE is not installed for this user, or its version changed and that~
+~%  directory is no longer the right one. Name the script with~
+~%  --epure-script FILE or $AUTOLISP_EPURE_SCRIPT."
                                       script))))))))))
 
 ;;; --- the launch: argv and working directory (BricsCAD batch) --------
@@ -165,10 +193,22 @@ to the errors file and the run goes on with the current profile."
 (define-plugin-hook "epure" :launcher-lines (ctx slot &key kind backend)
   (let ((script (control-script backend)))
     (ecase kind
-      ;; run.scr: EPURE's control script, then (next line of the script)
-      ;; alfe's own load. The script name is the answer to SCRIPT's prompt.
+      ;; run.scr: LOAD EPURE's control script, then (next line of the
+      ;; script) alfe's own runtime.
+      ;;
+      ;; NOT a nested ._SCRIPT. That was inherited from the legacy
+      ;; wrapper, on the assumption that control returns to the outer
+      ;; script afterwards, and on the Windows runner it does not: run.scr
+      ;; BEGAN and then stopped there, BricsCAD sitting at BOOTING until
+      ;; the timeout, while the same run.scr without EPURE completed
+      ;; (verify:epure:windows, 2026-09-25, BricsCAD V25).
+      ;;
+      ;; The file is AutoLISP SOURCE despite its .scr name -- it reads
+      ;; VENDORNAME and loads EPURE's .des (BricsCAD) or .vlx (AutoCAD)
+      ;; accordingly -- so LOAD is what it wants, and (load ...) simply
+      ;; returns, leaving the next line to run. pjb, 2026-09-25.
       (:scr (when (and (eq slot :before-load) script)
-              (list "._SCRIPT" script)))
+              (list (format nil "(load ~S)" script))))
       (:vbs (case slot
               (:after-app (profile-activation-lines (plugin-option :profile)))
               (:before-load (when script (send-script-lines script))))))))

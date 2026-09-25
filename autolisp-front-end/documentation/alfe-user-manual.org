@@ -204,6 +204,27 @@ rather than refusing: no answer is not the same as a negative answer.
 The same ProgID is used to attach, to create, and to quit at the end of
 the run, so alfe never closes an instance of another release.
 
+*** When alfe is killed before it can quit AutoCAD
+
+alfe quits the AutoCAD it created — but only if it reaches the end of
+the run. Killed, or its CI job cancelled, it never gets there, and the
+=acad.exe= that COM started belongs to the COM service rather than to
+alfe, so killing alfe's process tree does not reach it either.
+
+So each run writes down what it creates, in
+=<temp>/alfe-created-cad.txt=: the process id and its creation time, one
+line per instance. The file is outside the workdir on purpose — the
+workdir goes away with the run, and the run this serves is the one that
+cleaned nothing up.
+
+=scripts/sweep-orphaned-cad.ps1= reads that file and ends those
+instances, and only those: both the process id *and* the creation time
+must still match, because Windows reuses process ids. It never touches
+an AutoCAD alfe did not start. On the project's Windows CI it runs
+*before* every CAD job, which is the only moment that covers a hard
+cancel (nothing runs after one) and the only moment that cannot catch an
+AutoCAD the current job is using.
+
 The release → version table alfe knows covers AutoCAD 2019–2026 (2022 is
 24.1, 2025 is 25.0); the relation is not arithmetic, so a release outside
 it is resolved by asking the registry what is installed, and
@@ -821,6 +842,60 @@ The default control script is
 When the script does not exist the run stops with a
 =backend-bootstrap-error= naming the path (exit status 4) — unless it is
 a =--dry-run=.
+
+*** How the control script is run
+
+Despite its =.scr= name, EPURE's control script is *AutoLISP source*: it
+reads =VENDORNAME= and loads EPURE's =.des= (BricsCAD) or =.vlx=
+(AutoCAD) accordingly. So alfe =LOAD=s it, and =run.scr= reads
+
+#+begin_example
+(load "C:/Users/.../AppData/Roaming/sncf/epure/epure 2022_b/control_path_epure_2022.scr")
+(load "C:/.../run-common.lsp")
+#+end_example
+
+=LOAD= returns, so the line after it — alfe's own runtime — runs. The
+earlier spelling nested a =._SCRIPT= inside =run.scr= instead, inherited
+from the legacy wrapper on the assumption that control comes back from
+one. On BricsCAD V25 it does not: =run.scr= began and stopped there,
+BricsCAD sitting at =BOOTING= until the timeout, while the same script
+without EPURE ran to completion. AutoCAD's COM bridge still sends
+=._SCRIPT= through =SendCommand=, where it works.
+
+*** EPURE is slow to load, and alfe waits for it
+
+Loading EPURE's =.des= / =.vlx= and the vertical application's menus
+takes minutes: 174 s to READY on the project's Windows runner (BricsCAD
+V25, 2026-09-25), against a 30 s backend default. So when =--epure= is
+active and you named no =--timeout=, alfe waits *420 s* instead, and
+says so under =--verbose=. An explicit =--timeout= is yours and is left
+alone.
+
+The path is checked before anything is launched. It is stable for a
+given EPURE version, so a missing file means EPURE is not installed —
+or that its version moved and the directory (=epure 2022_b=) is no
+longer the right one. Either way alfe stops and says which path it
+looked for; =--epure-script FILE= names another.
+
+*** What has been verified, and where
+
+On the project's Windows runner (=verify:epure:windows=, 2026-09-25),
+with EPURE 2022_b installed:
+
+- =alfe --autocad --epure= runs the action and exits with its status
+  (AutoCAD 2022, COM automation).
+- =alfe --bricscad --epure= (BricsCAD V25 fr_FR, =/b= batch script) is
+  what exposed the nested-=._SCRIPT= problem above. With =LOAD= in its
+  place the run is being re-checked on the runner.
+- =--mode automation= is *not* the answer for BricsCAD, and is not
+  wanted in any case: =--epure= exists for GUI work. On the runner the
+  COM bridge hung at attach/create even *without* EPURE, so BricsCAD COM
+  automation is a separate matter from this plug-in.
+
+Two assumptions inherited from the legacy wrapper remain to be confirmed
+separately: that a =._SCRIPT= nested in a =/b= script gives control back
+to the outer script, and that COM =SendCommand= preserves the order of
+two sends. AutoCAD's result above is consistent with the second.
 
 *Why the mode matters.* EPURE is a full-GUI application: it needs the
 CAD's profile, menus and CUIX. accoreconsole (AutoCAD's batch mode) has

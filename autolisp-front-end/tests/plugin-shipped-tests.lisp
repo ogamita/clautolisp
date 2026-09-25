@@ -135,6 +135,33 @@ explicit automation, and refuses accoreconsole (batch)."
                           (alfe.error:cli-usage-error-message condition)))
               (is (= 2 (exit-code-for-condition condition))))))))))
 
+(test epure-raises-the-ready-timeout
+  "EPURE takes MINUTES to load -- 174 s to READY on the Windows runner
+(BricsCAD V25, 2026-09-25) -- against a 30 s backend default. The
+plug-in knows EPURE is what is being loaded, so it is the thing that
+raises the wait; an explicit --timeout is the user's and is left alone."
+  (with-shipped-plugins
+    (with-plugin-temp-directory (dir)
+      (let ((script (namestring (%write-file (merge-pathnames "epure.scr" dir) "x")))
+            (backend (alfe.backend.bricscad:make-bricscad-backend
+                      :executable-path "/fake/bricscad.exe")))
+        (flet ((timeout-after (&rest extra)
+                 (with-epure-context (options (append (list "--bricscad" "--epure"
+                                                            "--epure-script" script)
+                                                      extra))
+                   (alfe.plugin:run-hook :backend-selected backend
+                                         :options options :dry-run-p nil)
+                   (cli-options-timeout options))))
+          ;; The plug-in's package exists only once the plug-in is
+          ;; LOADED, so its symbol is looked up at run time; naming it
+          ;; directly would be a read error when this file is compiled.
+          (let ((declared (let ((symbol (find-symbol "*EPURE-READY-TIMEOUT*"
+                                                     "ALFE.PLUGIN.EPURE")))
+                            (and symbol (boundp symbol) (symbol-value symbol)))))
+            (is (eql declared (timeout-after))))
+          (is (> (timeout-after) 100) "a 30 s default would fail a working run")
+          (is (eql 42 (timeout-after "--timeout" "42"))))))))
+
 (test epure-checks-its-control-script
   "The control script must exist — unless this is a dry run — and %APPDATA%
 gives the default one."
@@ -153,6 +180,14 @@ gives the default one."
             (is (eq :epure-script-missing (alfe.error:backend-error-code condition)))
             (is (search "/no/such/control.scr"
                         (alfe.error:backend-error-message condition)))
+            ;; and it says what the absence MEANS: the path is fixed for
+            ;; a given EPURE version, so a miss is "not installed" or
+            ;; "the version moved" -- not a puzzle for the reader
+            ;; (pjb, 2026-09-25).
+            (let ((message (alfe.error:backend-error-message condition)))
+              (is (search "not installed" message))
+              (is (search "version changed" message))
+              (is (search "--epure-script" message)))
             (is (= 4 (exit-code-for-condition condition)))))
         (is (select '("--epure-script" "/no/such/control.scr") :dry-run-p t))
         ;; No name and no %APPDATA%: cannot guess.
@@ -223,8 +258,20 @@ directory when there is none."
                                          "--epure-profile" "Ep\"ure"))
         (flet ((lines (slot kind)
                  (alfe.plugin:run-hook :launcher-lines slot :kind kind :variant :batch)))
-          ;; run.scr: the script name is the answer to SCRIPT's prompt.
-          (is (equal (list "._SCRIPT" script) (lines :before-load :scr)))
+          ;; run.scr LOADS the control script: it is AutoLISP source
+          ;; despite the .scr name (it reads VENDORNAME and loads EPURE's
+          ;; .des or .vlx), and LOAD returns, so the next line -- alfe's
+          ;; own runtime -- runs. A nested ._SCRIPT does not return on
+          ;; BricsCAD V25: run.scr began and stopped there, BOOTING until
+          ;; the timeout, while the same script without EPURE completed
+          ;; (verify:epure:windows, 2026-09-25).
+          ;;
+          ;; The path keeps a space (EPURE's own `epure 2022_b'), which
+          ;; is what broke the earlier ._SCRIPT spelling: ~S writes it as
+          ;; an AutoLISP string, where a space is just a character.
+          (is (find #\Space script) "the path under test must contain a space")
+          (is (equal (list (format nil "(load ~S)" script))
+                     (lines :before-load :scr)))
           (is (null (lines :after-load :scr)))
           ;; VBScript: ASCII, quotes doubled.
           (let ((after-app (format nil "~{~A~%~}" (lines :after-app :vbs)))
@@ -280,12 +327,19 @@ EPURE's control script before it loads alfe's run-common.lsp. Without
                    (is (not (search "/Automation" command)))
                    (let* ((scr (uiop:read-file-string (merge-pathnames "run.scr" workdir)))
                           (lines (%lines scr))
-                          (script-at (position "._SCRIPT" lines :test #'string=))
-                          (load-at (position-if (lambda (l) (search "(load " l)) lines)))
-                     (is (integerp script-at))
-                     (is (integerp load-at))
-                     (is (string= script (nth (1+ script-at) lines)))
-                     (is (< (1+ script-at) load-at))))
+                          (control-at (position (format nil "(load ~S)" script) lines
+                                                :test #'string=))
+                          (runtime-at (position-if
+                                       (lambda (l) (and (search "(load " l)
+                                                        (search "run-common" l)))
+                                       lines)))
+                     ;; EPURE's control script is LOADED, and alfe's
+                     ;; runtime is loaded after it -- no nested ._SCRIPT,
+                     ;; which BricsCAD does not return from.
+                     (is (integerp control-at))
+                     (is (integerp runtime-at))
+                     (is (< control-at runtime-at))
+                     (is (not (search "._SCRIPT" scr)))))
               (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))
         ;; Without it: the plug-in's registered, but the run is what it was.
         (let* ((alfe.backend.cad-common:*host-os-override* :windows)

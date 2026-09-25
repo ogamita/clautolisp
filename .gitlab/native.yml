@@ -195,8 +195,31 @@ default:
 .gate-macos-cad-hard:   { extends: .gate-macos-hard,   tags: [macos, arm64, shell, cad], timeout: 30m }
 .gate-macos-cad-soft:   { extends: .gate-macos-soft,   tags: [macos, arm64, shell, cad], timeout: 30m }
 .gate-macos-cad-manual: { extends: .gate-macos-manual, tags: [macos, arm64, shell, cad], timeout: 30m }
-.gate-windows-cad-hard: { extends: .gate-windows-hard, tags: [windows, amd64, shell, cad], timeout: 30m }
-.gate-windows-cad-soft: { extends: .gate-windows-soft, tags: [windows, amd64, shell, cad], timeout: 30m }
+# Every Windows CAD job sweeps FIRST (autocad-orphaned-by-killed-or-
+# cancelled-jobs.issue). A run that alfe could not close -- killed, or
+# its job cancelled -- leaves an acad.exe owned by the COM service, out
+# of reach of any process-tree kill, and the next CAD job inherits it.
+#
+# BEFORE, not after: a hard cancel never runs an after_script, which is
+# exactly the ending this exists for. Before is also the safe moment,
+# since nothing the current job started can be caught by it.
+#
+# It kills only instances alfe WROTE DOWN as having created, matching
+# PID and creation time both -- never an AutoCAD somebody else started
+# on that machine. It reports and exits 0 whatever happens: a sweep must
+# not fail the job it precedes.
+.cad-sweep-before:
+  before_script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep-orphaned-cad.ps1
+
+.gate-windows-cad-hard:
+  extends: [.gate-windows-hard, .cad-sweep-before]
+  tags: [windows, amd64, shell, cad]
+  timeout: 30m
+.gate-windows-cad-soft:
+  extends: [.gate-windows-soft, .cad-sweep-before]
+  tags: [windows, amd64, shell, cad]
+  timeout: 30m
 
 # --- unit suites on the real OS --------------------------------------------
 test:clautolisp:macos:
@@ -284,6 +307,28 @@ verify:vl-registry:windows:
     GIT_SUBMODULE_STRATEGY: none
   script:
     - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
+
+# alfe --epure against the real CADs, with EPURE installed on the runner
+# (pjb, 2026-09-25). The plug-in rests on two assumptions inherited from
+# the legacy wrapper -- that a nested ._SCRIPT returns control to the
+# outer /b script, and that COM SendCommand keeps the order -- and both
+# have only ever been asserted against a mock
+# (alfe-plugin-epure-windows-validation.issue).
+#
+# A PROBE: it keeps the workdir and prints the emitted run.scr /
+# bridge-*.vbs / protocol files, which is the evidence those assumptions
+# need. Manual and CAD-tagged, since it starts a real CAD.
+verify:epure:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-epure-windows.ps1
 
 # What the registry actually holds, and what alfe makes of it. Starts no
 # AutoCAD (--print-command stages without launching), so it needs no CAD

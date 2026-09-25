@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-plugin-epure-windows-validation — run --epure against real AutoCAD and BricsCAD on the Windows runner
-#+STATUS: BLOCKED
+#+STATUS: IN PROGRESS — EPURE installed on the runner 2026-09-25; AutoCAD verified, BricsCAD fix in alfe 2.2.88 awaiting re-run
 #+PRIORITY: P2
 #+TYPE: cad-runtime
 #+DEPENDS: windows-access, alfe-plugin-epure
-#+BRANCH: fix-alfe-plugin-epure-windows
+#+BRANCH: feat-cad-orphan-sweep
 
 * Context
 
@@ -35,3 +35,67 @@ the user manual's EPURE section.
 
 - Both CADs run an =-x= under EPURE and exit with the script's status.
 - The manual states what was verified, on which CAD/EPURE versions.
+
+* First run on the Windows runner — 2026-09-25
+
+=verify:epure:windows=, job 16731487278, with EPURE 2022_b installed
+(pjb confirmed the install that day). alfe 2.2.87.
+
+#+begin_example
+  --autocad  --epure : exit 0, marker PRESENT
+  --bricscad --epure : exit 4, marker ABSENT
+#+end_example
+
+** AutoCAD: works
+
+COM automation, AutoCAD 2022. The action ran and alfe exited with its
+status. That is consistent with assumption 2 (SendCommand order), though
+it does not prove it: nothing here would have distinguished a
+=._SCRIPT= that ran late from one that ran in order.
+
+** BricsCAD: hung at BOOTING, and the cause is ours
+
+BricsCAD V25 fr_FR, =/b= batch script. Status stayed =BOOTING= for the
+full 300 s; =protocol/stdout.txt= and =stderr.txt= were empty, so
+=run-common.lsp= never loaded. The emitted =run.scr=:
+
+#+begin_example
+(setq alfe-scr-mark (open ".../run-scr-started.txt" "w"))
+...
+._SCRIPT
+C:/Users/PPBN02261/AppData/Roaming/sncf/epure/epure 2022_b/control_path_epure_2022.scr
+(load ".../run-common.lsp")
+#+end_example
+
+THE PATH IS NOT QUOTED, AND IT CONTAINS A SPACE -- =epure 2022_b=. That
+line is the answer to =SCRIPT='s prompt, and an answer ends at a space,
+so BricsCAD received =...\epure= and then had =2022_b\control_...scr= as
+its next input. AutoCAD never met this because the COM branch of the
+same plug-in has always wrapped the path in =Chr(34)=: one path, two
+spellings, and only one of them quoted.
+
+The test that covered this line had the bug written into it -- it used a
+path with a space (=epure 2022_b=, the real shape) and asserted the
+UNQUOTED form.
+
+** Fix — alfe 2.2.88
+
+=(:scr ... (list "._SCRIPT" (format nil "\\"~A\\"" script)))=, and both
+tests now demand the quoted form: the hook's lines, and the =run.scr=
+actually emitted. alfe SBCL and CCL 1097 checks, 0 failures.
+
+The probe now also dumps =run-scr-started.txt=, written by the first
+line of =run.scr=. Its presence separates "the script never ran" from
+"the nested =._SCRIPT= never gave control back" -- the two readings of a
+BricsCAD sitting at BOOTING, and the evidence assumption 1 needs.
+
+** Still open
+
+- Re-run =verify:epure:windows= with 2.2.88 and confirm BricsCAD reaches
+  the marker. Only then is assumption 1 answered.
+- Assumption 2 (COM =SendCommand= order) is consistent with AutoCAD's
+  result but not isolated by it.
+- The remaining unverified points from the Proposal above -- dropping
+  =/Automation= for EPURE, the control-script defaults for the current
+  EPURE year, the GUI staying usable after the runtime loads -- were not
+  examined by this run.
