@@ -27,20 +27,28 @@ if (-not $selection) { $selection = 'autocad' }
 $timeout = $env:ACTIVEX_TIMEOUT
 if (-not $timeout) { $timeout = '240' }
 
-$expr = @'
+# Through a FILE, not -x: the double quotes of AutoLISP strings do not
+# survive PowerShell's argument handling, and a first run printed its
+# labels as `nil' -- (princ ACTIVEX.APP=) read as a symbol -- while the
+# values themselves came through. A file is passed by name and read by
+# AutoLISP itself, so the source arrives as written.
+$probe = Join-Path ([System.IO.Path]::GetTempPath()) 'alfe-activex-probe.lsp'
+@'
 (progn
   (setq app (vlax-get-acad-object))
-  (princ "ACTIVEX.APP=")     (princ (if app "yes" "no"))     (princ "\n")
-  (princ "ACTIVEX.VERSION=") (princ (vla-get-Version app))   (princ "\n")
+  (princ "ACTIVEX.APP=")      (princ (if app "yes" "no"))   (terpri)
+  (princ "ACTIVEX.VERSION=")  (princ (vla-get-Version app)) (terpri)
   (setq doc (vla-get-ActiveDocument app))
-  (princ "ACTIVEX.DOCUMENT=") (princ (vla-get-Name doc))     (princ "\n")
+  (princ "ACTIVEX.DOCUMENT=") (princ (vla-get-Name doc))    (terpri)
   (princ "ACTIVEX.RESULT=SUCCESS")
   (princ))
-'@
+'@ | Set-Content -Path $probe -Encoding ASCII
+Write-Host "--- probe file $probe"
+Get-Content $probe | Out-String | Write-Host
 
 Write-Host "=== alfe --cad $selection --mode automation (timeout ${timeout}s)"
 & $alfe --no-init --debug --cad $selection --mode automation `
-    --timeout $timeout --keep-workdir -x $expr 2>&1 | Out-String | Write-Host
+    --timeout $timeout --keep-workdir -l $probe 2>&1 | Out-String | Write-Host
 $status = $LASTEXITCODE
 Write-Host "--- alfe exit $status"
 
