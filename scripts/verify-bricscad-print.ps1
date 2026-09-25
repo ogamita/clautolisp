@@ -82,13 +82,25 @@ function Run-Alfe([string]$label, [string[]]$arguments) {
     Start-Sleep -Seconds 5
 }
 
+# From a FILE, never -x. PowerShell splits an -x expression on its
+# spaces when it hands arguments to a native program: the first attempt
+# reported `actions = 10' for three expressions, and every one of them
+# was a fragment. The file is read by AutoLISP itself, so the source
+# arrives as written.
+$booleans = Join-Path $work 'booleans.lsp'
+@'
+(print (= 1 1))
+(print (= 1 2))
+(princ "end")
+'@ | Set-Content -Path $booleans -Encoding ASCII
+Write-Host "--- the file both runs load:"
+Get-Content $booleans | Out-String | Write-Host
+
 Run-Alfe "1. booleans, no EPURE" `
-    @('--keep-workdir', '-norc', '--debug', '--bricscad',
-      '-x', '(print (= 1 1))', '-x', '(print (= 1 2))', '-x', '(princ "end")')
+    @('--keep-workdir', '-norc', '--debug', '--bricscad', '-l', $booleans)
 
 Run-Alfe "2. booleans, under EPURE" `
-    @('--keep-workdir', '-norc', '--debug', '--bricscad', '--epure',
-      '-x', '(print (= 1 1))', '-x', '(princ "end")')
+    @('--keep-workdir', '-norc', '--debug', '--bricscad', '--epure', '-l', $booleans)
 
 Write-Host ""
 Write-Host "Read the two protocol/stdout.txt dumps above:"
