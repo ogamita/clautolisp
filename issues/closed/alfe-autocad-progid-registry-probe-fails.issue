@@ -164,8 +164,10 @@ Note also that the generic ProgID here resolves to
 Which release answers =AutoCAD.Application= on this machine is not
 stable, which is the whole argument for the versioned ProgID.
 
-** Still open
+** End to end, the same day
 
-The end-to-end run: =alfe --cad autocad -l probe.lsp= reaching READY and
-executing AutoLISP in AutoCAD 2022 (SCHMS job 507862). This probe stages
-the bridge and stops before launching, by design.
+=verify:autocad-activex:windows=, job 16731030463: a real AutoCAD
+launched through the bridge on =AutoCAD.Application.24.1=, READY in
+20.22 s, ActiveX answering =24.1s (LMS Tech)= and =Dessin1.dwg=, exit 0,
+=ATTACHED=0 CREATED=1=, and the instance quit afterwards. The detail is
+in issues/closed/alfe-autocad-cad-selection-ignores-com-progid.issue.
