@@ -144,8 +144,16 @@ Run-Alfe-Raw "2. the same forms passed with -x" $xargs
 Run-Alfe "3. under EPURE, loaded from a file" `
     @('--keep-workdir', '-norc', '--debug', '--bricscad', '--epure', '-l', $booleans)
 
+# The combination nobody has run: --epure AND -x. Run 2 had -x without
+# EPURE and printed; run 3 had EPURE with -l and printed. pjb failing
+# case is both at once, so this is where the difference must be if it is
+# not in the EPURE functions themselves.
+$xepure = '--keep-workdir -norc --debug --bricscad --epure ' +
+          '-x "(print (= 1 1))" -x "(print (= 1 2))" -x "(princ 42)"'
+Run-Alfe-Raw "4. under EPURE, passed with -x" $xepure
+
 Write-Host ""
-Write-Host "Read the two protocol/stdout.txt dumps above:"
-Write-Host "  T and nil present in run 1 -> the EPURE session is the difference"
-Write-Host "  bare newlines in run 1 too -> boolean rendering in the shadow"
+Write-Host "Runs 1 to 3 all printed. If run 4 does not, the fault needs BOTH"
+Write-Host "--epure and -x; if it does, the fault is in the EPURE functions"
+Write-Host "of pjb own test rather than in how alfe carries their output."
 exit 0

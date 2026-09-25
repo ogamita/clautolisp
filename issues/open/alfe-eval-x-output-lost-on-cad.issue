@@ -51,41 +51,43 @@ Three hypotheses were tested and are wrong:
 
    T, nil and the marker all come through INSIDE an EPURE session.
 
-* What it is
+* What it is NOT, continued: it is not -x either
 
-The difference is =-x= against =-l=. Everything that printed came
-through the LOAD path; everything that vanished went through the EVAL
-path. Note run 2 above: the file's own output, and then TWO BARE
-NEWLINES -- the same signature as pjb's run, which had only those.
+The three-way run on the runner (verify:bricscad-print:windows, the
+same three forms each way) refutes the reading this ticket first gave:
 
-The runtime's two paths differ in more than the name
-(=source/runtime/autolisp-bootstrap.lsp=):
+#+begin_example
+1. loaded from a file      exit 0   \r\nT \r\nnil end
+2. passed with -x          exit 0   \r\nT \r\nnil 42     (actions = 3)
+3. under EPURE, from file  exit 0   \r\nT \r\nnil end\r\n\r\n
+#+end_example
 
-- =autolisp-run-load= sets =*AUTOLISP_CAPTURE_STDOUT*= and calls
-  =autolisp-source-load= on the user's file, as written;
-- =autolisp-run-eval-file= also sets the capture, but first does
-  =(read form-text)= and hands the result to
-  =autolisp-eval-request-form=, which passes it through
-  =autolisp-normalize-princ-call=. alfe writes the expression into
-  =protocol/alfe-eval.lsp= wrapped in a =setq=, and re-printed: the file
-  in pjb's workdir reads
+-x prints. What run 3 does show is that an EPURE SESSION APPENDS TWO
+BARE NEWLINES after the output -- exactly the two CRLF that were the
+WHOLE of pjb's capture. So that pair is EPURE-session noise, and in his
+run the values were simply absent in front of it.
 
-  : (setq *AUTOLISP-EVAL-RESULT* (PRINT (EQUAL (QUOTE ((ENABLED) (MESSAGE))) (F_DATEHEURE_UTC 0))))
+* What is left
 
-  which is the user's form UPCASED and wrapped.
+One combination has not been run: --epure AND -x together. Run 2 was -x
+without EPURE; run 3 was EPURE with -l. pjb's failing case is both at
+once. Either
 
-Candidates to separate, in that order: the =read= round trip, the
-normaliser (a no-op when the host has =&rest=, an arity-padding rewrite
-otherwise), and the =setq= wrapper.
+- the two together lose the output, and the fault is in how the EVAL
+  path behaves inside an EPURE session; or
+- they print, and the question moves to the EXPRESSIONS of that test:
+  toutes_options and f_DateHeure_UTC returning something that prints as
+  nothing, or not being the functions they are taken for.
+
+The job now carries that fourth run.
 
 * Why it matters
 
-=-x= is the documented way to ask a CAD a question. A user who types
-
-: alfe --bricscad -x '(print (foo))'
-
-gets exit 0 and a blank line whatever =foo= returns, so the command
-cannot answer anything. It also made an unrelated investigation much
+A user asking a CAD a question with =-x= got exit 0 and a blank line,
+with no way to tell a working run from a broken one. That is now known
+NOT to be general: =-x= prints in an ordinary session, so the harm is
+narrower than this ticket first claimed, and its extent is what the
+remaining run settles. It also made an unrelated investigation much
 longer: the EPURE API validation
 (alfe-plugin-epure-windows-validation.issue) could not see its own
 results, and the emptiness was read three times over as a fault in
