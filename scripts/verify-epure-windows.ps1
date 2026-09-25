@@ -36,17 +36,36 @@ $probe = Join-Path ([System.IO.Path]::GetTempPath()) 'alfe-epure-probe.lsp'
 
 $summary = @()
 
+# Each CAD runs TWICE: with --epure and without. The control run is what
+# makes the EPURE result mean anything. On 2026-09-25 BricsCAD sat at
+# BOOTING under --epure and run-scr-started.txt was never written, i.e.
+# run.scr never began -- which is BEFORE anything EPURE adds to it.
+# Whether plain --bricscad starts that same script on this machine is
+# then the question, and only a control run answers it.
+$runs = @()
 foreach ($cad in $cads) {
+    $runs += [pscustomobject]@{ Cad = $cad; Epure = $true }
+    $runs += [pscustomobject]@{ Cad = $cad; Epure = $false }
+}
+
+foreach ($run in $runs) {
+    $cad = $run.Cad
+    $label = if ($run.Epure) { "--$cad --epure" } else { "--$cad (control, no --epure)" }
     Write-Host ""
-    Write-Host "================ alfe --$cad --epure"
-    $out = & $alfe --no-init --debug --$cad --epure --timeout $timeout `
-        --keep-workdir -l $probe 2>&1 | Out-String
+    Write-Host "================ alfe $label"
+    $out = if ($run.Epure) {
+        & $alfe --no-init --debug --$cad --epure --timeout $timeout `
+            --keep-workdir -l $probe 2>&1 | Out-String
+    } else {
+        & $alfe --no-init --debug --$cad --timeout $timeout `
+            --keep-workdir -l $probe 2>&1 | Out-String
+    }
     $status = $LASTEXITCODE
     Write-Host $out
     Write-Host "--- alfe exit $status"
 
     $sawMarker = $out -match [regex]::Escape($marker)
-    $summary += [pscustomobject]@{ Cad = $cad; Exit = $status; Marker = $sawMarker }
+    $summary += [pscustomobject]@{ Label = $label; Exit = $status; Marker = $sawMarker }
 
     # Everything the plug-in emitted, which is what the two assumptions
     # are about.
@@ -54,6 +73,8 @@ foreach ($cad in $cads) {
                 Select-Object -First 1)
     if ($workdir -match 'workdir = (\S+)') {
         $dir = $Matches[1].Trim()
+        $started = Test-Path (Join-Path $dir 'run-scr-started.txt')
+        Write-Host ("--- run.scr began: {0}" -f $(if ($started) { 'YES' } else { 'NO' }))
         Write-Host ""
         Write-Host "--- artefacts in $dir"
         # run-scr-started.txt is written by the FIRST line of run.scr, so
@@ -82,12 +103,13 @@ foreach ($cad in $cads) {
 Write-Host ""
 Write-Host "================ summary"
 foreach ($row in $summary) {
-    Write-Host ("  --{0} --epure : exit {1}, marker {2}" -f `
-        $row.Cad, $row.Exit, $(if ($row.Marker) { 'PRESENT' } else { 'ABSENT' }))
+    Write-Host ("  {0,-34} : exit {1}, marker {2}" -f `
+        $row.Label, $row.Exit, $(if ($row.Marker) { 'PRESENT' } else { 'ABSENT' }))
 }
 
 # The question asked of this job is "what happens", so a CAD that is not
 # installed is not a failure; a CAD that ran and did not reach the
 # marker is.
-$bad = @($summary | Where-Object { $_.Exit -eq 0 -and -not $_.Marker }).Count
+$bad = @($summary | Where-Object {
+    $_.Label -match '--epure$' -and $_.Exit -eq 0 -and -not $_.Marker }).Count
 exit $bad
