@@ -26,6 +26,11 @@ if (-not (Test-Path $alfe)) { Write-Host "alfe-sbcl.exe not built at $alfe"; exi
 
 $timeout = $env:EPURE_TIMEOUT
 if (-not $timeout) { $timeout = '300' }
+# BricsCAD gets longer: a cold start that also loads EPURE's CUIX and
+# menus is not a 300 s proposition, and a timeout that is merely too
+# short looks exactly like a hang.
+$bricscadTimeout = $env:EPURE_BRICSCAD_TIMEOUT
+if (-not $bricscadTimeout) { $bricscadTimeout = '600' }
 
 # Which CADs to try. EPURE_CADS overrides, e.g. 'autocad' alone.
 $cads = if ($env:EPURE_CADS) { $env:EPURE_CADS -split '[,\s]+' } else { @('autocad', 'bricscad') }
@@ -53,7 +58,13 @@ foreach ($cad in $cads) {
 # the one AutoCAD already takes, and the VBS branch of the plug-in has
 # always emitted it. Whether it works on BricsCAD has never been run, so
 # it is asked here rather than assumed, BEFORE the default is changed.
-$runs += [pscustomobject]@{ Cad = 'bricscad'; Epure = $true; Mode = 'automation' }
+$runs += [pscustomobject]@{ Cad = 'bricscad'; Epure = $true;  Mode = 'automation' }
+# ... and its control. The automation run above hung with the bridge log
+# holding one line, "[VBS] bridge start; commode=auto", so it never got
+# past attach/create -- nowhere near anything EPURE adds. Whether
+# BricsCAD COM automation works AT ALL on this machine is therefore the
+# question, and only a run without --epure answers it.
+$runs += [pscustomobject]@{ Cad = 'bricscad'; Epure = $false; Mode = 'automation' }
 
 foreach ($run in $runs) {
     $cad = $run.Cad
@@ -61,14 +72,18 @@ foreach ($run in $runs) {
     if ($run.Mode) { $label = "$label --mode $($run.Mode)" }
     Write-Host ""
     Write-Host "================ alfe $label"
+    $t = if ($cad -eq 'bricscad') { $bricscadTimeout } else { $timeout }
     $out = if ($run.Epure -and $run.Mode) {
-        & $alfe --no-init --debug --$cad --epure --mode $run.Mode --timeout $timeout `
+        & $alfe --no-init --debug --$cad --epure --mode $run.Mode --timeout $t `
             --keep-workdir -l $probe 2>&1 | Out-String
     } elseif ($run.Epure) {
-        & $alfe --no-init --debug --$cad --epure --timeout $timeout `
+        & $alfe --no-init --debug --$cad --epure --timeout $t `
+            --keep-workdir -l $probe 2>&1 | Out-String
+    } elseif ($run.Mode) {
+        & $alfe --no-init --debug --$cad --mode $run.Mode --timeout $t `
             --keep-workdir -l $probe 2>&1 | Out-String
     } else {
-        & $alfe --no-init --debug --$cad --timeout $timeout `
+        & $alfe --no-init --debug --$cad --timeout $t `
             --keep-workdir -l $probe 2>&1 | Out-String
     }
     $status = $LASTEXITCODE
