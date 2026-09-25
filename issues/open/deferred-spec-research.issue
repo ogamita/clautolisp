@@ -28,6 +28,24 @@ Convention (project-wide, going forward):
 Open uncertainties (open this list as you add SPEC-UNCERTAIN
 markers — keep it sorted by function name):
 
+== < <= > >= (relational-cross-type-arguments-should-signal) ==
+
+  * Non-nil incompatible arguments. Since clautolisp 2.2.88 the four
+    relational operators signal a type error (code
+    :invalid-comparison-argument) when the argument list is neither
+    all numbers nor all strings and holds no nil: the spec's
+    normative shared domain rule (ch.5, "The Comparison Operators").
+    Not yet probed. On AutoCAD and BricsCAD: does each of
+    (< 1 "a"), (< "a" 1), (< 1 'foo), (< 'a 'b), (< '(1) '(2)),
+    (< 'a) signal, and with what message? If either vendor returns
+    nil or coerces instead, re-classify per AGENTS.md § Dialect
+    Divergence.
+
+  * Precedence of nil over a type error in the same chain:
+    (< 1 "a" nil) returns nil here (the spec's "a nil anywhere
+    short-circuits the chain"). Does a vendor instead check left to
+    right and signal on 1 vs "a" first?
+
 == TRANS (M2) ==
 
   * Behaviour when the source space (FROM) is not equal to the

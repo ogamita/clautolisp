@@ -37,6 +37,16 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *=<=, =<==, =>=, =>== signal a type error on incompatible arguments.*
+  A number against a string, or a symbol or list, now fails with
+  =:invalid-comparison-argument=, as the autolisp-spec requires:
+  =(< 1 "a")= and =(< 'a 'b)= used to return =nil=. A =nil= argument
+  still makes the comparison =nil= without error.
+
+- *=<=, =<==, =>=, =>== compare strings.* They order strings
+  lexicographically by character code, as AutoCAD and BricsCAD do:
+  =(< "a" "b")= is now =T= (it was =nil= in every dialect).
+
 - *The DWG codec is built on LibreDWG 0.14* (was a 0.13.4 development
   snapshot). The vendored library gains r2004 DWG write support and many
   decoder and DXF round-trip fixes; see LibreDWG's own =NEWS=.
@@ -1208,6 +1218,10 @@ file or COM), and forwards the workload.
   ~accoreconsole~ per ~--mode~. Among same-version BricsCAD locales the
   host language preference (macOS ~AppleLanguages~; ~LANG~ / ~LC_*~)
   breaks the tie.
+- The ~accoreconsole.exe~ shipped by the read-only DWG TrueView viewer is
+  now listed as ~dwgtrueview-YYYY~, so ~--cad accoreconsole~ and ~--cad
+  autocad --mode batch~ no longer pick it over an older real AutoCAD
+  (it aborted at bootstrap on its locked ~dwgviewr*.cfg~).
 - *A selected AutoCAD release now also selects its COM server.* Under
   ~--mode automation~ the bridge asks for that release's own ProgID
   (~AutoCAD.Application.24.1~ for AutoCAD 2022) instead of the generic

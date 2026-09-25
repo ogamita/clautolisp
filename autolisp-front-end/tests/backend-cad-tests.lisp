@@ -1324,6 +1324,10 @@ the canonical denotation each yields (OS-independent — we feed paths in)."
                  (den :acad "/Applications/Autodesk/AutoCAD 2026/AutoCAD 2026.app/Contents/MacOS/AutoCAD")))
     (is (string= "accoreconsole-2022"
                  (den :accoreconsole "C:/Program Files/Autodesk/AutoCAD 2022/accoreconsole.exe")))
+    ;; the DWG TrueView viewer's accoreconsole is a DIFFERENT product: its own
+    ;; denotation, so "accoreconsole" / "autocad" never match it
+    (is (string= "dwgtrueview-2024"
+                 (den :accoreconsole "C:/Program Files/Autodesk/DWG TrueView 2024 - French/accoreconsole.exe")))
     ;; BricsCAD — the V-token (lower-cased in the denotation); + locale on Win
     (is (string= "bricscad-v26"
                  (den :bricscad "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad")))
@@ -1374,7 +1378,21 @@ bare/partial (latest wins), and the virtual autocad -> acad/accoreconsole per
       (is (string= "acad-2026" (den (res "ACAD" progs))))
       ;; unknown -> nil
       (is (null (res "nope" progs)))
-      (is (null (res "acad-2019" progs))))))
+      (is (null (res "acad-2019" progs))))
+    ;; A newer DWG TrueView (read-only viewer, also ships accoreconsole.exe)
+    ;; must not win over real AutoCAD's accoreconsole: seen on PF5S26BT,
+    ;; `--cad accoreconsole` picked TrueView 2024 over AutoCAD 2022, which
+    ;; aborted at bootstrap on its locked dwgviewr2024.cfg.
+    (let ((progs (list
+                  (mk :acad "C:/Program Files/Autodesk/AutoCAD 2022/acad.exe")
+                  (mk :accoreconsole "C:/Program Files/Autodesk/AutoCAD 2022/accoreconsole.exe")
+                  (mk :accoreconsole "C:/Program Files/Autodesk/DWG TrueView 2024 - French/accoreconsole.exe"))))
+      (is (string= "accoreconsole-2022" (den (res "accoreconsole" progs))))
+      (is (string= "accoreconsole-2022" (den (res "autocad" progs :batch))))
+      (is (null (res "accoreconsole-2024" progs)))
+      (is (null (res "autocad-2024" progs :batch)))
+      ;; still selectable explicitly, by its own name
+      (is (string= "dwgtrueview-2024" (den (res "dwgtrueview" progs)))))))
 
 (test cad-denotation-locale-preference
   "backend-selection: among same-version BricsCAD installs of different

@@ -560,6 +560,7 @@ A *denotation* is the canonical selector:
 |-------------------------+-----------------------------------------------------------------|
 | =acad-YYYY=             | AutoCAD YYYY, GUI engine (=acad=)                               |
 | =accoreconsole-YYYY=    | =accoreconsole= of AutoCAD YYYY                                 |
+| =dwgtrueview-YYYY=      | =accoreconsole= of DWG TrueView YYYY (never matched by =accoreconsole= / =autocad=) |
 | =bricscad-vNN[-ll_CC]=  | BricsCAD VNN, optionally a specific locale                      |
 | =acad= / =bricscad= / =accoreconsole= | latest of that kind                              |
 | =autocad[-YYYY]=        | =acad= or =accoreconsole= per =--mode= (=batch= → accoreconsole, else =acad=) |

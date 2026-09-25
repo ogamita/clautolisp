@@ -1079,11 +1079,23 @@ upper-cased; \"V26x64\" keeps only \"V26\". NIL when absent."
                   (or (>= (+ i 5) (length path)) (not (alphanumericp (char path (+ i 5))))))
           return (subseq path i (+ i 5))))
 
-(defun %cad-denotation (kind version locale)
-  "Build the canonical denotation string from KIND + VERSION + LOCALE."
+(defun %dwg-trueview-path-p (path)
+  "True when PATH lies in a DWG TrueView install. The free, read-only DWG
+TrueView viewer also ships accoreconsole.exe, but it is not AutoCAD: it
+cannot create or modify entities, and its configuration file lives in
+Program Files, so for a normal user it aborts on launch (\"configuration
+file may be locked\"). It therefore gets its own denotation
+(dwgtrueview-YYYY) so that accoreconsole / autocad never select it."
+  (search "trueview" (string-downcase (namestring path))))
+
+(defun %cad-denotation (kind version locale &key path)
+  "Build the canonical denotation string from KIND + VERSION + LOCALE.
+PATH is used to tell DWG TrueView's accoreconsole apart from AutoCAD's."
   (let ((base (ecase kind
                 (:acad          (format nil "acad~@[-~A~]" version))
-                (:accoreconsole (format nil "accoreconsole~@[-~A~]" version))
+                (:accoreconsole (format nil "~:[accoreconsole~;dwgtrueview~]~@[-~A~]"
+                                        (and path (%dwg-trueview-path-p path))
+                                        version))
                 (:bricscad      (format nil "bricscad~@[-~(~A~)~]" version))
                 (:clautolisp    "clautolisp"))))
     (if (and (eq kind :bricscad) locale)
@@ -1098,7 +1110,7 @@ upper-cased; \"V26x64\" keeps only \"V26\". NIL when absent."
                     (:bricscad              (%find-bricscad-version ns))))
          (locale (when (eq kind :bricscad) (%find-locale ns))))
     (%make-cad-program :kind kind :version version :locale locale :path ns
-                       :denotation (%cad-denotation kind version locale))))
+                       :denotation (%cad-denotation kind version locale :path ns))))
 
 ;; -- per-kind, per-OS enumeration -------------------------------------
 

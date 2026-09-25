@@ -3581,41 +3581,71 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
      object))
   object)
 
-(defun numeric-order-p (arguments predicate operator-name)
-  (declare (ignore operator-name))
-  ;; AutoLISP semantics (AutoCAD / BricsCAD): the relational
-  ;; operators <, <=, >, >= fold a non-numeric argument (including
-  ;; nil) to nil rather than signalling a type error. Loop-guard
-  ;; idioms depend on it:
+(defun numeric-order-p (arguments predicate operator-name
+                        &optional string-predicate)
+  ;; The relational operators <, <=, >, >= order NUMBERS by value and
+  ;; STRINGS lexicographically by character code point (autolisp-spec
+  ;; ch.5, "The Comparison Operators" and Function Entry: <; confirmed on
+  ;; AutoCAD 2022 and BricsCAD V25: (< "a" "b") => T, (> "c" "b") => T).
+  ;; STRING-PREDICATE is the CL string comparison matching PREDICATE
+  ;; (string< for <, ...).
+  ;;
+  ;; A NIL argument anywhere folds the comparison to nil without error
+  ;; (bottom propagation). Loop-guard idioms depend on it:
   ;;   (while (<= 48 (car chars) 57) ...)
-  ;; where (car chars) becomes nil at end of list and the
-  ;; comparison must yield nil to stop the loop. SCHMS+'s numeric
-  ;; validators (validateur_reel / _naturel / _entier) rely on
-  ;; exactly this shape — see
-  ;; issues/closed/strict-dialect-autolisp-divergences.issue §2.
+  ;; where (car chars) becomes nil at end of list and the comparison
+  ;; must yield nil to stop the loop. SCHMS+'s numeric validators
+  ;; (validateur_reel / _naturel / _entier) rely on exactly this shape —
+  ;; see issues/closed/strict-dialect-autolisp-divergences.issue §2.
+  ;;
+  ;; Any other argument list — a number against a string, or an
+  ;; argument outside the number/string domain (a symbol, a list) — is a
+  ;; type error, per the spec's shared domain rule
+  ;; (issues/closed/relational-cross-type-arguments-should-signal.issue).
+  ;;; SPEC-UNCERTAIN: the type error on non-nil incompatible arguments is
+  ;;; the spec's normative rule, not yet confirmed by a vendor probe of
+  ;;; (< 1 "a") / (< 'a 'b) on AutoCAD and BricsCAD — see
+  ;;; issues/open/deferred-spec-research.issue, "< <= > >=".
   (cond
     ((null arguments)
      (autolisp-true))
-    ((not (every #'numberp arguments))
+    ((member nil arguments)
      nil)
-    ((or (null (rest arguments))
-         (loop for (left right) on arguments
+    ((every #'numberp arguments)
+     (if (loop for (left right) on arguments
                while right
-               always (funcall predicate left right)))
-     (autolisp-true))
-    (t nil)))
+               always (funcall predicate left right))
+         (autolisp-true)
+         nil))
+    ((and string-predicate
+          (every (lambda (argument) (typep argument 'autolisp-string))
+                 arguments))
+     (if (loop for (left right) on arguments
+               while right
+               always (funcall string-predicate
+                               (autolisp-string-value left)
+                               (autolisp-string-value right)))
+         (autolisp-true)
+         nil))
+    (t
+     (signal-builtin-argument-error
+      :invalid-comparison-argument
+      operator-name
+      "~A expects numbers or strings, not a mixture or other types, got~{ ~S~}."
+      operator-name
+      arguments))))
 
 (defun builtin-< (&rest arguments)
-  (numeric-order-p arguments #'< "<"))
+  (numeric-order-p arguments #'< "<" #'string<))
 
 (defun builtin-<= (&rest arguments)
-  (numeric-order-p arguments #'<= "<="))
+  (numeric-order-p arguments #'<= "<=" #'string<=))
 
 (defun builtin-> (&rest arguments)
-  (numeric-order-p arguments #'> ">"))
+  (numeric-order-p arguments #'> ">" #'string>))
 
 (defun builtin->= (&rest arguments)
-  (numeric-order-p arguments #'>= ">="))
+  (numeric-order-p arguments #'>= ">=" #'string>=))
 
 (defun builtin-abs (object)
   (abs (require-number object "ABS")))
