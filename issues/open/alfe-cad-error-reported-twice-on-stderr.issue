@@ -1,0 +1,54 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-cad-error-reported-twice-on-stderr — a failing CAD action prints its message twice
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: alfe-backend
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-09-25
+
+* Observed
+
+With alfe 2.2.91 (the first version in which a failing =-x= form is
+reported at all -- see issues/closed/alfe-eval-x-output-lost-on-cad),
+one failing action puts its diagnostic on protocol/stderr.txt twice:
+
+#+begin_example
+$ cat protocol/stderr.txt
+ERROR protocol request 1: Undefined AutoLISP function NO_SUCH_FUNCTION.
+ERROR protocol request 1: Undefined AutoLISP function NO_SUCH_FUNCTION.
+#+end_example
+
+* Cause
+
+=autolisp-protocol-server-loop= (source/runtime/autolisp-remote-io.lsp,
+FAIL branch) deliberately writes the message to BOTH channels: it calls
+=autolisp-log-err= (errors.txt, the session log) and
+=autolisp-protocol-write-stderr= (protocol/stderr.txt, the wire). Those
+are two different files -- but the bridge block emitted into
+run-common.lsp redefines =autolisp-log-err= to write to
+=*AUTOLISP_PROTOCOL_STDERRFILE*=, so both land in the same file and the
+user sees the line twice.
+
+The duplication has always been in the code; it became visible only
+when errors started being reported.
+
+* Fix candidates
+
+1. In the bridge, keep =autolisp-log-err= pointed at the session log
+   (errors.txt) and let only =autolisp-protocol-write-stderr= reach the
+   wire. Check why the bridge redirected it in the first place -- the
+   intent was probably that a CAD-side log line should reach the user
+   at all, which the protocol stderr now does.
+2. Or, in the loop's FAIL branch, drop the =autolisp-log-err= call when
+   the protocol channel is active.
+
+Either way the same message must still appear exactly once, with the
+same text, and the =DONE N FAIL= status is unaffected.
+
+* Acceptance
+
+- A failing action writes its diagnostic once.
+- A regression test asserts the count, alongside
+  protocol-signalling-form-is-reported-fail-not-ok (which already
+  hosts the emitted runtime under clautolisp, no CAD needed).

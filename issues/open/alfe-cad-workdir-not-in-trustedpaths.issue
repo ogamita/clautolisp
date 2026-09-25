@@ -1,0 +1,84 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-cad-workdir-not-in-trustedpaths — a CAD with SECURELOAD=2 would refuse alfe's own runtime
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: alfe-backend
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-09-25
+
+* Observed
+
+Found while auditing alfe's CAD-side AutoLISP under each dialect
+(clautolisp hosting the emitted run-common.lsp, 2026-09-25). The engine
+reports, for every session:
+
+#+begin_example
+[sec-untrusted-load] LOAD: …/runtime/autolisp-bootstrap.lsp is a gated file
+  in an untrusted location (SECURELOAD=1); on a host with SECURELOAD=2 this
+  would be blocked. Add its folder to TRUSTEDPATHS to trust it.
+[sec-untrusted-load] LOAD: …/runtime/autolisp-remote-io.lsp  (same)
+[sec-untrusted-open] OPEN: …/protocol/alfe-eval.lsp           (same)
+#+end_example
+
+* Why it matters
+
+alfe stages its runtime into a temporary workdir and, for every =-x=
+request, writes the form to =protocol/alfe-eval.lsp= and calls the
+host's native LOAD. None of that is inside TRUSTEDPATHS. On a CAD
+configured with =SECURELOAD= = 2 -- "loads executable files ONLY if
+their location is in TRUSTEDPATHS" (see issues/open/note-secureload.txt
+and the AutoCAD documentation it cites) -- every one of those loads is
+REFUSED, so alfe cannot bootstrap at all, and even a trusted runtime
+directory would not save the per-request eval file.
+
+SECURELOAD defaults to 1 on the machines we test (warn and proceed),
+which is why this has never been seen on a real CAD. A hardened site --
+which is exactly where a CAD-automation tool gets deployed -- would hit
+it immediately, and the failure mode would be a bootstrap that never
+reaches READY.
+
+* pjb, 2026-09-25: the invocations set TRUSTEDPATHS
+
+"Set the environment variable TRUSTEDPATHS to deal with this secureload
+warning (in the uses of the tool)."
+
+clautolisp seeds the TRUSTEDPATHS sysvar from the environment variable
+of the same name under EVERY dialect
+(autolisp-builtins-core/source/secureload.lisp, the SECURELOAD /
+TRUSTEDPATHS pair is exempt from the clautolisp-only gate), so an
+invocation declares alfe's staged runtime trusted by exporting it. The
+clautolisp-hosted test harness now does exactly that before starting an
+engine (TRUSTEDPATHS-SPEC / SET-ENVIRONMENT-VARIABLE in
+file-protocol-tests.lisp, naming the workdir and its runtime/ and
+protocol/ subdirectories), and the dialect gate consequently refuses
+ANY bracketed diagnostic instead of exempting the [sec-…] family.
+
+What remains open is the REAL CAD, where TRUSTEDPATHS is a sysvar read
+from the profile/registry and no environment variable reaches it.
+
+* Directions
+
+- alfe knows its workdir before it launches the CAD: it can append the
+  workdir (and its =protocol/= and =runtime/= subdirectories) to
+  TRUSTEDPATHS in the engine's own session, restoring the previous value
+  on exit -- the pattern already used for SRCHPATH
+  (=_autolisp_old_srchpath= in the emitted run-common.lsp).
+- Setting TRUSTEDPATHS may itself be gated on some hosts; check whether
+  it can be set from LISP at all under SECURELOAD=2, or whether the
+  first load has to come from an already-trusted location. If it cannot,
+  the fallback is to stage the runtime under a directory the user has
+  trusted once (a documented =--runtime-dir= or the installed
+  =share/alfe/runtime/=, which is a stable location a site CAN trust)
+  rather than a fresh temp directory per run.
+- Whatever the mechanism, it must be documented: a site administrator
+  has to know which directory to trust.
+
+* Verification
+
+The clautolisp-hosted harness added with
+alfe-autocad-shadow-path-spurious-newlines reproduces the diagnostics
+without a CAD (they are the =[sec-…]= lines that
+=dialect-warning-lines= deliberately filters out of the dialect gate).
+A real check needs a CAD with SECURELOAD set to 2 -- a Windows-runner
+job.

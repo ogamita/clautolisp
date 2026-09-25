@@ -318,6 +318,24 @@ verify:vl-registry:windows:
 # A PROBE: it keeps the workdir and prints the emitted run.scr /
 # bridge-*.vbs / protocol files, which is the evidence those assumptions
 # need. Manual and CAD-tagged, since it starts a real CAD.
+# Why does (print X) write only a newline in an EPURE session, when it
+# prints fine without EPURE? Two runs separate boolean rendering in the
+# shadow from something the EPURE session changes. Dumps the BYTES of
+# protocol/stdout.txt: the presence or absence of print trailing space
+# is the whole distinction.
+verify:bricscad-print:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  timeout: 45m
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-bricscad-print.ps1
+
 verify:epure:windows:
   extends: .gate-windows-cad-soft
   stage: test
