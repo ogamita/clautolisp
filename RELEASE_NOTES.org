@@ -1266,6 +1266,12 @@ file or COM), and forwards the workload.
   ~scripts/sweep-orphaned-cad.ps1~ ends exactly those instances, matching
   id *and* creation time, and never an AutoCAD alfe did not start. See
   /When alfe is killed before it can quit AutoCAD/.
+- *Only a release-naming selection can refuse to run.* ~--cad autocad~
+  asks for the latest AutoCAD, so it falls back to the generic ProgID
+  when the discovered release is not registered; ~--cad autocad-2022~
+  names a release and still refuses another one. And when alfe cannot
+  read the registry at all, it says so and uses the named release's
+  ProgID unverified instead of reporting it as unregistered.
 - *A failed COM activation now says what failed.* The bootstrap error
   carries the stage (~getobject~ / ~createobject~), the ProgID and the
   COM error in decimal and hexadecimal with its description, and it
