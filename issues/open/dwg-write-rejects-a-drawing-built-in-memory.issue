@@ -1,0 +1,85 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: dwg-write-rejects-a-drawing-built-in-memory — libredwg refuses the DXF we hand it (error 2048), while a DWG read from disk round-trips
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: drawing-codec
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-09-26
+
+* Observed
+
+Found immediately behind
+clautolisp-distributed-native-libraries-not-loaded, once the standalone
+program carried the DWG codec (2.2.99). The SHIPPED binary, ActiveX
+SaveAs to a .dwg, on a document created in the session:
+
+#+begin_example
+$ clautolisp-sbcl -norc -q -l x.lsp     ;; (vla-saveas d "…/probe.dwg")
+clautolisp: runtime error: COM-SAVE-FAILED: SaveAs could not write
+  …/probe.dwg: libredwg failed to write "…/probe.dwg" (error code 2048).
+#+end_example
+
+That is progress -- before, the same call said "no writer codec
+registered for format :DWG" -- but the write still fails. It fails with
+an empty document and with one that has an entity (a LINE added through
+vla-AddLine).
+
+A drawing READ FROM A DWG, however, writes back as DWG perfectly:
+
+#+begin_example
+(read-drawing "autolisp-front-end/source/empty.dwg")   -> :DWG
+(write-drawing d "rt.dxf" :format :dxf-ascii)          -> 37268 bytes
+(write-drawing d "rt.dwg" :format :dwg)                -> 302706 bytes
+#+end_example
+
+So the shim, the vendored libredwg and the DXF writer all work. What
+libredwg refuses is the DXF produced from a drawing this process BUILT,
+as opposed to one it parsed.
+
+* Where it is
+
+=dwg-write-drawing= (clautolisp/drawing-dwg/source/codec.lisp) writes a
+temporary DXF with =dxf-write-drawing= and calls the shim's
+=clal_dxf_to_dwg=, which returns 2048. Codes at or above
+=+dwg-err-critical+= (128) are failures, and 2048 is 1<<11 -- one of
+libredwg's high error bits, so the first job is to name it from
+libredwg's own header rather than report the bare number.
+
+The difference between the two DXFs is the question: a parsed drawing
+carries whatever HEADER variables, TABLES entries and handles the source
+DWG had, while a drawing built by cador carries only what our own
+in-memory model sets. Something libredwg's DXF reader requires is
+missing (a candidate list, cheapest first: $ACADVER / $HANDSEED, the
+mandatory table records -- VPORT "*ACTIVE*", LTYPE "BYLAYER"/"BYBLOCK"/
+"CONTINUOUS", STYLE "STANDARD", APPID "ACAD" -- the BLOCK_RECORD table,
+or handle continuity).
+
+* How to find it in one pass
+
+Diff the two DXFs: write the parsed drawing's DXF (works) and the
+in-memory drawing's DXF (refused) and compare their HEADER and TABLES
+sections. Then bisect by adding to the in-memory drawing what the parsed
+one has until libredwg accepts it. Both files are produced by the
+snippets above, so this needs no CAD and no Windows.
+
+* Acceptance criteria
+
+- A drawing created in a clautolisp session writes as DWG and reads back,
+  with its entities.
+- The error message names libredwg's code symbolically, not just the
+  number, and says which of the two files it was reading.
+- A regression test writes a DWG from an in-memory drawing (not only
+  from a parsed one, which is what dwg-write-then-read-round-trips
+  covers today) and reads it back.
+- The SCHME+ A1 scenario "creation et fermeture d'un DWG temporaire"
+  passes.
+
+* Related
+
+- =issues/open/clautolisp-distributed-native-libraries-not-loaded.issue=
+  -- the packaging half, which had to be fixed before this became
+  visible at all.
+- =issues/open/drawing-codec-version-output.issue= -- the writer still
+  emits a fixed DWG version (a STUB in dwg-write-drawing); if 2048 turns
+  out to be a version rejection, these two meet.
