@@ -20,12 +20,30 @@
 # archived and unpacked somewhere else entirely: nothing may embed the
 # path it was built at.
 #
+# On MS-WINDOWS there is one more rule to check, and it is the reason the
+# layout has two files: a DLL carries no rpath, so clal_dwg.dll's import of
+# libredwg.dll is NOT resolved by the loader just because the two sit in the
+# same directory. The Lisp side pre-loads libredwg.dll by absolute path and
+# reports "installed but its dependency libredwg.dll is not beside it" as its
+# own case -- so this script installs the libraries, removes libredwg.dll, and
+# insists on that message rather than a codec complaint. Runs under MSYS2 bash
+# there (scripts/avec-bash.ps1 does the PowerShell handoff), which is why this
+# stayed one script instead of being reimplemented in PowerShell.
+#
 # Usage: scripts/verify-packaged-dwg.sh [workdir]
 # The workdir defaults to a fresh directory under TMPDIR. Exits non-zero
 # on the first failure, printing what it saw.
 set -u
 
 here=$(cd "$(dirname "$0")/.." && pwd)
+
+# Windows names programs with .exe, and `test -x' does not append it -- so
+# the binary must be looked up under both spellings.
+case $(uname -s 2>/dev/null) in
+  MINGW*|MSYS*|CYGWIN*) host_os=windows; exe=.exe ;;
+  Darwin)               host_os=macos;   exe= ;;
+  *)                    host_os=linux;   exe= ;;
+esac
 work=${1:-$(mktemp -d "${TMPDIR:-/tmp}/clal-packaged-XXXXXX")}
 prefix="$work/a prefix with spaces"
 moved="$work/moved elsewhere"
@@ -42,8 +60,8 @@ make -C "$here/clautolisp" install-programs install-libraries \
   { tail -20 "$work/install.log"; fail "make install failed"; }
 
 # What a release carries: the program, and the platform's native libraries.
-bin="$prefix/bin/clautolisp"
-[ -x "$bin" ] || bin="$prefix/bin/clautolisp-sbcl"
+bin="$prefix/bin/clautolisp$exe"
+[ -x "$bin" ] || bin="$prefix/bin/clautolisp-sbcl$exe"
 [ -x "$bin" ] || fail "no installed clautolisp under $prefix/bin"
 libs=$(find "$prefix/lib" -name 'clal_dwg.*' 2>/dev/null | head -1)
 [ -n "$libs" ] || fail "the libraries archive installed no clal_dwg under $prefix/lib"
@@ -101,8 +119,8 @@ mkdir -p "$bare" || fail "cannot create the bare prefix"
 make -C "$here/clautolisp" install-programs PREFIX="$bare" \
      > "$work/install-bare.log" 2>&1 ||
   { tail -20 "$work/install-bare.log"; fail "make install-programs failed"; }
-bin3="$bare/bin/clautolisp"
-[ -x "$bin3" ] || bin3="$bare/bin/clautolisp-sbcl"
+bin3="$bare/bin/clautolisp$exe"
+[ -x "$bin3" ] || bin3="$bare/bin/clautolisp-sbcl$exe"
 [ -x "$bin3" ] || fail "no installed clautolisp under $bare/bin"
 [ -z "$(find "$bare/lib" -name 'clal_dwg.*' 2>/dev/null)" ] ||
   fail "install-programs should not have installed a native library"
@@ -135,6 +153,40 @@ case "$out3" in
   *)
     fail "a binaries-only install must report the missing native library" ;;
 esac
+
+# MS-WINDOWS ONLY: the shim without its dependency. The two files are not
+# interchangeable halves of one thing -- clal_dwg.dll IMPORTS libredwg.dll,
+# and a DLL has no rpath, so shipping one without the other cannot work. The
+# program must say which file is missing (and that the archive carries both),
+# not blame the codec. The relocated prefix is the one still installed here.
+if [ "$host_os" = windows ]; then
+  dep=$(find "$moved/lib" -name 'libredwg*.dll' 2>/dev/null | head -1)
+  if [ -z "$dep" ]; then
+    say "NOTE: no libredwg*.dll under $moved/lib -- the libraries phase did not"
+    say "      install the runtime, so the dependency case cannot be exercised;"
+    say "      that is itself a packaging failure on this platform"
+    fail "the libraries archive shipped clal_dwg.dll without libredwg.dll"
+  fi
+  say "removing $(basename "$dep") to check the dependency is named"
+  rm -f "$dep" || fail "cannot remove $dep"
+  out4=$(run_probe "$bin2" "$work") || true
+  printf '%s\n' "$out4" | sed 's/^/packaged-dwg:   /'
+  case "$out4" in
+    *"dependency libredwg.dll is not beside it"*)
+      say "the missing dependency is named, with the directory looked in" ;;
+    *"no writer codec registered"*)
+      fail "a shim without libredwg.dll must name the dependency, not the codec" ;;
+    *WROTE-DWG*)
+      # Not a pass: it means the loader found libredwg.dll somewhere else
+      # (MSYS2's mingw64 bin on PATH, say), so this run proves nothing about
+      # what a user's machine would do.
+      fail "the save succeeded without libredwg.dll beside the shim -- the loader ~
+found one elsewhere on PATH, so this check cannot conclude; run it with a PATH ~
+that has no libredwg.dll on it" ;;
+    *)
+      fail "a shim without libredwg.dll must report the missing dependency" ;;
+  esac
+fi
 
 say "OK: a complete installed release writes a DWG, before and after being moved"
 exit 0

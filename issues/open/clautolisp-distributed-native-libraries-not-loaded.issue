@@ -283,15 +283,48 @@ vendored libredwg and the program images and runs the script. Manual
 because it is minutes of C and Lisp compilation and nothing depends on
 its result.
 
-** What is still missing
+** The Windows =.dll= half — the job exists (clautolisp 2.2.111)
 
-- *The Windows =.dll= half.* The criteria ask for it explicitly, and it is
-  the layout with the extra rule: =libredwg.dll= must be opened BEFORE the
-  shim, because a DLL carries no rpath. The Lisp side already does that
-  and reports a shim present without its dependency as its own case. What
-  is missing is the job: the Windows runner drives PowerShell, so this
-  bash script is not directly usable there --
-  =scripts/verify-installed-prefix.ps1= is the model to copy, and the
-  probe is the same four steps.
+Not rewritten in PowerShell after all. The runner drives PowerShell, but
+=scripts/avec-bash.ps1= already normalises the PowerShell → MSYS2 bash handoff
+for the release lane (MSYS2's bash over Git's, =MSYS2_PATH_TYPE=inherit=,
+MINGW64 before UCRT64, CC set on the bash side), so the platform-neutral
+checker is REUSED instead of duplicated. Duplicating 140 lines of shell in
+another language would have made two things to keep in step, and the first
+divergence would have been silent.
+
+What landed:
+
+- =scripts/verify-packaged-dwg.sh= is now platform-aware: it detects the host
+  (=uname=), looks the program up under =.exe= as well (=test -x= does not
+  append it on MSYS2), and gained the Windows-only fourth case — install the
+  libraries, REMOVE =libredwg.dll=, and insist the program answers "installed
+  but its dependency libredwg.dll is not beside it" rather than a codec
+  complaint. A save that SUCCEEDS there is a failure of the check, not a pass:
+  it means the loader found a =libredwg.dll= elsewhere on =PATH=, so the run
+  proves nothing about a user's machine, and the script says exactly that.
+  The libraries phase shipping =clal_dwg.dll= without =libredwg.dll= is itself
+  reported as a packaging failure.
+- =scripts/verify-packaged-dwg-windows.sh= — the bash side: sources
+  =environnement-windows.sh=, =make build-libraries=, =make build-programs=,
+  then the checker. A file, not inline YAML, for the reason
+  =scripts/release-windows.sh= records: PowerShell expands =$(...)= in a
+  double-quoted string itself, so an inline =$(cygpath -u …)= would be
+  evaluated by PowerShell, which has no =cygpath=.
+- =verify:packaged-dwg:windows= (.gitlab/native.yml, manual, 60 min,
+  =.gate-windows-soft=). Deliberately NOT =.gate-windows-cad-*=: this needs
+  MS-Windows, not AutoCAD, so it must neither queue behind the CAD sweep nor
+  be failed by it. It checks =$LASTEXITCODE= after the handoff — PowerShell
+  does not fail a step on a native program's non-zero exit, the trap the
+  release lane documents.
+
+=make check-release= (all five packaging checks) passes with the job added.
+
+*** Still open: the run itself
+
+- [ ] =verify:packaged-dwg:windows= played on the Windows runner, green. It
+      has never run; the Windows runner is intermittent and the job is manual
+      by design. Until then the Windows half is WRITTEN, not demonstrated —
+      and the criteria ask for a demonstration.
 - The DWG written by the packaged binary carries no ENTITIES yet; that is
   =issues/open/dwg-round-trip-loses-entities.issue=, not this one.
