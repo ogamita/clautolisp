@@ -354,7 +354,41 @@ resolves its dependency: **the Linux lane had been passing its first two cases
 without ever loading the installed library.** The check was not checking what
 it claimed, on any machine that has a build tree — which is every CI machine.
 
-*** Fixed — clautolisp 2.2.117
+*** Fixed — clautolisp 2.2.118, in two parts
+
+*The ORDER is the root cause* (2.2.118). =%NATIVE-LIBRARY-DIRECTORIES= is now a
+pure function over the four pieces, and it puts the RUNNING PROGRAM's own
+=lib/clautolisp/<os>/<arch>/= BEFORE the development tree:
+
+: 1. $CLAUTOLISP_DWG_LIBDIR   2. the program's own lib/  3. the dev tree  4. the installed ASDF prefix
+
+A library shipped beside the program belongs to that program; a build tree
+merely happens to exist on the same machine. A developer loses nothing, and
+that is what makes the change safe: running from a checkout the program is the
+host Lisp (or a dev image under =tools/clautolisp/bin/=), neither of which owns
+a =lib/clautolisp/…=, so the dev tree is still what gets found. The order
+settles only the case where BOTH exist — an installed program on a machine with
+a checkout, i.e. every CI machine.
+
+Measured on the BUILT binary, reproducing the Windows situation on Linux (the
+installed prefix complete, the dev copy present but unloadable — a zero-length
+=clal_dwg.so=):
+
+#+begin_example
+$ clautolisp -norc -q -l probe.lsp        # installed program, broken dev copy present
+WROTE-DWG                                  # 302711 bytes, and NO "skipped" line:
+                                           # its own library was taken first
+$ CLAUTOLISP_DWG_LIBDIR=<broken dir> clautolisp -norc -q -l probe.lsp
+clautolisp: skipped the DWG native library .../clal_dwg.so: the dynamic loader
+  refused it: ... file too short.
+WROTE-DWG                                  # the explicit override still ranks
+                                           # first, is skipped, and the search goes on
+#+end_example
+
+The second line is the fall-through below doing its job, and it is also the
+proof that the diagnostic fires at all.
+
+*The FALL-THROUGH keeps a broken candidate from ending the search* (2.2.117):
 
 - =%TRY-LOAD-SHIM= attempts one candidate (its MS-Windows dependency first) and
   returns a REASON instead of signalling. =%SELECT-USABLE-SHIM= walks the
@@ -381,7 +415,12 @@ packaged-dwg: the missing library is named, with the paths tried
 packaged-dwg: OK: a complete installed release writes a DWG, before and after being moved
 #+end_example
 
-Tests: four in =drawing-dwg/tests/dwg-tests.lisp= over =%SELECT-USABLE-SHIM=
+Tests: eight in =drawing-dwg/tests/dwg-tests.lisp= — four over the ORDER
+(=%NATIVE-LIBRARY-DIRECTORIES= as a pure function: the whole order, the
+program before the dev tree, a developer left with the dev tree, several
+program prefixes kept in order; plus one over the real function asserting it is
+duplicate-free and never puts the dev tree first) and four over
+=%SELECT-USABLE-SHIM=
 with injected probe/try functions — so the Windows case is reproducible on
 Linux, with no library on disk: fall through an existing-but-unusable
 candidate (the reported case, asserting the skip is reported), prefer the first

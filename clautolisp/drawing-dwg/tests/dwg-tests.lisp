@@ -89,11 +89,17 @@ libexec wins, so a prefix that itself contains a libexec resolves."
     (is (null (clautolisp.drawing.dwg::running-program-prefix-candidates nil)))))
 
 (test dwg-native-library-directories-order-and-override
-  "The search order is: CLAUTOLISP_DWG_LIBDIR, the development tree, the
-prefixes of the RUNNING program (lib/clautolisp/<os>/<arch>/), then the
-installed-ASDF-source prefix. The override comes first and the
-program-derived candidate is present -- that one is what makes a
-release work with no environment variable and no ASDF sources."
+  "Every kind of candidate is PRESENT: the development tree, and the prefixes
+of the RUNNING program (lib/clautolisp/<os>/<arch>/) -- the latter is what
+makes a release work with no environment variable and no ASDF sources -- with
+no duplicates.
+
+This test only ever checked PRESENCE, although its docstring used to recite an
+order (override, dev tree, program, installed). It therefore passed unchanged
+when the order was corrected to put the program's own library BEFORE the
+development tree, which is a fair warning about prose that claims more than the
+assertions below it. The order itself is asserted by
+NATIVE-LIBRARY-ORDER-PUTS-THE-PROGRAM-BEFORE-THE-DEVELOPMENT-TREE."
   (let* ((dirs (mapcar #'namestring
                        (clautolisp.drawing.dwg::native-library-directories)))
          (platform (format nil "lib/clautolisp/~A/~A/"
@@ -310,3 +316,69 @@ older library"))))
       (is (null path))
       (is (equal (list a b) skipped)
           "all of them, in order: the error message names each one and why"))))
+
+;;; --- the ORDER of the candidate directories -----------------------
+;;;
+;;; The fall-through above keeps a broken candidate from ending the search;
+;;; this is the root cause it was masking. A library shipped BESIDE THE
+;;; PROGRAM belongs to that program; a build tree merely happens to be on the
+;;; same machine. The Windows run of 2026-09-26 had an installed release load
+;;; the checkout's clal_dwg.dll and fail to save.
+
+(test native-library-order-puts-the-program-before-the-development-tree
+  (let ((program "/prefix/lib/clautolisp/windows/x86-64/")
+        (dev "/checkout/clautolisp/drawing-dwg/source/")
+        (installed "/usr/share/common-lisp/.../")
+        (override "/from/the/environment/"))
+    ;; the whole order, with every piece present
+    (is (equal (list override program dev installed)
+               (clautolisp.drawing.dwg::%native-library-directories
+                :override override :program-dirs (list program)
+                :dev-dir dev :installed-libdir installed)))
+    ;; an explicit instruction still outranks everything
+    (is (equal override
+               (first (clautolisp.drawing.dwg::%native-library-directories
+                       :override override :program-dirs (list program)
+                       :dev-dir dev))))
+    ;; the case that was wrong: program before dev tree
+    (is (equal (list program dev)
+               (clautolisp.drawing.dwg::%native-library-directories
+                :program-dirs (list program) :dev-dir dev)))))
+
+(test native-library-order-leaves-a-developer-with-the-development-tree
+  ;; Running from a checkout there is no program-owned library at all (the host
+  ;; Lisp's prefix carries none), so the dev tree is still first -- which is
+  ;; why this order costs a developer nothing.
+  (let ((dev "/checkout/clautolisp/drawing-dwg/source/"))
+    (is (equal (list dev)
+               (clautolisp.drawing.dwg::%native-library-directories
+                :program-dirs '() :dev-dir dev)))))
+
+(test native-library-order-keeps-several-program-prefixes-in-order
+  ;; Two layouts ship (below libexec, and plain bin/); both are candidates and
+  ;; the more specific one stays first.
+  (let ((a "/prefix/lib/clautolisp/linux/x86-64/")
+        (b "/other/lib/clautolisp/linux/x86-64/")
+        (dev "/checkout/clautolisp/drawing-dwg/source/"))
+    (is (equal (list a b dev)
+               (clautolisp.drawing.dwg::%native-library-directories
+                :program-dirs (list a b) :dev-dir dev)))))
+
+(test native-library-directories-is-duplicate-free-and-ordered-for-real
+  ;; The real function, in this image: whatever it yields, it must be free of
+  ;; duplicates and must not put the development tree before a program
+  ;; directory. (In the test image the host Lisp owns no clautolisp library, so
+  ;; this mostly proves the wiring is the pure function above.)
+  (let* ((dirs (clautolisp.drawing.dwg::native-library-directories))
+         (dev (uiop:pathname-directory-pathname
+               (asdf:system-relative-pathname
+                :clautolisp/drawing-dwg "drawing-dwg/source/x")))
+         (dev-at (position dev dirs :test #'equal))
+         (program-at (position-if (lambda (d)
+                                    (search "lib/clautolisp/"
+                                            (namestring d)))
+                                  dirs)))
+    (is (equal dirs (remove-duplicates dirs :test #'equal :from-end t)))
+    (is (integerp dev-at) "the development tree is among the candidates")
+    (is (or (null program-at) (< program-at dev-at))
+        "a program-owned directory, when there is one, comes first")))

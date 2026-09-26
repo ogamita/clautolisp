@@ -1503,16 +1503,30 @@ correct a wrong guess — but it is not its purpose.
 - ~$CLAUTOLISP_DEBUG_PATHMAP~ :: when set to any value, dump the
   build and run path-mapping frames at startup. See /Paths on Windows/.
 - ~$CLAUTOLISP_DWG_LIBDIR~ :: explicit directory for the DWG codec
-  shared library, tried *before* the development tree and the installed
-  layout. The way to point clautolisp at a codec you built yourself.
-  The search tries each candidate in turn and takes the first one that
-  actually *loads*: a candidate that exists but cannot be used — on
-  MS-Windows, typically a ~clal_dwg.dll~ with no ~libredwg.dll~ beside
-  it — is reported on ~*error-output*~ as =skipped the DWG native
-  library … : …= and the next candidate is tried. So a broken local
-  build no longer hides an installed codec, and it does not pass
-  unnoticed either. When no candidate loads, the error names every one
-  that was tried and the loader's own words for each.
+  shared library, tried *first* of all. The way to point clautolisp at a
+  codec you built yourself. The full search order is:
+
+  1. ~$CLAUTOLISP_DWG_LIBDIR~ — your explicit instruction;
+  2. the *running program's own* ~lib/clautolisp/<os>/<arch>/~, found
+     from the program's location, so an unpacked release works wherever
+     it was unpacked;
+  3. the development tree (a checkout's ~drawing-dwg/source/~);
+  4. the installed ASDF source prefix.
+
+  A library shipped beside the program belongs to that program, which is
+  why it outranks a build tree that merely happens to be on the same
+  machine. Running from a checkout you lose nothing: the host Lisp owns
+  no ~lib/clautolisp/…~, so the development tree is still what gets
+  found.
+
+  Each candidate in turn is *loaded*, not merely looked for, and the
+  first one that actually loads wins. A candidate that exists but cannot
+  be used — on MS-Windows, typically a ~clal_dwg.dll~ with no
+  ~libredwg.dll~ beside it — is reported on ~*error-output*~ as =skipped
+  the DWG native library … : …=, with the dynamic loader's own words, and
+  the search goes on. So a broken build neither hides a working codec nor
+  passes unnoticed. When no candidate loads, the error names every one
+  that was tried and why each failed.
 - ~$CLAUTOLISP_PREFIX~ :: the ~$PREFIX~ used to build the trusted
   search path for ~findtrustedfile~ and secure loading; omitted from
   the path when unset.

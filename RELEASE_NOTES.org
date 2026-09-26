@@ -37,13 +37,18 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
-- *An installed release finds its own DWG codec, even when a broken copy
-  comes first.* The search took the first candidate that EXISTED and died
-  on it; it now takes the first that actually LOADS, reporting each
-  skipped one on ~*error-output*~. On MS-Windows this was fatal — an
+- *An installed release loads its OWN DWG codec.* The program's own
+  ~lib/clautolisp/<os>/<arch>/~ now comes before a checkout's build tree
+  in the search order — a library shipped beside the program belongs to
+  it — and each candidate is *loaded* rather than merely looked for, the
+  first that works winning. A candidate that exists but cannot be used is
+  reported on ~*error-output*~ (=skipped the DWG native library …=) with
+  the loader's own words, so a broken build neither hides a working codec
+  nor passes unnoticed. On MS-Windows the old order was fatal: an
   installed program loaded the development tree's ~clal_dwg.dll~, which
   has no ~libredwg.dll~ beside it, and no drawing could be saved. See the
-  user manual § /Environment variables/ (~$CLAUTOLISP_DWG_LIBDIR~).
+  user manual § /Environment variables/ (~$CLAUTOLISP_DWG_LIBDIR~) for
+  the whole order.
 
 - *~(quit)~ at a debugger prompt quits, instead of dumping a host-Lisp
   backtrace.* The debugger UI runs on the aldo companion thread, where the
