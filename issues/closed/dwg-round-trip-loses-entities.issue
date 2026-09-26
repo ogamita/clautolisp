@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: dwg-round-trip-loses-entities — a DWG written by clautolisp comes back with no entities
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: drawing-codec
 #+DEPENDS: -
@@ -205,3 +205,68 @@ One fix from that attempt is kept because it stands alone:
 drawing that already carries a record keeps it, and the seeded records'
 type marker is =BLOCK_RECORD= with the DXF underscore rather than
 =BLOCK-RECORD= from the keyword name.
+
+* Resolved — clautolisp 2.2.121: the template is a SYSVAR, so nothing is imposed
+
+The decision this was parked on — "does a cador document come from the
+template?" — was a false dilemma, and pjb named the way out (2026-09-26): /"Il
+doit y avoir une sysvar pour specifier un template non?"/ A system variable makes
+the structure an explicit, per-session, scriptable CHOICE instead of a silent
+change to what "new document" means. Both answers coexist:
+
+- =CLAUTOLISPNEWDRAWINGTEMPLATE= (string, default ""): the drawing a NEW document
+  is created from. EMPTY keeps today's empty document, so the 22 cador tests that
+  assert it stay correct — they were never wrong, they were describing the
+  default.
+- The ENVIRONMENT variable of the same name governs the STARTUP document, which
+  is built in an =:initform= before any AutoLISP can run. That is why both exist.
+- A RELATIVE name resolves against BricsCAD's =TEMPLATEPATH= (the Templates
+  folder), already in the vendor catalogue, so a script can name just the file
+  the way it would in BricsCAD.
+- An unreadable value is reported on =*error-output*= and the document is created
+  empty: a typo in a variable neither ends the session nor passes unnoticed.
+
+Measured end to end on the BUILT binary — a fresh session, a LINE added through
+ActiveX, saved as DWG, read back with the drawing API:
+
+#+begin_example
+$ CLAUTOLISPNEWDRAWINGTEMPLATE=.../drawing/template/empty-drawing.dxf \
+  clautolisp -norc -q -l probe.lsp          # vla-addline + vla-saveas
+SAVED
+$ ... read it back ...
+ENTITIES=1 BLOCKS=1
+#+end_example
+
+Without the variable the same probe yields =ENTITIES=0=: that IS this defect, and
+it is now a configuration away rather than a wall.
+
+Implementation: =CADOR-NEW-DRAWING-TEMPLATE= / =CADOR-MAKE-NEW-DRAWING=
+(cador/source/sysvars.lisp) for documents opened during a session;
+=%STARTUP-DRAWING= (model.lisp, where the two sysvar NAMES also live, because
+that file loads first and one definition beats the same string written twice) for
+the startup one; and =CLAUTOLISP.DRAWING:MAKE-DRAWING-FROM-TEMPLATE= gained a
+=:TEMPLATE= argument — it had always read the bundled one — and now SNIFFS the
+template's format instead of assuming DXF, since a user's template is as likely
+to be a .dwg or a .dwt.
+
+Tests: five in cador — the default empty document, which PINS the assumption the
+other 22 rest on and says so in its docstring; the sysvar's template used; an
+unreadable value warning and staying empty; a relative name resolved against
+TEMPLATEPATH; and the startup document following the environment, through an
+injected template argument so no environment variable has to be set in-process —
+plus the existing drawing-dwg round trip. Whole clautolisp suite green on SBCL
+(34 suites, 0 failures).
+
+Documented in the user manual twice, as AGENTS.md requires of a user-visible
+setting: /The ActiveX / COM object model/ (what it does, and why DWG needs it)
+and /Environment variables/ (the startup knob). RELEASE_NOTES.org too.
+
+** One question left for pjb, not decided here
+
+AutoCAD's own name for this is, from memory, =QNEWTEMPLATE= — and it is in
+NEITHER autolisp-spec NOR =system-variables-inventory.sexp=, which was generated
+from help.autodesk.com 2026. Adding a vendor sysvar to the normative
+specification on a recollection is precisely what AGENTS.md forbids, so it was
+not done. Filed as a probe question in =deferred-spec-research.issue=: if AutoCAD
+2026 does document QNEWTEMPLATE, accepting it as a second spelling here is a
+two-line change, plus a spec entry and a document-version bump.

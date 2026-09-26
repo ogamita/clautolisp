@@ -134,6 +134,36 @@ back.
     the standard text style, and record it as a documented approximation
     rather than a coincidence.
 
+== QNEWTEMPLATE — does AutoCAD document it? (pjb to confirm) ==
+
+Opened 2026-09-26 while giving clautolisp a template for new drawings
+(dwg-round-trip-loses-entities). pjb: "il doit y avoir une sysvar pour
+specifier un template non?" — and he is right that a sysvar is the
+mechanism. The question is the vendor NAME.
+
+  * From memory, AutoCAD's knob is QNEWTEMPLATE (string, the template
+    file the QNEW command uses, set in Options). It is in NEITHER the
+    specification NOR system-variables-inventory.sexp — and that
+    inventory was GENERATED from help.autodesk.com 2026 ENU, so its
+    absence is evidence, not an oversight of ours. Three readings:
+    (a) the enumeration missed it; (b) AutoCAD 2026 no longer exposes it
+    as a sysvar; (c) it never was one and Options is the only surface.
+    Probe: (getvar "QNEWTEMPLATE") on AutoCAD 2026, and grep the 2026
+    system-variable reference.
+
+  * BricsCAD's TEMPLATEPATH *is* in the spec, but it is the Templates
+    FOLDER, not a file — so it cannot be the whole answer on either
+    vendor. clautolisp honours it for resolving a relative name.
+
+  * What clautolisp does meanwhile: CLAUTOLISPNEWDRAWINGTEMPLATE, a
+    CLAL-namespace extension sysvar (the documented exception for
+    surface with no vendor counterpart), default "" = the empty document
+    of every previous release. If the probe confirms QNEWTEMPLATE,
+    accepting it as a second spelling is two lines here, plus a spec
+    entry (Compatibility: AutoCAD only) and the mandatory
+    document-version bump — pjb's call, since it changes the normative
+    spec.
+
 == Future entries ==
 
 When opening a new SPEC-UNCERTAIN marker, add an `== NAME (Mn) ==`

@@ -46,7 +46,11 @@ answer from the start."
 and return its KEY. Does not change the current document."
   (let* ((dname (or name "Drawing.dwg"))
          (key (%cador-fresh-document-key host dname))
-         (drawing (make-drawing :name dname)))
+         ;; Empty unless CLAUTOLISPNEWDRAWINGTEMPLATE names a readable drawing
+         ;; (pjb, 2026-09-26: the template is a sysvar, not a built-in change of
+         ;; what `new document' means). CADOR-MAKE-NEW-DRAWING is the single
+         ;; place that choice is made.
+         (drawing (cador-make-new-drawing host :name dname)))
     (setf (cador-documents host)
           (append (cador-documents host) (list (cons key drawing))))
     key))

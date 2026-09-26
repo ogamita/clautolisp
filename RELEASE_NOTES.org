@@ -37,6 +37,16 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *A new drawing can be created from a template, so a DWG saved from a
+  fresh session keeps its entities.* The ~CLAUTOLISPNEWDRAWINGTEMPLATE~
+  system variable (and the environment variable of the same name, which
+  governs the startup document) names a ~.dxf~ / ~.dwg~ / ~.dwt~ file; a
+  relative name resolves against BricsCAD's ~TEMPLATEPATH~. Empty — the
+  default — keeps a new document empty, exactly as before. libredwg needs
+  an owner record and a formed BLOCKS section, which a template carries
+  and a drawing assembled from nothing does not. See the user manual
+  § /The ActiveX / COM object model/ and § /Environment variables/.
+
 - *An installed release loads its OWN DWG codec.* The program's own
   ~lib/clautolisp/<os>/<arch>/~ now comes before a checkout's build tree
   in the search order — a library shipped beside the program belongs to

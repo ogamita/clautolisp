@@ -1034,6 +1034,31 @@ provides that surface through the host backend:
   a ~--bricscad~ dialect, to BricsCAD's ~SAVEFORMAT~ integer (AutoCAD has
   no save-format sysvar). The chosen version sets the emitted DXF
   ~$ACADVER~; the DWG writer carries it through libredwg.
+- *A new drawing can be created from a TEMPLATE.* By default a new
+  document is EMPTY, as it always has been. Set the
+  ~CLAUTOLISPNEWDRAWINGTEMPLATE~ system variable to a ~.dxf~ / ~.dwg~ /
+  ~.dwt~ file and a document opened afterwards is created from that
+  drawing's *structure* — its header, symbol table records and
+  ~*Model_Space~ / ~*Paper_Space~ block definitions — with its own name.
+  A relative name is resolved against BricsCAD's ~TEMPLATEPATH~ (the
+  Templates folder) when that is set.
+
+  This matters for *DWG*: libredwg needs an entity's owner record and a
+  properly formed BLOCKS section, so a drawing assembled from nothing
+  loses its entities through a DWG round trip, while one created from a
+  template keeps them. clautolisp ships such a template (installed as
+  ~share/common-lisp/…/clautolisp/drawing/template/empty-drawing.dxf~);
+  pointing the variable at it is enough:
+
+  #+begin_example
+  (setvar "CLAUTOLISPNEWDRAWINGTEMPLATE" "…/drawing/template/empty-drawing.dxf")
+  #+end_example
+
+  The *startup* document is created before any AutoLISP runs, so for that
+  one the *environment variable* of the same name is the knob (see
+  /Environment variables/). A value that cannot be read is reported on
+  ~*error-output*~ and the document is created empty — a typo in a
+  variable does not end the session, and does not pass unnoticed either.
 - ~ModelSpace.AddLine~ and ~Block.AddAttribute~ create entities through
   the object model: ~(vla-addline space start end)~ adds a LINE on the
   current layer, and ~(vla-addattribute block height mode prompt
@@ -1544,6 +1569,16 @@ correct a wrong guess — but it is not its purpose.
   system variable are spelled here, as against clautolisp's own
   ~$CLAUTOLISP_*~ knobs. Honoured under every dialect but ~--strict~,
   the CAD emulation dialects included.
+- ~$CLAUTOLISPNEWDRAWINGTEMPLATE~ :: initial value of the system
+  variable of the same name — the drawing a *new* document is created
+  from (its header, symbol tables and block definitions), or empty (the
+  default) for the empty document clautolisp has always started with. A
+  relative name is resolved against ~$TEMPLATEPATH~, BricsCAD's Templates
+  folder. This variable, not the sysvar, is what governs the *startup*
+  document, which exists before any AutoLISP can run; the sysvar governs
+  documents opened later in the session. A drawing created from a template
+  keeps its entities through a DWG round trip — see /The ActiveX / COM
+  object model/ above for why.
 - ~$CLAUTOLISPDEFAULTDRAWINGFORMAT~ :: initial value of the system
   variable of the same name — the file format a drawing is *written* in
   when neither the destination extension nor the drawing itself selects
