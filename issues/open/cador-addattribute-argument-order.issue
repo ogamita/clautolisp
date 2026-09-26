@@ -1,0 +1,156 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cador-addattribute-argument-order — Block.AddAttribute swaps InsertionPoint and Tag and ignores Value
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: cad-runtime
+#+DEPENDS: -
+#+BRANCH: fix-cador-addattribute-argument-order
+#+DATE: 2026-09-26
+
+* Observed
+
+The SCHME+ ActiveX A1 scenario =creation insertion et mise a jour d'un bloc
+attribue= fails under clautolisp/Cador with:
+
+#+begin_example
+AddAttribute expects a point (a VARIANT/SAFEARRAY of doubles or a number list),
+got "REPERE".
+#+end_example
+
+The application call in
+=LSP/fonctions-utilitaires/technique/bloc.lsp= follows the AutoCAD ActiveX
+signature and passes six arguments after the receiver:
+
+#+begin_src lisp
+(vla-AddAttribute bloc
+                  hauteur-attribut
+                  acAttributeModeNormal
+                  prompt-text
+                  point-ancrage
+                  identifiant-attribut
+                  valeur-par-defaut)
+#+end_src
+
+For the failing case those values are equivalent to:
+
+#+begin_example
+Height         = 1.0
+Mode           = acAttributeModeNormal
+Prompt         = ""
+InsertionPoint = (0.0 0.0 0.0)
+Tag            = "REPERE"
+Value          = ""
+#+end_example
+
+AutoCAD and BricsCAD accept this ordering.  The failure is in Cador's method
+adapter, before the ATTDEF entity is created.
+
+Observed in SCHME+ pipeline 86651, job 516228
+=(test-cad-activex:clautolisp:linux)= at commit =bf0cd375=.
+
+* Cause
+
+The ActiveX contract is:
+
+#+begin_example
+Block.AddAttribute(Height, Mode, Prompt, InsertionPoint, Tag, Value)
+#+end_example
+
+But =clautolisp/cador/source/vlax-api.lisp= currently documents and
+destructures another signature:
+
+#+begin_src lisp
+(defun %block-add-attribute (host collection-kind args)
+  "Block.AddAttribute(Height, Mode, Prompt, Tag, InsertionPoint): ..."
+  (destructuring-bind
+      (&optional height mode prompt tag insertion-point &rest ignore)
+      args
+    ...
+    (ip (%unwrap-com-point insertion-point "AddAttribute"))
+    ...))
+#+end_src
+
+Given the valid SCHME+ call, Cador therefore binds:
+
+#+begin_example
+tag             <- point-ancrage
+insertion-point <- "REPERE"
+ignore          <- ("")
+#+end_example
+
+=%unwrap-com-point= then receives the tag string and emits the observed error.
+The sixth =Value= argument is discarded, and the resulting ATTDEF's DXF group
+1 is always hard-coded to the empty string:
+
+#+begin_src lisp
+(cons 1 "")
+#+end_src
+
+* False-green regression test
+
+The existing test
+=vlax-block-addattribute-adds-an-attdef-to-the-block= in
+=clautolisp/cador/tests/vlax-tests.lisp= passes the arguments in the same wrong
+order as the implementation:
+
+#+begin_src lisp
+(host-vlax-invoke-method host block "AddAttribute"
+  (list 2.5d0 0 "Enter name" "NAME" '(1.0d0 1.0d0 0.0d0)))
+#+end_src
+
+It places ="NAME"= where the real API requires =InsertionPoint= and omits the
+sixth =Value=.  Consequently the test validates Cador against its own mistaken
+contract rather than against AutoCAD/BricsCAD, and cannot catch this defect.
+
+* Fix
+
+Change the adapter to consume all six arguments in vendor order:
+
+#+begin_src lisp
+(destructuring-bind
+    (&optional height mode prompt insertion-point tag value &rest ignore)
+    args
+  ...)
+#+end_src
+
+Then populate the ATTDEF consistently:
+
+- DXF group 10 from =InsertionPoint=;
+- group 40 from =Height=;
+- group 3 from =Prompt=;
+- group 2 from =Tag=;
+- group 1 from =Value=;
+- group 70 from =Mode=.
+
+Correct the existing test to use the vendor order and six arguments.  Add
+assertions for the insertion point, prompt, tag and default value so that a
+future permutation cannot remain green merely because an object was returned.
+
+The public =vla-AddAttribute= and =vlax-invoke-method= paths must both preserve
+the argument list unchanged before it reaches this adapter.
+
+* Acceptance criteria
+
+- Cador implements
+  =AddAttribute(Height, Mode, Prompt, InsertionPoint, Tag, Value)= in exactly
+  that order.
+- A non-empty default =Value= is stored in DXF group 1 and visible through the
+  corresponding ActiveX property.
+- The regression test uses a point, tag and value which are observably
+  different and asserts every mapped field.
+- A test through the AutoLISP =vla-AddAttribute= wrapper covers the same
+  six-argument call, rather than testing only =host-vlax-invoke-method=
+  directly.
+- The SCHME+ =creation insertion et mise a jour d'un bloc attribue= scenario
+  gets past attribute-definition creation and no longer reports that
+  ="REPERE"= was supplied as a point.
+- Existing =Blocks.Add=, =InsertBlock= and attribute-reference update
+  behaviour remains green.
+
+* Related
+
+- =issues/closed/cador-schme-a1-activex-coverage.issue= claimed the A1
+  =Block.AddAttribute= surface complete, but its test encoded this wrong
+  signature.
+- =issues/open/clautolisp-distributed-native-libraries-not-loaded.issue= is
+  the independent DWG writer failure exposed by the same SCHME+ A1 job.
