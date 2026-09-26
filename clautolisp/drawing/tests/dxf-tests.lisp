@@ -396,3 +396,34 @@ space."
           "the entity's own owner must survive")
       (is (not (search (format nil "~%330~%1F~%") text))
           "and must not be replaced by model space"))))
+
+;;; --- version output (drawing-codec-version-output.issue) ----------
+;;; The writers honour the requested version: it becomes the file's
+;;; $ACADVER, which a round-trip reads back into drawing-version.
+
+(test dxf-write-honors-requested-version
+  (let ((d (build-sample-drawing)))               ; own version :ac1027
+    (uiop:with-temporary-file (:pathname p :type "dxf")
+      (dxf-write-drawing d p :version :ac1032)     ; DWG 2018
+      (is (eq :ac1032 (drawing-version (dxf-read-drawing p))))
+      (is (search "AC1032" (uiop:read-file-string p))))
+    ;; With no explicit version the drawing's own version is used.
+    (uiop:with-temporary-file (:pathname p :type "dxf")
+      (dxf-write-drawing d p)
+      (is (eq :ac1027 (drawing-version (dxf-read-drawing p)))))))
+
+(test dxf-binary-write-honors-requested-version
+  (let ((d (build-sample-drawing)))
+    (uiop:with-temporary-file (:pathname p :type "dxf")
+      (dxf-write-binary-drawing d p :version :ac1024) ; DWG 2010
+      (with-open-file (s p :element-type '(unsigned-byte 8))
+        (is (eq :ac1024 (drawing-version (dxf-read-binary-drawing-from-stream s))))))))
+
+(test dxf-acadver-string-validates-version
+  ;; An accepted version keyword -> its $ACADVER string; a bad one and a
+  ;; string are handled without erroring.
+  (is (string= "AC1032" (clautolisp.drawing::%dxf-acadver-string :ac1032)))
+  (is (string= "AC1027" (clautolisp.drawing::%dxf-acadver-string :ac1027)))
+  (is (string= "AC1027" (clautolisp.drawing::%dxf-acadver-string :bogus)))
+  (is (string= "AC1027" (clautolisp.drawing::%dxf-acadver-string nil)))
+  (is (string= "AC1015" (clautolisp.drawing::%dxf-acadver-string "ac1015"))))
