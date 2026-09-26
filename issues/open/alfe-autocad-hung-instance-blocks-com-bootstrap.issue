@@ -1,0 +1,81 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-autocad-hung-instance-blocks-com-bootstrap — a stuck acad.exe the sweep cannot end refuses every later COM session
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: alfe-backend
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-09-26
+
+* Observed
+
+verify:epure-api:windows on master (alfe 2.2.96, job 16753534728,
+2026-09-26 11:30). Both AutoCAD runs died in BOOTSTRAP:
+
+#+begin_example
+alfe: alfe AUTOCAD backend error (phase BOOTSTRAP): AutoCAD COM bridge
+  (cscript) exited before READY (exit 0):
+  ...\bridge-autocad.vbs(189, 1) (null):
+  L'appel a ete rejete par l'appele. [PROCESS-EXITED-BEFORE-READY]
+#+end_example
+
+"L'appel a ete rejete par l'appele" is =RPC_E_CALL_REJECTED= (0x80010001):
+the COM server refused the call. The cause is in the same trace, in the
+sweep that runs before every Windows CAD job:
+
+#+begin_example
+sweep: 97 instance(s) recorded
+sweep: ending orphaned acad.exe pid 21928 (created 20260925132249...)
+sweep: pid 21928 survived Stop-Process
+sweep: ending orphaned acad.exe pid 17640 (created 20260925140116...)
+sweep: pid 17640 survived Stop-Process
+   ... (97 "survived Stop-Process" lines) ...
+sweep: 0 ended, 97 left
+#+end_example
+
+Two acad.exe from the PREVIOUS DAY (13:22 and 14:01 on 2026-09-25) are
+still running and survive Stop-Process every time. A hung AutoCAD owns
+the =AutoCAD.Application= COM registration, and it is that instance
+=GetObject=/=CreateObject= reaches -- so it answers RPC_E_CALL_REJECTED
+(it is modal, or wedged) and every subsequent AutoCAD session fails
+before READY, whatever the session asks for.
+
+So this masks everything else on the AutoCAD side: the EPURE API
+question cannot be answered on AutoCAD while those two processes exist.
+
+* Two defects, and they compound
+
+1. *The sweep cannot end a hung instance.* =scripts/sweep-orphaned-cad.ps1=
+   uses =Stop-Process -Force=, reports "survived", and proceeds. It also
+   reports each of the 97 recorded entries separately although they are
+   two distinct PIDs -- the created-CAD registry accumulates an entry per
+   session and is never pruned, so the log is 97 lines for 2 processes.
+2. *The bridge treats RPC_E_CALL_REJECTED as fatal.* A rejected call is
+   the documented "server is busy" answer in AutoCAD automation, and the
+   standard handling is to retry with a short back-off (that is what an
+   =IMessageFilter= does for a native client). Failing the bootstrap on
+   the first rejection makes a transiently busy AutoCAD indistinguishable
+   from a wedged one.
+
+* Directions
+
+- Escalate in the sweep: after Stop-Process fails, try
+  =taskkill /PID <pid> /T /F=; if the process still exists, FAIL THE JOB
+  EARLY with a message naming the PIDs, instead of letting a doomed
+  AutoCAD bootstrap run and report a COM error that looks like alfe's
+  fault. A hung CAD is a runner-hygiene problem and must be reported as
+  one.
+- Prune the created-CAD registry: drop entries whose PID no longer
+  exists, so the log reflects reality and the sweep does not re-report
+  the same two processes 97 times.
+- Retry RPC_E_CALL_REJECTED in bridge-autocad.vbs (a few attempts, ~1 s
+  apart) before giving up, and say in the final message how many
+  attempts were made.
+- Then re-run verify:epure-api:windows to get the AutoCAD half of the
+  EPURE API answer (alfe-plugin-epure-windows-validation).
+
+* Note
+
+The same job answered the BricsCAD half: the file run reached READY in
+25.7 s and reported =DONE 1 FAIL= with exit 1, which is the 2.2.91 fix
+working on a real CAD -- before it, that run was a silent success.
