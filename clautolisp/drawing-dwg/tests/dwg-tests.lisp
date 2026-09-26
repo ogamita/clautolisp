@@ -158,12 +158,57 @@ $ACADVER, DWG_ERR_IOERROR for the group-70 overflow."
            (let ((back (clautolisp.drawing:read-drawing out)))
              (is (eq :dwg (clautolisp.drawing:drawing-format back))
                  "the file written must read back as a DWG")
-             ;; The ENTITY does not survive, and that is a separate,
-             ;; pre-existing defect of the DWG round trip -- a drawing
-             ;; PARSED from a DWG loses an added entity the same way, so
-             ;; it is not about being built in memory. Filed as
-             ;; dwg-round-trip-loses-entities; asserting it here would
-             ;; only pin this test to that bug's fix.
+             ;; The ENTITY still does not survive from a drawing built
+             ;; ENTIRELY here, and the reason is now known precisely
+             ;; (dwg-round-trip-loses-entities): libredwg needs the
+             ;; entity's owner handle to RESOLVE -- which it now does,
+             ;; group 330 is written and the record carries the handle --
+             ;; AND a properly formed BLOCKS section, with the
+             ;; *Model_Space BLOCK header carrying its own handle, owner
+             ;; and AcDbEntity / AcDbBlockBegin markers. Our writer emits
+             ;; a bare BLOCK / ENDBLK pair, so the second half is missing.
+             ;; A drawing PARSED from a DWG has both and round-trips its
+             ;; entities (dwg-parsed-drawing-keeps-its-entities below).
              (is (zerop (clautolisp.drawing:drawing-entity-count back))
-                 "documents today's entity loss; see dwg-round-trip-loses-entities")))
+                 "documents what a bare skeleton still loses; see ~
+dwg-round-trip-loses-entities")))
       (ignore-errors (delete-file out)))))
+
+(test dwg-parsed-drawing-keeps-its-entities
+  "A drawing read from a DWG, given one more entity, comes back from a DWG
+round trip with ONE MORE than the same drawing round-tripped unchanged.
+That is the half dwg-round-trip-loses-entities fixed: an entity is now
+written with its owner block record (group 330), which libredwg requires
+and our writer did not emit -- a LINE used to vanish into a successful
+save.
+
+The comparison is against the SAME drawing round-tripped without the
+addition, not against the source, because libredwg's own writer does not
+keep every entity type of a rich sample: example_2000.dwg goes in with
+228 entities and comes out with 183, and an entity ADDED to it is lost
+among them. sample_2000.dwg is small and lossless (6 in, 6 out), which is
+why it is the fixture here; example_r13 and example_r14 behave too. What
+must hold is the DELTA: adding one entity adds one."
+  (let* ((source (sample-dwg "sample_2000.dwg"))
+         (plain (clautolisp.drawing:read-drawing source))
+         (with-line (clautolisp.drawing:read-drawing source))
+         (out-plain (format nil "/tmp/clal-dwg-plain-~D.dwg" (get-internal-real-time)))
+         (out-line (format nil "/tmp/clal-dwg-line-~D.dwg" (get-internal-real-time))))
+    (clautolisp.drawing:add-entity
+     with-line (list (cons 0 "LINE") (cons 8 "0")
+                     (cons 10 0.0d0) (cons 20 0.0d0) (cons 30 0.0d0)
+                     (cons 11 7.0d0) (cons 21 7.0d0) (cons 31 0.0d0)))
+    (unwind-protect
+         (progn
+           (clautolisp.drawing:write-drawing plain out-plain :format :dwg)
+           (clautolisp.drawing:write-drawing with-line out-line :format :dwg)
+           (let ((back-plain (clautolisp.drawing:drawing-entity-count
+                              (clautolisp.drawing:read-drawing out-plain)))
+                 (back-line (clautolisp.drawing:drawing-entity-count
+                             (clautolisp.drawing:read-drawing out-line))))
+             (is (plusp back-plain) "the sample's entities must survive at all")
+             (is (= (1+ back-plain) back-line)
+                 "the added entity must survive: ~D without it, ~D with it"
+                 back-plain back-line)))
+      (ignore-errors (delete-file out-plain))
+      (ignore-errors (delete-file out-line)))))

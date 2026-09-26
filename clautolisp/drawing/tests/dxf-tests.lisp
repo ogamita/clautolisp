@@ -336,3 +336,63 @@ still uses 70 and nothing else about the header changes."
         (is (search "90" text :start2 pos :end2 (min (length text) (+ pos 24)))
             "a 10000000 sysvar must be written with group 90: ~S"
             (subseq text pos (min (length text) (+ pos 24))))))))
+
+;;; --- Entities name their owner -------------------------------------
+;;;
+;;; dwg-round-trip-loses-entities. An entity in a DXF belongs to a block
+;;; record -- model space is the record named "*Model_Space" -- and says
+;;; so with group 330. libredwg SILENTLY DROPS an entity that does not,
+;;; or whose owner handle does not resolve: a LINE written without it came
+;;; back from a DWG round trip as nothing, with rc 0. The 100 AcDbEntity /
+;;; AcDbLine subclass markers turned out not to matter; the owner does.
+
+(test dxf-entities-carry-their-owner-block-record
+  "A model-space entity is written with (330 . H) where H is the handle of
+the *Model_Space BLOCK_RECORD, and the record is written WITH that handle
+-- so the reference resolves. The handle is allocated when the record has
+none, which is what a from-scratch drawing has, and it lands AFTER the
+record's (0 . \"BLOCK_RECORD\") marker, because a DXF object must begin
+with its type."
+  (let ((d (make-drawing :version :ac1027)))
+    (add-table-record d (make-symbol-table-record
+                         :kind :block-record :name "*Model_Space"
+                         :data (list (cons 0 "BLOCK_RECORD")
+                                     (cons 2 "*Model_Space"))))
+    (add-entity d (list (cons 0 "LINE") (cons 8 "0")
+                        (cons 10 0.0d0) (cons 20 0.0d0) (cons 30 0.0d0)
+                        (cons 11 1.0d0) (cons 21 1.0d0) (cons 31 0.0d0)))
+    (let* ((text (with-output-to-string (s) (dxf-write-drawing-to-stream d s)))
+           (record (find-table-record d :block-record "*Model_Space"))
+           (handle (cdr (assoc 5 (symbol-table-record-data record)))))
+      (is (stringp handle) "the record must have been given a handle")
+      ;; The record's data starts with its type, then the handle.
+      (is (= 0 (car (first (symbol-table-record-data record))))
+          "the (0 . type) pair must stay first: ~S"
+          (subseq (symbol-table-record-data record) 0 2))
+      (is (= 5 (car (second (symbol-table-record-data record)))))
+      ;; The entity names it.
+      (let* ((pos (search (format nil "~%LINE~%") text))
+             (window (and pos (subseq text pos (min (length text) (+ pos 120))))))
+        (is (not (null pos)) "the LINE must be written")
+        (is (search (format nil "~%330~%~A~%" handle) window)
+            "the entity must name the owner handle ~S: ~S" handle window))
+      ;; And the record itself carries that handle, so the reference resolves.
+      (is (search (format nil "~%5~%~A~%" handle) text)))))
+
+(test dxf-entities-keep-an-owner-they-already-have
+  "An entity that already carries a 330 keeps it: a drawing read from a
+file has real owners, and the writer must not overwrite them with model
+space."
+  (let ((d (make-drawing :version :ac1027)))
+    (add-table-record d (make-symbol-table-record
+                         :kind :block-record :name "*Model_Space"
+                         :data (list (cons 0 "BLOCK_RECORD") (cons 5 "1F")
+                                     (cons 2 "*Model_Space"))))
+    (add-entity d (list (cons 0 "LINE") (cons 8 "0") (cons 330 "ABC")
+                        (cons 10 0.0d0) (cons 20 0.0d0) (cons 30 0.0d0)
+                        (cons 11 1.0d0) (cons 21 1.0d0) (cons 31 0.0d0)))
+    (let ((text (with-output-to-string (s) (dxf-write-drawing-to-stream d s))))
+      (is (search (format nil "~%330~%ABC~%") text)
+          "the entity's own owner must survive")
+      (is (not (search (format nil "~%330~%1F~%") text))
+          "and must not be replaced by model space"))))
