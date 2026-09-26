@@ -1521,10 +1521,16 @@ correct a wrong guess — but it is not its purpose.
 
   Each candidate in turn is *loaded*, not merely looked for, and the
   first one that actually loads wins. A candidate that exists but cannot
-  be used — on MS-Windows, typically a ~clal_dwg.dll~ with no
-  ~libredwg.dll~ beside it — is reported on ~*error-output*~ as =skipped
-  the DWG native library … : …=, with the dynamic loader's own words, and
-  the search goes on. So a broken build neither hides a working codec nor
+  be used — on MS-Windows, typically a ~clal_dwg.dll~ with no libredwg
+  DLL beside it — is reported on ~*error-output*~ as =skipped the DWG
+  native library … : …=, with the dynamic loader's own words, and the
+  search goes on.
+
+  On MS-Windows the codec's own dependency is pre-loaded from beside it,
+  because a DLL carries no rpath and that directory is not on ~PATH~. Its
+  name is toolchain-dependent — MSYS2 links it ~msys-redwg.dll~, others
+  ~libredwg-0.dll~, ~cygredwg-0.dll~ or ~libredwg.dll~ — so any ~.dll~
+  beside the codec whose name contains ~redwg~ is taken as it. So a broken build neither hides a working codec nor
   passes unnoticed. When no candidate loads, the error names every one
   that was tried and why each failed.
 - ~$CLAUTOLISP_PREFIX~ :: the ~$PREFIX~ used to build the trusted

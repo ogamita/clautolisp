@@ -382,3 +382,34 @@ older library"))))
     (is (integerp dev-at) "the development tree is among the candidates")
     (is (or (null program-at) (< program-at dev-at))
         "a program-owned directory, when there is one, comes first")))
+
+;;; --- the libredwg DLL's name is toolchain-dependent ----------------
+;;;
+;;; Measured on the Windows runner (2026-09-26): MSYS2 links libredwg as
+;;; msys-redwg.dll. The pre-load check hard-coded "libredwg.dll", so a
+;;; correctly installed pair was reported as a shim without its dependency --
+;;; twice, once blaming the development tree and once the installed prefix.
+
+(test libredwg-dependency-is-recognised-under-every-toolchain-spelling
+  (flet ((found (&rest names)
+           (let ((hit (clautolisp.drawing.dwg::%libredwg-dependency-in
+                       (mapcar #'pathname names))))
+             (and hit (file-namestring hit)))))
+    ;; the spelling that actually shipped on the runner
+    (is (equal "msys-redwg.dll" (found "/lib/clal_dwg.dll" "/lib/msys-redwg.dll")))
+    ;; and the others in the wild
+    (is (equal "libredwg.dll" (found "/lib/libredwg.dll")))
+    (is (equal "libredwg-0.dll" (found "/lib/libredwg-0.dll")))
+    (is (equal "cygredwg-0.dll" (found "/lib/cygredwg-0.dll")))
+    (is (equal "redwg.dll" (found "/lib/redwg.dll")))
+    ;; case does not decide it
+    (is (equal "LibReDWG.dll" (found "/lib/LibReDWG.dll")))))
+
+(test libredwg-dependency-does-not-mistake-the-shim-for-itself
+  ;; clal_dwg contains "dwg" but not "redwg" -- which is why that is the test.
+  (is (null (clautolisp.drawing.dwg::%libredwg-dependency-in
+             (list (pathname "/lib/clal_dwg.dll")))))
+  (is (null (clautolisp.drawing.dwg::%libredwg-dependency-in '())))
+  ;; an unrelated DLL beside it is not the dependency either
+  (is (null (clautolisp.drawing.dwg::%libredwg-dependency-in
+             (list (pathname "/lib/clal_dwg.dll") (pathname "/lib/zlib1.dll"))))))

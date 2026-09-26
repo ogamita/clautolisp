@@ -45,10 +45,13 @@ separate binary for tool integrators.
   reported on ~*error-output*~ (=skipped the DWG native library …=) with
   the loader's own words, so a broken build neither hides a working codec
   nor passes unnoticed. On MS-Windows the old order was fatal: an
-  installed program loaded the development tree's ~clal_dwg.dll~, which
-  has no ~libredwg.dll~ beside it, and no drawing could be saved. See the
-  user manual § /Environment variables/ (~$CLAUTOLISP_DWG_LIBDIR~) for
-  the whole order.
+  installed program loaded the development tree's ~clal_dwg.dll~ and no
+  drawing could be saved. The codec's own dependency is also recognised
+  under every toolchain spelling — MSYS2 links it as ~msys-redwg.dll~,
+  not ~libredwg.dll~ — so a correctly installed pair is no longer
+  reported as a shim with a missing dependency. See the user manual
+  § /Environment variables/ (~$CLAUTOLISP_DWG_LIBDIR~) for the whole
+  order.
 
 - *~(quit)~ at a debugger prompt quits, instead of dumping a host-Lisp
   backtrace.* The debugger UI runs on the aldo companion thread, where the
