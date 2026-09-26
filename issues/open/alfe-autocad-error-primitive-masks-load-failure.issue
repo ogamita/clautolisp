@@ -1,0 +1,126 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-autocad-error-primitive-masks-load-failure — deported LOAD calls undefined ERROR and hides the original failure
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: cad-runtime
+#+DEPENDS: -
+#+BRANCH: fix-alfe-autocad-error-primitive-masks-load-failure
+#+DATE: 2026-09-26
+
+* Observed
+
+Two SCHME+ jobs driven by ALFE against AutoCAD 2022 fail on the first
+=tu:load= in their test entry point:
+
+#+begin_example
+ERROR protocol request 5: while loading .../alfe/esrc-test-cad.lsp
+  (form starting at line 5) at line 5, column 1:
+  no function definition: ERROR
+#+end_example
+
+The unit-test entry point fails identically on its own first =tu:load=:
+
+#+begin_example
+ERROR protocol request 5: while loading .../alfe/esrc-test-unitaire.lsp
+  (form starting at line 5) at line 5, column 1:
+  no function definition: ERROR
+#+end_example
+
+The generated entry points are ordinary AutoLISP.  Line 5 is respectively:
+
+#+begin_src lisp
+(tu:load "LSP/fonctions-utilitaires/technique/logiciel.lsp")
+(tu:load "LSP/fonctions-utilitaires/technique/autolisp.lsp")
+#+end_src
+
+Both equivalent BricsCAD jobs pass in the same pipeline: CAD reports 6/6 and
+the unit group 20/20.  The failure is therefore on the AutoCAD path through
+ALFE's CAD-side runtime, before SCHME+'s assertions execute.
+
+Observed in SCHME+ pipeline 86651 at commit =bf0cd375=:
+
+- job 516229, =test-cad:autocad:windows=;
+- job 516232, =test-unitaire:autocad:windows=.
+
+The two identical lines in each job are a separate known reporting defect;
+see =issues/open/alfe-cad-error-reported-twice-on-stderr.issue=.
+
+* Cause
+
+AutoCAD reports exactly what the CAD-side runtime asks it to resolve: the
+function =ERROR=.  That function is not available in this AutoCAD AutoLISP
+host, but the deported source loader uses it as its rethrow primitive in
+=autolisp-front-end/source/runtime/autolisp-bootstrap.lsp=.
+
+At least two paths are affected:
+
+#+begin_src lisp
+(defun autolisp-source-raise (... / msg)
+  ...
+  (error msg))
+
+(defun autolisp-source-load-core-impl (... / ... catch-result)
+  ...
+  (if (vl-catch-all-error-p catch-result)
+    (error (vl-catch-all-error-message catch-result))
+    catch-result))
+#+end_src
+
+The source-aware loader catches an error while evaluating a loaded form and
+then tries to re-signal it by calling =ERROR=.  On AutoCAD that attempted
+rethrow raises a new undefined-function error.  Consequently the useful
+original condition and message are lost; ALFE can only report =no function
+definition: ERROR= against the outer =tu:load= form.
+
+This remains present on =master= at =b8a1f15a=, so it is not only a stale
+installed-runtime symptom.
+
+* Reproduction
+
+On a Windows host with AutoCAD 2022, run ALFE's source-aware loader on a file
+which performs a nested =load= and whose nested evaluation signals an error.
+The SCHME+ reproducer is:
+
+#+begin_example
+make test-cad-alfe CAD=autocad
+make test-unitaire-alfe CAD=autocad
+#+end_example
+
+With =--keep-workdir=, inspect =alfe/esrc-test-cad.lsp= or
+=alfe/esrc-test-unitaire.lsp= and =console.err=.  The request reaches the
+first nested load, then reports the undefined =ERROR= function instead of the
+condition which made the source loader rethrow.
+
+A minimal regression scenario should not depend on SCHME+: stage an outer
+file which loads an inner file whose evaluated form fails, and exercise it
+through the emitted AutoCAD runtime.
+
+* Fix direction
+
+Do not use an assumed =ERROR= function as the CAD-portable non-local signalling
+mechanism.  Refactor the source loader so that it transports a structured
+failure through the existing =vl-catch-all-apply= / =*error*= boundary, or use
+an error-signalling operation whose presence and semantics have been verified
+on every supported CAD backend.
+
+The fix must preserve the source-aware diagnostic already assembled by
+=autolisp-source-format-error=, including the inner pathname, line, column,
+form start and nested load stack.  Merely avoiding the call while returning
+=nil= would turn a failed load into an apparent success and is not acceptable.
+
+Audit every =(error ...)= in the emitted CAD runtime, not only the two calls
+above: bootstrap, request evaluation, quit propagation and legacy batch paths
+contain further calls which can fail the same way once reached under AutoCAD.
+
+* Acceptance criteria
+
+- The emitted AutoCAD runtime contains no reachable dependency on an
+  undefined =ERROR= function.
+- A nested loaded-file failure reaches ALFE as a failed request with the
+  original error text and the correct inner source location/load stack; it is
+  not replaced by =no function definition: ERROR=.
+- A regression test exercises the emitted runtime with =ERROR= unavailable
+  and proves both the request status and diagnostic text.
+- The SCHME+ AutoCAD CAD and unit entry points get past their first =tu:load=
+  (or, if an independent source error remains, report that underlying error).
+- BricsCAD and clautolisp source-load behaviour remains unchanged.
