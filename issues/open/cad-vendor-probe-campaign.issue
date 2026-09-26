@@ -42,3 +42,28 @@ issue tracks that campaign; each target issue is closed on its own evidence.
 
 - 2026-09-26: campaign opened; MR spawns the native child; playing the AutoCAD
   and BricsCAD probe jobs. (Results appended as they return.)
+
+** 2026-09-26 — first probe round + bridge fix
+
+detect:runners: MACOS_RUNNER=online, WINDOWS_RUNNER=online. Native child
+2885655529 ran the AutoCAD/BricsCAD probes. Findings:
+
+- BLOCKER FOUND (alfe 2.2.107): vendor:probes:autocad failed before READY with
+  bridge-autocad.vbs(138,1) "Variable non definie: 'lastTouchError'" — every
+  AutoCAD probe then reported "backend unreachable" (3 probes failed). The
+  bridge's Option Explicit script assigns lastTouchError (the hung-instance
+  retry, alfe-autocad-hung-instance-blocks-com-bootstrap) but never Dim'd it.
+  FIX: added lastTouchError to the Dim in backend-autocad.lisp; added a headless
+  regression test (autocad-bridge-template-declares-every-global-under-option-
+  explicit) that lints the emitted template for any Option-Explicit global
+  assigned-but-not-Dim'd. alfe suite 1202/1202. Relates to
+  alfe-autocad-vbscript-comments. This unblocks #4 verification and the AutoCAD
+  vla SPEC-UNCERTAIN probes on the next run.
+
+- #5 accoreconsole-deported-load-highbyte REPRODUCED: encoding:experiment:
+  autocad:windows shows source.{default,utf8,utf16le}.load = LOAD-ERR for a file
+  containing (setq ENCSRC "A<e9>Z") across chcp 1252/437, UTF-8, C — while plain
+  open+read-char reads the bytes fine (file.default.hex = 41 e9 ac 42). So the
+  deported source-load chokes on the high byte specifically; the probe masks the
+  real error as LOAD-ERR. NEXT: surface the actual error message, then bring
+  autolisp-source-load to the encoding-honouring reference loader.

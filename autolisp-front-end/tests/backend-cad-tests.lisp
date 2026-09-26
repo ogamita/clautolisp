@@ -2544,6 +2544,62 @@ stage, and Err.Number in decimal AND hex with Err.Description."
     ;; Err.Number must be captured into a local before anything can clear it
     (is (search "errNumber" text))))
 
+;;; --- Option Explicit hygiene: every global must be Dim'd -----------
+;;;
+;;; alfe-autocad-vbscript / accoreconsole probe 2026-09-26: the bridge died
+;;; before READY with `bridge-autocad.vbs(138,1) Variable non definie:
+;;; lastTouchError' — a top-level variable assigned but never Dim'd under
+;;; Option Explicit. cscript exited 0, so every AutoCAD probe reported
+;;; "backend unreachable". VBScript cannot run on the Linux CI, but this
+;;; class of bug is visible in the emitted template: under Option Explicit
+;;; every column-0 `ident = ...' assignment must have a matching Dim.
+
+(defun %vbs-lines (text)
+  (with-input-from-string (s text)
+    (loop for line = (read-line s nil :eof)
+          until (eq line :eof) collect line)))
+
+(defun %vbs-leading-identifier (line)
+  (when (and (plusp (length line))
+             (let ((c (char line 0))) (or (alpha-char-p c) (char= c #\_))))
+    (subseq line 0 (or (position-if-not (lambda (c) (or (alphanumericp c) (char= c #\_)))
+                                         line)
+                       (length line)))))
+
+(defun %vbs-dim-names (lines)
+  (let ((names '()))
+    (dolist (line lines names)
+      (let ((trimmed (string-left-trim '(#\Space #\Tab) line)))
+        (when (and (>= (length trimmed) 4) (string-equal "Dim " (subseq trimmed 0 4)))
+          (dolist (piece (uiop:split-string (subseq trimmed 4) :separator '(#\,)))
+            (let ((id (%vbs-leading-identifier (string-left-trim '(#\Space #\Tab) piece))))
+              (when id (push (string-downcase id) names)))))))))
+
+(defun %vbs-toplevel-assignments (lines)
+  (let ((names '()))
+    (dolist (line lines (nreverse names))
+      (let* ((id (%vbs-leading-identifier line))
+             (rest (and id (string-left-trim '(#\Space #\Tab) (subseq line (length id))))))
+        (when (and id rest (plusp (length rest)) (char= (char rest 0) #\=)
+                   (or (< (length rest) 2) (char/= (char rest 1) #\=)))
+          (pushnew (string-downcase id) names :test #'string=))))))
+
+(test autocad-bridge-template-declares-every-global-under-option-explicit
+  "Regression for the accoreconsole bridge crash `Variable non definie:
+lastTouchError': under Option Explicit every top-level assigned variable must
+be Dim-declared, or the emitted .vbs dies before READY and every AutoCAD probe
+fails backend-unreachable."
+  (let* ((text alfe.backend.autocad::*bridge-autocad-vbs-template*)
+         (lines (%vbs-lines text)))
+    (if (search "Option Explicit" text)
+        (let* ((dims (%vbs-dim-names lines))
+               (assigned (%vbs-toplevel-assignments lines))
+               (undeclared (remove-if (lambda (n) (member n dims :test #'string=)) assigned)))
+          (is (null undeclared)
+              "top-level VBScript globals assigned but never Dim'd: ~{~A~^, ~}" undeclared)
+          (is (member "lasttoucherror" dims :test #'string=)))
+        (is nil "template unexpectedly lacks Option Explicit"))))
+
 (test autocad-bridge-exit-message-reports-the-com-failure
   "The bootstrap error must carry the COM failure and name the stage
 accurately: cscript exiting is not proof that acad.exe exited."
