@@ -1,0 +1,95 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: clal-sedit-recall-filename-quotes-and-tilde — recalled source path keeps its quotes and does not expand ~
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+
+* Symptom
+
+Found 2026-09-13 while investigating =navi-double-quit= (its trace shows it,
+but it is a distinct defect from the quit semantics). Recalling a file-loaded
+definition through =(CLAL-SEDIT 'FACT)= from the toplevel resolves the source
+file to, literally:
+
+: #P".../\"~/src/public/autolisp/fact.lsp\""
+
+Two things are wrong with that one path:
+
+1. The surrounding double-quote characters are KEPT inside the name — the
+   recorded source string was =~/src/public/autolisp/fact.lsp= written with
+   its reader quotes, and they were never stripped.
+2. The leading =~= is NOT expanded to the home directory, and the whole
+   (still-quoted) string is merged against the cwd, so it resolves nowhere.
+
+* Cause (located, not yet fixed)
+
+The symbol→recorded-file recall path:
+- =%clal-sedit-target= resolves the symbol arg to the keyword under which the
+  source file was recorded — =autolisp-builtins-core/source/api.lisp:5659=.
+- The bad pathname surfaces in =source-file-open=, which uses
+  =(merge-pathnames path)= — =autolisp-builtins-core/source/source-file.lisp:117-127=.
+  =cl:merge-pathnames= does not expand =~=, and the incoming =path= still
+  carries literal surrounding =\"= quote characters.
+
+So the fix is on the recall path: strip the reader quotes from the recorded
+source string and expand =~= (via =uiop:native-namestring= /
+=uiop:parse-native-namestring=, or the project's existing home-expansion
+helper) before handing it to =source-file-open=.
+
+* Acceptance criteria
+
+- =(clal-sedit 'fn)= for a function loaded from =~/…/fn.lsp= opens the real
+  file (quotes stripped, =~= expanded), and a test covers the recall path.
+- No change to opening a file given by an already-absolute/relative path.
+
+* Note
+
+Filed per the "write tickets for bugs found while doing something else" rule.
+Surfaced in the =navi-double-quit= trace; see
+=clautolisp/documentation/clautolisp-interactor-state-diagram.org= §3.
+
+* Resolved — clautolisp 2.2.108
+
+Fixed at the storage boundary rather than on one recall path, because a path
+reaches sedit as TEXT from several directions and every one of them showed the
+defect.
+
+=CLAUTOLISP.SEDIT:NORMALIZE-SOURCE-PATH= (autolisp-sedit/source/session.lisp)
+removes a matched pair of surrounding reader double quotes and expands a
+leading =~= / =~/= through =USER-HOMEDIR-PATHNAME=; a pathname, NIL, an
+absolute or relative path and a =~user= form pass through unchanged. It is
+applied where a path becomes a pathname:
+
+- =%RESOLVE-OPEN='s string branch — normalised ONCE, so the session ORIGIN
+  records the corrected path and a later save writes the file the user meant;
+- =%OPEN-FILE-NODE=;
+- the editor's raw-argument commands =s= (=%DO-SAVE=), =w= (=%DO-WRITE-NEW=)
+  and =load= (=%DO-LOAD=) in modes.lisp — the tokens an interactor read, which
+  is where the quotes come from in the first place;
+- =SOURCE-FILE-OPEN= and =WRITE-NEW-SOURCE-FILE= in
+  autolisp-builtins-core/source/source-file.lisp (the site named in /Cause/).
+
+Measured, not assumed: both host Lisps mishandle a quoted path, and they
+disagree about =~=. For a quoted =~/x.lsp= SBCL's MERGE-PATHNAMES yields
+=<cwd>/"~/x.lsp"= (pjb's symptom exactly) and CCL ="~/x.lsp"= with the quotes
+IN the name; an unquoted =~/x.lsp= keeps its =~/= under SBCL but is expanded at
+parse time under CCL, and a bare =~= becomes a file NAMED =~= under SBCL. So
+the expansion is also what makes a recorded path host-independent.
+
+Tests: =normalize-source-path-strips-reader-quotes-and-expands-tilde=,
+=open-a-quoted-path-opens-the-real-file= and
+=open-a-tilde-path-opens-the-file-under-the-home-directory=
+(autolisp-sedit/tests/session-tests.lisp) plus
+=source-file-open-accepts-a-path-as-the-user-typed-it=
+(autolisp-builtins-core/tests/source-file-tests.lisp). Verified on the BUILT
+binary too: a quoted =~/…/fact.lsp= handed to =clal-sedit= printed =[]= — an
+empty editor — before, and opens the real =defun= now.
+
+The acceptance criterion "no change to opening a file given by an
+already-absolute/relative path" is covered by the unchanged-input assertions
+and by the pre-existing file/directory open tests, which still pass.
+
+Documented in clautolisp-user-manual.org § /Starting sedit from AutoLISP/
+("How a path may be spelled") and in RELEASE_NOTES.org.

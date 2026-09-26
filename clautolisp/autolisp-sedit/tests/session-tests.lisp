@@ -93,6 +93,57 @@
       ;; initial selection is the first Lisp/sexp file, not ".." (spec §2.4)
       (is (equal "one.lsp" (file-node-name (state-focus (sedit-session-state s))))))))
 
+;;; --- a path as the user typed it (clal-sedit-recall-filename-quotes-and-tilde)
+
+(test normalize-source-path-strips-reader-quotes-and-expands-tilde
+  (let ((home (namestring (user-homedir-pathname))))
+    ;; the quotes an interactor command argument keeps around the typed token
+    (is (equal "/tmp/fact.lsp" (normalize-source-path "\"/tmp/fact.lsp\"")))
+    ;; ~ expanded — and expanded through the quotes, which is the reported case
+    (is (equal (concatenate 'string home "src/fact.lsp")
+               (normalize-source-path "~/src/fact.lsp")))
+    (is (equal (concatenate 'string home "src/fact.lsp")
+               (normalize-source-path "\"~/src/fact.lsp\"")))
+    (is (equal home (normalize-source-path "~")))
+    ;; unchanged: an absolute path, a relative path, a ~user form, a pathname, NIL
+    (is (equal "/tmp/fact.lsp" (normalize-source-path "/tmp/fact.lsp")))
+    (is (equal "src/fact.lsp" (normalize-source-path "src/fact.lsp")))
+    (is (equal "~other/fact.lsp" (normalize-source-path "~other/fact.lsp")))
+    (is (equal #P"/tmp/fact.lsp" (normalize-source-path #P"/tmp/fact.lsp")))
+    (is (null (normalize-source-path nil)))
+    ;; a lone quote is not a matched pair: it stays part of the name
+    (is (equal "\"odd.lsp" (normalize-source-path "\"odd.lsp")))))
+
+(test open-a-quoted-path-opens-the-real-file
+  ;; Before the fix a quoted path resolved to a file literally named
+  ;; "\"…\"" under the current directory: sedit opened an EMPTY node and a
+  ;; save would have created that absurd name.
+  (with-temp-dir (dir)
+    (let ((path (namestring (merge-pathnames "foo.lsp" dir))))
+      (sedit-save (parse-source (format nil "(defun a () 1)~%")) path)
+      (let ((s (sedit-open (format nil "\"~A\"" path))))
+        ;; the ORIGIN records the corrected path, so a later save writes here
+        (is (equal (list :file path) (sedit-session-origin s)))
+        (is (equal '(:defun :a () 1) (tree->sexp (state-focus (sedit-session-state s)))))))))
+
+(test open-a-tilde-path-opens-the-file-under-the-home-directory
+  (let* ((name (format nil "clautolisp-sedit-test-~A.lsp" (gensym "T")))
+         (path (merge-pathnames name (user-homedir-pathname)))
+         (writable (ignore-errors
+                    (sedit-save (parse-source (format nil "(defun h () 7)~%")) path)
+                    t)))
+    (if writable
+        (unwind-protect
+             (let ((s (sedit-open (format nil "\"~~/~A\"" name))))
+               (is (equal (namestring path) (second (sedit-session-origin s))))
+               (is (equal '(:defun :h () 7)
+                          (tree->sexp (state-focus (sedit-session-state s))))))
+          (ignore-errors (delete-file path)))
+        ;; an unwritable home (a hardened runner): the string form is still
+        ;; the contract, and it is what the open above relies on
+        (is (equal (namestring path)
+                   (normalize-source-path (format nil "\"~~/~A\"" name)))))))
+
 ;;; --- the §2 result table --------------------------------------------------
 
 (test result-is-the-top-level-form-the-selection-is-in

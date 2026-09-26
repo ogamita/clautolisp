@@ -119,6 +119,11 @@ recorded here — SOURCE-FILE-READ records the form it returns."
 'UPDATE (or :UPDATE) to edit them. A non-existent file opens empty (it is
 created by SOURCE-FILE-SAVE-AND-CLOSE). Returns a SOURCE-FILE."
   (let* ((mode (intern (string-upcase (string mode)) :keyword))
+         ;; PATH may arrive as the text an interactor read — still carrying the
+         ;; reader quotes the user typed, and with an unexpanded ~ that
+         ;; MERGE-PATHNAMES below would resolve nowhere
+         ;; (clal-sedit-recall-filename-quotes-and-tilde.issue).
+         (path (clautolisp.sedit:normalize-source-path path))
          (text (if (probe-file path)
                    (uiop:read-file-string path)
                    ""))
@@ -348,7 +353,7 @@ the source-position table (by reading it back, which records each form cons at
 its span), so the written forms become file-associated for further file editing
 (sedit-save-forms-to-new-file-command.issue). Installed as
 CLAUTOLISP.SEDIT:*SEDIT-WRITE-NEW-FILE-HOOK*. Returns the namestring."
-  (let* ((path (namestring path))
+  (let* ((path (namestring (clautolisp.sedit:normalize-source-path path)))
          (block (format nil "~{~A~^~2%~}~%" form-texts))
          (text (if (probe-file path)
                    (let ((existing (uiop:read-file-string path)))

@@ -42,6 +42,18 @@
       (is (eql 3 (%startline b)))
       (is (eq :eof eof)))))
 
+(test source-file-open-accepts-a-path-as-the-user-typed-it
+  ;; A path can reach this module as the text an interactor read, still
+  ;; carrying the reader quotes the user typed around it; MERGE-PATHNAMES
+  ;; resolved that to a file named "\"…\"" under the current directory, and
+  ;; expands no ~ either (clal-sedit-recall-filename-quotes-and-tilde.issue).
+  (with-sf-temp (path (format nil "(defun a (x) x)~%"))
+    (let* ((sf (funcall (%sf 'source-file-open) (format nil "\"~A\"" path) 'read))
+           (a (funcall (%sf 'source-file-read) sf)))
+      (is (consp a))                                    ; the REAL file was read
+      (is (equal (namestring (truename path))
+                 (funcall (%sf 'source-file-path) sf))))))
+
 (test source-file-insert-shifts-positions-below
   (with-sf-temp (path (format nil "(defun a (x) x)~%~%(defun b (y) y)~%~%(defun c (z) z)~%"))
     (let* ((sf (funcall (%sf 'source-file-open) path 'update))

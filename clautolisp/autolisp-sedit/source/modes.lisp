@@ -112,7 +112,7 @@ EVAL-HOOK (node -> result-node); a no-op with a message otherwise."
 (defun %do-load (session arg load-hook)
   "load [FILE] (§5.7): load the current file or FILE into the running system via
 LOAD-HOOK. Not an editing command — the mode is unchanged (§6.6)."
-  (let ((path (or arg (%session-file session))))
+  (let ((path (normalize-source-path (or arg (%session-file session)))))
     (when (and load-hook path) (funcall load-hook path))))
 
 (defvar *sedit-file-save-hook* nil
@@ -137,8 +137,11 @@ file-backed session writes its WHOLE file — every top-level item, not just the
 selected form (which used to truncate the file) — and, through
 *SEDIT-FILE-SAVE-HOOK*, keeps the source-position map consistent
 (sedit-bugs-and-design.issue). A stand-alone/sexp session still writes the
-selected top-level form."
-  (let ((path (or arg (%session-file session))))
+selected top-level form.
+
+ARG is the text the user typed after `s', so it is normalized (quotes stripped,
+~ expanded) before it becomes a pathname."
+  (let ((path (normalize-source-path (or arg (%session-file session)))))
     (when path
       (if (%session-file session)
           (let ((text (unparse (%loc-root (sedit-state-loc (sedit-session-state session))))))
@@ -170,7 +173,7 @@ when it already exists — and, through *SEDIT-WRITE-NEW-FILE-HOOK*, register th
 source positions so the forms become file-associated. PATH is required; a
 file-backed session has no file-less forms (use `s'). Returns NIL (not an
 editing command: the mode is unchanged)."
-  (let ((path arg)
+  (let ((path (normalize-source-path arg))
         (forms (%file-less-toplevel-forms session)))
     (cond
       ((null path)

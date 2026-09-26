@@ -92,12 +92,43 @@ name kept only at its LAST (re-)definition's position; non-definitions kept as-i
 
 ;;; --- storage: read/write files, list directories (§2.3–§2.4, §5.7–§5.9) ---
 
+(defun normalize-source-path (path)
+  "PATH (a string, a pathname, or NIL) made usable as a file designator: a
+matched pair of surrounding reader double quotes is removed, and a leading =~=
+or =~/= is expanded to the home directory. Anything else — an absolute or
+relative path, a =~user= form, a pathname, NIL — is returned unchanged.
+
+Both corrections are needed because a path reaches sedit as TEXT: an interactor
+command argument keeps the quotes the user typed around it, and CL's
+MERGE-PATHNAMES expands no =~= (SBCL keeps =~/= in the namestring, CCL expands
+it when parsing, and neither host strips quotes — so a quoted path silently
+resolved to a file literally named =\"~/…\"= under the current directory).
+See clal-sedit-recall-filename-quotes-and-tilde.issue."
+  (if (not (stringp path))
+      path
+      (let* ((unquoted (if (and (>= (length path) 2)
+                                (char= #\" (char path 0))
+                                (char= #\" (char path (1- (length path)))))
+                           (subseq path 1 (1- (length path)))
+                           path))
+             (length (length unquoted)))
+        (cond ((string= unquoted "~")
+               (namestring (user-homedir-pathname)))
+              ((and (> length 1)
+                    (char= #\~ (char unquoted 0))
+                    (char= #\/ (char unquoted 1)))
+               (namestring (merge-pathnames
+                            (uiop:parse-unix-namestring (subseq unquoted 2))
+                            (user-homedir-pathname))))
+              (t unquoted)))))
+
 (defun %open-file-node (path)
   "PATH read into an adorned file-node — parsed with verbatim text when it exists,
 else a new empty file-node backing PATH."
-  (if (probe-file path)
-      (parse-source (uiop:read-file-string path) :file (namestring path))
-      (make-file-node (namestring path) '())))
+  (let ((path (normalize-source-path path)))
+    (if (probe-file path)
+        (parse-source (uiop:read-file-string path) :file (namestring path))
+        (make-file-node (namestring path) '()))))
 
 (defun sedit-load (path)
   "Read PATH into an adorned file-node (spec §5.7 load). Re-installing its
@@ -305,11 +336,14 @@ a line (sedit-bugs-and-design.issue)."
            (let ((root (make-atom-node nil)))    ; not recorded: start stand-alone
              (values root (list :symbol (%name-key object)) (node->loc root))))))
     ((stringp object)                           ; a path: directory or file
-     (if (%directory-path-p object)
-         (let ((dir (read-directory object)))
-           (values dir (list :dir object) (%dir-initial-loc dir)))
-         (let ((file (%open-file-node object)))
-           (values file (list :file object) (%first-child-loc file)))))
+     ;; Normalized ONCE, here: the ORIGIN records the corrected path, so a
+     ;; later save writes the file the user meant, not one named "~/…".
+     (let ((object (normalize-source-path object)))
+       (if (%directory-path-p object)
+           (let ((dir (read-directory object)))
+             (values dir (list :dir object) (%dir-initial-loc dir)))
+           (let ((file (%open-file-node object)))
+             (values file (list :file object) (%first-child-loc file))))))
     (t (error "sedit-open: cannot edit ~S" object))))
 
 (defun sedit-open (object &key recording)
