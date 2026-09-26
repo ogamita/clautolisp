@@ -101,7 +101,28 @@ and not exercised here — left for a later cleanup.)
 Status
 ------
 
-OPEN pending the next vendor:probes:autocad CI run. With the yield now
-non-signalling, the loop should hold at READY, accept the probe forms,
-and emit real verdicts. Any FAIL from there is a genuine
-clautolisp-vs-AutoCAD divergence to reconcile.
+RESOLVED 2026-09-26 — verified on the real AutoCAD backend. The
+vendor:probes:autocad job (native child 2885828771, MR !292 pipeline;
+AutoCAD 2022 accoreconsole, Windows) now does EXACTLY what this issue
+predicted: the protocol runtime holds at READY (18.65 s / 16.61 s /
+18.15 s across three probe cycles — status "READY 0", no "backend
+unreachable or crashed"), accepts the probe forms, and emits real
+verdicts. No VLAX-SLEEP / COMMAND apply-escape, no arity error, no
+STOPPED-99. Verdicts:
+
+    PASS      entity-lifecycle -- 101 conforms, 0 unexpected
+    PASS      selection        --  21 conforms, 0 unexpected
+    DIVERGED  drawing-data     --  20 conforms, 7 unexpected (recorded, not gated)
+
+The runtime-portability crash that IS this issue is gone (that was the
+whole subject: the yield primitive aborting the read loop before it
+served anything). The one DIVERGED probe is the genuine
+clautolisp-vs-AutoCAD divergence this issue anticipated ("Any FAIL from
+there is a genuine divergence to reconcile") — AutoCAD is not surfacing
+xdata (xdata.surfaced-with-applist no/expected yes; pair-count 0/8; the
+1000/1040/1070/1071/1005 types all absent). That is a drawing-data
+fidelity gap, tracked under drawing-data-structures-parity, NOT a
+runtime crash, so it does not hold this issue open.
+
+Unblocked by the alfe AutoCAD bridge fix (lastTouchError, alfe 2.2.119,
+MR !287) which let the probes reach the backend at all. issues/closed/.
