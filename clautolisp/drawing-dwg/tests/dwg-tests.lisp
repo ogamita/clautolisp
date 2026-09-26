@@ -212,3 +212,34 @@ must hold is the DELTA: adding one entity adds one."
                  back-plain back-line)))
       (ignore-errors (delete-file out-plain))
       (ignore-errors (delete-file out-line)))))
+
+(test dwg-a-drawing-from-the-template-keeps-its-entities
+  "dwg-round-trip-loses-entities, the other half: a drawing created from
+the DXF TEMPLATE -- not hand-assembled -- writes as DWG and reads back
+WITH its entity. The template carries what a bare skeleton cannot: real
+symbol table records and properly formed *Model_Space / *Paper_Space block
+definitions, which libredwg needs on top of a resolving owner handle.
+
+It is DXF, so creating the drawing needs no native library; only this test
+needs one, to write the DWG."
+  (let* ((d (clautolisp.drawing:make-drawing-from-template :name "T.dwg"))
+         (out (format nil "/tmp/clal-dwg-template-~D.dwg" (get-internal-real-time))))
+    (is (probe-file (clautolisp.drawing:drawing-template-path))
+        "the template must ship with the drawing system")
+    (is (zerop (clautolisp.drawing:drawing-entity-count d))
+        "a new drawing from the template starts with no entities")
+    (is (plusp (hash-table-count (clautolisp.drawing:drawing-blocks d)))
+        "but it does carry block definitions")
+    (clautolisp.drawing:add-entity
+     d (list (cons 0 "LINE") (cons 8 "0")
+             (cons 10 0.0d0) (cons 20 0.0d0) (cons 30 0.0d0)
+             (cons 11 7.0d0) (cons 21 7.0d0) (cons 31 0.0d0)))
+    (unwind-protect
+         (progn
+           (clautolisp.drawing:write-drawing d out :format :dwg)
+           (let ((back (clautolisp.drawing:read-drawing out)))
+             (is (eq :dwg (clautolisp.drawing:drawing-format back)))
+             (is (= 1 (clautolisp.drawing:drawing-entity-count back))
+                 "the entity must survive: this is what a hand-built ~
+skeleton loses")))
+      (ignore-errors (delete-file out)))))

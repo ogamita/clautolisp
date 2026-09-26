@@ -8,6 +8,7 @@
                 ;; the extraction keep resolving to the same symbols.
                 #:drawing
                 #:make-drawing
+                #:make-drawing-from-template
                 #:drawing-p
                 #:drawing-name
                 #:drawing-path

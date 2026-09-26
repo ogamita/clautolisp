@@ -153,3 +153,55 @@ AutoCAD's expectations.
 
 =dwg-writes-a-drawing-built-in-memory= documents today's zero count and
 points here, so the assertion turns around when this is finished.
+
+* Progress — clautolisp 2.2.106: the template exists and works; wiring
+  cador to it is a model decision
+
+The way out measured above now ships as an API, with the template itself
+committed:
+
+- =clautolisp/drawing/template/empty-drawing.dxf= — 37 KB of DXF produced
+  from the bundled empty drawing: 249 header variables, the real symbol
+  table records, and the =*Model_Space= / =*Paper_Space= block definitions.
+  It is a =:static-file= of =clautolisp/drawing=, so it installs with the
+  system.
+- =make-drawing-from-template= reads it and overrides name / path / format
+  / version. Being DXF, it needs NO native library -- the DXF codec is
+  pure Lisp -- and it falls back to =make-drawing= when the template
+  cannot be read, so nothing breaks if a deployment lacks it (such a
+  drawing then loses entities through a DWG round trip, which is the
+  state before all this).
+- =make-drawing= is unchanged and remains right for a LOADER, which is
+  about to fill the drawing from a file.
+
+Test: =dwg-a-drawing-from-the-template-keeps-its-entities= creates a
+drawing from the template, adds a LINE, writes DWG and reads it back with
+the entity. drawing-dwg suite 30 checks, clautolisp 10017 checks, 0
+failures.
+
+** The decision left: does a cador document come from the template?
+
+Wiring cador's two creation sites to =make-drawing-from-template= is one
+line each, and it was tried: it makes the DWG a session saves keep its
+geometry, which is what the SCHME+ A1 scenario needs. It also makes a NEW
+DOCUMENT NON-EMPTY, and 22 cador tests assert today's empty one:
+
+#+begin_example
+EMPTY-CADOR-HAS-EMPTY-HANDLE-TABLES        TBLNEXT-WALKS-AND-REWINDS
+ENTLAST-AND-ENTNEXT-WALK-CREATION-ORDER    BLOCKS-ADD-CREATES-A-BLOCK-…
+POPULATE-DEFAULT-SYSVARS-FULL-INSTALLS-1836 (1880 with the template)
+DOCUMENT-BLOCKS-IS-A-LIVE-COLLECTION-WITH-LAYOUT-BLOCKS   …
+#+end_example
+
+Every one of those is an assumption about what a fresh document contains,
+not a defect in the change -- a real CAD's new drawing does carry all of
+it, and =tblnext=, =entget= and the Blocks collection would see it. That
+is a deliberate change to the document model, with a visible surface, so
+it wants pjb's decision rather than 22 test edits made in passing. The
+change itself is ready: revert-free, one line per site.
+
+One fix from that attempt is kept because it stands alone:
+=populate-default-tables= now FILLS A GAP instead of overwriting, so a
+drawing that already carries a record keeps it, and the seeded records'
+type marker is =BLOCK_RECORD= with the DXF underscore rather than
+=BLOCK-RECORD= from the keyword name.

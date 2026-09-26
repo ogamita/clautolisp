@@ -154,7 +154,8 @@
   :depends-on ("clautolisp/autolisp-runtime")
   :serial t
   :components
-  ((:file "drawing/source/package")
+  ((:static-file "drawing/template/empty-drawing.dxf")
+   (:file "drawing/source/package")
    (:file "drawing/source/model")
    (:file "drawing/source/conditions")
    (:file "drawing/source/api")
