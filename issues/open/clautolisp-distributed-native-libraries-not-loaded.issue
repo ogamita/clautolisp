@@ -1,0 +1,163 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: clautolisp-distributed-native-libraries-not-loaded — the standalone runtime does not activate native libraries shipped in its installation prefix
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: packaging-runtime
+#+DEPENDS: -
+#+BRANCH: fix-clautolisp-distributed-native-libraries-not-loaded
+#+DATE: 2026-09-26
+
+* Observed
+
+A complete clautolisp installation can contain the native DWG libraries and
+still run as though no DWG codec were installed.
+
+SCHME+ pipeline 86651 provides a concrete end-to-end reproduction.  Its Linux
+build job 514668 built clautolisp 2.2.85 from =master=, then successfully built
+and installed both native objects:
+
+#+begin_example
+[100%] Linking C shared library libredwg.so
+built: .../clautolisp/drawing-dwg/source/clal_dwg.so
+LibreDWG runtime: .../third-party/libredwg/build/libredwg.so
+installed: .../libredwg.so -> .../.clautolisp/lib/clautolisp/linux/x86-64/
+installed: .../clal_dwg.so -> .../.clautolisp/lib/clautolisp/linux/x86-64/
+#+end_example
+
+The resulting =.clautolisp/= prefix was passed intact as an artifact to the
+test jobs.  Nevertheless job 516228, running that installed standalone
+clautolisp, failed an ActiveX =Document.SaveAs= to DWG with:
+
+#+begin_example
+SaveAs could not write .../schme-test-a1.dwg:
+no writer codec registered for format :DWG
+#+end_example
+
+This is not a missing compiler and not a failed native build.  The distributed
+libraries exist at runtime but clautolisp does not activate them.
+
+The Windows release has the same architectural risk with =libredwg.dll= and
+=clal_dwg.dll=.  The release format deliberately separates =binaries= and
+=libraries= archives, while the normal installer downloads and overlays both
+into one prefix.  A complete installation must therefore be usable without a
+development checkout, compiler, manually-set library path, or an explicit
+ASDF command from the user.
+
+* Cause
+
+There are two halves to native codec availability, and the distributed
+standalone currently only satisfies the filesystem half.
+
+1. =clautolisp/drawing-dwg= contains the CFFI declarations and registers the
+   =:DWG= reader/writer when =drawing-dwg/source/codec.lisp= is loaded.
+2. =clautolisp/clautolisp-tool= does not depend on
+   =clautolisp/drawing-dwg=.  The saved executable therefore contains the
+   drawing core but not necessarily the code which registers the DWG codec.
+3. =drawing-dwg/source/bindings.lisp= already has partial path resolution:
+   =$CLAUTOLISP_DWG_LIBDIR=, a development-tree candidate, and an installed
+   =PREFIX/lib/clautolisp/<os>/<arch>/= candidate derived from the installed
+   ASDF source directory.  That resolver cannot help if the system containing
+   it is never loaded.
+4. On Windows, once the system is loaded, the loader must first open the
+   adjacent =libredwg.dll= by absolute pathname and then =clal_dwg.dll=.  On
+   ELF/Mach-O the shim's =$ORIGIN=/=@loader_path= rpath is intended to resolve
+   the adjacent dependency.
+
+The result is a misleading split state: the packaging and build logs prove
+that the codec was distributed, but =clautolisp.drawing= has no registered DWG
+writer because the activation code never ran.
+
+* Required behaviour
+
+At startup, or lazily on the first operation requiring the DWG codec, the
+standalone clautolisp runtime must:
+
+1. determine the installation prefix from the running installed program and
+   its dispatch layout, without assuming the build directory or current
+   working directory;
+2. select =lib/clautolisp/<os>/<arch>/= for the actual runtime platform;
+3. load the platform dependency and shim with
+   =cffi:load-foreign-library= in the required order;
+4. load/retain the Lisp side of =clautolisp/drawing-dwg= and register the
+   =:DWG= reader and writer;
+5. retain =$CLAUTOLISP_DWG_LIBDIR= as an explicit override, not as a mandatory
+   installation step.
+
+The installed prefix is relocatable.  Moving or unpacking it under a different
+absolute directory, including a directory containing spaces, must not break
+native-library discovery.  The runtime must not embed the staging path from
+the machine which produced the release.
+
+If the user installed only the =binaries= archive, or if a native object is
+present but unloadable, the eventual DWG operation must report a diagnostic
+which distinguishes at least:
+
+- codec Lisp module unavailable/not activated;
+- shim absent, with all attempted pathnames;
+- dependency absent;
+- dynamic-loader rejection, including the underlying CFFI/OS error.
+
+It must not collapse all of these cases into =no writer codec registered=.
+
+* Fix direction
+
+Bake =clautolisp/drawing-dwg= into the standalone program, or provide an
+equivalent explicit optional-module activation phase in the program startup.
+The native library itself may remain lazily loaded: =ensure-shim-loaded=
+already defers =cffi:load-foreign-library= until the first DWG conversion.
+
+Centralise installation-prefix discovery so other distributed native
+extensions can reuse it.  The resolver should start from the installed
+launcher/executable layout and may use the installed ASDF source directory as
+a corroborating candidate, but must not require ASDF sources merely to locate
+a native library shipped beside the program.
+
+Do not solve this by adding a CI-only =LD_LIBRARY_PATH=, modifying the global
+Windows =PATH=, or hard-coding =/opt/local=.  Those hide the packaging/runtime
+contract instead of making an installed release self-contained.
+
+* Reproduction
+
+From a release or the output of =make install-programs install-libraries=:
+
+1. unpack/install the program and libraries into a fresh arbitrary prefix;
+2. unset =CLAUTOLISP_DWG_LIBDIR= and any project-specific library-path
+   variables;
+3. run the installed =bin/clautolisp= from an unrelated working directory;
+4. create a drawing and save it as DWG through the Cador/ActiveX
+   =Document.SaveAs= path, or call the drawing persistence API;
+5. observe that the native files are present under
+   =lib/clautolisp/<os>/<arch>/= but the operation reports no registered
+   =:DWG= writer.
+
+The SCHME+ reproducer is:
+
+#+begin_example
+make test-cad-activex-alfe CAD=clautolisp
+#+end_example
+
+* Acceptance criteria
+
+- The standalone program built for a release includes or automatically
+  activates =clautolisp/drawing-dwg=; the =:DWG= codec is registered without
+  an explicit user-side =(asdf:load-system ...)=.
+- A complete installed release finds its adjacent platform-native libraries
+  with =CLAUTOLISP_DWG_LIBDIR= unset and successfully writes and reads a DWG.
+- The check runs from an unrelated current directory after relocating the
+  installation prefix to a path containing spaces.
+- Automated packaged-runtime tests cover Linux =.so= and Windows =.dll=
+  layouts.  The Windows test proves that =libredwg.dll= is loaded before the
+  shim; the Linux test proves that the adjacent dependency is resolved.
+- Installing only the binaries archive fails a DWG operation with an explicit
+  missing-native-library diagnostic, not =no writer codec registered=.
+- =$CLAUTOLISP_DWG_LIBDIR= continues to override automatic discovery.
+- The SCHME+ =creation et fermeture d'un DWG temporaire= scenario no longer
+  fails for lack of a registered writer.
+
+* Related
+
+- =issues/closed/drawing-codec-libredwg-submodule.issue=
+- =issues/closed/release-artefacts.issue=
+- =issues/closed/install-sources-with-libraries.issue=
+- =issues/closed/cador-schme-a1-activex-coverage.issue=
+- =issues/open/drawing-codec-version-output.issue=
