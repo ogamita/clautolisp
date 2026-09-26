@@ -466,6 +466,57 @@ with group code 0, but the drawing stores (5 . handle) first."
   (let ((zero (assoc 0 data)))
     (if zero (cons zero (remove zero data :test #'eq)) data)))
 
+(defun dxf-owner-handle (drawing owner-name)
+  "The handle of the BLOCK_RECORD named OWNER-NAME, allocating one if the
+record has none, or NIL when there is no such record.
+
+Every entity in a DXF belongs to a block record -- model space is the
+record named \"*Model_Space\" -- and says so with group 330. libredwg
+SILENTLY DROPS an entity that does not: a LINE written without it came
+back from a DWG round trip as nothing at all, with rc 0
+(dwg-round-trip-loses-entities). The 100 AcDbEntity / AcDbLine subclass
+markers, by contrast, turned out not to matter.
+
+A record with no handle gets one here: a DXF handle is not optional, and
+a writer assigning the missing ones is what AutoCAD does too. That is why
+this takes the DRAWING -- the seed lives there."
+  (let ((record (find-table-record drawing :block-record owner-name)))
+    (when record
+      (let* ((data (symbol-table-record-data record))
+             (existing (cdr (assoc 5 data))))
+        (or existing
+            (let ((handle (format nil "~X" (allocate-handle drawing)))
+                  (zero (assoc 0 data)))
+              ;; AFTER the (0 . type) pair: a DXF object must begin with
+              ;; its type marker, and a table record is written in the
+              ;; order it is stored (only ENTITIES get reordered). Putting
+              ;; the handle first emitted `5 <h>' before
+              ;; `0 BLOCK_RECORD', which breaks the table.
+              (setf (symbol-table-record-data record)
+                    (if zero
+                        (cons zero (cons (cons 5 handle)
+                                         (remove zero data :test #'eq)))
+                        (cons (cons 5 handle) data)))
+              handle))))))
+
+(defun dxf-entity-data-with-owner (drawing entity)
+  "ENTITY's group-code list with (330 . owner-handle) inserted after its
+handle when it carries no owner of its own. The owner is the entity's
+block, or model space for a model-space entity."
+  (let ((data (dxf-ordered-entity-data (entity-handle-data entity))))
+    (if (assoc 330 data)
+        data
+        (let ((handle (dxf-owner-handle
+                       drawing
+                       (or (entity-handle-block entity) "*Model_Space"))))
+          (if (null handle)
+              data
+              ;; After (0 . type) and (5 . handle), as the vendor writes it.
+              (let ((head '()) (rest data))
+                (loop while (and rest (member (car (first rest)) '(0 5)))
+                      do (push (pop rest) head))
+                (append (nreverse head) (list (cons 330 handle)) rest)))))))
+
 (defun dxf-write-entities (drawing)
   "Emit the ENTITIES section: model-space entities only (those with a
 NIL block owner). Block-owned entities are emitted inside BLOCKS."
@@ -475,7 +526,7 @@ NIL block owner). Block-owned entities are emitted inside BLOCKS."
      (map-entities (lambda (entity)
                      (unless (entity-handle-block entity)
                        (dxf-write-object
-                        (dxf-ordered-entity-data (entity-handle-data entity)))))
+                        (dxf-entity-data-with-owner drawing entity))))
                    drawing))))
 
 (defun dxf-write-blocks (drawing)
@@ -488,7 +539,9 @@ owned entities, then ENDBLK."
       (lambda (name header)
         (dxf-write-object (dxf-ordered-entity-data header))
         (dolist (entity (block-entities drawing name))
-          (dxf-write-object (dxf-ordered-entity-data (entity-handle-data entity))))
+          ;; Same owner rule inside a block: the entity belongs to that
+          ;; block's record, and without group 330 libredwg drops it.
+          (dxf-write-object (dxf-entity-data-with-owner drawing entity)))
         (dxf-emit 0 "ENDBLK"))
       drawing))))
 
@@ -546,7 +599,55 @@ its assigned handle; any other value is emitted as its handle string."
                     (dxf-write-object (dxf-ordered-entity-data obj)))
                   objects))))))
 
+(defun dxf-complete-block-header (drawing name header)
+  "HEADER with what libredwg needs in order to RECOGNISE a block: its own
+handle, its block record as owner (330), and the AcDbEntity /
+AcDbBlockBegin subclass markers. Pairs already present are left alone.
+
+A resolving owner on the entity is necessary but not sufficient: with a
+bare `(0 . BLOCK) (2 . name)' header -- which is what a drawing built in
+this process has -- libredwg still drops every entity of that block, and
+with the header below it keeps them. Measured both ways
+(dwg-round-trip-loses-entities)."
+  (let ((record-handle (dxf-owner-handle drawing name)))
+    (if (or (null record-handle) (assoc 330 header))
+        header
+        (let* ((zero (assoc 0 header))
+               (rest (remove zero header :test #'eq))
+               (handle (or (cdr (assoc 5 header))
+                           (format nil "~X" (allocate-handle drawing)))))
+          (append (when zero (list zero))
+                  (list (cons 5 handle)
+                        (cons 330 record-handle)
+                        (cons 100 "AcDbEntity")
+                        (cons 8 (or (cdr (assoc 8 rest)) "0"))
+                        (cons 100 "AcDbBlockBegin"))
+                  (remove-if (lambda (pair) (member (car pair) '(5 8))) rest))))))
+
+(defun dxf-ensure-write-handles (drawing)
+  "Assign, BEFORE any section is written, the handles the later sections
+must agree on: a handle on every block record an entity names as its
+owner, and the identity pairs on every block header. The ENTITIES and
+BLOCKS sections are written after TABLES, so a handle allocated while
+writing them would name a record that had already gone out without it."
+  (map-entities (lambda (entity)
+                  (dxf-owner-handle drawing
+                                    (or (entity-handle-block entity)
+                                        "*Model_Space")))
+                drawing)
+  (let ((names '()))
+    (map-blocks (lambda (name header) (declare (ignore header))
+                  (push name names))
+                drawing)
+    (dolist (name names)
+      (let ((header (find-block drawing name)))
+        (when header
+          (setf (gethash name (drawing-blocks drawing))
+                (dxf-complete-block-header drawing name header))))))
+  nil)
+
 (defun dxf-write-drawing-body (drawing)
+  (dxf-ensure-write-handles drawing)
   (dxf-write-header drawing)
   (dxf-write-tables drawing)
   (dxf-write-blocks drawing)

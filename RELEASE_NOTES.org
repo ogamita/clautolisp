@@ -37,6 +37,15 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *An entity saved to DWG keeps its owner, so a re-opened drawing still
+  has it.* Every entity is now written with the block record it belongs
+  to (DXF group 330) — model space for a model-space entity — and the
+  record and block definitions are given the handles that reference
+  needs. libredwg SILENTLY DROPS an entity whose owner is missing or
+  does not resolve, so a drawing read, modified and written back as DWG
+  used to come back without the entities that had been added to it,
+  reporting success. A drawing built entirely in a session is still
+  affected (=issues/open/dwg-round-trip-loses-entities.issue=).
 - *Saving a drawing as DWG works from a clautolisp session.* Two defects
   in the DXF header the DWG writer hands to libredwg made every such save
   fail: =$ACADVER= was written twice — once as the file-format version

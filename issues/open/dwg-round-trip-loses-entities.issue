@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: dwg-round-trip-loses-entities — a DWG written by clautolisp comes back with no entities
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P1
 #+TYPE: drawing-codec
 #+DEPENDS: -
@@ -73,3 +73,83 @@ this issue turns that assertion around.
   definitions the BLOCK_RECORD table declares, if that turns out to be
   the missing piece.
 - The SCHME+ A1 DWG scenario sees its geometry after a save.
+
+* Progress — clautolisp 2.2.103: the owner is written; a bare skeleton is
+  still not enough
+
+The loss is on the WRITE side, settled first: our DXF contains the LINE,
+the DXF libredwg regenerates from the DWG it built does not. So libredwg's
+DXF reader drops it, and the question was what it wants.
+
+** What libredwg requires, measured
+
+Written as file-surgery variants converted through the shim, and read back:
+
+| the entity's group 330 (owner)                    | entities back |
+|---------------------------------------------------+---------------|
+| absent                                            |             0 |
+| absent, but with 100 AcDbEntity / AcDbLine        |             0 |
+| present and RESOLVING to the *Model_Space record  |             1 |
+| present but pointing at a handle nothing declares |             0 |
+
+So the OWNER is the requirement and the subclass markers are irrelevant.
+And it is necessary, not sufficient: with a resolving owner but our own
+minimal BLOCKS section the entity is still dropped, while with a resolving
+owner and the BLOCKS section of a real drawing it survives.
+
+** Fixed
+
+- =dxf-entity-data-with-owner= writes =(330 . H)= for every entity that
+  does not carry an owner of its own, H being the handle of the block
+  record it belongs to -- its block, or =*Model_Space= for a model-space
+  entity. An entity that already has an owner keeps it.
+- =dxf-owner-handle= allocates a handle for a record that has none (a DXF
+  handle is not optional; AutoCAD's writer assigns them too) and inserts
+  it AFTER the record's =(0 . type)= pair, because a DXF object must begin
+  with its type -- putting it first emitted =5 <h>= before
+  =0 BLOCK_RECORD= and broke the table.
+- =dxf-complete-block-header= gives each block header its own handle, its
+  record as owner, and the AcDbEntity / AcDbBlockBegin markers.
+- =dxf-ensure-write-handles= does both BEFORE any section is written:
+  TABLES precedes ENTITIES and BLOCKS on the stream, so a handle
+  allocated while writing an entity would have named a record that had
+  already gone out without it.
+
+Result: *a drawing whose tables and blocks come from a real DWG now keeps
+its entities through a DWG round trip* — the read-modify-write case.
+Test: =dwg-parsed-drawing-keeps-its-entities=, which compares the same
+drawing round-tripped with and without one added entity, since libredwg's
+own writer is lossy on rich samples (example_2000.dwg: 228 entities in,
+183 out, and an entity added to it is lost among them; sample_2000.dwg,
+example_r13 and example_r14 are lossless, which is why the fixture is
+sample_2000.dwg). Plus =dxf-entities-carry-their-owner-block-record= and
+=dxf-entities-keep-an-owner-they-already-have= in clautolisp/drawing, with
+no native library needed. Suites: clautolisp 10017 checks, drawing-dwg
+25 checks, 0 failures.
+
+** What remains: a drawing built from NOTHING
+
+A drawing assembled in this process -- which is what a cador document is,
+and what the binary's ActiveX SaveAs writes -- still comes back empty, and
+not for want of the owner: the record and the block header now carry
+everything the reference file has. Ruled out one at a time, each measured:
+the subclass markers and 70/280/281 flags on the block record, its owner
+330, the TABLE header shape (identical in both), the OBJECTS section
+(removing it from a working file keeps the entity), the HEADER variables
+(transplanting the rich header does not help), and the LAYER record's
+identity. Transplanting the reference TABLES *and* BLOCKS together does
+work, so what is missing is somewhere in the breadth of a real table set,
+not in any single record we have tried.
+
+*The practical way out, already measured:* build a new drawing FROM THE
+BUNDLED TEMPLATE instead of synthesising a skeleton.
+=autolisp-front-end/source/empty.dwg= exists for exactly this, and
+reading it, adding a LINE and writing DWG gives the entity back (1 of 1).
+A cador document created from that template would inherit a complete,
+real structure -- tables, blocks, dictionaries -- and its saves would keep
+their geometry. That is a smaller and more honest change than growing a
+hand-written skeleton that must then be maintained against libredwg's and
+AutoCAD's expectations.
+
+=dwg-writes-a-drawing-built-in-memory= documents today's zero count and
+points here, so the assertion turns around when this is finished.
