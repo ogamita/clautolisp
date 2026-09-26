@@ -239,3 +239,59 @@ duplicates).
   =clautolisp/configuration= before a second caller exists would add a
   cross-system API on speculation. Recorded here so the next extension
   does the move rather than a copy.
+
+* Progress — clautolisp 2.2.105: the packaged check exists and passes on Linux
+
+=scripts/verify-packaged-dwg.sh= is the outside-in check the criteria ask
+for, and it runs green here. It does what a user does, and nothing else:
+
+1. =make install-programs install-libraries= into a prefix that does not
+   exist yet and whose path CONTAINS A SPACE;
+2. runs the installed binary from =/=, with =CLAUTOLISP_DWG_LIBDIR=,
+   =LD_LIBRARY_PATH= and =DYLD_LIBRARY_PATH= UNSET;
+3. writes a DWG through the ActiveX =SaveAs= path and checks the bytes;
+4. MOVES the prefix and repeats, since a release is staged, archived and
+   unpacked somewhere else entirely -- nothing may embed its build path;
+5. installs the PROGRAMS ONLY and requires the missing-library
+   diagnostic, not "no writer codec registered".
+
+Measured on 2026-09-26:
+
+#+begin_example
+packaged-dwg: program: …/a prefix with spaces/bin/clautolisp
+packaged-dwg: native:  …/a prefix with spaces/lib/clautolisp/linux/x86-64/clal_dwg.so
+packaged-dwg: running from / with no overrides
+packaged-dwg:   WROTE-DWG
+packaged-dwg: wrote 302711 bytes
+packaged-dwg: moving the prefix, to prove nothing embedded its path
+packaged-dwg:   WROTE-DWG
+packaged-dwg: installing the programs WITHOUT the libraries
+packaged-dwg:   …: the DWG native library clal_dwg.so was not found. Looked in:
+packaged-dwg:   …/drawing-dwg/source/clal_dwg.so, …/binaries only/lib/clautolisp/
+packaged-dwg:   linux/x86-64/clal_dwg.so. A release must ship it under …
+packaged-dwg: OK: a complete installed release writes a DWG, before and after being moved
+#+end_example
+
+Step 5 needs the DEVELOPMENT TREE's copy hidden to mean anything -- the
+installed program still probes it, because the dev-tree candidate resolves
+through the ASDF system it was built from, a path that does not exist on a
+machine which only unpacked a release. The script moves it aside and
+restores it, with a trap for an interrupted run.
+
+CI: =verify:packaged-dwg:linux= (poseidon, manual, 45 min) builds the
+vendored libredwg and the program images and runs the script. Manual
+because it is minutes of C and Lisp compilation and nothing depends on
+its result.
+
+** What is still missing
+
+- *The Windows =.dll= half.* The criteria ask for it explicitly, and it is
+  the layout with the extra rule: =libredwg.dll= must be opened BEFORE the
+  shim, because a DLL carries no rpath. The Lisp side already does that
+  and reports a shim present without its dependency as its own case. What
+  is missing is the job: the Windows runner drives PowerShell, so this
+  bash script is not directly usable there --
+  =scripts/verify-installed-prefix.ps1= is the model to copy, and the
+  probe is the same four steps.
+- The DWG written by the packaged binary carries no ENTITIES yet; that is
+  =issues/open/dwg-round-trip-loses-entities.issue=, not this one.

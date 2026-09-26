@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-cad-error-reported-twice-on-stderr — a failing CAD action prints its message twice
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: alfe-backend
 #+DEPENDS: -
@@ -52,3 +52,23 @@ same text, and the =DONE N FAIL= status is unaffected.
 - A regression test asserts the count, alongside
   protocol-signalling-form-is-reported-fail-not-ok (which already
   hosts the emitted runtime under clautolisp, no CAD needed).
+
+* Resolved — clautolisp 2.2.104
+
+Fixed in the LOOP, which is the only place that wrote twice. Its two
+calls were deliberate and wrote two different files -- the session log
+(=autolisp-log-err=) and the wire (=autolisp-protocol-write-stderr=) --
+but run-common's bridge REDIRECTS =autolisp-log-err= onto the protocol
+stderr so CAD-side warnings reach the user at all, and the loop always
+runs with that bridge. Both calls therefore landed in the same file.
+
+The loop now writes the wire only, in both places that reported a
+failure (the read error and the request error). The bridge keeps
+carrying everything else =autolisp-log-err= is used for, so no warning
+is lost; nothing else changes, because with the bridge in place the two
+calls were writing the same bytes to the same file.
+
+Test: =protocol-a-failure-is-reported-exactly-once= (hosted under
+clautolisp) counts the =ERROR protocol request= lines for one failing
+request and requires exactly one, with the engine's message still in it.
+alfe suite 1200 checks, 0 failures.

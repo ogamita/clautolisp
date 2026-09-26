@@ -23,6 +23,8 @@ from the cador package before the Phase-17a extraction.")
    ;; The drawing value object.
    #:drawing
    #:make-drawing
+   #:make-drawing-from-template
+   #:drawing-template-path
    #:drawing-p
    #:drawing-name
    #:drawing-path

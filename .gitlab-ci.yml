@@ -283,6 +283,33 @@ build:clautolisp-ci-image:
         -e '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket") :silent t)'
         -e '(ccl:quit)'
 
+# Does a COMPLETE INSTALLED RELEASE find its native DWG libraries?
+#
+# clautolisp-distributed-native-libraries-not-loaded: an installation that
+# carried lib/clautolisp/<os>/<arch>/clal_dwg.so still answered "no writer
+# codec registered for format :DWG". The unit tests cannot see that -- it is
+# a property of the INSTALLED TREE, not of the sources -- so this lane
+# installs into a prefix whose path contains a space, runs the installed
+# binary from an unrelated directory with no CLAUTOLISP_DWG_LIBDIR and no
+# library path, writes a DWG through the ActiveX SaveAs path, MOVES the
+# prefix and does it again, and finally checks that a binaries-only install
+# names the missing library instead of blaming the codec.
+#
+# Manual: it builds the vendored libredwg and a program image, which is
+# minutes of work, and nothing below it depends on the result.
+verify:packaged-dwg:linux:
+  rules:
+    - *not-on-schedule
+    - when: manual
+      allow_failure: true
+  stage: test
+  timeout: 45m
+  script:
+    - *pre-warm-quicklisp-sbcl
+    - make build-libraries          # vendored libredwg + the CFFI shim
+    - make build-programs           # the standalone images
+    - bash scripts/verify-packaged-dwg.sh
+
 test:clautolisp:sbcl:
   rules:
     - *not-on-schedule

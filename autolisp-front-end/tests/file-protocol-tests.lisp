@@ -1652,3 +1652,72 @@ clautolisp-sbcl is not on disk."
           (is (string= "xyz(A 1 B 2)" (without-returns stdout))
               "every form must run, in order: ~S" stdout)
           (is (string= "" stderr))))))
+
+;;; --- a failure is reported ONCE --------------------------------------
+;;;
+;;; alfe-cad-error-reported-twice-on-stderr. The server loop wrote each
+;;; failure to the session log AND to the wire -- two different files by
+;;; design -- but the bridge redirects the session log onto the wire so
+;;; CAD-side warnings reach the user at all, and the loop always runs with
+;;; that bridge. So every failure arrived twice. pjb saw it in his own
+;;; EPURE run and in the SCHME+ AutoCAD jobs, on top of whatever the real
+;;; defect was.
+
+(test protocol-a-failure-is-reported-exactly-once
+  "One failing request produces ONE `ERROR protocol request N:' line, not
+two. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; single-report test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine binary (list "(no_such_function 1)"))
+          (declare (ignore stdout))
+          (is (search " FAIL" (first statuses)))
+          (let ((count 0) (from 0))
+            (loop for pos = (search "ERROR protocol request" stderr :start2 from)
+                  while pos
+                  do (incf count) (setf from (1+ pos)))
+            (is (= 1 count)
+                "exactly one report expected, got ~D: ~S" count stderr))
+          ;; And it still carries the engine's own message.
+          (is (search "NO_SUCH_FUNCTION" stderr))))))
+
+;;; --- a failure names a cause ------------------------------------------
+;;;
+;;; alfe-cad-load-error-message-says-only-error. pjb's BricsCAD run
+;;; reported `at line 1, column 1: error' -- correct and useless: it does
+;;; not say whether the function was undefined or called wrongly. The
+;;; runtime does not lose the text (clautolisp reports "Undefined AutoLISP
+;;; function TOUTES_OPTIONS" for the same shapes, from a file and from a
+;;; form); BricsCAD's own text for that condition IS the word "error". So
+;;; when the engine says nothing useful, the report adds the one piece of
+;;; context this side always has: the form.
+
+(test protocol-a-vague-engine-message-gains-the-form
+  "A failure whose engine message says nothing -- empty, or the bare word
+`error' -- is reported with the FORM appended, and an informative message
+is passed through untouched. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; vague-message test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine binary (list "(error \"\")"
+                                              "(error \"error\")"
+                                              "(no_such_function 1)"))
+          (declare (ignore stdout))
+          (is (= 3 (length statuses)))
+          (is (every (lambda (s) (search " FAIL" s)) statuses))
+          ;; 1. no message at all: say so, and show the form.
+          (is (search "the engine supplied no message" stderr))
+          (is (search "[form: (ERROR \"\")]" stderr)
+              "the form must be shown when there is no message: ~S" stderr)
+          ;; 2. the bare word: keep it, note that it is all there was,
+          ;;    and show the form.
+          (is (search "error -- the engine said no more" stderr))
+          (is (search "[form: (ERROR \"error\")]" stderr))
+          ;; 3. a real message is passed through, with no form appended.
+          (is (search "Undefined AutoLISP function NO_SUCH_FUNCTION" stderr))
+          (is (not (search "[form: (NO_SUCH_FUNCTION 1)]" stderr))
+              "an informative message must not be padded: ~S" stderr)))))

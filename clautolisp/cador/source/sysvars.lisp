@@ -33,11 +33,18 @@ tables so tblsearch / tblnext have a sensible baseline."
                            (setf (gethash kind tables)
                                  (make-hash-table :test #'equalp)))))
         (dolist (name names)
-          (setf (gethash name per-kind)
-                (make-symbol-table-record
-                 :kind kind :name name
-                 :data (list (cons 0 (string-upcase (symbol-name kind)))
-                             (cons 2 name))))))))
+          ;; FILL A GAP, never overwrite. A drawing created from the DXF
+          ;; template already carries these records WITH their handles and
+          ;; subclass markers, and replacing them with the bare pair below
+          ;; is what would lose the structure a DWG write needs
+          ;; (dwg-round-trip-loses-entities). The bare record remains the
+          ;; right thing when nothing supplied one.
+          (unless (gethash name per-kind)
+            (setf (gethash name per-kind)
+                  (make-symbol-table-record
+                   :kind kind :name name
+                   :data (list (cons 0 (substitute #\_ #\- (string-upcase (symbol-name kind))))
+                               (cons 2 name)))))))))
   mock)
 
 ;;; --- Sysvar defaults --------------------------------------------
