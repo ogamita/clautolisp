@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: dwg-write-rejects-a-drawing-built-in-memory — libredwg refuses the DXF we hand it (error 2048), while a DWG read from disk round-trips
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: drawing-codec
 #+DEPENDS: -
@@ -82,4 +82,53 @@ snippets above, so this needs no CAD and no Windows.
   visible at all.
 - =issues/open/drawing-codec-version-output.issue= -- the writer still
   emits a fixed DWG version (a STUB in dwg-write-drawing); if 2048 turns
-  out to be a version rejection, these two meet.
+  out to be a version rejection, these two meet. (It did not: every
+  version from AC1015 to AC1032 failed identically, which is what ruled
+  the version out.)
+
+* Resolved — clautolisp 2.2.101: two header defects, both in what WE wrote
+
+The diff-the-two-DXFs recipe worked, and there were TWO causes, each with
+its own libredwg code. The codes are now decoded by NAME
+(=dwg-error-text= in bindings.lisp), which is what made them separable:
+2048 is =DWG_ERR_INVALIDDWG=, 4096 is =DWG_ERR_IOERROR=.
+
+1. *=$ACADVER= written TWICE* (=DWG_ERR_INVALIDDWG=). In a DXF header that
+   is the FILE FORMAT version (=AC1027=). The sysvar of the same name is
+   the PRODUCT version -- "24.1s (LMS Tech)" on AutoCAD, clautolisp's own
+   "2.2.98" here -- and the writer emitted every sysvar after its own two,
+   so the format version was overwritten with a string no reader can take.
+   The sysvar pass already skipped HANDSEED for exactly this reason;
+   ACADVER now joins it. Bisected to header variable 9 of the cador
+   document's DXF.
+2. *An integer sysvar over the group-70 range* (=DWG_ERR_IOERROR=). Group
+   70 is a signed 16-bit integer; =$CMPDIFFLIMIT= is 10000000 by default,
+   and writing it as 70 gave a header libredwg would not read at all. The
+   group code is now chosen from the VALUE: 70 when it fits, 90 -- the
+   32-bit code -- otherwise. Bisected to header variable 230.
+
+Neither was about being built in memory as such: a drawing PARSED from a
+DWG round-tripped because its sysvars come from the file, where ACADVER
+already IS the format version and nothing exceeds its group. The
+mandatory symbol tables matter too -- a drawing with none fails with
+=DWG_ERR_IOERROR= -- while a cador document, which has them, got as far
+as the header. Empty UCS / VIEW tables and the non-ASCII byte in the
+header were both ruled out along the way.
+
+Verified on the BUILT binary, which is where it was reported:
+
+#+begin_example
+(vla-addline ms …) (vla-saveas d "probe2.dwg")   ->  SAVED-DWG
+-rw-rw-r-- 302711 probe2.dwg
+#+end_example
+
+Tests: =dxf-header-writes-acadver-once-and-as-the-format-version= and
+=dxf-header-integer-group-code-follows-the-value= (clautolisp/drawing, no
+native library needed), plus =dwg-writes-a-drawing-built-in-memory=
+(clautolisp/drawing-dwg), which carries both traps and the mandatory
+tables. clautolisp suite 10009 checks, 0 failures.
+
+Found immediately behind this, and filed separately:
+=issues/open/dwg-round-trip-loses-entities.issue= — the file writes and
+re-reads as a DWG, but its ENTITIES do not survive, for a parsed drawing
+as much as an in-memory one. So the SCHME+ A1 scenario needs that one too.

@@ -15,8 +15,8 @@ in a temp file, which the DXF codec parses. DRAWING-FORMAT is set to
                            (uiop:native-namestring dxf))))
       (when (>= rc +dwg-err-critical+)
         (error 'drawing-error
-               :format-control "libredwg failed to read ~S (error code ~D)"
-               :format-arguments (list source rc)))
+               :format-control "libredwg failed to read ~S: ~A (code ~D)"
+               :format-arguments (list source (dwg-error-text rc) rc)))
       (let ((drawing (dxf-read-drawing dxf)))
         (setf (drawing-format drawing) :dwg
               (drawing-path drawing) (or (ignore-errors (truename source))
@@ -42,8 +42,9 @@ version is taken from the DXF/libredwg defaults for now)."
                            (uiop:native-namestring destination))))
       (when (>= rc +dwg-err-critical+)
         (error 'drawing-error
-               :format-control "libredwg failed to write ~S (error code ~D)"
-               :format-arguments (list destination rc)))
+               :format-control "libredwg failed to write ~S from the DXF this ~
+drawing produced: ~A (code ~D)"
+               :format-arguments (list destination (dwg-error-text rc) rc)))
       drawing)))
 
 (register-drawing-codec :dwg

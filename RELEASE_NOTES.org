@@ -37,6 +37,17 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *Saving a drawing as DWG works from a clautolisp session.* Two defects
+  in the DXF header the DWG writer hands to libredwg made every such save
+  fail: =$ACADVER= was written twice — once as the file-format version
+  (=AC1027=), then again from the system variable of the same name, which
+  is the PRODUCT version — and an integer system variable larger than a
+  16-bit group was written with group 70 (=CMPDIFFLIMIT= is 10000000),
+  which no reader accepts. A drawing read from a DWG was unaffected,
+  because its variables come from the file. The failure now also names
+  libredwg's own error, e.g. =DWG_ERR_INVALIDDWG (code 2048)=, instead of
+  a bare number. Note that entities do not yet survive a DWG round trip
+  (=issues/open/dwg-round-trip-loses-entities.issue=).
 - *The standalone program carries the DWG codec, and finds its native
   libraries beside itself.* An installation that contained
   =lib/clautolisp/<os>/<arch>/clal_dwg.*= still answered "no writer codec

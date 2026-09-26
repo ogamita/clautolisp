@@ -1,0 +1,75 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: dwg-round-trip-loses-entities — a DWG written by clautolisp comes back with no entities
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: drawing-codec
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-09-26
+
+* Observed
+
+Once a DWG could be written at all
+(dwg-write-rejects-a-drawing-built-in-memory, fixed in 2.2.101), the file
+turns out to carry no entities:
+
+#+begin_example
+;; a drawing PARSED from a DWG, plus one LINE
+parsed source entities: 0
+parsed + 1 entity:      1
+parsed round trip:      0        <- the LINE is gone
+
+;; the DWG an ActiveX SaveAs produced from a session with a LINE
+activex-written dwg: entities 0
+#+end_example
+
+It is not about being built in memory: a drawing read from
+=autolisp-front-end/source/empty.dwg=, given one entity, written as DWG
+and read back, loses it too. The write reports success (libredwg rc 0)
+and the file is ~300 KB.
+
+A geometry-losing save that reports success is as bad as it sounds: a
+user's drawing is silently emptied.
+
+* Where to look
+
+=dwg-write-drawing= (clautolisp/drawing-dwg/source/codec.lisp) writes a
+temp DXF with =dxf-write-drawing= and hands it to libredwg's
+=clal_dxf_to_dwg=. Two candidates, and the temp DXF settles which:
+
+1. *Our DXF's ENTITIES are not acceptable to libredwg's DXF reader.* Most
+   likely the OWNERSHIP: in a DXF a real entity carries its owner block
+   record (group 330) and the entities of model space belong to
+   =*Model_Space=, whose BLOCK definition we do not even emit (the BLOCKS
+   section of a cador document has zero BLOCK entries although the
+   BLOCK_RECORD table names both spaces). libredwg may parse the entity
+   and then drop it for want of an owner.
+2. *The READ side loses them.* =dwg-read-drawing= converts DWG to DXF and
+   parses that. Run =clal_dwg_to_dxf= by hand on a written file and look
+   for the LINE in the DXF it produces: present means our DXF reader
+   drops it, absent means the write did.
+
+Keep the temp DXF (or write it explicitly with
+=(write-drawing d "x.dxf" :format :dxf-ascii)=) and compare its ENTITIES
+section with the one libredwg emits for a real DWG that has a line --
+the same diff-the-two-files method that found the two header defects.
+
+* Note
+
+=dwg-write-then-read-round-trips= has been green throughout: it asserts
+the format and the tables, not the entities. That is the gap that let
+this stand. The new
+=dwg-writes-a-drawing-built-in-memory= documents today's behaviour with
+an explicit "entity count is zero" assertion pointing here, so fixing
+this issue turns that assertion around.
+
+* Acceptance criteria
+
+- A drawing with entities written as DWG reads back with those entities,
+  from an in-memory drawing and from a parsed one.
+- Both round-trip tests assert entity counts and identities, not just the
+  format.
+- The BLOCKS section carries the =*Model_Space= / =*Paper_Space= block
+  definitions the BLOCK_RECORD table declares, if that turns out to be
+  the missing piece.
+- The SCHME+ A1 DWG scenario sees its geometry after a save.
