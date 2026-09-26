@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: vla-entity-property-bridge — COM properties on entity-backed VLA-objects (DXF-group bridge)
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: cad-runtime
 #+DEPENDS: -
@@ -115,7 +115,26 @@
   suite passes entirely headless: fixture discrimination, all four
   migrations, and the no-op current-schema case. The SCHMS driver of
   this issue is satisfied.
-- *Remaining open (downgraded from the SCHMS blocker):* extend the
+- *CLOSED 2026-09-26 (clautolisp 2.2.113): every acceptance criterion is
+  met, and the two leftovers are filed where they belong.* Checked one by
+  one rather than declared: the mapped subset works on =--host mock=
+  (unknown properties still raise =:unknown-com-property=); point getters
+  return VARIANT(SAFEARRAY of doubles) and the putters take the same,
+  plain lists, or =vlax-3d-point=; Rotation converts and writes are
+  visible to =entget=; =make test-cad-clautolisp= is 6/6 (pjb,
+  2026-08-07); the suites are green on SBCL *and* CCL (verified again on
+  this branch); and both books carry it — the user manual's entity-
+  properties list and RELEASE_NOTES.org.
+  What remains is NOT this ticket: extending the table is demand-driven
+  (=vla-entity-property-table-on-demand=, P3 — a property becomes a row
+  when a consumer calls it, because the first subset was chosen from a
+  measured call inventory and not from a guess), and the four probe
+  questions moved into =deferred-spec-research= (EffectiveName on dynamic
+  blocks, entmakex on BLOCK/ENDBLK, the ENDBLK-terminated entnext walk,
+  TEXT bounding-box glyph metrics), which is the convention for uncertain
+  behaviour. Keeping a P1 open for work that is waiting on a CONSUMER,
+  not on a decision or a machine, hides what is really blocked.
+- *Formerly "remaining open" (downgraded from the SCHMS blocker):* extend the
   property table as other SCHMS suites consume it
   (candidates: =TrueColor=, =Closed=, =MTextAttribute=, MTEXT
   =Rotation= units — SPEC-UNCERTAIN); vendor probes for the
