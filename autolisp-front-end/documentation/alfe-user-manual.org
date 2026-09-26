@@ -1279,6 +1279,77 @@ state:
 
 The specifications document the full set and their lifetimes.
 
+* Recording a session: =--dribble=
+
+=--dribble= keeps a transcript of a session. A CAD session is the hard kind to
+reproduce — a particular drawing, a particular install, a modal dialog nobody
+saw — so a record of what was sent and what came back is often the only evidence
+there will be.
+
+#+begin_example
+alfe --bricscad --dribble -x '(princ (getvar "DWGNAME"))'
+alfe --autocad --dribble=/tmp/session.log -l script.lsp
+#+end_example
+
+Bare, the file is
+=$XDG_STATE_HOME/alfe/dribbles/<backend>/<timestamp>.log= (=~/.local/state/…=
+when that variable is unset). The per-backend directory is alfe's own: one
+machine drives several engines, and a listing that mixed an AutoCAD session with
+a BricsCAD one would hide the difference the transcript is kept for. With
+=--dribble=FILE= the file is FILE, *appended to* when it already exists, so a
+day's sessions accumulate instead of overwriting each other.
+
+** The format
+
+The same format clautolisp writes, so the two can be read — and diffed — side by
+side:
+
+#+begin_example
+;; H: alfe 2.2.124 bricscad bricscad-v25
+(princ (getvar "DWGNAME"))
+;; O: Drawing1.dwg
+;; E: a warning the engine printed
+;; C: DIVISION-BY-ZERO: Division by zero in /.
+#+end_example
+
+- the *header* names *both* versions — alfe's and the engine's — where
+  clautolisp's names one. A CAD transcript is only interpretable with both. The
+  CAD version is what alfe knows when recording *starts*: the release it
+  selected or detected, or =unknown=. It is deliberately not withheld until the
+  engine answers, because a CAD start takes tens of seconds and can fail, and a
+  transcript that appeared only after a successful start would be missing
+  exactly the sessions worth reading;
+- *input* — the form alfe sent — is raw and unprefixed;
+- =;; O:= is engine output, =;; E:= its error output, =;; C:= a condition
+  report, one line each. A line never carries two tags' text: when output and
+  error output interleave, the open line is closed first.
+
+** Which backend records, and why it differs
+
+- Under =--autocad= / =--bricscad=, *alfe* records: those engines have no
+  dribble of their own, so the transcript is what alfe sees of the conversation.
+- Under =--clautolisp --backend subprocess=, the request is *forwarded to the
+  engine*, which records its own REPL. That transcript is richer than anything
+  alfe could reconstruct from outside — it has the prompts, the interactor stack
+  and the values — and forwarding means one file per session rather than two
+  partial ones.
+- Under =--clautolisp= with the *in-process* engine (the default =--backend
+  direct=), *nothing is recorded*, and alfe says so on =*error-output*= rather
+  than leaving you to look for a file that is not there. The reason is not an
+  omission: clautolisp's dribble is a REPL tee that belongs to the clautolisp
+  *program* and attaches itself through an internal hook, so in alfe's
+  in-process engine =(clal-dribble …)= is a documented no-op. The two answers
+  alfe names are the honest ones — run the engine as a child
+  (=--backend subprocess=), or use =clautolisp= directly.
+
+** =--dribble-interactors=
+
+Selects which interactors are recorded: =t= for all, or a comma-separated list
+of names (=--dribble-interactors=AUTOLISP,ALDO=). Interactors are a clautolisp
+notion — the REPL, the ALDO debugger, the navigator — so the option is forwarded
+to =--clautolisp= and *ignored* under the CAD backends, which have no interactor
+stack and record the whole session.
+
 * Seeing the CAD command line: =--print-command=
 
 =--print-command= answers "what exactly does alfe launch?". It runs

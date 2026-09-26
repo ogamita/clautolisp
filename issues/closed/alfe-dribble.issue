@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-dribble — the alfe half of the dribble feature
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: feature
 #+DEPENDS: -
@@ -98,3 +98,53 @@ Worth settling before writing code.
 - O/E/C tagging and the interleaving rule match the clautolisp output
   byte for byte for an equivalent session.
 - Documented in the alfe user manual and RELEASE_NOTES.org.
+
+* Resolved — clautolisp 2.2.124 / alfe 2.2.124 (2026-09-27)
+
+Shipped. The open question above was settled the recommended way:
+=--dribble-interactors= is meaningful only for the =--clautolisp=
+backend, where it is *forwarded* and the engine applies its own
+=*interactor-stack*= filter; the CAD backends have no such stack and
+record everything. The flag is accepted in every case rather than
+rejected, so a script does not have to know which backend it drives.
+
+What was added:
+
+- =autolisp-front-end/source/dribble.lisp= (new, package
+  =alfe.dribble=): =start-dribble=, =stop-dribble=,
+  =record-input=/=record-output=/=record-error-output=/=record-condition=,
+  and =default-dribble-path=. The chunk recorder keeps =*open-tag*= /
+  =*open-text*= so a partial line from one channel is continued rather
+  than re-tagged, which is the interleaving rule the clautolisp half
+  applies — the two transcripts read the same for an equivalent
+  session.
+- The header is =;; H: alfe <alfe-version> <backend> <cad-version>=
+  with the backend name downcased. When the backend has not answered a
+  version query yet, the third field is written as =?=: the header is
+  emitted at =start-dribble= time, before the first round trip, and a
+  transcript that names its backend but not yet its build is more
+  useful than one that waits (or lies).
+- Default path
+  =${XDG_STATE_HOME}/alfe/dribbles/<backend>/YYYYMMDDTHHMMSS.log=,
+  per-backend subdirectory as specified; =$XDG_STATE_HOME= falls back
+  to =~/.local/state=. An existing file is appended to.
+- CLI: =--dribble=, =--dribble FILE=, =--dribble-interactors IS= on
+  alfe's own spec, in =--help= and in the man page.
+- =--clautolisp --backend subprocess=: =build-subprocess-argv= forwards
+  both flags, so the engine records its own richer REPL transcript and
+  alfe records nothing (no double recording).
+- =--clautolisp --backend direct= (the default): =(clal-dribble …)= is
+  a documented no-op in-process, because clautolisp's dribble is a REPL
+  tee owned by the clautolisp *program* and attached through an
+  internal hook that alfe's in-process engine does not install. Rather
+  than appear to record and produce nothing, alfe warns on
+  =*error-output*= and names the two working answers (=--backend
+  subprocess=, or run =clautolisp= directly). This is the one
+  acceptance criterion deliberately not met as literally written, and
+  the manual says so in the same words.
+- =autolisp-front-end/tests/dribble-tests.lisp= (new): 14 tests over
+  the header, the default path, append semantics, the O/E/C tagging and
+  interleaving, the forwarded-flag argv, and the direct-mode warning.
+- Documented in =autolisp-front-end/documentation/alfe-user-manual.org=
+  (with the direct-mode limitation and its reason), the man page, and
+  =RELEASE_NOTES.org=.

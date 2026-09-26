@@ -130,6 +130,37 @@ line. Lets a caller locate a
 .B \-\-keep-workdir
 workdir without scraping stdout. Honoured equivalently via
 .BR $AUTOLISP_WRITE_WORKDIR_PATH .
+.SS Recording a session
+.TP
+.BR \-\-dribble " [=" \fIFILE\fR ]
+Record the session's interactions into a log file: the forms alfe sends, the
+engine's output
+.RB ( ";; O: " ),
+its error output
+.RB ( ";; E: " ),
+and condition reports
+.RB ( ";; C: " ).
+Bare, the file is
+.IR $XDG_STATE_HOME/alfe/dribbles/<backend>/<timestamp>.log ;
+with
+.IR =FILE ,
+that file, appended to when it exists. The header names both versions:
+.RB ` ";; H: alfe " \fIVERSION\fR " " \fIBACKEND\fR " " \fICAD-VERSION\fR '.
+.IP
+Under
+.B \-\-clautolisp
+the request is FORWARDED to the engine, which records its own REPL \(em a richer
+transcript than alfe could reconstruct, and only one file per session. Under
+.BR \-\-autocad / \-\-bricscad
+alfe records what it sees, because those engines have no dribble of their own.
+.TP
+.BR \-\-dribble-interactors " " \fIIS\fR
+Which interactors are recorded:
+.B t
+for all, or a comma-separated list of names. Meaningful for
+.B \-\-clautolisp
+only, where interactors exist, and forwarded there; the CAD backends have no
+interactor stack and record the whole session.
 .SS Bootstrap and runtime
 .TP
 .BR \-\-bootstrap-phase " " \fI{marker,core,log,full}\fR
