@@ -58,12 +58,58 @@ for one of the three actions rather than =:ok=.
 3. Only then consider =:skip-on-os=; a skip chosen before step 1 would hide
    the second outcome.
 
+* Diagnosed and fixed — clautolisp 2.2.122
+
+Step 1 of /Directions/ answered the question: the failing check is
+=(EVAL-RESULT-STATUS RESULT)= evaluating to *=:ABORTED=*, not to a stale
+=:SUCCESS=. =:ABORTED= is set in exactly one place
+(=backend-cad-common.lisp=, =wait-done=): =wait-for-status-prefix= did not
+match within the request timeout. So it is a GIVE-UP, not the
+stale-status race the ticket's first hypothesis proposed -- and the fault is in
+the TEST MOCK, not the driver.
+
+=SPAWN-MOCK-CAD-RUNTIME= was a =DOTIMES= over =cycles=, and each round waited
+for =stdin.txt= for at most *two seconds*, then published =RUNNING n= / =DONE n=
+*anyway* and moved on. Two consequences:
+
+1. a slow round CONSUMED the budget, so with =:cycles 3= and three actions the
+   third request was never acknowledged and the driver timed out -- which is the
+   =:ABORTED= the Windows lane reported;
+2. a =DONE= published for a request that never arrived is a status the driver
+   could match against a send it has not yet made -- latent nondeterminism on
+   every platform, not only Windows.
+
+The mock now SERVES =cycles= requests instead of SPENDING =cycles= rounds: the
+counter follows the requests actually served, so it cannot run ahead of the
+driver, and the only cap is one overall deadline (20 s) whose job is to stop a
+mock nobody feeds -- its test then fails on its own assertion instead of hanging.
+Every one of the six call sites sends exactly =:cycles= actions, so this is what
+they all meant.
+
+*Reproduced on Linux before fixing*, which is what the ticket asked for rather
+than a platform-specific guess: =cad-mock-serves-a-request-that-arrives-late=
+sends its action 3 seconds after READY -- past the old per-round budget -- and
+against the old mock it fails with
+
+: a late request must still be acknowledged; got :ABORTED
+
+the same symptom, the same word, on a machine with a fast filesystem. With the
+fix it passes, and the echo assertion proves the request was really consumed
+rather than answered by a status the mock had run ahead to publish.
+
+alfe suite 1232 checks, 0 failures on SBCL.
+
 * Acceptance criteria
 
-- =test:alfe:windows= green, or the one assertion documented as
-  platform-dependent with the reason recorded at the call site.
-- If the driver had a race: a test that fails on Linux too, so the fix is not
-  platform-folklore.
+- [X] *A test that fails on Linux too, so the fix is not platform-folklore* --
+      =cad-mock-serves-a-request-that-arrives-late=, red with the old mock and
+      with the same =:ABORTED=.
+- [X] *Nothing was skipped.* No =:skip-on-os=, no relaxed assertion: the mock's
+      contract was wrong and is now right on every platform.
+- [ ] =test:alfe:windows= green on the runner. The symptom it reported is now
+      impossible for the reason diagnosed above; whether it was the ONLY reason
+      is what that lane will say. It is =allow_failure: true=, so it gates
+      nothing meanwhile.
 
 * Note
 

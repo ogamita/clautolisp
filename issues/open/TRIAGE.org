@@ -161,7 +161,23 @@ CAD (machine-bound):
   hypothèse : le rename non atomique de Windows (delete+rename d'UIOP) fait lire
   un =status.txt= absent ou périmé. NE PAS sauter le test avant d'avoir lu les
   valeurs : si c'est le PILOTE qui a une course, un vrai CAD sur cette
-  plateforme la rencontrera aussi
+  plateforme la rencontrera aussi. **DIAGNOSTIQUÉ ET CORRIGÉ (clautolisp
+  2.2.122)** : la valeur lue était =:ABORTED=, pas un =:SUCCESS= périmé — donc un
+  ABANDON (=wait-for-status-prefix= a dépassé son délai), et la faute est dans le
+  MOCK du test, pas dans le pilote. =SPAWN-MOCK-CAD-RUNTIME= était un =DOTIMES=
+  où chaque tour attendait =stdin.txt= au plus DEUX SECONDES puis publiait
+  =RUNNING n= / =DONE n= QUAND MÊME : (1) un tour lent consommait le budget, donc
+  avec =:cycles 3= la troisième requête n'était jamais acquittée — le =:ABORTED=
+  de la lane Windows ; (2) un =DONE= publié pour une requête jamais arrivée est
+  un statut que le pilote peut apparier avec un envoi qu'il n'a pas encore fait
+  (indéterminisme latent sur TOUTES les plateformes). Le mock SERT désormais
+  =cycles= requêtes au lieu de DÉPENSER =cycles= tours ; le compteur suit les
+  requêtes servies, donc il ne peut plus devancer le pilote, et le seul plafond
+  est une échéance globale (20 s) qui empêche un mock que personne n'alimente de
+  pendre. REPRODUIT SOUS LINUX AVANT CORRECTION (=cad-mock-serves-a-request-that-
+  arrives-late=, action envoyée 3 s après READY) : =got :ABORTED=, le même
+  symptôme au même mot. RIEN n'a été sauté — ni =:skip-on-os=, ni assertion
+  relâchée. Reste : voir la lane verte sur le runner
 - TODO =cad-sweep-blocks-bricscad-jobs-over-autocad= — P3, trouvé en corrigeant
   le précédent : parmi les 22 jobs stoppés, =harvest:sysvars:bricscad:windows=
   — un job BRICSCAD arrêté à cause de trois =acad.exe=. L'argument du garde-fou

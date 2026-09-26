@@ -720,37 +720,59 @@ stdout.txt so the test driver can verify the round-trip."
       (alfe.protocol.file:protocol-session-status-path protocol-session)
       "READY 0")
      (sleep initial-ready-delay)
-     (dotimes (i cycles)
-       (let ((stdin (alfe.protocol.file:protocol-session-stdin-path protocol-session))
-             (deadline (+ (get-internal-real-time)
-                          (* 2 internal-time-units-per-second)))
-             (request nil))
-         (loop until (probe-file stdin)
-               when (> (get-internal-real-time) deadline)
-                 do (return)
-               do (sleep 0.02))
-         (when (probe-file stdin)
-           (setf request (alfe.protocol.file:read-file-as-string stdin))
-           (%mock-retry-file-op
-            (lambda () (when (probe-file stdin) (delete-file stdin)))))
-         (alfe.protocol.file:write-atomic-file
-          (alfe.protocol.file:protocol-session-status-path protocol-session)
-          (format nil "RUNNING ~D" (1+ i)))
-         (when (and echo-stdin-p request)
-           (%mock-retry-file-op
-            (lambda ()
-              (with-open-file (out (alfe.protocol.file:protocol-session-stdout-path
-                                    protocol-session)
-                                   :direction :output :if-exists :append
-                                   :external-format :utf-8)
-                (write-string request out)))))
-         (alfe.protocol.file:write-atomic-file
-          (alfe.protocol.file:protocol-session-status-path protocol-session)
-          (format nil "DONE ~D OK" (1+ i)))
-         ;; Keep DONE published until the next cycle consumes stdin and
-         ;; replaces it with RUNNING. A fixed sleep lets a busy scheduler
-         ;; miss DONE entirely and makes the mock nondeterministic.
-         ))
+     ;; SERVE `cycles' REQUESTS -- do not SPEND `cycles' rounds of
+     ;; up-to-two-seconds (alfe-windows-drive-protocol-three-evals-fails). The
+     ;; old loop was a DOTIMES whose body gave up waiting for stdin.txt after 2
+     ;; seconds and then published RUNNING/DONE for that counter ANYWAY. Two
+     ;; consequences, and the Windows runner hit the first:
+     ;;
+     ;;   * a slow cycle consumed the budget, so with :cycles 3 and three
+     ;;     actions the third request was never acknowledged and the driver
+     ;;     timed out -- :ABORTED, which is exactly what that lane reported;
+     ;;   * a DONE published for a request that never arrived is a status the
+     ;;     driver could match against a send it has not made yet.
+     ;;
+     ;; The counter now follows the requests SERVED, so the mock cannot run
+     ;; ahead of the driver. The overall deadline is what stops a mock nobody
+     ;; feeds: its test then fails on its own assertion instead of hanging.
+     (let ((stdin (alfe.protocol.file:protocol-session-stdin-path protocol-session))
+           (served 0)
+           (overall-deadline (+ (get-internal-real-time)
+                                (* 20 internal-time-units-per-second))))
+       (loop while (and (< served cycles)
+                        (< (get-internal-real-time) overall-deadline))
+             do (let ((request nil))
+                  ;; Wait for THIS request, without a budget of its own: the
+                  ;; overall deadline above is the only cap, so a filesystem
+                  ;; slower than one guess does not strand a request.
+                  (loop until (probe-file stdin)
+                        when (> (get-internal-real-time) overall-deadline)
+                          do (return)
+                        do (sleep 0.02))
+                  (when (probe-file stdin)
+                    (setf request (alfe.protocol.file:read-file-as-string stdin))
+                    (%mock-retry-file-op
+                     (lambda () (when (probe-file stdin) (delete-file stdin)))))
+                  (when request
+                    (incf served)
+                    (alfe.protocol.file:write-atomic-file
+                     (alfe.protocol.file:protocol-session-status-path protocol-session)
+                     (format nil "RUNNING ~D" served))
+                    (when echo-stdin-p
+                      (%mock-retry-file-op
+                       (lambda ()
+                         (with-open-file (out (alfe.protocol.file:protocol-session-stdout-path
+                                               protocol-session)
+                                              :direction :output :if-exists :append
+                                              :external-format :utf-8)
+                           (write-string request out)))))
+                    (alfe.protocol.file:write-atomic-file
+                     (alfe.protocol.file:protocol-session-status-path protocol-session)
+                     (format nil "DONE ~D OK" served))
+                    ;; Keep DONE published until the next request replaces it
+                    ;; with RUNNING. A fixed sleep lets a busy scheduler miss
+                    ;; DONE entirely and makes the mock nondeterministic.
+                    ))))
      ;; Wait for SHUTDOWN.
      (let ((control (alfe.protocol.file:protocol-session-control-path protocol-session))
            (deadline (+ (get-internal-real-time)
@@ -2979,3 +3001,40 @@ lingering PID is a running CAD")
     ;; the header must keep saying WHY a lingering PID is not a survivor,
     ;; so the next reader does not re-add the simpler, wrong check
     (is (search "A PID THAT STILL EXISTS IS NOT A RUNNING PROCESS" text))))
+
+(test cad-mock-serves-a-request-that-arrives-late
+  "alfe-windows-drive-protocol-three-evals-fails, reproduced on Linux: a request
+that arrives after the mock's OLD per-cycle budget (2 s) must still be served.
+
+The old mock gave up waiting, published DONE for that counter anyway, and moved
+on -- so the request was never echoed and, with several actions, a later one was
+never acknowledged at all (the Windows lane reported :ABORTED). Here the action
+is deliberately sent LATE; the assertions that discriminate are the echo (the
+mock really consumed this request) and :success (it acknowledged this counter,
+not a counter it ran ahead to)."
+  (let ((workdir (uiop:ensure-directory-pathname
+                  (merge-pathnames
+                   (format nil "alfe-test-cad-late-~D/" (random 999999))
+                   (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist workdir)
+          (let* ((protocol (alfe.protocol.file:init-session workdir))
+                 (cad (spawn-mock-cad-runtime protocol :cycles 1))
+                 (plan (list (alfe.backend:action-eval "(princ 'late)")
+                             (alfe.backend:action-quit))))
+            (alfe.protocol.file:wait-for-status-prefix protocol "READY" :timeout 15)
+            ;; Past the old 2-second per-cycle budget, by a margin.
+            (sleep 3)
+            (let ((result (let ((*standard-output* (make-string-output-stream))
+                                (*error-output*    (make-string-output-stream)))
+                            (alfe.backend.cad-common:drive-protocol-actions
+                             protocol plan))))
+              (is (eq :success (alfe.backend:eval-result-status result))
+                  "a late request must still be acknowledged; got ~S"
+                  (alfe.backend:eval-result-status result))
+              (is (search "(princ 'late)" (alfe.backend:eval-result-output result))
+                  "and really consumed -- the echo proves the mock read it"))
+            (bordeaux-threads:join-thread cad)))
+      (uiop:delete-directory-tree workdir :validate t
+                                          :if-does-not-exist :ignore))))
