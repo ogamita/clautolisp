@@ -1,9 +1,9 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: clautolisp-distributed-native-libraries-not-loaded — the standalone runtime does not activate native libraries shipped in its installation prefix
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P1
 #+TYPE: packaging-runtime
-#+DEPENDS: -
+#+DEPENDS: dwg-write-rejects-a-drawing-built-in-memory
 #+BRANCH: fix-clautolisp-distributed-native-libraries-not-loaded
 #+DATE: 2026-09-26
 
@@ -161,3 +161,81 @@ make test-cad-activex-alfe CAD=clautolisp
 - =issues/closed/install-sources-with-libraries.issue=
 - =issues/closed/cador-schme-a1-activex-coverage.issue=
 - =issues/open/drawing-codec-version-output.issue=
+- =issues/open/dwg-write-rejects-a-drawing-built-in-memory.issue= — what
+  became visible once the codec was actually in the program.
+
+* Progress — clautolisp 2.2.99: the codec is in the program, and the
+  libraries are found from the program
+
+Both halves named in /Cause/ are addressed, and the result is verified
+against the BUILT executable rather than a test image.
+
+1. *The codec is baked in.* =clautolisp/clautolisp-tool= now depends on
+   =clautolisp/drawing-dwg=, with the reason spelled out beside the
+   identical case for the compiler: nothing below the program depends on
+   it, so the program that assembles the image has to. The NATIVE library
+   stays lazily loaded (=ensure-shim-loaded= still defers
+   =cffi:load-foreign-library= to the first conversion), so this costs
+   nothing at startup and a binaries-only installation still runs.
+
+2. *The libraries are found from the RUNNING PROGRAM.* New in
+   drawing-dwg/source/bindings.lisp:
+   - =running-program-pathname= — the one implementation-specific spot
+     (=sb-ext:*runtime-pathname*= / =ccl::kernel-path=);
+   - =running-program-prefix-candidates= — the prefix for the two shipped
+     layouts, =<PREFIX>/bin/…= and anywhere below =<PREFIX>/libexec/…=,
+     deepest =libexec= winning, case-insensitively so LIBEXEC and libexec
+     are one directory on MS-Windows;
+   - =native-library-directories= — the whole search order:
+     =CLAUTOLISP_DWG_LIBDIR=, the development tree, the program's
+     prefixes with =lib/clautolisp/<os>/<arch>/= appended, and last the
+     installed-ASDF-source prefix that used to be the only installed
+     candidate. Nothing embeds a staging path, and duplicates are
+     removed.
+
+3. *The diagnostics distinguish the cases.* A missing shim lists every
+   pathname tried and names the platform directory a release must carry;
+   on MS-Windows a shim present WITHOUT libredwg.dll beside it says so
+   explicitly instead of letting the loader fail obscurely; and a loader
+   rejection is reported with the file and the loader's own words. The
+   one case that can no longer happen is the one that was reported:
+   "codec Lisp module not activated".
+
+Verified end to end on the built binary: =(vla-saveas d "…dwg")= used to
+answer /no writer codec registered for format :DWG/ and now reaches
+libredwg. And =native-library-directories= in a process started as
+=/usr/bin/sbcl= lists =/usr/lib/clautolisp/linux/x86-64/=, i.e. the
+prefix really is derived from the program.
+
+Tests (clautolisp/drawing-dwg/tests/dwg-tests.lisp, suite 20/20; full
+clautolisp suite 9993 checks 0 failures):
+=dwg-tool-program-depends-on-the-codec= (the dependency cannot be
+dropped again), =dwg-running-program-prefix-candidates-knows-both-layouts=
+(both layouts, a prefix containing its own libexec, and no wrong prefix
+claimed for neither), =dwg-native-library-directories-order-and-override=
+(order, the override first, the program-derived candidate present, no
+duplicates).
+
+** What is NOT done, and why
+
+- *A complete release does not yet write a DWG*, so the second
+  acceptance criterion is not met -- but not for a packaging reason. With
+  the codec in place, writing a drawing BUILT in the session fails inside
+  libredwg with error 2048, while a drawing READ from a DWG round-trips
+  (302706 bytes written). Filed as
+  =dwg-write-rejects-a-drawing-built-in-memory= with the diff-the-two-DXFs
+  recipe. The SCHME+ scenario needs that one.
+- *No packaged-runtime test yet.* The criteria ask for automated tests
+  over a real installed prefix for Linux =.so= and Windows =.dll=,
+  including relocation to a path with spaces. The pieces exist (the
+  discovery is now a pure function of the program's pathname, and
+  alfe's verify:installed-prefix:windows job is the model for the Windows
+  half), but a job that runs =make install-programs install-libraries=
+  into a temp prefix and drives the installed binary is still to be
+  written.
+- *Centralising the prefix discovery* (so a second native extension can
+  reuse it) is deliberately deferred: the helpers are exported and
+  documented as the reuse point, but moving them into
+  =clautolisp/configuration= before a second caller exists would add a
+  cross-system API on speculation. Recorded here so the next extension
+  does the move rather than a copy.

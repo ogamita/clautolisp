@@ -44,3 +44,70 @@
       (let ((restored (clautolisp.drawing:read-drawing p)))
         (is (eq :dwg (clautolisp.drawing:drawing-format restored)))
         (is (plusp (clautolisp.drawing:drawing-entity-count restored)))))))
+
+;;; --- finding the native libraries of an installed release -----------
+;;;
+;;; clautolisp-distributed-native-libraries-not-loaded: a complete
+;;; installation carried the native DWG libraries and still answered "no
+;;; writer codec registered for format :DWG", because the standalone
+;;; program did not contain the code that REGISTERS the codec, and
+;;; because the only installed search candidate was derived from the
+;;; installed ASDF SOURCES -- which a programs+libraries release does not
+;;; ship. The prefix is knowable at run time from the running program,
+;;; and that is now the candidate that matters.
+
+(test dwg-tool-program-depends-on-the-codec
+  "The shipped standalone must CONTAIN the DWG codec: nothing below
+clautolisp-tool depends on clautolisp/drawing-dwg, so the program that
+assembles the image has to, exactly as it does for the compiler. Without
+the dependency a release ships the drawing core with no :DWG codec
+registered, whatever native libraries sit beside it."
+  (let ((deps (asdf:system-depends-on
+               (asdf:find-system "clautolisp/clautolisp-tool"))))
+    (is (member "clautolisp/drawing-dwg" deps :test #'equal)
+        "clautolisp-tool must depend on clautolisp/drawing-dwg; deps: ~S"
+        deps)))
+
+(test dwg-running-program-prefix-candidates-knows-both-layouts
+  "RUNNING-PROGRAM-PREFIX-CANDIDATES derives the installation prefix from
+the program's own pathname, for the two layouts a release uses: the
+bin/ one and anywhere below libexec/ (where the per-platform binaries
+live and the bin/ trampoline does not pass the prefix on). The deepest
+libexec wins, so a prefix that itself contains a libexec resolves."
+  (flet ((cands (path)
+           (mapcar #'namestring
+                   (clautolisp.drawing.dwg::running-program-prefix-candidates
+                    (pathname path)))))
+    (is (equal '("/opt/local/") (cands "/opt/local/bin/clautolisp-sbcl")))
+    (is (equal '("/opt/local/")
+               (cands "/opt/local/libexec/clautolisp/binaries/linux/x86-64/clautolisp-sbcl")))
+    ;; A prefix that contains a libexec component of its own.
+    (is (equal '("/opt/libexec/x/")
+               (cands "/opt/libexec/x/libexec/clautolisp/binaries/linux/x86-64/clautolisp-sbcl")))
+    ;; Neither layout: no prefix claimed, rather than a wrong one.
+    (is (null (cands "/tmp/clautolisp-sbcl")))
+    (is (null (clautolisp.drawing.dwg::running-program-prefix-candidates nil)))))
+
+(test dwg-native-library-directories-order-and-override
+  "The search order is: CLAUTOLISP_DWG_LIBDIR, the development tree, the
+prefixes of the RUNNING program (lib/clautolisp/<os>/<arch>/), then the
+installed-ASDF-source prefix. The override comes first and the
+program-derived candidate is present -- that one is what makes a
+release work with no environment variable and no ASDF sources."
+  (let* ((dirs (mapcar #'namestring
+                       (clautolisp.drawing.dwg::native-library-directories)))
+         (platform (format nil "lib/clautolisp/~A/~A/"
+                           (clautolisp.drawing.dwg::%os)
+                           (clautolisp.drawing.dwg::%arch))))
+    (is (plusp (length dirs)))
+    ;; The development tree is always a candidate.
+    (is (find-if (lambda (d) (search "drawing-dwg/source/" d)) dirs)
+        "the dev tree must be searched: ~S" dirs)
+    ;; When the implementation names the running program, its prefix is
+    ;; searched, with the platform subdirectory appended.
+    (when (clautolisp.drawing.dwg::running-program-prefix-candidates)
+      (is (find-if (lambda (d) (search platform d)) dirs)
+          "a program-derived lib/clautolisp/<os>/<arch>/ must be searched: ~S"
+          dirs))
+    ;; No duplicates: the same directory must not be probed twice.
+    (is (= (length dirs) (length (remove-duplicates dirs :test #'equal))))))

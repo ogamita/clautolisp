@@ -2856,6 +2856,46 @@ the host's prompt-output / command log after the run."
   ;; A user (defun vla-get-foo …) shadows the façade for that name.
   (is (eql 42 (%vla "(vl-load-com)(defun vla-get-foo (x) 42)(vla-get-foo nil)"))))
 
+(test vla-addattribute-passes-the-six-vendor-arguments-through
+  "cador-addattribute-argument-order. The AutoLISP façade must hand
+Block.AddAttribute's six arguments to the host in the VENDOR order --
+Height, Mode, Prompt, InsertionPoint, Tag, Value -- so an application
+written against AutoCAD works unchanged. The previous host adapter read
+argument 4 as the Tag, which made a real call fail with `AddAttribute
+expects a point ... got \"REPERE\"', and the host-level test could not
+catch it because it passed the arguments in the adapter's own order.
+
+This covers the (vla-AddAttribute …) route rather than
+host-vlax-invoke-method, so a façade that reorders or drops an argument
+is caught too. The tag comes back as the ATTDEF's TagString and the
+Value as its TextString; both are read through the façade as well."
+  (let ((tag (%vla (concatenate
+                    'string
+                    "(vl-load-com)"
+                    "(setq d (vla-get-activedocument (vlax-get-acad-object)))"
+                    "(setq b (vla-add (vla-get-blocks d)"
+                    "                 (vlax-3d-point 0.0 0.0 0.0) \"TITLE\"))"
+                    "(setq a (vla-addattribute b 1.0 0 \"\""
+                    "                          (vlax-3d-point 3.0 4.0 0.0)"
+                    "                          \"REPERE\" \"A1\"))"
+                    "(vla-get-tagstring a)")))
+        (value (%vla (concatenate
+                      'string
+                      "(vl-load-com)"
+                      "(setq d (vla-get-activedocument (vlax-get-acad-object)))"
+                      "(setq b (vla-add (vla-get-blocks d)"
+                      "                 (vlax-3d-point 0.0 0.0 0.0) \"TITLE\"))"
+                      "(setq a (vla-addattribute b 1.0 0 \"\""
+                      "                          (vlax-3d-point 3.0 4.0 0.0)"
+                      "                          \"REPERE\" \"A1\"))"
+                      "(vla-get-textstring a)"))))
+    (is (string= "REPERE" (if (typep tag 'autolisp-string)
+                              (autolisp-string-value tag)
+                              tag)))
+    (is (string= "A1" (if (typep value 'autolisp-string)
+                          (autolisp-string-value value)
+                          value)))))
+
 ;;; --- vlax-* group A: points / tmatrix / safearray extras ---------
 
 (test vlax-3d-point-builds-variant-double-triple

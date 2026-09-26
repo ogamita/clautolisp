@@ -37,6 +37,27 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *The standalone program carries the DWG codec, and finds its native
+  libraries beside itself.* An installation that contained
+  =lib/clautolisp/<os>/<arch>/clal_dwg.*= still answered "no writer codec
+  registered for format :DWG", because the shipped image lacked the code
+  that registers the codec; it is now built in. The libraries are located
+  from the RUNNING program (both the =bin/= and the =libexec/= layouts),
+  so an unpacked release works with no =CLAUTOLISP_DWG_LIBDIR=, no
+  installed ASDF sources and no development checkout, wherever it is
+  unpacked. =CLAUTOLISP_DWG_LIBDIR= still overrides the search. A missing
+  or unloadable library now says which — listing every pathname tried,
+  naming a missing =libredwg.dll= beside the shim on MS-Windows, and
+  quoting the dynamic loader when it refuses — instead of reporting an
+  unregistered codec.
+- *=Block.AddAttribute= takes the vendor's six arguments.*
+  =(vla-addattribute block height mode prompt insertion-point tag value)=
+  -- the point BEFORE the tag, as AutoCAD and BricsCAD take them -- and
+  the sixth argument is stored as the attribute's default text (DXF group
+  1). Up to 2.2.96 clautolisp read the fourth argument as the tag and the
+  fifth as the point, so a call written for AutoCAD failed with
+  "AddAttribute expects a point ... got \"REPERE\"", and no default value
+  could be set. See =issues/closed/cador-addattribute-argument-order.issue=.
 - *The comparison operators behave like AutoCAD and BricsCAD.* Measured
   on both (240 cases), and the autolisp-spec corrected to match:
   - =<=, =<==, =>=, =>== treat =nil= as the *smallest* value:

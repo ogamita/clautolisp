@@ -1,9 +1,9 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-autocad-error-primitive-masks-load-failure — deported LOAD calls undefined ERROR and hides the original failure
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P1
 #+TYPE: cad-runtime
-#+DEPENDS: -
+#+DEPENDS: alfe-eval-request-form-reenters-its-own-temp-file
 #+BRANCH: fix-alfe-autocad-error-primitive-masks-load-failure
 #+DATE: 2026-09-26
 
@@ -124,3 +124,69 @@ contain further calls which can fail the same way once reached under AutoCAD.
 - The SCHME+ AutoCAD CAD and unit entry points get past their first =tu:load=
   (or, if an independent source error remains, report that underlying error).
 - BricsCAD and clautolisp source-load behaviour remains unchanged.
+
+* Progress — clautolisp 2.2.98: the ERROR dependency is gone
+
+The audit asked for is done, and it found FIFTEEN calls, not two: three
+diagnostic raises in the source loader and TWELVE
+=(error *AUTOLISP_QUIT_SIGNAL*)= in the quit-propagation and batch
+paths. Every one of them would have failed the same way once reached
+under AutoCAD, so =(quit)= from a loaded file was broken there too. A
+sixteenth lived on the alfe side, in the =autolisp-eval-request-form=
+override emitted into run-common.lsp (=(if err (error err) r)=, added
+with the 2.2.91 fix).
+
+All sixteen now go through one helper, =autolisp-raise= (bootstrap):
+
+- it raises with ARITHMETIC -- =(/ 1 0)=, which fails on every
+  supported host and IS trappable by =vl-catch-all-apply=, unlike an
+  undefined-function error;
+- the message travels where the source loader's diagnostic already
+  travelled, in =*AUTOLISP_LAST_ERROR_CONTEXT*=, which
+  =autolisp-effective-error-message= already prefers -- so the inner
+  pathname, line, column, form start and nested load stack survive
+  unchanged;
+- a quit is not written into the error context: =autolisp-raise= sets
+  =*AUTOLISP_QUIT_REQUESTED*=, which every quit test consults BEFORE the
+  message, so quit propagation is preserved without depending on the
+  message text;
+- =autolisp-force-error= has two further statements after the division
+  (=(car 0)=, then an undefined function) so the abort is certain even on
+  a host that would tolerate a division by zero. They are unreachable on
+  every host we know.
+
+Tests (autolisp-front-end/tests/file-protocol-tests.lisp):
+
+- =protocol-emitted-runtime-never-calls-error= — run-common.lsp AND the
+  staged bootstrap and protocol runtime contain no =(error = call at all,
+  and the replacement helpers are present. This is acceptance criterion 1
+  in mechanical form.
+- =protocol-loader-failure-reports-its-diagnostic-without-error= — hosted
+  under clautolisp: a loaded file whose form the LOADER rejects reports
+  =DONE 1 FAIL= with the file, the line and the original text
+  (=LOAD failed: "/nonexistent-file-xyz"=), the session stays usable, and
+  =(quit)= still quits rather than failing.
+
+Suites: alfe 1171 checks 0 failures.
+
+** What is NOT done, and why
+
+- *Criterion 3, "with ERROR unavailable", is met mechanically, not by
+  running.* clautolisp HAS =error=, and shadowing it with a defun does
+  not reproduce an ABSENT function (AutoCAD's symptom is that resolving
+  the symbol fails, which no shadow can imitate). The text gate above
+  proves the property AutoCAD needs -- no call exists -- and the hosted
+  test proves the replacement carries the diagnostic.
+- *Criterion 2 is met for the loader path and still blocked for the
+  other one.* A form that fails inside the alfe =autolisp-eval-request-form=
+  override is STILL swallowed, and that is a second, independent defect
+  found while testing this one: the override writes every form to ONE
+  fixed temp file and the source loader calls it per form, so a nested
+  invocation rewrites the file the outer load is reading. Filed as
+  =issues/open/alfe-eval-request-form-reenters-its-own-temp-file.issue=
+  (P1) with a no-CAD reproduction. SCHME+'s =(tu:load …)= goes through
+  exactly that path, so this issue stays open until that one is fixed.
+- *Criterion 4 needs SCHME+ and a working AutoCAD.* The Windows runner
+  currently cannot start AutoCAD at all -- two wedged acad.exe hold the
+  COM registration, see
+  =issues/open/alfe-autocad-hung-instance-blocks-com-bootstrap.issue=.

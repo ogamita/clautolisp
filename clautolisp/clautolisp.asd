@@ -409,6 +409,20 @@ identity / TEMPPREFIX stamping, option value parsers)."
                ;; -- while the test systems, which depend on the compiler
                ;; directly as a test of it must, all passed.
                "clautolisp/autolisp-compiler"
+               ;; The DWG codec (clautolisp-distributed-native-libraries-not-
+               ;; loaded). It has to be listed HERE, for the same reason as
+               ;; the compiler above: nothing below depends on it, so the
+               ;; program that assembles them has to, and without this line
+               ;; the shipped executable had the drawing CORE but not the code
+               ;; that REGISTERS the :DWG reader/writer -- so a complete
+               ;; installation, native libraries and all, still answered "no
+               ;; writer codec registered for format :DWG". The NATIVE library
+               ;; stays lazily loaded (ensure-shim-loaded defers
+               ;; cffi:load-foreign-library to the first conversion), so
+               ;; baking the Lisp side in costs nothing at startup and a
+               ;; binaries-only install still runs -- it reports a missing
+               ;; native library when a DWG operation is actually attempted.
+               "clautolisp/drawing-dwg"
                ;; REPL comma-commands (interactors): ,date ,uptime ,help ,quit
                "clautolisp/autolisp-interactor"
                ;; the *AUTOLISP* REPL interactor + lisp window template now live

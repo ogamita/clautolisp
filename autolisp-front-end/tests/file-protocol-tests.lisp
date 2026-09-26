@@ -1155,7 +1155,11 @@ recognises a quit."
             (is (search "(setq err (vl-catch-all-apply 'load (list path)))"
                         content))
             (is (search "(vl-catch-all-error-p err)" content))
-            (is (search "(if err (error err) r)" content))
+            ;; Re-signalled through autolisp-raise, never `error': that
+            ;; function does not exist on AutoCAD
+            ;; (alfe-autocad-error-primitive-masks-load-failure).
+            (is (search "(if err (autolisp-raise err) r)" content))
+            (is (not (search "(error err)" content)))
             ;; ERR must be a local of the override, not a global left
             ;; behind in the CAD's symbol table.
             (is (search "(defun autolisp-eval-request-form (form / r err"
@@ -1248,7 +1252,8 @@ before `make build-clautolisp-sbcl`)."
 ;;; a host that does support &rest.
 
 (defun drive-hosted-engine (binary forms &key assume-no-rest-p dialect
-                                              (explicit-no-rest-p t))
+                                              (explicit-no-rest-p t)
+                                              forms-fn)
   "Host the emitted run-common.lsp in a clautolisp subprocess, send
 FORMS one at a time, and return (values statuses stdout stderr
 engine-diagnostics). STATUSES holds the DONE line of each request in
@@ -1257,7 +1262,10 @@ which is where clautolisp puts the dialect-portability warnings.
 
 DIALECT names the target the run-common.lsp is emitted for.
 EXPLICIT-NO-REST-P NIL passes no :assume-no-rest-p at all, so the
-emitter's own default — the target — decides the shadow path."
+emitter's own default — the target — decides the shadow path.
+FORMS-FN, a function of the workdir called once the session exists and
+before the engine starts, returns the forms to send instead of FORMS —
+for a test that has to stage files of its own next to the session."
   (let ((workdir (make-test-workdir (if assume-no-rest-p
                                         "hosted-norest"
                                         "hosted-rest")))
@@ -1283,6 +1291,8 @@ emitter's own default — the target — decides the shadow path."
            (unless (alfe.protocol.file:wait-for-status-prefix
                     session "READY" :timeout 60)
              (error "the hosted engine never reached READY"))
+           (when forms-fn
+             (setf forms (funcall forms-fn workdir)))
            (let ((statuses '()))
              (loop for form in forms
                    for i from 1
@@ -1291,7 +1301,18 @@ emitter's own default — the target — decides the shadow path."
                           (alfe.protocol.file:wait-for-status-prefix
                            session (format nil "DONE ~D" i) :timeout 30)
                         (declare (ignore elapsed))
-                        (push (if ok last "(timeout)") statuses)))
+                        ;; A DONE line can be overwritten before the
+                        ;; poll sees it -- a quit publishes DONE n QUIT
+                        ;; and then STOPPED at once -- so on a miss
+                        ;; record the status that IS there rather than a
+                        ;; bare "(timeout)", which would hide a
+                        ;; legitimate terminal state.
+                        (push (if ok
+                                  last
+                                  (or (alfe.protocol.file:read-current-status
+                                       session)
+                                      "(timeout)"))
+                              statuses)))
              (let ((out (alfe.protocol.file:read-file-as-string
                          (alfe.protocol.file:protocol-session-stdout-path
                           session)))
@@ -1418,3 +1439,106 @@ Skipped when clautolisp-sbcl is not on disk."
                   "~A: alfe's CAD-side runtime is not portable to its own ~
 target; each line names the construct needing an alternative:~%~{  ~A~%~}"
                   dialect warnings)))))))
+
+
+;;; --- the CAD-side runtime must not need an ERROR function ------------
+;;;
+;;; alfe-autocad-error-primitive-masks-load-failure. The source loader
+;;; assembled a precise diagnostic -- inner pathname, line, column, form
+;;; start, nested load stack -- and then re-signalled it with
+;;; (error msg). `error' is NOT an AutoLISP function: the autolisp-spec
+;;; documents none (only vl-exit-with-error, VLX-scoped), BricsCAD and
+;;; clautolisp provide one as an extension, AutoCAD does not. So on
+;;; AutoCAD the rethrow itself failed with "no function definition:
+;;; ERROR", which REPLACED the real diagnostic; and because an
+;;; undefined-function error is signalled while resolving the symbol, it
+;;; escapes vl-catch-all-apply, so the failure could even be published
+;;; as a success. Two SCHME+ AutoCAD jobs hit it on their first nested
+;;; tu:load while the BricsCAD jobs passed.
+;;;
+;;; A clautolisp host HAS `error', so it cannot show the AutoCAD symptom
+;;; by running. Two tests instead: the emitted text must contain no call
+;;; at all (which is the property AutoCAD needs), and the replacement
+;;; raise must still carry a loader diagnostic end to end and still
+;;; deliver a quit.
+
+(test protocol-emitted-runtime-never-calls-error
+  "The emitted CAD-side runtime -- run-common.lsp AND the bootstrap and
+protocol runtime it stages -- must contain no `(error ' call. That is
+the mechanical form of `no reachable dependency on an undefined ERROR
+function': AutoCAD has none, and a call that is never made cannot mask
+a diagnostic."
+  (let ((workdir (make-test-workdir "no-error-call")))
+    (unwind-protect
+        (multiple-value-bind (session path)
+            (emit-run-common-with-real-runtime workdir)
+          (dolist (file (list path
+                              (alfe.protocol.file:protocol-session-bootstrap-lsp-staged
+                               session)
+                              (alfe.protocol.file:protocol-session-runtime-lsp-staged
+                               session)))
+            (let* ((text (alfe.protocol.file:read-file-as-string file))
+                   (pos (search "(error " text)))
+              (is (null pos)
+                  "~A calls ERROR at offset ~A: ~S"
+                  (file-namestring file) pos
+                  (when pos (subseq text pos (min (length text) (+ pos 70)))))))
+          ;; The replacement must be there, and be the bootstrap's.
+          (let ((boot (alfe.protocol.file:read-file-as-string
+                       (alfe.protocol.file:protocol-session-bootstrap-lsp-staged
+                        session))))
+            (is (search "(defun autolisp-raise (msg)" boot))
+            (is (search "(defun autolisp-force-error ()" boot))))
+      (delete-workdir workdir))))
+
+(test protocol-loader-failure-reports-its-diagnostic-without-error
+  "Acceptance, hosted: with no `error' call left in the runtime, a
+failure raised by the source loader inside a loaded file still reaches
+alfe as a FAILED request carrying the inner pathname, the line and the
+original text -- and (quit) still stops the engine cleanly, which is the
+other thing the old (error *AUTOLISP_QUIT_SIGNAL*) did. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; loader-diagnostic test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary nil
+             :forms-fn
+             (lambda (workdir)
+               (let ((outer (merge-pathnames "outer.lsp" workdir)))
+                 (with-open-file (out outer :direction :output
+                                            :if-exists :supersede
+                                            :if-does-not-exist :create
+                                            :external-format :utf-8)
+                   ;; Line 2 asks for a file that is not there: the
+                   ;; loader raises, through autolisp-raise, with the
+                   ;; source-aware framing around it.
+                   (format out ";; outer~%(load \"/nonexistent-file-xyz\")~%"))
+                 (list (format nil "(load ~S)" (namestring outer))
+                       "(princ 7)"
+                       "(quit)"))))
+          (is (= 3 (length statuses)))
+          ;; 1. the loader's failure, reported with its diagnostic.
+          (is (search " FAIL" (first statuses))
+              "a loader failure must be reported, got ~S" (first statuses))
+          (is (search "outer.lsp" stderr)
+              "the diagnostic must name the loaded file: ~S" stderr)
+          (is (search "nonexistent-file-xyz" stderr)
+              "the diagnostic must carry the original text: ~S" stderr)
+          (is (not (search "no function definition" stderr))
+              "the runtime must not reach for ERROR: ~S" stderr)
+          ;; 2. the session is still usable after a reported failure.
+          (is (search " OK" (second statuses)))
+          (is (search "7" stdout))
+          ;; 3. (quit) is a quit, not an error. The loop publishes
+          ;; DONE n QUIT and then STOPPED immediately, so either is the
+          ;; right answer; what must NOT appear is FAIL, which is what a
+          ;; quit raised through a missing ERROR would have produced.
+          (is (or (search " QUIT" (third statuses))
+                  (string= "STOPPED" (third statuses)))
+              "(quit) must quit, got ~S" (third statuses))
+          (is (not (search " FAIL" (third statuses)))
+              "(quit) must not be reported as a failure: ~S"
+              (third statuses))))))

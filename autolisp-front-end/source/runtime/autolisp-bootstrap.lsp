@@ -377,6 +377,49 @@
     (setq msg (strcat msg " [load stack: " stack "]")))
   msg)
 
+;;; Raising an error WITHOUT the `error' function.
+;;;
+;;; alfe-autocad-error-primitive-masks-load-failure. `error' is NOT an
+;;; AutoLISP function: the autolisp-spec documents none (only
+;;; vl-exit-with-error, which is VLX-scoped). BricsCAD and clautolisp
+;;; provide one as an extension; AutoCAD does not. So on AutoCAD every
+;;; rethrow in this runtime failed with "no function definition: ERROR",
+;;; which REPLACED the diagnostic the source loader had just assembled --
+;;; and since an undefined-function error is signalled while RESOLVING
+;;; the symbol, it escapes vl-catch-all-apply, so a failed nested load
+;;; could even be published as a success.
+;;;
+;;; The runtime therefore raises with arithmetic: (/ 1 0) fails on every
+;;; supported host and IS trappable. The message travels the way the
+;;; source loader's own diagnostic already travelled, in
+;;; *AUTOLISP_LAST_ERROR_CONTEXT*, which autolisp-effective-error-message
+;;; prefers over whatever text the host produced for the arithmetic --
+;;; so the inner pathname, line, column, form start and nested load stack
+;;; all survive.
+;;;
+;;; The three statements make the abort certain even on a host that would
+;;; tolerate a division by zero: the last is an undefined function, which
+;;; no host survives. It is unreachable on every host we know.
+(defun autolisp-force-error ()
+  (/ 1 0)
+  (car 0)
+  (__autolisp-force-error-no-such-function))
+
+(defun autolisp-raise (msg)
+  (if (autolisp-quit-signal-p msg)
+    ;; A quit is a control signal, not a diagnostic: do not put it in
+    ;; the error context (it would be reported as an error message).
+    ;; The protocol loop and the batch paths recognise a quit by
+    ;; *AUTOLISP_QUIT_REQUESTED*, which they test BEFORE the message.
+    (setq *AUTOLISP_QUIT_REQUESTED* T)
+    ;; A caller that already assembled a context (the source loader)
+    ;; keeps it; a bare raise becomes the context itself.
+    (if (or (not (boundp '*AUTOLISP_LAST_ERROR_CONTEXT*))
+            (null *AUTOLISP_LAST_ERROR_CONTEXT*)
+            (= *AUTOLISP_LAST_ERROR_CONTEXT* ""))
+      (setq *AUTOLISP_LAST_ERROR_CONTEXT* (autolisp-str msg))))
+  (autolisp-force-error))
+
 (defun autolisp-effective-error-message (fallback)
   (if (and (boundp '*AUTOLISP_LAST_ERROR_CONTEXT*)
            *AUTOLISP_LAST_ERROR_CONTEXT*
@@ -396,7 +439,7 @@
   (setq msg (autolisp-source-format-error path detail line col form-start defun-name))
   (setq *AUTOLISP_LAST_ERROR_CONTEXT* msg)
   (autolisp-source-pop-stack)
-  (error msg))
+  (autolisp-raise msg))
 
 (defun autolisp-source-load-failure (onfailure)
   (if (= (type onfailure) 'SYM)
@@ -434,7 +477,7 @@
   (if (not resolved)
     (if has-onfailure
       (autolisp-source-load-failure onfailure)
-      (error (strcat "LOAD failed: \"" path "\"")))
+      (autolisp-raise (strcat "LOAD failed: \"" path "\"")))
     (progn
       ;; Bind *AUTOLISP-LOAD-PATHNAME* (both hyphen and underscore
       ;; spellings, per the project's convention) to the absolute
@@ -455,7 +498,7 @@
       (setq *AUTOLISP-LOAD-PATHNAME* prev-load-pathname)
       (setq *AUTOLISP_LOAD_PATHNAME* prev-load-pathname)
       (if (vl-catch-all-error-p catch-result)
-        (error (vl-catch-all-error-message catch-result))
+        (autolisp-raise (vl-catch-all-error-message catch-result))
         catch-result))))
 
 ;; --- G3: native (load) honours the resolved `source' encoding -------------
@@ -565,7 +608,7 @@
                    (progn
                      (close f)
                      (autolisp-source-pop-stack)
-                     (error *AUTOLISP_QUIT_SIGNAL*))
+                     (autolisp-raise *AUTOLISP_QUIT_SIGNAL*))
                    (progn
                      (close f)
                      (autolisp-source-raise resolved
@@ -775,9 +818,9 @@
   (setq *error* olderr)
   (setq *AUTOLISP_CAPTURE_STDOUT* nil)
   (if *AUTOLISP_QUIT_REQUESTED*
-    (error *AUTOLISP_QUIT_SIGNAL*)
+    (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
     (if (autolisp-quit-signal-p *AUTOLISP_ERROR_MSG*)
-      (error *AUTOLISP_QUIT_SIGNAL*)
+      (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
     (if *AUTOLISP_ERROR_MSG*
       (progn
         (autolisp-log-err
@@ -813,9 +856,9 @@
       (setq form-read (read form-text))
       (setq *error* olderr)
       (if *AUTOLISP_QUIT_REQUESTED*
-        (error *AUTOLISP_QUIT_SIGNAL*)
+        (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
         (if (autolisp-quit-signal-p *AUTOLISP_ERROR_MSG*)
-          (error *AUTOLISP_QUIT_SIGNAL*)
+          (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
         (if *AUTOLISP_ERROR_MSG*
           (progn
             (autolisp-log-err (strcat "ERROR read " form-text ": " *AUTOLISP_ERROR_MSG*))
@@ -829,9 +872,9 @@
             (setq *error* olderr)
             (setq *AUTOLISP_CAPTURE_STDOUT* nil)
             (if *AUTOLISP_QUIT_REQUESTED*
-              (error *AUTOLISP_QUIT_SIGNAL*)
+              (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
               (if (autolisp-quit-signal-p *AUTOLISP_ERROR_MSG*)
-                (error *AUTOLISP_QUIT_SIGNAL*)
+                (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
               (if *AUTOLISP_ERROR_MSG*
                 (progn
                   (autolisp-log-err (strcat "ERROR eval " form-text ": " *AUTOLISP_ERROR_MSG*))
@@ -851,9 +894,9 @@
   (setq sym-read (read main-name))
   (setq *error* olderr)
   (if *AUTOLISP_QUIT_REQUESTED*
-    (error *AUTOLISP_QUIT_SIGNAL*)
+    (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
     (if (autolisp-quit-signal-p *AUTOLISP_ERROR_MSG*)
-      (error *AUTOLISP_QUIT_SIGNAL*)
+      (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
     (if *AUTOLISP_ERROR_MSG*
       (progn
         (autolisp-log-err (strcat "ERROR read-main " main-name ": " *AUTOLISP_ERROR_MSG*))
@@ -868,9 +911,9 @@
         (setq *error* olderr)
         (setq *AUTOLISP_CAPTURE_STDOUT* nil)
         (if *AUTOLISP_QUIT_REQUESTED*
-          (error *AUTOLISP_QUIT_SIGNAL*)
+          (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
           (if (autolisp-quit-signal-p *AUTOLISP_ERROR_MSG*)
-            (error *AUTOLISP_QUIT_SIGNAL*)
+            (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
           (if *AUTOLISP_ERROR_MSG*
             (progn
               (autolisp-log-err (strcat "ERROR main " main-name ": " *AUTOLISP_ERROR_MSG*))
@@ -896,7 +939,7 @@
 
 (defun quit ()
   (setq *AUTOLISP_QUIT_REQUESTED* T)
-  (error *AUTOLISP_QUIT_SIGNAL*))
+  (autolisp-raise *AUTOLISP_QUIT_SIGNAL*))
 
 (defun exit ()
   (quit))

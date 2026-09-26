@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cador-addattribute-argument-order — Block.AddAttribute swaps InsertionPoint and Tag and ignores Value
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: cad-runtime
 #+DEPENDS: -
@@ -154,3 +154,38 @@ the argument list unchanged before it reaches this adapter.
   signature.
 - =issues/open/clautolisp-distributed-native-libraries-not-loaded.issue= is
   the independent DWG writer failure exposed by the same SCHME+ A1 job.
+
+* Resolved — clautolisp 2.2.97
+
+=%block-add-attribute= (clautolisp/cador/source/vlax-api.lisp) now
+destructures the vendor order =(height mode prompt insertion-point tag
+value)= and maps all six: 40 Height, 70 Mode, 3 Prompt, 10
+InsertionPoint, 2 Tag, 1 Value. Its docstring records what the old order
+was and what it cost, so the permutation cannot come back as a
+"simplification".
+
+The false-green test is CORRECTED, not supplemented:
+=vlax-block-addattribute-adds-an-attdef-to-the-block= passes the six
+arguments in vendor order with values that differ from one another
+(height 2.5, mode 8, prompt "Enter name", point (1 2 0), tag "NAME",
+value "DEFAULT") and asserts every mapped field plus the block's Count.
+Before the fix it reproduced the reported failure exactly: /AddAttribute
+expects a point ... got "NAME"/.
+
+Added =vla-addattribute-passes-the-six-vendor-arguments-through=
+(clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp): it goes
+through the AutoLISP =vla-addattribute= façade rather than
+=host-vlax-invoke-method=, so a façade that reordered or dropped an
+argument is caught too. It reads the tag back as TagString and the value
+as TextString.
+
+clautolisp SBCL suite after the fix: 9993 checks, 0 failures.
+
+The user manual documented the WRONG signature (=… prompt tag point=);
+it is corrected, and now says explicitly that the point comes before the
+tag and that =value= is the attribute's default text.
+RELEASE_NOTES.org carries the user-visible entry.
+
+Left for the SCHME+ side: re-run /creation insertion et mise a jour d'un
+bloc attribue/ to confirm end to end. That needs the SCHME+ pipeline,
+not this repository.
