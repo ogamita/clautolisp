@@ -103,7 +103,12 @@
         (setq ENCSRC "unset")
         (setq r (vl-catch-all-apply 'load (list path)))
         (if (vl-catch-all-error-p r)
-            (m (strcat "source." tag ".load") "LOAD-ERR")
+            ;; Surface the actual failure, not a bare sentinel: the message is
+            ;; what diagnoses accoreconsole-deported-load-highbyte (why the
+            ;; deported load chokes on a high byte). Keep the LOAD-ERR prefix
+            ;; so existing readers still key on it.
+            (m (strcat "source." tag ".load")
+               (strcat "LOAD-ERR: " (vl-catch-all-error-message r)))
             (m (strcat "source." tag ".cp") (codepoints ENCSRC))))))
 
 (defun run-encoding-probe ( / S)

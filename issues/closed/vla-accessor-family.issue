@@ -2,7 +2,8 @@
 
 # Issue: implement the `vla-get-*` / `vla-put-*` / `vla-<method>` accessor family
 
-- **Status:** open — **REPRIORITISED P1 (2026-08-07).** SCHMS
+- **Status:** DONE (2026-09-26 — resolved by progress; see the Resolved
+  section at the end). Historical context below. **REPRIORITISED P1 (2026-08-07).** SCHMS
   `make test-cad-clautolisp` (host=mock) fails 6/6 [sigfic-cad] tests with
   "VLA-OBJECT AutoCAD.Document has no property named BLOCKS": the P2
   remainder below (object-valued mock properties — `Blocks`, `ModelSpace`,
@@ -220,3 +221,24 @@ jamais de job stuck-pending.
 Non vérifié ici, faute d'accès au corpus : que `make test-cad-clautolisp`
 existe bien sous ce nom dans le SCHMS courant et que ses prérequis se
 limitent à clautolisp sur le PATH. À confirmer au premier run.
+
+## Resolved — 2026-09-26 (closed by progress)
+
+The vla-get-* / vla-put-* / vla-<method> facade, vlax-get-acad-object, the full
+vlax-* primitive set, and the live drawing-backed collection layer (Blocks /
+Layers / ModelSpace / PaperSpace + generic Item/Count/Add/Delete) all shipped
+across 1.7.19-1.8.20. The P1 blocker ("AutoCAD.Document has no property named
+BLOCKS") was resolved same-day at 1.8.10. Verified headless on --host cador:
+the cador suite is 1070/1070 on clautolisp 2.2.106, and the SCHMS driver
+make test-cad-clautolisp (host=cador) reports 6/6 OK. Every vlax-* operator is
+a real implementation - none remain nil stubs.
+
+Residual, tracked elsewhere (not blocking this issue):
+- The vlax-curve-* SPEC-UNCERTAIN items (ELLIPSE/SPLINE/bulge evaluation) are
+  recorded in issues/open/deferred-spec-research.issue and are exercised by the
+  vendor probe lanes now that CAD runners are available.
+- The P3 "back the facade with the real host instead of the mock" note is moot:
+  cador IS the headless host the facade resolves against; no separate mock to
+  migrate off, and no AutoLISP-visible change remains.
+
+Closed as resolved-by-progress per the triage workflow.

@@ -231,6 +231,14 @@ separate binary for tool integrators.
   image. Before this they shipped only inside the installed source copy,
   off the search path, so the automation and batch backends failed at
   start with "no bootstrap/runtime LSP found" on every installed system.
+- The AutoCAD COM bridge no longer dies before READY with "Variable non
+  définie: lastTouchError". The bridge VBScript runs under ~Option Explicit~
+  and assigns ~lastTouchError~ (the busy-instance retry) but never declared
+  it, so ~cscript~ exited 0 before signalling READY and every AutoCAD backend
+  request failed "COM bridge exited before READY". Declared it; a headless
+  regression test now lints the emitted bridge template for any Option-Explicit
+  global that is assigned but never ~Dim~'d. Found on the Windows AutoCAD
+  vendor-probe lane.
 - Driving AutoCAD in automation mode no longer crashes on start with "The
   function ALFE.BACKEND.AUTOCAD::PROBE is undefined." A missing parenthesis
   had turned the AutoCAD ~start-engine~ error handler inside out — its two

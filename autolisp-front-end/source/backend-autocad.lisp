@@ -597,7 +597,7 @@ The next job reads this file and can end what the last one left."
 Option Explicit
 Dim fso, app, doc, runFile, statusFile, errFile, commode, debugFile, waitSecs
 Dim attached, created, rc, statusReadyFlag, flagsFile, progId, createdFile
-Dim errNumber, errDescription
+Dim errNumber, errDescription, lastTouchError
 
 Set fso = CreateObject(\"Scripting.FileSystemObject\")
 runFile     = \"${RUNLSPFILE}\"
