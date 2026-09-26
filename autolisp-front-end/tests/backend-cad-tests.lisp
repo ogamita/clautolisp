@@ -696,6 +696,82 @@ raise."
         (when (>= n 50) (error c))
         (sleep 0.02)))))
 
+(defvar *mock-cad-condition* nil
+  "The condition that killed the most recent mock CAD thread, or NIL.
+
+The thread's body has to be guarded -- an unhandled error in a thread under
+`--disable-debugger' aborts the WHOLE test process -- but a guard that only
+swallows turns every mock crash into an indistinguishable driver timeout.
+test:alfe:windows reported exactly that for a week: :ABORTED, with no cause,
+because the mock had died inside its IGNORE-ERRORS and nothing recorded why.
+So the guard records, and the tests that can be defeated by a dead mock quote
+this in their failure message.")
+
+(defun %call-recording-mock-condition (thunk)
+  "Run THUNK under the mock thread's guard: a condition that would otherwise
+kill the thread silently is RECORDED in *MOCK-CAD-CONDITION* and swallowed.
+
+Both halves are load-bearing. Swallowing is mandatory -- an unhandled error in
+a thread under `--disable-debugger' aborts the whole test process, so the mock
+must not let one out. Recording is what was missing: without it every mock
+crash arrives at the assertions as an indistinguishable driver timeout.
+
+It is a FUNCTION rather than the inline HANDLER-CASE it replaces so that the
+guarantee can be tested directly, on the same code the thread runs, instead of
+by arranging a filesystem failure -- which is not portable: the first version of
+that test deleted the workdir and passed on SBCL, where the mock's first write
+then signals, and failed on CCL, where it does not."
+  (handler-case (funcall thunk)
+    (error (condition)
+      (setf *mock-cad-condition* condition)
+      nil)))
+
+(defun %mock-cad-failure-note ()
+  "A clause naming the condition that killed the mock, or the empty string.
+Appended to an assertion message so a timeout says WHY instead of :ABORTED."
+  (if *mock-cad-condition*
+      (format nil " -- the mock CAD thread died: ~A" *mock-cad-condition*)
+      ""))
+
+(defun %mock-consume-request (stdin deadline)
+  "Wait until STDIN holds a request, return its text and delete it; NIL if
+DEADLINE passes first.
+
+NEVER PROBE THEN OPEN. The driver publishes stdin.txt with WRITE-ATOMIC-FILE
+-- write a temp, rename over -- and on Windows that rename is delete+rename
+(UIOP's overwrite), so between a PROBE-FILE that succeeds and the OPEN that
+follows, the file can be gone or still held by the renaming party. The first
+shape of this loop probed and then read BARE, and that read was the one
+operation in the cycle %MOCK-RETRY-FILE-OP did not cover: the transient
+propagated to the thread's outer handler, killed the mock mid-session, and the
+driver timed out with :ABORTED and no cause.
+
+That is the SECOND cause of alfe-windows-drive-protocol-three-evals-fails. The
+mock's per-round budget was the first; fixing it made the Linux repro pass and
+left the Windows lane red, which is what said there was another one.
+
+The only way to know a file is readable is to read it, so the wait and the read
+are ONE loop: attempt the read, treat absence and a sharing violation alike as
+`not yet', and stop at the deadline. An EMPTY read is also `not yet' -- it is
+what a half-written file looks like, and consuming it would strand the request."
+  (loop
+    (let ((text (handler-case
+                    (with-open-file (in stdin :direction :input
+                                              :if-does-not-exist nil
+                                              :external-format :utf-8)
+                      (when in
+                        (let* ((buffer (make-string (file-length in)))
+                               (n (read-sequence buffer in)))
+                          (subseq buffer 0 n))))
+                  ((or file-error stream-error) () nil))))
+      (when (and text (plusp (length text)))
+        (%mock-retry-file-op
+         (lambda () (when (probe-file stdin) (delete-file stdin))))
+        (return text))
+      (when (> (get-internal-real-time) deadline)
+        (return nil))
+      (sleep 0.02))))
+
 (defun spawn-mock-cad-runtime (protocol-session
                                &key (cycles 1)
                                     (echo-stdin-p t)
@@ -714,8 +790,12 @@ stdout.txt so the test driver can verify the round-trip."
      ;; skipped because the driver threw), an unguarded WRITE-ATOMIC-FILE
      ;; here signals a file error that, being UNHANDLED in a thread under
      ;; --disable-debugger, aborts the ENTIRE test process. Swallow it so
-     ;; at most the owning test fails; the suite keeps running.
-     (ignore-errors
+     ;; at most the owning test fails; the suite keeps running -- but RECORD
+     ;; it (*MOCK-CAD-CONDITION*) rather than only swallowing: a guard that
+     ;; discards the cause is why a dead mock read as a bare :ABORTED on the
+     ;; Windows lane for a week.
+     (%call-recording-mock-condition
+      (lambda ()
      (alfe.protocol.file:write-atomic-file
       (alfe.protocol.file:protocol-session-status-path protocol-session)
       "READY 0")
@@ -741,18 +821,14 @@ stdout.txt so the test driver can verify the round-trip."
                                 (* 20 internal-time-units-per-second))))
        (loop while (and (< served cycles)
                         (< (get-internal-real-time) overall-deadline))
-             do (let ((request nil))
-                  ;; Wait for THIS request, without a budget of its own: the
-                  ;; overall deadline above is the only cap, so a filesystem
-                  ;; slower than one guess does not strand a request.
-                  (loop until (probe-file stdin)
-                        when (> (get-internal-real-time) overall-deadline)
-                          do (return)
-                        do (sleep 0.02))
-                  (when (probe-file stdin)
-                    (setf request (alfe.protocol.file:read-file-as-string stdin))
-                    (%mock-retry-file-op
-                     (lambda () (when (probe-file stdin) (delete-file stdin)))))
+             do (let ((request
+                        ;; Wait for THIS request, without a budget of its own:
+                        ;; the overall deadline above is the only cap, so a
+                        ;; filesystem slower than one guess does not strand a
+                        ;; request. The wait and the read are one operation --
+                        ;; see %MOCK-CONSUME-REQUEST for why probing first is
+                        ;; what broke this on Windows.
+                        (%mock-consume-request stdin overall-deadline)))
                   (when request
                     (incf served)
                     (alfe.protocol.file:write-atomic-file
@@ -789,7 +865,7 @@ stdout.txt so the test driver can verify the round-trip."
      (sleep 0.2)
      (alfe.protocol.file:write-atomic-file
       (alfe.protocol.file:protocol-session-status-path protocol-session)
-      "STOPPED")))
+      "STOPPED"))))
    :name "mock-cad-runtime"))
 
 (test cad-drive-protocol-actions-end-to-end
@@ -3026,6 +3102,7 @@ not a counter it ran ahead to)."
     (unwind-protect
         (progn
           (ensure-directories-exist workdir)
+          (setf *mock-cad-condition* nil)
           (let* ((protocol (alfe.protocol.file:init-session workdir))
                  (cad (spawn-mock-cad-runtime protocol :cycles 1))
                  (plan (list (alfe.backend:action-eval "(princ 'late)")
@@ -3037,11 +3114,94 @@ not a counter it ran ahead to)."
                                 (*error-output*    (make-string-output-stream)))
                             (alfe.backend.cad-common:drive-protocol-actions
                              protocol plan))))
+              ;; Quote the mock's death when there was one: this assertion
+              ;; reported a bare :ABORTED on the Windows runner while the real
+              ;; cause was the mock dying on a probe-then-open transient.
               (is (eq :success (alfe.backend:eval-result-status result))
-                  "a late request must still be acknowledged; got ~S"
-                  (alfe.backend:eval-result-status result))
+                  "a late request must still be acknowledged; got ~S~A"
+                  (alfe.backend:eval-result-status result)
+                  (%mock-cad-failure-note))
               (is (search "(princ 'late)" (alfe.backend:eval-result-output result))
-                  "and really consumed -- the echo proves the mock read it"))
+                  "and really consumed -- the echo proves the mock read it~A"
+                  (%mock-cad-failure-note)))
             (bordeaux-threads:join-thread cad)))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
+
+(test cad-mock-consume-request-never-probes-then-opens
+  "The second cause of alfe-windows-drive-protocol-three-evals-fails, as a unit
+test that needs no thread and no platform.
+
+%MOCK-CONSUME-REQUEST must treat an ABSENT file and a HALF-WRITTEN one alike as
+`not yet' and keep waiting, because that is what stdin.txt looks like while the
+driver's WRITE-ATOMIC-FILE renames over it -- on Windows a delete+rename, so a
+PROBE-FILE that succeeds says nothing about the OPEN that follows. The old code
+probed and then read bare; the read signalled, the mock thread died inside its
+guard, and the driver reported :ABORTED with no cause.
+
+The case that discriminates is the EMPTY file: a reader that consumes it eats a
+request that was never fully written, and the request is then lost for good."
+  (let* ((dir (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "alfe-test-consume-~D/" (random 999999))
+                                (uiop:temporary-directory))))
+         (stdin (merge-pathnames "stdin.txt" dir))
+         (quarter (floor internal-time-units-per-second 4)))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist dir)
+          ;; ABSENT: returns NIL at the deadline rather than signalling.
+          (is (null (%mock-consume-request stdin (get-internal-real-time)))
+              "an absent request file must be `not yet', not an error")
+          ;; HALF-WRITTEN (empty): still `not yet', and LEFT ALONE.
+          (with-open-file (out stdin :direction :output
+                                     :if-exists :supersede
+                                     :if-does-not-exist :create))
+          (is (null (%mock-consume-request stdin (+ (get-internal-real-time) quarter)))
+              "an empty file is a half-written request, not a request")
+          (is (probe-file stdin)
+              "and it must be LEFT for the writer to finish, not consumed")
+          ;; COMPLETE: consumed, returned verbatim, and removed. Verbatim
+          ;; INCLUDES the trailing newline WRITE-ATOMIC-FILE appends -- the
+          ;; protocol is line-oriented (the CAD side reads with `read-line'),
+          ;; and the mock echoes what it read, so trimming here would hide a
+          ;; reader that dropped or added a line.
+          (alfe.protocol.file:write-atomic-file stdin "(princ 'x)")
+          (is (equal (format nil "(princ 'x)~%")
+                     (%mock-consume-request stdin (+ (get-internal-real-time)
+                                                     (* 5 internal-time-units-per-second))))
+              "a complete request must be returned verbatim, newline included")
+          (is (null (probe-file stdin))
+              "consumed means deleted, so the next cycle waits for a new one"))
+      (uiop:delete-directory-tree dir :validate t
+                                      :if-does-not-exist :ignore))))
+
+(test cad-mock-death-is-recorded-not-swallowed
+  "A mock that dies must say why. The thread's body has to be guarded -- an
+unhandled error in a thread under --disable-debugger aborts the whole test
+process -- but the guard used to discard the condition, so every mock crash
+arrived at the assertions as an indistinguishable driver timeout. That is why
+the Windows lane took a week to explain: it said :ABORTED and nothing else.
+
+Exercises %CALL-RECORDING-MOCK-CONDITION, the guard the thread itself runs, so
+the test proves the mechanism rather than a symptom. The first version arranged
+a real failure instead -- it deleted the workdir so the mock's first write would
+signal -- and that is NOT portable: it passed on SBCL and failed on CCL, where
+the write does not signal. The mechanism is the same on both."
+  (setf *mock-cad-condition* nil)
+  (is (equal "" (%mock-cad-failure-note))
+      "no death, no note -- otherwise every message would carry noise")
+  ;; The guard must SWALLOW: a condition escaping here would abort the process.
+  (is (null (%call-recording-mock-condition
+             (lambda () (error "mock-cad boom, deliberately"))))
+      "the guard must swallow, or an unhandled thread error kills the suite")
+  ;; ... and RECORD, which is the half that was missing.
+  (is (not (null *mock-cad-condition*))
+      "the guard must RECORD the condition, not discard it")
+  (is (search "mock-cad boom" (%mock-cad-failure-note))
+      "and the note must quote it, so an assertion can name the cause")
+  ;; A successful body returns its value and leaves no note behind.
+  (setf *mock-cad-condition* nil)
+  (is (eql 42 (%call-recording-mock-condition (lambda () 42)))
+      "a body that succeeds returns its value")
+  (is (equal "" (%mock-cad-failure-note))
+      "and records nothing"))
