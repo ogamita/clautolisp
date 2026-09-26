@@ -320,11 +320,80 @@ What landed:
 
 =make check-release= (all five packaging checks) passes with the job added.
 
-*** Still open: the run itself
+*** It ran — and found a real defect (2026-09-26, job 16756197963)
 
-- [ ] =verify:packaged-dwg:windows= played on the Windows runner, green. It
-      has never run; the Windows runner is intermittent and the job is manual
-      by design. Until then the Windows half is WRITTEN, not demonstrated —
-      and the criteria ask for a demonstration.
+The lane ran on its first opportunity (the Windows runner came online and
+=.gate-windows-soft= schedules it automatically) and FAILED, which is the lane
+earning its keep. Everything up to the check worked: libredwg built from the
+submodule (8.5 min), the images built, and the install produced the right
+layout —
+
+#+begin_example
+packaged-dwg: program: .../a prefix with spaces/bin/clautolisp.exe
+packaged-dwg: native:  .../a prefix with spaces/lib/clautolisp/windows/x86-64/clal_dwg.dll
+#+end_example
+
+— and then the save failed:
+
+#+begin_example
+COM-SAVE-FAILED: the DWG native library
+  C:/gitlab-runner/builds/.../clautolisp/drawing-dwg/source/clal_dwg.dll
+  is installed but its dependency libredwg.dll is not beside it in
+  C:/gitlab-runner/builds/.../clautolisp/drawing-dwg/source/.
+#+end_example
+
+*The installed program loaded the DEVELOPMENT TREE's shim, not its own.*
+=native-library-directories= lists the dev-tree ASDF path before the program's
+=lib/clautolisp/<os>/<arch>/= — correct for a developer — and
+=ensure-shim-loaded= took the first candidate that EXISTED, then died on it.
+The dev copy on that machine has no =libredwg.dll= beside it (cmake puts it
+elsewhere), so nothing could be saved although the installed pair was complete.
+
+*And the same wrong pick was invisible on Linux*, because the dev copy's rpath
+resolves its dependency: **the Linux lane had been passing its first two cases
+without ever loading the installed library.** The check was not checking what
+it claimed, on any machine that has a build tree — which is every CI machine.
+
+*** Fixed — clautolisp 2.2.117
+
+- =%TRY-LOAD-SHIM= attempts one candidate (its MS-Windows dependency first) and
+  returns a REASON instead of signalling. =%SELECT-USABLE-SHIM= walks the
+  candidates and takes the first that actually LOADS; every skipped one is
+  reported on =*error-output*= (=skipped the DWG native library …: …=), so a
+  developer with a broken local build cannot silently end up running an
+  installed, older library. When none loads, the error names each one and the
+  loader's words for it. The candidate ORDER is unchanged: a developer's own
+  build still wins when it works.
+- =scripts/verify-packaged-dwg.sh= now hides the development tree's shim for
+  the WHOLE check rather than only for its last case. That is what makes cases
+  1 and 2 mean anything on a machine with a checkout: the question is what a
+  machine that only unpacked a release does, and such a machine has no dev tree.
+
+Measured on Linux after the fix — the first run in which the check really
+loaded the installed library:
+
+#+begin_example
+packaged-dwg: hid the development tree's clal_dwg.so for the whole check
+packaged-dwg: native:  /tmp/.../a prefix with spaces/lib/clautolisp/linux/x86-64/clal_dwg.so
+packaged-dwg:   WROTE-DWG        (302711 bytes)
+packaged-dwg:   WROTE-DWG        (after moving the prefix)
+packaged-dwg: the missing library is named, with the paths tried
+packaged-dwg: OK: a complete installed release writes a DWG, before and after being moved
+#+end_example
+
+Tests: four in =drawing-dwg/tests/dwg-tests.lisp= over =%SELECT-USABLE-SHIM=
+with injected probe/try functions — so the Windows case is reproducible on
+Linux, with no library on disk: fall through an existing-but-unusable
+candidate (the reported case, asserting the skip is reported), prefer the first
+USABLE one (the dev build still wins when it works), ignore a candidate that
+does not exist, and report every rejection when none works. drawing-dwg suite
+38 checks, 0 failures.
+
+*** Still open: the Windows run, again
+
+- [ ] =verify:packaged-dwg:windows= green on the runner with 2.2.117. The
+      failure above is understood and fixed, but the fix has not yet been seen
+      on the platform that exhibited it — and that platform is the whole point
+      of this half.
 - The DWG written by the packaged binary carries no ENTITIES yet; that is
   =issues/open/dwg-round-trip-loses-entities.issue=, not this one.

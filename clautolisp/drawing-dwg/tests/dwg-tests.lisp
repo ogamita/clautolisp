@@ -243,3 +243,70 @@ needs one, to write the DWG."
                  "the entity must survive: this is what a hand-built ~
 skeleton loses")))
       (ignore-errors (delete-file out)))))
+
+;;; --- choosing among candidate native libraries --------------------
+;;;
+;;; clautolisp-distributed-native-libraries-not-loaded, measured on the
+;;; Windows runner 2026-09-26: a complete installed release FAILED to save a
+;;; DWG because the search took the first candidate that EXISTED -- the
+;;; development tree's clal_dwg.dll, which has no libredwg.dll beside it --
+;;; and died on it, although the program's own lib/clautolisp/<os>/<arch>/
+;;; carried a complete pair. On ELF the same wrong pick is invisible (the dev
+;;; copy's rpath resolves its dependency), which is why the Linux check had
+;;; been passing without ever loading the installed library.
+;;;
+;;; The choice is tested here with injected probe/try functions: no real
+;;; library, no platform dependency, and the Windows case reproducible on
+;;; Linux.
+
+(defun %fake-shim-selection (candidates existing usable)
+  "Run the selection over CANDIDATES where EXISTING names the ones on disk and
+USABLE the ones that load. Returns (values PATH SKIPPED-NAMES)."
+  (multiple-value-bind (path skipped)
+      (clautolisp.drawing.dwg::%select-usable-shim
+       candidates
+       :probe (lambda (p) (member p existing :test #'equal))
+       :try (lambda (p)
+              (if (member p usable :test #'equal)
+                  t
+                  (values nil "no libredwg.dll beside it"))))
+    (values path (mapcar #'car skipped))))
+
+(test shim-selection-falls-through-an-existing-but-unusable-candidate
+  (let ((dev "/checkout/drawing-dwg/source/clal_dwg.dll")
+        (installed "/prefix/lib/clautolisp/windows/x86-64/clal_dwg.dll"))
+    ;; The reported case: both exist, the dev one cannot load.
+    (multiple-value-bind (path skipped)
+        (%fake-shim-selection (list dev installed) (list dev installed) (list installed))
+      (is (equal installed path)
+          "the installed library must be used when the dev copy cannot load")
+      (is (equal (list dev) skipped)
+          "and the skipped candidate is reported, so nobody silently runs an ~
+older library"))))
+
+(test shim-selection-prefers-the-first-usable-candidate
+  (let ((dev "/checkout/drawing-dwg/source/clal_dwg.so")
+        (installed "/prefix/lib/clautolisp/linux/x86-64/clal_dwg.so"))
+    ;; A developer's own build still wins when it works: the order is right,
+    ;; only the give-up-on-first-existing was wrong.
+    (multiple-value-bind (path skipped)
+        (%fake-shim-selection (list dev installed) (list dev installed)
+                              (list dev installed))
+      (is (equal dev path))
+      (is (null skipped)))))
+
+(test shim-selection-skips-what-is-not-on-disk
+  (let ((absent "/nowhere/clal_dwg.so")
+        (installed "/prefix/lib/clautolisp/linux/x86-64/clal_dwg.so"))
+    (multiple-value-bind (path skipped)
+        (%fake-shim-selection (list absent installed) (list installed) (list installed))
+      (is (equal installed path))
+      (is (null skipped) "a candidate that does not exist is not a rejection"))))
+
+(test shim-selection-reports-every-rejection-when-none-works
+  (let ((a "/a/clal_dwg.dll") (b "/b/clal_dwg.dll"))
+    (multiple-value-bind (path skipped)
+        (%fake-shim-selection (list a b) (list a b) '())
+      (is (null path))
+      (is (equal (list a b) skipped)
+          "all of them, in order: the error message names each one and why"))))

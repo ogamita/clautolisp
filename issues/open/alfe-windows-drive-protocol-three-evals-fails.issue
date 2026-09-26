@@ -1,0 +1,72 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-windows-drive-protocol-three-evals-fails — cad-drive-protocol-actions-three-evals-counter-aware fails on the Windows runner
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: portability
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-09-26
+
+* Observed
+
+=test:alfe:windows= (native Windows runner, =allow_failure: true=), job
+16756197957 on master pipeline 2885678935: the suite completes with 1208 checks
+and *4 failures, all in one test* —
+=CAD-DRIVE-PROTOCOL-ACTIONS-THREE-EVALS-COUNTER-AWARE=, on
+=(EVAL-RESULT-STATUS RESULT)=.
+
+The same test passes on Linux (SBCL and CCL) and on macOS.
+
+* Context that matters
+
+The immediately preceding run of that lane (job 16755546814) was WORSE: it
+aborted mid-suite inside =PROTOCOL-MOCK-CAD-FULL-LIFECYCLE= with an unhandled
+condition and reported nothing at all. So the lane was already red before
+2026-09-26's work; what changed is that it now runs to completion and isolates
+the failure to one test, which is what makes this ticket possible.
+
+* Why it is probably platform, not logic
+
+The test drives the FILE protocol against the mock: three =:eval= actions, each
+waiting for =DONE N= with N the next request counter. It is exactly the shape
+that Windows file semantics disturb, and the repository already carries two
+findings of that class:
+
+- =write-atomic-file='s overwriting rename is NOT atomic on Windows (UIOP does
+  delete-then-rename), so a reader can transiently see the target missing --
+  see =write-atomic-file-concurrent-rename-windows= (closed) and the Windows
+  skip in =protocol-write-atomic-file-contention=.
+- Readers must use =:if-does-not-exist nil= and never probe-then-open, because
+  the delete gap of a hot-rewritten file makes TOCTOU fire.
+
+So the first hypothesis is that the mock's =status.txt= / =stdout.txt= updates
+are read across such a gap, and =eval-result-status= comes back NIL (or stale)
+for one of the three actions rather than =:ok=.
+
+* Directions
+
+1. Get the 4 failing checks' actual values from the job trace (the names are
+   there; the values are truncated in the summary) -- which of the three
+   actions, and what status came back.
+2. Decide between the two honest outcomes, and do not fudge the difference:
+   - the ASSERTION is platform-dependent (a status legitimately observable as
+     pending on Windows) -> relax it for Windows the way the contention test
+     does, with the reason at the call site; or
+   - the PROTOCOL DRIVER has a real race that Windows merely exposes -> fix
+     the driver, since a real CAD on that platform would hit it too. This is
+     the outcome that matters, and it is the reason this is not simply skipped.
+3. Only then consider =:skip-on-os=; a skip chosen before step 1 would hide
+   the second outcome.
+
+* Acceptance criteria
+
+- =test:alfe:windows= green, or the one assertion documented as
+  platform-dependent with the reason recorded at the call site.
+- If the driver had a race: a test that fails on Linux too, so the fix is not
+  platform-folklore.
+
+* Note
+
+Filed per AGENTS.md: a defect noticed while doing something else gets its own
+ticket rather than a mention. Noticed while reading the Windows results for
+=clautolisp-distributed-native-libraries-not-loaded=.
