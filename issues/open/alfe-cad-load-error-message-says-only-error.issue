@@ -1,0 +1,61 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-cad-load-error-message-says-only-error — a CAD-side failure is reported without naming its cause
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: alfe-backend
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-09-26
+
+* Observed
+
+verify:epure-api:windows on master (alfe 2.2.96, job 16753534728), the
+BricsCAD run that loads pjb's two expressions from a file. The failure
+is now REPORTED (that is alfe-eval-x-output-lost-on-cad, fixed in
+2.2.91) -- but what it says is:
+
+#+begin_example
+protocol: status now "DONE 1 FAIL" (elapsed 0.06 s)
+ERROR protocol request 1: while loading C:\msys64\tmp\alfe-epure-api.lsp
+  (form starting at line 1) at line 1, column 1: error
+ERROR protocol request 1: while loading C:\msys64\tmp\alfe-epure-api.lsp
+  (form starting at line 1) at line 1, column 1: error
+cli: plan finished status=:FAILED exit=1
+#+end_example
+
+The cause is the single word =error=. The file's first form is
+=(print (= "" (toutes_options nil)))=, and the message does not say
+whether TOUTES_OPTIONS is undefined, was called with the wrong argument
+count, or raised something itself -- which is exactly what the user
+needs in order to act. "at line 1, column 1" is the position of the
+whole form, so it does not narrow it down either.
+
+(The duplicate line is a separate, already-filed defect:
+alfe-cad-error-reported-twice-on-stderr.)
+
+* Questions to settle
+
+1. Where does the word =error= come from? Candidates: BricsCAD's own
+   =*error*= message text for this condition; the runtime's
+   =autolisp-effective-error-message= falling back to a placeholder when
+   the message is empty; or =autolisp-source-load='s wrapper discarding
+   the inner message while keeping its own frame.
+2. Does a DIRECT =-x= of the same form give a better message? The eval
+   path and the load path reach the error differently
+   (=autolisp-eval-load-form= versus the alfe-eval.lsp load), and the
+   comparison localises the loss.
+3. Does the CAD have more to say elsewhere -- =protocol/stderr.txt= raw,
+   the session log, =*AUTOLISP_ERROR_MSG*= -- that the report drops?
+
+The clautolisp-hosted harness added in
+alfe-autocad-shadow-path-spurious-newlines answers 1 and 2 without a
+CAD: it can load a file whose form signals and show exactly what the
+runtime captures. What it cannot answer is what BricsCAD itself puts in
+the message; that needs the Windows runner.
+
+* Acceptance
+
+- A CAD-side failure names its cause: the engine's own message text, or
+  an explicit statement that the engine supplied none.
+- A regression test pins the message for a form that signals in the
+  hosted harness.
