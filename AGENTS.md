@@ -513,6 +513,16 @@ not deleted (published immutable ref) and `version-1.8` is not repointed onto
 it. Treat these two I3/I5 lines as a standing, accepted exception for the 1.8
 series only.
 
+Since clautolisp 2.2.109 that exception is **declared, not just described**:
+both lines are listed in `scripts/version-audit-exceptions.txt`, so
+`make check-versions` reports them as `xfail` with their reason and exits 0
+again. Every other violation still fails, a listed exception without a reason
+fails, and an exception that matches nothing fails as `stale` — so the list
+shrinks when a situation is resolved and cannot become a blanket. An audit
+that is always red is not a gate: nobody reads it, and the next real violation
+goes unseen. Declare an exception there only for an **immutable published
+ref**; anything still fixable gets fixed.
+
 **Cutting a release** (full procedure in `version-rules.md` § 5):
 
 1. bump the shipped programs' stamps, update `RELEASE_NOTES.org`, commit;
@@ -683,7 +693,10 @@ programs this repo ships.
 
 **Verification.** `make check-versions` audits the repository against
 the invariants; run `git fetch --prune --tags` first. It is expected to
-pass on master at all times.
+pass on master at all times — including the 1.8 shakedown case, which is
+declared in `scripts/version-audit-exceptions.txt` (see above) rather
+than left to fail. A red audit is a defect to fix or a new exception to
+justify, never something to step over.
 
 **Legacy refs.** Releases up to 1.6.11 were originally marked `vM.m.d`
 with `release-M.m.d` / `release-M.m` *branches*; the branches are gone,
@@ -1032,6 +1045,17 @@ to **master** — proceed without asking. Feature-branch + MR only when he
 requests it. End commit messages with the Co-Authored-By: Claude trailer. If
 the harness classifier still gates the author/push, that is authorization
 friction, not a reason to stop.
+
+**Commit messages are PLAIN ASCII.** Hyphens, not em dashes; "section 11", not
+a section sign; straight quotes; no backticks. This is not style: the Windows
+runner's PowerShell executor writes `CI_COMMIT_MESSAGE` into a generated `.ps1`
+and under-escapes it, so a message with such punctuation kills the job before
+it clones — once, it went on to run the job's script in the runner's own
+directory instead (`windows-runner-commit-message-breaks-powershell`). Checked
+by `make check-commit-message-ascii` in the `documentation` CI lane (HEAD only,
+so a merge commit passes); sweep a branch before pushing with
+`make check-commit-message-ascii RANGE=origin/master..HEAD`. The real fix is a
+newer runner on that machine, which is pjb's call; until then this is the rule.
 
 ## Ongoing epics (as of clautolisp 1.7.18 / alfe 1.7.24, 2026-08)
 

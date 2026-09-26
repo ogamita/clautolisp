@@ -36,3 +36,57 @@ out whether it is Rosetta / the x86 CCL (an arm64 CCL is a separate issue,
 =cecil-native-arm64-runner=) or a real deadlock in the contention path
 (=bordeaux-threads= under CCL). Until then =make test-ccl= cannot be used to
 completion on this machine; run subsets by test name.
+
+* Measured 2026-09-26 — not CCL, and not this code: the same test passes in seconds on Linux
+
+Ran the test ALONE under =CCL Version 1.13 (v1.13-22-g3c7de4fd) LinuxX8664= —
+the same CCL release as the macOS box's, x86-64, but NATIVE rather than under
+Rosetta:
+
+: Running test PROTOCOL-WRITE-ATOMIC-FILE-CONTENTION ...
+:  Did 3 checks.  Pass: 3 (100%)  Fail: 0 (0%)
+
+Seconds, not ten minutes. Five repetitions, all green, and the full
+=make -C autolisp-front-end test-ccl= completes (1228 checks, 0 failures).
+
+So two candidate causes are OUT: a deadlock in =write-atomic-file='s contention
+path, and =bordeaux-threads= under CCL as such. What is left is the macOS box
+specifically — =dx86cl64= under *Rosetta* (16 writer threads + a reader, x86
+threading emulated on arm64), or something about that machine. That is where
+the next measurement has to be taken, and =cecil-native-arm64-runner= /a native
+arm64 CCL/ is the obvious lever.
+
+* A stall now fails instead of hanging (clautolisp 2.2.112)
+
+The worst part of this was never the hang, it was the SILENCE: ten minutes at
+0 % CPU, no output, nothing said about which thread was stuck, and
+=make test-ccl= unusable to completion on that machine. Fixed regardless of the
+root cause:
+
+- =%JOIN-THREADS-OR-NAME-THE-STUCK= replaces the bare =JOIN-THREAD= loop
+  (bordeaux-threads 0.9 has no portable join-with-timeout, so it polls
+  =THREAD-ALIVE-P=). After =+CONTENTION-DEADLINE+= (120 s, against ~2 s for a
+  healthy run) it destroys the stragglers and returns their NAMES, which the
+  test turns into a failure: /Threads still running after 120 s:
+  ("atomic-writer-7" …)/ — precisely the evidence the box could not produce.
+- It then WAITS for the destroyed threads to actually die (=DESTROY-THREAD=
+  asks, it does not wait), so a wedged thread is not inherited by the next
+  test. Found by measurement: the watchdog's own test failed on that race the
+  first time it ran.
+- =protocol-contention-watchdog-names-a-thread-that-will-not-finish= proves the
+  watchdog FIRES — it rebinds the deadline to 1 s against a thread that will
+  not finish and asserts the name comes back and the thread is gone. A watchdog
+  never seen doing its job is worth nothing.
+
+Suites: alfe 1228 checks, 0 failures, on SBCL *and* CCL; the watchdog test
+green five runs in a row under CCL.
+
+* What remains
+
+- [ ] The macOS/Rosetta measurement: run =make -C autolisp-front-end test-ccl=
+      on that box. It should now either pass or FAIL WITHIN ~2 MINUTES naming
+      the stuck threads. Either outcome moves this forward; the previous one
+      did not.
+- [ ] =HEAD~= comparison there is no longer worth its cost: the Linux result
+      above says the contention code is not the cause, so "pre-existing" is
+      answered for practical purposes.

@@ -144,6 +144,58 @@ content visible; the temp file is renamed atomically each time."
                        (alfe.protocol.file:read-file-as-string target))))
       (delete-workdir workdir))))
 
+(defparameter +contention-deadline+ 120
+  "Seconds the contention test waits for its 17 threads before giving up on
+them. Generous next to the ~2 s the race takes on a healthy host, and finite
+because the alternative was measured: under the macOS/Rosetta CCL the suite sat
+at 0 % CPU for over ten minutes inside this test and reported nothing
+(ccl-protocol-write-atomic-file-contention-hangs).")
+
+(defun %join-threads-or-name-the-stuck (threads)
+  "Join THREADS, giving up after +CONTENTION-DEADLINE+ seconds. Returns NIL
+when all of them finished, else the NAMES of those still running — which the
+caller turns into a failure. The stragglers are destroyed, so one wedged thread
+cannot hold the rest of the suite hostage.
+
+BORDEAUX-THREADS 0.9 has no portable join-with-timeout, hence the poll: it
+costs nothing next to a stall that produces no evidence at all."
+  (let ((deadline (+ (get-internal-real-time)
+                     (* +contention-deadline+ internal-time-units-per-second))))
+    (loop
+      (let ((alive (remove-if-not #'bordeaux-threads:thread-alive-p threads)))
+        (cond ((null alive) (return nil))
+              ((> (get-internal-real-time) deadline)
+               (let ((names (mapcar #'bordeaux-threads:thread-name alive)))
+                 (dolist (thread alive)
+                   (ignore-errors (bordeaux-threads:destroy-thread thread)))
+                 ;; DESTROY-THREAD is asynchronous -- it asks, it does not
+                 ;; wait -- so give the victims a moment to actually go, or
+                 ;; the caller sees them still alive and the next test
+                 ;; inherits them. Measured: the first run of the watchdog's
+                 ;; own test failed on exactly this.
+                 (let ((gone (+ (get-internal-real-time)
+                                (* 5 internal-time-units-per-second))))
+                   (loop while (and (some #'bordeaux-threads:thread-alive-p alive)
+                                    (< (get-internal-real-time) gone))
+                         do (sleep 0.05)))
+                 (return names)))
+              (t (sleep 0.05)))))))
+
+(test protocol-contention-watchdog-names-a-thread-that-will-not-finish
+  "The bounded join must actually FIRE, and name the thread: a watchdog never
+seen doing its job is worth nothing, and this one exists because a stall
+reported nothing at all under the macOS/Rosetta CCL."
+  (let ((+contention-deadline+ 1))                ; special: rebinding works
+    (let* ((keep-going t)
+           (slow (bordeaux-threads:make-thread
+                  (lambda () (loop while keep-going do (sleep 0.05)))
+                  :name "deliberately-slow"))
+           (stuck (%join-threads-or-name-the-stuck (list slow))))
+      (setf keep-going nil)
+      (is (equal '("deliberately-slow") stuck))
+      ;; and it did not leave the thread behind
+      (is (not (bordeaux-threads:thread-alive-p slow))))))
+
 (test protocol-write-atomic-file-contention
   "N=16 concurrent writers publishing distinct integers all complete
 without errors; the final file content is one of the published
@@ -229,12 +281,17 @@ formed value, never a partial one."
                                   (format nil "writer-~D" id) c))))
                   :name (format nil "atomic-writer-~D" id))
                  threads)))
-            (dolist (thread threads)
-              (bordeaux-threads:join-thread thread))
-            ;; Stop the reader (it self-stops after 1000 reads, but
-            ;; just in case).
-            (handler-case (bordeaux-threads:join-thread reader)
-              (error () nil))
+            ;; BOUNDED join, never a bare one: on the macOS/Rosetta CCL this
+            ;; test stopped making progress at 0 % CPU for over ten minutes
+            ;; and the whole `make test-ccl' with it, reporting nothing at
+            ;; all (ccl-protocol-write-atomic-file-contention-hangs). A
+            ;; stall must become a FAILURE THAT NAMES THE STUCK THREADS --
+            ;; that is the one piece of evidence the box could not give.
+            (let ((stuck (%join-threads-or-name-the-stuck
+                          (cons reader threads))))
+              (is (null stuck)
+                  "Threads still running after ~D s: ~S" +contention-deadline+
+                  stuck))
             (is (null thread-errors)
                 "Threads raised uncaught errors: ~S" thread-errors)
             (is (null observed-corruptions)

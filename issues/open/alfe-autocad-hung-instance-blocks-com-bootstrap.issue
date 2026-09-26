@@ -117,12 +117,50 @@ guarded first touch, the absence of the bare =app.Visible = True=, the
 attempt count in the message, and that the file is still ASCII-only
 VBScript that cscript can parse. alfe suite 1189 checks, 0 failures.
 
+** CORRECTION 2026-09-26 — "wedged" was the wrong word: those processes are DEAD
+
+The escalation above ran on the runner today, 22 times, and its conclusion was
+wrong every time. =taskkill= answered, for each of pids 21928, 17640 and a new
+9164:
+
+: Raison : Il n'existe aucune instance en cours de cette tâche.
+
+/There is no running instance of the task./ The processes had ALREADY EXITED.
+Windows keeps the process-table entry until the last handle to it closes, and
+=acad.exe='s parent here is the COM service, which holds one — so a dead
+=acad.exe= keeps answering =Get-Process= for days. The sweep asked only whether
+the id answered, called that "survived", and failed the job. Fixed in
+clautolisp 2.2.110 (=cad-sweep-fails-jobs-for-zombie-pids=): the state is now
+classified explicitly and only a genuinely =live= instance fails anything.
+
+*What this does to THIS ticket's evidence.* Two of its claims must be held more
+loosely until seen again:
+
+- "the two wedged processes hold the COM registration, so an AutoCAD session
+  would only report a rejected call" — a DEAD process holds no registration and
+  answers no call. Whatever produced =RPC_E_CALL_REJECTED= earlier, it was not
+  those two corpses, or not only them. The message the sweep prints (kept, it
+  is right for a real survivor) must not be read back as evidence.
+- "the two processes may need ending by hand" — they cannot be ended at all;
+  they are already gone. Nothing needs doing on the machine for them, and a
+  reboot is what will clear the table entries.
+
+That leaves the original symptom — AutoCAD not starting under COM — WITHOUT a
+confirmed cause. The retry (=TouchApp=) still stands on its own: a rejected
+call means BUSY and a native client would retry it. But the "another instance
+is wedged" explanation is now a hypothesis again.
+
 ** What remains
 
-- *Verification on the runner.* Play =verify:autocad-activex:windows= (or
-  any AutoCAD job) once the machine is awake: the sweep should now either
-  end the two acad.exe from 2026-09-25 or fail the job naming them, and a
-  transiently busy AutoCAD should be waited out rather than aborted.
-- *The two wedged processes themselves* (pids 17640 and 21928, created
-  2026-09-25 13:22 and 14:01) may well need ending by hand once, since
-  they predate the escalation.
+- *Observe it once on a clean runner.* Play =verify:autocad-activex:windows=
+  (or any AutoCAD job) on clautolisp 2.2.110 or later. Three outcomes, all
+  informative: the sweep reports the three ids as exited and the bootstrap
+  SUCCEEDS (the corpses were never the problem and the earlier rejection was
+  transient busy-ness, which =TouchApp= now waits out); or the bootstrap fails
+  with the rejection while the sweep reports NO live instance (the cause is
+  elsewhere — this ticket then needs reopening on a different theory); or the
+  sweep names a genuinely live instance (the original theory, finally with
+  evidence).
+- Do NOT play it while another master pipeline is about to start: an
+  interruptible pipeline cancels queued jobs, which has already cost this
+  investigation two runs.

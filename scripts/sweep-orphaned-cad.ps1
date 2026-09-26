@@ -17,10 +17,42 @@
 # never runs an after_script. Before a job is also the safe moment --
 # nothing the current job started can be swept away by mistake.
 #
-# Reports what it does and exits 0 even when it can do nothing: a sweep
-# that fails must not fail the job it precedes.
+# Reports what it does. It fails the job it precedes ONLY when a CAD that
+# is really RUNNING could not be ended -- such an instance owns the
+# AutoCAD.Application COM registration and answers RPC_E_CALL_REJECTED to
+# every call, so the job behind it would fail confusingly instead.
+#
+# A PID THAT STILL EXISTS IS NOT A RUNNING PROCESS. Windows keeps a
+# process table entry until the last handle to it is closed, and the COM
+# service (acad.exe's parent here) holds one for a long time -- so a dead
+# acad.exe lingers as a zombie: no threads left, Stop-Process cannot
+# touch it, and taskkill answers "there is no running instance of the
+# task" while the PID keeps answering Get-Process. Counting that as a
+# survivor is how this sweep failed 21 CAD jobs on 2026-09-26 over three
+# PIDs that had already exited (two of them the day before). The state is
+# classified explicitly below, and only a LIVE instance fails a job.
 
 $ErrorActionPreference = 'Continue'
+
+function Get-CadProcessState {
+    # 'gone'   -- no process with this PID at all
+    # 'zombie' -- the PID exists but the process has exited: no threads
+    #             left. Nothing to kill, and a dead process answers no
+    #             COM call, so it blocks nothing.
+    # 'live'   -- really running
+    param([int] $ProcessId)
+    $cim = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" `
+        -ErrorAction SilentlyContinue
+    if (-not $cim) { return 'gone' }
+    $threads = 0
+    try { $threads = [int] $cim.ThreadCount } catch { $threads = 0 }
+    if ($threads -le 0) { return 'zombie' }
+    $proc = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if ($proc) {
+        try { if ($proc.HasExited) { return 'zombie' } } catch { }
+    }
+    return 'live'
+}
 
 $registry = Join-Path $env:TEMP 'alfe-created-cad.txt'
 if (-not (Test-Path $registry)) {
@@ -49,11 +81,16 @@ foreach ($line in (Get-Content $registry -ErrorAction SilentlyContinue)) {
 Write-Host "cad sweep: $($entries.Count) instance(s) recorded ($recorded line(s) in $registry)"
 
 $killed = 0
+$settled = 0
 $living = @()
 foreach ($entry in $entries) {
     $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $($entry.Pid)" `
         -ErrorAction SilentlyContinue
-    if (-not $proc) { continue }
+    if (-not $proc) {
+        Write-Host "cad sweep: pid $($entry.Pid) is gone; entry dropped"
+        $settled++
+        continue
+    }
     # Same PID is not the same process. The creation time settles it, and
     # WMI reports it as a CIM datetime (or a DateTime, depending on the
     # PowerShell version) -- compare on the leading yyyyMMddHHmmss.
@@ -70,9 +107,18 @@ foreach ($entry in $entries) {
         Write-Host "cad sweep: pid $($entry.Pid) is $($proc.Name), not acad.exe; left alone"
         continue
     }
+    # Dead but unreaped: the PID answers, the process does not. Nothing to
+    # kill and nothing blocked -- say so plainly and drop the entry, rather
+    # than hammering it and calling it a survivor.
+    if ((Get-CadProcessState -ProcessId $entry.Pid) -eq 'zombie') {
+        Write-Host ("cad sweep: pid $($entry.Pid) has EXITED (no threads left) and is " +
+                    "waiting to be reaped; nothing to kill, entry dropped")
+        $settled++
+        continue
+    }
     Write-Host "cad sweep: ending orphaned acad.exe pid $($entry.Pid) (created $recorded)"
     Stop-Process -Id $entry.Pid -Force -ErrorAction SilentlyContinue
-    if (Get-Process -Id $entry.Pid -ErrorAction SilentlyContinue) {
+    if ((Get-CadProcessState -ProcessId $entry.Pid) -eq 'live') {
         # A wedged AutoCAD -- one showing a modal dialog, or hung in COM --
         # survives Stop-Process. taskkill /T /F takes its children with it
         # and is the stronger hammer; reporting "survived" and carrying on
@@ -82,11 +128,17 @@ foreach ($entry in $entries) {
         & taskkill /PID $entry.Pid /T /F 2>&1 | ForEach-Object { Write-Host "cad sweep:   $_" }
         Start-Sleep -Seconds 2
     }
-    if (Get-Process -Id $entry.Pid -ErrorAction SilentlyContinue) {
-        Write-Host "cad sweep: pid $($entry.Pid) SURVIVED taskkill too"
-        $living += $entry
-    } else {
-        $killed++
+    switch (Get-CadProcessState -ProcessId $entry.Pid) {
+        'live' {
+            Write-Host "cad sweep: pid $($entry.Pid) is STILL RUNNING after taskkill"
+            $living += $entry
+        }
+        'zombie' {
+            Write-Host ("cad sweep: pid $($entry.Pid) has exited; its PID lingers until " +
+                        "the last handle to it closes")
+            $killed++
+        }
+        default { $killed++ }
     }
 }
 
@@ -98,7 +150,8 @@ if ($living.Count -gt 0) {
     Remove-Item $registry -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "cad sweep: $killed ended, $($living.Count) left"
+Write-Host ("cad sweep: $killed ended, $settled already settled, " +
+            "$($living.Count) still running")
 
 if ($living.Count -gt 0) {
     # Do not let a CAD job run behind a wedged instance. A hung AutoCAD

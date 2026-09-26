@@ -37,6 +37,15 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *sedit opens the file you named, quotes and =~= included.* Every path
+  sedit takes — the ~(clal-sedit …)~ arguments and the editor's own ~s~,
+  ~w~ and ~load~ commands — now has a surrounding pair of double quotes
+  removed and a leading ~~/~ expanded to the home directory. A quoted
+  path used to resolve to a file literally named ~"~/…"~ under the
+  current directory: the editor opened an empty buffer and a save would
+  have created that name. See /Starting sedit from AutoLISP/ in the
+  user manual.
+
 - *An entity saved to DWG keeps its owner, so a re-opened drawing still
   has it.* Every entity is now written with the block record it belongs
   to (DXF group 330) — model space for a model-space entity — and the
@@ -1196,6 +1205,11 @@ file or COM), and forwards the workload.
 
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
+- *=alfe --list-hosts= answers.* It prints cador, cadtui and nihil with a
+  one-line summary each and exits, like =--list-dialects=. The option was
+  accepted and ignored before, so with no other action alfe opened its
+  REPL instead. It does not repeat clautolisp's note about =mock= / =null=
+  / =none=, which alfe refuses.
 - *A failed action is reported once, and names a cause.* Every failure on
   a CAD backend used to be printed TWICE. And when the engine's own
   message says nothing — BricsCAD answers the bare word =error= for some

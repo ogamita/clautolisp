@@ -1,0 +1,68 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-list-hosts-ignored — alfe --list-hosts is accepted and does nothing
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-alfe-list-hosts-ignored
+
+* Symptom
+
+Split out of =alfe-host-selection-gaps= (alfe 2.2.77). The shared parser
+accepts =--list-hosts= and sets =list-hosts-p=, but =alfe.cli:run= has no
+branch for it, so with no other action alfe opens its REPL (=alfe> =) instead
+of printing the hosts as =clautolisp --list-hosts= does. =--help= does not
+list the option, and the user manual says alfe accepts it and does nothing.
+
+* Proposal
+
+Print the hosts and exit 0, like =--list-encodings= / =--list-dialects=. The
+shared =clautolisp.autolisp-cli:print-hosts= prints a line about the retired
+spellings of two hosts; alfe, which dropped them, should not repeat it, so
+either alfe prints its own three lines or the shared list loses that note
+(clautolisp-visible). Then: =--help=, the man page, the manual's "Host
+selection" (the "Two clautolisp options alfe does not have" paragraph), a
+scenario.
+
+* Acceptance criteria
+
+- =alfe --list-hosts= prints cador, cadtui, nihil with a one-line summary
+  each and exits 0, opening no REPL.
+- Documented in =--help=, the man page and the user manual.
+
+* Resolved — alfe 2.2.107
+
+=alfe.cli:run= gained the branch, beside =--list-encodings= and
+=--list-dialects=, and prints through the shared
+=clautolisp.autolisp-cli:print-hosts=.
+
+The proposal's open question is answered the first way it offered: the
+SHARED list keeps its aliases note for clautolisp, and =print-hosts= takes
+=:aliases= (default T) which alfe passes NIL. alfe refuses =mock=, =null=
+and =none= -- =cli-host-cador-cadtui-and-nihil= pins that -- so printing
+the note would have advertised spellings it rejects, and changing the
+shared list for everyone would have taken the note away from clautolisp,
+where it is true.
+
+#+begin_example
+$ alfe --list-hosts
+Available --host backends:
+  cador    Headless CAD core: the /application/console tree (default).
+  cadtui   Full textual UI-tree host on the cador core: menus, drawings,
+            CAD view, and DCL dialogs mirrored into an inspectable tree.
+  nihil    Trivial backend: no CAD host at all.
+#+end_example
+
+Documented in all three places the rule asks for: the =--help= banner
+(beside =--list-dialects=), the man page OPTIONS section, and the user
+manual -- whose /Two clautolisp options alfe does not have/ section said
+alfe "accepts =--list-hosts= without doing anything with it" and is now
+=** --list-hosts= with the output above, plus /One clautolisp option alfe
+does not have/ for =--mock-input=, which is still true.
+
+Tests: =cli-run-list-hosts-prints-the-backends-and-exits-zero= (prints the
+three, exits 0, no =aliases:=, no =mock=, no =alfe>=),
+=cli-list-hosts-sets-its-slot=, and the corpus scenario
+=tests/scenarios/cli/list-hosts.sexp= -- verified to really run and pass
+(=:STATUS :PASS=, exit 0) rather than to be silently skipped. alfe suite
+1210 checks, 0 failures.

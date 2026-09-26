@@ -101,3 +101,33 @@ trailer alone is survivable; an em dash in the body was not.
 This is a workaround, not the fix. The fix is the runner version (its
 PowerShell executor escapes the CI_* assignments properly in later
 releases), which is pjb's call on his own machine.
+
+* The workaround is now mechanical - clautolisp 2.2.113
+
+The rule above ("a commit whose pipeline runs Windows jobs takes a plain-ASCII
+message") was adopted by hand, twice, after the job had already failed. A rule
+kept by discipline alone is kept until the day it is forgotten, and the cost
+lands on the one platform nobody runs locally. So it is checked:
+
+- =scripts/check-commit-message-ascii.sh= - prints each offending line, the
+  character's position and the subject, and says what to write instead. It
+  checks HEAD by default, which is what =CI_COMMIT_MESSAGE= carries, and takes
+  a range so a branch can be swept before it is pushed:
+  =make check-commit-message-ascii RANGE=origin/master..HEAD=.
+- =make check-commit-message-ascii=, run in the =documentation= CI lane beside
+  =check-user-visible-documentation= - a lane that always runs, costs seconds,
+  and needs no build. The failure therefore arrives as a sentence about the
+  message, at the moment the message is written, instead of as a PowerShell
+  parser error quoting the commit body on another platform.
+- Because only HEAD is checked, an ordinary merge commit (auto-generated, ASCII)
+  passes: the gate bites the branch pipeline of a commit just written, which is
+  the one moment it can still be amended cheaply. Historical em dashes on master
+  do not block anything.
+
+Proven on its first run: it flagged five commits of the very branch that added
+it (em dashes in bodies), which is also why the fix is trustworthy - it was red
+before it was green.
+
+This does NOT close the ticket. The acceptance criterion is a Windows =get_sources=
+that survives an em dash, a section sign and a backtick, and that still needs the
+runner upgrade. What is closed is the gap between the rule and its observance.

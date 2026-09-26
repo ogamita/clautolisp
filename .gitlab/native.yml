@@ -322,6 +322,37 @@ verify:vl-registry:windows:
   script:
     - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
 
+# Does a COMPLETE INSTALLED RELEASE find its native DWG libraries on
+# MS-Windows? The Windows half of clautolisp-distributed-native-libraries-not-
+# loaded, and the half with the extra rule: clal_dwg.dll IMPORTS libredwg.dll,
+# a DLL carries no rpath, so the two are not interchangeable halves of one
+# thing and the program must NAME the missing one rather than blame the codec.
+# The check removes libredwg.dll from the installed prefix and insists on that
+# message.
+#
+# The work happens in MSYS2 bash (scripts/avec-bash.ps1 does the handoff, and
+# the bash side sources environnement-windows.sh for MINGW64-first + a POSIX
+# CC), so the platform-neutral checker is reused instead of being rewritten in
+# PowerShell. NO CAD is involved: this needs Windows, not AutoCAD, so it takes
+# the plain windows gate and NOT .gate-windows-cad-* -- nothing here should
+# wait behind, or be failed by, the CAD sweep.
+#
+# Manual, like its Linux counterpart: it is minutes of C and Lisp compilation
+# and nothing depends on its result.
+verify:packaged-dwg:windows:
+  extends: .gate-windows-soft
+  stage: test
+  timeout: 60m
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive   # vendored libredwg (+ jsmn)
+    MSYS2_ROOT: 'C:\msys64'
+  script:
+    - '& scripts/avec-bash.ps1 scripts/verify-packaged-dwg-windows.sh'
+    # PowerShell does NOT fail a step on a native program's non-zero exit, so
+    # without this the job would go green over a failed check (the trap the
+    # release lane documents two jobs above).
+    - 'if ($LASTEXITCODE -ne 0) { throw "packaged-dwg check failed ($LASTEXITCODE)" }'
+
 # alfe --epure against the real CADs, with EPURE installed on the runner
 # (pjb, 2026-09-25). The plug-in rests on two assumptions inherited from
 # the legacy wrapper -- that a nested ._SCRIPT returns control to the

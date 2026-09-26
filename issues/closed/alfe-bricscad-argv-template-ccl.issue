@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-bricscad-argv-template-ccl — BUILD-LAUNCH-ARGV drops the BricsCAD template path on CCL
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: portability
 #+DEPENDS: -
@@ -53,3 +53,37 @@ Found while verifying that cp1252-codec-host-independent introduced no
 regression: the failure reproduces identically on a clean
 =origin/master= worktree, so it predates that work and is unrelated to
 encodings.
+
+* Resolved 2026-09-26 — both halves, and the suspicion was right
+
+Checked rather than assumed, both halves measured on this branch (clautolisp
+2.2.112, CCL 1.13 x86-64 Linux):
+
+*The argv half is fixed, and by the cause this ticket guessed.* It is the same
+defect as =issues/closed/alfe-bricscad-template-path-escaped-on-ccl.issue=:
+=NAMESTRING= of the STRING ="C:/t.dwt"= first PARSES it with the running Lisp's
+rules, and CCL escapes the drive colon — ="C\:/t.dwt"= — which then went to
+BricsCAD. =CAD-ARGUMENT-PATH= (backend-cad-common.lisp) now passes a string
+through UNTOUCHED (this Lisp has no business reinterpreting a path meant for
+another program) and renders only a real PATHNAME, with
+=UIOP:NATIVE-NAMESTRING=. =BUILD-LAUNCH-ARGV= calls it instead of =NAMESTRING=,
+with the reason in a comment at the call site. So the guess in /Suspected
+cause/ was exactly right — and the answer to its own first question ("does it
+touch the template with anything pathname-ish at all?") was yes.
+
+=bricscad-windows-batch-argv-has-single-automation-before-b= now passes under
+CCL (10 checks), and the whole alfe CCL suite is 1228 checks, 0 failures.
+
+*The swallowed exit status is fixed too* — the half this ticket rightly called
+the more serious one, since it means a lane that cannot fail. MEASURED by
+injecting a deliberately failing test into the suite and running each lane:
+
+: make -C autolisp-front-end test-ccl   -> EXIT 2   ("autolisp-front-end tests failed.")
+: make -C autolisp-front-end test-sbcl  -> EXIT 2   (same error)
+
+Both lanes report the failing test by name and exit non-zero, so CI does notice.
+The injected test was removed again; a gate is only worth what its red run
+proves, which is why it was made red on purpose rather than taken on trust.
+
+Nothing to split out: the suggested follow-up was conditional on the exit status
+still being broken.

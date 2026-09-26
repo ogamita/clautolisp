@@ -98,6 +98,42 @@ markers — keep it sorted by function name):
     they fold into one of the three slots? Currently neither
     appears in our triple.
 
+== Entity COM properties and the block walk (vla-entity-property-bridge) ==
+
+Carried over when vla-entity-property-bridge was closed (2026-09-26): its
+driver (the SCHMS sigfic suite, 6/6 headless) is satisfied, but four
+choices in it rest on reading rather than on a vendor answer. Each wants a
+probe on AutoCAD and BricsCAD, and they are cheap to batch because all four
+live in one script: build a block, insert it, walk it, read the properties
+back.
+
+  * EffectiveName on a DYNAMIC block. Headless, clautolisp has no dynamic
+    blocks, so EffectiveName is Name (group 2). On a vendor, a dynamic
+    block reference's Name is the anonymous *U<n> and EffectiveName the
+    user-visible one -- confirm that, and confirm what each returns for a
+    NON-dynamic reference (they should agree; if they do, our equality is
+    right for every case we can represent).
+
+  * entmakex on a BLOCK / ENDBLK pair. entmake is exercised; entmakex is
+    assumed to behave the same and return the new ename. Does a vendor
+    accept entmakex for a block-definition pair at all, and what does it
+    return for the ENDBLK -- the ename, or nil?
+
+  * The ENDBLK-terminated entnext walk. We stop the block-contents walk at
+    the ENDBLK. Does a vendor's entnext RETURN the ENDBLK entity itself
+    before ending the walk, or skip it? Code that counts entities in a
+    definition gets a different answer either way, which is exactly the
+    kind of off-by-one a portable corpus would trip over.
+
+  * GetBoundingBox for TEXT: glyph metrics. Our box is computed from the
+    height, the string length and a character-width ratio, with vertical
+    justification honoured (73/74). A vendor measures the real font. So
+    the numbers WILL differ; the question is whether anything portable may
+    depend on more than the ORDERING of two boxes (the sigfic oracle is
+    topological, which is why this has not bitten). Probe the ratio for
+    the standard text style, and record it as a documented approximation
+    rather than a coincidence.
+
 == Future entries ==
 
 When opening a new SPEC-UNCERTAIN marker, add an `== NAME (Mn) ==`

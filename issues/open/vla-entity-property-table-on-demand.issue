@@ -1,0 +1,61 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vla-entity-property-table-on-demand — extend the entity COM property table as suites actually consume it
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: cad-runtime
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-09-26
+
+* Context
+
+Carried out of =vla-entity-property-bridge= when that P1 closed (its driver,
+the SCHMS sigfic suite, is 6/6 headless and pjb confirmed it). The bridge is
+a DECLARATIVE table: property name, the entity kinds it applies to, the DXF
+group, read-only flag, encoder, decoder. Adding a property is one row plus a
+test, which is why the remaining work is small, unglamorous and does NOT
+justify keeping a P1 open.
+
+* Why this is demand-driven, deliberately
+
+The obvious next candidates are known — =TrueColor= (group 420), =Closed=
+(LWPOLYLINE group 70 bit 1), =MTextAttribute=, and MTEXT =Rotation='s units —
+and they are NOT being added speculatively. Two reasons:
+
+- AGENTS.md § /Change Discipline/: no speculative features in a foundational
+  module. A row nobody calls is a row nobody has checked against a vendor.
+- The mapped subset is supposed to follow what a suite CONSUMES, measured
+  (=schms-call-inventory.md= is how the first subset was chosen: 188 ×
+  =vla-put-textstring=, 170 × =vla-get-layer=, and so on). A count is a
+  better guide than a guess, and it tells us the units and the exact shape
+  the caller expects.
+
+So: when a suite fails on =:unknown-com-property=, the property named in that
+error is the next row. Until then the table is complete for every consumer we
+have.
+
+* How to add one
+
+1. Name the property, the entity kinds, and the DXF group it maps to.
+2. Classify it against the dialects FIRST (AGENTS.md § /Dialect Divergence and
+   Warnings/): common, extension, resolved divergence, or symmetric
+   divergence. =MTEXT Rotation= is the live example — if AutoCAD and BricsCAD
+   disagree about radians versus degrees there, that is a divergence to record,
+   not a unit to pick.
+3. Add the row in =clautolisp/cador/source/vlax-api.lisp=, a read/write
+   round-trip test against =entget= at the cador layer, and a line in the
+   user manual's entity-properties list.
+4. Anything not pinned down by both vendor documents gets a
+   =;;; SPEC-UNCERTAIN:= marker and an entry in
+   =issues/open/deferred-spec-research.issue= — which now carries the four
+   questions the bridge left behind (EffectiveName on dynamic blocks,
+   entmakex on BLOCK/ENDBLK, the ENDBLK-terminated entnext walk, TEXT
+   bounding-box glyph metrics).
+
+* Acceptance criteria
+
+- No suite fails on =:unknown-com-property= for a property a consumer
+  actually calls.
+- Every property added carries its dialect classification and a
+  round-trip test; unknown properties still raise =:unknown-com-property=
+  rather than silently returning nil.

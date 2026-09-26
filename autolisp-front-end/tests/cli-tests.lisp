@@ -455,6 +455,36 @@ not a usage failure)."
     (is (= 0 exit-code))
     (is (search "Usage: alfe" (get-output-stream-string stdout)))))
 
+(test cli-run-list-hosts-prints-the-backends-and-exits-zero
+  "alfe --list-hosts answers instead of opening a REPL
+(alfe-list-hosts-ignored): the shared parser has always accepted the
+option and set its slot, but RUN had no branch for it, so with no other
+action alfe fell through to `alfe> \'. It prints the three backends with
+their summaries, exits 0, and does NOT repeat the shared aliases note --
+alfe takes cador, cadtui and nihil and refuses mock / null / none, so
+naming them here would advertise spellings it rejects."
+  (let* ((stdout (make-string-output-stream))
+         (exit-code
+           (let ((*standard-output* stdout))
+             (run '("--list-hosts") :version "0.0.1"))))
+    (is (= 0 exit-code))
+    (let ((text (get-output-stream-string stdout)))
+      (is (search "Available --host backends:" text))
+      (is (search "cador" text))
+      (is (search "cadtui" text))
+      (is (search "nihil" text))
+      ;; The retired spellings must not be advertised by alfe.
+      (is (not (search "aliases:" text))
+          "alfe must not print the shared aliases note: ~S" text)
+      (is (not (search "mock" text)))
+      ;; And it is a listing, not a session.
+      (is (not (search "alfe>" text))))))
+
+(test cli-list-hosts-sets-its-slot
+  "The shared parser sets the slot RUN now consults."
+  (is (cli-options-list-hosts-p (parse-arguments '("--list-hosts"))))
+  (is (not (cli-options-list-hosts-p (parse-arguments '())))))
+
 (test cli-run-dry-run-against-echo-backend
   "--dry-run resolves to the echo backend (the only one registered in
 the test image), prints the resolved plan, and exits 0."

@@ -678,6 +678,21 @@ means:
 (clal-sedit 'directory "~/src/")    ; a directory
 #+end_example
 
+*How a path may be spelled.* Wherever sedit takes a file or directory path —
+the ~clal-sedit~ arguments above, and the ~s~, ~w~, ~load~ commands inside the
+editor — the path is normalised before it is used:
+
+- a leading ~~/~ (or a bare ~~~) is expanded to your home directory, on every
+  host Lisp and every platform;
+- a *matched pair of surrounding double quotes* is removed, so a path pasted or
+  typed with the quotes still around it — ~s "~/src/prog.lsp"~ — names the file
+  you meant. Up to clautolisp 2.2.107 such a path resolved to a file literally
+  named ~"~/src/prog.lsp"~, quotes included, under the current directory: the
+  editor silently opened an empty buffer and a save would have created that
+  name.
+
+An absolute path, a relative path and a ~~user/…~ form are used unchanged.
+
 In a directory listing, ~d~ descends — into a sub-directory (read fresh from
 disk) or into a file (opened for editing) — and ~..~ climbs to the parent
 directory. A long listing is *windowed*: at most a screen-height of entries is

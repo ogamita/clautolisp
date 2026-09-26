@@ -286,6 +286,20 @@ check-versions:  ## Audit the release tags / version-* pointers against the shar
 check-user-visible-documentation:  ## Fail if a user-visible surface (CLI option, CLAL- builtin) is missing from the manuals.
 	python3 scripts/check-user-visible-documentation.py
 
+# A commit message is CODE on the Windows runner: its PowerShell executor
+# writes CI_COMMIT_MESSAGE into a generated .ps1 and under-escapes it, so an em
+# dash or a backtick kills the job before it clones -- and has been seen running
+# the job's script in the runner's own directory instead. The repo-side rule
+# (plain-ASCII messages, until that runner is upgraded) was adopted by hand;
+# this is the rule mechanically, because one kept by discipline alone is kept
+# until the day it is forgotten. See
+# issues/open/windows-runner-commit-message-breaks-powershell.issue.
+# Checks HEAD, which is what CI_COMMIT_MESSAGE carries; pass a range to check a
+# branch before pushing it:  make check-commit-message-ascii RANGE=origin/master..HEAD
+RANGE ?= HEAD
+check-commit-message-ascii:  ## Fail if a commit message is not plain ASCII (the Windows runner parses it as code).
+	sh scripts/check-commit-message-ascii.sh "$(RANGE)"
+
 # The release set was found incomplete by RUNNING collect-artefacts, not
 # by reading it (release-artefact-set-incomplete.issue): 7 of the 10
 # specified artefacts were missing. These two keep it that way only if

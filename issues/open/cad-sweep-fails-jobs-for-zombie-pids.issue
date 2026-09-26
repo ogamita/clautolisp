@@ -1,0 +1,95 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cad-sweep-fails-jobs-for-zombie-pids — the sweep failed 21 CAD jobs over acad.exe processes that had already exited
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: ci
+#+DEPENDS: -
+#+BRANCH: fix-sedit-path-and-alfe-list-hosts
+#+DATE: 2026-09-26
+
+* Observed
+
+Master pipeline 2885566068, native child 2885566207 (2026-09-26): *21 of its
+CAD jobs failed*, every one of them in =scripts/sweep-orphaned-cad.ps1= before
+running anything of its own — =pathname:probe:*=, =optkw:probe:*=,
+=getcname:probe:*=, =path-sysvars:probe:*=, =pgp:probe:*=,
+=encoding:experiment:*=, =verify:bricscad-hidden-ui:windows=, … The trace of
+each (e.g. job 16755546845):
+
+#+begin_example
+cad sweep: 3 instance(s) recorded (3 line(s) in C:\msys64\tmp\alfe-created-cad.txt)
+cad sweep: ending orphaned acad.exe pid 21928 (created 20260925132249.056071+120)
+cad sweep: pid 21928 survived Stop-Process; taskkill /T /F
+cad sweep:   Erreur : le processus de PID 21928 (processus enfant de PID 1760)
+             n'a pas été arrêté.
+cad sweep:   Raison : Il n'existe aucune instance en cours de cette tâche.
+cad sweep: pid 21928 SURVIVED taskkill too
+   … identically for pid 17640 (of the previous day) and pid 9164 …
+cad sweep: 0 ended, 3 left
+cad sweep: FAILING THIS JOB -- a CAD process could not be ended.
+#+end_example
+
+* Cause
+
+Read taskkill's reason: /Il n'existe aucune instance en cours de cette tâche/ —
+"there is no running instance of the task". **The processes were already
+dead.** Windows keeps a process-table entry until the last HANDLE to it is
+closed, and =acad.exe='s parent here is the COM service (pid 1760), which holds
+one — so a dead =acad.exe= lingers as a zombie: no threads left,
+=Stop-Process= cannot touch it, =taskkill= refuses it, and =Get-Process -Id=
+keeps answering for days.
+
+The sweep asked only whether the id still answered =Get-Process=, took "yes"
+for "still running", and failed the job. So the gate fired on processes that
+blocked nothing: a dead process answers no COM call, holds no ActiveX
+registration, and cannot be the reason a CAD session fails.
+
+Two entries dated from 2026-09-25, so every CAD job on the runner had been
+failing at the gate for a day — the gate that exists to protect those jobs was
+the only thing stopping them. Worse than the original problem it fixed:
+=autocad-orphaned-by-killed-or-cancelled-jobs= at least let a job run.
+
+* Fixed in code — clautolisp 2.2.110
+
+=Get-CadProcessState= classifies a recorded id explicitly before anything is
+killed:
+
+- =gone= — no such process; entry dropped.
+- =zombie= — the id exists but the process has exited (=ThreadCount= 0, or
+  =HasExited=): nothing to kill and nothing blocked, so it is reported as
+  settled and the entry is dropped. Previously this was the "survivor".
+- =live= — really running: =Stop-Process=, then =taskkill /T /F=, then
+  re-classified. Only an instance still =live= after that lands in the
+  survivors list, and only that list fails the job.
+
+The failure path, its message and the =CAD_SWEEP_IGNORE_SURVIVORS=1= escape are
+unchanged for the case they were written for — a genuinely wedged AutoCAD
+holding the COM registration.
+
+Regression tests (=autolisp-front-end/tests/backend-cad-tests.lisp=):
+=cad-sweep-classifies-a-process-before-calling-it-a-survivor= and
+=cad-sweep-fails-only-for-a-cad-that-is-really-running=. There is no PowerShell
+on the Linux lanes, so they assert on the script TEXT — the instrument the
+VBScript-template tests already use, for the same reason: what breaks is a
+property of the file another tool reads. Verified RED against the pre-fix
+script (no classifier at all; two bare =Get-Process= presence checks).
+
+Documented in =alfe-user-manual.org= § /When alfe is killed before it can quit
+AutoCAD/ ("a process id that still answers is not a running process").
+
+* Open criterion — the runner
+
+- [ ] A CAD job on the Windows runner passes the sweep with those three
+      zombie ids still in =alfe-created-cad.txt=, reporting them as settled,
+      and the registry file ends up removed. Needs the machine; the ids are
+      recorded above, so the next Windows pipeline answers it.
+
+Until then the fix is reasoned from the trace and the tests, not observed on
+the platform — the honest state to leave it in.
+
+* Note
+
+Filed per AGENTS.md's rule for a bug found while doing something else. The
+sweep script is this project's own (added for
+=autocad-orphaned-by-killed-or-cancelled-jobs=), so this is a self-inflicted
+defect, which is exactly why it gets a ticket rather than a silent amendment.

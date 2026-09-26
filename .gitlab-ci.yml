@@ -626,6 +626,13 @@ documentation:
     # and the point is to fail on the documentation gap rather than after
     # several minutes of LaTeX.
     - make check-user-visible-documentation
+    # A commit message is CODE on the Windows runner (its PowerShell executor
+    # writes CI_COMMIT_MESSAGE into a .ps1 and under-escapes it), so an em dash
+    # kills a Windows job before it clones. Say so HERE, in a lane that always
+    # runs, instead of leaving it to be rediscovered from a PowerShell parser
+    # error quoting the commit body
+    # (windows-runner-commit-message-breaks-powershell).
+    - make check-commit-message-ascii
     # XeLaTeX has NO font fallback: a glyph the body face lacks is dropped,
     # the PDF is produced successfully, and the character is simply gone.
     # Cheap and BEFORE the build, for the same reason as the check above --
