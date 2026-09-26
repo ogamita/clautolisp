@@ -1,0 +1,44 @@
+#+TITLE: CAD vendor-probe campaign (drive the real-CAD-gated CAD-runtime issues)
+#+STATUS: WIP
+#+PRIORITY: P1
+#+TYPE: ci-campaign
+#+DEPENDS: -
+#+BRANCH: cad-vendor-probe-campaign
+
+* Why
+
+The macOS (BricsCAD) and Windows (AutoCAD + BricsCAD) runners are available
+again (pjb, 2026-09-26), so the CAD-hardware-gated CAD-runtime issues can be
+driven to closure through the native child pipeline (.gitlab/native.yml). This
+issue tracks that campaign; each target issue is closed on its own evidence.
+
+* Targets and the job that informs each
+
+- autocad-runtime-vlax-sleep-and-rest — code complete (1.6.4/1.6.6), open only
+  pending a confirming run. Job: =vendor:probes:autocad= (protocol loop holds
+  at READY, real verdicts, no unbound-vlax-sleep crash). Close if green.
+
+- autocad-no-rest-output-capture — the -x / native-load eval-request path loses
+  CAD output. First PROBE whether accoreconsole honours LOGFILEMODE /
+  LOGFILEPATH under /isolate (a small probe form via
+  =probe:suite:autocad:windows= or a dedicated run), then implement the capture
+  (route -x through source-load, or tee the command-line log), then re-verify.
+
+- accoreconsole-deported-load-highbyte — a source file with a high byte (é=0xE9)
+  fails LOAD under accoreconsole (LISPSYS 0, ANSI_1252). Job:
+  =encoding:experiment:autocad:windows= (scripts/run-encoding-experiment.ps1
+  -Backend autocad) to reproduce; then bring autolisp-source-load to the
+  encoding-honouring reference loader and re-run (LISPSYS 0 vs 1/2, no /isolate).
+
+* Also validates (residual of the now-closed vla-* issues)
+
+- =probe:suite:autocad:windows= / =vendor:probes:bricscad:macos= exercise the
+  SPEC-UNCERTAIN vendor behaviours the two closed vla-* issues left to confirm
+  (EffectiveName on dynamic blocks, entmakex-on-BLOCK, ENDBLK-terminated entnext
+  walk, glyph-metric bounding boxes). Findings feed deferred-spec-research.issue
+  and the autolisp-spec divergence notes; no code is blocked on them.
+
+* Log
+
+- 2026-09-26: campaign opened; MR spawns the native child; playing the AutoCAD
+  and BricsCAD probe jobs. (Results appended as they return.)
