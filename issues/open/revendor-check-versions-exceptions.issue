@@ -1,0 +1,57 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: revendor-check-versions-exceptions — the accepted-exceptions mechanism must go back upstream to informatimago/rules
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-09-26
+
+* Context
+
+=scripts/check-versions.sh= is a VENDORED copy of the shared audit from
+[[https://gitlab.com/informatimago/rules][informatimago/rules]]
+(=scripts/check-versions.sh= there). AGENTS.md § /Build, install and release
+structure/ states the rule: *fix it there, then re-vendor.*
+
+clautolisp 2.2.109 broke that order, knowingly. It added an
+ACCEPTED-EXCEPTIONS mechanism to the vendored copy while closing
+=version-invariants-broken-by-shakedown-release=: the audit had been failing
+on every run for the two documented 1.8-shakedown lines, which is precisely
+how a gate stops being read. The session that made the change was sandboxed to
+this repository's worktree and could not commit to another repository, so the
+fix landed here first.
+
+* What must go upstream
+
+1. =scripts/check-versions.sh= — the exceptions block (=exception_match=, the
+   =bad()= wrapper, the stale sweep, the summary counters) and the two header
+   paragraphs describing it. The mechanism is project-INDEPENDENT; only the
+   list it reads is project-local, so it belongs in the shared copy. Take the
+   file as-is from clautolisp master; it is a strict superset of the current
+   upstream copy (no other behaviour changed).
+2. =version-rules.md= — a short § under § 6 describing the mechanism, so other
+   projects know the facility exists and what it refuses:
+   - one exception per line: =<glob matched against the check's message> # why=;
+   - a reason is REQUIRED (an exception nobody can justify is not one);
+   - an exception matching NOTHING fails as =stale=, so the list shrinks when
+     the situation is resolved and cannot grow into a blanket;
+   - only an IMMUTABLE PUBLISHED REF qualifies — anything still fixable gets
+     fixed, not declared;
+   - default list =scripts/version-audit-exceptions.txt=, overridable with
+     =$VERSION_AUDIT_EXCEPTIONS=.
+3. Once upstream carries it, re-vendor into this repository (the file should
+   then be byte-identical again) and drop this issue.
+
+* Verification
+
+Upstream and vendored copies identical (=diff=), and =make check-versions=
+still exits 0 here with the two accepted exceptions, 1 on a stale or
+reason-less exception, and 1 on any unlisted violation. Those four cases were
+checked when the mechanism landed; re-check them after the round trip, since
+the value of this change is entirely in the cases that still FAIL.
+
+* Note
+
+Filed per AGENTS.md's "a bug or a follow-up found while doing something else
+gets its own ticket" rule, rather than left as a comment in the closed issue.

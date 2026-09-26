@@ -513,6 +513,16 @@ not deleted (published immutable ref) and `version-1.8` is not repointed onto
 it. Treat these two I3/I5 lines as a standing, accepted exception for the 1.8
 series only.
 
+Since clautolisp 2.2.109 that exception is **declared, not just described**:
+both lines are listed in `scripts/version-audit-exceptions.txt`, so
+`make check-versions` reports them as `xfail` with their reason and exits 0
+again. Every other violation still fails, a listed exception without a reason
+fails, and an exception that matches nothing fails as `stale` — so the list
+shrinks when a situation is resolved and cannot become a blanket. An audit
+that is always red is not a gate: nobody reads it, and the next real violation
+goes unseen. Declare an exception there only for an **immutable published
+ref**; anything still fixable gets fixed.
+
 **Cutting a release** (full procedure in `version-rules.md` § 5):
 
 1. bump the shipped programs' stamps, update `RELEASE_NOTES.org`, commit;
@@ -683,7 +693,10 @@ programs this repo ships.
 
 **Verification.** `make check-versions` audits the repository against
 the invariants; run `git fetch --prune --tags` first. It is expected to
-pass on master at all times.
+pass on master at all times — including the 1.8 shakedown case, which is
+declared in `scripts/version-audit-exceptions.txt` (see above) rather
+than left to fail. A red audit is a defect to fix or a new exception to
+justify, never something to step over.
 
 **Legacy refs.** Releases up to 1.6.11 were originally marked `vM.m.d`
 with `release-M.m.d` / `release-M.m` *branches*; the branches are gone,

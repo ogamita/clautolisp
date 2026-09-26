@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: version-invariants-broken-by-shakedown-release — `make check-versions` fails on six counts, and only two are mine to fix
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: infra
 #+DEPENDS: -
@@ -89,3 +89,47 @@ la procédure de release ne peut pas être suivie *à la lettre*. J'ai coupé
 =release-1.9.9= en le sachant, en vérifiant que les trois violations
 restantes concernent toutes la série 1.8 et le rodage, et aucune la série
 1.9 que je publie.
+
+* Resolved — clautolisp 2.2.109 : l'option 2, sans toucher au moindre tag
+
+Le groupe 3 était déjà tranché *en prose* : AGENTS.md § /Release tags and
+branches/ « Known audit exception — release-1.8.103 (the shakedown tag) »
+décide de GARDER le tag (ref publiée immuable) et de LAISSER =version-1.8= sur
+=release-1.8.49=. Ce qui manquait, c'est que le vérificateur l'apprenne : il
+échouait à chaque exécution, donc =make check-versions= n'était plus un
+signal — exactement le coût que ce ticket désigne comme le pire des trois.
+
+Implémenté : l'*option 2* du ticket, sous une forme générique.
+=scripts/check-versions.sh= lit une liste d'exceptions ACCEPTÉES
+(=scripts/version-audit-exceptions.txt=, surchargeable par
+=$VERSION_AUDIT_EXCEPTIONS=) — une par ligne, =<glob sur le message> # la
+raison=. Une violation reconnue est rapportée =xfail= avec sa raison et ne
+fait plus échouer l'audit. Les garde-fous comptent autant que le mécanisme :
+
+- toute autre violation échoue comme avant ;
+- une exception SANS RAISON échoue (« accepted WITHOUT A REASON — say why ») ;
+- une exception qui ne correspond à RIEN échoue comme =stale=, avec son
+  numéro de ligne : la liste rétrécit quand la situation est réglée et ne peut
+  pas devenir une couverture générale ;
+- le sha de =version-1.8= est ÉPINGLÉ dans le motif I5, donc tout AUTRE
+  placement de =version-1.8= reste une vraie violation.
+
+Vérifié dans les quatre cas, pas seulement le vert : liste réelle → exit 0
+(28 releases, 13 séries, « 2 accepted exception(s) ») ; exception périmée →
+exit 1 avec =stale= ; exception sans raison → exit 1 ; violation non listée →
+exit 1. Aucun tag, aucune branche, aucun pointeur n'a été créé, déplacé ni
+supprimé — ce ticket disait ne pas vouloir de ce geste, et il n'a pas été fait.
+
+AGENTS.md est mis à jour aux deux endroits : le paragraphe de l'exception dit
+maintenant qu'elle est DÉCLARÉE et non seulement décrite, et § /Verification/
+redevient vrai (« expected to pass on master at all times »).
+
+** Reste à faire, fiché à part
+
+=scripts/check-versions.sh= est une copie VENDORÉE de
+[[https://gitlab.com/informatimago/rules][informatimago/rules]] ; la règle est
+« corriger là-bas, puis re-vendorer ». Le bac à sable de cette session ne peut
+pas committer dans un autre dépôt, donc la correction a atterri d'abord ici.
+La re-vendorisation (le script + un § dans =version-rules.md= décrivant le
+mécanisme, pour que les autres projets en profitent) est fichée :
+=issues/open/revendor-check-versions-exceptions.issue=.

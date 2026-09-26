@@ -105,7 +105,20 @@ Test / CI infrastructure (Linux-doable, high value):
   staging and cannot diverge (the libraries-phase model). Verified + closed
   done-by-construction 2026-09-12; the drift-guard test (acceptance 3) is moot
   under single-sourcing and was declined.
-- TODO =version-invariants-broken-by-shakedown-release= — P3: shakedown-tag version invariants.
+- DONE =version-invariants-broken-by-shakedown-release= — P2 (clautolisp 2.2.109):
+  l'option 2 du ticket, sans toucher au moindre tag. =check-versions.sh= lit
+  désormais =scripts/version-audit-exceptions.txt= (=<glob sur le message> # la
+  raison=) : les deux lignes I3/I5 du tag de rodage, déjà DÉCIDÉES en prose dans
+  AGENTS.md, sont rapportées =xfail= avec leur raison et l'audit repasse vert.
+  Les garde-fous font la valeur : exception sans raison → échec ; exception qui
+  ne correspond à rien → =stale= + échec (la liste rétrécit, ne devient pas une
+  couverture) ; sha de =version-1.8= épinglé, donc tout autre placement échoue ;
+  toute autre violation échoue. Les 4 cas vérifiés, pas seulement le vert.
+  Re-vendorisation vers informatimago/rules fichée : =revendor-check-versions-exceptions=.
+- TODO =revendor-check-versions-exceptions= — P3: remonter le mécanisme
+  d'exceptions acceptées dans informatimago/rules (script + § dans
+  version-rules.md), puis re-vendorer ; la correction a atterri ici d'abord
+  parce que la session était confinée à ce dépôt.
 Release / Windows (verification-bound to a Windows runner or a release tag):
 - BLOCKED =windows-artifact-upload-fails-on-release= — P1/machine.
 - TODO =release-1.9.9-has-no-macos-products= — P3/machine: macOS products absent from a release.
