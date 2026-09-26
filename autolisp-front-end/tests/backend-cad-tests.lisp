@@ -2867,3 +2867,59 @@ VBScript with it."
               (is (null (%vbs-offending-lines text))))))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
+
+;;; --- the runner-side sweep: a lingering PID is not a running process ---
+;;;
+;;; cad-sweep-fails-jobs-for-zombie-pids: on 2026-09-26 the sweep failed
+;;; 21 CAD jobs over three acad.exe PIDs that had ALREADY EXITED. Windows
+;;; keeps a process-table entry until the last handle to it closes, and
+;;; the COM service holds one, so a dead acad.exe answers Get-Process for
+;;; days while Stop-Process cannot touch it and taskkill says "there is no
+;;; running instance of the task". The sweep read that as a survivor.
+;;;
+;;; No PowerShell on the Linux test lanes, so these are assertions on the
+;;; script TEXT -- the same instrument as the VBScript template tests
+;;; above, and for the same reason: what breaks is a property of the file
+;;; the other tool reads.
+
+(defun %cad-sweep-script-text ()
+  "The runner-side sweep script's text (scripts/sweep-orphaned-cad.ps1),
+read from the repository the tests run in."
+  (uiop:read-file-string
+   (merge-pathnames "scripts/sweep-orphaned-cad.ps1"
+                    (asdf:system-relative-pathname "autolisp-front-end" "../"))))
+
+(test cad-sweep-classifies-a-process-before-calling-it-a-survivor
+  (let ((text (%cad-sweep-script-text)))
+    ;; there is an explicit classifier, and it names all three states
+    (is (search "function Get-CadProcessState" text))
+    (is (search "'zombie'" text))
+    (is (search "'live'" text))
+    (is (search "'gone'" text))
+    ;; it decides on evidence that a PID's mere existence does not give:
+    ;; the thread count, and the exited flag
+    (is (search "ThreadCount" text))
+    (is (search "HasExited" text))
+    ;; the survivor list is fed by the classifier, not by "the PID answers"
+    (is (search "(Get-CadProcessState -ProcessId $entry.Pid) -eq 'live'" text))
+    (is (not (search "if (Get-Process -Id $entry.Pid -ErrorAction SilentlyContinue) {" text))
+        "a bare Get-Process presence check must not decide again that a ~
+lingering PID is a running CAD")
+    ;; and a zombie is settled, never a reason to fail a job
+    (is (search "has EXITED (no threads left)" text))
+    (is (search "entry dropped" text))))
+
+(test cad-sweep-fails-only-for-a-cad-that-is-really-running
+  (let* ((text (%cad-sweep-script-text))
+         (fail-at (search "FAILING THIS JOB" text))
+         (live-at (search "is STILL RUNNING after taskkill" text)))
+    (is (and fail-at live-at))
+    ;; the hard failure is reached only through the living list
+    (is (search "if ($living.Count -gt 0) {" text))
+    (is (< live-at fail-at)
+        "the live-instance report comes before the job is failed")
+    ;; the escape hatch for a machine nobody can reach right now stays
+    (is (search "CAD_SWEEP_IGNORE_SURVIVORS" text))
+    ;; the header must keep saying WHY a lingering PID is not a survivor,
+    ;; so the next reader does not re-add the simpler, wrong check
+    (is (search "A PID THAT STILL EXISTS IS NOT A RUNNING PROCESS" text))))

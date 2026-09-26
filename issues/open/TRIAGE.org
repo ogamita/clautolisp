@@ -125,6 +125,18 @@ Release / Windows (verification-bound to a Windows runner or a release tag):
 CAD (machine-bound):
 - BLOCKED =probes-suite-crashes-bricscad= — P1: the probe suite kills BricsCAD; see the
   closed bricscad-refuses-to-load ticket; needs the machine.
+- TODO =cad-sweep-fails-jobs-for-zombie-pids= — P1, CORRIGÉ EN CODE (clautolisp
+  2.2.110), critère runner ouvert. Le pipeline master 2885566068 (enfant
+  2885566207) a vu *21 jobs CAD* échouer dans =scripts/sweep-orphaned-cad.ps1=
+  pour trois =acad.exe= DÉJÀ MORTS : taskkill répondait « Il n'existe aucune
+  instance en cours de cette tâche » et le sweep lisait « survivant ». Windows
+  garde l'entrée de table jusqu'à la fermeture du dernier handle (le service COM
+  en tient un), donc un pid mort répond à =Get-Process= pendant des jours. Le
+  garde-fou censé protéger les jobs CAD était la seule chose qui les empêchait
+  de tourner, depuis la veille. =Get-CadProcessState= classe désormais
+  gone/zombie/live (ThreadCount, HasExited) : seul un =live= survivant fait
+  échouer un job. 2 tests sur le TEXTE du script (pas de PowerShell sur les
+  lanes Linux), vérifiés ROUGES sur la version d'avant.
 Debugger / ncurses UI (P3, pure-Lisp, this branch's workstream =debugger-ui-ncurses-aldb=):
 - DONE =ncurses-key-bindings= — keymap prefix-tree + 5 AutoLISP builtins (api.lisp ~5500) + user-binding test suite (verified 2026-09-12, closed).
 - DONE =aldb-commands= — aldb.el binds the full command table + 19 server tests (verified 2026-09-12, closed).

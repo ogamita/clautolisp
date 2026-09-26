@@ -225,6 +225,18 @@ an AutoCAD alfe did not start. On the project's Windows CI it runs
 cancel (nothing runs after one) and the only moment that cannot catch an
 AutoCAD the current job is using.
 
+A *process id that still answers is not a running process.* Windows keeps
+a process-table entry until the last handle to it is closed, and the COM
+service holds one — so a dead =acad.exe= can linger for days: it has no
+threads left, =Stop-Process= cannot touch it, and =taskkill= replies
+"there is no running instance of the task". The sweep classifies each
+recorded id before acting (gone / exited-and-waiting-to-be-reaped /
+running) and drops the first two from the file. It *fails the job it
+precedes* only when an instance is really *running* and could not be
+ended — such an AutoCAD owns the =AutoCAD.Application= COM registration
+and answers =RPC_E_CALL_REJECTED= to every call, which would look like an
+alfe defect in the log. Set =CAD_SWEEP_IGNORE_SURVIVORS=1= to run anyway.
+
 The release → version table alfe knows covers AutoCAD 2019–2026 (2022 is
 24.1, 2025 is 25.0); the relation is not arithmetic, so a release outside
 it is resolved by asking the registry what is installed, and
