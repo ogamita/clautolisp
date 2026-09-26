@@ -68,6 +68,28 @@ libs=$(find "$prefix/lib" -name 'clal_dwg.*' 2>/dev/null | head -1)
 say "program: $bin"
 say "native:  $libs"
 
+# HIDE THE DEVELOPMENT TREE'S SHIM FOR THE WHOLE CHECK, not just the
+# binaries-only case at the end. The question this script asks is what a
+# machine that only unpacked a RELEASE does, and such a machine has no
+# checkout: the dev-tree candidate resolves through the ASDF system the image
+# was built from, a path that does not exist there. On a CI machine it DOES
+# exist, so leaving it in place let the program load the dev copy and the check
+# proved nothing about the installed one -- silently on Linux, where that copy's
+# rpath resolves its dependency, and with a confusing failure on MS-Windows,
+# where it does not (the Windows run of 2026-09-26 that found this).
+devshim=$(find "$here/clautolisp/drawing-dwg" -maxdepth 2 -name 'clal_dwg.*' | head -1)
+restore_devshim() {
+  if [ -n "${devshim:-}" ] && [ -f "$devshim.hidden-by-packaged-check" ]; then
+    mv "$devshim.hidden-by-packaged-check" "$devshim"
+    say "restored $devshim"
+  fi
+}
+trap restore_devshim EXIT INT TERM
+if [ -n "$devshim" ]; then
+  mv "$devshim" "$devshim.hidden-by-packaged-check" || fail "cannot hide the dev shim"
+  say "hid the development tree's $(basename "$devshim") for the whole check"
+fi
+
 probe="$work/probe.lsp"
 cat > "$probe" <<'LISP'
 (vl-load-com)
@@ -124,27 +146,12 @@ bin3="$bare/bin/clautolisp$exe"
 [ -x "$bin3" ] || fail "no installed clautolisp under $bare/bin"
 [ -z "$(find "$bare/lib" -name 'clal_dwg.*' 2>/dev/null)" ] ||
   fail "install-programs should not have installed a native library"
-# To exercise this the DEVELOPMENT TREE's copy has to be out of the way:
-# the installed program still probes it, because the dev-tree candidate
-# resolves through the ASDF system it was built from -- a path that does
-# not exist on a machine which only unpacked a release. Move it aside and
-# put it back, with a trap so an interrupted run restores it.
-devshim=$(find "$here/clautolisp/drawing-dwg" -maxdepth 2 -name 'clal_dwg.*' | head -1)
-restore_devshim() {
-  if [ -n "${devshim:-}" ] && [ -f "$devshim.hidden-by-packaged-check" ]; then
-    mv "$devshim.hidden-by-packaged-check" "$devshim"
-    say "restored $devshim"
-  fi
-}
-trap restore_devshim EXIT INT TERM
-if [ -n "$devshim" ]; then
-  mv "$devshim" "$devshim.hidden-by-packaged-check" || fail "cannot hide the dev shim"
-  say "hid the development tree's $(basename "$devshim") for this case"
-fi
+# The development tree's copy is already hidden -- for the whole check, from
+# the top -- so this case needs no hide/restore of its own. It did when only
+# this case depended on it, which is exactly what let the earlier cases pass
+# while loading the dev copy.
 out3=$(run_probe "$bin3" "$work") || true
 printf '%s\n' "$out3" | sed 's/^/packaged-dwg:   /'
-restore_devshim
-trap - EXIT INT TERM
 case "$out3" in
   *"no writer codec registered"*)
     fail "a binaries-only install must name the missing library, not the codec" ;;

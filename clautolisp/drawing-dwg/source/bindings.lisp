@@ -110,27 +110,58 @@ same directory on MS-Windows."
             (let ((p (prefix 1))) (when p (push p prefixes)))))
         (nreverse prefixes)))))
 
-(defun native-library-directories ()
-  "Every directory to look in for this platform's native libraries, most
-specific first: the CLAUTOLISP_DWG_LIBDIR override, the development
-tree, the prefixes of the RUNNING program, and the installed ASDF source
-prefix. A complete installed release is found through the third of these
-with no environment variable set and no ASDF sources present."
+(defun %native-library-directories (&key override program-dirs dev-dir
+                                         installed-libdir)
+  "The directories to search, IN ORDER, built from the pieces that name them:
+
+  1. OVERRIDE          -- $CLAUTOLISP_DWG_LIBDIR, an explicit instruction;
+  2. PROGRAM-DIRS      -- the RUNNING program's own lib/clautolisp/<os>/<arch>/;
+  3. DEV-DIR           -- the development tree (this ASDF system's source/);
+  4. INSTALLED-LIBDIR  -- the installed ASDF source prefix.
+
+*The running program's own library comes before the development tree.* That is
+the order fix (clautolisp-distributed-native-libraries-not-loaded): a library
+shipped BESIDE THE PROGRAM belongs to that program, while a build tree merely
+happens to exist on the same machine, and on the Windows runner (2026-09-26)
+an installed release loaded the checkout's clal_dwg.dll -- which has no
+libredwg.dll beside it -- and could not save a drawing.
+
+A developer loses nothing by this. Running from a checkout, the program is the
+host Lisp (or a dev image under tools/clautolisp/bin/), and neither carries a
+lib/clautolisp/<os>/<arch>/ of its own, so PROGRAM-DIRS names nothing that
+exists and the development tree is still what gets found. What the order
+settles is the one case where BOTH exist -- an installed program on a machine
+that also has a checkout -- and there the program's own library is the right
+answer.
+
+Pure, so the order can be tested without a filesystem or an environment."
   (let ((dirs '()))
-    (let ((env (uiop:getenv "CLAUTOLISP_DWG_LIBDIR")))
-      (when (and env (plusp (length env)))
-        (push (uiop:ensure-directory-pathname env) dirs)))
-    (push (uiop:pathname-directory-pathname
-           (asdf:system-relative-pathname
-            :clautolisp/drawing-dwg "drawing-dwg/source/x"))
-          dirs)
-    (dolist (prefix (running-program-prefix-candidates))
-      (push (merge-pathnames (format nil "lib/clautolisp/~A/~A/" (%os) (%arch))
-                             prefix)
-            dirs))
-    (let ((libdir (%installed-libdir)))
-      (when libdir (push libdir dirs)))
+    (when override (push override dirs))
+    (dolist (dir program-dirs) (push dir dirs))
+    (when dev-dir (push dev-dir dirs))
+    (when installed-libdir (push installed-libdir dirs))
     (remove-duplicates (nreverse dirs) :test #'equal :from-end t)))
+
+(defun native-library-directories ()
+  "Every directory to look in for this platform's native libraries, in the
+order %NATIVE-LIBRARY-DIRECTORIES documents: the CLAUTOLISP_DWG_LIBDIR
+override, the RUNNING program's own lib/clautolisp/<os>/<arch>/, the
+development tree, and the installed ASDF source prefix. A complete installed
+release is found through the second of these with no environment variable set
+and no ASDF sources present."
+  (%native-library-directories
+   :override (let ((env (uiop:getenv "CLAUTOLISP_DWG_LIBDIR")))
+               (when (and env (plusp (length env)))
+                 (uiop:ensure-directory-pathname env)))
+   :program-dirs (mapcar (lambda (prefix)
+                           (merge-pathnames
+                            (format nil "lib/clautolisp/~A/~A/" (%os) (%arch))
+                            prefix))
+                         (running-program-prefix-candidates))
+   :dev-dir (uiop:pathname-directory-pathname
+             (asdf:system-relative-pathname
+              :clautolisp/drawing-dwg "drawing-dwg/source/x"))
+   :installed-libdir (%installed-libdir)))
 
 (defun %candidate-shim-pathnames ()
   (let ((name (%shim-file-name)))
@@ -139,58 +170,103 @@ with no environment variable set and no ASDF sources present."
 
 (defvar *shim-loaded* nil)
 
+(defun %try-load-shim (path)
+  "Try to load the shim at PATH, its MS-Windows dependency first. Returns T
+when the library is loaded, else NIL and a one-line reason why this candidate
+cannot be used. NEVER signals: the caller goes on to the next candidate.
+
+Windows DLLs carry no rpath/$ORIGIN, so the loader will not find
+clal_dwg.dll's import of libredwg.dll just because the two sit in one
+directory. Pre-load it by absolute path: once libredwg.dll is in the process
+the shim's import resolves to it. On ELF/Mach-O the rpath handles this, so
+that part is a no-op there."
+  (let ((dir (uiop:pathname-directory-pathname path)))
+    (when (uiop:os-windows-p)
+      (let ((dep (merge-pathnames "libredwg.dll" dir)))
+        (unless (probe-file dep)
+          (return-from %try-load-shim
+            (values nil (format nil "its dependency libredwg.dll is not beside ~
+it in ~A (the release's libraries archive carries both; installing only one ~
+cannot work on MS-Windows, where the shim's import is resolved by the loader)"
+                                (namestring dir)))))
+        (handler-case (cffi:load-foreign-library dep)
+          (error (condition)
+            (return-from %try-load-shim
+              (values nil (format nil "the dynamic loader refused its ~
+dependency ~A: ~A" (namestring dep) condition)))))))
+    (handler-case (progn (cffi:load-foreign-library path) t)
+      (error (condition)
+        ;; Present but unloadable: the wrong architecture, a missing
+        ;; transitive dependency, a hardened loader.
+        (values nil (format nil "the dynamic loader refused it: ~A" condition))))))
+
+(defun %select-usable-shim (candidates &key (probe #'probe-file)
+                                            (try #'%try-load-shim))
+  "Walk CANDIDATES in order and load the FIRST USABLE one. Returns
+(values PATH SKIPPED) where SKIPPED is a list of (PATH . REASON) for the
+candidates that existed but could not be used, or (values NIL SKIPPED) when
+none worked. PROBE and TRY are injectable so the choice can be tested without
+a real library on disk.
+
+*A candidate that EXISTS but cannot be LOADED must not end the search.* That
+was the defect, measured on the Windows runner (2026-09-26,
+clautolisp-distributed-native-libraries-not-loaded): a complete installed
+release found the DEVELOPMENT tree's clal_dwg.dll first -- the ASDF path is
+listed before the program's own prefix, which is right for a developer -- and
+that copy has no libredwg.dll beside it, so the save failed although the
+program's own lib/clautolisp/<os>/<arch>/ carried a complete pair. On ELF the
+identical wrong pick is INVISIBLE, because the dev copy's rpath resolves its
+dependency: the Linux check had been passing without ever loading the
+installed library."
+  (let ((skipped '()))
+    (dolist (path candidates (values nil (nreverse skipped)))
+      (when (funcall probe path)
+        (multiple-value-bind (ok reason) (funcall try path)
+          (if ok
+              (return (values path (nreverse skipped)))
+              (push (cons path reason) skipped)))))))
+
 (defun ensure-shim-loaded ()
   "Load the compiled libredwg shim if not yet loaded, searching the
-candidate locations. Signals a clear error if it cannot be found (run
+candidate locations. Signals a clear error if no candidate can be used (run
 `make build-libredwg`, or set CLAUTOLISP_DWG_LIBDIR)."
   (unless *shim-loaded*
-    (let* ((candidates (%candidate-shim-pathnames))
-           (path (find-if #'probe-file candidates)))
-      ;; The four cases the caller must be able to tell apart
-      ;; (clautolisp-distributed-native-libraries-not-loaded): the Lisp
-      ;; module not activated is now impossible -- it is baked into the
-      ;; program -- and the other three each say so, with the pathnames.
-      (unless path
-        (error 'drawing-error
-               :format-control "the DWG native library ~A was not found. ~
+    (let ((candidates (%candidate-shim-pathnames)))
+      (multiple-value-bind (path skipped) (%select-usable-shim candidates)
+        (cond
+          (path
+           ;; Say what was passed over. A developer whose own build is
+           ;; incomplete must not SILENTLY end up running an installed,
+           ;; older library -- that would be a different bug wearing this
+           ;; fix as a disguise.
+           (dolist (entry skipped)
+             (format *error-output*
+                     "~&clautolisp: skipped the DWG native library ~A: ~A~%"
+                     (namestring (car entry)) (cdr entry)))
+           (setf *shim-loaded* t))
+          (skipped
+           ;; Present but none usable: name every one and the loader's own
+           ;; words for it. "no writer codec registered" is what this used
+           ;; to look like from the outside.
+           (error 'drawing-error
+                  :format-control "no usable DWG native library. Tried ~
+~{~{~A (~A)~}~^; ~}."
+                  :format-arguments
+                  (list (mapcar (lambda (entry)
+                                  (list (namestring (car entry)) (cdr entry)))
+                                skipped))))
+          (t
+           ;; The four cases the caller must be able to tell apart
+           ;; (clautolisp-distributed-native-libraries-not-loaded): the Lisp
+           ;; module not activated is now impossible -- it is baked into the
+           ;; program -- and the other three each say so, with the pathnames.
+           (error 'drawing-error
+                  :format-control "the DWG native library ~A was not found. ~
 Looked in: ~{~A~^, ~}. A release must ship it under ~
 lib/clautolisp/~A/~A/ beside the program; in a checkout build it with ~
 `make build-libredwg'. CLAUTOLISP_DWG_LIBDIR overrides the search."
-               :format-arguments (list (%shim-file-name) candidates
-                                       (%os) (%arch))))
-      ;; Windows DLLs carry no rpath/$ORIGIN, so the dynamic loader will
-      ;; not find clal_dwg.dll's dependency libredwg.dll just because it
-      ;; sits next to the shim. Pre-load it by absolute path first: once
-      ;; libredwg.dll is in the process the shim's import resolves to it.
-      ;; (On ELF/Mach-O the rpath handles this, so this is a no-op there.)
-      (when (uiop:os-windows-p)
-        (let ((dep (merge-pathnames "libredwg.dll"
-                                    (uiop:pathname-directory-pathname path))))
-          (unless (probe-file dep)
-            (error 'drawing-error
-                   :format-control "the DWG native library ~A is installed ~
-but its dependency libredwg.dll is not beside it in ~A. The release's ~
-libraries archive carries both; installing only one cannot work on ~
-MS-Windows, where the shim's import is resolved by the loader."
-                   :format-arguments
-                   (list (namestring path)
-                         (namestring (uiop:pathname-directory-pathname path)))))
-          (handler-case (cffi:load-foreign-library dep)
-            (error (condition)
-              (error 'drawing-error
-                     :format-control "the dynamic loader refused ~A: ~A"
-                     :format-arguments (list (namestring dep) condition))))))
-      (handler-case (cffi:load-foreign-library path)
-        (error (condition)
-          ;; Present but unloadable: the wrong architecture, a missing
-          ;; transitive dependency, a hardened loader. Say which file and
-          ;; give the loader's own words -- "no writer codec registered"
-          ;; is what this used to look like from the outside.
-          (error 'drawing-error
-                 :format-control "the dynamic loader refused the DWG native ~
-library ~A: ~A"
-                 :format-arguments (list (namestring path) condition))))
-      (setf *shim-loaded* t))))
+                  :format-arguments (list (%shim-file-name) candidates
+                                          (%os) (%arch)))))))))
 
 ;;; libredwg's error codes are a bit set (third-party/libredwg/include/dwg.h,
 ;;; enum Dwg_Error). Reporting the number alone -- "error code 2048" -- told a

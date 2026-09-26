@@ -152,6 +152,16 @@ CAD (machine-bound):
   =(quit)= -> QUIT/0, =(exit 3)= -> EXIT/3, zéro ligne de backtrace. 2 tests,
   dont un qui épingle la RAISON de la clause séparée (si la condition devenait
   un =ERROR=, la clause d'erreur avalerait le quit et répondrait =:continue=)
+- TODO =alfe-windows-drive-protocol-three-evals-fails= — P3, remarqué en lisant
+  les résultats Windows : =test:alfe:windows= (allow_failure) échoue sur 4
+  checks, tous dans =cad-drive-protocol-actions-three-evals-counter-aware=, vert
+  sur Linux et macOS. La course précédente de cette lane était PIRE (abandon en
+  plein milieu dans =protocol-mock-cad-full-lifecycle=, aucun rapport) ; elle va
+  maintenant au bout et isole le test, ce qui rend le ticket possible. Première
+  hypothèse : le rename non atomique de Windows (delete+rename d'UIOP) fait lire
+  un =status.txt= absent ou périmé. NE PAS sauter le test avant d'avoir lu les
+  valeurs : si c'est le PILOTE qui a une course, un vrai CAD sur cette
+  plateforme la rencontrera aussi
 - TODO =cad-sweep-blocks-bricscad-jobs-over-autocad= — P3, trouvé en corrigeant
   le précédent : parmi les 22 jobs stoppés, =harvest:sysvars:bricscad:windows=
   — un job BRICSCAD arrêté à cause de trois =acad.exe=. L'argument du garde-fou
