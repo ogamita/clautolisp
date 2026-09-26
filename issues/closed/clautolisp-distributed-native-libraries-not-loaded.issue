@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: clautolisp-distributed-native-libraries-not-loaded — the standalone runtime does not activate native libraries shipped in its installation prefix
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: packaging-runtime
 #+DEPENDS: dwg-write-rejects-a-drawing-built-in-memory
@@ -477,12 +477,87 @@ is not mistaken for its own dependency (=clal_dwg= contains =dwg= but not
 failures; the Linux packaged check still passes, and its /Looked in:/ list now
 shows the corrected order.
 
-*** Still open: the Windows run, a third time
+*** GREEN on the Windows runner — 2026-09-26, job 16756830397
 
-- [ ] =verify:packaged-dwg:windows= green on the runner with 2.2.119. Each run
-      so far has found a different real defect and moved one step further —
-      first the search order and the give-up-on-first-existing, now the
-      hard-coded dependency name — which is what an unproven platform half
-      looks like while it is being proven.
+=verify:packaged-dwg:windows= SUCCEEDED with clautolisp 2.2.119, all four cases,
+on the platform that exhibited every one of these defects:
+
+#+begin_example
+packaged-dwg: program: .../a prefix with spaces/bin/clautolisp.exe
+packaged-dwg: native:  .../a prefix with spaces/lib/clautolisp/windows/x86-64/clal_dwg.dll
+packaged-dwg: hid the development tree's clal_dwg.dll for the whole check
+packaged-dwg: running from / with no overrides
+packaged-dwg:   WROTE-DWG          (302711 bytes)
+packaged-dwg: moving the prefix, to prove nothing embedded its path
+packaged-dwg:   WROTE-DWG
+packaged-dwg: installing the programs WITHOUT the libraries ...
+packaged-dwg: the missing library is named, with the paths tried
+packaged-dwg: removing msys-redwg.dll to check the dependency is named
+packaged-dwg: the missing dependency is named, with the directory looked in
+packaged-dwg: OK: a complete installed release writes a DWG, before and after being moved
+Job succeeded
+#+end_example
+
+So the Windows half is DEMONSTRATED, not merely written: a DWG written from a
+prefix that contains a SPACE, from an unrelated working directory, with no
+environment variable, and again after the prefix was MOVED; the dev-tree shim
+hidden as =clal_dwg.dll= (the glob fix); the dependency found under its MSYS2
+name =msys-redwg.dll=; and the two negative cases still naming what is missing
+rather than blaming the codec.
+
+*** What three Windows runs cost, and what they bought
+
+Each run found a DIFFERENT real defect, and none of them was visible on Linux:
+
+1. the search took the first candidate that EXISTED and died on it
+   (fall-through, 2.2.117);
+2. the ORDER preferred a checkout's build tree over the program's own library
+   (2.2.118) — the root cause the fall-through had been masking;
+3. the dependency's name was hard-coded =libredwg.dll= while MSYS2 links
+   =msys-redwg.dll= (2.2.119);
+
+plus two bugs in the check script itself (=clal_dwg.*= matching the C source, and
+the =libredwg*.dll= glob). *The Linux lane had been passing all along while
+silently loading the development copy* — which is the general lesson worth
+keeping: a check that runs on a machine holding a build tree proves nothing
+about a release unless it hides that tree.
+
+A fourth run was lost to an unrelated merge (every native job is
+=interruptible=, so a new master pipeline cancels the queued ones); that is a
+scheduling cost, not a defect.
+
+*** CLOSED — every acceptance criterion, checked one at a time
+
+1. *Codec baked into the program* — =clautolisp/clautolisp-tool= depends on
+   =clautolisp/drawing-dwg=; pinned by
+   =dwg-tool-program-depends-on-the-codec=. No user-side =asdf:load-system=.
+2. *A complete installed release finds its libraries with the variable unset and
+   writes and reads a DWG* — green on Linux AND on MS-Windows (302711 bytes,
+   job 16756830397).
+3. *From an unrelated working directory, prefix containing spaces, after
+   relocation* — the check runs from =/=, installs into ="a prefix with
+   spaces"=, and repeats the save after MOVING the prefix. Both platforms.
+4. *Automated packaged-runtime tests for the =.so= and =.dll= layouts, the
+   Windows one proving the dependency is loaded before the shim* —
+   =verify:packaged-dwg:linux= and =verify:packaged-dwg:windows=; the Windows
+   case removes the dependency DLL and requires the program to name it, which is
+   what proves the pre-load is what makes the shim loadable.
+5. *Binaries-only installs fail with an explicit missing-native-library
+   diagnostic, not "no writer codec registered"* — /the missing library is
+   named, with the paths tried/ on both platforms.
+6. *=$CLAUTOLISP_DWG_LIBDIR= still overrides* — measured today: pointed at a
+   directory holding a deliberately broken shim, it is tried FIRST, skipped with
+   the loader's own words, and the search continues.
+7. *The SCHME+ "creation et fermeture d'un DWG temporaire" scenario no longer
+   fails for lack of a registered writer* — satisfied IN ITS OWN TERMS: there is
+   no "no writer codec registered" any more, and an installed release writes DWG
+   on both platforms. NOT claimed: that every SCHME+ DWG scenario passes. Entity
+   FIDELITY through a DWG round trip is a different defect with its own open
+   ticket (=dwg-round-trip-loses-entities=, which awaits pjb's decision on
+   whether a cador document is created from the template).
+
+Closing on that basis. What is left in this area is tracked elsewhere:
+=dwg-round-trip-loses-entities= (fidelity) and
+=drawing-codec-version-output= (reporting).
 - The DWG written by the packaged binary carries no ENTITIES yet; that is
   =issues/open/dwg-round-trip-loses-entities.issue=, not this one.
