@@ -1191,6 +1191,14 @@ file or COM), and forwards the workload.
   =ab=) and =print= ended with a newline instead of the documented
   trailing space. BricsCAD was fixed for this earlier; AutoCAD now
   matches it byte for byte.
+- *Every form of a loaded file runs, including the second one on a line.*
+  On the CAD backends, a line carrying two forms had all but the first
+  SILENTLY DISCARDED: =(princ "x")(princ "y")= printed only =x=, and
+  =(setq a 1)(setq b 2)= left =b= unbound, with no diagnostic and a
+  successful status. Any loaded file written in that (ordinary) style was
+  quietly running less code than it contains. A form spanning several
+  lines after one on the same line is kept as well. See
+  =issues/closed/alfe-cad-source-loader-drops-a-second-form-on-a-line.issue=.
 - *A =-x= expression that fails on a CAD backend now fails the run.*
   On =--bricscad= / =--autocad=, an expression that signalled -- an
   undefined function, a wrong argument -- used to be reported as a
