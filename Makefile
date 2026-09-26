@@ -331,7 +331,14 @@ check-doc-glyph-coverage:  ## Fail if a documentation source uses a glyph the PD
 check-nightly-sweep-isolation:  ## Fail if a scheduled pipeline would contain anything but the nightly sweep.
 	python3 scripts/check-nightly-sweep-isolation.py
 
-check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation  ## Every release-packaging check.
+# The CAD sweep fails a job only when a wedged AutoCAD could actually affect it.
+# A BricsCAD job put on the blocking gate by mistake costs nothing until someone
+# leaves a wedged AutoCAD on the machine -- and then reddens a lane that has no
+# business caring (cad-sweep-blocks-bricscad-jobs-over-autocad).
+check-cad-sweep-gating:  ## Fail if a Windows CAD job sits on a sweep gate that does not match the CAD it drives.
+	python3 scripts/check-cad-sweep-gating.py
+
+check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
 # (no PowerShell, pjb 2026-08-16: do not install it). A container gives the

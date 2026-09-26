@@ -175,6 +175,21 @@ if ($living.Count -gt 0) {
     Write-Host "cad sweep: they hold the COM registration, so every AutoCAD"
     Write-Host "cad sweep: session would fail with a rejected call instead."
     Write-Host "cad sweep: see issues/open/alfe-autocad-hung-instance-blocks-com-bootstrap.issue"
+    # A job that does not touch AutoCAD is not affected by any of the above: a
+    # wedged acad.exe owns the AutoCAD.Application registration, which a
+    # BricsCAD session neither asks for nor shares. Such jobs declare
+    # CAD_SWEEP_NONBLOCKING=1 (cad-sweep-blocks-bricscad-jobs-over-autocad) --
+    # they still SWEEP, because cleaning up is always right on a shared runner,
+    # they just are not stopped by what is left. The variable is set by the
+    # .gate-windows-bricscad-* templates, so the choice is visible per job.
+    if ($env:CAD_SWEEP_NONBLOCKING -eq '1') {
+        Write-Host "cad sweep: CAD_SWEEP_NONBLOCKING=1 -- this job does not use"
+        Write-Host "cad sweep: AutoCAD, so a wedged one cannot affect it; continuing."
+        exit 0
+    }
+    # The emergency override, for a machine nobody can reach right now. Distinct
+    # from the above on purpose: this one says "I know, run anyway", the other
+    # says "this cannot affect me".
     if ($env:CAD_SWEEP_IGNORE_SURVIVORS -eq '1') {
         Write-Host "cad sweep: CAD_SWEEP_IGNORE_SURVIVORS=1 -- continuing anyway."
         exit 0

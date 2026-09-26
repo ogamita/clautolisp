@@ -2998,6 +2998,13 @@ lingering PID is a running CAD")
         "the live-instance report comes before the job is failed")
     ;; the escape hatch for a machine nobody can reach right now stays
     (is (search "CAD_SWEEP_IGNORE_SURVIVORS" text))
+    ;; and the separate, intent-named knob for a job a wedged AutoCAD cannot
+    ;; affect at all (cad-sweep-blocks-bricscad-jobs-over-autocad). Two knobs
+    ;; on purpose: one says "I know, run anyway", the other "this cannot
+    ;; affect me" -- collapsing them would lose that difference.
+    (is (search "CAD_SWEEP_NONBLOCKING" text))
+    (is (search "does not use" text)
+        "the non-blocking path must say WHY it is continuing")
     ;; the header must keep saying WHY a lingering PID is not a survivor,
     ;; so the next reader does not re-add the simpler, wrong check
     (is (search "A PID THAT STILL EXISTS IS NOT A RUNNING PROCESS" text))))

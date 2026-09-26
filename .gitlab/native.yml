@@ -221,6 +221,32 @@ default:
   tags: [windows, amd64, shell, cad]
   timeout: 30m
 
+# A CAD job that does NOT touch AutoCAD still sweeps -- cleaning up is always
+# right on a shared runner -- but must not be STOPPED by a wedged acad.exe: that
+# instance owns the AutoCAD.Application COM registration, which a BricsCAD
+# session neither asks for nor shares (cad-sweep-blocks-bricscad-jobs-over-
+# autocad; among the 22 jobs the sweep failed on 2026-09-26 was
+# harvest:sysvars:bricscad:windows). accoreconsole IS AutoCAD, so those jobs
+# keep the blocking gate.
+#
+# THESE ARE NOT PER-VENDOR RUNNER POOLS, and they do not reopen the ruling
+# above: the `cad' tag is UNCHANGED and still the single global mutex, so a
+# BricsCAD job still cannot run beside an AutoCAD one. The only difference is
+# what a LEFTOVER acad.exe means for this job -- nothing, when the job never
+# speaks to AutoCAD. That is a per-job fact about the sweep's verdict, not about
+# scheduling, which is why it is one variable and not a tag.
+#
+# It is a GATE rather than a variable repeated per job so that reading a job's
+# `extends' tells you which it is.
+.gate-windows-bricscad-hard:
+  extends: .gate-windows-cad-hard
+  variables:
+    CAD_SWEEP_NONBLOCKING: "1"
+.gate-windows-bricscad-soft:
+  extends: .gate-windows-cad-soft
+  variables:
+    CAD_SWEEP_NONBLOCKING: "1"
+
 # --- unit suites on the real OS --------------------------------------------
 test:clautolisp:macos:
   extends: .gate-macos-hard
@@ -369,7 +395,7 @@ verify:packaged-dwg:windows:
 # protocol/stdout.txt: the presence or absence of print trailing space
 # is the whole distinction.
 verify:bricscad-print:windows:
-  extends: .gate-windows-cad-soft
+  extends: .gate-windows-bricscad-soft
   stage: test
   timeout: 45m
   rules:
@@ -453,7 +479,7 @@ verify:autocad-activex:windows:
 
 # --- real-CAD BricsCAD automation checks (self-building) -------------------
 verify:bricscad-hidden-ui:windows:
-  extends: .gate-windows-cad-hard
+  extends: .gate-windows-bricscad-hard
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -507,7 +533,7 @@ encoding:experiment:bricscad:macos:
     - bash scripts/run-encoding-experiment.sh --backend bricscad
 
 encoding:experiment:bricscad:windows:
-  extends: [.gate-windows-cad-soft, .encoding-artifacts]
+  extends: [.gate-windows-bricscad-soft, .encoding-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -555,7 +581,7 @@ path-sysvars:probe:bricscad:macos:
     - bash scripts/run-path-sysvars-probe.sh --backend bricscad
 
 path-sysvars:probe:bricscad:windows:
-  extends: [.gate-windows-cad-soft, .path-sysvars-artifacts]
+  extends: [.gate-windows-bricscad-soft, .path-sysvars-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -606,7 +632,7 @@ getcname:probe:bricscad:macos:
     - bash scripts/run-getcname-probe.sh --backend bricscad
 
 getcname:probe:bricscad:windows:
-  extends: [.gate-windows-cad-soft, .getcname-artifacts]
+  extends: [.gate-windows-bricscad-soft, .getcname-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -656,7 +682,7 @@ pgp:probe:bricscad:macos:
     - bash scripts/run-pgp-probe.sh --backend bricscad
 
 pgp:probe:bricscad:windows:
-  extends: [.gate-windows-cad-soft, .pgp-artifacts]
+  extends: [.gate-windows-bricscad-soft, .pgp-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -707,7 +733,7 @@ optkw:probe:bricscad:macos:
     - bash scripts/run-optkw-probe.sh --backend bricscad
 
 optkw:probe:bricscad:windows:
-  extends: [.gate-windows-cad-soft, .optkw-artifacts]
+  extends: [.gate-windows-bricscad-soft, .optkw-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -733,7 +759,7 @@ pathname:probe:bricscad:macos:
     - bash scripts/run-pathname-probe.sh --backend bricscad
 
 pathname:probe:bricscad:windows:
-  extends: [.gate-windows-cad-soft, .pathname-artifacts]
+  extends: [.gate-windows-bricscad-soft, .pathname-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -762,7 +788,7 @@ pathname:probe:autocad:windows:
     expire_in: 30 days
 
 vendor:probes:bricscad:
-  extends: [.gate-windows-cad-hard, .vendor-probe-artifacts]
+  extends: [.gate-windows-bricscad-hard, .vendor-probe-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -896,7 +922,7 @@ probe:load-refusal:bricscad:macos:
     expire_in: 90 days
 
 probe:load-refusal:bricscad:windows:
-  extends: .gate-windows-cad-soft
+  extends: .gate-windows-bricscad-soft
   stage: test
   allow_failure: true
   variables:
@@ -917,7 +943,7 @@ probe:load-refusal:bricscad:windows:
     expire_in: 90 days
 
 probe:suite:bricscad:windows:
-  extends: .gate-windows-cad-soft
+  extends: .gate-windows-bricscad-soft
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -1001,7 +1027,7 @@ harvest:sysvars:bricscad:macos:
 # here is not release-blocking. pjb must confirm this runs before relying
 # on the Windows artifact.
 harvest:sysvars:bricscad:windows:
-  extends: [.gate-windows-cad-soft, .sysvars-artifacts]
+  extends: [.gate-windows-bricscad-soft, .sysvars-artifacts]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none

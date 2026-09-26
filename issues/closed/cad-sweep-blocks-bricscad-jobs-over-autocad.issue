@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cad-sweep-blocks-bricscad-jobs-over-autocad — the sweep's hard failure gates jobs that never touch AutoCAD
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: ci
 #+DEPENDS: cad-sweep-fails-jobs-for-zombie-pids
@@ -63,3 +63,58 @@ Filed rather than folded into the 2.2.110 fix: that change was about reading a
 process's state correctly, this one is about which jobs a gate should govern,
 and it needs the per-job reading above. AGENTS.md § /Change Discipline/ — do
 not silently broaden scope.
+
+* Resolved — clautolisp 2.2.123
+
+Every Windows CAD job was classified by READING ITS SCRIPT, not by its name
+alone — which mattered: =verify:epure*= names neither vendor but both scripts
+drive AutoCAD, and =vendor:probes:bricscad= passes =-Backend bricscad=, so the
+name is right there.
+
+*Twelve BricsCAD-only jobs* moved to new gates: =verify:bricscad-print=,
+=verify:bricscad-hidden-ui=, =encoding:experiment:bricscad=,
+=path-sysvars/getcname/pgp/optkw/pathname:probe:bricscad=,
+=probe:load-refusal:bricscad=, =probe:suite:bricscad=,
+=harvest:sysvars:bricscad= (all =:windows=) and =vendor:probes:bricscad=.
+
+*Thirteen keep the blocking gate*: every =autocad= and =accoreconsole= job --
+accoreconsole IS AutoCAD -- plus =verify:epure= and =verify:epure-api=, whose
+scripts drive it.
+
+=.gate-windows-bricscad-{hard,soft}= extend the existing CAD gates and add one
+variable, =CAD_SWEEP_NONBLOCKING=1=, which =sweep-orphaned-cad.ps1= now honours:
+the sweep still RUNS and still reports -- cleaning up after a killed job is right
+whatever the vendor -- it simply does not fail a job that a wedged AutoCAD cannot
+affect. It is kept DISTINCT from =CAD_SWEEP_IGNORE_SURVIVORS=, because the two
+say different things: /this cannot affect me/ versus /I know, run anyway/.
+
+*The `cad' tag is untouched*, so pjb's 2026-08-14 ruling stands: one global
+mutex, no per-vendor pools, a BricsCAD job still cannot run beside an AutoCAD
+one. The comment in native.yml says so explicitly, because a reader meeting
+=.gate-windows-bricscad-*= would reasonably wonder.
+
+*The classification is checked, not merely done*:
+=scripts/check-cad-sweep-gating.py= (=make check-cad-sweep-gating=, wired into
+=make check-release=) walks native.yml and fails when a job names AutoCAD on a
+non-blocking gate, names BricsCAD only on a blocking one, or names NEITHER
+vendor while sitting on a CAD gate — that last case forcing a deliberate
+classification rather than a default. It also fails when it examined nothing at
+all. Verified both ways: 25 jobs pass, and moving =harvest:sysvars:bricscad= back
+to the blocking gate produces
+
+: FAIL  harvest:sysvars:bricscad:windows drives BricsCAD only but sits on the
+:       BLOCKING gate: a wedged acad.exe it never speaks to would fail it
+
+Two sweep-script text tests extended (the knob, and that the non-blocking path
+says WHY it continues); alfe suite 1234 checks, 0 failures; documented in the
+alfe user manual, where the two variables are contrasted rather than listed.
+
+** Acceptance criteria, one at a time
+
+- [X] A wedged AutoCAD does not fail a BricsCAD-only job, and still fails an
+      AutoCAD one — by construction of the two gates, and the check keeps every
+      job on the right one.
+- [X] The sweep still RUNS and reports in both cases: only the verdict is
+      scoped.
+- [X] A regression test on the CI configuration, so the distinction survives a
+      refactor of the templates.
