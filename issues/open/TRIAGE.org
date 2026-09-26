@@ -195,7 +195,17 @@ Docs / spec:
   list-not-dotted-pair note; headless test pins the shape. Residual (needs real
   CAD, non-blocking): AutoCAD return-shape + mouse code-5 cross-checks. Closed.
 Needs triage:
-- =empty-ressource= — unclassified; read and tier (or close) at next pass.
+- DONE =empty-ressource= — c'etait un DOUBLON : =issues/closed/empty-ressource.issue=
+  (109 lignes, la version autoritaire) porte deja la resolution, et sa propre
+  section « Still to do » demandait de supprimer la copie restee dans
+  =issues/open/= avec le =empty.dwg= qui l'accompagnait. Fait 2026-09-26
+  (clautolisp 2.2.117) ; le dessin etait identique octet pour octet a
+  =autolisp-front-end/source/empty.dwg= (13733 octets) et un repertoire d'issues
+  n'est pas un repertoire de ressources. Re-verifie avant suppression, puisque le
+  doublon donnait l'impression d'un travail inachevé : ALFE.DRAWING porte la
+  ressource (embarquee a la COMPILATION, pas via LOAD-TIME-VALUE) et LES DEUX
+  backends ecrivent une copie NEUVE dans le workdir de l'invocation
+  (backend-autocad.lisp:244, backend-bricscad.lisp:312).
 
 ** Newly indexed 2026-09-13 (cadtui — Phase 1 shipped; localisation sub-issues filed)
 cadtui (big feature, in progress on the parking/cadtui workstream):

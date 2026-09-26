@@ -107,3 +107,12 @@ which is the property that matters.
 issues/open/empty-ressource.issue and issues/open/empty.dwg on branch
 debugger-ui-ncurses-aldb should be deleted when that branch lands; this
 file is their closed counterpart.
+
+DONE 2026-09-26 (clautolisp 2.2.117): both deleted. The stray drawing was
+byte-identical to autolisp-front-end/source/empty.dwg (13733 bytes), and an
+issue directory is not a resource directory. Re-verified before deleting, since
+the duplicate made this look unfinished: ALFE.DRAWING carries the resource
+(*EMPTY-DWG-CONTENTS*, SAVE-EMPTY-DWG, EMPTY-DWG-SIZE, FRESH-EMPTY-DWG), and
+BOTH backends write a fresh copy into the invocation workdir --
+backend-autocad.lisp:244 and backend-bricscad.lisp:312 -- which is the property
+the original note asked for ("bricscad and autocad", a new file per invocation).
