@@ -1,0 +1,65 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cad-sweep-blocks-bricscad-jobs-over-autocad — the sweep's hard failure gates jobs that never touch AutoCAD
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: ci
+#+DEPENDS: cad-sweep-fails-jobs-for-zombie-pids
+#+BRANCH: -
+#+DATE: 2026-09-26
+
+* Observed
+
+While fixing =cad-sweep-fails-jobs-for-zombie-pids= (clautolisp 2.2.110): among
+the 22 jobs the sweep failed in native child pipeline 2885566207 was
+=harvest:sysvars:bricscad:windows= — a *BricsCAD* job, stopped because three
+=acad.exe= ids were in =alfe-created-cad.txt=.
+
+* Why it is wrong
+
+The sweep's hard failure exists for one reason, stated in the script: a wedged
+AutoCAD owns the =AutoCAD.Application= COM registration, so the job behind it
+would reach that instance and get =RPC_E_CALL_REJECTED= instead of a session.
+That argument covers AutoCAD jobs only. A hung — let alone a DEAD — =acad.exe=
+has no bearing on a BricsCAD session: different product, different COM
+registration, different executable.
+
+So a BricsCAD lane can be stopped by a condition that cannot affect it. The
+zombie fix removes today's instance of this (the ids were dead, so nothing is
+reported as a survivor any more), but the shape remains: one genuinely wedged
+AutoCAD on the runner would again block every BricsCAD job.
+
+* Directions
+
+Sweeping everywhere is right — cleaning up is harmless and the runner is
+shared. What must be scoped is the *hard failure*:
+
+- =.cad-sweep-before= (.gitlab/native.yml) is shared by
+  =.gate-windows-cad-hard= and =.gate-windows-cad-soft=, which every Windows
+  CAD job extends, AutoCAD and BricsCAD alike.
+- Give the script an intent-named knob — e.g. =CAD_SWEEP_NONBLOCKING=1= —
+  read next to the existing =CAD_SWEEP_IGNORE_SURVIVORS= (which should stay
+  what it is: the emergency override for a machine nobody can reach). Then
+  either set it on the BricsCAD-only jobs, or add
+  =.gate-windows-bricscad-{hard,soft}= templates that carry it, and switch
+  those jobs' =extends=. The template route is the tidier one: the choice is
+  then visible in one place per job rather than repeated as a variable.
+- Jobs to classify: =*:bricscad:windows=, =probe:load-refusal:bricscad=,
+  =verify:bricscad-*=, =*:accoreconsole:*= (accoreconsole IS AutoCAD, so it
+  stays blocking), =vendor:probes:bricscad=. Read each job's script before
+  deciding — a "bricscad" name that also drives AutoCAD must stay blocking.
+
+* Acceptance criteria
+
+- A wedged AutoCAD on the runner does not fail a BricsCAD-only job, and still
+  fails an AutoCAD one.
+- The sweep still RUNS (and still reports) in both cases: the cleanup is not
+  what is being scoped, only the gate.
+- A regression test on the CI configuration or the script text, so the
+  distinction is not lost the next time the templates are refactored.
+
+* Note
+
+Filed rather than folded into the 2.2.110 fix: that change was about reading a
+process's state correctly, this one is about which jobs a gate should govern,
+and it needs the per-job reading above. AGENTS.md § /Change Discipline/ — do
+not silently broaden scope.

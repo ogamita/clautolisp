@@ -137,6 +137,15 @@ CAD (machine-bound):
   gone/zombie/live (ThreadCount, HasExited) : seul un =live= survivant fait
   échouer un job. 2 tests sur le TEXTE du script (pas de PowerShell sur les
   lanes Linux), vérifiés ROUGES sur la version d'avant.
+- TODO =cad-sweep-blocks-bricscad-jobs-over-autocad= — P3, trouvé en corrigeant
+  le précédent : parmi les 22 jobs stoppés, =harvest:sysvars:bricscad:windows=
+  — un job BRICSCAD arrêté à cause de trois =acad.exe=. L'argument du garde-fou
+  (l'instance coincée détient l'enregistrement COM =AutoCAD.Application=) ne
+  vaut que pour les jobs AutoCAD ; un =acad.exe= coincé, a fortiori mort, ne
+  gêne pas une session BricsCAD. Balayer partout reste juste ; c'est l'ÉCHEC
+  DUR qu'il faut cadrer (=CAD_SWEEP_NONBLOCKING=, ou des templates
+  =.gate-windows-bricscad-*=). Non fait dans 2.2.110 : autre sujet, et il faut
+  lire le script de chaque job avant de le classer.
 Debugger / ncurses UI (P3, pure-Lisp, this branch's workstream =debugger-ui-ncurses-aldb=):
 - DONE =ncurses-key-bindings= — keymap prefix-tree + 5 AutoLISP builtins (api.lisp ~5500) + user-binding test suite (verified 2026-09-12, closed).
 - DONE =aldb-commands= — aldb.el binds the full command table + 19 server tests (verified 2026-09-12, closed).
