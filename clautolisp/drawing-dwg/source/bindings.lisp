@@ -170,24 +170,45 @@ and no ASDF sources present."
 
 (defvar *shim-loaded* nil)
 
+(defun %libredwg-dependency-in (candidates)
+  "The libredwg DLL among CANDIDATES (a list of pathnames), or NIL.
+
+*The name is toolchain-dependent, so it must not be hard-coded.* MSYS2 links
+libredwg as =msys-redwg.dll= -- measured on the Windows runner, 2026-09-26,
+where hard-coding =libredwg.dll= made the shim's dependency look missing
+although it was installed right beside it. Other spellings in the wild:
+=libredwg-0.dll= (MinGW with a soversion), =cygredwg-0.dll= (Cygwin),
+=libredwg.dll= / =redwg.dll=. What they share is =redwg= in the name, and the
+shim itself (=clal_dwg=) does not contain it, so that is the test."
+  (find-if (lambda (candidate)
+             (let ((name (pathname-name candidate)))
+               (and (stringp name) (search "redwg" (string-downcase name)))))
+           candidates))
+
+(defun %libredwg-dependency-beside (dir)
+  "The libredwg DLL sitting in DIR, or NIL."
+  (%libredwg-dependency-in (directory (merge-pathnames "*.dll" dir))))
+
 (defun %try-load-shim (path)
   "Try to load the shim at PATH, its MS-Windows dependency first. Returns T
 when the library is loaded, else NIL and a one-line reason why this candidate
 cannot be used. NEVER signals: the caller goes on to the next candidate.
 
-Windows DLLs carry no rpath/$ORIGIN, so the loader will not find
-clal_dwg.dll's import of libredwg.dll just because the two sit in one
-directory. Pre-load it by absolute path: once libredwg.dll is in the process
-the shim's import resolves to it. On ELF/Mach-O the rpath handles this, so
-that part is a no-op there."
+Windows DLLs carry no rpath/$ORIGIN, so the loader will not find the shim's
+import of libredwg just because the two sit in one directory -- and that
+directory is not on PATH. Pre-load it by absolute path: once it is in the
+process the shim's import resolves to it. On ELF/Mach-O the rpath handles
+this, so that part is a no-op there."
   (let ((dir (uiop:pathname-directory-pathname path)))
     (when (uiop:os-windows-p)
-      (let ((dep (merge-pathnames "libredwg.dll" dir)))
-        (unless (probe-file dep)
+      (let ((dep (%libredwg-dependency-beside dir)))
+        (unless dep
           (return-from %try-load-shim
-            (values nil (format nil "its dependency libredwg.dll is not beside ~
-it in ~A (the release's libraries archive carries both; installing only one ~
-cannot work on MS-Windows, where the shim's import is resolved by the loader)"
+            (values nil (format nil "no libredwg DLL is beside it in ~A (looked ~
+for a *.dll whose name contains `redwg' -- msys-redwg.dll under MSYS2, ~
+libredwg-0.dll, libredwg.dll, cygredwg-0.dll; the release's libraries archive ~
+carries one, and installing the shim alone cannot work on MS-Windows, where ~
+its import is resolved by the loader)"
                                 (namestring dir)))))
         (handler-case (cffi:load-foreign-library dep)
           (error (condition)

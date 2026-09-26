@@ -428,11 +428,61 @@ USABLE one (the dev build still wins when it works), ignore a candidate that
 does not exist, and report every rejection when none works. drawing-dwg suite
 38 checks, 0 failures.
 
-*** Still open: the Windows run, again
+*** Second Windows run (2.2.118, job 16756535663): both fixes CONFIRMED, third defect found
 
-- [ ] =verify:packaged-dwg:windows= green on the runner with 2.2.117. The
-      failure above is understood and fixed, but the fix has not yet been seen
-      on the platform that exhibited it — and that platform is the whole point
-      of this half.
+The re-run failed again, but two steps further on, and its message proves the
+two fixes above work on the platform that exhibited the bug:
+
+#+begin_example
+no usable DWG native library. Tried
+  .../a prefix with spaces/lib/clautolisp/windows/x86-64/clal_dwg.dll
+      (its dependency libredwg.dll is not beside it in .../windows/x86-64/);
+  C:/gitlab-runner/.../drawing-dwg/source/clal_dwg.dll   (same reason)
+#+end_example
+
+The installed library is tried FIRST (the order fix) and the search FELL THROUGH
+to the dev tree instead of dying on the first candidate (the fall-through fix).
+
+*The remaining defect was the hard-coded dependency NAME.* From the same trace:
+
+#+begin_example
+[100%] Linking C shared library msys-redwg.dll
+LibreDWG runtime: .../third-party/libredwg/build/msys-redwg.dll
+#+end_example
+
+*MSYS2 links libredwg as =msys-redwg.dll=*, and the pre-load check looked for a
+file literally called =libredwg.dll=. So it declared the dependency missing
+while it sat right there under another name — and that same hard-coded string is
+why the FIRST run blamed the development tree. Other spellings exist:
+=libredwg-0.dll= (MinGW with a soversion), =cygredwg-0.dll= (Cygwin),
+=redwg.dll=. What they share is =redwg= in the name, and the shim
+(=clal_dwg=) does not contain it.
+
+*** Fixed — clautolisp 2.2.119
+
+- =%LIBREDWG-DEPENDENCY-IN= / =%LIBREDWG-DEPENDENCY-BESIDE= find the libredwg
+  DLL beside the shim by that shared substring instead of a fixed name, and the
+  "missing" message now says what was looked FOR, not one spelling of it.
+- =scripts/verify-packaged-dwg.sh=: two glob corrections, both mine.
+  =-name 'clal_dwg.*'= matched the *C SOURCE* first on Windows (directory
+  order), so the run reported /hid the development tree's clal_dwg.c/ and the
+  dev-tree DLL was never hidden at all; it now matches only
+  =.so= / =.dylib= / =.dll=. The MS-Windows dependency case looked for
+  =libredwg*.dll= for the same wrong reason and now looks for =*redwg*.dll=.
+
+Tests: two more (nine over this area), asserting every spelling seen or plausible
+— =msys-redwg.dll= first, since that is the one that shipped — and that the shim
+is not mistaken for its own dependency (=clal_dwg= contains =dwg= but not
+=redwg=, which is exactly why that is the test). drawing-dwg 55 checks, 0
+failures; the Linux packaged check still passes, and its /Looked in:/ list now
+shows the corrected order.
+
+*** Still open: the Windows run, a third time
+
+- [ ] =verify:packaged-dwg:windows= green on the runner with 2.2.119. Each run
+      so far has found a different real defect and moved one step further —
+      first the search order and the give-up-on-first-existing, now the
+      hard-coded dependency name — which is what an unproven platform half
+      looks like while it is being proven.
 - The DWG written by the packaged binary carries no ENTITIES yet; that is
   =issues/open/dwg-round-trip-loses-entities.issue=, not this one.

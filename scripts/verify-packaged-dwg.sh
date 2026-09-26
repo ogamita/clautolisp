@@ -77,7 +77,12 @@ say "native:  $libs"
 # proved nothing about the installed one -- silently on Linux, where that copy's
 # rpath resolves its dependency, and with a confusing failure on MS-Windows,
 # where it does not (the Windows run of 2026-09-26 that found this).
-devshim=$(find "$here/clautolisp/drawing-dwg" -maxdepth 2 -name 'clal_dwg.*' | head -1)
+# ONLY the shared library, never clal_dwg.c: `-name clal_dwg.*' matched the C
+# SOURCE first on the Windows runner (directory order), so the dev-tree DLL was
+# not hidden at all and the run said `hid the development tree's clal_dwg.c'.
+devshim=$(find "$here/clautolisp/drawing-dwg" -maxdepth 2 \
+               \( -name 'clal_dwg.so' -o -name 'clal_dwg.dylib' \
+                  -o -name 'clal_dwg.dll' \) | head -1)
 restore_devshim() {
   if [ -n "${devshim:-}" ] && [ -f "$devshim.hidden-by-packaged-check" ]; then
     mv "$devshim.hidden-by-packaged-check" "$devshim"
@@ -167,31 +172,35 @@ esac
 # program must say which file is missing (and that the archive carries both),
 # not blame the codec. The relocated prefix is the one still installed here.
 if [ "$host_os" = windows ]; then
-  dep=$(find "$moved/lib" -name 'libredwg*.dll' 2>/dev/null | head -1)
+  # THE DEPENDENCY'S NAME IS TOOLCHAIN-DEPENDENT: MSYS2 links libredwg as
+  # msys-redwg.dll, not libredwg.dll (measured on the runner, 2026-09-26 --
+  # hard-coding the latter is what made a correctly installed pair look
+  # broken). Match what they share: `redwg' in the name.
+  dep=$(find "$moved/lib" -name '*redwg*.dll' 2>/dev/null | head -1)
   if [ -z "$dep" ]; then
-    say "NOTE: no libredwg*.dll under $moved/lib -- the libraries phase did not"
+    say "NOTE: no *redwg*.dll under $moved/lib -- the libraries phase did not"
     say "      install the runtime, so the dependency case cannot be exercised;"
     say "      that is itself a packaging failure on this platform"
-    fail "the libraries archive shipped clal_dwg.dll without libredwg.dll"
+    fail "the libraries archive shipped clal_dwg.dll without its libredwg DLL"
   fi
   say "removing $(basename "$dep") to check the dependency is named"
   rm -f "$dep" || fail "cannot remove $dep"
   out4=$(run_probe "$bin2" "$work") || true
   printf '%s\n' "$out4" | sed 's/^/packaged-dwg:   /'
   case "$out4" in
-    *"dependency libredwg.dll is not beside it"*)
+    *"no libredwg DLL is beside it"*)
       say "the missing dependency is named, with the directory looked in" ;;
     *"no writer codec registered"*)
-      fail "a shim without libredwg.dll must name the dependency, not the codec" ;;
+      fail "a shim without its libredwg DLL must name the dependency, not the codec" ;;
     *WROTE-DWG*)
-      # Not a pass: it means the loader found libredwg.dll somewhere else
+      # Not a pass: it means the loader found a libredwg somewhere else
       # (MSYS2's mingw64 bin on PATH, say), so this run proves nothing about
       # what a user's machine would do.
-      fail "the save succeeded without libredwg.dll beside the shim -- the loader ~
+      fail "the save succeeded with no libredwg DLL beside the shim -- the loader ~
 found one elsewhere on PATH, so this check cannot conclude; run it with a PATH ~
-that has no libredwg.dll on it" ;;
+that has no libredwg DLL on it" ;;
     *)
-      fail "a shim without libredwg.dll must report the missing dependency" ;;
+      fail "a shim without its libredwg DLL must report the missing dependency" ;;
   esac
 fi
 
