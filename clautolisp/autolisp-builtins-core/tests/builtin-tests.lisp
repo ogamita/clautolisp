@@ -4727,6 +4727,36 @@ TUI, headless: `shout=1', selecting the `medium' radio_button, and clamping
       (ignore-errors
         (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))))
 
+(test dcl-shipped-examples-load-their-dialog-by-a-relative-name
+  "Every shipped DCL example must reach its .dcl by a RELATIVE name.
+greet.lsp and greet-probe.lsp carried
+=/Users/pjb/src/public/clautolisp/.../greet.dcl=, so the example printed
+\"Could not load greet.dcl\" on every machine but the author's -- while
+dcl-tui-completion recorded it as running headless. AGENTS.md forbids a
+machine-specific absolute path in a committed project file; this is that rule
+where it was broken, so it cannot come back unnoticed."
+  (let ((examples (asdf:system-relative-pathname
+                   :clautolisp/autolisp-builtins-core "examples/"))
+        (checked 0))
+    (dolist (path (directory (merge-pathnames "*/*.lsp" examples)))
+      (let ((text (uiop:read-file-string path))
+            (name (file-namestring path)))
+        (incf checked)
+        ;; No absolute path of any flavour: a POSIX root, a home shortcut, or
+        ;; a Windows drive letter.
+        (is (not (search "/Users/" text)) "~A names an absolute /Users path" name)
+        (is (not (search "/home/" text)) "~A names an absolute /home path" name)
+        (is (not (search "C:/" text)) "~A names an absolute drive path" name)
+        (is (not (search "load_dialog \"/" text))
+            "~A calls load_dialog with an absolute path" name)
+        (is (not (search "load_dialog \"~~" text))
+            "~A calls load_dialog with a ~~ path (the CAD does not expand it)"
+            name)))
+    ;; A check that examined nothing would pass forever.
+    (is (>= checked 3)
+        "expected at least the greet / listpick / all-widgets examples, saw ~D"
+        checked)))
+
 (test m5-layoutlist-returns-model-only
   "(layoutlist) returns a single-element list with the autolisp-string \"Model\"."
   (reset-autolisp-symbol-table)

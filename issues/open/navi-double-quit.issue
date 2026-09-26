@@ -27,3 +27,51 @@ _$
 
 The quit command of NAVI should also quit from ALDO.
 
+* Measured 2026-09-26 (clautolisp 2.2.115) — one =q= reaches =_$=
+
+The 2026-09-13 analysis in
+=clautolisp/documentation/clautolisp-interactor-state-diagram.org= §3 concluded
+from READING the code that this no longer reproduces. Now measured on the built
+binary, which is what the ticket asked for ("capture the exact reproduction
+steps"):
+
+#+begin_example
+$ printf '(defun foo (x) (/ x 0))\n(foo 1)\nq\ny\n(princ "AT-TOPLEVEL-AGAIN")\n(quit)\n' \
+  | clautolisp -norc -q --on-error debug
+_$ FOO
+DBG> Error at FOO line 1 col 16 -- Division by zero in /.
+DBG>   (q abort, r <form> return a value, c continue/run *error*)
+(DEFUN FOO (X) [(/ X 0)])
+NAV> q from the debugger aborts the execution and returns to the toplevel
+NAV> really abort? (y/n)
+_$ AT-TOPLEVEL-AGAIN"AT-TOPLEVEL-AGAIN"
+_$ clautolisp: terminated by QUIT
+$ echo $?   -> 0
+#+end_example
+
+*One =q=* (plus the y/n confirmation) goes from the navigator straight to =_$= --
+the next form is read by the toplevel REPL, as the =AT-TOPLEVEL-AGAIN= echo
+proves. No second =q=, and no =DBG>= prompt in between. The trace in this ticket
+predates the confirm-then-abort cascade and the floor-based single-=q= return.
+
+So the defect as reported does not reproduce, and the ticket's own sentence --
+"the quit command of NAVI should also quit from ALDO" -- is what the code now
+does.
+
+*Recommendation: close as resolved-by-construction*, moving the one remaining
+design question (should a single =q= ever collapse SEVERAL stacked interactors,
+or always exactly one level?) into
+=interactor-state-diagram-revision.issue= §4, where it belongs to the diagram
+rather than to a NAVI patch. Left open because this is pjb's DRAFT ticket and
+the recommendation is his to accept; the measurement above is the evidence it
+was waiting for.
+
+** A different defect found while measuring this
+
+=(quit)= typed at the =NAV>= prompt killed the process with a 22-frame host-Lisp
+backtrace and exit 1, because =AUTOLISP-TERMINATION= is a =SERIOUS-CONDITION=
+that the aldo companion thread's =error= handler never saw. Filed and fixed as
+=issues/closed/aldo-companion-quit-leaks-a-host-backtrace.issue= (clautolisp
+2.2.116) -- it is unrelated to the quit SEMANTICS this ticket is about, which is
+why it is its own ticket.
+

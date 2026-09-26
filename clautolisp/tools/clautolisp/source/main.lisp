@@ -1809,6 +1809,31 @@ HANDLER, written here against the exported accessors)."
     (prog1 (clautolisp.debug:bq-pop (clautolisp.debug:thread-debug-info-inbound ti))
       (setf (clautolisp.debug:thread-debug-info-status ti) :running))))
 
+(defun companion-terminate (condition &key (exit-fn #'uiop:quit))
+  "Handle an AUTOLISP-TERMINATION raised INSIDE the aldo companion thread: a
+=(quit)= or =(exit)= typed at a debugger prompt. Reports it exactly as the
+toplevel does and ends the process with the status the form carried, through
+EXIT-FN (injectable so this is testable without exiting the test run).
+
+Why it cannot just return: the debugger UI runs on the companion thread while
+the application thread is parked at the stop, so there is nobody to hand the
+termination to -- and the user asked for the program to end, not for the stop to
+resume. The output streams are flushed first, and the exit does not unwind the
+parked thread (nothing there needs unwinding, and waiting for it could hang).
+
+Before clautolisp 2.2.116 this condition was simply UNHANDLED here: it is not an
+ERROR, so the companion's ERROR clause never saw it, and SBCL killed the process
+with a full host backtrace and exit 1 -- a Common Lisp condition in the user's
+face, which AGENTS.md forbids. Measured: =(quit)= at the NAV> prompt printed
+/Unhandled CLAUTOLISP.AUTOLISP-RUNTIME:AUTOLISP-TERMINATION in thread
+\"aldo-companion\"/."
+  (report-termination condition)
+  (ignore-errors (finish-output *standard-output*))
+  (ignore-errors (finish-output *error-output*))
+  ;; NIL for UIOP's FINISH-OUTPUT argument: flushed above, and an exit that
+  ;; tries to unwind every thread would wait on the parked one.
+  (funcall exit-fn (autolisp-termination-status condition) nil))
+
 (defun start-aldo-companion (session)
   "Fork the aldo companion thread for SESSION: it drives the debugger UI for every
 hit the application hands off through the outbound queue, pushing SESSION-STOP's
@@ -1831,6 +1856,12 @@ writes to the streams it captured at session creation; the process-global
                  ;; on error, resume with :continue so the program carries on.
                  (handler-case
                      (clautolisp.debug.ui:session-stop session (second message))
+                   ;; (quit) / (exit) typed at the debugger prompt. NOT an
+                   ;; ERROR, so it must have its own clause -- without it the
+                   ;; condition left this thread unhandled and the host Lisp
+                   ;; killed the process with a backtrace (COMPANION-TERMINATE).
+                   (autolisp-termination (condition)
+                     (companion-terminate condition))
                    (error (condition)
                      (format *error-output* "~&aldo companion: ~A~%" condition)
                      :continue))))

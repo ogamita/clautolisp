@@ -248,3 +248,41 @@ legacy aliases). They now fail as unknown options."
         (ctx (clautolisp.autolisp-runtime:make-default-runtime-context)))
     (let ((ui (clautolisp.tools.clautolisp::build-debug-ui :aldb ctx)))
       (is (not (typep ui 'clautolisp.tools.clautolisp::aldb-listener-ui))))))
+
+;;; --- (quit) at a debugger prompt ----------------------------------
+;;;
+;;; aldo-companion-quit-leaks-a-host-backtrace: the debugger UI runs on the
+;;; aldo companion thread, and AUTOLISP-TERMINATION is NOT an ERROR -- so the
+;;; companion's ERROR clause never saw the (quit) a user typed at the DBG> /
+;;; NAV> prompt, the condition left the thread unhandled, and the host Lisp
+;;; killed the process with a full backtrace and exit 1. Measured on the built
+;;; binary before the fix.
+
+(test companion-terminate-reports-and-exits-with-the-forms-status
+  "COMPANION-TERMINATE prints the toplevel's own termination line and exits
+with the status the (quit N) carried, through the injected exit function."
+  (let* ((exited '())
+         (text (with-output-to-string (err)
+                 (let ((*error-output* err))
+                   (clautolisp.tools.clautolisp::companion-terminate
+                    (make-condition 'clautolisp.autolisp-runtime:autolisp-termination
+                                    :kind :quit :status 7)
+                    :exit-fn (lambda (&rest arguments) (push arguments exited)))))))
+    ;; the same wording the toplevel uses, so a quit from the debugger and a
+    ;; quit from _$ do not look like two different events
+    (is (search "terminated by" text))
+    (is (search "QUIT" text))
+    ;; and it really exits, with the form's status
+    (is (equal '((7 nil)) exited))))
+
+(test companion-terminate-is-reached-for-a-termination-not-an-error
+  "The condition the companion must catch is not an ERROR -- which is why it
+needed a clause of its own. Pin that, so a future simplification to a single
+ERROR handler fails here instead of in the user's face."
+  (let ((termination (make-condition 'clautolisp.autolisp-runtime:autolisp-termination
+                                     :kind :exit :status 0)))
+    (is (typep termination 'condition))
+    (is (not (typep termination 'error))
+        "AUTOLISP-TERMINATION must not be an ERROR subtype; if it becomes one, ~
+the companion's ERROR clause would swallow a quit and answer :continue")
+    (is (eql 0 (clautolisp.autolisp-runtime:autolisp-termination-status termination)))))

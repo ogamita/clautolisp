@@ -1,6 +1,7 @@
 (defun c:greet-probe (/ id status)
   (princ "\n[probe] entering c:greet-probe")
-  (setq id (load_dialog "/Users/pjb/src/public/clautolisp/clautolisp/examples/greet/greet.dcl"))
+  ;; Relative name: run from this directory (see greet.lsp).
+  (setq id (load_dialog "greet.dcl"))
   (princ (strcat "\n[probe] load_dialog -> " (itoa id)))
   (cond
     ((< id 0) (princ "\n[probe] FAILED: bad load_dialog"))

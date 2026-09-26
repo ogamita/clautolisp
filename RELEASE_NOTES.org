@@ -37,6 +37,14 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *~(quit)~ at a debugger prompt quits, instead of dumping a host-Lisp
+  backtrace.* The debugger UI runs on the aldo companion thread, where the
+  termination condition was unhandled, so a ~(quit)~ typed at a =DBG>= /
+  =NAV>= prompt killed the process with twenty-two frames of Common Lisp and
+  status 1. It now prints =clautolisp: terminated by QUIT= and exits with the
+  status the form carried, exactly as at =_$=. See the user manual §
+  /Entering the debugger/ ("Leaving from a stop").
+
 - *sedit opens the file you named, quotes and =~= included.* Every path
   sedit takes — the ~(clal-sedit …)~ arguments and the editor's own ~s~,
   ~w~ and ~load~ commands — now has a surrounding pair of double quotes

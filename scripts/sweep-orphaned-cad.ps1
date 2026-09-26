@@ -47,9 +47,15 @@ function Get-CadProcessState {
     $threads = 0
     try { $threads = [int] $cim.ThreadCount } catch { $threads = 0 }
     if ($threads -le 0) { return 'zombie' }
+    # Two more signals, through the .NET process object rather than WMI, in
+    # case WMI reports a stale thread count for an entry it is still keeping.
+    # Any ONE of them saying "exited" is enough; if all three say running, the
+    # answer is 'live' and the job is failed as before -- the conservative
+    # default, so the worst case of this classifier is the old behaviour.
     $proc = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
     if ($proc) {
         try { if ($proc.HasExited) { return 'zombie' } } catch { }
+        try { if ($proc.Threads.Count -le 0) { return 'zombie' } } catch { }
     }
     return 'live'
 }
@@ -97,10 +103,10 @@ foreach ($entry in $entries) {
     $stamp = if ($proc.CreationDate -is [datetime]) {
                  $proc.CreationDate.ToString('yyyyMMddHHmmss')
              } else { "$($proc.CreationDate)" }
-    $recorded = $entry.Created
+    $recordedStamp = $entry.Created
     if (-not ($stamp.Substring(0, [Math]::Min(14, $stamp.Length)) -eq
-              $recorded.Substring(0, [Math]::Min(14, $recorded.Length)))) {
-        Write-Host "cad sweep: pid $($entry.Pid) is a DIFFERENT process now ($stamp vs $recorded); left alone"
+              $recordedStamp.Substring(0, [Math]::Min(14, $recordedStamp.Length)))) {
+        Write-Host "cad sweep: pid $($entry.Pid) is a DIFFERENT process now ($stamp vs $recordedStamp); left alone"
         continue
     }
     if ($proc.Name -ne 'acad.exe') {
@@ -116,7 +122,7 @@ foreach ($entry in $entries) {
         $settled++
         continue
     }
-    Write-Host "cad sweep: ending orphaned acad.exe pid $($entry.Pid) (created $recorded)"
+    Write-Host "cad sweep: ending orphaned acad.exe pid $($entry.Pid) (created $recordedStamp)"
     Stop-Process -Id $entry.Pid -Force -ErrorAction SilentlyContinue
     if ((Get-CadProcessState -ProcessId $entry.Pid) -eq 'live') {
         # A wedged AutoCAD -- one showing a modal dialog, or hung in COM --

@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: release-1.9.0 — cut 1.9.0 before starting cadtui
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: infra
 #+DEPENDS: -
@@ -85,3 +85,27 @@ Check with =bash scripts/manifest-versions.sh= (prints the three stamps) and
 
 Create no =clautolisp-v*= / =alfe-*= tag: those formats are deprecated, a
 program version is read from its source.
+
+* Done long ago — closed 2026-09-26 as overtaken by events
+
+This was a GATE ("cut 1.9.0 before starting cadtui"), and both sides of it are
+history:
+
+- =release-1.9.0= exists as an annotated tag, cut 2026-08-21
+  (=df7257b8 Merge branch 'prep-release-1.9.0' into 'master'=), and the series
+  ran on to =release-1.9.9=; =version-1.9= points at that tip, which
+  =make check-versions= confirms.
+- =cadtui= started: =clautolisp/cadtui/= is a system in the tree, with its own
+  sources, locale data and tests.
+- The trunk is at 2.2.x, two minor series past the gate, so nothing here can
+  still be a next action: the checklist above explains how to cut a release that
+  was cut five weeks ago.
+
+The durable parts are not lost. The procedure now lives in AGENTS.md
+§ /Release tags and branches/ -- with the release runbook and its traps -- and in
+the shared =version-rules.md=; the CI-parity rule it cites is in AGENTS.md § /CI/.
+Kept as a record rather than deleted: the argument for why =m= and not =d= was
+the right digit is the kind of thing the next series will want to reread.
+
+It stayed open only because nobody re-read it after the release -- the standing
+cost of a ticket whose whole content is "do this later".

@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: dcl-tui-completion — complete the integrated DCL text-UI renderer for headless / "-" commands
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: feature
 #+DEPENDS: -
@@ -121,6 +121,49 @@ the opendcl epic (=opendcl-renderer-scaffold=, =opendcl-controls=,
 5. **Second example**: make =examples/listpick= (a list_box picker) work
    headless too, as a second acceptance fixture.
 6. Complete the Qt GUI DCL renderer (partial) — its own opendcl-epic issues.
+
+* Verified and closed — clautolisp 2.2.114
+
+The criteria were checked by RUNNING the three examples against the built
+binary, not by re-reading the notes above. That found a defect the notes had
+already declared fixed:
+
+*=greet= did not run for anybody but the author.* =greet.lsp= and
+=greet-probe.lsp= still called
+
+: (load_dialog "/Users/pjb/src/public/clautolisp/clautolisp/examples/greet/greet.dcl")
+
+so the example printed /Could not load greet.dcl/ on every other machine --
+while item 5 above records the same absolute-path defect as fixed *for
+listpick*. The 1.7.15 progress note ("the =greet= example now runs fully over
+the TUI") was true only on the machine it was written on. AGENTS.md § /Paths in
+Project Files/ forbids exactly this. Both files now use the relative name, with
+the reason in a comment.
+
+Measured after the fix, headless, on the built binary:
+
+#+begin_example
+cd examples/greet    : name=Claude, shout=1, accept  -> "Hello, CLAUDE!"   (toggle round-trips)
+                       cancel                        -> "Cancelled."
+cd examples/listpick : colour=2, accept               -> "You picked index 2"
+cd examples/all-widgets: name=X, accept               -> the labelled value report
+#+end_example
+
+Regression test =dcl-shipped-examples-load-their-dialog-by-a-relative-name=
+(builtin-tests.lisp, in the DCL block): every =examples/*/*.lsp= is read and
+refused an absolute =/Users/=, =/home/=, =C:/=, a =load_dialog "/…"= or a =~=
+path, and the test insists it examined at least three files -- a check that
+examined nothing would pass forever. Red on the pre-fix tree by construction
+(the string was there). Documented in the user manual: the examples load their
+dialog by a relative name, so they are run from their own directory, with the
+headless one-liner.
+
+*The remaining item 6 is the Qt C++ GUI app*, and it is tracked by the opendcl
+epic (=opendcl-renderer-scaffold=, =opendcl-controls=, =opendcl-wire-protocol=)
+-- three issues that own that work. Keeping this ticket open to mirror them is
+duplicate tracking: every criterion below belongs to the TUI and every one is
+met and measured. Closed on that basis; if the Qt renderer needs a TUI-side
+change, it will come from those issues.
 
 * Acceptance criteria
 

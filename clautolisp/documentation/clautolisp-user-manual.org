@@ -296,6 +296,17 @@ Only *instrumented* functions can be stepped into or stopped in;
 instrument exactly what you want to debug (uninstrumented code runs at
 full speed and is stepped over).
 
+*Leaving from a stop.* At a debugger prompt you have two different exits:
+
+- =q= *abandons the computation* and returns to the toplevel REPL (it
+  confirms first: /really abort? (y/n)/). One =q= is enough — it leaves the
+  navigator and the debugger together, whatever depth you are at.
+- ~(quit)~ / ~(exit [status])~, *evaluated at the prompt*, end the whole
+  program, exactly as they do at =_$=: the process prints =clautolisp:
+  terminated by QUIT= (or =EXIT=) and exits with the status the form carried.
+  Up to clautolisp 2.2.115 this instead killed the process with a host-Lisp
+  backtrace and status 1.
+
 ** The three user interfaces
 
 aldo presents *one* command set through three interchangeable
@@ -1188,6 +1199,17 @@ identically under either terminal renderer. (A ~Space~ typed in a focused
 See ~examples/all-widgets/~ (one of every tile type, with a labelled
 value report you can diff against AutoCAD / BricsCAD) and
 ~examples/greet~ / ~examples/listpick~.
+
+Each example loads its ~.dcl~ by a *relative* name, so *run it from its own
+directory* — clautolisp resolves a relative ~load_dialog~ against the current
+working directory (in AutoCAD or BricsCAD, put the directory on the support
+path instead). All three run headless:
+
+#+begin_example
+cd examples/greet
+printf 'name=Claude\nshout=1\naccept\n' | clautolisp -norc -q --dcl tui -l greet.lsp
+   => Hello, CLAUDE!
+#+end_example
 
 ** Interactive user input (~get*~ functions)
 AutoCAD and BricsCAD gather the answers to the interactive input
