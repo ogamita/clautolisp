@@ -67,3 +67,15 @@ detect:runners: MACOS_RUNNER=online, WINDOWS_RUNNER=online. Native child
   deported source-load chokes on the high byte specifically; the probe masks the
   real error as LOAD-ERR. NEXT: surface the actual error message, then bring
   autolisp-source-load to the encoding-honouring reference loader.
+
+** 2026-09-26 — dedicated untouched probe MR
+
+The bridge fix (lastTouchError) landed on master (8a1fd567, alfe 2.2.119) but
+every attempt to verify it produced no traces: master's CAD child jobs sit
+pending under 4-way Windows-runner contention and are auto-cancelled by the
+next parallel merge before a runner picks them up; a re-pushed MR is cancelled
+by the push. This branch (cad-probe-run) carries only this note so its MR
+pipeline is never re-pushed — an untouched MR pipeline is not cancelled by
+master churn, so its native child's AutoCAD probes can finally run to
+completion and confirm bridge-READY (#4 vlax-sleep-and-rest) and surface #5's
+real deported-load error.
