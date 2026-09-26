@@ -159,14 +159,18 @@
 cadtui). A key of \"\" continues the previous host's description; a key starting
 with ';' is a trailing note.")
 
-(defun print-hosts (&key (stream *standard-output*))
-  "Print the --host values with a one-line summary each, for --list-hosts."
+(defun print-hosts (&key (stream *standard-output*) (aliases t))
+  "Print the --host values with a one-line summary each, for --list-hosts.
+ALIASES NIL omits the trailing aliases note: alfe takes cador, cadtui and
+nihil and NOTHING else, so telling its users about mock / null / none
+would name spellings it refuses (alfe-list-hosts-ignored)."
   (format stream "Available --host backends:~%")
   (loop for (name . desc) in *host-descriptions*
         do (cond ((string= name "")
                   (format stream "  ~A~%" desc))
                  ((and (plusp (length name)) (char= (char name 0) #\;))
-                  (format stream "  aliases: ~A~%" desc))
+                  (when aliases
+                    (format stream "  aliases: ~A~%" desc)))
                  (t (format stream "  ~8A ~A~%" name desc))))
   (values))
 

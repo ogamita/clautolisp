@@ -121,6 +121,7 @@
                 #:cli-options-version-p
                 #:cli-options-list-encodings-p
                 #:cli-options-list-dialects-p
+                #:cli-options-list-hosts-p
                 #:cli-options-list-situations-p
                 #:cli-options-list-cad-programs-p
                 #:cli-options-dry-run-p
@@ -177,6 +178,7 @@
            #:cli-options-version-p
            #:cli-options-list-encodings-p
            #:cli-options-list-dialects-p
+           #:cli-options-list-hosts-p
            #:cli-options-list-situations-p
            #:cli-options-list-cad-programs-p
            #:cli-options-dry-run-p
@@ -297,6 +299,7 @@ Dialect, host, encoding:
                          known version; unqualified platform => windows.
                          Honoured under --clautolisp; ignored under --autocad/--bricscad.
   --list-dialects        Print every --dialect name (strict first, lax last) and exit.
+  --list-hosts           Print the --host backends with a one-line summary and exit.
   --list-situations      Print the encoding situations (source/file/console/…) and exit.
   --list-cad-programs    Scan the host and print each installed CAD with its
                          canonical denotation (acad-2026, bricscad-v26, …), then exit.
@@ -1243,6 +1246,15 @@ The handler chain matches alfe-cli.issue's exit-code table:
            0)
           ((cli-options-list-dialects-p options)
            (clautolisp.autolisp-cli:print-dialects)
+           0)
+          ((cli-options-list-hosts-p options)
+           ;; The shared parser has always ACCEPTED --list-hosts and set
+           ;; this slot; with no branch here alfe fell through to its REPL
+           ;; instead of answering (alfe-list-hosts-ignored). ALIASES NIL:
+           ;; alfe takes cador, cadtui and nihil and nothing else, so the
+           ;; shared note about mock / null / none would name spellings it
+           ;; refuses.
+           (clautolisp.autolisp-cli:print-hosts :aliases nil)
            0)
           ((cli-options-list-situations-p options)
            (clautolisp.autolisp-cli:print-situations

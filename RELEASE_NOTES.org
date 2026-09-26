@@ -1196,6 +1196,11 @@ file or COM), and forwards the workload.
 
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
+- *=alfe --list-hosts= answers.* It prints cador, cadtui and nihil with a
+  one-line summary each and exits, like =--list-dialects=. The option was
+  accepted and ignored before, so with no other action alfe opened its
+  REPL instead. It does not repeat clautolisp's note about =mock= / =null=
+  / =none=, which alfe refuses.
 - *A failed action is reported once, and names a cause.* Every failure on
   a CAD backend used to be printed TWICE. And when the engine's own
   message says nothing — BricsCAD answers the bare word =error= for some

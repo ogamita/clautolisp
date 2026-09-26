@@ -55,6 +55,7 @@
                 #:cli-options-dialect
                 #:cli-options-host
                 #:cli-options-help-p
+                #:cli-options-list-hosts-p
                 #:cli-options-version-p
                 #:cli-options-verbosity
                 #:cli-options-interactive-p

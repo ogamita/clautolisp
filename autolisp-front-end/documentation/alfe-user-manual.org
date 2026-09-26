@@ -367,13 +367,31 @@ and in the child process:
 
 With no =--host= the host is cador.
 
-** Two clautolisp options alfe does not have
+** =--list-hosts=
 
-=--list-hosts= (print the available hosts with a one-line summary each)
-and =--mock-input PATH= (a file of answers for the cador host's
-=getstring= / =getpoint= prompts) belong to clautolisp. alfe rejects
-=--mock-input= as an unknown option and accepts =--list-hosts= without
-doing anything with it; use =clautolisp --list-hosts= to see the list.
+=alfe --list-hosts= prints the three backends with a one-line summary each
+and exits, like =--list-dialects= and =--list-encodings=:
+
+#+begin_example
+$ alfe --list-hosts
+Available --host backends:
+  cador    Headless CAD core: the /application/console tree (default).
+  cadtui   Full textual UI-tree host on the cador core: menus, drawings,
+            CAD view, and DCL dialogs mirrored into an inspectable tree.
+  nihil    Trivial backend: no CAD host at all.
+#+end_example
+
+clautolisp's own =--list-hosts= adds a line about =mock=, =null= and
+=none=; alfe does not, because it refuses those spellings (see the table
+above). Up to alfe 2.2.106 the option was accepted and did nothing, so
+=alfe --list-hosts= with no other action opened the REPL instead of
+answering.
+
+** One clautolisp option alfe does not have
+
+=--mock-input PATH= (a file of answers for the cador host's =getstring= /
+=getpoint= prompts) belongs to clautolisp. alfe rejects it as an unknown
+option.
 
 * CAD engine control
 
