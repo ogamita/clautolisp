@@ -1189,6 +1189,17 @@ See ~examples/all-widgets/~ (one of every tile type, with a labelled
 value report you can diff against AutoCAD / BricsCAD) and
 ~examples/greet~ / ~examples/listpick~.
 
+Each example loads its ~.dcl~ by a *relative* name, so *run it from its own
+directory* — clautolisp resolves a relative ~load_dialog~ against the current
+working directory (in AutoCAD or BricsCAD, put the directory on the support
+path instead). All three run headless:
+
+#+begin_example
+cd examples/greet
+printf 'name=Claude\nshout=1\naccept\n' | clautolisp -norc -q --dcl tui -l greet.lsp
+   => Hello, CLAUDE!
+#+end_example
+
 ** Interactive user input (~get*~ functions)
 AutoCAD and BricsCAD gather the answers to the interactive input
 functions — ~getstring~, ~getint~, ~getreal~, ~getpoint~, ~getcorner~,
