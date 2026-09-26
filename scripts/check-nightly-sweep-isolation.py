@@ -3,7 +3,7 @@
 
 ci-native-child-pipeline-creation-fails.issue.
 
-The nightly schedule exists for one job: sweep:stale-child-pipelines,
+The nightly schedule exists for one job: sweep:stale-pipelines,
 which cancels child pipelines that have gone stale. Everything else must
 be `never' on a schedule — and `never', not `manual', is the requirement:
 a pipeline whose remaining jobs are manual STAYS ACTIVE, and its jobs
@@ -53,8 +53,8 @@ def excluded(n, seen=()):
     return False
 
 
-if 'sweep:stale-child-pipelines' not in order:
-    print("FAIL: sweep:stale-child-pipelines is gone -- the nightly schedule "
+if 'sweep:stale-pipelines' not in order:
+    print("FAIL: sweep:stale-pipelines is gone -- the nightly schedule "
           "would run nothing, and the leak it drains would come back "
           "unnoticed.")
     sys.exit(1)
@@ -63,7 +63,7 @@ real = [n for n in order
         if not n.startswith('.')
         and n not in ('workflow', 'stages', 'variables', 'default', 'include')]
 leaking = [n for n in real
-           if n != 'sweep:stale-child-pipelines' and not excluded(n)]
+           if n != 'sweep:stale-pipelines' and not excluded(n)]
 
 print('jobs: %d' % len(real))
 if leaking:
@@ -72,4 +72,4 @@ if leaking:
     for n in leaking:
         print('   ', n)
     sys.exit(1)
-print('ok  a scheduled pipeline contains only sweep:stale-child-pipelines')
+print('ok  a scheduled pipeline contains only sweep:stale-pipelines')

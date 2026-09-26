@@ -164,6 +164,63 @@ obstacle: the project has its own sanctioned mechanism for exactly this,
 correct and then play it. So the draining happens through the fixed sweep,
 not through an agent cancelling pipelines by hand.
 
+* Implemented — clautolisp 2.2.126
+
+=scripts/cancel-stale-child-pipelines.py= is replaced by
+=scripts/cancel-stale-pipelines.py= (renamed: it no longer sweeps only
+children, and a name that lies about its scope is how the stuck parent stayed
+invisible). The job is =sweep:stale-pipelines=.
+
+1. *State criterion, independent of age.* =classify_pipeline= sweeps a child
+   whose ref is =refs/merge-requests/N/head= when that MR is =merged= or
+   =closed=, whatever its age: nobody can play its manual jobs again. An
+   *open* MR's child of the same age is left alone — that is the half that
+   matters, since sweeping it would kill the verification of every merge
+   request under review. An MR state that could not be read falls back to
+   age, so an API hiccup never becomes a cancellation.
+2. *Runs on every master pipeline* (=.pre=, =allow_failure: true=) as well as
+   nightly and by hand. Two seconds, idempotent.
+3. *Listing is exhaustive, and truncation is a FAILURE.* The query asks per
+   ACTIVE status, so the sets are small; if a listing would still be
+   truncated, =active_pipelines= raises and the run reports FAIL instead of
+   printing a page cap as if it were a count.
+4. *Parents too*, on age alone under a separate generous threshold
+   (=SWEEP_MAX_PARENT_AGE_HOURS=, 48) — a master pipeline waiting on the
+   serial Windows runner legitimately stays open for hours.
+5. *Never its own pipeline, nor its own child*: =protected_ids= reads
+   =CI_PIPELINE_ID= and its bridges. Not hypothetical now that the sweep runs
+   in =.pre= of every master pipeline — without it the job would cancel the
+   pipeline it belongs to on its first run.
+6. *The log says how full the bucket is*: =count_active_jobs= prints the jobs
+   counting against the cap. Not the headroom — GitLab does not expose the
+   limit over the API — but the number that moves, in the one place anybody
+   looks at this mechanism.
+
+=scripts/tests/test-cancel-stale-pipelines.py= (17 tests, =make
+check-stale-pipeline-sweep=, wired into the CI documentation lane): every case
+is one the previous sweep got wrong, in pairs so the check can fail — the
+merged-MR child IS swept and the open-MR child of the same age is NOT.
+
+*The tests were watched failing against the old rule* rather than assumed to
+discriminate: with the MR-state and parent clauses removed, a 0.5 h child of a
+merged MR and the five-week-old parent both classify as =None= — the 84 jobs
+and the 15 jobs that filled the cap, exactly.
+
+*API assumptions verified against the live project*, not read from the docs:
+=status== filters, the plain listing EXCLUDES children (3 results, none with
+=source=parent_pipeline=, while the child listing returned 6), and =source= is
+present on every entry — so classification does not depend on which listing an
+entry came from.
+
+** What remains before this closes
+
+*Observation.* The next master pipeline runs the sweep in =.pre=; it should
+cancel the four merged-MR children and the 2026-08-22 parent, and print an
+active-job count that drops. That is the acceptance, and it is minutes away
+rather than machine-gated — but it has not happened yet, and an unobserved
+sweep is exactly what this ticket is about. The nightly job reported "nothing
+to sweep" for weeks.
+
 * Note
 
 Found while reading why two master pipelines were red before playing the
