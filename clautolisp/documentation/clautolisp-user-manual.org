@@ -296,6 +296,17 @@ Only *instrumented* functions can be stepped into or stopped in;
 instrument exactly what you want to debug (uninstrumented code runs at
 full speed and is stepped over).
 
+*Leaving from a stop.* At a debugger prompt you have two different exits:
+
+- =q= *abandons the computation* and returns to the toplevel REPL (it
+  confirms first: /really abort? (y/n)/). One =q= is enough — it leaves the
+  navigator and the debugger together, whatever depth you are at.
+- ~(quit)~ / ~(exit [status])~, *evaluated at the prompt*, end the whole
+  program, exactly as they do at =_$=: the process prints =clautolisp:
+  terminated by QUIT= (or =EXIT=) and exits with the status the form carried.
+  Up to clautolisp 2.2.115 this instead killed the process with a host-Lisp
+  backtrace and status 1.
+
 ** The three user interfaces
 
 aldo presents *one* command set through three interchangeable
