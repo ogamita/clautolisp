@@ -37,6 +37,14 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *=Block.AddAttribute= takes the vendor's six arguments.*
+  =(vla-addattribute block height mode prompt insertion-point tag value)=
+  -- the point BEFORE the tag, as AutoCAD and BricsCAD take them -- and
+  the sixth argument is stored as the attribute's default text (DXF group
+  1). Up to 2.2.96 clautolisp read the fourth argument as the tag and the
+  fifth as the point, so a call written for AutoCAD failed with
+  "AddAttribute expects a point ... got \"REPERE\"", and no default value
+  could be set. See =issues/closed/cador-addattribute-argument-order.issue=.
 - *The comparison operators behave like AutoCAD and BricsCAD.* Measured
   on both (240 cases), and the autolisp-spec corrected to match:
   - =<=, =<==, =>=, =>== treat =nil= as the *smallest* value:

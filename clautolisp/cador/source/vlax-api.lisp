@@ -1096,17 +1096,29 @@ in the collection's space; return its VLA-object."
       (host-vlax-ename->vla-object host ename))))
 
 (defun %block-add-attribute (host collection-kind args)
-  "Block.AddAttribute(Height, Mode, Prompt, Tag, InsertionPoint): add an ATTDEF
-to the block definition the collection wraps, so a later InsertBlock
-instantiates it. Returns the ATTDEF's VLA-object."
-  (destructuring-bind (&optional height mode prompt tag insertion-point &rest ignore) args
+  "Block.AddAttribute(Height, Mode, Prompt, InsertionPoint, Tag, Value): add an
+ATTDEF to the block definition the collection wraps, so a later InsertBlock
+instantiates it. Returns the ATTDEF's VLA-object.
+
+The argument order is the vendor's, which AutoCAD and BricsCAD both
+accept (cador-addattribute-argument-order). Until 2.2.97 this adapter
+read argument 4 as the Tag and argument 5 as the InsertionPoint, and
+dropped argument 6 while hard-coding DXF group 1 to the empty string --
+so an application written against the vendor signature handed the
+insertion point where a tag was expected and failed with `AddAttribute
+expects a point ... got \"REPERE\"', and no default value could ever be
+stored. The whole six are mapped here: 40 Height, 70 Mode, 3 Prompt,
+10 InsertionPoint, 2 Tag, 1 Value."
+  (destructuring-bind (&optional height mode prompt insertion-point tag value
+                       &rest ignore)
+      args
     (declare (ignore ignore))
     (let* ((owner (%space-owner-name collection-kind))
            (ip (%unwrap-com-point insertion-point "AddAttribute"))
            (data (list (cons 0 "ATTDEF") (cons 8 "0")
                        (cons 10 (copy-list ip))
                        (cons 40 (coerce (if (realp height) height 2.5) 'double-float))
-                       (cons 1 "")
+                       (cons 1 (or (%com-string value) ""))
                        (cons 3 (or (%com-string prompt) ""))
                        (cons 2 (or (%com-string tag) ""))
                        (cons 70 (if (integerp mode) mode 0))

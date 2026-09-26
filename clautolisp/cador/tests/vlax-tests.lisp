@@ -739,17 +739,41 @@ comparison."
     (is (= (1+ before) (host-vlax-get-property host model "Count")))))
 
 (test vlax-block-addattribute-adds-an-attdef-to-the-block
+  "Block.AddAttribute(Height, Mode, Prompt, InsertionPoint, Tag, Value) --
+the VENDOR order, which AutoCAD and BricsCAD both accept
+(cador-addattribute-argument-order). Until alfe 2.2.97 the adapter read
+the 4th argument as the Tag and the 5th as the InsertionPoint, and
+discarded the 6th (Value) while hard-coding DXF group 1 to \"\". This
+test previously passed the arguments in the SAME wrong order as the
+implementation, so it validated Cador against its own mistaken contract:
+a real call with a point in position 4 failed with `AddAttribute expects
+a point ... got \"REPERE\"'.
+
+Every mapped field is asserted, with values that are observably
+different from one another, so no future permutation can stay green
+merely because an ATTDEF came back."
   (let* ((host (make-cador))
          (doc (%a1-active-document host))
          (blocks (host-vlax-get-property host doc "Blocks"))
          (block (host-vlax-invoke-method host blocks "Add"
                                          (list '(0.0d0 0.0d0 0.0d0) "TITLE")))
          (before (host-vlax-get-property host block "Count"))
-         (attdef (host-vlax-invoke-method host block "AddAttribute"
-                                          (list 2.5d0 0 "Enter name" "NAME"
-                                                '(1.0d0 1.0d0 0.0d0)))))
-    (is (string= "NAME" (%a1-str (host-vlax-get-property host attdef "TagString"))))
-    (is (= (1+ before) (host-vlax-get-property host block "Count")))))
+         (attdef (host-vlax-invoke-method
+                  host block "AddAttribute"
+                  ;; Height Mode Prompt InsertionPoint Tag Value
+                  (list 2.5d0 8 "Enter name" '(1.0d0 2.0d0 0.0d0)
+                        "NAME" "DEFAULT"))))
+    (is (= (1+ before) (host-vlax-get-property host block "Count")))
+    (is (string= "NAME"
+                 (%a1-str (host-vlax-get-property host attdef "TagString"))))
+    (is (string= "DEFAULT"
+                 (%a1-str (host-vlax-get-property host attdef "TextString"))))
+    (is (string= "Enter name"
+                 (%a1-str (host-vlax-get-property host attdef "PromptString"))))
+    (is (equal '(1.0d0 2.0d0 0.0d0)
+               (host-vlax-get-property host attdef "InsertionPoint")))
+    (is (= 2.5d0 (host-vlax-get-property host attdef "Height")))
+    (is (= 8 (host-vlax-get-property host attdef "Mode")))))
 
 (test vlax-linetypes-load-registers-a-table-record
   (let* ((host (make-cador))

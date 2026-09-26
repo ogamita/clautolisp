@@ -1010,11 +1010,16 @@ provides that surface through the host backend:
   the DXF/DWG writers currently emit a fixed version regardless.
 - ~ModelSpace.AddLine~ and ~Block.AddAttribute~ create entities through
   the object model: ~(vla-addline space start end)~ adds a LINE on the
-  current layer, and ~(vla-addattribute block height mode prompt tag
-  point)~ appends an ATTDEF to a block definition so a later
-  ~InsertBlock~ instantiates it. Both return the new entity's
-  VLA-object, and the entity is visible through ~entget~ / ~entlast~ /
-  the block walk exactly as if made with ~entmake~.
+  current layer, and ~(vla-addattribute block height mode prompt
+  insertion-point tag value)~ appends an ATTDEF to a block definition so
+  a later ~InsertBlock~ instantiates it. The six arguments are in the
+  vendor's order, as AutoCAD and BricsCAD take them: the *point comes
+  before the tag*, and ~value~ is the attribute's default text. Both
+  return the new entity's VLA-object, and the entity is visible through
+  ~entget~ / ~entlast~ / the block walk exactly as if made with
+  ~entmake~. (Up to 2.2.96 clautolisp read the fourth argument as the tag
+  and the fifth as the point, and ignored ~value~; a call written for
+  AutoCAD failed with "AddAttribute expects a point".)
 - Block definitions are also created the AutoLISP way: ~entmake~ of a
   ~(0 . "BLOCK")~ header opens a definition run, the entities entmade
   next belong to it, and the closing ~(0 . "ENDBLK")~ registers the
