@@ -186,7 +186,26 @@ CAD (machine-bound):
   gêne pas une session BricsCAD. Balayer partout reste juste ; c'est l'ÉCHEC
   DUR qu'il faut cadrer (=CAD_SWEEP_NONBLOCKING=, ou des templates
   =.gate-windows-bricscad-*=). Non fait dans 2.2.110 : autre sujet, et il faut
-  lire le script de chaque job avant de le classer.
+  lire le script de chaque job avant de le classer. **FAIT (clautolisp 2.2.123)**
+  : chaque job CAD Windows classé en LISANT SON SCRIPT, pas son nom — ce qui
+  comptait (=verify:epure*= ne nomme aucun vendeur mais les deux scripts pilotent
+  AutoCAD ; =vendor:probes:bricscad= passe =-Backend bricscad=). 12 jobs
+  BricsCAD-seulement basculés sur =.gate-windows-bricscad-{hard,soft}= (qui
+  étendent les gates existantes et n'ajoutent QUE =CAD_SWEEP_NONBLOCKING=1=) ;
+  13 gardent le gate bloquant, dont tous les =accoreconsole= (accoreconsole EST
+  AutoCAD) et les deux =verify:epure=. Le tag =cad= est INTACT : la règle de pjb
+  du 2026-08-14 tient (un seul mutex global, pas de pools par vendeur), et le
+  commentaire de native.yml le dit explicitement puisqu'un lecteur croisant
+  =.gate-windows-bricscad-*= se poserait la question. Le balayage TOURNE et
+  rapporte toujours ; seul le verdict est cadré. =CAD_SWEEP_NONBLOCKING= reste
+  DISTINCT de =CAD_SWEEP_IGNORE_SURVIVORS= : « ça ne peut pas m'affecter » vs
+  « je sais, tourne quand même ». CLASSIFICATION VÉRIFIÉE, pas seulement faite :
+  =scripts/check-cad-sweep-gating.py= (=make check-cad-sweep-gating=, dans
+  =make check-release=) échoue si un job AutoCAD est sur un gate non bloquant, si
+  un job BricsCAD-seul est sur le bloquant, s'il ne nomme AUCUN vendeur (forçant
+  un classement délibéré), ou s'il n'a rien examiné ; vérifié ROUGE en remettant
+  =harvest:sysvars:bricscad= sur le gate bloquant. Suite alfe 1234/0, manuel alfe
+  mis à jour (les deux variables contrastées, pas listées)
 Debugger / ncurses UI (P3, pure-Lisp, this branch's workstream =debugger-ui-ncurses-aldb=):
 - DONE =ncurses-key-bindings= — keymap prefix-tree + 5 AutoLISP builtins (api.lisp ~5500) + user-binding test suite (verified 2026-09-12, closed).
 - DONE =aldb-commands= — aldb.el binds the full command table + 19 server tests (verified 2026-09-12, closed).

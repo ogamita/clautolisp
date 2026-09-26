@@ -235,7 +235,19 @@ running) and drops the first two from the file. It *fails the job it
 precedes* only when an instance is really *running* and could not be
 ended — such an AutoCAD owns the =AutoCAD.Application= COM registration
 and answers =RPC_E_CALL_REJECTED= to every call, which would look like an
-alfe defect in the log. Set =CAD_SWEEP_IGNORE_SURVIVORS=1= to run anyway.
+alfe defect in the log.
+
+Two variables relax that, and they are not interchangeable:
+
+- =CAD_SWEEP_NONBLOCKING=1= — *this job cannot be affected*: it drives BricsCAD
+  only, and a wedged AutoCAD owns a registration BricsCAD neither asks for nor
+  shares. The sweep still runs and still reports; it simply does not fail the
+  job. The project's BricsCAD-only Windows jobs carry it through their CI gate
+  (=.gate-windows-bricscad-*=), and ~make check-cad-sweep-gating~ keeps each job
+  on the gate its vendor calls for. Note that =accoreconsole= *is* AutoCAD, so
+  those jobs stay blocking.
+- =CAD_SWEEP_IGNORE_SURVIVORS=1= — *I know, run anyway*: the emergency override
+  for a machine nobody can reach at the moment.
 
 The release → version table alfe knows covers AutoCAD 2019–2026 (2022 is
 24.1, 2025 is 25.0); the relation is not arithmetic, so a release outside
