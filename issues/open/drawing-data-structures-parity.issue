@@ -130,3 +130,25 @@ Tests
   drawing-data-probe.lsp with :clautolisp-only (green now) +
   :bricscad-only / :autocad-only self-skipping scenarios.
 Full `test-system "clautolisp"`: 5482 checks, Fail 0.
+
+Measured on real AutoCAD (2026-09-26)
+--------------------------------------
+vendor:probes:autocad (MR !292 native child 2885828771, AutoCAD 2022
+accoreconsole/Windows) reports the drawing-data probe DIVERGED — recorded,
+not gated — with the whole xdata payload absent on AutoCAD:
+
+    UNEXPECTED  xdata.surfaced-with-applist: no,  expected yes
+    UNEXPECTED  xdata.pair-count:            0,   expected 8
+    UNEXPECTED  xdata.1000-string:           no,  expected yes
+    UNEXPECTED  xdata.1040-real:             no,  expected yes
+    UNEXPECTED  xdata.1070-int16:            no,  expected yes
+    UNEXPECTED  xdata.1071-int32:            no,  expected yes
+    UNEXPECTED  xdata.1005-handle:           no,  expected yes
+    (20 conforms, 7 unexpected, 0 missing)
+
+So an xdata payload attached in the probe does not read back through
+ENTGET on AutoCAD accoreconsole (the same probe conforms on BricsCAD and
+clautolisp). This is the concrete AutoCAD end of the XData-fidelity work
+above — the REGAPP/1001-applist + full group-code round-trip is what is
+failing to surface. entity-lifecycle and selection probes PASS on the same
+run, so it is xdata-specific, not a general entget breakage.
