@@ -110,8 +110,41 @@ variable.")
   "Name of BricsCAD's save-format system variable, honoured under a BricsCAD
 dialect.")
 
+;;; The TEMPLATE of a new drawing (pjb, 2026-09-26: "il doit y avoir une sysvar
+;;; pour specifier un template non?"). A sysvar is the right shape: a new
+;;; document's structure becomes an explicit, per-session, scriptable choice
+;;; instead of a silent change to what `new document' means.
+;;;
+;;;   CLAUTOLISPNEWDRAWINGTEMPLATE — a clautolisp extension system variable
+;;;   (string, default ""), seeded from the environment variable of the same
+;;;   name, exactly like CLAUTOLISPDEFAULTDRAWINGFORMAT above. Empty means what
+;;;   clautolisp has always done: a new document is EMPTY. Set to a .dxf/.dwg
+;;;   file and a new document is created from that drawing's structure --
+;;;   header, symbol tables, block definitions -- which is what makes a DWG
+;;;   saved from a fresh session keep its entities (libredwg needs an owner
+;;;   record to resolve; see dwg-round-trip-loses-entities).
+;;;
+;;;   TEMPLATEPATH — a *BricsCAD* system variable (string, the Templates
+;;;   FOLDER), already in the vendor catalogue. A relative
+;;;   CLAUTOLISPNEWDRAWINGTEMPLATE is resolved against it, so a script can name
+;;;   just `empty.dwt' the way it would in BricsCAD.
+;;;
+;;; NOT DONE HERE, deliberately: AutoCAD's own knob for this is (from memory)
+;;; QNEWTEMPLATE, and it is in NEITHER the specification NOR
+;;; system-variables-inventory.sexp, which was generated from help.autodesk.com
+;;; 2026. Adding a vendor sysvar to the normative spec on a recollection is
+;;; exactly what AGENTS.md forbids; the question is filed for pjb in
+;;; deferred-spec-research.issue. If it is confirmed, accepting QNEWTEMPLATE as
+;;; a second spelling here is a two-line change.
+
+;;; +NEW-DRAWING-TEMPLATE-SYSVAR+ and +TEMPLATEPATH-SYSVAR+ are defined in
+;;; model.lisp, which loads FIRST and needs them for the startup document's
+;;; initform. One definition, in the earliest file that needs it, rather than
+;;; the same name written twice (AGENTS.md: never scatter name tables).
+
 (defparameter *clautolisp-extension-sysvar-names*
-  (list +default-drawing-format-sysvar+)
+  (list +default-drawing-format-sysvar+
+        +new-drawing-template-sysvar+)
   "The clautolisp-specific system variables with no vendor counterpart, which
 INSTALL-CLAUTOLISP-EXTENSION-SYSVARS adds on top of whichever vendor catalogue
 was loaded (SAVEFORMAT is NOT here — it is a BricsCAD sysvar already in the
@@ -194,17 +227,84 @@ of the same name when it names a known container, otherwise \"DXF\"."
         (string-upcase (string-trim '(#\Space #\Tab) env))
         "DXF")))
 
+(defun %new-drawing-template-initial-value ()
+  "The initial CLAUTOLISPNEWDRAWINGTEMPLATE value: the environment variable of
+the same name, or \"\" — and \"\" means a new document is EMPTY, which is what
+clautolisp has always done. The file is NOT probed here: a session may set the
+sysvar later, and a value that turns out to be unreadable is reported when a
+document is actually created, not at start-up."
+  (let ((env (uiop:getenv +new-drawing-template-sysvar+)))
+    (if (and env (plusp (length (string-trim '(#\Space #\Tab) env))))
+        (string-trim '(#\Space #\Tab) env)
+        "")))
+
 (defun install-clautolisp-extension-sysvars (mock)
   "Install the clautolisp-specific system variables that have no vendor
-counterpart, on top of whichever vendor catalogue was loaded. Currently just
-CLAUTOLISPDEFAULTDRAWINGFORMAT. Returns MOCK."
+counterpart, on top of whichever vendor catalogue was loaded:
+CLAUTOLISPDEFAULTDRAWINGFORMAT and CLAUTOLISPNEWDRAWINGTEMPLATE. Returns MOCK."
   (setf (gethash +default-drawing-format-sysvar+ (cador-sysvars mock))
         (make-sysvar-cell :name +default-drawing-format-sysvar+
                           :kind :string
                           :value (%default-drawing-format-initial-value)
                           :read-only-p nil
                           :host-derived-p nil))
+  (setf (gethash +new-drawing-template-sysvar+ (cador-sysvars mock))
+        (make-sysvar-cell :name +new-drawing-template-sysvar+
+                          :kind :string
+                          :value (%new-drawing-template-initial-value)
+                          :read-only-p nil
+                          :host-derived-p nil))
   mock)
+
+(defun %sysvar-string (mock name)
+  "MOCK's NAME sysvar as a trimmed string, or NIL when absent or empty."
+  (let* ((cell (cador-sysvar mock name))
+         (value (and cell (sysvar-cell-value cell)))
+         (text (and (stringp value) (string-trim '(#\Space #\Tab) value))))
+    (and text (plusp (length text)) text)))
+
+(defun cador-new-drawing-template (mock)
+  "The template a NEW document is created from, as a pathname, or NIL for an
+empty document (the default).
+
+CLAUTOLISPNEWDRAWINGTEMPLATE names the drawing; a RELATIVE name is resolved
+against BricsCAD's TEMPLATEPATH (the Templates folder) when that is set, then
+against the current directory. Returns NIL when the sysvar is empty, and also
+when it names something unreadable -- with a warning on *error-output* rather
+than an error, following the project's out-of-reach-resource style: a new
+document is still created, empty, and the session says why it is not what was
+asked for. A silent empty document would be the worst of the three."
+  (let ((name (%sysvar-string mock +new-drawing-template-sysvar+)))
+    (when name
+      (let* ((folder (%sysvar-string mock +templatepath-sysvar+))
+             (candidates
+               (remove nil
+                       (list (ignore-errors
+                              (if folder
+                                  (merge-pathnames
+                                   name (uiop:ensure-directory-pathname folder))
+                                  nil))
+                             (ignore-errors (pathname name)))))
+             (found (find-if (lambda (candidate)
+                               (ignore-errors (probe-file candidate)))
+                             candidates)))
+        (or found
+            (progn
+              (format *error-output*
+                      "~&clautolisp: ~A names ~S, which cannot be read~@[ ~
+(also tried it under TEMPLATEPATH ~S)~]; the new document is empty.~%"
+                      +new-drawing-template-sysvar+ name folder)
+              nil))))))
+
+(defun cador-make-new-drawing (mock &key (name "Drawing.dwg"))
+  "A drawing for a NEW document of MOCK: from CLAUTOLISPNEWDRAWINGTEMPLATE when
+that names a readable drawing, else empty. This is the one place the choice is
+made, so both creation sites agree."
+  (let ((template (ignore-errors (cador-new-drawing-template mock))))
+    (if template
+        (clautolisp.drawing:make-drawing-from-template :name name
+                                                       :template template)
+        (make-drawing :name name))))
 
 (defun cador-default-drawing-format (mock)
   "Return (values CONTAINER VERSION) — the clautolisp.drawing codec keyword and

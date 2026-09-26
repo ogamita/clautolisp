@@ -60,8 +60,62 @@ vlax-release-object."
 
 ;;; --- MockHost ---------------------------------------------------
 
+;;; --- the template a new drawing is created from --------------------
+;;;
+;;; The names live HERE, in the earliest file that needs them, because the
+;;; startup document below is built in an :initform -- before any sysvar table
+;;; exists, so before user code could setvar anything. sysvars.lisp (which loads
+;;; later) reuses these constants; one definition, not the same string twice.
+;;;
+;;; Two knobs, one meaning (pjb, 2026-09-26 -- "il doit y avoir une sysvar pour
+;;; specifier un template non?"):
+;;;   * the SYSVAR governs documents opened during the session;
+;;;   * the ENVIRONMENT VARIABLE of the same name governs the STARTUP document,
+;;;     which is created before a session can run at all.
+;;; Both empty means what clautolisp has always done: an empty drawing.
+
+(defparameter +new-drawing-template-sysvar+ "CLAUTOLISPNEWDRAWINGTEMPLATE"
+  "Name of the clautolisp new-drawing-template system / environment variable:
+the drawing a NEW document is created from. Empty (the default) keeps a new
+document empty.")
+
+(defparameter +templatepath-sysvar+ "TEMPLATEPATH"
+  "Name of BricsCAD's Templates-FOLDER system variable, used to resolve a
+relative CLAUTOLISPNEWDRAWINGTEMPLATE.")
+
+(defun %environment-template-pathname ()
+  "The template named by $CLAUTOLISPNEWDRAWINGTEMPLATE, resolved against
+$TEMPLATEPATH when relative, or NIL when unset or unreadable. Used for the
+STARTUP document only; a warning here would precede any output the user asked
+for, so an unreadable value is silently an empty drawing and the session's first
+document creation reports it."
+  (let ((name (uiop:getenv +new-drawing-template-sysvar+)))
+    (when (and name (plusp (length (string-trim '(#\Space #\Tab) name))))
+      (let* ((name (string-trim '(#\Space #\Tab) name))
+             (folder (uiop:getenv +templatepath-sysvar+))
+             (candidates
+               (remove nil
+                       (list (when (and folder (plusp (length folder)))
+                               (ignore-errors
+                                (merge-pathnames
+                                 name (uiop:ensure-directory-pathname folder))))
+                             (ignore-errors (pathname name))))))
+        (find-if (lambda (candidate) (ignore-errors (probe-file candidate)))
+                 candidates)))))
+
+(defun %startup-drawing (&optional (template (ignore-errors
+                                              (%environment-template-pathname))))
+  "The drawing a fresh cador starts with: from TEMPLATE -- by default whatever
+$CLAUTOLISPNEWDRAWINGTEMPLATE names, when that is readable -- else the empty
+shell clautolisp has always started with. TEMPLATE is an argument so the choice
+can be tested without setting an environment variable."
+  (if template
+      (clautolisp.drawing:make-drawing-from-template :name "Drawing.dwg"
+                                                     :template template)
+      (make-drawing :name "Drawing.dwg")))
+
 (defclass cador (host)
-  ((active-drawing           :initform (make-drawing :name "Drawing.dwg")
+  ((active-drawing           :initform (%startup-drawing)
                              :accessor cador-active-drawing
                              :documentation "The drawing the host's
 AutoLISP entity / table / sysvar surface currently operates on. A
