@@ -1446,7 +1446,14 @@ Returns the path of the emitted file."
               (setq r *AUTOLISP-EVAL-RESULT*))))~%~
         (setq r nil))))~%~
   (alfe-publish-runtime-flags)~%~
-  (if err (error err) r))~%~
+  ;; autolisp-raise, never `error': `error' is a BricsCAD / clautolisp~%~
+  ;; extension and AutoCAD has none, so re-signalling with it there~%~
+  ;; raised \"no function definition: ERROR\" INSTEAD of the real~%~
+  ;; failure -- and that error, signalled while resolving the symbol,~%~
+  ;; escapes vl-catch-all-apply. The bootstrap's autolisp-raise carries~%~
+  ;; the message in the error context and aborts portably. See~%~
+  ;; alfe-autocad-error-primitive-masks-load-failure.~%~
+  (if err (autolisp-raise err) r))~%~
 ;;; --- alfe: explicit control sentinels via protocol/stdout.txt ---~%~
 ;; The polling mirror above (runtime-flags.txt) re-publishes after~%~
 ;; every eval and works for the (setq *autolisp-debug* …) case, but~%~

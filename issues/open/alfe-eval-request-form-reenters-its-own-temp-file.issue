@@ -1,0 +1,124 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-eval-request-form-reenters-its-own-temp-file — a form failing inside a loaded file is reported as success
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: alfe-backend
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-09-26
+
+* Observed
+
+Found while fixing alfe-autocad-error-primitive-masks-load-failure, with
+the clautolisp-hosted protocol harness (no CAD needed). A file is loaded
+through a =(load "file")= REQUEST, and the file contains a form that
+fails:
+
+#+begin_example
+single.lsp:   ;; single
+              (setq single-ran 1)(/ 1 0)
+
+request 1:  (load ".../single.lsp")   ->  DONE 1 OK      (no diagnostic)
+request 2:  (princ 1)                 ->  DONE 2 OK      prints 1
+#+end_example
+
+The division by zero is never reported. Worse, it is not always lost in
+the same way -- in another ordering the SAME failure surfaced against
+the FOLLOWING request:
+
+#+begin_example
+request 1:  (load ".../outer.lsp")    ->  DONE 1 OK
+request 2:  (princ …)                 ->  DONE 2 FAIL
+            ERROR protocol request 2: Division by zero in /.
+#+end_example
+
+so a later, innocent request is blamed for an earlier failure.
+
+By contrast, a failure the SOURCE LOADER raises itself is reported
+correctly, with the full source-aware diagnostic:
+
+#+begin_example
+outer.lsp:   (load "/nonexistent-file-xyz")
+request 1 -> DONE 1 FAIL
+  ERROR protocol request 1: while loading …/outer.lsp (form starting at
+  line 1) at line 1, column 1: LOAD failed: "/nonexistent-file-xyz"
+#+end_example
+
+That is the discriminator: the loss happens only for a form that goes
+through alfe's own =autolisp-eval-request-form= override.
+
+* Cause
+
+The override (emitted into run-common.lsp by
+=autolisp-front-end/source/file-protocol.lisp=) evaluates a non-LOAD
+form by writing it to a temp file and calling the host's native LOAD:
+
+#+begin_src lisp
+(setq path (strcat *AUTOLISP_PROTOCOL_DIR* "alfe-eval.lsp"))
+(setq text (autolisp-readable-text form))
+… write "(setq *AUTOLISP-EVAL-RESULT* <text>)" to path …
+(setq err (vl-catch-all-apply 'load (list path)))
+#+end_src
+
+The path is FIXED, one per session. And the override is not called only
+once per request: =autolisp-source-load-run-body-impl= (in the
+bootstrap) calls =autolisp-eval-request-form= for EVERY FORM of a loaded
+file. So while the outer =load= of alfe-eval.lsp -- or of the user's
+file -- is still being read, a nested invocation rewrites the very file
+being read. The override re-enters itself through a shared mutable file.
+
+That is consistent with all three observations: a failure vanishing, a
+failure appearing against the next request, and the outcome depending on
+the order of the forms.
+
+The =(load …)= FORM path and the =-l FILE= ACTION path differ here,
+which is why this was not seen earlier: the action goes through
+=autolisp-run-load=, which reports failures correctly (that is the run
+in the EPURE API probe that reported DONE 1 FAIL, exit 1). It is the
+FORM path -- what SCHME+'s =(tu:load …)= entry points use -- that loses
+them.
+
+* Why it matters
+
+It is the same class of defect as
+issues/closed/alfe-eval-x-output-lost-on-cad (a failure reported as a
+success), which is the one that cost a whole investigation: a user
+cannot tell a working run from a broken one, and a script that tests
+alfe's exit code sees success. Here it is worse in one respect: the
+blame can land on an unrelated later request.
+
+It also blocks acceptance criterion 2 of
+alfe-autocad-error-primitive-masks-load-failure (a nested loaded-file
+failure must reach alfe with the original text): the ERROR dependency is
+gone, but a failure on THIS path is still swallowed.
+
+* Fix direction
+
+The temp file must not be shared between nesting levels. Either
+
+- give each invocation its own file (a depth counter or a per-request
+  sequence in the name, cleaned up after), or
+- do not re-enter at all: evaluate nested forms with plain =eval= and
+  keep the file trick for the request's OUTERMOST form only, which is
+  where it was needed (the BricsCAD V26 mapcar/lambda mis-dispatch that
+  motivated it -- see issues/closed/bricscad-rest-mapcar-lambda-bug).
+
+Then check the outcome is reported: the request that contained the
+failing form must be the one that FAILS, with the engine's own message.
+
+* Reproduction (no CAD)
+
+=drive-hosted-engine= in autolisp-front-end/tests/file-protocol-tests.lisp
+hosts the emitted runtime under clautolisp. Stage a file containing
+=(setq x 1)(/ 1 0)=, send =(load "<that file>")= as one request and
+=(princ 1)= as the next, and read the statuses: the first is OK.
+
+* Acceptance criteria
+
+- A form that fails inside a loaded file makes THAT request fail, with
+  the engine's message and the file/line the source loader assembles.
+- No failure is ever attributed to a later request.
+- The BricsCAD mapcar/lambda behaviour that motivated the file trick is
+  preserved (its regression test stays green).
+- A regression test in the hosted harness covers both the single-level
+  and the nested case.
