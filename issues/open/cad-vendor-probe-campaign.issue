@@ -67,3 +67,40 @@ detect:runners: MACOS_RUNNER=online, WINDOWS_RUNNER=online. Native child
   deported source-load chokes on the high byte specifically; the probe masks the
   real error as LOAD-ERR. NEXT: surface the actual error message, then bring
   autolisp-source-load to the encoding-honouring reference loader.
+
+** 2026-09-26 — AutoCAD probes ran (untouched MR !292); three results
+
+The untouched-MR strategy worked: MR !292's native child 2885828771 survived
+master churn and its Windows AutoCAD jobs ran to completion once the runner
+freed (all macOS probes were green much earlier). Three findings:
+
+- #4 autocad-runtime-vlax-sleep-and-rest — RESOLVED/CLOSED. vendor:probes:autocad
+  reaches READY (18.65/16.61/18.15 s, "READY 0"), no "backend unreachable", no
+  VLAX-SLEEP/COMMAND apply-escape. PASS entity-lifecycle (101 conforms), PASS
+  selection (21), DIVERGED drawing-data (7 unexpected, recorded/not gated). The
+  1.6.x runtime fix is confirmed on the real backend; unblocked by the
+  lastTouchError bridge fix (alfe 2.2.119, MR !287).
+
+- drawing-data DIVERGED (NEW, tracked): AutoCAD is not surfacing xdata through
+  the probe — xdata.surfaced-with-applist no/expected yes, pair-count 0/8, the
+  1000-string / 1040-real / 1070-int16 / 1071-int32 / 1005-handle types all
+  absent. Belongs to drawing-data-structures-parity (fidelity), not a runtime
+  crash. Append the concrete observation there.
+
+- #5 accoreconsole-deported-load-highbyte — REAL ERROR CAPTURED. Across chcp
+  1252/437/65001, UTF-8 and C locale, and all three source-write encodings, the
+  load of a byte-0xE9 file fails identically with AutoCAD's NATIVE message:
+  "LOAD-ERR: La commande CHARGER n'a pas abouti: \"encp-src-default.lsp\"".
+  On-disk bytes confirmed (...22 41 e9 5a 22 29 = (setq ENCSRC "A<e9>Z")). Two
+  sub-findings: (a) "w,ccs=UTF-8" write mode did NOT produce UTF-8 — all three
+  variants yielded identical single-e9-byte files (accoreconsole ignores ccs on
+  write too); (b) the message is AutoCAD's NATIVE (load) error, which raises the
+  question whether the probe's nested (load) even routes through alfe's deported
+  autolisp-source-load shadow or hits native accoreconsole load — resolving that
+  before implementing, since it decides whether an autolisp-source-open-encoded
+  fix is testable by this probe. See #5 issue for the design note.
+
+- #3 autocad-no-rest-output-capture — probe:suite:autocad PASSED; its full-run
+  output IS captured (LogFilePath -> results.sexp, 1670 artifact files, princ
+  output visible in accoreconsole stdout). The gap #3 targets is the REST / -x
+  eval path specifically, a different code path needing headless investigation.
