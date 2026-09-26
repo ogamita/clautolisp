@@ -1046,6 +1046,17 @@ requests it. End commit messages with the Co-Authored-By: Claude trailer. If
 the harness classifier still gates the author/push, that is authorization
 friction, not a reason to stop.
 
+**Commit messages are PLAIN ASCII.** Hyphens, not em dashes; "section 11", not
+a section sign; straight quotes; no backticks. This is not style: the Windows
+runner's PowerShell executor writes `CI_COMMIT_MESSAGE` into a generated `.ps1`
+and under-escapes it, so a message with such punctuation kills the job before
+it clones — once, it went on to run the job's script in the runner's own
+directory instead (`windows-runner-commit-message-breaks-powershell`). Checked
+by `make check-commit-message-ascii` in the `documentation` CI lane (HEAD only,
+so a merge commit passes); sweep a branch before pushing with
+`make check-commit-message-ascii RANGE=origin/master..HEAD`. The real fix is a
+newer runner on that machine, which is pjb's call; until then this is the rule.
+
 ## Ongoing epics (as of clautolisp 1.7.18 / alfe 1.7.24, 2026-08)
 
 - **Coverage epic** (`complete-unit-tests.issue`, P2): backfill builtin
