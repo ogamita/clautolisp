@@ -228,6 +228,12 @@
    ;; clautolisp default drawing format (CLAUTOLISPDEFAULTDRAWINGFORMAT)
    #:cador-default-drawing-format
    #:+default-drawing-format-sysvar+
+   ;; clautolisp new-drawing template (CLAUTOLISPNEWDRAWINGTEMPLATE, resolved
+   ;; against BricsCAD's TEMPLATEPATH when relative)
+   #:cador-new-drawing-template
+   #:cador-make-new-drawing
+   #:+new-drawing-template-sysvar+
+   #:+templatepath-sysvar+
    #:*clautolisp-extension-sysvar-names*
    ;; BricsCAD-dialect sysvar overlay
    #:*bricscad-absent-sysvars*

@@ -77,27 +77,32 @@ must then track what libredwg and AutoCAD expect."
   (asdf:system-relative-pathname :clautolisp/drawing
                                  "drawing/template/empty-drawing.dxf"))
 
-(defun make-drawing-from-template (&key (name "Drawing.dwg") path format version)
-  "A new drawing with a REAL drawing's structure, read from
-DRAWING-TEMPLATE-PATH. NAME, PATH, FORMAT and VERSION override what the
-template carried. Falls back to MAKE-DRAWING -- an empty shell -- when the
-template cannot be read, so a program still runs (it will lose entities
-through a DWG round trip, which is the state before this existed).
+(defun make-drawing-from-template (&key (name "Drawing.dwg") path format version
+                                        (template (drawing-template-path)))
+  "A new drawing with a REAL drawing's structure, read from TEMPLATE (the
+bundled empty drawing by default -- a caller that honours a user setting passes
+its own, e.g. cador's CLAUTOLISPNEWDRAWINGTEMPLATE). NAME, PATH, FORMAT and
+VERSION override what the template carried. Falls back to MAKE-DRAWING -- an
+empty shell -- when the template cannot be read, so a program still runs (it
+will lose entities through a DWG round trip, which is the state before this
+existed).
+
+The template's own format is SNIFFED rather than assumed: the bundled one is
+DXF, but a user's is as likely to be a .dwg or a .dwt.
 
 MAKE-DRAWING remains the right thing for a LOADER, which is about to fill
 the drawing from a file; this is for a program that BUILDS one."
-  (let ((template (drawing-template-path)))
-    (if (not (and template (probe-file template)))
-        (make-drawing :name name :path path :format format :version version)
-        (handler-case
-            (let ((drawing (read-drawing template :format :dxf-ascii)))
-              (setf (drawing-name drawing) name
-                    (drawing-path drawing) path
-                    (drawing-format drawing) format)
-              (when version (setf (drawing-version drawing) version))
-              drawing)
-          (error () (make-drawing :name name :path path
-                                  :format format :version version))))))
+  (if (not (and template (probe-file template)))
+      (make-drawing :name name :path path :format format :version version)
+      (handler-case
+          (let ((drawing (read-drawing template)))
+            (setf (drawing-name drawing) name
+                  (drawing-path drawing) path
+                  (drawing-format drawing) format)
+            (when version (setf (drawing-version drawing) version))
+            drawing)
+        (error () (make-drawing :name name :path path
+                                :format format :version version)))))
 
 (defun read-drawing (source &key format)
   "Read SOURCE (a pathname / namestring) into a fresh DRAWING. FORMAT
