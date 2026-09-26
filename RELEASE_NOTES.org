@@ -199,6 +199,13 @@ separate binary for tool integrators.
 
 ** Standalone CLI (clautolisp-sbcl / clautolisp-ccl)
 
+- Drawing writers honour the requested version. The DXF writer emits the
+  requested ~$ACADVER~ (e.g. AC1027 for 2013, AC1032 for 2018) for both
+  ASCII and Binary DXF, and the DWG writer carries the version through
+  libredwg. So the version half of ~SAVEFORMAT~ /
+  ~CLAUTOLISPDEFAULTDRAWINGFORMAT~ (and ~vla-saveas~ / ~write-drawing~'s
+  version) is now reflected in the file, not merely recorded. Resolves
+  ~issues/closed/drawing-codec-version-output.issue~.
 - Default drawing write format. A new clautolisp system variable
   ~CLAUTOLISPDEFAULTDRAWINGFORMAT~ names the container (~DXF~ default,
   ~DXFB~, ~DWG~) and, optionally, version (~DWG-2013~, ~DXF2000~) a drawing

@@ -1006,8 +1006,8 @@ provides that surface through the host backend:
   the ~CLAUTOLISPDEFAULTDRAWINGFORMAT~ system variable — ~DXF~ by default,
   seedable from the environment (see /Environment variables/) — or, under
   a ~--bricscad~ dialect, to BricsCAD's ~SAVEFORMAT~ integer (AutoCAD has
-  no save-format sysvar). The chosen version is recorded on the drawing;
-  the DXF/DWG writers currently emit a fixed version regardless.
+  no save-format sysvar). The chosen version sets the emitted DXF
+  ~$ACADVER~; the DWG writer carries it through libredwg.
 - ~ModelSpace.AddLine~ and ~Block.AddAttribute~ create entities through
   the object model: ~(vla-addline space start end)~ adds a LINE on the
   current layer, and ~(vla-addattribute block height mode prompt tag
@@ -1485,9 +1485,8 @@ correct a wrong guess — but it is not its purpose.
   recognised extension always wins over it. Shared by ~--host cador~ and
   ~--host cadtui~. Under a ~--bricscad~ dialect the vendor ~SAVEFORMAT~
   system variable is consulted instead (AutoCAD has no such sysvar). The
-  version is recorded on the drawing but the writers still emit a fixed
-  version for now. Precedence: ~setvar~ > this variable > the ~DXF~
-  default.
+  version sets the emitted DXF ~$ACADVER~ (and, for DWG, is carried through
+  libredwg). Precedence: ~setvar~ > this variable > the ~DXF~ default.
 - ~$AUTOLISP_NO_INIT~, ~$CLAUTOLISP_NO_INIT~ :: equivalent to
   ~-norc~ / ~--no-init~.
 - ~$NO_COLOR~ :: disable ANSI colour ([[https://no-color.org][no-color.org]]).

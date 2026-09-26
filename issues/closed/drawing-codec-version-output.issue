@@ -1,8 +1,9 @@
 #+TITLE: DXF/DWG writers ignore the requested version
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: enhancement
 #+DEPENDS:
+#+BRANCH: feat-drawing-codec-version-output
 
 DXF/DWG writers ignore the requested version
 
@@ -39,3 +40,30 @@ Greppable: `grep -rnE "STUB:" clautolisp/drawing*/source/`.
 When resolved, delete the STUB markers in the two codec files and replace
 them with a normal note, and move this entry to the issue's Resolved tail.
 Split out from issues/closed/saveformat-default-drawing-format.issue.
+
+== Resolved ==
+
+DONE — clautolisp 2.2.95 (2026-09-25).
+
+- clautolisp.drawing (dxf.lisp): a bound special *dxf-output-version* threads
+  the requested version into dxf-write-header, which emits it as $ACADVER via
+  the new %dxf-acadver-string (validated against +dxf-acadver-versions+,
+  R9..R2018). dxf-write-drawing / dxf-write-binary-drawing bind it from their
+  :version argument (falling back to the drawing's own version). The STUBs are
+  gone.
+- clautolisp.drawing.dwg (codec.lisp): dwg-write-drawing stamps :version into
+  the temp DXF's $ACADVER; libredwg's DXF importer reads it and its DWG writer
+  emits that version — no shim-signature change (clal_dxf_to_dwg takes only
+  paths). If a libredwg build ignores $ACADVER on conversion, the DWG version
+  falls back to libredwg's default; the requested version is still recorded.
+
+Tests (drawing suite 302/302): dxf-write-honors-requested-version (ASCII
+round-trip + $ACADVER string present), dxf-binary-write-honors-requested-version
+(binary round-trip), dxf-acadver-string-validates-version. Docs: autolisp-spec
+§§ SAVEFORMAT and CLAUTOLISPDEFAULTDRAWINGFORMAT (doc 0.14.0 -> 0.14.1),
+clautolisp user manual, RELEASE_NOTES.org.
+
+Scope note: the version sets $ACADVER (the field readers key on) and, for our
+supported entity subset, that is the version-carrying difference; full
+per-version *feature gating* (dropping header vars / objects a target version
+predates) is not required for that subset and is not attempted here.

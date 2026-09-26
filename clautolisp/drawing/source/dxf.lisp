@@ -386,6 +386,26 @@ group codes."
   (funcall body-thunk)
   (dxf-emit 0 "ENDSEC"))
 
+(defvar *dxf-output-version* nil
+  "The DXF $ACADVER version (a keyword such as :ac1032 for DWG 2018) the
+writer emits. Bound by DXF-WRITE-DRAWING / -BINARY-DRAWING from their VERSION
+argument; NIL falls back to the drawing's own version, then the R2013 default.")
+
+(defparameter +dxf-acadver-versions+
+  '(:ac1004 :ac1006 :ac1009 :ac1012 :ac1014 :ac1015 :ac1018 :ac1021 :ac1024
+    :ac1027 :ac1032)
+  "The DXF $ACADVER version keywords the writer accepts (R9 .. R2018). The
+keyword name is the literal $ACADVER string, e.g. :ac1032 -> \"AC1032\".")
+
+(defun %dxf-acadver-string (version)
+  "The $ACADVER string for VERSION: an accepted version keyword's name, a
+string used as-is (upcased), or the R2013 default (\"AC1027\") otherwise."
+  (cond
+    ((and (keywordp version) (member version +dxf-acadver-versions+))
+     (string-upcase (symbol-name version)))
+    ((stringp version) (string-upcase version))
+    (t "AC1027")))
+
 (defun dxf-header-value-code (kind value)
   "Choose a DXF group code to carry a header variable of KIND."
   (case kind
@@ -401,9 +421,8 @@ group codes."
    "HEADER"
    (lambda ()
      (dxf-emit 9 "$ACADVER")
-     (dxf-emit 1 (or (and (drawing-version drawing)
-                          (string-upcase (symbol-name (drawing-version drawing))))
-                     "AC1027"))
+     (dxf-emit 1 (%dxf-acadver-string
+                  (or *dxf-output-version* (drawing-version drawing))))
      (dxf-emit 9 "$HANDSEED")
      (dxf-emit 5 (format nil "~X" (drawing-handle-seed drawing)))
      (map-variables
@@ -683,26 +702,25 @@ Sets DRAWING-FORMAT precisely (READ-DRAWING leaves it as set)."
         drawing)))
 
 (defun dxf-write-drawing (drawing destination &key version)
-  ;;; STUB: VERSION is ignored — the writer emits one fixed DXF version
-  ;;; regardless (the $ACADVER header comes from the drawing's own version).
-  ;;; Per-version DXF output is deferred; see
-  ;;; issues/open/drawing-codec-version-output.issue.
-  (declare (ignore version))
-  (with-open-file (stream destination :direction :output
-                                      :if-exists :supersede
-                                      :if-does-not-exist :create
-                                      :external-format +dxf-external-format+)
-    (dxf-write-drawing-to-stream drawing stream)))
+  "Write DRAWING to DESTINATION as ASCII DXF. VERSION (a $ACADVER keyword
+such as :ac1032) sets the emitted $ACADVER; NIL uses the drawing's own
+version, then the R2013 default."
+  (let ((*dxf-output-version* (or version (drawing-version drawing))))
+    (with-open-file (stream destination :direction :output
+                                        :if-exists :supersede
+                                        :if-does-not-exist :create
+                                        :external-format +dxf-external-format+)
+      (dxf-write-drawing-to-stream drawing stream))))
 
 (defun dxf-write-binary-drawing (drawing destination &key version)
-  ;;; STUB: VERSION is ignored — see dxf-write-drawing and
-  ;;; issues/open/drawing-codec-version-output.issue.
-  (declare (ignore version))
-  (with-open-file (stream destination :direction :output
-                                      :if-exists :supersede
-                                      :if-does-not-exist :create
-                                      :element-type '(unsigned-byte 8))
-    (dxf-write-binary-drawing-to-stream drawing stream)))
+  "Write DRAWING to DESTINATION as Binary DXF. VERSION sets $ACADVER as in
+DXF-WRITE-DRAWING."
+  (let ((*dxf-output-version* (or version (drawing-version drawing))))
+    (with-open-file (stream destination :direction :output
+                                        :if-exists :supersede
+                                        :if-does-not-exist :create
+                                        :element-type '(unsigned-byte 8))
+      (dxf-write-binary-drawing-to-stream drawing stream))))
 
 (register-drawing-codec :dxf-ascii
                         :reader #'dxf-read-drawing

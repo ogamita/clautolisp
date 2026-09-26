@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.14.0
+#+VERSION: 0.14.1
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -50149,11 +50149,10 @@ specification above./
 clautolisp honours SAVEFORMAT under a BricsCAD dialect as the default
 write format when neither the destination extension nor the drawing itself
 determines one (see CLAUTOLISPDEFAULTDRAWINGFORMAT, the clautolisp
-cross-dialect equivalent). The *container* axis (DWG / DXF / Binary DXF) is
-selected for real; the *version* axis is recorded on the drawing and in the
-DXF ~$ACADVER~ header, but the current DXF/DWG writers still emit a single
-fixed version — per-version output is deferred
-(~issues/open/drawing-codec-version-output.issue~).
+cross-dialect equivalent). Both axes are honoured: the *container* (DWG /
+DXF / Binary DXF) selects the codec, and the *version* sets the emitted DXF
+~$ACADVER~ (e.g. AC1027 for 2013, AC1032 for 2018); the DWG writer converts
+through libredwg, which carries the version from that ~$ACADVER~.
 
 *** Source Notes
 - BricsCAD: https://help.bricsys.com/en-us/document/system-variable-reference/s/saveformat-system-variable
@@ -60546,8 +60545,8 @@ This is the clautolisp cross-dialect equivalent of BricsCAD's ~SAVEFORMAT~:
 under a BricsCAD dialect the vendor ~SAVEFORMAT~ integer is consulted
 instead; under every other dialect (AutoCAD, which has *no* save-format
 system variable, and clautolisp/strict/lax) this variable is the source.
-As with ~SAVEFORMAT~, the version axis is currently recorded but the DXF/DWG
-writers emit a fixed version (~issues/open/drawing-codec-version-output.issue~).
+Both container and version are honoured — the version sets the emitted DXF
+~$ACADVER~, and the DWG writer follows it through libredwg.
 
 *** Read/Written By
 - the drawing writer reached through the ActiveX object model
