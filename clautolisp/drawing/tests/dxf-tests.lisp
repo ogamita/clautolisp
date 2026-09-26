@@ -279,3 +279,60 @@
 (test dxf-registered-on-the-format-dispatch
   (is (eq :dxf-ascii (probe-drawing-format "/tmp/plan.dxf")))
   (is (not (null (find-drawing-codec :dxf-ascii)))))
+
+;;; --- Header variables a reader can actually take -------------------
+;;;
+;;; dwg-write-rejects-a-drawing-built-in-memory. Two header defects made
+;;; libredwg refuse every DXF a clautolisp session produced, while a
+;;; drawing READ from a DWG round-tripped -- because a parsed drawing's
+;;; sysvars come from the file, where they are already DXF-shaped.
+
+(test dxf-header-writes-acadver-once-and-as-the-format-version
+  "$ACADVER is the FILE FORMAT version in a DXF header. As a sysvar it is
+the PRODUCT version -- \"24.1s (LMS Tech)\" on AutoCAD, clautolisp's own
+version here -- so the sysvar pass must not emit it a second time: DXF
+has one slot per variable and the last one wins, which replaced AC1027
+with something no reader accepts (libredwg: DWG_ERR_INVALIDDWG)."
+  (let ((d (make-drawing :version :ac1027)))
+    (ensure-drawing-variable d "ACADVER" :kind :string :value "2.2.99")
+    (ensure-drawing-variable d "HANDSEED" :kind :string :value "ZZZ")
+    (let* ((text (with-output-to-string (s) (dxf-write-drawing-to-stream d s)))
+           (count 0) (start 0))
+      (loop for pos = (search "$ACADVER" text :start2 start)
+            while pos do (incf count) (setf start (1+ pos)))
+      (is (= 1 count) "exactly one $ACADVER, got ~D" count)
+      (is (search "AC1027" text) "the format version must be written")
+      (is (not (search "2.2.99" text))
+          "the PRODUCT version must not reach the header")
+      ;; Same reasoning for HANDSEED, which was already excluded.
+      (let ((seeds 0) (from 0))
+        (loop for pos = (search "$HANDSEED" text :start2 from)
+              while pos do (incf seeds) (setf from (1+ pos)))
+        (is (= 1 seeds) "exactly one $HANDSEED, got ~D" seeds)))))
+
+(test dxf-header-integer-group-code-follows-the-value
+  "Group 70 carries a signed 16-bit integer; 90 is the 32-bit one. A
+sysvar can exceed the smaller range -- CMPDIFFLIMIT is 10000000 by
+default -- and writing it as 70 gave a header libredwg would not read at
+all (DWG_ERR_IOERROR). The code is chosen from the VALUE, so a small one
+still uses 70 and nothing else about the header changes."
+  (is (= 70 (clautolisp.drawing::dxf-header-value-code :integer 40)))
+  (is (= 70 (clautolisp.drawing::dxf-header-value-code :integer -32768)))
+  (is (= 70 (clautolisp.drawing::dxf-header-value-code :integer 32767)))
+  (is (= 90 (clautolisp.drawing::dxf-header-value-code :integer 32768)))
+  (is (= 90 (clautolisp.drawing::dxf-header-value-code :integer -32769)))
+  (is (= 90 (clautolisp.drawing::dxf-header-value-code :integer 10000000)))
+  (is (= 70 (clautolisp.drawing::dxf-header-value-code :short 1)))
+  (is (= 90 (clautolisp.drawing::dxf-header-value-code :short 10000000)))
+  ;; The untyped fallback follows the same rule.
+  (is (= 70 (clautolisp.drawing::dxf-header-value-code nil 7)))
+  (is (= 90 (clautolisp.drawing::dxf-header-value-code nil 10000000)))
+  ;; And a big integer really is emitted as 90 in a written header.
+  (let ((d (make-drawing :version :ac1027)))
+    (ensure-drawing-variable d "CMPDIFFLIMIT" :kind :integer :value 10000000)
+    (let ((text (with-output-to-string (s) (dxf-write-drawing-to-stream d s))))
+      (is (search "$CMPDIFFLIMIT" text))
+      (let ((pos (search "$CMPDIFFLIMIT" text)))
+        (is (search "90" text :start2 pos :end2 (min (length text) (+ pos 24)))
+            "a 10000000 sysvar must be written with group 90: ~S"
+            (subseq text pos (min (length text) (+ pos 24))))))))

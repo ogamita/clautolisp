@@ -3,7 +3,7 @@
 #+STATUS: NEXT
 #+PRIORITY: P1
 #+TYPE: cad-runtime
-#+DEPENDS: alfe-eval-request-form-reenters-its-own-temp-file
+#+DEPENDS: alfe-autocad-hung-instance-blocks-com-bootstrap
 #+BRANCH: fix-alfe-autocad-error-primitive-masks-load-failure
 #+DATE: 2026-09-26
 
@@ -177,15 +177,17 @@ Suites: alfe 1171 checks 0 failures.
   the symbol fails, which no shadow can imitate). The text gate above
   proves the property AutoCAD needs -- no call exists -- and the hosted
   test proves the replacement carries the diagnostic.
-- *Criterion 2 is met for the loader path and still blocked for the
-  other one.* A form that fails inside the alfe =autolisp-eval-request-form=
-  override is STILL swallowed, and that is a second, independent defect
-  found while testing this one: the override writes every form to ONE
-  fixed temp file and the source loader calls it per form, so a nested
-  invocation rewrites the file the outer load is reading. Filed as
-  =issues/open/alfe-eval-request-form-reenters-its-own-temp-file.issue=
-  (P1) with a no-CAD reproduction. SCHME+'s =(tu:load …)= goes through
-  exactly that path, so this issue stays open until that one is fixed.
+- *Criterion 2 is MET as of 2.2.100.* It was blocked by a second defect
+  found while testing this one, which looked like the failure being
+  swallowed on the override's path. It was not: the CAD-side loader ran
+  only the FIRST form of each line of a loaded file and discarded the
+  rest in silence, so the form that should have failed had never run.
+  Fixed and closed as
+  =issues/closed/alfe-cad-source-loader-drops-a-second-form-on-a-line.issue=
+  (the re-entrancy write-up that preceded it is kept, marked
+  MISDIAGNOSED). With that in place a failure inside a loaded file
+  reports =DONE n FAIL= with the engine's message and the inner source
+  location, at one nesting level and at two, which is this criterion.
 - *Criterion 4 needs SCHME+ and a working AutoCAD.* The Windows runner
   currently cannot start AutoCAD at all -- two wedged acad.exe hold the
   COM registration, see

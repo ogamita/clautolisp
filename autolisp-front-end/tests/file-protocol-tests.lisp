@@ -1542,3 +1542,113 @@ clautolisp-sbcl is not on disk."
           (is (not (search " FAIL" (third statuses)))
               "(quit) must not be reported as a failure: ~S"
               (third statuses))))))
+
+;;; --- every form of a loaded file runs, and its failure is reported ----
+;;;
+;;; alfe-cad-source-loader-drops-a-second-form-on-a-line. The CAD-side
+;;; read loop accumulated lines until the text scanned as balanced and
+;;; then called READ on the whole buffer. READ returns the FIRST form
+;;; only, and the buffer was cleared straight after -- so every later
+;;; form on the same line was discarded in silence. Two forms on a line
+;;; is ordinary AutoLISP: (princ "x")(princ "y") printed only x, and
+;;; (setq a 1)(setq b 2) left b unbound, with no diagnostic and DONE OK.
+;;;
+;;; That is also what made a failure in a loaded file look swallowed: the
+;;; form that would have failed was the second on its line and never
+;;; ran. (This was first filed as
+;;; alfe-eval-request-form-reenters-its-own-temp-file, a misdiagnosis --
+;;; the override's fixed temp filename is not re-entered in practice,
+;;; because the loader routes a nested (load …) through
+;;; autolisp-eval-load-form, which uses no temp file.)
+
+(test protocol-failure-inside-a-loaded-file-fails-that-request
+  "Acceptance: a form that fails inside a loaded file makes THAT request
+fail, at one level and at two, and no failure is ever attributed to a
+later request. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; re-entrancy test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary nil
+             :forms-fn
+             (lambda (workdir)
+               (let ((single (merge-pathnames "single.lsp" workdir))
+                     (outer (merge-pathnames "outer.lsp" workdir))
+                     (inner (merge-pathnames "inner.lsp" workdir)))
+                 (dolist (spec (list (cons single ";; single~%(setq ran 1)(/ 1 0)~%")
+                                     (cons inner ";; inner~%(setq ran 2)(/ 1 0)~%")))
+                   (with-open-file (out (car spec) :direction :output
+                                                   :if-exists :supersede
+                                                   :if-does-not-exist :create
+                                                   :external-format :utf-8)
+                     (format out (cdr spec))))
+                 (with-open-file (out outer :direction :output
+                                            :if-exists :supersede
+                                            :if-does-not-exist :create
+                                            :external-format :utf-8)
+                   (format out "(load ~S)~%" (namestring inner)))
+                 (list (format nil "(load ~S)" (namestring single))
+                       "(princ 1)"
+                       (format nil "(load ~S)" (namestring outer))
+                       "(princ 2)"))))
+          (is (= 4 (length statuses)))
+          ;; 1. one level of loading.
+          (is (search " FAIL" (first statuses))
+              "a failure in a loaded file must fail ITS request, got ~S"
+              (first statuses))
+          ;; 2. the next request is innocent and must stay so.
+          (is (search " OK" (second statuses))
+              "the failure must not be attributed to the next request, got ~S"
+              (second statuses))
+          ;; 3. two levels: the nested load must fail too.
+          (is (search " FAIL" (third statuses))
+              "a failure in a NESTED loaded file must fail its request, got ~S"
+              (third statuses))
+          (is (search " OK" (fourth statuses))
+              "the nested failure must not spill over, got ~S" (fourth statuses))
+          ;; Both princ forms ran, in order: the session stays usable.
+          (is (string= "12" (without-returns stdout)))
+          ;; And the diagnostic is the engine's own, twice over.
+          (is (search "Division by zero" stderr)
+              "the original error text must be reported: ~S" stderr)))))
+
+(test protocol-loaded-file-runs-every-form-on-a-line
+  "Acceptance: a loaded file whose line carries two forms runs BOTH, in
+order. (princ \"x\")(princ \"y\") must print xy, and (setq a 1)(setq b 2)
+must leave both bound -- the CAD-side loader used to keep only the first
+form of each line and discard the rest without a word. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; two-forms-per-line test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary nil
+             :forms-fn
+             (lambda (workdir)
+               (let ((f (merge-pathnames "twoforms.lsp" workdir)))
+                 (with-open-file (out f :direction :output
+                                        :if-exists :supersede
+                                        :if-does-not-exist :create
+                                        :external-format :utf-8)
+                   ;; Two forms on one line, then a form split ACROSS
+                   ;; lines after them -- the remainder of a line must be
+                   ;; kept when it is the start of a form, not dropped.
+                   (write-string "(princ \"x\")(princ \"y\")" out)
+                   (terpri out)
+                   (write-string "(setq a 1)(setq b 2)" out)
+                   (terpri out)
+                   (write-string "(princ" out) (terpri out)
+                   (write-string "  \"z\")" out) (terpri out))
+                 (list (format nil "(load ~S)" (namestring f))
+                       "(princ (list (quote a) a (quote b) (if (boundp (quote b)) b (quote UNBOUND))))"))))
+          (is (search " OK" (first statuses))
+              "the load itself must succeed, got ~S" (first statuses))
+          (is (search " OK" (second statuses)))
+          ;; xyz: both forms of line 1, and the form spanning lines 3-4.
+          (is (string= "xyz(A 1 B 2)" (without-returns stdout))
+              "every form must run, in order: ~S" stdout)
+          (is (string= "" stderr))))))

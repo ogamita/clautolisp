@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
-#+TITLE: alfe-eval-request-form-reenters-its-own-temp-file — a form failing inside a loaded file is reported as success
-#+STATUS: TODO
+#+TITLE: alfe-eval-request-form-reenters-its-own-temp-file — MISDIAGNOSED: the cause was the loader dropping the second form on a line
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: alfe-backend
 #+DEPENDS: -
@@ -122,3 +122,49 @@ hosts the emitted runtime under clautolisp. Stage a file containing
   preserved (its regression test stays green).
 - A regression test in the hosted harness covers both the single-level
   and the nested case.
+
+* Resolved — MISDIAGNOSED. The cause was elsewhere; clautolisp 2.2.100
+
+The symptoms above are real and are fixed, but not by anything in this
+issue's /Cause/ section. The re-entrancy it describes does not happen:
+the override is the one thing the source loader calls per form, and when
+that form is a =(load …)= the override routes it to
+=autolisp-eval-load-form=, which uses NO temp file. So the fixed
+filename is never re-entered, and giving it a per-depth name changed
+nothing (measured: the same DONE OK).
+
+What the evidence actually showed. After a failing load, only
+=alfe-eval-1.lsp= existed in the protocol directory, and it held the
+FIRST form of the loaded file, =(setq single-ran 1)= — not the division
+that was supposed to fail. The failing form had never been evaluated.
+Because both forms sat on ONE LINE, and the read loop called READ on the
+whole balanced buffer, took the first form, and then cleared the buffer.
+The second form of every line was silently discarded.
+
+Proof, through the CAD-side loader, before the fix:
+
+#+begin_example
+twoforms.lsp:  (princ "x")(princ "y")
+               (setq a 1)(setq b 2)
+
+stdout: "x(A 1 B UNBOUND)"        ;; y never printed, b never set
+status: DONE OK, stderr empty
+#+end_example
+
+clautolisp's OWN loader runs both (=(A 1 B 2)|xy=), so this was alfe's
+CAD-side loader alone.
+
+Filed and fixed as
+=issues/closed/alfe-cad-source-loader-drops-a-second-form-on-a-line.issue=.
+With that fixed the failing form runs and its failure is reported:
+=DONE 1 FAIL= with /Division by zero in ./, at one nesting level and at
+two, and the next request stays OK — which is exactly this issue's
+acceptance list, so it is met, by the other fix.
+
+Kept as a record rather than deleted: the misdiagnosis is instructive.
+The "failure attributed to the NEXT request" observation that made
+re-entrancy plausible has a simpler explanation — the pending error from
+the discarded-form ordering surfaced on a later turn — and the lesson is
+that a shared-file hypothesis should have been checked by LOOKING at the
+files (which is what finally settled it) before being written up as the
+cause.

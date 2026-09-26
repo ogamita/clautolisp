@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-autocad-hung-instance-blocks-com-bootstrap — a stuck acad.exe the sweep cannot end refuses every later COM session
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P1
 #+TYPE: alfe-backend
 #+DEPENDS: -
@@ -79,3 +79,50 @@ question cannot be answered on AutoCAD while those two processes exist.
 The same job answered the BricsCAD half: the file run reached READY in
 25.7 s and reported =DONE 1 FAIL= with exit 1, which is the 2.2.91 fix
 working on a real CAD -- before it, that run was a silent success.
+
+* Progress — clautolisp 2.2.102: all three directions implemented, NONE
+  verified on the machine
+
+Both defects named above are addressed, and the third direction (pruning
+the registry) with them. What cannot be done from here is the
+verification: that runner's AutoCAD is the thing that does not start, and
+the machine was asleep for this work. Everything below is therefore
+written and unit-tested, and still has to be seen working on PF5S26BT.
+
+*The sweep escalates and then refuses* (=scripts/sweep-orphaned-cad.ps1=):
+
+- =taskkill /PID <pid> /T /F= after =Stop-Process= fails -- the stronger
+  hammer, and it takes the process's children with it;
+- if the process is STILL there, the sweep FAILS THE JOB (exit 1) naming
+  each surviving PID and its creation stamp, and saying that they hold the
+  COM registration so an AutoCAD session would only report a rejected
+  call. A doomed bootstrap no longer runs and no longer looks like an alfe
+  defect. =CAD_SWEEP_IGNORE_SURVIVORS=1= is the escape hatch for a job
+  that wants to proceed anyway;
+- the recorded entries are DEDUPLICATED on PID + creation stamp, and the
+  count of raw lines is printed beside the count of instances. That is the
+  97-lines-for-2-processes noise: the registry gains a line per session
+  and was replayed in full.
+
+*The bridge retries a rejected call* (the emitted bridge-autocad.vbs):
+=TouchApp= wraps the FIRST call on the app object (=app.Visible = True=,
+which is where the rejection landed) in ten attempts a second apart,
+because RPC_E_CALL_REJECTED means BUSY -- a modal dialog, a load in
+progress -- and a native client would have an IMessageFilter retry for it.
+The give-up message says how many attempts were made and that another
+instance is probably wedged.
+
+Test: =autocad-bridge-retries-a-rejected-com-call= pins the helper, the
+guarded first touch, the absence of the bare =app.Visible = True=, the
+attempt count in the message, and that the file is still ASCII-only
+VBScript that cscript can parse. alfe suite 1189 checks, 0 failures.
+
+** What remains
+
+- *Verification on the runner.* Play =verify:autocad-activex:windows= (or
+  any AutoCAD job) once the machine is awake: the sweep should now either
+  end the two acad.exe from 2026-09-25 or fail the job naming them, and a
+  transiently busy AutoCAD should be waited out rather than aborted.
+- *The two wedged processes themselves* (pids 17640 and 21928, created
+  2026-09-25 13:22 and 14:01) may well need ending by hand once, since
+  they predate the escalation.

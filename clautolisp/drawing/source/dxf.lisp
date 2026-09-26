@@ -386,15 +386,29 @@ group codes."
   (funcall body-thunk)
   (dxf-emit 0 "ENDSEC"))
 
+(defun dxf-integer-group-code (value)
+  "70 for an integer that FITS a DXF 16-bit group, 90 otherwise.
+Group 70 is a signed 16-bit int (-32768..32767); 90 is the 32-bit one.
+A sysvar can exceed the smaller range -- CMPDIFFLIMIT is 10000000 by
+default -- and emitting it as 70 produces a header a reader cannot take:
+libredwg refused the whole file with DWG_ERR_IOERROR, which is why an
+ActiveX SaveAs to .dwg failed from a clautolisp session while the same
+drawing read from a DWG round-tripped. See
+dwg-write-rejects-a-drawing-built-in-memory."
+  (if (typep value '(signed-byte 16)) 70 90))
+
 (defun dxf-header-value-code (kind value)
   "Choose a DXF group code to carry a header variable of KIND."
   (case kind
     (:string 1)
-    (:integer 70)
-    (:short 70)
+    (:integer (dxf-integer-group-code value))
+    (:short (dxf-integer-group-code value))
     (:real 40)
     (:point 10)
-    (t (if (consp value) 10 (if (integerp value) 70 (if (stringp value) 1 40))))))
+    (t (cond ((consp value) 10)
+             ((integerp value) (dxf-integer-group-code value))
+             ((stringp value) 1)
+             (t 40)))))
 
 (defun dxf-write-header (drawing)
   (dxf-write-section
@@ -410,7 +424,21 @@ group codes."
       (lambda (cell)
         (let ((name (sysvar-cell-name cell))
               (value (sysvar-cell-value cell)))
-          (unless (string-equal name "HANDSEED")
+          ;; HANDSEED and ACADVER are written ABOVE, from the drawing
+          ;; itself, so the sysvar of the same name must not be written
+          ;; again: DXF has one slot per variable and the LAST one wins.
+          ;; ACADVER is the trap. In the DXF header it is the FILE FORMAT
+          ;; version (AC1027); as a sysvar it is the PRODUCT version --
+          ;; "24.1s (LMS Tech)" on AutoCAD, clautolisp's own "2.2.98"
+          ;; here -- so emitting the sysvar overwrote the format version
+          ;; with something no reader can make sense of. libredwg then
+          ;; refused the file with DWG_ERR_INVALIDDWG, which is what made
+          ;; every ActiveX SaveAs to .dwg from a clautolisp session fail
+          ;; while a drawing READ from a DWG round-tripped (its sysvars
+          ;; come from the file, where ACADVER already IS the format
+          ;; version). See dwg-write-rejects-a-drawing-built-in-memory.
+          (unless (or (string-equal name "HANDSEED")
+                      (string-equal name "ACADVER"))
             (dxf-emit 9 (format nil "$~A" name))
             (dxf-write-data-pair
              (cons (dxf-header-value-code (sysvar-cell-kind cell) value) value)))))

@@ -111,3 +111,59 @@ release work with no environment variable and no ASDF sources."
           dirs))
     ;; No duplicates: the same directory must not be probed twice.
     (is (= (length dirs) (length (remove-duplicates dirs :test #'equal))))))
+
+;;; --- a drawing BUILT here, written as DWG ---------------------------
+;;;
+;;; dwg-write-rejects-a-drawing-built-in-memory: dwg-write-then-read-
+;;; round-trips above starts from a PARSED DWG, whose header and tables
+;;; come from the file, so it never exercised what a clautolisp session
+;;; actually produces. Every such session's SaveAs to .dwg failed, for two
+;;; header reasons (a second $ACADVER carrying the product version, and an
+;;; integer sysvar over the 16-bit group-70 range), plus the need for the
+;;; standard symbol tables.
+
+(test dwg-writes-a-drawing-built-in-memory
+  "A drawing created in this process -- standard tables, a product-version
+ACADVER sysvar, an out-of-16-bit-range sysvar, and an entity -- writes as
+DWG and reads back as one. Both header traps are in place, so this fails
+before the 2.2.101 header fixes: DWG_ERR_INVALIDDWG for the duplicate
+$ACADVER, DWG_ERR_IOERROR for the group-70 overflow."
+  (let* ((d (clautolisp.drawing:make-drawing :version :ac1027))
+         (out (format nil "/tmp/clal-dwg-fresh-~D.dwg" (get-internal-real-time))))
+    ;; The symbol tables every real drawing has; without them libredwg
+    ;; cannot build a DWG at all (DWG_ERR_IOERROR).
+    (dolist (spec '((:block-record "*Model_Space" "*Paper_Space")
+                    (:layer "0") (:ltype "BYBLOCK" "BYLAYER" "Continuous")
+                    (:style "Standard") (:dimstyle "Standard")
+                    (:vport "*Active") (:appid "ACAD")))
+      (dolist (name (cdr spec))
+        (clautolisp.drawing:add-table-record
+         d (clautolisp.drawing:make-symbol-table-record
+            :kind (car spec) :name name
+            :data (list (cons 0 (string-upcase (symbol-name (car spec))))
+                        (cons 2 name))))))
+    ;; The two header traps, as a cador document carries them.
+    (clautolisp.drawing:ensure-drawing-variable d "ACADVER" :kind :string
+                                                            :value "2.2.99")
+    (clautolisp.drawing:ensure-drawing-variable d "CMPDIFFLIMIT"
+                                                :kind :integer :value 10000000)
+    (clautolisp.drawing:add-entity
+     d (list (cons 0 "LINE") (cons 8 "0")
+             (cons 10 0.0d0) (cons 20 0.0d0) (cons 30 0.0d0)
+             (cons 11 10.0d0) (cons 21 10.0d0) (cons 31 0.0d0)))
+    (unwind-protect
+         (progn
+           (clautolisp.drawing:write-drawing d out :format :dwg)
+           (is (probe-file out))
+           (let ((back (clautolisp.drawing:read-drawing out)))
+             (is (eq :dwg (clautolisp.drawing:drawing-format back))
+                 "the file written must read back as a DWG")
+             ;; The ENTITY does not survive, and that is a separate,
+             ;; pre-existing defect of the DWG round trip -- a drawing
+             ;; PARSED from a DWG loses an added entity the same way, so
+             ;; it is not about being built in memory. Filed as
+             ;; dwg-round-trip-loses-entities; asserting it here would
+             ;; only pin this test to that bug's fix.
+             (is (zerop (clautolisp.drawing:drawing-entity-count back))
+                 "documents today's entity loss; see dwg-round-trip-loses-entities")))
+      (ignore-errors (delete-file out)))))

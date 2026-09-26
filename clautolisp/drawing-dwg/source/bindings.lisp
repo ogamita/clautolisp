@@ -192,6 +192,33 @@ library ~A: ~A"
                  :format-arguments (list (namestring path) condition))))
       (setf *shim-loaded* t))))
 
+;;; libredwg's error codes are a bit set (third-party/libredwg/include/dwg.h,
+;;; enum Dwg_Error). Reporting the number alone -- "error code 2048" -- told a
+;;; user nothing and cost a bisection to interpret; the names do the work
+;;; (dwg-write-rejects-a-drawing-built-in-memory).
+(defparameter *dwg-error-names*
+  '((1 . "WRONGCRC") (2 . "NOTYETSUPPORTED") (4 . "UNHANDLEDCLASS")
+    (8 . "INVALIDTYPE") (16 . "INVALIDHANDLE") (32 . "INVALIDEED")
+    (64 . "VALUEOUTOFBOUNDS") (128 . "CLASSESNOTFOUND")
+    (256 . "SECTIONNOTFOUND") (512 . "PAGENOTFOUND") (1024 . "INTERNALERROR")
+    (2048 . "INVALIDDWG") (4096 . "IOERROR") (8192 . "OUTOFMEM"))
+  "libredwg's Dwg_Error bits, by value.")
+
+(defun dwg-error-text (rc)
+  "RC as libredwg's own error names, e.g. 2048 -> \"DWG_ERR_INVALIDDWG\" and
+2049 -> \"DWG_ERR_WRONGCRC|DWG_ERR_INVALIDDWG\". Falls back to the number
+for a bit this libredwg does not name."
+  (if (zerop rc)
+      "DWG_NOERR"
+      (let ((parts '()) (rest rc))
+        (dolist (entry *dwg-error-names*)
+          (when (logtest rc (car entry))
+            (push (format nil "DWG_ERR_~A" (cdr entry)) parts)
+            (setf rest (logandc2 rest (car entry)))))
+        (when (plusp rest)
+          (push (format nil "unnamed bits ~D" rest) parts))
+        (format nil "~{~A~^|~}" (nreverse parts)))))
+
 (cffi:defcfun ("clal_dwg_to_dxf" %dwg-to-dxf) :int
   (dwg-path :string) (dxf-path :string))
 

@@ -551,7 +551,66 @@
         (open path "r")                            ; robust fallback on any failure
         f))))
 
-(defun autolisp-source-load-run-body-impl (resolved / f line line-no form-text form-start-line result form-read defun-name eval-result capture-old)
+;; Where the FIRST top-level form in TEXT ends, as a 1-based index, or
+;; NIL when TEXT holds no complete form.
+;;
+;; alfe-cad-source-loader-drops-a-second-form-on-a-line: the read loop
+;; accumulates lines until the text scans as balanced, then called READ on
+;; the whole of it. READ returns the FIRST form only, and the buffer was
+;; then cleared -- so every later form on the same line was thrown away,
+;; silently. (princ "x")(princ "y") printed only x; (setq a 1)(setq b 2)
+;; left b unbound; no diagnostic anywhere. Two forms on one line is
+;; ordinary AutoLISP (clautolisp's own loader runs both), so the loop
+;; takes them one at a time, and that needs to know where the first ends.
+;;
+;; The conventions are autolisp-source-scan-text's: a string runs to its
+;; unescaped closing quote, a semicolon comments out the rest of its line,
+;; everything else is structure. A form is a parenthesised list -- ending
+;; at the paren that brings the depth back to zero -- or a bare atom,
+;; which ends before the first whitespace after it, or at end of text.
+(defun autolisp-source-first-form-end
+       (text / idx len ch depth in-string escape in-comment started found)
+  (setq idx 1)
+  (setq len (strlen text))
+  (setq depth 0)
+  (setq in-string nil)
+  (setq escape nil)
+  (setq in-comment nil)
+  (setq started nil)
+  (setq found nil)
+  (while (and (<= idx len) (not found))
+    (setq ch (substr text idx 1))
+    (cond
+      (in-comment
+       (if (= ch "\n") (setq in-comment nil)))
+      (in-string
+       (cond
+         (escape (setq escape nil))
+         ((= ch "\\") (setq escape T))
+         ((= ch "\"")
+          (setq in-string nil)
+          ;; A string at top level is a complete form by itself.
+          (if (= depth 0) (setq found idx)))))
+      ((= ch ";") (setq in-comment T))
+      ((= ch "\"")
+       (setq in-string T)
+       (setq started T))
+      ((= ch "(")
+       (setq depth (+ depth 1))
+       (setq started T))
+      ((= ch ")")
+       (setq depth (- depth 1))
+       (if (<= depth 0) (setq found idx)))
+      ((member ch (list " " "\t" "\r" "\n"))
+       ;; Whitespace ends a bare atom begun at top level.
+       (if (and started (= depth 0)) (setq found (- idx 1))))
+      (T (setq started T)))
+    (if (not found) (setq idx (+ idx 1))))
+  ;; A bare atom that runs to the end of TEXT ends there.
+  (if (and (not found) started (= depth 0)) (setq found len))
+  found)
+
+(defun autolisp-source-load-run-body-impl (resolved / f line line-no form-text form-start-line result form-read defun-name eval-result capture-old piece piece-end)
   (progn
       (setq f (autolisp-source-open-encoded resolved))
       (if (not f)
@@ -579,10 +638,19 @@
                                   form-start-line
                                   (autolisp-source-leading-defun-name form-text)))
           ((= *AUTOLISP_SOURCE_SCAN_STATE* 'complete)
-           (setq defun-name (autolisp-source-leading-defun-name form-text))
+           ;; form-text can hold MORE THAN ONE form -- two forms on a line
+           ;; is ordinary AutoLISP -- and READ returns only the first, so
+           ;; take them one at a time and keep the remainder. Clearing the
+           ;; buffer after the first is what silently discarded the rest
+           ;; (alfe-cad-source-loader-drops-a-second-form-on-a-line).
+           (setq piece-end (autolisp-source-first-form-end form-text))
+           (while piece-end
+           (setq piece (substr form-text 1 piece-end))
+           (setq form-text (substr form-text (+ piece-end 1)))
+           (setq defun-name (autolisp-source-leading-defun-name piece))
            (setq form-read
                  (vl-catch-all-apply 'read
-                                     (list (autolisp-source-trim-leading-junk form-text))))
+                                     (list (autolisp-source-trim-leading-junk piece))))
            (if (vl-catch-all-error-p form-read)
              (progn
                (close f)
@@ -618,7 +686,18 @@
                                             1
                                             form-start-line
                                             defun-name)))
-                 (setq result eval-result))
+                 (setq result eval-result))))
+           ;; Another form on the same line?
+           (autolisp-source-scan-text form-text)
+           (if (= *AUTOLISP_SOURCE_SCAN_STATE* 'complete)
+             (setq piece-end (autolisp-source-first-form-end form-text))
+             (setq piece-end nil)))
+           ;; What is left is either nothing of substance -- whitespace or
+           ;; a trailing comment -- or the start of a form the next lines
+           ;; continue. Keep the latter, and let it own the current line.
+           (if (= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete)
+             (setq form-start-line line-no)
+             (progn
                (setq form-text "")
                (setq form-start-line nil))))))
       (close f)

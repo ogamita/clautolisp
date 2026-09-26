@@ -37,6 +37,17 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *Saving a drawing as DWG works from a clautolisp session.* Two defects
+  in the DXF header the DWG writer hands to libredwg made every such save
+  fail: =$ACADVER= was written twice — once as the file-format version
+  (=AC1027=), then again from the system variable of the same name, which
+  is the PRODUCT version — and an integer system variable larger than a
+  16-bit group was written with group 70 (=CMPDIFFLIMIT= is 10000000),
+  which no reader accepts. A drawing read from a DWG was unaffected,
+  because its variables come from the file. The failure now also names
+  libredwg's own error, e.g. =DWG_ERR_INVALIDDWG (code 2048)=, instead of
+  a bare number. Note that entities do not yet survive a DWG round trip
+  (=issues/open/dwg-round-trip-loses-entities.issue=).
 - *The standalone program carries the DWG codec, and finds its native
   libraries beside itself.* An installation that contained
   =lib/clautolisp/<os>/<arch>/clal_dwg.*= still answered "no writer codec
@@ -1176,6 +1187,14 @@ file or COM), and forwards the workload.
 
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
+- *A busy AutoCAD is waited out, not given up on.* The COM bridge failed
+  the whole start-up the first time AutoCAD answered "the call was
+  rejected by the callee" (=RPC_E_CALL_REJECTED=), which means the
+  application is BUSY — a modal dialog, a drawing still loading — and not
+  broken. The first call is now retried ten times, a second apart, and if
+  it still fails the message says how many attempts were made and that
+  another instance is probably wedged. (A native client gets this for free
+  from an =IMessageFilter=; a script has to do it by hand.)
 - *The CAD-side runtime adapts to the TARGET CAD, not only to what the
   host happens to accept.* alfe picks between two implementations of
   its printing shadows depending on whether the engine's =defun= takes
@@ -1191,6 +1210,14 @@ file or COM), and forwards the workload.
   =ab=) and =print= ended with a newline instead of the documented
   trailing space. BricsCAD was fixed for this earlier; AutoCAD now
   matches it byte for byte.
+- *Every form of a loaded file runs, including the second one on a line.*
+  On the CAD backends, a line carrying two forms had all but the first
+  SILENTLY DISCARDED: =(princ "x")(princ "y")= printed only =x=, and
+  =(setq a 1)(setq b 2)= left =b= unbound, with no diagnostic and a
+  successful status. Any loaded file written in that (ordinary) style was
+  quietly running less code than it contains. A form spanning several
+  lines after one on the same line is kept as well. See
+  =issues/closed/alfe-cad-source-loader-drops-a-second-form-on-a-line.issue=.
 - *A =-x= expression that fails on a CAD backend now fails the run.*
   On =--bricscad= / =--autocad=, an expression that signalled -- an
   undefined function, a wrong argument -- used to be reported as a
