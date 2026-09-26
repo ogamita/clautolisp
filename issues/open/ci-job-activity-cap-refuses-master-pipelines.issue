@@ -1,0 +1,172 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: ci-job-activity-cap-refuses-master-pipelines — a merge can land on master with NO pipeline at all, and nothing says so
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-ci-job-activity-cap
+#+DATE: 2026-09-27
+
+* Observed
+
+Two consecutive master pipelines, 2026-09-26 21:47Z and 21:55Z, are
+=failed= with *zero jobs*, zero duration, and =yaml_errors: null=. The REST
+pipeline endpoint shows nothing but the failure; GraphQL names it:
+
+#+begin_example
+query { project(fullPath:"ogamita/clautolisp") { pipeline(iid:"2484") {
+  status failureReason jobs { count } } } }
+
+  status        = FAILED
+  failureReason = "The pipeline job activity limit was exceeded."
+  jobs.count    = 0
+#+end_example
+
+| pipeline    | iid  | sha      | created              |
+|-------------+------+----------+----------------------|
+| 2885863084  | 2483 | 12bb8299 | 2026-09-26T21:55:04Z |
+| 2885863269  | 2484 | 7d56d37b | 2026-09-26T21:55:12Z |
+
+Both are merge commits on =master=. *Neither ran any CI.* The merges are in
+the history with no verification behind them, and the only trace is a red
+pipeline that looks exactly like an ordinary failure — which is how it was
+read for the two hours before someone asked GraphQL.
+
+* Why this is not the closed ticket
+
+=issues/closed/ci-native-child-pipeline-creation-fails.issue= diagnosed the
+same COUNTER filling up, and its durable fix #1 is
+=native:pipeline: allow_failure: true= — so that a BRIDGE which cannot
+create its child fails softly instead of reddening the parent.
+
+That fix cannot help here, and the difference matters: *it is the PARENT
+pipeline that is refused now*, at creation, before any job exists. There is
+no bridge to allow-fail and no job to skip. A pipeline that was never
+created cannot report its own absence, so the failure is silent by
+construction: CI's own gates are exactly what is missing.
+
+* Cause — measured, not inferred
+
+163 jobs were in the states that count toward the cap (=pending= 124,
+=created= 30, =running= 9). Where they were:
+
+| pipeline    | ref                          | source          | active jobs |
+|-------------+------------------------------+-----------------+-------------|
+| 2886027994  | master                       | parent_pipeline |          38 |
+| 2886027801  | master                       | push            |          25 |
+| 2885989591  | refs/merge-requests/297/head | parent_pipeline |          21 |
+| 2885864174  | refs/merge-requests/295/head | parent_pipeline |          21 |
+| 2885851115  | refs/merge-requests/294/head | parent_pipeline |          21 |
+| 2885836781  | refs/merge-requests/293/head | parent_pipeline |          21 |
+| 2782105481  | master                       | push            |          15 |
+| 2885828771  | refs/merge-requests/292/head | parent_pipeline |           1 |
+
+Three distinct defects in the existing broom, each independently sufficient:
+
+** 1. The sweep's criterion is AGE, and this leak is minutes old
+
+=scripts/cancel-stale-child-pipelines.py= cancels active children older
+than =SWEEP_MAX_AGE_HOURS= (12). The four children above belong to merge
+requests !293, !294, !295 and !297 — *all four state=merged* — and all four
+were under two hours old. They hold 84 active jobs between them and the
+sweep would not have touched one of them, at any hour of the night.
+
+Their manual jobs can never be played: the merge request they belong to is
+gone. Age is the wrong question. *Whether anyone could ever play them* is
+the right one, and it is answerable — the ref is
+=refs/merge-requests/N/head= and the MR's state is one API call away.
+
+This is the gap the script's own docstring names ("a merge request merged
+from its last push, which is the normal case — has nothing to supersede it,
+and its child lives for ever") and then does not close: it drains those by
+age, once a night, which is far too slow for a repository whose working
+pattern is an evening of agent-merged MRs.
+
+** 2. It runs once a night, so the bucket empties at 03:00Z
+
+The cap was crossed at 21:47Z. The next sweep was due at 03:00Z — five
+hours during which every master pipeline would have been refused. The job
+takes *two seconds* (03:08:04 → 03:08:06 in its own trace) on a docker
+runner. There is no reason for it to be nightly-only.
+
+** 3. Its listing is capped at 500 of 806 children, and it says so in a line nobody read
+
+From the 2026-09-26 03:08Z run, verbatim:
+
+#+begin_example
+child pipelines seen: 500, active: 0, older than 12h: 0
+nothing to sweep; the 0 active child pipeline(s) are all younger than 12h
+#+end_example
+
+=seen: 500= is exactly =for page in range(1, 6)= x 100 — the page cap, not
+a count. Paging to exhaustion finds *806*. So the sweep is blind to every
+child older than the newest 500, which in this repository is a few weeks:
+an immortal child that drifts past the window is never swept again, and the
+sweep prints a reassuring "nothing to sweep" in precisely the situation it
+exists to catch. Same class as the release check that passed a 42 MB
+archive no launcher could open.
+
+** And a fourth, outside the sweep's scope entirely: a stuck PARENT
+
+Pipeline 2782105481, =master=, =source: push=, created *2026-08-22T17:55Z*,
+is still =running= five weeks later. Its jobs: 15 =success=, 1 =manual=,
+and *15 in =created== — =pages=, =deploy:documentation=, the five
+=benchmark:*= and the seven =release:*= jobs — waiting behind a stage that
+never completed (=updated_at= is 2026-08-22T18:01:38Z).
+
+Those 15 jobs have counted against the cap for five weeks, and nothing
+sweeps them: the script lists =source=parent_pipeline= only, by design and
+by name. Roughly one tenth of the ceiling, held permanently, by one
+forgotten pipeline.
+
+* Fix direction
+
+1. *Add a state criterion to the sweep, independent of age.* An active
+   child whose ref is =refs/merge-requests/N/head= and whose MR is =merged=
+   or =closed= is stale IMMEDIATELY. Keep the age rule for everything else
+   (a branch pushed once and abandoned still needs it).
+2. *Run the sweep on every master pipeline*, in =.pre=, as well as
+   nightly. It costs two seconds and it is idempotent. It must never cancel
+   the pipeline it is running in, nor that pipeline's own child.
+3. *Page to exhaustion, and never report success from a truncated
+   listing.* If the listing stops at a page cap, that is a failure to
+   report, not a number to print. Better still, ask for the active states
+   directly — active children are few, so the window stops mattering.
+4. *Cover stuck parents* under a separate, much larger threshold (a
+   legitimately long master pipeline waiting on a serial Windows queue
+   takes hours; five weeks is not that). The script then sweeps stale
+   PIPELINES, not only children, and should be named accordingly.
+5. *Make the log tell the truth*: print the active-job total and the
+   headroom, so a filling bucket is visible in the one place that looks at
+   it every night, before it refuses a merge.
+
+* Acceptance criteria
+
+- A child pipeline of a merged or closed MR is cancelled by the sweep
+  regardless of age, and a test proves the selection (not just that the
+  script runs).
+- The sweep runs automatically on master pipelines, and provably never
+  cancels its own pipeline or its own child.
+- A truncated pipeline listing is a FAILURE, not a printed number; the
+  count in the log is a real count.
+- A stuck parent pipeline older than the parent threshold is cancelled.
+- The log reports active jobs and headroom.
+- =make= target + CI lane, as =check-nightly-sweep-isolation= already does
+  for the other half of this mechanism.
+
+* Not done here, and why
+
+The bucket was still full when this was filed. Cancelling the four
+merged-MR children by hand was refused by this session's tool policy
+(cancelling live CI workloads), which is a reasonable guard rather than an
+obstacle: the project has its own sanctioned mechanism for exactly this,
+=sweep:stale-child-pipelines=, and the right move is to make that mechanism
+correct and then play it. So the draining happens through the fixed sweep,
+not through an agent cancelling pipelines by hand.
+
+* Note
+
+Found while reading why two master pipelines were red before playing the
+Windows AutoCAD evidence jobs. Filed per AGENTS.md rather than mentioned:
+a merge that lands with no CI is the most expensive kind of silence this
+repository can have.

@@ -177,7 +177,67 @@ CAD (machine-bound):
   pendre. REPRODUIT SOUS LINUX AVANT CORRECTION (=cad-mock-serves-a-request-that-
   arrives-late=, action envoyée 3 s après READY) : =got :ABORTED=, le même
   symptôme au même mot. RIEN n'a été sauté — ni =:skip-on-os=, ni assertion
-  relâchée. Reste : voir la lane verte sur le runner
+  relâchée. Reste : voir la lane verte sur le runner. **LA LANE A RÉPONDU, ET IL
+  Y AVAIT UNE SECONDE CAUSE (clautolisp 2.2.125)** : =test:alfe:windows= sur
+  master en 2.2.124 (job 16758224382) échoue sur le test AJOUTÉ pour reproduire
+  la première (=got :ABORTED=), donc le budget par tour n'était pas la seule
+  raison — exactement ce que le critère demandait à la lane de dire. La seconde
+  est dans la LECTURE du mock, et c'est l'anti-patron Windows que ce dépôt
+  connaît déjà : =probe-file= puis =read-file-as-string= NUE, alors que le
+  pilote publie =stdin.txt= par =write-atomic-file= (rename = delete+rename sous
+  Windows) — entre le probe qui réussit et l'open qui suit, le fichier peut être
+  absent ou encore tenu. Et cette lecture était LA SEULE opération du cycle que
+  =%mock-retry-file-op= n'enrobait pas, alors que sa propre docstring décrit ce
+  transitoire et dit qu'il « abandonne TOUT le thread du mock ». Pire, le garde
+  du thread était un =ignore-errors= qui JETAIT la condition : un mock mort et un
+  mock lent étaient indiscernables à l'assertion (=:ABORTED=, sans cause) — la
+  vraie raison pour laquelle il a fallu une semaine et non une course.
+  CORRIGÉ : =%mock-consume-request= fond l'attente et la lecture en UNE boucle
+  (=:if-does-not-exist nil=, violations de partage rattrapées, absence ET vacuité
+  traitées pareil comme « pas encore » — un fichier vide est une requête à
+  moitié écrite, la consommer la perdrait) ; =%call-recording-mock-condition=
+  remplace le =ignore-errors= (il avale toujours, il le DOIT, mais il ENREGISTRE)
+  et =%mock-cad-failure-note= met la condition dans le message, donc une
+  prochaine rougeur nommera sa cause au lieu d'imprimer =:ABORTED=. 2 tests,
+  dont le cas du fichier VIDE qui discrimine. PIÈGE DE PORTABILITÉ consigné : la
+  première version du test sur le garde provoquait une VRAIE panne (supprimer le
+  workdir) — verte sous SBCL, ROUGE sous CCL où cette écriture ne signale pas ;
+  le garde est donc extrait en fonction et le test éprouve le mécanisme que le
+  thread exécute vraiment. Un test qui dépend de l'hôte qui fait échouer une
+  opération éprouve l'hôte. 1278 checks, 0 échec, SBCL ET CCL. PAS PROUVÉ que ce
+  soit la DERNIÈRE cause : reproduire un transitoire d'absence demande la
+  plateforme dont le rename n'est pas atomique. Reste : voir la lane verte
+- NEXT =ci-job-activity-cap-refuses-master-pipelines= — P1, NOUVEAU 2026-09-27,
+  trouvé en lisant pourquoi deux pipelines master étaient rouges avant de jouer
+  les jobs de preuve AutoCAD. Les pipelines 2885863084 et 2885863269 (21:55Z,
+  deux commits de merge sur master) sont =failed= avec ZÉRO job et
+  =yaml_errors: null= ; GraphQL les nomme : =failureReason: "The pipeline job
+  activity limit was exceeded."= **Deux merges sur master n'ont donc eu AUCUNE
+  CI**, et la seule trace est une pipeline rouge qui ressemble à n'importe quel
+  échec. Ce n'est PAS le ticket clos =ci-native-child-pipeline-creation-fails=
+  dont le correctif #1 (=native:pipeline: allow_failure: true=) ne peut rien ici
+  : c'est la pipeline PARENTE qui est refusée à la création, il n'y a ni bridge à
+  laisser échouer ni job à sauter — une pipeline jamais créée ne peut pas
+  signaler son absence. MESURÉ : 163 jobs actifs, dont 84 dans les enfants de
+  !293/!294/!295/!297, **toutes fusionnées** (leurs jobs manuels ne seront jamais
+  joués) et toutes de MOINS DE DEUX HEURES, donc invisibles pour un balayage qui
+  ne trie que par ÂGE (=SWEEP_MAX_AGE_HOURS= 12) une fois par nuit à 03:00Z. Le
+  plafond a été franchi à 21:47Z. Trois défauts de plus, chacun suffisant : (1)
+  le critère est l'âge alors que la question est « quelqu'un pourra-t-il encore
+  jouer ces jobs ? », répondable par l'état de la MR ; (2) le balayage ne tourne
+  que la nuit alors qu'il dure DEUX SECONDES ; (3) son listing est plafonné —
+  son propre log dit =child pipelines seen: 500= (= =range(1, 6)= x 100), alors
+  qu'en paginant jusqu'au bout il y en a **806**, et il imprime « nothing to
+  sweep » précisément dans la situation qu'il existe pour attraper. Et un
+  quatrième hors de sa portée : la pipeline PARENTE 2782105481 (master, poussée
+  le **2026-08-22**) est encore =running= cinq semaines plus tard avec 15 jobs en
+  =created= (=pages=, =deploy:documentation=, les =benchmark:*= et les
+  =release:*=) — un dixième du plafond tenu en permanence, et le script ne liste
+  que =source=parent_pipeline=, par conception et par son nom. NON FAIT ici :
+  vider le seau à la main (annuler des workloads CI vivants) a été refusé par la
+  politique d'outils de cette session, ce qui est un garde-fou raisonnable et non
+  un obstacle — le projet a son propre mécanisme sanctionné pour ça
+  (=sweep:stale-child-pipelines=), donc on le rend correct puis on le joue
 - TODO =cad-sweep-blocks-bricscad-jobs-over-autocad= — P3, trouvé en corrigeant
   le précédent : parmi les 22 jobs stoppés, =harvest:sysvars:bricscad:windows=
   — un job BRICSCAD arrêté à cause de trois =acad.exe=. L'argument du garde-fou

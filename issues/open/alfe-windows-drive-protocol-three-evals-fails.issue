@@ -111,6 +111,79 @@ alfe suite 1232 checks, 0 failures on SBCL.
       is what that lane will say. It is =allow_failure: true=, so it gates
       nothing meanwhile.
 
+* The lane answered, and there was a SECOND cause (clautolisp 2.2.125)
+
+=test:alfe:windows= ran on master at 2.2.124 (job 16758224382) and *failed* --
+on the very test added to reproduce the first cause:
+
+#+begin_example
+CAD-MOCK-SERVES-A-REQUEST-THAT-ARRIVES-LATE
+  a late request must still be acknowledged; got :ABORTED
+Did 1247 checks.  Pass: 1245 (99%)  Fail: 2 ( 0%)
+#+end_example
+
+(The two entries are the same failure: the suite runs twice per SBCL process.)
+
+So the per-round budget was NOT the only reason, exactly as the criterion below
+asked the lane to say. The second cause is in the mock's read, and it is the
+Windows anti-pattern this repository already knows:
+
+#+begin_src lisp
+(loop until (probe-file stdin) ...)          ; wait
+(when (probe-file stdin)
+  (setf request (read-file-as-string stdin)) ; <- probe, THEN open
+  ...)
+#+end_src
+
+The driver publishes =stdin.txt= with =WRITE-ATOMIC-FILE= -- write a temp,
+rename over -- and on Windows that rename is *delete+rename* (UIOP's
+overwrite). Between a =PROBE-FILE= that succeeds and the =OPEN= that follows,
+the file can be absent, or still held by the renaming party. And that read was
+*the one operation in the cycle =%MOCK-RETRY-FILE-OP= did not wrap* -- its own
+docstring describes this transient and says that hitting it "aborts the WHOLE
+mock thread, so it stops consuming stdin.txt". Which is what happened: the mock
+died, nothing consumed the request, and the driver timed out.
+
+** Why it said nothing
+
+The mock's body is guarded by design (an unhandled error in a thread under
+=--disable-debugger= aborts the whole test process), but the guard was
+=IGNORE-ERRORS= -- it *discarded* the condition. So a dead mock and a slow one
+were indistinguishable at the assertion: =:ABORTED=, no cause. That is the real
+reason this took a week rather than a run.
+
+** Fixed
+
+- =%MOCK-CONSUME-REQUEST= replaces the wait-then-probe-then-read with ONE
+  loop: attempt the read (=:if-does-not-exist nil=, sharing violations caught),
+  treat absence AND emptiness alike as "not yet", stop at the deadline. The
+  only way to know a file is readable is to read it. An empty read is left
+  alone on purpose -- it is what a half-written file looks like, and consuming
+  it would strand the request for good.
+- =%CALL-RECORDING-MOCK-CONDITION= replaces the bare =IGNORE-ERRORS=: still
+  swallows (it must), but *records* into =*MOCK-CAD-CONDITION*=, and
+  =%MOCK-CAD-FAILURE-NOTE= puts it in the failure message. If this lane goes
+  red again it will name its cause instead of printing =:ABORTED=.
+- Two tests: =cad-mock-consume-request-never-probes-then-opens= (absent,
+  half-written, complete -- the empty-file case is the one that discriminates)
+  and =cad-mock-death-is-recorded-not-swallowed=.
+
+*A portability trap, recorded because the first version of the test fell into
+it.* That second test first arranged a REAL failure -- delete the workdir so
+the mock's first write signals. It passed on SBCL and *failed on CCL*, where
+that write does not signal. So the guard was factored into a function and the
+test now exercises the mechanism the thread actually runs, on both hosts. A
+test that depends on which host makes an operation fail is testing the host.
+
+alfe suite: *1278 checks, 0 failures, on SBCL AND CCL.*
+
+*Still not proven*: that this was the LAST cause. The hypothesis is strong (the
+symptom, the unwrapped read, the silent guard, and the helper's own docstring
+all agree) but it cannot be run here -- reproducing an absent-file transient
+needs the platform whose rename is not atomic. The lane will say. What IS now
+guaranteed regardless of whether the hypothesis is right: the next red run
+names its condition.
+
 * Note
 
 Filed per AGENTS.md: a defect noticed while doing something else gets its own
