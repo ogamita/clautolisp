@@ -837,11 +837,16 @@ through verbatim."
                  ;; the unfiltered trace. The live stream only sees
                  ;; the filtered text.
                  (write-string out captured-stdout)
+                 ;; The dribble records what the USER would have seen, so the
+                 ;; FILTERED text: an [ALFE-CONTROL] line is alfe's own
+                 ;; signalling, never engine output (alfe-dribble.issue).
                  (when (plusp (length visible))
+                   (alfe.dribble:record-output visible)
                    (write-string visible output-stream)
                    (finish-output output-stream))))
              (when (plusp (length err))
                (write-string err captured-stderr)
+               (alfe.dribble:record-error-output err)
                (write-string err error-stream)
                (finish-output error-stream))))
          (sync-verbosity-from-runtime ()
@@ -910,6 +915,12 @@ trace line."
          (send-action (form-text)
            "Atomically publish FORM-TEXT into stdin.txt, then wait
 for the runtime to acknowledge `DONE <next-counter>'."
+           ;; The form is this session's INPUT -- the nearest thing a
+           ;; file-protocol conversation has to what a user typed -- and it is
+           ;; recorded raw and unprefixed, as the format wants
+           ;; (alfe-dribble.issue). Before sending, so the transcript reads in
+           ;; the order it happened even when the engine answers instantly.
+           (alfe.dribble:record-input form-text)
            (alfe.protocol.file:send-stdin protocol-session form-text)
            (wait-done))
          (interactive-loop ()

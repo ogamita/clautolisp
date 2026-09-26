@@ -55,6 +55,9 @@
   :components
   ((:file "source/error")
    (:file "source/logging")
+   ;; The dribble recorder is a leaf: it writes a file and knows nothing of
+   ;; backends or the CLI, so it loads before both (alfe-dribble.issue).
+   (:file "source/dribble")
    (:file "source/workdir")
    (:file "source/plugin")
    (:file "source/backend")
@@ -171,6 +174,7 @@
    (:file "tests/backend-tests")
    (:file "tests/cli-tests")
    (:file "tests/backend-clautolisp-tests")
+   (:file "tests/dribble-tests")
    (:file "tests/file-protocol-tests")
    (:file "tests/backend-cad-tests")
    (:file "tests/empty-drawing-tests")

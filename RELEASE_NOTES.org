@@ -1252,6 +1252,20 @@ alfe is the multi-backend driver: it speaks the AutoLISP CLI surface,
 resolves a backend (in-process clautolisp, or a CAD-host bridge via
 file or COM), and forwards the workload.
 
+** Recording a session (=alfe-user-manual.org= § /Recording a session/)
+
+- *=alfe --dribble= keeps a transcript of a CAD session.* The forms alfe
+  sends, the engine's output (~;; O:~), its error output (~;; E:~) and
+  condition reports (~;; C:~), in clautolisp's own format so the two can be
+  read and diffed side by side. Bare it writes
+  =$XDG_STATE_HOME/alfe/dribbles/<backend>/<timestamp>.log=;
+  ~--dribble=FILE~ writes FILE, appended when it exists. The header names
+  *both* versions, alfe's and the engine's. Under =--clautolisp= the request
+  is forwarded to the engine, which records its own richer REPL transcript —
+  one file per session, never two partial ones. ~--dribble-interactors=IS~
+  selects which interactors are recorded and is forwarded to =--clautolisp=,
+  where interactors exist.
+
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
 - *=alfe --list-hosts= answers.* It prints cador, cadtui and nihil with a

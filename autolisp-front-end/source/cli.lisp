@@ -354,6 +354,16 @@ Bootstrap and runtime:
                          to FILE (one line). Lets a caller (e.g. a CI script)
                          locate a --keep-workdir workdir without scraping stdout.
                          Mirrors $AUTOLISP_WRITE_WORKDIR_PATH.
+  --dribble              Record the session (forms sent, output `;; O:', error
+                         output `;; E:', conditions `;; C:') into
+                         $XDG_STATE_HOME/alfe/dribbles/BACKEND/TIMESTAMP.log.
+                         The header names both versions (alfe and the CAD).
+  --dribble=FILE         Record into FILE (appended when it exists).
+  --dribble-interactors=IS  Which interactors are recorded: t for all, or a
+                         comma-separated list. Forwarded to --clautolisp, where
+                         interactors exist; the CAD backends have none and
+                         record the whole session. Under --clautolisp the
+                         recording is the ENGINE's own REPL transcript.
   --dry-run              Print the resolved action plan and exit 0.
   --print-command        Stage the workdir exactly as a real run would, print
                          the CAD command line alfe would launch (one shell-ready
@@ -641,7 +651,28 @@ error rather than silently last-winning."
     :longs '("--write-workdir-path") :takes-arg-p t
     :handler (lambda (opts value name)
                (declare (ignore name))
-               (setf (cli-options-write-workdir-path opts) value)))))
+               (setf (cli-options-write-workdir-path opts) value)))
+   ;; --- dribble (alfe-dribble.issue) -------------------------------
+   ;; The slots live in the SHARED cli-options struct, which already
+   ;; carried them ("clautolisp today, alfe planned"); only the specs
+   ;; are per-program, because clautolisp's --dribble and alfe's differ
+   ;; in what they record. Spelled exactly as clautolisp spells them --
+   ;; a user who knows one knows the other.
+   ;;
+   ;; --dribble takes an OPTIONAL value: bare records into the default
+   ;; timestamped file, --dribble=FILE into FILE (appended).
+   (make-option-spec
+    :longs '("--dribble") :shorts nil :takes-arg-p t :optional-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (clautolisp.autolisp-cli:cli-options-dribble opts)
+                     (or value t))))
+   (make-option-spec
+    :longs '("--dribble-interactors") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (clautolisp.autolisp-cli:cli-options-dribble-interactors opts)
+                     (clautolisp.autolisp-cli:parse-dribble-interactors
+                      value name))))))
 
 (defparameter *alfe-option-specs* (%make-alfe-option-specs))
 
@@ -1465,6 +1496,11 @@ engine."
                                 (cli-options-io-encoding options)
                                 :cli-options options
                                 :version-text version-text)))
+    ;; Start recording, for the backends alfe records itself. The clautolisp
+    ;; backend is NOT one of them: its flags were forwarded to the engine, which
+    ;; records its own REPL, and a second alfe-side file would be a poorer copy
+    ;; of the same session (alfe-dribble.issue; pjb's split).
+    (%start-dribble-if-asked options version-text)
     (unwind-protect
          (progn
            (run-hook :engine-started session)
@@ -1523,8 +1559,44 @@ engine."
       (%safe-hook :pre-shutdown session :reason :cli-exit)
       (ignore-errors (shutdown session :reason :cli-exit))
       (%safe-hook :post-shutdown session :workdir workdir)
+      ;; Close the transcript before the workdir goes: the dribble lives outside
+      ;; it (a run that cleans up must still leave its record behind), but the
+      ;; open line is flushed here rather than at process exit, so a killed alfe
+      ;; loses at most the line in progress.
+      (ignore-errors (alfe.dribble:stop-dribble))
       (ignore-errors (cleanup-workdir backend workdir
                                       :keep-p (cli-options-keep-workdir-p options))))))
+
+(defun %start-dribble-if-asked (options version-text)
+  "Start alfe's own recording when --dribble was given AND the selected backend
+is one alfe records: the CAD backends. Returns the path, or NIL.
+
+VERSION-TEXT is alfe's own version, threaded from RUN -- alfe.tool owns the
+stamp and loads after this file, so the value is passed in rather than reached
+for.
+
+The clautolisp backend is excluded BY DESIGN, not by omission: its --dribble was
+forwarded into the spawned engine's argv (or, in :direct mode, the engine's own
+recording is already in-process), and the engine's REPL transcript is richer
+than anything alfe could reconstruct from the outside -- it has the prompts, the
+interactor stack, and the values. Recording both would leave two files for one
+session, which is the double-recording the issue's acceptance criteria forbid."
+  (let ((dribble (clautolisp.autolisp-cli:cli-options-dribble options))
+        (kind (cli-options-backend options)))
+    (when (and dribble (member kind '(:autocad :bricscad)))
+      (let ((path (alfe.dribble:start-dribble
+                   :file dribble
+                   :backend kind
+                   :alfe-version version-text
+                   ;; What alfe KNOWS now: the --cad denotation it resolved
+                   ;; (acad-2022, bricscad-v25, …). The engine has not answered
+                   ;; yet and may never; ALFE.DRIBBLE writes `unknown' then, and
+                   ;; the header is not delayed for it -- a transcript that
+                   ;; appeared only after a successful CAD start would be
+                   ;; missing the sessions worth reading.
+                   :cad-version (cli-options-cad options))))
+        (log-verbose "cli: dribble recording into ~A" path)
+        path))))
 
 (defun print-command-plan (options backend &key version-text
                                                 (stream *standard-output*))

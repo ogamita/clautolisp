@@ -360,7 +360,12 @@ resolved at START-ENGINE time."
   ;; User-supplied `-e ENC' string, forwarded as the subprocess
   ;; argv's `-e ENC' so the spawned engine reads source files in
   ;; the same encoding. NIL when the user did not pass `-e'.
-  (load-encoding nil))
+  (load-encoding nil)
+  ;; The user's --dribble / --dribble-interactors request, forwarded to
+  ;; the spawned engine, which records its OWN REPL (alfe-dribble.issue).
+  ;; T = the engine's default timestamped file, a string = that file.
+  (dribble nil)
+  (dribble-interactors nil))
 
 ;;; --- START-ENGINE: direct variant ----------------------------------
 
@@ -448,6 +453,9 @@ SHUTDOWN."
              (when effective
                (clautolisp.autolisp-runtime:set-default-source-encoding
                 context effective)))
+           ;; --dribble under the IN-PROCESS engine (alfe-dribble.issue).
+           (when cli-options
+             (%warn-direct-dribble-unavailable cli-options))
            (let ((session (%make-direct-session
                            :backend backend
                            :workdir workdir
@@ -472,7 +480,17 @@ SHUTDOWN."
                               :dialect dialect
                               :host host
                               :interactive-p interactive-p
-                              :load-encoding load-encoding))))
+                              :load-encoding load-encoding
+                              ;; Forwarded, not recorded here: the engine's own
+                              ;; REPL transcript is the one worth having
+                              ;; (alfe-dribble.issue).
+                              :dribble (when cli-options
+                                         (clautolisp.autolisp-cli:cli-options-dribble
+                                          cli-options))
+                              :dribble-interactors
+                              (when cli-options
+                                (clautolisp.autolisp-cli:cli-options-dribble-interactors
+                                 cli-options))))))
 
 ;;; --- START-ENGINE: subprocess variant ------------------------------
 
@@ -485,8 +503,62 @@ keyword name matches the reader's dialect registry, so :clautolisp ->
       (string-downcase (symbol-name dialect-keyword))
       "strict"))
 
+(defun %warn-direct-dribble-unavailable (cli-options)
+  "Say why --dribble records nothing under the IN-PROCESS clautolisp engine, and
+what to do instead. Returns T when it warned.
+
+The recording clautolisp's --dribble performs is a REPL one: three Gray streams
+tee the REPL's own input/output character by character, and that implementation
+belongs to CLAUTOLISP.TOOLS.CLAUTOLISP -- the program, not the engine. It
+attaches itself through *DRIBBLE-HOOK*, and in alfe's :direct mode nothing
+attaches it, so (clal-dribble …) is a documented no-op there. alfe could not
+substitute its own recorder without producing something visibly poorer than what
+the same flag gives elsewhere.
+
+So the two honest answers are named, and the third -- recording nothing and
+saying nothing -- is the one avoided: a user who asked for a transcript must not
+discover its absence by looking for the file."
+  (let ((dribble (clautolisp.autolisp-cli:cli-options-dribble cli-options)))
+    (when dribble
+      (format *error-output*
+              "~&alfe: --dribble records nothing with the IN-PROCESS clautolisp ~
+engine: the recording is clautolisp's own REPL tee, which only the clautolisp ~
+program attaches.~%~
+alfe: for a transcript, either run the engine as a child -- `alfe --clautolisp ~
+--backend subprocess --dribble …', which forwards the flag so the engine records ~
+itself -- or use clautolisp directly. Under --autocad / --bricscad, alfe records ~
+the session itself.~%")
+      t)))
+
+(defun %dribble-interactors-cli-value (interactors)
+  "The --dribble-interactors value to forward for INTERACTORS (the parsed
+cli-options slot: :ALL, or a list of names), or NIL when there is nothing to
+forward. The spelling is the engine's own: `t' for all, else a comma-separated
+list -- so the value the user typed is what the engine receives."
+  (cond ((null interactors) nil)
+        ((eq interactors :all) "t")
+        ((listp interactors) (format nil "~{~A~^,~}" interactors))
+        (t nil)))
+
+(defun %dribble-cli-flags (session)
+  "The argv fragment forwarding SESSION's dribble request to the spawned
+engine: NIL when none was asked for, `--dribble' for the engine's default file,
+`--dribble=FILE' for an explicit one, plus --dribble-interactors when given."
+  (let ((dribble (clautolisp-subprocess-session-dribble session))
+        (interactors (clautolisp-subprocess-session-dribble-interactors session)))
+    (append
+     (cond ((null dribble) nil)
+           ((eq dribble t) (list "--dribble"))
+           ((stringp dribble) (list (format nil "--dribble=~A" dribble)))
+           (t nil))
+     ;; Only with a dribble: the option alone would configure a recording
+     ;; that is not happening, and the engine would rightly ignore it.
+     (when dribble
+       (let ((value (%dribble-interactors-cli-value interactors)))
+         (when value (list (format nil "--dribble-interactors=~A" value))))))))
+
 (defun start-subprocess-engine (backend workdir &key dialect host interactive-p
-                                load-encoding)
+                                load-encoding dribble dribble-interactors)
   ;; The Phase 1 subprocess variant defers the actual fork to
   ;; EVAL-PLAN so we can map every action to a clautolisp-sbcl CLI
   ;; flag and run the engine *once* with the right argv (rather than
@@ -514,7 +586,9 @@ keyword name matches the reader's dialect registry, so :clautolisp ->
                                    (open-output-file workdir "output.txt"))
                     :errors-file (when workdir
                                    (open-output-file workdir "errors.txt"))
-                    :load-encoding load-encoding)))
+                    :load-encoding load-encoding
+                    :dribble dribble
+                    :dribble-interactors dribble-interactors)))
       (session-state-set session :ready)
       session)))
 
@@ -795,6 +869,15 @@ subprocess variant."
             ;; it's in effect from the very first -l/-x in the queue.
             (let ((enc (clautolisp-subprocess-session-load-encoding session)))
               (when enc (list "-Esource" enc)))
+            ;; Forward the dribble request, the same way as -Esource above
+            ;; (alfe-dribble.issue; pjb: "alfe --clautolisp surement
+            ;; l'implemente deja dans clautolisp"). The ENGINE records its own
+            ;; REPL, which is the transcript worth having -- alfe records
+            ;; nothing for this backend, so there is no second, poorer copy of
+            ;; the same session. --dribble-interactors only means anything
+            ;; where interactors exist, which is exactly here, so it is
+            ;; forwarded too.
+            (%dribble-cli-flags session)
             (loop for action in plan
                   for flags = (action-to-cli-flags action)
                   when flags append flags))))
