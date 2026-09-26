@@ -70,6 +70,62 @@ open via vl-catch-all, so the bug persists there but is no worse). Needs a
 Windows/accoreconsole run to confirm: repro with `-Esource utf-8` at LISPSYS
 0 vs 1/2 (remember /isolate pins LISPSYS — drop it or pre-set the profile).
 
+== Update 2026-09-26 (real error captured + ROOT CAUSE CORRECTED) ==
+
+The encoding:experiment:autocad:windows job finally ran (AutoCAD 2022
+accoreconsole, MR !292 native child 2885828771; the enhanced probe now
+surfaces the real message). Two things are now settled.
+
+(A) The real error, across chcp 1252 / 437 / 65001, UTF-8 and C locale, and
+all three source-write encodings, is IDENTICAL and is accoreconsole's own
+NATIVE (load) failure:
+
+    source.default.load  = LOAD-ERR: La commande CHARGER n'a pas abouti: "encp-src-default.lsp"
+    source.utf8.load     = LOAD-ERR: (idem)
+    source.utf16le.load  = LOAD-ERR: (idem)
+    on-disk bytes confirmed:  ...22 41 e9 5a 22 29   = (setq ENCSRC "A<e9>Z")
+
+Sub-finding: the "w,ccs=UTF-8" / "w,ccs=UTF-16LE" WRITE modes are ignored on
+accoreconsole too — all three write variants produced identical single-e9-byte
+files, so the write side never re-encodes either.
+
+(B) ROOT-CAUSE CORRECTION. The "Context / likely cause" above (deported
+`autolisp-source-load` shadow, protocol transport) is WRONG for what this
+probe measures. Verified against the implementation:
+
+  * alfe NEVER redefines the LOAD symbol's function cell. Interception is a
+    purely STRUCTURAL, per-form check: autolisp-eval-request-form
+    (autolisp-bootstrap.lsp:891) routes a form to the shim only when the form
+    it is HANDED is itself a `(load …)` list (autolisp-load-form-p :755).
+    *CLLOAD_DEFAULT_LOADER* (:1021) is only a marker setq, never read to
+    reroute LOAD.
+  * The `-l` scenario ENTRY load IS a top-level `(load "<staged>")`, so THAT
+    goes through the shim. But srcprobe's own load — encoding-probe.lsp:104,
+    `(vl-catch-all-apply 'load (list path))` — is (a) nested inside the
+    srcprobe defun body (never handed to the per-form dispatcher) and (b) not
+    even a `(load …)` head. So it resolves accoreconsole's NATIVE LOAD builtin.
+    That is why the message is AutoCAD's native "La commande CHARGER".
+
+Consequence: a fix confined to autolisp-source-open-encoded /
+autolisp-source-load-run-body-impl would NOT be exercised by this probe. The
+shim fix (§3, bring it to the reference algorithm) is still worth doing — it
+governs TOP-LEVEL and deported loads, the common real path — but it cannot be
+verified by the probe as written, and it does NOT address the nested/native
+case this probe exercises.
+
+DECISION NEEDED (pjb) — the fork changes this issue's approach:
+  (a) Redefine the LOAD symbol's function cell to autolisp-source-load in the
+      engine, so EVERY (load …), nested or not, deports to the byte-safe shim.
+      Fixes the general case but has broad blast radius (all loads reroute).
+  (b) Restructure the probe so the load is a TOP-LEVEL form (caught + deported)
+      — loses the write-then-load-in-one-function measurement design.
+  (c) Accept that native accoreconsole LOAD cannot read a high-byte file at
+      LISPSYS 0 (an AutoCAD limitation), scope this issue to the shim/top-level
+      path, and file the native limitation separately.
+Also open regardless: at LISPSYS 0 there may be NO AutoLISP (open) mode that
+gives a total single-byte read, so the shim fix itself may need a byte-level
+read — empirically untested (needs a runner cycle).
+
 == Related ==
 
 - issues/open/encoding-situations-cli-options.issue (§2.1 load impls, §7.1
