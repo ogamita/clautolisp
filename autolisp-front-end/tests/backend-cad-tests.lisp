@@ -2828,3 +2828,42 @@ registration that names the release."
         (is (equal "AutoCAD.Application.24.1" progid))
         (is (eq :ok (second (assoc "AutoCAD.Application.24.1" tried
                                    :test #'string=))))))))
+
+(test autocad-bridge-retries-a-rejected-com-call
+  "alfe-autocad-hung-instance-blocks-com-bootstrap. RPC_E_CALL_REJECTED --
+`L'appel a ete rejete par l'appele' -- means the COM server is BUSY, not
+broken: a modal dialog, a load in progress. A native client installs an
+IMessageFilter and the runtime retries for it; a script must retry by
+hand, and this bridge failed the whole bootstrap on the first rejection.
+The emitted VBS must carry the retry, and must still be ASCII-clean
+VBScript with it."
+  (let ((workdir (uiop:ensure-directory-pathname
+                  (merge-pathnames
+                   (format nil "alfe-test-acad-retry-~D/" (random 999999))
+                   (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist workdir)
+          (let ((vbs (merge-pathnames "bridge-autocad.vbs" workdir)))
+            (alfe.backend.autocad:emit-bridge-vbs
+             vbs
+             :runtime-load-path (merge-pathnames "run-common.lsp" workdir)
+             :status-path (merge-pathnames "protocol/status.txt" workdir)
+             :error-path (merge-pathnames "protocol/stderr.txt" workdir))
+            (let ((text (read-back vbs)))
+              ;; The retry helper, and the first touch going through it.
+              (is (search "Function TouchApp(theApp, tries)" text))
+              (is (search "WScript.Sleep 1000" text))
+              (is (search "If Not TouchApp(app, 10) Then" text))
+              ;; The bare unguarded touch must be gone, or the first
+              ;; rejection still kills the bootstrap.
+              (is (not (search (format nil "~%app.Visible = True~%") text))
+                  "the unguarded app.Visible must not come back")
+              ;; The give-up message says how many attempts were made,
+              ;; and what to do about it.
+              (is (search "on 10 attempts" text))
+              (is (search "wedged" text))
+              ;; Still valid, ASCII-only VBScript.
+              (is (null (%vbs-offending-lines text))))))
+      (uiop:delete-directory-tree workdir :validate t
+                                          :if-does-not-exist :ignore))))

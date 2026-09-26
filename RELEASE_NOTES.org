@@ -1187,6 +1187,14 @@ file or COM), and forwards the workload.
 
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
+- *A busy AutoCAD is waited out, not given up on.* The COM bridge failed
+  the whole start-up the first time AutoCAD answered "the call was
+  rejected by the callee" (=RPC_E_CALL_REJECTED=), which means the
+  application is BUSY — a modal dialog, a drawing still loading — and not
+  broken. The first call is now retried ten times, a second apart, and if
+  it still fails the message says how many attempts were made and that
+  another instance is probably wedged. (A native client gets this for free
+  from an =IMessageFilter=; a script has to do it by hand.)
 - *The CAD-side runtime adapts to the TARGET CAD, not only to what the
   host happens to accept.* alfe picks between two implementations of
   its printing shadows depending on whether the engine's =defun= takes

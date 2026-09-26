@@ -724,6 +724,34 @@ End Sub
 
 errNumber = 0
 errDescription = \"\"
+lastTouchError = \"\"
+
+' RPC_E_CALL_REJECTED (&H80010001, \"L'appel a ete rejete par l'appele\")
+' and RPC_E_SERVERCALL_RETRYLATER (&H8001010A) do not mean the server is
+' broken: they mean it is BUSY -- a modal dialog, a load in progress, a
+' command mid-flight. A native client installs an IMessageFilter and the
+' COM runtime retries for it; a script must retry by hand. Failing on the
+' first rejection made a transiently busy AutoCAD indistinguishable from
+' a wedged one, and said neither. See
+' alfe-autocad-hung-instance-blocks-com-bootstrap.
+Function TouchApp(theApp, tries)
+  Dim i
+  TouchApp = False
+  For i = 1 To tries
+    On Error Resume Next
+    theApp.Visible = True
+    If Err.Number = 0 Then
+      On Error GoTo 0
+      TouchApp = True
+      Exit Function
+    End If
+    lastTouchError = Err.Number & \" \" & Err.Description
+    VBSDebug \"app busy on attempt \" & i & \" of \" & tries & \": \" & lastTouchError
+    Err.Clear
+    On Error GoTo 0
+    WScript.Sleep 1000
+  Next
+End Function
 
 If commode = \"attach\" Or commode = \"auto\" Then
   On Error Resume Next
@@ -763,7 +791,14 @@ If app Is Nothing Then
   RecordCreatedProcesses createdFile
 End If
 
-app.Visible = True
+If Not TouchApp(app, 10) Then
+  AppendLine errFile, \"ERROR COM bridge: \" & progId & \" rejected the first call \" & _
+    \"on 10 attempts, one second apart (\" & lastTouchError & \"). Another instance \" & _
+    \"is probably wedged and holding the registration: end it on the machine.\"
+  RecordComError \"touch\", 0, lastTouchError
+  EmitFlags attached, created
+  WScript.Quit 4
+End If
 EmitFlags attached, created
 
 ${PLUGIN_AFTER_APP}
