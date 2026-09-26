@@ -417,7 +417,15 @@
     (if (or (not (boundp '*AUTOLISP_LAST_ERROR_CONTEXT*))
             (null *AUTOLISP_LAST_ERROR_CONTEXT*)
             (= *AUTOLISP_LAST_ERROR_CONTEXT* ""))
-      (setq *AUTOLISP_LAST_ERROR_CONTEXT* (autolisp-str msg))))
+      ;; An EMPTY message must still win over the arithmetic used to
+      ;; raise: an empty context loses to the host's "divide by zero",
+      ;; and the user would be told something this runtime did, not what
+      ;; happened. Say plainly that there was no message; the loop then
+      ;; adds the form (alfe-cad-load-error-message-says-only-error).
+      (setq *AUTOLISP_LAST_ERROR_CONTEXT*
+            (if (or (null msg) (/= (type msg) 'STR) (= (autolisp-str msg) ""))
+                "the engine supplied no message"
+                (autolisp-str msg)))))
   (autolisp-force-error))
 
 (defun autolisp-effective-error-message (fallback)

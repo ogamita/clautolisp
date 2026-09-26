@@ -1196,6 +1196,12 @@ file or COM), and forwards the workload.
 
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
+- *A failed action is reported once, and names a cause.* Every failure on
+  a CAD backend used to be printed TWICE. And when the engine's own
+  message says nothing — BricsCAD answers the bare word =error= for some
+  conditions — the report now adds the form that failed, or states that
+  the engine supplied no message at all. An informative message is passed
+  through unchanged, with nothing appended.
 - *A busy AutoCAD is waited out, not given up on.* The COM bridge failed
   the whole start-up the first time AutoCAD answered "the call was
   rejected by the callee" (=RPC_E_CALL_REJECTED=), which means the

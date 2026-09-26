@@ -236,6 +236,43 @@
       (fix result))
     (T 0)))
 
+(defun autolisp-vague-error-message-p (msg)
+  "True when MSG tells the user nothing: absent, empty, or one of the
+bare words a host offers when it has no text of its own. BricsCAD
+answers exactly \"error\" for some conditions, which is what
+alfe-cad-load-error-message-says-only-error was about -- the report was
+correct and useless."
+  (or (null msg)
+      (/= (type msg) 'STR)
+      (= msg "")
+      (member (strcase msg)
+              (list "ERROR" "ERREUR" "FUNCTION CANCELLED"
+                    ;; What autolisp-raise puts in the context when the
+                    ;; host gave nothing: still vague, so the form is
+                    ;; still worth adding.
+                    (strcase "the engine supplied no message")))))
+
+(defun autolisp-request-failure-text (req-id msg form / text shown)
+  "The stderr line for a failed request: the engine's message, plus the
+FORM when that message says nothing. A host that supplies no text leaves
+the user with a position and no cause, and the form is the one piece of
+context this side always has."
+  (setq text (strcat "ERROR protocol request " (itoa req-id) ": "
+                     (if (autolisp-vague-error-message-p msg)
+                         (if (or (null msg) (/= (type msg) 'STR) (= msg "")
+                                 (= (strcase msg)
+                                    (strcase "the engine supplied no message")))
+                             "the engine supplied no message"
+                             (strcat msg " -- the engine said no more"))
+                         msg)))
+  (if (autolisp-vague-error-message-p msg)
+    (progn
+      (setq shown (autolisp-readable-text form))
+      (if (> (strlen shown) 200)
+        (setq shown (strcat (substr shown 1 200) "...")))
+      (setq text (strcat text " [form: " shown "]"))))
+  text)
+
 (defun autolisp-protocol-server-loop (/ keep form req-id result rc)
   (setq *AUTOLISP_PROTOCOL_INPUT_QUEUE* nil)
   (setq *AUTOLISP_PROTOCOL_STOP* nil)
@@ -248,9 +285,15 @@
     (setq form (vl-catch-all-apply 'autolisp-protocol-remote-read nil))
     (if (vl-catch-all-error-p form)
       (progn
-        (autolisp-log-err
-          (strcat "ERROR protocol read: "
-                  (vl-catch-all-error-message form)))
+        ;; ONE report, not two. This loop used to write the message to the
+        ;; session log (autolisp-log-err) AND to the wire
+        ;; (autolisp-protocol-write-stderr) -- two different files by
+        ;; design. But run-common's bridge REDIRECTS autolisp-log-err onto
+        ;; the protocol stderr so CAD-side warnings reach the user at all,
+        ;; and the loop always runs with that bridge, so both calls landed
+        ;; in the same file and the user saw every failure twice. Keep the
+        ;; wire; the bridge keeps carrying everything else log-err is used
+        ;; for. See alfe-cad-error-reported-twice-on-stderr.
         (autolisp-protocol-write-stderr
           (strcat "ERROR protocol read: "
                   (vl-catch-all-error-message form)))
@@ -276,14 +319,15 @@
                   (strcat "DONE " (itoa req-id) " QUIT"))
                 (setq *AUTOLISP_PROTOCOL_STOP* T))
               (progn
-                (autolisp-log-err
-                  (strcat "ERROR protocol request " (itoa req-id) ": "
-                          (autolisp-effective-error-message
-                            (vl-catch-all-error-message result))))
+                ;; One report, as above, and it names a cause: when the
+                ;; engine's own message says nothing the form goes with it
+                ;; (alfe-cad-load-error-message-says-only-error).
                 (autolisp-protocol-write-stderr
-                  (strcat "ERROR protocol request " (itoa req-id) ": "
-                          (autolisp-effective-error-message
-                            (vl-catch-all-error-message result))))
+                  (autolisp-request-failure-text
+                    req-id
+                    (autolisp-effective-error-message
+                      (vl-catch-all-error-message result))
+                    form))
                 (autolisp-clear-last-error-context)
                 (setq rc 1)
                 (autolisp-set-status rc)

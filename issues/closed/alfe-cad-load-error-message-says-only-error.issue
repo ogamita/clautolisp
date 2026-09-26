@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-cad-load-error-message-says-only-error — a CAD-side failure is reported without naming its cause
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: alfe-backend
 #+DEPENDS: -
@@ -59,3 +59,53 @@ the message; that needs the Windows runner.
   an explicit statement that the engine supplied none.
 - A regression test pins the message for a form that signals in the
   hosted harness.
+
+* Resolved — clautolisp 2.2.104
+
+Question 1 answered: the word is BRICSCAD'S. This runtime does not lose
+the text. The same two shapes, hosted under clautolisp, report it in
+full:
+
+#+begin_example
+;; from a FILE
+ERROR protocol request 1: while loading …/api.lsp (form starting at
+  line 1) at line 1, column 1: Undefined AutoLISP function TOUTES_OPTIONS.
+;; as a direct form
+ERROR protocol request 2: Undefined AutoLISP function TOUTES_OPTIONS.
+#+end_example
+
+So question 2 is answered too -- both paths carry it -- and question 3
+does not arise: nothing was dropped on the way. What pjb saw is what
+BricsCAD supplied for that condition: the bare word =error=.
+
+What can still be done is make such a report USABLE, and that is what
+ships:
+
+- =autolisp-vague-error-message-p= recognises a message that says
+  nothing: absent, empty, or one of the bare words a host offers
+  (=error=, =erreur=, =Function cancelled=).
+- =autolisp-request-failure-text= then appends the FORM -- the one piece
+  of context this side always has -- and says plainly when the engine
+  gave no text at all:
+
+#+begin_example
+ERROR protocol request 1: the engine supplied no message [form: (ERROR "")]
+ERROR protocol request 2: error -- the engine said no more [form: (ERROR "error")]
+ERROR protocol request 3: Undefined AutoLISP function NO_SUCH_FUNCTION.
+#+end_example
+
+  An informative message is passed through untouched, with no form
+  appended, so nothing gets noisier.
+- =autolisp-raise= no longer lets an EMPTY message fall through to the
+  arithmetic it raises with: an empty error context lost to the host's
+  "divide by zero", so a user was told what this runtime did rather than
+  what happened. It now records "the engine supplied no message", which
+  the loop recognises as vague and completes with the form.
+
+Test: =protocol-a-vague-engine-message-gains-the-form= (hosted under
+clautolisp) covers all three shapes. alfe suite 1200 checks, 0 failures.
+
+On BricsCAD pjb's report will now read
+=…: error -- the engine said no more [form: (PRINT (= "" (TOUTES_OPTIONS NIL)))]=,
+which names the call that failed. Which of its parts BricsCAD objects to
+is a question for that engine; the report no longer hides it.
