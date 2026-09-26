@@ -82,3 +82,41 @@ without a CAD (they are the =[sec-…]= lines that
 =dialect-warning-lines= deliberately filters out of the dialect gate).
 A real check needs a CAD with SECURELOAD set to 2 -- a Windows-runner
 job.
+
+* Analysis, 2026-09-26: a Lisp-side fix cannot bootstrap
+
+One of the /Directions/ above is now ruled out, which narrows the work
+before anyone starts it.
+
+*Setting TRUSTEDPATHS from AutoLISP is too late.* The first thing the CAD
+loads is =run-common.lsp=, from the temporary workdir, through its =/b=
+script or the COM bridge. That load is ITSELF a gated load. With
+=SECURELOAD= = 2 the CAD refuses it before any expression of ours runs, so
+there is no moment at which a =(setvar "TRUSTEDPATHS" …)= could take
+effect -- not in the runtime, not in the bootstrap, not in run-common's
+first form. The SRCHPATH precedent (=_autolisp_old_srchpath=) does not
+carry over: SRCHPATH is set by code that has already been allowed to run.
+
+That leaves two shapes, both OUTSIDE the AutoLISP layer:
+
+1. *Trust the directory before launching.* TRUSTEDPATHS lives in the
+   CAD's profile (registry on MS-Windows). alfe already reads the registry
+   for AutoCAD's ProgID and for TEMPPREFIX, so it can add its workdir and
+   restore the previous value on exit. Windows-only, mutates the user's
+   profile, and must be robust if a run is killed -- an entry left behind
+   is a security-relevant leftover, so the restore matters more than the
+   set.
+2. *Stage into a directory the site has already trusted.* Load the runtime
+   from the INSTALLED =share/alfe/runtime/= -- a stable path an
+   administrator can trust once -- instead of copying it into the temp
+   workdir. This is the smaller change and it needs no registry write, but
+   it does NOT cover the per-request =protocol/alfe-eval.lsp=, which must
+   be writable and therefore cannot live under a read-only installed tree.
+   So on its own it moves the problem rather than solving it, unless the
+   eval file moves too (a documented, writable, trusted directory, e.g.
+   under the user's profile).
+
+Either way this needs a CAD with SECURELOAD=2 to verify, and the second
+shape needs a decision about where a writable-but-trusted directory
+belongs. Both are beyond what can be settled without the machine, which
+is why this stays open rather than being half-implemented.
