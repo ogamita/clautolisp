@@ -203,6 +203,45 @@ actually refused. The four it took were children of my own merged docs-only
 merge requests; everything holding played or running work was spared, as the
 pre-landing check said it would be.
 
+** The same root cause, measured on the other side: 73 CAD jobs behind one gate
+
+Measured 15:55Z, while waiting for a deliberately played verification:
+
+#+begin_example
+cad-tagged RUNNING: 1
+    16763481721 optkw:probe:accoreconsole:windows
+cad-tagged PENDING: 73
+    14:26:45Z  harvest:sysvars:bricscad:windows, probe:suite:bricscad:windows,
+               probe:load-refusal:bricscad:windows, probe:suite:autocad:windows,
+               vendor:probes:autocad, vendor:probes:bricscad,
+               pathname:probe:autocad:windows, pathname:probe:bricscad:windows,
+               optkw:probe:bricscad:windows
+    14:42:31Z  (the same nine again, from the next pipeline)
+    ...
+#+end_example
+
+*Seventy-three pending CAD jobs behind a concurrency-1 gate*, arriving in
+batches of nine per pipeline. At the several minutes each CAD job takes — and
+twenty-plus for some — that queue is hours deep, and it explains something that
+looked like bad luck all day: every deliberately played CAD verification either
+waited over an hour or was dropped at the two-hour stuck-pending mark. It was
+not luck; it was a saturated serial lane.
+
+This is the SAME root cause as the activity cap, seen from the other side. The
+cap is "too many jobs exist"; this is "too many of them want the one machine".
+Both are fed by the same thing: every pipeline creates a full platform matrix
+whether or not anything in it could have changed. The =changes:= gate would have
+reduced both — nine CAD jobs per docs-only merge request is pure waste — which
+is a second reason to get it working rather than leave it reverted.
+
+*A separate lever, and a pjb-decision.* Those nine are vendor probe DIAGNOSTICS.
+Nothing about them needs to run on every push: their inputs are the vendor CADs
+and the probe scripts, which change rarely. Running them on a schedule, or
+gating them on the probe directories, would empty this queue without losing
+anything — but how often the vendor surface should be re-measured is a question
+about the campaign (=cad-vendor-probe-campaign=, P1 WIP, another session's work),
+not one to answer by editing its jobs from the side.
+
 ** REVERTED 2026-09-27 (2.2.138): the gate did not match a real code change
 
 The =changes:= gate is out again, and the reason belongs here rather than in a
