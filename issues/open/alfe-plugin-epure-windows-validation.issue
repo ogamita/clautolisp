@@ -225,26 +225,87 @@ queued CAD job, both worth the line they cost:
 Negative control green again: under clautolisp, =verdict=nothing-defined= and
 =api-verdict=library-absent=.
 
+** ANSWERED 2026-09-27 17:31Z: one file, =Sauvprm.lsp=, is not loaded — on both engines
+
+The census ran (job 16763989248, on MR !325's child — the first attempt, 16763561700,
+was on a MASTER child and my own next merge cancelled it; see AGENTS.md § /where to
+PLAY a manual CAD job/, which exists because of that). Result, both engines:
+
+#+begin_example
+--autocad  --epure  epure-like-symbols=29  api-sample=24 present=9 absent=15  library-partial
+--bricscad --epure  epure-like-symbols=40  api-sample=24 present=9 absent=15  library-partial
+
+api-present=(dateheureutc com_startup com_version com_savecont com_way
+             SNCF:Epure:Reg:Env:Set dos_chdir com_tl_continu schme_sauvegrd)
+api-absent =(toutes_options f_DateHeure_UTC epuree-directory epure-version
+             epure-directory interr affiche_message identite fld rempl getbloc
+             pose f_nom_date Annuaire ConvertAuto)
+#+end_example
+
+*The public API loaded is IDENTICAL on AutoCAD and BricsCAD* — same nine present,
+same fifteen absent — although the engines carry different amounts of EPURE
+plumbing (29 against 40 EPURE-like symbols: BricsCAD has more CUI and command
+symbols). So the fault is vendor-independent, and the difference seen earlier was
+plumbing, not API.
+
+*Mapped onto the vendor sources* (=~/src/pjb/epuree/resources/upstream/=, not
+epuree's consolidated =src/core.lsp= / =src/comu.lsp=, which do not reflect how the
+vendor loads):
+
+| present name       | vendor file                     |
+|--------------------+---------------------------------|
+| =com_startup=        | =COM/lisp/SNCF_startup.lsp=       |
+| =com_savecont=, =com_way=, =com_tl_continu= | =COM/lisp/SNCF_Com.lsp= |
+| =schme_sauvegrd=     | =COM/gestsauv/Sauvegrd.lsp=       |
+
+| absent name          | vendor file                  |
+|----------------------+------------------------------|
+| =toutes_options=     | =COM/gestsauv/Sauvprm.lsp=     |
+| =f_DateHeure_UTC=    | =COM/gestsauv/Sauvprm.lsp=     |
+| =f_nom_date=         | =COM/gestsauv/Sauvprm.lsp=     |
+
+*All three absent save-option functions — including BOTH names the API test calls —
+live in ONE file, =COM/gestsauv/Sauvprm.lsp=.* Its sibling =Sauvegrd.lsp=, in the same
+directory, IS loaded. =resources/resource-manifest.tsv= says what separates them:
+=Sauvegrd.lsp= is the "Save-orchestrator source"; =Sauvprm.lsp= is the
+"Save-parameters source" and ships with its own =SAUVPRM.DCL= ("Dialog declarations
+for Sauvprm"). =toutes_options= renders the enabled save options as a summary string
+— a helper of that dialog.
+
+So:
+
+- EPURE is NOT failing to load: its startup and save-orchestration layer is there on
+  both engines;
+- the test is NOT asking for wrong names: =toutes_options= is EPURE's (Module COM,
+  per the API reference, and per pjb);
+- *it is calling two functions from a module that nothing in a fresh session has
+  loaded yet* — the save-parameters dialog module, which EPURE presumably loads when
+  the dialog is first opened. This is the demand-loading hypothesis, now localised to
+  one file.
+
+What I could not see: the mechanism that loads =Sauvprm.lsp= in production. The
+upstream tree in epuree is the readable source subset; it contains no
+=(load … Sauvprm)=, no =autoload=, no =.mnl=, so the trigger lives in the vendor
+install's menu or startup files.
+
+The other absent core helpers (=interr=, =affiche_message=, =identite=, =fld=,
+=rempl=, =getbloc=) are consolidated into epuree's =src/core.lsp=, and no vendor
+=defun= for them turned up in =resources/upstream= — so in the vendor they live in a
+file outside that subset, also not loaded at startup. Worth knowing before choosing
+replacement test functions from that group.
+
 ** Still open
 
-- [ ] *Re-run =verify:epure-api:windows= with the census* — PLAYED at 14:43Z on
-      the 2.2.139 child (job 16763561700) and still =pending= at 15:55Z, 72
-      minutes queued. Not stuck: the runner is alive and matching. It is behind
-      *73 pending CAD-tagged jobs on a concurrency-1 gate*, arriving nine per
-      pipeline from the vendor probe matrix — measured, and recorded under
-      =ci-job-activity-cap-refuses-master-pipelines= because it is the same
-      "every pipeline creates a full matrix" cause seen from the queue side. The
-      census will land when the queue drains; nothing about it needs re-doing.
-      Read =api-present= / =api-absent=. That says whether the COM module alone is
-      missing or the whole function library, on each engine — the two engines
-      already load different subsets (29 EPURE-like symbols under AutoCAD, 40
-      under BricsCAD).
-- [ ] If the library is partial, the hypothesis to test next is DEMAND LOADING:
-      the BricsCAD census found the command stubs =C:COM_APROPOSEPURE= and
-      =C:COM_MODIFEPURECOM= while =toutes_options= was absent, which is what an
-      application that loads its function modules when a command first runs looks
-      like. A probe that invokes one such command before the census would settle
-      it.
+- [ ] *pjb: how should the API test reach =Sauvprm.lsp='s functions?* Three honest
+      options, and the choice is about what "EPURE's API answers inside an alfe
+      session" should mean:
+      1. =(load "Sauvprm")= explicitly before calling — tests the functions, not
+         EPURE's loading;
+      2. trigger the save-parameters command that loads it in production — tests
+         what a user actually gets, if the command can run headless;
+      3. test the startup-loaded layer instead (=com_startup=, =com_savecont=,
+         =dateheureutc=, …) — tests that =--epure= brings EPURE up, which is what
+         the plug-in is for.
 - *Distinguish "EPURE never loaded" from "EPURE loaded out of view".* ANSWERED
   above: neither. Kept for the record of what the probe was for. Probe
   =atoms-family= for a name EPURE defines, and dump whether its .lsp/.vlx was
