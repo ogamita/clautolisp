@@ -177,6 +177,21 @@
   (m "read.utf16file-unicode.cp"  (readcp "encp-ccs-utf16le.txt" "r,ccs=UNICODE"))
   (m "read.utf16file-utf16le.cp"  (readcp "encp-ccs-utf16le.txt" "r,ccs=UTF-16LE"))
 
+  ;; --- 6b. localize the AutoCAD alfe-load failure. srcprobe below deports
+  ;; through alfe-load and, on accoreconsole, reported "division par zero".
+  ;; Load an ASCII-ONLY file through the same alfe-load first: if this
+  ;; succeeds and the high-byte cases below fail, the non-ASCII byte is the
+  ;; trigger; if this ALSO fails, alfe-load is failing on AutoCAD regardless
+  ;; of content. accoreconsole-deported-load-highbyte. ---
+  (setq ASCIISRC nil)
+  (if (trywrite "encp-ascii.lsp" "w" "(setq ASCIISRC 7)")
+      (progn
+        (setq AR (vl-catch-all-apply 'alfe-load (list "encp-ascii.lsp")))
+        (m "alfe-load.ascii"
+           (if (vl-catch-all-error-p AR)
+               (strcat "ERR " (vl-catch-all-error-message AR))
+               (strcat "OK ASCIISRC=" (if ASCIISRC (itoa ASCIISRC) "nil"))))))
+
   ;; --- 7. source situation: native (load) decode vs known on-disk bytes,
   ;; across the write encodings (default / UTF-8 / UTF-16LE). Each line pair
   ;; source.<tag>.bytes + source.<tag>.cp says "these bytes decoded to these

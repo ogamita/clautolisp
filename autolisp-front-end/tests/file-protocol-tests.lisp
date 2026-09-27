@@ -1726,6 +1726,46 @@ clautolisp-sbcl is not on disk."
 ;;; because the loader routes a nested (load …) through
 ;;; autolisp-eval-load-form, which uses no temp file.)
 
+(test protocol-alfe-load-reads-a-non-ascii-file
+  "accoreconsole-deported-load-highbyte: alfe-load reads a .lsp whose
+string literal carries a non-ASCII byte, rewrites its calls to the alfe-*
+operators, and evaluates them DIRECTLY -- so the byte-decoded string never
+round-trips through a native (load) that would choke on some backends. The
+hosted clautolisp engine confirms alfe-load SUCCEEDS (status OK, not a
+`division par zero' or decode failure) and binds the variable. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; alfe-load non-ASCII test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary nil
+             :forms-fn
+             (lambda (workdir)
+               (let ((f (merge-pathnames "encp-hi.lsp" workdir)))
+                 ;; (setq ENCSRC "A<U+00E9>Z") written as raw UTF-8 bytes
+                 ;; (e-acute = C3 A9), valid under the clautolisp dialect's
+                 ;; UTF-8 source default.
+                 (with-open-file (out f :direction :output
+                                        :if-exists :supersede
+                                        :if-does-not-exist :create
+                                        :element-type '(unsigned-byte 8))
+                   (dolist (b '(40 115 101 116 113 32 69 78 67 83 82 67 32
+                                34 65 195 169 90 34 41))
+                     (write-byte b out)))
+                 (list (format nil "(alfe-load ~S)" (namestring f))
+                       (concatenate 'string
+                                    "(princ (if (and (boundp (quote ENCSRC))"
+                                    " ENCSRC) \"ENCSRC-OK\" \"ENCSRC-UNSET\"))")))))
+          (is (search " OK" (first statuses))
+              "alfe-load of a non-ASCII file must succeed, got ~S"
+              (first statuses))
+          (is (search " OK" (second statuses)))
+          (is (search "ENCSRC-OK" (without-returns stdout))
+              "alfe-load must set ENCSRC from the loaded file: ~S" stdout)
+          (is (string= "" stderr))))))
+
 (test protocol-failure-inside-a-loaded-file-fails-that-request
   "Acceptance: a form that fails inside a loaded file makes THAT request
 fail, at one level and at two, and no failure is ever attributed to a
