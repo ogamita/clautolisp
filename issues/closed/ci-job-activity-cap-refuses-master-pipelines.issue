@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: ci-job-activity-cap-refuses-master-pipelines — a merge can land on master with NO pipeline at all, and nothing says so
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: infra
 #+DEPENDS: -
@@ -337,7 +337,51 @@ permission explicitly, not just membership; and if it is created *protected*, th
 from a merge request, which is why the existing =RUNNER_STATUS_TOKEN= is
 unprotected.
 
-** What remains before this closes — a token, which is pjb's to grant
+** RESOLVED 2026-09-27 11:08Z — the broom swept, for the first time ever
+
+pjb added =PIPELINE_SWEEP_TOKEN= (project level, masked, *protected*). The
+=sweep:stale-pipelines= job in =.pre= of master pipeline 2886719249 was re-run
+and reported:
+
+#+begin_example
+active pipelines: 6 (2 protected), to cancel: 1
+jobs counting against the activity cap: 90
+  cancelled    2782105481 master   pipeline still active after 857.2h (>= 48h) -- stuck
+#+end_example
+
+Verified afterwards, not assumed: pipeline 2782105481 is now =canceled=
+(=updated_at= 11:08:38Z) and its jobs read =16 canceled, 15 success= — the
+fifteen that had sat in =created= since *2026-08-22* are released. That is a
+permanent tenth of the ceiling recovered, and the first cancellation this
+mechanism has ever performed: before today the age-only rule never selected
+anything, so the 403 behind it was never reached.
+
+Three further things the run confirms, each of which was only a claim until now:
+
+- *the count works* — "jobs counting against the activity cap: 90", where every
+  previous run said =unknown= because the read-only token could not list jobs.
+  The number that matters is now in the log of a job that runs on every master
+  pipeline, which is what stops the bucket filling unseen;
+- *its own pipeline and child are protected* — "6 (2 protected)", so a sweep
+  running in =.pre= does not cancel the pipeline it belongs to;
+- *the sparing rule holds in production* — "to cancel: 1" out of six active
+  pipelines. The other five include the probe campaigns with played-but-unrun
+  CAD jobs, and none was touched.
+
+*One consequence of =protected: True= worth knowing rather than changing.* A
+protected variable reaches jobs on protected refs only — master and release
+tags. So the AUTOMATIC sweep (which runs on =$CI_COMMIT_BRANCH ==
+$CI_DEFAULT_BRANCH=) has the credential, and the "playable by hand from any
+pipeline" fallback does NOT when played from a merge request: there it falls
+back to =RUNNER_STATUS_TOKEN= and reports 403 for anything it selects. That is a
+defensible trade — the write credential stays off unprotected refs — and the
+403 message says exactly what happened, so it fails loudly rather than
+silently. Play it from a master pipeline when it is needed by hand.
+
+Every acceptance criterion is met, and the two that needed the machine were
+answered on it. Moved to =issues/closed/=.
+
+** What was, until 11:08Z, the last open item — a token, which was pjb's to grant
 
 The sweep needs a credential with the =api= scope. Two shapes, and the second
 is better hygiene:
