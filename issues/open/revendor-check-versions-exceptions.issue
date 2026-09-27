@@ -43,6 +43,44 @@ fix landed here first.
 3. Once upstream carries it, re-vendor into this repository (the file should
    then be byte-identical again) and drop this issue.
 
+* Measured 2026-09-27 — the round trip is smaller than it reads, and one claim above is wrong
+
+The upstream clone is at =~/src/public/rules= (readable from here), so the diff
+is no longer a guess:
+
+| file                       | added | modified | removed |
+|----------------------------+-------+----------+---------|
+| =scripts/check-versions.sh=  |   106 |        4 |       0 |
+
+*One file*, and upstream's copy has an mtime of 2026-07-26 — so there is no
+upstream divergence to merge: re-vendoring is a whole-file copy, in the
+direction OUR copy → upstream, then back.
+
+*The claim "it is a strict superset ... (no other behaviour changed)" is not
+literally true and should not be relied on for a blind copy.* Four lines are
+MODIFIED rather than added, and a reviewer should look at exactly those:
+
+1. the header comment "Project-independent: it reads nothing but git refs" —
+   reworded, because the script now reads an exceptions FILE as well as git
+   refs, and that sentence would otherwise be false upstream too;
+2. =bad()= — re-implemented as the wrapper that consults =exception_match=
+   before counting a violation. This is the mechanism;
+3. the success =printf= — now names how many accepted exceptions were applied,
+   so a green run states its own caveats;
+4. the failure =printf= — same reason, on the other branch.
+
+Behaviourally it IS a superset (nothing was taken away), which is presumably
+what the sentence meant. But the review is four lines, not one hundred and
+ten, and saying so is the difference between a five-minute round trip and a
+re-reading of the whole file.
+
+*Why this session still cannot do it, verified rather than assumed.* Git
+operations against =~/src/public/rules= are refused outright — the worktree
+isolation rejects any git invocation whose target is a different checkout, and
+a plain =cd= into it before =git= is refused too. So the constraint that
+created this ticket in 2.2.109 is unchanged, and the remaining work is
+someone-with-access running a copy and reviewing four lines.
+
 * Verification
 
 Upstream and vendored copies identical (=diff=), and =make check-versions=
