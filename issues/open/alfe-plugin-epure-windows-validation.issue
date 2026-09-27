@@ -89,8 +89,51 @@ line of =run.scr=. Its presence separates "the script never ran" from
 "the nested =._SCRIPT= never gave control back" -- the two readings of a
 BricsCAD sitting at BOOTING, and the evidence assumption 1 needs.
 
+** The EPURE API question, answered 2026-09-27 — and the answer is vendor-independent
+
+=verify:epure-api:windows= ran on PF5S26B (job 16761201252, clautolisp 2.2.129),
+four invocations. Its own summary:
+
+#+begin_example
+================ summary (T twice is the pass)
+  --autocad  --epure, -x as typed          : exit 4, T x0
+  --autocad  --epure, from a file (verbose): exit 1, T x0
+  --bricscad --epure, -x as typed          : exit 1, T x0
+  --bricscad --epure, from a file (verbose): exit 1, T x0
+#+end_example
+
+The three =exit 1= runs all *reached READY and evaluated the request* — AutoCAD
+in 30.95 s, BricsCAD in 24.24 s, both entering
+=autolisp-protocol-server-loop= — and all three failed the SAME way:
+
+: ERROR protocol request 1: while loading ...alfe-epure-api.lsp
+:   (form starting at line 1) at line 1, column 1:
+:   no function definition: TOUTES_OPTIONS
+
+*So the engines are fine and the EPURE API is not there.* =toutes_options= is
+undefined in the session on BOTH vendors, which is the useful part: it is not an
+AutoCAD-specific problem, not a COM problem, and not a protocol problem. Loading
+the EPURE application is not making its AutoLISP API visible to the session alfe
+drives — the question this job exists to ask.
+
+That reframes what is left. The earlier open item ("confirm BricsCAD reaches the
+marker") is answered in passing: BricsCAD reaches READY and runs a form, so the
+=._SCRIPT= control does hand back. What is NOT answered is whether =--epure=
+actually loads the application at all, or loads it into a context whose symbols
+the protocol session cannot see — and those are different fixes, so the next run
+must distinguish them rather than re-ask the same question.
+
+The =exit 4= run is unrelated: a transient COM rejection before READY, fixed
+under =alfe-autocad-hung-instance-blocks-com-bootstrap= (the document calls
+after =TouchApp= were unguarded). Same job, different defect.
+
 ** Still open
 
+- *Distinguish "EPURE never loaded" from "EPURE loaded out of view".* Probe
+  =atoms-family= for a name EPURE defines, and dump whether its .lsp/.vlx was
+  loaded at all, before assuming either. =vl-catch-all-apply= cannot trap an
+  unbound-symbol error, so the existence check has to be =atoms-family= (the
+  lesson already recorded for the vendor probes).
 - Re-run =verify:epure:windows= with 2.2.88 and confirm BricsCAD reaches
   the marker. Only then is assumption 1 answered.
 - Assumption 2 (COM =SendCommand= order) is consistent with AutoCAD's

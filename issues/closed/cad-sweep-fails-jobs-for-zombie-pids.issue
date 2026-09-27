@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cad-sweep-fails-jobs-for-zombie-pids — the sweep failed 21 CAD jobs over acad.exe processes that had already exited
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: ci
 #+DEPENDS: -
@@ -77,15 +77,44 @@ script (no classifier at all; two bare =Get-Process= presence checks).
 Documented in =alfe-user-manual.org= § /When alfe is killed before it can quit
 AutoCAD/ ("a process id that still answers is not a running process").
 
-* Open criterion — the runner
+* Open criterion — ANSWERED on the runner, 2026-09-27 (job 16761201255)
 
-- [ ] A CAD job on the Windows runner passes the sweep with those three
-      zombie ids still in =alfe-created-cad.txt=, reporting them as settled,
-      and the registry file ends up removed. Needs the machine; the ids are
-      recorded above, so the next Windows pipeline answers it.
+=verify:autocad-activex:windows= ran on PF5S26B at 09:12:46Z and its sweep
+printed, verbatim:
 
-Until then the fix is reasoned from the trace and the tests, not observed on
-the platform — the honest state to leave it in.
+#+begin_example
+cad sweep: 5 instance(s) recorded (8 line(s) in C:\msys64\tmp\alfe-created-cad.txt)
+cad sweep: pid 21928 has EXITED (no threads left) and is waiting to be reaped; nothing to kill, entry dropped
+cad sweep: pid 17640 has EXITED (no threads left) and is waiting to be reaped; nothing to kill, entry dropped
+cad sweep: pid  9164 has EXITED (no threads left) and is waiting to be reaped; nothing to kill, entry dropped
+cad sweep: pid 32840 is gone; entry dropped
+cad sweep: pid 35184 is gone; entry dropped
+cad sweep: 0 ended, 5 already settled, 0 still running
+#+end_example
+
+Every part of the criterion, and nothing inferred:
+
+- *pids 21928 and 17640 are the two from the original incident*, recorded in
+  this ticket in August. They are reported as EXITED-and-unreaped — zombies —
+  not as survivors. The earlier reading of them as "wedged instances holding
+  the COM registration" is now settled as wrong, from the machine rather than
+  from reasoning.
+- *The three states are distinguished*: exited-but-unreaped, gone, and running.
+  The distinction is the whole fix.
+- *The registry is pruned*: 8 lines collapsed to 5 instances and every entry
+  dropped. (The same runner's earlier job at 09:01Z reported "nothing recorded"
+  for that file, which is what the empty state looks like.)
+- *The job was NOT failed.* It went on to run =verify-autocad-activex.ps1=,
+  which is the behaviour the pre-2.2.110 sweep denied to 22 jobs.
+
+So the fix is now observed on the platform, not only reasoned from a trace and
+unit tests. Nothing named in this ticket remains. Moved to =issues/closed/=.
+
+*What the same job found next is a DIFFERENT defect* and belongs to
+=alfe-autocad-hung-instance-blocks-com-bootstrap=: with the sweep reporting no
+live instance, the COM bridge still failed — =ATTACHED=0 CREATED=1= and a
+rejection on the document calls. That is our own freshly created AutoCAD being
+busy, not an orphan, and it is fixed there.
 
 * Note
 

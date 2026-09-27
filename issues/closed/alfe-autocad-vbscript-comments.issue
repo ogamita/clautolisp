@@ -1,6 +1,6 @@
 # -*- mode:org;coding:utf-8 -*-
 #+TITLE: alfe-autocad-vbscript-comments — generated AutoCAD bridge starts with invalid VBScript comments
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: cad-runtime
 #+DEPENDS: -
@@ -186,3 +186,47 @@ launch AutoCAD via =CreateObject= and progress toward READY. If a later step
 fails, =--on-error debug= gives the backtrace and =--keep-workdir= the
 emitted bridge. A confirmed READY + =--eval= round-trip closes criterion 2
 and the ticket.
+
+* RESOLVED 2026-09-27 (clautolisp 2.2.131) — criterion 2 confirmed on the runner
+
+=verify:epure-api:windows= on PF5S26B (job 16761201252, 09:03Z), driving
+=alfe --autocad --epure= through the COM bridge in automation mode:
+
+#+begin_example
+alfe[debug]: [CAD] run-common.lsp evaluated; about to bootstrap runtime
+alfe[debug]: [CAD] bootstrap LOAD succeeded
+alfe[debug]: [CAD] runtime LOAD succeeded
+alfe[debug]: [CAD] host lacks &rest; keeping bootstrap 1-arg shadows + walk-rewriting normalize
+alfe[debug]: [CAD] I/O bridged onto protocol/stdout.txt and protocol/stderr.txt
+alfe[debug]: [CAD] entering autolisp-protocol-server-loop
+alfe[verbose]: backend AUTOCAD: READY after 30.95 s (status "READY 0")
+alfe[debug]: protocol: status now "DONE 1 FAIL" (elapsed 0.40 s)
+ERROR protocol request 1: ... no function definition: TOUTES_OPTIONS
+#+end_example
+
+That is criterion 2 exactly: a real AutoCAD 2022, launched by the bridge,
+reaching *READY* and completing a *request round trip* — =DONE 1= came back in
+0.40 s. The =FAIL= is about an EPURE function being undefined, which is a
+different question entirely (=alfe-plugin-epure-windows-validation=): the
+engine received the form, evaluated it, and answered. A VBScript that cscript
+refused to parse, which is what this ticket was filed for, could not have got
+within a mile of that line.
+
+All four criteria are now met, three by tests and this one by the machine:
+
+1. [X] no =;;= prefix, accepted by the VBScript parser;
+2. [X] =--mode automation= reaches READY on a Windows host with AutoCAD 2022
+       — *observed*, 30.95 s, with a completed request;
+3. [X] regression tests that fail if Lisp comment syntax returns;
+4. [X] batch-mode selection and the bridge protocol unchanged.
+
+Noted for the record, because it is easy to misread this run as a clean pass:
+the FIRST of the two invocations in that job died before READY on a transient
+COM rejection, and the second is the one quoted above. That intermittency is
+its own defect and is fixed under
+=alfe-autocad-hung-instance-blocks-com-bootstrap= (the document calls after
+=TouchApp= were unguarded). It does not affect this ticket's criteria — the
+bridge parses and, when the server is ready to talk, works — but a reader who
+saw only the summary line =exit 1= would conclude the opposite.
+
+Moved to =issues/closed/=.

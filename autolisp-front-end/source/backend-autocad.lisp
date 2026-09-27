@@ -793,9 +793,22 @@ If app Is Nothing Then
 End If
 
 If Not TouchApp(app, 10) Then
-  AppendLine errFile, \"ERROR COM bridge: \" & progId & \" rejected the first call \" & _
-    \"on 10 attempts, one second apart (\" & lastTouchError & \"). Another instance \" & _
-    \"is probably wedged and holding the registration: end it on the machine.\"
+  ' The advice depends on WHERE the instance came from, and getting that wrong
+  ' sent one investigation after a phantom for a week. If we ATTACHED, another
+  ' instance really does hold the registration and ending it is the fix. If we
+  ' CREATED it, there is no other instance to blame -- it is our own, still
+  ' starting or showing a dialog.
+  If attached Then
+    AppendLine errFile, \"ERROR COM bridge: \" & progId & \" rejected the first call \" & _
+      \"on 10 attempts, one second apart (\" & lastTouchError & \"). We ATTACHED to an \" & _
+      \"existing instance, so that one is wedged and holding the registration: end it \" & _
+      \"on the machine.\"
+  Else
+    AppendLine errFile, \"ERROR COM bridge: \" & progId & \" rejected the first call \" & _
+      \"on 10 attempts, one second apart (\" & lastTouchError & \"). We CREATED this \" & _
+      \"instance, so no other one is to blame: it is still starting, or a startup \" & _
+      \"dialog is waiting for input on the machine's desktop.\"
+  End If
   RecordComError \"touch\", 0, lastTouchError
   EmitFlags attached, created
   WScript.Quit 4
@@ -805,10 +818,47 @@ EmitFlags attached, created
 ${PLUGIN_AFTER_APP}
 WaitQuiescent app, waitSecs
 
-If app.Documents.Count = 0 Then
-  Call app.Documents.Add(\"\")
+' THE CALLS AFTER A SUCCESSFUL TouchApp CAN STILL BE REJECTED, and they used to
+' be unguarded. A freshly CreateObject'd AutoCAD answers Visible=True and is
+' then still opening its startup document and running its startup routines, so
+' Documents.Count / Documents.Add / ActiveDocument get RPC_E_CALL_REJECTED --
+' and with no On Error around them the script died on a RAW VBSCRIPT RUNTIME
+' ERROR naming only a line number, which is not a diagnosis.
+'
+' Measured, not supposed: verify:autocad-activex:windows on 2026-09-27 (job
+' 16761201255) failed exactly there -- \"L'appel a ete rejete par l'appele\" at
+' bridge-autocad.vbs(217, 1) -- with EmitFlags reporting ATTACHED=0 CREATED=1
+' and the CAD sweep in the same job reporting NO live instance. So nothing was
+' wedged; our own new instance was busy. The same pipeline's verify:epure-api
+' job then reached READY in 30.95 s on a second invocation, which is what
+' \"transient\" looks like.
+Dim docReady, docAttempt
+docReady = False
+For docAttempt = 1 To 20
+  On Error Resume Next
+  If app.Documents.Count = 0 Then
+    Call app.Documents.Add(\"\")
+  End If
+  Set doc = app.ActiveDocument
+  If Err.Number = 0 Then
+    On Error GoTo 0
+    docReady = True
+    Exit For
+  End If
+  lastTouchError = Err.Number & \" \" & Err.Description
+  VBSDebug \"document not ready on attempt \" & docAttempt & \" of 20: \" & lastTouchError
+  Err.Clear
+  On Error GoTo 0
+  WScript.Sleep 1000
+Next
+If Not docReady Then
+  AppendLine errFile, \"ERROR COM bridge: \" & progId & \" accepted Visible but kept \" & _
+    \"rejecting the document calls on 20 attempts, one second apart (\" & _
+    lastTouchError & \"). The instance is up but never became ready to take a \" & _
+    \"command; on this machine that is usually a startup dialog on the desktop.\"
+  RecordComError \"document\", 0, lastTouchError
+  WScript.Quit 4
 End If
-Set doc = app.ActiveDocument
 
 ${PLUGIN_BEFORE_LOAD}
 VBSDebug \"SendCommand (load ...)\"

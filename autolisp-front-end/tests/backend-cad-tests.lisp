@@ -2699,6 +2699,75 @@ quit another release."
           (is (not (search "GetObject(, \"AutoCAD.Application\")" text)))
           (is (not (search "CreateObject(\"AutoCAD.Application\")" text))))))))
 
+(test autocad-bridge-retries-the-document-calls-after-touchapp
+  "alfe-autocad-hung-instance-blocks-com-bootstrap, measured on the runner
+2026-09-27 (job 16761201255): the bridge died on a RAW VBScript runtime error --
+`L'appel a ete rejete par l'appele' at bridge-autocad.vbs(217, 1) -- because the
+calls AFTER a successful TouchApp were unguarded. A freshly CreateObject'd
+AutoCAD answers Visible=True and is then still opening its startup document, so
+Documents.Count / Documents.Add / ActiveDocument get RPC_E_CALL_REJECTED.
+
+The same job proved nothing else was wedged (EmitFlags ATTACHED=0 CREATED=1, and
+the CAD sweep reported no live instance), and verify:epure-api reached READY in
+30.95 s on another invocation -- so the rejection is TRANSIENT and must be
+retried, not reported as a broken server.
+
+The structural assertion is the one that would have failed before: between
+WaitQuiescent and the ActiveDocument call there must be an error guard."
+  (let* ((text alfe.backend.autocad::*bridge-autocad-vbs-template*)
+         (quiescent (search "WaitQuiescent app, waitSecs" text))
+         (active-doc (search "Set doc = app.ActiveDocument" text)))
+    (is (and quiescent active-doc (< quiescent active-doc))
+        "the template must still call WaitQuiescent before taking the document")
+    (let ((guard (search "On Error Resume Next" text :start2 quiescent)))
+      (is (and guard (< guard active-doc))
+          "the ActiveDocument call must sit inside an error guard: unguarded, a ~
+busy server kills the script with a bare line number"))
+    ;; It retries, and says how many times it tried when it gives up.
+    (is (search "docReady" text) "the retry must record whether it succeeded")
+    (is (search "docAttempt" text) "and count its attempts")
+    (is (search "of 20" text) "and name the budget in the failure message")
+    ;; Assert on a fragment that is CONTIGUOUS in the template. VBScript
+    ;; messages are built with `& _' continuations, so a phrase that reads as
+    ;; one sentence in the source is several strings in the emitted text -- the
+    ;; first version of this test searched across a continuation and failed on
+    ;; its own wording rather than on the code.
+    (is (search "never became ready to take a" text)
+        "the give-up message must say what actually happened")
+    ;; Option Explicit: both new globals are declared.
+    (is (search "Dim docReady, docAttempt" text)
+        "both new globals must be Dim'd -- an undeclared one kills the bridge ~
+before READY under Option Explicit")))
+
+(test autocad-bridge-blames-another-instance-only-when-it-attached
+  "The TouchApp failure message used to say `Another instance is probably wedged
+and holding the registration' unconditionally. When the bridge CREATED the
+instance itself there is no other one to blame, and that advice sent an
+investigation after a phantom for a week -- the 2026-09-27 evidence was
+ATTACHED=0, CREATED=1, sweep reporting nothing live.
+
+So the advice is now conditional, and the wrong half must not be reachable from
+the created path."
+  (let* ((text alfe.backend.autocad::*bridge-autocad-vbs-template*)
+         (touch-fail (search "rejected the first call" text)))
+    ;; NB: IS needs a LIST form -- `(is touch-fail ...)' is a compile error
+    ;; ("Argument to IS must be a list"), which surfaces at RUN time as
+    ;; COMPILED-PROGRAM-ERROR rather than at compile time.
+    (is (not (null touch-fail)) "the TouchApp failure branch must still exist")
+    ;; The branch OPENS before the message, so the window has to start earlier
+    ;; than the message -- and every fragment asserted below is contiguous in
+    ;; the template, because `& _' continuations split a sentence into several
+    ;; strings (see the note in the sibling test).
+    (is (search "If attached Then" text)
+        "the advice must branch on whether we attached")
+    (let ((region (subseq text touch-fail (min (length text) (+ touch-fail 1400)))))
+      (is (search "that one is wedged" region)
+          "the ATTACHED branch keeps the end-it-on-the-machine advice")
+      (is (search "no other one is to blame" region)
+          "and the CREATED branch must say so instead")
+      (is (search "it is still starting" region)
+          "naming the likely cause for our own instance"))))
+
 (test autocad-bridge-records-the-com-failure-details
   "The COM error number and description are what diagnose a failed
 activation, and they were thrown away: the run reported only cscript's
