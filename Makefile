@@ -338,7 +338,16 @@ check-nightly-sweep-isolation:  ## Fail if a scheduled pipeline would contain an
 check-cad-sweep-gating:  ## Fail if a Windows CAD job sits on a sweep gate that does not match the CAD it drives.
 	python3 scripts/check-cad-sweep-gating.py
 
-check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating  ## Every release-packaging check.
+# The pipeline sweep decides which pipelines can never finish. Every defect the
+# previous version had was a SELECTION defect -- it swept on age when the
+# question was whether anyone could still play the jobs, it ignored parents, and
+# it reported success from a truncated listing -- and it had no test at all. Two
+# merges landed on master with no CI because of it
+# (ci-job-activity-cap-refuses-master-pipelines).
+check-stale-pipeline-sweep:  ## Fail if the stale-pipeline sweep would select the wrong pipelines.
+	python3 scripts/tests/test-cancel-stale-pipelines.py
+
+check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
 # (no PowerShell, pjb 2026-08-16: do not install it). A container gives the

@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""Unit tests for the stale-pipeline sweep's SELECTION.
+
+ci-job-activity-cap-refuses-master-pipelines.issue. The old sweep was never
+tested, and every one of its defects was a selection defect: it looked at age
+when the question was whether anyone could still play the jobs, it ignored
+parents, and it reported success from a truncated listing. So what is tested
+here is the decision, not that the script runs.
+
+Each case below is one the previous sweep got WRONG on 2026-09-26. A test that
+cannot fail proves nothing, so the pairs matter: the merged-MR child IS swept
+and the OPEN-MR child of the same age is NOT.
+
+    python3 scripts/tests/test-cancel-stale-pipelines.py
+"""
+
+import datetime
+import importlib.util
+import os
+import pathlib
+import unittest
+
+HERE = pathlib.Path(__file__).resolve().parent
+SCRIPT = HERE.parent / "cancel-stale-pipelines.py"
+
+# The script is a hyphenated CLI, not an importable module name; load it by path
+# so the test exercises the shipped file rather than a copy of its logic.
+_spec = importlib.util.spec_from_file_location("sweep", SCRIPT)
+sweep = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(sweep)
+
+NOW = datetime.datetime(2026, 9, 27, 0, 0, 0, tzinfo=datetime.timezone.utc)
+
+
+def stamp(hours_ago):
+    return (NOW - datetime.timedelta(hours=hours_ago)).strftime(
+        "%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def pipeline(pid=1, ref="master", source="parent_pipeline",
+             status="running", hours_ago=1.0):
+    return {"id": pid, "ref": ref, "source": source, "status": status,
+            "created_at": stamp(hours_ago)}
+
+
+def classify(p, mr_state=None, max_age=12, max_parent_age=48, protected=()):
+    return sweep.classify_pipeline(p, mr_state, NOW, max_age, max_parent_age,
+                                   set(protected))
+
+
+class MergeRequestRef(unittest.TestCase):
+    def test_recognises_head_and_merge_refs(self):
+        self.assertEqual(297, sweep.merge_request_iid(
+            "refs/merge-requests/297/head"))
+        self.assertEqual(297, sweep.merge_request_iid(
+            "refs/merge-requests/297/merge"))
+
+    def test_a_branch_is_not_a_merge_request(self):
+        self.assertIsNone(sweep.merge_request_iid("master"))
+        self.assertIsNone(sweep.merge_request_iid("fix-something"))
+        self.assertIsNone(sweep.merge_request_iid(None))
+
+
+class ChildOfAFinishedMergeRequest(unittest.TestCase):
+    """THE case that filled the cap: four children of merged MRs, all young."""
+
+    def young_child(self, pid=10):
+        return pipeline(pid=pid, ref="refs/merge-requests/297/head",
+                        hours_ago=0.5)
+
+    def test_merged_is_swept_however_young(self):
+        reason = classify(self.young_child(), mr_state="merged")
+        self.assertIsNotNone(reason)
+        self.assertIn("!297", reason)
+        self.assertIn("merged", reason)
+
+    def test_closed_is_swept_too(self):
+        self.assertIsNotNone(classify(self.young_child(), mr_state="closed"))
+
+    def test_but_an_OPEN_merge_request_of_the_same_age_is_left_alone(self):
+        # The discriminating half: if this were swept, the sweep would kill the
+        # verification of every merge request under review.
+        self.assertIsNone(classify(self.young_child(), mr_state="opened"))
+
+    def test_an_unknown_mr_state_falls_back_to_age(self):
+        # An API hiccup must not turn into a cancellation.
+        self.assertIsNone(classify(self.young_child(), mr_state=None))
+        old = pipeline(ref="refs/merge-requests/297/head", hours_ago=30)
+        self.assertIsNotNone(classify(old, mr_state=None))
+
+
+class ChildAge(unittest.TestCase):
+    def test_an_abandoned_branch_child_is_swept_on_age(self):
+        # A ref pushed once and never again has nothing to supersede it.
+        reason = classify(pipeline(ref="fix-abandoned", hours_ago=20))
+        self.assertIsNotNone(reason)
+        self.assertIn(">=", reason)
+
+    def test_a_young_branch_child_is_not(self):
+        self.assertIsNone(classify(pipeline(ref="fix-in-progress",
+                                            hours_ago=2)))
+
+
+class StuckParents(unittest.TestCase):
+    """The fifteen jobs held since 2026-08-22 that nothing swept."""
+
+    def test_a_five_week_old_parent_is_swept(self):
+        reason = classify(pipeline(source="push", hours_ago=24 * 35))
+        self.assertIsNotNone(reason)
+        self.assertIn("stuck", reason)
+
+    def test_a_parent_waiting_hours_on_a_serial_runner_is_not(self):
+        # This is normal here: the Windows runner is serial and a native child
+        # can keep a master pipeline open for hours. Sweeping it would be worse
+        # than the leak.
+        self.assertIsNone(classify(pipeline(source="push", hours_ago=10)))
+
+    def test_a_parent_is_not_swept_by_the_child_threshold(self):
+        # 20h is past the child threshold (12) and short of the parent one (48).
+        self.assertIsNone(classify(pipeline(source="push", hours_ago=20)))
+
+
+class NeverItsOwnPipeline(unittest.TestCase):
+    """The sweep is meant to run in .pre of every master pipeline."""
+
+    def test_the_current_pipeline_is_protected(self):
+        old = pipeline(pid=99, source="push", hours_ago=24 * 40)
+        self.assertIsNotNone(classify(old), "must be sweepable when unprotected")
+        self.assertIsNone(classify(old, protected=(99,)))
+
+    def test_the_current_pipelines_child_is_protected(self):
+        child = pipeline(pid=100, ref="refs/merge-requests/297/head",
+                         hours_ago=0.5)
+        self.assertIsNotNone(classify(child, mr_state="merged"))
+        self.assertIsNone(classify(child, mr_state="merged", protected=(100,)))
+
+
+class OnlyActivePipelines(unittest.TestCase):
+    def test_a_finished_pipeline_is_never_cancelled(self):
+        for status in ("success", "failed", "canceled", "skipped"):
+            done = pipeline(source="push", status=status, hours_ago=24 * 40)
+            self.assertIsNone(classify(done), status)
+
+    def test_every_active_status_is_considered(self):
+        # `created' is the status the fifteen stuck jobs' pipeline reports its
+        # jobs in, and `manual'/`scheduled' pipelines hold jobs just as well.
+        for status in sweep.ACTIVE:
+            old = pipeline(source="push", status=status, hours_ago=24 * 40)
+            self.assertIsNotNone(classify(old), status)
+
+
+class TruncationIsAFailure(unittest.TestCase):
+    """`child pipelines seen: 500' was a page cap printed as a count."""
+
+    def test_a_full_last_page_raises_instead_of_truncating(self):
+        calls = []
+
+        def always_full(path):
+            calls.append(path)
+            return [{"id": len(calls), "ref": "master", "source": "push",
+                     "status": "running", "created_at": stamp(1)}
+                    for _ in range(100)]
+
+        original = sweep.request
+        sweep.request = always_full
+        try:
+            with self.assertRaises(RuntimeError) as caught:
+                sweep.active_pipelines(child=False)
+            self.assertIn("truncated", str(caught.exception))
+        finally:
+            sweep.request = original
+
+    def test_a_short_page_ends_the_listing_normally(self):
+        def one_short_page(path):
+            if "page=1" in path:
+                return [{"id": 1, "ref": "master", "source": "push",
+                         "status": "running", "created_at": stamp(1)}]
+            return []
+
+        original = sweep.request
+        sweep.request = one_short_page
+        try:
+            found = sweep.active_pipelines(child=False)
+            self.assertEqual(1, len(found))
+        finally:
+            sweep.request = original
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

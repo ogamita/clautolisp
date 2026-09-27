@@ -102,7 +102,7 @@ stages:
 # automatic for the poseidon test lanes). These anchors are spliced as the
 # FIRST rule of a job so the release tag wins over the manual fallback.
 .not-on-schedule: &not-on-schedule
-  # The nightly schedule exists for ONE job: sweep:stale-child-pipelines.
+  # The nightly schedule exists for ONE job: sweep:stale-pipelines.
   # Everything else stays off it. Without this, a scheduled pipeline on
   # master runs the whole test matrix at 03:00Z -- and native:pipeline
   # with it, which would create one more never-completing child every
@@ -633,6 +633,14 @@ documentation:
     # error quoting the commit body
     # (windows-runner-commit-message-breaks-powershell).
     - make check-commit-message-ascii
+    # The pipeline sweep decides which pipelines can never finish. It had no
+    # test, and all three of its defects were selection defects -- which is how
+    # two merges came to land on master with NO pipeline at all, the cap having
+    # been filled by children of merge requests that were already merged
+    # (ci-job-activity-cap-refuses-master-pipelines). Seconds, and it runs in a
+    # lane that always runs, because the failure it guards against is silent:
+    # a pipeline that was never created cannot report its own absence.
+    - make check-stale-pipeline-sweep
     # XeLaTeX has NO font fallback: a glyph the body face lacks is dropped,
     # the PDF is produced successfully, and the character is simply gone.
     # Cheap and BEFORE the build, for the same reason as the check above --
@@ -1091,7 +1099,11 @@ release:windows:x86-64:
 #
 # It is a broom, not a fix, and it is scheduled rather than reactive for
 # exactly that reason. SWEEP_MAX_AGE_HOURS tunes it without touching code.
-sweep:stale-child-pipelines:
+# Renamed from sweep:stale-child-pipelines: it no longer sweeps only children.
+# A stuck PARENT holds jobs against the same cap, and one of them had held
+# fifteen since 2026-08-22 while nothing looked at it
+# (ci-job-activity-cap-refuses-master-pipelines).
+sweep:stale-pipelines:
   stage: .pre
   tags: [linux, amd64, docker]
   image: $CLAUTOLISP_CI_LATEST
@@ -1103,16 +1115,30 @@ sweep:stale-child-pipelines:
     # back online, and a sweep that removed them the same night would take
     # that away.
     SWEEP_MAX_AGE_HOURS: "12"
+    # Parents have no "nobody will play this" signal, so they go by age alone
+    # and the threshold is generous: a master pipeline waiting on the serial
+    # Windows runner legitimately stays open for hours. Five weeks is not that.
+    SWEEP_MAX_PARENT_AGE_HOURS: "48"
   rules:
     # The nightly schedule runs this and nothing else: every other job
     # carries *not-on-schedule.
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: on_success
+    # AND on every master pipeline. Nightly-only was not enough: the cap was
+    # crossed at 21:47Z by four children of merge requests merged minutes
+    # earlier, and the next sweep was due at 03:00Z -- five hours in which
+    # every master pipeline would have been REFUSED, which is how two merges
+    # came to land with no CI at all. The job takes two seconds and is
+    # idempotent, and it never cancels its own pipeline or its own child
+    # (protected explicitly, and tested).
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+      allow_failure: true
     # And by hand, from any pipeline, for the day the bucket fills early.
     - when: manual
       allow_failure: true
   script:
-    - python3 scripts/cancel-stale-child-pipelines.py
+    - python3 scripts/cancel-stale-pipelines.py
 
 detect:runners:
   stage: .pre
