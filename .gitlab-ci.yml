@@ -641,6 +641,11 @@ documentation:
     # lane that always runs, because the failure it guards against is silent:
     # a pipeline that was never created cannot report its own absence.
     - make check-stale-pipeline-sweep
+    # A test file without (in-suite ...) loads and its tests never run, so the
+    # suite reports SUCCESS by not executing them -- the worst failure shape
+    # this repository meets, and one it has already met. Seconds, in a lane
+    # that always runs (test-file-without-in-suite-runs-nothing).
+    - make check-test-suite-membership
     # XeLaTeX has NO font fallback: a glyph the body face lacks is dropped,
     # the PDF is produced successfully, and the character is simply gone.
     # Cheap and BEFORE the build, for the same reason as the check above --

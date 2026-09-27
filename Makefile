@@ -347,6 +347,16 @@ check-cad-sweep-gating:  ## Fail if a Windows CAD job sits on a sweep gate that 
 check-stale-pipeline-sweep:  ## Fail if the stale-pipeline sweep would select the wrong pipelines.
 	python3 scripts/tests/test-cancel-stale-pipelines.py
 
+# A test file without (in-suite ...) compiles, loads, and its tests NEVER RUN:
+# the suite passes green by not executing them. That happened while fixing
+# sysvar-table-ignores-runtime-dialect-change -- four new tests were declared
+# outside the suite and the green was first read as success. Its write-up ends
+# with the recommendation this implements. Both targets: the check itself, and
+# the tests proving each of its rules fires.
+check-test-suite-membership:  ## Fail if a FiveAM test file would load but never run.
+	python3 scripts/check-test-suite-membership.py
+	python3 scripts/tests/test-check-test-suite-membership.py
+
 check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
