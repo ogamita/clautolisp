@@ -1438,7 +1438,15 @@ Returns the path of the emitted file."
           ;; Re-signalling by MESSAGE keeps~%~
           ;; the loop's quit test working: it recognises a quit with~%~
           ;; autolisp-quit-signal-p on the message text.~%~
-          (setq err (vl-catch-all-apply 'load (list path)))~%~
+          ;; Use the CAPTURED NATIVE loader, not the (load) symbol: run-common~%~
+          ;; now redefines (load) to deport onto autolisp-source-load, which~%~
+          ;; re-dispatches the loaded form back through THIS function and~%~
+          ;; re-stages to alfe-eval.lsp -- an unbounded re-entrancy that wedges~%~
+          ;; the request at RUNNING (STDIN-BUSY). alfe-eval.lsp holds alfe's own~%~
+          ;; re-serialised form and needs the host reader pipeline, never the~%~
+          ;; byte-safe shim. *alfe-native-load* is captured before either shadow~%~
+          ;; and always bound by the time the server loop runs.~%~
+          (setq err (vl-catch-all-apply *alfe-native-load* (list path)))~%~
           (if (vl-catch-all-error-p err)~%~
             (setq err (vl-catch-all-error-message err))~%~
             (progn~%~
@@ -1578,6 +1586,22 @@ Returns the path of the emitted file."
               (autolisp-emit-user-line (autolisp-str (car args)))~%~
               (car args))~%~
             (car args)))))~%~
+    ;; load: deport EVERY (load ...) -- including a call nested inside a~%~
+    ;; running function or applied via (vl-catch-all-apply 'load ...),~%~
+    ;; which the per-form dispatcher never sees -- onto alfe's byte-safe~%~
+    ;; source shim, so the host's native (load) is never used. Variadic~%~
+    ;; because normalize is the identity on this host, so a 1-arg~%~
+    ;; (load X) is never padded; accept 1 or 2 args like native load's~%~
+    ;; optional onfailure. NB the shim reads .lsp text via read-line, so~%~
+    ;; a nested load of a compiled/.vlx/.fas target is out of its scope.~%~
+    ;; Capture the native loader FIRST so autolisp-eval-internal-load can~%~
+    ;; run alfe's own staged protocol-request files without re-entering~%~
+    ;; the shim (which wedges stdin). load is still native at this point.~%~
+    (setq *alfe-native-load* load)~%~
+    (defun load (&rest args)~%~
+      (if (cdr args)~%~
+        (autolisp-source-load-with-onfailure (car args) (cadr args))~%~
+        (autolisp-source-load (car args))))~%~
     ;; With variadic shadows in place, every documented (princ)~%~
     ;; arity is honoured natively — no source-form rewrite is~%~
     ;; needed. Replace normalize with the identity function so~%~
@@ -1617,7 +1641,18 @@ Returns the path of the emitted file."
     (defun prin1 (obj file)~%~
       (if file~%~
         (progn (autolisp-write-string-to-file (autolisp-stdout-text obj) file) obj)~%~
-        (progn (autolisp-emit-user-str (autolisp-stdout-text obj)) obj)))))~%~
+        (progn (autolisp-emit-user-str (autolisp-stdout-text obj)) obj)))~%~
+    ;; load: same deportation as the &rest branch (see above). Fixed~%~
+    ;; 2-arg here because this host's defun has no &rest; the bootstrap~%~
+    ;; walker pads a top-level 1-arg (load X) to (load X nil), and a~%~
+    ;; nested/applied (load X) must pass the 2nd arg explicitly. Routing~%~
+    ;; through -with-onfailure with onfailure=nil suppresses only a~%~
+    ;; resolve-failure; a decode/eval error inside the file still raises.~%~
+    ;; Capture the native loader first (see the &rest branch) so alfe's own~%~
+    ;; staged protocol-request loads bypass this shadow via APPLY.~%~
+    (setq *alfe-native-load* load)~%~
+    (defun load (path onfailure)~%~
+      (autolisp-source-load-with-onfailure path onfailure))))~%~
 ;; Publish once at startup so alfe sees the initial values even~%~
 ;; before the first request lands.~%~
 (alfe-publish-runtime-flags)~%~

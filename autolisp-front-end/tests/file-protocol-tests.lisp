@@ -1215,7 +1215,11 @@ never signals."
 ;;; alfe-eval-x-output-lost-on-cad. alfe overrides the runtime's
 ;;; AUTOLISP-EVAL-REQUEST-FORM (the override is emitted into
 ;;; run-common.lsp) so a non-LOAD form is written to alfe-eval.lsp and
-;;; run through the host's native LOAD. That override used to call
+;;; run through the host's native LOAD -- reached via the captured
+;;; *alfe-native-load* now that run-common redefines (load) to deport onto
+;;; the byte-safe source shim (accoreconsole-deported-load-highbyte); a bare
+;;; 'load here would re-enter the server loop unboundedly. That override
+;;; used to call
 ;;;
 ;;;   (vl-catch-all-apply 'load (list path))
 ;;;
@@ -1316,8 +1320,13 @@ recognises a quit."
             (emit-run-common-with-real-runtime workdir)
           (declare (ignore session))
           (let ((content (alfe.protocol.file:read-file-as-string path)))
-            ;; The outcome is bound, tested, and re-signalled.
-            (is (search "(setq err (vl-catch-all-apply 'load (list path)))"
+            ;; The outcome is bound, tested, and re-signalled. The staged
+            ;; alfe-eval.lsp is run through the CAPTURED NATIVE loader, not
+            ;; the (load) symbol: run-common redefines (load) to deport onto
+            ;; autolisp-source-load, and letting this staging load hit that
+            ;; shadow re-enters the server loop unboundedly (STDIN-BUSY). See
+            ;; accoreconsole-deported-load-highbyte.
+            (is (search "(setq err (vl-catch-all-apply *alfe-native-load* (list path)))"
                         content))
             (is (search "(vl-catch-all-error-p err)" content))
             ;; Re-signalled through autolisp-raise, never `error': that
@@ -1331,7 +1340,7 @@ recognises a quit."
                         content))
             ;; The discarding shape must not come back: the ONLY
             ;; occurrence of the load call is the one bound to ERR.
-            (let ((pos (search "(vl-catch-all-apply 'load (list path))"
+            (let ((pos (search "(vl-catch-all-apply *alfe-native-load* (list path))"
                                content)))
               (is (not (null pos)))
               (when pos

@@ -877,16 +877,30 @@
   (cond
     ((and (= (length form) 2)
           (autolisp-internal-protocol-load-p (cadr form)))
-     (eval form))
+     (autolisp-eval-internal-load form))
     ((= (length form) 2)
      (autolisp-source-load (eval (cadr form))))
     ((and (= (length form) 3)
           (autolisp-internal-protocol-load-p (cadr form)))
-     (eval form))
+     (autolisp-eval-internal-load form))
     ((= (length form) 3)
      (autolisp-source-load-with-onfailure (eval (cadr form)) (eval (caddr form))))
     (T
      (eval form))))
+
+;; A protocol-request-*.lsp is alfe's OWN staged request file: it must be
+;; run by the HOST's native loader, NOT the (load) shadow that run-common
+;; installs to deport user loads onto autolisp-source-load. Deporting an
+;; internal load re-enters the protocol server loop (re-dispatching the
+;; staged form, re-publishing status) and wedges stdin -- STDIN-BUSY, the
+;; request never leaving RUNNING. run-common captures the native subr into
+;; *alfe-native-load* just before shadowing; APPLY sidesteps the no-&rest
+;; host's fixed-arity shadow entirely. Before the shadow is installed the
+;; variable is unbound and a bare (eval form) already reaches native load.
+(defun autolisp-eval-internal-load (form)
+  (if (boundp '*alfe-native-load*)
+    (apply *alfe-native-load* (cdr form))
+    (eval form)))
 
 (defun autolisp-eval-request-form (form)
   (setq form (autolisp-normalize-princ-call form))

@@ -101,7 +101,14 @@
       (progn
         (m (strcat "source." tag ".bytes") (dumpbytes path))
         (setq ENCSRC "unset")
-        (setq r (vl-catch-all-apply 'load (list path)))
+        ;; Pass the onfailure arg explicitly: under alfe the (load) symbol is
+        ;; redefined to deport onto the byte-safe source shim, and on a no-&rest
+        ;; host (AutoCAD) that shadow is fixed 2-arg (path onfailure). A 1-arg
+        ;; apply would raise an arity error masquerading as LOAD-ERR. The file
+        ;; exists (trywrite just wrote it), so onfailure=nil suppresses nothing
+        ;; here; a real decode error inside the shim still surfaces as LOAD-ERR,
+        ;; and success sets ENCSRC (codepoints 65 233 90) vs the "unset" sentinel.
+        (setq r (vl-catch-all-apply 'load (list path nil)))
         (if (vl-catch-all-error-p r)
             ;; Surface the actual failure, not a bare sentinel: the message is
             ;; what diagnoses accoreconsole-deported-load-highbyte (why the
