@@ -16,7 +16,17 @@
   (stream nil :type (or null stream)))
 
 (defun read-line-from-input-context (input-context)
-  (read-line (input-context-stream input-context) nil :eof))
+  "Read one line from INPUT-CONTEXT, or :EOF. A CRLF line ending is
+normalised here, at the input boundary: when the stream does not translate
+CRLF (SBCL on MS-Windows, an Emacs shell buffer sending CRLF), READ-LINE
+leaves the CR at the end of the line, and `,help<CR>' then named the
+unknown command \"help<CR>\"."
+  (let ((line (read-line (input-context-stream input-context) nil :eof)))
+    (if (and (stringp line)
+             (plusp (length line))
+             (char= #\Return (char line (1- (length line)))))
+        (subseq line 0 (1- (length line)))
+        line)))
 
 (defun unread-line-from-input-context (line input-context)
   "Push LINE (plus a newline) back in front of INPUT-CONTEXT's stream."

@@ -1,0 +1,44 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: repl-comma-command-crlf — `,help' answers a lone `"' on MS-Windows
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-repl-comma-commands
+
+* Symptom
+
+Reported by pjb 2026-09-27 on PF5S26BT (clautolisp 2.2.136, MS-Windows,
+bash in an Emacs shell buffer):
+
+#+begin_example
+_$ ,help
+
+"
+_$
+#+end_example
+
+No comma-command worked; Lisp forms evaluated normally.
+
+* Cause
+
+=read-line-from-input-context= returned =READ-LINE='s result verbatim. When
+the input stream does not translate CRLF (SBCL's stdin on MS-Windows, a
+terminal/Emacs buffer sending CRLF), the line keeps its trailing CR. A Lisp
+form does not care (CR is whitespace to the reader), but a comma line became
+the command "help<CR>", unknown; the reply =? unknown command "help<CR>"=
+carries the CR, and a terminal honouring it returns to column 0, so the
+closing ="= overwrites the message — leaving a lone ="=.
+
+Reproduced on macOS by piping =,help\r\n=: =? unknown command "help^M"=.
+
+The interactor's input code had not changed since 2.0.11, so the
+"regression" is environmental (what sends CRLF), not a code change.
+
+* Resolved
+
+clautolisp 2.2.140: =read-line-from-input-context= drops one trailing CR —
+line-ending normalisation at the input boundary, as AGENTS.md asks. Every
+interactor reader (REPL comma-commands, debugger / navigator command lines,
+shell escape, argument prompts) goes through it. Regression test
+=crlf-lines-read-like-lf-lines= (autolisp-interactor tests).

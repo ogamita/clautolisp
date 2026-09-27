@@ -37,6 +37,12 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *REPL comma-commands work again on CRLF input.* On MS-Windows (and
+  in an Emacs shell buffer sending CRLF) the CR stayed at the end of the
+  line, so =,help= was looked up as the unknown command =help<CR>= — which
+  the terminal rendered as a lone ="=. Line endings are now normalised
+  where the REPL, debugger and navigators read a line.
+
 - *A new drawing can be created from a template, so a DWG saved from a
   fresh session keeps its entities.* The ~CLAUTOLISPNEWDRAWINGTEMPLATE~
   system variable (and the environment variable of the same name, which
