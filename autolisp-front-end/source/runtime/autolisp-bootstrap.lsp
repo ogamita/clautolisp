@@ -843,11 +843,42 @@
     (alfe-load-onfailure (car args) (cadr args))
     (alfe-load (car args))))
 
+;; T iff FORM contains a native princ/print/prin1/load CALL that needs
+;; rewriting. Walks without consing; stops at QUOTE / FUNCTION so quoted
+;; data never false-positives. This is the CONS-IDENTITY GUARD: unless a
+;; form actually contains one of these calls, alfe-rewrite-form must return
+;; it UNTOUCHED. Re-consing a form and then eval'ing it breaks on the CAD
+;; backends -- the reader attaches per-cell metadata that a rebuilt cons
+;; lacks, and AutoCAD then fails eval'ing it (observed as "division par
+;; zero" on accoreconsole for EVERY alfe-load, ASCII or not). The princ
+;; normalizer (autolisp-normalize-princ-call) is written the same way for
+;; the same reason.
+(defun alfe-form-needs-rewrite-p (form / head s)
+  (cond
+    ((atom form) nil)
+    ((not (listp form)) nil)
+    ((null form) nil)
+    (T
+     (setq head (car form))
+     (cond
+       ((and (= (type head) 'SYM)
+             (progn (setq s (strcase (vl-symbol-name head)))
+                    (or (= s "QUOTE") (= s "FUNCTION"))))
+        nil)
+       ((and (= (type head) 'SYM)
+             (or (= s "PRINC") (= s "PRINT") (= s "PRIN1") (= s "LOAD")))
+        T)
+       (T
+        (cond
+          ((alfe-form-needs-rewrite-p (car form)) T)
+          ((alfe-form-needs-rewrite-p (cdr form)) T)
+          (T nil)))))))
+
 ;; Rewrite a form's native operator calls into alfe-* calls. The star forms
-;; take the arg list, so a variadic call maps to a fixed-arity one. Recurse
-;; into subforms; stop at QUOTE / FUNCTION exactly like the princ walker, so
-;; quoted data is never rewritten.
-(defun alfe-rewrite-form (form / head s)
+;; take the arg list, so a variadic call maps to a fixed-arity one. Only
+;; called (via alfe-rewrite-form) when the pre-check found a call to rewrite,
+;; so a form with none keeps its reader-built cons cells intact.
+(defun alfe-rewrite-form-impl (form / head s)
   (cond
     ((atom form) form)
     ((not (listp form)) form)
@@ -869,6 +900,14 @@
         (list 'alfe-load* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
        (T
         (mapcar 'alfe-rewrite-form form))))))
+
+;; Cons-identity-preserving entry point: an untouched form is returned as-is
+;; (same cons cells), so only forms that really carry a native operator call
+;; are rebuilt. See alfe-form-needs-rewrite-p.
+(defun alfe-rewrite-form (form)
+  (if (alfe-form-needs-rewrite-p form)
+    (alfe-rewrite-form-impl form)
+    form))
 
 (defun alfe-eval-rewritten-form (form)
   (eval (alfe-rewrite-form form)))
