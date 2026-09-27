@@ -227,8 +227,15 @@ Negative control green again: under clautolisp, =verdict=nothing-defined= and
 
 ** Still open
 
-- [ ] *Re-run =verify:epure-api:windows= with the census* and read
-      =api-present= / =api-absent=. That says whether the COM module alone is
+- [ ] *Re-run =verify:epure-api:windows= with the census* — PLAYED at 14:43Z on
+      the 2.2.139 child (job 16763561700) and still =pending= at 15:55Z, 72
+      minutes queued. Not stuck: the runner is alive and matching. It is behind
+      *73 pending CAD-tagged jobs on a concurrency-1 gate*, arriving nine per
+      pipeline from the vendor probe matrix — measured, and recorded under
+      =ci-job-activity-cap-refuses-master-pipelines= because it is the same
+      "every pipeline creates a full matrix" cause seen from the queue side. The
+      census will land when the queue drains; nothing about it needs re-doing.
+      Read =api-present= / =api-absent=. That says whether the COM module alone is
       missing or the whole function library, on each engine — the two engines
       already load different subsets (29 EPURE-like symbols under AutoCAD, 40
       under BricsCAD).
