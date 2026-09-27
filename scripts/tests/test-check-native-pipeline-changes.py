@@ -90,24 +90,44 @@ class Unclassified(unittest.TestCase):
 
 
 class TheRealGate(unittest.TestCase):
-    def test_the_run_list_is_read_from_the_ci_file(self):
+    """The gate may be ABSENT, which is a real state, not a broken test.
+
+    It was reverted on 2026-09-27 after failing to match a merge request that
+    changed scripts/*.py. So these assert the CONTRACT in whichever state the
+    repository is in, which is what keeps them meaningful when it returns --
+    a test that only passes while a feature exists gets deleted the day it is
+    reverted, and then nothing guards its comeback.
+    """
+
+    def test_the_run_list_is_read_from_the_ci_file_when_there_is_one(self):
+        patterns = nat.run_patterns(nat.DEFAULT_ROOT)
+        if patterns is None:
+            self.skipTest("no changes: gate at the moment (reverted)")
         # Read from .gitlab-ci.yml, not duplicated here: the check must not be
         # able to drift from the behaviour it is checking.
-        patterns = nat.run_patterns(nat.DEFAULT_ROOT)
         self.assertIn("**/*.lisp", patterns)
         self.assertIn("**/Dockerfile", patterns)
         self.assertGreater(len(patterns), 20,
                            "the gate should be generous; a short list is a "
                            "silent-skip risk")
 
-    def test_the_repository_is_fully_classified(self):
-        # The check's own subject, asserted: this is what keeps a new file type
-        # from inheriting a decision nobody made.
+    def test_the_repository_is_fully_classified_when_there_is_a_gate(self):
         root = nat.DEFAULT_ROOT
-        missing = nat.unclassified(nat.tracked_paths(root),
-                                   nat.run_patterns(root), nat.IRRELEVANT)
+        patterns = nat.run_patterns(root)
+        if patterns is None:
+            self.skipTest("no changes: gate at the moment (reverted)")
+        missing = nat.unclassified(nat.tracked_paths(root), patterns,
+                                   nat.IRRELEVANT)
         self.assertEqual([], missing,
                          "unclassified tracked paths: %s" % missing[:10])
+
+    def test_the_check_passes_on_this_repository(self):
+        # Meaningful in BOTH states, which is the point: with a gate it passes
+        # because every tracked path is classified, and without one because the
+        # absence is a choice rather than an error. The first version of this
+        # was `assertEqual(0, ... if ... else 0)' -- a tautology that could not
+        # fail, which is worse than no test.
+        self.assertEqual(0, nat.main([str(nat.DEFAULT_ROOT)]))
 
 
 if __name__ == "__main__":

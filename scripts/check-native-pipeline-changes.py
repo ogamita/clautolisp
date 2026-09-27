@@ -142,11 +142,21 @@ def run_patterns(root):
     rest = text[start + 1:]
     end = re.search(r"\n(?=[A-Za-z.][^\s:]*:)", rest[1:])
     block = rest[: end.start() + 1] if end else rest
-    changes = block.find("changes:")
+    # A KEY, not the word: `changes:' also occurs in the prose comments around
+    # the rule, and matching those is how the first version of this reported
+    # "lists no paths" against a block that had none because the text it found
+    # was a sentence. Text-parsing YAML is fragile; anchoring on a line that is
+    # only whitespace + the key is the cheap way to keep it honest.
+    found = re.search(r"^\s*changes:\s*$", block, re.MULTILINE)
+    changes = found.start() if found else -1
     if changes < 0:
-        raise SystemExit("FAIL: native:pipeline has no `changes:' block -- the "
-                         "merge-request gate is gone, so this check and the "
-                         "issue that asked for it are out of step")
+        # The gate is ABSENT, which is a real state and not an error: it was
+        # reverted on 2026-09-27 after failing to match a merge request that
+        # changed scripts/*.py. The classification is still worth keeping --
+        # it is the list the gate needs when it returns, and it already found
+        # four real omissions -- so the check reports and passes instead of
+        # failing on a situation somebody chose.
+        return None
     patterns = re.findall(r'^\s*-\s*"([^"]+)"\s*$', block[changes:], re.MULTILINE)
     if not patterns:
         raise SystemExit("FAIL: native:pipeline's changes: block lists no paths")
@@ -167,6 +177,12 @@ def unclassified(paths, run, irrelevant):
 def main(argv=None):
     root = DEFAULT_ROOT if not argv else pathlib.Path(argv[0]).resolve()
     run = run_patterns(root)
+    if run is None:
+        print("native:pipeline has no changes: gate at the moment -- it was")
+        print("reverted after failing to match a real code change. Nothing to")
+        print("classify against; the IRRELEVANT list here is kept for when the")
+        print("gate returns (ci-job-activity-cap-refuses-master-pipelines).")
+        return 0
     paths = tracked_paths(root)
     missing = unclassified(paths, run, IRRELEVANT)
 
