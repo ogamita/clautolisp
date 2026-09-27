@@ -454,10 +454,30 @@
     (eval onfailure)
     onfailure))
 
+;; T when PATH names a file that opens for reading. findfile searches the
+;; CAD Support File Search Path, NOT the current directory -- on AutoCAD
+;; accoreconsole a bare relative name of a file in the cwd is not found by
+;; findfile, though native (open)/(load) resolve it (and BricsCAD's findfile
+;; does search the cwd). So the resolver below falls back to a direct open
+;; test. accoreconsole-deported-load-highbyte.
+(defun autolisp-source-file-openable-p (path / f)
+  (setq f (open path "r"))
+  (if f
+    (progn (close f) T)
+    nil))
+
 (defun autolisp-source-resolve-load-path (path / found home)
   (setq found (findfile path))
   (if (not found)
     (setq found (findfile (strcat path ".lsp"))))
+  ;; cwd-relative / absolute paths findfile's support-path search misses:
+  ;; accept the path as given (then +".lsp") when it actually opens.
+  (if (not found)
+    (if (autolisp-source-file-openable-p path)
+      (setq found path)))
+  (if (not found)
+    (if (autolisp-source-file-openable-p (strcat path ".lsp"))
+      (setq found (strcat path ".lsp"))))
   (if (not found)
     (if (and (> (strlen path) 1)
              (= (substr path 1 2) "~/"))
