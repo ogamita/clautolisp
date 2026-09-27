@@ -1,6 +1,6 @@
 # -*- mode:org;coding:utf-8 -*-
 #+TITLE: autolisp-globals-writability-triage — quelles variables *AUTOLISP-…* méritent d'être RO avec une fonction de réglage
-#+STATUS: DRAFT
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: design
 #+DEPENDS: sysvar-table-ignores-runtime-dialect-change
@@ -119,6 +119,33 @@ peut faire.
 Quant à la troisième voie envisagée par pjb — instrumenter les
 affectations — le tri la disqualifie : elle imposerait un coût à chaque
 =setq= du langage pour surveiller une seule variable.
+
+* RÉSOLU 2026-09-27 — la question est répondue, et la dépendance est close
+
+Ce ticket est une RÉPONSE DE CONCEPTION, pas une tâche de code, et sa réponse
+est ci-dessus : *une seule variable* (=*AUTOLISP-DIALECT*=) relève de la classe
+A, et son défaut a été corrigé par la dépendance,
+=sysvar-table-ignores-runtime-dialect-change=, aujourd'hui close. La troisième
+voie envisagée par pjb — instrumenter toutes les affectations — reste
+disqualifiée par le tri : un coût sur chaque =setq= du langage pour surveiller
+une seule variable.
+
+*Vérifié sur le BINAIRE CONSTRUIT* plutôt que déduit du code : l'affectation
+=(setq *AUTOLISP-DIALECT* 'bricscad)= est bien prise en compte à chaud — la
+variable change et est relue à l'appel suivant, ce que le probe montre en
+imprimant le dialecte courant après chaque affectation.
+
+*Ce que la mesure n'a PAS pu discriminer, et c'est instructif.* Le probe voulait
+prouver que la TABLE DES SYSVARS suit le dialecte, en regardant apparaître et
+disparaître une sysvar propre à un vendeur. Impossible : sous =--dialect
+autocad=, =SAVEFORMAT= (BricsCAD) répond =1=, =TEMPLATEPATH= et
+=CLAUTOLISPNEWDRAWINGTEMPLATE= répondent =""=, et seul un nom inventé répond
+=nil=. Le catalogue est donc, pour ces noms, volontairement indépendant du
+dialecte. Détail de méthode qui a failli me faire conclure de travers : une
+valeur =""= ne distingue pas « absente » de « présente et vide » — il faut
+sonder par EXISTENCE (=nil= vs autre chose), et la première version du probe,
+qui lisait la valeur, montrait la même chose dans les trois dialectes sans
+rien prouver.
 
 * À vérifier si la classe D bouge
 
