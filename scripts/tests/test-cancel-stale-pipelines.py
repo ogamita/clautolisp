@@ -125,44 +125,52 @@ class PlayedJobsAreQueuedWork(unittest.TestCase):
 
 
 class QueuedWorkDetection(unittest.TestCase):
-    def test_manual_jobs_alone_are_not_queued_work(self):
-        def only_manual(path):
-            if "page=1" in path:
-                return [{"status": "manual"}, {"status": "success"},
-                        {"status": "failed"}]
-            return []
+    """The discriminator, which took two attempts to find.
 
-        original = sweep.request
-        sweep.request = only_manual
-        try:
-            self.assertFalse(sweep.has_queued_work(1))
-        finally:
-            sweep.request = original
+    A PENDING job is either a played manual job (a deliberate act) or one the
+    pipeline's matrix scheduled (garbage, in a merged MR's child). REST cannot
+    tell them apart -- measured 2026-09-27, a played verify:epure-api:windows and
+    an auto-scheduled build:alfe:windows return byte-identical field sets. This
+    ticket's earlier analysis concluded it was impossible; GraphQL's
+    CiJob.manualJob says whether the job is DECLARED manual, and that is the
+    distinction:
 
-    def test_a_pending_job_is_queued_work(self):
-        def one_pending(path):
-            if "page=1" in path:
-                return [{"status": "manual"}, {"status": "pending"}]
-            return []
+        pending + declared manual -> PLAYED
+        pending + not manual      -> the matrix scheduled it
+    """
 
-        original = sweep.request
-        sweep.request = one_pending
-        try:
-            self.assertTrue(sweep.has_queued_work(1))
-        finally:
-            sweep.request = original
+    def test_unplayed_manual_jobs_are_not_queued_work(self):
+        # Exactly what the sweep exists to clear: clickable fallbacks nobody
+        # clicked.
+        self.assertFalse(sweep.queued_work_p(
+            [("manual", True), ("success", False), ("failed", False)]))
 
-    def test_an_unlistable_pipeline_counts_as_queued(self):
+    def test_a_PLAYED_manual_job_is_queued_work(self):
+        self.assertTrue(sweep.queued_work_p([("manual", True),
+                                             ("pending", True)]))
+
+    def test_an_AUTO_SCHEDULED_pending_job_is_NOT(self):
+        # The case the old rule got wrong, and the reason the bucket refilled:
+        # a merged MR's child full of matrix-scheduled pending jobs was spared.
+        self.assertFalse(sweep.queued_work_p([("pending", False),
+                                              ("pending", False)]))
+
+    def test_a_RUNNING_job_is_spared_whatever_its_provenance(self):
+        # Killing work in flight wastes it, and here it can leave a CAD process
+        # behind.
+        self.assertTrue(sweep.queued_work_p([("running", False)]))
+        self.assertTrue(sweep.queued_work_p([("running", True)]))
+
+    def test_a_mixture_is_spared_for_the_played_one(self):
+        self.assertTrue(sweep.queued_work_p(
+            [("pending", False), ("pending", False), ("pending", True)]))
+
+    def test_unknown_counts_as_queued(self):
         # If we cannot tell, the safe answer is the one that does not cancel.
-        def boom(path):
-            raise ValueError("no")
+        self.assertTrue(sweep.queued_work_p(None))
 
-        original = sweep.request
-        sweep.request = boom
-        try:
-            self.assertTrue(sweep.has_queued_work(1))
-        finally:
-            sweep.request = original
+    def test_an_empty_pipeline_holds_nothing(self):
+        self.assertFalse(sweep.queued_work_p([]))
 
 
 class ChildAge(unittest.TestCase):
