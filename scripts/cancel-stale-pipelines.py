@@ -69,7 +69,19 @@ PROJECT = os.environ.get("CI_PROJECT_ID", "")
 # reports as a failure rather than swallowing, because a sweep that
 # silently cancels nothing is indistinguishable from one that had nothing
 # to do, and that is the failure mode this whole issue is about.
-TOKEN = os.environ.get("RUNNER_STATUS_TOKEN", "")
+#
+# TWO variables, in this order, and the order is the point. Cancelling needs
+# `api'; reading runner status needs only `read_api'. When the sweep was first
+# armed it inherited RUNNER_STATUS_TOKEN and every cancellation came back
+# 403 Forbidden -- the broom had never swept anything, and nobody knew because
+# the age-only rule never selected anything for it to fail on. So the sweep now
+# names its OWN credential: set PIPELINE_SWEEP_TOKEN to a token with `api' and
+# the read-only one stays read-only, which is the right shape when only one job
+# in the project needs to write. RUNNER_STATUS_TOKEN remains the fallback so an
+# installation that has not been split keeps working -- and still says plainly,
+# via the 403 report at the end, when that token cannot cancel.
+TOKEN = (os.environ.get("PIPELINE_SWEEP_TOKEN")
+         or os.environ.get("RUNNER_STATUS_TOKEN", ""))
 
 # Pipeline statuses that hold jobs against the cap.
 ACTIVE = ("created", "waiting_for_resource", "preparing", "pending", "running",
@@ -276,7 +288,10 @@ def main():
     args = parser.parse_args()
 
     if not TOKEN or not PROJECT:
-        print("FAIL: RUNNER_STATUS_TOKEN and CI_PROJECT_ID are both required.")
+        print("FAIL: a token (PIPELINE_SWEEP_TOKEN, else RUNNER_STATUS_TOKEN)")
+        print("      and CI_PROJECT_ID are both required. Cancelling needs the")
+        print("      `api' scope; a read_api token lists the pipelines and then")
+        print("      fails every cancellation with 403.")
         print("      Refusing to report success without having looked: a")
         print("      sweep that quietly does nothing is the failure this")
         print("      exists to prevent.")

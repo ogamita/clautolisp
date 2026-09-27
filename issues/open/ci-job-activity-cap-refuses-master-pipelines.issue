@@ -277,6 +277,66 @@ the answer is unknown, the safe one is the one that does not cancel.
 
 Six more tests (23 in total), including the case as observed.
 
+** The sparing rule earned its keep within hours (2026-09-27 08:40Z)
+
+Run against the live project with a token that can read, the sweep saw four
+active pipelines and selected *one*. What it did NOT select is the point:
+
+| pipeline    | ref                  | MR     | played+queued | verdict |
+|-------------+----------------------+--------+---------------+---------|
+| 2886614315  | !305/head            | merged |  6 (1 RUNNING) | spared  |
+| 2886632427  | !306/head            | merged | 21            | spared  |
+| 2886633375  | master (child)       | —      | 21            | spared  |
+| 2782105481  | master, 2026-08-22   | —      |  0 (15 created) | CANCEL |
+
+The first row is the one to read twice: a child of an *already-merged* MR
+holding a *running* =vendor:probes:bricscad= on a real CAD, plus five queued
+probes. Under the age-and-MR-state rule alone — the state of this ticket
+yesterday morning — the first armed sweep would have killed a running vendor
+probe and two 21-job campaigns another session had played. The rule that spares
+played work (2.2.127) was written the same evening, from one observed case, and
+this is it happening for real.
+
+** GitLab drops a played job after ~2 h anyway, which bounds the rule
+
+The two AutoCAD evidence jobs played the previous night both ended
+=failed / failure_reason: stuck_pending_no_matching_runners=, =queued_duration:
+7056 s=, =started_at: null= — GitLab gave up on them about two hours in, because
+PF5S26B had gone offline and no runner *matched*. So a played job does not
+survive its machine going away overnight, whatever the sweep does; the sparing
+rule matters for a runner that is busy or briefly away, not for one that is off.
+Worth knowing before reading a played-but-never-run job as evidence of anything.
+
+** The token pjb granted: what it can and cannot do (2026-09-27)
+
+pjb: "~/.authinfo contains a host gitlab.com port claude-job-killer token for
+this." Measured, because a token's scopes matter more than its name:
+
+- it READS fine — it listed the pipelines above and counted 64 active jobs,
+  which =RUNNER_STATUS_TOKEN= could not even do;
+- it CANNOT manage CI variables: =POST /projects/:id/variables= answers *403*,
+  so the sweep's credential cannot be wired into CI from here;
+- it cannot read its own metadata either — =GET /personal_access_tokens/self=
+  answers 403 =insufficient_granular_scope=, so it is a *fine-grained* PAT whose
+  permission set is not introspectable with itself;
+- whether it can CANCEL is *untested*: this session's tool policy refuses to
+  cancel CI workloads, narrowed to the single dead pipeline and with the token in
+  hand. That refusal is the same judgement as before and is not worked around.
+
+So the code half is done and the remaining step is a *one-field* action in the
+UI, not a code change: =scripts/cancel-stale-pipelines.py= now reads
+*=PIPELINE_SWEEP_TOKEN= first* and falls back to =RUNNER_STATUS_TOKEN=, so the
+read-only token stays read-only and only the sweep gets write. Set
+=PIPELINE_SWEEP_TOKEN= as a masked CI variable (project level is enough — this is
+the only project with the job) to a token that may *cancel pipelines*, and the
+sweep drains on every master pipeline by itself.
+
+Two cautions on creating it: a fine-grained PAT needs the pipeline-write
+permission explicitly, not just membership; and if it is created *protected*, the
+"playable by hand from any pipeline" rule in the job's =rules:= stops working
+from a merge request, which is why the existing =RUNNER_STATUS_TOKEN= is
+unprotected.
+
 ** What remains before this closes — a token, which is pjb's to grant
 
 The sweep needs a credential with the =api= scope. Two shapes, and the second
