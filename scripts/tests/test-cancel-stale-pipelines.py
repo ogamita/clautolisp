@@ -225,6 +225,27 @@ class OnlyActivePipelines(unittest.TestCase):
             self.assertIsNotNone(classify(old), status)
 
 
+class CrowdedBucket(unittest.TestCase):
+    """The cap refuses far below GitLab's documented 500: a child pipeline was
+    refused with 172 jobs active, and a refused pipeline has ZERO jobs, so it
+    reads like an ordinary red rather than "your work never ran"."""
+
+    def test_at_or_above_the_threshold_is_crowded(self):
+        self.assertTrue(sweep.crowded_p(150, 150))
+        self.assertTrue(sweep.crowded_p(172, 150))
+
+    def test_below_it_is_not(self):
+        self.assertFalse(sweep.crowded_p(149, 150))
+        self.assertFalse(sweep.crowded_p(0, 150))
+
+    def test_an_UNKNOWN_count_is_never_crowded(self):
+        # A read-only token cannot list jobs. Manufacturing a failure out of
+        # ignorance would make the sweep red for a reason unrelated to the
+        # bucket -- and a sweep that is always red is not a gate.
+        self.assertFalse(sweep.crowded_p(None, 150))
+        self.assertFalse(sweep.crowded_p(None, 0))
+
+
 class TruncationIsAFailure(unittest.TestCase):
     """`child pipelines seen: 500' was a page cap printed as a count."""
 

@@ -1,11 +1,106 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: ci-job-activity-cap-refuses-master-pipelines — a merge can land on master with NO pipeline at all, and nothing says so
-#+STATUS: DONE
+#+STATUS: NEXT
 #+PRIORITY: P1
 #+TYPE: infra
 #+DEPENDS: -
 #+BRANCH: fix-ci-job-activity-cap
 #+DATE: 2026-09-27
+
+* REOPENED 2026-09-27 12:19Z — closed too early, and the closure was my mistake
+
+pjb: "MR!317 fails", pipeline 2886930575. That pipeline is the NATIVE CHILD of
+!317, it has *zero jobs*, and GraphQL gives the reason this ticket exists for:
+
+: failureReason = "The pipeline job activity limit was exceeded."
+
+So the symptom is back three hours after I closed this. *The closure was
+premature and the fault is mine*: I closed on the acceptance criterion ("the
+sweep performs a cancellation"), which was genuinely met, while the thing the
+ticket is named for — a pipeline refused — was not actually prevented. A
+criterion that can be satisfied while the symptom returns was the wrong
+criterion, and I should have noticed that reclaiming ONE five-week-old pipeline
+said nothing about the steady state.
+
+** What is actually filling the bucket, measured
+
+172 active jobs (=created= 15, =pending= 147, =running= 10), and the holders are
+*my own merge requests*:
+
+| pipeline    | ref       | source              | jobs |
+|-------------+-----------+---------------------+------|
+| 2886946075  | !317/head | parent_pipeline     |   38 |
+| 2886928961  | !317/head | merge_request_event |   23 |
+| 2886928874  | !316/head | parent_pipeline     |   22 |
+| 2886900169  | !315/head | parent_pipeline     |   21 |
+| 2886848303  | !314/head | parent_pipeline     |   21 |
+| 2886847637  | !313/head | parent_pipeline     |   21 |
+| 2886827126  | !312/head | parent_pipeline     |   21 |
+| 2886821781  | !311/head | parent_pipeline     |    5 |
+
+Eight merge requests in about three hours, *six of them documentation-only*,
+each spawning a native child of roughly twenty-one Windows/macOS jobs that then
+sit =pending= behind a serial CAD runner. None of that is garbage the sweep may
+reclaim; it is work that was legitimately created and cannot run yet.
+
+** Two corrections to this ticket's own analysis
+
+1. *The ceiling is far below the documented 500.* The refusal happened with
+   *172* jobs active. Every earlier note here implicitly assumed a large margin;
+   there is none, and a handful of merge requests is enough to cross it.
+
+2. *The played-work sparing rule cannot reclaim these, and that is not a bug in
+   it.* =has_queued_work= treats any =pending= job as deliberately queued work.
+   For the vendor probe campaigns that is exactly right — they ARE played, they
+   live in merged MRs' children, and sweeping them would destroy another
+   session's runs. But an AUTO-SCHEDULED pending job in a merged MR's child is
+   indistinguishable from a played one over the REST API: both are =pending=
+   with =started_at: null=, and the =when: manual= that would tell them apart is
+   not exposed on the jobs endpoint. So the sweep is structurally unable to
+   reclaim the biggest holders, and making it try would kill the campaigns.
+
+Which means *sweeping is the wrong lever for the steady state.* The sweep
+handles immortal leftovers; it cannot handle "too many jobs were created".
+
+** Done here (clautolisp 2.2.135): make the ceiling visible before it bites
+
+The sweep now takes =--warn-at= (=$SWEEP_WARN_ACTIVE_JOBS=, default 150 — below
+the observed 172) and, when the bucket is at or above it AND the sweep found
+nothing it may cancel, *reports failure* naming the levers. That combination is
+the actionable one: full, and the broom cannot help. Crowded WITH something to
+cancel is not a failure — the sweep is working.
+
+=crowded_p= is extracted and tested (26 tests). The case that matters most is
+the third: an UNKNOWN count (a read-only token cannot list jobs) is never
+crowded, because manufacturing a failure out of ignorance is how an audit
+becomes permanently red and therefore unread.
+
+** The real levers, and why I am not pulling the big one unasked
+
+1. *Open fewer merge requests.* The proximate cause is mine: eight MRs where two
+   would have done, six of them docs-only. Batching costs nothing and removes
+   most of the pressure. Adopted immediately.
+2. *Do not spawn the native child for a change that cannot affect it.* A
+   docs-only MR creating twenty-one Windows/macOS CAD jobs is waste as well as
+   cap pressure. The bridge's rule is currently
+   =if: $CI_PIPELINE_SOURCE == "merge_request_event"= with no path condition.
+   *pjb-decision*, deliberately not implemented here: GitLab has no "only these
+   paths changed" primitive, so this must be written as "run when these paths
+   changed", and a pattern missed from that list SILENTLY SKIPS the native lanes
+   on a real code change. This repository has been bitten twice by exactly that
+   shape — see the =release:*= comment about a release "quietly missing two
+   platforms WHILE BOTH MACHINES WERE ONLINE... Worse than the blocking it
+   replaced, and invisible". I am not introducing a third instance on my own
+   judgement.
+3. *Ask GitLab for a higher limit*, or accept the ceiling and keep the backlog
+   short.
+
+** What remains
+
+- [ ] pjb's call on lever 2 (a =changes:= gate on =native:pipeline= for
+      merge-request pipelines), with the silent-skip risk above in mind.
+- [ ] Watch whether lever 1 alone keeps the count under the threshold. The
+      sweep will now say when it does not.
 
 * Observed
 
