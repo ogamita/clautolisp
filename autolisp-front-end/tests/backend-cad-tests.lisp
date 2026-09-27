@@ -707,6 +707,14 @@ because the mock had died inside its IGNORE-ERRORS and nothing recorded why.
 So the guard records, and the tests that can be defeated by a dead mock quote
 this in their failure message.")
 
+(define-condition alfe-test-serious-not-error (serious-condition) ()
+  (:report (lambda (condition stream)
+             (declare (ignore condition))
+             (write-string "deliberately serious, not an ERROR" stream)))
+  (:documentation "Serious but not an ERROR, so a HANDLER-CASE on ERROR does not
+see it. The fixture for the class of condition that used to escape the mock
+thread's guard and, under CCL, block on a terminal that is not there."))
+
 (defun %call-recording-mock-condition (thunk)
   "Run THUNK under the mock thread's guard: a condition that would otherwise
 kill the thread silently is RECORDED in *MOCK-CAD-CONDITION* and swallowed.
@@ -720,11 +728,27 @@ It is a FUNCTION rather than the inline HANDLER-CASE it replaces so that the
 guarantee can be tested directly, on the same code the thread runs, instead of
 by arranging a filesystem failure -- which is not portable: the first version of
 that test deleted the workdir and passed on SBCL, where the mock's first write
-then signals, and failed on CCL, where it does not."
-  (handler-case (funcall thunk)
-    (error (condition)
-      (setf *mock-cad-condition* condition)
-      nil)))
+then signals, and failed on CCL, where it does not.
+
+IT CATCHES SERIOUS-CONDITION, NOT ERROR, and binds *DEBUGGER-HOOK* too. A
+condition can be serious without being an error, and an ERROR handler then does
+not see it; and no handler at all helps against INVOKE-DEBUGGER or BREAK. Either
+way the condition reaches the implementation's debugger, and under CCL a
+debugger with no terminal to talk to BLOCKS -- a process at 0 % CPU producing
+nothing, which is the shape of ccl-protocol-write-atomic-file-contention-hangs
+and of job 14519641143 before it. On SBCL it is merely dropped, so an ERROR-only
+guard looks fine on the host most runs happen on. Same reasoning and same shape
+as %CALL-IN-GUARDED-THREAD in file-protocol-tests.lisp."
+  (catch '%mock-cad-exit
+    (let ((*debugger-hook*
+            (lambda (condition hook)
+              (declare (ignore hook))
+              (setf *mock-cad-condition* condition)
+              (throw '%mock-cad-exit nil))))
+      (handler-case (funcall thunk)
+        (serious-condition (condition)
+          (setf *mock-cad-condition* condition)
+          nil)))))
 
 (defun %mock-cad-failure-note ()
   "A clause naming the condition that killed the mock, or the empty string.
@@ -3199,6 +3223,25 @@ the write does not signal. The mechanism is the same on both."
       "the guard must RECORD the condition, not discard it")
   (is (search "mock-cad boom" (%mock-cad-failure-note))
       "and the note must quote it, so an assertion can name the cause")
+  ;; A SERIOUS condition that is not an ERROR: an ERROR-only handler misses it
+  ;; entirely, the condition reaches the implementation's debugger, and under
+  ;; CCL a debugger with no terminal BLOCKS the process at 0 % CPU
+  ;; (ccl-protocol-write-atomic-file-contention-hangs). This is the case the
+  ;; first version of this guard would have let through.
+  (setf *mock-cad-condition* nil)
+  (is (null (%call-recording-mock-condition
+             (lambda () (error 'alfe-test-serious-not-error))))
+      "a serious non-error must be swallowed too")
+  (is (search "serious, not an ERROR" (%mock-cad-failure-note))
+      "and recorded: got ~S" (%mock-cad-failure-note))
+  ;; NOT asserted here, and the reason is recorded rather than left as a gap:
+  ;; the guard also binds *DEBUGGER-HOOK*, but under SBCL's --disable-debugger
+  ;; -- how this suite runs -- INVOKE-DEBUGGER goes through
+  ;; SB-EXT:*INVOKE-DEBUGGER-HOOK*, which runs FIRST and quits the process, so
+  ;; that binding cannot be exercised from inside the suite on this host. It is
+  ;; kept for the implementations whose debugger entry does honour it (CCL, the
+  ;; one that blocks rather than quitting). Measured, not assumed: asserting it
+  ;; killed the SBCL run outright.
   ;; A successful body returns its value and leaves no note behind.
   (setf *mock-cad-condition* nil)
   (is (eql 42 (%call-recording-mock-condition (lambda () 42)))

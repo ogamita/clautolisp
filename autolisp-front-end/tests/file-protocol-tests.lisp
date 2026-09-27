@@ -144,6 +144,57 @@ content visible; the temp file is renamed atomically each time."
                        (alfe.protocol.file:read-file-as-string target))))
       (delete-workdir workdir))))
 
+(define-condition %serious-but-not-an-error (serious-condition) ()
+  (:report (lambda (condition stream)
+             (declare (ignore condition))
+             (write-string "deliberate serious condition, not an ERROR" stream)))
+  (:documentation "A condition that is SERIOUS but not an ERROR, for proving the
+thread guard catches the class that HANDLER-CASE on ERROR misses."))
+
+(defun %call-in-guarded-thread (label thunk record)
+  "Run THUNK so that nothing it signals can block the process, recording the
+condition through RECORD (a function of LABEL and the condition).
+
+TWO guards, because they cover different things and this test suite has been
+stalled by both:
+
+- HANDLER-CASE on SERIOUS-CONDITION, not on ERROR. This is the load-bearing
+  one: a condition can be serious without being an error, and then a handler
+  for ERROR does not see it at all. Same class as the aldo-companion defect,
+  where a quit condition was a SERIOUS-CONDITION on purpose and left the thread
+  through an ERROR-only handler.
+- *DEBUGGER-HOOK*, for a condition that reaches the debugger by some path a
+  handler does not cover. MEASURED LIMIT, recorded because the first version of
+  this claimed more than it delivers: under SBCL's `--disable-debugger' -- which
+  is how this suite runs -- INVOKE-DEBUGGER goes through
+  SB-EXT:*INVOKE-DEBUGGER-HOOK*, which runs BEFORE *DEBUGGER-HOOK* and quits the
+  process, so the binding below never sees it. It is kept for the
+  implementations and configurations where debugger entry does honour it (CCL,
+  the host that BLOCKS rather than quitting), not because it is a portable
+  shield. Nothing in the code under test calls INVOKE-DEBUGGER or BREAK; the
+  conditions that actually arrive here are signalled by file operations, and the
+  handler above is what catches those.
+
+Why it matters HERE rather than in principle: under CCL an unhandled condition
+in a thread enters the debugger, and a debugger with no terminal to talk to
+blocks -- 'requires access to Shared Terminal Input'. That is a process sitting
+at 0 % CPU producing nothing, which is exactly the reported shape of
+ccl-protocol-write-atomic-file-contention-hangs, and of job 14519641143 before
+it. On SBCL the same condition is merely dropped, so this is invisible on the
+host most runs happen on."
+  (catch '%guarded-thread-exit
+    (let ((*debugger-hook*
+            (lambda (condition hook)
+              (declare (ignore hook))
+              (funcall record label condition)
+              ;; Unwind instead of returning: a hook that returns normally
+              ;; lets the implementation carry on into the very terminal
+              ;; prompt this exists to avoid. A THROW to our own tag needs no
+              ;; thread primitive and behaves the same on both hosts.
+              (throw '%guarded-thread-exit nil))))
+      (handler-case (funcall thunk)
+        (serious-condition (condition) (funcall record label condition))))))
+
 (defparameter +contention-deadline+ 120
   "Seconds the contention test waits for its 17 threads before giving up on
 them. Generous next to the ~2 s the race takes on a healthy host, and finite
@@ -196,6 +247,60 @@ reported nothing at all under the macOS/Rosetta CCL."
       ;; and it did not leave the thread behind
       (is (not (bordeaux-threads:thread-alive-p slow))))))
 
+(test thread-guard-catches-the-class-an-error-handler-misses
+  "The premise, pinned: a condition can be SERIOUS without being an ERROR, and
+then a handler for ERROR does not see it. Both thread bodies in the contention
+test used to guard with HANDLER-CASE on ERROR, which is why this matters --
+under CCL the condition would reach the debugger, and a debugger with no
+terminal blocks the process at 0 % CPU
+(ccl-protocol-write-atomic-file-contention-hangs)."
+  (is (typep (make-condition '%serious-but-not-an-error) 'serious-condition)
+      "the fixture must be serious, or it proves nothing")
+  (is (not (typep (make-condition '%serious-but-not-an-error) 'error))
+      "and must NOT be an error, which is the whole point")
+  ;; An ERROR-only handler lets it straight through. Demonstrated rather than
+  ;; asserted in prose: this is the behaviour the old guard relied on.
+  (is (eq :escaped
+          (block probe
+            (handler-bind ((serious-condition (lambda (c)
+                                                (declare (ignore c))
+                                                (return-from probe :escaped))))
+              (handler-case (error '%serious-but-not-an-error)
+                (error () :caught-by-error-handler)))))
+      "an ERROR handler must be shown NOT to catch it")
+  ;; The guard does catch it, and control returns normally.
+  (let ((seen nil))
+    (%call-in-guarded-thread "victim"
+                             (lambda () (error '%serious-but-not-an-error))
+                             (lambda (label condition)
+                               (setf seen (list label (princ-to-string condition)))))
+    (is (equal "victim" (first seen))
+        "the guard must record the condition under its label; got ~S" seen)
+    (is (search "not an ERROR" (second seen))
+        "and keep the condition's own report; got ~S" seen)))
+
+(test thread-guard-records-a-condition-from-inside-a-thread
+  "The guard where it is actually used: in a spawned thread, whose unhandled
+conditions are what stalled this suite. SBCL merely drops them, CCL takes the
+condition to a debugger that has no terminal and blocks at 0 % CPU
+(ccl-protocol-write-atomic-file-contention-hangs) -- so the assertion is that
+the condition comes back as DATA, on both hosts, and the thread finishes."
+  (let ((seen nil)
+        (mutex (bordeaux-threads:make-lock)))
+    (let ((thread (bordeaux-threads:make-thread
+                   (lambda ()
+                     (%call-in-guarded-thread
+                      "in-thread"
+                      (lambda () (error '%serious-but-not-an-error))
+                      (lambda (label condition)
+                        (bordeaux-threads:with-lock-held (mutex)
+                          (setf seen (list label (princ-to-string condition)))))))
+                   :name "guarded-victim")))
+      (is (null (%join-threads-or-name-the-stuck (list thread)))
+          "the guarded thread must finish, not stall")
+      (is (equal "in-thread" (first seen))
+          "and its condition must arrive as data; got ~S" seen))))
+
 (test protocol-write-atomic-file-contention
   "N=16 concurrent writers publishing distinct integers all complete
 without errors; the final file content is one of the published
@@ -247,19 +352,21 @@ formed value, never a partial one."
           (let ((reader
                   (bordeaux-threads:make-thread
                    (lambda ()
-                     (handler-case
-                         (loop for ch from 0 below 1000
-                               for content = (alfe.protocol.file:read-file-as-string target)
-                               do (let ((trimmed (string-right-trim
-                                                  '(#\Newline #\Space) content)))
-                                    (unless (or (string= trimmed "seed")
-                                                (and (> (length trimmed) 6)
-                                                     (string= "value-" trimmed
-                                                              :end2 6)))
-                                      (bordeaux-threads:with-lock-held (mutex)
-                                        (push (list :corruption-at ch :content trimmed)
-                                              observed-corruptions)))))
-                       (error (c) (record-thread-error "reader" c))))
+                     (%call-in-guarded-thread
+                      "reader"
+                      (lambda ()
+                        (loop for ch from 0 below 1000
+                              for content = (alfe.protocol.file:read-file-as-string target)
+                              do (let ((trimmed (string-right-trim
+                                                 '(#\Newline #\Space) content)))
+                                   (unless (or (string= trimmed "seed")
+                                               (and (> (length trimmed) 6)
+                                                    (string= "value-" trimmed
+                                                             :end2 6)))
+                                     (bordeaux-threads:with-lock-held (mutex)
+                                       (push (list :corruption-at ch :content trimmed)
+                                             observed-corruptions))))))
+                      #'record-thread-error))
                    :name "atomic-write-reader")))
             (dotimes (writer-id n-writers)
               ;; Bind WRITER-ID afresh per iteration. DOTIMES under
@@ -271,14 +378,15 @@ formed value, never a partial one."
                 (push
                  (bordeaux-threads:make-thread
                   (lambda ()
-                    (handler-case
-                        (dotimes (n writes-per-writer)
-                          (alfe.protocol.file:write-atomic-file
-                           target
-                           (format nil "value-~D"
-                                   (+ (* id writes-per-writer) n))))
-                      (error (c) (record-thread-error
-                                  (format nil "writer-~D" id) c))))
+                    (%call-in-guarded-thread
+                     (format nil "writer-~D" id)
+                     (lambda ()
+                       (dotimes (n writes-per-writer)
+                         (alfe.protocol.file:write-atomic-file
+                          target
+                          (format nil "value-~D"
+                                  (+ (* id writes-per-writer) n)))))
+                     #'record-thread-error))
                   :name (format nil "atomic-writer-~D" id))
                  threads)))
             ;; BOUNDED join, never a bare one: on the macOS/Rosetta CCL this
