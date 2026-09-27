@@ -1537,6 +1537,31 @@ that resolves to no runnable server; try the versioned ProgID as above.
 What exited is =cscript=, the bridge: whether =acad.exe= itself started
 is what the =ATTACHED= / =CREATED= flags report.
 
+** "did not reach READY within N s ... the engine never moved past BOOTING"
+
+The CAD was launched and published *nothing*: =BOOTING= is what alfe itself
+writes to =status.txt= before the launch, so seeing it still there means the
+engine never got as far as loading =run-common.lsp=.
+
+On *Windows* that is almost always a *startup dialog waiting for input*.
+BricsCAD asks which drawing and which profile to use when given neither, and
+under a hidden main frame (=/Automation=) the dialog is invisible as well as
+unanswerable — the CAD sits there for ever and the job's only symptom is the
+timeout. Give it a drawing (=--dwg=) and a profile
+(=$AUTOLISP_BRICSCAD_PROFILE=, e.g. the clean =<<Profil sans nom>>=). On
+*macOS* the same shape comes from the Accessibility prompt that blocks the
+first keystroke an un-permitted =osascript= sends: grant the terminal
+Accessibility permission once, in front of the machine.
+
+The wording matters, so it is worth reading exactly: =launcher still running=
+alone means the engine *did* start and stalled later, which is a different
+problem — look at the request, not the launch. If the phrase instead names an
+exit code, the launcher itself died and its output is quoted with it.
+
+A cold start can legitimately take minutes (174 s to READY on the project's
+Windows runner), so raise =--timeout= before concluding anything; this
+diagnosis is about a CAD that produced *no* transition at all.
+
 ** =alfe= prints "Backend ... is not registered"
 
 You selected an explicit backend that isn't compiled into this

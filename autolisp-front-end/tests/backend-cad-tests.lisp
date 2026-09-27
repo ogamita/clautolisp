@@ -707,6 +707,14 @@ because the mock had died inside its IGNORE-ERRORS and nothing recorded why.
 So the guard records, and the tests that can be defeated by a dead mock quote
 this in their failure message.")
 
+(define-condition alfe-test-serious-not-error (serious-condition) ()
+  (:report (lambda (condition stream)
+             (declare (ignore condition))
+             (write-string "deliberately serious, not an ERROR" stream)))
+  (:documentation "Serious but not an ERROR, so a HANDLER-CASE on ERROR does not
+see it. The fixture for the class of condition that used to escape the mock
+thread's guard and, under CCL, block on a terminal that is not there."))
+
 (defun %call-recording-mock-condition (thunk)
   "Run THUNK under the mock thread's guard: a condition that would otherwise
 kill the thread silently is RECORDED in *MOCK-CAD-CONDITION* and swallowed.
@@ -720,11 +728,27 @@ It is a FUNCTION rather than the inline HANDLER-CASE it replaces so that the
 guarantee can be tested directly, on the same code the thread runs, instead of
 by arranging a filesystem failure -- which is not portable: the first version of
 that test deleted the workdir and passed on SBCL, where the mock's first write
-then signals, and failed on CCL, where it does not."
-  (handler-case (funcall thunk)
-    (error (condition)
-      (setf *mock-cad-condition* condition)
-      nil)))
+then signals, and failed on CCL, where it does not.
+
+IT CATCHES SERIOUS-CONDITION, NOT ERROR, and binds *DEBUGGER-HOOK* too. A
+condition can be serious without being an error, and an ERROR handler then does
+not see it; and no handler at all helps against INVOKE-DEBUGGER or BREAK. Either
+way the condition reaches the implementation's debugger, and under CCL a
+debugger with no terminal to talk to BLOCKS -- a process at 0 % CPU producing
+nothing, which is the shape of ccl-protocol-write-atomic-file-contention-hangs
+and of job 14519641143 before it. On SBCL it is merely dropped, so an ERROR-only
+guard looks fine on the host most runs happen on. Same reasoning and same shape
+as %CALL-IN-GUARDED-THREAD in file-protocol-tests.lisp."
+  (catch '%mock-cad-exit
+    (let ((*debugger-hook*
+            (lambda (condition hook)
+              (declare (ignore hook))
+              (setf *mock-cad-condition* condition)
+              (throw '%mock-cad-exit nil))))
+      (handler-case (funcall thunk)
+        (serious-condition (condition)
+          (setf *mock-cad-condition* condition)
+          nil)))))
 
 (defun %mock-cad-failure-note ()
   "A clause naming the condition that killed the mock, or the empty string.
@@ -1760,6 +1784,53 @@ dispatching), the wait must continue — the CAD publishes READY later."
     (is (probe nil 0) "exited 0 -> keep waiting (driver finished its job)")
     (is (not (probe nil 1)) "exited non-zero -> abort now")
     (is (not (probe nil 2)) "exited non-zero -> abort now")))
+
+(test ready-timeout-diagnosis-tells-a-dialog-from-a-slow-start
+  "cad-runner-wedged-by-modal-dialog, the half left open: `READY timeout, last
+status BOOTING, launcher still running' reads IDENTICALLY for a CAD that is
+merely slow and for one sitting on a modal dialog nobody can answer. Telling
+those apart cost three wrong hypotheses once, so the message now says which it
+is.
+
+The discriminating pair is the last two assertions: same live launcher, one
+engine that never moved and one that did."
+  (flet ((phrase (exit-code last) (alfe.backend.cad-common:ready-timeout-diagnosis
+                                   exit-code last)))
+    ;; An exited launcher: its code is the fact that matters.
+    (is (search "exited with code 1" (phrase 1 "BOOTING"))
+        "an exited launcher must report its code; got ~S" (phrase 1 "BOOTING"))
+    (is (not (search "dialog" (phrase 1 "BOOTING")))
+        "and must NOT be diagnosed as a dialog -- it is not running")
+    ;; Alive, and the engine never published anything: the dialog case.
+    (dolist (last '(nil "" "BOOTING" "BOOTING 0" "  BOOTING  "))
+      (let ((text (phrase nil last)))
+        (is (search "never moved past BOOTING" text)
+            "~S must be diagnosed as never started; got ~S" last text)
+        (is (search "dialog" text)
+            "~S must name the likely cause; got ~S" last text)))
+    ;; Alive, but the engine HAS moved: a later stall, NOT a launch problem.
+    (dolist (last '("READY 0" "RUNNING 1" "DONE 1 OK" "STOPPING"))
+      (let ((text (phrase nil last)))
+        (is (not (search "dialog" text))
+            "~S moved past BOOTING, so it must NOT be called a dialog; got ~S"
+            last text)
+        (is (search "still running" text)
+            "~S must still describe the launcher; got ~S" last text)))))
+
+(test engine-never-started-p-is-exactly-the-no-transition-case
+  "The predicate behind the diagnosis, on its own. BOOTING is what INIT-SESSION
+writes BEFORE the CAD is launched, so seeing it still there means the engine
+published nothing at all -- it never loaded run-common.lsp."
+  (flet ((never (last) (alfe.backend.cad-common:engine-never-started-p last)))
+    (is (never nil) "no status at all")
+    (is (never "") "empty status")
+    (is (never "BOOTING") "the initial status")
+    (is (never "booting") "case-insensitive, status text is not a contract")
+    (is (never (format nil "BOOTING~%")) "trailing newline (status.txt is a line)")
+    (is (never (format nil "BOOTING~C~%" #\Return)) "and CRLF, which is what Windows writes")
+    (is (not (never "READY 0")) "READY is a transition")
+    (is (not (never "RUNNING 1")) "so is RUNNING")
+    (is (not (never "FAILED 1")) "and a failure is a transition too")))
 
 (test launcher-failure-details-nil-unless-nonzero-exit
   "LAUNCHER-FAILURE-DETAILS reports nothing for a live or cleanly-exited
@@ -3199,6 +3270,25 @@ the write does not signal. The mechanism is the same on both."
       "the guard must RECORD the condition, not discard it")
   (is (search "mock-cad boom" (%mock-cad-failure-note))
       "and the note must quote it, so an assertion can name the cause")
+  ;; A SERIOUS condition that is not an ERROR: an ERROR-only handler misses it
+  ;; entirely, the condition reaches the implementation's debugger, and under
+  ;; CCL a debugger with no terminal BLOCKS the process at 0 % CPU
+  ;; (ccl-protocol-write-atomic-file-contention-hangs). This is the case the
+  ;; first version of this guard would have let through.
+  (setf *mock-cad-condition* nil)
+  (is (null (%call-recording-mock-condition
+             (lambda () (error 'alfe-test-serious-not-error))))
+      "a serious non-error must be swallowed too")
+  (is (search "serious, not an ERROR" (%mock-cad-failure-note))
+      "and recorded: got ~S" (%mock-cad-failure-note))
+  ;; NOT asserted here, and the reason is recorded rather than left as a gap:
+  ;; the guard also binds *DEBUGGER-HOOK*, but under SBCL's --disable-debugger
+  ;; -- how this suite runs -- INVOKE-DEBUGGER goes through
+  ;; SB-EXT:*INVOKE-DEBUGGER-HOOK*, which runs FIRST and quits the process, so
+  ;; that binding cannot be exercised from inside the suite on this host. It is
+  ;; kept for the implementations whose debugger entry does honour it (CCL, the
+  ;; one that blocks rather than quitting). Measured, not assumed: asserting it
+  ;; killed the SBCL run outright.
   ;; A successful body returns its value and leaves no note behind.
   (setf *mock-cad-condition* nil)
   (is (eql 42 (%call-recording-mock-condition (lambda () 42)))

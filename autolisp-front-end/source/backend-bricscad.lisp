@@ -1838,8 +1838,14 @@ future ticket."
                                         (format nil
                                                 "BricsCAD did not reach READY within ~A s (last status: ~S~@[; ~A~])."
                                                 ready-timeout last
+                                                ;; LAST is passed so the phrase can
+                                                ;; distinguish a CAD that never
+                                                ;; started from one that stalled
+                                                ;; later
+                                                ;; (cad-runner-wedged-by-modal-dialog).
                                                 (launcher-state-description
-                                                 (bricscad-session-process-info session))))
+                                                 (bricscad-session-process-info session)
+                                                 last)))
                                     :details (list :workdir workdir
                                                    :last-status last
                                                    :launcher-failure failure)))))))

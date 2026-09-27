@@ -37,6 +37,65 @@ out whether it is Rosetta / the x86 CCL (an arm64 CCL is a separate issue,
 (=bordeaux-threads= under CCL). Until then =make test-ccl= cannot be used to
 completion on this machine; run subsets by test name.
 
+* Progress — a stall can no longer be silent, and one mechanism is gone (2.2.128)
+
+Two things, neither of which is a reproduction — that still needs the macOS box.
+
+** 1. The silence is fixed (was already in the tree when this was re-read)
+
+=%JOIN-THREADS-OR-NAME-THE-STUCK= + =+CONTENTION-DEADLINE+= (120 s) replaced the
+bare join: a stall now FAILS and names the threads still running, and destroys
+them so one wedged thread cannot hold the rest of the suite hostage. The
+symptom this ticket was filed for — "the suite sits at 0 % CPU and reports
+nothing" — is therefore no longer possible; the worst case is a named failure
+after two minutes. Its own test
+(=protocol-contention-watchdog-names-a-thread-that-will-not-finish=) proves the
+watchdog fires, because a watchdog never seen doing its job is worth nothing.
+
+** 2. A mechanism that produces exactly this signature is removed
+
+Both thread bodies guarded with =HANDLER-CASE ... (error (c) ...)=. *A condition
+can be SERIOUS without being an ERROR*, and an ERROR handler then does not see
+it at all — the same class as the aldo-companion defect, where a quit condition
+was a =SERIOUS-CONDITION= on purpose. When that happens the condition reaches
+the implementation's debugger, and *under CCL a debugger with no terminal to
+talk to BLOCKS* ("requires access to Shared Terminal Input"). That is a process
+at 0 % CPU producing nothing — the exact shape reported here, and the shape of
+job 14519641143, which this file's own comment already records.
+
+On SBCL the same condition is merely dropped, so an ERROR-only guard looks
+perfectly healthy on the host most runs happen on. That asymmetry is why this
+survived.
+
+=%CALL-IN-GUARDED-THREAD= now wraps the reader and all 16 writers, catching
+=SERIOUS-CONDITION= and recording it as data;
+=%CALL-RECORDING-MOCK-CONDITION= in backend-cad-tests.lisp had the identical
+gap and is fixed the same way. Three tests, including the premise itself
+(the fixture is serious, is NOT an error, and an ERROR handler is *shown* not
+to catch it) and the guard inside a real spawned thread.
+
+*A claim withdrawn, because it was measured false.* The first version also
+asserted that binding =*DEBUGGER-HOOK*= shields against =INVOKE-DEBUGGER=.
+It does not, here: under SBCL's =--disable-debugger= — which is how this suite
+runs — =INVOKE-DEBUGGER= goes through =SB-EXT:*INVOKE-DEBUGGER-HOOK*=, which
+runs FIRST and quits the process. Asserting it killed the SBCL run outright.
+The binding is kept for implementations whose debugger entry does honour it
+(CCL, the one that blocks rather than quitting), and the docstring now says
+that the =SERIOUS-CONDITION= handler is the load-bearing half. Nothing under
+test calls =INVOKE-DEBUGGER= or =BREAK=.
+
+alfe suite: *1287 checks, 0 failures, on SBCL AND CCL.*
+
+** What remains
+
+*A run on the macOS/Rosetta box.* Whether the serious-condition escape was THE
+cause cannot be settled from Linux: it needs the host whose debugger blocks.
+Two outcomes, both useful now that the watchdog exists — the suite completes,
+or it fails after 120 s NAMING the stuck threads, which is the evidence the
+box could not previously give. The =HEAD~= comparison the proposal asks for is
+no longer the first thing to do: run it at HEAD first, since the mechanism
+above was present at =HEAD~= too.
+
 * Measured 2026-09-26 — not CCL, and not this code: the same test passes in seconds on Linux
 
 Ran the test ALONE under =CCL Version 1.13 (v1.13-22-g3c7de4fd) LinuxX8664= —

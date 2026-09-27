@@ -1488,6 +1488,18 @@ file or COM), and forwards the workload.
   well as extends (~--timeout 1~ aborts, ~--timeout 600~ grants ten
   minutes).
 
+** READY timeout says whether the CAD ever started (alfe-user-manual § /Troubleshooting/)
+
+- A READY timeout whose engine published *nothing* now says so, and names
+  the likely cause: "the engine never moved past BOOTING -- on Windows this
+  is usually a startup dialog waiting for input". BricsCAD asks which
+  drawing and which profile when given neither, and under a hidden main
+  frame that dialog is invisible as well as unanswerable. A launcher that is
+  merely slow still reads "launcher still running", which now means the
+  engine *did* start and stalled later -- a different problem. Both CAD
+  backends carry the phrase (AutoCAD's message had no launcher state at
+  all).
+
 ** Diagnostics under ~--verbose~ / ~--debug~
 
 - Both flags now emit progressive diagnostics through every

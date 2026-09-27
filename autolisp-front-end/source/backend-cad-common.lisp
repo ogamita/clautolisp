@@ -47,6 +47,8 @@
            #:launcher-exit-code
            #:launcher-alive-or-clean-p
            #:launcher-state-description
+           #:engine-never-started-p
+           #:ready-timeout-diagnosis
            #:launcher-failure-details
            #:kill-engine-process
            #:cad-argument-path
@@ -522,7 +524,52 @@ immediately instead of burning the rest of the timeout."
   (let ((code (launcher-exit-code process-info)))
     (or (null code) (eql code 0))))
 
-(defun launcher-state-description (process-info)
+(defun engine-never-started-p (last-status)
+  "True when the engine has published no transition at all: LAST-STATUS is
+empty or still the BOOTING that INIT-SESSION wrote before the CAD was launched.
+
+This is the discriminator the READY-timeout message was missing. `Timed out,
+launcher still running' reads identically for a CAD that is merely slow and for
+one sitting on a modal dialog nobody can answer, and telling those apart took
+three wrong hypotheses once (cad-runner-wedged-by-modal-dialog). A CAD that has
+moved to RUNNING and stopped is a different problem from one that never loaded
+run-common.lsp at all."
+  (let ((status (string-trim '(#\Space #\Tab #\Newline #\Return)
+                             (or last-status ""))))
+    (or (zerop (length status))
+        (and (>= (length status) 7)
+             (string-equal "BOOTING" status :end2 7)))))
+
+(defun ready-timeout-diagnosis (exit-code last-status)
+  "The phrase appended to a READY-timeout message, from the launcher's EXIT-CODE
+\(NIL while it is alive) and the LAST-STATUS the protocol saw.
+
+Pure, so the wording is testable without launching anything. Three cases, and
+the third is the one this exists for:
+
+- the launcher EXITED -- its code is the fact that matters, and
+  LAUNCHER-FAILURE-DETAILS already reports a non-zero one with its output;
+- it is alive and the engine HAS moved (RUNNING, DONE, ...) -- then it started
+  fine and stalled later, which is not a launch problem at all;
+- it is alive and the engine NEVER MOVED off BOOTING -- it was started and has
+  produced nothing. On Windows that is usually a startup dialog waiting for
+  input, and under a hidden main frame (/Automation) the dialog is invisible as
+  well as unanswerable: BricsCAD asks which drawing and which profile to use
+  when given neither. On macOS the same shape comes from the Accessibility
+  prompt that blocks the first `keystroke' from an un-permitted osascript.
+  Naming the likely cause here is the whole point -- it is what would have
+  pointed at the real one in a single read."
+  (cond
+    (exit-code (format nil "launcher exited with code ~A" exit-code))
+    ((engine-never-started-p last-status)
+     "launcher still running but the engine never moved past BOOTING -- it was \
+started and has produced nothing; on Windows this is usually a startup dialog \
+waiting for input (BricsCAD asks which drawing and which profile when given \
+neither, and under a hidden main frame the dialog is invisible as well as \
+unanswerable), on macOS an Accessibility prompt blocking osascript")
+    (t "launcher still running")))
+
+(defun launcher-state-description (process-info &optional last-status)
   "A short phrase describing the launcher's state, for the READY-timeout
 message. A launcher that finished cleanly and a launcher that is STUCK
 produce identical protocol symptoms — status.txt frozen at BOOTING,
@@ -530,12 +577,11 @@ empty channels — and the one thing that tells them apart is whether the
 process is still there. On macOS the stuck case is real and common: the
 first `keystroke' from an un-permitted process raises a system
 Accessibility prompt, and osascript blocks on that modal until someone
-answers it."
+answers it.
+
+LAST-STATUS, when given, sharpens it further — see READY-TIMEOUT-DIAGNOSIS."
   (when process-info
-    (let ((code (launcher-exit-code process-info)))
-      (if code
-          (format nil "launcher exited with code ~A" code)
-          "launcher still running"))))
+    (ready-timeout-diagnosis (launcher-exit-code process-info) last-status)))
 
 (defun launcher-failure-details (process-info &key (limit 4000))
   "When PROCESS-INFO exited non-zero, return a string with its exit code

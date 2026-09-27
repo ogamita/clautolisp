@@ -66,6 +66,7 @@
                 #:discover-bootstrap-lsp
                 #:require-runtime-assets
                 #:drive-protocol-actions
+                #:launcher-state-description
                 #:kill-engine-process)
   (:import-from #:alfe.logging
                 #:log-debug
@@ -1413,8 +1414,15 @@ unwind-protect that reaps the engine when it does not get there."
                         :backend :autocad
                         :code :ready-timeout
                         :message
-                        (format nil "AutoCAD did not reach READY within ~A s (last: ~S)."
-                                ready-timeout last)
+                        ;; Say WHY, not just that it timed out: a CAD that never
+                        ;; moved off BOOTING is usually sitting on a startup
+                        ;; dialog, and that reads the same as a slow start
+                        ;; unless the message distinguishes them
+                        ;; (cad-runner-wedged-by-modal-dialog).
+                        (format nil "AutoCAD did not reach READY within ~A s (last: ~S~@[; ~A~])."
+                                ready-timeout last
+                                (launcher-state-description
+                                 (autocad-session-process-info session) last))
                         :details (list :workdir workdir :last-status last))))))
     nil))
 
