@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-autocad-hung-instance-blocks-com-bootstrap — a stuck acad.exe the sweep cannot end refuses every later COM session
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: alfe-backend
 #+DEPENDS: -
@@ -80,15 +80,58 @@ tests failed on its own wording rather than on the code.
 
 alfe suite: *1328 checks, 0 failures, SBCL and CCL.*
 
-** What remains
+** CONFIRMED 2026-09-27 12:14Z — the retry closes the gap, and the ticket is closed
 
-- [ ] A re-run of =verify:autocad-activex:windows= reaching READY, to confirm
-      the retry closes the gap on the invocation shape that failed. The
-      evidence says the server becomes ready at around 30 s and the loop now
-      waits up to 20, so this is expected rather than hoped — but it is a
-      machine answer and has not been given yet.
-- The title is now wrong and deliberately left alone: renaming it would break
-  every reference, and the body says plainly that the premise is refuted.
+=verify:autocad-activex:windows= re-run at clautolisp 2.2.132 (job
+16762215995, the child of !311) *SUCCEEDED*, in 76.4 s:
+
+#+begin_example
+cad sweep: nothing recorded (C:\msys64\tmp\alfe-created-cad.txt)
+  (setq app (vlax-get-acad-object))
+[CAD] run-common.lsp evaluated; about to bootstrap runtime
+[CAD] bootstrap LOAD succeeded
+backend AUTOCAD: READY after 47.27 s (status "READY 0")
+protocol: status now "DONE 1 OK" (elapsed 1.28 s)
+ATTACHED=0
+CREATED=1
+--- protocol\stdout.txt
+ACTIVEX.APP=yes
+ACTIVEX.VERSION=24.1s (LMS Tech)
+ACTIVEX.DOCUMENT=Dessin2.dwg
+ACTIVEX.RESULT=SUCCESS
+Job succeeded
+#+end_example
+
+A real AutoCAD 2022, created by the bridge (=ATTACHED=0 CREATED=1= again),
+reaching READY, evaluating =(vlax-get-acad-object)= and answering =DONE 1 OK=.
+
+*The number that explains the whole ticket is 47.27 s.* The unguarded version
+died at *28.99 s* on the rejected document call. The server here needed
+forty-seven seconds to become ready to take a command — comfortably past the
+point where the old code gave up, and comfortably inside the twenty attempts the
+retry now makes. A transiently busy AutoCAD, exactly as the fix assumed, and
+nothing wedged anywhere: the sweep in the same job reports the registry empty.
+
+Honest about what is NOT in evidence: the per-attempt =document not ready on
+attempt N of 20= lines are =VBSDebug= output and do not reach the job log, so the
+retry's firing is inferred from the timing and the outcome rather than read
+directly. If that ever needs proving, =--keep-workdir= keeps the bridge's debug
+log.
+
+** Nothing remains
+
+- [X] The observation on a clean runner — outcome 2 of the three listed, which
+      refuted the premise (2.2.131 write-up above).
+- [X] A re-run reaching READY, confirming the retry closes the gap — this
+      section.
+
+The title stays wrong on purpose: renaming it would break every reference, and
+the body says plainly that the premise is refuted. Moved to =issues/closed/=.
+
+*Unblocks* =alfe-autocad-error-primitive-masks-load-failure=, which named this
+ticket as the reason its criterion 4 could not be attempted: AutoCAD now starts,
+reaches READY and evaluates. What remains there is SCHME+'s own pipeline, in
+another repository.
 
 * Observed (as filed — the reading of this evidence was WRONG, see above)
 
