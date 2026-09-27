@@ -75,7 +75,52 @@ return NIL rather than signal and take the run down with it."
   ;; writable/" was unwritable only on Linux — on Windows it mapped to a
   ;; perfectly creatable C:\proc\... and the write SUCCEEDED, returning a
   ;; pathname and reddening test:alfe:windows.
+  ;;
+  ;; THE PREMISE IS NOW ASSERTED, NOT ASSUMED, because the second version of
+  ;; this test failed on Windows too and said nothing about why. The shape it
+  ;; needs -- a real file, with the target directly below it -- depends on
+  ;; pathname arithmetic, and that is exactly what differs between platforms:
+  ;; verified here on POSIX, uiop:with-temporary-file does leave a real file and
+  ;; ENSURE-DIRECTORIES-EXIST below it signals SIMPLE-FILE-ERROR, so the POSIX
+  ;; side was never the problem. If a platform builds a different path, the
+  ;; write succeeds somewhere harmless and the old assertion just reported
+  ;; `expected NIL' -- a puzzle rather than an answer. The two checks below fail
+  ;; with the paths in hand instead.
   (handler-bind ((warning #'muffle-warning))
-    (uiop:with-temporary-file (:pathname file)
-      (let ((under-a-file (merge-pathnames "sub/" (uiop:ensure-directory-pathname file))))
-        (is (null (alfe.drawing:fresh-empty-dwg under-a-file)))))))
+    (let ((dir (uiop:ensure-directory-pathname
+                (merge-pathnames (format nil "alfe-decline-~D/" (random 999999))
+                                 (uiop:temporary-directory)))))
+      (unwind-protect
+           (progn
+             (ensure-directories-exist dir)
+             (let ((blocker (merge-pathnames "blocker" dir)))
+               ;; Written explicitly rather than through a temporary-file macro:
+               ;; one less platform-dependent behaviour between the fixture and
+               ;; the thing being tested.
+               (with-open-file (out blocker :direction :output
+                                            :if-exists :supersede
+                                            :if-does-not-exist :create)
+                 (write-line "not a directory" out))
+               (is (and (probe-file blocker)
+                        (pathname-name (probe-file blocker))
+                        t)
+                   "the blocker must exist as a FILE, or this test is not ~
+testing an unwritable location at all; probe-file gave ~S"
+                   (probe-file blocker))
+               (let* ((target (uiop:ensure-directory-pathname
+                               (concatenate 'string (namestring blocker) "/sub")))
+                      (parent (uiop:pathname-parent-directory-pathname target)))
+                 (is (equal (namestring (uiop:ensure-directory-pathname blocker))
+                            (namestring parent))
+                     "the target must sit directly below the blocker, else this ~
+platform's pathname arithmetic has moved it and the case is not being tested: ~
+blocker ~S, target ~S, target's parent ~S"
+                     blocker target parent)
+                 (let ((result (alfe.drawing:fresh-empty-dwg target)))
+                   (is (null result)
+                       "a directory cannot be created below a regular file, so ~
+FRESH-EMPTY-DWG must DECLINE with NIL; it returned ~S for target ~S"
+                       result target)))))
+        (ignore-errors
+         (uiop:delete-directory-tree dir :validate t
+                                         :if-does-not-exist :ignore))))))
