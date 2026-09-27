@@ -181,15 +181,44 @@ probe waiting on the Windows runner. Before this change the same run selected
 30 tests. The case that matters most is the one the old rule got wrong: an
 auto-scheduled pending job is NOT queued work. Unknown still counts as queued.
 
+** Confirmed in production the same hour: 262 -> 126 active jobs
+
+The master sweep of pipeline 2887016667 (job 16763232797, 13:47:57Z) ran the new
+discriminator unattended and did exactly what the dry run predicted:
+
+#+begin_example
+active pipelines: 11 (1 protected), to cancel: 4
+jobs counting against the activity cap: 262
+WARNING: 262 active jobs (threshold 150) ...
+  cancelled  2886848303 refs/merge-requests/314/head  child of !314, which is merged ...
+  cancelled  2886900169 refs/merge-requests/315/head  child of !315, which is merged ...
+  cancelled  2886946075 refs/merge-requests/317/head  child of !317, which is merged ...
+  cancelled  2886954444 refs/merge-requests/318/head  child of !318, which is merged ...
+#+end_example
+
+Measured afterwards: *126 active jobs* (=created= 30, =pending= 86, =running=
+10), against *262* in the sweep's own log minutes earlier. *136 jobs freed*,
+back under the 150 threshold and well under the 172 at which a pipeline was
+actually refused. The four it took were children of my own merged docs-only
+merge requests; everything holding played or running work was spared, as the
+pre-landing check said it would be.
+
 ** What remains
 
-- [ ] Watch whether levers 1, 2 and this together keep the count under the
-      threshold. The sweep now says when they do not — and the =--warn-at=
-      default (150) is a guess anchored on a single observation (refused at
-      172), so it may want adjusting once a few days of data exist.
-- [ ] The first docs-only merge request after 2.2.136 should spawn NO native
-      child. Not yet observed, because this change is deliberately batched into
-      one merge request rather than the eight that caused the problem.
+*Deliberately still open.* I closed this ticket once on a single good
+measurement and the symptom returned within three hours; the lesson was that one
+cancellation is not the steady state, and the same caution applies to one good
+before/after. What would justify closing it:
+
+- [ ] The count stays under the threshold across a normal working day, with the
+      vendor probe campaigns running. The sweep now reports when it does not.
+- [ ] A docs-only merge request is observed spawning NO native child (2.2.136's
+      gate). The MR carrying this very paragraph is docs-only, so it is the
+      first opportunity — if it spawns a child, the gate does not work and this
+      note is wrong.
+- [ ] =--warn-at= 150 reviewed against a few days of data: it is a guess
+      anchored on one observation (refused at 172), and a threshold nobody has
+      calibrated is a threshold that will eventually be ignored.
 
 * Observed
 
