@@ -1,0 +1,95 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: clal-drawing-sysvars-silent-out-of-dialect — two clautolisp-only sysvars answer under every dialect without a warning
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: pjb-decision
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-09-27
+
+* Observed
+
+Measured on the built binary while verifying
+=autolisp-globals-writability-triage= (now closed). Probing by EXISTENCE — a
+name that does not exist answers =nil=, anything else answers a value:
+
+#+begin_example
+$ clautolisp-sbcl -norc -q --dialect autocad -l probe.lsp
+dialect=AUTOCAD | SAVEFORMAT=1 | TEMPLATEPATH= | CLAL-template= | bogus=nil
+#+end_example
+
+So under =--dialect autocad=:
+
+- =CLAUTOLISPNEWDRAWINGTEMPLATE= exists and answers (=""=), and so does
+  =CLAUTOLISPDEFAULTDRAWINGFORMAT=;
+- nothing is written to =*error-output*= — the read is entirely silent
+  (checked with stdout discarded, stderr alone).
+
+Both are declared clautolisp-only. =cador/source/sysvars.lisp=:
+
+#+begin_quote
+=*clautolisp-extension-sysvar-names*= — "The clautolisp-specific system
+variables with *no vendor counterpart*"
+#+end_quote
+
+* The question, and why it is pjb's rather than a defect to fix
+
+AGENTS.md § /Dialect Divergence and Warnings/, case 1: an *Extension* —
+present in some implementations only — "clautolisp runs it; warn under any
+dialect that isn't the owner (=lax= silent)". Read literally, these two should
+warn under =strict=, =--autocad= and =--bricscad=, and they do not.
+
+But the tree shows the gate is *deliberately mixed*, decided name by name.
+=autolisp-builtins-core/source/secureload.lisp= gates three clautolisp-only
+sysvars behind =(when clautolisp-p ...)= — =CLAUTOLISPSUPPORTFILESEARCHPATH=,
+=CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS=, =CLAUTOLISPDROP= — and immediately
+after, a *pjb ruling* moves another one OUT of that gate, with the reason
+recorded:
+
+#+begin_quote
+Case-insensitive path resolution: EVERY dialect but =--strict= (pjb's ruling,
+case-insensitive-paths-ignored-in-cad-dialects). It was clautolisp-only, which
+put it exactly where it was least needed: a =--bricscad= / =--autocad= run is
+how a corpus WRITTEN FOR WINDOWS is exercised, and that is the corpus whose
+path spellings nobody ever checked.
+#+end_quote
+
+That reasoning may well apply to these two as well: a =--bricscad= run is
+exactly when you want to choose the template and the save format, and a sysvar
+that warns every time it is read would be noise on the path where it is most
+useful. So this is not obviously a bug — it is a choice with a precedent on
+both sides, and the point of this ticket is that *which choice it is should be
+written down* instead of re-derived by the next reader.
+
+* Options
+
+1. *Warn, deduped.* Emit the extension warning on first access per sysvar per
+   session, silent under =:clautolisp= and =:lax=. Precedent for the shape:
+   =emit-terpri-file-extension-warning=, and the per-path/session dedup of the
+   =[path-dotdot]= warning.
+2. *Exempt deliberately*, like the case-insensitive sysvar, and record the
+   exemption in the =*** clautolisp= note of each sysvar's spec page so the
+   silence is documented rather than accidental.
+3. *Gate them to =:clautolisp== like the three trust sysvars — the strictest
+   reading, and the one most likely to break a =--bricscad= invocation that
+   currently works.
+
+Option 2 is the cheapest if the current behaviour is what pjb wants; option 1
+is what a literal reading of AGENTS.md asks for. Either way the outcome is one
+paragraph of documentation, which is why this is P3 and not larger.
+
+* Not done here, deliberately
+
+No code change. Adding a warning is user-visible behaviour on a path that a
+=--bricscad= invocation may rely on, and the tree shows this exact question has
+already been decided *both ways* by the owner for different sysvars. Guessing
+which way it goes for these two is how a deliberate exemption gets silently
+reversed.
+
+* Note
+
+Filed per AGENTS.md's rule for something found while doing something else. The
+measurement detail is worth keeping: a sysvar value of =""= does NOT distinguish
+"absent" from "present and empty", so a probe must test existence (=nil= or
+not). The first version of that probe read values and showed the same thing
+under three dialects while proving nothing.
