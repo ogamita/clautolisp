@@ -80,27 +80,60 @@ becomes permanently red and therefore unread.
 1. *Open fewer merge requests.* The proximate cause is mine: eight MRs where two
    would have done, six of them docs-only. Batching costs nothing and removes
    most of the pressure. Adopted immediately.
-2. *Do not spawn the native child for a change that cannot affect it.* A
-   docs-only MR creating twenty-one Windows/macOS CAD jobs is waste as well as
-   cap pressure. The bridge's rule is currently
-   =if: $CI_PIPELINE_SOURCE == "merge_request_event"= with no path condition.
-   *pjb-decision*, deliberately not implemented here: GitLab has no "only these
-   paths changed" primitive, so this must be written as "run when these paths
-   changed", and a pattern missed from that list SILENTLY SKIPS the native lanes
-   on a real code change. This repository has been bitten twice by exactly that
-   shape — see the =release:*= comment about a release "quietly missing two
-   platforms WHILE BOTH MACHINES WERE ONLINE... Worse than the blocking it
-   replaced, and invisible". I am not introducing a third instance on my own
-   judgement.
+2. *Do not spawn the native child for a change that cannot affect it.*
+   *DONE in clautolisp 2.2.136* — pjb: "implement it, use changes: on
+   native:pipeline". See the next section; the objection stands and is guarded
+   rather than dismissed.
 3. *Ask GitLab for a higher limit*, or accept the ceiling and keep the backlog
    short.
 
+** Lever 2, implemented with the guard that answers the objection (2.2.136)
+
+=native:pipeline= now spawns its child, for a MERGE REQUEST, only when the
+change touches something those lanes could exercise. Tags and master are
+untouched and always spawn it: they are the refs whose results anybody relies
+on, and =changes:= against a merge commit compares with the first parent, which
+is not a question with a useful answer.
+
+The recorded objection does not go away — GitLab has no "only these paths
+changed" primitive, so the gate must read "run when these changed", and a
+missing pattern SILENTLY SKIPS the native lanes. Two things make that
+impossible to do by accident:
+
+- *the list is deliberately generous* — overlap costs one spurious child,
+  omission costs a silent skip — so every source-ish extension, =**/Makefile=,
+  =**/Dockerfile=, the whole of =**/tools/**=, the CI definitions, the drawing
+  fixtures and the submodule pointer are in it;
+- *=make check-native-pipeline-changes= refuses an unclassified path.* Every
+  tracked file must match either the gate (read out of =.gitlab-ci.yml=, so the
+  check cannot drift from the behaviour it checks) or an IRRELEVANT list
+  declared in the script WITH A REASON. A new kind of file fails the check until
+  someone classifies it, which turns "silently skipped" into "will not merge".
+
+*It earned its keep on the first run*, and that is the part worth recording: it
+reported *25 unclassified paths*, four of them real — =Dockerfile= (the CI image
+the lanes run in) and three EXTENSIONLESS executables (=run-file-compat=,
+=read-all-autolisp=, =sanity-check=) that no extension pattern could ever have
+matched. Without the check, those four would have been exactly the silent skip
+the objection predicted. The other 21 are LaTeX preambles, TeX config, diagram
+sources, recorded probe output, =.keep= placeholders and =.plan= documents, now
+declared irrelevant with reasons.
+
+11 tests. The ones that matter are the glob-translation cases: =*= must NOT
+cross a directory separator and =**/= must — which is why the translation is
+written out instead of using =fnmatch=, whose =*= DOES cross separators, so
+every pattern would have been silently wider than it reads. Plus the degenerate
+case: a gate that lost its patterns must report everything, not pass quietly.
+
+Wired into the CI documentation lane beside the other gates. =glab ci lint=
+valid; 1486 tracked paths classified.
+
 ** What remains
 
-- [ ] pjb's call on lever 2 (a =changes:= gate on =native:pipeline= for
-      merge-request pipelines), with the silent-skip risk above in mind.
-- [ ] Watch whether lever 1 alone keeps the count under the threshold. The
-      sweep will now say when it does not.
+- [ ] Watch whether levers 1 and 2 together keep the count under the threshold.
+      The sweep now says when they do not — and the =--warn-at= default (150) is
+      a guess anchored on a single observation (refused at 172), so it may want
+      adjusting once a few days of data exist.
 
 * Observed
 

@@ -646,6 +646,11 @@ documentation:
     # this repository meets, and one it has already met. Seconds, in a lane
     # that always runs (test-file-without-in-suite-runs-nothing).
     - make check-test-suite-membership
+    # The native child's merge-request gate is "run when these paths changed",
+    # so a missing pattern SKIPS the Windows/macOS lanes in silence. No tracked
+    # path may be unclassified -- in the gate, or declared irrelevant on purpose
+    # (ci-job-activity-cap-refuses-master-pipelines).
+    - make check-native-pipeline-changes
     # XeLaTeX has NO font fallback: a glyph the body face lacks is dropped,
     # the PDF is produced successfully, and the character is simply gone.
     # Cheap and BEFORE the build, for the same reason as the check above --
@@ -1184,9 +1189,83 @@ native:pipeline:
     WINDOWS_RUNNER: "$WINDOWS_RUNNER"
   rules:
     - *not-on-schedule
+    # A TAG and MASTER always spawn the child: those are the refs whose results
+    # anybody relies on, and `changes:' against a merge commit compares with the
+    # first parent, which is not a question with a useful answer.
     - if: '$CI_COMMIT_TAG'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    # A MERGE REQUEST spawns it only when it changes something the native lanes
+    # could conceivably exercise (pjb, 2026-09-27: "implement it, use changes:
+    # on native:pipeline").
+    #
+    # WHY: each child is ~21 Windows/macOS jobs that queue behind a serial CAD
+    # runner. Eight merge requests in three hours -- six of them
+    # documentation-only -- put 172 jobs in flight and GitLab then REFUSED a new
+    # pipeline outright: "The pipeline job activity limit was exceeded", zero
+    # jobs, which reads like an ordinary red while the work simply never ran
+    # (ci-job-activity-cap-refuses-master-pipelines). A docs-only change
+    # creating twenty-one CAD jobs is waste as well as pressure.
+    #
+    # THE RISK, and what guards it. GitLab has no "only these paths changed"
+    # primitive, so this has to be written as "run when these changed" -- and a
+    # pattern missing from the list SILENTLY SKIPS the native lanes on a real
+    # code change. This repository has been bitten twice by that shape (see the
+    # release:* comment about a release "quietly missing two platforms WHILE
+    # BOTH MACHINES WERE ONLINE ... Worse than the blocking it replaced, and
+    # invisible"). So the list is DELIBERATELY GENEROUS -- overlap costs one
+    # spurious child, omission costs a silent skip -- and
+    # `make check-native-pipeline-changes' fails when any tracked path matches
+    # neither this list nor the explicitly-declared irrelevant one. A new file
+    # type therefore has to be classified on purpose; it cannot slip through.
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        paths:
+          # Lisp, and the systems that build it
+          - "**/*.lisp"
+          - "**/*.asd"
+          - "**/*.lsp"
+          - "**/*.el"
+          - "**/*.sexp"
+          # native code and its build
+          - "**/*.c"
+          - "**/*.h"
+          - "**/*.cpp"
+          - "**/*.hpp"
+          - "**/CMakeLists.txt"
+          - "**/Makefile"
+          - "**/*.mk"
+          # drivers and scripts the lanes actually run
+          - "**/*.sh"
+          - "**/*.ps1"
+          - "**/*.cmd"
+          - "**/*.bat"
+          - "**/*.vbs"
+          - "**/*.py"
+          - "**/*.scr"
+          # CI definitions, configuration and data the lanes read
+          - "**/*.yml"
+          - "**/*.yaml"
+          - "**/*.json"
+          - "**/*.cfg"
+          - "**/*.conf"
+          - "**/*.txt"
+          - "**/*.csv"
+          - "**/*.dcl"
+          # drawing fixtures
+          - "**/*.dwg"
+          - "**/*.dwt"
+          - "**/*.dxf"
+          # the CI image the lanes run in, and every tools/ tree -- the latter
+          # because several of its programs are EXTENSIONLESS executables
+          # (run-file-compat, read-all-autolisp, sanity-check) that no extension
+          # pattern would ever catch. Matching the whole tree is broad on
+          # purpose: overlap costs a spurious child, omission costs a silent
+          # skip. check-native-pipeline-changes found all four of these.
+          - "**/Dockerfile"
+          - "**/tools/**"
+          # the vendored submodule pointer, and the submodule list itself
+          - ".gitmodules"
+          - "clautolisp/third-party/**"
     - when: never
   trigger:
     include: '.gitlab/native.yml'

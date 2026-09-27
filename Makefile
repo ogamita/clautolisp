@@ -357,6 +357,17 @@ check-test-suite-membership:  ## Fail if a FiveAM test file would load but never
 	python3 scripts/check-test-suite-membership.py
 	python3 scripts/tests/test-check-test-suite-membership.py
 
+# native:pipeline only spawns its child for a merge request that changes
+# something the Windows/macOS lanes could exercise. GitLab has no "only these
+# paths changed" primitive, so the gate reads "run when these changed" -- and a
+# MISSING pattern silently skips those lanes on a real code change, a shape this
+# repository has been bitten by twice. So no tracked path may be unclassified:
+# it is either in the gate or declared irrelevant, on purpose
+# (ci-job-activity-cap-refuses-master-pipelines).
+check-native-pipeline-changes:  ## Fail if a tracked path is classified by neither half of native:pipeline's changes: gate.
+	python3 scripts/check-native-pipeline-changes.py
+	python3 scripts/tests/test-check-native-pipeline-changes.py
+
 check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
