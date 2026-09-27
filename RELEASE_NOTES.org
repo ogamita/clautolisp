@@ -1488,6 +1488,21 @@ file or COM), and forwards the workload.
   well as extends (~--timeout 1~ aborts, ~--timeout 600~ grants ten
   minutes).
 
+** The AutoCAD COM bridge waits out a busy server (alfe-user-manual § /Troubleshooting/)
+
+- A freshly created AutoCAD answers the first call and is then still opening
+  its startup document, so the calls that follow were rejected
+  (=RPC_E_CALL_REJECTED=) and the bridge died on a bare VBScript line
+  number. Those calls are now retried for up to 20 s, and if the server
+  never becomes ready the message says that the instance is up but never
+  became ready to take a command. Measured on the Windows runner: one
+  invocation was rejected at 29 s and another reached READY at 31 s, so this
+  was a race, not a broken install.
+- The "another instance is probably wedged and holding the registration"
+  advice is now given only when alfe *attached* to an existing AutoCAD. When
+  it created the instance itself there is no other one to blame, and the old
+  wording sent one investigation after a phantom for a week.
+
 ** READY timeout says whether the CAD ever started (alfe-user-manual § /Troubleshooting/)
 
 - A READY timeout whose engine published *nothing* now says so, and names

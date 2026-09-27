@@ -7,7 +7,90 @@
 #+BRANCH: -
 #+DATE: 2026-09-26
 
-* Observed
+* ANSWERED 2026-09-27 — the theory is refuted, and the real cause is fixed (2.2.131)
+
+The observation this ticket asked for happened: =verify:autocad-activex:windows=
+on PF5S26B, job 16761201255, clautolisp 2.2.129. Of the three outcomes listed
+under /What remains/ it is the SECOND — the bootstrap fails with the rejection
+while the sweep reports *no live instance*. So the hypothesis in the title is
+wrong, and the cause is elsewhere. Concretely:
+
+#+begin_example
+cad sweep: 0 ended, 5 already settled, 0 still running     <- nothing alive
+...
+ATTACHED=0
+CREATED=1                                                  <- it is OUR instance
+alfe[warn]: backend AUTOCAD: process exited after 28.99 s; last status = "BOOTING"
+bridge-autocad.vbs(217, 1) (null): L'appel a ete rejete par l'appele.
+--- protocol\status.txt
+BOOTING
+#+end_example
+
+=ATTACHED=0= is the fact that settles it: the bridge attached to nothing and
+*created* the instance itself, and then that instance rejected a call. There was
+no other AutoCAD to hold the registration — the sweep in the same job says so
+independently. "A stuck acad.exe refuses every later COM session" describes
+something that did not happen.
+
+*And the rejection is TRANSIENT.* The same pipeline's =verify:epure-api:windows=
+(job 16761201252) reached =READY after 30.95 s= and completed a request round
+trip against a real AutoCAD. Two invocations, minutes apart, same machine: one
+rejected at 29 s, one ready at 31 s.
+
+** The real cause: the calls AFTER TouchApp were unguarded
+
+=TouchApp= already retries =Visible = True= ten times (defect 2 of this ticket,
+fixed earlier). What it did not cover is everything that follows it:
+
+#+begin_src vbscript
+WaitQuiescent app, waitSecs
+If app.Documents.Count = 0 Then      ' <- unguarded
+  Call app.Documents.Add("")         ' <- unguarded
+End If
+Set doc = app.ActiveDocument         ' <- unguarded, emitted line 217
+#+end_src
+
+A freshly =CreateObject='d AutoCAD answers =Visible = True= and is *then* still
+opening its startup document and running its startup routines, so the next call
+gets =RPC_E_CALL_REJECTED=. With no =On Error= around it the script died on a
+RAW VBScript runtime error naming only a line number — not a diagnosis, and the
+reason this read as "something is wedged" for a week.
+
+Fixed: those three calls now sit in a 20-attempt, one-second retry loop that
+reports, when it truly gives up, that the instance is up but never became ready
+to take a command — and names a startup dialog on the desktop as the usual
+reason, which is the same conclusion =cad-runner-wedged-by-modal-dialog= reached
+from the other side.
+
+*The misdiagnosis was also in the code, and is fixed.* =TouchApp='s failure
+message said "Another instance is probably wedged and holding the registration:
+end it on the machine" *unconditionally* — advice that is simply false when
+=created= is true, and precisely the sentence that sent this investigation after
+a phantom. It now branches on =attached=: blame another instance only when we
+attached to one, and otherwise say that it is our own instance, still starting
+or waiting on a dialog.
+
+Two tests on the emitted template (=backend-cad-tests.lisp=): the structural one
+requires an error guard between =WaitQuiescent= and the =ActiveDocument= call —
+which would have failed before this change — and the other requires the advice
+to branch. A wording note earned the hard way: assertions on the emitted VBS
+must use fragments that are contiguous in the template, because =& _=
+continuations split a sentence into several strings; the first version of both
+tests failed on its own wording rather than on the code.
+
+alfe suite: *1328 checks, 0 failures, SBCL and CCL.*
+
+** What remains
+
+- [ ] A re-run of =verify:autocad-activex:windows= reaching READY, to confirm
+      the retry closes the gap on the invocation shape that failed. The
+      evidence says the server becomes ready at around 30 s and the loop now
+      waits up to 20, so this is expected rather than hoped — but it is a
+      machine answer and has not been given yet.
+- The title is now wrong and deliberately left alone: renaming it would break
+  every reference, and the body says plainly that the premise is refuted.
+
+* Observed (as filed — the reading of this evidence was WRONG, see above)
 
 verify:epure-api:windows on master (alfe 2.2.96, job 16753534728,
 2026-09-26 11:30). Both AutoCAD runs died in BOOTSTRAP:
