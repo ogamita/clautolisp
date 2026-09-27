@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cad-runner-wedged-by-modal-dialog — a CAD job that waits on an invisible dialog blocks every other CAD job
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: infra
 #+DEPENDS: -
@@ -126,12 +126,50 @@ Four, none needing a CAD:
   contains the call, and a check that its own rationale can fail is worse
   than no check. (It fired on exactly that during development.)
 
-** Still open
+** RESOLVED 2026-09-27 (clautolisp 2.2.129) — the diagnosis half
 
-The DIAGNOSIS half. "READY-TIMEOUT, last status BOOTING, launcher still
-running" reads identically for a slow start and for a modal dialog
-waiting on input nobody can give. Distinguishing them — the engine is
-alive but has not moved off BOOTING at all, which on Windows usually
-means a startup dialog — would have pointed at the cause in one read
-instead of three wrong hypotheses. Left open deliberately: it is a
-message, not a mechanism, and the mechanism is now safe.
+"READY-TIMEOUT, last status BOOTING, launcher still running" now reads
+differently in the case that matters.
+
+=ENGINE-NEVER-STARTED-P= is the discriminator the message was missing:
+=BOOTING= is what alfe ITSELF writes to status.txt before the launch, so
+seeing it still there means the engine published nothing at all — it never
+got as far as loading run-common.lsp. That is a different fact from a CAD
+which reached =RUNNING= and stalled, and the two used to print the same
+phrase.
+
+=READY-TIMEOUT-DIAGNOSIS= turns it into three cases:
+
+| launcher | engine moved? | phrase                                                    |
+|----------+---------------+-----------------------------------------------------------|
+| exited   | —             | =launcher exited with code N= (its output is quoted too)   |
+| alive    | yes           | =launcher still running= — it started and stalled LATER    |
+| alive    | no            | =never moved past BOOTING ... usually a startup dialog=    |
+
+The third names the likely cause: BricsCAD asks which drawing and which
+profile when given neither, and under a hidden main frame (=/Automation=)
+that dialog is invisible as well as unanswerable — which is exactly the
+2026-08-14 incident. On macOS the same shape is the Accessibility prompt
+blocking the first =osascript= keystroke.
+
+*AutoCAD's message had no launcher state at all* — found while wiring this,
+and the same structural defect the earlier half of this ticket recorded: one
+backend owning a lesson. Both now pass the last status and print the phrase.
+
+Tests (=backend-cad-tests.lisp=), pure, no CAD needed:
+
+- =ready-timeout-diagnosis-tells-a-dialog-from-a-slow-start= — the
+  discriminating pair is the point: the SAME live launcher, one engine that
+  never moved and one that did, must not produce the same phrase. Also that
+  an exited launcher is NOT diagnosed as a dialog.
+- =engine-never-started-p-is-exactly-the-no-transition-case= — nil, empty,
+  =BOOTING=, lowercase, trailing newline and CRLF (what Windows writes) are
+  all "never started"; =READY=, =RUNNING= and =FAILED= are all transitions.
+
+alfe suite: *1316 checks, 0 failures, SBCL and CCL.* Documented in the alfe
+user manual § Troubleshooting (with what to do about it, and the warning that
+a cold start legitimately takes minutes) and in RELEASE_NOTES.org.
+
+Nothing named in this ticket remains: the ceiling exists (=timeout: 30m=), the
+engine is reaped by both backends through one bounded killer, and the
+diagnosis now distinguishes the two shapes. Moved to =issues/closed/=.
