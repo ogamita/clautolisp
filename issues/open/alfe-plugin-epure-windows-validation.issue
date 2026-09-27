@@ -182,11 +182,62 @@ the answer legible without reading AutoLISP, and the negative control under
 clautolisp (=nothing-defined=) is what proved the probe could tell the cases
 apart at all.
 
+** pjb answered, and the probe was asking too small a question (2.2.139)
+
+pjb, 2026-09-27: "toutes_options is EPURE; you may have a look at EPURE API
+looking into epuree ~claude/src/pjb/epuree/".
+
+Confirmed in that tree. =toutes_options= is defined at =src/comu.lsp:2515=
+(=(defun toutes_options (x / ch) …)=), documented in
+=manual/reference/api-reference.md= as *Module: COM*, host scope
+=bricscad, autocad=, signature =toutes_options(options) -> string=, and it is
+loaded by =src/loader.lsp= through =epuree:bundle-load-first= over
+=lisp/comu.lsp= / =comu.lsp= / =src/comu.lsp= / =dist/epuree/lisp/comu.lsp=.
+So it is real, public, and supposed to be there on both engines.
+
+*So the earlier conclusion — "the test is asking for the wrong names" — was
+wrong, and the probe was the reason: it asked only for the two names the test
+calls.* Meanwhile it had FOUND =SNCF:EPURE:REG:ENV:SET=, which is itself in
+EPURE's public API catalogue (=tests/unit/public-api-catalog.lsp=, 422 names,
+generated from =spec/api/public-api.yaml=). Part of the public API is loaded and
+part is not, and "which part" is the question that distinguishes a missing module
+from a missing library — different faults, different fixes.
+
+The probe now runs a CENSUS over 24 catalogue names spread evenly through those
+422, spanning modules (=com_startup=, =com_version=, =dateheureutc=, =interr=,
+=fld=, =getbloc=, =dos_chdir=, =f_nom_date=, =schme_sauvegrd=, =Annuaire=, …),
+and reports =api-present=, =api-absent= and a verdict of =library-absent= /
+=library-partial= / =library-complete=. A mixture NAMES the modules that did not
+load, which is what the next run needs to say.
+
+Two self-inflicted bugs caught by the local negative control rather than by a
+queued CAD job, both worth the line they cost:
+
+- =DEFVAR= is Common Lisp; AutoLISP has no such function, and the file died with
+  "Undefined AutoLISP function DEFVAR" under clautolisp. =SETQ= at top level.
+- the probe counted its OWN new variable =*ALFE-EPURE-API-SAMPLE*= as an
+  EPURE-like symbol and reported =defined-under-other-names= on a session with no
+  EPURE at all. The exclusion was =ALFE-*= — a prefix — and this name starts with
+  a star. It now matches =*ALFE*= anywhere. That is the SECOND time the probe saw
+  itself, by a second name shape; a probe that can see itself answers the wrong
+  question.
+
+Negative control green again: under clautolisp, =verdict=nothing-defined= and
+=api-verdict=library-absent=.
+
 ** Still open
 
-- [ ] *pjb: which functions should the API test call?* See above — EPURE is
-      loaded and visible; =toutes_options= and =f_DateHeure_UTC= are not part of
-      it on either engine.
+- [ ] *Re-run =verify:epure-api:windows= with the census* and read
+      =api-present= / =api-absent=. That says whether the COM module alone is
+      missing or the whole function library, on each engine — the two engines
+      already load different subsets (29 EPURE-like symbols under AutoCAD, 40
+      under BricsCAD).
+- [ ] If the library is partial, the hypothesis to test next is DEMAND LOADING:
+      the BricsCAD census found the command stubs =C:COM_APROPOSEPURE= and
+      =C:COM_MODIFEPURECOM= while =toutes_options= was absent, which is what an
+      application that loads its function modules when a command first runs looks
+      like. A probe that invokes one such command before the census would settle
+      it.
 - *Distinguish "EPURE never loaded" from "EPURE loaded out of view".* ANSWERED
   above: neither. Kept for the record of what the probe was for. Probe
   =atoms-family= for a name EPURE defines, and dump whether its .lsp/.vlx was
