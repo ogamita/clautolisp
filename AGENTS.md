@@ -905,6 +905,34 @@ only when **genuinely platform-bound** (native macOS/Windows builds, GUI
 BricsCAD/AutoCAD). `release:linux:arm64` is the one lane that could move to
 poseidon but can't yet (needs a qemu arm64 runner).
 
+## CI — where to PLAY a manual CAD job, and how long it will wait
+
+Two things cost a whole day of evidence runs on 2026-09-27, both avoidable.
+
+**Never play a manual CAD job on a MASTER child pipeline.** `.gitlab/native.yml`
+sets `default: interruptible: true` (the fix for the job-activity-cap leak), so
+the next master merge — yours or another session's — auto-cancels that child and
+your played job with it. On a busy day that is every ten minutes, and it is not
+something to time. Play it on a **merge-request** child: a master merge does not
+supersede a different ref, which is the same property that makes those children
+leak. A *merged* MR's child is fine and is not swept away either, because the
+pipeline sweep spares any pipeline holding a played job (`pending` +
+`manualJob: true` in GraphQL). A plain branch will **not** work: `detect:runners`,
+which `native:pipeline` needs, only runs on master, tags and
+`merge_request_event`, so an arbitrary branch gets no child at all.
+
+*This note exists because the lesson was first written into an issue that was
+then closed, and the next session — the same one, an hour later — repeated the
+mistake. Operational lessons belong here, not in a ticket that will be archived.*
+
+**Expect hours, not minutes.** The `cad` tag is one machine at concurrency 1, and
+every pipeline adds ~9 vendor-probe jobs to it: measured 73 pending behind 1
+running. A deliberately played CAD job therefore waits behind the whole backlog.
+It is *not* stuck if the runner's `contacted_at` is recent — check that field, not
+`status`, which reports `online` for up to two hours after a runner stops polling.
+GitLab drops a pending job after ~2 h only when **no runner matches**; with a live
+matching runner it simply waits.
+
 ## CAD pathname semantics
 
 `..` / `.` resolution is **OS-level, not per-engine**. Missing-intermediate
