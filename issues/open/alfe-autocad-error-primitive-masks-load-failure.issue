@@ -192,3 +192,20 @@ Suites: alfe 1171 checks 0 failures.
   currently cannot start AutoCAD at all -- two wedged acad.exe hold the
   COM registration, see
   =issues/open/alfe-autocad-hung-instance-blocks-com-bootstrap.issue=.
+
+  *UPDATE 2026-09-27: that half is no longer true, and the reason it was
+  believed was wrong.* AutoCAD starts: =verify:autocad-activex:windows= (job
+  16762215995, clautolisp 2.2.132) reaches READY in 47.27 s, evaluates
+  =(vlax-get-acad-object)=, answers =DONE 1 OK= and reports
+  =ACTIVEX.RESULT=SUCCESS= against AutoCAD 24.1s. The "two wedged acad.exe"
+  reading was refuted from the machine — those pids were EXITED-but-unreaped
+  corpses, the bridge attaches to nothing (=ATTACHED=0 CREATED=1=) and creates
+  its own instance, and what actually failed was an unguarded COM call on that
+  new instance while it was still starting. Fixed in 2.2.131 and that ticket is
+  closed.
+
+  So the blocker named here is gone and criterion 4 is attemptable. What it
+  still needs is *SCHME+'s own pipeline*, in another repository: the two entry
+  points =test-cad:autocad:windows= and =test-unitaire:autocad:windows= have to
+  be re-run there against an alfe carrying the =autolisp-raise= fix. Nothing in
+  THIS repository blocks it any more, which is the state to leave it in.
