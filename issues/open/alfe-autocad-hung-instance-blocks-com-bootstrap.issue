@@ -164,3 +164,26 @@ is wedged" explanation is now a hypothesis again.
 - Do NOT play it while another master pipeline is about to start: an
   interruptible pipeline cancels queued jobs, which has already cost this
   investigation two runs.
+
+*Sharper, after that cost a third run (2026-09-27): do not play it on a MASTER
+child at all.* =.gitlab/native.yml= sets =default: interruptible: true= (the fix
+for the job-activity-cap leak), so a CAD job played on master's native child is
+cancelled the moment ANY other session merges to master — which on a busy evening
+is every ten minutes, and it is not something to time. Play it on a
+*merge-request* child instead: a master merge does not supersede a different ref,
+so an MR child survives. That is the same property that makes those children leak,
+which is why the sweep since 2.2.127 spares a child holding a *played* job
+(=pending=/=running=, as opposed to an unplayed =manual= one) — a queued CAD job
+is no longer swept away either.
+
+A plain branch will NOT do: =detect:runners=, which =native:pipeline= needs, runs
+only on master, tags and =merge_request_event=, so an arbitrary branch gets no
+child at all.
+
+*And read =contacted_at=, not =status=.* A runner reports =status: "online"= for up
+to two hours after it stops polling. PF5S26B and thalassa are intermittent and go
+quiet overnight: on the night of 2026-09-26/27 they last polled at 23:27Z and
+00:01Z, and 193 windows-tagged jobs sat =pending= with nothing running at all. The
+two evidence jobs (=verify:autocad-activex:windows=,
+=verify:epure-api:windows=) are PLAYED and queued in the child of !300 — they will
+run when that machine comes back, and the sweep will not take them.
