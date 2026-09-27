@@ -675,7 +675,17 @@
                    (strcat "LOADFORM " (autolisp-str form-read))))
                (setq capture-old *AUTOLISP_CAPTURE_STDOUT*)
                (setq *AUTOLISP_CAPTURE_STDOUT* T)
-               (setq eval-result (vl-catch-all-apply 'autolisp-eval-request-form (list form-read)))
+               ;; alfe-load drives this loop with *alfe-load-rewrite* set: it
+               ;; rewrites native ops to alfe-* and evaluates DIRECTLY, so the
+               ;; form is never re-serialised to alfe-eval.lsp and native-loaded
+               ;; (which re-introduces a high byte that chokes AutoCAD). The
+               ;; default protocol path keeps going through eval-request-form.
+               (setq eval-result
+                 (vl-catch-all-apply
+                   (if (and (boundp '*alfe-load-rewrite*) *alfe-load-rewrite*)
+                     'alfe-eval-rewritten-form
+                     'autolisp-eval-request-form)
+                   (list form-read)))
                (setq *AUTOLISP_CAPTURE_STDOUT* capture-old)
                (if (vl-catch-all-error-p eval-result)
                  (if (or *AUTOLISP_QUIT_REQUESTED*
@@ -747,6 +757,121 @@
 
 (defun autolisp-source-load-with-onfailure (path onfailure /)
   (autolisp-source-load-core-impl path T onfailure))
+
+;; --- alfe-* interface operators (fixed arity) -----------------------------
+;;
+;; accoreconsole-deported-load-highbyte: AutoCAD's native (load) chokes on a
+;; high byte, and we cannot fix that by SHADOWING (load)/(princ)/... --
+;; AutoCAD has no variadic user functions, so a shadow must be fixed-arity,
+;; and re-routing every (load) through the deporting shim re-enters the
+;; protocol server loop. Instead we expose fixed-arity alfe-* operators and
+;; have alfe-load REWRITE the calls in the code it loads: (princ a b) becomes
+;; (alfe-princ* (list a b)), (load p) becomes (alfe-load* (list p)), etc. The
+;; star forms take exactly ONE argument -- the argument LIST -- so any arity
+;; maps to a fixed-arity call, no &rest needed on any host. Ordinary user code
+;; that alfe does NOT load keeps calling the native operators (losing the
+;; deportation/redirection, which is fine since alfe owns the code that needs
+;; it -- test scenarios and the REPL).
+;;
+;; alfe-load also evaluates the rewritten forms DIRECTLY (not via the emitted
+;; autolisp-eval-request-form, which re-serialises each form to alfe-eval.lsp
+;; and native-loads it -- re-introducing the very high byte that chokes
+;; AutoCAD). Direct eval keeps the byte-decoded string in memory.
+
+(setq *alfe-load-rewrite* nil)   ; T only while alfe-load drives the read loop
+
+;; Output operators: one argument, the arg list, mirroring the runtime's
+;; princ/print/prin1 framing. A file descriptor in the second slot writes
+;; there; otherwise output goes to the captured user stream.
+(defun alfe-princ* (args)
+  (cond
+    ((null args) (autolisp-princ-newline))
+    ((cadr args)
+     (autolisp-write-string-to-file (autolisp-str (car args)) (cadr args))
+     (car args))
+    (T (autolisp-emit-user-line (autolisp-str (car args))) (car args))))
+
+(defun alfe-print* (args)
+  (cond
+    ((null args) (autolisp-princ-newline))
+    ((cadr args)
+     (autolisp-write-string-to-file
+       (strcat "\n" (autolisp-stdout-text (car args)) " ") (cadr args))
+     (car args))
+    (T (autolisp-princ-newline) (autolisp-emit-user-out (car args)))))
+
+(defun alfe-prin1* (args)
+  (cond
+    ((null args) (autolisp-emit-user-out nil))
+    ((cadr args)
+     (autolisp-write-string-to-file (autolisp-stdout-text (car args)) (cadr args))
+     (car args))
+    (T (autolisp-emit-user-out (car args)))))
+
+;; One-argument conveniences for hand-written alfe-owned code.
+(defun alfe-princ (obj) (alfe-princ* (list obj)))
+(defun alfe-print (obj) (alfe-print* (list obj)))
+(defun alfe-prin1 (obj) (alfe-prin1* (list obj)))
+
+;; Deporting byte-safe loader. alfe-load / alfe-load-onfailure are the
+;; fixed-arity entry points; alfe-load* takes the arg list (what the rewriter
+;; emits). autolisp-source-load reads the file honouring its encoding
+;; (autolisp-source-open-encoded) via read-line, and -- with *alfe-load-rewrite*
+;; set -- the read loop evaluates each form through alfe-eval-rewritten-form.
+(defun alfe-load (path / prev result)
+  (setq prev (if (boundp '*alfe-load-rewrite*) *alfe-load-rewrite* nil))
+  (setq *alfe-load-rewrite* T)
+  (setq result (vl-catch-all-apply 'autolisp-source-load (list path)))
+  (setq *alfe-load-rewrite* prev)
+  (if (vl-catch-all-error-p result)
+    (autolisp-raise (vl-catch-all-error-message result))
+    result))
+
+(defun alfe-load-onfailure (path onfailure / prev result)
+  (setq prev (if (boundp '*alfe-load-rewrite*) *alfe-load-rewrite* nil))
+  (setq *alfe-load-rewrite* T)
+  (setq result
+        (vl-catch-all-apply 'autolisp-source-load-with-onfailure
+                            (list path onfailure)))
+  (setq *alfe-load-rewrite* prev)
+  (if (vl-catch-all-error-p result)
+    (autolisp-raise (vl-catch-all-error-message result))
+    result))
+
+(defun alfe-load* (args)
+  (if (cdr args)
+    (alfe-load-onfailure (car args) (cadr args))
+    (alfe-load (car args))))
+
+;; Rewrite a form's native operator calls into alfe-* calls. The star forms
+;; take the arg list, so a variadic call maps to a fixed-arity one. Recurse
+;; into subforms; stop at QUOTE / FUNCTION exactly like the princ walker, so
+;; quoted data is never rewritten.
+(defun alfe-rewrite-form (form / head s)
+  (cond
+    ((atom form) form)
+    ((not (listp form)) form)
+    ((null form) form)
+    (T
+     (setq head (car form))
+     (cond
+       ((and (= (type head) 'SYM)
+             (progn (setq s (strcase (vl-symbol-name head)))
+                    (or (= s "QUOTE") (= s "FUNCTION"))))
+        form)
+       ((and (= (type head) 'SYM) (= s "PRINC"))
+        (list 'alfe-princ* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
+       ((and (= (type head) 'SYM) (= s "PRINT"))
+        (list 'alfe-print* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
+       ((and (= (type head) 'SYM) (= s "PRIN1"))
+        (list 'alfe-prin1* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
+       ((and (= (type head) 'SYM) (= s "LOAD"))
+        (list 'alfe-load* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
+       (T
+        (mapcar 'alfe-rewrite-form form))))))
+
+(defun alfe-eval-rewritten-form (form)
+  (eval (alfe-rewrite-form form)))
 
 (defun autolisp-internal-protocol-load-p (path)
   (and (= (type path) 'STR)
