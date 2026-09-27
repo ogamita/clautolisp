@@ -63,6 +63,14 @@ import urllib.request
 
 API = os.environ.get("CI_API_V4_URL", "https://gitlab.com/api/v4")
 PROJECT = os.environ.get("CI_PROJECT_ID", "")
+
+# GraphQL is asked exactly one thing REST cannot answer -- whether a job is
+# DECLARED manual (see QUEUED_WORK_P). Derived from the REST endpoint so a
+# self-hosted instance follows automatically; the project PATH (not the numeric
+# id) is what the GraphQL schema takes, and without it the sweep falls back to
+# its conservative behaviour rather than guessing.
+GRAPHQL_URL = API.rsplit("/api/", 1)[0] + "/api/graphql"
+PROJECT_PATH = os.environ.get("CI_PROJECT_PATH", "")
 # Reuse the token detect:runners already uses. NOTE: reading runners needs
 # only read_api; CANCELLING needs `api'. A token with the narrower scope
 # will list the stale pipelines and then fail to cancel them -- which this
@@ -202,33 +210,93 @@ def active_pipelines(child):
     return list(found.values())
 
 
-def has_queued_work(pipeline_id):
-    """Does this pipeline hold a job somebody PLAYED that has not run yet?
+def graphql(query):
+    """One GraphQL query, or None when it cannot be asked.
 
-    A job still in `manual' is an unplayed, clickable fallback -- exactly what
-    the sweep exists to clear away. A job in `pending' or `running' was either
-    scheduled automatically or PLAYED BY HAND, and is queued work: on this
-    project it is typically a CAD verification waiting for a machine that is
-    intermittent by design, so waiting hours is normal and cancelling it throws
-    away a deliberate act.
-
-    Unknown counts as "yes". If the jobs cannot be listed, the safe answer is
-    the one that does not cancel.
+    Needed for ONE fact the REST jobs endpoint does not carry: whether a job is
+    DECLARED manual. See QUEUED_WORK_P.
     """
+    if not PROJECT_PATH:
+        return None
+    url = GRAPHQL_URL
+    body = json.dumps({"query": query}).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST")
+    req.add_header("PRIVATE-TOKEN", TOKEN)
+    req.add_header("Content-Type", "application/json")
     try:
-        for page in range(1, MAX_PAGES + 1):
-            batch = request("pipelines/%s/jobs?per_page=100&page=%d"
-                            % (pipeline_id, page))
-            if not batch:
-                return False
-            for job in batch:
-                if job.get("status") in ("pending", "running"):
-                    return True
-            if len(batch) < 100:
-                return False
+        with urllib.request.urlopen(req, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, urllib.error.HTTPError, ValueError):
+        return None
+
+
+def queued_work_p(job_states):
+    """Does this pipeline hold work somebody DELIBERATELY started?
+
+    JOB-STATES is a list of (status, declared-manual) pairs, or None when they
+    could not be read -- and unknown means "yes", because the safe answer is the
+    one that does not cancel.
+
+    THE DISCRIMINATOR, and it took two attempts to find. A job still in `manual'
+    is an unplayed, clickable fallback: exactly what the sweep clears. A job in
+    `pending' is either a PLAYED manual job -- somebody's deliberate act, on this
+    project typically a CAD verification waiting for a machine that is
+    intermittent by design -- or one the pipeline's own matrix scheduled, which
+    in a merged merge request's child is the garbage that fills the activity cap.
+
+    The REST jobs endpoint cannot tell those apart: measured 2026-09-27, a played
+    `verify:epure-api:windows' and an auto-scheduled `build:alfe:windows' return
+    byte-identical field sets -- no `when', no `manual', no `source', same
+    `user', both `pending' with `started_at: null'. This ticket's earlier
+    analysis concluded from that it was IMPOSSIBLE. It is not: GraphQL carries
+    `CiJob.manualJob', which says whether the job is DECLARED manual, and
+
+        pending + declared manual  => it was PLAYED
+        pending + not manual       => the matrix scheduled it
+
+    which is exactly the distinction. A RUNNING job is spared whatever its
+    provenance: killing work in flight wastes it, and on this project it can
+    leave a CAD process behind.
+    """
+    if job_states is None:
         return True
-    return True
+    for status, declared_manual in job_states:
+        if status == "running":
+            return True
+        if status == "pending" and declared_manual:
+            return True
+    return False
+
+
+def pipeline_job_states(pipeline):
+    """(status, declared-manual) for every job of PIPELINE, or None if unknown.
+
+    GraphQL, because `manualJob' is the one field REST does not carry. Falls back
+    to None -- read as "assume queued work" -- whenever it cannot be asked, so a
+    missing CI_PROJECT_PATH or an API hiccup never turns into a cancellation.
+    """
+    iid = pipeline.get("iid")
+    if iid is None:
+        return None
+    answer = graphql("""
+    query {
+      project(fullPath: "%s") {
+        pipeline(iid: "%s") {
+          jobs { nodes { status manualJob } }
+        }
+      }
+    }""" % (PROJECT_PATH, iid))
+    try:
+        nodes = (answer["data"]["project"]["pipeline"]["jobs"]["nodes"])
+    except (TypeError, KeyError):
+        return None
+    return [((n.get("status") or "").lower(), bool(n.get("manualJob")))
+            for n in nodes]
+
+
+def has_queued_work(pipeline):
+    """Whether PIPELINE holds deliberately-started work. See QUEUED_WORK_P."""
+    return queued_work_p(pipeline_job_states(pipeline))
 
 
 def crowded_p(jobs, warn_at):
@@ -343,7 +411,7 @@ def main():
         iid = merge_request_iid(pipeline.get("ref"))
         # Asked only for children, and only once the cheap checks could not
         # already spare the pipeline -- it is one request per candidate.
-        queued = (has_queued_work(pipeline["id"])
+        queued = (has_queued_work(pipeline)
                   if pipeline.get("source") == "parent_pipeline"
                   else False)
         reason = classify_pipeline(pipeline, mr_states.get(iid), now,

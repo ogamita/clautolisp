@@ -49,18 +49,18 @@ reclaim; it is work that was legitimately created and cannot run yet.
    *172* jobs active. Every earlier note here implicitly assumed a large margin;
    there is none, and a handful of merge requests is enough to cross it.
 
-2. *The played-work sparing rule cannot reclaim these, and that is not a bug in
-   it.* =has_queued_work= treats any =pending= job as deliberately queued work.
-   For the vendor probe campaigns that is exactly right — they ARE played, they
-   live in merged MRs' children, and sweeping them would destroy another
-   session's runs. But an AUTO-SCHEDULED pending job in a merged MR's child is
-   indistinguishable from a played one over the REST API: both are =pending=
-   with =started_at: null=, and the =when: manual= that would tell them apart is
-   not exposed on the jobs endpoint. So the sweep is structurally unable to
-   reclaim the biggest holders, and making it try would kill the campaigns.
+2. *The played-work sparing rule cannot reclaim these* — over REST.
+   =has_queued_work= treated any =pending= job as deliberately queued work. For
+   the vendor probe campaigns that is right: they ARE played, they live in merged
+   MRs' children, and sweeping them would destroy another session's runs. But an
+   AUTO-SCHEDULED pending job in a merged MR's child is indistinguishable from a
+   played one over REST — measured, a played =verify:epure-api:windows= and an
+   auto-scheduled =build:alfe:windows= return *byte-identical field sets*: no
+   =when=, no =manual=, no =source=, same =user=, both =pending= with
+   =started_at: null=.
 
-Which means *sweeping is the wrong lever for the steady state.* The sweep
-handles immortal leftovers; it cannot handle "too many jobs were created".
+   *I then concluded it was structurally impossible, and that was wrong.* See the
+   correction below: GraphQL carries the missing field.
 
 ** Done here (clautolisp 2.2.135): make the ceiling visible before it bites
 
@@ -128,12 +128,68 @@ case: a gate that lost its patterns must report everything, not pass quietly.
 Wired into the CI documentation lane beside the other gates. =glab ci lint=
 valid; 1486 tracked paths classified.
 
+** CORRECTION (2.2.137): it was NOT impossible — GraphQL has the field
+
+The paragraph above said the sweep was "structurally unable" to tell a played
+job from an auto-scheduled one. That was a conclusion drawn from ONE API and
+stated as a property of the problem. Wrong, and worth correcting in place
+because the wrong version had already been used to justify leaving the steady
+state unfixed.
+
+REST does not carry it. *GraphQL's =CiJob.manualJob= does* — whether the job is
+DECLARED manual — and combined with the status that is exactly the distinction:
+
+| status  | declared manual | means                        |
+|---------+-----------------+------------------------------|
+| manual  | yes             | unplayed fallback: SWEEP     |
+| pending | yes             | somebody PLAYED it: SPARE    |
+| pending | no              | the matrix scheduled it      |
+| running | either          | in flight: SPARE             |
+
+Measured on the two jobs that motivated the claim:
+
+#+begin_example
+verify:epure-api:windows  status PENDING  manualJob true   <- I played it
+build:alfe:windows        status PENDING  manualJob false  <- matrix
+#+end_example
+
+So =queued_work_p= now decides on (status, declared-manual) pairs and
+=pipeline_job_states= asks GraphQL for them, falling back to "assume queued
+work" whenever it cannot ask (no =CI_PROJECT_PATH=, an API hiccup) so ignorance
+never becomes a cancellation. A RUNNING job is spared whatever its provenance:
+killing work in flight wastes it, and here it can leave a CAD process behind.
+
+*Verified against the live project before landing*, because this rule cancels
+things and CI will run it unattended:
+
+#+begin_example
+  2886847637 !313/head  mr=merged  played=0 running=1 auto= 4 -> spare
+  2886848303 !314/head  mr=merged  played=0 running=0 auto=21 -> CANCEL
+  2886900169 !315/head  mr=merged  played=0 running=0 auto=21 -> CANCEL
+  2886928874 !316/head  mr=merged  played=1 running=0 auto=21 -> spare
+  2886946075 !317/head  mr=merged  played=0 running=0 auto=21 -> CANCEL
+  2886954444 !318/head  mr=merged  played=0 running=0 auto=21 -> CANCEL
+  2887010842 master     mr=-       played=0 running=1 auto=29 -> spare
+#+end_example
+
+Four children of my own docs-only merge requests reclaimed — *84 jobs* — while
+every pipeline holding real work is spared: =!313= and the master child for a
+running job, and =!316= for the ONE played job in it, which is the EPURE symbol
+probe waiting on the Windows runner. Before this change the same run selected
+*zero*.
+
+30 tests. The case that matters most is the one the old rule got wrong: an
+auto-scheduled pending job is NOT queued work. Unknown still counts as queued.
+
 ** What remains
 
-- [ ] Watch whether levers 1 and 2 together keep the count under the threshold.
-      The sweep now says when they do not — and the =--warn-at= default (150) is
-      a guess anchored on a single observation (refused at 172), so it may want
-      adjusting once a few days of data exist.
+- [ ] Watch whether levers 1, 2 and this together keep the count under the
+      threshold. The sweep now says when they do not — and the =--warn-at=
+      default (150) is a guess anchored on a single observation (refused at
+      172), so it may want adjusting once a few days of data exist.
+- [ ] The first docs-only merge request after 2.2.136 should spawn NO native
+      child. Not yet observed, because this change is deliberately batched into
+      one merge request rather than the eight that caused the problem.
 
 * Observed
 
