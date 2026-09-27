@@ -42,11 +42,21 @@ $expr2 = '(print (equal (quote ((enabled) (message))) (f_DateHeure_UTC 0)))'
 $apiFile = Join-Path ([System.IO.Path]::GetTempPath()) 'alfe-epure-api.lsp'
 "$expr1`r`n$expr2`r`n" | Set-Content -Path $apiFile -Encoding ASCII
 
+# The symbol probe travels with the repository rather than being inlined here:
+# it is AutoLISP, it is long enough to deserve its own comments, and it is
+# verifiable OFF Windows -- running it under clautolisp (which has no EPURE)
+# must report verdict=nothing-defined, which is the negative control for the
+# case this job is trying to distinguish.
+$probeFile = Join-Path $PSScriptRoot 'epure-symbol-probe.lsp'
+if (-not (Test-Path $probeFile)) {
+    Write-Host "epure-symbol-probe.lsp missing at $probeFile"; exit 2
+}
+
 $work = Join-Path ([System.IO.Path]::GetTempPath()) 'alfe-epure-api-out'
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 $summary = @()
 
-function Run-Alfe([string]$label, [string[]]$arguments) {
+function Run-Alfe([string]$label, [string[]]$arguments, [bool]$verdict = $true) {
     $out = Join-Path $work 'stdout.txt'
     $err = Join-Path $work 'stderr.txt'
     Remove-Item $out, $err -Force -ErrorAction SilentlyContinue
@@ -77,7 +87,19 @@ function Run-Alfe([string]$label, [string[]]$arguments) {
     Write-Host $stderr
     $ts = ([regex]::Matches("$stdout`n$stderr", '(?m)^\s*T\s*$')).Count
     Write-Host "--- exit $status, T printed $ts time(s)"
-    $script:summary += [pscustomobject]@{ Label = $label; Exit = $status; Ts = $ts }
+    # The symbol probe is a DIAGNOSTIC, not a verdict: it prints EPURE-PROBE
+    # lines and never two Ts, so counting it would fail the job for answering
+    # the question it was added to answer.
+    $script:summary += [pscustomobject]@{ Label = $label; Exit = $status; Ts = $ts; Verdict = $verdict }
+    if (-not $verdict) {
+        $probeLines = ([regex]::Matches("$stdout`n$stderr", '(?m)^EPURE-PROBE .*$'))
+        if ($probeLines.Count -eq 0) {
+            Write-Host "--- WARNING: the symbol probe printed no EPURE-PROBE line at all"
+            Write-Host "    (so it did not run -- that is itself the finding, not a pass)"
+        } else {
+            foreach ($m in $probeLines) { Write-Host ("--- {0}" -f $m.Value) }
+        }
+    }
     # Leave no CAD behind for the next run.
     Get-Process bricscad, acad -ErrorAction SilentlyContinue |
         ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
@@ -85,6 +107,16 @@ function Run-Alfe([string]$label, [string[]]$arguments) {
 }
 
 foreach ($cad in $cads) {
+    # FIRST, the diagnostic: does EPURE define ANYTHING here?
+    #
+    # On 2026-09-27 three invocations reached READY and all failed with "no
+    # function definition: TOUTES_OPTIONS", which says the API is absent but
+    # not WHY -- EPURE never loaded, or loaded out of view, or loaded under
+    # other names. Those are different fixes, so asking the session directly
+    # comes before asking it to call the functions. ATOMS-FAMILY, not a call:
+    # vl-catch-all-apply cannot trap an unbound symbol.
+    Run-Alfe "--$cad --epure, symbol probe (diagnostic)" `
+        @('-norc', '--debug', "--$cad", '--epure', '-l', $probeFile) $false
     # As pjb types it.
     Run-Alfe "--$cad --epure, -x as typed" `
         @('-norc', '--quiet', "--$cad", '--epure', '-x', $expr1, '-x', $expr2)
@@ -95,8 +127,11 @@ foreach ($cad in $cads) {
 }
 
 Write-Host ""
-Write-Host "================ summary (T twice is the pass)"
+Write-Host "================ summary (T twice is the pass; probe rows are diagnostics)"
 foreach ($row in $summary) {
-    Write-Host ("  {0,-34} : exit {1}, T x{2}" -f $row.Label, $row.Exit, $row.Ts)
+    $kind = if ($row.Verdict) { 'verdict ' } else { 'diagnostic' }
+    Write-Host ("  {0,-42} : {1} exit {2}, T x{3}" -f $row.Label, $kind, $row.Exit, $row.Ts)
 }
-exit @($summary | Where-Object { $_.Ts -lt 2 }).Count
+# Only the verdict rows decide the exit code. A diagnostic row never prints two
+# Ts -- counting it would fail the job for answering its own question.
+exit @($summary | Where-Object { $_.Verdict -and $_.Ts -lt 2 }).Count
