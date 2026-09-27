@@ -251,6 +251,32 @@ The age-only rule inside the newest-500 window found nothing to cancel, so the
 made the second defect visible — and neither would have surfaced without
 watching a run.
 
+** A played job is queued work, not a fallback (clautolisp 2.2.127)
+
+Found before the token was granted, which is the only reason it did no damage.
+The sweep's justification for taking a merged MR's child is that *nobody can
+play its manual jobs again*. But the child of merged !300 held **twelve played
+jobs**: ten BricsCAD macOS probes from another session and the two AutoCAD
+verifications played for this investigation, all =pending=, all waiting for
+machines that are *intermittent by design* (PF5S26B last polled 23:27Z,
+thalassa 00:01Z — it is the middle of the night). Somebody had already played
+them. The first armed sweep would have cancelled every one.
+
+So the rule now distinguishes the two states GitLab already distinguishes:
+
+- =manual= — unplayed, a clickable fallback. Exactly what the sweep clears.
+- =pending= / =running= — scheduled or PLAYED BY HAND. Queued work.
+
+=has_queued_work= asks per candidate child, and a child holding queued work is
+spared the MR-state rule AND the child age threshold — a CAD machine that comes
+back when an office opens is easily more than twelve hours away. It buys time,
+not immortality: past the parent ("genuinely stuck") threshold it is swept
+anyway, because a played job that has waited two days is not waiting for an
+office to open. A pipeline whose jobs cannot be listed counts as queued: when
+the answer is unknown, the safe one is the one that does not cancel.
+
+Six more tests (23 in total), including the case as observed.
+
 ** What remains before this closes — a token, which is pjb's to grant
 
 The sweep needs a credential with the =api= scope. Two shapes, and the second
