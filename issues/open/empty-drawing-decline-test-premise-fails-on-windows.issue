@@ -1,0 +1,91 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: empty-drawing-decline-test-premise-fails-on-windows — the unwritable-location fixture is writable on Windows
+#+STATUS: NEXT
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-09-27
+
+* Observed
+
+=test:alfe:windows= on the clautolisp 2.2.133 child (job 16762247996) is the
+only red Windows unit lane, and it fails on exactly one check:
+
+#+begin_example
+Did 1308 checks.  Pass: 1307 (99%)  Fail: 1 ( 0%)
+  AN-UNWRITABLE-DIRECTORY-DECLINES-RATHER-THAN-FAILS-THE-RUN
+#+end_example
+
+=test:clautolisp:windows= and =test:autolisp-test:windows= are both green in the
+same child, so this is one test, not a broken toolchain.
+
+* What the test needs, and why it is hard to get portably
+
+=FRESH-EMPTY-DWG= is a *courtesy*: a backend that cannot get a drawing falls
+back on template discovery, so the function must return NIL rather than signal
+and take the run down. Testing that needs a location the write genuinely
+CANNOT succeed in, on every platform — and that is the whole difficulty. Two
+attempts so far, each defeated by Windows in a different way:
+
+1. =/proc/definitely/not/writable/= — unwritable on Linux only. On Windows it
+   maps to a perfectly creatable =C:\proc\...=, the write SUCCEEDED, and the
+   lane went red.
+2. A directory *below a regular file*, which cannot be created anywhere:
+   ENOTDIR on POSIX, its equivalent on Windows. Still red.
+
+*Attempt 2's premise was verified on POSIX and holds there*, which is what
+narrows this down. Measured with uiop 3.3.7.3 on Linux:
+=uiop:with-temporary-file (:pathname p)= leaves a real file at =p= during the
+body, and =(ensure-directories-exist "<p>/sub/empty.dwg")= signals
+=SB-INT:SIMPLE-FILE-ERROR=. So the POSIX side was never the problem and the
+difference is on the Windows side of one of two things:
+
+- the fixture — the temporary file may not exist as a file when the body runs;
+  or
+- *the pathname arithmetic* — =uiop:ensure-directory-pathname= on
+  =C:/Temp/xyz.tmp= plus =merge-pathnames "sub/"= may not produce a path whose
+  parent is that file. If it lands somewhere else, the write succeeds
+  harmlessly and the test fails for a reason that has nothing to do with what
+  it is testing.
+
+The second is the likelier of the two and matches the shape of attempt 1.
+
+* Done here (clautolisp 2.2.134): the test now says WHICH
+
+It could not be reproduced from Linux, so instead of guessing at a fix the test
+was made to *assert its premise* and report the paths. It now:
+
+- builds the blocker file *explicitly* (=with-open-file=) rather than through a
+  temporary-file macro — one less platform-dependent behaviour between the
+  fixture and the thing under test;
+- asserts the blocker exists AS A FILE, quoting =probe-file= when it does not;
+- asserts the target sits *directly below* the blocker, comparing namestrings
+  and quoting blocker, target and the target's parent when it does not — this
+  is the check that names a pathname-arithmetic difference instead of leaving
+  it as a mystery;
+- reports what =FRESH-EMPTY-DWG= actually returned, and for which target.
+
+Still 2 more checks and green on SBCL and CCL (1330 checks, 0 failures).
+
+So the next Windows run answers the question by itself: either a premise check
+fails and names the paths, or the decline check fails with the pathname it
+managed to write into.
+
+* Acceptance criteria
+
+- [ ] The next =test:alfe:windows= identifies which of the two premises breaks,
+      from its own failure message, without another investigation.
+- [ ] The fixture is then made unwritable in a way that holds on Windows too,
+      OR — if no portable unwritable location exists — the test declares
+      =:skip-on-os (:windows …)= with the reason stated, per the convention for
+      a scenario whose premise is false on a platform.
+- [ ] =test:alfe:windows= green.
+
+* Note
+
+Carved out of =alfe-windows-drive-protocol-three-evals-fails= when that closed:
+its own test now PASSES on Windows, and keeping it open for an unrelated red
+test would have misreported what was fixed. A lane that is red for two
+different reasons needs two tickets, or the second reason inherits the first
+one's conclusion.

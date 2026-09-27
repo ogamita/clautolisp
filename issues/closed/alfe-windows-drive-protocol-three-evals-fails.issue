@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-windows-drive-protocol-three-evals-fails — cad-drive-protocol-actions-three-evals-counter-aware fails on the Windows runner
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: portability
 #+DEPENDS: -
@@ -183,6 +183,35 @@ all agree) but it cannot be run here -- reproducing an absent-file transient
 needs the platform whose rename is not atomic. The lane will say. What IS now
 guaranteed regardless of whether the hypothesis is right: the next red run
 names its condition.
+
+* RESOLVED 2026-09-27 — the lane ran the test and it PASSED (clautolisp 2.2.134)
+
+=test:alfe:windows= on the =2.2.133= child (job 16762247996) reports:
+
+#+begin_example
+Did 1308 checks.  Pass: 1307 (99%)  Fail: 1 ( 0%)
+Failure Details:
+  AN-UNWRITABLE-DIRECTORY-DECLINES-RATHER-THAN-FAILS-THE-RUN
+#+end_example
+
+*=cad-mock-serves-a-request-that-arrives-late= is not in that list.* The test
+written to reproduce this ticket's defect — the one that failed on Windows at
+2.2.124 with =got :ABORTED= — now passes there. So both causes are confirmed
+fixed ON THE PLATFORM, not only reasoned about:
+
+- the mock's per-round budget (2.2.122), and
+- the probe-then-open read whose transient killed the mock thread silently
+  (2.2.125), which is the one that could only be settled by a platform whose
+  rename is not atomic.
+
+Criterion 3 asked for the LANE to be green. It is not, and deliberately not
+counted against this ticket: the single remaining failure is a different test
+with a different cause (a fixture whose premise does not hold on Windows), now
+tracked as =empty-drawing-decline-test-premise-fails-on-windows=. Keeping this
+ticket open until an unrelated test goes green would misreport what is fixed.
+
+Closed. What this ticket set out to explain is explained, and what it set out to
+fix is fixed and observed.
 
 * Note
 
