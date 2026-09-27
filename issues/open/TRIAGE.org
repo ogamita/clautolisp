@@ -219,7 +219,7 @@ CAD (machine-bound):
   opération éprouve l'hôte. 1278 checks, 0 échec, SBCL ET CCL. PAS PROUVÉ que ce
   soit la DERNIÈRE cause : reproduire un transitoire d'absence demande la
   plateforme dont le rename n'est pas atomique. Reste : voir la lane verte
-- NEXT =ci-job-activity-cap-refuses-master-pipelines= — P1, NOUVEAU 2026-09-27,
+- DONE =ci-job-activity-cap-refuses-master-pipelines= — P1, NOUVEAU 2026-09-27,
   trouvé en lisant pourquoi deux pipelines master étaient rouges avant de jouer
   les jobs de preuve AutoCAD. Les pipelines 2885863084 et 2885863269 (21:55Z,
   deux commits de merge sur master) sont =failed= avec ZÉRO job et
@@ -249,7 +249,7 @@ CAD (machine-bound):
   vider le seau à la main (annuler des workloads CI vivants) a été refusé par la
   politique d'outils de cette session, ce qui est un garde-fou raisonnable et non
   un obstacle — le projet a son propre mécanisme sanctionné pour ça
-  (=sweep:stale-child-pipelines=), donc on le rend correct puis on le joue.
+  (=sweep:stale-child-pipelines=), donc on le rend correct puis on le joue. **CLOS 2026-09-27 11:08Z — LE BALAI A BALAYÉ, pour la première fois de son existence.** pjb a posé =PIPELINE_SWEEP_TOKEN= (projet, masquée, PROTÉGÉE) ; le job =sweep:stale-pipelines= du =.pre= de master a été rejoué et a rapporté « active pipelines: 6 (2 protected), to cancel: 1 / jobs counting against the activity cap: 90 / cancelled 2782105481 master — pipeline still active after 857.2h (>= 48h) — stuck ». VÉRIFIÉ ENSUITE et non supposé : la pipeline est =canceled= et ses jobs lisent « 16 canceled, 15 success » — les quinze restés en =created= depuis le 2026-08-22 sont libérés, soit un dixième du plafond récupéré définitivement. Trois choses de plus que ce tir confirme et qui n'étaient que des affirmations : le DÉCOMPTE marche (« 90 », là où chaque tir précédent disait =unknown=, le jeton en lecture seule ne pouvant pas lister les jobs) ; la pipeline COURANTE et son enfant sont protégés (« 2 protected »), donc un balayage en =.pre= n'annule pas la pipeline à laquelle il appartient ; et LA RÈGLE D'ÉPARGNE TIENT EN PRODUCTION — 1 sur 6, les cinq autres étant les campagnes de sondes avec des jobs CAD joués-mais-non-exécutés, aucune touchée. UNE CONSÉQUENCE de =protected: True= à connaître plutôt qu'à changer : une variable protégée ne parvient qu'aux jobs des refs protégées, donc le balayage AUTOMATIQUE (master) a le justificatif et le repli « jouable à la main depuis n'importe quelle pipeline » ne l'a PAS depuis une MR — il retombe alors sur =RUNNER_STATUS_TOKEN= et rapporte 403 pour ce qu'il sélectionne. Compromis défendable (le jeton d'écriture reste hors des refs non protégées) et il échoue BRUYAMMENT, le message disant exactement ce qui s'est passé : jouer depuis une pipeline master au besoin. issues/closed/
   **CORRIGÉ ET OBSERVÉ (clautolisp 2.2.126)** : =cancel-stale-child-pipelines.py=
   devient =cancel-stale-pipelines.py= et le job =sweep:stale-pipelines= (un nom
   qui mentait sur sa portée, c'est ainsi que la parente coincée est restée
