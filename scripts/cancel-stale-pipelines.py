@@ -231,6 +231,21 @@ def has_queued_work(pipeline_id):
     return True
 
 
+def crowded_p(jobs, warn_at):
+    """Is the activity bucket close enough to the ceiling to say so?
+
+    JOBS is the active-job count, or None when it could not be read -- and an
+    UNKNOWN count must never count as crowded. A read-only token cannot list
+    jobs, and manufacturing a failure out of ignorance would make the sweep red
+    for a reason that has nothing to do with the bucket.
+
+    The threshold is low on purpose: a child pipeline was refused at 172 active
+    jobs, far below GitLab's documented 500, so the useful warning comes well
+    before the number looks alarming.
+    """
+    return jobs is not None and jobs >= warn_at
+
+
 def protected_ids(pipeline_id):
     """This pipeline and its own children -- never swept by itself."""
     if not pipeline_id:
@@ -285,7 +300,14 @@ def main():
                              "this (default 48)")
     parser.add_argument("--dry-run", action="store_true",
                         help="list what would be cancelled, cancel nothing")
+    parser.add_argument("--warn-at", type=int,
+                        default=int(os.environ.get("SWEEP_WARN_ACTIVE_JOBS")
+                                    or 150),
+                        help="active-job count above which a sweep that found "
+                             "NOTHING to cancel reports failure (default 150; "
+                             "a child pipeline was refused at 172)")
     args = parser.parse_args()
+    warn_at = args.warn_at
 
     if not TOKEN or not PROJECT:
         print("FAIL: a token (PIPELINE_SWEEP_TOKEN, else RUNNER_STATUS_TOKEN)")
@@ -337,6 +359,32 @@ def main():
     print("jobs counting against the activity cap: %s"
           % ("unknown" if jobs is None else jobs))
 
+    # THE CEILING IS LOWER THAN THE DOCUMENTED 500. Measured 2026-09-27: a child
+    # pipeline was refused with "The pipeline job activity limit was exceeded"
+    # while 172 jobs were active, so the practical margin is far thinner than
+    # anyone assumed -- and a refusal produces a pipeline with ZERO jobs, which
+    # reads like an ordinary red rather than "your work never ran".
+    #
+    # Saying the number is not enough: nobody reads a log line that is fine
+    # ninety-nine times. So when the bucket is high AND this sweep found nothing
+    # it may cancel, it FAILS -- that combination is exactly the actionable one,
+    # "full, and I cannot help". High with something to cancel is not a failure:
+    # the sweep is doing its job.
+    crowded = crowded_p(jobs, warn_at)
+    if crowded:
+        print("")
+        print("WARNING: %d active jobs (threshold %d). The cap refuses new"
+              % (jobs, warn_at))
+        print("         pipelines well below GitLab's documented 500 -- a child")
+        print("         pipeline was refused at 172. A refused pipeline has ZERO")
+        print("         jobs and looks like an ordinary failure, so the work")
+        print("         simply does not run.")
+        print("         Levers, in order of bluntness: open fewer merge requests")
+        print("         (each one spawns a native child of ~21 platform jobs);")
+        print("         let the CAD backlog drain; reduce what a docs-only")
+        print("         change creates. See")
+        print("         ci-job-activity-cap-refuses-master-pipelines.")
+
     failures = 0
     for pipeline, reason in doomed:
         label = "%d %-44s %s" % (pipeline["id"], (pipeline["ref"] or "")[:44],
@@ -360,6 +408,13 @@ def main():
     if not doomed:
         print("nothing to sweep; every active pipeline is either protected, "
               "young, or still playable")
+        if crowded:
+            print("FAIL: the bucket is crowded and this sweep has nothing it "
+                  "may cancel.")
+            print("      Not a defect in the sweep -- a report that it cannot "
+                  "help, which")
+            print("      is the one state worth interrupting someone for.")
+            return 1
     return 0
 
 
