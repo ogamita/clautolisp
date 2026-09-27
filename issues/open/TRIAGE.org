@@ -237,7 +237,60 @@ CAD (machine-bound):
   vider le seau à la main (annuler des workloads CI vivants) a été refusé par la
   politique d'outils de cette session, ce qui est un garde-fou raisonnable et non
   un obstacle — le projet a son propre mécanisme sanctionné pour ça
-  (=sweep:stale-child-pipelines=), donc on le rend correct puis on le joue
+  (=sweep:stale-child-pipelines=), donc on le rend correct puis on le joue.
+  **CORRIGÉ ET OBSERVÉ (clautolisp 2.2.126)** : =cancel-stale-child-pipelines.py=
+  devient =cancel-stale-pipelines.py= et le job =sweep:stale-pipelines= (un nom
+  qui mentait sur sa portée, c'est ainsi que la parente coincée est restée
+  invisible) ; critère d'ÉTAT indépendant de l'âge (enfant d'une MR =merged= ou
+  =closed= balayé quel que soit son âge, enfant d'une MR OUVERTE du même âge
+  laissé — cette moitié-là compte, sinon le balayage tuerait la vérification de
+  toutes les MR en cours ; état illisible = repli sur l'âge, un hoquet d'API ne
+  devient jamais une annulation) ; tourne sur CHAQUE pipeline master en =.pre= ;
+  listing par statut actif et une troncature LÈVE au lieu d'imprimer un plafond
+  de pagination comme un décompte ; parentes balayées sur l'âge avec un seuil
+  séparé et généreux (48 h) ; =protected_ids= tient le balayage à l'écart de sa
+  propre pipeline et de son propre enfant ; le log imprime les jobs qui comptent
+  dans le plafond. 17 tests (=make check-stale-pipeline-sweep=, dans la lane
+  documentation), par PAIRES pour que le contrôle puisse échouer, et VUS ROUGES
+  contre l'ancienne règle : privée des clauses état-de-MR et parente, un enfant
+  de 0,5 h d'une MR fusionnée et la parente de cinq semaines classent tous deux
+  =None= — les 84 jobs et les 15 jobs, exactement. Hypothèses d'API vérifiées
+  sur le projet vivant et non lues dans la doc (=status== filtre, le listing
+  simple EXCLUT les enfants, =source= présent partout).
+  **ET LA VRAIE DÉCOUVERTE, visible seulement en regardant tourner** (job
+  16758514768) : la sélection est juste — 9 pipelines actives, 1 protégée, 8 à
+  annuler avec leur raison (la parente coincée depuis 846 h et les enfants de
+  SEPT MR fusionnées) — puis **les 8 annulations sont refusées en HTTP 403**. Le
+  diagnostic écrit par l'auteur précédent pour ce cas précis tombe juste :
+  =RUNNER_STATUS_TOKEN= (variable de GROUPE =ogamita=, masquée, pas une variable
+  de projet) peut LIRE et pas ÉCRIRE — lire l'état des runners ne demande que
+  =read_api=, annuler une pipeline demande =api=. **Donc le balai n'a JAMAIS rien
+  balayé, pour deux raisons indépendantes** : la règle par âge dans une fenêtre
+  de 500 ne trouvait rien, donc le 403 n'était jamais atteint, donc le job
+  nocturne imprimait « nothing to sweep » et paraissait sain pendant des
+  semaines. Corriger la sélection est ce qui a rendu le second défaut visible.
+  RESTE — et c'est à pjb : un jeton de scope =api=, soit en élargissant
+  =RUNNER_STATUS_TOKEN=, soit (meilleure hygiène) en ajoutant une seconde
+  variable de groupe =PIPELINE_SWEEP_TOKEN= en =api= et en laissant le jeton de
+  lecture en lecture seule — =detect:runners= ne fait que lire. Créer un jeton
+  d'accès et poser une variable CI masquée est une modification de justificatif
+  sur le namespace de pjb, pas une action d'arrière-plan. En attendant, le
+  balayage tourne, dit précisément ce qu'il annulerait, et échoue en
+  =allow_failure= : visible sur chaque pipeline master sans rien bloquer —
+  strictement mieux que le silence qu'il remplace, mais pas encore un drainage
+- NOTÉ 2026-09-27 : panne DNS TRANSITOIRE des conteneurs docker sur poseidon
+  vers 00:04-00:08Z — =fatal: unable to access 'https://gitlab.com/...':
+  Could not resolve host: gitlab.com (Timeout while contacting DNS servers)=,
+  exit 128, AVANT le script, donc sur =git fetch=. A touché =test:alfe:sbcl=,
+  =test:alfe:ccl=, =documentation=, =check:release= et les deux jobs =.pre= de
+  master (=detect:runners= n'étant pas en allow_failure, les 33 autres jobs de
+  la pipeline 2886065813 ont été SAUTÉS : ce merge de master n'a rien testé).
+  DIAGNOSTIC depuis poseidon même : l'hôte résolvait, et un conteneur relancé
+  quelques minutes plus tard résolvait aussi (=gitlab.com= ET =debian.org=),
+  donc transitoire et non une config cassée. Le troisième essai du job a tourné.
+  Rien à corriger dans le dépôt ; consigné parce qu'un exit 128 sur =git fetch=
+  se relance et ne se débogue pas (cf. la note du même symptôme dans
+  clautolisp-test-double-run-and-native-ci)
 - TODO =cad-sweep-blocks-bricscad-jobs-over-autocad= — P3, trouvé en corrigeant
   le précédent : parmi les 22 jobs stoppés, =harvest:sysvars:bricscad:windows=
   — un job BRICSCAD arrêté à cause de trois =acad.exe=. L'argument du garde-fou
