@@ -127,9 +127,68 @@ The =exit 4= run is unrelated: a transient COM rejection before READY, fixed
 under =alfe-autocad-hung-instance-blocks-com-bootstrap= (the document calls
 after =TouchApp= were unguarded). Same job, different defect.
 
+** ANSWERED 2026-09-27 by the symbol probe — and it is a THIRD possibility
+
+=verify:epure-api:windows= with =scripts/epure-symbol-probe.lsp= (job
+16762746801, clautolisp 2.2.133). The probe ran on both engines:
+
+#+begin_example
+--autocad  --epure, symbol probe
+  EPURE-PROBE total-symbols=5680
+  EPURE-PROBE epure-like-symbols=29
+  EPURE-PROBE named=(nil nil)
+  EPURE-PROBE sample=(FICHIERLOGEPURE SCHMS_LOG_EVENEMENT_EPURE
+                      SNCF:EPURE:REG:ENV:SET SNCF:EPURE:GETENV:SET
+                      SNCF:EPURE:GETENV:GET COM_DOSSIERLOCALEPURE ...)
+  EPURE-PROBE verdict=defined-under-other-names
+
+--bricscad --epure, symbol probe
+  EPURE-PROBE total-symbols=6852
+  EPURE-PROBE epure-like-symbols=40
+  EPURE-PROBE named=(NIL NIL)
+  EPURE-PROBE sample=(FICHIERLOGEPURE C:COM_MODIFEPURECOM
+                      EPURE3D_SELECTIONNE_OBJETS C:COM_APROPOSEPURE EPURE_REG
+                      C:EPURE3D_SELECTION *EPURE-CUI* EPURE EPURE-CMD
+                      SNCF:EPURE:...)
+  EPURE-PROBE verdict=defined-under-other-names
+#+end_example
+
+*EPURE loads, and the session can see it.* Twenty-nine EPURE symbols under
+AutoCAD, forty under BricsCAD, with unmistakably real names —
+=SNCF:EPURE:GETENV:GET=, =C:COM_APROPOSEPURE=, =*EPURE-CUI*=, =EPURE-CMD=. So
+neither of the two cases this probe was built to separate is what happened:
+the application is not missing, and it is not out of view.
+
+*The two functions the API test calls are simply not among them.*
+=named=(nil nil)= says =TOUTES_OPTIONS= and =F_DATEHEURE_UTC= are undefined in a
+session where forty other EPURE symbols are defined. So the test is asking for
+the wrong names — or for names belonging to something =--epure= does not load
+(=SCHMS_LOG_EVENEMENT_EPURE= in the AutoCAD sample suggests SCHMS+ symbols are
+in scope there too, so the boundary between the two applications is worth
+establishing rather than assumed).
+
+*This is a question for pjb*, because the two names came from him
+(2026-09-25): are =toutes_options= / =f_DateHeure_UTC= EPURE's own API, or
+SCHMS+'s? If the latter, the job is testing the wrong layer and needs either an
+EPURE function that exists (the sample offers candidates) or =--load-app= for
+the application that defines them.
+
+Worth noting the two engines load DIFFERENT subsets — 29 against 40 — which is
+itself a fact for the epic: whatever function the test settles on has to exist
+on both, or the job needs a per-engine expectation.
+
+The probe's own design held up: the =verdict= line plus a bounded sample made
+the answer legible without reading AutoLISP, and the negative control under
+clautolisp (=nothing-defined=) is what proved the probe could tell the cases
+apart at all.
+
 ** Still open
 
-- *Distinguish "EPURE never loaded" from "EPURE loaded out of view".* Probe
+- [ ] *pjb: which functions should the API test call?* See above — EPURE is
+      loaded and visible; =toutes_options= and =f_DateHeure_UTC= are not part of
+      it on either engine.
+- *Distinguish "EPURE never loaded" from "EPURE loaded out of view".* ANSWERED
+  above: neither. Kept for the record of what the probe was for. Probe
   =atoms-family= for a name EPURE defines, and dump whether its .lsp/.vlx was
   loaded at all, before assuming either. =vl-catch-all-apply= cannot trap an
   unbound-symbol error, so the existence check has to be =atoms-family= (the

@@ -203,7 +203,58 @@ actually refused. The four it took were children of my own merged docs-only
 merge requests; everything holding played or running work was spared, as the
 pre-landing check said it would be.
 
+** REVERTED 2026-09-27 (2.2.138): the gate did not match a real code change
+
+The =changes:= gate is out again, and the reason belongs here rather than in a
+quiet undo.
+
+*It did the thing I said I would not let it do.* MR !321 changed
+=scripts/cancel-stale-pipelines.py= and =scripts/tests/…py=, which =**/*.py=
+covers. Its pipeline 2887016538 — a genuine =merge_request_event= pipeline at sha
+aa0d83a0 — created =detect:runners= and *no =native:pipeline=*. The bridge was
+excluded on a real code change: the silent skip the comment warned about, live on
+master, found by looking rather than by anything failing.
+
+The docs-only half worked — MR !322 created 34 jobs and no bridge, which is what
+the gate is for. But "works for the case I wanted, silently drops the case I
+feared" is the worst possible split.
+
+*What I could not establish, and why that settles it.* The pattern list was
+generous, =glab ci lint= called the file valid, and the extended
+=changes: paths:= form is documented. The one difference from the form that
+demonstrably works elsewhere in this file — =build:clautolisp-ci-image=, which
+uses the short list — is that =paths:= sub-key. That is a hypothesis, not a
+finding, and this rule decides whether Windows and macOS get tested at all.
+Guessing between candidate causes on that rule is how this repository lost two
+platforms from a release before. So the gate comes out until the matching
+behaviour is established by experiment.
+
+*Kept, because it has already paid for itself:*
+=scripts/check-native-pipeline-changes.py=, which classifies every tracked path
+and found four real omissions (=Dockerfile= and three extensionless executables).
+It is the list the gate needs when it returns, and it now REPORTS AND PASSES when
+there is no gate rather than failing on a state somebody chose. Its two
+gate-specific tests SKIP in that state instead of being deleted — a test that
+only passes while a feature exists gets removed the day it is reverted, and then
+nothing guards its return.
+
+Two method notes from the same hour, both of which cost time:
+
+- I first concluded the gate was missing from master entirely, from a
+  =sed -n '1130,1170p'= of the committed file. It was not: my own change had
+  added sixty lines and moved =native:pipeline=, so I was reading another job's
+  rules. *Line numbers are not identity* — grep for the job name.
+- The classification check then reported "changes: block lists no paths" against
+  the reverted file, because =block.find("changes:")= matched the word inside my
+  own revert COMMENT. Text-parsing YAML is fragile; it now anchors on a line
+  that is only whitespace plus the key.
+
 ** What remains
+
+- [ ] *Establish how =changes:= actually matches here*, by experiment on a
+      throwaway branch: one merge request touching a single =.lisp= file, using
+      the SHORT list form, and observe whether the bridge appears. Only then
+      re-land the gate. The classification list is ready for it.
 
 *Deliberately still open.* I closed this ticket once on a single good
 measurement and the symptom returned within three hours; the lesson was that one
