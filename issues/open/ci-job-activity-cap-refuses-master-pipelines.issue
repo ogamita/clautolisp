@@ -212,14 +212,65 @@ and the 15 jobs that filled the cap, exactly.
 present on every entry — so classification does not depend on which listing an
 entry came from.
 
-** What remains before this closes
+** Observed on master, and the selection is right — but the token cannot cancel
 
-*Observation.* The next master pipeline runs the sweep in =.pre=; it should
-cancel the four merged-MR children and the 2026-08-22 parent, and print an
-active-job count that drops. That is the acceptance, and it is minutes away
-rather than machine-gated — but it has not happened yet, and an unobserved
-sweep is exactly what this ticket is about. The nightly job reported "nothing
-to sweep" for weeks.
+=sweep:stale-pipelines= ran in =.pre= of master pipeline 2886065813 (job
+16758514768, clautolisp 2.2.126). The selection is exactly right:
+
+#+begin_example
+active pipelines: 9 (1 protected), to cancel: 8
+jobs counting against the activity cap: unknown
+  FAILED 2782105481 master           pipeline still active after 846.2h (>= 48h) -- stuck: HTTP Error 403: Forbidden
+  FAILED 2885836781 !293/head        child of !293, which is merged ...: HTTP Error 403: Forbidden
+  FAILED 2885851115 !294/head        child of !294, which is merged ...: HTTP Error 403: Forbidden
+  FAILED 2885864174 !295/head        child of !295, which is merged ...: HTTP Error 403: Forbidden
+  FAILED 2885989591 !297/head        child of !297, which is merged ...: HTTP Error 403: Forbidden
+  FAILED 2886033287 !298/head        child of !298, which is merged ...: HTTP Error 403: Forbidden
+  FAILED 2886048719 !299/head        child of !299, which is merged ...: HTTP Error 403: Forbidden
+  FAILED 2886059142 !300/head        child of !300, which is merged ...: HTTP Error 403: Forbidden
+FAIL: 8 cancellation(s) refused. If the token has read_api but not api,
+      this is exactly what it looks like -- widen the scope.
+#+end_example
+
+Eight pipelines, each with its reason: the five-week-old stuck parent (846
+hours) and the children of *seven* merged merge requests. The previous sweep
+would have selected NONE of them. Its own protected-id rule kept it off the
+pipeline it was running in. So criteria 1, 4, 5 and the log are confirmed
+against the live project, not only in tests.
+
+*And then every cancellation was refused with HTTP 403.* The diagnostic that
+fired was written by the previous author for exactly this, and it is right:
+=RUNNER_STATUS_TOKEN= (a *group-level* masked variable on =ogamita=, not a
+project one) can READ — the listing worked — and cannot WRITE. Reading runner
+status needs only =read_api=; cancelling a pipeline needs =api=.
+
+*Which means the broom has never swept anything, for two independent reasons.*
+The age-only rule inside the newest-500 window found nothing to cancel, so the
+403 that would have met it was never reached, so the nightly job printed
+"nothing to sweep" and looked healthy for weeks. Fixing the selection is what
+made the second defect visible — and neither would have surfaced without
+watching a run.
+
+** What remains before this closes — a token, which is pjb's to grant
+
+The sweep needs a credential with the =api= scope. Two shapes, and the second
+is better hygiene:
+
+1. widen =RUNNER_STATUS_TOKEN= (group =ogamita=) to =api=; or
+2. add a SECOND group variable, e.g. =PIPELINE_SWEEP_TOKEN=, with =api=, and
+   leave =RUNNER_STATUS_TOKEN= read-only. =detect:runners= only reads, and a
+   read-only token should stay read-only — the sweep is the one job that needs
+   to write, and it can name its own credential.
+
+Not done here deliberately: creating a project/group access token and setting a
+masked CI variable is a credential change on pjb's namespace, not a background
+action. Cancelling the eight pipelines by hand was also refused by this
+session's tool policy, which is the same judgement from the other side.
+
+Until the token exists the sweep runs, reports precisely what it WOULD cancel,
+and fails =allow_failure= — so it is visible on every master pipeline without
+blocking anything. That is strictly better than the silence it replaces, but it
+is not yet a drain.
 
 * Note
 
