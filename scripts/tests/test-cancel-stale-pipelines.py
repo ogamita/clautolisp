@@ -43,9 +43,10 @@ def pipeline(pid=1, ref="master", source="parent_pipeline",
             "created_at": stamp(hours_ago)}
 
 
-def classify(p, mr_state=None, max_age=12, max_parent_age=48, protected=()):
+def classify(p, mr_state=None, max_age=12, max_parent_age=48, protected=(),
+             queued=False):
     return sweep.classify_pipeline(p, mr_state, NOW, max_age, max_parent_age,
-                                   set(protected))
+                                   set(protected), has_queued_work=queued)
 
 
 class MergeRequestRef(unittest.TestCase):
@@ -87,6 +88,81 @@ class ChildOfAFinishedMergeRequest(unittest.TestCase):
         self.assertIsNone(classify(self.young_child(), mr_state=None))
         old = pipeline(ref="refs/merge-requests/297/head", hours_ago=30)
         self.assertIsNotNone(classify(old, mr_state=None))
+
+
+class PlayedJobsAreQueuedWork(unittest.TestCase):
+    """A job somebody PLAYED is not a clickable fallback.
+
+    Observed before this rule existed: the child of merged !300 held TWELVE
+    played jobs -- ten BricsCAD macOS probes from another session and two
+    AutoCAD verifications -- all waiting for machines that are intermittent by
+    design. The sweep's whole justification for taking a merged MR's child is
+    that nobody can play its jobs again. Somebody already had.
+    """
+
+    def merged_child(self, hours_ago=0.5):
+        return pipeline(ref="refs/merge-requests/300/head", hours_ago=hours_ago)
+
+    def test_queued_work_spares_a_merged_mr_child(self):
+        self.assertIsNotNone(classify(self.merged_child(), mr_state="merged"),
+                             "without queued work it must still be swept")
+        self.assertIsNone(classify(self.merged_child(), mr_state="merged",
+                                   queued=True))
+
+    def test_queued_work_survives_the_child_age_threshold(self):
+        # A CAD machine that comes back when an office opens can easily be
+        # more than 12h away.
+        self.assertIsNone(classify(self.merged_child(hours_ago=20),
+                                   mr_state="merged", queued=True))
+
+    def test_but_it_buys_time_not_immortality(self):
+        # Past the stuck threshold, a played job is not waiting for an office
+        # to open any more.
+        reason = classify(self.merged_child(hours_ago=60), mr_state="merged",
+                          queued=True)
+        self.assertIsNotNone(reason)
+        self.assertIn("not coming", reason)
+
+
+class QueuedWorkDetection(unittest.TestCase):
+    def test_manual_jobs_alone_are_not_queued_work(self):
+        def only_manual(path):
+            if "page=1" in path:
+                return [{"status": "manual"}, {"status": "success"},
+                        {"status": "failed"}]
+            return []
+
+        original = sweep.request
+        sweep.request = only_manual
+        try:
+            self.assertFalse(sweep.has_queued_work(1))
+        finally:
+            sweep.request = original
+
+    def test_a_pending_job_is_queued_work(self):
+        def one_pending(path):
+            if "page=1" in path:
+                return [{"status": "manual"}, {"status": "pending"}]
+            return []
+
+        original = sweep.request
+        sweep.request = one_pending
+        try:
+            self.assertTrue(sweep.has_queued_work(1))
+        finally:
+            sweep.request = original
+
+    def test_an_unlistable_pipeline_counts_as_queued(self):
+        # If we cannot tell, the safe answer is the one that does not cancel.
+        def boom(path):
+            raise ValueError("no")
+
+        original = sweep.request
+        sweep.request = boom
+        try:
+            self.assertTrue(sweep.has_queued_work(1))
+        finally:
+            sweep.request = original
 
 
 class ChildAge(unittest.TestCase):

@@ -106,7 +106,8 @@ def age_hours(stamp, now):
 
 
 def classify_pipeline(pipeline, mr_state, now,
-                      max_age_hours, max_parent_age_hours, protected):
+                      max_age_hours, max_parent_age_hours, protected,
+                      has_queued_work=False):
     """Why PIPELINE should be cancelled, or None to leave it alone.
 
     Pure, so the decision is testable without the API
@@ -114,6 +115,8 @@ def classify_pipeline(pipeline, mr_state, now,
     the merge request this pipeline belongs to, or None when it belongs to
     none or is unknown. PROTECTED is the set of pipeline ids this run must
     never touch -- its own pipeline and that pipeline's children.
+    HAS-QUEUED-WORK says the pipeline holds a job somebody PLAYED that has not
+    run yet (see %has_queued_work).
     """
     if pipeline["id"] in protected:
         return None
@@ -125,6 +128,25 @@ def classify_pipeline(pipeline, mr_state, now,
     iid = merge_request_iid(pipeline.get("ref"))
 
     if is_child:
+        # A PLAYED job is queued work, not a clickable fallback, and the whole
+        # justification for sweeping a merged MR's child is that nobody can
+        # play its jobs again. Somebody already did. This is not hypothetical:
+        # when this rule was missing, one merged MR's child held TWELVE played
+        # jobs -- ten BricsCAD macOS probes from another session and two
+        # AutoCAD verifications -- all waiting for machines that are
+        # intermittent by design, so the queue is long on purpose. The first
+        # armed sweep would have cancelled every one of them.
+        #
+        # It buys time, not immortality: past the PARENT threshold (the
+        # "something is genuinely stuck" one) it is swept anyway, because a
+        # played job that has waited two days is not waiting for an office to
+        # open.
+        if has_queued_work:
+            if age >= max_parent_age_hours:
+                return ("child holding played-but-unrun jobs for %.1fh "
+                        "(>= %gh) -- the runner is not coming"
+                        % (age, max_parent_age_hours))
+            return None
         # The criterion that matters: nobody can play these again.
         if iid is not None and mr_state in FINISHED_MR_STATES:
             return ("child of !%d, which is %s -- its manual jobs can never "
@@ -166,6 +188,35 @@ def active_pipelines(child):
                     "(child=%s): refusing to report a partial sweep"
                     % (MAX_PAGES, status, child))
     return list(found.values())
+
+
+def has_queued_work(pipeline_id):
+    """Does this pipeline hold a job somebody PLAYED that has not run yet?
+
+    A job still in `manual' is an unplayed, clickable fallback -- exactly what
+    the sweep exists to clear away. A job in `pending' or `running' was either
+    scheduled automatically or PLAYED BY HAND, and is queued work: on this
+    project it is typically a CAD verification waiting for a machine that is
+    intermittent by design, so waiting hours is normal and cancelling it throws
+    away a deliberate act.
+
+    Unknown counts as "yes". If the jobs cannot be listed, the safe answer is
+    the one that does not cancel.
+    """
+    try:
+        for page in range(1, MAX_PAGES + 1):
+            batch = request("pipelines/%s/jobs?per_page=100&page=%d"
+                            % (pipeline_id, page))
+            if not batch:
+                return False
+            for job in batch:
+                if job.get("status") in ("pending", "running"):
+                    return True
+            if len(batch) < 100:
+                return False
+    except (urllib.error.URLError, urllib.error.HTTPError, ValueError):
+        return True
+    return True
 
 
 def protected_ids(pipeline_id):
@@ -253,9 +304,15 @@ def main():
     doomed = []
     for pipeline in sorted(pipelines, key=lambda p: p["created_at"]):
         iid = merge_request_iid(pipeline.get("ref"))
+        # Asked only for children, and only once the cheap checks could not
+        # already spare the pipeline -- it is one request per candidate.
+        queued = (has_queued_work(pipeline["id"])
+                  if pipeline.get("source") == "parent_pipeline"
+                  else False)
         reason = classify_pipeline(pipeline, mr_states.get(iid), now,
                                    args.max_age_hours,
-                                   args.max_parent_age_hours, keep)
+                                   args.max_parent_age_hours, keep,
+                                   has_queued_work=queued)
         if reason:
             doomed.append((pipeline, reason))
 
