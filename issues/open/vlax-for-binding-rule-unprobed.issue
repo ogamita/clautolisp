@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vlax-for-binding-rule-unprobed — VLAX-FOR's loop variable rule is asserted by analogy, not probed
+#+STATUS: NEXT
+#+PRIORITY: P2
+#+TYPE: divergence
+#+DEPENDS: bricscad-access (probe:suite:bricscad:*), autocad COM for the AutoCAD column
+#+BRANCH: -
+
 Title: VLAX-FOR's loop variable rule is asserted by analogy, not probed
 Status: open (the code is fixed; the EVIDENCE is what is missing)
 Found: 2.0.26, while open-coding VLAX-FOR in the transpiler
@@ -75,3 +83,34 @@ compiler equivalence tests install a fake collection hook and assert
 that VLAX-FOR and FOREACH agree with each other. If a probe ever
 contradicts this, BIND-FOREACH-VARIABLE is the single place to change,
 which is the whole reason it exists.
+
+* The probe is written — 2026-09-28
+
+=probes/sources/probe-vlax-for-scope.lsp=, in the manifest after
+foreach-scope, so every =probe:suite:*= job runs it. Four cases, the
+FOREACH ones transposed: the loop variable a /-local of the same function,
+a /-local of the CALLER, a global, and bound nowhere. The collection is the
+active document's Layers (layer "0" always exists), and each case returns
+=(<variable afterwards> <iterations>)= so that BEFORE cannot be a loop that
+never ran; a layer left behind shows as ="layer:<name>"=.
+
+Headless clautolisp baseline (probe-results/clautolisp/linux/20260928T121031Z):
+
+| case                  | clautolisp  | means |
+|-----------------------+-------------+-------|
+| own /-local           | (BEFORE 1)  | binds |
+| caller's /-local      | (BEFORE 1)  | binds |
+| global                | (OUTER 1)   | binds |
+| bound nowhere         | (nil 1)     | no leak |
+
+What is left is the VENDOR columns:
+- =probe:suite:bricscad:macos= / =:windows= -- BricsCAD has the object
+  model in its batch runs, so these should answer;
+- =probe:suite:autocad:windows= runs accoreconsole, which has no ActiveX
+  object model: expect =error= in every case there, which answers nothing
+  about the rule. AutoCAD's column needs a full acad.exe run (COM
+  automation), currently blocked by alfe-autocad-createobject-fails-on-runner.
+
+Close on the BricsCAD answer if it is BIND on both platforms, with the
+AutoCAD column recorded as unavailable; reopen as a divergence if any
+engine answers ASSIGN.
