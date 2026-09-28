@@ -1217,29 +1217,80 @@ native:pipeline:
     # `make check-native-pipeline-changes' fails when any tracked path matches
     # neither this list nor the explicitly-declared irrelevant one. A new file
     # type therefore has to be classified on purpose; it cannot slip through.
-    # REVERTED 2026-09-27, and the reason is recorded rather than the change
-    # quietly undone: the `changes:' gate that stood here DID NOT MATCH a
-    # merge request whose diff changed scripts/*.py, which `**/*.py' covers.
-    # !321 (sha aa0d83a0, a genuine merge_request_event pipeline) created
-    # detect:runners and NO native:pipeline, so the bridge was excluded on a
-    # real code change -- exactly the silent skip the comment below warned
-    # about, live on master.
+    # RE-LANDED in the SHORT list form (clautolisp 2.2.142). The extended
+    # `changes: paths:' form that stood here was REVERTED 2026-09-27 because it
+    # SILENTLY SKIPPED the bridge on a real code change: MR !321 (sha aa0d83a0,
+    # a genuine merge_request_event pipeline) changed scripts/*.py -- which
+    # `**/*.py' covers -- yet created detect:runners and NO native:pipeline.
+    # The one difference from the form that demonstrably works elsewhere in
+    # this file (build:clautolisp-ci-image, which uses the short list) was the
+    # `paths:' sub-key. That was a hypothesis, not a finding, and this rule
+    # decides whether Windows and macOS get tested at all, so it was proven by
+    # experiment before re-landing. Two isolated MRs targeting a base branch
+    # that already carried THIS short-form gate, so `changes:' saw only the
+    # one-file diff: a .py-only MR (!350, pipeline 2889668504) CREATED the
+    # native:pipeline bridge -- the exact case that silently skipped under
+    # `paths:' -- and a .org-only MR (!351, pipeline 2889673744) created NO
+    # bridge. Positive and negative both correct; the `paths:' sub-key was it.
     #
-    # I could not explain WHY from the outside: the pattern list was
-    # generous, `glab ci lint' called the file valid, and the extended
-    # `changes: paths:' form is documented. The one difference from the form
-    # that demonstrably works elsewhere in this file (the
-    # build:clautolisp-ci-image rule, which uses the short list) is that sub-
-    # key. Guessing between candidate causes on a rule that decides whether
-    # Windows and macOS get tested is how this repository lost two platforms
-    # from a release before, so the gate comes out until the matching
-    # behaviour is established by experiment.
-    #
-    # What stays: scripts/check-native-pipeline-changes.py, which classifies
-    # every tracked path and already found four real omissions (Dockerfile
-    # and three extensionless executables). It is the list the gate will need
-    # when it returns. See ci-job-activity-cap-refuses-master-pipelines.
+    # THE RISK this guards. GitLab has no "only these paths changed" primitive,
+    # so the gate must be written as "run when these changed", and a pattern
+    # missing from the list SILENTLY SKIPS the native lanes on a real code
+    # change (this repository has been bitten by that shape -- see the release:*
+    # comment about a release "quietly missing two platforms WHILE BOTH MACHINES
+    # WERE ONLINE"). So the list is DELIBERATELY GENEROUS -- overlap costs one
+    # spurious child, omission costs a silent skip -- and
+    # `make check-native-pipeline-changes' (scripts/check-native-pipeline-
+    # changes.py) fails when any tracked path matches neither this list nor an
+    # explicitly-declared irrelevant one. A new file type therefore has to be
+    # classified on purpose; it cannot slip through. See
+    # ci-job-activity-cap-refuses-master-pipelines.
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        # Lisp, and the systems that build it
+        - "**/*.lisp"
+        - "**/*.asd"
+        - "**/*.lsp"
+        - "**/*.el"
+        - "**/*.sexp"
+        # native code and its build
+        - "**/*.c"
+        - "**/*.h"
+        - "**/*.cpp"
+        - "**/*.hpp"
+        - "**/CMakeLists.txt"
+        - "**/Makefile"
+        - "**/*.mk"
+        # drivers and scripts the lanes actually run
+        - "**/*.sh"
+        - "**/*.ps1"
+        - "**/*.cmd"
+        - "**/*.bat"
+        - "**/*.vbs"
+        - "**/*.py"
+        - "**/*.scr"
+        # CI definitions, configuration and data the lanes read
+        - "**/*.yml"
+        - "**/*.yaml"
+        - "**/*.json"
+        - "**/*.cfg"
+        - "**/*.conf"
+        - "**/*.txt"
+        - "**/*.csv"
+        - "**/*.dcl"
+        # drawing fixtures
+        - "**/*.dwg"
+        - "**/*.dwt"
+        - "**/*.dxf"
+        # the CI image the lanes run in, and every tools/ tree -- the latter
+        # because several of its programs are EXTENSIONLESS executables
+        # (run-file-compat, read-all-autolisp, sanity-check) that no extension
+        # pattern would ever catch. check-native-pipeline-changes found all four.
+        - "**/Dockerfile"
+        - "**/tools/**"
+        # the vendored submodule pointer, and the submodule list itself
+        - ".gitmodules"
+        - "clautolisp/third-party/**"
     - when: never
   trigger:
     include: '.gitlab/native.yml'
