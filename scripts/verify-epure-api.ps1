@@ -115,10 +115,33 @@ function Quote-WinArg([string]$arg) {
 # running". Stop-Process only ASKS; an AutoCAD still exiting when the next one
 # starts made the COM bridge give up at BOOTING (exit 4, ATTACHED=0
 # CREATED=0). So wait until no CAD process is left, not a fixed 5 s.
+#
+# Only LIVE processes count. A dead acad.exe can keep its PID for days while
+# the COM service holds a handle to it (the "zombie" of sweep-orphaned-cad.ps1,
+# whose classifier this copies -- that script runs on load, so it cannot be
+# dot-sourced). On 2026-09-28 ten such PIDs made this wait its full 120 s
+# twice per run, 24 minutes of a 60-minute job, for processes nothing can end
+# and that block nothing.
+function Test-CadProcessLive([int]$ProcessId) {
+    $cim = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" `
+        -ErrorAction SilentlyContinue
+    if (-not $cim) { return $false }
+    $threads = 0
+    try { $threads = [int] $cim.ThreadCount } catch { $threads = 0 }
+    if ($threads -le 0) { return $false }
+    $proc = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if ($proc) {
+        try { if ($proc.HasExited) { return $false } } catch { }
+        try { if ($proc.Threads.Count -le 0) { return $false } } catch { }
+    }
+    return $true
+}
+
 function Wait-NoCad([int]$seconds = 120) {
     $deadline = (Get-Date).AddSeconds($seconds)
     while ($true) {
-        $left = @(Get-Process bricscad, acad, accoreconsole -ErrorAction SilentlyContinue)
+        $left = @(Get-Process bricscad, acad, accoreconsole -ErrorAction SilentlyContinue |
+                  Where-Object { Test-CadProcessLive $_.Id })
         if ($left.Count -eq 0) { return }
         if ((Get-Date) -gt $deadline) {
             Write-Host ("    (still running after {0} s: {1})" -f $seconds,

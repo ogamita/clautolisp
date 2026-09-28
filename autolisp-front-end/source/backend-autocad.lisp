@@ -1140,6 +1140,30 @@ pipe read, so the default stays the robust total decoder (G2)."
                    (when (plusp (length value))
                      (return value)))))))
 
+(defun read-bridge-errors (path)
+  "The COM bridge's error file as a string, or NIL when there is none.
+
+The bridge writes it with the FileSystemObject's default, the ANSI code page
+-- CP1252 on the runner's French Windows -- so the COM description it records
+(\"L'exécution du serveur a échoué\") is NOT UTF-8. Read as UTF-8 only, the
+first accented byte signalled a decoding error, the IGNORE-ERRORS around the
+read turned it into NIL, and the bootstrap message said only \"exit 4:
+ATTACHED=0 CREATED=0\": the COM error, the whole diagnosis, was dropped
+(verify:epure-api:windows, 2026-09-28, three AutoCAD runs). So UTF-8 first --
+what alfe itself writes there -- and CP1252 when that fails.
+
+Decoded from the OCTETS with babel, strictly, rather than by opening the file
+with an external format: SBCL signals on an invalid UTF-8 sequence, but CCL
+substitutes U+FFFD and carries on, so a `try UTF-8, fall back' built on the
+stream would never fall back under CCL and would print the description with
+its accents replaced."
+  (when (and path (probe-file path))
+    (let ((octets (ignore-errors
+                   (alfe.backend.cad-common::%read-file-octets path))))
+      (when octets
+        (or (ignore-errors (babel:octets-to-string octets :encoding :utf-8 :errorp t))
+            (babel:octets-to-string octets :encoding :cp1252 :errorp nil))))))
+
 (defun summarize-process-exit (details)
   "The bootstrap message for a launch that ended before READY.
 
@@ -1444,10 +1468,9 @@ unwind-protect that reaps the engine when it does not get there."
                                  (list :variant (and session
                                                      (autocad-session-variant session))
                                        :bridge-errors
-                                       (ignore-errors
-                                        (uiop:read-file-string
-                                         (alfe.protocol.file:protocol-session-stderr-path
-                                          protocol))))
+                                       (read-bridge-errors
+                                        (alfe.protocol.file:protocol-session-stderr-path
+                                         protocol)))
                                  details)))
                    (error 'backend-bootstrap-error
                           :backend :autocad

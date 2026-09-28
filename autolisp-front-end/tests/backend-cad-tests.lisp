@@ -2924,6 +2924,45 @@ COM.ERROR.DESCRIPTION=ActiveX component can't create object"))))
     (is (search "bridge" (string-downcase message)))
     (is (not (search "AutoCAD process exited" message)))))
 
+(test autocad-bridge-errors-are-read-in-the-ansi-code-page-too
+  "The bridge writes its error file in the ANSI code page (CP1252 on the
+runner's French Windows). Read as UTF-8 only, the accented COM description
+\"L'exécution du serveur a échoué\" made the read fail, the failure became NIL,
+and the bootstrap message lost the COM error it exists to report
+(verify:epure-api:windows, 2026-09-28). The test above passes the text as a
+string and so never saw that: this one writes the BYTES the bridge writes."
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (path (merge-pathnames "stderr.txt" dir))
+           (text (format nil "ERROR COM bridge: could not launch AutoCAD.Application.24.1~%~
+COM.STAGE=createobject~%COM.ERROR.DECIMAL=-2146959355~%COM.ERROR.HEX=0x80080005~%~
+COM.ERROR.DESCRIPTION=L'ex~Ccution du serveur a ~Cchou~C~%"
+                         (code-char 233) (code-char 233) (code-char 233))))
+      ;; CP1252 bytes: every character here is below 256, so Latin-1 IS the
+      ;; byte-for-byte encoding the bridge produced.
+      (with-open-file (out path :direction :output :if-exists :supersede
+                                :external-format :latin-1)
+        (write-string text out))
+      (let ((read (alfe.backend.autocad::read-bridge-errors path)))
+        (is (stringp read) "the ANSI file must be read, not dropped; got ~S" read)
+        (is (equal text read)))
+      (let ((message (alfe.backend.autocad::summarize-process-exit
+                      (list :exit-code 4 :variant :automation
+                            :stdout (format nil "ATTACHED=0~%CREATED=0") :stderr ""
+                            :bridge-errors (alfe.backend.autocad::read-bridge-errors path)))))
+        (is (search "0x80080005" message) "got ~S" message)
+        (is (search (format nil "serveur a ~Cchou~C" (code-char 233) (code-char 233))
+                    message)
+            "got ~S" message))
+      ;; What alfe itself writes there is UTF-8, and must stay UTF-8.
+      (with-open-file (out path :direction :output :if-exists :supersede
+                                :external-format :utf-8)
+        (write-string text out))
+      (is (equal text (alfe.backend.autocad::read-bridge-errors path)))
+      ;; No file, no errors -- and no signal.
+      (is (null (alfe.backend.autocad::read-bridge-errors
+                 (merge-pathnames "absent.txt" dir)))))))
+
 (test autocad-batch-needs-no-com-registration
   "Batch selection is unchanged and independent of COM: emitting the
 accoreconsole SCR must not consult the registry at all."

@@ -1,0 +1,42 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-autocad-createobject-fails-on-runner — AutoCAD COM automation cannot start AutoCAD on the Windows runner (2026-09-27/28)
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: cad-runtime
+#+DEPENDS: windows-access
+#+BRANCH: -
+
+* Observed
+
+Every =alfe --autocad= (COM automation) run on PF5S26B in
+=verify:epure-api:windows= on MR !336 (job 16774481586, 2026-09-28): the bridge
+waits about 120 s and exits 4 with =ATTACHED=0 CREATED=0=, i.e. =GetObject=
+found no AutoCAD and =CreateObject= failed. BricsCAD in the same job, on the
+same machine, reached READY in 31 and 56 s. The AutoCAD run from a file on
+MR !330 the day before failed the same way (130 s), while AutoCAD's symbol
+probe earlier in that same job had worked. Another session recorded the
+AutoCAD runner as unavailable on the same morning (commit 0b11a711).
+
+pjb, 2026-09-28: =alfe -norc --$CAD --epure -x '(print (com_way "\\foo"))'=
+works on Windows with BricsCAD and AutoCAD "when no other cad is running".
+
+* What is known
+
+- The ten acad.exe PIDs =Get-Process= lists on the runner (9164, 17640,
+  21928, ...) are the known ZOMBIES of alfe-autocad-hung-instance-blocks-com-bootstrap:
+  processes that exited days ago, kept in the table by a handle the COM
+  service holds. They answer no COM call, so they are not what holds the
+  registration -- unless one of them is in fact live.
+- The COM error itself was not visible: alfe dropped it
+  (alfe-autocad-bridge-com-error-dropped-on-ansi, fixed in alfe 2.2.146).
+  About 120 s before failing is the signature of CO_E_SERVER_EXEC_FAILURE
+  (0x80080005): COM started acad.exe and it never registered its class
+  object -- typically a startup dialog on a desktop nobody sees, a licence
+  prompt, or a crash at start. Not confirmed.
+
+* Next
+
+1. Re-run an AutoCAD job with alfe >= 2.2.146 and read the COM error it now
+   prints.
+2. If it is 0x80080005, look at the runner's desktop / AutoCAD's startup
+   (licence, recovery dialog) -- that needs someone at the machine.
