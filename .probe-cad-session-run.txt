@@ -1,0 +1,3 @@
+Throwaway: hosts a persistent MR pipeline whose native child runs
+probe:cad-session-state:windows without master-churn cancelling it.
+Do NOT merge; delete after the matrix is captured.
