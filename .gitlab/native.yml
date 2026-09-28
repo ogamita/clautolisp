@@ -210,6 +210,15 @@ default:
 # not fail the job it precedes.
 .cad-sweep-before:
   before_script:
+    # Log the Windows interactive-session state FIRST, before anything else,
+    # so every CAD job's log says whether the desktop was live, disconnected
+    # or locked -- the difference between a COM/GUI CAD run that works and one
+    # that dies partway (autocad-com-fails-in-disconnected-windows-session).
+    # WRAPPED so it can NEVER fail the job: this runs in before_script of every
+    # Windows CAD job, and a failing before_script fails the job, so a mere
+    # diagnostic must be caught even against its own parse errors -- `try/&/catch'
+    # then `exit 0' makes powershell.exe return 0 whatever the script does.
+    - 'powershell -NoProfile -ExecutionPolicy Bypass -Command "try { & scripts/windows-session-state.ps1 } catch { Write-Host $_ } ; exit 0"'
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep-orphaned-cad.ps1
 
 .gate-windows-cad-hard:
@@ -476,6 +485,31 @@ verify:autocad-activex:windows:
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-autocad-activex.ps1
+
+# What runs in the CURRENT Windows session state? Prints the session state
+# (console/rdp, connect state, locked) and then a 3x3 matrix: clautolisp
+# (in-process control), bricscad and autocad, each under --mode batch,
+# --mode automation and --epure. It reports and exits 0; reading the matrix
+# against the session banner is the deliverable. The point is to characterise
+# the disconnected-GUI state -- runner logged in but the desktop suspended
+# back to the login window -- in which COM/GUI CAD (automation, epure) dies
+# while headless batch (accoreconsole) survives, the difference seen between
+# benchmark:autocad:windows and benchmark:bricscad:windows on the same runner.
+# See autocad-com-fails-in-disconnected-windows-session.issue. Manual and
+# CAD-tagged: it launches both real CADs. 90m: up to six real CAD launches,
+# some of which may time out under a suspended desktop.
+probe:cad-session-state:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  timeout: 90m
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-cad-session-state.ps1
 
 # --- real-CAD BricsCAD automation checks (self-building) -------------------
 verify:bricscad-hidden-ui:windows:
