@@ -6,12 +6,17 @@
 # launching, and removes it afterwards (pjb, 2026-09-28). This proves it on
 # the real CAD, and proves the proof:
 #
-#   RUN      -x (+ 20 22) goes through protocol\alfe-eval.lsp in the workdir
-#            -> must print 42: the trusted workdir was loaded.
-#   CONTROL  -l <untrusted dir>\control.lsp is loaded from ITS OWN directory,
-#            which nobody trusted -> must NOT print its marker. If it does,
-#            SECURELOAD=2 was not in force and the RUN proves nothing:
-#            reported INCONCLUSIVE (exit 3), never PASS.
+#   INFORCE  (getvar "SECURELOAD") as the CAD itself reports it -> must be 2.
+#   RUN      an -x form goes through protocol\alfe-eval.lsp in the workdir
+#            -> must print RUN=42: the trusted workdir was loaded.
+#   CONTROL  a NATIVE (load ...) of <untrusted dir>\control.lsp, from -x --
+#            NOT alfe's -l, which stages a copy INTO the trusted workdir (the
+#            first run of this job, 16790730125, was fooled by exactly that)
+#            -> must be refused. If SECURELOAD is not 2, or the control loads,
+#            the RUN proves nothing: INCONCLUSIVE (exit 3), never PASS.
+# No double quote may appear in a -x form (PowerShell's native-argument
+# passing loses them), so strings are built with vl-symbol-name and
+# vl-list->string.
 #   AFTER    no alfe workdir entry may remain in any profile's TRUSTEDPATHS.
 #
 # It CHANGES THE RUNNER'S AUTOCAD PROFILES for its duration (SECURELOAD=2 in
@@ -56,25 +61,32 @@ $status = 1
 try {
     foreach ($s in $keys) { $cu.OpenSubKey($s, $true).SetValue('SECURELOAD', '2', 'String') }
     Write-Host "=== SECURELOAD=2 in $($keys.Count) profile(s); alfe --cad autocad --mode $mode"
+    $codes = ([int[]][char[]]($control -replace '\\', '/')) -join ' '
+    $inforce = '(progn (princ (vl-symbol-name (quote INFORCE=))) (princ (getvar (vl-symbol-name (quote SECURELOAD)))) (princ))'
+    $run = '(progn (princ (vl-symbol-name (quote RUN=))) (princ (+ 20 22)) (princ))'
+    $ctl = "(progn (setq r (vl-catch-all-apply (quote load) (list (vl-list->string (quote ($codes)))))) (princ (vl-symbol-name (if (vl-catch-all-error-p r) (quote CONTROL.REFUSED) (quote CONTROL.RETURNED)))) (princ))"
     $out = & $alfe --no-init --verbose --cad autocad --mode $mode --timeout $timeout `
-        -l $control -x '(+ 20 22)' 2>&1 | Out-String
+        -x $inforce -x $run -x $ctl 2>&1 | Out-String
     $alfeStatus = $LASTEXITCODE
     Write-Host $out
     Write-Host "--- alfe exit $alfeStatus"
 
-    $ran     = $out -match '(?m)^\s*42\s*$'
+    $enforced = $out -match 'INFORCE=2'
+    $ran      = $out -match 'RUN=42'
     $control_loaded = $out -match 'CONTROL\.LOADED'
     $leftover = @()
     foreach ($s in $keys) {
         $tp = [string]$cu.OpenSubKey($s).GetValue('TRUSTEDPATHS', '')
         foreach ($e in $tp.Split(';')) { if ($e -match 'alfe-autocad-') { $leftover += "$s : $e" } }
     }
-    Write-Host "RUN (42 printed)          : $ran"
+    Write-Host "SECURELOAD=2 in force     : $enforced"
+    Write-Host "RUN (RUN=42 printed)      : $ran"
     Write-Host "CONTROL refused           : $(-not $control_loaded)"
     Write-Host "TRUSTEDPATHS left clean   : $($leftover.Count -eq 0)"
     $leftover | ForEach-Object { Write-Host "  LEFTOVER $_" }
 
-    if ($control_loaded)           { Write-Host "RESULT=INCONCLUSIVE (SECURELOAD=2 not enforced)"; $status = 3 }
+    if (-not $enforced)            { Write-Host "RESULT=INCONCLUSIVE (the CAD does not report SECURELOAD=2)"; $status = 3 }
+    elseif ($control_loaded)       { Write-Host "RESULT=INCONCLUSIVE (the untrusted control loaded)"; $status = 3 }
     elseif (-not $ran)             { Write-Host "RESULT=FAIL (alfe did not run)"; $status = 1 }
     elseif ($leftover.Count -gt 0) { Write-Host "RESULT=FAIL (entry left in TRUSTEDPATHS)"; $status = 1 }
     else                           { Write-Host "RESULT=PASS"; $status = 0 }
