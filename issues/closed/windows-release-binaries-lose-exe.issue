@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: windows-release-binaries-lose-exe — the Windows release shipped unrunnable names, a Linux binary, and images built from another commit
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: alfe-sbcl-windows-build-missing-exe-suffix
@@ -238,3 +238,36 @@ pipeline, or cut the next release with the runner online — either runs
 =verify-release-artefacts= against the real Windows archive, which is the
 acceptance. Not done here because triggering/ publishing a release is
 pjb's call, not a background action.
+
+* Resolved 2026-09-28 — confirmed on a real Windows release
+
+The acceptance above had in fact already run, on the release that ships
+Windows today. The Windows products are built by the GitHub mirror's
+=release.yml= (run 34328996322, tag =release-2.2.1=, windows-2025 host,
+MINGW64), which runs =scripts/release-windows.sh= and so
+=verify-release-artefacts= against the real archive:
+
+#+begin_example
+ok  clautolisp-2.2.1-binaries-windows-x86-64.zip (41491653 bytes)
+ok  clautolisp-sbcl.exe is where the launcher opens it
+ok  read-autolisp-sbcl.exe is where the launcher opens it
+ok  alfe-sbcl.exe is where the launcher opens it
+ok  clautolisp-sbcl.exe reports 2.2.1
+ok  read-autolisp-sbcl.exe reports 1.9.0
+ok  alfe-sbcl.exe reports 2.2.1
+#+end_example
+
+And the PUBLISHED asset is that archive: the zip downloaded from
+poseidon's release-2.2.1 page is 41491653 bytes too, holds
+=libexec/clautolisp/binaries/windows/x86-64/{alfe,clautolisp,read-autolisp}-sbcl.exe=,
+and =file= calls all three "PE32+ executable for MS Windows (console),
+x86-64" — no Linux ELF. The versions are the ones the tag's version.lisp
+files carry (2.2.1 / 2.2.1 / 1.9.0), so no image was dumped from another
+commit's fasls. All three defects are gone in a shipped release.
+
+The release-1.9.0 repair question is moot: 1.9.3, 1.9.9, 2.1.0 and 2.2.1
+have been published since, each with its own Windows archive.
+
+The GitLab =release:windows:x86-64= lane itself still has no runner. That
+is a separate matter: Windows ships from GitHub, and =collect:release=
+bundles the GitHub-built archives into the release.
