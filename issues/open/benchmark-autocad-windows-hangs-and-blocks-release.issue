@@ -167,3 +167,36 @@ lui-même — aucun autre ticket ouvert ne mentionne
 =benchmark:autocad:windows=. Le fermer maintenant perdrait l'option 4,
 qui ne vit qu'ici. Ce qui est levé, et c'est ce que le titre décrivait,
 c'est le risque pour les releases.
+
+* 2026-09-28 — it no longer hangs; it failed on an arity trap, fixed
+
+Every run on record since August had been CANCELLED before finishing
+(superseded pipelines), so nothing said whether the hang was still there.
+Played by hand on MR !338's pipeline (job 16774988547, alfe 2.2.145):
+*no hang*. accoreconsole started, alfe reached its protocol, and the run
+failed in 142 s with a readable error:
+
+#+begin_example
+ERROR protocol request 3: while loading ...\autolisp-benchmark\harness\run.lsp
+(form starting at line 39) at line 39, column 1: nombre d'arguments insuffisants
+#+end_example
+
+"Too few arguments" -- the accoreconsole fixes of September
+(accoreconsole-deported-load-highbyte, the bridge fixes) took the hang away,
+and what was behind it is an arity trap of alfe's own making. AutoCAD has no
+variadic user functions, so alfe's bootstrap replaces princ/print/prin1 with
+fixed =(obj file)= versions and pads the calls it SEES: the forms of the file
+=-l= loads. run.lsp loads its harness through its own function, with a
+NATIVE =(load ...)= inside it (line 39), and AutoCAD's own loader then ran
+version.lsp's bare =(princ)= against the two-argument replacement.
+
+Fixed in =autolisp-benchmark/Makefile=: on AutoCAD the suite is loaded with
+=-x (alfe-load "…/harness/run.lsp")= instead of =-l=. alfe-load rewrites every
+princ/print/prin1/load call in what it loads, function bodies included, so the
+nested loads are covered -- the accoreconsole-deported-load-highbyte decision
+(code alfe owns calls alfe-load; ordinary user code keeps the native
+operators) applied to the benchmark. BricsCAD and clautolisp keep =-l=: they
+have =&rest= and get variadic shadows.
+
+Still open until a run PRODUCES numbers: play =benchmark:autocad:windows=
+with this change.
