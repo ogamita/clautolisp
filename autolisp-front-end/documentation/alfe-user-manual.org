@@ -962,7 +962,8 @@ alfe accepted =--epure= and did nothing with it.)
 
 It applies to =--bricscad= and =--autocad= and is *MS-Windows only*. On
 another OS, and under =--clautolisp=, =--epure= is silently ignored (a
-=--verbose= message says so), so the option stays harmless in scripts
+=--verbose= message says so, and under =--clautolisp= suggests =--epuree=,
+the EPUREE emulation, instead), so the option stays harmless in scripts
 shared between machines.
 
 | Option / variable                                 | Meaning                                                   |
@@ -1105,15 +1106,22 @@ nowhere, the run stops with a usage error listing the places tried.
 The plug-in puts =eval= actions in front of the action plan — so in front of
 your init files and actions — and they show in =--dry-run=:
 
-1. load =alpm.lsp=;
-2. one =(alpm-register-directory DIR T)= for each =--epuree-path=
+1. for each installed EPUREE, =PREFIX/share/epuree/= (PREFIX being the
+   installation prefix of the running executable, =/opt/local=,
+   =/usr/local= or =~/.local=) that exists, append =PREFIX/share/epuree/...=
+   (=\...= on MS-Windows: the directory and its subdirectories) to
+   =TRUSTEDPATHS=, unless it is already there, so that SECURELOAD lets EPUREE's
+   files load. Where =TRUSTEDPATHS= is read-only (BricsCAD V26), the refusal
+   is ignored and the run goes on;
+2. load =alpm.lsp=;
+3. one =(alpm-register-directory DIR T)= for each =--epuree-path=
    directory;
-3. =(alpm-load-system "epuree" nil)=;
-4. =(epuree-initialize)=.
+4. =(alpm-load-system "epuree" nil)=;
+5. =(epuree-initialize)=.
 
 Loading the system only defines; =(epuree-initialize)= is what does the rest
 of what =(load "load_epuree")= does: it installs the path-separator and
-Windows-environment shims and anchors the bundle root. Steps 3 and 4 together
+Windows-environment shims and anchors the bundle root. Steps 4 and 5 together
 are equivalent to =(load "load_epuree")=.
 
 Because these are ordinary plan actions, the engine evaluates them
