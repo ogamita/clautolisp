@@ -1580,7 +1580,7 @@ file or COM), and forwards the workload.
   shims, the bundle root — so loading EPUREE through ALPM no longer skips them.
 - ~--epuree~ first adds each installed ~PREFIX/share/epuree/...~ to
   ~TRUSTEDPATHS~, so SECURELOAD does not refuse EPUREE's files; and
-  ~--epure~ under ~--clautolisp~ now warns, suggesting ~--epuree~ (alfe-user-manual
+  ~--epure~ under ~--clautolisp~ or off Windows now warns, suggesting ~--epuree~ (alfe-user-manual
   § /The EPUREE plug-in/).
 - The shipped plug-ins now install (and compile against the alfe just
   installed) as part of ~make install-programs~ / ~install~, at every level —

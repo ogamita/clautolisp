@@ -79,8 +79,7 @@ forward slashes."
     (cond
       ((eq name :clautolisp)
        ;; EPURE needs a real CAD; its emulation EPUREE runs here. A warning,
-       ;; not a verbose note: asking for EPURE on clautolisp is a mistake
-       ;; with a remedy, unlike --epure in a script shared across machines.
+       ;; like off Windows: the run goes on without what was asked for.
        (log-warn "epure: no effect under the clautolisp backend; ignored ~
                      (use --epuree to load the EPUREE emulation of the EPURE API)")
        (deactivate-plugin ctx))
@@ -88,7 +87,10 @@ forward slashes."
        (log-verbose "epure: no effect under the ~(~A~) backend; ignored" name)
        (deactivate-plugin ctx))
       ((not (windows-p))
-       (log-verbose "epure: Windows only; ignored")
+       ;; A warning (pjb): the run goes on WITHOUT EPURE, which the user
+       ;; asked for. EPUREE exists precisely for BricsCAD off Windows.
+       (log-warn "epure: Windows only; ignored ~
+                  (use --epuree to load the EPUREE emulation of the EPURE API)")
        (deactivate-plugin ctx))
       (t
        ;; AutoCAD: EPURE needs the full GUI, so COM automation is the

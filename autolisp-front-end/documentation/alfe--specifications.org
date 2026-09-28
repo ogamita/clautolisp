@@ -1893,11 +1893,9 @@ EPURE's control script; and it arranges for that script to run before alfe's
 own runtime is loaded. It replaces the legacy =autolisp --epure=.
 
 It acts under =:bricscad= and =:autocad= and is *Windows only*. On another
-OS =--epure= is silently ignored (a =--verbose= message says so, and the
-plug-in deactivates itself): the option stays harmless in scripts shared
-between machines. Under =--clautolisp= the plug-in deactivates itself too,
-but with a *warning* (default log level) suggesting =--epuree=, which runs
-there.
+OS, and under =--clautolisp=, the plug-in deactivates itself with a
+*warning* (default log level) suggesting =--epuree=, which runs there; the
+run goes on, so a script shared between machines still works.
 
 | Option / variable                               | Meaning                                            |
 |-------------------------------------------------+----------------------------------------------------|
