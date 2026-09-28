@@ -77,6 +77,54 @@ autologon without lock), and that automated CAD verification that must run
 unattended should prefer the batch/accoreconsole path where the vendor offers
 one.
 
+* Result 2026-09-28 — probe ran LOCKED; the light matrix did NOT reproduce it
+
+=probe:cad-session-state:windows= (job 16789240697, =success=) ran with the
+session in exactly the target state:
+
+: SESSION-STATE: transport=console connect=Active locked=yes on-console=yes
+:   => LOCKED (LogonUI present -- at the login / lock screen)
+
+The 3x3 matrix (load one marker form; alfe --debug):
+
+| engine     | option     | exit | marker | ready | sec | verdict |
+|------------+------------+------+--------+-------+-----+---------|
+| clautolisp | batch      |    0 | yes    | --    |   7 | OK      |
+| clautolisp | automation |    0 | yes    | --    |   1 | OK      |
+| clautolisp | epure      |    0 | yes    | --    |   0 | OK      |
+| bricscad   | batch      |    0 | yes    | yes   |  57 | OK      |
+| bricscad   | automation |    0 | yes    | yes   |  38 | OK      |
+| bricscad   | epure      |    0 | yes    | yes   |  43 | OK      |
+| autocad    | batch      |    0 | yes    | yes   |  18 | OK      |
+| autocad    | automation |    0 | yes    | yes   |   6 | OK      |
+| autocad    | epure      |    0 | yes    | yes   |  11 | OK      |
+
+*Every cell passed, including COM automation, while LOCKED.* This REFUTES the
+simple form of the hypothesis above (that =--mode automation= fails while
+locked). The AutoCAD automation cell genuinely drove COM
+(=cscript bridge-autocad.vbs=), reached =READY 0= in 1.84 s, evaluated the form
+(=DONE 1 OK=) and printed the marker. BricsCAD automation (38 s) and epure
+(43 s) were real COM launches, not attaches, and also succeeded.
+
+Two things the light probe did not control for, and which the failing
+benchmark had:
+
+1. *Attach vs cold GUI start.* AutoCAD automation reaching READY in 1.84 s
+   ATTACHED to an already-running AutoCAD; it did not build a fresh main
+   window. Creating a new AutoCAD GUI on a locked desktop is a different
+   operation and is the more likely failure.
+2. *Sustained workload.* =benchmark:autocad:windows= started (Visual LISP
+   2022 fr) and died AFTER running 2 of 7 benchmarks -- a ~20 s run, not a
+   one-form load. Whatever kills it is reached only partway through sustained
+   automation, not by attaching and evaluating once.
+
+So the lock is real context but not, by itself, the cause: COM attach-and-eval
+survives it. The refined question is whether a COLD-STARTED, LONG automation
+run dies under lock -- which is what =probe:cad-heavy-automation:windows=
+(added here) exercises: it kills any running CAD first (forcing a fresh GUI)
+and runs a multi-phase heavy AutoLISP workload, reporting how many phases
+completed before a death, mirroring the benchmark's "2 of 7".
+
 * RDP note
 
 The detector distinguishes transport (=console= vs =rdp-tcp#N=) and connect

@@ -526,6 +526,26 @@ probe:cad-session-state:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-cad-session-state.ps1
 
+# The heavier follow-up: reproduce the benchmark's mid-run death. The light
+# session-state matrix passed every cell while LOCKED because it ATTACHED to a
+# running CAD and evaluated ONE form; the benchmark COLD-started and ran ~20 s
+# before dying. This kills any running CAD first (forcing a fresh GUI) and then
+# drives a multi-phase heavy AutoLISP loop through automation, reporting how
+# many phases completed before a death. Manual, CAD-tagged, 90m.
+# See autocad-com-fails-in-disconnected-windows-session (Result 2026-09-28).
+probe:cad-heavy-automation:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  timeout: 90m
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-cad-heavy-automation.ps1
+
 # --- real-CAD BricsCAD automation checks (self-building) -------------------
 verify:bricscad-hidden-ui:windows:
   extends: .gate-windows-bricscad-hard
