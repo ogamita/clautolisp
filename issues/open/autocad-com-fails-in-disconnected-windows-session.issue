@@ -100,3 +100,19 @@ someone is RDP'd in and fails after they disconnect is this, not flakiness.
 Filed while comparing benchmark:autocad:windows with
 benchmark:bricscad:windows at pjb's request. The scripts run only on the
 Windows runner; they are validated there, not in the Linux lanes.
+
+* Merged in: alfe-autocad-createobject-fails-on-runner (closed 2026-09-28)
+
+The same morning, every =alfe --autocad= COM run in =verify:epure-api:windows=
+(MR !336, job 16774481586) waited ~120 s and exited 4 with =ATTACHED=0
+CREATED=0= -- =CreateObject= failed -- while BricsCAD ran on the same machine;
+in the afternoon (MR !341, job 16776999021, alfe 2.2.146) AutoCAD started in
+every run. A suspended desktop explains both. If it recurs, alfe >= 2.2.146
+prints the COM error (it was being dropped: CP1252 error file read as UTF-8,
+alfe-autocad-bridge-com-error-dropped-on-ansi); ~120 s then 0x80080005
+(CO_E_SERVER_EXEC_FAILURE) would confirm it.
+
+One thing to check here, noted when the two were compared:
+=benchmark:autocad:windows= runs =--mode batch= (accoreconsole, headless, no
+COM -- =autolisp-benchmark/Makefile=, =run-autocad-windows=), so its
+mid-suite death may need another explanation than the missing desktop.

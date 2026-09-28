@@ -5,7 +5,7 @@
 #+DATE: 2026-08-06 (refreshed 2026-09-28)
 #+OPTIONS: toc:3 num:t ^:nil
 #+STARTUP: overview
-#+DOCUMENT_VERSION: 0.2.0 (draft for review — cador-3 / epic deliverables D1 + D5; §14 and §15 decided by pjb 2026-09-28, §3/§10/§13 refreshed against cador-2's implementation — see §19)
+#+DOCUMENT_VERSION: 0.3.0 (draft for review — cador-3 / epic deliverables D1 + D5; §14/§15 and the command layer decided by pjb 2026-09-28, cadtui added to the hosts and the fidelity matrix, the wire host deferred — see §19)
 
 * 0. Status, scope, and how to read this document
   :PROPERTIES:
@@ -89,8 +89,8 @@ requires:
 3. *Return value* — value domain, including the =nil= conventions AutoLISP
    relies on.
 4. *Error conditions* — which taxonomy class (§6) each failure signals.
-5. *Per-host behaviour* — one column each for =nihil=, =cador=, and the
-   =<wire-host>=. AutoCAD/BricsCAD reference behaviour is carried in the
+5. *Per-host behaviour* — one column each for =nihil=, =cador=, =cadtui= and
+   the =<wire-host>=. AutoCAD/BricsCAD reference behaviour is carried in the
    fidelity matrix (§12), not repeated per operation.
 
 To keep the per-operation tables legible, the *common* per-host pattern is
@@ -103,11 +103,14 @@ stated once here and only *deviations* are called out per operation:
   =clautolisp/autolisp-host/source/nihil.lisp:145–167=]
 - =cador= :: performs the operation against its in-memory drawing / session
   state, or signals =unavailable-in-headless-context= for operations that
-  require a display or a live pointer (§6, and D2 §I.11).
+  require a display or a live pointer (§15, and D2 §I.11).
+- =cadtui= :: does what =cador= does — it runs on a =cador= instance (§2.2) —
+  and, where its display gives it the means, performs what =cador= must refuse:
+  picking, pointer input, dialogs. Those are =prop= in §12 until built.
 - =<wire-host>= :: forwards the operation to the remote display/editor server
   and returns its reply, or signals =backend-error= on refusal, or
-  =operation-not-supported-by-this-host= if the remote declares it absent
-  through capability query (§5). The wire host is *not implemented* (epic §11);
+  =operation-not-supported-by-this-host= when the remote lacks it (§13.6,
+  §14). The wire host is a *deferred feature* (pjb, 2026-09-28; epic §11);
   its column states the *contract* it must meet, graded =S= only where the
   runtime already constrains it and otherwise left as design intent.
 - =cadtui= :: implements *all* CAD operations like =cador=, but presents the
@@ -137,20 +140,31 @@ HAL. Nothing else in the interpreter may reach a CAD backend directly (C6).
 |---------------+-------------------------------------+-----------------------------------------------------------------------------------------------------|
 | =nihil=       | No-op stubs                         | Keeps the interpreter running with no CAD backend. Implements nothing CAD-like *by contract* (C7).  |
 | =cador=       | Headless, in-process CAD core       | Real documents, databases, entities; no GUI. The analogue of AutoCAD Core Console (=accoreconsole=). |
-| =cadtui=      | In-process CAD core with an ncurses text UI | Implements all CAD operations like =cador=, but drives documents and interaction through a full-screen ncurses text UI — a TUI CAD host. |
-| =<wire-host>= | Wire protocol to a remote display server | Forwards host operations to a separate CAD/GUI process that owns the real editor and display.  |
+| =cadtui=      | =cador= plus a text user interface  | Everything =cador= does, with a specific (terminal) display and a more exhaustive set of operations: interactive picking, the console command line, command localisation, dialogs. |
+| =<wire-host>= | Wire protocol to a remote display server | *Deferred* (pjb, 2026-09-28). Forwards host operations to a separate CAD/GUI process that owns the real editor and display. Kept anonymous. |
 
-=cadtui= was added after epic §1's original three; it is a fourth host, a
-text-UI peer of =cador= (all CAD operations, presented through ncurses). See
-=cadtui.issue= and =clautolisp/cadtui/documentation/cadtui-specifications.org=.
+=cadtui= was added after epic §1's original three. pjb, 2026-09-28: =cadtui=
+is a "subclass" of =cador= — the same CAD core, with a more specific display
+and a more exhaustive set of operations; the engines (commands, their
+localisation) are shared, so what =cadtui= builds can serve =cador= too. As
+built: =--host cadtui= creates a =cador= instance and puts cadtui's UI tree
+(=ui-node= classes) on top of it; cadtui specializes no =host-*= generic yet,
+so every operation it has today is =cador='s, and its column in §12 reads
+"= cador" wherever its specification promises nothing more. [S:
+=tools/clautolisp/source/main.lisp:147-150, 179-206=; =clautolisp/cadtui/source/=]
+Its screen renderer is text (=render.lisp=); an ncurses backend is not built.
+See =cadtui.issue= and =clautolisp/cadtui/documentation/cadtui-specifications.org=.
+
+The =<wire-host>= is a *deferred feature*: specified here so the protocol
+(§13) holds for it, not scheduled, and deliberately left unnamed.
 
 Consequences (verbatim from epic §1): =cador= is a *peer* of the wire host,
 not a family name. Entity handling begun in the former null host *belongs in
 =cador=* and was moved there (epic §7, done in cador-1). The null host is
 renamed =nihil= and reduced to no-op stubs; its contract is *negative* — it
 must never grow a CAD-like implementation. Naming the wire host is a separate
-decision (analysis-side placeholder =<wire-host>=; see D2 §9.7 for the naming
-recommendation).
+decision, deferred with the wire host itself (pjb, 2026-09-28): the
+placeholder =<wire-host>= stands (D2 §9.7).
 
 ** 2.3 The two wire protocols are distinct
 
@@ -446,12 +460,33 @@ normalised token-string list the runtime's =command= special form produces:
 each element is command-line input text; ="" = is the RETURN token and ="\\"=
 (one backslash) is the PAUSE token. [S: protocol.lisp:120]
 
-*Command-layer scope* is epic §9.4, resolved in D2 §I.11 / §II.13: =cador=
-implements the command channel *observationally* — it records the tokens,
-echoes a one-line ="Command: …"= to the console output, and returns =nil=;
-there is *no command engine* that parses ="_LINE"= into geometry. [S:
-command-api.lisp:28–39] The entity API (=entmake=/=entget=/=entmod=) is the
-primary surface. On =nihil=, =host-command= signals not-supported.
+*Command-layer scope* is epic §9.4. *Decision (pjb, 2026-09-28):*
+
+- =nihil= has *no* command: =host-command= signals
+  =operation-not-supported-by-this-host=.
+- =cador= and =cadtui= *implement the commands they can*, with one shared
+  command engine. It lives in =cador= (=cador/source/command-api.lisp=), so
+  =cadtui= — =cador= plus a display — inherits it, and anything =cadtui= adds to
+  it (localisation, more commands) serves =cador= too.
+- *Localisation of command names* is part of that engine: a localised name
+  (=LIGNE=), the international name forced by =_= (=_LINE=), the =.= prefix
+  for the built-in over a redefinition, and the keyboard aliases (=.pgp=), from
+  per-locale data (=clautolisp/cadtui/data/locale/<locale>/=, command names,
+  option keywords, aliases), shared with =getcname=.
+
+*As built* [S: =command-api.lisp:13-20, 112-133, 884-936=]: the engine runs
+LINE, CIRCLE, ARC, TEXT, MTEXT, DONUT, SOLID, PLINE, WIPEOUT, ERASE, MOVE,
+COPY, ROTATE, MIRROR, BLOCK / -BLOCK, INSERT / -INSERT, LAYER / -LAYER and
+LINETYPE / -LINETYPE, accepts ZOOM, UCS, PEDIT, BREAK, BROWSER and SHELL as
+recognised no-ops, strips the =.= and =_= prefixes, keeps =-=; an *unknown*
+command stops the interpretation of the remaining tokens without signalling —
+a program that drives many commands still runs where only some exist. Every
+call is also recorded in the command log and echoed as ="Command: …"=.
+*Not yet built:* matching localised names and aliases (only English names are
+recognised; =_LINE= works because the =_= is stripped, =LIGNE= does not), and
+=getcname= (a =nil= stub in the builtins). The entity API
+(=entmake=/=entget=/=entmod=) remains the complete surface; the command engine
+covers what it can.
 
 * 8. Group 6 — Filesystem and encoding
   :PROPERTIES:
@@ -504,6 +539,7 @@ per-document and application reactors fire in the correct namespace (R16).
 - =cador= :: emits the object/database/editor/sysvar events its operations
   imply, in the current document's namespace. The event set cador emits is
   enumerated in D2 §I (session model) and §II.14 (debugger surfaces).
+- =cadtui= :: the same events, from the same =cador= instance.
 - =<wire-host>= :: must translate remote notifications into the same
   runtime-side =vlr-*= events; the remote's own reactor system is invisible to
   AutoLISP except through this translation.
@@ -615,6 +651,7 @@ against in-memory =mock-com-object= records seeded from a ProgID template
 table, with =ldata= persisted for the host's lifetime and
 =ename->vla-object= identity-stable. [S: =cador/source/model.lisp:29–51,
 132–138=] =ldata= is the headless analogue of ldata stored in the drawing.
+=cadtui= inherits all of it from its =cador= instance.
 =<wire-host>= forwards to the real COM automation server (Windows) or signals
 =operation-not-supported-by-this-host= off Windows.
 
@@ -640,63 +677,80 @@ This table is the *contract* and the conformance suite's checklist (epic §4,
 AutoCAD/BricsCAD columns describe configuration (c) reference behaviour, not a
 clautolisp host (§2.4).
 
-| Operation group / op        | nihil | cador | <wire-host> | AutoCAD | BricsCAD |
-|-----------------------------+-------+-------+-------------+---------+----------|
-| *Session/document* (§3)     | sig   | full  | prop/fwd    | native A | native A |
-| =document-list/current=     | sig   | full  | fwd         | A       | A        |
-| =open-document= (new, empty) | sig  | full  | fwd         | A       | A        |
-| =open-document= (from file) | sig   | prop  | fwd         | A       | A        |
-| =close-document=            | sig   | full  | fwd         | A       | A        |
-| =activate-document=         | sig   | full  | fwd         | A       | A        |
-| *Entities* (§4.1)           |       |       |             |         |          |
-| =entget/entmod/entmake=     | sig   | full  | fwd         | A       | A        |
-| =entmakex/entdel/entupd=    | sig   | full  | fwd         | A       | A        |
-| =entlast/entnext/handent=   | sig   | full  | fwd         | A       | A        |
-| *Selection* (§4.2)          |       |       |             |         |          |
-| =ssget= (filter/"X")        | sig   | full  | fwd         | A       | A        |
-| =ssget= (pick/drag)         | sig   | head  | fwd         | A       | A        |
-| =ssadd/ssdel/ssname=        | sig   | full  | fwd         | A       | A        |
-| =sslength/ssmemb=           | sig   | full  | fwd         | A       | A        |
-| =ssgetfirst/sssetfirst=     | sig   | full  | fwd         | A       | A        |
-| *Tables/dicts* (§4.3)       |       |       |             |         |          |
-| =tblsearch/tblnext/tblobjname= | sig | full | fwd        | A       | A        |
-| =namedobjdict/dict*=        | sig   | full  | fwd         | A       | A        |
-| =dictobjname=               | sig¹  | full  | fwd         | A       | A        |
-| =regapp=                    | sig   | full  | fwd         | A       | A        |
-| *Sysvars* (§5)              |       |       |             |         |          |
-| =getvar/setvar=             | sig   | full  | fwd         | A       | A        |
-| =sysvar scope tier= (R4/C4) | n/a   | prop² | fwd         | A       | A(cfg)   |
-| =set-derived/define/undefine-sysvar= | noop | full | sig     | n/a     | n/a      |
-| =sysvar-names=              | sig   | full  | fwd         | —(clal ext) | —    |
-| *Registry* (§5.1)           |       |       |             |         |          |
-| =registry-read/write/delete/descendents= | sig | full³ | fwd | A (Win) | A (Win/cfg) |
-| *Interaction* (§6)          |       |       |             |         |          |
-| =prompt/initget=            | sig   | full  | fwd         | A       | A        |
-| =getstring/getint/getreal/getkword= | sig | full | fwd    | A       | A        |
-| =getpoint/getcorner/getdist/getangle/getorient= | sig | head | fwd | A | A |
-| =grdraw/grtext/grvecs/grclear/redraw= | sig | obs | fwd     | A       | A        |
-| =grread=                    | sig   | head  | fwd         | A       | A        |
-| *Command* (§7)              |       |       |             |         |          |
-| =command/command-s=         | sig   | obs   | fwd         | A       | A        |
-| =command-log=               | sig   | full  | sig         | —(clal ext) | —    |
-| *Filesystem/encoding* (§8)  |       |       |             |         |          |
-| code-page resolution        | noop  | full  | fwd         | A       | A        |
-| stream ownership on close   | prop  | prop  | prop        | A       | A        |
-| *Notification* (§9)         |       |       |             |         |          |
-| =vlr-*= document/app events | none  | full  | fwd         | A       | A        |
-| *Concurrency/locking* (§10) |       |       |             |         |          |
-| park/resume                 | n/a   | prop  | prop        | A(fibers, historical) B | A B |
-| =lock/unlock-document=      | sig   | prop⁴ | fwd         | A       | A        |
-| *ActiveX/COM* (§11)         |       |       |             |         |          |
-| =vlax-create/get/release-object= | sig | full | fwd(Win)  | A(Win)  | A(Win)   |
-| =vlax-get/put-property/invoke-method= | sig | full | fwd(Win) | A(Win) | A(Win) |
-| =vlax-*-available/applicable-p= | sig | full | fwd(Win) | A(Win)  | A(Win)   |
-| =vlax-get-acad-object=      | sig   | full  | fwd(Win)    | A(Win)  | A(Win)   |
-| =vlax-ename<->vla-object=   | sig   | full  | fwd(Win)    | A(Win)  | A(Win)   |
-| =vlax-erased-p/describe-object= | sig | full | fwd(Win)  | A(Win)  | A(Win)   |
-| =vlax-ldata-put/get/delete/list= | sig | full | fwd(Win) | A(Win)  | A(Win)   |
-| =vlax-add-cmd/remove-cmd/queueexpr= | sig | full | fwd(Win) | A(Win) | A(Win)  |
-| =vlax-collection-items=     | sig   | full  | fwd(Win)    | A(Win)  | A(Win)   |
+The =cadtui= column (added 2026-09-28): =cadtui= runs on a =cador= instance
+(§2.2), so a =cadtui= cell *equal to =cador='s is inherited* from it. A
+=cadtui= cell that differs is =prop= — what the cadtui specification promises
+beyond =cador= and does not do yet — with today's behaviour in parentheses.
+The =<wire-host>= column is a deferred feature (§2.2).
+
+| Operation group / op        | nihil | cador | cadtui | <wire-host> | AutoCAD | BricsCAD |
+|-----------------------------+-------+-------+--------+-------------+---------+----------|
+| *Session/document* (§3)     | sig   | full  | full   | prop/fwd    | native A | native A |
+| =document-list/current=     | sig   | full  | full   | fwd         | A       | A        |
+| =open-document= (new, empty) | sig  | full  | full   | fwd         | A       | A        |
+| =open-document= (from file) | sig   | prop  | prop   | fwd         | A       | A        |
+| =close-document=            | sig   | full  | full   | fwd         | A       | A        |
+| =activate-document=         | sig   | full  | full⁶  | fwd         | A       | A        |
+| *Entities* (§4.1)           |       |       |        |             |         |          |
+| =entget/entmod/entmake=     | sig   | full  | full   | fwd         | A       | A        |
+| =entmakex/entdel/entupd=    | sig   | full  | full   | fwd         | A       | A        |
+| =entlast/entnext/handent=   | sig   | full  | full   | fwd         | A       | A        |
+| =entsel/nentsel/nentselp=   | sig   | head⁷ | prop (head) | fwd    | A       | A        |
+| *Selection* (§4.2)          |       |       |        |             |         |          |
+| =ssget= (filter/"X")        | sig   | full  | full   | fwd         | A       | A        |
+| =ssget= (pick/drag)         | sig   | head  | prop (head) | fwd    | A       | A        |
+| =ssadd/ssdel/ssname=        | sig   | full  | full   | fwd         | A       | A        |
+| =sslength/ssmemb=           | sig   | full  | full   | fwd         | A       | A        |
+| =ssgetfirst/sssetfirst=     | sig   | full  | full⁸  | fwd         | A       | A        |
+| *Tables/dicts* (§4.3)       |       |       |        |             |         |          |
+| =tblsearch/tblnext/tblobjname= | sig | full | full  | fwd         | A       | A        |
+| =namedobjdict/dict*=        | sig   | full  | full   | fwd         | A       | A        |
+| =dictobjname=               | sig¹  | full  | full   | fwd         | A       | A        |
+| =regapp=                    | sig   | full  | full   | fwd         | A       | A        |
+| *Sysvars* (§5)              |       |       |        |             |         |          |
+| =getvar/setvar=             | sig   | full  | full   | fwd         | A       | A        |
+| =sysvar scope tier= (R4/C4) | n/a   | prop² | prop²  | fwd         | A       | A(cfg)   |
+| =set-derived/define/undefine-sysvar= | noop | full | full | sig    | n/a     | n/a      |
+| =sysvar-names=              | sig   | full  | full   | fwd         | —(clal ext) | —    |
+| *Registry* (§5.1)           |       |       |        |             |         |          |
+| =registry-read/write/delete/descendents= | sig | full³ | full³ | fwd | A (Win) | A (Win/cfg) |
+| *Interaction* (§6)          |       |       |        |             |         |          |
+| =prompt/initget=            | sig   | full  | full   | fwd         | A       | A        |
+| =getstring/getint/getreal/getkword= | sig | full | full | fwd     | A       | A        |
+| =getpoint/getcorner/getdist/getangle/getorient= | sig | head | prop (head) | fwd | A | A |
+| =grdraw/grtext/grvecs/grclear/redraw= | sig | obs | obs | fwd      | A       | A        |
+| =grread=                    | sig   | head⁹ | prop (head⁹) | fwd   | A       | A        |
+| =getfiled=                  | sig   | prop  | prop   | fwd         | A       | A        |
+| =alert=                     | obs¹⁰ | obs¹⁰ | prop (obs) | fwd     | A       | A        |
+| DCL dialogs (=new_dialog= …) | —¹¹  | —¹¹   | full¹¹ | fwd         | A       | A        |
+| *Command* (§7)              |       |       |        |             |         |          |
+| =command/command-s=         | sig   | full⁵ | full⁵  | fwd         | A       | A        |
+| command-name localisation (=LIGNE=, =_LINE=), =getcname= | sig | prop | prop | fwd | A | A |
+| option-keyword localisation | sig   | prop  | prop   | fwd         | A       | A        |
+| keyboard aliases (=.pgp=)   | sig   | prop  | prop   | fwd         | A       | A        |
+| interactive command line (a bare =LINE= at the console) | sig | prop | prop | fwd | A | A |
+| =command-log=               | sig   | full  | full   | sig         | —(clal ext) | —    |
+| *Filesystem/encoding* (§8)  |       |       |        |             |         |          |
+| code-page resolution        | noop  | full  | full   | fwd         | A       | A        |
+| stream ownership on close   | prop  | prop  | prop   | prop        | A       | A        |
+| *Notification* (§9)         |       |       |        |             |         |          |
+| =vlr-*= document/app events | none  | full  | full   | fwd         | A       | A        |
+| *Concurrency/locking* (§10) |       |       |        |             |         |          |
+| park/resume                 | n/a   | full¹² | full¹² | prop       | A(fibers, historical) B | A B |
+| per-document console / namespace isolation | n/a | full | full | fwd | A       | B¹³      |
+| =lock/unlock-document=      | sig   | prop⁴ | prop⁴  | fwd         | A       | A        |
+| *ActiveX/COM* (§11)         |       |       |        |             |         |          |
+| =vlax-create/get/release-object= | sig | full | full | fwd(Win)   | A(Win)  | A(Win)   |
+| =vlax-get/put-property/invoke-method= | sig | full | full | fwd(Win) | A(Win) | A(Win) |
+| =vlax-*-available/applicable-p= | sig | full | full | fwd(Win)  | A(Win)  | A(Win)   |
+| =vlax-get-acad-object=      | sig   | full  | full   | fwd(Win)    | A(Win)  | A(Win)   |
+| =vlax-ename<->vla-object=   | sig   | full  | full   | fwd(Win)    | A(Win)  | A(Win)   |
+| =vlax-erased-p/describe-object= | sig | full | full | fwd(Win)   | A(Win)  | A(Win)   |
+| =vlax-ldata-put/get/delete/list= | sig | full | full | fwd(Win)  | A(Win)  | A(Win)   |
+| =vlax-add-cmd/remove-cmd/queueexpr= | sig | full | full | fwd(Win) | A(Win) | A(Win) |
+| =vlax-collection-items=     | sig   | full  | full   | fwd(Win)    | A(Win)  | A(Win)   |
+| *cadtui UI* (not HAL)       |       |       |        |             |         |          |
+| UI-tree meta-commands (==dump=, ==select=, ==click=, ==key=, ==locale= …) | sig | sig | full¹⁴ | — | —(clal ext) | —(clal ext) |
 
 Notes on the matrix:
 1. =dictobjname= on =nihil= inherits the *base-class* not-supported method
@@ -706,6 +760,34 @@ Notes on the matrix:
    =sysvar-cell= (§5, D2 §I.6). Until then C4 is not satisfiable.
 3. =cador= registry is =full= via a persistent =registry.sexp= store (§5.1).
 4. Locking on =cador= is =prop= and, once landed, a *checked no-op* (§10, D2 §9.5).
+5. The command engine (§7): =full= for the commands it implements (LINE,
+   CIRCLE, ARC, TEXT, MTEXT, PLINE, INSERT, BLOCK, LAYER, … — the list is in
+   §7); an unimplemented command stops interpretation without signalling.
+   Was =obs= in 0.1.0/0.2.0 — out of date, cador has had an engine since.
+6. =cadtui='s =activate= meta-command switches the console's runtime
+   namespace (=console-runtime.lisp:160-171=); the host document it selects is
+   =cador='s.
+7. =entsel= / =nentsel= / =nentselp= are =nil= stubs in the builtins today
+   (=autolisp-builtins-core=); =head= is the *contract* for =cador= (a picked
+   entity needs a pointer), not what the stub does.
+8. =cadtui='s cad-view selection is not yet the pickfirst set (=prop=, cadtui
+   spec "Selection").
+9. =grread= on =cador= returns keyboard events =(2 code)= and has no pointer:
+   =full= for the keyboard, =head= for the pointer (=cador= prompt-api).
+   =cadtui= specifies mapping ==key= / ==click= to =grread= events (=prop=).
+10. =alert= is not a HAL operation: every host prints a one-line =WARNING:=
+    message (=builtin-alert=). =cadtui= specifies a real dialog (=ui-alert=,
+    not fed yet).
+11. DCL is not a HAL operation today — it goes through =autolisp-dcl='s
+    renderer, which =cadtui= mirrors into its UI tree with a headless event
+    queue. Where it belongs in the HAL is open (C6).
+12. Built by cador-2 (2026-09-28): parking in-image, continuations as threads
+    on a condition variable (§10); the wire half is the deferred wire host.
+13. BricsCAD is documented to share more between documents than AutoCAD
+    (cadtui spec, per-document namespaces) — grade B.
+14. clautolisp's own UI, not an AutoLISP surface: the ===-escaped console
+    meta-commands. ==dclick=, ==right-click=, ==drag= and ==cancel-command= are
+    stand-ins today (=cadtui/source/dispatch.lisp=).
 
 A cell that is =prop=/=fwd= is an *untested contract* until its host implements
 it and the conformance suite (epic §8, D4) walks it. That is the intended use
@@ -947,8 +1029,8 @@ Per epic §8, the E1–E10 experiments of the analysis become conformance probes
 runnable against any host; against AutoCAD/BricsCAD they establish reference
 behaviour, against =cador= they assert conformance. Each cell of §12 that is
 not =sig=/=n/a=/=none= is a contract a probe must cover; a cell with no probe is
-an untested contract. The harness writes each probe once and runs it three ways
-(nihil / cador / real product), tabulating per host and version. The =isatty=
+an untested contract. The harness writes each probe once and runs it on every
+host (nihil / cador / cadtui / real product), tabulating per host and version. The =isatty=
 guards, bounded reads and non-interactive =*debugger-hook*= belong to =alfe='s
 terminal layer, not to the host; =cador= contributes a path with *no terminal
 to query* (D2 §I.10, epic §8).
@@ -1102,3 +1184,25 @@ cador-2 built (closed 2026-09-28).
 - [ ] Sign-off of the §12 fidelity-matrix rows and of the section structure —
       pjb's review.
 - [ ] D2 Part II and the §5/§9 items — pjb's review (see D2).
+
+** 0.3.0 — cadtui, the command layer, the wire host (pjb, 2026-09-28)
+
+- *cadtui is a host of this interface.* Added to §1's per-host list, §2.2,
+  §9, §11, §16, and as a column of the §12 matrix. pjb: cadtui is a
+  "subclass" of cador — the same core, a more specific display, a more
+  exhaustive set of operations. As built it runs on a =cador= instance and
+  specializes no =host-*= generic yet, so its cells equal cador's except where
+  the cadtui specification promises more (=prop=, today's behaviour in
+  parentheses). New matrix rows from the cadtui survey: =entsel= family,
+  =getfiled=, =alert=, DCL, command-name / option-keyword / alias
+  localisation, the interactive command line, per-document console isolation,
+  the cadtui meta-commands; notes 5–14.
+- *Command layer (§7).* =nihil= has no command; =cador= and =cadtui= implement
+  the commands they can, with one engine in =cador= that cadtui shares, and
+  localisation of command names is part of it. The 0.1.0/0.2.0 text ("no
+  command engine", =obs=) was out of date: =cador= has had an engine; the
+  matrix cell is now =full⁵=.
+- *Stale cells corrected:* =park/resume= on cador is =full= (cador-2), =grread=
+  on cador is keyboard-full / pointer-head.
+- *The wire host is a deferred feature* and stays anonymous (=<wire-host>=).
+- pjb revises the matrix next.

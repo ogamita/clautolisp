@@ -5,7 +5,7 @@
 #+DATE: 2026-08-06 (refreshed 2026-09-28)
 #+OPTIONS: toc:3 num:t ^:nil
 #+STARTUP: overview
-#+DOCUMENT_VERSION: 0.2.0 (draft for review — cador-3 / epic deliverable D2; §I.1/§I.2/§II.14 refreshed against cador-2's implementation, see the 2026-09-28 refresh at the end)
+#+DOCUMENT_VERSION: 0.3.0 (draft for review — cador-3 / epic deliverable D2; refreshed against cador-2, command layer (§II.13) and wire host (§9.7) decided by pjb 2026-09-28, cadtui noted — see the refresh at the end)
 
 * 0. Status, scope, and conventions
   :PROPERTIES:
@@ -355,7 +355,7 @@ interaction contract.
 | Dialog boxes (DCL modal/modeless UI, message boxes)  | =unavailable-in-headless-context=   |
 | Real-time cursor tracking / rubber-band / drag (=grread=, =ssget= pick modes, dragging =getpoint=) | =unavailable-in-headless-context= |
 | Plotting to a physical device / print                | =unavailable-in-headless-context=   |
-| A native command engine that parses =command= tokens into geometry (§II.13) | =command= is =observational= — records + returns =nil=, does *not* signal (a program that only drives =command= runs, it just produces no geometry) |
+| Commands the engine does not implement (§II.13) | *nothing* — an unimplemented command stops the interpretation of the remaining tokens and returns =nil=; it does *not* signal (a program that drives many commands runs where only some exist) |
 
 The transient-graphics primitives (=grdraw=/=grtext=/=grvecs=/=grclear=/=redraw=)
 are *observational* — recorded to the display log, no pixels — rather than
@@ -365,6 +365,12 @@ signals. This split (draw = observe, read = unavailable) is the deliberate
 line. Contributes to *C7* by analogy: just as =nihil= implements *nothing*,
 =cador= implements *everything but the display*, and the boundary is a typed
 condition, not a crash.
+
+These omissions are =cador='s *because it has no display*. =cadtui= — the same
+core with a text display (D1 §2.2) — is specified to perform several of them:
+picking (=ssget= pick modes, =entsel=, =getpoint= by grip), pointer and key
+events for =grread=, dialogs (DCL mirrored into its UI tree, =alert=). They
+are =prop= in the D1 §12 =cadtui= column until built.
 
 * Part II — Internal design
   :PROPERTIES:
@@ -433,32 +439,43 @@ emulation are very different sizes. A great deal of real AutoLISP drives
 =command= rather than the entity API, so this decision determines how much
 existing code =cador= can run.
 
-*Decision.* =cador= implements the command channel *observationally*, *not* as
-a geometry-producing engine — for now. =(command …)= and =(command-s …)=:
+*Decision (pjb, 2026-09-28).* =nihil= has no command. =cador= and =cadtui=
+*implement the commands they can*, with *one* command engine. The engine lives
+in =cador=; =cadtui= — =cador= with a more specific display and a more
+exhaustive set of operations (D1 §2.2) — uses the same one, so what =cadtui=
+adds to it (localisation, more commands) serves =cador= as well.
 
-- *record* the normalised token list on the host's command log (readable
-  oldest-first via =host-command-log= / =clal-command-log=),
-- *echo* a one-line ="Command: …"= to the console output, and
-- *return =nil== (the documented =command= return-value rule). [S:
-  =cador/source/command-api.lisp:28–42=]
+*The engine as built* [S: =cador/source/command-api.lisp:13-20, 112-133,
+884-936=]. =(command …)= and =(command-s …)=:
 
-For an *unimplemented* command, =(command "LINE" …)= therefore *runs without
-error* but *creates no entity*: the tokens are logged, nothing is drawn. It does
-*not* signal (§I.11) — signalling would break the large corpus that issues
-=command= defensively. =(command-s …)= behaves identically at the host boundary
-(the subroutine-vs-coroutine distinction is a scheduler concern, D1 §13, not a
-=cador= data concern).
+- *interpret* the normalised tokens: LINE, CIRCLE, ARC, TEXT, MTEXT, DONUT,
+  SOLID, PLINE, WIPEOUT, ERASE, MOVE, COPY, ROTATE, MIRROR, BLOCK / -BLOCK,
+  INSERT / -INSERT, LAYER / -LAYER, LINETYPE / -LINETYPE create or change
+  entities and tables through the same drawing model as the entity API; ZOOM,
+  UCS, PEDIT, BREAK, BROWSER and SHELL are recognised no-ops; the =.= and =_=
+  prefixes are stripped, =-= is part of the name;
+- *stop* at a command the engine does not implement: the remaining tokens are
+  not interpreted, and nothing signals (§I.11) — signalling would break the
+  large corpus that issues =command= defensively;
+- *record* the token list on the command log (=host-command-log= /
+  =clal-command-log=) and *echo* ="Command: …"= to the console;
+- *return =nil=* (the documented =command= return-value rule).
 
-*Rationale and the upgrade path.* The *entity API* (=entmake=/=entget=/=entmod=)
-is the primary, fully-implemented surface; corpora that build geometry
-programmatically run fully on =cador=. Corpora that drive =command= run *to
-completion* but produce no geometry — which is the correct behaviour for a probe
-that measures control flow, and a known limitation for one that measures
-drawing output. The upgrade path (a future cador phase, not this epic) is a
-*minimal command set* that maps a curated set of tokens (LINE, CIRCLE, LAYER,
-…) onto the entity API; full emulation is explicitly *not* pursued. This is
-recorded so the observational choice is understood as a floor, not a ceiling.
-Grade: S (current behaviour), design (upgrade path).
+=(command-s …)= behaves identically at the host boundary (the
+subroutine-vs-coroutine distinction is a scheduler concern, D1 §13).
+
+*Localisation — specified, not yet built.* The engine is to accept a command by
+its localised name (=LIGNE=), its international name forced by =_= (=_LINE=),
+and the keyboard aliases (=.pgp=), with option keywords localised per locale
+too, from the per-locale data =clautolisp/cadtui/data/locale/<locale>/=
+(command names, option keywords, aliases), shared with =getcname=. Today only
+English names match — =_LINE= works because the =_= is stripped; =LIGNE= does
+not — and =getcname= is a =nil= stub. See the =cadtui-locale-*= issues.
+
+*Scope.* The entity API (=entmake=/=entget=/=entmod=) remains the complete
+surface; the command engine grows command by command, and full emulation of a
+vendor's command set is not a goal. Grade: S (the engine), design
+(localisation).
 
 ** II.14 Debugger integration surfaces (R16–R21)
    :PROPERTIES:
@@ -645,10 +662,11 @@ read optional and isolated. Full reasoning and the concrete entity model in
 §II.12. Grade S (the model is implemented) + design (the DWG-read layering).
 
 ** 9.4 Command-layer scope
-*Resolution:* observational command channel (records + echoes + returns =nil=,
-no geometry, does not signal for unimplemented commands); entity API is the
-primary surface; minimal-command-set is the named upgrade path; full emulation
-is not pursued. §II.13. Grade S (current) + design.
+*Resolution (pjb, 2026-09-28):* =nihil= has no command; =cador= and =cadtui=
+implement the commands they can, with one engine in =cador= that =cadtui=
+shares, and localisation of command names is part of that engine. Unimplemented
+commands stop interpretation without signalling. §II.13. Grade S (the engine)
++ design (localisation).
 
 ** 9.5 Locking semantics in a headless core
 *Resolution:* the *middle option* — a *checked no-op*. =cador= does not enforce
@@ -676,8 +694,9 @@ wire, and *not* suggesting kinship with =alfe=. Recommended shortlist:
 =speculum= (Latin "mirror"), =phantasma=, or =pictor= — a display-server name.
 =cador= keeps the Latin-noun register (=cador= = "I fall"/"chance"?; here a
 project name), and =nihil= is already Latin, so a Latin display-noun
-(=speculum=) is stylistically consistent. This is a *note*, not a decision; the
-placeholder =<wire-host>= stands until the owner chooses. Grade: design.
+(=speculum=) is stylistically consistent. This is a *note*, not a decision.
+*pjb, 2026-09-28:* the wire host is a *deferred feature*; it stays anonymous,
+and the placeholder =<wire-host>= stands. Grade: design.
 
 * Part VI — References
 - =issues/open/cador-multidocument-host.issue= (epic §5, §9, C1–C8).
@@ -828,3 +847,14 @@ condition classes named in §I.11).
       decision to take.
 - [X] Constraint traceability C1–C8 — C1/C2/C3/C8 trace to code, C5 to the
       design still to build.
+
+** 0.3.0 — decisions of pjb, 2026-09-28
+
+- *§II.13 / §9.4 command layer:* =nihil= has no command; =cador= and =cadtui=
+  implement the commands they can, with one engine in =cador= shared by
+  =cadtui=; localisation of command names belongs to that engine. The
+  "observational, no engine" text of 0.1.0/0.2.0 was out of date: the engine
+  exists (LINE, CIRCLE, ARC, TEXT, PLINE, INSERT, LAYER, …).
+- *§9.7 wire host:* a deferred feature, kept anonymous (=<wire-host>=).
+- *§I.11:* the omissions are =cador='s for want of a display; =cadtui= is
+  specified to perform several of them (D1 §12, =cadtui= column).
