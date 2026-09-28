@@ -1,0 +1,102 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: autocad-com-fails-in-disconnected-windows-session — COM/GUI CAD dies when the runner's desktop is suspended, headless batch survives
+#+STATUS: NEXT
+#+PRIORITY: P2
+#+TYPE: ci-infra
+#+DEPENDS: -
+#+BRANCH: cad-session-state-probe
+#+DATE: 2026-09-28
+
+* Observed
+
+Two benchmark jobs on the SAME Windows runner (PF5S26B), the SAME minute
+(2026-09-28 17:35–17:36Z):
+
+| job                          | id          | result  | how far                              |
+|------------------------------+-------------+---------+--------------------------------------|
+| benchmark:bricscad:windows   | 16783323457 | success | all 7 benchmarks, summary, exit 0    |
+| benchmark:autocad:windows    | 16783323458 | FAILED  | 2 of 7 (arithmetic, lists) then died |
+
+AutoCAD was NOT a COM-startup failure: the trace shows =implementation :
+Visual LISP 2022 (fr)=, i.e. AutoCAD launched and AutoLISP executed. It ran
+=arithmetic= and =lists=, then the process died mid-suite (~5 s hang) and
+=make -C autolisp-benchmark run-autocad-windows= returned Error 1. BricsCAD
+(=LispEx : Version 25.0=) ran the whole suite to completion on the same
+machine.
+
+* Cause (pjb, from the machine)
+
+"The runner user account is logged-in, but the GUI session is suspended, back
+to the login window / change user." AutoCAD's benchmark path drives the
+application by COM automation, and *COM automation of a GUI application needs
+a live interactive desktop*. When the session is disconnected/locked, the
+desktop is gone and the GUI-dependent parts of AutoCAD fault partway through.
+BricsCAD's path completed before touching anything that needs the desktop, or
+tolerated it.
+
+In alfe terms this is the =--mode automation= (COM bridge via =cscript=) vs
+=--mode batch= (=accoreconsole=, headless, no COM) divide documented in the
+alfe user manual: automation needs the desktop, batch does not. =--epure=
+drives COM on AutoCAD, so it is in the automation camp.
+
+* What this ticket adds
+
+Not a fix for AutoCAD -- the runner's session state is an environment fact,
+not a code defect -- but the instrumentation to SEE it and to characterise
+what survives it:
+
+1. =scripts/windows-session-state.ps1= — prints the interactive-session
+   state: process vs console session id, WTS connect state (Active /
+   Disconnected / …), window-station name (=console= vs =rdp-tcp#N=), and
+   whether =LogonUI.exe= is up (locked / at the login screen). It ends with a
+   one-line, greppable =SESSION-STATE: transport=… connect=… locked=… =>
+   VERDICT= and always exits 0.
+
+2. Every Windows CAD job now logs it. =.cad-sweep-before= (which every
+   Windows CAD job extends) runs it FIRST, before the orphan sweep, so a CAD
+   job's log says whether the desktop was live -- turning "Error 1" into
+   "Error 1, and the desktop was DISCONNECTED".
+
+3. =probe:cad-session-state:windows= (manual, CAD-tagged) — runs a 3x3
+   matrix in the current session state: {clautolisp (in-process control),
+   bricscad, autocad} x {=--mode batch=, =--mode automation=, =--epure=},
+   recording each cell's exit + marker + whether it reached READY, and prints
+   a table to read against the session banner. It reports and exits 0.
+
+* Expected shape of the result (hypothesis, to confirm by running the probe)
+
+- clautolisp: OK in every state (in-process, no desktop).
+- =--mode batch=: OK even disconnected (accoreconsole is headless; BricsCAD
+  batch already proven so by benchmark:bricscad:windows).
+- =--mode automation= / =--epure=: FAIL or REACHED-READY-THEN-FAILED while
+  disconnected/locked; OK on a live desktop.
+
+If confirmed, the operational conclusion is that COM/GUI CAD jobs need the
+runner's desktop kept CONNECTED (e.g. an RDP session left attached, or
+autologon without lock), and that automated CAD verification that must run
+unattended should prefer the batch/accoreconsole path where the vendor offers
+one.
+
+* RDP note
+
+The detector distinguishes transport (=console= vs =rdp-tcp#N=) and connect
+state, because RDP has its own version of this: an =rdp-tcp= session is
+=Active= while the client is attached and =Disconnected= the moment the client
+detaches WITHOUT logging off -- the same desktop-gone condition as a locked
+console, and it breaks COM CAD the same way. A CAD job that works while
+someone is RDP'd in and fails after they disconnect is this, not flakiness.
+
+* Acceptance criteria
+
+- =probe:cad-session-state:windows= run in the disconnected state produces a
+  matrix distinguishing the engines/modes that survive it from those that do
+  not, read against a =SESSION-STATE:= line that correctly names the state.
+- Every Windows CAD job's log contains the =SESSION-STATE:= line.
+- The detector correctly reports =locked= at the login screen and the
+  =rdp-tcp= transport under RDP (confirmed on the machine).
+
+* Note
+
+Filed while comparing benchmark:autocad:windows with
+benchmark:bricscad:windows at pjb's request. The scripts run only on the
+Windows runner; they are validated there, not in the Linux lanes.
