@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: windows-artifact-upload-fails-on-release — the Windows lane builds correctly and then cannot upload what it built
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: infra
 #+DEPENDS: -
@@ -116,3 +116,34 @@ deterministic.
 Filed while cutting release-1.9.1. Worth writing down rather than
 retrying until it works, because "the release lane fails at random" is
 exactly the kind of thing that becomes normal.
+
+* Resolved 2026-09-28 — option 1 holds
+
+The narrowed upload had never run: the lane became a manual fallback (the
+primary Windows build moved to the GitHub mirror's release.yml, and
+=collect:release= takes its zips from there), and no one had played it since.
+It is =when: manual= in every pipeline, not only on tags, and it publishes
+nothing -- it builds, runs =verify-release-artefacts=, and uploads the zips
+as CI artefacts -- so it was played on MR !338's pipeline (alfe 2.2.145,
+job 16774988540), with no release involved:
+
+#+begin_example
+ok  clautolisp-2.2.141-binaries-windows-x86-64.zip (46100399 bytes)
+ok  clautolisp-2.2.141-libraries-windows-x86-64.zip (8298441 bytes)
+ok  clautolisp-sbcl.exe is where the launcher opens it
+ok  read-autolisp-sbcl.exe is where the launcher opens it
+ok  alfe-sbcl.exe is where the launcher opens it
+ok  clautolisp-sbcl.exe reports 2.2.141
+ok  read-autolisp-sbcl.exe reports 1.9.1
+ok  alfe-sbcl.exe reports 2.2.145
+Uploading artifacts as "archive" to coordinator... 201 Created
+Job succeeded
+#+end_example
+
+Two zips, 54 MB together -- larger than the 44 + 7.9 MB that failed -- went
+through first time. So the failure was the 362-entry staging tree, not the
+size; which entry (MAX_PATH remains the likely suspect) is no longer worth
+finding, since nothing uploads that tree any more.
+
+The priority had also dropped on its own: since the lane stopped being
+mandatory on a tag, this could no longer block a release.
