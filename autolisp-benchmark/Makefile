@@ -233,9 +233,22 @@ run-bricscad-windows:
 # picks the broken automation/VBScript path). BENCH_DWG defaults to the runner's
 # CAD-made drawing; override as needed.
 BENCH_DWG ?= c:/gitlab-runner/dwg/empty.dwg
+# On AutoCAD the suite is loaded through ALFE-LOAD, not -l. AutoCAD has no
+# variadic user functions, so alfe's bootstrap replaces princ/print/prin1 with
+# fixed (obj file) versions and pads the calls it SEES -- the forms of the file
+# -l loads. run.lsp then loads its harness through its own function, with a
+# NATIVE (load ...) inside it: AutoCAD's loader evaluates version.lsp's bare
+# (princ) against the two-argument replacement, and the benchmark died at
+# once with "nombre d'arguments insuffisants" (job 16774988547, 2026-09-28).
+# ALFE-LOAD rewrites every princ/print/prin1/load call in what it loads,
+# function bodies included, so the nested loads are covered too. This is the
+# accoreconsole-deported-load-highbyte decision applied here: code alfe owns
+# calls alfe-load, ordinary user code keeps the native operators.
+ALFE_LOAD_AUTOCAD    := -x "(alfe-load \"$(ROOT_DIR_NATIVE)/harness/run.lsp\")"
+ALFE_ACTIONS_AUTOCAD  = $(ALFE_DEBUG_FLAGS) $(ALFE_SET_ROOT) $(ALFE_SET_SECONDS) $(ALFE_LOAD_AUTOCAD) $(ALFE_RUN)
 run-autocad-windows:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --no-init $(ALFE_TIMEOUT_FLAG) --autocad --mode batch --dwg "$(BENCH_DWG)" $(ALFE_ACTIONS)
+	 "$(ALFE_SBCL)" --no-init $(ALFE_TIMEOUT_FLAG) --autocad --mode batch --dwg "$(BENCH_DWG)" $(ALFE_ACTIONS_AUTOCAD)
 
 # Very large org docs can exceed TeX's default main_memory and abort with "TeX
 # capacity exceeded". A repo-local web2c/texmf.cnf raises the memory parameters;
