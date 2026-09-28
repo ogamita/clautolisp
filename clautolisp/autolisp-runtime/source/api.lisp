@@ -2438,7 +2438,23 @@ so ordinary non-debug runs keep defining plain, allocation-free bodies."
                         elements))
             (doc (cons-object-preceding-doc object)))
        (when (and clautolisp.source:*track-source-positions* (consp result))
-         (clautolisp.source:note-position result (cons-object-span object)))
+         (clautolisp.source:note-position result (cons-object-span object))
+         ;; …and each ATOM element's position, keyed by this list and the
+         ;; element's index: an atom is no key of its own (the same symbol or
+         ;; fixnum appears everywhere), its occurrence is. Read by the
+         ;; instrumenter when it weaves poll points around atoms
+         ;; (instrumenter-no-pollpoints-on-atoms).
+         (clautolisp.source:note-element-positions
+          result
+          (mapcar (lambda (element)
+                    (clautolisp.source:source-position-from-span
+                     (typecase element
+                       (symbol-object (symbol-object-span element))
+                       (string-object (string-object-span element))
+                       (integer-object (integer-object-span element))
+                       (real-object (real-object-span element))
+                       (t nil))))
+                  (cons-object-elements object))))
        ;; Source-aware-defun-documentation: if the parsed cons-object
        ;; carried a ;|…|; block-comment doc, register that text against
        ;; the fresh CL cons we are returning. eval-defun-form /

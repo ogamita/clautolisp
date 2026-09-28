@@ -109,3 +109,98 @@
         ;; second attempt: plain body (nil), no re-attempt of the failing weave
         (is (null (clautolisp.autolisp-runtime:instrument-usubr-if-possible usubr)))
         (is (= 1 calls))))))
+
+;;; --- atom poll points (instrumenter-no-pollpoints-on-atoms) --------------
+
+(defun %kinds (metadata)
+  (coerce (clautolisp.debug:function-debug-metadata-form-id->kind metadata) 'list))
+
+(defun %atom-form-ids (metadata)
+  (loop for kind in (%kinds metadata)
+        for form-id from 0
+        when (clautolisp.debug:atom-form-kind-p kind) collect form-id))
+
+(test atoms-get-no-poll-points-by-default
+  "Off by default: turning it on renumbers poll points and changes what a step
+stops on, so nothing changes for anyone who does not ask."
+  (let* ((context (fresh-context))
+         (clautolisp.debug:*instrument-atoms* nil)
+         (clautolisp.debug:*instrument-atoms-predicate* nil)
+         (metadata (first (define-and-instrument context +frob-source+ "FROB"))))
+    (is (null (%atom-form-ids metadata)))
+    ;; entry, (setq z (id x)), (id x)
+    (is (= 3 (clautolisp.debug:function-debug-metadata-poll-point-count metadata)))))
+
+(test atoms-get-poll-points-when-asked
+  "With atom poll points on, the variable reference X in (id x) and the bare Z
+that returns the local get their own poll points, positioned where they are
+written -- but SETQ's place Z does not: it is not evaluated."
+  (let* ((context (fresh-context))
+         (clautolisp.debug:*instrument-atoms* t)
+         (metadata (first (define-and-instrument context +frob-source+ "FROB")))
+         (atoms (%atom-form-ids metadata)))
+    ;; line 3 "  (setq z (id x))": X at column 15; line 4 "  z)": Z at column 3
+    (is (= 2 (length atoms)) "the atoms woven: ~S (kinds ~S)" atoms (%kinds metadata))
+    (is (every (lambda (id) (eq :variable (clautolisp.debug:form-id-kind metadata id))) atoms))
+    (is (equal '((3 . 15) (4 . 3))
+               (mapcar (lambda (id)
+                         (let ((p (clautolisp.debug:form-id-position metadata id)))
+                           (cons (clautolisp.source:source-position-start-line p)
+                                 (clautolisp.source:source-position-start-column p))))
+                       atoms)))
+    ;; `break LINE' still means the statement: line 3 resolves to a compound
+    ;; form, while line 4, which holds only the bare Z, falls back to it.
+    (is (eq :form (clautolisp.debug:form-id-kind
+                   metadata (clautolisp.debug:find-form-id-at-line metadata 3))))
+    (is (eq :variable (clautolisp.debug:form-id-kind
+                       metadata (clautolisp.debug:find-form-id-at-line metadata 4))))))
+
+(test the-predicate-turns-atom-poll-points-on
+  "The UI layer's `atom-poll-points' setting reaches the engine through
+*INSTRUMENT-ATOMS-PREDICATE*, read when a function is woven."
+  (let* ((context (fresh-context))
+         (clautolisp.debug:*instrument-atoms* nil)
+         (clautolisp.debug:*instrument-atoms-predicate* (lambda () t))
+         (metadata (first (define-and-instrument context +frob-source+ "FROB"))))
+    (is (= 2 (length (%atom-form-ids metadata))))))
+
+(test a-breakpoint-stops-before-a-variable-is-read
+  "The point of the feature: stop BEFORE X is evaluated in (id x), and running
+on still gives the same answer -- the poll point around an atom is transparent."
+  (let* ((context (fresh-context))
+         (clautolisp.debug:*instrument-atoms* t)
+         (metas (define-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob-meta (first metas))
+         (x-id (first (%atom-form-ids frob-meta)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti (fid-of frob-meta) x-id :when :before)
+    (multiple-value-bind (result hits) (run-collecting context ti "FROB" 7)
+      (is (eql 7 result))
+      (is (= 1 (length hits)))
+      (let ((hit (first hits)))
+        (is (= x-id (clautolisp.debug:hit-form-id hit)))
+        (is (eq :before (clautolisp.debug:hit-when hit)))
+        (is (= 15 (clautolisp.source:source-position-start-column
+                   (clautolisp.debug:hit-source-position hit))))))))
+
+(test atom-poll-points-skip-the-places-that-are-not-evaluated
+  "FOREACH's variable and SETQ's places are names, not references: a poll point
+around them would turn them into forms. COND clauses are walked like any
+operand list, so the test T is a :LITERAL and the clause bodies' atoms are
+woven."
+  (let* ((context (fresh-context))
+         (clautolisp.debug:*instrument-atoms* t)
+         (metadata (first (define-and-instrument
+                              context
+                              (format nil "(defun g (a / s)~%  (foreach v (quote (1 2)) (setq s v))~%  (cond (a s) (t 0)))")
+                              "G")))
+         (kinds (mapcar (lambda (id) (clautolisp.debug:form-id-kind metadata id))
+                        (%atom-form-ids metadata))))
+    ;; woven: V (the setq VALUE), A, S, T, 0 -- not the FOREACH V, not SETQ's S
+    (is (= 3 (count :variable kinds)) "kinds ~S" kinds)
+    (is (= 2 (count :literal kinds)) "kinds ~S" kinds)
+    ;; and the function still runs correctly under debugging
+    (let ((result (clautolisp.debug:with-debugging () (eval-call context "G" (rt-sym "T")))))
+      (is (eql 2 result)))
+    (let ((result (clautolisp.debug:with-debugging () (eval-call context "G" nil))))
+      (is (eql 0 result)))))

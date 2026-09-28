@@ -1105,6 +1105,19 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
     *Terminal styling* for how they render).
   - break-on-caught — stop on a /caught/ error too (=*break-on-caught-error*=,
     §2 =catch=); default off.
+  - =atom-poll-points= — =on= / =off= (=set atom-poll-points on=): give every
+    *atom* in an evaluated position — a variable reference or a literal — its
+    own poll point, so the debugger can stop /before/ =a= is read in =(+ a b)=,
+    or before a function's bare return value =z=. Default *off*, because it
+    changes what a step stops on (every variable) and renumbers the poll points
+    (=func.INDEX=, =LINE.K=, =ppN=). Names that are not evaluated get none:
+    SETQ's places, FOREACH's variable, an operator. =break LINE= still means
+    the *statement* on that line — atoms are skipped unless the line holds
+    nothing else — so designate an atom with =LINE:COL=, =LINE.K= or =ppN=. It
+    is read when a function is *instrumented* (on its first debugged call), so
+    it applies to functions instrumented from then on; one already instrumented
+    keeps its poll points, and its breakpoints with them.
+    (instrumenter-no-pollpoints-on-atoms)
   - =source-window-height= — how many source lines =list source= shows around
     the stop (=set source-window-height N=); an integer, default *24*.
   - =value-line-width= — the width, in characters, of a *single-line* value

@@ -192,15 +192,29 @@ highest form-id — when several do), or NIL (command reference §2 LINE:COL)."
                    (eql (source-position-start-column pos) col))
           (setf best form-id))))))
 
+(defun atom-form-kind-p (kind)
+  "True for the kinds of the poll points woven around ATOMS -- a variable
+reference or a literal (instrumenter-no-pollpoints-on-atoms)."
+  (member kind '(:variable :literal)))
+
 (defun find-form-id-at-line (metadata line)
-  "Return the form-id of the innermost recorded form whose source
+  "Return the form-id of the innermost recorded COMPOUND form whose source
 position starts on LINE, or NIL. 'Innermost' = the highest form-id
 (the instrumenter allocates outer forms before the sub-forms they
-contain), so a breakpoint set by line lands on the most specific form."
+contain), so a breakpoint set by line lands on the most specific form.
+
+Atom poll points are skipped: with them woven, the innermost thing on a line
+is usually its last variable reference, and `break LINE' means the statement,
+not that. A line holding ONLY an atom (a function's bare return value) falls
+back to it, so such a line is still breakable. Designate an atom precisely
+with LINE:COL, LINE.K or ppN."
   (let ((positions (function-debug-metadata-form-id->position metadata))
-        (best nil))
-    (dotimes (form-id (length positions) best)
+        (best nil)
+        (best-atom nil))
+    (dotimes (form-id (length positions) (or best best-atom))
       (let ((position (aref positions form-id)))
         (when (and (source-position-p position)
                    (= (source-position-start-line position) line))
-          (setf best form-id))))))
+          (if (atom-form-kind-p (form-id-kind metadata form-id))
+              (setf best-atom form-id)
+              (setf best form-id)))))))

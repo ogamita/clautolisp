@@ -45,6 +45,7 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
                 #:*autolisp-caught-error-hook*)
   (:import-from #:clautolisp.source
                 #:position-of
+                #:element-position-of
                 #:source-position
                 #:source-position-p
                 #:source-position-equal
@@ -75,6 +76,10 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:functions-matching
    #:form-id-position
    #:form-id-kind
+   #:atom-form-kind-p
+   #:*instrument-atoms*
+   #:*instrument-atoms-predicate*
+   #:instrument-atoms-p
    #:find-form-id-at-line
    #:form-ids-at-line
    #:form-id-at-line-col

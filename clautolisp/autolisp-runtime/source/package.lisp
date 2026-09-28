@@ -21,7 +21,11 @@
                 #:string-object
                 #:string-object-value
                 #:symbol-object
-                #:symbol-object-canonical-name)
+                #:symbol-object-canonical-name
+                #:symbol-object-span
+                #:string-object-span
+                #:integer-object-span
+                #:real-object-span)
   (:export
    #:autolisp-string
    #:make-autolisp-string

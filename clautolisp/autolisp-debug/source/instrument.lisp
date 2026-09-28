@@ -14,22 +14,53 @@ instrumenter recurses into them). All other special operators have
 unevaluated operands (QUOTE, FUNCTION, DEFUN, DEFUN-Q, LAMBDA, TRACE,
 UNTRACE, %CLAL-POLL, …) and are treated as leaves — see LEAF-FORM-P.")
 
+;;;; --- atom poll points (instrumenter-no-pollpoints-on-atoms) ----------
+;;;;
+;;;; Off by default. With it on, every ATOM in an evaluated position -- a
+;;;; variable reference or a literal -- gets its own poll point, so the
+;;;; debugger can stop before `a' is read in (+ a b). Off by default because
+;;;; it changes what stepping means (a step would stop on every variable)
+;;;; and renumbers the poll points (func.INDEX, LINE.K), and because a poll
+;;;; point per atom multiplies the cost of instrumented code. It is read
+;;;; when a function is INSTRUMENTED -- once, on its first debugged call --
+;;;; so turning it on affects functions instrumented from then on; one
+;;;; already woven keeps its poll points, and with them its breakpoints.
+
+(defvar *instrument-atoms* nil
+  "When true, the instrumenter weaves a poll point around every atom in an
+evaluated position. See also *INSTRUMENT-ATOMS-PREDICATE*.")
+
+(defvar *instrument-atoms-predicate* nil
+  "NIL or a function of no arguments consulted in addition to
+*INSTRUMENT-ATOMS* -- how the UI layer makes its `atom-poll-points' setting
+take effect without this engine depending on it.")
+
+(defun instrument-atoms-p ()
+  "True when atoms are to get poll points (for the function being woven now)."
+  (or *instrument-atoms*
+      (and *instrument-atoms-predicate*
+           (funcall *instrument-atoms-predicate*)
+           t)))
+
 ;;;; --- instrumentation state -----------------------------------------
 
 (defstruct instr-state
   (fid 0 :type fixnum)
   poll-symbol
+  (atoms-p nil)
   (next-id 0 :type fixnum)
   (positions (make-array 8 :adjustable t :fill-pointer 0))
   (kinds (make-array 8 :adjustable t :fill-pointer 0))
   (parents (make-array 8 :adjustable t :fill-pointer 0)))
 
-(defun alloc-form-id (state form kind parent-id)
-  "Allocate a dense form-id for FORM, recording its source position,
-KIND, and enclosing PARENT-ID. Returns the new form-id."
+(defun alloc-form-id (state form kind parent-id &optional (position nil positionp))
+  "Allocate a dense form-id for FORM, recording its source position (POSITION
+when given -- an atom has no position of its own, its occurrence does), KIND,
+and enclosing PARENT-ID. Returns the new form-id."
   (let ((form-id (instr-state-next-id state)))
     (incf (instr-state-next-id state))
-    (vector-push-extend (and form (position-of form)) (instr-state-positions state))
+    (vector-push-extend (if positionp position (and form (position-of form)))
+                        (instr-state-positions state))
     (vector-push-extend kind (instr-state-kinds state))
     (vector-push-extend parent-id (instr-state-parents state))
     form-id))
@@ -79,29 +110,62 @@ with its evaluated sub-forms instrumented recursively."
             (inner (instrument-inner form state form-id)))
        (wrap-poll state form-id inner)))))
 
+(defun instrument-atom (atom cell state parent-id)
+  "Wrap ATOM -- the CAR of CELL, in an evaluated position -- in its own poll
+point, positioned by its occurrence (the cell), when atom poll points are on;
+otherwise return it unchanged. A symbol is a :VARIABLE reference, except T and
+NIL, which are constants; anything else is a :LITERAL."
+  (if (instr-state-atoms-p state)
+      (let* ((kind (if (and (typep atom 'autolisp-symbol)
+                            (not (string-equal (autolisp-symbol-name atom) "T")))
+                       :variable
+                       :literal))
+             (form-id (alloc-form-id state nil kind parent-id
+                                     (element-position-of cell))))
+        (wrap-poll state form-id atom))
+      atom))
+
+(defun instrument-operands (cells state parent-id &key (evaluated-p (constantly t)))
+  "Instrument the evaluated elements of the list CELLS (walked by cell, so an
+atom can be positioned by its occurrence). EVALUATED-P, called with each
+element's 0-based index, says which positions are evaluated: the others --
+SETQ's places, FOREACH's variable -- are kept verbatim, since a poll point
+around a place would make it a form."
+  (loop for cell on cells
+        for index from 0
+        for element = (car cell)
+        collect (cond ((not (funcall evaluated-p index)) element)
+                      ((consp element) (instrument-eval-form element state parent-id))
+                      (t (instrument-atom element cell state parent-id)))))
+
 (defun instrument-inner (form state form-id)
   "Rebuild FORM keeping its operator, instrumenting its evaluated
 operands. COND is special: its operands are clauses, not forms."
   (let ((name (form-operator-name form)))
-    (if (and name (string= name "COND"))
-        (cons (first form)
-              (mapcar (lambda (clause) (instrument-cond-clause clause state form-id))
-                      (rest form)))
-        ;; Every other recursable form (control op or function call):
-        ;; instrument each operand. Atom operands — SETQ places, the
-        ;; FOREACH binding name, literals — are returned unchanged by
-        ;; INSTRUMENT-EVAL-FORM, so no special-casing is needed.
-        (cons (first form)
-              (mapcar (lambda (operand) (instrument-eval-form operand state form-id))
-                      (rest form))))))
+    (cond
+      ((and name (string= name "COND"))
+       (cons (first form)
+             (mapcar (lambda (clause) (instrument-cond-clause clause state form-id))
+                     (rest form))))
+      ;; (setq place value place value ...): the places are not evaluated.
+      ((and name (string= name "SETQ"))
+       (cons (first form)
+             (instrument-operands (rest form) state form-id :evaluated-p #'oddp)))
+      ;; (foreach var list body...): the variable is not evaluated.
+      ((and name (string= name "FOREACH"))
+       (cons (first form)
+             (instrument-operands (rest form) state form-id
+                                  :evaluated-p (lambda (index) (plusp index)))))
+      ;; Every other recursable form (control op or function call): every
+      ;; operand is evaluated.
+      (t
+       (cons (first form) (instrument-operands (rest form) state form-id))))))
 
 (defun instrument-cond-clause (clause state parent-id)
   "Instrument a COND clause (test . body) without wrapping the clause
 itself; the test and each body form are instrumented in place."
   (if (consp clause)
-      (cons (instrument-eval-form (first clause) state parent-id)
-            (mapcar (lambda (form) (instrument-eval-form form state parent-id))
-                    (rest clause)))
+      (instrument-operands clause state parent-id)
       clause))
 
 ;;;; --- entry point ---------------------------------------------------
@@ -121,13 +185,15 @@ USUBR's body conses must have been recorded by a tracked load
         (ensure-poll-operator)
         (let* ((fid (next-function-id))
                (poll-symbol (intern-autolisp-symbol +poll-operator-name+))
-               (state (make-instr-state :fid fid :poll-symbol poll-symbol))
+               (state (make-instr-state :fid fid :poll-symbol poll-symbol
+                                        :atoms-p (instrument-atoms-p)))
                ;; The whole body is wrapped under one form-id whose :before
                ;; poll point is the function entry and :after the exit.
                (entry-id (alloc-form-id state nil :function-entry -1))
-               (statements (mapcar (lambda (form)
-                                     (instrument-eval-form form state entry-id))
-                                   (autolisp-usubr-body usubr)))
+               ;; A body statement may be an atom too -- the bare `x' that
+               ;; returns a local -- so the body is walked by cell as well.
+               (statements (instrument-operands (autolisp-usubr-body usubr)
+                                                state entry-id))
                (progn-symbol (intern-autolisp-symbol "PROGN"))
                (body-progn (cons progn-symbol statements))
                (instrumented-body (list (wrap-poll state entry-id body-progn)))

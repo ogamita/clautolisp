@@ -46,9 +46,10 @@
 
 ;;;; The position table maps a runtime object (the cons cell produced by
 ;;;; the reader→runtime lowering) to its source position, by EQ. Only
-;;;; compound forms are recorded; atoms lower to bare CL values that
-;;;; cannot carry a key, and the debugger resolves them through the
-;;;; enclosing form's per-function form-id table (spec §11).
+;;;; compound forms are keys here; atoms lower to bare CL values that
+;;;; cannot carry a key, so their positions are recorded per OCCURRENCE,
+;;;; against the enclosing list and the atom's index in it
+;;;; (*SOURCE-ELEMENT-POSITION-TABLE* below).
 
 (defparameter *track-source-positions* nil
   "When non-nil, the runtime's reader→runtime lowering records each
@@ -74,9 +75,38 @@ table, and return the stored SOURCE-POSITION (or NIL if SPAN is NIL)."
   "Return the SOURCE-POSITION recorded for OBJECT, or NIL."
   (values (gethash object *source-position-table*)))
 
+;;;; ATOM positions (instrumenter-no-pollpoints-on-atoms). An atom cannot be
+;;;; a key -- the same interned symbol, or the same fixnum, appears at a
+;;;; hundred places -- but its OCCURRENCE can: the cons CELL whose car it is.
+;;;; So a tracked load also records, for every list element that is an atom,
+;;;; the cell holding it. Keyed by cell rather than by (list, index) so that
+;;;; any TAIL answers too -- a function's body is a tail of its DEFUN form,
+;;;; and its statements have no index in a list the instrumenter can see.
+;;;; The debugger reads it only when it weaves poll points around atoms.
+
+(defvar *source-element-position-table* (make-hash-table :test 'eq)
+  "EQ hash table: cons CELL → the SOURCE-POSITION of its CAR, for cells whose
+car is an atom. Populated with *SOURCE-POSITION-TABLE*, cleared and shifted
+with it.")
+
+(defun note-element-positions (list positions)
+  "Record POSITIONS (SOURCE-POSITIONs or NILs, one per element of LIST): each
+non-NIL one against the cell of LIST holding that element. Returns LIST."
+  (loop for cell on list
+        for position in positions
+        when position
+          do (setf (gethash cell *source-element-position-table*) position))
+  list)
+
+(defun element-position-of (cell)
+  "The SOURCE-POSITION of (CAR CELL) when it is an atom recorded by a tracked
+load, or NIL."
+  (values (gethash cell *source-element-position-table*)))
+
 (defun clear-source-positions ()
-  "Forget every recorded source position."
-  (clrhash *source-position-table*))
+  "Forget every recorded source position, compound and atom."
+  (clrhash *source-position-table*)
+  (clrhash *source-element-position-table*))
 
 (defun shift-source-positions (file from-line delta)
   "Shift every recorded position of FILE whose START-LINE >= FROM-LINE by DELTA
@@ -89,14 +119,23 @@ namestring. Returns the number of positions shifted."
       0
       (let ((file (and file (namestring file)))
             (count 0))
-        (maphash (lambda (object position)
-                   (declare (ignore object))
-                   (when (and (equal (source-position-file position) file)
-                              (>= (source-position-start-line position) from-line))
-                     (incf (source-position-start-line position) delta)
-                     (incf (source-position-end-line position) delta)
-                     (incf count)))
-                 *source-position-table*)
+        (flet ((shift (position)
+                 (when (and position
+                            (equal (source-position-file position) file)
+                            (>= (source-position-start-line position) from-line))
+                   (incf (source-position-start-line position) delta)
+                   (incf (source-position-end-line position) delta)
+                   (incf count))))
+          (maphash (lambda (object position)
+                     (declare (ignore object))
+                     (shift position))
+                   *source-position-table*)
+          ;; The atoms' positions must move with their forms, or a breakpoint
+          ;; on a variable reference below an edit points at the wrong line.
+          (maphash (lambda (cell position)
+                     (declare (ignore cell))
+                     (shift position))
+                   *source-element-position-table*))
         count)))
 
 (defun call-with-source-tracking (thunk)
