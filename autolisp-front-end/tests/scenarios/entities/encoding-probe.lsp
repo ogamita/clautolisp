@@ -213,6 +213,21 @@
                      (strcat "raised: " (vl-catch-all-error-message ER))
                      (strcat "returned: " (vl-princ-to-string ER))))))))
 
+  ;; --- 6c. alfe-autocad-error-primitive-masks-load-failure, criterion 2/4 on
+  ;; the REAL host: a nested loaded form that SIGNALS must surface ITS OWN
+  ;; message + inner location, NOT "no function definition: ERROR" (the removed
+  ;; rethrow primitive) nor a bare "division par zero" (the raise mechanism).
+  ;; Outer alfe-loads inner; inner errors on a bad rtos argument. ---
+  (setq LOADFAILMARK nil)
+  (if (and (trywrite "encp-inner.lsp" "w" "(setq LOADFAILMARK (rtos \"nan\"))")
+           (trywrite "encp-outer.lsp" "w" "(alfe-load \"encp-inner.lsp\")"))
+      (progn
+        (setq LR (vl-catch-all-apply 'alfe-load (list "encp-outer.lsp")))
+        (m "loader.nested-fail"
+           (if (vl-catch-all-error-p LR)
+               (autolisp-effective-error-message (vl-catch-all-error-message LR))
+               "UNEXPECTED-OK"))))
+
   ;; --- 7. source situation: native (load) decode vs known on-disk bytes,
   ;; across the write encodings (default / UTF-8 / UTF-16LE). Each line pair
   ;; source.<tag>.bytes + source.<tag>.cp says "these bytes decoded to these
