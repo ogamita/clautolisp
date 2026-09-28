@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-autocad-createobject-fails-on-runner — AutoCAD COM automation cannot start AutoCAD on the Windows runner (2026-09-27/28)
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: cad-runtime
 #+DEPENDS: windows-access
@@ -53,3 +53,12 @@ on the runner, most likely something on its desktop.
 
 Suggested: close as not reproduced if it stays away; if it returns, 2.2.146
 now prints the COM error, which is step 1 above. Left open for pjb to decide.
+
+* Closed 2026-09-28 — merged into autocad-com-fails-in-disconnected-windows-session
+
+pjb: "ok" to closing as not reproduced and merging. The likely explanation is
+the one pjb found on the machine the same day: the runner's GUI session had
+been suspended back to the login screen, and COM automation of AutoCAD needs a
+live interactive desktop. A morning with a suspended desktop and an afternoon
+with a live one fits both the ~120 s CreateObject failures and the clean
+afternoon runs. Anything further is followed there.
