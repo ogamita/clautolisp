@@ -214,8 +214,11 @@ default:
     # so every CAD job's log says whether the desktop was live, disconnected
     # or locked -- the difference between a COM/GUI CAD run that works and one
     # that dies partway (autocad-com-fails-in-disconnected-windows-session).
-    # It only reads and always exits 0, so it never fails the job.
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-session-state.ps1
+    # WRAPPED so it can NEVER fail the job: this runs in before_script of every
+    # Windows CAD job, and a failing before_script fails the job, so a mere
+    # diagnostic must be caught even against its own parse errors -- `try/&/catch'
+    # then `exit 0' makes powershell.exe return 0 whatever the script does.
+    - 'powershell -NoProfile -ExecutionPolicy Bypass -Command "try { & scripts/windows-session-state.ps1 } catch { Write-Host $_ } ; exit 0"'
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep-orphaned-cad.ps1
 
 .gate-windows-cad-hard:
