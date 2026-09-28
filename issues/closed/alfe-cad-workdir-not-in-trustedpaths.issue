@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-cad-workdir-not-in-trustedpaths — a CAD with SECURELOAD=2 would refuse alfe's own runtime
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: alfe-backend
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: alfe-trustedpaths-registry (MR !361)
 #+DATE: 2026-09-25
 
 * Observed
@@ -166,10 +166,37 @@ Job 16790265270, on the Windows runner, 2026-09-28:
   a workdir named with =é=, every profile restored exactly.
 - Manual: "alfe's workdir in AutoCAD's TRUSTEDPATHS".
 
-* Remaining for DONE
+* Verified on the real CAD (2026-09-29): DONE
 
-The end-to-end proof on the real CAD: =verify:trustedpaths-secureload2:windows=
-(manual). It sets SECURELOAD=2 in every profile and runs alfe. A =-l=
-file from an untrusted directory must be refused (the control, without
-which a success proves nothing). It then checks that nothing is left in
-TRUSTEDPATHS, and restores SECURELOAD.
+=verify:trustedpaths-secureload2:windows= (manual) sets SECURELOAD=2 in
+every AutoCAD profile, runs alfe, then restores SECURELOAD. Job
+16792530197, AutoCAD 2022 accoreconsole on the Windows runner:
+
+#+begin_example
+INFORCE=2          <- (getvar "SECURELOAD") as the CAD reports it
+RUN=42             <- an -x form, via protocol\alfe-eval.lsp in the trusted workdir
+FOUND=1            <- the control file exists (findfile)
+CONTROLREFUSEDChargement du fichier annulé: C:/msys64/tmp/alfe-untrusted-25c93c4b/control.lsp
+TRUSTEDPATHS left clean : True   (both profiles)
+RESULT=PASS
+#+end_example
+
+The same session ran alfe, which needs its workdir trusted, and refused
+a native load from an untrusted directory. So the trust is what made the
+run possible, and the enforcement was real.
+
+It took three runs to get a control that proves anything, and the lessons
+are in the script:
+- alfe's =-l= stages a copy of the file INTO the trusted workdir, so an
+  "untrusted" =-l= control loads (job 16790730125). The control must be a
+  native =(load ...)= of the untrusted path from =-x=.
+- AutoLISP reads =(quote CONTROL.REFUSED)= as =CONTROL=, so refused and
+  returned looked alike (job 16792324913). Use dot-free markers, plus
+  =findfile= so that a wrong path cannot pass for a refusal.
+- =--verbose= echoes each =-x= form, and the echo contains every marker
+  symbol, so markers must be anchored at the start of a line (job
+  16792421246 scored a real refusal INCONCLUSIVE).
+
+Also on the native Windows alfe lane: =trustedpaths-real-registry-round-trip-on-windows=
+passes against the runner's real registry. Its workdir name contains =é=,
+and both profiles come back exactly as they were.
