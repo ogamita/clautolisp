@@ -2704,6 +2704,39 @@ boundaries, which compiling one function at a time cannot do.
 The default is ~((DEBUG 3) (SPACE 0) (SPEED 2))~ — debugging matters
 most, speed next, size not at all.
 
+*~(SPEED 3) (DEBUG 0)~ — lexical locals.* This one combination — as fast
+as possible, and I will not debug it — gives a function a third, *lexical*
+fork when it is worth having: its parameters and ~/~-locals live in
+Common Lisp variables instead of a dynamic frame, so a call binds no
+frame at all. Measured on a hot leaf function called a million times,
+the loop around it ran 1.5x faster (median 832 ms against 540 ms).
+
+It does not change what your program computes. AutoLISP is dynamically
+scoped, so anything a function calls can read or write its locals by
+name — a callee using the name free, ~SET~, ~BOUNDP~, ~EVAL~, a
+redefined builtin. A lexical fork therefore calls directly only
+builtins *audited* as unable to see a local (arithmetic, comparisons,
+list and string operations: ~+ - * / 1+ 1- < > <= >= = /= CAR CDR CADR
+CDDR CAAR CDAR NULL NOT ATOM LISTP ZEROP MINUSP NUMBERP EQ EQUAL CONS
+LIST APPEND LENGTH REVERSE NTH LAST ASSOC MEMBER ABS MIN MAX REM FIX
+FLOAT SQRT EXPT STRCAT STRLEN SUBSTR ASCII CHR ATOI ITOA~), and checks
+at *every call* that the name still names that builtin. Anything else
+is called with the locals put back into a real frame first, and read
+back afterwards — exactly what the callee would have seen. Because that
+costs more than the frame it saves, a function gets a lexical fork only
+when all its calls are to audited builtins: in practice, the leaf
+arithmetic and list functions where hot loops spend their time. A
+function that uses a local as an operator, or rebinds one with ~FOREACH~
+or ~LET~, keeps its ordinary fork.
+
+A lexical fork never runs under a debug session — the debugger shows
+and changes frame bindings at a stop, and this fork has none — so
+turning ~DEBUG~ back up, or starting the debugger, is all it takes to
+see the locals again. It is built only by the eager compilation of
+~SPEED 3~, so set the qualities *before* loading, with ~-O~ /
+~--optimize~ (below). Compiled applications (=.lap=) do not carry
+lexical forks.
+
 To choose the qualities *before* the first file is loaded — which is
 when ~SPEED 3~ matters most, since it governs how a file is compiled as
 it is loaded — use the ~-O~ / ~--optimize~ command-line option; see §

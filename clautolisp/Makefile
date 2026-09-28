@@ -248,6 +248,11 @@ test-compiler-equivalence:  ## Run the whole test corpus with every AutoLISP fun
 	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--load autolisp-compiler/tests/whole-suite-compiled.lisp
 
+test-lexical-locals:  ## Run the whole test corpus with LEXICAL forks forced on every DEFUN ((speed 3) (debug 0)).
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
+		--load autolisp-compiler/tests/whole-suite-lexical.lisp
+
 test-debug-compiled:  ## Run the whole test corpus with every INSTRUMENTED body compiled.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
 	"$(SBCL)" --noinform --no-userinit --non-interactive \

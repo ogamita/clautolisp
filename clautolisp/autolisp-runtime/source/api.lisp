@@ -1611,6 +1611,30 @@ the call site never has to know what it is holding before it asks."
 (defun (setf autolisp-open-code-tag) (tag object)
   (setf (clautolisp.autolisp-runtime.internal::autolisp-subr-open-code object) tag))
 
+(declaim (inline lexically-safe-callee-p))
+(defun lexically-safe-callee-p (object)
+  "True when OBJECT is a builtin audited LEXICALLY SAFE: it cannot call back
+into AutoLISP and cannot read or write a variable by name, so a lexical fork
+may call it without materialising its locals (lexical-locals-escape-analysis).
+
+The question every call site of a lexical fork asks about the function its
+operator resolved to RIGHT NOW. A user DEFUN, a SETQ of a lambda, a shadow, an
+unaudited builtin -- all answer NIL and are called with the locals in a real
+frame, where they can see them exactly as they would in the dynamic fork."
+  (and (typep object 'autolisp-subr)
+       (clautolisp.autolisp-runtime.internal::autolisp-subr-lexically-safe object)))
+
+(defun (setf autolisp-subr-lexically-safe) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-subr-lexically-safe object)
+        value))
+
+(defun autolisp-usubr-lexical-body (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-lexical-body object))
+
+(defun (setf autolisp-usubr-lexical-body) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-lexical-body object)
+        value))
+
 (defun autolisp-usubr-name (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-name object))
 
@@ -2150,6 +2174,18 @@ makes file-wide optimizations possible at all, where compiling one function
 at a time on the call that made it hot can only ever optimize that function.
 
 Set by CLAL-OPTIMIZE. Bound directly only by tests.")
+
+(defparameter *autolisp-lexical-locals-enabled* nil
+  "When true, compiling a function's plain fork also tries to build its
+LEXICAL fork (lexical-locals-escape-analysis): formals and /-locals as Common
+Lisp variables, no dynamic frame per call. Set by CLAL-OPTIMIZE at
+(SPEED 3) (DEBUG 0) only -- `make it as fast as possible, I will not debug
+it' -- and read when a function is compiled, not when it is called.
+
+It does not change what a program computes: every callee that could see the
+locals is called with them materialised into a real frame, and the fork never
+runs under a debug session. So it is a SPEED quality, not the unsound named
+quality the issue warns against.")
 
 (defun autolisp-compile-plain-fork-p ()
   "Whether a function's non-instrumented fork should be compiled."
@@ -3219,33 +3255,43 @@ the call to the definition, which is a behaviour change."
                 (list required rest-param locals))
           (values required rest-param locals)))))
 
+(defun check-usubr-arity (name req-count rest-p arguments)
+  "Signal :WRONG-NUMBER-OF-ARGUMENTS when ARGUMENTS does not fit a function
+named NAME with REQ-COUNT required formals (and a rest parameter when REST-P).
+One statement of the rule and its messages, shared by BIND-USUBR-FRAME and the
+lexical fork, which binds no frame but must refuse the same calls in the same
+words."
+  (let ((arg-count (length arguments)))
+    (cond
+      (rest-p
+       ;; Variadic: at least REQ-COUNT arguments are needed, no
+       ;; upper bound. Excess arguments gather into REST-PARAM as
+       ;; a proper list (NIL when there are exactly REQ-COUNT
+       ;; arguments, matching `(princ)' / `(princ x)' / `(princ x
+       ;; fh)' behavior the extension was designed to emulate).
+       (when (< arg-count req-count)
+         (signal-autolisp-runtime-error
+          :wrong-number-of-arguments
+          "AutoLISP function ~A expects at least ~D arguments, got ~D."
+          name
+          req-count
+          arg-count)))
+      (t
+       (unless (= req-count arg-count)
+         (signal-autolisp-runtime-error
+          :wrong-number-of-arguments
+          "AutoLISP function ~A expects ~D arguments, got ~D."
+          name
+          req-count
+          arg-count))))))
+
 (defun bind-usubr-frame (function arguments context)
   (multiple-value-bind (required rest-param locals)
       (usubr-lambda-list-split function)
-    (let ((req-count (length required))
-          (arg-count (length arguments)))
-      (cond
-        (rest-param
-         ;; Variadic: at least REQ-COUNT arguments are needed, no
-         ;; upper bound. Excess arguments gather into REST-PARAM as
-         ;; a proper list (NIL when there are exactly REQ-COUNT
-         ;; arguments, matching `(princ)' / `(princ x)' / `(princ x
-         ;; fh)' behavior the extension was designed to emulate).
-         (when (< arg-count req-count)
-           (signal-autolisp-runtime-error
-            :wrong-number-of-arguments
-            "AutoLISP function ~A expects at least ~D arguments, got ~D."
-            (autolisp-usubr-name function)
-            req-count
-            arg-count)))
-        (t
-         (unless (= req-count arg-count)
-           (signal-autolisp-runtime-error
-            :wrong-number-of-arguments
-            "AutoLISP function ~A expects ~D arguments, got ~D."
-            (autolisp-usubr-name function)
-            req-count
-            arg-count)))))
+    (check-usubr-arity (autolisp-usubr-name function)
+                       (length required)
+                       rest-param
+                       arguments)
     (push-dynamic-frame context)
     (loop for symbol in required
           for value in arguments
@@ -3396,6 +3442,21 @@ flag only."
                             :details (list :subr (autolisp-subr-name function)
                                            :condition condition)
                             :call-stack (current-autolisp-call-stack))))))
+              ;; The LEXICAL fork (lexical-locals-escape-analysis): no frame
+              ;; is pushed, because its formals and /-locals are Common Lisp
+              ;; variables; it checks its own arity with the same rule and
+              ;; words as BIND-USUBR-FRAME. Never under a debug session --
+              ;; the debugger reads and writes frame bindings at a stop, and
+              ;; this fork has none to show it.
+              ((and (not *debugging*)
+                    (typep function 'autolisp-usubr)
+                    (functionp (autolisp-usubr-lexical-body function)))
+               (let ((*autolisp-call-stack*
+                      (cons (cons :usubr
+                                  (cons (or (autolisp-usubr-name function) "<lambda>")
+                                        arguments))
+                            *autolisp-call-stack*)))
+                 (funcall (autolisp-usubr-lexical-body function) context arguments)))
               ((typep function 'autolisp-usubr)
                ;; Two-bodies dispatch (clautolisp-debugger plan §3a,
                ;; revised by design note DN-2): while a debug session is

@@ -47,7 +47,87 @@ by storing :FAILED, so this is free to signal."
                               (declare (ignorable %context))
                               ,(transpile-body (autolisp-usubr-body usubr)
                                                '%context)))))))
-    (setf (autolisp-usubr-compiled-body usubr) compiled)))
+    (setf (autolisp-usubr-compiled-body usubr) compiled)
+    ;; At (SPEED 3) (DEBUG 0), the lexical fork too. It never makes the plain
+    ;; fork fail: anything that goes wrong building it leaves :NONE, and the
+    ;; function runs the plain fork it would have run anyway.
+    (when *autolisp-lexical-locals-enabled*
+      (setf (autolisp-usubr-lexical-body usubr)
+            (or (ignore-errors (compile-lexical-usubr usubr)) :none)))
+    compiled))
+
+(defvar *lexical-build-even-when-unsafe* nil
+  "When true, build a lexical fork even if some site must materialise the
+locals. Never set in production: it exists so the tests can make the
+materialising path RUN -- it is what keeps a redefined builtin, SET, BOUNDP or
+a user callee correct -- which the worth-building rule would otherwise keep
+them from ever reaching.")
+
+(defun compile-lexical-usubr (usubr)
+  "Build USUBR's LEXICAL fork (lexical-locals-escape-analysis), or return NIL
+when its body is not eligible or would not gain from it.
+
+The fork is a function of (CONTEXT ARGUMENTS): it checks the arity with the
+same rule and words as BIND-USUBR-FRAME, binds the formals, the rest parameter
+and the /-locals as Common Lisp variables, and runs the body transpiled in
+lexical mode. No dynamic frame is pushed -- which is the whole gain: in the
+compiled-code profile the frame machinery (BIND-USUBR-FRAME,
+MAKE-DYNAMIC-BINDING, ...) was the largest cost left.
+
+Refused when a local's name would have to be found in a frame (see
+*LEXICAL-REFUSAL*), when the lambda list names something twice or names T or
+NIL, and when some site would have to materialise the locals on every call --
+correct, but slower than the frame it saves."
+  (multiple-value-bind (required rest-param locals)
+      (split-usubr-lambda-list (autolisp-usubr-lambda-list usubr))
+    (let ((names (append required (and rest-param (list rest-param)) locals)))
+      (when (or (/= (length names) (length (remove-duplicates names)))
+                (some (lambda (name)
+                        (member (string-upcase (autolisp-symbol-name name))
+                                '("T" "NIL") :test #'string=))
+                      names))
+        (return-from compile-lexical-usubr nil))
+      (let* ((*lexical-locals*
+               (loop for name in names
+                     for i from 1
+                     collect (cons name (intern (format nil "%LEXICAL-LOCAL-~D" i)
+                                                :clautolisp.autolisp-compiler))))
+             (*lexical-refusal* nil)
+             (*lexical-unsafe-sites* 0)
+             (*transpiler-fallbacks* nil)
+             (body (transpile-body (autolisp-usubr-body usubr) '%context))
+             (variable (lambda (name) (cdr (assoc name *lexical-locals*)))))
+        (when (or *lexical-refusal*
+                  (and (plusp *lexical-unsafe-sites*)
+                       (not *lexical-build-even-when-unsafe*)))
+          (return-from compile-lexical-usubr nil))
+        (with-muffled-host-compiler
+          (compile nil
+                   `(lambda (%context %arguments)
+                      (declare (ignorable %context))
+                      (check-usubr-arity ,(autolisp-usubr-name usubr)
+                                         ,(length required)
+                                         ,(and rest-param t)
+                                         %arguments)
+                      (let* ((%lexical-rest %arguments)
+                             ,@(mapcar (lambda (name)
+                                         `(,(funcall variable name) (pop %lexical-rest)))
+                                       required)
+                             ;; BIND-USUBR-FRAME binds a FRESH list (SUBSEQ):
+                             ;; the caller's argument list must not become
+                             ;; the callee's rest parameter.
+                             ,@(when rest-param
+                                 `((,(funcall variable rest-param)
+                                    (copy-list %lexical-rest))))
+                             ,@(mapcar (lambda (name) `(,(funcall variable name) nil))
+                                       locals))
+                        (declare (ignorable %lexical-rest
+                                            ,@(mapcar variable names)))
+                        ,body))))))))
+
+(defun autolisp-function-lexical-p (usubr)
+  "True when USUBR has a lexical fork to run."
+  (functionp (autolisp-usubr-lexical-body usubr)))
 
 (defun compile-instrumented-usubr (usubr)
   "Transpile USUBR's INSTRUMENTED body and store the result in its

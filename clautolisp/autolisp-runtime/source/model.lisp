@@ -325,7 +325,16 @@ clautolisp-secureload-trust-model spec.")
   ;; open-codes. Swap the implementation and the tag silently disappears,
   ;; which is the safe direction: a missing tag costs a call, a wrong tag
   ;; would cost correctness.
-  (open-code nil :type symbol))
+  (open-code nil :type symbol)
+  ;; True when this builtin is AUDITED LEXICALLY SAFE
+  ;; (lexical-locals-escape-analysis): it never calls back into AutoLISP
+  ;; and never reads or writes a variable BY NAME. A lexical fork -- a
+  ;; function whose locals live in Common Lisp variables instead of a
+  ;; dynamic frame -- may call such a builtin directly; any other callee is
+  ;; called with the locals materialised into a real frame first, because
+  ;; it could see them. Same discipline as OPEN-CODE: set only by
+  ;; INSTALL-CORE-BUILTINS, against the implementation, never the name.
+  (lexically-safe nil))
 
 (defstruct autolisp-usubr
   (name "" :type string)
@@ -373,6 +382,14 @@ clautolisp-secureload-trust-model spec.")
   ;; Same :FAILED convention as COMPILED-BODY.
   (compiled-body nil)
   (compiled-instrumented-body nil)
+  ;; LEXICAL-BODY is the FIFTH body (lexical-locals-escape-analysis): a
+  ;; Common Lisp function of (CONTEXT ARGUMENTS) whose formals and /-locals
+  ;; are CL variables, so a call pushes no dynamic frame at all. Built only
+  ;; at (SPEED 3) (DEBUG 0), and only for a body where it cannot be told
+  ;; apart from the others -- every callee that could see the locals gets
+  ;; them materialised into a real frame first. Run only when no debug
+  ;; session is active. NIL = not built, :NONE = not eligible.
+  (lexical-body nil)
   (call-count 0 :type fixnum)
   ;; Memoised result of SPLIT-USUBR-LAMBDA-LIST: (REQUIRED REST-PARAM
   ;; LOCALS), or NIL when it has not been computed yet. A lambda list
