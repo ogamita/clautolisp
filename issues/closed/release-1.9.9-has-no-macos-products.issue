@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: release-1.9.9-has-no-macos-products — thalassa slept through the tag, and the release says so rather than waiting
-#+STATUS: TODO
+#+STATUS: WONTFIX
 #+PRIORITY: P3
 #+TYPE: infra
 #+DEPENDS: -
@@ -64,3 +64,20 @@ six points s'arrête à « =make-gitlab-release.py= ». Le dépôt sur poseidon
 devrait y figurer comme étape 5b, ou devenir un job de la pipeline. À
 trancher par pjb : un job le rendrait automatique, mais il faudrait donner
 au runner un accès en écriture à l'arborescence web.
+
+* Closed 2026-09-28 — WONTFIX, superseded
+
+Both lessons have been taken up since:
+
+- Every later release ships macOS: release-2.1.0 and release-2.2.1 (and
+  1.9.3 before this one) each carry
+  =clautolisp-*-binaries-darwin-arm64.tar.bz2= and
+  =clautolisp-*-libraries-darwin-arm64.tar.bz2= (15 assets, against 13 here).
+- The poseidon deploy step is now written down: AGENTS.md § /Cutting a
+  release/ runs =deploy-release-to-poseidon.sh= as an explicit step and says
+  where to run it from.
+
+What is left is retrofitting macOS assets onto 1.9.9 itself, three releases
+back. That is a publish action on a superseded release, not a background
+fix, so it is not done here; reopen if a user of the 1.9 series on macOS
+needs it -- the recipe above still works.

@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: mock-CAD DRIVE-PROTOCOL-ACTIONS test family flakes on the native Windows lane
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: test-determinism
 #+DATE: 2026-09-28
@@ -121,6 +121,15 @@ green test:alfe:windows runs on the loaded runner. Not claimed from Linux.
 | !336 MR pipeline, job 16774481578     | 2.2.141 | BEFORE the fix: 6 failures, this family (three-evals x4, dribble, subprocess-parity) |
 | !338 MR pipeline, job 16775177010     | 2.2.145 | green, 1283 checks, 0 fail |
 | master 2889039928, job 16776116301    | 2.2.145 | green, 1283 checks, 0 fail |
+| !341 MR pipeline, job 16776999013     | 2.2.146 | green                      |
+| master 2889213652, job 16777256060    | 2.2.146 | green                      |
 
-Two consecutive green runs so far, on the same runner that failed the family
-the same morning. One more before closing.
+* Resolved 2026-09-28
+
+Four consecutive green =test:alfe:windows= runs, two MR and two master
+pipelines, on the runner that failed this family six times the same morning;
+=test:alfe:macos= green alongside, and the Linux lanes and both local suites
+(SBCL, CCL) green. The acceptance criteria hold: no shifting subset, the
+determinism is structural (the retry closes a race window; the mock is
+step-locked, and its only remaining deadlines are failure-time safety nets),
+and the other lanes are green.
