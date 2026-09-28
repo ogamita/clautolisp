@@ -132,3 +132,37 @@ read — empirically untested (needs a runner cycle).
   measured source native-load)
 - issues/open/cad-load-encoding-macos.issue (the same source-load axis on
   BricsCAD/macOS)
+
+== RESOLVED 2026-09-28 (alfe 2.2.134..2.2.141, MR !313 + !320) ==
+
+Fixed via the alfe-* interface + a path-resolution fix, and VERIFIED on the
+Windows AutoCAD runner.
+
+Design (maintainer's call): do NOT shadow the AutoLISP builtins to deport
+(load)/(princ)/... -- AutoCAD has no variadic user functions and shadowing
+re-enters the protocol loop. Instead alfe exposes fixed-arity alfe-*
+operators (alfe-load / alfe-load-onfailure / alfe-load*, alfe-princ* /
+alfe-print* / alfe-prin1* + 1-arg conveniences), and alfe-load rewrites the
+native calls in the code it loads into their alfe-* form (cons-identity
+preserving) and evaluates directly. Code alfe controls (autolisp-test,
+outils-autolisp scenarios, the REPL) calls alfe-load; ordinary user code
+keeps the native operators. Documented in the alfe user manual, section
+"The alfe-* operators (for test and REPL code)".
+
+The actual accoreconsole failure turned out NOT to be the high byte: the
+byte-safe read already worked. autolisp-source-resolve-load-path used only
+findfile, and accoreconsole's findfile searches the Support File Search Path,
+NOT the current directory, so alfe-load of a cwd-relative name resolved to
+nil -> "LOAD failed". (The message was masked by autolisp-force-error's
+portable (/ 1 0) raise -- confirmed on this pass that accoreconsole has no
+(error) primitive, so that mechanism stays; the probe now surfaces
+autolisp-effective-error-message.) Fix: a fallback in the resolver that
+accepts the path as given (then +".lsp") when it opens, only when findfile
+misses -- so BricsCAD/clautolisp are unchanged.
+
+Verification (encoding:experiment:autocad:windows): alfe-load.ascii = OK,
+and source.{default,utf8,utf16le}.cp = 65 233 90 -- (setq ENCSRC "A<e9>Z")
+loaded via alfe-load reads back as A e-acute Z on accoreconsole, where native
+(load) still chokes. BricsCAD (macOS+Windows) and clautolisp: same 65 233 90.
+alfe unit suite 1334/1334 with the new regression test
+protocol-alfe-load-reads-a-non-ascii-file.
