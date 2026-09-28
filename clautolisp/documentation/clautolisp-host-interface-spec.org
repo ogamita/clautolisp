@@ -2,10 +2,10 @@
 #+TITLE: Clautolisp Host Interface Specification (D1)
 #+SUBTITLE: The backend-agnostic contract every clautolisp host implements, plus the formal AutoLISP↔host protocol
 #+AUTHOR: clautolisp project
-#+DATE: 2026-08-06
+#+DATE: 2026-08-06 (refreshed 2026-09-28)
 #+OPTIONS: toc:3 num:t ^:nil
 #+STARTUP: overview
-#+DOCUMENT_VERSION: 0.1.0 (draft for review — cador-3 / epic deliverables D1 + D5)
+#+DOCUMENT_VERSION: 0.2.0 (draft for review — cador-3 / epic deliverables D1 + D5; §14 and §15 decided by pjb 2026-09-28, §3/§10/§13 refreshed against cador-2's implementation — see §19)
 
 * 0. Status, scope, and how to read this document
   :PROPERTIES:
@@ -201,48 +201,51 @@ not a clautolisp host.
   :CUSTOM_ID: g-session
   :END:
 
-*Status of this group.* The current HAL has *no* session/document-management
-generics. [S: protocol.lisp carries no =host-open-document= /
-=host-current-document= etc.] The document model itself already exists one
-level up, in the runtime session — =runtime-session= owns a
+*Status of this group (refreshed 2026-09-28).* *Built* — by cador-2 slice 1a.
+The five generics below are in =autolisp-host/source/protocol.lisp:63–85= and
+=cador= implements them (=cador/source/document-api.lisp=). They sit on the
+document model one level up, in the runtime session — =runtime-session= owns a
 =document-namespaces= table, a =blackboard-namespace=, an application context
 (=application-state= / =application-reactors=), a session-level
 =exported-functions= table, and a =current-document= pointer; each
 =document-namespace= carries a lifecycle =state= and a per-document =reactors=
-table. [S: =autolisp-runtime/source/model.lisp:45–158=]
+table. [S: =autolisp-runtime/source/model.lisp:45–158=] The scheduler keeps the
+runtime's current document and the host's current document in lock-step
+(cador-2 slices 2a–2c).
 
-This group therefore specifies the *forward contract* the cador-2 scheduler and
-the wire host must implement, cross-referenced to the runtime structures that
-already realise part of it. Every operation here is marked *proposed* in the
-fidelity matrix (§12) until cador-2 lands it; specifying it now is required by
-epic §4.1 and is what lets cador-2 and the wire host implement against one
-contract.
+*Document identity.* A document is designated by an opaque *key* returned by
+the host — on =cador= a string, compared with =string== — and carried by every
+entity name, selection set and ldata handle for the cross-document dereference
+check (C5, D2 §I.7). The draft asked for an =eq=-comparable handle; the built
+contract is a key the host defines, which is the weaker requirement and
+suffices for C5.
 
-Document identity is a *first-class AutoLISP-visible value* (epic §4.1): a
-=document= handle, opaque to user code, comparable with =eq=, and carried by
-every entity name, selection set and ldata handle for the cross-document
-dereference check (C5, D2 §I.7).
+*The built contract:*
 
-| Operation (proposed generic)         | Arguments                     | Returns                          | Errors                                                                 |
-|--------------------------------------+-------------------------------+----------------------------------+------------------------------------------------------------------------|
-| =host-document-list=                 | host                          | list of document handles         | —                                                                      |
-| =host-current-document=              | host                          | the current document handle      | —                                                                      |
-| =host-active-document=               | host                          | the active document handle       | — (in a headless core collapses to current; see D2 §I.3)               |
-| =host-set-current-document=          | host document                 | the document                     | =unavailable-in-headless= if switching is disabled mid-input (analysis §4.3) |
-| =host-open-document=                 | host pathname &key format     | the new document handle          | =backend-error= on read failure; =not-yet-implemented= for DWG (D2 §II.12) |
-| =host-new-document=                  | host &key template            | the new document handle          | —                                                                      |
-| =host-close-document=               | host document &key save       | =t=                              | =backend-error= if save fails; closes owned streams (Group 6, R6)      |
-| =host-document-of=                   | host handle                   | the owning document of an ename/pickset/ldata handle | =cross-document-dereference= is a *caller-side* check (C5), not here |
+| Operation                  | Arguments          | Returns                                   | Errors                                                                 |
+|----------------------------+--------------------+-------------------------------------------+------------------------------------------------------------------------|
+| =host-document-list=       | host               | the open keys, in opening order           | —                                                                      |
+| =host-current-document=    | host               | the current key, or =nil= if none is open | —                                                                      |
+| =host-open-document=       | host &optional name | a fresh key for a new, empty document (or one from the =CLAUTOLISPNEWDRAWINGTEMPLATE= template); does *not* change the current document | — |
+| =host-activate-document=   | host key           | =key=, now current                        | unknown key ⇒ =:no-such-document=                                      |
+| =host-close-document=      | host key           | =t=, or =nil= for an unknown key          | closing the *only* document ⇒ =:cannot-close-last-document= (=cador= keeps a current drawing); closing the current one activates the first remaining |
+
+*Still design-ahead* (specified here, not built): an *active*-document query
+distinct from current (it collapses in a headless core, D2 §I.3, so nothing
+needs it yet), opening a document *from a file* (=pathname &key format=,
+=backend-error= on read failure, =not-yet-implemented= for DWG, D2 §II.12),
+closing with =&key save=, and =host-document-of= (the owning document of a
+handle). Each will take the §15 condition classes when it lands.
 
 *Per-host behaviour.*
 - =nihil= :: has no documents. =host-document-list= ⇒ the single default
   document only if one is bound; all mutating operations signal
   =operation-not-supported-by-this-host=. =nihil= must never grow real
   multi-document semantics (C7).
-- =cador= :: today holds exactly one active drawing
-  (=cador-active-drawing=). [S: =cador/source/model.lisp:56=] cador-2/Phase-17f
-  grows the set of open drawings with this as the active pointer; the
-  operations above map onto that set. Current-vs-active collapses (D2 §I.3).
+- =cador= :: holds an ordered set of open drawings (=cador-documents=, an
+  alist key → drawing) with =cador-active-drawing= as the current pointer
+  (cador-2 slice 1a); every sysvar is therefore per-document (slice 3c).
+  Current-vs-active collapses (D2 §I.3).
 - =<wire-host>= :: forwards to the remote =Documents= collection; =eq=
   stability of document handles across calls is a wire-host obligation.
 
@@ -515,17 +518,28 @@ host is installed.
   :CUSTOM_ID: g-concurrency
   :END:
 
-The governing invariant is analysis §4.2: *one runner, N parked contexts.*
-There is no thread per document; at most one document's evaluation runs at any
-instant, and any number of document contexts may hold a *suspended* evaluation
-(C2). [A, analysis §4.2]
+The governing invariant is analysis §4.2: *one runner, N parked contexts.* At
+most one document's evaluation runs at any instant, and any number of document
+contexts may hold a *suspended* evaluation (C2). [A, analysis §4.2]
 
 *Parking.* A host operation that must wait for something outside the runner —
 user input at a prompt, or a W2 round trip — is a *park point*. Parking saves
 the current context's continuation and returns control to the single runner,
 which may resume another context. This is the CAD-side analogue of =aldo='s
 signal/park handoff (epic §1.2(a)). The park/resume contract is specified
-formally in §13.5. Its two obligations on the HAL:
+formally in §13.5.
+
+*How a continuation is realised (pjb, 2026-09-13; built by cador-2 slices
+3d–3g).* Common Lisp has no portable first-class continuations, so *a parked
+context's continuation is its thread, blocked on a condition variable*. To
+resume a context, the runner notifies that context's condition and waits on its
+own. The condition-variable handoff *is* the single-runner mutual exclusion:
+only the thread that holds the token runs, so the per-document threads are
+*coroutine carriers*, not concurrent workers (C2 holds by construction). A
+context that never parks — every batch and single-document run — spawns *no*
+thread at all. [S: =autolisp-runtime/source/scheduler.lisp=,
+=scheduler-activate= / =scheduler-switch= / =scheduler-park=] Its two
+obligations on the HAL:
 
 1. Any get-family operation (§6.2), any =host-command= that would prompt, and
    any wire round trip (=<wire-host>= for *every* operation) is a *potential
@@ -555,7 +569,10 @@ cross-document mutation is attempted without it; on =nihil= they signal
 not-supported; on =<wire-host>= they forward to =lockDocument= /
 =unlockDocument=.
 
-*C8 restated.* =cador= needs *no worker thread and must not require one*. The
+*C8 restated.* =cador= needs *no worker thread and must not require one*: a
+batch or single-document run spawns none. The threads that carry parked
+contexts are not workers — never two of them run at once — so they are within
+C8's intent, which is that =cador= does not depend on concurrency. The
 single-runner model is a simplification to exploit, not an obstacle (R14, R21).
 
 * 11. Group 9 — ActiveX / Visual LISP COM automation bridge
@@ -625,10 +642,12 @@ clautolisp host (§2.4).
 
 | Operation group / op        | nihil | cador | <wire-host> | AutoCAD | BricsCAD |
 |-----------------------------+-------+-------+-------------+---------+----------|
-| *Session/document* (§3)     | sig   | prop  | prop/fwd    | native A | native A |
-| =document-list/current=     | sig   | prop  | fwd         | A       | A        |
-| =open/new/close-document=   | sig   | prop  | fwd         | A       | A        |
-| =set-current-document=      | sig   | prop  | fwd         | A       | A        |
+| *Session/document* (§3)     | sig   | full  | prop/fwd    | native A | native A |
+| =document-list/current=     | sig   | full  | fwd         | A       | A        |
+| =open-document= (new, empty) | sig  | full  | fwd         | A       | A        |
+| =open-document= (from file) | sig   | prop  | fwd         | A       | A        |
+| =close-document=            | sig   | full  | fwd         | A       | A        |
+| =activate-document=         | sig   | full  | fwd         | A       | A        |
 | *Entities* (§4.1)           |       |       |             |         |          |
 | =entget/entmod/entmake=     | sig   | full  | fwd         | A       | A        |
 | =entmakex/entdel/entupd=    | sig   | full  | fwd         | A       | A        |
@@ -716,7 +735,7 @@ interaction is a pair
 where =OP= is the operation name (the AutoLISP-visible name, e.g. =entget=, not
 the CL generic), =ARGS= is a tuple in the value domains of §13.2, =V= is a
 value in a return domain, and =(:signal CLASS OP DATUM)= carries one of the
-four condition classes of §6. Exactly one response is produced per request
+four condition classes of §15. Exactly one response is produced per request
 (the *forest* discipline of §13.4 governs *nesting*, not multiplicity).
 
 For the in-image realisation, =REQUEST= is the generic call and =RESPONSE= is
@@ -768,6 +787,9 @@ may resume document B, which starts a fresh top-level evaluation that itself
 nests. Therefore correlation state is *one stack per document context, keyed by
 document*, not a single global stack (R11). A wire host's envelope must carry a
 document discriminator (R10) so responses route to the correct context's stack.
+[S: built, cador-2 slice 3g — =scheduled-context= carries its
+=correlation-stack=, pushed by =with-host-request=; wiring it into the live
+host generics waits for the wire host, cador-4.]
 
 ** 13.5 Park and resume
 
@@ -777,7 +799,10 @@ immediately available: a get-family prompt, a =host-command= that prompts, a
 trip is always outstanding for a non-zero time. At a park point the issuing
 context's continuation is captured and control returns to the single runner
 (*park*); when the response is available the runner *resumes* the context by
-invoking its continuation with the =RESPONSE= (§13.1).
+invoking its continuation with the =RESPONSE= (§13.1). In this implementation
+the captured continuation is the context's thread, parked on its condition
+variable, and "invoking" it is notifying that condition (§10). [S: built,
+cador-2 slices 3d–3f]
 
 *What resuming restores.* The context's dynamic environment: its current
 document and namespace, its =*error*= handler, its command-echo and
@@ -810,46 +835,46 @@ above semantics*:
    the same underlying object across requests, or the runtime must intern them
    on receipt, so AutoLISP's =eq= idioms hold (as =cador= does with its
    ename/COM caches).
-4. *Capability advertisement* at connect time (§5), so the runtime knows which
-   operations the remote supports before issuing them.
+4. *Unsupported operations answer with the §15 condition*, like any other
+   host: there is no capability query (§14), so the remote reports an
+   operation it lacks by returning =(:signal operation-not-supported-by-this-host
+   OP DATUM)= for that request. A wire host may learn the remote's capabilities
+   at connect time to answer locally without a round trip — an internal
+   optimisation, invisible to AutoLISP.
 5. *No W1 assumptions* (§2.3): W2 is not =alfe=; the remote is a display
    server, not a Lisp evaluator.
 
 Because the in-image and cador realisations satisfy 1–5 trivially (no
-serialisation, one process, native =eq=, static capability set, no wire at
-all), a host operation written to this protocol runs unchanged on all three.
+serialisation, one process, native =eq=, conditions signalled in-image, no wire
+at all), a host operation written to this protocol runs unchanged on all three.
 
 * 14. Cross-cutting mechanism A — capability query
   :PROPERTIES:
   :CUSTOM_ID: capability
   :END:
 
-A host must *declare which operations it supports* so that library code,
-=aldo= and the test suite adapt rather than crash (epic §4).
+*Decision (pjb, 2026-09-28): there is no capability query. Capability stays
+implicit.* A program — library code, =aldo=, the conformance suite — learns
+whether a host supports an operation by *invoking it* and handling the §15
+condition it signals. No =host-capable-p=, =host-capability= or
+=host-supports-p= is added: a query would be an *extension* to the AutoLISP
+surface, and the rule is to minimise extensions. The draft's proposed query
+(0.1.0) is withdrawn.
 
-- *Granularity.* Per *operation* (the =host-OP= name), not per group — because
-  =cador= supports most of a group (e.g. selection) but not the interactive
-  members of it (=ssget= pick mode). The query answers, for an operation name,
-  one of =:full= / =:headless-limited= / =:observational= / =:unsupported= /
-  =:not-yet-implemented=, matching the fidelity-matrix cell kinds (§12).
-- *The query.* A generic =host-capability (host op) → keyword=, plus a
-  convenience =host-supports-p (host op) → boolean= (true unless =:unsupported=
-  or =:not-yet-implemented=). This is *proposed* — it does not exist in the
-  current HAL [S: protocol.lisp has no capability generic] and is introduced by
-  this spec; cador-2 lands it.
-- *When consulted.* Both *load time* and *call time* are permitted, with
-  different consumers: library code and =aldo= consult it *at load time* to
-  decide whether to install a feature (so a missing operation degrades a
-  feature rather than crashing mid-run); the conformance suite consults it *at
-  call time* to distinguish an expected =:unsupported= from an =UNEXPECTED=
-  failure (epic §8). The declaration itself is *static per host class* (it does
-  not depend on runtime state), which is what lets the load-time consultation be
-  sound.
-- *Relationship to the base method.* The base =host= class answers
-  =:unsupported= for everything; a backend's capability table is the dual of
-  its method overrides. A backend whose method exists but signals
-  =not-yet-implemented= answers =:not-yet-implemented=, distinguishing a *gap*
-  from a *design boundary* (§6).
+What the draft wanted from the query is kept, by the condition hierarchy:
+
+- *Per-operation granularity* is inherent: the answer comes from calling that
+  operation, so =cador= can support most of selection and still refuse
+  =ssget='s pick mode.
+- *Telling a gap from a design boundary* is what the four subclasses of §15
+  are for: =operation-not-yet-implemented= marks a probe *pending*, the other
+  three a design boundary or a backend refusal (epic §8).
+- *Degrading a feature rather than crashing* is a handler around the first
+  use — =vl-catch-all-apply= in AutoLISP, =handler-case= on =host-error= or a
+  subclass in Lisp — instead of a check at load time.
+
+The fidelity matrix (§12) remains the *documentation* of which operations each
+host supports; it is not queryable at run time.
 
 * 15. Cross-cutting mechanism B — the condition taxonomy
   :PROPERTIES:
@@ -857,20 +882,46 @@ A host must *declare which operations it supports* so that library code,
   :END:
 
 Conflating these makes the test suite unable to tell a gap from a design
-boundary (epic §4). Four *distinct* classes, all subclasses of the runtime's
-=autolisp-runtime-error= (so =*error*=, =vl-catch-all-apply= and the debugger
-see a consistent implementation-defined error, per AGENTS.md):
+boundary (epic §4).
+
+*Decision (pjb, 2026-09-28): one superclass, four subclasses.* Every host
+failure is a =host-error=, and =host-error= is a subclass of the runtime's
+=autolisp-runtime-error= — so =*error*=, =vl-catch-all-apply= and the debugger
+see a consistent implementation-defined error, per AGENTS.md. Four subclasses
+discriminate *why*:
+
+#+begin_example
+autolisp-runtime-error
+  host-error                                  catch every host failure
+    operation-not-supported-by-this-host      code :host-not-supported
+    unavailable-in-headless-context           code :host-unavailable-headless
+    operation-not-yet-implemented             code :host-not-yet-implemented
+    backend-error                             code :host-backend-error
+#+end_example
+
+A handler catches *globally* on =host-error= or *specifically* on one
+subclass; AutoLISP code keeps catching everything with =vl-catch-all-apply=
+and reads the message. Each class keeps a =code= keyword as well, the one the
+runtime error already carries, so every existing handler that tests
+=(autolisp-runtime-error-code c)= against =:host-not-supported= keeps working
+unchanged; the class is the new, finer way in, not a replacement.
 
 | Class                                   | Meaning                                                                 | Canonical raiser        | Current state |
 |-----------------------------------------+-------------------------------------------------------------------------+-------------------------+---------------|
-| =operation-not-supported-by-this-host=  | This host implements nothing of the kind — a *design boundary*. =nihil= asked for an entity. | =signal-host-not-supported= | *Exists* as code =:host-not-supported= [S: protocol.lisp:47–54] |
-| =unavailable-in-headless-context=       | The host *has* the subsystem but this operation needs a display/pointer this configuration lacks — a *design boundary*. =cador= asked for a rubber-band drag or =grread=. | (proposed) =signal-unavailable-in-headless= | *Proposed* — not yet distinct; cador currently reuses =:host-not-supported= |
-| =operation-not-yet-implemented=         | A *real gap* the host intends to fill. Distinguished so a probe marks it *pending*, not *failing* (epic §8). | (proposed) =signal-not-yet-implemented= | *Proposed* |
-| =backend-error=                         | The backend was asked correctly and *refused* or failed — the remote CAD said no, a DWG failed to parse. | (proposed) =signal-backend-error= | *Proposed* |
+| =host-error= (superclass)               | Any failure of a host operation — never signalled itself, only its subclasses. | —                       | *To build* (cador-4) |
+| =operation-not-supported-by-this-host=  | This host implements nothing of the kind — a *design boundary*. =nihil= asked for an entity. | =signal-host-not-supported= | *Exists* as code =:host-not-supported= of a plain =autolisp-runtime-error= [S: protocol.lisp:47–54]; becomes this class |
+| =unavailable-in-headless-context=       | The host *has* the subsystem but this operation needs a display/pointer this configuration lacks — a *design boundary*. =cador= asked for a rubber-band drag or =grread=. | =signal-unavailable-in-headless= | *To build* — cador currently reuses =:host-not-supported= |
+| =operation-not-yet-implemented=         | A *real gap* the host intends to fill. Distinguished so a probe marks it *pending*, not *failing* (epic §8). | =signal-not-yet-implemented= | *To build* |
+| =backend-error=                         | The backend was asked correctly and *refused* or failed — the remote CAD said no, a DWG failed to parse. | =signal-backend-error= | *To build* |
+
+Errors specific to one operation that are *not* host boundaries stay plain
+runtime errors with their own codes — =:no-such-document=,
+=:cannot-close-last-document=, =:sysvar-read-only=: they report a wrong
+argument, not a missing capability.
 
 *Decision (owner, cador-1).* =nihil= signals
 =operation-not-supported-by-this-host= (code =:host-not-supported=) — *not*
-warn-and-return-=nil=. [S: =issues/open/cador-1-split-nihil-cador.issue=;
+warn-and-return-=nil=. [S: =issues/closed/cador-1-split-nihil-cador.issue=;
 nihil.lisp raises it for every CAD op] This is settled and recorded here so it
 survives the epic.
 
@@ -878,15 +929,17 @@ survives the epic.
 (=autolisp-runtime-error= with a =code= keyword) and only the
 =:host-not-supported= code is used for host boundaries. [S:
 =autolisp-runtime/source/package.lisp:104–108=] To satisfy the taxonomy, the
-other three classes/codes must be introduced and =cador= must be changed to
+superclass and the four subclasses must be introduced — the existing
+=:host-not-supported= becoming =operation-not-supported-by-this-host= with its
+code unchanged — and =cador= must be changed to
 raise =unavailable-in-headless-context= where it currently reuses
 =:host-not-supported= (e.g. the read-only-setvar path raises
 =:host-not-supported= today, which is arguably a mis-grade — it should be
 =sysvar-read-only=). [S: =cador/source/sysvar-api.lisp:238–242= uses the
 distinct =:sysvar-read-only= code correctly; but =cador-set-sysvar= in
 =sysvars.lisp:131–132= raises =:host-not-supported= — flagged for cleanup, D2
-§II.15.] This refinement is a cador-1/cador-2 code change, specified here as the
-contract.
+§II.15.] This refinement is a code change specified here as the contract; it
+is tracked in =cador-4-epic-remainder= ("From cador-3").
 
 * 16. Conformance and the fidelity matrix as coverage target
 
@@ -1002,3 +1055,50 @@ Kept at DOCUMENT_VERSION 0.1.0 (draft for review). The reviewer's task is to
 (a) confirm the group/section structure against the built generics above,
 (b) decide the §14 capability-query and §15 four-way-taxonomy designs, and
 (c) sign off the fidelity matrix rows now that the operation set is known.
+
+/This section is the 2026-09-13 record and is kept as such. Where it says
+"design-ahead", §19 supersedes it./
+
+* 19. Refresh 2026-09-28 — decisions and cador-2's implementation
+  :PROPERTIES:
+  :CUSTOM_ID: refresh-2026-09-28
+  :END:
+
+Version 0.2.0. Two decisions by pjb, and the text brought up to the code
+cador-2 built (closed 2026-09-28).
+
+** Decided (pjb, 2026-09-28)
+
+- *§14 — no capability query.* Capability stays implicit: invoke the
+  operation, handle the §15 condition. =host-capable-p= and its kin would be
+  extensions, and extensions are to be minimised. The 0.1.0 query design is
+  withdrawn; §13.6 item 4 adjusted to match.
+- *§15 — a superclass and four subclasses.* =host-error= (itself an
+  =autolisp-runtime-error=) over =operation-not-supported-by-this-host=,
+  =unavailable-in-headless-context=, =operation-not-yet-implemented= and
+  =backend-error=, so a handler catches all host failures or discriminates;
+  each keeps a =code= keyword so existing handlers are unaffected. The code
+  change is tracked in =cador-4-epic-remainder=.
+
+** Now built (was design-ahead in §18)
+
+- *§3 Group 1* — =host-open-document= / =-close-= / =-activate-= /
+  =-current-document= and =host-document-list=, implemented by =cador=
+  (slice 1a). §3 now states the built signatures and errors; opening from a
+  file, =&key save= and =host-document-of= remain design-ahead. Fidelity
+  matrix rows updated.
+- *§10 / §13.5 parking* — continuations are threads parked on a condition
+  variable (pjb, 2026-09-13), the condvar handoff being the single-runner
+  exclusion; no thread for batch or single-document runs (slices 3d–3f).
+- *§13.4 correlation forest* — one stack per document context (slice 3g);
+  wiring it into live host generics waits for the wire host (cador-4).
+
+** Acceptance-criteria status (cador-3, D1 half)
+
+- [X] D1 exists, backend-agnostic, with the fidelity matrix (§12), and the
+      capability question (§14) and condition taxonomy (§15) *decided*.
+- [X] The formal AutoLISP↔host protocol (§13) is defined, and its park/resume
+      half is proven implementable — it is implemented (cador-2).
+- [ ] Sign-off of the §12 fidelity-matrix rows and of the section structure —
+      pjb's review.
+- [ ] D2 Part II and the §5/§9 items — pjb's review (see D2).

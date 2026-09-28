@@ -1,9 +1,9 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cador-2-multidocument-runtime — N documents, isolated engines, shared blackboard, cooperative coroutine scheduler
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: feature
-#+DEPENDS: cador-1-split-nihil-cador
+#+DEPENDS: cador-1-split-nihil-cador (closed)
 #+BRANCH: cador-multidocument
 
 * Context
@@ -509,3 +509,19 @@ interactive reads to the driver (3f), and keeps a per-document correlation fores
 (3g). Deferred to the wire host (pjb): serialisation/envelope (§13.6), a full
 driver/event loop, prompting =host-command=, and wiring correlation frames into
 live host generics. Next: cadtui.
+
+* Closed 2026-09-28 (pjb: "close cador-2")
+
+Everything in scope is built and tested: the host document registry and the
+Group-1 generics (slice 1a), the single-runner scheduler and its lock-step with
+the host (2a-2c), the E1/E2 conformance probes against cador (3a), blackboard
+function rejection (3b), per-document sysvars (3c), and real parking as threads
+parked on a condition variable -- pjb's model -- with the per-document
+correlation forest (3d-3g).
+
+The items pjb deferred to the wire host are not dropped: they move to
+=cador-4-epic-remainder= (section "From cador-2"), which is where the wire host
+lives -- envelope serialisation (D1 13.6), a full driver/event loop, a
+prompting =host-command=, and wiring correlation frames into live host
+generics. The specs D1/D2 were refreshed against this implementation in the
+same change (cador-3).
