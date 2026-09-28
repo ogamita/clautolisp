@@ -961,10 +961,10 @@ replaces the legacy =autolisp --epure=. (Before the plug-in system,
 alfe accepted =--epure= and did nothing with it.)
 
 It applies to =--bricscad= and =--autocad= and is *MS-Windows only*. On
-another OS, and under =--clautolisp=, =--epure= is silently ignored (a
-=--verbose= message says so, and under =--clautolisp= suggests =--epuree=,
-the EPUREE emulation, instead), so the option stays harmless in scripts
-shared between machines.
+another OS, =--epure= is silently ignored (a =--verbose= message says so),
+so the option stays harmless in scripts shared between machines. Under
+=--clautolisp= it is ignored too, but with a warning suggesting =--epuree=,
+the EPUREE emulation, which does run there.
 
 | Option / variable                                 | Meaning                                                   |
 |---------------------------------------------------+-----------------------------------------------------------|

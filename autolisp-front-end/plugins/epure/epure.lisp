@@ -19,7 +19,8 @@
                 #:cli-usage-error
                 #:backend-bootstrap-error)
   (:import-from #:alfe.logging
-                #:log-verbose)
+                #:log-verbose
+                #:log-warn)
   (:import-from #:alfe.backend.cad-common
                 #:windows-p
                 #:vbs-escape)
@@ -77,8 +78,10 @@ forward slashes."
   (let ((name (alfe.backend:backend-name backend)))
     (cond
       ((eq name :clautolisp)
-       ;; EPURE needs a real CAD; its emulation EPUREE runs here.
-       (log-verbose "epure: no effect under the clautolisp backend; ignored ~
+       ;; EPURE needs a real CAD; its emulation EPUREE runs here. A warning,
+       ;; not a verbose note: asking for EPURE on clautolisp is a mistake
+       ;; with a remedy, unlike --epure in a script shared across machines.
+       (log-warn "epure: no effect under the clautolisp backend; ignored ~
                      (use --epuree to load the EPUREE emulation of the EPURE API)")
        (deactivate-plugin ctx))
       ((not (member name '(:bricscad :autocad)))

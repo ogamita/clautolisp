@@ -114,17 +114,19 @@ nothing and leaves the active list, so that what is transmitted is true."
 
 (test epure-under-clautolisp-suggests-epuree
   "Under --clautolisp EPURE cannot run, but EPUREE -- its emulation, a
-plug-in of its own -- can: the message ignoring --epure says so."
+plug-in of its own -- can: the warning ignoring --epure says so, at the
+default log level (no --verbose needed)."
   (with-shipped-plugins
     (let* ((options (%epure-options "--epure" "--clautolisp"))
            (alfe.plugin:*context* (alfe.plugin:make-context :options options))
            (log (with-output-to-string (stream)
-                  (let ((alfe.logging:*current-level* :verbose)
+                  (let ((alfe.logging:*current-level* :info)
                         (alfe.logging:*log-stream* stream))
                     (alfe.plugin:run-hook :backend-selected
                                           (alfe.backend:find-backend :clautolisp)
                                           :options options :dry-run-p nil)))))
-      (is (search "--epuree" log) "no --epuree hint in ~S" log))))
+      (is (search "--epuree" log) "no --epuree hint in ~S" log)
+      (is (search "warn" log) "not a warning: ~S" log))))
 
 (defmacro with-epuree-installed-in ((directories) &body body)
   "BODY with EPUREE looked for in DIRECTORIES only. The plug-in's package
