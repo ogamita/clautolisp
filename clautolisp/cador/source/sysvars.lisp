@@ -219,6 +219,39 @@ or (values NIL NIL) when it is not an integer in the documented 1..30 range."
   (let ((name (and (symbolp dialect-name) (symbol-name dialect-name))))
     (and name (search "BRICSCAD" name) t)))
 
+;;; VENDOR FIRST, clautolisp as the fallback (pjb, 2026-09-28,
+;;; clal-drawing-sysvars-silent-out-of-dialect): under a vendor dialect the
+;;; vendor's own system variable decides when it has one -- BricsCAD's BASEFILE
+;;; for the template, SAVEFORMAT for the format -- and the clautolisp one is
+;;; used otherwise, WITH a `[clautolisp-sysvar]' notice, because a program
+;;; relying on it gets something else on the product. AutoCAD has no system
+;;; variable for either (both are Options settings; neither is in the 2026
+;;; reference), so under an AutoCAD dialect the clautolisp ones decide, with the
+;;; notice. --dialect clautolisp and --lax are silent (the emitter's rule).
+
+(defparameter +basefile-sysvar+ "BASEFILE"
+  "Name of BricsCAD's default-template-file system variable, which decides the
+template of a new document under a BricsCAD dialect.")
+
+(defun %current-dialect-name ()
+  (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-dialect-name)))
+
+(defun %clautolisp-sysvar-vendor-note (name dialect-name)
+  "What the vendor of DIALECT-NAME uses instead of the clautolisp system
+variable NAME, as a phrase for the notice, or NIL."
+  (cond
+    ((%bricscad-dialect-p dialect-name)
+     (cond ((string= name +new-drawing-template-sysvar+) "BricsCAD's own is BASEFILE")
+           ((string= name +default-drawing-format-sysvar+) "BricsCAD's own is SAVEFORMAT")))
+    ((and (symbolp dialect-name) (search "AUTOCAD" (symbol-name dialect-name)))
+     "AutoCAD has no system variable for it")))
+
+(defun warn-clautolisp-sysvar-use (name)
+  "Emit the `[clautolisp-sysvar]' notice for the clautolisp system variable
+NAME under the current dialect (silent under clautolisp / lax, once per run)."
+  (clautolisp.autolisp-runtime:emit-clautolisp-sysvar-warning
+   name (%clautolisp-sysvar-vendor-note name (%current-dialect-name))))
+
 (defun %default-drawing-format-initial-value ()
   "The initial CLAUTOLISPDEFAULTDRAWINGFORMAT value: the environment variable
 of the same name when it names a known container, otherwise \"DXF\"."
@@ -267,14 +300,21 @@ CLAUTOLISPDEFAULTDRAWINGFORMAT and CLAUTOLISPNEWDRAWINGTEMPLATE. Returns MOCK."
   "The template a NEW document is created from, as a pathname, or NIL for an
 empty document (the default).
 
-CLAUTOLISPNEWDRAWINGTEMPLATE names the drawing; a RELATIVE name is resolved
-against BricsCAD's TEMPLATEPATH (the Templates folder) when that is set, then
-against the current directory. Returns NIL when the sysvar is empty, and also
+Under a BricsCAD dialect BricsCAD's own BASEFILE names the drawing when it is
+set; otherwise -- and under every other dialect -- CLAUTOLISPNEWDRAWINGTEMPLATE
+does, with a `[clautolisp-sysvar]' notice outside --dialect clautolisp / --lax.
+A RELATIVE name is resolved against BricsCAD's TEMPLATEPATH (the Templates
+folder) when that is set, then against the current directory. Returns NIL when the sysvar is empty, and also
 when it names something unreadable -- with a warning on *error-output* rather
 than an error, following the project's out-of-reach-resource style: a new
 document is still created, empty, and the session says why it is not what was
 asked for. A silent empty document would be the worst of the three."
-  (let ((name (%sysvar-string mock +new-drawing-template-sysvar+)))
+  (let* ((basefile (and (%bricscad-dialect-p (%current-dialect-name))
+                        (%sysvar-string mock +basefile-sysvar+)))
+         (name (or basefile (%sysvar-string mock +new-drawing-template-sysvar+))))
+    ;; The clautolisp variable decided: say so, unless the dialect is ours.
+    (when (and name (not basefile))
+      (warn-clautolisp-sysvar-use +new-drawing-template-sysvar+))
     (when name
       (let* ((folder (%sysvar-string mock +templatepath-sysvar+))
              (candidates
@@ -293,7 +333,8 @@ asked for. A silent empty document would be the worst of the three."
               (format *error-output*
                       "~&clautolisp: ~A names ~S, which cannot be read~@[ ~
 (also tried it under TEMPLATEPATH ~S)~]; the new document is empty.~%"
-                      +new-drawing-template-sysvar+ name folder)
+                      (if basefile +basefile-sysvar+ +new-drawing-template-sysvar+)
+                      name folder)
               nil))))))
 
 (defun cador-make-new-drawing (mock &key (name "Drawing.dwg"))
@@ -326,6 +367,9 @@ dialect-dependent: under a BricsCAD dialect the vendor SAVEFORMAT integer
             (%parse-drawing-format-spec
              (let ((cell (cador-sysvar mock +default-drawing-format-sysvar+)))
                (and cell (sysvar-cell-value cell))))
+          ;; No vendor variable outside BricsCAD: the clautolisp one decides,
+          ;; with the notice (silent under clautolisp / lax).
+          (warn-clautolisp-sysvar-use +default-drawing-format-sysvar+)
           (values (or container :dxf-ascii) version)))))
 
 (defun populate-default-sysvars (mock &key (catalogue :full))

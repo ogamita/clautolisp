@@ -929,6 +929,106 @@ merely because an ATTDEF came back."
       (clautolisp.autolisp-runtime:set-runtime-session-dialect
        session (clautolisp.autolisp-reader:autolisp-dialect-strict)))))
 
+;;; --- vendor sysvar first, clautolisp as the fallback ---------------------
+;;; pjb, 2026-09-28 (clal-drawing-sysvars-silent-out-of-dialect): under a vendor
+;;; dialect the vendor's own system variable decides when it has one; the
+;;; clautolisp one is the fallback, with a `[clautolisp-sysvar]' notice.
+
+(defmacro %with-dialect ((dialect) &body body)
+  "Run BODY with DIALECT (a registry keyword) as the session dialect, restoring
+strict afterwards, and with the notice's once-per-run memory cleared so each
+test sees its own first use."
+  `(let ((session (clautolisp.autolisp-runtime:evaluation-context-session
+                   (clautolisp.autolisp-runtime:current-evaluation-context))))
+     (clrhash clautolisp.autolisp-runtime:*clautolisp-sysvar-warnings-seen*)
+     (unwind-protect
+          (progn
+            (clautolisp.autolisp-runtime:set-runtime-session-dialect
+             session (clautolisp.autolisp-reader:find-autolisp-dialect ,dialect))
+            ,@body)
+       (clrhash clautolisp.autolisp-runtime:*clautolisp-sysvar-warnings-seen*)
+       (clautolisp.autolisp-runtime:set-runtime-session-dialect
+        session (clautolisp.autolisp-reader:autolisp-dialect-strict)))))
+
+(defmacro %stderr-of (&body body)
+  `(let ((*error-output* (make-string-output-stream)))
+     ,@body
+     (get-output-stream-string *error-output*)))
+
+(defun %temp-template ()
+  "A readable drawing file to name as a template."
+  (let ((path (format nil "/tmp/cador-template-~D.dxf" (random 1000000))))
+    (with-open-file (out path :direction :output :if-exists :supersede)
+      (write-string "0
+EOF
+" out))
+    path))
+
+(test bricscad-dialect-takes-the-template-from-basefile
+  "Under a BricsCAD dialect BASEFILE -- BricsCAD's own variable -- names the
+template, silently; CLAUTOLISPNEWDRAWINGTEMPLATE is ignored when BASEFILE is set."
+  (let ((host (make-cador))
+        (basefile (%temp-template))
+        (ours (%temp-template)))
+    (unwind-protect
+         (%with-dialect (:bricscad-v26)
+           (cador-set-sysvar host "BASEFILE" basefile)
+           (cador-set-sysvar host "CLAUTOLISPNEWDRAWINGTEMPLATE" ours)
+           (let (template)
+             (is (equal "" (%stderr-of
+                             (setf template (clautolisp.cador:cador-new-drawing-template host)))))
+             (is (equal (namestring (truename basefile)) (namestring (truename template))))))
+      (ignore-errors (delete-file basefile))
+      (ignore-errors (delete-file ours)))))
+
+(test bricscad-dialect-falls-back-to-the-clautolisp-template-with-a-notice
+  "BASEFILE empty: the clautolisp variable decides, and the notice names BASEFILE
+as BricsCAD's own."
+  (let ((host (make-cador))
+        (ours (%temp-template)))
+    (unwind-protect
+         (%with-dialect (:bricscad-v26)
+           (cador-set-sysvar host "BASEFILE" "")
+           (cador-set-sysvar host "CLAUTOLISPNEWDRAWINGTEMPLATE" ours)
+           (let* (template
+                  (err (%stderr-of
+                         (setf template (clautolisp.cador:cador-new-drawing-template host)))))
+             (is (equal (namestring (truename ours)) (namestring (truename template))))
+             (is (search "[clautolisp-sysvar]" err) "no notice: ~S" err)
+             (is (search "CLAUTOLISPNEWDRAWINGTEMPLATE" err))
+             (is (search "BASEFILE" err))))
+      (ignore-errors (delete-file ours)))))
+
+(test autocad-dialect-uses-the-clautolisp-sysvars-with-a-notice-once
+  "AutoCAD has no system variable for either: the clautolisp ones decide, with
+the notice -- once per variable per run, not on every use."
+  (let ((host (make-cador)))
+    (%with-dialect (:autocad-2026)
+      (let ((first (%stderr-of (clautolisp.cador:cador-default-drawing-format host)))
+            (second (%stderr-of (clautolisp.cador:cador-default-drawing-format host))))
+        (is (search "[clautolisp-sysvar]" first) "no notice: ~S" first)
+        (is (search "CLAUTOLISPDEFAULTDRAWINGFORMAT" first))
+        (is (search "AutoCAD has no system variable" first))
+        (is (equal "" second) "the notice repeated: ~S" second)))))
+
+(test clautolisp-dialect-is-silent-about-its-own-sysvars
+  (let ((host (make-cador)))
+    (%with-dialect (:clautolisp)
+      (is (equal "" (%stderr-of
+                      (clautolisp.cador:cador-default-drawing-format host)
+                      (host-getvar host "CLAUTOLISPNEWDRAWINGTEMPLATE")))))))
+
+(test getvar-of-a-clautolisp-sysvar-out-of-dialect-gets-the-notice
+  "What the ticket measured: (getvar \"CLAUTOLISPNEWDRAWINGTEMPLATE\") was
+entirely silent under --dialect autocad."
+  (let ((host (make-cador)))
+    (%with-dialect (:autocad-2026)
+      (let ((err (%stderr-of (host-getvar host "CLAUTOLISPNEWDRAWINGTEMPLATE"))))
+        (is (search "[clautolisp-sysvar]" err) "no notice: ~S" err))
+      ;; a vendor sysvar never does
+      (clrhash clautolisp.autolisp-runtime:*clautolisp-sysvar-warnings-seen*)
+      (is (equal "" (%stderr-of (host-getvar host "FILEDIA")))))))
+
 (test vlax-saveas-records-version-from-default
   ;; A DXF-2013 default records both format and version on the drawing even
   ;; when the path extension is unknown (container DXF is a real codec).

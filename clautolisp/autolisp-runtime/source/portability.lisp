@@ -352,6 +352,45 @@ arguments error on the vendor engines."
  :references
  '(("clautolisp: emitted by" . "clautolisp/autolisp-builtins-core/source/api.lisp, the TERPRI builtin")))
 
+(register-dialect-warning
+ :tag "clautolisp-sysvar"
+ :title "clautolisp-only system variable"
+ :kind :extension-notice
+ :message "~A is a clautolisp system variable, not portable to ~(~A~)~@[; ~A~]"
+ :arguments "the system variable's name, the dialect name, what the vendor uses instead (or NIL)"
+ :example ": [clautolisp-sysvar] in MAKE-REPORT: CLAUTOLISPNEWDRAWINGTEMPLATE is a clautolisp system variable, not portable to bricscad-v26; BricsCAD's own is BASEFILE"
+ :dialects
+ "clautolisp has a few system variables of its own, with no vendor
+counterpart of the same name -- CLAUTOLISPNEWDRAWINGTEMPLATE (the drawing
+a new document starts from) and CLAUTOLISPDEFAULTDRAWINGFORMAT (the format
+a drawing is saved in when nothing else decides). The rule (pjb,
+2026-09-28): under a vendor dialect, the VENDOR's own system variable is
+used when it has one, and the clautolisp one is the fallback, with this
+notice.
+
+- BricsCAD has both: BASEFILE (the default template file for new
+  drawings) and SAVEFORMAT (the default save format), documented by
+  Bricsys. Under --dialect bricscad-* they decide; the clautolisp
+  template is consulted only when BASEFILE is empty, with the notice.
+- AutoCAD has neither as a system variable (both are Options /
+  profile settings, and neither is in the 2026 system-variable
+  reference), so under --dialect autocad-* and --strict the clautolisp
+  ones are used, with the notice.
+
+Also emitted when a program reads or sets one of them with
+GETVAR / SETVAR out of dialect. Once per variable per run. Silent under
+--dialect clautolisp and --lax."
+ :rationale
+ "A program that relies on a clautolisp system variable gets a different
+drawing, or a different file format, on the vendor's product -- where
+the variable does not exist and GETVAR returns nil. The notice says so,
+and names the vendor's own variable where there is one."
+ :references
+ '(("Bricsys: BASEFILE" . "https://help.bricsys.com/en-us/document/system-variable-reference/b/basefile-system-variable")
+   ("Bricsys: SAVEFORMAT" . "https://help.bricsys.com/en-us/document/system-variable-reference/s/saveformat-system-variable")
+   ("clautolisp: the decision" . "issues/closed/clal-drawing-sysvars-silent-out-of-dialect.issue")
+   ("clautolisp: emitted by" . "clautolisp/cador/source/sysvars.lisp, sysvar-api.lisp")))
+
 ;;; ------------------------------------------------------------------
 ;;; :vendor-divergence — clautolisp follows the spec, a vendor does not
 ;;; ------------------------------------------------------------------
