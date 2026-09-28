@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-autocad-error-primitive-masks-load-failure — deported LOAD calls undefined ERROR and hides the original failure
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: cad-runtime
 #+DEPENDS: alfe-autocad-hung-instance-blocks-com-bootstrap
@@ -224,3 +224,43 @@ Suites: alfe 1171 checks 0 failures.
   OPEN. Next AutoCAD-runner-available pipeline exercises the probe automatically;
   close this issue only when that artifact shows the inner =rtos= error, not the
   undefined-=ERROR= symptom.
+
+* Resolution — 2026-09-28: criterion 4 VERIFIED on real AutoCAD, issue CLOSED
+
+The =loader.nested-fail= probe ran on a genuine AutoCAD host and passed, so
+the last open criterion is met and every criterion now holds:
+
+- =encoding:experiment:autocad:windows= (job 16776117747, runner PF5S26B,
+  status =success=) ran the probe under all three Windows codepages
+  (default, chcp 65001 UTF-8, chcp 1252 ANSI) with the SAME result.
+- =loader.nested-fail= reports:
+
+  #+begin_example
+  while loading encp-outer.lsp (form starting at line 1) at line 1, column 1:
+  while loading encp-inner.lsp (form starting at line 1) at line 1, column 1:
+  type d'argument incorrect: numberp: "nan"
+  [load stack: ...encoding-probe.lsp -> encp-outer.lsp -> encp-inner.lsp]
+  [load stack: ...encoding-probe.lsp -> encp-outer.lsp]
+  #+end_example
+
+  That is the ORIGINAL inner error — =(rtos "nan")= raising "argument type
+  incorrect: numberp" — carried up with the correct two-level nested load
+  stack and inner source location (line 1, column 1). It is NOT replaced by
+  =no function definition: ERROR=. This is exactly acceptance criterion 4.
+- =error-primitive.bound = no= confirms =ERROR= is genuinely ABSENT on this
+  AutoCAD host, so the property criterion 1 asserts (no reachable =ERROR=
+  dependency) is being exercised for real, not merely by a shadow.
+- =alfe-load.ascii = OK= and =source.*.cp = 65 233 90= (A é Z) confirm the
+  deported loader is otherwise healthy across codepages.
+
+The =autolisp-raise= arithmetic-based rethrow (2.2.98) therefore behaves on
+real AutoCAD exactly as designed: it fails where =ERROR= would have, is
+trapped by =vl-catch-all-apply=, and preserves the diagnostic. BricsCAD and
+clautolisp source-load behaviour is unchanged (criterion 5): the same probe
+family is green on BricsCAD and the hosted clautolisp tests pass.
+
+Because the driving run needed a pipeline that master churn could not
+auto-cancel, the probe was exercised from a throwaway draft MR (!340,
+branch =probe-autocad-crit4=) whose native child persisted; that MR and
+branch are discarded — nothing from them lands on master. The probe itself
+is already on master (MR !331).
