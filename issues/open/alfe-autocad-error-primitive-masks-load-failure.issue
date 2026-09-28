@@ -209,3 +209,18 @@ Suites: alfe 1171 checks 0 failures.
   points =test-cad:autocad:windows= and =test-unitaire:autocad:windows= have to
   be re-run there against an alfe carrying the =autolisp-raise= fix. Nothing in
   THIS repository blocks it any more, which is the state to leave it in.
+
+  *UPDATE 2026-09-28: an in-repo criterion-4 probe is now staged but still
+  UNVERIFIED.* Per the Reproduction note that "a minimal regression scenario
+  should not depend on SCHME+", a =loader.nested-fail= smoke was added to
+  =autolisp-front-end/tests/scenarios/entities/encoding-probe.lsp= (merged to
+  master in MR !331 / =2279e786=): an outer file =alfe-load=s an inner file
+  whose evaluated form errors (=(setq LOADFAILMARK (rtos "nan"))=), and the
+  probe asserts the inner error text surfaces rather than
+  =no function definition: ERROR=. It rides =encoding:experiment:autocad:windows=.
+  That job could not run: in pipeline 2888597149 it sat =pending= ~73 min with
+  no runner assigned (the intermittent Windows AutoCAD runner was offline) and
+  was canceled (job 16772780954, no artifact). Criterion 4 therefore stays
+  OPEN. Next AutoCAD-runner-available pipeline exercises the probe automatically;
+  close this issue only when that artifact shows the inner =rtos= error, not the
+  undefined-=ERROR= symptom.
