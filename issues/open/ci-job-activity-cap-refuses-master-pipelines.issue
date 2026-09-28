@@ -290,10 +290,27 @@ Two method notes from the same hour, both of which cost time:
 
 ** What remains
 
-- [ ] *Establish how =changes:= actually matches here*, by experiment on a
-      throwaway branch: one merge request touching a single =.lisp= file, using
-      the SHORT list form, and observe whether the bridge appears. Only then
-      re-land the gate. The classification list is ready for it.
+- [X] *Establish how =changes:= actually matches here*, by experiment on a
+      throwaway branch, DONE 2026-09-28 (clautolisp 2.2.142). The hypothesis
+      held: the SHORT list form matches; the =paths:= sub-key was the cause.
+      Two isolated merge requests targeted a base branch that already carried
+      the short-form gate, so =changes:= compared a single-file diff:
+
+      #+begin_example
+      MR !350  ci-gate-experiment-probe.py  (.py only, pipeline 2889668504)
+               -> native:pipeline bridge CREATED   <- the case that silently
+                  skipped under `changes: paths:' (MR !321)
+      MR !351  ci-gate-experiment-note.org  (.org only, pipeline 2889673744)
+               -> NO native:pipeline bridge        <- docs-only correctly skips
+      #+end_example
+
+      Re-landed in the short-list form (=- if: merge_request_event= then
+      =changes:= directly, no =paths:=), identical generous path list and
+      =scripts/check-native-pipeline-changes.py= (1496 paths classified, 12
+      tests, =glab ci lint= valid). The throwaway branches/MRs are discarded.
+      The landing MR's own pipeline, changing =.gitlab-ci.yml= (=**/*.yml=),
+      spawns the child as it should -- a third confirmation of the positive
+      case.
 
 *Deliberately still open.* I closed this ticket once on a single good
 measurement and the symptom returned within three hours; the lesson was that one

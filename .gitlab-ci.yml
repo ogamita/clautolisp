@@ -1226,7 +1226,12 @@ native:pipeline:
     # this file (build:clautolisp-ci-image, which uses the short list) was the
     # `paths:' sub-key. That was a hypothesis, not a finding, and this rule
     # decides whether Windows and macOS get tested at all, so it was proven by
-    # experiment before re-landing: EXPERIMENT_RESULT_PLACEHOLDER
+    # experiment before re-landing. Two isolated MRs targeting a base branch
+    # that already carried THIS short-form gate, so `changes:' saw only the
+    # one-file diff: a .py-only MR (!350, pipeline 2889668504) CREATED the
+    # native:pipeline bridge -- the exact case that silently skipped under
+    # `paths:' -- and a .org-only MR (!351, pipeline 2889673744) created NO
+    # bridge. Positive and negative both correct; the `paths:' sub-key was it.
     #
     # THE RISK this guards. GitLab has no "only these paths changed" primitive,
     # so the gate must be written as "run when these changed", and a pattern
