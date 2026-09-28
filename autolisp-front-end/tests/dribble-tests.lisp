@@ -200,6 +200,7 @@ send-action and drain-live, not from the test."
     (unwind-protect
         (progn
           (ensure-directories-exist workdir)
+          (setf *mock-cad-condition* nil)
           (let* ((protocol (alfe.protocol.file:init-session workdir))
                  (cad (spawn-mock-cad-runtime protocol :cycles 1))
                  (plan (list (alfe.backend:action-eval "(princ 42)")
@@ -211,9 +212,13 @@ send-action and drain-live, not from the test."
             (unwind-protect
                  (let ((*standard-output* (make-string-output-stream))
                        (*error-output*    (make-string-output-stream)))
-                   (alfe.backend.cad-common:drive-protocol-actions protocol plan))
+                   (let ((result (alfe.backend.cad-common:drive-protocol-actions
+                                  protocol plan)))
+                     (is (eq :success (alfe.backend:eval-result-status result))
+                         "got ~S~A" (alfe.backend:eval-result-status result)
+                         (%mock-cad-failure-note))))
               (alfe.dribble:stop-dribble))
-            (bordeaux-threads:join-thread cad)
+            (%finish-mock-cad cad protocol)
             (let ((lines (%dribble-lines log)))
               (is (equal ";; H: alfe 9.9.9 bricscad bricscad-v25" (first lines)))
               ;; the form alfe sent, raw and unprefixed

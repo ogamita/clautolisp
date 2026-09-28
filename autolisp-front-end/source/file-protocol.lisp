@@ -325,6 +325,11 @@ of how many threads are racing. The legacy bash wrapper used
          (base    (namestring target)))
     (pathname (concatenate 'string base suffix))))
 
+(defparameter +write-atomic-file-rename-attempts+ 100
+  "How many times WRITE-ATOMIC-FILE tries its overwriting rename, 20 ms apart,
+before re-signalling. Only a transient Windows sharing violation ever uses more
+than one; see WRITE-ATOMIC-FILE.")
+
 (defun write-atomic-file (target content &key (external-format :utf-8)
                                               (newline-p t))
   "Atomically publish CONTENT (a string) at TARGET. The implementation
@@ -359,7 +364,36 @@ inputs. Pass :newline-p nil for binary-ish writes (rare)."
     ;; (POSIX rename on Unix, MoveFileEx with
     ;; MOVEFILE_REPLACE_EXISTING on Windows) so the contract holds
     ;; cross-Lisp + cross-OS without us probing *features*.
-    (uiop:rename-file-overwriting-target temp target)
+    ;;
+    ;; ON WINDOWS THAT OVERWRITE CAN FAIL TRANSIENTLY, and is retried.
+    ;; UIOP's Windows path is delete-target then rename -- two calls -- and
+    ;; either one fails with a sharing violation while the OTHER party still
+    ;; has TARGET open: the CAD reading stdin.txt or control.txt, alfe's
+    ;; poller reading status.txt character by character. READ-FILE-AS-STRING
+    ;; already retries that window from the reading side; this is the
+    ;; writing side, which had nothing, so one unlucky tick signalled a
+    ;; FILE-ERROR out of a protocol write. In the test suite's mock CAD that
+    ;; killed the mock thread and the driver reported a bare :ABORTED on a
+    ;; loaded runner (mock-cad-protocol-tests-flake-on-native-windows). Bounded
+    ;; (about 2 s), then the error is re-signalled and the temp file removed,
+    ;; so a genuinely unwritable target still fails loudly. Dormant on POSIX,
+    ;; where rename(2) replaces atomically and does not signal.
+    ;;
+    ;; ERROR, not FILE-ERROR: SBCL signals a FILE-ERROR here, but CCL a bare
+    ;; SIMPLE-ERROR ("Failed to rename ... : -21"), which a FILE-ERROR clause
+    ;; lets straight through -- no retry, and the temp file left behind
+    ;; (measured: protocol-write-atomic-file-gives-up-loudly-and-cleans-its-temp
+    ;; failed under CCL only). The call does nothing but the rename, so any
+    ;; error it signals is the rename failing.
+    (loop for attempt from 1
+          do (handler-case
+                 (progn (uiop:rename-file-overwriting-target temp target)
+                        (return))
+               (error (condition)
+                 (when (>= attempt +write-atomic-file-rename-attempts+)
+                   (ignore-errors (delete-file temp))
+                   (error condition))
+                 (sleep 0.02))))
     target))
 
 ;;; --- reads ---------------------------------------------------------

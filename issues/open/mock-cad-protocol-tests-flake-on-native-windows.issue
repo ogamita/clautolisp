@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: mock-CAD DRIVE-PROTOCOL-ACTIONS test family flakes on the native Windows lane
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P2
 #+TYPE: test-determinism
 #+DATE: 2026-09-28
@@ -65,3 +65,51 @@ Filed per AGENTS.md while advancing the two NEXT AutoCAD triage items: the
 native Windows lane flagged this on an unrelated MR (!331, probe + triage only).
 Not caused by that MR nor by the accoreconsole-deported-load-highbyte fixes;
 those change no mock-CAD test path.
+
+* Implemented, alfe 2.2.145 (2026-09-28) — awaiting Windows runs
+
+The cause was not only a budget. Reading the family end to end found a WRITE
+that nothing retried, and two deadlines on the success path.
+
+1. *The writing side of the Windows replace window had no retry.*
+   WRITE-ATOMIC-FILE's overwrite is, on Windows, UIOP's delete-target then
+   rename; either call fails with a sharing violation while the other party
+   still holds the target open. READ-FILE-AS-STRING already retried that
+   window from the reading side (its docstring even pointed at a "Windows
+   note" in WRITE-ATOMIC-FILE that did not exist). The mock publishes
+   RUNNING / DONE / STOPPING / STOPPED on status.txt, which the driver polls
+   character by character -- so one unlucky tick signalled out of the mock's
+   write, the thread died inside its guard (recorded, but no assertion in the
+   family quoted it), and the driver waited out its 30 s and said :ABORTED.
+   Which test lost varied with the load: the shifting subset. FIX, in
+   PRODUCTION (file-protocol.lisp), since alfe's own writes of stdin.txt and
+   control.txt face the same window against a real CAD: retry the rename,
+   bounded (100 x 20 ms), then re-signal and delete the temp file. It catches
+   ERROR, not FILE-ERROR -- CCL signals a bare SIMPLE-ERROR for a failed
+   rename, measured, and the new test failed under CCL until it did.
+2. *The mock's 20 s budget covered the WHOLE session* and was on the success
+   path; a loaded runner could spend it before the last request. The mock is
+   now STEP-LOCKED: it waits for the next request or for SHUTDOWN, with no
+   budget, and +MOCK-CAD-SAFETY-NET-SECONDS+ (300) is reached only when a
+   test is already broken. Its 2 s SHUTDOWN wait -- which published STOPPED
+   whether or not SHUTDOWN had come -- is step-locked the same way, and the
+   control.txt delete, the last bare file op in the cycle, is retried.
+3. *A failing test stays fast.* %FINISH-MOCK-CAD replaces the bare
+   JOIN-THREAD: when the driver stopped early it sends SHUTDOWN itself, so a
+   failure no longer costs the safety net.
+4. *A dead mock now says so.* Every test of the family resets
+   *MOCK-CAD-CONDITION* and quotes %MOCK-CAD-FAILURE-NOTE in its :SUCCESS
+   assertion, the dribble test included (it asserted nothing about the
+   status before). The subprocess-parity test -- a different class: it runs
+   clautolisp-sbcl synchronously and fails only on a non-zero exit -- now
+   quotes the child's stdout and stderr instead of only "not :SUCCESS".
+
+New tests: protocol-write-atomic-file-gives-up-loudly-and-cleans-its-temp (the
+retry is bounded and leaves no temp; a directory stands in for an
+unreplaceable target, since the transient itself cannot be arranged off
+Windows) and cad-mock-stops-on-shutdown-without-its-requests (an unfed mock
+stops within 10 s of SHUTDOWN -- the old 20 s budget would fail it). alfe suite
+1352/1352 on SBCL and on CCL (Linux).
+
+*Still to do before closing*: the acceptance above -- several consecutive
+green test:alfe:windows runs on the loaded runner. Not claimed from Linux.
