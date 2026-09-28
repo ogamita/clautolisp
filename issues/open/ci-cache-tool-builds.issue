@@ -95,3 +95,26 @@ checks would not catch a stale image; nothing would.
    reader meets it.
 4. Measured before/after on at least the Windows lane, since that is the
    machine the cost falls on.
+
+* Notes from a re-read, 2026-09-28 (nothing implemented)
+
+- *A premise has moved.* "Uploading 13 MB from the Windows box fails
+  reproducibly" is no longer true: =release:windows:x86-64= uploaded two zips,
+  54 MB together, first time on 2026-09-28 (job 16774988540,
+  windows-artifact-upload-fails-on-release). That failure was the 362-entry
+  tree, not the size. So on Windows an artefact is an option again, and the
+  cache-versus-artefact argument above should be re-weighed.
+- *Piece 1 exists, on two lanes only, and may not be doing anything.*
+  =release:linux:arm64= and =release:linux:arm32= cache
+  =clautolisp/third-party/libredwg/build/= (keys =libredwg-arm64-v1= /
+  =-arm32-v1=). Two things to check before building on it:
+  1. The key hashes =.gitmodules=, which does NOT change when the libredwg
+     submodule moves to another commit (that pointer is in the tree). Not
+     dangerous -- the cache is a CMake build directory, so changed sources
+     are recompiled -- but it means the key does not express what it looks
+     like it expresses (criterion 2).
+  2. Those lanes run in a fresh Docker container from a fresh clone, so
+     every source file's mtime is the checkout time, NEWER than every cached
+     object: make may rebuild everything and the cache save nothing.
+     Measure (a warm run's LibreDWG step against a cold one) before
+     extending the pattern to other lanes.
