@@ -270,10 +270,61 @@ really is the implementation this file names for it. NIL otherwise."
          (eq function (fdefinition (third entry)))
          (second entry))))
 
+;;; --- lexically safe builtins (lexical-locals-escape-analysis) ------------
+;;;
+;;; A LEXICAL FORK keeps a function's locals in Common Lisp variables, and
+;;; calls these builtins without first pushing the locals into a frame -- so
+;;; each one here must be unable to see a local: it never calls back into
+;;; AutoLISP (no EVAL, no function argument, no *error*, no hook that could
+;;; run user code) and never reads or writes a variable BY NAME (no SET,
+;;; BOUNDP, VL-SYMBOL-VALUE). Anything not listed is still callable from a
+;;; lexical fork; it is called with the locals materialised.
+;;;
+;;; AUDITED 2026-09-28 by the transitive call closure of each implementation
+;;; through builtins-core and the runtime: nothing reaches AUTOLISP-EVAL,
+;;; CALL-AUTOLISP-FUNCTION*, LOOKUP-/SET-VARIABLE, LOOKUP-FUNCTION,
+;;; AUTOLISP-BOUNDP or LOAD. The only FUNCALL/APPLY met are host arithmetic,
+;;; CONCATENATE, FORMAT for error messages, and AUTOLISP-RUNTIME-ERROR's
+;;; *DEBUG-ERROR-SNAPSHOT-HOOK*, which copies the debugger's shadow stack and
+;;; is NIL outside a debug session (where no lexical fork runs anyway).
+;;;
+;;; Like *OPEN-CODED-CORE-BUILTINS*, keyed by IMPLEMENTATION: a build that puts
+;;; another function behind a name gets no flag. A missing flag costs a
+;;; materialisation; a wrong one would cost correctness. Adding a name means
+;;; auditing its implementation the same way, not trusting its name.
+
+(defparameter *lexically-safe-core-builtins*
+  '(("+" builtin-+) ("-" builtin--) ("*" builtin-*) ("/" builtin-/)
+    ("1+" builtin-1+) ("1-" builtin-1-)
+    ("<" builtin-<) (">" builtin->) ("<=" builtin-<=) (">=" builtin->=)
+    ("=" builtin-=) ("/=" builtin-/=)
+    ("CAR" builtin-car) ("CDR" builtin-cdr)
+    ("CADR" builtin-cadr) ("CDDR" builtin-cddr) ("CAAR" builtin-caar) ("CDAR" builtin-cdar)
+    ("NULL" autolisp-null) ("NOT" autolisp-not) ("ATOM" autolisp-atom)
+    ("LISTP" autolisp-listp) ("ZEROP" builtin-zerop) ("MINUSP" builtin-minusp)
+    ("NUMBERP" builtin-numberp) ("EQ" builtin-eq) ("EQUAL" builtin-equal)
+    ("CONS" builtin-cons) ("LIST" builtin-list) ("APPEND" builtin-append)
+    ("LENGTH" builtin-length) ("REVERSE" builtin-reverse) ("NTH" builtin-nth)
+    ("LAST" builtin-last) ("ASSOC" builtin-assoc) ("MEMBER" builtin-member)
+    ("ABS" builtin-abs) ("MIN" builtin-min) ("MAX" builtin-max) ("REM" builtin-rem)
+    ("FIX" builtin-fix) ("FLOAT" builtin-float) ("SQRT" builtin-sqrt) ("EXPT" builtin-expt)
+    ("STRCAT" builtin-strcat) ("STRLEN" builtin-strlen) ("SUBSTR" builtin-substr)
+    ("ASCII" builtin-ascii) ("CHR" builtin-chr) ("ATOI" builtin-atoi) ("ITOA" builtin-itoa))
+  "(NAME IMPLEMENTATION) for the builtins audited lexically safe; see above.")
+
+(defun %lexically-safe-builtin-p (name function)
+  "True when FUNCTION really is the audited implementation of NAME."
+  (let ((entry (assoc name *lexically-safe-core-builtins* :test #'string=)))
+    (and entry
+         (fboundp (second entry))
+         (eq function (fdefinition (second entry))))))
+
 (defun make-core-builtin-subr (name function)
   (let ((subr (make-autolisp-subr name (wrap-builtin-function name function))))
     (setf (clautolisp.autolisp-runtime:autolisp-open-code-tag subr)
           (%open-code-tag-for name function))
+    (when (%lexically-safe-builtin-p name function)
+      (setf (clautolisp.autolisp-runtime:autolisp-subr-lexically-safe subr) t))
     subr))
 
 (defun builtin-boundp (object)
@@ -6223,6 +6274,13 @@ engine was not actually in."
             (clal-optimization-level :space)))
   (setf clautolisp.autolisp-runtime:*autolisp-speed-level*
         (clal-optimization-level :speed))
+  ;; (SPEED 3) (DEBUG 0): as fast as possible, and I will not debug it -- the
+  ;; one setting that builds LEXICAL forks (lexical-locals-escape-analysis).
+  ;; They cannot change what a program computes, and they never run under a
+  ;; debug session, so no semantic quality of its own is needed.
+  (setf clautolisp.autolisp-runtime:*autolisp-lexical-locals-enabled*
+        (and (>= (clal-optimization-level :speed) 3)
+             (zerop (clal-optimization-level :debug))))
   (%clal-optimization->autolisp))
 
 (defun set-clal-optimization-levels (pairs)

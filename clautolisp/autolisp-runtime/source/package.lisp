@@ -139,6 +139,11 @@
    #:autolisp-subr-name
    #:autolisp-subr-function
    #:autolisp-open-code-tag
+   #:lexically-safe-callee-p
+   #:autolisp-subr-lexically-safe
+   #:autolisp-usubr-lexical-body
+   #:*autolisp-lexical-locals-enabled*
+   #:check-usubr-arity
    #:autolisp-true-symbol
    #:check-repeat-count
    #:check-foreach-sequence

@@ -79,10 +79,104 @@ calls compile."
   (push (or name "<not-a-symbol-call>") *transpiler-fallbacks*)
   nil)
 
+;;; --- the LEXICAL fork (lexical-locals-escape-analysis) -------------------
+;;;
+;;; When *LEXICAL-LOCALS* is non-NIL the transpiler is building a function's
+;;; lexical fork: its formals and /-locals live in Common Lisp variables, and
+;;; no dynamic frame holds them. That is only sound if nothing can SEE them,
+;;; and in AutoLISP everything a function calls can: dynamic scope lets any
+;;; callee read or write a caller's local by name, and so do SET, BOUNDP,
+;;; VL-SYMBOL-VALUE, EVAL and the interpreter itself -- without re-entering
+;;; AutoLISP at all.
+;;;
+;;; So the rule is not `prove nothing escapes' but `never let anything look
+;;; without a frame to look at'. Every place where code outside this body
+;;; could run -- a call, SET, an interpreter fallback -- either calls a
+;;; builtin AUDITED as unable to look (LEXICALLY-SAFE-CALLEE-P, asked of the
+;;; function the name resolves to AT RUN TIME, so a redefinition is caught),
+;;; or runs with the locals MATERIALISED: pushed into a real frame with
+;;; their current values, and copied back afterwards. Either way the callee
+;;; sees exactly what the dynamic fork would have shown it. Correctness does
+;;; not depend on the eligibility analysis; the analysis only decides whether
+;;; the fork is worth having (*LEXICAL-UNSAFE-SITES*).
+;;;
+;;; What cannot be materialised is REFUSED (*LEXICAL-REFUSAL*): a local in
+;;; operator position (function lookup walks the frames), a FOREACH / LET /
+;;; VLAX-FOR rebinding a local's name. Those functions keep the dynamic fork.
+
+(defvar *lexical-locals* nil
+  "While transpiling a lexical fork: an alist (AUTOLISP-SYMBOL . CL-VARIABLE)
+of the function's formals and /-locals. NIL otherwise.")
+
+(defvar *lexical-refusal* nil
+  "Set to a string saying why, when the body uses a local in a way the lexical
+fork cannot honour.")
+
+(defvar *lexical-unsafe-sites* 0
+  "How many sites of the body would run with the locals materialised. The fork
+is built only when there are none: a materialising site is correct, but it
+costs more than the frame the fork saves.")
+
+(defun %lexical-variable (symbol)
+  (and *lexical-locals* (cdr (assoc symbol *lexical-locals*))))
+
+(defun %lexical-refuse (reason)
+  (unless *lexical-refusal* (setf *lexical-refusal* reason))
+  nil)
+
+(defun %lexical-materialize (inner context-var)
+  "INNER, run with the lexical locals pushed into a real dynamic frame holding
+their current values, and each copied back from that frame after INNER returns
+-- a callee that SETQs a caller's local must be seen to have done so. On a
+non-local exit the frame is popped and nothing is copied: the lexical fork is
+being unwound too, and its variables with it.
+
+INNER must not evaluate anything that reads the lexical variables: the frame
+is a snapshot, so the caller evaluates arguments FIRST, into temporaries."
+  (incf *lexical-unsafe-sites*)
+  `(let ((%lexical-materialized nil))
+     (unwind-protect
+          (progn
+            (push-dynamic-frame ,context-var)
+            ,@(loop for (symbol . variable) in *lexical-locals*
+                    collect `(bind-dynamic-variable ',symbol ,variable ,context-var))
+            (setf %lexical-materialized ,inner)
+            ,@(loop for (symbol . variable) in *lexical-locals*
+                    collect `(setf ,variable (lookup-variable ',symbol ,context-var))))
+       (pop-dynamic-frame ,context-var))
+     %lexical-materialized))
+
+(defun %lexical-guarded-call (operator function-var context-var argument-vars)
+  "The call of FUNCTION-VAR (what OPERATOR resolved to) on ARGUMENT-VARS in a
+lexical fork: direct when that function is audited lexically safe, with the
+locals materialised otherwise. The test is at RUN TIME -- a DEFUN of `+' after
+the fork was built is caught here. Counted as an unsafe site only when OPERATOR
+is not safe NOW: the materialising branch of a guard that is expected never to
+take it costs nothing."
+  (unless (%lexically-safe-now-p operator)
+    (incf *lexical-unsafe-sites*))
+  `(if (lexically-safe-callee-p ,function-var)
+       (call-autolisp-function-in-context ,function-var ,context-var ,@argument-vars)
+       ,(let ((*lexical-unsafe-sites* 0))
+          (%lexical-materialize
+           `(call-autolisp-function-in-context ,function-var ,context-var ,@argument-vars)
+           context-var))))
+
+(defun %lexically-safe-now-p (operator)
+  "Whether OPERATOR resolves, as the fork is being built, to an audited
+lexically safe builtin -- the guess that decides whether the fork is worth
+building. Never a correctness decision: the run-time guard is."
+  (ignore-errors
+   (lexically-safe-callee-p (lookup-function operator (current-evaluation-context)))))
+
 (defun %fallback (form context-var)
-  "Compile FORM by handing it back to the interpreter."
+  "Compile FORM by handing it back to the interpreter -- with the lexical
+locals materialised when building a lexical fork, since the interpreter reads
+variables by name."
   (%note-fallback (%operator-name form))
-  `(autolisp-eval ',form ,context-var))
+  (if *lexical-locals*
+      (%lexical-materialize `(autolisp-eval ',form ,context-var) context-var)
+      `(autolisp-eval ',form ,context-var)))
 
 (defun transpile-body (forms context-var)
   "Translate FORMS as an implicit PROGN, yielding the last value — nil for
@@ -345,8 +439,10 @@ block, so a nested open-coded call binds and returns from its own."
        (block ,block-name
          (when (eq (autolisp-open-code-tag ,function-var) ,tag)
            ,(%open-coded-fast-path tag variables block-name))
-         (call-autolisp-function-in-context
-          ,function-var ,context-var ,@variables)))))
+         ,(if *lexical-locals*
+              (%lexical-guarded-call (first form) function-var context-var variables)
+              `(call-autolisp-function-in-context
+                ,function-var ,context-var ,@variables))))))
 
 (defun %parse-let-bindings-or-nil (binding-list arguments)
   "Parse BINDING-LIST into a list of (SYMBOL INIT-FORM), returning
@@ -401,7 +497,8 @@ Never fails: an unhandled form becomes an interpreter call on itself."
     ;; diagnostic lives behind it, so referencing an unbound name behaves
     ;; identically compiled or interpreted.
     ((typep form 'autolisp-symbol)
-     `(lookup-variable ',form ,context-var))
+     (or (%lexical-variable form)
+         `(lookup-variable ',form ,context-var)))
 
     ;; Neither self-evaluating, nor a symbol, nor a call: the interpreter
     ;; signals :invalid-form here. Hand the form to it rather than invent
@@ -411,6 +508,11 @@ Never fails: an unhandled form becomes an interpreter call on itself."
     (t
      (let ((name (%operator-name form))
            (arguments (rest form)))
+       ;; A local in OPERATOR position is looked up as a function through the
+       ;; dynamic frames -- (setq g foo) (g 1) calls through the local -- and
+       ;; a lexical local is in none. Refused, not materialised.
+       (when (%lexical-variable (first form))
+         (%lexical-refuse "a local is used in operator position"))
        (cond
          ((null name) (%fallback form context-var))
 
@@ -435,10 +537,15 @@ Never fails: an unhandled form becomes an interpreter call on itself."
               `(let ((%value nil))
                  (declare (ignorable %value))
                  ,@(loop for (symbol value-form) on arguments by #'cddr
-                         collect `(setf %value
-                                        (set-variable ',symbol
-                                                      ,(transpile-form value-form context-var)
-                                                      ,context-var)))
+                         for variable = (%lexical-variable symbol)
+                         collect (if variable
+                                     `(setf %value
+                                            (setf ,variable
+                                                  ,(transpile-form value-form context-var)))
+                                     `(setf %value
+                                            (set-variable ',symbol
+                                                          ,(transpile-form value-form context-var)
+                                                          ,context-var))))
                  %value)))
 
          ;; AND / OR yield the T SYMBOL or nil -- not the last value, which
@@ -519,6 +626,8 @@ Never fails: an unhandled form becomes an interpreter call on itself."
           ;; literal: a malformed FOREACH falls back and the interpreter
           ;; signals, rather than this file growing a second copy of that
           ;; error.
+          (when (%lexical-variable (first arguments))
+            (%lexical-refuse "FOREACH rebinds a local"))
           (cond
             ((not (and (>= (length arguments) 2)
                        (typep (first arguments) 'autolisp-symbol)))
@@ -583,6 +692,8 @@ Never fails: an unhandled form becomes an interpreter call on itself."
           (let ((binding-list (first arguments)))
             (multiple-value-bind (bindings well-formed)
                 (%parse-let-bindings-or-nil binding-list arguments)
+              (when (some (lambda (b) (%lexical-variable (first b))) bindings)
+                (%lexical-refuse "LET rebinds a local"))
               (if (not well-formed)
                   (%fallback form context-var)
                   `(progn
@@ -679,12 +790,22 @@ Never fails: an unhandled form becomes an interpreter call on itself."
           ;; happens after both, inside SET-AUTOLISP-PLACE, exactly
           ;; where the interpreter does it. Getting that order from the
           ;; host rather than restating it is the point.
-          (if (= 2 (length arguments))
-              `(set-autolisp-place
-                ,(transpile-form (first arguments) context-var)
-                ,(transpile-form (second arguments) context-var)
-                ,context-var)
-              (%fallback form context-var)))
+          (cond
+            ((/= 2 (length arguments)) (%fallback form context-var))
+            ;; In a lexical fork the place is a name known only at run time
+            ;; -- (set 'x 5) may well name a local -- so the assignment runs
+            ;; against materialised locals, after both operands are evaluated.
+            (*lexical-locals*
+             `(let ((%set-place ,(transpile-form (first arguments) context-var))
+                    (%set-value ,(transpile-form (second arguments) context-var)))
+                ,(%lexical-materialize
+                  `(set-autolisp-place %set-place %set-value ,context-var)
+                  context-var)))
+            (t
+             `(set-autolisp-place
+               ,(transpile-form (first arguments) context-var)
+               ,(transpile-form (second arguments) context-var)
+               ,context-var))))
 
          ((string= name "VLAX-FOR")
           ;; (vlax-for NAME COLLECTION body...) over an ActiveX
@@ -705,6 +826,10 @@ Never fails: an unhandled form becomes an interpreter call on itself."
           ;; FOREACH calls -- one rule, one place. It is asserted by
           ;; analogy rather than by a vendor probe; see
           ;; issues/open/vlax-for-binding-rule-unprobed.issue.
+          ;; The collection hook reaches the host's COM layer, which this
+          ;; file cannot audit: no lexical fork around a VLAX-FOR.
+          (when *lexical-locals*
+            (%lexical-refuse "VLAX-FOR"))
           (if (and (>= (length arguments) 2)
                    (typep (first arguments) 'autolisp-symbol))
               `(let ((%vlax-result nil))
@@ -824,11 +949,30 @@ Never fails: an unhandled form becomes an interpreter call on itself."
           ;; being removed -- so backtraces through compiled code show
           ;; function frames but not intermediate form frames. Restoring
           ;; them is the instrumented variant's job, not this one's.
-          `(call-autolisp-function-in-context
-            (resolve-autolisp-function-designator ',(first form) ,context-var)
-            ,context-var
-            ,@(mapcar (lambda (argument) (transpile-form argument context-var))
-                      arguments))))))))
+          (if *lexical-locals*
+              ;; In a lexical fork the call is GUARDED: resolved first and
+              ;; the arguments after (the same order as below), into
+              ;; variables, so that a materialising call snapshots the locals
+              ;; AFTER its arguments ran -- (foo (setq x 1)) must show foo the
+              ;; new x. The init forms are evaluated outside these bindings
+              ;; (LET, not LET*), so a nested call's own temporaries cannot
+              ;; be confused with these.
+              (let ((argument-vars
+                      (loop for i from 1 to (length arguments)
+                            collect (intern (format nil "%LEXICAL-ARG-~D" i)
+                                            :clautolisp.autolisp-compiler))))
+                `(let ((%lexical-function
+                         (resolve-autolisp-function-designator ',(first form) ,context-var))
+                       ,@(mapcar (lambda (variable argument)
+                                   (list variable (transpile-form argument context-var)))
+                                 argument-vars arguments))
+                   ,(%lexical-guarded-call (first form) '%lexical-function
+                                           context-var argument-vars)))
+              `(call-autolisp-function-in-context
+                (resolve-autolisp-function-designator ',(first form) ,context-var)
+                ,context-var
+                ,@(mapcar (lambda (argument) (transpile-form argument context-var))
+                          arguments)))))))))
 
 (defun compile-autolisp-form (form)
   "Compile FORM into a function of one argument (the evaluation context)

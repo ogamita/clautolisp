@@ -49,12 +49,22 @@
                 #:resolve-autolisp-function-designator
                 #:autolisp-open-code-tag
                 #:self-evaluating-runtime-value-p
-                #:set-variable)
+                #:set-variable
+                #:lexically-safe-callee-p
+                #:autolisp-usubr-lexical-body
+                #:autolisp-usubr-name
+                #:autolisp-usubr-lambda-list
+                #:split-usubr-lambda-list
+                #:*autolisp-lexical-locals-enabled*
+                #:check-usubr-arity
+                #:lookup-function)
   (:export #:transpile-form
            #:transpile-body
            #:compile-autolisp-form
            #:compile-usubr
            #:compile-instrumented-usubr
+           #:compile-lexical-usubr
+           #:autolisp-function-lexical-p
            #:compile-autolisp-files-to-lap
            #:load-compiled-defun
            #:load-compiled-toplevel
