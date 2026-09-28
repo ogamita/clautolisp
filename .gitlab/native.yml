@@ -10,6 +10,21 @@
 # and a release-* TAG keeps the jobs that used to be release-mandatory
 # mandatory (block the release).
 #
+# PROBES are gated on a third variable, PROBES_CHANGED (pjb, 2026-09-28: "run
+# the vendor probe jobs only when new probes are written (or old probes
+# modified); probe results are stored in the project and git"). A probe
+# measures the VENDOR, and its answer is committed, so re-running it on a
+# change that did not touch it re-measures the same thing on a serial CAD
+# runner. Each probe job (vendor:probes:*, probe:suite:*, probe:load-refusal:*,
+# encoding:experiment:*, *:probe:*, harvest:sysvars:*) carries its own rules:
+#   runner online AND its family in PROBES_CHANGED -> on_success
+#   otherwise                                       -> manual (play by hand)
+# The families and their files are in scripts/ci-detect-probe-changes.py,
+# which detect:runners runs; `make check-probe-families' fails when a probe
+# file is in no family or a family is tested by no rule here. Consequence:
+# vendor:probes:* no longer BLOCK a release tag -- a release does not need
+# the vendor re-measured.
+#
 # Child pipelines do NOT inherit the parent's anchors / templates, so the gate
 # templates are defined here. Native jobs run on shell executors, no image.
 #
@@ -559,6 +574,14 @@ verify:bricscad-automation:macos:
 
 encoding:experiment:bricscad:macos:
   extends: [.gate-macos-cad-soft, .encoding-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,encoding,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -568,6 +591,14 @@ encoding:experiment:bricscad:macos:
 
 encoding:experiment:bricscad:windows:
   extends: [.gate-windows-bricscad-soft, .encoding-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,encoding,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -577,6 +608,14 @@ encoding:experiment:bricscad:windows:
 
 encoding:experiment:autocad:windows:
   extends: [.gate-windows-cad-soft, .encoding-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,encoding,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -607,6 +646,14 @@ encoding:experiment:autocad:windows:
 
 path-sysvars:probe:bricscad:macos:
   extends: [.gate-macos-cad-soft, .path-sysvars-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,path-sysvars,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -616,6 +663,14 @@ path-sysvars:probe:bricscad:macos:
 
 path-sysvars:probe:bricscad:windows:
   extends: [.gate-windows-bricscad-soft, .path-sysvars-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,path-sysvars,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -625,6 +680,14 @@ path-sysvars:probe:bricscad:windows:
 
 path-sysvars:probe:autocad:windows:
   extends: [.gate-windows-cad-soft, .path-sysvars-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,path-sysvars,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -634,6 +697,14 @@ path-sysvars:probe:autocad:windows:
 
 path-sysvars:probe:accoreconsole:windows:
   extends: [.gate-windows-cad-soft, .path-sysvars-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,path-sysvars,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -658,6 +729,14 @@ path-sysvars:probe:accoreconsole:windows:
 
 getcname:probe:bricscad:macos:
   extends: [.gate-macos-cad-soft, .getcname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,getcname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -667,6 +746,14 @@ getcname:probe:bricscad:macos:
 
 getcname:probe:bricscad:windows:
   extends: [.gate-windows-bricscad-soft, .getcname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,getcname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -676,6 +763,14 @@ getcname:probe:bricscad:windows:
 
 getcname:probe:autocad:windows:
   extends: [.gate-windows-cad-soft, .getcname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,getcname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -685,6 +780,14 @@ getcname:probe:autocad:windows:
 
 getcname:probe:accoreconsole:windows:
   extends: [.gate-windows-cad-soft, .getcname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,getcname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -708,6 +811,14 @@ getcname:probe:accoreconsole:windows:
 
 pgp:probe:bricscad:macos:
   extends: [.gate-macos-cad-soft, .pgp-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,pgp,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -717,6 +828,14 @@ pgp:probe:bricscad:macos:
 
 pgp:probe:bricscad:windows:
   extends: [.gate-windows-bricscad-soft, .pgp-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,pgp,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -726,6 +845,14 @@ pgp:probe:bricscad:windows:
 
 pgp:probe:autocad:windows:
   extends: [.gate-windows-cad-soft, .pgp-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,pgp,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -750,6 +877,14 @@ pgp:probe:autocad:windows:
 
 optkw:probe:accoreconsole:windows:
   extends: [.gate-windows-cad-soft, .optkw-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,optkw,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -759,6 +894,14 @@ optkw:probe:accoreconsole:windows:
 
 optkw:probe:bricscad:macos:
   extends: [.gate-macos-cad-soft, .optkw-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,optkw,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -768,6 +911,14 @@ optkw:probe:bricscad:macos:
 
 optkw:probe:bricscad:windows:
   extends: [.gate-windows-bricscad-soft, .optkw-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,optkw,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -785,6 +936,14 @@ optkw:probe:bricscad:windows:
 
 pathname:probe:bricscad:macos:
   extends: [.gate-macos-cad-soft, .pathname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,pathname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -794,6 +953,14 @@ pathname:probe:bricscad:macos:
 
 pathname:probe:bricscad:windows:
   extends: [.gate-windows-bricscad-soft, .pathname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,pathname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -803,6 +970,14 @@ pathname:probe:bricscad:windows:
 
 pathname:probe:autocad:windows:
   extends: [.gate-windows-cad-soft, .pathname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,pathname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -823,6 +998,14 @@ pathname:probe:autocad:windows:
 
 vendor:probes:bricscad:
   extends: [.gate-windows-bricscad-hard, .vendor-probe-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,vendor,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -833,6 +1016,14 @@ vendor:probes:bricscad:
 
 vendor:probes:autocad:
   extends: [.gate-windows-cad-hard, .vendor-probe-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,vendor,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -855,6 +1046,14 @@ vendor:probes:autocad:
 # there would be pointless, so the results travel as an artefact instead.
 probe:suite:autocad:windows:
   extends: .gate-windows-cad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,suite,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -897,6 +1096,14 @@ probe:suite:autocad:windows:
 # exonerated. The experiment is the job.
 probe:suite:bricscad:macos:
   extends: .gate-macos-cad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,suite,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -938,6 +1145,14 @@ probe:suite:bricscad:macos:
 # is kept as a belt-and-braces guard for the no-result case.
 probe:load-refusal:bricscad:macos:
   extends: .gate-macos-cad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,load-refusal,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   allow_failure: true
   variables:
@@ -959,6 +1174,14 @@ probe:load-refusal:bricscad:macos:
 
 probe:load-refusal:bricscad:windows:
   extends: .gate-windows-bricscad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,load-refusal,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   allow_failure: true
   variables:
@@ -980,6 +1203,14 @@ probe:load-refusal:bricscad:windows:
 
 probe:suite:bricscad:windows:
   extends: .gate-windows-bricscad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,suite,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -1002,6 +1233,14 @@ probe:suite:bricscad:windows:
 
 vendor:probes:bricscad:macos:
   extends: [.gate-macos-cad-hard, .vendor-probe-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,vendor,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -1043,6 +1282,14 @@ vendor:probes:bricscad:macos:
 
 harvest:sysvars:bricscad:macos:
   extends: [.gate-macos-cad-soft, .sysvars-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,sysvars,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -1066,6 +1313,14 @@ harvest:sysvars:bricscad:macos:
 # on the Windows artifact.
 harvest:sysvars:bricscad:windows:
   extends: [.gate-windows-bricscad-soft, .sysvars-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,sysvars,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none

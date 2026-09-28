@@ -728,3 +728,19 @@ Found while reading why two master pipelines were red before playing the
 Windows AutoCAD evidence jobs. Filed per AGENTS.md rather than mentioned:
 a merge that lands with no CI is the most expensive kind of silence this
 repository can have.
+
+* Probe jobs gated on their own change (2026-09-28)
+
+pjb: "run the vendor probe jobs only when new probes are written (or old
+probes modified) probe results are stored in the project and git". The ~30
+probe jobs of the native child (vendor:probes:*, probe:suite:*,
+probe:load-refusal:*, encoding:experiment:*, *:probe:*, harvest:sysvars:*)
+used to run on every child whose runner was online. Now detect:runners runs
+=scripts/ci-detect-probe-changes.py emit=, which diffs the change (merge
+request: diff base..HEAD; master: HEAD^1..HEAD unless it is a merge request's
+merge commit) and writes =PROBES_CHANGED=,family,...,= (or =none=) into
+runners.env; native:pipeline passes it down, and each probe job runs
+automatically only when its family is listed, manual otherwise.
+=make check-probe-families= (in the always-running lane next to
+check-native-pipeline-changes) fails on a probe file in no family, a family
+matching no file, or a family no job rule tests.
