@@ -21,7 +21,7 @@
 (in-package #:alfe.plugin.epuree)
 
 (define-plugin "epuree"
-  :version "1.1.0"
+  :version "1.2.0"
   :description "Load and initialize the EPUREE emulation of the EPURE API (ALPM system epuree) before the plan runs."
   :options ((:flag   "--epuree" :activates t :env "AUTOLISP_EPUREE"
                      :doc "Load EPUREE before anything else.")
@@ -78,15 +78,54 @@ exist, else the first of the usual places that does."
                     :message (format nil "alpm.lsp not found (looked in ~{~A~^, ~}); pass --epuree-alpm FILE or set $ALPM_LSP"
                                      candidates))))))))
 
+(defvar *epuree-share-candidates-function* 'epuree-share-candidates
+  "Function of no argument returning the directories where an installed
+EPUREE may live. A variable so that the tests can say where to look.")
+
+(defun epuree-share-candidates ()
+  "PREFIX/share/epuree/ for every installation prefix the running executable
+can belong to, then for the usual prefixes -- the places alpm.lsp is looked
+for, with share/epuree/ instead of share/autolisp/."
+  (mapcar (lambda (prefix) (merge-pathnames "share/epuree/" prefix))
+          (append
+           (ignore-errors
+            (uiop:symbol-call :alfe.backend.cad-common :installation-prefixes))
+           (list #P"/opt/local/" #P"/usr/local/"
+                 (merge-pathnames ".local/" (user-homedir-pathname))))))
+
+(defun trusted-epuree-paths ()
+  "The TRUSTEDPATHS entries for the installed EPUREE directories: each one
+that exists, with the subfolder marker (\\... on MS-Windows, /... elsewhere),
+without duplicates."
+  (let ((separator (if (uiop:os-windows-p) "\\" "/")))
+    (remove-duplicates
+     (mapcar (lambda (directory)
+               (concatenate 'string
+                            (string-right-trim "/\\" (uiop:native-namestring directory))
+                            separator "..."))
+             (remove-if-not #'uiop:directory-exists-p
+                            (funcall *epuree-share-candidates-function*)))
+     :test #'string-equal :from-end t)))
+
+(defun trust-form (entry)
+  "An AutoLISP form appending ENTRY to TRUSTEDPATHS unless it is already
+there. TRUSTEDPATHS is read-only on BricsCAD V26 (admin-configured): the
+SETVAR is caught, so a refusal leaves the run to SECURELOAD rather than
+failing it."
+  (format nil "((lambda (entry / trusted) (setq trusted (cond ((getvar \"TRUSTEDPATHS\")) (\"\"))) (if (not (vl-string-search (strcase entry) (strcase trusted))) (vl-catch-all-apply 'setvar (list \"TRUSTEDPATHS\" (if (= trusted \"\") entry (strcat trusted \";\" entry))))) entry) ~A)"
+          (autolisp-string-literal entry)))
+
 (defun eval-form (control &rest arguments)
   (alfe.backend:action-eval (apply #'format nil control arguments)))
 
 (define-plugin-hook "epuree" :plan (ctx plan)
-  ;; Four kinds of action in front of everything (init files included),
-  ;; evaluated by the engine itself: load ALPM, tell it where epuree.alpm is,
-  ;; load the system, initialize it. A failure fails the run before the user's
-  ;; script starts.
+  ;; Five kinds of action in front of everything (init files included),
+  ;; evaluated by the engine itself: trust the installed EPUREE directories,
+  ;; load ALPM, tell it where epuree.alpm is, load the system, initialize it.
+  ;; A failure fails the run before the user's script starts.
   (append
+   (mapcar (lambda (entry) (alfe.backend:action-eval (trust-form entry)))
+           (trusted-epuree-paths))
    (list (eval-form "(load ~A)" (autolisp-string-literal (absolute (alpm-lsp)))))
    (mapcar (lambda (directory)
              (eval-form "(alpm-register-directory ~A T)"

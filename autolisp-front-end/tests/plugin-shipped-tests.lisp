@@ -112,6 +112,27 @@ nothing and leaves the active list, so that what is transmitted is true."
               "epure stays active for ~S on ~S" backend-name os)
           (is (eq :auto (alfe.cli::cli-options-mode options)) "mode untouched"))))))
 
+(test epure-under-clautolisp-suggests-epuree
+  "Under --clautolisp EPURE cannot run, but EPUREE -- its emulation, a
+plug-in of its own -- can: the message ignoring --epure says so."
+  (with-shipped-plugins
+    (let* ((options (%epure-options "--epure" "--clautolisp"))
+           (alfe.plugin:*context* (alfe.plugin:make-context :options options))
+           (log (with-output-to-string (stream)
+                  (let ((alfe.logging:*current-level* :verbose)
+                        (alfe.logging:*log-stream* stream))
+                    (alfe.plugin:run-hook :backend-selected
+                                          (alfe.backend:find-backend :clautolisp)
+                                          :options options :dry-run-p nil)))))
+      (is (search "--epuree" log) "no --epuree hint in ~S" log))))
+
+(defmacro with-epuree-installed-in ((directories) &body body)
+  "BODY with EPUREE looked for in DIRECTORIES only. The plug-in's package
+exists only once it is loaded, so its variable is found at run time."
+  `(progv (list (find-symbol "*EPUREE-SHARE-CANDIDATES-FUNCTION*" "ALFE.PLUGIN.EPUREE"))
+       (list (let ((directories ,directories)) (lambda () directories)))
+     ,@body))
+
 (test epure-autocad-needs-the-gui
   "Under AutoCAD --epure defaults the mode to COM automation, keeps an
 explicit automation, and refuses accoreconsole (batch)."
@@ -464,7 +485,8 @@ the system defines epuree-initialize, as the real epuree.alpm does.")
   "ALPM is loaded, each --epuree-path is registered, the system is loaded and
 initialized — before the init files and the user's actions, on every backend."
   (with-shipped-plugins
-    (with-plugin-temp-directory (dir)
+    (with-epuree-installed-in (nil)
+     (with-plugin-temp-directory (dir)
       (let* ((alpm (namestring (%write-file (merge-pathnames "alpm.lsp" dir) *fake-alpm*)))
              (options (%epure-options "--epuree" "--epuree-alpm" alpm
                                       "--epuree-path" "/a/one" "--epuree-path" "/b/two"
@@ -483,7 +505,35 @@ initialized — before the init files and the user's actions, on every backend."
         (is (string= "(alpm-register-directory \"/b/two\" T)" (third texts)))
         (is (string= "(alpm-load-system \"epuree\" nil)" (fourth texts)))
         (is (string= "(epuree-initialize)" (fifth texts)))
-        (is (string= "(+ 1 2)" (sixth texts)))))))
+        (is (string= "(+ 1 2)" (sixth texts))))))))
+
+(test epuree-trusts-the-installed-epuree-before-loading-it
+  "Each existing PREFIX/share/epuree/ is added to TRUSTEDPATHS, with the
+subfolder marker, before ALPM is loaded; a prefix without one adds nothing."
+  (with-shipped-plugins
+    (with-plugin-temp-directory (dir)
+      (let* ((share (merge-pathnames "prefix/share/epuree/" dir))
+             (entry (concatenate 'string
+                                 (string-right-trim "/\\" (uiop:native-namestring share))
+                                 (if (uiop:os-windows-p) "\\" "/") "...")))
+        (ensure-directories-exist share)
+        (with-epuree-installed-in ((list share (merge-pathnames "absent/share/epuree/" dir)))
+          (let* ((alpm (namestring (%write-file (merge-pathnames "alpm.lsp" dir) *fake-alpm*)))
+                 (options (%epure-options "--epuree" "--epuree-alpm" alpm "-x" "(+ 1 2)"))
+                 (alfe.plugin:*context* (alfe.plugin:make-context :options options))
+                 (texts (mapcar (lambda (action) (alfe.backend:action-payload action))
+                                (alfe.cli::effective-plan options))))
+            (is (= 6 (length texts)) "one trust, four epuree actions, the user's, the terminator")
+            (is (search "TRUSTEDPATHS" (first texts)))
+            (is (search (alfe.plugin:autolisp-string-literal entry) (first texts)))
+            (is (search "alpm.lsp" (second texts)) "the trust comes before ALPM")
+            ;; End to end: the engine really appends it, once.
+            (multiple-value-bind (code out err)
+                (%run-alfe "--clautolisp" "--epuree" "--epuree-alpm" alpm
+                           "-x" "(princ (getvar \"TRUSTEDPATHS\"))")
+              (is (= 0 code) "exit ~A: ~A" code err)
+              (is (search entry out) "~S not in ~S" entry out)
+              (is (= (search entry out) (search entry out :from-end t))))))))))
 
 (test epuree-loads-the-system-through-alpm-on-the-clautolisp-backend
   "End to end against a real engine: the fake ALPM records the calls the

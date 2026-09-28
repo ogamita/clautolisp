@@ -1894,8 +1894,9 @@ own runtime is loaded. It replaces the legacy =autolisp --epure=.
 
 It acts under =:bricscad= and =:autocad= and is *Windows only*. On another
 OS, and under =--clautolisp=, =--epure= is silently ignored (a
-=--verbose= message says so, and the plug-in deactivates itself): the option
-stays harmless in scripts shared between machines.
+=--verbose= message says so -- under =--clautolisp= it suggests =--epuree=,
+which runs there -- and the plug-in deactivates itself): the option stays
+harmless in scripts shared between machines.
 
 | Option / variable                               | Meaning                                            |
 |-------------------------------------------------+----------------------------------------------------|
@@ -1955,9 +1956,14 @@ Without =--epuree-alpm=, =alpm.lsp= is looked for in =$ALPM_LSP=,
 =/usr/local/share/autolisp/= and =~/.local/share/autolisp/=; when it is
 nowhere, the run stops with a usage error listing the places tried.
 
-The plug-in's =:plan= filter puts four kinds of =eval= action in front of the
+The plug-in's =:plan= filter puts five kinds of =eval= action in front of the
 plan (so in front of the user's init files and actions, and visible in
-=--dry-run=): load =alpm.lsp=; one =(alpm-register-directory DIR T)= per
+=--dry-run=): for each existing =PREFIX/share/epuree/= (PREFIX ranging over
+the running executable's installation prefixes, then =/opt/local/=,
+=/usr/local/=, =~/.local/=), append =PREFIX/share/epuree/...= (=\...= on
+MS-Windows) to =TRUSTEDPATHS= unless it already contains it -- the =SETVAR=
+under =vl-catch-all-apply=, since =TRUSTEDPATHS= is read-only on BricsCAD V26;
+load =alpm.lsp=; one =(alpm-register-directory DIR T)= per
 =--epuree-path= directory; =(alpm-load-system "epuree" nil)=;
 =(epuree-initialize)=. Loading the system only defines: =(epuree-initialize)=,
 which the system defines (=src/initialize.lsp= in the EPUREE repository), is
