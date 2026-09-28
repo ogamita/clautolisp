@@ -75,9 +75,13 @@ try {
     Write-Host $out
     Write-Host "--- alfe exit $alfeStatus"
 
-    $enforced = $out -match 'INFORCE=2'
-    $ran      = $out -match 'RUN=42'
-    $control_loaded = ($out -match 'CONTROL\.LOADED') -or ($out -match 'CONTROLRETURNED') -or -not ($out -match 'FOUND=1') -or -not ($out -match 'CONTROLREFUSED')
+    $enforced = $out -match '(?m)^\s*INFORCE=2'
+    $ran      = $out -match '(?m)^\s*RUN=42'
+    # ANCHORED at the start of a line: --verbose echoes each -x form, and the
+    # echo of the control CONTAINS the symbol CONTROLRETURNED (job
+    # 16792421246 scored a real refusal INCONCLUSIVE that way).
+    $control_loaded = ($out -match '(?m)^\s*CONTROL\.LOADED') -or ($out -match '(?m)^\s*CONTROLRETURNED') -or
+                      -not ($out -match '(?m)^\s*FOUND=1') -or -not ($out -match '(?m)^\s*CONTROLREFUSED')
     $leftover = @()
     foreach ($s in $keys) {
         $tp = [string]$cu.OpenSubKey($s).GetValue('TRUSTEDPATHS', '')
