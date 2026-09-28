@@ -99,6 +99,8 @@ nothing and leaves the active list, so that what is transmitted is true."
       (destructuring-bind (os backend-name) case
         (let* ((options (%epure-options "--epure"
                                         (format nil "--~(~A~)" backend-name)))
+               ;; the warnings are epure-off-windows-warns-and-suggests-epuree's
+               (alfe.logging:*log-stream* (make-broadcast-stream))
                (alfe.backend.cad-common:*host-os-override* os)
                (alfe.plugin:*context* (alfe.plugin:make-context :options options))
                (backend (ecase backend-name
@@ -134,6 +136,24 @@ exists only once it is loaded, so its variable is found at run time."
   `(progv (list (find-symbol "*EPUREE-SHARE-CANDIDATES-FUNCTION*" "ALFE.PLUGIN.EPUREE"))
        (list (let ((directories ,directories)) (lambda () directories)))
      ,@body))
+
+(test epure-off-windows-warns-and-suggests-epuree
+  "Off Windows EPURE cannot run either; the run goes on without it, so the
+user is warned -- at the default log level -- and pointed at EPUREE."
+  (with-shipped-plugins
+    (let* ((options (%epure-options "--epure" "--bricscad"))
+           (alfe.backend.cad-common:*host-os-override* :macos)
+           (alfe.plugin:*context* (alfe.plugin:make-context :options options))
+           (log (with-output-to-string (stream)
+                  (let ((alfe.logging:*current-level* :info)
+                        (alfe.logging:*log-stream* stream))
+                    (alfe.plugin:run-hook :backend-selected
+                                          (alfe.backend.bricscad:make-bricscad-backend
+                                           :executable-path "/fake/bricscad")
+                                          :options options :dry-run-p nil)))))
+      (is (search "Windows only" log) "no warning in ~S" log)
+      (is (search "warn" log) "not a warning: ~S" log)
+      (is (search "--epuree" log) "no --epuree hint in ~S" log))))
 
 (test epure-autocad-needs-the-gui
   "Under AutoCAD --epure defaults the mode to COM automation, keeps an
