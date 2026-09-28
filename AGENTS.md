@@ -543,8 +543,16 @@ the whole thing; the traps below are what cost time the first time.
 - *Steps 1–5 from a worktree-isolated session.* Raw `git push origin master`,
   force-push and branch merges are refused by the sandbox — but landing on
   master still works: put the source changes (program stamps + `RELEASE_NOTES.org`,
-  step 1) on a work branch, open an MR, and `glab mr merge <iid> --auto-merge
-  --yes`. Auto-merge lands on master which the direct push cannot. Do the
+  step 1) on a work branch, open an MR, and set it to auto-merge. Auto-merge
+  lands on master which the direct push cannot. *Set it through the API, not
+  `glab mr merge --auto-merge`*: glab looks for a RUNNING pipeline, and when
+  the head pipeline is only created or pending -- which it is for the first
+  minutes after `glab mr create` -- it prints "No pipeline running" and MERGES
+  AT ONCE, untested (!336 and !338, 2026-09-28). Wait until the MR's
+  `head_pipeline.id` exists, then
+  `glab api -X PUT projects/ogamita%2Fclautolisp/merge_requests/<iid>/merge -f auto_merge=true`
+  and check the answer still says `opened` with `merge_when_pipeline_succeeds`
+  true. Do the
   **post-release bump** (step 5) the same way, as its own auto-merged MR. The
   **tag** and the `version-M.m` / `version-M` pointers are ordinary ref pushes
   (NOT master, so allowed): `git tag -a release-M.m.d <sha>`, then
