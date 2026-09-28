@@ -2,10 +2,10 @@
 #+TITLE: Clautolisp cador Specification (D2)
 #+SUBTITLE: The headless CAD core — Part I semantics presented to AutoLISP, Part II internal design
 #+AUTHOR: clautolisp project
-#+DATE: 2026-08-06
+#+DATE: 2026-08-06 (refreshed 2026-09-28)
 #+OPTIONS: toc:3 num:t ^:nil
 #+STARTUP: overview
-#+DOCUMENT_VERSION: 0.1.0 (draft for review — cador-3 / epic deliverable D2)
+#+DOCUMENT_VERSION: 0.2.0 (draft for review — cador-3 / epic deliverable D2; §I.1/§I.2/§II.14 refreshed against cador-2's implementation, see the 2026-09-28 refresh at the end)
 
 * 0. Status, scope, and conventions
   :PROPERTIES:
@@ -66,13 +66,14 @@ does *not* introduce a competing session object; it *is* the =host= field of
 that session (D1 §1), holding the CAD-side state (drawings, picksets, COM
 objects) that the language-side session does not.
 
-*Current implementation status.* =cador= today holds *one* active drawing
-(=cador-active-drawing=). [S: =cador/source/model.lisp:56–61=] The multi-drawing
-set (Phase-17f / cador-2) makes that one pointer the *active* member of a set of
-open drawings; the session-level carriers above already exist, so this is an
-extension of =cador=, not of the runtime. Satisfies *C1* (no global Lisp
-environment; N isolated document environments plus blackboard plus application
-context — see §IV).
+*Implementation status (refreshed 2026-09-28): built.* =cador= holds an ordered
+set of open drawings (=cador-documents=, key → drawing) with
+=cador-active-drawing= as the current pointer, and implements D1 §3's Group-1
+generics over it (cador-2 slice 1a) [S: =cador/source/document-api.lisp=]; the
+session-level carriers above were already there, so this was an extension of
+=cador=, not of the runtime. Every sysvar is per-document as a consequence
+(slice 3c). Satisfies *C1* (no global Lisp environment; N isolated document
+environments plus blackboard plus application context — see §IV).
 
 ** I.2 Scheduler — the single-runner cooperative model
    :PROPERTIES:
@@ -82,10 +83,14 @@ context — see §IV).
 *Decision.* =cador= implements the *one runner, N parked contexts* model
 (analysis §4.2) with *no worker thread* (C8). Concretely:
 
-- *Parking is continuation capture.* A context parks at a *park point* — a
+- *Parking is continuation capture, and a continuation is a thread parked on a
+  condition variable* (pjb, 2026-09-13). A context parks at a *park point* — a
   get-family prompt, a prompting =command=, a document lock that must wait, or
-  (wire host only) any host round trip (D1 §13.5). Parking captures the
-  context's continuation and returns control to the single runner.
+  (wire host only) any host round trip (D1 §13.5). Parking returns control to
+  the single runner by notifying the next context's condition and waiting on
+  its own; the handoff is the at-most-one-running rule, so these threads are
+  coroutine carriers, never concurrent workers, and a context that never parks
+  has no thread at all (D1 §10).
 - *Park points* are exactly the HAL operations D1 §13.5 enumerates; in a pure
   =cador= session (config (a)) the only real park points are *interactive
   input* operations, because every other =cador= operation completes in-process
@@ -100,12 +105,17 @@ context — see §IV).
   assumes idleness from parked-ness, and — being single-runner — needs *no
   mutual exclusion* on its data structures (analysis R13, C2).
 
-*Implementation note.* The park/resume machinery is a *cador-2 deliverable*; it
-does not exist in the current tree. [S: no park/coroutine struct in
-=autolisp-runtime/source/= or =cador/source/=.] The document lifecycle states
+*Implementation note (refreshed 2026-09-28): built by cador-2.* The scheduler is
+=autolisp-runtime/source/scheduler.lisp=: =scheduler-activate= is the single
+entry, synchronous for contexts with no thunk (every batch and single-document
+run — no thread) and a thread rendezvous otherwise (=scheduler-spawn-context=,
+=scheduler-switch=); =scheduler-park= parks real interactive reads to the
+driver; each =scheduled-context= carries its per-document =correlation-stack=
+(D1 §13.4). [S: slices 2a–2c, 3d–3g] The document lifecycle states
 (=:loading/:loaded/:active/:inactive/:closing/:closed=) that a parked/resumed
-context transitions through *do* exist. [S: =model.lisp:48–51=] Satisfies *C2*
-and *C8* (§IV).
+context transitions through exist too. [S: =model.lisp:48–51=] What needs a
+wire — envelope, event loop, prompting =host-command= — is cador-4's.
+Satisfies *C2* and *C8* (§IV).
 
 ** I.3 Current versus active document
    :PROPERTIES:
@@ -499,7 +509,9 @@ host adds config (b), D1 §2.4):
 
 *No CAD-side worker thread* (R21, C8): the two-thread exclusive-handoff design
 is the same-image hosted case; =cador= offers *no thread to hand off to* and
-must not require one. Reactor events (D1 §9) fire on the current context, in its
+must not require one. The threads that carry *parked contexts* (§I.2) are not
+such workers: only the context holding the handoff runs, and a context that
+never parks has none. Reactor events (D1 §9) fire on the current context, in its
 document namespace. [S: =cador/source/sysvar-api.lisp:245–254= raises
 =:vlr-sysvarwillchange=/=:vlr-sysvarchanged=]
 
@@ -644,13 +656,18 @@ locking for mutual exclusion (single runner, nothing to exclude, C8) but
 *detects and signals the protocol violation* of mutating a non-current document
 without holding its lock, because that catches bugs that would otherwise appear
 only against a real backend (epic §9.5, R20). The =host-lock-document= /
-=host-unlock-document= surface is D1 §10; it is =prop= (cador-2). Grade: design
-(the surface does not exist yet).
+=host-unlock-document= surface is D1 §10; it is =prop= — not built by cador-2,
+tracked in cador-4 ("Locking semantics"). Grade: design (the surface does not
+exist yet).
 
 ** 9.6 E1 and E2 outcomes
 *Resolution:* stated as assumptions A1 (symbol identity ⇒ global interning) and
 A2 (blackboard ⇒ share), each with the cost of being wrong (§III). Grade V;
-E1/E2 are first-class conformance probes (D4).
+E1/E2 are first-class conformance probes (D4). *Status 2026-09-28:* E1/E2 run
+as deterministic tests *against cador* (cador-2 slice 3a,
+=autolisp-runtime/tests/multidocument-conformance-tests.lisp=), so cador's side
+is pinned; the *vendor* side — the same probes on AutoCAD and BricsCAD, which
+is what would lift A1/A2 from V to A — has not been run.
 
 ** 9.7 Wire host name
 *Resolution (recommendation, decided separately per epic §11).* The Display
@@ -763,3 +780,51 @@ Kept at DOCUMENT_VERSION 0.1.0 (draft for review). See
 =cador-2-multidocument-runtime= for the implementation this spec governs; the
 Explore of that issue proposes a first landable slice (host holds a
 document→drawing map, scheduler deferred) that this spec should bless.
+
+/This section is the 2026-09-13 record and is kept as such; the refresh below
+supersedes it where they differ./
+
+* Refresh 2026-09-28 — against cador-2's implementation
+  :PROPERTIES:
+  :CUSTOM_ID: refresh-2026-09-28
+  :END:
+
+Version 0.2.0. cador-2 closed on 2026-09-28 with every in-scope slice built;
+this refresh brings the text up to it. D1 carries the two decisions pjb took
+the same day (no capability query; a =host-error= superclass over the four
+condition classes named in §I.11).
+
+** Now built (was "not built" above)
+
+- *Many documents in =cador=* (§I.1) — the document set and the Group-1
+  generics (slice 1a); per-document sysvars (3c).
+- *The cooperative scheduler and real parking* (§I.2) — single runner, N
+  parked contexts; continuations as threads on a condition variable; batch
+  runs spawn no thread (2a–2c, 3d–3f).
+- *The per-document correlation forest* (D1 §13.4) (3g).
+- *C3 blackboard function rejection* enforced and tested (3b).
+- *E1/E2 conformance probes against cador* (3a).
+
+** Corrections to the record above
+
+- *The analysis document exists*: =clautolisp/documentation/clautolisp-multidocument-analysis.org=
+  (R1–R21, E1–E10; E1/E2 at its lines 452–458). The "not found in this
+  worktree" note above was mistaken, as cador-2 slice 3a established.
+- *C2/C8 now trace to code* (=scheduler.lisp=), not "code still to be written".
+
+** Still not built (tracked in cador-4)
+
+- Document-tagged handles and the cross-document dereference signal (C5,
+  §I.7), document locking (§9.5), the host condition hierarchy (D1 §15), the
+  wire-host half of parking (envelope, event loop, prompting =host-command=).
+
+** Acceptance-criteria status (cador-3, D2 half)
+
+- [X] Part I reaches a stated decision on each item, and the scheduler/parking
+      decision (§I.2) is settled — and implemented.
+- [ ] Part II decisions + every §5/§9 open question resolved with a provenance
+      grade — pjb's review. Nothing blocks it any more: §9.6 has cador's side
+      pinned and a vendor run to do, which is a grade to record, not a
+      decision to take.
+- [X] Constraint traceability C1–C8 — C1/C2/C3/C8 trace to code, C5 to the
+      design still to build.

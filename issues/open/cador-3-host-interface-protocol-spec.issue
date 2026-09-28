@@ -65,3 +65,30 @@ flagged). Documents live under =clautolisp/documentation/=.
 D1 must be specifiable without reference to any particular host (epic §3).
 Feeds cador-1 (the condition taxonomy nihil/cador use) and cador-2 (the
 protocol the scheduler realises).
+
+* Decisions and refresh — 2026-09-28
+
+pjb decided the two D1 design questions:
+
+- *§14 capability query: none.* Capability stays implicit (invoke, handle the
+  condition); =host-capable-p= would be an extension, and extensions are
+  minimised.
+- *§15 condition taxonomy: a superclass and four subclasses* -- =host-error=
+  over not-supported-by-this-host / unavailable-in-headless-context /
+  not-yet-implemented / backend-error -- so errors can be caught globally or
+  specifically. Implementation tracked in cador-4.
+
+Both documents were refreshed against cador-2 (closed the same day) and moved
+to DOCUMENT_VERSION 0.2.0, still "draft for review":
+
+- =clautolisp/documentation/clautolisp-host-interface-spec.org= (D1 + D5) --
+  §3 Group 1 now states the built generics, §10/§13 the built parking model
+  (threads on condition variables), §12 matrix rows updated, §14/§15 decided,
+  §19 records the refresh.
+- =clautolisp/documentation/clautolisp-cador-spec.org= (D2) -- §I.1/§I.2/§II.14
+  refreshed, §9.5/§9.6 updated, the "analysis document not found" note
+  corrected (it exists), a 2026-09-28 refresh section at the end.
+
+What remains for pjb's review: sign-off of the D1 fidelity-matrix rows and
+section structure, and the D2 Part II decisions + epic §5/§9 items. Nothing
+blocks that review any more.

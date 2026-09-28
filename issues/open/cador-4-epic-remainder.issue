@@ -3,7 +3,7 @@
 #+STATUS: DEFERRED
 #+PRIORITY: P3
 #+TYPE: epic
-#+DEPENDS: cador-1-split-nihil-cador cador-2-multidocument-runtime cador-3-host-interface-protocol-spec
+#+DEPENDS: cador-3-host-interface-protocol-spec (cador-1, cador-2 closed)
 #+BRANCH: cador
 
 * Context
@@ -40,6 +40,23 @@ issues as each becomes actionable.
 - **Wire host (epic §1 third host, §9.7).** Specify and name the W2
   display/editor server host. Out of scope for the epic itself; tracked
   here so it is not forgotten.
+- **From cador-2 (closed 2026-09-28), deferred by pjb to the wire host.**
+  cador-2 built the scheduler, real parking (threads parked on a condition
+  variable) and the per-document correlation forest; what needs a wire to
+  exist is:
+  - the request/response *envelope* and its serialisation (D1 §13.6), with
+    the document discriminator (R10);
+  - a full *driver / event loop* that serves N parked contexts;
+  - a *prompting =host-command=* (a command that asks for input parks);
+  - wiring *correlation frames* (=with-host-request=) into the live host
+    generics, so nested requests route through the forest.
+- **From cador-3 (pjb, 2026-09-28): the host condition hierarchy.** D1 §15
+  now specifies a superclass =host-error= with four subclasses
+  (not-supported-by-this-host / unavailable-in-headless-context /
+  not-yet-implemented / backend-error). Implement it in the runtime and
+  re-grade cador's raisers (e.g. =cador-set-sysvar='s read-only path) --
+  keeping the existing =code= keywords so handlers that test the code keep
+  working.
 
 * Acceptance criteria
 
