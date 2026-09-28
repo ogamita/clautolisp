@@ -200,6 +200,24 @@
     (is (null (call-autolisp-function fn baz)))
     (is (autolisp-symbol-value-bound-p baz))))
 
+(test builtin-atoms-family-string-names-ignore-case
+  ;; AutoCAD and BricsCAD both answer (atoms-family 1 '("com_way")) with the
+  ;; name of a function the reader stored as COM_WAY; clautolisp answered nil,
+  ;; so an existence test written in lowercase could never pass.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((fn (autolisp-symbol-function (find-autolisp-symbol "ATOMS-FAMILY"))))
+    (set-autolisp-symbol-value (intern-autolisp-symbol "COM_WAY") 1)
+    (flet ((ask (format &rest names)
+             (call-autolisp-function
+              fn format (mapcar #'make-autolisp-string names))))
+      (let ((found (ask 1 "com_way" "Com_Way" "COM_WAY")))
+        (is (= 3 (length found)))
+        (is (every (lambda (s) (string= "COM_WAY" (autolisp-string-value s))) found)))
+      (let ((found (ask 0 "com_way")))
+        (is (eq (find-autolisp-symbol "COM_WAY") (first found))))
+      (is (equal '(nil) (ask 1 "com_tl_continu"))))))
+
 (test builtin-blackboard-and-propagation
   (reset-autolisp-symbol-table)
   (let* ((document-a (make-document-namespace :name "DRAWING-A"))
