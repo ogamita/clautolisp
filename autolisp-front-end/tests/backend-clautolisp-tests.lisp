@@ -404,13 +404,23 @@ isn't on disk (a fresh checkout's `make test` runs before
                                                 :interactive-p nil))
             (plan (list (alfe.backend:action-eval "(+ 1 2)")
                         (alfe.backend:action-quit)))
+            ;; Don't echo to live stdout during this test -- otherwise the
+            ;; FiveAM trace gets polluted -- but KEEP what was said: a failure
+            ;; here used to report only that the status was not :SUCCESS, and
+            ;; the loaded Windows runner gave no other clue
+            ;; (mock-cad-protocol-tests-flake-on-native-windows).
+            (out (make-string-output-stream))
+            (err (make-string-output-stream))
             (result
-              ;; Don't echo to live stdout during this test —
-              ;; otherwise the FiveAM trace gets polluted.
-              (let ((*standard-output* (make-string-output-stream))
-                    (*error-output*    (make-string-output-stream)))
+              (let ((*standard-output* out)
+                    (*error-output*    err))
                 (alfe.backend:eval-plan session plan))))
-       (is (eq :success (alfe.backend:eval-result-status result)))
+       (is (eq :success (alfe.backend:eval-result-status result))
+           "got ~S; output ~S; stdout ~S; stderr ~S"
+           (alfe.backend:eval-result-status result)
+           (alfe.backend:eval-result-output result)
+           (get-output-stream-string out)
+           (get-output-stream-string err))
        (alfe.backend:shutdown session)))))
 
 ;;; --- --host: transmitted to clautolisp by its own names -------------

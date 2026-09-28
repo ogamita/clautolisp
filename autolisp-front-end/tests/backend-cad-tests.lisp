@@ -757,9 +757,43 @@ Appended to an assertion message so a timeout says WHY instead of :ABORTED."
       (format nil " -- the mock CAD thread died: ~A" *mock-cad-condition*)
       ""))
 
-(defun %mock-consume-request (stdin deadline)
+(defparameter +mock-cad-safety-net-seconds+ 300
+  "How long a mock CAD thread may live, at most. NOT a budget the mock is
+expected to meet: the mock is step-locked to its driver -- it waits for the next
+request or for SHUTDOWN, however long either takes, and a test that finishes
+without sending SHUTDOWN sends it through %FINISH-MOCK-CAD. So this is reached
+only when something is already broken, and then it keeps a wedged thread from
+outliving the suite.
+
+It replaced a 20 s budget for the WHOLE session, which WAS on the success path:
+a loaded Windows runner could spend it before the last request arrived, the mock
+stopped serving, and the driver reported :ABORTED
+(mock-cad-protocol-tests-flake-on-native-windows).")
+
+(defun %mock-shutdown-requested-p (control)
+  "True when the driver has published SHUTDOWN on CONTROL."
+  (and control
+       (search "SHUTDOWN" (alfe.protocol.file:read-file-as-string control))))
+
+(defun %finish-mock-cad (thread protocol-session)
+  "Join the mock CAD THREAD, first telling it to stop when it is still alive.
+
+The driver's :quit publishes SHUTDOWN, so on the success path the mock has
+already stopped. When the driver gave up early -- the failures this family is
+diagnosed by -- the mock would otherwise wait for a SHUTDOWN nobody sends, until
++MOCK-CAD-SAFETY-NET-SECONDS+. Sending it here keeps a failing test fast without
+putting a deadline back on the success path."
+  (when (bordeaux-threads:thread-alive-p thread)
+    (ignore-errors
+     (alfe.protocol.file:write-atomic-file
+      (alfe.protocol.file:protocol-session-control-path protocol-session)
+      "SHUTDOWN")))
+  (bordeaux-threads:join-thread thread))
+
+(defun %mock-consume-request (stdin deadline &optional control)
   "Wait until STDIN holds a request, return its text and delete it; NIL if
-DEADLINE passes first.
+DEADLINE passes first, :SHUTDOWN if CONTROL (when given) says SHUTDOWN first --
+a driver that stops early must not leave the mock waiting for a request.
 
 NEVER PROBE THEN OPEN. The driver publishes stdin.txt with WRITE-ATOMIC-FILE
 -- write a temp, rename over -- and on Windows that rename is delete+rename
@@ -792,6 +826,8 @@ what a half-written file looks like, and consuming it would strand the request."
         (%mock-retry-file-op
          (lambda () (when (probe-file stdin) (delete-file stdin))))
         (return text))
+      (when (%mock-shutdown-requested-p control)
+        (return :shutdown))
       (when (> (get-internal-real-time) deadline)
         (return nil))
       (sleep 0.02))))
@@ -837,22 +873,27 @@ stdout.txt so the test driver can verify the round-trip."
      ;;     driver could match against a send it has not made yet.
      ;;
      ;; The counter now follows the requests SERVED, so the mock cannot run
-     ;; ahead of the driver. The overall deadline is what stops a mock nobody
-     ;; feeds: its test then fails on its own assertion instead of hanging.
+     ;; ahead of the driver. And the mock is STEP-LOCKED to it: it waits for
+     ;; the next request OR for SHUTDOWN, with no budget on that wait. The
+     ;; safety net is reached only when a test is already broken
+     ;; (+MOCK-CAD-SAFETY-NET-SECONDS+); the 20 s session budget it replaced
+     ;; was not, and a loaded Windows runner spent it
+     ;; (mock-cad-protocol-tests-flake-on-native-windows).
      (let ((stdin (alfe.protocol.file:protocol-session-stdin-path protocol-session))
+           (control (alfe.protocol.file:protocol-session-control-path protocol-session))
            (served 0)
            (overall-deadline (+ (get-internal-real-time)
-                                (* 20 internal-time-units-per-second))))
+                                (* +mock-cad-safety-net-seconds+
+                                   internal-time-units-per-second))))
        (loop while (and (< served cycles)
                         (< (get-internal-real-time) overall-deadline))
              do (let ((request
-                        ;; Wait for THIS request, without a budget of its own:
-                        ;; the overall deadline above is the only cap, so a
-                        ;; filesystem slower than one guess does not strand a
-                        ;; request. The wait and the read are one operation --
-                        ;; see %MOCK-CONSUME-REQUEST for why probing first is
-                        ;; what broke this on Windows.
-                        (%mock-consume-request stdin overall-deadline)))
+                        ;; The wait and the read are one operation -- see
+                        ;; %MOCK-CONSUME-REQUEST for why probing first is what
+                        ;; broke this on Windows.
+                        (%mock-consume-request stdin overall-deadline control)))
+                  (when (eq request :shutdown)
+                    (return))
                   (when request
                     (incf served)
                     (alfe.protocol.file:write-atomic-file
@@ -873,16 +914,22 @@ stdout.txt so the test driver can verify the round-trip."
                     ;; with RUNNING. A fixed sleep lets a busy scheduler miss
                     ;; DONE entirely and makes the mock nondeterministic.
                     ))))
-     ;; Wait for SHUTDOWN.
+     ;; Wait for SHUTDOWN -- from the driver's :quit, or from %FINISH-MOCK-CAD
+     ;; when the driver stopped early. Step-locked like the requests: the old
+     ;; 2 s wait published STOPPED whether or not SHUTDOWN had come, so a slow
+     ;; driver could find the mock already gone. The delete is retried like the
+     ;; mock's other file ops: a bare one was the last unguarded operation in
+     ;; the cycle, and a sharing violation there killed the thread.
      (let ((control (alfe.protocol.file:protocol-session-control-path protocol-session))
            (deadline (+ (get-internal-real-time)
-                        (* 2 internal-time-units-per-second))))
-       (loop until (let ((text (alfe.protocol.file:read-file-as-string control)))
-                     (search "SHUTDOWN" text))
+                        (* +mock-cad-safety-net-seconds+
+                           internal-time-units-per-second))))
+       (loop until (%mock-shutdown-requested-p control)
              when (> (get-internal-real-time) deadline)
                do (return)
              do (sleep 0.02))
-       (when (probe-file control) (delete-file control)))
+       (%mock-retry-file-op
+        (lambda () (when (probe-file control) (delete-file control)))))
      (alfe.protocol.file:write-atomic-file
       (alfe.protocol.file:protocol-session-status-path protocol-session)
       "STOPPING")
@@ -904,6 +951,7 @@ session would walk."
     (unwind-protect
         (progn
           (ensure-directories-exist workdir)
+          (setf *mock-cad-condition* nil)
           (let* ((protocol (alfe.protocol.file:init-session workdir))
                  (cad (spawn-mock-cad-runtime protocol :cycles 1))
                  (plan (list (alfe.backend:action-eval "(princ 42)")
@@ -916,10 +964,12 @@ session would walk."
                                 (*error-output*    (make-string-output-stream)))
                             (alfe.backend.cad-common:drive-protocol-actions
                              protocol plan)))))
-            (is (eq :success (alfe.backend:eval-result-status result)))
+            (is (eq :success (alfe.backend:eval-result-status result))
+                "got ~S~A" (alfe.backend:eval-result-status result)
+                (%mock-cad-failure-note))
             (is (search "(princ 42)"
                         (alfe.backend:eval-result-output result)))
-            (bordeaux-threads:join-thread cad)))
+            (%finish-mock-cad cad protocol)))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
@@ -941,6 +991,7 @@ stdin.txt for them."
     (unwind-protect
         (progn
           (ensure-directories-exist workdir)
+          (setf *mock-cad-condition* nil)
           (let* ((protocol (alfe.protocol.file:init-session workdir))
                  (cad (spawn-mock-cad-runtime protocol :cycles 3))
                  (plan (list (alfe.backend:action-eval "(princ 1)")
@@ -954,13 +1005,15 @@ stdin.txt for them."
                                 (*error-output*    (make-string-output-stream)))
                             (alfe.backend.cad-common:drive-protocol-actions
                              protocol plan)))))
-            (is (eq :success (alfe.backend:eval-result-status result)))
+            (is (eq :success (alfe.backend:eval-result-status result))
+                "got ~S~A" (alfe.backend:eval-result-status result)
+                (%mock-cad-failure-note))
             (let ((stdout (alfe.backend:eval-result-output result)))
               ;; All three actions must show up in the echo capture.
               (is (search "(princ 1)" stdout))
               (is (search "(princ 2)" stdout))
               (is (search "(princ 3)" stdout)))
-            (bordeaux-threads:join-thread cad)))
+            (%finish-mock-cad cad protocol)))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
@@ -979,6 +1032,7 @@ published."
     (unwind-protect
         (progn
           (ensure-directories-exist workdir)
+          (setf *mock-cad-condition* nil)
           (let* ((protocol (alfe.protocol.file:init-session workdir))
                  (cad (spawn-mock-cad-runtime protocol :cycles 2))
                  (plan (list (alfe.backend:action-interactive)
@@ -1006,8 +1060,10 @@ published."
               (is (search "(print (+ 3 4))" live))
               ;; A primary prompt was issued before the first form.
               (is (search "alfe>" live)))
-            (is (eq :success (alfe.backend:eval-result-status result)))
-            (bordeaux-threads:join-thread cad)))
+            (is (eq :success (alfe.backend:eval-result-status result))
+                "got ~S~A" (alfe.backend:eval-result-status result)
+                (%mock-cad-failure-note))
+            (%finish-mock-cad cad protocol)))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
@@ -1024,6 +1080,7 @@ debug.log channel."
     (unwind-protect
         (progn
           (ensure-directories-exist workdir)
+          (setf *mock-cad-condition* nil)
           (let* ((protocol (alfe.protocol.file:init-session workdir))
                  (cad (spawn-mock-cad-runtime protocol :cycles 1))
                  (plan (list (alfe.backend:action-eval "(princ 1)")
@@ -1053,7 +1110,7 @@ debug.log channel."
               (is (eq :info alfe.logging:*current-level*)
                   "Runtime DEBUG=0 should have dragged alfe down to :info; current is ~S"
                   alfe.logging:*current-level*))
-            (bordeaux-threads:join-thread cad)))
+            (%finish-mock-cad cad protocol)))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
@@ -1077,6 +1134,7 @@ mirror, the control fires the instant the CAD evaluates the form
     (unwind-protect
         (progn
           (ensure-directories-exist workdir)
+          (setf *mock-cad-condition* nil)
           (let* ((protocol (alfe.protocol.file:init-session workdir))
                  (stdout (alfe.protocol.file:protocol-session-stdout-path
                           protocol))
@@ -1113,7 +1171,7 @@ mirror, the control fires the instant the CAD evaluates the form
                 (is (null (search "[ALFE-CONTROL]" shown))
                     "User-visible output must NOT echo the sentinel; got ~S"
                     shown)))
-            (bordeaux-threads:join-thread cad)))
+            (%finish-mock-cad cad protocol)))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
@@ -1169,7 +1227,9 @@ the :launcher keyword. The session ends up in :ready state."
                            session
                            (list (alfe.backend:action-eval "(princ 7)")
                                  (alfe.backend:action-quit)))))
-              (is (eq :success (alfe.backend:eval-result-status result)))))
+              (is (eq :success (alfe.backend:eval-result-status result))
+                  "got ~S~A" (alfe.backend:eval-result-status result)
+                  (%mock-cad-failure-note))))
           (alfe.backend:shutdown session)
           (when mock-thread
             (handler-case (bordeaux-threads:join-thread mock-thread)
@@ -1242,6 +1302,7 @@ in-use dialogs."
     (unwind-protect
         (progn
           (ensure-directories-exist workdir)
+          (setf *mock-cad-condition* nil)
           (let* ((protocol (alfe.protocol.file:init-session workdir))
                  (no-acc (alfe.backend.autocad:make-autocad-backend))
                  (with-install-template
@@ -3264,7 +3325,41 @@ not a counter it ran ahead to)."
               (is (search "(princ 'late)" (alfe.backend:eval-result-output result))
                   "and really consumed -- the echo proves the mock read it~A"
                   (%mock-cad-failure-note)))
-            (bordeaux-threads:join-thread cad)))
+            (%finish-mock-cad cad protocol)))
+      (uiop:delete-directory-tree workdir :validate t
+                                          :if-does-not-exist :ignore))))
+
+(test cad-mock-stops-on-shutdown-without-its-requests
+  "The mock is step-locked, with only a failure-time safety net
+(+MOCK-CAD-SAFETY-NET-SECONDS+, minutes). So a test whose driver stopped early
+must be able to stop it: %FINISH-MOCK-CAD sends SHUTDOWN, and a mock still
+waiting for requests it will never get must take it and publish STOPPED -- in
+seconds, not at the safety net. Without this, every failure of the family would
+cost the safety net and a flaky lane would time out instead of failing."
+  (let ((workdir (uiop:ensure-directory-pathname
+                  (merge-pathnames
+                   (format nil "alfe-test-cad-stop-~D/" (random 999999))
+                   (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist workdir)
+          (setf *mock-cad-condition* nil)
+          (let* ((protocol (alfe.protocol.file:init-session workdir))
+                 ;; Three requests expected; none will be sent.
+                 (cad (spawn-mock-cad-runtime protocol :cycles 3))
+                 (started nil))
+            (alfe.protocol.file:wait-for-status-prefix protocol "READY" :timeout 15)
+            (setf started (get-internal-real-time))
+            (%finish-mock-cad cad protocol)
+            (is (< (/ (- (get-internal-real-time) started)
+                      internal-time-units-per-second)
+                   10)
+                "an unfed mock must stop on SHUTDOWN, not at the safety net~A"
+                (%mock-cad-failure-note))
+            (is (search "STOPPED"
+                        (alfe.protocol.file:read-file-as-string
+                         (alfe.protocol.file:protocol-session-status-path protocol)))
+                "and say so: STOPPED~A" (%mock-cad-failure-note))))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 

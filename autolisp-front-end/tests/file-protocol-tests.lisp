@@ -144,6 +144,32 @@ content visible; the temp file is renamed atomically each time."
                        (alfe.protocol.file:read-file-as-string target))))
       (delete-workdir workdir))))
 
+(test protocol-write-atomic-file-gives-up-loudly-and-cleans-its-temp
+  "The overwriting rename is retried, because on Windows it fails transiently
+while the other party still has the target open
+(mock-cad-protocol-tests-flake-on-native-windows). The retry must be BOUNDED:
+a target that can never be replaced -- here a DIRECTORY of that name -- must
+still signal, after its attempts, and leave no temp file behind. A retry loop
+that swallowed the error, or looped forever, is the regression this catches;
+the transient itself cannot be arranged off Windows."
+  (let* ((workdir (make-test-workdir "atomic-give-up"))
+         (target (merge-pathnames "value.txt" workdir))
+         (started (get-internal-real-time)))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist (uiop:ensure-directory-pathname target))
+          (signals error (alfe.protocol.file:write-atomic-file target "never"))
+          (is (< (/ (- (get-internal-real-time) started)
+                    internal-time-units-per-second)
+                 60)
+              "the retry must be bounded")
+          (let ((temps (remove-if-not (lambda (path)
+                                        (search ".tmp." (file-namestring path)))
+                                      (uiop:directory-files workdir))))
+            (is (null temps)
+                "no temp file may be left behind; found ~S" temps)))
+      (delete-workdir workdir))))
+
 (define-condition %serious-but-not-an-error (serious-condition) ()
   (:report (lambda (condition stream)
              (declare (ignore condition))
