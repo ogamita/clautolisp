@@ -113,3 +113,14 @@ stops within 10 s of SHUTDOWN -- the old 20 s budget would fail it). alfe suite
 
 *Still to do before closing*: the acceptance above -- several consecutive
 green test:alfe:windows runs on the loaded runner. Not claimed from Linux.
+
+** Windows runs with the fix
+
+| run                                   | alfe    | result                    |
+|---------------------------------------+---------+---------------------------|
+| !336 MR pipeline, job 16774481578     | 2.2.141 | BEFORE the fix: 6 failures, this family (three-evals x4, dribble, subprocess-parity) |
+| !338 MR pipeline, job 16775177010     | 2.2.145 | green, 1283 checks, 0 fail |
+| master 2889039928, job 16776116301    | 2.2.145 | green, 1283 checks, 0 fail |
+
+Two consecutive green runs so far, on the same runner that failed the family
+the same morning. One more before closing.

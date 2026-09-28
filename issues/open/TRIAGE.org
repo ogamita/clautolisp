@@ -120,7 +120,7 @@ Test / CI infrastructure (Linux-doable, high value):
   version-rules.md), puis re-vendorer ; la correction a atterri ici d'abord
   parce que la session était confinée à ce dépôt.
 Release / Windows (verification-bound to a Windows runner or a release tag):
-- BLOCKED =windows-artifact-upload-fails-on-release= — P1/machine.
+- DONE =windows-artifact-upload-fails-on-release= — closed 2026-09-28: option 1 (upload only the 2 zips) verified, release:windows:x86-64 played on MR !338's pipeline (job 16774988540), 46 MB + 8 MB, "201 Created". The lane is a manual fallback anyway (Windows ships from GitHub). issues/closed/
 - TODO =release-1.9.9-has-no-macos-products= — P3/machine: macOS products absent from a release.
 CAD (machine-bound):
 - BLOCKED =probes-suite-crashes-bricscad= — P1: the probe suite kills BricsCAD; see the
