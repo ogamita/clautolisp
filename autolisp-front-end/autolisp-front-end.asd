@@ -127,7 +127,8 @@
                "autolisp-front-end/backend-cad-common")
   :serial t
   :components
-  ((:file "source/backend-autocad")))
+  ((:file "source/backend-autocad")
+   (:file "source/backend-autocad-trustedpaths")))
 
 (asdf:defsystem "autolisp-front-end/conformance"
   :description "alfe scenario corpus runner — drives declarative .sexp scenarios through alfe.cli:run and compares captured streams against expectations."
@@ -177,6 +178,7 @@
    (:file "tests/dribble-tests")
    (:file "tests/file-protocol-tests")
    (:file "tests/backend-cad-tests")
+   (:file "tests/trustedpaths-tests")
    (:file "tests/empty-drawing-tests")
    (:file "tests/conformance-tests")
    (:file "tests/plugin-tests")

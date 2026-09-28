@@ -120,3 +120,56 @@ Either way this needs a CAD with SECURELOAD=2 to verify, and the second
 shape needs a decision about where a writable-but-trusted directory
 belongs. Both are beyond what can be settled without the machine, which
 is why this stays open rather than being half-implemented.
+
+* pjb, 2026-09-28: shape 1
+
+"(a) add to TRUSTEDPATHS for the run and restore after".
+
+* Measured: where TRUSTEDPATHS lives (probe:trustedpaths-registry:windows)
+
+Job 16790265270, on the Windows runner, 2026-09-28:
+
+- AutoCAD: =HKCU\Software\Autodesk\AutoCAD\R24.1\ACAD-5101:40C\Profiles\<profile>\Variables=,
+  value =TRUSTEDPATHS=, REG_SZ. The runner's hand-set CI trust
+  (=C:/gitlab-runner/builds/.../alpm/...;C:\msys64\tmp=) is in
+  =<<Profil sans nom>>=; =Epure= has an empty value.
+- *"The current profile" is two answers*: the =Profiles= default value
+  said =Epure= while =CPROFILE= said =<<Profil sans nom>>=. So alfe trusts
+  the workdir in EVERY profile rather than guessing one.
+- =SECURELOAD= is 0 in both profiles; the machine default
+  (=HKLM\...\R24.1\ACAD-5101\Install=) is 1.
+- BricsCAD: neither value anywhere in HKCU or HKLM (the inventory says
+  "not saved"), which is consistent with alfe's run.scr setting SECURELOAD
+  to 0 for the session. BricsCAD is out of scope here.
+
+* Implementation (clautolisp 2.2.145)
+
+=autolisp-front-end/source/backend-autocad-trustedpaths.lisp=:
+- =trust-workdir-for-run= runs in AutoCAD's =start-engine= before the
+  launch, and only for a REAL launch: =--print-command= and the tests pass
+  their own launcher. It adds =<workdir>\...= to every profile's
+  TRUSTEDPATHS.
+- =untrust-workdir= removes exactly that entry from the value as it is
+  THEN, so others' changes are kept. It runs at the end of =shutdown=,
+  after the created AutoCAD has quit (AutoCAD saves its profile on exit),
+  and in the failed-start cleanup.
+- Registry I/O goes through PowerShell's .NET API with an ASCII-only
+  transport (=-EncodedCommand=, strings as UTF-16 code numbers). reg.exe's
+  console codepage would corrupt a =%TEMP%= under a non-ASCII user name.
+  The value kind is kept.
+- Killed runs: a journal =<temp>/alfe-trustedpaths.txt= (pid + entry),
+  plus removal of entries naming an alfe-generated workdir whose pid is
+  dead. Both are swept at the start of every run. An unknown pid state
+  counts as alive.
+- Tests: =tests/trustedpaths-tests.lisp=, 13 tests. One of them does a
+  real-registry round trip, only on a Windows host with AutoCAD profiles:
+  a workdir named with =é=, every profile restored exactly.
+- Manual: "alfe's workdir in AutoCAD's TRUSTEDPATHS".
+
+* Remaining for DONE
+
+The end-to-end proof on the real CAD: =verify:trustedpaths-secureload2:windows=
+(manual). It sets SECURELOAD=2 in every profile and runs alfe. A =-l=
+file from an untrusted directory must be refused (the control, without
+which a success proves nothing). It then checks that nothing is left in
+TRUSTEDPATHS, and restores SECURELOAD.
