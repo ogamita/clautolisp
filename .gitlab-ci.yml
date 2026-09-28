@@ -1195,7 +1195,13 @@ native:pipeline:
   variables:
     MACOS_RUNNER: "$MACOS_RUNNER"
     WINDOWS_RUNNER: "$WINDOWS_RUNNER"
+    ARM64_RUNNER: "$ARM64_RUNNER"
     PROBES_CHANGED: "$PROBES_CHANGED"
+    # The arm64 lanes in .gitlab/native.yml pick native-vs-emulated on
+    # ARM64_RUNNER and pull the same digest-pinned arm64 base as the parent's
+    # release:linux:arm64 — forwarded here rather than duplicated, since a child
+    # pipeline inherits neither the parent's anchors nor its top-level variables.
+    ARM64_BASE: "$ARM64_BASE"
   rules:
     - *not-on-schedule
     # A TAG and MASTER always spawn the child: those are the refs whose results
