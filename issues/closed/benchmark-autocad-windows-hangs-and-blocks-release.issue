@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: benchmark-autocad-windows-hangs-and-blocks-release — a silent 2-hour job sits in front of every release stage
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: infra
 #+DEPENDS: -
@@ -200,3 +200,13 @@ have =&rest= and get variadic shadows.
 
 Still open until a run PRODUCES numbers: play =benchmark:autocad:windows=
 with this change.
+
+* Resolved 2026-09-28 — the AutoCAD benchmark runs and reports
+
+=benchmark:autocad:windows= on MR !342's pipeline (job 16778123587), with the
+alfe-load change: green. accoreconsole loaded the suite (=7 benchmarks
+registered=), ran every class for 3 s, and printed its table -- 1927696
+iterations in 21236 ms. The hang (fixed by the September accoreconsole work)
+and the arity trap behind it (fixed here) are both gone, so option 4 is done:
+the AutoCAD benchmark is repaired rather than disabled, and the numbers can go
+beside BricsCAD's and clautolisp's.

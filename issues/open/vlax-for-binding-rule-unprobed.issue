@@ -114,3 +114,22 @@ What is left is the VENDOR columns:
 Close on the BricsCAD answer if it is BIND on both platforms, with the
 AutoCAD column recorded as unavailable; reopen as a divergence if any
 engine answers ASSIGN.
+
+** BricsCAD macOS answered: BIND — 2026-09-28
+
+The BricsCAD probe jobs had PROBE_SUITES pinned to the old FOREACH
+experiment, so the suite never ran there; MR !347 added it. Then
+=probe:suite:bricscad:macos= (job 16779889621, BricsCAD V26,
+probe-results/bricscad/macos/20260928T131139Z):
+
+| case                  | BricsCAD macOS | clautolisp  |
+|-----------------------+----------------+-------------|
+| own /-local           | (BEFORE 1)     | (BEFORE 1)  |
+| caller's /-local      | (BEFORE 1)     | (BEFORE 1)  |
+| global                | (OUTER 1)      | (OUTER 1)   |
+| bound nowhere         | (NIL 1)        | (nil 1)     |
+
+BricsCAD BINDS the VLAX-FOR loop variable, exactly as it does FOREACH's, and
+as clautolisp has since 2.0.26. =probe:suite:bricscad:windows= on the same
+pipeline was cancelled before it ran (a newer pipeline superseded it); the
+Windows column is the last one this ticket waits for.
