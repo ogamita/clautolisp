@@ -31,6 +31,7 @@
     (:navigation-history-max . 1000)
     (:sedit-on-quit . :ask)
     (:break-on-caught . nil)
+    (:atom-poll-points . nil)
     (:source-window-height . 24)
     (:value-line-width . 72)
     (:pager . :on)
@@ -62,6 +63,7 @@ types and the :DECORATIONS sub-list for the theme glyphs.")
     (:navigation-history-max  :integer)
     (:sedit-on-quit           :enum (:auto-save :do-not-save :ask))
     (:break-on-caught         :boolean)
+    (:atom-poll-points        :boolean)
     (:source-window-height    :integer)
     (:value-line-width        :integer)
     (:pager                   :pager)
@@ -677,3 +679,13 @@ the defaults in place. Returns the path read, or NIL if none."
         (when (consp config)
           (setf *lisp-configuration* (%config-consume-extras "lisp" config)))))
     path))
+
+;;; ---------------------------------------------------------------------------
+;;; Settings the debugger ENGINE reads
+
+;; `set atom-poll-points on' (instrumenter-no-pollpoints-on-atoms): the engine
+;; asks this predicate when it weaves a function, so the setting -- persisted or
+;; set mid-session -- takes effect for every function instrumented from then on,
+;; without the engine depending on this layer.
+(setf clautolisp.debug:*instrument-atoms-predicate*
+      (lambda () (debugger-setting :atom-poll-points)))

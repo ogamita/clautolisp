@@ -1,8 +1,13 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: Instrumenter assigns no poll-points to atoms — cannot break before evaluating a variable reference
 #+AUTHOR: pjb (reported), investigated by the aldo REPL-breakpoint work
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: -
+#+BRANCH: feat-atom-poll-points
 
-* TODO Instrumenter assigns no poll-points to atoms
+* DONE Instrumenter assigns no poll-points to atoms
 
 ** Symptom
 
@@ -91,3 +96,58 @@ Considerations:
 
 - =aldo-command-from-repl.issue= (the REPL-accessible aldo commands
   whose position-designation raised this).
+
+** Resolution — clautolisp 2.2.142 (2026-09-28)
+
+pjb, 2026-09-28, choosing between this and lexical-locals-escape-analysis:
+"do 1 then 2." Implemented as a SETTING, off by default: =set atom-poll-points
+on=.
+
+*Why a setting and not a DEBUG level.* The default optimization is already
+=(debug 3)=, the top, so "only at a high DEBUG level" would have meant ON for
+everyone -- and it changes what a step stops on (every variable) and renumbers
+the poll points (func.INDEX, LINE.K, ppN). So it is opt-in, persisted with the
+other aldo settings.
+
+*Positions: by occurrence.* An atom cannot be a key (the same symbol or fixnum
+is everywhere), but the cons CELL holding it can. A tracked load now records,
+for every list element that is an atom, the cell whose car it is
+(=clautolisp.source:*source-element-position-table*=,
+=note-element-positions=, =element-position-of=), cleared and shifted with the
+compound table. Keyed by cell rather than (list, index) so that a function
+BODY -- a tail of its DEFUN form -- answers too: a bare =z= returning a local
+is a statement that is an atom.
+
+*Instrumenter.* =instrument-operands= walks operands (and COND clauses, and the
+body) by cell; with atoms on, each atom in an EVALUATED position is wrapped in
+its own =%CLAL-POLL=, kind =:variable= (a symbol other than T) or =:literal=.
+Not woven: SETQ's places, FOREACH's variable, the operator. Read once per
+function, when it is instrumented (=instr-state-atoms-p=), so a function keeps
+a consistent numbering; turning the setting on affects functions instrumented
+from then on. The engine reads =*instrument-atoms*= or
+=*instrument-atoms-predicate*=, which the UI layer's settings.lisp sets to read
+=atom-poll-points= -- no engine-to-UI dependency.
+
+*Line breakpoints keep their meaning.* =find-form-id-at-line= prefers compound
+forms: with atoms woven, the innermost thing on a line is usually its last
+variable, and =break LINE= means the statement. A line holding only an atom
+still resolves to it. FILE:LINE resolution (earliest poll point at/after) needed
+no change: a form's paren precedes its atoms.
+
+*Compiled forks.* The transpiler open-codes =%CLAL-POLL= generically
+(=transpile-form= on its inner form), so a poll around an atom compiles like
+any variable reference or literal. Checked by running the debug suite with
+instrumented bodies compiled at threshold 1 and atoms FORCED ON globally:
+198/200, the two failures being the stepping tests that pin the exact sequence
+of stops (step-into now stops at the X in (id x) before entering ID -- the
+feature itself). Same run with atoms off: 200/200, 128 instrumented bodies
+compiled.
+
+Tests: =atoms-get-no-poll-points-by-default=, =atoms-get-poll-points-when-asked=
+(positions 3:15 and 4:3; break LINE still the statement),
+=the-predicate-turns-atom-poll-points-on=,
+=a-breakpoint-stops-before-a-variable-is-read=,
+=atom-poll-points-skip-the-places-that-are-not-evaluated= (FOREACH/SETQ/COND),
+and =atoms-are-positioned-by-their-occurrence= in the source-map suite (incl.
+shift and clear). Full clautolisp suite green. Documented in the debugger
+command reference, /settings/.

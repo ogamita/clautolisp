@@ -28,6 +28,9 @@ back to its source. The runtime records positions here when
    #:*source-position-table*
    #:note-position
    #:position-of
+   #:*source-element-position-table*
+   #:note-element-positions
+   #:element-position-of
    #:clear-source-positions
    #:shift-source-positions
    #:call-with-source-tracking
