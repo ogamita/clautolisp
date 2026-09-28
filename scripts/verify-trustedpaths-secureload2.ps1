@@ -64,7 +64,11 @@ try {
     $codes = ([int[]][char[]]($control -replace '\\', '/')) -join ' '
     $inforce = '(progn (princ (vl-symbol-name (quote INFORCE=))) (princ (getvar (vl-symbol-name (quote SECURELOAD)))) (princ))'
     $run = '(progn (princ (vl-symbol-name (quote RUN=))) (princ (+ 20 22)) (princ))'
-    $ctl = "(progn (setq r (vl-catch-all-apply (quote load) (list (vl-list->string (quote ($codes)))))) (princ (vl-symbol-name (if (vl-catch-all-error-p r) (quote CONTROL.REFUSED) (quote CONTROL.RETURNED)))) (princ))"
+    # Markers WITHOUT dots: AutoLISP read (quote CONTROL.REFUSED) as CONTROL
+    # (job 16792324913), which could not tell refused from returned. FOUND=1
+    # proves the path is right, so a failed load is not a typo; the error
+    # message is AutoCAD's own reason.
+    $ctl = "(progn (setq p (vl-list->string (quote ($codes)))) (princ (vl-symbol-name (quote FOUND=))) (princ (if (findfile p) 1 0)) (terpri) (setq r (vl-catch-all-apply (quote load) (list p))) (princ (vl-symbol-name (if (vl-catch-all-error-p r) (quote CONTROLREFUSED) (quote CONTROLRETURNED)))) (if (vl-catch-all-error-p r) (princ (vl-catch-all-error-message r))) (princ))"
     $out = & $alfe --no-init --verbose --cad autocad --mode $mode --timeout $timeout `
         -x $inforce -x $run -x $ctl 2>&1 | Out-String
     $alfeStatus = $LASTEXITCODE
@@ -73,7 +77,7 @@ try {
 
     $enforced = $out -match 'INFORCE=2'
     $ran      = $out -match 'RUN=42'
-    $control_loaded = $out -match 'CONTROL\.LOADED'
+    $control_loaded = ($out -match 'CONTROL\.LOADED') -or ($out -match 'CONTROLRETURNED') -or -not ($out -match 'FOUND=1') -or -not ($out -match 'CONTROLREFUSED')
     $leftover = @()
     foreach ($s in $keys) {
         $tp = [string]$cu.OpenSubKey($s).GetValue('TRUSTEDPATHS', '')
@@ -86,7 +90,7 @@ try {
     $leftover | ForEach-Object { Write-Host "  LEFTOVER $_" }
 
     if (-not $enforced)            { Write-Host "RESULT=INCONCLUSIVE (the CAD does not report SECURELOAD=2)"; $status = 3 }
-    elseif ($control_loaded)       { Write-Host "RESULT=INCONCLUSIVE (the untrusted control loaded)"; $status = 3 }
+    elseif ($control_loaded)       { Write-Host "RESULT=INCONCLUSIVE (the untrusted control was not found-and-refused)"; $status = 3 }
     elseif (-not $ran)             { Write-Host "RESULT=FAIL (alfe did not run)"; $status = 1 }
     elseif ($leftover.Count -gt 0) { Write-Host "RESULT=FAIL (entry left in TRUSTEDPATHS)"; $status = 1 }
     else                           { Write-Host "RESULT=PASS"; $status = 0 }
