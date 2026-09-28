@@ -1035,6 +1035,14 @@ provides that surface through the host backend:
   a ~--bricscad~ dialect, to BricsCAD's ~SAVEFORMAT~ integer (AutoCAD has
   no save-format sysvar). The chosen version sets the emitted DXF
   ~$ACADVER~; the DWG writer carries it through libredwg.
+- *Vendor variable first.* Under a vendor dialect, the vendor's own system
+  variable decides when it has one — BricsCAD's ~BASEFILE~ for the
+  template, ~SAVEFORMAT~ for the format — and the ~CLAUTOLISP…~ variable is
+  the fallback. Whenever a ~CLAUTOLISP…~ variable is what decides, or a
+  program reads or sets one with ~getvar~ / ~setvar~, under any dialect but
+  ~--dialect clautolisp~ and ~--lax~, a ~[clautolisp-sysvar]~ notice says
+  so, once per variable per run: on the vendor's product the variable does
+  not exist, and the program would get another drawing or format there.
 - *A new drawing can be created from a TEMPLATE.* By default a new
   document is EMPTY, as it always has been. Set the
   ~CLAUTOLISPNEWDRAWINGTEMPLATE~ system variable to a ~.dxf~ / ~.dwg~ /
@@ -1042,7 +1050,8 @@ provides that surface through the host backend:
   drawing's *structure* — its header, symbol table records and
   ~*Model_Space~ / ~*Paper_Space~ block definitions — with its own name.
   A relative name is resolved against BricsCAD's ~TEMPLATEPATH~ (the
-  Templates folder) when that is set.
+  Templates folder) when that is set. Under a ~--bricscad~ dialect
+  BricsCAD's own ~BASEFILE~ takes precedence when it is set.
 
   This matters for *DWG*: libredwg needs an entity's owner record and a
   properly formed BLOCKS section, so a drawing assembled from nothing

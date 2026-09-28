@@ -383,6 +383,10 @@
    ;; path builtins call the emitter, which is silent only in --lax.
    #:emit-dotdot-path-portability-warning
    #:autolisp-path-has-dotdot-component-p
+   ;; `[clautolisp-sysvar]' notice (clal-drawing-sysvars-silent-out-of-dialect):
+   ;; a clautolisp-only system variable used under a vendor dialect.
+   #:emit-clautolisp-sysvar-warning
+   #:*clautolisp-sysvar-warnings-seen*
    ;; `/...' subfolder-recursion warning, platform-gated to Windows
    ;; (dialect-platform-version-axis): AutoCAD-Windows accepts only the
    ;; back-slash `\...' spelling of the `...' wildcard.

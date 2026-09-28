@@ -195,9 +195,17 @@ clock."
 
 ;;; --- Method definitions ------------------------------------------
 
+(defun %note-clautolisp-sysvar-access (string)
+  "GETVAR / SETVAR of a clautolisp-only system variable out of dialect gets the
+`[clautolisp-sysvar]' notice (clal-drawing-sysvars-silent-out-of-dialect): it
+does not exist on the vendor's product, where GETVAR answers nil."
+  (when (member string *clautolisp-extension-sysvar-names* :test #'string=)
+    (warn-clautolisp-sysvar-use string)))
+
 (defmethod host-getvar ((host cador) name)
   (let* ((string (ensure-sysvar-name name 'getvar))
          (cell (cador-sysvar host string)))
+    (%note-clautolisp-sysvar-access string)
     (cond
       ;; Unknown name -> nil (§16 normative rule on unknown names).
       ((null cell) nil)
@@ -229,6 +237,7 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
 (defmethod host-setvar ((host cador) name value)
   (let* ((string (ensure-sysvar-name name 'setvar))
          (cell (cador-sysvar host string)))
+    (%note-clautolisp-sysvar-access string)
     (cond
       ((null cell)
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error

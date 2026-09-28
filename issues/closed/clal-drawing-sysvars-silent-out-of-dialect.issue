@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: clal-drawing-sysvars-silent-out-of-dialect — two clautolisp-only sysvars answer under every dialect without a warning
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: pjb-decision
 #+DEPENDS: -
@@ -93,3 +93,35 @@ measurement detail is worth keeping: a sysvar value of =""= does NOT distinguish
 "absent" from "present and empty", so a probe must test existence (=nil= or
 not). The first version of that probe read values and showed the same thing
 under three dialects while proving nothing.
+
+* Resolved — clautolisp 2.2.144 (2026-09-28)
+
+pjb: "dialect autocad and bricscad have their own sysvar (GNEWTEMPLATE?). If
+not we can fallback to the clautolisp sysvar, but then a dialect warning must
+be issued."
+
+*What the vendors have* (system-variables-inventory.sexp, built from the 2026
+vendor references; each entry cites its page):
+- BricsCAD: *BASEFILE* — "the file path and default template file name for
+  new drawings" — and *SAVEFORMAT*, the default save format. Both documented.
+- AutoCAD: *neither*. Its template and default save format are Options /
+  profile settings, not system variables; neither GNEWTEMPLATE nor
+  QNEWTEMPLATE is in the 2026 reference (QNEWTEMPLATE was already noted, from
+  memory, in =cador/source/sysvars.lisp= and left out for that reason).
+
+*The rule, implemented:*
+- under a BricsCAD dialect BASEFILE names the template (new) and SAVEFORMAT
+  the format (already so); CLAUTOLISPNEWDRAWINGTEMPLATE is the fallback when
+  BASEFILE is empty;
+- under an AutoCAD dialect and --strict the clautolisp variables decide;
+- whenever a clautolisp variable decides, or GETVAR / SETVAR touches one, out
+  of --dialect clautolisp / --lax: a `[clautolisp-sysvar]' notice, once per
+  variable per run, naming the vendor's own variable where there is one
+  ("BricsCAD's own is BASEFILE") or saying AutoCAD has none. It honours the
+  dialect's portability-warning mode (=:error= signals).
+
+New register entry =clautolisp-sysvar= (=:extension-notice=), emitter
+=emit-clautolisp-sysvar-warning= in the runtime, annex regenerated; five tests
+in =cador/tests/vlax-tests.lisp=; user manual updated. The measured case --
+=(getvar "CLAUTOLISPNEWDRAWINGTEMPLATE")= silent under --dialect autocad -- now
+warns.

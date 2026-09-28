@@ -3036,6 +3036,39 @@ go to *ERROR-OUTPUT*."
           (unless (%dotdot-path-warning-seen-p path)
             (format *error-output* "~&~A~%" message)))))))
 
+(defvar *clautolisp-sysvar-warnings-seen* (make-hash-table :test 'equal)
+  "Names of the clautolisp system variables already reported by
+EMIT-CLAUTOLISP-SYSVAR-WARNING in this run: the notice is once per variable,
+not once per read.")
+
+(defun emit-clautolisp-sysvar-warning (name &optional vendor-note)
+  "Emit the `[clautolisp-sysvar]' extension notice: the clautolisp system
+variable NAME is being used under a dialect it is not portable to. VENDOR-NOTE,
+when given, says what the vendor uses instead (\"BricsCAD's own is BASEFILE\").
+
+Silent under --dialect clautolisp and --lax. Once per NAME per run
+ (*CLAUTOLISP-SYSVAR-WARNINGS-SEEN*). Honours the dialect's
+PORTABILITY-WARNING-MODE: `:error' signals instead of printing, as the other
+dialect notices do. Warnings go to *ERROR-OUTPUT*; the operation proceeds."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (dialect-name (and dialect
+                            (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+         (mode (or (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                          dialect)))
+                   :warn)))
+    (unless (member dialect-name '(:clautolisp :lax))
+      (let ((message (%portability-diagnostic
+                      "clautolisp-sysvar"
+                      (%portability-warning-location nil)
+                      name (or dialect-name "default") vendor-note)))
+        (when (eq mode :error)
+          (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+        (unless (gethash name *clautolisp-sysvar-warnings-seen*)
+          (setf (gethash name *clautolisp-sysvar-warnings-seen*) t)
+          (format *error-output* "~&~A~%" message))))))
+
 (defun autolisp-path-has-forward-slash-ellipsis-p (path)
   "T iff PATH contains a `...' subfolder-recursion component (AutoCAD's
 support/trusted-path `...' wildcard — a directory and all of its
