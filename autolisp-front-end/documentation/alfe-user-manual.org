@@ -661,6 +661,77 @@ LISPSYS-selected) is tracked in the project's encoding issues.
 | BricsCAD V25 / Windows    | ANSI_1252; per-open =,ccs=UTF-8/UTF-16LE= honoured | cp1252 (GUI) |
 | AutoCAD 2022 / accoreconsole | ANSI_1252 / MBCS; =LISPSYS= 1/2 → UTF-8 (restart); =ccs=~ ignored | UTF-16LE, fixed |
 
+* The =alfe-*= operators (for test and REPL code)
+
+Code that alfe *controls* — =autolisp-test= suites, =outils-autolisp=
+regression scenarios, REPL snippets, anything you feed through
+=alfe -l FILE= or =-x EXPR= — should call the fixed-arity =alfe-*=
+operators instead of the native =load= / =princ= / =print= / =prin1= when
+it needs alfe's behaviour to be *identical on AutoCAD and on BricsCAD*.
+The native operators still work, but they run in the CAD, not in alfe: on
+AutoCAD =accoreconsole= a native =(load)= of a file that contains a
+non-ASCII byte fails outright, and native =(princ …)= output does not
+reach alfe's captured stream. The =alfe-*= operators are the portable
+interface; they are defined by the alfe runtime, so they exist on every
+backend (AutoCAD, BricsCAD, and the =clautolisp= host).
+
+Why not just redefine =load= / =princ=? Because AutoCAD's AutoLISP has no
+variable-arity user functions and re-routing the builtins re-enters alfe's
+protocol loop. So alfe does *not* shadow the builtins; it offers parallel
+=alfe-*= operators and rewrites the code it loads to use them (see below).
+
+** The operators
+
+| You write             | Use instead                | Notes                                              |
+|-----------------------+----------------------------+----------------------------------------------------|
+| =(load "f.lsp")=      | =(alfe-load "f.lsp")=      | Byte-safe deported load; honours =-Esource=.       |
+| =(load p onfailure)=  | =(alfe-load-onfailure p x)=| Returns =x= on a resolve failure instead of erroring. |
+| =(princ obj [file])=  | =(alfe-princ obj)=         | 1-arg convenience; output reaches alfe's stream.   |
+| =(print obj [file])=  | =(alfe-print obj)=         |                                                    |
+| =(prin1 obj [file])=  | =(alfe-prin1 obj)=         |                                                    |
+
+For a call whose arity is not exactly one argument, use the *star* form,
+which takes the argument list, so any arity maps to a fixed-arity call
+(this is what lets it work on AutoCAD):
+
+: (alfe-princ* (list obj file))     ; = (princ obj file)
+: (alfe-princ* (list))              ; = (princ)  -> newline
+: (alfe-load*  (list "f.lsp"))      ; = (load "f.lsp")
+
+=alfe-print*=, =alfe-prin1*= and =alfe-load*= follow the same shape.
+
+** =alfe-load= rewrites the file it loads
+
+You do *not* have to convert a whole source tree by hand. =alfe-load=
+reads the file honouring its encoding (so a high byte survives even on
+=accoreconsole=), then *rewrites* every native =(load …)= / =(princ …)=
+/ =(print …)= / =(prin1 …)= call in the loaded forms into its =alfe-*=
+equivalent, and evaluates them directly. So a file loaded with =alfe-load=
+gets the full alfe behaviour throughout — a nested =(load "other.lsp")=
+inside it deports too — while the same file loaded with the native
+=(load)= keeps native behaviour. Quoted data (=(quote …)=, =#'…=) is left
+untouched.
+
+Practical rule for =autolisp-test= / =outils-autolisp=: make the *entry
+point* alfe loads use =alfe-load= for any file that may contain non-ASCII
+literals, and use =alfe-print= / =alfe-princ= for output the harness must
+capture. Everything transitively loaded through =alfe-load= is rewritten
+automatically, so the scenario files themselves need no per-call change.
+
+** Portability summary
+
+| Backend                      | native =(load)= high-byte | =(alfe-load)= high-byte |
+|------------------------------+---------------------------+-------------------------|
+| clautolisp (Linux)           | ok                        | ok                      |
+| BricsCAD (macOS / Windows)   | ok                        | ok                      |
+| AutoCAD 2022 / accoreconsole | FAILS                     | ok                      |
+
+=alfe-load= is the safe default in cross-backend test code: it is verified on
+clautolisp, BricsCAD (macOS + Windows), and AutoCAD =accoreconsole= (the
+encoding probe reads =(setq ENCSRC "A<e-acute>Z")= back as code points
+=65 233 90= on all three). Native =(load)= of a high byte still FAILS on
+accoreconsole, which is why alfe-owned code must call =alfe-load=.
+
 * Init files
 
 On startup (unless =--no-init= / =-norc= is given), alfe loads

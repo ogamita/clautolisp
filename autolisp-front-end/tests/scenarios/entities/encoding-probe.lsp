@@ -108,8 +108,14 @@
         ;; surfaces below with the LOAD-ERR prefix existing readers key on.
         (setq r (vl-catch-all-apply 'alfe-load (list path)))
         (if (vl-catch-all-error-p r)
+            ;; The runtime raises via (/ 1 0) (portable, AutoCAD has no error);
+            ;; the host text is then "division par zero", masking the real
+            ;; cause. autolisp-effective-error-message recovers the diagnostic
+            ;; the source loader stashed in *AUTOLISP_LAST_ERROR_CONTEXT*.
             (m (strcat "source." tag ".load")
-               (strcat "LOAD-ERR: " (vl-catch-all-error-message r)))
+               (strcat "LOAD-ERR: "
+                       (autolisp-effective-error-message
+                         (vl-catch-all-error-message r))))
             (m (strcat "source." tag ".cp") (codepoints ENCSRC))))))
 
 (defun run-encoding-probe ( / S)
@@ -176,6 +182,36 @@
   (m "read.utf8file-default.cp"   (readcp "encp-ccs-utf8.txt"    "r"))
   (m "read.utf16file-unicode.cp"  (readcp "encp-ccs-utf16le.txt" "r,ccs=UNICODE"))
   (m "read.utf16file-utf16le.cp"  (readcp "encp-ccs-utf16le.txt" "r,ccs=UTF-16LE"))
+
+  ;; --- 6b. localize the AutoCAD alfe-load failure. srcprobe below deports
+  ;; through alfe-load and, on accoreconsole, reported "division par zero".
+  ;; Load an ASCII-ONLY file through the same alfe-load first: if this
+  ;; succeeds and the high-byte cases below fail, the non-ASCII byte is the
+  ;; trigger; if this ALSO fails, alfe-load is failing on AutoCAD regardless
+  ;; of content. accoreconsole-deported-load-highbyte. ---
+  (setq ASCIISRC nil)
+  (if (trywrite "encp-ascii.lsp" "w" "(setq ASCIISRC 7)")
+      (progn
+        (setq AR (vl-catch-all-apply 'alfe-load (list "encp-ascii.lsp")))
+        (m "alfe-load.ascii"
+           (if (vl-catch-all-error-p AR)
+               (strcat "ERR " (autolisp-effective-error-message
+                                 (vl-catch-all-error-message AR)))
+               (strcat "OK ASCIISRC=" (if ASCIISRC (itoa ASCIISRC) "nil"))))
+        ;; Does accoreconsole actually support (error MSG)? The runtime says
+        ;; no (it fell back to (/ 1 0)); settle it empirically. Probe binding
+        ;; via atoms-family FIRST -- calling an undefined ERROR would signal
+        ;; while resolving the symbol and ESCAPE vl-catch-all-apply (the
+        ;; vlax-sleep hazard). Only call it when it is actually bound.
+        (m "error-primitive.bound"
+           (if (autolisp-host-has-fn "ERROR") "yes" "no"))
+        (if (autolisp-host-has-fn "ERROR")
+            (progn
+              (setq ER (vl-catch-all-apply 'error (list "alfe-error-probe-marker")))
+              (m "error-primitive.call"
+                 (if (vl-catch-all-error-p ER)
+                     (strcat "raised: " (vl-catch-all-error-message ER))
+                     (strcat "returned: " (vl-princ-to-string ER))))))))
 
   ;; --- 7. source situation: native (load) decode vs known on-disk bytes,
   ;; across the write encodings (default / UTF-8 / UTF-16LE). Each line pair
