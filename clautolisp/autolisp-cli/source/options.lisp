@@ -56,6 +56,9 @@
   (list-situations-p nil)             ; AC  --list-situations
   (list-hosts-p     nil)              ; AC  --list-hosts
   (list-cad-programs-p nil)           ; AC  --list-cad-programs (alfe)
+  (probe-gui-p      nil)              ; A   --probe-gui: report whether an
+                                      ;     interactive desktop is available for
+                                      ;     COM/GUI automation, then exit (alfe)
   (dry-run-p        nil)              ; A
   (print-command-p  nil)              ; A   --print-command: stage the workdir as
                                       ;     usual, print the CAD command line that

@@ -192,6 +192,20 @@ Only =--cad autocad-2022= (or =acad-2022=) *names* a release. =--cad
 autocad= asks for the latest one, so the release is alfe's own choice
 and never a reason to refuse the run.
 
+*=--mode automation= needs a live interactive desktop.* COM automation
+drives a GUI application, so it requires the Windows session to be
+*connected and unlocked*. When the session is disconnected — locked,
+after a "switch user", the console handed back to the login window, or
+an RDP client that closed without logging off — a =--mode automation=
+run FAILS or hangs partway, while =--mode batch= (headless
+=accoreconsole= on AutoCAD) is unaffected. =alfe --probe-gui= reports
+whether a desktop is available right now (on Windows: the WTS connect
+state and whether the lock/login screen is up), and exits; and under
+=--verbose= (or =--debug=) alfe prints a conspicuous heads-up at launch
+whenever it selects automation but no desktop is available. If an
+automated runner cannot keep its session connected, prefer =--mode
+batch= where the vendor offers a headless engine.
+
 alfe confirms the registration before using it (a CLSID *and* a readable
 =LocalServer32=). When you named the release and its COM server is not
 registered, alfe stops and says so — it will not quietly fall back to the

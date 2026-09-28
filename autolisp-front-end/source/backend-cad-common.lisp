@@ -24,6 +24,12 @@
            #:macos-p
            #:linux-p
            #:windows-p
+           ;; interactive-desktop (GUI) availability for COM automation
+           #:gui-availability
+           #:windows-gui-state
+           #:print-gui-availability
+           #:announce-gui-availability
+           #:*gui-availability-override*
            ;; binary discovery
            #:env-binary
            #:first-existing
@@ -95,6 +101,163 @@ matrix here. *HOST-OS-OVERRIDE*, when set, wins (tests only)."
 (defun macos-p ()   (eq (host-os) :macos))
 (defun linux-p ()   (eq (host-os) :linux))
 (defun windows-p () (eq (host-os) :windows))
+
+;;; --- interactive-desktop (GUI) availability -----------------------
+;;;
+;;; COM automation of a GUI CAD (`--mode automation') needs a LIVE
+;;; interactive Windows desktop. When the runner's session is
+;;; disconnected -- locked, "switch user", the console handed back to
+;;; the login screen, or an RDP client that detached without logging
+;;; off -- automation FAILS or hangs while a headless run
+;;; (accoreconsole, `--mode batch') keeps working. This is the
+;;; difference seen between benchmark:autocad:windows (COM, died after
+;;; 2 of 7 benchmarks) and benchmark:bricscad:windows (batch, all 7) on
+;;; the same runner. See
+;;; autocad-com-fails-in-disconnected-windows-session.
+
+(defvar *gui-availability-override* nil
+  "When non-NIL, a keyword forcing WINDOWS-GUI-STATE's verdict
+(:available / :locked / :disconnected / :unknown) instead of querying the
+OS. Tests only; NIL in production.")
+
+(defparameter +gui-probe-powershell+
+  (concatenate
+   'string
+   "$ErrorActionPreference='SilentlyContinue';"
+   "try{Add-Type -Namespace AlfeGui -Name Wts -MemberDefinition '"
+   "[DllImport(\"wtsapi32.dll\")] public static extern bool WTSQuerySessionInformation(System.IntPtr h,uint s,int c,out System.IntPtr b,out uint n);"
+   "[DllImport(\"wtsapi32.dll\")] public static extern void WTSFreeMemory(System.IntPtr p);'}catch{};"
+   "$sid=(Get-Process -Id $PID).SessionId;$state=-1;"
+   "try{$b=[IntPtr]::Zero;$n=0;"
+   "if([AlfeGui.Wts]::WTSQuerySessionInformation([IntPtr]::Zero,$sid,8,[ref]$b,[ref]$n)){"
+   "$state=[System.Runtime.InteropServices.Marshal]::ReadInt32($b);[AlfeGui.Wts]::WTSFreeMemory($b)}}catch{};"
+   "$locked=@(Get-Process -Name LogonUI -ErrorAction SilentlyContinue).Count -gt 0;"
+   "Write-Output ('GUIPROBE state=' + $state + ' locked=' + $locked)")
+  "A PowerShell script printing `GUIPROBE state=<int> locked=<True|False>'.
+state is the WTS connect state (0 = Active); locked is whether the secure
+desktop (LogonUI.exe) is up. Both are locale-independent -- unlike qwinsta
+text, whose STATE column is translated (Actif/Deconnecte on a French host).")
+
+(defun %gui-run-capturing (command-list)
+  "Run COMMAND-LIST and return its stdout string, or NIL. Never signals:
+a diagnostic must not become the thing that fails a run."
+  (ignore-errors
+   (uiop:run-program command-list
+                     :output :string :error-output nil
+                     :external-format :latin-1
+                     :ignore-error-status t)))
+
+(defun %integer-after (text marker)
+  "The (possibly negative) integer immediately after MARKER in TEXT, or NIL."
+  (let ((p (search marker text)))
+    (when p
+      (let* ((start (+ p (length marker)))
+             (end start))
+        (when (and (< end (length text)) (char= (char text end) #\-))
+          (incf end))
+        (loop while (and (< end (length text)) (digit-char-p (char text end)))
+              do (incf end))
+        (ignore-errors (parse-integer text :start start :end end))))))
+
+(defun windows-gui-state ()
+  "Probe the interactive Windows session. Return
+(values AVAILABLE KEYWORD DETAIL): AVAILABLE is T, NIL or :unknown;
+KEYWORD is :available / :locked / :disconnected / :unknown; DETAIL is a
+short human string. AVAILABLE is T only when the session is connected
+(WTS state Active) AND not locked -- the condition COM automation needs.
+Unknown is never reported as unavailable: ignorance must not manufacture a
+failure."
+  (when *gui-availability-override*
+    (let ((kw *gui-availability-override*))
+      (return-from windows-gui-state
+        (values (case kw (:available t) ((:locked :disconnected) nil) (t :unknown))
+                kw (format nil "override ~(~A~)" kw)))))
+  (let ((out (%gui-run-capturing
+              (list "powershell" "-NoProfile" "-ExecutionPolicy" "Bypass"
+                    "-Command" +gui-probe-powershell+))))
+    (if (and out (search "GUIPROBE" out))
+        (let ((state (%integer-after out "state="))
+              (locked (search "locked=True" out)))
+          (cond
+            (locked
+             (values nil :locked
+                     (format nil "LogonUI up (locked / login screen)~@[; connect-state=~A~]" state)))
+            ((eql state 0)
+             (values t :available "connect-state=Active, unlocked"))
+            ((and (integerp state) (> state 0))
+             (values nil :disconnected
+                     (format nil "connect-state=~A (not Active)" state)))
+            (t
+             (values :unknown :unknown "WTS query returned no usable state"))))
+        ;; Fallback when PowerShell/WTS could not be reached: LogonUI via
+        ;; tasklist (the image name is not localized). It catches the locked
+        ;; case; a plain disconnect it cannot see, so that is :unknown.
+        (let ((tl (%gui-run-capturing
+                   '("tasklist" "/FI" "IMAGENAME eq LogonUI.exe" "/NH"))))
+          (cond
+            ((and tl (search "LogonUI" tl))
+             (values nil :locked "LogonUI present (login / lock screen)"))
+            (t
+             (values :unknown :unknown
+                     "could not query session state (no PowerShell/WTS)")))))))
+
+(defun gui-availability ()
+  "Return (values AVAILABLE KEYWORD DETAIL) for whether an interactive desktop
+is available for COM/GUI automation. On non-Windows hosts the question does
+not apply -- alfe automation is a Windows/COM concept -- so returns
+(values T :not-applicable ...). On Windows, see WINDOWS-GUI-STATE."
+  (if (windows-p)
+      (windows-gui-state)
+      (values t :not-applicable
+              (format nil "~(~A~): COM/GUI automation is Windows-specific; batch modes need no GUI"
+                      (host-os)))))
+
+(defun print-gui-availability (&optional (stream *standard-output*))
+  "Print the --probe-gui report to STREAM."
+  (multiple-value-bind (available keyword detail) (gui-availability)
+    (let ((headline (ecase keyword
+                      (:available      "AVAILABLE")
+                      (:locked         "NOT AVAILABLE (locked / login screen)")
+                      (:disconnected   "NOT AVAILABLE (session disconnected)")
+                      (:unknown        "UNKNOWN")
+                      (:not-applicable "n/a (not Windows)")))
+          (autoverdict (case available
+                         ((t)   "expected to work")
+                         ((nil) "expected to FAIL or hang")
+                         (t     "uncertain"))))
+      (format stream "~&GUI availability: ~A~%" headline)
+      (format stream "  host OS   : ~(~A~)~%" (host-os))
+      (format stream "  detail    : ~A~%" detail)
+      (format stream "  --mode automation (COM)     : ~A~%" autoverdict)
+      (format stream "  --mode batch (headless)     : always OK (no GUI needed)~%"))))
+
+(defun announce-gui-availability (label variant)
+  "Under --verbose, emit a conspicuous message about interactive-desktop
+availability when VARIANT is :automation (COM), which needs a live desktop.
+LABEL names the backend for the log line. A no-op off Windows or off
+automation. Gated on --verbose via LOG-VERBOSE, per the intent that this
+be a heads-up rather than a hard gate; CAD CI runs pass --debug (=> verbose)
+so it is visible there."
+  (when (and (eq variant :automation) (windows-p))
+    (multiple-value-bind (available keyword detail) (gui-availability)
+      (declare (ignore available))
+      (if (eq keyword :available)
+          (log-verbose "~A: interactive desktop AVAILABLE for COM automation (~A)"
+                       label detail)
+          (log-verbose
+           "~%============================================================~%~
+              ~A: COM automation needs a live interactive desktop, and~%~
+              it is ~A.~%  ~A~%~
+              COM/GUI automation is likely to FAIL or hang in this state.~%~
+              Keep the session connected and unlocked, or use --mode batch~%~
+              (headless: accoreconsole for AutoCAD) which needs no GUI.~%~
+              ============================================================"
+           label
+           (ecase keyword
+             (:locked       "NOT AVAILABLE (locked / at the login screen)")
+             (:disconnected "NOT AVAILABLE (session disconnected)")
+             (:unknown      "of UNKNOWN availability"))
+           detail)))))
 
 ;;; --- binary discovery helpers ------------------------------------
 

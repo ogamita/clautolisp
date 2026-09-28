@@ -124,6 +124,7 @@
                 #:cli-options-list-hosts-p
                 #:cli-options-list-situations-p
                 #:cli-options-list-cad-programs-p
+                #:cli-options-probe-gui-p
                 #:cli-options-dry-run-p
                 #:cli-options-print-command-p
                 #:cli-options-no-init-p
@@ -181,6 +182,7 @@
            #:cli-options-list-hosts-p
            #:cli-options-list-situations-p
            #:cli-options-list-cad-programs-p
+           #:cli-options-probe-gui-p
            #:cli-options-dry-run-p
            #:cli-options-print-command-p
            #:cli-options-no-init-p
@@ -303,6 +305,9 @@ Dialect, host, encoding:
   --list-situations      Print the encoding situations (source/file/console/…) and exit.
   --list-cad-programs    Scan the host and print each installed CAD with its
                          canonical denotation (acad-2026, bricscad-v26, …), then exit.
+  --probe-gui            Report whether an interactive desktop is available for
+                         COM/GUI automation (Windows: connected & unlocked), then
+                         exit. --mode automation needs it; --mode batch does not.
   --cad DENOTATION       Select a specific installed CAD by denotation
                          (acad-2026, accoreconsole-2022, bricscad-v25-fr_FR,
                          or a bare/partial acad / bricscad / autocad → latest;
@@ -540,6 +545,16 @@ error rather than silently last-winning."
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-list-cad-programs-p opts) t)))
+   ;; --probe-gui reports whether an interactive desktop is available for
+   ;; COM/GUI automation, then exits — a diagnostic for the disconnected-
+   ;; session case where `--mode automation' (COM) fails while `--mode batch'
+   ;; (headless) works. Same short-circuit shape as --list-cad-programs.
+   ;; See autocad-com-fails-in-disconnected-windows-session.
+   (make-option-spec
+    :longs '("--probe-gui") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-probe-gui-p opts) t)))
    ;; --cad DENOTATION picks a specific installed CAD by its canonical name
    ;; (acad-2026, bricscad-v25-fr_FR, autocad-2022, …; --list-cad-programs
    ;; enumerates them). The denotation is stored raw and resolved in RUN,
@@ -1296,6 +1311,11 @@ The handler chain matches alfe-cli.issue's exit-code table:
            ;; self-register at runtime; cli never names their packages), so
            ;; resolve PRINT-CAD-PROGRAMS at call time.
            (uiop:symbol-call :alfe.backend.cad-common :print-cad-programs)
+           0)
+          ((cli-options-probe-gui-p options)
+           ;; Same late-resolution as --list-cad-programs: the GUI probe lives
+           ;; in alfe.backend.cad-common, which loads after this file.
+           (uiop:symbol-call :alfe.backend.cad-common :print-gui-availability)
            0)
           ((cli-options-list-plugins-p options)
            (print-plugins)

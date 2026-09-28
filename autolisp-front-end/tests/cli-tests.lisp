@@ -95,6 +95,32 @@
   (is (eq :attach (alfe.cli::cli-options-backend-variant
                    (parse-arguments '("--backend" "attach"))))))
 
+(test cli-parses-probe-gui
+  "--probe-gui sets the diagnostic flag; default is off."
+  (is (null (cli-options-probe-gui-p (parse-arguments '()))))
+  (is (eq t (cli-options-probe-gui-p (parse-arguments '("--probe-gui"))))))
+
+(test gui-availability-verdict-from-override
+  "WINDOWS-GUI-STATE maps the override keyword to an availability tri-state,
+so the launch-warning path can be exercised without a real Windows session."
+  (let ((alfe.backend.cad-common:*host-os-override* :windows))
+    (flet ((avail (kw)
+             (let ((alfe.backend.cad-common:*gui-availability-override* kw))
+               (nth-value 0 (alfe.backend.cad-common:windows-gui-state)))))
+      (is (eq t   (avail :available)))
+      (is (eq nil (avail :locked)))
+      (is (eq nil (avail :disconnected)))
+      (is (eq :unknown (avail :unknown))))))
+
+(test gui-availability-not-applicable-off-windows
+  "Off Windows, GUI-AVAILABILITY is a no-op that reports :not-applicable and
+available T -- automation's GUI requirement is a Windows/COM concept."
+  (let ((alfe.backend.cad-common:*host-os-override* :linux))
+    (multiple-value-bind (available keyword)
+        (alfe.backend.cad-common:gui-availability)
+      (is (eq t available))
+      (is (eq :not-applicable keyword)))))
+
 (test cli-builds-action-plan-in-order
   "Actions appear in the plan in the order they're seen on the CLI."
   (let* ((opts (parse-arguments '("-x" "(+ 1 2)" "-l" "/tmp/foo.lsp" "-x" "(bar)")))

@@ -1344,6 +1344,11 @@ started is what ATTACHED/CREATED say.")
            (log-warn "backend AUTOCAD: runtime LSP not staged")))
         (log-debug "backend AUTOCAD: emitted run-common.lsp -> ~A" run-common)
         (log-verbose "backend AUTOCAD: effective mode = ~A" variant)
+        ;; Under --verbose, say conspicuously whether the interactive desktop
+        ;; is available: COM automation needs it, and a suspended session is
+        ;; why an automation run dies where batch survives
+        ;; (autocad-com-fails-in-disconnected-windows-session).
+        (alfe.backend.cad-common:announce-gui-availability "backend AUTOCAD" variant)
         (case variant
           (:automation
            (let ((vbs (merge-pathnames "bridge-autocad.vbs" workdir)))

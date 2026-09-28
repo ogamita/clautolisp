@@ -61,6 +61,7 @@
                 #:cli-options-interactive-p
                 #:cli-options-quit-p
                 #:cli-options-dry-run-p
+                #:cli-options-probe-gui-p
                 #:cli-options-mode
                 #:cli-options-load-encoding
                 #:cli-options-io-encoding
