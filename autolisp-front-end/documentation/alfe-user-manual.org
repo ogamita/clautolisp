@@ -720,17 +720,17 @@ automatically, so the scenario files themselves need no per-call change.
 
 ** Portability summary
 
-| Backend                      | native =(load)= high-byte | =(alfe-load)= high-byte      |
-|------------------------------+---------------------------+------------------------------|
-| clautolisp (Linux)           | ok                        | ok                           |
-| BricsCAD (macOS / Windows)   | ok                        | ok                           |
-| AutoCAD 2022 / accoreconsole | FAILS                     | under verification (¹)       |
+| Backend                      | native =(load)= high-byte | =(alfe-load)= high-byte |
+|------------------------------+---------------------------+-------------------------|
+| clautolisp (Linux)           | ok                        | ok                      |
+| BricsCAD (macOS / Windows)   | ok                        | ok                      |
+| AutoCAD 2022 / accoreconsole | FAILS                     | ok                      |
 
-=alfe-load= is the safe default in cross-backend test code: it is verified
-on clautolisp and BricsCAD. (¹) On AutoCAD =accoreconsole= the deported read
-succeeds but a residual failure is being resolved under
-=accoreconsole-deported-load-highbyte=; consult that issue for the current
-status before relying on high-byte loads there.
+=alfe-load= is the safe default in cross-backend test code: it is verified on
+clautolisp, BricsCAD (macOS + Windows), and AutoCAD =accoreconsole= (the
+encoding probe reads =(setq ENCSRC "A<e-acute>Z")= back as code points
+=65 233 90= on all three). Native =(load)= of a high byte still FAILS on
+accoreconsole, which is why alfe-owned code must call =alfe-load=.
 
 * Init files
 
