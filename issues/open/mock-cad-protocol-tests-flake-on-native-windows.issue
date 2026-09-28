@@ -1,0 +1,67 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: mock-CAD DRIVE-PROTOCOL-ACTIONS test family flakes on the native Windows lane
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: test-determinism
+#+DATE: 2026-09-28
+
+* Observed
+
+=test:alfe:windows= (native Windows runner, allow_failure) intermittently
+fails a shifting subset of the mock-CAD protocol / dribble tests. TWO runs of
+the SAME commit failed DIFFERENT tests:
+
+- run A (job 16772780938): =CAD-DRIVE-PROTOCOL-ACTIONS-THREE-EVALS-COUNTER-AWARE=
+  (got =:ABORTED=, expected =:SUCCESS=) and
+  =CLAUTOLISP-SUBPROCESS-EVAL-PARITY-WITH-DIRECT=.
+- run B (retry 16773377643): =CAD-DRIVE-PROTOCOL-ACTIONS-INTERACTIVE-LOOP-ROUNDTRIPS=,
+  =CAD-DRIVE-PROTOCOL-ACTIONS-END-TO-END= (x2),
+  =ALFE-DRIBBLE-RECORDS-A-WHOLE-MOCK-CAD-SESSION=.
+
+A different member of the same family loses each run -> a timing race, not a
+deterministic defect. The SAME alfe code passed =test:alfe:windows= clean on a
+master pipeline a few hours earlier (2888394131, alfe 2.2.141), so it is
+runner-load dependent. The Linux =test:alfe:sbcl= lane is green throughout.
+
+* Relation to prior work
+
+=issues/closed/alfe-windows-drive-protocol-three-evals-fails.issue= fixed the
+=THREE-EVALS= =:ABORTED= symptom (per-round budget 2.2.122; probe-then-open
+transient 2.2.125) and observed it green on the lane 2026-09-27. Its own
+resolution note warned it was "not proven this was the LAST cause". This ticket
+is that caveat coming true, and BROADER: the whole DRIVE-PROTOCOL-ACTIONS +
+mock-CAD + dribble family, not one test.
+
+* Cause (hypothesis)
+
+The mock CAD and the drive-protocol harness coordinate through the file-based
+protocol (status.txt / stdin.txt polling) with per-round time budgets. On a
+loaded Windows runner the budgets are occasionally too tight and an action is
+reported =:ABORTED= before the mock has serviced it -- the same class the
+three-evals fix addressed, but the budget/handshake is not yet robust across
+the whole family.
+
+* Fix direction
+
+Make the mock-CAD protocol tests deterministic rather than time-budgeted:
+pre-queue the mock's replies and drive them single-threaded / step-locked so a
+slow runner cannot make an action appear finished before the mock has read its
+stdin, mirroring the determinism note in
+=clautolisp-test-double-run-and-native-ci=. Audit the whole
+=CAD-DRIVE-PROTOCOL-ACTIONS-*= + dribble family, not just one test.
+
+* Acceptance criteria
+
+- =test:alfe:windows= passes the DRIVE-PROTOCOL-ACTIONS / mock-CAD / dribble
+  family across several consecutive runs on the loaded runner (no shifting
+  subset failures).
+- The determinism is structural (pre-queued / step-locked), not a larger
+  timeout.
+- Linux and macOS lanes remain green.
+
+* Note
+
+Filed per AGENTS.md while advancing the two NEXT AutoCAD triage items: the
+native Windows lane flagged this on an unrelated MR (!331, probe + triage only).
+Not caused by that MR nor by the accoreconsole-deported-load-highbyte fixes;
+those change no mock-CAD test path.
