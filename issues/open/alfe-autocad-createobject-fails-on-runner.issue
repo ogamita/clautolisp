@@ -40,3 +40,16 @@ works on Windows with BricsCAD and AutoCAD "when no other cad is running".
    prints.
 2. If it is 0x80080005, look at the runner's desktop / AutoCAD's startup
    (licence, recovery dialog) -- that needs someone at the machine.
+
+* Not reproduced — 2026-09-28, later the same day
+
+=verify:epure-api:windows= on MR !341 (job 16776999021, alfe 2.2.146, the
+version that prints the COM error): AutoCAD STARTED, in every run -- the
+symbol probe, =-x= as typed and from a file all exited 0, and both verdict
+runs printed T twice. There was no COM error to read. Whatever held AutoCAD
+back in the morning (the ~120 s CreateObject failure) had cleared by the
+afternoon, without a change on our side that could explain it: a transient
+on the runner, most likely something on its desktop.
+
+Suggested: close as not reproduced if it stays away; if it returns, 2.2.146
+now prints the COM error, which is step 1 above. Left open for pjb to decide.
