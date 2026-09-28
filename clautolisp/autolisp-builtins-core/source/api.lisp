@@ -4586,10 +4586,16 @@ Companion to %HOST-SYSVAR-STRING."
                                       "ATOMS-FAMILY"
                                       "ATOMS-FAMILY list element must be a symbol or string, got ~S."
                                       sym))))
-                          (resolved (clautolisp.autolisp-runtime:find-autolisp-symbol name)))
+                          ;; Names given as STRINGS are matched case-insensitively,
+                          ;; as AutoCAD and BricsCAD both do: (atoms-family 1
+                          ;; '("com_way")) finds a function the reader stored as
+                          ;; COM_WAY. The exact name first, so a symbol interned
+                          ;; under :preserve still wins over a folded homonym.
+                          (resolved (some #'clautolisp.autolisp-runtime:find-autolisp-symbol
+                                          (list name (string-upcase name) (string-downcase name)))))
                      (if (and resolved
                               (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p resolved))
-                         (render name)
+                         (render (autolisp-symbol-name resolved))
                          nil)))
                  filter))
         (t

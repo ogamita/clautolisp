@@ -1,13 +1,31 @@
-# Does EPURE's own API answer inside an alfe session?
-#
-# pjb, 2026-09-25, before closing alfe-plugin-epure-windows-validation:
+# Is EPURE's function library loaded inside an alfe session?
 #
 #   TRUSTEDPATHS=... alfe -norc --quiet --$cad --epure \
-#     -x '(print (= "" (toutes_options nil)))' \
-#     -x '(print (equal (quote ((enabled) (message))) (f_DateHeure_UTC 0)))'
+#     -x '(print (and (car (atoms-family 1 (quote ("com_way"))))))' \
+#     -x '(print (and (car (atoms-family 1 (quote ("com_tl_continu"))))))'
 #
-# must print T twice. Reaching READY only says EPURE LOADED; this says
-# its functions answer, which is what --epure is for.
+# must print T twice.
+#
+# WHY THESE TWO, and why an existence test rather than a call (pjb, 2026-09-28:
+# "let's use atoms-family on com_way and com_tl_continu. Replace the tests to
+# validate."). The previous pair -- toutes_options and f_DateHeure_UTC -- were
+# real EPURE API, but both are defined in COM/gestsauv/Sauvprm.lsp, the
+# save-parameters DIALOG module, which EPURE loads when that dialog is opened and
+# a fresh session has not loaded yet. The census in epure-symbol-probe.lsp found
+# them absent on BOTH engines while their sibling Sauvegrd.lsp, and the rest of
+# the startup layer, were present (alfe-plugin-epure-windows-validation). So the
+# test was failing on a module boundary, not on EPURE.
+#
+# com_way and com_tl_continu both live in COM/lisp/SNCF_Com.lsp, which the
+# census found loaded on AutoCAD and on BricsCAD. ATOMS-FAMILY asks whether they
+# exist without CALLING them: com_way would otherwise search the path for
+# EPURE's own CUI and cache the root in a global, and loops forever if the CUI
+# is missing -- a test must not be able to hang on the thing it is testing.
+#
+# `(and (car ...))' because ATOMS-FAMILY returns the name, or nil in its place,
+# and AND turns a non-nil name into the T the summary counts. `(quote ...)'
+# rather than a quote mark, because the whole expression sits inside a
+# PowerShell single-quoted string.
 #
 # Separate from verify-epure-windows.ps1, which asks about the LAUNCH.
 # That script grew to six CAD launches and ran past the job's 30 minute
@@ -36,8 +54,18 @@ $epureDirs = @("$env:APPDATA\SNCF\Epure\Epure 2022_b", "$env:APPDATA\SNCF\Epure\
 $env:TRUSTEDPATHS = (@($env:TRUSTEDPATHS) + $epureDirs | Where-Object { $_ }) -join ';'
 Write-Host "TRUSTEDPATHS=$env:TRUSTEDPATHS"
 
-$expr1 = '(print (= "" (toutes_options nil)))'
-$expr2 = '(print (equal (quote ((enabled) (message))) (f_DateHeure_UTC 0)))'
+$expr1 = '(print (and (car (atoms-family 1 (quote ("com_way"))))))'
+$expr2 = '(print (and (car (atoms-family 1 (quote ("com_tl_continu"))))))'
+
+# The TWO VARIANTS below are a test of argument passing as much as of EPURE.
+# The file variant is quote-safe: Set-Content writes the text verbatim. The
+# as-typed variant goes through Start-Process, whose argument joining in Windows
+# PowerShell is known to drop embedded double quotes -- which would turn
+# ("com_way") into (com_way), a list of SYMBOLS, and ATOMS-FAMILY would then
+# answer nil for a function that is there. So if the file run prints T twice and
+# the as-typed run does not, the fault is argv quoting, not EPURE. The previous
+# expressions could not tell those apart: the as-typed run produced zero bytes
+# of output and exit 1 on 2026-09-27, with nothing to say what alfe received.
 
 $apiFile = Join-Path ([System.IO.Path]::GetTempPath()) 'alfe-epure-api.lsp'
 "$expr1`r`n$expr2`r`n" | Set-Content -Path $apiFile -Encoding ASCII
