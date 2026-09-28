@@ -482,6 +482,26 @@ probe:com-registration:autocad:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-autocad-com-registration.ps1
 
+# Where AutoCAD / BricsCAD keep TRUSTEDPATHS in the registry, so alfe can add
+# its workdir before launching and remove it after
+# (alfe-cad-workdir-not-in-trustedpaths). Read-only reg queries, no CAD, no
+# build: a diagnostic, played by hand.
+probe:trustedpaths-registry:windows:
+  extends: .gate-windows-soft
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-trustedpaths-registry.ps1
+  artifacts:
+    when: always
+    name: "trustedpaths-registry-$CI_COMMIT_SHORT_SHA"
+    paths: [dist/trustedpaths-registry/]
+    expire_in: 90 days
+
 # The other half of the COM work: a REAL AutoCAD, launched through the
 # bridge, evaluating ActiveX. The registry probe above says which ProgID
 # alfe picks; only this says the bridge reaches READY and AutoLISP runs
