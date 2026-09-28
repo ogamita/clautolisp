@@ -651,6 +651,10 @@ documentation:
     # path may be unclassified -- in the gate, or declared irrelevant on purpose
     # (ci-job-activity-cap-refuses-master-pipelines).
     - make check-native-pipeline-changes
+    # The probe jobs run automatically only when their FAMILY changed, so a
+    # probe file in no family would never be re-measured, in silence
+    # (scripts/ci-detect-probe-changes.py).
+    - make check-probe-families
     # XeLaTeX has NO font fallback: a glyph the body face lacks is dropped,
     # the PDF is produced successfully, and the character is simply gone.
     # Cheap and BEFORE the build, for the same reason as the check above --
@@ -1163,6 +1167,10 @@ detect:runners:
     - when: never
   script:
     - python3 scripts/ci-detect-runners.py runners.env
+    # Which CAD probe families this change wrote or modified (pjb, 2026-09-28:
+    # run the probes only then -- their results are committed). The child
+    # cannot ask `changes:' itself: in a child pipeline it is always true.
+    - python3 scripts/ci-detect-probe-changes.py emit runners.env
     - cat runners.env
   artifacts:
     reports:
@@ -1187,6 +1195,7 @@ native:pipeline:
   variables:
     MACOS_RUNNER: "$MACOS_RUNNER"
     WINDOWS_RUNNER: "$WINDOWS_RUNNER"
+    PROBES_CHANGED: "$PROBES_CHANGED"
   rules:
     - *not-on-schedule
     # A TAG and MASTER always spawn the child: those are the refs whose results

@@ -368,6 +368,10 @@ check-native-pipeline-changes:  ## Fail if a tracked path is classified by neith
 	python3 scripts/check-native-pipeline-changes.py
 	python3 scripts/tests/test-check-native-pipeline-changes.py
 
+check-probe-families:  ## Fail if a probe file is in no family, or a family is gated by no probe job (ci-detect-probe-changes.py).
+	python3 scripts/ci-detect-probe-changes.py check
+	python3 scripts/tests/test-ci-detect-probe-changes.py
+
 check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
