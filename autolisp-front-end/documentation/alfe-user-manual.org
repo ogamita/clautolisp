@@ -1029,7 +1029,24 @@ with EPURE 2022_b installed:
   (AutoCAD 2022, COM automation).
 - =alfe --bricscad --epure= (BricsCAD V25 fr_FR, =/b= batch script) is
   what exposed the nested-=._SCRIPT= problem above. With =LOAD= in its
-  place the run is being re-checked on the runner.
+  place it reaches READY in about 30 s and runs the action.
+- *EPURE's own functions answer inside the session, on both CADs.* By
+  hand on the runner (alfe 2.2.134, 2026-09-28), with no other CAD
+  running, both of
+
+  #+begin_src sh
+    alfe -norc --autocad --epure -x '(print (com_way "\\foo"))'
+    alfe -norc --bricscad --epure -x '(print (com_way "\\foo"))'
+  #+end_src
+
+  work; and =verify:epure-api:windows= (alfe 2.2.141) found =com_way=
+  and =com_tl_continu= (EPURE's =COM/lisp/SNCF_Com.lsp=) on AutoCAD and
+  on BricsCAD, with the same nine of 24 catalogued EPURE names present
+  on both. Functions of a module EPURE loads on demand — the
+  save-parameters dialog's =Sauvprm.lsp=: =toutes_options=,
+  =f_DateHeure_UTC= — are *not* there in a fresh session, on either CAD.
+- Run one CAD at a time: an AutoCAD started while the previous run's CAD
+  was still exiting failed before READY (exit 4).
 - =--mode automation= is *not* the answer for BricsCAD, and is not
   wanted in any case: =--epure= exists for GUI work. On the runner the
   COM bridge hung at attach/create even *without* EPURE, so BricsCAD COM
@@ -1046,7 +1063,7 @@ neither a GUI nor profiles. So:
 
 | Backend, mode                           | What =--epure= does                                                                                                                                                                                                             |
 |-----------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| BricsCAD, =batch= (the default)         | Starts =bricscad.exe [template] /p PROFILE /b run.scr= from =UserDataCache=. The =/Automation= switch, which hides the main window, is *dropped*. =run.scr= runs =._SCRIPT= on the control script, then loads =run-common.lsp=. |
+| BricsCAD, =batch= (the default)         | Starts =bricscad.exe [template] /p PROFILE /b run.scr= from =UserDataCache=. The =/Automation= switch, which hides the main window, is *dropped*. =run.scr= =LOAD=s the control script, then loads =run-common.lsp=. |
 | BricsCAD, =--mode automation= (COM)     | The bridge tries to activate the profile through =Preferences.Profiles= (a failure is written to the errors file and the run carries on with the current profile), and sends =._SCRIPT= before the load.                        |
 | AutoCAD, =automation= (COM)             | The default under =--epure=. The bridge activates the profile and sends =._SCRIPT= before the load.                                                                                                                             |
 | AutoCAD, =--mode batch= (accoreconsole) | Refused: usage error (exit status 2), "EPURE requires the full AutoCAD GUI; accoreconsole (--mode batch) has no profile support. Use --mode automation."                                                                                                              |

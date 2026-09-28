@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-plugin-epure-windows-validation — run --epure against real AutoCAD and BricsCAD on the Windows runner
-#+STATUS: IN PROGRESS — EPURE installed on the runner 2026-09-25; AutoCAD verified, BricsCAD fix in alfe 2.2.88 awaiting re-run
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: cad-runtime
 #+DEPENDS: windows-access, alfe-plugin-epure
@@ -294,7 +294,41 @@ The other absent core helpers (=interr=, =affiche_message=, =identite=, =fld=,
 file outside that subset, also not loaded at startup. Worth knowing before choosing
 replacement test functions from that group.
 
-** Still open
+** Resolved 2026-09-28 — validated by pjb
+
+pjb chose option 3 below: test the startup layer. "Let's use atoms-family on
+com_way and com_tl_continu" (both in =COM/lisp/SNCF_Com.lsp=), and then, having
+run it by hand on the runner:
+
+#+begin_quote
+alfe -norc --$CAD --epure -x '(print (com_way "\\foo"))' works on windows with
+bricscad and autocad when no other cad is running. (alfe 2.2.134) So let's
+validate it for now.
+#+end_quote
+
+The job agrees. =verify:epure-api:windows= on MR !330 (alfe 2.2.141, job
+16772551022): the symbol probe found =com_way= and =com_tl_continu= on AutoCAD
+AND BricsCAD, and BricsCAD's run from a file printed =T= twice. The other
+failures in that job were not EPURE's:
+
+- AutoCAD's run from a file: the COM bridge exited at BOOTING after 130 s
+  (exit 4, ATTACHED=0 CREATED=0), right after the previous run's CAD was
+  killed — pjb's "when no other cad is running". The script now waits for
+  every CAD process to be gone before the next launch.
+- Both =-x= runs: zero bytes of output, exit 1. Windows PowerShell's
+  =Start-Process -ArgumentList= joins an array with spaces and quotes
+  nothing, so alfe received =(print=, =(and=, ... as separate arguments. The
+  script now builds the command line itself, quoted by the
+  CommandLineToArgvW rules.
+
+Found while validating: clautolisp's ATOMS-FAMILY matched string names
+case-sensitively (atoms-family-string-names-case-sensitive, fixed 2.2.141).
+
+Documented in the alfe manual, /The EPURE plug-in/, /What has been verified,
+and where/. What stays unverified is listed below and does not block the
+plug-in's use: pjb validated it.
+
+** Still open (not blocking; recorded when the issue was closed)
 
 - [ ] *pjb: how should the API test reach =Sauvprm.lsp='s functions?* Three honest
       options, and the choice is about what "EPURE's API answers inside an alfe

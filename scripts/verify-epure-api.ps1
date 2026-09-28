@@ -59,13 +59,12 @@ $expr2 = '(print (and (car (atoms-family 1 (quote ("com_tl_continu"))))))'
 
 # The TWO VARIANTS below are a test of argument passing as much as of EPURE.
 # The file variant is quote-safe: Set-Content writes the text verbatim. The
-# as-typed variant goes through Start-Process, whose argument joining in Windows
-# PowerShell is known to drop embedded double quotes -- which would turn
-# ("com_way") into (com_way), a list of SYMBOLS, and ATOMS-FAMILY would then
-# answer nil for a function that is there. So if the file run prints T twice and
-# the as-typed run does not, the fault is argv quoting, not EPURE. The previous
-# expressions could not tell those apart: the as-typed run produced zero bytes
-# of output and exit 1 on 2026-09-27, with nothing to say what alfe received.
+# as-typed variant goes through the command line, which Run-Alfe builds itself
+# (Quote-WinArg): on 2026-09-28 Start-Process given an ARRAY split every
+# expression at its spaces, and both engines' -x runs printed nothing (exit 1)
+# while their file runs found the functions. So if the file run prints T twice
+# and the as-typed run does not, look at the `alfe ...' line above it first --
+# it is the exact command line alfe was given.
 
 $apiFile = Join-Path ([System.IO.Path]::GetTempPath()) 'alfe-epure-api.lsp'
 "$expr1`r`n$expr2`r`n" | Set-Content -Path $apiFile -Encoding ASCII
@@ -84,14 +83,65 @@ $work = Join-Path ([System.IO.Path]::GetTempPath()) 'alfe-epure-api-out'
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 $summary = @()
 
+# One argument, quoted so that the C runtime's argv parser (the
+# CommandLineToArgvW rules) hands it back unchanged. Windows PowerShell's
+# Start-Process joins an -ArgumentList ARRAY with spaces and quotes nothing,
+# so on 2026-09-28 alfe received `(print', `(and', ... as separate arguments
+# and both -x runs printed nothing (exit 1) -- while the same expressions from
+# a file printed T twice. Backslashes are literal except before a double
+# quote, where 2n+1 of them make n backslashes and a quote.
+function Quote-WinArg([string]$arg) {
+    if ($arg -ne '' -and $arg -notmatch '[\s"]') { return $arg }
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append('"')
+    $slashes = 0
+    foreach ($c in $arg.ToCharArray()) {
+        if ($c -eq '\') { $slashes++; continue }
+        if ($c -eq '"') {
+            [void]$sb.Append('\' * (2 * $slashes + 1))
+        } elseif ($slashes -gt 0) {
+            [void]$sb.Append('\' * $slashes)
+        }
+        $slashes = 0
+        [void]$sb.Append($c)
+    }
+    # Before the closing quote, every backslash has to be doubled.
+    [void]$sb.Append('\' * (2 * $slashes))
+    [void]$sb.Append('"')
+    return $sb.ToString()
+}
+
+# pjb, 2026-09-28: `alfe --$CAD --epure -x ...' works "when no other cad is
+# running". Stop-Process only ASKS; an AutoCAD still exiting when the next one
+# starts made the COM bridge give up at BOOTING (exit 4, ATTACHED=0
+# CREATED=0). So wait until no CAD process is left, not a fixed 5 s.
+function Wait-NoCad([int]$seconds = 120) {
+    $deadline = (Get-Date).AddSeconds($seconds)
+    while ($true) {
+        $left = @(Get-Process bricscad, acad, accoreconsole -ErrorAction SilentlyContinue)
+        if ($left.Count -eq 0) { return }
+        if ((Get-Date) -gt $deadline) {
+            Write-Host ("    (still running after {0} s: {1})" -f $seconds,
+                (($left | ForEach-Object { "$($_.Name) $($_.Id)" }) -join ', '))
+            return
+        }
+        $left | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+        Start-Sleep -Seconds 2
+    }
+}
+
 function Run-Alfe([string]$label, [string[]]$arguments, [bool]$verdict = $true) {
     $out = Join-Path $work 'stdout.txt'
     $err = Join-Path $work 'stderr.txt'
     Remove-Item $out, $err -Force -ErrorAction SilentlyContinue
     Write-Host ""
     Write-Host "=== $label"
-    Write-Host "    alfe $($arguments -join ' ')"
-    $proc = Start-Process -FilePath $alfe -ArgumentList $arguments -PassThru `
+    Wait-NoCad
+    # A single string, so Start-Process passes it through as is -- and what
+    # is printed is exactly the command line alfe gets.
+    $commandLine = ($arguments | ForEach-Object { Quote-WinArg $_ }) -join ' '
+    Write-Host "    alfe $commandLine"
+    $proc = Start-Process -FilePath $alfe -ArgumentList $commandLine -PassThru `
         -RedirectStandardOutput $out -RedirectStandardError $err -WindowStyle Hidden
     if (-not $proc) { Write-Host "    (alfe did not start at all)"; return }
     Write-Host "    pid $($proc.Id)"
@@ -129,9 +179,7 @@ function Run-Alfe([string]$label, [string[]]$arguments, [bool]$verdict = $true) 
         }
     }
     # Leave no CAD behind for the next run.
-    Get-Process bricscad, acad -ErrorAction SilentlyContinue |
-        ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
-    Start-Sleep -Seconds 5
+    Wait-NoCad
 }
 
 foreach ($cad in $cads) {
