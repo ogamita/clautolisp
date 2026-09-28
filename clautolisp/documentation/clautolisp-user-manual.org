@@ -444,6 +444,7 @@ The complete set of aldo settings, with their types:
 | ~navigation-history-max~         | integer (1000) — how many previous browse stacks the navigation history keeps; the oldest are dropped past this |
 | ~sedit-on-quit~                  | =auto-save= \vert{} =do-not-save= \vert{} =ask=                   |
 | ~break-on-caught~                | boolean                                                           |
+| ~atom-poll-points~               | boolean (off) — give every evaluated atom (a variable reference or a literal) its own poll point, so the debugger can stop before =a= is read in =(+ a b)=; applies to functions instrumented from then on. Off by default because stepping then stops on every variable and the poll points renumber |
 | ~source-window-height~           | integer                                                           |
 | ~value-line-width~               | integer                                                           |
 | ~pager~                          | =on= \vert{} =off= \vert{} a pager path (an external filter such as =less= / =more=, run on the text) |
