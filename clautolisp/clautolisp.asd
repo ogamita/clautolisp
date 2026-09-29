@@ -523,6 +523,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   ((:file "autolisp-host/tests/package")
    (:file "autolisp-host/tests/test-harness")
    (:file "autolisp-host/tests/nihil-tests")
+   (:file "autolisp-host/tests/host-error-tests")
    (:file "autolisp-host/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

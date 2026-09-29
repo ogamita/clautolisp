@@ -197,8 +197,48 @@ dependency-inversion pattern of *INSTRUMENT-USUBR-HOOK* / *DEBUG-BREAK-HOOK*.")
                      (autolisp-namespace-exit-kind condition)
                      (autolisp-namespace-exit-value condition)))))
 
+;;; --- The host condition taxonomy (D1 §15; pjb, 2026-09-28) --------------
+;;;
+;;; ONE superclass, FOUR subclasses, so a handler can catch every host failure
+;;; (HOST-ERROR) or one reason for it. Each subclass keeps the CODE keyword the
+;;; runtime error already carries: every existing handler that tests
+;;; (autolisp-runtime-error-code c) against :host-not-supported keeps working.
+;;; The class is chosen FROM the code, in AUTOLISP-RUNTIME-ERROR-CLASS-FOR-CODE,
+;;; so every raiser that already passes one of these codes -- and there are well
+;;; over a hundred -- signals the right class without being touched.
+
+(define-condition host-error (autolisp-runtime-error) ()
+  (:documentation "Any failure of a host operation. Never signalled itself:
+only its four subclasses are. Catch it to handle every host failure at once."))
+
+(define-condition operation-not-supported-by-this-host (host-error) ()
+  (:documentation "Code :HOST-NOT-SUPPORTED. The host implements nothing of
+the kind -- a DESIGN BOUNDARY (nihil asked for an entity)."))
+
+(define-condition unavailable-in-headless-context (host-error) ()
+  (:documentation "Code :HOST-UNAVAILABLE-HEADLESS. The host has the
+subsystem, but the operation needs a display or a pointer this configuration
+lacks -- a DESIGN BOUNDARY (cador asked for an interactive pick)."))
+
+(define-condition operation-not-yet-implemented (host-error) ()
+  (:documentation "Code :HOST-NOT-YET-IMPLEMENTED. A real GAP the host
+intends to fill; a probe marks it pending, not failing."))
+
+(define-condition backend-error (host-error) ()
+  (:documentation "Code :HOST-BACKEND-ERROR. The backend was asked correctly
+and refused or failed -- the remote CAD said no, a DWG failed to parse."))
+
+(defun autolisp-runtime-error-class-for-code (code)
+  "The condition class a runtime error with CODE is signalled as."
+  (case code
+    (:host-not-supported        'operation-not-supported-by-this-host)
+    (:host-unavailable-headless 'unavailable-in-headless-context)
+    (:host-not-yet-implemented  'operation-not-yet-implemented)
+    (:host-backend-error        'backend-error)
+    (t                          'autolisp-runtime-error)))
+
 (defun signal-autolisp-runtime-error (code control-string &rest arguments)
-  (error 'autolisp-runtime-error
+  (error (autolisp-runtime-error-class-for-code code)
          :code code
          :message (apply #'format nil control-string arguments)
          :details arguments

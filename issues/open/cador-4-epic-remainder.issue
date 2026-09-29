@@ -57,6 +57,15 @@ issues as each becomes actionable.
   re-grade cador's raisers (e.g. =cador-set-sysvar='s read-only path) --
   keeping the existing =code= keywords so handlers that test the code keep
   working.
+  *DONE, clautolisp 2.2.146 (2026-09-29).* The classes are in autolisp-runtime,
+  and the class is chosen from the code, so every existing raise is re-graded
+  without being touched. The raisers are =signal-{host-not-supported,
+  unavailable-in-headless,not-yet-implemented,backend-error}= in
+  autolisp-host. On cador, pick-mode =ssget= now signals
+  =unavailable-in-headless-context=, and =cador-set-sysvar= signals
+  =:sysvar-read-only=. Tests: autolisp-host/tests/host-error-tests.lisp.
+  Two spec/code divergences (=grread= keyboard, =gr*= drawing not logged)
+  are recorded in D1 §15, not changed.
 
 * Acceptance criteria
 

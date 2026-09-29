@@ -46,12 +46,47 @@ the NULL-HOST default and signal :host-not-supported."))
 
 (defun signal-host-not-supported (host operation)
   "Raise the standard runtime error for a host backend that does
-not implement OPERATION."
+not implement OPERATION: OPERATION-NOT-SUPPORTED-BY-THIS-HOST, code
+:HOST-NOT-SUPPORTED -- a design boundary (D1 §15)."
   (signal-autolisp-runtime-error
    :host-not-supported
    "Host backend ~A does not support ~A."
    (host-name host)
    operation))
+
+;;; The canonical raisers of the other three HOST-ERROR subclasses (D1 §15).
+;;; Raise through these, not with a bare code, so the message stays uniform.
+
+(defun signal-unavailable-in-headless (host operation)
+  "OPERATION needs a display or a pointer HOST does not have in this
+configuration: UNAVAILABLE-IN-HEADLESS-CONTEXT, code
+:HOST-UNAVAILABLE-HEADLESS -- a design boundary, not a gap."
+  (signal-autolisp-runtime-error
+   :host-unavailable-headless
+   "Host backend ~A cannot perform ~A without a display or pointer."
+   (host-name host)
+   operation))
+
+(defun signal-not-yet-implemented (host operation)
+  "OPERATION is a real gap HOST intends to fill:
+OPERATION-NOT-YET-IMPLEMENTED, code :HOST-NOT-YET-IMPLEMENTED. A probe
+marks it pending, not failing."
+  (signal-autolisp-runtime-error
+   :host-not-yet-implemented
+   "Host backend ~A does not implement ~A yet."
+   (host-name host)
+   operation))
+
+(defun signal-backend-error (host operation reason)
+  "HOST's backend was asked correctly for OPERATION and refused or
+failed, for REASON (a string or a condition): BACKEND-ERROR, code
+:HOST-BACKEND-ERROR."
+  (signal-autolisp-runtime-error
+   :host-backend-error
+   "Host backend ~A failed ~A: ~A"
+   (host-name host)
+   operation
+   reason))
 
 ;;; --- Generic-function declarations ---------------------------------
 ;;;

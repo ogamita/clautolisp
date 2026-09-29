@@ -126,7 +126,7 @@
     "VL-VECTOR-PROJECT-POINTTOENTITY"))
 
 (defun make-builtin-runtime-error (code builtin-name condition)
-  (error 'autolisp-runtime-error
+  (error (clautolisp.autolisp-runtime:autolisp-runtime-error-class-for-code code)
          :code code
          :message (format nil
                           "AutoLISP builtin ~A signaled an error: ~A"
@@ -137,14 +137,14 @@
          :call-stack (current-autolisp-call-stack)))
 
 (defun signal-builtin-argument-error (code builtin-name control-string &rest arguments)
-  (error 'autolisp-runtime-error
+  (error (clautolisp.autolisp-runtime:autolisp-runtime-error-class-for-code code)
          :code code
          :message (apply #'format nil control-string arguments)
          :details (list* :builtin builtin-name arguments)
          :call-stack (current-autolisp-call-stack)))
 
 (defun signal-builtin-host-error (code builtin-name control-string &rest arguments)
-  (error 'autolisp-runtime-error
+  (error (clautolisp.autolisp-runtime:autolisp-runtime-error-class-for-code code)
          :code code
          :message (apply #'format nil control-string arguments)
          :details (list* :builtin builtin-name arguments)
