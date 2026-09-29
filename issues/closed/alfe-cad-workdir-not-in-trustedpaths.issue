@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-cad-workdir-not-in-trustedpaths — a CAD with SECURELOAD=2 would refuse alfe's own runtime
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: alfe-backend
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: alfe-trustedpaths-registry (MR !361)
 #+DATE: 2026-09-25
 
 * Observed
@@ -120,3 +120,83 @@ Either way this needs a CAD with SECURELOAD=2 to verify, and the second
 shape needs a decision about where a writable-but-trusted directory
 belongs. Both are beyond what can be settled without the machine, which
 is why this stays open rather than being half-implemented.
+
+* pjb, 2026-09-28: shape 1
+
+"(a) add to TRUSTEDPATHS for the run and restore after".
+
+* Measured: where TRUSTEDPATHS lives (probe:trustedpaths-registry:windows)
+
+Job 16790265270, on the Windows runner, 2026-09-28:
+
+- AutoCAD: =HKCU\Software\Autodesk\AutoCAD\R24.1\ACAD-5101:40C\Profiles\<profile>\Variables=,
+  value =TRUSTEDPATHS=, REG_SZ. The runner's hand-set CI trust
+  (=C:/gitlab-runner/builds/.../alpm/...;C:\msys64\tmp=) is in
+  =<<Profil sans nom>>=; =Epure= has an empty value.
+- *"The current profile" is two answers*: the =Profiles= default value
+  said =Epure= while =CPROFILE= said =<<Profil sans nom>>=. So alfe trusts
+  the workdir in EVERY profile rather than guessing one.
+- =SECURELOAD= is 0 in both profiles; the machine default
+  (=HKLM\...\R24.1\ACAD-5101\Install=) is 1.
+- BricsCAD: neither value anywhere in HKCU or HKLM (the inventory says
+  "not saved"), which is consistent with alfe's run.scr setting SECURELOAD
+  to 0 for the session. BricsCAD is out of scope here.
+
+* Implementation (clautolisp 2.2.145)
+
+=autolisp-front-end/source/backend-autocad-trustedpaths.lisp=:
+- =trust-workdir-for-run= runs in AutoCAD's =start-engine= before the
+  launch, and only for a REAL launch: =--print-command= and the tests pass
+  their own launcher. It adds =<workdir>\...= to every profile's
+  TRUSTEDPATHS.
+- =untrust-workdir= removes exactly that entry from the value as it is
+  THEN, so others' changes are kept. It runs at the end of =shutdown=,
+  after the created AutoCAD has quit (AutoCAD saves its profile on exit),
+  and in the failed-start cleanup.
+- Registry I/O goes through PowerShell's .NET API with an ASCII-only
+  transport (=-EncodedCommand=, strings as UTF-16 code numbers). reg.exe's
+  console codepage would corrupt a =%TEMP%= under a non-ASCII user name.
+  The value kind is kept.
+- Killed runs: a journal =<temp>/alfe-trustedpaths.txt= (pid + entry),
+  plus removal of entries naming an alfe-generated workdir whose pid is
+  dead. Both are swept at the start of every run. An unknown pid state
+  counts as alive.
+- Tests: =tests/trustedpaths-tests.lisp=, 13 tests. One of them does a
+  real-registry round trip, only on a Windows host with AutoCAD profiles:
+  a workdir named with =é=, every profile restored exactly.
+- Manual: "alfe's workdir in AutoCAD's TRUSTEDPATHS".
+
+* Verified on the real CAD (2026-09-29): DONE
+
+=verify:trustedpaths-secureload2:windows= (manual) sets SECURELOAD=2 in
+every AutoCAD profile, runs alfe, then restores SECURELOAD. Job
+16792530197, AutoCAD 2022 accoreconsole on the Windows runner:
+
+#+begin_example
+INFORCE=2          <- (getvar "SECURELOAD") as the CAD reports it
+RUN=42             <- an -x form, via protocol\alfe-eval.lsp in the trusted workdir
+FOUND=1            <- the control file exists (findfile)
+CONTROLREFUSEDChargement du fichier annulé: C:/msys64/tmp/alfe-untrusted-25c93c4b/control.lsp
+TRUSTEDPATHS left clean : True   (both profiles)
+RESULT=PASS
+#+end_example
+
+The same session ran alfe, which needs its workdir trusted, and refused
+a native load from an untrusted directory. So the trust is what made the
+run possible, and the enforcement was real.
+
+It took three runs to get a control that proves anything, and the lessons
+are in the script:
+- alfe's =-l= stages a copy of the file INTO the trusted workdir, so an
+  "untrusted" =-l= control loads (job 16790730125). The control must be a
+  native =(load ...)= of the untrusted path from =-x=.
+- AutoLISP reads =(quote CONTROL.REFUSED)= as =CONTROL=, so refused and
+  returned looked alike (job 16792324913). Use dot-free markers, plus
+  =findfile= so that a wrong path cannot pass for a refusal.
+- =--verbose= echoes each =-x= form, and the echo contains every marker
+  symbol, so markers must be anchored at the start of a line (job
+  16792421246 scored a real refusal INCONCLUSIVE).
+
+Also on the native Windows alfe lane: =trustedpaths-real-registry-round-trip-on-windows=
+passes against the runner's real registry. Its workdir name contains =é=,
+and both profiles come back exactly as they were.

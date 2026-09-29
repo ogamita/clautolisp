@@ -204,6 +204,60 @@ rather than refusing: no answer is not the same as a negative answer.
 The same ProgID is used to attach, to create, and to quit at the end of
 the run, so alfe never closes an instance of another release.
 
+*** alfe's workdir in AutoCAD's TRUSTEDPATHS
+
+An AutoCAD with =SECURELOAD= set to 2 loads executable files *only* from
+the folders listed in =TRUSTEDPATHS=. alfe's first act on the CAD is to
+load =run-common.lsp= from its fresh temporary workdir, and every =-x=
+form travels through =protocol\alfe-eval.lsp= in the same workdir. Such an
+AutoCAD would refuse all of it, and the run would never reach READY.
+
+So, on MS-Windows and for a real launch only (not =--print-command=),
+alfe adds one entry, =<workdir>\...=, to =TRUSTEDPATHS= *before*
+starting AutoCAD. The trailing =\...= trusts the subfolders too. It
+removes that entry again when the run ends. Setting it from AutoLISP would
+be too late, because the first load is already the refused one.
+
+- *Where.* In *every* AutoCAD profile of the current user:
+  =HKCU\Software\Autodesk\AutoCAD\<release>\<product>\Profiles\<profile>\Variables=,
+  value =TRUSTEDPATHS=. Every profile, because "the current profile" is not
+  one answer. On the project's runner, the =Profiles= key named one profile
+  as the default while =CPROFILE= named another, and AutoCAD and
+  accoreconsole choose between them on their own terms.
+- *What is removed.* Exactly alfe's entry, from whatever the value is *at
+  the end*. Anything you, or another alfe run, added meanwhile stays. The
+  value's type (=REG_SZ= or =REG_EXPAND_SZ=) is kept, and so is every
+  character: alfe reads and writes through PowerShell's registry API, not
+  through =reg.exe='s console codepage. That matters because the workdir
+  lives under =%TEMP%=, and so under your user name. alfe runs
+  =powershell -NoProfile -NonInteractive -EncodedCommand <base64>=: the
+  script travels base64-encoded and strings travel as character codes, so
+  no quoting or codepage can alter them. A site whose policy forbids
+  PowerShell for the user gets no trust entry: alfe then finds no profile
+  (visible with =--debug=) and runs as it did before this existed.
+- *When.* After the AutoCAD alfe created has quit. AutoCAD saves its
+  profile, =TRUSTEDPATHS= included, when it exits, so an entry removed
+  while it still ran would be written back.
+- *A killed run* cannot remove its entry. Two records let the next run do
+  it for you:
+  - =<temp>/alfe-trustedpaths.txt= names each entry with the process id of
+    the alfe that added it.
+  - Any entry naming an alfe workdir (=alfe-autocad-<pid>-<tag>=) whose
+    alfe is no longer running is removed as well.
+
+  A process whose state cannot be determined counts as running. alfe never
+  takes away another run's trust on a guess.
+
+Nothing is changed when no AutoCAD profile exists. If a write is refused,
+alfe warns that a =SECURELOAD=2= AutoCAD will refuse its runtime, and
+carries on. With =SECURELOAD= at 0 or 1, the defaults, the entry is
+harmless and unnecessary.
+
+BricsCAD keeps neither =TRUSTEDPATHS= nor =SECURELOAD= in the registry
+(both are "not saved" there, and the registry of the project's runner has
+neither). alfe's BricsCAD launch script sets =SECURELOAD= to 0 for the
+session instead.
+
 *** When alfe is killed before it can quit AutoCAD
 
 alfe quits the AutoCAD it created — but only if it reaches the end of

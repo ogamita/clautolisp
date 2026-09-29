@@ -1253,7 +1253,10 @@ started is what ATTACHED/CREATED say.")
   (variant          nil)
   ;; The COM server this run asked for, kept so SHUTDOWN quits the same
   ;; one (alfe-autocad-cad-selection-ignores-com-progid).
-  (progid           nil))
+  (progid           nil)
+  ;; What TRUST-WORKDIR-FOR-RUN added to TRUSTEDPATHS, for UNTRUST-WORKDIR
+  ;; (alfe-cad-workdir-not-in-trustedpaths). NIL when nothing was added.
+  (trusted          nil))
 
 (defmethod prepare-workdir ((backend autocad-backend) workdir-root &key)
   (let ((workdir (if workdir-root
@@ -1390,6 +1393,14 @@ started is what ATTACHED/CREATED say.")
                          :protocol-session protocol
                          :variant variant
                          :progid progid))
+               ;; BEFORE the launch: with SECURELOAD=2 the CAD's first load,
+               ;; run-common.lsp from this workdir, is itself refused unless
+               ;; the workdir is already trusted. Only for a REAL launch --
+               ;; --print-command and the tests pass their own launcher, and
+               ;; a dry run must not write the user's registry.
+               (_ (when (eq launcher #'uiop:launch-program)
+                    (setf (autocad-session-trusted session)
+                          (ignore-errors (trust-workdir-for-run workdir)))))
                (_ (log-verbose "backend AUTOCAD: launching: ~{~A~^ ~}" argv))
                (process-info
                  (when launcher
@@ -1431,7 +1442,10 @@ started is what ATTACHED/CREATED say.")
                   (ignore-errors
                    (log-warn "backend AUTOCAD: start aborted; terminating spawned engine (pid ~A)"
                              (ignore-errors (uiop:process-info-pid process-info))))
-                  (kill-engine-process process-info)))))))
+                  (kill-engine-process process-info))
+                ;; AFTER the kill: a live AutoCAD saves its profile on exit.
+                (ignore-errors (untrust-workdir (autocad-session-trusted session)))
+                (setf (autocad-session-trusted session) nil))))))
     (alfe.error:backend-error (probe)
       (error probe))
     (error (probe)
@@ -1616,7 +1630,12 @@ not create it)")
       ;; kill below is unaffected either way.
       (when (eq (autocad-session-variant session) :automation)
         (ignore-errors (quit-created-autocad session)))
-      (kill-engine-process info))
+      (kill-engine-process info)
+      ;; LAST, once the AutoCAD this run created is gone: it saves its
+      ;; profile -- TRUSTEDPATHS included -- when it exits, and would write
+      ;; back an entry removed while it still ran.
+      (ignore-errors (untrust-workdir (autocad-session-trusted session)))
+      (setf (autocad-session-trusted session) nil))
     (session-state-set session :stopped))
   session)
 
