@@ -229,7 +229,12 @@ be too late, because the first load is already the refused one.
   value's type (=REG_SZ= or =REG_EXPAND_SZ=) is kept, and so is every
   character: alfe reads and writes through PowerShell's registry API, not
   through =reg.exe='s console codepage. That matters because the workdir
-  lives under =%TEMP%=, and so under your user name.
+  lives under =%TEMP%=, and so under your user name. alfe runs
+  =powershell -NoProfile -NonInteractive -EncodedCommand <base64>=: the
+  script travels base64-encoded and strings travel as character codes, so
+  no quoting or codepage can alter them. A site whose policy forbids
+  PowerShell for the user gets no trust entry: alfe then finds no profile
+  (visible with =--debug=) and runs as it did before this existed.
 - *When.* After the AutoCAD alfe created has quit. AutoCAD saves its
   profile, =TRUSTEDPATHS= included, when it exits, so an entry removed
   while it still ran would be written back.
