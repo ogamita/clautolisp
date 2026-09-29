@@ -3204,6 +3204,83 @@ instead, at every call. Silenced by *AUTOLISP-WARN-OUT-OF-DIALECT* = NIL."
             (unless (%vendor-operator-warning-seen-p name)
               (format *error-output* "~&~A~%" message))))))))
 
+;;; --- feet / inch / fraction distance input (DISTOF, GETDIST) -------------
+;;; system-variables.issue: DISTOF ignored its MODE and GETDIST read only
+;;; decimals. Autodesk documents DISTOF as RTOS's complement, taking the
+;;; LUNITS modes, with modes 3 and 4 PARSED EQUIVALENTLY -- engineering and
+;;; architectural forms accepted for either (autolisp-spec, distof Notes).
+
+(defun %parse-unsigned-decimal (text)
+  "TEXT as a non-negative rational when it is digits with at most one `.'
+and at least one digit (\"18\", \"5.50\", \".5\", \"5.\"), else NIL."
+  (let ((dot (position #\. text)))
+    (when (and (plusp (length text))
+               (every (lambda (c) (or (digit-char-p c) (char= c #\.))) text)
+               (<= (count #\. text) 1)
+               (some #'digit-char-p text))
+      (let ((int (subseq text 0 (or dot (length text))))
+            (frac (if dot (subseq text (1+ dot)) "")))
+        (+ (if (plusp (length int)) (parse-integer int) 0)
+           (if (plusp (length frac))
+               (/ (parse-integer frac) (expt 10 (length frac)))
+               0))))))
+
+(defun %parse-mixed-number (text)
+  "TEXT as a non-negative rational in the forms RTOS modes 3-5 print and a
+user types: a decimal (\"5.5\"), a fraction (\"1/2\"), or a whole number and a
+fraction joined by a space or a hyphen (\"5 1/2\", \"5-1/2\" -- the UNITMODE 0
+and 1 forms). NIL for anything else."
+  (let* ((text (string-trim " " text))
+         (slash (position #\/ text)))
+    (if (null slash)
+        (%parse-unsigned-decimal text)
+        (let* ((joint (position-if (lambda (c) (member c '(#\Space #\-))) text
+                                   :end slash :from-end t))
+               (whole-text (if joint (string-trim " " (subseq text 0 joint)) ""))
+               (numer-text (subseq text (if joint (1+ joint) 0) slash))
+               (denom-text (subseq text (1+ slash))))
+          (when (and (every #'digit-char-p numer-text) (plusp (length numer-text))
+                     (every #'digit-char-p denom-text) (plusp (length denom-text))
+                     (every #'digit-char-p whole-text))
+            (let ((denom (parse-integer denom-text)))
+              (unless (zerop denom)
+                (+ (if (plusp (length whole-text)) (parse-integer whole-text) 0)
+                   (/ (parse-integer numer-text) denom)))))))))
+
+(defun parse-autolisp-distance (text mode)
+  "Parse the distance TEXT the way DISTOF does for LUNITS MODE 3, 4
+(engineering / architectural, accepted alike) or 5 (fractional); a double
+in drawing units (inches for 3/4), or NIL when TEXT is not in that form.
+Modes 1 and 2 (decimal, scientific) are the caller's own decimal parser.
+
+  3, 4:  [-] [FEET'] [-] [INCHES] [\"]   e.g. 1'-5 1/2\" 1'-5.50\" 1'6\" 8'
+         -1/2\" 17.5   FEET may be decimal; INCHES as %PARSE-MIXED-NUMBER
+  5:     [-] WHOLE [ N/D ] | N/D | decimal   e.g. 17 1/2  17-1/2  1/2"
+  (let* ((text (string-trim '(#\Space #\Tab) (or text "")))
+         (negative (and (plusp (length text)) (char= (char text 0) #\-)))
+         (body (string-trim '(#\Space) (if negative (subseq text 1) text)))
+         (value
+           (case mode
+             ((3 4)
+              (let* ((tick (position #\' body))
+                     (feet (if tick (%parse-unsigned-decimal
+                                     (string-trim " " (subseq body 0 tick)))
+                               0))
+                     (rest (string-trim " " (if tick (subseq body (1+ tick)) body))))
+                (when (and (plusp (length rest)) (char= (char rest 0) #\-) tick)
+                  (setf rest (string-trim " " (subseq rest 1))))
+                (when (and (plusp (length rest))
+                           (char= (char rest (1- (length rest))) #\"))
+                  (setf rest (string-trim " " (subseq rest 0 (1- (length rest))))))
+                (let ((inches (if (zerop (length rest))
+                                  (and tick 0)
+                                  (%parse-mixed-number rest))))
+                  (when (and feet inches (plusp (length body)))
+                    (+ (* 12 feet) inches)))))
+             (5 (%parse-mixed-number body)))))
+    (when value
+      (coerce (if negative (- value) value) 'double-float))))
+
 (defun autolisp-path-has-forward-slash-ellipsis-p (path)
   "T iff PATH contains a `...' subfolder-recursion component (AutoCAD's
 support/trusted-path `...' wildcard — a directory and all of its

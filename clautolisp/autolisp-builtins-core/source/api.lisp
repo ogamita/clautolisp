@@ -4328,81 +4328,118 @@ system-variables.issue 'Coupling'."
          (setf result (concatenate 'string "-" (subseq result 2))))))
     result))
 
+(defun %round-half-away (x)
+  "X rounded to the nearest integer, halves AWAY from zero -- what AutoCAD
+and BricsCAD do in RTOS: (rtos 2.5 4 0) is \"3\\\"\" and (rtos -0.5 2 0) is
+\"-1\" on both (probe-results 20260831T130043Z / 20260906T190558Z). CL's
+ROUND goes to even, which printed 2.5 as 2 and 0.5 as 0."
+  (if (minusp x)
+      (- (floor (+ (- x) 1/2)))
+      (floor (+ x 1/2))))
+
 (defun %inches->whole-fraction (inches p)
   "Split the non-negative real INCHES into whole units and a reduced
 fraction NUMER/DENOM whose denominator is 2^max(0,P) — the AutoCAD
 LUPREC-as-power-of-two convention for architectural (mode 4) and
 fractional (mode 5) RTOS output (LUPREC 4 => 1/16, LUPREC 8 => 1/256).
-Rounding that lands on a full unit carries into WHOLE. Returns (values
-WHOLE NUMER DENOM); NUMER is 0 when there is no fractional part.
-system-variables.issue 'Coupling'."
+Rounds to the nearest 1/DENOM, halves away from zero; rounding that lands
+on a full unit carries into WHOLE. Returns (values WHOLE NUMER DENOM);
+NUMER is 0 when there is no fractional part."
   (let* ((pp (max 0 p))
          (denom (expt 2 pp))
-         (whole (floor inches))
-         (frac (- inches whole))
-         (numer (round (* frac denom))))
-    (when (= numer denom)               ; rounded up to the next unit
-      (incf whole)
-      (setf numer 0))
+         (ticks (%round-half-away (* (rational inches) denom)))
+         (whole (floor ticks denom))
+         (numer (- ticks (* whole denom))))
     (if (zerop numer)
         (values whole 0 denom)
         (let ((g (gcd numer denom)))
           (values whole (/ numer g) (/ denom g))))))
 
-(defun %format-engineering-real (n p unitmode)
+(defun %feet-and-inches (neg feet inches-text inches-zero-p dimzin)
+  "Assemble RTOS feet-and-inches output (modes 3 and 4) per DIMZIN's
+feet/inch code, (LOGAND DIMZIN 3), as Autodesk documents it:
+
+  0  suppress zero feet and precisely zero inches
+  1  include zero feet and precisely zero inches
+  2  include zero feet, suppress zero inches
+  3  include zero inches, suppress zero feet
+
+Code 0 is MEASURED on AutoCAD and BricsCAD (both run with DIMZIN 8, whose
+feet/inch code is 0): (rtos 0.5 4 2) => 1/2\", (rtos 100 3 2) => 8'-4\",
+(rtos 0.0 4 2) => 0\" -- when both would go, the inches stay. Codes 1-3
+and exactly-zero inches are the documented behaviour, pending the probe
+cases added to probes/sources/probe-rtos.lsp. NEG adds a leading `-',
+which a value that rounds to zero does not get."
+  (let* ((code (logand dimzin 3))
+         (feet-zero (zerop feet))
+         (show-feet (not (and feet-zero (member code '(0 3)))))
+         (show-inches (not (and inches-zero-p (member code '(0 2))))))
+    (when (and (not show-feet) (not show-inches))
+      (setf show-inches t))              ; never an empty string: 0"
+    (with-output-to-string (s)
+      (when (and neg (not (and feet-zero inches-zero-p)))
+        (write-char #\- s))
+      (when show-feet
+        (format s "~D'" feet)
+        (when show-inches (write-char #\- s)))
+      (when show-inches
+        (format s "~A\"" inches-text)))))
+
+(defun %format-engineering-real (n p unitmode &optional (dimzin 0))
   "RTOS mode 3 (engineering): feet and decimal inches. N is a length in
 inches; P (LUPREC) is the number of decimal places on the inches part.
-Output is `F'-I.DDDD\"' (feet, an apostrophe, a hyphen, decimal inches,
-a double quote). UNITMODE has no visible effect on engineering output
-(there is no whole/fraction space to collapse). Canonical AutoCAD
-example: (rtos 17.5 3 2) => \"1'-5.50\\\"\".  system-variables.issue
-'Coupling'."
+The inches are rounded (halves away from zero) BEFORE the feet are split
+off, so 11.999 at P 2 carries into 1'-0\". DIMZIN's decimal bits (8:
+trailing zeros, 4: a leading zero) apply to the inches, its feet/inch code
+to the assembly (%FEET-AND-INCHES). UNITMODE has no visible effect.
+Measured: (rtos 17.5 3 2) => 1'-5.5\" under DIMZIN 8, 1'-5.50\" under 0."
   (declare (ignore unitmode))
-  (let* ((neg (minusp n))
-         (a (abs n)))
-    (multiple-value-bind (feet rem) (floor a 12.0d0)
-      (with-output-to-string (s)
-        (when neg (write-char #\- s))
-        (format s "~D'-~A\"" feet (%format-decimal-real rem p))))))
+  (let* ((pp (max 0 p))
+         (scale (expt 10 pp))
+         (ticks (%round-half-away (* (rational (abs n)) scale)))
+         (feet (floor ticks (* 12 scale)))
+         (inch-ticks (- ticks (* feet 12 scale)))
+         (inches-text (%apply-dimzin-decimal
+                       (%format-decimal-real (/ inch-ticks scale) pp)
+                       dimzin)))
+    (%feet-and-inches (minusp n) feet inches-text (zerop inch-ticks) dimzin)))
 
-(defun %format-architectural-real (n p unitmode)
+(defun %format-architectural-real (n p unitmode &optional (dimzin 0))
   "RTOS mode 4 (architectural): feet and fractional inches, the fraction
-denominator being 2^P (LUPREC). Output is `F'-W N/D\"' when there is a
-fraction, else `F'-W\"'. UNITMODE 0 separates the whole inches from the
-fraction with a space (display form); UNITMODE 1 uses a hyphen (the
-re-readable input form). Canonical AutoCAD example: (rtos 17.5 4 2) =>
-\"1'-5 1/2\\\"\".  system-variables.issue 'Coupling'."
-  (let* ((neg (minusp n))
-         (a (abs n)))
-    (multiple-value-bind (feet rem) (floor a 12.0d0)
-      (multiple-value-bind (whole numer denom) (%inches->whole-fraction rem p)
-        (when (= whole 12)              ; fraction rounding carried a full foot
-          (incf feet)
-          (setf whole 0))
-        (let ((sep (if (and unitmode (plusp unitmode)) "-" " ")))
-          (with-output-to-string (s)
-            (when neg (write-char #\- s))
-            (if (zerop numer)
-                (format s "~D'-~D\"" feet whole)
-                (format s "~D'-~D~A~D/~D\"" feet whole sep numer denom))))))))
+denominator being 2^P (LUPREC). The inches are `W N/D' with a fraction,
+`W' without; a zero W before a fraction is dropped when the feet are
+(measured: (rtos 0.5 4 2) => 1/2\", (rtos 123456.789 4 2) =>
+10288'-0 3/4\"). UNITMODE 0 separates W from the fraction with a space,
+1 with a hyphen (the re-readable input form). DIMZIN's feet/inch code
+decides the zero feet / zero inches (%FEET-AND-INCHES). Canonical
+AutoCAD example: (rtos 17.5 4 2) => \"1'-5 1/2\\\"\"."
+  (multiple-value-bind (total numer denom) (%inches->whole-fraction (abs n) p)
+    (multiple-value-bind (feet whole) (floor total 12)
+      (let* ((sep (if (and unitmode (plusp unitmode)) "-" " "))
+             (show-feet (not (and (zerop feet) (member (logand dimzin 3) '(0 3)))))
+             (inches-text
+               (cond ((zerop numer) (format nil "~D" whole))
+                     ((and (zerop whole) (not show-feet)) (format nil "~D/~D" numer denom))
+                     (t (format nil "~D~A~D/~D" whole sep numer denom)))))
+        (%feet-and-inches (minusp n) feet inches-text
+                          (and (zerop whole) (zerop numer)) dimzin)))))
 
 (defun %format-fractional-real (n p unitmode)
   "RTOS mode 5 (fractional): whole units and a reduced fraction with
-denominator 2^P (LUPREC); no feet. UNITMODE 0 uses a space between the
-whole part and the fraction; UNITMODE 1 uses a hyphen (input form). A
-zero whole part with a fraction prints as just the fraction. Canonical
-AutoCAD example: (rtos 17.5 5 2) => \"17 1/2\".  system-variables.issue
-'Coupling'."
-  (let* ((neg (minusp n))
-         (a (abs n)))
-    (multiple-value-bind (whole numer denom) (%inches->whole-fraction a p)
-      (let ((sep (if (and unitmode (plusp unitmode)) "-" " ")))
-        (with-output-to-string (s)
-          (when neg (write-char #\- s))
-          (cond
-            ((zerop numer) (format s "~D" whole))
-            ((zerop whole) (format s "~D/~D" numer denom))
-            (t (format s "~D~A~D/~D" whole sep numer denom))))))))
+denominator 2^P (LUPREC); no feet. Rounds halves away from zero (measured:
+(rtos 2.5 5 0) => 3, (rtos -0.5 5 0) => -1). UNITMODE 0 uses a space
+between the whole part and the fraction; UNITMODE 1 uses a hyphen (input
+form). A zero whole part with a fraction prints as just the fraction.
+Canonical AutoCAD example: (rtos 17.5 5 2) => \"17 1/2\"."
+  (multiple-value-bind (whole numer denom) (%inches->whole-fraction (abs n) p)
+    (let ((sep (if (and unitmode (plusp unitmode)) "-" " ")))
+      (with-output-to-string (s)
+        (when (and (minusp n) (not (and (zerop whole) (zerop numer))))
+          (write-char #\- s))
+        (cond
+          ((zerop numer) (format s "~D" whole))
+          ((zerop whole) (format s "~D/~D" numer denom))
+          (t (format s "~D~A~D/~D" whole sep numer denom)))))))
 
 (defun builtin-rtos (number &optional mode precision)
   ;; (rtos NUMBER [MODE [PRECISION]]) -> string. We honour every
@@ -4430,8 +4467,8 @@ AutoCAD example: (rtos 17.5 5 2) => \"17 1/2\".  system-variables.issue
     (make-autolisp-string
      (case m
        (1 (%format-scientific-real n p))
-       (3 (%format-engineering-real n p unitmode))
-       (4 (%format-architectural-real n p unitmode))
+       (3 (%format-engineering-real n p unitmode dimzin))
+       (4 (%format-architectural-real n p unitmode dimzin))
        (5 (%format-fractional-real n p unitmode))
        (otherwise (%apply-dimzin-decimal (%format-decimal-real n p) dimzin))))))
 
@@ -4451,9 +4488,18 @@ AutoCAD example: (rtos 17.5 5 2) => \"17 1/2\".  system-variables.issue
        (otherwise (%format-decimal-real (* rad (/ 180.0d0 pi)) p))))))
 
 (defun builtin-distof (string &optional mode)
-  (declare (ignore mode))
-  (let ((value (autolisp-string-value (require-string string "DISTOF"))))
-    (parse-autolisp-real value)))
+  ;; (distof STRING [MODE]) -> real, or nil. MODE takes the LUNITS values and
+  ;; defaults to LUNITS (autolisp-spec distof Notes): 1-2 decimal / scientific,
+  ;; 3 and 4 feet-and-inches (engineering and architectural forms accepted
+  ;; alike), 5 fractional. The complement of RTOS: (distof (rtos x m p) m)
+  ;; gives x back to the printed precision. system-variables.issue.
+  (let ((value (autolisp-string-value (require-string string "DISTOF")))
+        (m (if mode
+               (require-int32 mode "DISTOF")
+               (%rtos-units-sysvar "LUNITS" 2))))
+    (if (member m '(3 4 5))
+        (clautolisp.autolisp-runtime:parse-autolisp-distance value m)
+        (parse-autolisp-real value))))
 
 (defun builtin-angtof (string &optional mode)
   ;; (angtof STRING [MODE]) -> real angle. Mode 0 = radians, 1 = deg
@@ -9021,9 +9067,16 @@ later M3 (vector math) functions can pick it up from one place.")
   (declare (ignore _))
   (errno-and-return 68 nil))
 ;;; STUB: menu-command accessor. See deferred-stubbed-functions.issue § Menu system stubs.
-(defun builtin-menucmd  (&optional _)
-  (declare (ignore _))
-  (make-autolisp-string ""))
+(defun builtin-menucmd  (&optional request)
+  ;; (menucmd "M=<DIESEL>") evaluates the DIESEL expression and returns its
+  ;; result (diesel.lisp) -- the way AutoLISP programs read EDTIME dates. The
+  ;; other menu areas (P, B, A, T, I, G) have no menus to act on headless and
+  ;; keep the stub's "". system-variables.issue.
+  (let ((text (and (typep request 'autolisp-string) (autolisp-string-value request))))
+    (make-autolisp-string
+     (if (and text (>= (length text) 2) (string-equal "M=" text :end2 2))
+         (diesel-evaluate (subseq text 2))
+         ""))))
 ;;; STUB: menu-group query. See deferred-stubbed-functions.issue § Menu system stubs.
 (defun builtin-menugroup (&optional _)
   (declare (ignore _))

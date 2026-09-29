@@ -301,6 +301,7 @@ application for headless interactive/scriptable testing (generalises cador)."
   ((:file "autolisp-builtins-core/source/package")
    (:file "autolisp-builtins-core/source/secureload")
    (:file "autolisp-builtins-core/source/api")
+   (:file "autolisp-builtins-core/source/diesel")
    ;; the source-file editing module (sedit-bugs-and-design.issue) — after api,
    ;; it uses the AutoLISP printer defined there.
    (:file "autolisp-builtins-core/source/source-file"))
@@ -705,6 +706,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-builtins-core/tests/errno-coupling-tests")
    (:file "autolisp-builtins-core/tests/exit-status-tests")
    (:file "autolisp-builtins-core/tests/vendor-operator-tests")
+   (:file "autolisp-builtins-core/tests/diesel-tests")
    (:file "autolisp-builtins-core/tests/clal-extensions-tests")
    (:file "autolisp-builtins-core/tests/secureload-dialect-tests")
    (:file "autolisp-builtins-core/tests/sysvar-dialect-tracking-tests")

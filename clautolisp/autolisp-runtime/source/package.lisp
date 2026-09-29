@@ -216,6 +216,7 @@
    #:unavailable-in-headless-context
    #:operation-not-yet-implemented
    #:backend-error
+   #:parse-autolisp-distance
    #:autolisp-runtime-error-call-stack
    #:current-autolisp-call-stack
    #:autolisp-runtime-error-message

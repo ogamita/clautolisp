@@ -400,12 +400,51 @@ so the "CMDECHO -> command echo" coupling was not actually wired. Added
 still recorded unconditionally). This is the code half of that coupling;
 the FiveAM + conformance tests above are the test half.
 
-### Still open / TODO
+### Done 2026-09-29 (clautolisp 2.2.148) -- the three headless TODOs
 
-  - rtos modes 3-5 DIMZIN feet-inch suppression bits and engineering
-    inch->foot carry (above).
-  - getdist architectural INPUT parsing (LUNITS/UNITMODE, not LUPREC).
-  - DIESEL edtime formatter for DATE/CDATE/TDCREATE/TDUPDATE (menucmd is
-    still a stub) — the sysvars are readable but no edtime consumer.
+  - rtos modes 3-5 now MATCH AutoCAD 2022 and BricsCAD V26 on every
+    measured case (probe-results 20260831T130043Z / 20260906T190558Z, both
+    DIMZIN 8): halves round AWAY from zero (CL ROUND went to even: 2.5 -> 2);
+    zero feet are dropped under DIMZIN feet/inch code 0 (0.5 -> 1/2", not
+    0'-0 1/2"); DIMZIN's decimal bits apply to engineering inches (8'-4", not
+    8'-4.00"); a negative sign never precedes a zero; inches rounding to 12
+    carry a foot in engineering too. Codes 1-3 and exactly-zero inches follow
+    Autodesk's documented meaning (%FEET-AND-INCHES) pending the new probe
+    cases. Tests: RTOS-MODES-3-5-MATCH-AUTOCAD-AND-BRICSCAD-UNDER-DIMZIN-8
+    (27 measured cases); the old unmeasured expectations (0'-3 3/8", 1'-0")
+    corrected.
+  - DISTOF honours its MODE (default LUNITS): 3 and 4 read feet-and-inches
+    in either form, 5 fractional -- RTOS's complement (it reads back every
+    measured vendor output). GETDIST under LUNITS 3/4/5 accepts the same
+    forms (1'-6", 1'-5 1/2", 17 1/2); a plain number is accepted in every
+    unit. Shared parser: runtime PARSE-AUTOLISP-DISTANCE.
+  - DIESEL: (menucmd "M=...") evaluates DIESEL (autolisp-builtins-core/
+    source/diesel.lisp): the arithmetic, comparison, bitwise, string, if/eval,
+    getvar/getenv, rtos/angtos and EDTIME functions, "..." quoting, and the
+    documented error strings ($(f)?? / $(f,??) / $?). EDTIME inverts the
+    DATE convention (JDN + day fraction) and implements every picture code.
+    Other menucmd areas keep the stub's "".
+
+New probes, for the runners (they will run automatically: the `suite'
+probe family changed):
+  - probe-rtos.lsp: rtos under DIMZIN 0 1 2 3 4 8 12 (modes 3/4, exact feet,
+    the engineering carry, -0.1 rounding to zero), and DISTOF input forms
+    under modes 2-5 -- including (distof "1'-6\"" 2), where clautolisp's
+    decimal reader still takes the leading "1" (ATOF-like); the vendors
+    probably answer nil.
+  - probe-diesel.lsp (new suite): the DIESEL functions, how a non-integral
+    result prints (clautolisp: up to 8 decimals, trailing zeros dropped --
+    Autodesk does not say), the error strings, EDTIME on a fixed date.
+    NB: the BricsCAD probe:suite jobs run a narrowed PROBE_SUITES list, so
+    this suite runs on AutoCAD only until that list is widened
+    (probes-suite-crashes-bricscad).
+
+### Still open
+
+  - Confirm or correct the documented-only behaviour against the new probe
+    results (DIMZIN codes 1-3, zero inches, DISTOF mode 2, DIESEL number
+    format).
+  - vports/setview remain headless stubs (single-viewport sentinel /
+    nil); a live viewport model needs a CAD host.
   - vports/setview remain headless stubs (single-viewport sentinel /
     nil); a live viewport model needs a CAD host.
