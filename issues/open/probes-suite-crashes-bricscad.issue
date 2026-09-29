@@ -138,3 +138,10 @@ rather than a code change alone.
 AutoCAD's accoreconsole took the same wrapper with no drawing and ran it
 to completion, which does not disprove the hypothesis -- accoreconsole is
 built for exactly that -- but does mean the wrapper itself is sound.
+
+## UPDATE 2026-09-29: unblocked, NEXT
+
+The cause is fixed in the probe (probe-foreach-scope.lsp now reads
+(foreach e (list 1 2 3) nil)). Left: widen PROBE_SUITES on the BricsCAD
+probe:suite jobs in .gitlab/native.yml back to the full suite, and one run
+on the BricsCAD macOS + Windows runners.

@@ -25,6 +25,8 @@ transcode) as tracked work.
 Issue landscape after consolidation:
 - =encoding-situations-cli-options.issue= — the CLI/situations DESIGN
   (blocked on pjb validating the situation list; everything derives from it).
+  UPDATE 2026-09-29: that block is stale -- the situation list was VALIDATED
+  2026-07-28 (see encoding-situations-cli-options). This umbrella is now TODO.
 - =encoding-consolidation.issue= (this) — the PROGRAM + plan + code map +
   invariant; SUPERSEDES =cad-load-encoding-macos= (B5/B6) and
   =test-file-encodings= (B1 tests+spec); COORDINATES with (does not

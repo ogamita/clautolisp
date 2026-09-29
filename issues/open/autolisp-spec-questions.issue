@@ -34,3 +34,7 @@ So they cannot be used in short-circuiting expressions.
 
 AutoCAD and BricsCAD specification should be checked,
 the implementations should be tested.
+
+UPDATE 2026-09-29 (triage housekeeping): the "needs cad-access" block is lifted -- the CI
+CAD runners (native child pipeline, cad tag) run probe jobs. Write the COND/AND/OR
+edge-case probes on Linux; play them on AutoCAD + BricsCAD.

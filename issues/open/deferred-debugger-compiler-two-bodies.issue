@@ -6,6 +6,8 @@ See also:
   clautolisp/documentation/clautolisp-debugger-spec.org (§5, §13)
 
 DEFERRED — gated on the clautolisp compiler-to-CL, which does not yet exist.
+UPDATE 2026-09-29: the gate is lifted -- the compiler exists (compiler.issue,
+slices from 2.0.0). This is now TODO, workable on Linux.
 
 Context
 -------
