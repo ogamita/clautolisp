@@ -164,3 +164,8 @@ ORIGINAL FIX NOTES -- two parts, and two decisions that are pjb's
 WHY NOT FIXED IN THE SAME CHANGE: part A is a COM change that can only
 be verified on a Windows host with AutoCAD, and both decisions above
 change what happens on a machine a human uses.
+
+Closed 2026-09-29 (triage housekeeping) -- DONE
+Part A shipped in alfe 2.2.71 (quit-created-autocad: a run quits the AutoCAD it CREATED).
+Part B was split out as autocad-orphaned-by-killed-or-cancelled-jobs, which is closed
+(scripts/sweep-orphaned-cad.ps1 before every Windows CAD job). Nothing is left here.

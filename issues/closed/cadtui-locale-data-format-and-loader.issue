@@ -35,3 +35,13 @@ Notes
   is a lexical pre-pass BEFORE parsing, never a grammar duplicated per language.
 - This ticket is headless (schema + loader + converter + fr_FR interaction
   dictionary). The CAD-command DATA depends on the probe issues below.
+
+Closed 2026-09-29 (triage housekeeping) -- DONE, verified against the tree
+- Loader + per-locale data files: clautolisp 2.2.56 (clautolisp/cadtui/source/locale.lisp,
+  data under clautolisp/cadtui/data/locale/<locale>/, tests in cadtui/tests/locale-tests.lisp;
+  missing entries fall back to the international form).
+- fr_FR interaction dictionary (verb.sexp, keyword.sexp), plus de_DE / es_ES seeds.
+- Converters: scripts/cadtui-getcname-to-sexp.py and scripts/cadtui-pgp-to-sexp.py; the
+  fr_FR command.sexp (2.2.57-2.2.60) and alias.sexp (2.2.62) were produced with them.
+- The option-keyword DICTIONARY has no data yet: harvesting it is its own ticket,
+  cadtui-locale-option-keywords (machine-bound), not this one.
