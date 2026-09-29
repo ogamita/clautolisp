@@ -776,6 +776,26 @@ Whatever the dialect selected, all the operators are available. Only
 those that are not specifically inside the set defined by the dialect
 produce warnings when compiled and when used.
 
+For the operators only one vendor provides, that warning is
+=[vendor-operator]=. BricsCAD's =vle-*= family and its other extensions
+belong to BricsCAD, and =acad_strlsort= and the Express Tools functions
+belong to AutoCAD; the specification's Availability sections decide which.
+The first call of such an operator prints one notice for the session,
+interpreted or compiled:
+
+#+begin_example
+[vendor-operator] VLE-NTH0 is a BricsCAD-only operator, not portable to strict
+#+end_example
+
+- It is silent under that vendor's own dialects (any =bricscad-…= or
+  =autocad-…= spelling) and under =lax=.
+- It warns under the other vendor's dialects, and under =strict= and
+  =clautolisp=: =clautolisp= is the portable subset plus clautolisp's
+  /own/ extensions, not the vendors'.
+- =(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)= silences it. Any other value,
+  or leaving the variable unset, keeps it on.
+- A dialect whose portability-warning mode is =error= makes it an error.
+
 Unknown dialect names produce a diagnostic on standard error and exit
 code 1.
 

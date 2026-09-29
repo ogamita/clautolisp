@@ -325,6 +325,11 @@ really is the implementation this file names for it. NIL otherwise."
           (%open-code-tag-for name function))
     (when (%lexically-safe-builtin-p name function)
       (setf (clautolisp.autolisp-runtime:autolisp-subr-lexically-safe subr) t))
+    ;; The vendor that alone provides NAME, per the spec: the call site warns
+    ;; when it is used out of that vendor's dialect.
+    (let ((owner (clautolisp.autolisp-runtime:vendor-only-operator-owner name)))
+      (when owner
+        (setf (clautolisp.autolisp-runtime:autolisp-subr-owner subr) owner)))
     subr))
 
 (defun builtin-boundp (object)

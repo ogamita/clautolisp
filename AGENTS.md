@@ -817,10 +817,14 @@ clautolisp-only extension used under a non-clautolisp dialect emits a
 `emit-…-extension-warning`, gated by `(member dialect '(:clautolisp :lax))`.
 Model: `emit-lambda-list-extension-warning`; canonical case `(terpri <file>)`
 (real AutoCAD 2026 + BricsCAD V26 `terpri` is zero-arity/command-line-only).
-**Do not make these hard errors** — pjb corrected exactly this. The broad
-sweep of remaining hard dialect errors that should become warnings is
-`issues/open/deferred-clautolisp-out-of-dialect-warnings.issue` (DEFERRED —
-don't start without asking). This is the *implementation* companion to the
+**Do not make these hard errors** — pjb corrected exactly this. The
+VENDOR-ONLY operators have theirs since 2.2.147 (pjb asked for it
+2026-09-29): `emit-vendor-operator-warning`, fired from the subr call site on
+a builtin whose `autolisp-subr-owner` is set from the GENERATED
+`operator-availability.lisp` (spec Availability → `make -C clautolisp
+operator-availability`; the documentation job checks it for drift). A wrong
+owner is fixed in the spec, never by hand in the table
+(`issues/closed/deferred-clautolisp-out-of-dialect-warnings.issue`). This is the *implementation* companion to the
 normative **Dialect Divergence and Warnings** section above.
 
 ## Version-bump discipline

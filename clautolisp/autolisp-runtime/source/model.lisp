@@ -334,7 +334,14 @@ clautolisp-secureload-trust-model spec.")
   ;; called with the locals materialised into a real frame first, because
   ;; it could see them. Same discipline as OPEN-CODE: set only by
   ;; INSTALL-CORE-BUILTINS, against the implementation, never the name.
-  (lexically-safe nil))
+  (lexically-safe nil)
+  ;; :AUTOCAD or :BRICSCAD when this builtin implements an operator only that
+  ;; vendor provides (the spec's Availability; operator-availability.lisp),
+  ;; else NIL. Read on every subr call, so the out-of-dialect check costs
+  ;; one slot test for everything portable
+  ;; (deferred-clautolisp-out-of-dialect-warnings). Set by
+  ;; MAKE-CORE-BUILTIN-SUBR from the name at install time.
+  (owner nil))
 
 (defstruct autolisp-usubr
   (name "" :type string)

@@ -1668,6 +1668,29 @@ frame, where they can see them exactly as they would in the dynamic fork."
   (setf (clautolisp.autolisp-runtime.internal::autolisp-subr-lexically-safe object)
         value))
 
+(declaim (inline autolisp-subr-owner))
+(defun autolisp-subr-owner (object)
+  "The vendor that alone provides this builtin's operator -- :AUTOCAD or
+:BRICSCAD -- or NIL for a portable one."
+  (clautolisp.autolisp-runtime.internal::autolisp-subr-owner object))
+
+(defun (setf autolisp-subr-owner) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-subr-owner object) value))
+
+(defvar *vendor-only-operator-table*
+  (let ((table (make-hash-table :test 'equalp)))
+    (loop for (name . owner) in *vendor-only-operators*
+          do (setf (gethash name table) owner))
+    table)
+  "*VENDOR-ONLY-OPERATORS* (operator-availability.lisp, generated from the
+spec) as a case-insensitive table: operator name -> :AUTOCAD / :BRICSCAD.")
+
+(defun vendor-only-operator-owner (name)
+  "The vendor that alone provides the operator NAME, per the spec's
+Availability: :AUTOCAD, :BRICSCAD, or NIL for a portable operator (or one
+the spec does not describe)."
+  (values (gethash name *vendor-only-operator-table*)))
+
 (defun autolisp-usubr-lexical-body (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-lexical-body object))
 
@@ -3109,6 +3132,78 @@ dialect notices do. Warnings go to *ERROR-OUTPUT*; the operation proceeds."
           (setf (gethash name *clautolisp-sysvar-warnings-seen*) t)
           (format *error-output* "~&~A~%" message))))))
 
+;;; --- vendor-only operators out of their dialect --------------------------
+;;; deferred-clautolisp-out-of-dialect-warnings; the register entry
+;;; "vendor-operator" (portability.lisp) is the specification of this notice.
+
+(defun %warn-out-of-dialect-p (context)
+  "False only when the AutoLISP variable *AUTOLISP-WARN-OUT-OF-DIALECT* is
+BOUND to NIL -- (setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil). Unbound means the
+default, on: an AutoLISP variable nobody set reads as NIL, so an unset one
+cannot be what silences. Re-read at each decision, like
+*AUTOLISP-FILE-ENCODING*, so setting it takes effect at once."
+  (let ((symbol (ignore-errors (find-autolisp-symbol "*AUTOLISP-WARN-OUT-OF-DIALECT*"))))
+    (if (null symbol)
+        t
+        (multiple-value-bind (value boundp)
+            (ignore-errors (lookup-variable symbol context))
+          (or (not boundp) value)))))
+
+(defun %vendor-operator-silent-p (owner dialect)
+  "True when a call to an operator OWNER alone provides is silent under
+DIALECT: under --lax, and under any dialect of the owner's PRODUCT (matched on
+the product, so bricscad-mac and bricscad-v25 are BricsCAD too). Strict and
+clautolisp warn: strict is the portable subset, clautolisp is strict plus
+clautolisp's own extensions, not the vendors' (spec ch.25 case 1)."
+  (or (null dialect)
+      (eq :lax (clautolisp.autolisp-reader:autolisp-dialect-name dialect))
+      (eq owner (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+
+(defun %vendor-operator-warning-seen-p (name)
+  "T when the `vendor-operator' notice already fired for NAME in this
+session; records it otherwise. Kept in the session's
+DOTDOT-PATH-WARNINGS-SEEN table under an `op:' key, the table-sharing
+convention of the `fse:' / `case:' notices. No session reachable: never
+seen (always emit)."
+  (let* ((context (ignore-errors (current-evaluation-context)))
+         (session (and context
+                       (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                        context)))
+         (table (and session
+                     (clautolisp.autolisp-runtime.internal::runtime-session-dotdot-path-warnings-seen
+                      session)))
+         (key (concatenate 'string "op:" name)))
+    (cond
+      ((null table) nil)
+      ((gethash key table) t)
+      (t (setf (gethash key table) t) nil))))
+
+(defun emit-vendor-operator-warning (subr owner)
+  "The `[vendor-operator]' notice for a call of SUBR, whose operator only
+OWNER (:AUTOCAD / :BRICSCAD) provides, when the active dialect is not the
+owner's. Once per operator per session on *ERROR-OUTPUT*; the call proceeds.
+Under PORTABILITY-WARNING-MODE :error it signals :non-portable-construct
+instead, at every call. Silenced by *AUTOLISP-WARN-OUT-OF-DIALECT* = NIL."
+  (let ((dialect (ignore-errors (current-evaluation-dialect))))
+    (unless (%vendor-operator-silent-p owner dialect)
+      (let ((context (ignore-errors (current-evaluation-context))))
+        (when (%warn-out-of-dialect-p context)
+          (let* ((name (autolisp-subr-name subr))
+                 (mode (or (ignore-errors
+                            (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                             dialect))
+                           :warn))
+                 (message (%portability-diagnostic
+                           "vendor-operator"
+                           (%portability-warning-location nil)
+                           name
+                           (ecase owner (:autocad "AutoCAD") (:bricscad "BricsCAD"))
+                           (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+            (when (eq mode :error)
+              (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+            (unless (%vendor-operator-warning-seen-p name)
+              (format *error-output* "~&~A~%" message))))))))
+
 (defun autolisp-path-has-forward-slash-ellipsis-p (path)
   "T iff PATH contains a `...' subfolder-recursion component (AutoCAD's
 support/trusted-path `...' wildcard — a directory and all of its
@@ -3495,6 +3590,13 @@ flag only."
                       (cons (cons :subr
                                   (cons (autolisp-subr-name function) arguments))
                             *autolisp-call-stack*)))
+                 ;; A vendor-only operator out of its dialect: one slot test
+                 ;; for every portable call (the slot is NIL), the notice at
+                 ;; the first call of a vendor's. Interpreted and compiled
+                 ;; calls both come through here.
+                 (let ((owner (autolisp-subr-owner function)))
+                   (when owner
+                     (emit-vendor-operator-warning function owner)))
                  (handler-case
                      (apply (autolisp-subr-function function) arguments)
                    (autolisp-runtime-error (condition)

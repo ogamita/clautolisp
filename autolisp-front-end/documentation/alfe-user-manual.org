@@ -338,10 +338,13 @@ under the BricsCAD reader rules in the in-process engine, which
 is useful for testing.
 
 Whatever the dialect selected, all operators remain callable.
-Out-of-dialect operators are eligible for a diagnostic warning at
-use time (the warning machinery itself is tracked separately —
-see =deferred-clautolisp-out-of-dialect-warnings.issue= in the project
-issue tracker).
+Out-of-dialect operators get a diagnostic at use time: under the
+=clautolisp= backend, an operator only one vendor provides (BricsCAD's
+=vle-*= family, AutoCAD's =acad_*= functions, …) prints one
+=[vendor-operator]= notice per session at its first call, unless the
+dialect is that vendor's or =lax=. =(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)=
+silences it. Under =--autocad= and =--bricscad= the CAD itself decides:
+an operator it lacks is simply undefined there.
 
 * Host selection
 

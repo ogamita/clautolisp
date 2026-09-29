@@ -203,6 +203,10 @@
    #:autolisp-catch-all-error-message
    #:autolisp-catch-all-error-condition
    #:autolisp-catch-all-error-call-stack
+   #:autolisp-subr-owner
+   #:vendor-only-operator-owner
+   #:*vendor-only-operators*
+   #:emit-vendor-operator-warning
    #:autolisp-runtime-error
    #:autolisp-runtime-error-code
    #:autolisp-runtime-error-class-for-code

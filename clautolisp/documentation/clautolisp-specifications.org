@@ -164,9 +164,15 @@ the runtime implements remains callable — the dialect descriptor
 gates DEFAULTS (encoding, token-mode, ~atof~ behaviour), not
 operator visibility. Calling an operator that lies outside the
 selected dialect's documented surface is eligible for a diagnostic
-warning at use time; the warning machinery itself is tracked
-separately (see ~deferred-clautolisp-out-of-dialect-warnings.issue~ in the
-project issue tracker).
+warning at use time. For the VENDOR-ONLY operators this is the
+~[vendor-operator]~ notice (clautolisp 2.2.147): an operator only AutoCAD or
+only BricsCAD provides, per the spec's Availability sections (compiled into
+~autolisp-runtime/source/operator-availability.lisp~), warns once per
+session at its first call under any dialect but its owner's product and
+~lax~, strict and clautolisp included (autolisp-spec ch.25, case 1).
+~(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)~ silences it;
+~portability-warning-mode :error~ makes it an error. clautolisp's own
+extensions have their own notices (the dialect-warnings annex).
 
 ** Input selection
 - ~-l FILE~, ~--load FILE~ ::
