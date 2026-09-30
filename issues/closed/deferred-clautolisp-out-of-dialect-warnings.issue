@@ -63,3 +63,37 @@ Out of scope:
     "when used" half is the practical contract).
   - Cross-dialect operator polyfills (separate work; see
     missing-functions.issue for the inventory).
+
+Resolution — DONE, clautolisp 2.2.147 (2026-09-29; pjb asked for it)
+
+Design questions, as answered:
+  1. Source of truth: the spec's `*** Availability' sections. The paged spec
+     build already turned them into the A/B/AB flag of symbols.txt;
+     tools/generate-operator-availability.py keeps the A-only and B-only
+     Function / Special Form rows (minus CLAL-* / CLAUTOLISP-*, clautolisp's
+     own) as the committed autolisp-runtime/source/operator-availability.lisp
+     (66 AutoCAD-only, 473 BricsCAD-only). `make -C clautolisp
+     operator-availability' regenerates it; `check-operator-availability'
+     (documentation CI job) fails on drift -- seen red on a corrupted row.
+     THE SPEC PARSER WAS WRONG: it credited only the vendor a line STARTED
+     with, so `- AutoCAD 2022, BricsCAD V25 and V26: verified' made LOAD,
+     FINDFILE, READ-CHAR, WRITE-CHAR, VL-DIRECTORY-FILES and DEFUN-Q
+     AutoCAD-only. Fixed in autolisp-spec/scripts/build-paged-spec.el (every
+     vendor named before the colon, and `Status: ... both vendors').
+  2. First CALL, once per (operator, session): the owner is a slot of the
+     builtin subr, set at install; the subr branch of
+     CALL-AUTOLISP-FUNCTION-IN-CONTEXT tests it -- one slot test for every
+     portable call. Interpreted and compiled calls both pass there.
+  3. *error-output*, register format `[vendor-operator]' (register entry in
+     portability.lisp, annex regenerated). (setq *AUTOLISP-WARN-OUT-OF-DIALECT*
+     nil) silences; unbound = on. portability-warning-mode :error signals
+     :non-portable-construct.
+  4. Spec ch.25 case 1: warns in every dialect except the owner's PRODUCT
+     (so bricscad-mac is BricsCAD) and lax -- strict and clautolisp warn.
+
+Tests: autolisp-builtins-core/tests/vendor-operator-tests.lisp (9 tests,
+including the acceptance one: strict, BricsCAD-only operator, exactly one
+warning over three calls). clautolisp suites 34/34, alfe 1358/1358, the
+autolisp-test corpus unchanged (3699 pass / 207 fail, same as master).
+Docs: specifications (operator availability rule), user manual (dialect
+selection), alfe manual, AGENTS.md.

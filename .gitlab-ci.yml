@@ -621,6 +621,10 @@ documentation:
     # Fail here rather than ship a manual that disagrees with what the
     # program prints.
     - make -C clautolisp check-dialect-warnings-annex
+    # The vendor-only operator table is generated from the spec's
+    # Availability sections: a spec edit that changes who owns an operator
+    # must regenerate it (deferred-clautolisp-out-of-dialect-warnings).
+    - make -C clautolisp check-operator-availability
     # The user-visible rule (AGENTS.md): a CLI option or CLAL- builtin that
     # reaches no manual fails here. Run BEFORE the build -- it is seconds,
     # and the point is to fail on the documentation gap rather than after

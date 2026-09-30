@@ -144,7 +144,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
 
 .PHONY: all test test-sbcl test-ccl test-compiler-equivalence \
         test-debug-compiled test-shipped-compiler test-shipped-compiler-ccl \
-        check-docstrings \
+        check-docstrings spec-symbols operator-availability check-operator-availability \
         build build-sbcl build-ccl probe-check \
         submodules build-libredwg test-libredwg-compiler-path \
         build-read-autolisp-sbcl build-read-autolisp-ccl \
@@ -399,6 +399,21 @@ specifications: $(BUILD_DIR)/documentation/clautolisp-specifications.pdf $(BUILD
 # The generated .org is tracked, because it ships in the manual and is
 # built to PDF/Info like every other doc.
 DIALECT_WARNINGS_ANNEX := documentation/clautolisp-dialect-warnings.org
+
+# The vendor-only operator table (deferred-clautolisp-out-of-dialect-warnings)
+# is GENERATED from the spec's Availability sections, via the flags the paged
+# spec build writes into symbols.txt. Needs emacs (the spec build).
+SPEC_SYMBOLS := ../autolisp-spec/build/pages/symbols.txt
+OPERATOR_AVAILABILITY := autolisp-runtime/source/operator-availability.lisp
+
+spec-symbols:
+	$(MAKE) -C ../autolisp-spec pages
+
+operator-availability: spec-symbols  ## Regenerate the vendor-only operator table from the spec.
+	python3 tools/generate-operator-availability.py "$(SPEC_SYMBOLS)" "$(OPERATOR_AVAILABILITY)"
+
+check-operator-availability: spec-symbols  ## Fail if the vendor-only operator table is stale w.r.t. the spec.
+	python3 tools/generate-operator-availability.py --check "$(SPEC_SYMBOLS)" "$(OPERATOR_AVAILABILITY)"
 
 dialect-warnings-annex:  ## Regenerate the manual's dialect-warnings annex from the register.
 	"$(SBCL)" --non-interactive --disable-debugger \

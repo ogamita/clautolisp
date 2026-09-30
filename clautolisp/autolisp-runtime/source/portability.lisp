@@ -391,6 +391,49 @@ and names the vendor's own variable where there is one."
    ("clautolisp: the decision" . "issues/closed/clal-drawing-sysvars-silent-out-of-dialect.issue")
    ("clautolisp: emitted by" . "clautolisp/cador/source/sysvars.lisp, sysvar-api.lisp")))
 
+(register-dialect-warning
+ :tag "vendor-operator"
+ :title "vendor-only operator called out of its dialect"
+ :kind :portability
+ :message "~A is a ~A-only operator, not portable to ~(~A~)"
+ :arguments "the operator's name, the vendor that owns it (AutoCAD or BricsCAD), the dialect name"
+ :example ": [vendor-operator] in PARSE-CSV: VLE-STRING-SPLIT is a BricsCAD-only operator, not portable to strict"
+ :dialects
+ "clautolisp implements operators of BOTH vendors -- BricsCAD's VLE-*
+family and its other extensions, AutoCAD's ACAD_* and Express Tools
+functions where it can -- and every one of them is callable whatever the
+dialect (clautolisp user manual, \"Dialect selection\": \"all the
+operators are available; only those that are not specifically inside the
+set defined by the dialect produce warnings\").
+
+WHICH operators belong to one vendor only is the specification's call: the
+`*** Availability' section of each Function Entry, compiled into
+autolisp-runtime/source/operator-availability.lisp (generated; a wrong row
+is corrected in the spec, then regenerated). An operator of a vendor warns,
+per the spec's chapter 25 case 1 (an extension warns in every dialect
+except its owner's and lax):
+
+- under the OTHER vendor's dialects (a BricsCAD operator under
+  --dialect autocad-*, and the reverse);
+- under --dialect strict (the portable subset) and --dialect clautolisp
+  (strict plus clautolisp's OWN extensions -- not the vendors');
+- never under its owner's dialects (any bricscad-* or autocad-*
+  spelling, matched on the PRODUCT, so bricscad-mac is BricsCAD), and
+  never under --lax.
+
+Once per operator per session, at its first CALL (interpreted or
+compiled), never at read time. (setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)
+silences it; portability-warning-mode :error makes it an error instead."
+ :rationale
+ "A program that calls VLE-STRING-SPLIT runs on clautolisp and on
+BricsCAD, and fails with `no function definition' on AutoCAD. The notice
+says so at the first call, where the program still runs, rather than on the
+customer's AutoCAD."
+ :references
+ '(("autolisp-spec: ch.25 Dialect Portability Warnings, case 1 (Extension)" . "autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org")
+   ("clautolisp: the table (generated)" . "clautolisp/autolisp-runtime/source/operator-availability.lisp")
+   ("clautolisp: the ticket" . "issues/closed/deferred-clautolisp-out-of-dialect-warnings.issue")))
+
 ;;; ------------------------------------------------------------------
 ;;; :vendor-divergence — clautolisp follows the spec, a vendor does not
 ;;; ------------------------------------------------------------------

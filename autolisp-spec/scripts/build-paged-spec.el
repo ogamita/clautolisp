@@ -397,21 +397,33 @@ all flip the corresponding flag on."
            (setq in-availability t))
           ((and in-availability (string-match-p "^\\*\\*\\*" line))
            (setq in-availability nil))
-          (in-availability
-           (when (string-match
-                  "^-\\s-+AutoCAD\\b[^:]*:\\s-*\\(.*\\)$" line)
-             (let ((rest (string-trim (match-string 1 line))))
-               (unless (string-match-p "^not\\b" rest)
+          ;; A line credits EVERY vendor named before its colon, not only the
+          ;; one it starts with: `- AutoCAD 2022, BricsCAD V25 and V26:
+          ;; verified by runtime probe' is a BricsCAD line too. Reading only
+          ;; the leading vendor made LOAD, FINDFILE, READ-CHAR, WRITE-CHAR,
+          ;; VL-DIRECTORY-FILES and DEFUN-Q come out AutoCAD-only, which
+          ;; clautolisp's out-of-dialect warnings would have turned into a
+          ;; notice on LOAD under --bricscad. A `Status: ... both vendors'
+          ;; line credits both.
+          ((and in-availability
+                (string-match "^-\\s-+\\([^:]*\\):\\s-*\\(.*\\)$" line))
+           (let ((head (match-string 1 line))
+                 (rest (string-trim (match-string 2 line))))
+             (unless (string-match-p "^not\\b" rest)
+               (when (or (string-match-p "\\bAutoCAD\\b" head)
+                         (and (string-match-p "^Status\\b" head)
+                              (string-match-p "\\bboth vendors\\b" rest)))
                  (unless (cl-search "A" flags)
-                   (setq flags (concat flags "A"))))))
-           (when (string-match
-                  "^-\\s-+BricsCAD\\b[^:]*:\\s-*\\(.*\\)$" line)
-             (let ((rest (string-trim (match-string 1 line))))
-               (unless (string-match-p "^not\\b" rest)
+                   (setq flags (concat flags "A"))))
+               (when (or (string-match-p "\\bBricsCAD\\b" head)
+                         (and (string-match-p "^Status\\b" head)
+                              (string-match-p "\\bboth vendors\\b" rest)))
                  (unless (cl-search "B" flags)
                    (setq flags (concat flags "B"))))))))
         (setq tail (cdr tail))))
-    flags))
+    ;; canonical order, whatever order the lines came in
+    (concat (if (cl-search "A" flags) "A" "")
+            (if (cl-search "B" flags) "B" ""))))
 
 (defun alref-build/compute-availability (sections)
   "Populate the FLAGS slot of every entry-bearing SECTION before
