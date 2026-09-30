@@ -298,14 +298,16 @@ than signalling (the builtin layer validates gross filter shape)."
 (defmethod host-ssget ((host cador) filter &key mode)
   ;; Phase-11 supported modes:
   ;;   "X" / "_X"     all entities, optionally filtered.
-  ;;   nil            (interactive) — not supported headlessly,
-  ;;                  signals :host-not-supported.
+  ;;   nil            (interactive pick) — needs a pointer: signals
+  ;;                  UNAVAILABLE-IN-HEADLESS-CONTEXT, code
+  ;;                  :host-unavailable-headless (D1 §15). A design
+  ;;                  boundary of a headless host, not a gap.
   ;; Other modes (window, crossing, fence, last, previous, etc.)
   ;; signal :unsupported-ssget-mode for now.
   (let ((mode-string (and mode (mock-string-value mode))))
     (cond
       ((null mode-string)
-       (signal-host-not-supported host 'ssget))
+       (signal-unavailable-in-headless host 'ssget))
       ((or (string-equal mode-string "X")
            (string-equal mode-string "_X"))
        (let* ((order (reverse (cador-creation-order host)))

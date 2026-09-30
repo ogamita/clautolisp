@@ -11,6 +11,11 @@
    #:host-name
    ;; Predicates / introspection
    #:hostp
+   ;; The canonical raisers of the host condition taxonomy (D1 §15)
+   #:signal-host-not-supported
+   #:signal-unavailable-in-headless
+   #:signal-not-yet-implemented
+   #:signal-backend-error
    ;; --- Session and document management (D1 Group 1) -------------
    #:host-open-document
    #:host-close-document

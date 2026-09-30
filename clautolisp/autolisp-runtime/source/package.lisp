@@ -205,6 +205,13 @@
    #:autolisp-catch-all-error-call-stack
    #:autolisp-runtime-error
    #:autolisp-runtime-error-code
+   #:autolisp-runtime-error-class-for-code
+   ;; the host condition taxonomy (D1 §15)
+   #:host-error
+   #:operation-not-supported-by-this-host
+   #:unavailable-in-headless-context
+   #:operation-not-yet-implemented
+   #:backend-error
    #:autolisp-runtime-error-call-stack
    #:current-autolisp-call-stack
    #:autolisp-runtime-error-message

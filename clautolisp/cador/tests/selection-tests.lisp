@@ -112,11 +112,18 @@ returns nil without an intervening sssetfirst (vendor parity)."
                                 :mode (clautolisp.autolisp-runtime:make-autolisp-string "X"))))
       (is (null set)))))
 
-(test ssget-without-mode-signals-host-not-supported
-  (let ((mock (make-cador)))
+(test ssget-without-mode-is-unavailable-headless
+  ;; An interactive pick needs a pointer: a DESIGN BOUNDARY of a headless host,
+  ;; graded UNAVAILABLE-IN-HEADLESS-CONTEXT (D1 §15) -- it used to reuse
+  ;; :host-not-supported, which told a test nothing about why.
+  (let ((mock (make-cador))
+        (signalled nil))
     (handler-case (host-ssget mock nil)
-      (autolisp-runtime-error (condition)
-        (is (eq :host-not-supported (autolisp-runtime-error-code condition)))))))
+      (clautolisp.autolisp-runtime:unavailable-in-headless-context (condition)
+        (setf signalled t)
+        (is (eq :host-unavailable-headless (autolisp-runtime-error-code condition)))
+        (is (typep condition 'clautolisp.autolisp-runtime:host-error))))
+    (is (eq t signalled))))
 
 (test ssget-with-unsupported-mode-signals
   (let ((mock (make-cador)))

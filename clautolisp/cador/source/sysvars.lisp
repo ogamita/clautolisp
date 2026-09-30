@@ -433,8 +433,14 @@ it on first reference."
 (defun cador-set-sysvar (mock name value)
   (let ((cell (cador-sysvar mock name)))
     (when cell
+      ;; :SYSVAR-READ-ONLY, as HOST-SETVAR says it: a read-only variable is a
+      ;; wrong argument, not a missing host capability (D1 §15, D2 §II.15 --
+      ;; this used to raise :host-not-supported, a mis-grade).
       (when (sysvar-cell-read-only-p cell)
-        (signal-host-not-supported mock 'setvar))
+        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+         :sysvar-read-only
+         "Sysvar ~A is read-only."
+         name))
       (setf (sysvar-cell-value cell) value)
       value)))
 

@@ -990,11 +990,11 @@ unchanged; the class is the new, finer way in, not a replacement.
 
 | Class                                   | Meaning                                                                 | Canonical raiser        | Current state |
 |-----------------------------------------+-------------------------------------------------------------------------+-------------------------+---------------|
-| =host-error= (superclass)               | Any failure of a host operation — never signalled itself, only its subclasses. | —                       | *To build* (cador-4) |
-| =operation-not-supported-by-this-host=  | This host implements nothing of the kind — a *design boundary*. =nihil= asked for an entity. | =signal-host-not-supported= | *Exists* as code =:host-not-supported= of a plain =autolisp-runtime-error= [S: protocol.lisp:47–54]; becomes this class |
-| =unavailable-in-headless-context=       | The host *has* the subsystem but this operation needs a display/pointer this configuration lacks — a *design boundary*. =cador= asked for a rubber-band drag or =grread=. | =signal-unavailable-in-headless= | *To build* — cador currently reuses =:host-not-supported= |
-| =operation-not-yet-implemented=         | A *real gap* the host intends to fill. Distinguished so a probe marks it *pending*, not *failing* (epic §8). | =signal-not-yet-implemented= | *To build* |
-| =backend-error=                         | The backend was asked correctly and *refused* or failed — the remote CAD said no, a DWG failed to parse. | =signal-backend-error= | *To build* |
+| =host-error= (superclass)               | Any failure of a host operation — never signalled itself, only its subclasses. | —                       | *Built* (clautolisp 2.2.146) |
+| =operation-not-supported-by-this-host=  | This host implements nothing of the kind — a *design boundary*. =nihil= asked for an entity. | =signal-host-not-supported= | *Built* (2.2.146): every =:host-not-supported= raise is now this class, code unchanged |
+| =unavailable-in-headless-context=       | The host *has* the subsystem but this operation needs a display/pointer this configuration lacks — a *design boundary*. =cador= asked for a rubber-band drag or =grread=. | =signal-unavailable-in-headless= | *Built* (2.2.146); cador's pick-mode =ssget= raises it |
+| =operation-not-yet-implemented=         | A *real gap* the host intends to fill. Distinguished so a probe marks it *pending*, not *failing* (epic §8). | =signal-not-yet-implemented= | *Built* (2.2.146); no raiser yet |
+| =backend-error=                         | The backend was asked correctly and *refused* or failed — the remote CAD said no, a DWG failed to parse. | =signal-backend-error= | *Built* (2.2.146); no raiser yet |
 
 Errors specific to one operation that are *not* host boundaries stay plain
 runtime errors with their own codes — =:no-such-document=,
@@ -1022,6 +1022,27 @@ distinct =:sysvar-read-only= code correctly; but =cador-set-sysvar= in
 =sysvars.lisp:131–132= raises =:host-not-supported= — flagged for cleanup, D2
 §II.15.] This refinement is a code change specified here as the contract; it
 is tracked in =cador-4-epic-remainder= ("From cador-3").
+
+*Built (clautolisp 2.2.146).* The five classes live in =autolisp-runtime=,
+exported from =clautolisp.autolisp-runtime=. The class is chosen *from the
+code*, by =autolisp-runtime-error-class-for-code=, in
+=signal-autolisp-runtime-error= and in the builtins' error helpers. So the
+hundred-odd existing =:host-not-supported= raises signal
+=operation-not-supported-by-this-host= without being touched. The four
+raisers are exported from =clautolisp.autolisp-host=. On =cador=, pick-mode
+=ssget= now signals =unavailable-in-headless-context=, and =cador-set-sysvar=
+signals =:sysvar-read-only= on a read-only variable, as =host-setvar= does.
+
+Two places where this document and =cador= still disagree. They are recorded
+here rather than changed silently:
+
+- *=grread=.* §6.3 says =unavailable-in-headless-context= on =cador=, but
+  =cador= implements *keyboard* =grread=: it reads the prompt stream and
+  returns =(2 CHAR-CODE)=. Tests pin that behaviour, and it is the useful
+  one. Only pointer events are headless, and =cador= never produces them.
+- *=grdraw= / =grtext= / =grvecs= / =grclear=.* §6.3 says "recorded to the
+  display log", but =cador= does not specialise them. They fall through to
+  =operation-not-supported-by-this-host= (a test pins that too).
 
 * 16. Conformance and the fidelity matrix as coverage target
 

@@ -53,6 +53,7 @@
                 #:host
                 #:host-name
                 #:signal-host-not-supported
+                #:signal-unavailable-in-headless
                 ;; HAL generic-function names — needed by entity-api.lisp
                 ;; (and the upcoming Phase-11 selection / sysvar files)
                 ;; so that defmethod attaches a method to the *host*
