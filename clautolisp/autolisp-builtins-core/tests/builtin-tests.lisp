@@ -2259,8 +2259,12 @@ NIL when GETSTRING returns nil)."
   (install-core-builtins)
   (let ((rtos-fn (autolisp-symbol-function (find-autolisp-symbol "RTOS"))))
     (%rtos-is "1'-5.50\"" 17.5d0 3 2)     ; canonical AutoCAD example
-    (%rtos-is "1'-0.00\"" 12.0d0 3 2)     ; exact foot -> 0 inches
-    (%rtos-is "0'-6.5\"" 6.5d0 3 1)       ; under a foot keeps 0'
+    ;; DIMZIN 0 (the host-less default) = feet/inch code 0: zero feet and
+    ;; precisely zero inches are suppressed. Zero feet MEASURED on AutoCAD and
+    ;; BricsCAD (code 0 via DIMZIN 8); zero inches documented, probe pending.
+    (%rtos-is "1'" 12.0d0 3 2)             ; exact foot -> zero inches dropped
+    (%rtos-is "6.5\"" 6.5d0 3 1)           ; under a foot -> zero feet dropped
+    (%rtos-is "1'" 11.999d0 3 2)           ; 12.00" carries a foot
     (%rtos-is "-1'-5.50\"" -17.5d0 3 2)   ; sign leads the whole result
     (%rtos-is "2'-1\"" 25.0d0 3 0)))      ; P 0 drops the decimal point
 
@@ -2271,10 +2275,12 @@ NIL when GETSTRING returns nil)."
   (let ((rtos-fn (autolisp-symbol-function (find-autolisp-symbol "RTOS"))))
     (%rtos-is "1'-5 1/2\"" 17.5d0 4 2)    ; canonical AutoCAD example
     (%rtos-is "1'-5 1/2\"" 17.5d0 4 4)    ; 8/16 reduces to 1/2
-    (%rtos-is "1'-0\"" 12.0d0 4 4)        ; exact foot, no fraction
-    (%rtos-is "0'-3 3/8\"" 3.375d0 4 4)   ; 6/16 reduces to 3/8
+    ;; DIMZIN 0 = code 0: zero feet (measured) and zero inches (documented)
+    ;; are suppressed -- see %FEET-AND-INCHES.
+    (%rtos-is "1'" 12.0d0 4 4)             ; exact foot, no fraction
+    (%rtos-is "3 3/8\"" 3.375d0 4 4)       ; 6/16 reduces to 3/8; no 0'
     (%rtos-is "-1'-5 1/2\"" -17.5d0 4 2)  ; negative
-    (%rtos-is "1'-0\"" 11.99d0 4 0)))     ; rounds up 12" -> carries a foot
+    (%rtos-is "1'" 11.99d0 4 0)))          ; rounds up 12" -> carries a foot
 
 (test rtos-fractional-mode-whole-and-fraction
   ;; Mode 5: whole units + a reduced 2^P fraction, no feet.
@@ -2287,6 +2293,90 @@ NIL when GETSTRING returns nil)."
     (%rtos-is "6" 6.0d0 5 4)              ; integral -> no fraction
     (%rtos-is "1/2" 0.5d0 5 4)            ; zero whole -> bare fraction
     (%rtos-is "-15 1/2" -15.5d0 5 4)))    ; negative
+
+(test rtos-modes-3-5-match-autocad-and-bricscad-under-dimzin-8
+  ;; MEASURED, and identical on both vendors: AutoCAD 2022 (probe-results/
+  ;; autocad/ms-windows/20260831T130043Z) and BricsCAD V26 (probe-results/
+  ;; bricscad/macos/20260906T190558Z), each run with DIMZIN 8 and UNITMODE 0.
+  ;; DIMZIN 8 = trailing-zero suppression + feet/inch code 0 (zero feet
+  ;; dropped). Halves round AWAY from zero.
+  (dolist (case '(("(rtos -0.5 3 0)" "-1\"")
+                  ("(rtos 0.0 3 2)" "0\"")
+                  ("(rtos 0.5 3 2)" "0.5\"")
+                  ("(rtos 1.0 3 4)" "1\"")
+                  ("(rtos 3.14159 3 4)" "3.1416\"")
+                  ("(rtos 100.0 3 2)" "8'-4\"")
+                  ("(rtos 123456.789 3 2)" "10288'-0.79\"")
+                  ("(rtos 123456.789 3 6)" "10288'-0.789\"")
+                  ("(rtos -0.5 4 0)" "-1\"")
+                  ("(rtos 0.0 4 2)" "0\"")
+                  ("(rtos 0.5 4 0)" "1\"")
+                  ("(rtos 0.5 4 2)" "1/2\"")
+                  ("(rtos -0.5 4 2)" "-1/2\"")
+                  ("(rtos 2.5 4 0)" "3\"")
+                  ("(rtos 2.5 4 2)" "2 1/2\"")
+                  ("(rtos 3.14159 4 4)" "3 1/8\"")
+                  ("(rtos 3.14159 4 6)" "3 9/64\"")
+                  ("(rtos 100.0 4 2)" "8'-4\"")
+                  ("(rtos 123456.789 4 0)" "10288'-1\"")
+                  ("(rtos 123456.789 4 2)" "10288'-0 3/4\"")
+                  ("(rtos 123456.789 4 4)" "10288'-0 13/16\"")
+                  ("(rtos -0.5 5 0)" "-1")
+                  ("(rtos 0.5 5 0)" "1")
+                  ("(rtos 2.5 5 0)" "3")
+                  ("(rtos 123456.789 5 0)" "123457")
+                  ("(rtos 123456.789 5 2)" "123456 3/4")
+                  ("(rtos 123456.789 5 6)" "123456 25/32")))
+    (destructuring-bind (form expected) case
+      (let ((got (%al (format nil "(progn (setvar \"DIMZIN\" 8) (setvar \"UNITMODE\" 0) ~A)" form))))
+        (is (string= expected (autolisp-string-value got))
+            "~A => ~S, the vendors say ~S" form (autolisp-string-value got) expected)))))
+
+(test distof-reads-feet-inches-and-fractions
+  ;; Modes 3 and 4 accept engineering AND architectural forms alike (spec,
+  ;; distof Notes); 5 is fractional; a failure is nil.
+  (flet ((d (text mode)
+           (%al (format nil "(distof ~S ~D)" text mode))))
+    (is (= 18.0d0 (d "1'-6\"" 4)))
+    (is (= 18.0d0 (d "1'6\"" 4)))
+    (is (= 18.0d0 (d "1'-6\"" 3)) "3 and 4 alike")
+    (is (= 17.5d0 (d "1'-5 1/2\"" 4)))
+    (is (= 17.5d0 (d "1'-5-1/2\"" 4)) "the UNITMODE 1 form")
+    (is (= 17.5d0 (d "1'-5.50\"" 4)) "engineering form under mode 4")
+    (is (= 12.0d0 (d "1'" 4)))
+    (is (= 0.5d0 (d "1/2\"" 4)))
+    (is (= -0.5d0 (d "-1/2\"" 4)))
+    (is (= 17.5d0 (d "17.5" 4)) "a plain number is inches")
+    (is (= 18.0d0 (d "1.5'" 4)) "decimal feet")
+    (is (= 17.5d0 (d "17 1/2" 5)))
+    (is (= 17.5d0 (d "17-1/2" 5)))
+    (is (= 0.5d0 (d "1/2" 5)))
+    (is (= 2.5d0 (d "2.5" 2)))
+    (is (null (d "1'-x\"" 4)))
+    (is (null (d "1/0" 5)))
+    (is (null (d "" 4)))))
+
+(test distof-reads-back-what-the-vendors-rtos-printed
+  ;; RTOS's complement: every measured AutoCAD/BricsCAD mode 3-5 output
+  ;; (see RTOS-MODES-3-5-MATCH-...) reads back to the value it printed.
+  (dolist (case '(("8'-4\"" 3 100.0d0) ("10288'-0.79\"" 3 123456.79d0)
+                  ("-0.5\"" 3 -0.5d0) ("0\"" 3 0.0d0)
+                  ("1/2\"" 4 0.5d0) ("-1/2\"" 4 -0.5d0) ("2 1/2\"" 4 2.5d0)
+                  ("3 9/64\"" 4 3.140625d0) ("10288'-0 13/16\"" 4 123456.8125d0)
+                  ("123456 25/32" 5 123456.78125d0) ("3" 5 3.0d0)))
+    (destructuring-bind (text mode expected) case
+      (let ((got (%al (format nil "(distof ~S ~D)" text mode))))
+        (is (and got (< (abs (- got expected)) 1d-9)) "~A mode ~D => ~S" text mode got)))))
+
+(test getdist-reads-architectural-input-under-lunits-4
+  ;; getdist takes a distance in the CURRENT units: under LUNITS 4 the user
+  ;; may type it as RTOS prints it. The result is always a real.
+  (is (= 18.0d0 (%get-with-mock-input "(progn (setvar \"LUNITS\" 4) (getdist \"D: \"))" "1'-6\"")))
+  (is (= 17.5d0 (%get-with-mock-input "(progn (setvar \"LUNITS\" 4) (getdist \"D: \"))" "1'-5 1/2\"")))
+  (is (= 12.5d0 (%get-with-mock-input "(progn (setvar \"LUNITS\" 4) (getdist \"D: \"))" "12.5")))
+  (is (= 17.5d0 (%get-with-mock-input "(progn (setvar \"LUNITS\" 5) (getdist \"D: \"))" "17 1/2")))
+  ;; decimal units keep the decimal reading
+  (is (= 12.5d0 (%get-with-mock-input "(progn (setvar \"LUNITS\" 2) (getdist \"D: \"))" "12.5"))))
 
 (test rtos-unitmode-selects-display-vs-input-form
   ;; UNITMODE 0 (default) joins whole inches and the fraction with a

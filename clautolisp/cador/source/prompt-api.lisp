@@ -317,7 +317,19 @@ non-numeric."
     (let ((line (read-prompt-line host)))
       (cond
         ((eq line :eof) nil)
-        (t (parse-real line))))))
+        (t (%parse-distance-input host line))))))
+
+(defun %parse-distance-input (host line)
+  "A typed distance, in the current linear units: under LUNITS 3/4 (feet and
+inches, either form) or 5 (fractional) it may be written as RTOS prints it
+-- 1'-6\", 1'-5 1/2\", 17 1/2 -- and DISTOF's parser reads it; a plain
+number is accepted in every unit. The result is always a real (spec,
+getdist Notes). system-variables.issue."
+  (let* ((cell (cador-sysvar host "LUNITS"))
+         (lunits (and cell (sysvar-cell-value cell))))
+    (or (and (member lunits '(3 4 5))
+             (clautolisp.autolisp-runtime:parse-autolisp-distance line lunits))
+        (parse-real line))))
 
 (defmethod host-getangle ((host cador) prompt &key base controls)
   ;; Parse the entered angle and return it in RADIANS. A bare number is
