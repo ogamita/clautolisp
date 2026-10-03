@@ -71,7 +71,12 @@
       ;; VERTEX / ATTRIB / SEQEND run ENTNEXT would otherwise walk first.
       (setq marker (entlast))
       (while (and marker (entnext marker)) (setq marker (entnext marker)))
-      (apply 'command args)
+      ;; ARGS is a token list, or a function that drives the commands
+      ;; itself (to select by ename: a headless AutoCAD has no view, so
+      ;; window and point picks find nothing there).
+      (if (and (= (type args) 'LIST) (/= (car args) 'LAMBDA))
+          (apply 'command args)
+          (apply args '()))
       (cad-probe--cmd-cancel)
       (setq e (if marker (entnext marker) (entnext))
             out '()
@@ -126,8 +131,6 @@
     '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "1" ""))
   (cad-probe--cmd-case "CHANGE a line endpoint"
     '("_.LINE" "0,0" "2,0" "" "_.CHANGE" "_L" "" "3,3"))
-  (cad-probe--cmd-case "EXPLODE a rectangle"
-    '("_.RECTANG" "0,0" "2,1" "_.EXPLODE" "_L" ""))
   (cad-probe--cmd-case "DIVIDE a line into 4"
     '("_.LINE" "0,0" "4,0" "" "_.DIVIDE" "_L" "4"))
   (cad-probe--cmd-case "MEASURE a line by 1.5"
@@ -135,7 +138,11 @@
   (cad-probe--cmd-case "LENGTHEN a line by delta 1 at its end"
     '("_.LINE" "0,0" "4,0" "" "_.LENGTHEN" "_DE" "1" "4,0" ""))
   (cad-probe--cmd-case "JOIN two collinear lines"
-    '("_.LINE" "0,0" "2,0" "" "_.LINE" "2,0" "4,0" "" "_.JOIN" "_P" "_L" ""))
+    (function (lambda ( / e1)
+      (command "_.LINE" "0,0" "2,0" "")
+      (setq e1 (entlast))
+      (command "_.LINE" "2,0" "4,0" "")
+      (command "_.JOIN" e1 (entlast) ""))))
   (cad-probe--cmd-case "CONVERTPOLY light to heavy"
     '("_.PLINE" "0,0" "2,0" "2,1" "" "_.CONVERTPOLY" "_H" "_L" ""))
   (cad-probe--cmd-case "MATCHPROP layer and color"
@@ -143,6 +150,12 @@
       "_.LINE" "5,5" "6,6" "" "_.MATCHPROP" "0.7071,0.7071" "5.5,5.5" ""))
   (cad-probe--cmd-case "SETBYLAYER color"
     '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "2" "" "_.SETBYLAYER" "_L" "" "_Y" "_Y"))
+
+  ;; LAST: from LISP, AutoCAD's EXPLODE takes one object and ends, so a
+  ;; trailing "" repeats it and leaves it waiting -- it derailed every
+  ;; later case on 2026-10-03 (job 16914186872). No trailing "".
+  (cad-probe--cmd-case "EXPLODE a rectangle"
+    '("_.RECTANG" "0,0" "2,1" "_.EXPLODE" "_L"))
 
   (setvar "CMDECHO" cmdecho)
   (setvar "OSMODE" osmode)
