@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: angtos-modes-wrong — ANGTOS treats mode 0 as radians and folds modes 1-4 into decimal degrees
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: conformance
 #+DEPENDS: -
@@ -55,3 +55,26 @@ check where they differ), read AUNITS / AUPREC for the defaults, apply
 DIMZIN as RTOS now does, and pin it with a test made of the measured cases,
 as RTOS-MODES-3-5-MATCH-AUTOCAD-AND-BRICSCAD-UNDER-DIMZIN-8 does. ANGTOF is
 its complement and should read every form back.
+
+* Resolution -- DONE, clautolisp 2.2.151 (2026-10-03; pjb: "fix angtos")
+
+builtin-angtos rewritten against the measured tables:
+- the five modes: 0 decimal degrees, 1 d/m/s (precision counts the
+  minute/second places, zero minutes and seconds kept), 2 grads, 3 radians
+  with `r', 4 surveyor bearings -- a direction exactly on a cardinal is its
+  letter at precision > 0 (E, N, W) but keeps the full form at precision 0
+  (N 90d E), as both vendors print;
+- West is W, or O under a French locale (*EDTIME-LANGUAGE*, the locale --
+  the measured French AutoCAD printed O, the English BricsCAD W);
+- MODE / PRECISION default to AUNITS / AUPREC; the angle is taken modulo
+  2 pi; DIMZIN's decimal bits apply to modes 0, 2, 3; rounding is exact
+  (rationals, halves away from zero), so SBCL and CCL agree; UNITMODE 1
+  drops the bearing's spaces.
+builtin-angtof is its complement: every mode reads back (mode 0 was read as
+radians too). DIESEL's $(angtos,...) is right with it.
+
+Tests: ANGTOS-MATCHES-AUTOCAD-EVERY-MEASURED-CASE (all 80 AutoCAD cases,
+green) and ANGTOS-DEFAULTS-WEST-LETTER-AND-ANGTOF-ROUND-TRIP; the old
+coverage test that read (angtof "1.5708") as radians corrected. The
+autolisp-test corpus gains 4 passes (coupling-angle.lsp: 3703 / 203, was
+3699 / 207); clautolisp 34/34, alfe 1393/1393.
