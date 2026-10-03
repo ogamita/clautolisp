@@ -122,6 +122,7 @@
    (:file "autolisp-runtime/source/model")
    (:file "autolisp-runtime/source/terminal-color")
    (:file "autolisp-runtime/source/portability")
+   (:file "autolisp-runtime/source/text-metrics")
    (:file "autolisp-runtime/source/operator-availability")
    (:file "autolisp-runtime/source/api")
    (:file "autolisp-runtime/source/scheduler")

@@ -391,7 +391,10 @@ separate binary for tool integrators.
   ~mock~ is a deprecated alias of ~cador~; ~null~ / ~none~ of ~nihil~.
 - *Entity model* (mock host): the low-level entity family works end to
   end against an in-memory drawing database. ~entmakex~ returns the new
-  entity's ENAME (feedable straight into ~entget~/~entmod~/~entdel~),
+  entity's ENAME (feedable straight into ~entget~/~entmod~/~entdel~;
+  it builds block definitions too, as both vendors do: ~BLOCK~ returns
+  the block header's ENAME, ~ENDBLK~ returns ~nil~ — the block name
+  under a BricsCAD dialect),
   ~entmake~ returns the supplied list (vendor echo) and both validate the
   required DXF group codes of the modelled families — LINE, POINT,
   CIRCLE, ARC, ELLIPSE, LWPOLYLINE, POLYLINE (+VERTEX/SEQEND), SPLINE,
@@ -1188,11 +1191,19 @@ separate binary for tool integrators.
   transforming only the first corrupted its geometry — visibly, the
   bas/haut side discrimination of an inserted block. Point arity is
   preserved (2D vertices stay 2D).
-- ~GetBoundingBox~ extends a text entity's box by its height in the
-  direction the *vertical justification* dictates: a top-anchored
+- ~TEXTBOX~ and the TEXT / ATTRIB / ATTDEF ~GetBoundingBox~ measure the
+  glyph *ink* with the Standard font's real metrics, measured on
+  AutoCAD 2022 and BricsCAD (left bearing, advance, ink bottom/top per
+  ASCII character; height 40 and width factor 41 scale it) — no longer
+  0.6 x height per character, nor a zero-width box at the insertion
+  point. AutoCAD's reporting rules by default (spaces carry no ink, an
+  off-baseline box touches the baseline), BricsCAD's under a BricsCAD
+  dialect. ~make -C clautolisp text-metrics~ regenerates the table.
+- ~GetBoundingBox~ places a text entity's box in the direction the
+  *vertical justification* dictates: a top-anchored
   (~_TL~/~_TC~/~_TR~) TEXT grows downward from its anchor, a
   baseline / bottom one upward, a middle one both ways (MTEXT: top
-  attachment). Getting this wrong flipped topological above/below
+  attachment, extended by its height). Getting this wrong flipped topological above/below
   readings of ~_TL~ labels — the SCHMS côté BAS check. Command-name resolution honours that a leading
   ~-~ is *not* a generic modifier: ~-FOO~ is a distinct,
   explicitly-defined console-form command, so each dash form is

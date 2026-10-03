@@ -488,17 +488,63 @@ the mock approximates from the stored groups (deferred-spec-research)."
                                        :test #'group-code-equal-p)
                                (consp (cdr pair)))
                        collect (cdr pair)))
+             (text-box (e kind)
+               ;; TEXT / ATTRIB / ATTDEF: the MEASURED ink box (TEXT-INK-BOX,
+               ;; as TEXTBOX gives it) placed at the insertion point -- the
+               ;; alignment point 11 when justified -- shifted by the
+               ;; justification, turned by the rotation 50. BricsCAD's
+               ;; GetBoundingBox equals TEXTBOX for text at the origin
+               ;; (probe-block-walk.lsp, 2026-10-03). This replaced a box
+               ;; with NO width: only the height was ever added.
+               (let* ((string (let ((s (%entity-group-value e 1)))
+                                (cond ((stringp s) s)
+                                      ((typep s 'clautolisp.autolisp-runtime:autolisp-string)
+                                       (clautolisp.autolisp-runtime:autolisp-string-value s))
+                                      (t ""))))
+                      (h (let ((v (%entity-group-value e 40))) (if (realp v) v 1.0d0)))
+                      (wf (let ((v (%entity-group-value e 41))) (if (realp v) v 1.0d0)))
+                      (rot (let ((v (%entity-group-value e 50))) (if (realp v) v 0.0d0)))
+                      (hj (or (%entity-group-value e 72) 0))
+                      (vj (or (%entity-group-value e (if (eq kind :text) 73 74)) 0))
+                      (justified (or (and (integerp hj) (/= hj 0))
+                                     (and (integerp vj) (/= vj 0))))
+                      (anchor (or (and justified (%entity-group-value e 11))
+                                  (%entity-group-value e 10)
+                                  '(0.0d0 0.0d0 0.0d0)))
+                      (dialect (ignore-errors
+                                (clautolisp.autolisp-runtime:current-evaluation-dialect)))
+                      (bricscad (and dialect
+                                     (eq :bricscad
+                                         (clautolisp.autolisp-reader:autolisp-dialect-product
+                                          dialect)))))
+                 (multiple-value-bind (x0 y0 x1 y1 advance)
+                     (clautolisp.autolisp-runtime:text-ink-box
+                      string h :width-factor wf :bricscad bricscad)
+                   (let* ((dx (case hj ((1 4) (- (/ advance 2))) (2 (- advance)) (t 0d0)))
+                          (dy (cond ((eql hj 4) (- (/ h 2)))
+                                    (t (case vj (3 (- h)) (2 (- (/ h 2))) (1 (- y0)) (t 0d0)))))
+                          (c (cos rot)) (s (sin rot))
+                          (ax (first anchor)) (ay (second anchor))
+                          (az (or (third anchor) 0.0d0)))
+                     (dolist (corner (list (list x0 y0) (list x1 y0) (list x0 y1) (list x1 y1)))
+                       (let ((lx (+ (first corner) dx)) (ly (+ (second corner) dy)))
+                         (push (list (+ ax (- (* lx c) (* ly s)))
+                                     (+ ay (+ (* lx s) (* ly c)))
+                                     az)
+                               points)))))))
              (collect-entity (e)
-               (dolist (p (entity-points e)) (push p points))
-               ;; Text-bearing kinds: extend the box by the text height
-               ;; in the direction the VERTICAL JUSTIFICATION dictates —
-               ;; a top-anchored (_TL/_TC/_TR) text grows DOWNWARD from
-               ;; its anchor, a baseline/bottom one upward, a middle one
-               ;; both ways. Getting this wrong flips topological
-               ;; above/below readings of justified labels (the SCHMS
-               ;; côté BAS bug, 1.8.20).
+               (if (member (entity-handle-kind e) '(:text :attrib :attdef))
+                   (text-box e (entity-handle-kind e))
+                   (dolist (p (entity-points e)) (push p points)))
+               ;; MTEXT (TEXT / ATTRIB / ATTDEF have their measured box
+               ;; above): extend the box by the text height in the
+               ;; direction the VERTICAL JUSTIFICATION dictates -- a
+               ;; top-anchored text grows DOWNWARD from its anchor, a
+               ;; baseline/bottom one upward, a middle one both ways.
+               ;; Getting this wrong flips topological above/below readings
+               ;; of justified labels (the SCHMS côté BAS bug, 1.8.20).
                (let ((kind (entity-handle-kind e)))
-                 (when (member kind '(:text :mtext :attrib :attdef))
+                 (when (member kind '(:mtext))
                    (let* ((anchor (or (and (not (eq kind :mtext))
                                            (%entity-group-value e 11))
                                       (%entity-group-value e 10)))
