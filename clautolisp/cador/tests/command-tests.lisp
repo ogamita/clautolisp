@@ -515,3 +515,24 @@
     (is (%ct-near 0.18 (host-getvar mock "DIMASZ")))
     (is (equal '(12.0d0 9.0d0) (host-getvar mock "LIMMAX")))
     (is (eql 0 (host-getvar mock "MEASUREMENT")))))
+
+;;; --- alref Phase 4 S2: selection by window, crossing and point --------
+
+(test command-selection-window-crossing-and-point
+  (flet ((erased-after (selection)
+           ;; Draw a line inside (1,1)-(2,2) and one crossing x = 3, then
+           ;; ERASE with SELECTION; return what is left.
+           (let ((mock (make-cador)))
+             (clautolisp.autolisp-host:host-command
+              mock (append '("_.LINE" "1,1" "2,2" "" "_.LINE" "0,5" "6,5" ""
+                             "_.ERASE")
+                           selection '("")))
+             (%ct-types mock))))
+    ;; Window 0,0 - 4,6: the first line is inside, the second crosses out.
+    (is (equal '("LINE") (erased-after '("_W" "0,0" "4,6"))))
+    ;; Crossing: both.
+    (is (equal '() (erased-after '("_C" "0,0" "4,6"))))
+    ;; A point ON the second line picks it alone.
+    (is (equal '("LINE") (erased-after '("3,5"))))
+    ;; A point on nothing ends the selection; nothing is erased.
+    (is (equal '("LINE" "LINE") (erased-after '("9,9"))))))
