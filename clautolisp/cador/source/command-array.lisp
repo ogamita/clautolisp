@@ -10,7 +10,9 @@
 ;;;;                       (0,0) (3,0) (6,0) (0,2) ...
 ;;;;   ARRAYRECT          column by column (BricsCAD; AutoCAD's console run
 ;;;;                       has not answered yet)
-;;;;   3DARRAY            rows, then columns, then levels innermost
+;;;;   3DARRAY            levels innermost; then rows, columns outermost on
+;;;;                       AutoCAD (its 3darray.lsp add-on, job 16915676646);
+;;;;                       columns, rows outermost on BricsCAD
 ;;;;   polar              counter-clockwise from the original
 ;;;; The original stays the first item. The array commands are modelled
 ;;;; NON-associative (plain copies); an associative array is an array object
@@ -179,12 +181,16 @@ and itself rotated when ROTATE-ITEMS."
              (dy (if (> rows 1) (or (%command-token-number (pop rest)) 0) 0))
              (dx (if (> cols 1) (or (%command-token-number (pop rest)) 0) 0))
              (dz (if (> levels 1) (or (%command-token-number (pop rest)) 0) 0)))
-        (loop for r below rows
-              do (loop for c below cols
-                       do (loop for l below levels
-                                unless (= 0 r c l)
-                                  do (dolist (e entities)
-                                       (%copy-translated host e (* c dx) (* r dy) (* l dz))))))))
+        ;; Levels innermost on both; AutoCAD's 3darray.lsp goes column by
+        ;; column (columns outermost), BricsCAD row by row.
+        (flet ((cell (r c)
+                 (loop for l below levels
+                       unless (= 0 r c l)
+                         do (dolist (e entities)
+                              (%copy-translated host e (* c dx) (* r dy) (* l dz))))))
+          (if (%command-bricscad-p)
+              (loop for r below rows do (loop for c below cols do (cell r c)))
+              (loop for c below cols do (loop for r below rows do (cell r c)))))))
     rest))
 
 ;;; --- DIVIDE / MEASURE: POINTs along an object ------------------------
