@@ -1225,6 +1225,9 @@ separate binary for tool integrators.
   arc), ~FILLET~ / ~CHAMFER~ of two lines (~FILLETRAD~, ~CHAMFERA~ /
   ~CHAMFERB~), ~PEDIT~ (a line into a polyline; width, close, open) and
   ~OVERKILL~ (exact duplicates).
+- ~entget~ no longer lists an entity's ~100~ subclass markers twice when
+  the data that made it already carried them (every polyline a command
+  made, ~RECTANG~'s for one).
 - The command engine hatches: ~HATCH~ / ~-HATCH~ (closed polylines and
   circles picked as boundaries, islands included; ~SOLID~, ~ANSI31~ and
   ~ANSI37~ with the metric or imperial spacing per ~MEASUREMENT~, other

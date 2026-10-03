@@ -343,14 +343,21 @@ note on ENTMAKE in the spec."
                   (%inject-defaults with-layer (entity-family-defaults family))))
                ;; Every DXF entity carries the AcDbEntity base subclass
                ;; marker (AcDbObject for a non-graphical object) ahead of
-               ;; its per-class markers.
+               ;; its per-class markers. Only the ABSENT ones are added: data
+               ;; that already has them (every command-made LWPOLYLINE) got
+               ;; them twice (entmake-duplicates-subclass-markers).
                (base-marker
                  (if (entity-family-graphical-p family) "AcDbEntity" "AcDbObject"))
+               (present (loop for pair in with-defaults
+                              when (and (consp pair) (eql (car pair) 100)
+                                        (stringp (cdr pair)))
+                                collect (cdr pair)))
                (with-subclasses
                  (append with-defaults
-                         (mapcar (lambda (m) (cons 100 m))
-                                 (cons base-marker
-                                       (entity-family-subclasses family))))))
+                         (loop for m in (cons base-marker
+                                              (entity-family-subclasses family))
+                               unless (member m present :test #'string=)
+                                 collect (cons 100 m)))))
           (values with-subclasses nil))))))
 
 ;;; --- Divergence D1: R13+ subclass-marker contract ---------------

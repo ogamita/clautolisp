@@ -33,3 +33,11 @@ comparisons did not show it. Found 2026-10-04 while building alref S6.
 Append only the markers that are absent. For fidelity, also insert them
 where the vendors put them (AcDbEntity before 8, the class marker before
 the class's first group) instead of at the end.
+
+* Progress (2026-10-04, clautolisp 2.2.168)
+
+DUPLICATES FIXED: VALIDATE-ENTITY-DXF adds only the markers the data lacks
+(test validate-adds-only-the-absent-subclass-markers; RECTANG's ENTGET
+checked on the built executable). STILL OPEN, lower priority: a marker the
+data LACKS is still appended at the end instead of where the vendors put it
+(AcDbEntity before 8, the class marker before the class's first group).
