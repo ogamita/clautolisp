@@ -66,6 +66,22 @@ recorded-only until their category is implemented.
 | AutoCAD-only | 352 |
 | BricsCAD-only | 708 |
 
+## Support tiers (Phase 3, decided by pjb 2026-10-03)
+
+Stamped as `:tier` in `commands-inventory.sexp` by
+`scripts/merge-command-parts.lisp` and stated in each entry's
+`*** clautolisp` section.
+
+| Tier | Rule | Count |
+|---|---|---:|
+| core-now | DRAW + MODIFY commands both vendors have, plus NEW, OPEN, MENULOAD, CUILOAD | 105 |
+| package-specific | a command only one vendor has | 1059 |
+| deferred | everything else | 457 |
+
+Of the 105 core-now, cador executes 13 today (ARC, CIRCLE, COPY, DONUT,
+ERASE, LINE, MIRROR, MOVE, PLINE, ROTATE, SOLID, TEXT, WIPEOUT) and
+recognises 2 as no-ops (BREAK, PEDIT): 90 to go in Phase 4.
+
 ## Implemented in cador (`%execute-command-tokens`)
 
 **Executed against the drawing model (18):** LINE, CIRCLE, ARC, TEXT, MTEXT,

@@ -159,3 +159,9 @@ block, query, dimension, 3d, render, and a catch-all. Support tiers:
       DRAW + MODIFY commands both vendors share, plus NEW / OPEN /
       MENULOAD / CUILOAD. Next: stamp :tier on the inventory accordingly,
       then Phase 4.
+    - Phase 3 DONE (2026-10-03): merge-command-parts.lisp computes :tier
+      (an explicit one is kept) -- 105 core-now, 1059 package-specific,
+      457 deferred; gen-command-entries.lisp states it in every entry's
+      *** clautolisp section; commands-coverage.md gains the table. Of the
+      105, cador executes 13 and no-ops 2: Phase 4 = the other 90, plus the
+      cadtui tree layer and the cad> bare-command dispatch.
