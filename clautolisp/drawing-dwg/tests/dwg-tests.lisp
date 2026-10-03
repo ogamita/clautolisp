@@ -180,6 +180,32 @@ $ACADVER, DWG_ERR_IOERROR for the group-70 overflow."
 dwg-round-trip-loses-entities")))
       (ignore-errors (delete-file out)))))
 
+(test dwg-writes-a-drawing-with-no-version
+  "A drawing created without a version -- what a session's new Drawing.dwg
+is -- saves as DWG with no :VERSION: DWG-WRITE-DRAWING falls back to the
+drawing's own version (NIL, then the codec's newest). That fallback called
+an UNIMPORTED DRAWING-VERSION, an undefined function in this package, and
+every such save failed with COM-SAVE-FAILED; the tests above all carry a
+version, so only verify:packaged-dwg:windows saw it (2026-10-03)."
+  (let ((d (clautolisp.drawing:make-drawing))
+        (out (format nil "/tmp/clal-dwg-noversion-~D.dwg" (get-internal-real-time))))
+    (dolist (spec '((:block-record "*Model_Space" "*Paper_Space")
+                    (:layer "0") (:ltype "BYBLOCK" "BYLAYER" "Continuous")
+                    (:style "Standard") (:dimstyle "Standard")
+                    (:vport "*Active") (:appid "ACAD")))
+      (dolist (name (cdr spec))
+        (clautolisp.drawing:add-table-record
+         d (clautolisp.drawing:make-symbol-table-record
+            :kind (car spec) :name name
+            :data (list (cons 0 (string-upcase (symbol-name (car spec))))
+                        (cons 2 name))))))
+    (is (null (clautolisp.drawing:drawing-version d)) "the premise: no version")
+    (unwind-protect
+         (progn
+           (clautolisp.drawing.dwg:dwg-write-drawing d out)
+           (is (probe-file out)))
+      (ignore-errors (delete-file out)))))
+
 (test dwg-parsed-drawing-keeps-its-entities
   "A drawing read from a DWG, given one more entity, comes back from a DWG
 round trip with ONE MORE than the same drawing round-tripped unchanged.

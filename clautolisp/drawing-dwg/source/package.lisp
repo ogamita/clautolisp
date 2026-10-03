@@ -4,6 +4,11 @@
                 #:register-drawing-codec
                 #:drawing-format
                 #:drawing-path
+                ;; DWG-WRITE-DRAWING defaults the version to the drawing's own.
+                ;; Not imported, it read as CLAUTOLISP.DRAWING.DWG::DRAWING-VERSION
+                ;; -- undefined -- and every version-less DWG save (VLA-SAVEAS)
+                ;; failed; verify:packaged-dwg:windows caught it, 2026-10-03.
+                #:drawing-version
                 #:drawing-error
                 #:dxf-read-drawing
                 #:dxf-write-drawing)
