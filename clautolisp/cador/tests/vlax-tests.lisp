@@ -1155,3 +1155,82 @@ entirely silent under --dialect autocad."
     (is (every (lambda (c) (member c codes)) '(43 38 39 40 41 42 91)))
     (is (%ct-near 0.5 (%ct-group d 40)))
     (is (= 2 (count 91 codes)))))
+
+;;; --- alref Phase 4 S2 rest / S4: arrays, DIVIDE, MEASURE, ADDSELECTED,
+;;; JOIN, FLATTEN -- measured on BricsCAD (job 16914406700) / AutoCAD.
+
+(defun %ct-centers (mock)
+  "The 10 groups of MOCK's live main-space entities, oldest first, rounded."
+  (let ((out '()) (e (host-entnext mock nil)))
+    (loop while e
+          do (let ((p (cdr (assoc 10 (host-entget mock e)))))
+               (push (mapcar (lambda (x) (/ (round (* 1000 x)) 1000)) p) out))
+             (setq e (host-entnext mock e)))
+    (nreverse out)))
+
+(defun %ct-array (tokens)
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock (list "_.CIRCLE" "0,0" "0.5"))
+    (clautolisp.autolisp-host:host-command
+     mock (append (list (car tokens) (host-entlast mock)) (cdr tokens)))
+    mock))
+
+(test command-arrays-make-their-copies-in-the-measured-order
+  ;; -ARRAY: row by row; ARRAYRECT: column by column; 3DARRAY: rows, columns, levels.
+  (is (equal '((0 0 0) (3 0 0) (6 0 0) (0 2 0) (3 2 0) (6 2 0))
+             (%ct-centers (%ct-array '("_.-ARRAY" "" "_R" "2" "3" "2" "3")))))
+  (is (equal '((0 0 0) (0 2 0) (3 0 0) (3 2 0) (6 0 0) (6 2 0))
+             (%ct-centers (%ct-array '("_.ARRAYRECT" "" "_AS" "_N" "_COU" "3" "2"
+                                       "_S" "3" "2" "_X")))))
+  (is (equal '((0 0 0) (0 0 1) (1 0 0) (1 0 1) (0 1 0) (0 1 1) (1 1 0) (1 1 1))
+             (%ct-centers (%ct-array '("_.3DARRAY" "" "_R" "2" "2" "2" "1" "1" "1")))))
+  ;; ARRAY _R: column by column on AutoCAD, row by row on BricsCAD.
+  (let ((args '("_.ARRAY" "" "_R" "_AS" "_N" "_COU" "2" "2" "_S" "3" "3" "_X")))
+    (%with-dialect (:autocad)
+      (is (equal '((0 0 0) (0 3 0) (3 0 0) (3 3 0)) (%ct-centers (%ct-array args)))))
+    (%with-dialect (:bricscad)
+      (is (equal '((0 0 0) (3 0 0) (0 3 0) (3 3 0)) (%ct-centers (%ct-array args)))))))
+
+(test command-polar-array-goes-counter-clockwise-from-the-original
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("_.CIRCLE" "2,0" "0.5"))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.-ARRAY" (host-entlast mock) "" "_P" "0,0" "4" "360" "_Y"))
+    (is (equal '((2 0 0) (0 2 0) (-2 0 0) (0 -2 0)) (%ct-centers mock)))))
+
+(test command-divide-measure-addselected-join-flatten
+  (flet ((after (first-tokens second-builder)
+           (let ((mock (make-cador)))
+             (clautolisp.autolisp-host:host-command mock first-tokens)
+             (clautolisp.autolisp-host:host-command
+              mock (funcall second-builder (host-entlast mock)))
+             mock)))
+    (is (equal '((0 0 0) (1 0 0) (2 0 0) (3 0 0))
+               (%ct-centers (after '("_.LINE" "0,0" "4,0" "")
+                                   (lambda (e) (list "_.DIVIDE" e "4"))))))
+    (is (equal '((0 0 0) (3/2 0 0) (3 0 0))
+               (%ct-centers (after '("_.LINE" "0,0" "4,0" "")
+                                   (lambda (e) (list "_.MEASURE" e "1.5"))))))
+    (is (equal '((0 0 0) (5 5 0))
+               (%ct-centers (after '("_.CIRCLE" "0,0" "1")
+                                   (lambda (e) (list "_.ADDSELECTED" e "5,5" "2"))))))
+    (let ((mock (make-cador)))
+      (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "2,0" ""))
+      (let ((e1 (host-entlast mock)))
+        (clautolisp.autolisp-host:host-command mock '("_.LINE" "2,0" "4,0" ""))
+        (clautolisp.autolisp-host:host-command mock (list "_.JOIN" e1 (host-entlast mock) "")))
+      (is (equal '("LINE") (%ct-types mock)))
+      (is (%ct-near '(4 0 0) (%ct-group (%ct-last-data mock) 11))))
+    (let ((d (%ct-last-data (after '("_.LINE" "0,0,1" "2,0,3" "")
+                                   (lambda (e) (list "_.FLATTEN" e "" "_N"))))))
+      (is (%ct-near '(0 0 0) (%ct-group d 10)))
+      (is (%ct-near '(2 0 0) (%ct-group d 11))))))
+
+(test command-accepts-an-entsel-pick
+  ;; (ename point), the ENTSEL form, picks the object AND says where:
+  ;; LENGTHEN extends the end nearest the point.
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "4,0" ""))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.LENGTHEN" "_DE" "1" (list (host-entlast mock) '(0.0d0 0.0d0 0.0d0)) ""))
+    (is (%ct-near '(-1 0 0) (%ct-group (%ct-last-data mock) 10)))))

@@ -4157,6 +4157,14 @@ no command-input reading (nil, symbols, nested lists, functions, …)."
      ;; backend live (vendor COMMAND accepts one wherever a command
      ;; prompts for object selection).
      value)
+    ((and (consp value)
+          (typep (first value) 'autolisp-ename)
+          (consp (rest value))
+          (command-point-p (second value)))
+     ;; The ENTSEL form (ename point) -- what a single-object pick answers
+     ;; (LENGTHEN, TRIM, DIVIDE ...). Passed live too: the point matters
+     ;; (which end LENGTHEN extends). Rejected here before 2026-10-03.
+     value)
     (t
      (signal-autolisp-runtime-error
       :invalid-command-argument
