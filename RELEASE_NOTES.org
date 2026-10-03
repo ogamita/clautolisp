@@ -1225,6 +1225,9 @@ separate binary for tool integrators.
   arc), ~FILLET~ / ~CHAMFER~ of two lines (~FILLETRAD~, ~CHAMFERA~ /
   ~CHAMFERB~), ~PEDIT~ (a line into a polyline; width, close, open) and
   ~OVERKILL~ (exact duplicates).
+- ~3DARRAY~ makes its copies in each vendor's order: column by column
+  under the AutoCAD dialects (as AutoCAD's own =3darray.lsp= does), row by
+  row under BricsCAD's; levels innermost on both.
 - ~command~ accepts the ENTSEL form ~(list ename point)~ wherever a
   command picks one object, as the vendors do.
 - ~NEW~ and ~OPEN~ open a drawing (a DXF or DWG file for ~OPEN~) and make

@@ -1177,7 +1177,7 @@ entirely silent under --dialect autocad."
 
 (test command-arrays-make-their-copies-in-the-measured-order
   ;; -ARRAY: column by column on AutoCAD, row by row on BricsCAD;
-  ;; ARRAYRECT: column by column; 3DARRAY: rows, columns, levels.
+  ;; ARRAYRECT: column by column; 3DARRAY: levels innermost, per vendor.
   (let ((args '("_.-ARRAY" "" "_R" "2" "3" "2" "3")))
     (%with-dialect (:autocad)
       (is (equal '((0 0 0) (0 2 0) (3 0 0) (3 2 0) (6 0 0) (6 2 0))
@@ -1188,8 +1188,15 @@ entirely silent under --dialect autocad."
   (is (equal '((0 0 0) (0 2 0) (3 0 0) (3 2 0) (6 0 0) (6 2 0))
              (%ct-centers (%ct-array '("_.ARRAYRECT" "" "_AS" "_N" "_COU" "3" "2"
                                        "_S" "3" "2" "_X")))))
-  (is (equal '((0 0 0) (0 0 1) (1 0 0) (1 0 1) (0 1 0) (0 1 1) (1 1 0) (1 1 1))
-             (%ct-centers (%ct-array '("_.3DARRAY" "" "_R" "2" "2" "2" "1" "1" "1")))))
+  ;; 3DARRAY: levels innermost; column by column on AutoCAD (its
+  ;; 3darray.lsp, job 16915676646), row by row on BricsCAD.
+  (let ((args '("_.3DARRAY" "" "_R" "2" "2" "2" "1" "1" "1")))
+    (%with-dialect (:autocad)
+      (is (equal '((0 0 0) (0 0 1) (0 1 0) (0 1 1) (1 0 0) (1 0 1) (1 1 0) (1 1 1))
+                 (%ct-centers (%ct-array args)))))
+    (%with-dialect (:bricscad)
+      (is (equal '((0 0 0) (0 0 1) (1 0 0) (1 0 1) (0 1 0) (0 1 1) (1 1 0) (1 1 1))
+                 (%ct-centers (%ct-array args))))))
   ;; ARRAY _R: column by column on AutoCAD, row by row on BricsCAD.
   (let ((args '("_.ARRAY" "" "_R" "_AS" "_N" "_COU" "2" "2" "_S" "3" "3" "_X")))
     (%with-dialect (:autocad)

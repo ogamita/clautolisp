@@ -311,3 +311,11 @@ Other differences in that run, none S5:
     sequence does not fit AutoCAD's prompts for these two (UNANSWERED on
     AutoCAD; cador follows BricsCAD's measured answer). To probe: drive
     ARRAYASSOCIATIVITY 0 instead of the _AS option.
+
+## 3DARRAY measured on AutoCAD through its add-on (2026-10-03, job 16915676646)
+
+pjb's recipe works on the console: 3darray.lsp found below the support path,
+loaded, C:3DARRAY registered with vlax-add-cmd, (command "3DARRAY" ...) made
+the 8 circles. Its ORDER is column by column -- (0,0,0) (0,0,1) (0,1,0) ...
+(1,0,0) -- like AutoCAD's -ARRAY, where BricsCAD goes row by row; levels
+innermost on both. cador 2.2.165 follows each dialect (!385).
