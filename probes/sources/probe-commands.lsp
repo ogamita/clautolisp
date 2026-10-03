@@ -198,6 +198,48 @@
       (command "_.CIRCLE" "0,0" "0.5")
       (command "_.3DARRAY" (entlast) "" "_R" "2" "2" "2" "1" "1" "1"))))
 
+  ;; S5 geometry: picks as (ename point); classic TRIM / EXTEND (edges
+  ;; first, then the object), when the sysvar exists.
+  (vl-catch-all-apply 'setvar (list "TRIMEXTENDMODE" 0))
+  (cad-probe--cmd-case "TRIM a line at a cutting edge"
+    (function (lambda ( / a)
+      (command "_.LINE" "0,0" "4,0" "") (setq a (entlast))
+      (command "_.LINE" "2,-1" "2,1" "")
+      (command "_.TRIM" (entlast) "" (list a '(3.0 0.0 0.0)) ""))))
+  (cad-probe--cmd-case "EXTEND a line to a boundary"
+    (function (lambda ( / a)
+      (command "_.LINE" "0,0" "1,0" "") (setq a (entlast))
+      (command "_.LINE" "3,-1" "3,1" "")
+      (command "_.EXTEND" (entlast) "" (list a '(1.0 0.0 0.0)) ""))))
+  (cad-probe--cmd-case "FILLET two lines radius 1"
+    (function (lambda ( / a)
+      (command "_.LINE" "0,0" "4,0" "") (setq a (entlast))
+      (command "_.LINE" "4,0" "4,4" "")
+      (command "_.FILLET" "_R" "1")
+      (command "_.FILLET" (list a '(2.0 0.0 0.0)) (list (entlast) '(4.0 2.0 0.0))))))
+  (cad-probe--cmd-case "CHAMFER two lines distances 1 1"
+    (function (lambda ( / a)
+      (command "_.LINE" "0,0" "4,0" "") (setq a (entlast))
+      (command "_.LINE" "4,0" "4,4" "")
+      (command "_.CHAMFER" "_D" "1" "1")
+      (command "_.CHAMFER" (list a '(2.0 0.0 0.0)) (list (entlast) '(4.0 2.0 0.0))))))
+  (cad-probe--cmd-case "OFFSET a line by 1 to the left"
+    (function (lambda ()
+      (command "_.LINE" "0,0" "4,0" "")
+      (command "_.OFFSET" "1" (list (entlast) '(2.0 0.0 0.0)) "2,1" ""))))
+  (cad-probe--cmd-case "OFFSET a circle by 1 outward"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "2")
+      (command "_.OFFSET" "1" (list (entlast) '(2.0 0.0 0.0)) "5,0" ""))))
+  (cad-probe--cmd-case "BREAK a line between two points"
+    (function (lambda ()
+      (command "_.LINE" "0,0" "4,0" "")
+      (command "_.BREAK" (list (entlast) '(1.0 0.0 0.0)) "3,0"))))
+  (cad-probe--cmd-case "PEDIT a line into a polyline of width 0.5"
+    (function (lambda ()
+      (command "_.LINE" "0,0" "4,0" "")
+      (command "_.PEDIT" (list (entlast) '(2.0 0.0 0.0)) "_Y" "_W" "0.5" ""))))
+
   ;; Express Tools (COPYM FLATTEN XPLODE) and the 3DROTATE gizmo may be
   ;; missing on a headless engine: run them late, so a missing command
   ;; cannot spoil the cases above.
@@ -220,6 +262,12 @@
 
   ;; S4 arrays: classic -ARRAY, and the array commands made NON-associative
   ;; (_AS _N) so the result is plain copies rather than an array object.
+
+  (cad-probe--cmd-case "OVERKILL two identical lines"
+    (function (lambda ( / a)
+      (command "_.LINE" "0,0" "4,0" "") (setq a (entlast))
+      (command "_.LINE" "0,0" "4,0" "")
+      (command "_.-OVERKILL" a (entlast) "" ""))))
 
   ;; LAST: from LISP, AutoCAD's EXPLODE takes one object and ends, so a
   ;; trailing "" repeats it and leaves it waiting -- it derailed every
