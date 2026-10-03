@@ -15,17 +15,17 @@
   (declare (ignore _))
   "/work/proj")
 
-(defun %trust-host (dialect &optional getenv)
-  "A fresh MockHost with the dialect trust defaults applied. GETENV, when
-supplied, stubs the environment lookups (a function NAME -> string-or-nil).
-The cwd is stubbed to /work/proj so implicit-trusted defaults are
-deterministic."
+(defun %trust-host (dialect &optional (getenv (constantly nil)))
+  "A fresh MockHost with the dialect trust defaults applied. GETENV stubs the
+environment lookups (a function NAME -> string-or-nil); by default it finds
+NOTHING, so the dialect defaults are what is tested. It used to fall back to
+the REAL environment, and on the macOS runner -- whose user exports
+TRUSTEDPATHS -- TRUSTEDPATHS-DIALECT-DEFAULT-IS-EMPTY read that user's paths
+(test:clautolisp:macos, job 16912187707, 2026-10-03). The cwd is stubbed to
+/work/proj so implicit-trusted defaults are deterministic."
   (let ((mock (clautolisp.cador:make-cador)))
-    (if getenv
-        (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
-         mock dialect :getenv getenv :getcwd #'%const-cwd)
-        (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
-         mock dialect :getcwd #'%const-cwd))
+    (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
+     mock dialect :getenv getenv :getcwd #'%const-cwd)
     mock))
 
 (defun %getvar-int (host name)
