@@ -462,7 +462,30 @@ AutoCAD 2022 (job 16824025450, probe-results/autocad/ms-windows/
     $(getvar,dimzin) (a template default, not a bug) and $(angtos,...),
     which is ANGTOS itself -- filed as angtos-modes-wrong.
 
+### DIESEL on BricsCAD -- measured 2026-10-03
+
+The full probe suite reached BricsCAD (probes-suite-crashes-bricscad
+closed): job 16912423452, probe-results/bricscad/ms-windows/
+20261003T120059Z. BricsCAD DOES evaluate (menucmd "M=..."), though its
+documentation lists only P0-P16, and agrees with AutoCAD on 43 of 53 cases.
+It DIVERGES on five (the remaining differences in that comparison were
+artefacts of the clautolisp baseline: pre-ANGTOS-fix, French locale):
+
+| case                | BricsCAD              | AutoCAD = clautolisp today |
+|---------------------+-----------------------+----------------------------|
+| non-integral result | 12 decimals           | 8 decimals                 |
+|                     | 0.333333333333        | 0.33333333                 |
+| $(/,1,0)            | inf                   | " $(/,??) "                |
+| unclosed $(+,1      | $?                    | nil                        |
+| $(substr)           | " $(SUBSTR,??) "      | ""                         |
+| edtime MSEC         | not a code: 9SEC      | milliseconds: 000          |
+|                     | (M month + SEC text)  |                            |
+
+clautolisp follows AutoCAD. Under a bricscad dialect it could follow
+BricsCAD, as DISTOF does since 2.2.150 -- not done yet.
+
 ### Still open
 
+  - DIESEL under a bricscad dialect: the five divergences above.
   - vports/setview remain headless stubs (single-viewport sentinel /
     nil); a live viewport model needs a CAD host.

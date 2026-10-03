@@ -1,6 +1,6 @@
 # probes-suite-crashes-bricscad — the probes/ suite dies on BricsCAD before any record
 
-STATUS: OPEN. Found 2026-08-30, the first time the probes/ suite was ever
+STATUS: DONE (closed 2026-10-03). Found 2026-08-30, the first time the probes/ suite was ever
 pointed at BricsCAD.
 
 ## Symptom
@@ -145,3 +145,26 @@ The cause is fixed in the probe (probe-foreach-scope.lsp now reads
 (foreach e (list 1 2 3) nil)). Left: widen PROBE_SUITES on the BricsCAD
 probe:suite jobs in .gitlab/native.yml back to the full suite, and one run
 on the BricsCAD macOS + Windows runners.
+
+## CLOSED 2026-10-03: the full suite runs on BricsCAD, both platforms
+
+PROBE_SUITES removed from probe:suite:bricscad:{macos,windows} (MR !372);
+one run each, both from run-start to run-end, every suite recording:
+
+| platform | job         | results | suites | errors                         |
+|----------+-------------+---------+--------+--------------------------------|
+| macOS    | 16912423449 | 605     | 12/12  | 1 -- the deliberate arity case |
+| Windows  | 16912423452 | 627     | 12/12  | 1 -- the same                  |
+
+The one `error' is vl-catch-all-apply-arity's "(vl-catch-all-apply '+ )
+-- omitted list, function takes arguments": a case that MUST raise an
+arity error, and does. Results committed: probe-results/bricscad/macos/
+20261003T114016Z and probe-results/bricscad/ms-windows/20261003T120059Z.
+
+The rule is in probes/README.org now: syntax a host might refuse goes in a
+string, read at run time.
+
+Side effect worth having: the DIESEL suite ran on BricsCAD for the first
+time. BricsCAD DOES evaluate (menucmd "M=...") -- which its documentation
+does not list -- and diverges from AutoCAD in five places, recorded in
+system-variables.issue.
