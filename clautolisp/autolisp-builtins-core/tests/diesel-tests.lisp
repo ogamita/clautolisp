@@ -92,3 +92,33 @@ case has its own test."
 
 (test menucmd-other-areas-stay-empty
   (is (string= "" (autolisp-string-value (%al "(menucmd \"P1=*\")")))))
+
+(defun %diesel-in (dialect expression)
+  "(menucmd \"M=EXPRESSION\") under DIALECT, English EDTIME names; NIL when
+menucmd returns nil."
+  (let* ((clautolisp.autolisp-builtins-core::*edtime-language* :en)
+         (result (run-autolisp-string
+                  (format nil "(menucmd ~S)" (concatenate 'string "M=" expression))
+                  :setup-fn #'%install-cador-and-core
+                  :dialect (clautolisp.autolisp-reader:find-autolisp-dialect dialect))))
+    (and result (autolisp-string-value result))))
+
+(test diesel-follows-bricscad-under-a-bricscad-dialect
+  ;; The five MEASURED divergences (probe-results/bricscad/ms-windows/
+  ;; 20261003T120059Z vs autocad/ms-windows/20261003T091920Z).
+  (let ((jd (%jd 2026 9 29 0.75d0)))
+    (dolist (case `(("$(/,1,3)"        "0.333333333333" "0.33333333")
+                    ("$(/,2,3)"        "0.666666666667" "0.66666667")
+                    ("$(/,1,0)"        "inf"            " $(/,??) ")
+                    ("$(+,1"           "$?"             nil)
+                    ("$(substr)"       " $(SUBSTR,??) " "")
+                    (,(format nil "$(edtime,~F,HH:MM:SS.MSEC)" jd)
+                     "18:00:00.9SEC" "18:00:00.000")
+                    ;; and where they agree
+                    ("$(+,0.1,0.2)"    "0.3"            "0.3")
+                    ("$(nth,7,a,b,c)"  " $(NTH,??) "    " $(NTH,??) ")))
+      (destructuring-bind (expression bricscad autocad) case
+        (is (equal bricscad (%diesel-in :bricscad expression)) "bricscad ~A" expression)
+        (is (equal bricscad (%diesel-in :bricscad-mac expression)) "bricscad-mac ~A" expression)
+        (is (equal autocad (%diesel-in :autocad expression)) "autocad ~A" expression)
+        (is (equal autocad (%diesel-in :strict expression)) "strict ~A" expression)))))

@@ -68,11 +68,26 @@ is, and \"\" inside quotes is one double quote."
                    (t (write-char c out))))
                (incf i)))))
 
+;;; AutoCAD and BricsCAD BOTH evaluate DIESEL through (menucmd "M=..."), and
+;;; agree on 43 of the 53 probed cases -- BricsCAD does it although its
+;;; documentation lists only P0-P16. They DIVERGE on five, all measured
+;;; (probe-results/autocad/ms-windows/20261003T091920Z vs bricscad/ms-windows/
+;;; 20261003T120059Z): the precision of a non-integral result, division by
+;;; zero, an unclosed $(, (substr) alone, and EDTIME's MSEC. clautolisp
+;;; follows AutoCAD, and BricsCAD under a dialect of that product -- as DISTOF
+;;; does. Each place reads %DIESEL-BRICSCAD-P.
+
+(defun %diesel-bricscad-p ()
+  "True under a dialect of the BricsCAD product (any bricscad-... spelling)."
+  (let ((dialect (ignore-errors (current-evaluation-dialect))))
+    (and dialect
+         (eq :bricscad (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
+
 (defun diesel-evaluate (text)
   "Evaluate every $(FUNCTION,ARG,...) in the DIESEL string TEXT, innermost
-first; the text around the calls is copied. NIL when a call is not closed:
-AutoCAD's (menucmd \"M=$(+,1\") returns nil (probe-results/autocad/
-ms-windows/20261003T091920Z)."
+first; the text around the calls is copied. A call that is not closed makes
+the whole result NIL on AutoCAD (menucmd returns nil); BricsCAD prints $?
+there and stops -- both measured."
   (block evaluate
     (with-output-to-string (out)
       (let ((i 0) (n (length text)))
@@ -82,7 +97,10 @@ ms-windows/20261003T091920Z)."
                      ((and (char= c #\$) (< (1+ i) n) (char= (char text (1+ i)) #\())
                       (multiple-value-bind (segments end) (%diesel-split-arguments text (+ i 2))
                         (when (null segments)
-                          (return-from evaluate nil))
+                          (unless (%diesel-bricscad-p)
+                            (return-from evaluate nil))
+                          (write-string "$?" out)
+                          (loop-finish))
                         (let ((result (%diesel-call segments)))
                           (unless result (return-from evaluate nil))
                           (write-string result out))
@@ -140,12 +158,13 @@ the documented $(+,??)."
 
 (defun %diesel-format-number (x)
   "A DIESEL numeric result: an integral value without a decimal point, any
-other with up to 8 decimals and no trailing zeros. (Pending
-probe-diesel.lsp: Autodesk's reference does not state the precision.)"
-  (let ((x (coerce x 'double-float)))
+other with no trailing zeros and up to 8 decimals -- 12 under BricsCAD.
+Measured: $(/,1,3) is 0.33333333 on AutoCAD, 0.333333333333 on BricsCAD."
+  (let ((x (coerce x 'double-float))
+        (places (if (%diesel-bricscad-p) 12 8)))
     (if (and (< (abs x) 1d15) (= x (ftruncate x)))
         (format nil "~D" (truncate x))
-        (let ((s (string-right-trim "0" (format nil "~,8F" x))))
+        (let ((s (string-right-trim "0" (format nil "~,vF" places x))))
           (string-right-trim "." s)))))
 
 (defun %diesel-bool (flag) (if flag "1" "0"))
@@ -218,6 +237,7 @@ DDD / MON forms are the first three letters, as measured: Mar, Sep.")
                        (search "A/P" picture) (search "a/p" picture)))
            (h (if twelve (let ((h12 (mod hour 12))) (if (zerop h12) 12 h12)) hour))
            (pm (>= hour 12))
+           (bricscad (%diesel-bricscad-p))
            (names (cdr (assoc (%edtime-language) *edtime-names*)))
            (days (first names))
            (months (second names)))
@@ -226,6 +246,9 @@ DDD / MON forms are the first three letters, as measured: Mar, Sep.")
           (loop while (< i n)
                 do (let ((code (find-if (lambda (k)
                                           (and (<= (+ i (length k)) n)
+                                               ;; BricsCAD has no MSEC: it reads M (the
+                                               ;; month) and copies SEC -- measured "9SEC"
+                                               (not (and bricscad (string= k "MSEC")))
                                                (string= k picture :start2 i :end2 (+ i (length k)))))
                                         *edtime-codes*)))
                      (cond
@@ -273,9 +296,19 @@ DDD / MON forms are the first three letters, as measured: Mar, Sep.")
 (define-diesel-function "*" (args) (%diesel-fold args #'*))
 (define-diesel-function "/" (args)
   (%diesel-arity args 1 9)
+  ;; Division by zero: AutoCAD answers $(/,??); BricsCAD prints the IEEE
+  ;; result, measured "inf" for $(/,1,0) -- so -inf for a negative numerator
+  ;; and nan for 0/0, by the same printer (those two not probed).
   (let ((nums (mapcar #'%diesel-number args)))
-    (when (some #'zerop (rest nums)) (error '%diesel-bad-arguments))
-    (%diesel-format-number (reduce #'/ nums))))
+    (if (some #'zerop (rest nums))
+        (if (%diesel-bricscad-p)
+            (let ((numerator (reduce #'* (cons (first nums)
+                                                (remove-if #'zerop (rest nums))))))
+              (cond ((plusp numerator) "inf")
+                    ((minusp numerator) "-inf")
+                    (t "nan")))
+            (error '%diesel-bad-arguments))
+        (%diesel-format-number (reduce #'/ nums)))))
 
 (macrolet ((compare (name fn)
              `(define-diesel-function ,name (args)
@@ -316,8 +349,9 @@ DDD / MON forms are the first three letters, as measured: Mar, Sep.")
 
 (define-diesel-function "substr" (args)
   ;; $(substr,STRING,START[,LENGTH]), START 1-based. With NO argument AutoCAD
-  ;; answers "", not an error (measured, 20261003T091920Z).
-  (when (null args) (return-from diesel-function ""))
+  ;; answers "", BricsCAD the error " $(SUBSTR,??) " (both measured).
+  (when (and (null args) (not (%diesel-bricscad-p)))
+    (return-from diesel-function ""))
   (%diesel-arity args 2 3)
   (let* ((s (first args))
          (start (1- (%diesel-integer (second args))))
