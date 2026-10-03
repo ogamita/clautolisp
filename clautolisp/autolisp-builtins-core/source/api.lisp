@@ -4270,7 +4270,7 @@ non-negative. system-variables.issue, 'rtos/distance float-format'."
         (subseq s 0 (1- (length s)))
         s)))
 
-(defun %format-scientific-real (n p)
+(defun %format-scientific-real (n p &optional half-even)
   "Scientific (mode 1) formatting for RTOS in AutoCAD style: uppercase
 E, an always-signed exponent zero-padded to at least two digits, e.g.
 `(rtos 100.0 1 2)' => \"1.00E+02\". CL's bare `~E' would emit the
@@ -4279,13 +4279,39 @@ the ~E exponent-digits (2) and exponent-char ('E) parameters fix both.
 Exponents wider than two digits expand as needed (e.g. \"1.00E+100\").
 system-variables.issue, 'rtos/distance float-format'.
 
-Zero is special-cased to \"0.<p zeros>E+00\": CL's ~E prints (rtos 0.0 1 4)
-as \"0.0000E-01\" on CCL (vs \"0.0000E+00\" on SBCL) — a host divergence in
-how the exponent of a zero mantissa is chosen — so we emit the canonical
-+00 form directly (ccl-suite-failures.issue)."
-  (if (zerop n)
-      (concatenate 'string "0." (make-string (max 0 p) :initial-element #\0) "E+00")
-      (format nil "~,v,2,,,,'EE" (max 0 p) n)))
+Computed on the exact rational, not with CL's ~E: ~E printed precision 0
+as \"3.E+00\" and chose the exponent of a zero mantissa differently on CCL
+and SBCL (ccl-suite-failures.issue). Measured (probes/sources/probe-rtos.lsp,
+AutoCAD 2022 + BricsCAD, 2026-10-03): precision 0 has NO decimal point --
+(rtos 2.5 1 0) is \"3E+00\", (rtos 0.0 1 0) \"0E+00\"; a tie rounds AWAY
+from zero on AutoCAD (\"3E+00\") but to EVEN on BricsCAD (\"2E+00\"), so
+HALF-EVEN selects the BricsCAD rule."
+  (let* ((p (max 0 p))
+         (x (abs (rational n)))
+         (e 0)
+         (ticks 0))
+    (unless (zerop x)
+      ;; 10^e <= x < 10^(e+1), found exactly.
+      (setf e (floor (log (coerce x 'double-float) 10)))
+      (loop while (< x (expt 10 e)) do (decf e))
+      (loop while (>= x (expt 10 (1+ e))) do (incf e))
+      (let ((scaled (* (/ x (expt 10 e)) (expt 10 p))))
+        (setf ticks (if half-even (round scaled) (%round-half-away scaled))))
+      ;; 9.99 at precision 1 rounds to 10.0: renormalise to 1.0E+(e+1).
+      (when (>= ticks (expt 10 (1+ p)))
+        (setf ticks (/ ticks 10) e (1+ e))))
+    (let ((digits (format nil "~v,'0D" (1+ p) ticks)))
+      (format nil "~:[~;-~]~A~:[~*~;.~A~]E~:[+~;-~]~2,'0D"
+              (and (minusp n) (plusp ticks))
+              (subseq digits 0 1)
+              (plusp p) (subseq digits 1)
+              (minusp e) (abs e)))))
+
+(defun %bricscad-product-dialect-p ()
+  "True under a dialect of the BricsCAD product (any bricscad-... spelling)."
+  (let ((dialect (ignore-errors (current-evaluation-dialect))))
+    (and dialect
+         (eq :bricscad (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
 
 (defun %rtos-units-sysvar (name default)
   "Read an integer linear-units sysvar (LUNITS / LUPREC / DIMZIN)
@@ -4466,7 +4492,7 @@ Canonical AutoCAD example: (rtos 17.5 5 2) => \"17 1/2\"."
          (n (coerce number 'double-float)))
     (make-autolisp-string
      (case m
-       (1 (%format-scientific-real n p))
+       (1 (%format-scientific-real n p (%bricscad-product-dialect-p)))
        (3 (%format-engineering-real n p unitmode dimzin))
        (4 (%format-architectural-real n p unitmode dimzin))
        (5 (%format-fractional-real n p unitmode))
@@ -4524,6 +4550,11 @@ both measured, on AutoCAD and BricsCAD. UNITMODE 1 drops the spaces."
          (ns (if north "N" "S"))
          (ew (if east "E" (%angtos-west-letter))))
     (multiple-value-bind (ticks unit k) (%angtos-dms-ticks off p)
+      ;; A hair past north, 1.5707963268 at precision 0: AutoCAD keeps the
+      ;; unrounded side, "N 0d W"; BricsCAD names a deviation that ROUNDS
+      ;; to zero east, "N 0d E" (probe-rtos.lsp angtos, 2026-10-03).
+      (when (and (zerop ticks) (%bricscad-product-dialect-p))
+        (setf ew "E"))
       (cond
         ((and (plusp p) (zerop ticks)) ns)
         ((and (plusp p) (= ticks (* 90 unit))) ew)

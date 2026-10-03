@@ -1241,6 +1241,12 @@ separate binary for tool integrators.
 - ~(substr s start 0)~ returns ~""~.
 - Locale-insensitive numeric I/O (period decimal separator regardless
   of ~LC_NUMERIC~ / ~DIMDSEP~).
+- ~rtos~ scientific mode (1) at precision 0 prints no decimal point —
+  ~(rtos 2.5 1 0)~ is ~"3E+00"~, not ~"3.E+00"~ — and a tie rounds away
+  from zero (AutoCAD) or to even (~"2E+00"~, under a BricsCAD dialect),
+  as both vendors measure. ~angtos~ surveyor's mode under a BricsCAD
+  dialect calls a bearing whose deviation rounds to zero east
+  (~"N 0d E"~ a hair past north; AutoCAD keeps the west side).
 - ~vl-file-systime~ returns *eight* elements — year, month, day of
   week, day of month, hours, minutes, seconds, milliseconds — matching
   every engine probed (AutoCAD 2022, BricsCAD V25 and V26) rather than

@@ -5681,6 +5681,7 @@ This function is part of the language/host formatting boundary, not purely a gen
   comma-separator UI does the substitution itself; the AutoLISP
   runtime stays in `.`-land so that
   `(atof (rtos n))` round-trips on every machine.
+- Measured (probes/sources/probe-rtos.lsp, AutoCAD 2022 and BricsCAD V26, 2026-10-03): scientific mode at precision 0 prints no decimal point (`(rtos 2.5 1 0)` is `"3E+00"`, `(rtos 0.0 1 0)` `"0E+00"`). A tie at the last digit rounds away from zero on AutoCAD (`"3E+00"`) and to even on BricsCAD (`"2E+00"`); decimal mode rounds ties away from zero on both (`(rtos 2.5 2 0)` is `"3"`).
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -5777,6 +5778,7 @@ A string if successful; otherwise `nil`.
 - If `precision` is omitted, Autodesk documents that `angtos` uses the current `AUPREC` value.
 - Autodesk documents that the result is additionally affected by `UNITMODE` and `DIMZIN`.
 - Autodesk documents that negative angles are reduced to an equivalent positive angle between `0` and `2*pi` before formatting.
+- Measured (probes/sources/probe-rtos.lsp, AutoCAD 2022 and BricsCAD V26, 2026-10-03): in surveyor's units, an angle a hair past north (`1.5707963268`) at precision 0 is `"N 0d W"` on AutoCAD (the unrounded side) but `"N 0d E"` on BricsCAD (a deviation that rounds to zero is called east). A French AutoCAD prints `O` (Ouest) for west.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
