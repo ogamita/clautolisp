@@ -57,6 +57,20 @@
       (is (member "AcDbEntity" markers :test #'string=))
       (is (member "AcDbLine" markers :test #'string=)))))
 
+(test validate-adds-only-the-absent-subclass-markers
+  ;; entmake-duplicates-subclass-markers: data that carries its markers
+  ;; (a command-made LWPOLYLINE) must not get them a second time.
+  (let ((data (validate-entity-dxf
+               '((0 . "LWPOLYLINE") (100 . "AcDbEntity") (100 . "AcDbPolyline")
+                 (8 . "0") (90 . 2) (70 . 0) (10 0.0d0 0.0d0) (10 1.0d0 0.0d0)))))
+    (is (= 1 (count "AcDbEntity" data :key #'cdr :test #'equal)))
+    (is (= 1 (count "AcDbPolyline" data :key #'cdr :test #'equal))))
+  ;; Only the class marker supplied: the base marker is still added, once.
+  (let ((data (validate-entity-dxf
+               '((0 . "LINE") (100 . "AcDbLine") (10 0.0d0 0.0d0 0.0d0) (11 1.0d0 1.0d0 0.0d0)))))
+    (is (= 1 (count "AcDbEntity" data :key #'cdr :test #'equal)))
+    (is (= 1 (count "AcDbLine" data :key #'cdr :test #'equal)))))
+
 (test validate-keeps-explicit-layer
   (multiple-value-bind (data reason)
       (validate-entity-dxf '((0 . "POINT") (8 . "MyLayer") (10 0.0d0 0.0d0 0.0d0)))
