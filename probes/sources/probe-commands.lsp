@@ -53,7 +53,10 @@
   ;; Run (command . ARGS) and record what it made, as one probe result.
   (cad-probe-capture "commands" name
     (function (lambda ()
+      ;; The REAL last entity: ENTLAST names the last MAIN entity, whose
+      ;; VERTEX / ATTRIB / SEQEND run ENTNEXT would otherwise walk first.
       (setq marker (entlast))
+      (while (and marker (entnext marker)) (setq marker (entnext marker)))
       (apply 'command args)
       (cad-probe--cmd-cancel)
       (setq e (if marker (entnext marker) (entnext))

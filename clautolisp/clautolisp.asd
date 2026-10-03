@@ -226,6 +226,7 @@
    (:file "cador/source/bricscad-sysvar-overrides")
    (:file "cador/source/prompt-api")
    (:file "cador/source/command-api")
+   (:file "cador/source/command-draw")
    (:file "cador/source/com-progids")
    (:file "cador/source/vlax-api"))
   :in-order-to ((asdf:test-op

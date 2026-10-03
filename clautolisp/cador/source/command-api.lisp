@@ -881,6 +881,65 @@ context (cador is model-only, WCS); BROWSER/SHELL launch external processes
   (declare (ignore host))
   (%consume-through-return tokens))
 
+;;; --- The command table --------------------------------------------
+;;;
+;;; Command name -> handler (HOST TOKENS) -> remaining TOKENS. Each
+;;; spelling is registered explicitly: a leading "-" names a distinct
+;;; console form, never a modifier (see %COMMAND-NAME). On this TUI-only
+;;; host a dialog command and its "-" console form project onto the same
+;;; console grammar, so both spellings run one handler.
+
+(defvar *cador-commands* (make-hash-table :test #'equal)
+  "Upcased command name -> handler function (HOST TOKENS) returning the
+tokens it did not consume.")
+
+(defun define-cador-command (names handler)
+  "Register HANDLER under every spelling in NAMES (a string or a list)."
+  (dolist (name (if (listp names) names (list names)))
+    (setf (gethash (string-upcase name) *cador-commands*) handler))
+  names)
+
+(defun cador-command-names ()
+  "Every command name the engine runs or recognises, sorted."
+  (sort (loop for name being the hash-keys of *cador-commands* collect name)
+        #'string<))
+
+(define-cador-command "LINE"   '%cmd-line)
+(define-cador-command "CIRCLE" '%cmd-circle)
+(define-cador-command "TEXT"   '%cmd-text)
+(define-cador-command "DONUT"  '%cmd-donut)
+(define-cador-command "SOLID"  '%cmd-solid)
+(define-cador-command "ERASE"  '%cmd-erase)
+(define-cador-command "MOVE"   '%cmd-move)
+(define-cador-command "COPY"   '%cmd-copy)
+(define-cador-command "ROTATE" '%cmd-rotate)
+(define-cador-command '("BLOCK" "-BLOCK") '%cmd-block)
+;; The 14 SCHMS-driven commands (schms-call-inventory section 9).
+(define-cador-command "ARC"     '%cmd-arc)
+(define-cador-command "PLINE"   '%cmd-pline)
+(define-cador-command "MTEXT"   '%cmd-mtext)
+(define-cador-command "WIPEOUT" '%cmd-wipeout)
+(define-cador-command "MIRROR"  '%cmd-mirror)
+(define-cador-command '("INSERT" "-INSERT")     '%cmd-insert)
+(define-cador-command '("LAYER" "-LAYER")       '%cmd-layer)
+(define-cador-command '("LINETYPE" "-LINETYPE") '%cmd-linetype)
+;; Recognised, but model-only no-ops (viewport / coordinate context /
+;; external process / deferred edit): consume the input line and keep
+;; flowing.
+(define-cador-command '("ZOOM" "UCS" "PEDIT" "BREAK" "BROWSER" "SHELL")
+                      '%cmd-recognised-noop)
+;; Core-now commands (alref Phase 4 S1) whose subject the headless model
+;; does not hold: a palette or dialog (PROPERTIES, MLSTYLE), raster /
+;; PDF underlay / online-map / point-cloud data (IMAGE*, CLIPIT, PDFCLIP,
+;; -PDFIMPORT, GEOMAPIMAGE*, POINTCLOUDCROP) and freehand pointer input
+;; (SKETCH). Recognised, so a driven sequence keeps flowing.
+(define-cador-command '("PROPERTIES" "MLSTYLE"
+                        "IMAGEADJUST" "IMAGECLIP" "IMAGEEDIT" "CLIPIT"
+                        "PDFCLIP" "-PDFIMPORT"
+                        "GEOMAPIMAGE" "GEOMAPIMAGEUPDATE" "POINTCLOUDCROP"
+                        "SKETCH")
+                      '%cmd-recognised-noop)
+
 (defun %execute-command-tokens (host tokens)
   "Interpret TOKENS — one HOST-COMMAND call's normalized sequence —
 executing the drawing commands the engine knows; the first unknown
@@ -888,50 +947,10 @@ command name stops interpretation (the sequence stays recorded on the
 command log either way). Never signals."
   (handler-case
       (loop while tokens
-            do (let ((name (%command-name (first tokens))))
-                 (unless name (return))
-                 (setf tokens (rest tokens))
-                 (setf tokens
-                       (cond
-                         ((string= name "LINE")   (%cmd-line host tokens))
-                         ((string= name "CIRCLE") (%cmd-circle host tokens))
-                         ((string= name "TEXT")   (%cmd-text host tokens))
-                         ((string= name "DONUT")  (%cmd-donut host tokens))
-                         ((string= name "SOLID")  (%cmd-solid host tokens))
-                         ((string= name "ERASE")  (%cmd-erase host tokens))
-                         ((string= name "MOVE")   (%cmd-move host tokens))
-                         ((string= name "COPY")   (%cmd-copy host tokens))
-                         ((string= name "ROTATE") (%cmd-rotate host tokens))
-                         ;; -BLOCK is the explicitly-defined console
-                         ;; form of BLOCK; on this TUI-only host the
-                         ;; dialog form projects onto the same console
-                         ;; grammar, so both spellings run it.
-                         ((or (string= name "-BLOCK")
-                              (string= name "BLOCK"))
-                          (%cmd-block host tokens))
-                         ;; The 14 SCHMS-driven commands (schms-call-inventory §9).
-                         ((string= name "ARC")      (%cmd-arc host tokens))
-                         ((string= name "PLINE")    (%cmd-pline host tokens))
-                         ((string= name "MTEXT")    (%cmd-mtext host tokens))
-                         ((string= name "WIPEOUT")  (%cmd-wipeout host tokens))
-                         ((string= name "MIRROR")   (%cmd-mirror host tokens))
-                         ((or (string= name "INSERT")
-                              (string= name "-INSERT"))
-                          (%cmd-insert host tokens))
-                         ((or (string= name "LAYER")
-                              (string= name "-LAYER"))
-                          (%cmd-layer host tokens))
-                         ((or (string= name "LINETYPE")
-                              (string= name "-LINETYPE"))
-                          (%cmd-linetype host tokens))
-                         ;; Recognised, but model-only no-ops (viewport /
-                         ;; coordinate context / external process / deferred
-                         ;; edit): consume the input line and keep flowing.
-                         ((member name '("ZOOM" "UCS" "PEDIT" "BREAK"
-                                         "BROWSER" "SHELL")
-                                  :test #'string=)
-                          (%cmd-recognised-noop host tokens))
-                         (t (return))))))
+            do (let* ((name (%command-name (first tokens)))
+                      (handler (and name (gethash name *cador-commands*))))
+                 (unless handler (return))
+                 (setf tokens (funcall handler host (rest tokens)))))
     (error () nil))
   nil)
 
