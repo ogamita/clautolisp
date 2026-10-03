@@ -142,6 +142,8 @@
                 #:host-vlax-queueexpr
                 #:host-vlax-collection-items)
   (:export
+   #:*cador-command-ui-hook*
+   #:cador-command-names
    ;; Class hierarchy
    #:cador
    #:make-cador

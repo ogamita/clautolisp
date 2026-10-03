@@ -78,12 +78,16 @@ Stamped as `:tier` in `commands-inventory.sexp` by
 | package-specific | a command only one vendor has | 1059 |
 | deferred | everything else | 457 |
 
-Of the 105 core-now, cador executes 23 (Phase 4 S1 added POINT, RAY,
-XLINE, ELLIPSE, POLYGON, RECTANG, SPLINE, 3DPOLY, TRACE, MLINE -- built
-against the vendors' measured output) and recognises 14 as no-ops (BREAK,
-PEDIT, and S1's PROPERTIES, MLSTYLE, IMAGEADJUST, IMAGECLIP, IMAGEEDIT,
-CLIPIT, PDFCLIP, -PDFIMPORT, GEOMAPIMAGE, GEOMAPIMAGEUPDATE, POINTCLOUDCROP,
-SKETCH): 68 to go (S2-S6, with HELIX in S5 and REGION in S6).
+Of the 105 core-now, cador executes 37 -- Phase 4 S1 added POINT, RAY,
+XLINE, ELLIPSE, POLYGON, RECTANG, SPLINE, 3DPOLY, TRACE, MLINE; S2 CHPROP,
+CHANGE, SCALE, ALIGN, EXPLODE, STRETCH, LENGTHEN, MATCHPROP, SETBYLAYER,
+CONVERTPOLY; S3 NEW, OPEN, MENULOAD, CUILOAD (all built against the
+vendors' measured output) -- and recognises 19 as no-ops (BREAK, PEDIT;
+S1's PROPERTIES, MLSTYLE, IMAGEADJUST, IMAGECLIP, IMAGEEDIT, CLIPIT,
+PDFCLIP, -PDFIMPORT, GEOMAPIMAGE, GEOMAPIMAGEUPDATE, POINTCLOUDCROP,
+SKETCH; S2's DRAWORDER, TEXTTOFRONT, HATCHTOBACK, CDORDER, TRANSPARENCY):
+49 to go (the rest of S2 once measured, S4 arrays, S5 geometry with HELIX,
+S6 hatch / boundary with REGION).
 
 ## Implemented in cador (`%execute-command-tokens`)
 

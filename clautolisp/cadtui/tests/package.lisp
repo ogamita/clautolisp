@@ -51,6 +51,10 @@
                 #:build-band
                 #:install-menu-bar
                 #:add-band
+                #:apply-file-command-event
+                #:cad-command-line-p
+                #:cad-command-line-name
+                #:cad-command-line-source
                 #:ui-description-error
                 #:ui-band-style
                 ;; Phase 7: localisation

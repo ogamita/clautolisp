@@ -135,17 +135,28 @@ RESULTS. Returns the ui-console."
       (declare (ignore v))
       (is (null b)))))
 
-(test console-repl-step-records-a-cad-command-stand-in
-  ;; Rule 3: a non-Lisp line is a CAD command name (Phase 4 stand-in).
+(test console-repl-step-runs-a-cad-command-line
+  ;; Rule 3: a non-Lisp line is a CAD command line, run as (command ...) in the
+  ;; console's own namespace -- the same classification as the REPL-hosted
+  ;; console. An unknown name gets the vendors' answer and runs nothing; a
+  ;; known one reaches the host (here nihil, which has no command channel).
   (let* ((session (make-runtime-session))
          (app (make-application-tree))
          (d (make-instance 'ui-drawing :key "A"))
          (c (make-instance 'ui-console :key "console")))
     (add-child app d) (add-child d c)
     (make-console-context session c :document-key "A")
-    (clautolisp.cadtui::%console-repl-step c "LINE")
-    (is (member "CAD command (not yet): LINE"
-                (clautolisp.cadtui::ui-stream-buffer c) :test #'string=))))
+    (let ((clautolisp.cadtui:*cad-command-known-p*
+            (lambda (name) (string= name "LINE"))))
+      (clautolisp.cadtui::%console-repl-step c "FOO 1 2")
+      (is (member "Unknown command \"FOO\".  Press F1 for help."
+                  (clautolisp.cadtui::ui-stream-buffer c) :test #'string=))
+      ;; (IS (HANDLER-CASE ...)) does not compile: IS takes its form apart as
+      ;; a predicate call. Compare the caught result instead.
+      (let ((signalled (handler-case
+                           (progn (clautolisp.cadtui::%console-repl-step c "LINE 0,0 1,1") nil)
+                         (clautolisp.autolisp-runtime:operation-not-supported-by-this-host () t))))
+        (is (eq t signalled))))))
 
 (test console-loop-reads-a-delivered-line-and-evaluates-it
   ;; End-to-end on the thread: start the loop (parks), deliver + serve a Lisp

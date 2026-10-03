@@ -201,6 +201,17 @@ every other host. Returns the tree or NIL."
   (when (eq host-keyword :cadtui)
     (let ((root (clautolisp.cadtui:make-application-tree)))
       (clautolisp.cadtui:install-cadtui-dcl-renderer root)
+      ;; NEW / OPEN / MENULOAD / CUILOAD run in the cador core; mirror them
+      ;; into the tree (a new ui-drawing, loaded menus and bands).
+      (setf clautolisp.cador:*cador-command-ui-hook*
+            (lambda (host event &rest args)
+              (declare (ignore host))
+              (apply #'clautolisp.cadtui:apply-file-command-event root event args))
+            ;; Spec 5.6 rule 3 answers "Unknown command" for a name the
+            ;; CAD core does not run or recognise.
+            clautolisp.cadtui:*cad-command-known-p*
+            (lambda (name)
+              (member name (clautolisp.cador:cador-command-names) :test #'string=)))
       (setf *cadtui-root* root
             *active-host-label* "cadtui")
       root)))

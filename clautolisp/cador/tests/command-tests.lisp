@@ -515,3 +515,94 @@
     (is (%ct-near 0.18 (host-getvar mock "DIMASZ")))
     (is (equal '(12.0d0 9.0d0) (host-getvar mock "LIMMAX")))
     (is (eql 0 (host-getvar mock "MEASUREMENT")))))
+
+;;; --- alref Phase 4 S2: selection by window, crossing and point --------
+
+(test command-selection-window-crossing-and-point
+  (flet ((erased-after (selection)
+           ;; Draw a line inside (1,1)-(2,2) and one crossing x = 3, then
+           ;; ERASE with SELECTION; return what is left.
+           (let ((mock (make-cador)))
+             (clautolisp.autolisp-host:host-command
+              mock (append '("_.LINE" "1,1" "2,2" "" "_.LINE" "0,5" "6,5" ""
+                             "_.ERASE")
+                           selection '("")))
+             (%ct-types mock))))
+    ;; Window 0,0 - 4,6: the first line is inside, the second crosses out.
+    (is (equal '("LINE") (erased-after '("_W" "0,0" "4,6"))))
+    ;; Crossing: both.
+    (is (equal '() (erased-after '("_C" "0,0" "4,6"))))
+    ;; A point ON the second line picks it alone.
+    (is (equal '("LINE") (erased-after '("3,5"))))
+    ;; A point on nothing ends the selection; nothing is erased.
+    (is (equal '("LINE" "LINE") (erased-after '("9,9"))))))
+
+;;; --- alref Phase 4 S2: modify / property commands, as measured --------
+;;; AutoCAD 2022 (job 16914186872) and BricsCAD V26 (job 16914186873).
+
+(test command-scale-align-change-as-measured
+  (let ((d (%ct-last-data (%ct-run '("_.CIRCLE" "1,0" "1" "_.SCALE" "_L" "" "0,0" "2")))))
+    (is (%ct-near '(2 0 0) (%ct-group d 10)))
+    (is (%ct-near 2.0 (%ct-group d 40))))
+  (let ((d (%ct-last-data (%ct-run '("_.LINE" "0,0" "2,0" ""
+                                     "_.ALIGN" "_L" "" "0,0" "1,1" "2,0" "1,3" "" "_N")))))
+    (is (%ct-near '(1 1 0) (%ct-group d 10)))
+    (is (%ct-near '(1 3 0) (%ct-group d 11))))
+  (let ((d (%ct-last-data (%ct-run '("_.LINE" "0,0" "2,0" "" "_.CHANGE" "_L" "" "3,3")))))
+    (is (%ct-near '(0 0 0) (%ct-group d 10)))
+    (is (%ct-near '(3 3 0) (%ct-group d 11)))))
+
+(test command-chprop-matchprop-setbylayer-colour
+  (let ((d (%ct-last-data (%ct-run '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "1" "")))))
+    (is (eql 1 (%ct-group d 62)))
+    ;; The vendors list colour right after the layer.
+    (is (eql 62 (car (nth (1+ (position 8 d :key #'car)) d)))))
+  (let ((mock (%ct-run '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "3" ""
+                         "_.LINE" "5,5" "6,6" "" "_.MATCHPROP" "0.7071,0.7071" "5.5,5.5" ""))))
+    (is (eql 3 (%ct-group (%ct-last-data mock) 62))))
+  (let ((d (%ct-last-data (%ct-run '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "2" ""
+                                     "_.SETBYLAYER" "_L" "" "_Y" "_Y")))))
+    (is (null (assoc 62 d)))))
+
+(test command-explode-stretch-lengthen-convertpoly
+  (is (equal '("LINE" "LINE" "LINE" "LINE")
+             (%ct-types (%ct-run '("_.RECTANG" "0,0" "2,1" "_.EXPLODE" "_L" "")))))
+  (let ((d (%ct-last-data (%ct-run '("_.LINE" "0,0" "4,0" ""
+                                     "_.STRETCH" "_C" "3,-1" "5,1" "" "4,0" "6,1")))))
+    (is (%ct-near '(0 0 0) (%ct-group d 10)))
+    (is (%ct-near '(6 1 0) (%ct-group d 11))))
+  (let ((d (%ct-last-data (%ct-run '("_.LINE" "0,0" "4,0" "" "_.LENGTHEN" "_DE" "1" "4,0" "")))))
+    (is (%ct-near '(5 0 0) (%ct-group d 11))))
+  (is (equal '("POLYLINE" "VERTEX" "VERTEX" "VERTEX" "SEQEND")
+             (%ct-types (%ct-run '("_.PLINE" "0,0" "2,0" "2,1" ""
+                                   "_.CONVERTPOLY" "_H" "_L" ""))))))
+
+;;; --- alref Phase 4 S3: NEW, OPEN, MENULOAD ---------------------------
+
+(test command-new-open-and-menuload-notify-the-ui
+  (let ((events '()) (mock (make-cador))
+        (menu (merge-pathnames "cador-menuload-test.mnu" (uiop:temporary-directory))))
+    (with-open-file (out menu :direction :output :if-exists :supersede)
+      (write-string "(:band \"Draw\" (:button \"Line\" :action \"LINE\"))
+(:menu-bar (:menu \"File\" (:item \"New\" :action \"NEW\")))
+(not-a-ui-form)" out))
+    (let ((clautolisp.cador:*cador-command-ui-hook*
+            (lambda (host event &rest args)
+              (declare (ignore host))
+              (push (cons event args) events))))
+      ;; NEW: a second document, current.
+      (clautolisp.autolisp-host:host-command mock '("_.NEW" "."))
+      (is (= 2 (length (clautolisp.autolisp-host:host-document-list mock))))
+      (is (equal (clautolisp.autolisp-host:host-current-document mock)
+                 (second (first events))))
+      ;; OPEN a real drawing: the bundled empty-drawing template (DXF).
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.OPEN" (namestring (clautolisp.drawing:drawing-template-path))))
+      (is (= 3 (length (clautolisp.autolisp-host:host-document-list mock))))
+      (is (eq :document-opened (car (first events))))
+      ;; MENULOAD: only the UI forms reach the UI.
+      (clautolisp.autolisp-host:host-command mock (list "_.MENULOAD" (namestring menu)))
+      (destructuring-bind (event forms path) (first events)
+        (is (eq :menu-loaded event))
+        (is (equal '(:band :menu-bar) (mapcar #'first forms)))
+        (is (string= (namestring menu) path))))))

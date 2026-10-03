@@ -61,10 +61,12 @@ cleanly)."
         (if pass-reader :eof (interactor-return :terminated))
         (multiple-value-bind (kind payload)
             (classify-line line :escape (cadtui-console-state-escape state))
-          (if (and pass-reader (eq kind :pass-through))
-              (progn (unread-line-from-input-context payload input-context)
-                     (funcall pass-reader input-context))
-              (list kind payload))))))
+          (cond ((and pass-reader (eq kind :pass-through) (cad-command-line-p payload))
+                 (list :cad-command payload))
+                ((and pass-reader (eq kind :pass-through))
+                 (unread-line-from-input-context payload input-context)
+                 (funcall pass-reader input-context))
+                (t (list kind payload)))))))
 
 (defun %cadtui-console-evaluate (input)
   "EVALUATOR of the cadtui console: run a meta-command immediately (an
@@ -91,6 +93,16 @@ pass-through line to the implicit-input console's queue (spec §5.6)."
              (when (and text (plusp (length text)))
                (format *standard-output* "~&~A~%" text)))
            result))
+        (:cad-command
+         ;; Rule 3: run the command line through the hosted REPL's evaluator
+         ;; (its session, its host); an unknown name gets the vendors' answer.
+         (let ((name (cad-command-line-name payload)))
+           (if (and *cad-command-known-p* (not (funcall *cad-command-known-p* name)))
+               (progn (format *standard-output* "~&Unknown command \"~A\".  Press F1 for help.~%"
+                              name)
+                      (make-command-result :status :error :verb nil :text name :data nil))
+               (funcall (cadtui-console-state-pass-evaluator state)
+                        (cad-command-line-source payload)))))
         (:source
          ;; A PASS-READER classified this as AutoLISP source (REPL hosting):
          ;; evaluate + print it through the host's REPL turn.

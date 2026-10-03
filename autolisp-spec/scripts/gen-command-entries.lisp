@@ -26,14 +26,20 @@
     "INSERT" "-INSERT" "LAYER" "-LAYER" "LINETYPE" "-LINETYPE"
     ;; alref Phase 4 S1 (built against the vendors' measured output)
     "POINT" "RAY" "XLINE" "ELLIPSE" "POLYGON" "RECTANG" "SPLINE" "3DPOLY"
-    "TRACE" "MLINE"))
+    "TRACE" "MLINE"
+    ;; S2 modify / property, S3 file / customisation
+    "CHPROP" "CHANGE" "SCALE" "ALIGN" "EXPLODE" "STRETCH" "LENGTHEN"
+    "MATCHPROP" "SETBYLAYER" "CONVERTPOLY"
+    "NEW" "OPEN" "MENULOAD" "CUILOAD"))
 
 (defparameter *cador-recognised-noop*
   '("ZOOM" "UCS" "PEDIT" "BREAK" "BROWSER" "SHELL"
     ;; alref Phase 4 S1: subject outside the headless model
     "PROPERTIES" "MLSTYLE" "IMAGEADJUST" "IMAGECLIP" "IMAGEEDIT" "CLIPIT"
     "PDFCLIP" "-PDFIMPORT" "GEOMAPIMAGE" "GEOMAPIMAGEUPDATE" "POINTCLOUDCROP"
-    "SKETCH"))
+    "SKETCH"
+    ;; S2: display order / raster image background
+    "DRAWORDER" "TEXTTOFRONT" "HATCHTOBACK" "CDORDER" "TRANSPARENCY"))
 
 (defun read-inventory (path)
   (with-open-file (in path :external-format :utf-8)

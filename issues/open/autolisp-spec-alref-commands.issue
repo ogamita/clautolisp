@@ -216,3 +216,20 @@ Deferred: HELIX -> S5 (each vendor approximates the helix with its own
 spline -- AutoCAD 46 control points for 3 turns, BricsCAD 27; matching
 either means reverse-engineering it). REGION -> S6 (needs ACIS SAT data).
 The probe hung AutoCAD twice before the CMDACTIVE fix (bit 4 = script).
+
+## Phase 4 S2 (partial) and S3 -- done (2026-10-03)
+
+S2: window / crossing / point selection (command-geometry.lisp); SCALE
+ALIGN STRETCH LENGTHEN CHANGE CHPROP MATCHPROP SETBYLAYER EXPLODE
+CONVERTPOLY -- each equal to BricsCAD on probe-commands, and to AutoCAD
+on the cases the headless AutoCAD answered (SCALE ALIGN CHPROP CHANGE
+EXPLODE; it has no view, so its window / point picks select nothing).
+DRAWORDER TEXTTOFRONT HATCHTOBACK CDORDER TRANSPARENCY recognised.
+Still to measure (cases in the probe, this MR's vendor run): DIVIDE,
+MEASURE, JOIN (corrected), ADDSELECTED, COPYM, FLATTEN, 3DROTATE,
+XPLODE; then MSTRETCH, CHSPACE, NCOPY, UNGROUP.
+S3: NEW OPEN MENULOAD CUILOAD (cador; cadtui mirrors them through
+*cador-command-ui-hook*) and spec 5.6 rule 3 at the cad> console (one
+logic for the REPL-hosted and threaded consoles). Interactive prompting
+for missing input waits for host-command park points (D1 13.5).
+S4: the array cases are in the probe already.

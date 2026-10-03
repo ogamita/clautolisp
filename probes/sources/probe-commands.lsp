@@ -71,7 +71,15 @@
       ;; VERTEX / ATTRIB / SEQEND run ENTNEXT would otherwise walk first.
       (setq marker (entlast))
       (while (and marker (entnext marker)) (setq marker (entnext marker)))
-      (apply 'command args)
+      ;; ARGS is a token list, or a function that drives the commands
+      ;; itself (to select by ename: a headless AutoCAD has no view, so
+      ;; window and point picks find nothing there). A function's TYPE
+      ;; depends on compilation -- the list (LAMBDA ...) interpreted, a
+      ;; USUBR / SUBR compiled -- so test the shape we control instead:
+      ;; a token list starts with the command name, a string.
+      (if (and (= (type args) 'LIST) (= (type (car args)) 'STR))
+          (apply 'command args)
+          (apply args '()))
       (cad-probe--cmd-cancel)
       (setq e (if marker (entnext marker) (entnext))
             out '()
@@ -126,8 +134,6 @@
     '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "1" ""))
   (cad-probe--cmd-case "CHANGE a line endpoint"
     '("_.LINE" "0,0" "2,0" "" "_.CHANGE" "_L" "" "3,3"))
-  (cad-probe--cmd-case "EXPLODE a rectangle"
-    '("_.RECTANG" "0,0" "2,1" "_.EXPLODE" "_L" ""))
   (cad-probe--cmd-case "DIVIDE a line into 4"
     '("_.LINE" "0,0" "4,0" "" "_.DIVIDE" "_L" "4"))
   (cad-probe--cmd-case "MEASURE a line by 1.5"
@@ -135,7 +141,11 @@
   (cad-probe--cmd-case "LENGTHEN a line by delta 1 at its end"
     '("_.LINE" "0,0" "4,0" "" "_.LENGTHEN" "_DE" "1" "4,0" ""))
   (cad-probe--cmd-case "JOIN two collinear lines"
-    '("_.LINE" "0,0" "2,0" "" "_.LINE" "2,0" "4,0" "" "_.JOIN" "_P" "_L" ""))
+    (function (lambda ( / e1)
+      (command "_.LINE" "0,0" "2,0" "")
+      (setq e1 (entlast))
+      (command "_.LINE" "2,0" "4,0" "")
+      (command "_.JOIN" e1 (entlast) ""))))
   (cad-probe--cmd-case "CONVERTPOLY light to heavy"
     '("_.PLINE" "0,0" "2,0" "2,1" "" "_.CONVERTPOLY" "_H" "_L" ""))
   (cad-probe--cmd-case "MATCHPROP layer and color"
@@ -143,6 +153,70 @@
       "_.LINE" "5,5" "6,6" "" "_.MATCHPROP" "0.7071,0.7071" "5.5,5.5" ""))
   (cad-probe--cmd-case "SETBYLAYER color"
     '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "2" "" "_.SETBYLAYER" "_L" "" "_Y" "_Y"))
+
+  ;; S2, second batch (several are Express Tools: their absence on a
+  ;; headless engine is an answer too). Selection by ename throughout.
+  (cad-probe--cmd-case "DIVIDE by ename into 4"
+    (function (lambda ()
+      (command "_.LINE" "0,0" "4,0" "")
+      (command "_.DIVIDE" (entlast) "4"))))
+  (cad-probe--cmd-case "MEASURE by ename by 1.5"
+    (function (lambda ()
+      (command "_.LINE" "0,0" "4,0" "")
+      (command "_.MEASURE" (entlast) "1.5"))))
+  (cad-probe--cmd-case "ADDSELECTED a circle"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "1")
+      (command "_.ADDSELECTED" (entlast) "5,5" "2"))))
+  (cad-probe--cmd-case "COPYM two copies"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "1")
+      (command "_.COPYM" (entlast) "" "0,0" "3,0" "6,0" ""))))
+  (cad-probe--cmd-case "FLATTEN a 3D line"
+    (function (lambda ()
+      (command "_.LINE" "0,0,1" "2,0,3" "")
+      (command "_.FLATTEN" (entlast) "" "_N"))))
+  (cad-probe--cmd-case "3DROTATE a line 90 about Z"
+    (function (lambda ()
+      (command "_.LINE" "0,0" "2,0" "")
+      (command "_.3DROTATE" (entlast) "" "0,0,0" "_Z" "90"))))
+  (cad-probe--cmd-case "XPLODE a rectangle"
+    (function (lambda ()
+      (command "_.RECTANG" "0,0" "2,1")
+      (command "_.XPLODE" (entlast) "" "_E"))))
+
+  ;; S4 arrays: classic -ARRAY, and the array commands made NON-associative
+  ;; (_AS _N) so the result is plain copies rather than an array object.
+  (cad-probe--cmd-case "-ARRAY rectangular 2 rows 3 columns"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "0.5")
+      (command "_.-ARRAY" (entlast) "" "_R" "2" "3" "2" "3"))))
+  (cad-probe--cmd-case "-ARRAY polar 4 items over 360"
+    (function (lambda ()
+      (command "_.CIRCLE" "2,0" "0.5")
+      (command "_.-ARRAY" (entlast) "" "_P" "0,0" "4" "360" "_Y"))))
+  (cad-probe--cmd-case "ARRAYRECT non-associative 3x2"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "0.5")
+      (command "_.ARRAYRECT" (entlast) "" "_AS" "_N" "_COU" "3" "2" "_S" "3" "2" "_X"))))
+  (cad-probe--cmd-case "ARRAYPOLAR non-associative 4 items"
+    (function (lambda ()
+      (command "_.CIRCLE" "2,0" "0.5")
+      (command "_.ARRAYPOLAR" (entlast) "" "0,0" "_AS" "_N" "_I" "4" "_X"))))
+  (cad-probe--cmd-case "ARRAY rectangular non-associative"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "0.5")
+      (command "_.ARRAY" (entlast) "" "_R" "_AS" "_N" "_COU" "2" "2" "_S" "3" "3" "_X"))))
+  (cad-probe--cmd-case "3DARRAY rectangular 2x2x2"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "0.5")
+      (command "_.3DARRAY" (entlast) "" "_R" "2" "2" "2" "1" "1" "1"))))
+
+  ;; LAST: from LISP, AutoCAD's EXPLODE takes one object and ends, so a
+  ;; trailing "" repeats it and leaves it waiting -- it derailed every
+  ;; later case on 2026-10-03 (job 16914186872). No trailing "".
+  (cad-probe--cmd-case "EXPLODE a rectangle"
+    '("_.RECTANG" "0,0" "2,1" "_.EXPLODE" "_L"))
 
   (setvar "CMDECHO" cmdecho)
   (setvar "OSMODE" osmode)

@@ -1,0 +1,35 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: princ-without-argument-returns-nil -- (princ) should return the null symbol, so the REPL echo is blank
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-03
+
+* Observed
+
+#+begin_example
+_$ (princ)
+nil
+_$ (type (princ))
+nil
+#+end_example
+
+On AutoCAD and BricsCAD (princ) with no argument returns the NULL SYMBOL --
+a symbol whose print name is empty: (type (princ)) is SYM and the console
+echoes nothing. That is the reason every AutoLISP command function ends in
+(princ): "exit quietly". clautolisp returns nil, so the REPL prints nil.
+
+Found while implementing spec 5.6 rule 3 for the cadtui console (alref
+Phase 4 S3): a CAD command line runs as (progn (command ...) (princ)) so
+that, as at the vendors' prompt, nothing is echoed -- and clautolisp
+echoes nil.
+
+* To do
+
+Make PRINC / PRIN1 / PRINT with no argument return the null symbol
+(and check that the value printer prints it as nothing, that (null (princ))
+is NIL, and that no test relies on nil). The spec's PRINC entry should say
+so if it does not; verify against the vendor pages before changing it.
+Probe-confirmable: (vl-symbol-name (princ)) -> "" on both vendors.

@@ -20,18 +20,6 @@ AutoCAD everywhere else, strict included."
       (clautolisp.autolisp-reader:autolisp-dialect-template-name
        (clautolisp.autolisp-runtime:current-evaluation-dialect-name))))
 
-(defun %v- (a b) (mapcar #'- a b))
-
-(defun %v+ (a b) (mapcar #'+ a b))
-
-(defun %v* (k v) (mapcar (lambda (x) (* k x)) v))
-
-(defun %vlen (v) (sqrt (reduce #'+ (mapcar (lambda (x) (* x x)) v))))
-
-(defun %vunit (v)
-  (let ((l (%vlen v)))
-    (if (zerop l) v (%v* (/ 1.0d0 l) v))))
-
 (defun %take-points (tokens)
   "Consume point tokens up to RETURN (consumed) or the first non-point.
 Returns (values POINTS REMAINING)."

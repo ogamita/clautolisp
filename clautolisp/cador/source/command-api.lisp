@@ -336,6 +336,25 @@ tokens and the _Last option, up to the closing RETURN. Returns
            (pop tokens))
           ((not (stringp token)) (return))
           ((equal token "") (pop tokens) (return))
+          ;; Window / Crossing + two corners (alref Phase 4 S2): entities
+          ;; wholly inside, or inside-or-crossing, the rectangle.
+          ((and (%command-option-p token "w" "window" "c" "crossing")
+                (%command-token-point (second tokens))
+                (%command-token-point (third tokens)))
+           (let ((crossing (%command-option-p token "c" "crossing")))
+             (dolist (entity (%window-selection host
+                                                (%command-token-point (second tokens))
+                                                (%command-token-point (third tokens))
+                                                crossing))
+               (pushnew entity entities))
+             (setf tokens (cdddr tokens))))
+          ;; A point picks the object under it (the newest, as the vendors
+          ;; pick the topmost); a point on nothing ends the selection.
+          ((%command-token-point token)
+           (let ((entity (%pick-entity host (%command-token-point token))))
+             (unless entity (return))
+             (pushnew entity entities)
+             (pop tokens)))
           ((%command-option-p token "l" "last")
            (let* ((ename (host-entlast host))
                   (entity
@@ -938,6 +957,12 @@ tokens it did not consume.")
                         "PDFCLIP" "-PDFIMPORT"
                         "GEOMAPIMAGE" "GEOMAPIMAGEUPDATE" "POINTCLOUDCROP"
                         "SKETCH")
+                      '%cmd-recognised-noop)
+;; S2: draw order (DRAWORDER, TEXTTOFRONT, HATCHTOBACK, CDORDER) is
+;; display state, and TRANSPARENCY toggles a raster image's background --
+;; neither is held by the headless model.
+(define-cador-command '("DRAWORDER" "TEXTTOFRONT" "HATCHTOBACK" "CDORDER"
+                        "TRANSPARENCY")
                       '%cmd-recognised-noop)
 
 (defun %execute-command-tokens (host tokens)
