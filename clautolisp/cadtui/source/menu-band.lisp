@@ -159,3 +159,35 @@ new ui-menubar."
   (let ((band (build-band form)))
     (add-child drawing band)
     band))
+
+;;; --- File-command events from the command engine (alref Phase 4 S3) ---
+;;;
+;;; The CAD core opens documents and reads customisation files; this side
+;;; mirrors that into the tree. The core never depends on cadtui: the CLI
+;;; connects APPLY-FILE-COMMAND-EVENT to its hook when --host cadtui runs.
+
+(defun %root-active-drawing (root)
+  (find :drawing (ui-children root) :key #'ui-role))
+
+(defun apply-file-command-event (root event &rest args)
+  "Mirror a file command into ROOT. :DOCUMENT-OPENED KEY -- NEW / OPEN made
+document KEY current: a ui-drawing (with its console) is added and made the
+active drawing. :MENU-LOADED FORMS PATH -- MENULOAD / CUILOAD read FORMS: a
+(:menu-bar ...) replaces the application's menu bar, each (:band ...) is
+added to the active drawing (bands belong to a drawing; without one they
+are not installed). Returns the node(s) created."
+  (ecase event
+    (:document-opened
+     (let ((drawing (make-instance 'ui-drawing :key (first args) :filename (first args)))
+           (console (make-instance 'ui-console :key "console")))
+       (add-child root drawing)
+       (add-child drawing console)
+       (%activate-drawing drawing)
+       drawing))
+    (:menu-loaded
+     (let ((target (%root-active-drawing root)))
+       (loop for form in (first args)
+             when (eq (first form) :menu-bar)
+               collect (install-menu-bar root form)
+             when (and (eq (first form) :band) target)
+               collect (add-band target form))))))

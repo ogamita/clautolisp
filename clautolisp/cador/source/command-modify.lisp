@@ -8,6 +8,9 @@
 ;;;; SETBYLAYER and CONVERTPOLY the BricsCAD result is the reference (the
 ;;;; headless AutoCAD run lost those cases -- see the probe).
 
+(defvar *current-command-host* nil
+  "The host a property change runs on (CHPROP / CHANGE create a missing layer).")
+
 ;;; --- Group editing that keeps the vendors' group order ---------------
 
 (defparameter *property-codes* '(62 6 370 48 39 440)
@@ -82,8 +85,6 @@ property group) when absent."
                (setf tokens (cddr tokens))))
             (t (return)))))
   tokens)
-
-(defvar *current-command-host* nil)
 
 (defun %ensure-layer-exists (host name)
   (when (and host (stringp name)) (ignore-errors (%ensure-layer host name))))

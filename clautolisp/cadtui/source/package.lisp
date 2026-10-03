@@ -150,6 +150,11 @@ documentation/cadtui-specifications.org (normative).")
    #:build-band
    #:install-menu-bar
    #:add-band
+   #:apply-file-command-event
+   #:*cad-command-known-p*
+   #:cad-command-line-p
+   #:cad-command-line-source
+   #:cad-command-line-name
    #:ui-description-error
    #:ui-description-error-form
    #:ui-description-error-reason

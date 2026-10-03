@@ -576,3 +576,33 @@
   (is (equal '("POLYLINE" "VERTEX" "VERTEX" "VERTEX" "SEQEND")
              (%ct-types (%ct-run '("_.PLINE" "0,0" "2,0" "2,1" ""
                                    "_.CONVERTPOLY" "_H" "_L" ""))))))
+
+;;; --- alref Phase 4 S3: NEW, OPEN, MENULOAD ---------------------------
+
+(test command-new-open-and-menuload-notify-the-ui
+  (let ((events '()) (mock (make-cador))
+        (menu (merge-pathnames "cador-menuload-test.mnu" (uiop:temporary-directory))))
+    (with-open-file (out menu :direction :output :if-exists :supersede)
+      (write-string "(:band \"Draw\" (:button \"Line\" :action \"LINE\"))
+(:menu-bar (:menu \"File\" (:item \"New\" :action \"NEW\")))
+(not-a-ui-form)" out))
+    (let ((clautolisp.cador:*cador-command-ui-hook*
+            (lambda (host event &rest args)
+              (declare (ignore host))
+              (push (cons event args) events))))
+      ;; NEW: a second document, current.
+      (clautolisp.autolisp-host:host-command mock '("_.NEW" "."))
+      (is (= 2 (length (clautolisp.autolisp-host:host-document-list mock))))
+      (is (equal (clautolisp.autolisp-host:host-current-document mock)
+                 (second (first events))))
+      ;; OPEN a real drawing: the bundled empty-drawing template (DXF).
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.OPEN" (namestring (clautolisp.drawing:drawing-template-path))))
+      (is (= 3 (length (clautolisp.autolisp-host:host-document-list mock))))
+      (is (eq :document-opened (car (first events))))
+      ;; MENULOAD: only the UI forms reach the UI.
+      (clautolisp.autolisp-host:host-command mock (list "_.MENULOAD" (namestring menu)))
+      (destructuring-bind (event forms path) (first events)
+        (is (eq :menu-loaded event))
+        (is (equal '(:band :menu-bar) (mapcar #'first forms)))
+        (is (string= (namestring menu) path))))))

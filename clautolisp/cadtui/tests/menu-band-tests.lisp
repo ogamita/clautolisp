@@ -104,3 +104,35 @@
       (is (eq :ok (command-result-status r)))
       (is (eq :pong ran))
       (is (eq :pong (command-result-data r))))))
+
+;;; --- alref Phase 4 S3: file-command events and console rule 3 ---------
+
+(test file-command-events-build-drawings-menus-and-bands
+  (let ((root (make-application-tree)))
+    ;; NEW / OPEN: a ui-drawing with its console, made active.
+    (let ((d (apply-file-command-event root :document-opened "Drawing.dwg<2>")))
+      (is (eq :drawing (ui-role d)))
+      (is (string= "Drawing.dwg<2>" (ui-key d)))
+      (is (eq d (find :drawing (ui-children root) :key #'ui-role)))
+      (is (ui-find-child d "console")))
+    ;; MENULOAD: the menu bar replaced, the band added to the active drawing.
+    (apply-file-command-event
+     root :menu-loaded
+     '((:menu-bar (:menu "Draw" (:item "Line" :action "LINE")))
+       (:band "Tools" (:button "Circle" :action "CIRCLE")))
+     "x.mnu")
+    (is (ui-find-child (ui-find-child root "menu-bar") "Draw"))
+    (is (ui-find-child (find :drawing (ui-children root) :key #'ui-role) "Tools"))))
+
+(test console-rule-3-classifies-and-builds-a-command-line
+  ;; Spec 5.6: "(" is Lisp, "," and "!" are the REPL's; anything else is a
+  ;; CAD command line, its words the inputs (SPACE is ENTER), a final RETURN.
+  (is (cad-command-line-p "LINE 0,0 4,0"))
+  (is (cad-command-line-p "  _.circle 1,1 2"))
+  (is (not (cad-command-line-p "(setq a 1)")))
+  (is (not (cad-command-line-p ",quit")))
+  (is (not (cad-command-line-p "!ls")))
+  (is (not (cad-command-line-p "   ")))
+  (is (string= "CIRCLE" (cad-command-line-name "  _.circle 1,1 2")))
+  (is (string= "(progn (command \"LINE\" \"0,0\" \"4,0\" \"\") (princ))"
+               (cad-command-line-source "LINE  0,0 4,0 "))))
