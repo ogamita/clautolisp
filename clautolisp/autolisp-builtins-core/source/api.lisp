@@ -4493,13 +4493,34 @@ Canonical AutoCAD example: (rtos 17.5 5 2) => \"17 1/2\"."
   ;; 3 and 4 feet-and-inches (engineering and architectural forms accepted
   ;; alike), 5 fractional. The complement of RTOS: (distof (rtos x m p) m)
   ;; gives x back to the printed precision. system-variables.issue.
-  (let ((value (autolisp-string-value (require-string string "DISTOF")))
-        (m (if mode
-               (require-int32 mode "DISTOF")
-               (%rtos-units-sysvar "LUNITS" 2))))
-    (if (member m '(3 4 5))
-        (clautolisp.autolisp-runtime:parse-autolisp-distance value m)
-        (parse-autolisp-real value))))
+  ;;
+  ;; MEASURED 2026-10-03 (probe-results 20261003T091920Z / 20261003T092024Z),
+  ;; and the two vendors DIVERGE:
+  ;;   AutoCAD  -- mode 1/2: a whole decimal, or a fraction (\"1/2\" 0.5,
+  ;;               \"17 1/2\" 17.5); feet/inch marks are nil. Mode 5: fractions
+  ;;               and decimals, no marks. Modes 3/4: everything.
+  ;;   BricsCAD -- every mode reads every form (\"1'-6\\\"\" is 18.0 in mode 2).
+  ;; Both: \"\" and malformed text are nil -- never ATOF's leading-number
+  ;; reading, which this used to do (\"1'-6\\\"\" was 1.0 in mode 2).
+  ;; clautolisp follows AutoCAD except under a BricsCAD dialect.
+  (let* ((value (autolisp-string-value (require-string string "DISTOF")))
+         (m (if mode
+                (require-int32 mode "DISTOF")
+                (%rtos-units-sysvar "LUNITS" 2)))
+         (dialect (ignore-errors (current-evaluation-dialect)))
+         (bricscad (and dialect
+                        (eq :bricscad (clautolisp.autolisp-reader:autolisp-dialect-product
+                                       dialect))))
+         (trimmed (string-trim '(#\Space #\Tab) value))
+         (decimal (and (%diesel-numeric-text-p trimmed)   ; whole-string number
+                       (parse-autolisp-real trimmed))))
+    (cond
+      (bricscad
+       (or decimal (clautolisp.autolisp-runtime:parse-autolisp-distance value 4)))
+      ((member m '(3 4))
+       (clautolisp.autolisp-runtime:parse-autolisp-distance value m))
+      (t                                ; 1, 2, 5: number or fraction, no marks
+       (or decimal (clautolisp.autolisp-runtime:parse-autolisp-distance value 5))))))
 
 (defun builtin-angtof (string &optional mode)
   ;; (angtof STRING [MODE]) -> real angle. Mode 0 = radians, 1 = deg
@@ -9073,10 +9094,11 @@ later M3 (vector math) functions can pick it up from one place.")
   ;; other menu areas (P, B, A, T, I, G) have no menus to act on headless and
   ;; keep the stub's "". system-variables.issue.
   (let ((text (and (typep request 'autolisp-string) (autolisp-string-value request))))
-    (make-autolisp-string
-     (if (and text (>= (length text) 2) (string-equal "M=" text :end2 2))
-         (diesel-evaluate (subseq text 2))
-         ""))))
+    (if (and text (>= (length text) 2) (string-equal "M=" text :end2 2))
+        ;; nil for an unclosed $( -- AutoCAD's answer, measured
+        (let ((result (diesel-evaluate (subseq text 2))))
+          (and result (make-autolisp-string result)))
+        (make-autolisp-string ""))))
 ;;; STUB: menu-group query. See deferred-stubbed-functions.issue § Menu system stubs.
 (defun builtin-menugroup (&optional _)
   (declare (ignore _))

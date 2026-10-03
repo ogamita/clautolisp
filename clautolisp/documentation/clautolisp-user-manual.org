@@ -1634,6 +1634,12 @@ correct a wrong guess — but it is not its purpose.
 ** Probes
 - ~$LC_ALL~, ~$LANG~, ~$LC_CTYPE~ :: consulted in that order for the
   default source and terminal encoding when ~-e~ / ~-E~ are absent.
+- ~$LC_ALL~, ~$LC_TIME~, ~$LANG~ :: consulted in that order for the language
+  of the day and month names that DIESEL's ~edtime~ prints, through
+  ~(menucmd "M=$(edtime,…)")~. A locale starting with ~fr~ gives French
+  (~Mardi, 29 Septembre 2026~), as a French AutoCAD does; any other gives
+  English. AutoCAD names them in its product language, and clautolisp's
+  product language is its locale.
 - ~$COLORFGBG~, ~$TMUX~ :: consulted, after ~$CLAUTOLISP_BACKGROUND~,
   to work out whether the terminal is dark or light.
 - ~$COLUMNS~ :: the width the debugger's ~:column~ directory listing

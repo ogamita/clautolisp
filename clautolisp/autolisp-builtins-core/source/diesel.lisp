@@ -70,32 +70,41 @@ is, and \"\" inside quotes is one double quote."
 
 (defun diesel-evaluate (text)
   "Evaluate every $(FUNCTION,ARG,...) in the DIESEL string TEXT, innermost
-first; the text around the calls is copied. An unclosed call yields `$?'."
-  (with-output-to-string (out)
-    (let ((i 0) (n (length text)))
-      (loop while (< i n)
-            do (let ((c (char text i)))
-                 (cond
-                   ((and (char= c #\$) (< (1+ i) n) (char= (char text (1+ i)) #\())
-                    (multiple-value-bind (segments end) (%diesel-split-arguments text (+ i 2))
-                      (cond
-                        ((null segments)
-                         (write-string "$?" out)
-                         (setf i n))
-                        (t
-                         (write-string (%diesel-call segments) out)
-                         (setf i end)))))
-                   (t (write-char c out) (incf i))))))))
+first; the text around the calls is copied. NIL when a call is not closed:
+AutoCAD's (menucmd \"M=$(+,1\") returns nil (probe-results/autocad/
+ms-windows/20261003T091920Z)."
+  (block evaluate
+    (with-output-to-string (out)
+      (let ((i 0) (n (length text)))
+        (loop while (< i n)
+              do (let ((c (char text i)))
+                   (cond
+                     ((and (char= c #\$) (< (1+ i) n) (char= (char text (1+ i)) #\())
+                      (multiple-value-bind (segments end) (%diesel-split-arguments text (+ i 2))
+                        (when (null segments)
+                          (return-from evaluate nil))
+                        (let ((result (%diesel-call segments)))
+                          (unless result (return-from evaluate nil))
+                          (write-string result out))
+                        (setf i end)))
+                     (t (write-char c out) (incf i)))))))))
 
 (defun %diesel-call (segments)
-  (let* ((name (string-trim " " (diesel-evaluate (first segments))))
-         (args (mapcar (lambda (raw) (%diesel-unquote (diesel-evaluate raw)))
-                       (rest segments)))
-         (fn (gethash (string-downcase name) *diesel-functions*)))
-    (cond
-      ((null fn) (format nil "$(~A)??" name))
-      (t (handler-case (funcall fn args)
-           (error () (format nil "$(~A,??)" name)))))))
+  "The result of one call, or NIL when an argument held an unclosed call.
+The error strings are AutoCAD's, measured (20261003T091920Z): padded with a
+space on each side, the function name upper-cased --
+\" $(NOSUCH)?? \", \" $(+,??) \"."
+  (let* ((name-text (diesel-evaluate (first segments)))
+         (evaluated (mapcar #'diesel-evaluate (rest segments))))
+    (when (or (null name-text) (member nil evaluated))
+      (return-from %diesel-call nil))
+    (let* ((name (string-trim " " name-text))
+           (args (mapcar #'%diesel-unquote evaluated))
+           (fn (gethash (string-downcase name) *diesel-functions*)))
+      (cond
+        ((null fn) (format nil " $(~A)?? " (string-upcase name)))
+        (t (handler-case (funcall fn args)
+             (error () (format nil " $(~A,??) " (string-upcase name)))))))))
 
 ;;; --- values -----------------------------------------------------------------
 
@@ -179,15 +188,39 @@ SECOND MILLISECOND DAY-OF-WEEK), DAY-OF-WEEK 0 = Monday."
     "HH" "H" "SS" "AM/PM" "am/pm" "A/P" "a/p")
   "EDTIME picture codes, longest first where one is a prefix of another.")
 
+(defvar *edtime-language* nil
+  "The language of EDTIME's day and month names: :FR or :EN, or NIL to take
+it from the locale (LC_ALL, LC_TIME, LANG). AutoCAD names them in the
+PRODUCT's language -- a French AutoCAD printed \"Mardi, 29 Septembre 2026\"
+for DDDD\",\" D MONTH YYYY (probe-results/autocad/ms-windows/
+20261003T091920Z); clautolisp's product language is its locale. Other
+languages fall back to English until measured.")
+
+(defparameter *edtime-names*
+  '((:en #("Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday" "Sunday")
+         #("January" "February" "March" "April" "May" "June" "July"
+           "August" "September" "October" "November" "December"))
+    (:fr #("Lundi" "Mardi" "Mercredi" "Jeudi" "Vendredi" "Samedi" "Dimanche")
+         #("Janvier" "Février" "Mars" "Avril" "Mai" "Juin" "Juillet"
+           "Août" "Septembre" "Octobre" "Novembre" "Décembre")))
+  "Day names (Monday first) and month names per language. The three-letter
+DDD / MON forms are the first three letters, as measured: Mar, Sep.")
+
+(defun %edtime-language ()
+  (or *edtime-language*
+      (let ((locale (or (uiop:getenv "LC_ALL") (uiop:getenv "LC_TIME")
+                        (uiop:getenv "LANG") "")))
+        (if (and (>= (length locale) 2) (string-equal "fr" locale :end2 2)) :fr :en))))
+
 (defun %edtime (jd picture)
   (multiple-value-bind (year month day hour minute second msec dow) (%julian->calendar jd)
     (let* ((twelve (or (search "AM/PM" picture) (search "am/pm" picture)
                        (search "A/P" picture) (search "a/p" picture)))
            (h (if twelve (let ((h12 (mod hour 12))) (if (zerop h12) 12 h12)) hour))
            (pm (>= hour 12))
-           (days #("Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday" "Sunday"))
-           (months #("January" "February" "March" "April" "May" "June" "July"
-                     "August" "September" "October" "November" "December")))
+           (names (cdr (assoc (%edtime-language) *edtime-names*)))
+           (days (first names))
+           (months (second names)))
       (with-output-to-string (out)
         (let ((i 0) (n (length picture)))
           (loop while (< i n)
@@ -226,7 +259,7 @@ SECOND MILLISECOND DAY-OF-WEEK), DAY-OF-WEEK 0 = Monday."
 
 (defmacro define-diesel-function (name (args) &body body)
   `(setf (gethash ,name *diesel-functions*)
-         (lambda (,args) (declare (ignorable ,args)) ,@body)))
+         (lambda (,args) (declare (ignorable ,args)) (block diesel-function ,@body))))
 
 (defun %diesel-arity (args min &optional (max min))
   (unless (<= min (length args) max) (error '%diesel-bad-arguments)))
@@ -282,7 +315,9 @@ SECOND MILLISECOND DAY-OF-WEEK), DAY-OF-WEEK 0 = Monday."
   (string-upcase (first args)))
 
 (define-diesel-function "substr" (args)
-  ;; $(substr,STRING,START[,LENGTH]), START 1-based.
+  ;; $(substr,STRING,START[,LENGTH]), START 1-based. With NO argument AutoCAD
+  ;; answers "", not an error (measured, 20261003T091920Z).
+  (when (null args) (return-from diesel-function ""))
   (%diesel-arity args 2 3)
   (let* ((s (first args))
          (start (1- (%diesel-integer (second args))))
@@ -300,10 +335,13 @@ SECOND MILLISECOND DAY-OF-WEEK), DAY-OF-WEEK 0 = Monday."
     (if (< -1 k (length items)) (nth k items) "")))
 
 (define-diesel-function "nth" (args)
-  ;; $(nth,WHICH,ARG0,...,ARG7)
+  ;; $(nth,WHICH,ARG0,...,ARG7). WHICH past the arguments is an ERROR on
+  ;; AutoCAD, " $(NTH,??) ", not "" (measured, 20261003T091920Z).
   (%diesel-arity args 2 9)
   (let ((k (%diesel-integer (first args))))
-    (if (< -1 k (length (rest args))) (nth k (rest args)) "")))
+    (if (< -1 k (length (rest args)))
+        (nth k (rest args))
+        (error '%diesel-bad-arguments))))
 
 (define-diesel-function "getvar" (args)
   (%diesel-arity args 1)

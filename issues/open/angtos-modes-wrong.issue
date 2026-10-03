@@ -1,0 +1,57 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: angtos-modes-wrong — ANGTOS treats mode 0 as radians and folds modes 1-4 into decimal degrees
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: conformance
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-03
+
+* Observed
+
+Found while reading the 2026-10-03 probe results, the first run of the rtos
+suite since its angtos half was added (job 16824025450, AutoCAD 2022
+accoreconsole, probe-results/autocad/ms-windows/20261003T091920Z): of the
+angtos cases clautolisp can be compared on, ONE matches.
+
+=builtin-angtos= (autolisp-builtins-core/source/api.lisp) says it all:
+
+#+begin_example
+;; (angtos ANGLE [MODE [PRECISION]]) -> string in radians (MODE 0)
+;; or degrees (MODE 1) by default. Modes 2-4 (grad / surveyor /
+;; deg-min-sec) are not useful headlessly; we fall back to degrees.
+#+end_example
+
+AutoLISP's modes are 0 degrees, 1 degrees/minutes/seconds, 2 grads,
+3 radians, 4 surveyor's units -- so mode 0, the default and the most used,
+prints RADIANS where every program expects degrees: (angtos (/ pi 2) 0 2)
+is "1.57" in clautolisp and "90" on AutoCAD. AUNITS / AUPREC (the defaults
+when MODE / PRECISION are omitted) are not read either, and DIESEL's
+$(angtos,...) inherits all of it.
+
+* What the engine prints (AutoCAD, DIMZIN 8, French product)
+
+| angle | mode 0 p0/p2 | mode 1 p0 / p2 | mode 2 p0/p2 | mode 3 p0 / p2 | mode 4 p0 / p2       |
+|-------+--------------+----------------+--------------+----------------+----------------------|
+| 0     | 0 / 0        | 0d / 0d0'      | 0g / 0g      | 0r / 0r        | N 90d E / E          |
+| pi/4  | 45 / 45      | 45d / 45d0'    | 50g / 50g    | 1r / 0.79r     | N 45d E / N 45d0' E  |
+| pi/2  | 90 / 90      | 90d / 90d0'    | 100g / 100g  | 2r / 1.57r     | N 0d O / N           |
+| pi    | 180 / 180    | 180d / 180d0'  | 200g / 200g  | 3r / 3.14r     | S 90d O / O          |
+
+Worth noting before implementing:
+- Surveyor bearings are LOCALISED: this French AutoCAD writes O (Ouest)
+  for West -- like EDTIME's day names (diesel.lisp *EDTIME-LANGUAGE*).
+- DIMZIN 8 applies: trailing zeros go ("90", not "90.00"), and surveyor
+  mode collapses an exact cardinal to its letter at precision 2 ("E", "N").
+- Mode 1's precision counts minutes/seconds places ("0d0'" at p2).
+- The full 80-case AutoCAD and BricsCAD tables are in the two result files
+  (BricsCAD: probe-results/bricscad/ms-windows/20261003T092024Z; its case
+  labels print the angle with more digits, so match on the value).
+
+* Direction
+
+Implement the five modes against these tables (and the BricsCAD one --
+check where they differ), read AUNITS / AUPREC for the defaults, apply
+DIMZIN as RTOS now does, and pin it with a test made of the measured cases,
+as RTOS-MODES-3-5-MATCH-AUTOCAD-AND-BRICSCAD-UNDER-DIMZIN-8 does. ANGTOF is
+its complement and should read every form back.

@@ -6,9 +6,12 @@
 ;;;; family had no EDTIME consumer, and MENUCMD was a stub.
 
 (defun %diesel (expression)
-  "(menucmd \"M=EXPRESSION\") under a cador host, as a CL string."
-  (autolisp-string-value
-   (%al (format nil "(menucmd ~S)" (concatenate 'string "M=" expression)))))
+  "(menucmd \"M=EXPRESSION\") under a cador host, as a CL string (NIL when
+menucmd returns nil). EDTIME names are pinned to English here; the locale
+case has its own test."
+  (let* ((clautolisp.autolisp-builtins-core::*edtime-language* :en)
+         (result (%al (format nil "(menucmd ~S)" (concatenate 'string "M=" expression)))))
+    (and result (autolisp-string-value result))))
 
 (defun %jd (year month day &optional (day-fraction 0))
   "The DATE-sysvar value (Julian Day Number + day fraction) of a date."
@@ -38,11 +41,29 @@
   (is (string= "3" (%diesel "$(eval,$(+,1,2))")))
   (is (string= "x=2!" (%diesel "x=$(+,1,1)!")) "text around a call is copied"))
 
-(test diesel-errors-are-the-documented-strings
-  (is (string= "$(nosuch)??" (%diesel "$(nosuch,1)")))
-  (is (string= "$(/,??)" (%diesel "$(/,1,0)")))
-  (is (string= "$(+,??)" (%diesel "$(+,a)")))
-  (is (string= "$?" (%diesel "$(+,1"))))
+(test diesel-errors-are-autocad-s-strings
+  ;; MEASURED on AutoCAD (probe-results/autocad/ms-windows/20261003T091920Z):
+  ;; padded with a space each side, an unknown name upper-cased; an
+  ;; out-of-range NTH is an error; (substr) alone is ""; an unclosed $( makes
+  ;; menucmd return nil.
+  (is (string= " $(NOSUCH)?? " (%diesel "$(nosuch,1)")))
+  (is (string= " $(/,??) " (%diesel "$(/,1,0)")))
+  (is (string= " $(+,??) " (%diesel "$(+,a)")))
+  (is (string= " $(NTH,??) " (%diesel "$(nth,7,a,b,c)")))
+  (is (string= "" (%diesel "$(substr)")))
+  (is (null (%diesel "$(+,1"))))
+
+(test diesel-edtime-names-follow-the-locale
+  ;; A French AutoCAD printed "Mardi, 29 Septembre 2026" (20261003T091920Z).
+  (let ((jd (%jd 2026 9 29))
+        (clautolisp.autolisp-builtins-core::*edtime-language* :fr))
+    (is (string= "Mardi, 29 Septembre 2026"
+                 (autolisp-string-value
+                  (%al (format nil "(menucmd ~S)"
+                               (format nil "M=$(edtime,~F,DDDD\",\" D MONTH YYYY)" jd))))))
+    (is (string= "Mar Sep"
+                 (autolisp-string-value
+                  (%al (format nil "(menucmd ~S)" (format nil "M=$(edtime,~F,DDD MON)" jd))))))))
 
 (test diesel-getvar-reads-the-host
   (is (string= "2" (%diesel "$(getvar,lunits)")))

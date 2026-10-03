@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: vlax-for-binding-rule-unprobed — VLAX-FOR's loop variable rule is asserted by analogy, not probed
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: divergence
 #+DEPENDS: bricscad-access (probe:suite:bricscad:*), autocad COM for the AutoCAD column
@@ -133,3 +133,21 @@ BricsCAD BINDS the VLAX-FOR loop variable, exactly as it does FOREACH's, and
 as clautolisp has since 2.0.26. =probe:suite:bricscad:windows= on the same
 pipeline was cancelled before it ran (a newer pipeline superseded it); the
 Windows column is the last one this ticket waits for.
+
+** BricsCAD Windows answered: BIND -- 2026-10-03. CLOSED
+
+=probe:suite:bricscad:windows= (job 16824025454, the Windows runner,
+probe-results/bricscad/ms-windows/20261003T092024Z):
+
+| case                  | BricsCAD Windows | BricsCAD macOS | clautolisp  |
+|-----------------------+------------------+----------------+-------------|
+| own /-local           | (BEFORE 1)       | (BEFORE 1)     | (BEFORE 1)  |
+| caller's /-local      | (BEFORE 1)       | (BEFORE 1)     | (BEFORE 1)  |
+| global                | (OUTER 1)        | (OUTER 1)      | (OUTER 1)   |
+| bound nowhere         | (NIL 1)          | (NIL 1)        | (nil 1)     |
+
+BIND on both platforms, identical to clautolisp's BIND-FOREACH-VARIABLE --
+the closing condition above. The AutoCAD column stays UNAVAILABLE:
+accoreconsole has no ActiveX object model, and a full acad.exe run goes
+through COM (autocad-com-fails-in-disconnected-windows-session). Nothing to
+change in clautolisp.
