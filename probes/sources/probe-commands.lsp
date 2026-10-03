@@ -29,7 +29,7 @@
 
 (defun cad-probe--cmd-keep-p (code)
   ;; The groups that describe what a command made.
-  (or (member code '(0 1 2 3 7 8 38 39))
+  (or (member code '(0 1 2 3 7 8 38 39 62))
       (and (>= code 10) (<= code 18))
       (and (>= code 40) (<= code 51))
       (and (>= code 70) (<= code 79))
@@ -113,6 +113,36 @@
   (cad-probe--cmd-case "MLINE three points" '("_.MLINE" "0,0" "4,0" "4,3" ""))
   (cad-probe--cmd-case "REGION from a circle"
     (list "_.CIRCLE" "20,20" "1" "_.REGION" "_L" ""))
+
+  ;; S2 modify / properties: each case makes its own object, then edits
+  ;; it; the record is the object's final state (plus anything created).
+  (cad-probe--cmd-case "SCALE a circle by 2 about the origin"
+    '("_.CIRCLE" "1,0" "1" "_.SCALE" "_L" "" "0,0" "2"))
+  (cad-probe--cmd-case "STRETCH a line end by a crossing window"
+    '("_.LINE" "0,0" "4,0" "" "_.STRETCH" "_C" "3,-1" "5,1" "" "4,0" "6,1"))
+  (cad-probe--cmd-case "ALIGN a line onto another direction"
+    '("_.LINE" "0,0" "2,0" "" "_.ALIGN" "_L" "" "0,0" "1,1" "2,0" "1,3" "" "_N"))
+  (cad-probe--cmd-case "CHPROP color 1"
+    '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "1" ""))
+  (cad-probe--cmd-case "CHANGE a line endpoint"
+    '("_.LINE" "0,0" "2,0" "" "_.CHANGE" "_L" "" "3,3"))
+  (cad-probe--cmd-case "EXPLODE a rectangle"
+    '("_.RECTANG" "0,0" "2,1" "_.EXPLODE" "_L" ""))
+  (cad-probe--cmd-case "DIVIDE a line into 4"
+    '("_.LINE" "0,0" "4,0" "" "_.DIVIDE" "_L" "4"))
+  (cad-probe--cmd-case "MEASURE a line by 1.5"
+    '("_.LINE" "0,0" "4,0" "" "_.MEASURE" "_L" "1.5"))
+  (cad-probe--cmd-case "LENGTHEN a line by delta 1 at its end"
+    '("_.LINE" "0,0" "4,0" "" "_.LENGTHEN" "_DE" "1" "4,0" ""))
+  (cad-probe--cmd-case "JOIN two collinear lines"
+    '("_.LINE" "0,0" "2,0" "" "_.LINE" "2,0" "4,0" "" "_.JOIN" "_P" "_L" ""))
+  (cad-probe--cmd-case "CONVERTPOLY light to heavy"
+    '("_.PLINE" "0,0" "2,0" "2,1" "" "_.CONVERTPOLY" "_H" "_L" ""))
+  (cad-probe--cmd-case "MATCHPROP layer and color"
+    '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "3" ""
+      "_.LINE" "5,5" "6,6" "" "_.MATCHPROP" "0.7071,0.7071" "5.5,5.5" ""))
+  (cad-probe--cmd-case "SETBYLAYER color"
+    '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "2" "" "_.SETBYLAYER" "_L" "" "_Y" "_Y"))
 
   (setvar "CMDECHO" cmdecho)
   (setvar "OSMODE" osmode)
