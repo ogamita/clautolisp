@@ -44,10 +44,19 @@
                         (itoa (car g)) "=" (cad-probe--cmd-fmt (cdr g))))))
   out)
 
-(defun cad-probe--cmd-cancel ()
-  ;; End whatever command is still waiting for input.
-  (while (and (getvar "CMDACTIVE") (> (getvar "CMDACTIVE") 0))
-    (command)))
+(defun cad-probe--cmd-cancel ( / n)
+  ;; End whatever command is still waiting for input. CMDACTIVE is a BIT
+  ;; field: only bit 1 is "a command is active". Under a script -- how CI
+  ;; drives accoreconsole -- bit 4 stays set for the whole run, so the
+  ;; first version, (while (> (getvar "CMDACTIVE") 0) (command)), never
+  ;; ended on AutoCAD and the job ran into its 30-minute timeout
+  ;; (2026-10-03). Bit 1 only, and a bounded number of tries.
+  (setq n 0)
+  (while (and (< n 5)
+              (getvar "CMDACTIVE")
+              (= 1 (logand 1 (getvar "CMDACTIVE"))))
+    (command)
+    (setq n (1+ n))))
 
 (defun cad-probe--cmd-case (name args / marker e out n)
   ;; Run (command . ARGS) and record what it made, as one probe result.
