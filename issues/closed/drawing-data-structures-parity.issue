@@ -177,3 +177,20 @@ was wrong to accept everything. Fixed in clautolisp 2.2.157:
     own) and layer "0", so the round-trip is portable.
 LEFT before closing: one run of the fixed drawing-data probe on AutoCAD
 (its vendor family runs on the push), expecting the 8 pairs at last.
+
+
+CLOSED 2026-10-03 -- PASS on AutoCAD and BricsCAD
+==================================================
+MR !378's child 2909325334 ran the fixed probe (a live 1005 handle):
+vendor:probes:autocad (job 16913474428, AutoCAD 2022): "PASS drawing-data --
+observations: 27 conforms, 0 known-divergence, 0 unexpected, 0 missing";
+xdata.pair-count 8, every typed group read back. vendor:probes:bricscad and
+:bricscad:macos green in the same child. Against the acceptance:
+  - xdata lifecycle portable: conforms on all three;
+  - dictionary / XRECORD lifecycle: conforms on all three;
+  - symbol tables created / discovered / enumerated: conforms;
+  - drawing-scoped sysvars isolated between fresh sessions: tested headless;
+  - snapshot-visible values match AutoCAD and BricsCAD: 27/27 on AutoCAD;
+  - missing structures -> nil as the dialect does, no CL condition: the
+    ENTMOD xdata checks now follow each vendor (2.2.157);
+  - SBCL and CCL green.

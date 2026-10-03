@@ -5,7 +5,7 @@
 #+DATE: 2026-08-06 (refreshed 2026-09-28)
 #+OPTIONS: toc:3 num:t ^:nil
 #+STARTUP: overview
-#+DOCUMENT_VERSION: 0.3.0 (draft for review — cador-3 / epic deliverable D2; refreshed against cador-2, command layer (§II.13) and wire host (§9.7) decided by pjb 2026-09-28, cadtui noted — see the refresh at the end)
+#+DOCUMENT_VERSION: 0.3.0 (VALIDATED by pjb 2026-10-03 — cador-3 / epic deliverable D2; refreshed against cador-2, command layer (§II.13) and wire host (§9.7) decided by pjb 2026-09-28, cadtui noted — see the refresh at the end)
 
 * 0. Status, scope, and conventions
   :PROPERTIES:

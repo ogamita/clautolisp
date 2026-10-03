@@ -168,3 +168,15 @@ last TESTED release and keep 2026 as the behavioural template (the 2026
 web reference is what the catalogue was built from); or (b) make 2022 the
 latest known everywhere, bare `autocad' included -- a behaviour change
 (single-byte source default under --dialect autocad).
+
+DECIDED (pjb, 2026-10-03): option (a). 2022 is recorded as the last TESTED
+AutoCAD; 2026 stays the behavioural template and the value of
+*autolisp-dialect-latest-version* (docstring updated). And a standing rule:
+"when we have definite reference material specifying differences between
+versions, we must implement them in different dialect versions, even if we
+can't test them (yet). Possibly, we may write probes, and hope users will
+contribute later probe results on their versions." Recorded in AGENTS.md,
+"Dialect versions and products". Remaining work of this ticket is therefore
+concrete: harvest the documented version differences (doc scans) into the
+feature/version matrix and implement each behind the version facet, with a
+probe per difference.
