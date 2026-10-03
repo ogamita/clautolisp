@@ -26,7 +26,11 @@
   (cad-probe-capture "xdata" (strcat label " entmod")
     (function (lambda ()
       (setq r (entmod (append (entget e)
-                              (list (list -3 (cons cad-probe--xd-app (pairs-fn e)))))))
+                              ;; APPLY, not (pairs-fn e): AutoCAD refuses to
+                              ;; call a variable holding a (function ...) value
+                              ;; ("fonction incorrecte", 2026-10-03).
+                              (list (list -3 (cons cad-probe--xd-app
+                                                   (apply pairs-fn (list e))))))))
       (if r (vl-symbol-name (type r)) "NIL"))))
   (cad-probe-capture "xdata" (strcat label " pairs")
     (function (lambda ( / x)

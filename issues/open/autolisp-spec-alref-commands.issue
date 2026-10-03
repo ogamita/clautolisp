@@ -141,3 +141,17 @@ block, query, dimension, 3d, render, and a catch-all. Support tiers:
   - Pilot (2026-09-14): ~25 core commands harvested end-to-end
     (draw/modify/view/file/customization/block) to validate the pipeline
     inventory→pages→build→coverage before scaling to the full surface.
+  - State re-measured 2026-10-03 (the Progress above had gone stale):
+    - Phase 1 DONE: commands-inventory.sexp, 1621 commands (AutoCAD 2026
+      + BricsCAD V25; both 561, AutoCAD-only 352, BricsCAD-only 708).
+    - Phase 2 DONE: 1621 "** Command Entry:" sections in the draft
+      (autolisp-spec 0.13.0, "Commands chapter COMPLETE");
+      commands-coverage.md generated (18 executed by cador, 6 no-ops).
+    - Phase 3 HALF: every command carries a :category (3D 298, VIEW 177,
+      FILE 130, BLOCK 118, SYSTEM 111, MODIFY 109, ...), but NO command
+      carries a support tier (core-now / package-specific / deferred).
+    - Phase 4 NOT STARTED, and it cannot start before the tiers: "core-now"
+      is the list of commands this initiative implements, a scoping
+      decision. QUESTION FOR PJB: which commands are core-now? (A natural
+      first cut: the DRAW + MODIFY commands both vendors share, plus
+      NEW/OPEN/MENULOAD/CUILOAD for the cadtui tree layer.)
