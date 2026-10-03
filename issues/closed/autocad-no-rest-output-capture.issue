@@ -209,3 +209,23 @@ see =issues/closed/alfe-cad-relative-cli-load-path.issue=.
 
 This issue remains open only for its narrower unresolved =-x= / native-load
 capture path described above.
+
+
+== CLOSED 2026-10-03 -- both halves verified on real AutoCAD 2022 ==
+
+The -l half has been fixed since alfe 1.7.7 (the protocol FILE drain was
+decoded with the console pipe's UTF-16LE); the wider capture work since
+then closed the -x half as well. Measured, not inferred:
+
+- vendor:probes:autocad (job 16789240721, 2026-09-28) reads 149
+  observations through the probes' printed output -- 101 entity-lifecycle,
+  27 drawing-data, 21 selection -- where the original report had zero
+  bytes. That job only uses -l.
+- verify:autocad-x-output:windows (new, manual; job 16912427532,
+  2026-10-03) exercises exactly this ticket's remaining path: -l defines a
+  function printing only through 1-arg princ (a literal, a strcat, a
+  number, a nested helper, terpri), -x CALLS it, plus a top-level -x
+  princ. RESULT=PASS -- every marker (XOUT-LITERAL, XOUT-STRCAT, 4242,
+  XOUT-HELPER-7, XOUT-END, XTOP) reached alfe's output.
+
+The job stays, manual, for the day the capture path changes again.
