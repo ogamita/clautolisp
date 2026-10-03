@@ -2411,6 +2411,118 @@ NIL when GETSTRING returns nil)."
   ;; decimal units keep the decimal reading
   (is (= 12.5d0 (%get-with-mock-input "(progn (setvar \"LUNITS\" 2) (getdist \"D: \"))" "12.5"))))
 
+(test angtos-matches-autocad-every-measured-case
+  ;; angtos-modes-wrong. ALL 80 cases of the AutoCAD 2022 run (probe-results/
+  ;; autocad/ms-windows/20261003T091920Z), which had DIMZIN 8 and a FRENCH
+  ;; product -- hence O for West; BricsCAD's English run is identical but for
+  ;; W. Four angles, the five modes, precisions 0 2 4 6.
+  (let ((clautolisp.autolisp-builtins-core::*edtime-language* :fr))
+    (dolist (case '(
+                  ("(angtos 0.0 0 0)" "0")
+                  ("(angtos 0.7853981634 0 0)" "45")
+                  ("(angtos 1.5707963268 0 0)" "90")
+                  ("(angtos 3.1415926536 0 0)" "180")
+                  ("(angtos 0.0 0 2)" "0")
+                  ("(angtos 0.7853981634 0 2)" "45")
+                  ("(angtos 1.5707963268 0 2)" "90")
+                  ("(angtos 3.1415926536 0 2)" "180")
+                  ("(angtos 0.0 0 4)" "0")
+                  ("(angtos 0.7853981634 0 4)" "45")
+                  ("(angtos 1.5707963268 0 4)" "90")
+                  ("(angtos 3.1415926536 0 4)" "180")
+                  ("(angtos 0.0 0 6)" "0")
+                  ("(angtos 0.7853981634 0 6)" "45")
+                  ("(angtos 1.5707963268 0 6)" "90")
+                  ("(angtos 3.1415926536 0 6)" "180")
+                  ("(angtos 0.0 1 0)" "0d")
+                  ("(angtos 0.7853981634 1 0)" "45d")
+                  ("(angtos 1.5707963268 1 0)" "90d")
+                  ("(angtos 3.1415926536 1 0)" "180d")
+                  ("(angtos 0.0 1 2)" "0d0'")
+                  ("(angtos 0.7853981634 1 2)" "45d0'")
+                  ("(angtos 1.5707963268 1 2)" "90d0'")
+                  ("(angtos 3.1415926536 1 2)" "180d0'")
+                  ("(angtos 0.0 1 4)" "0d0'0\"")
+                  ("(angtos 0.7853981634 1 4)" "45d0'0\"")
+                  ("(angtos 1.5707963268 1 4)" "90d0'0\"")
+                  ("(angtos 3.1415926536 1 4)" "180d0'0\"")
+                  ("(angtos 0.0 1 6)" "0d0'0.00\"")
+                  ("(angtos 0.7853981634 1 6)" "45d0'0.00\"")
+                  ("(angtos 1.5707963268 1 6)" "90d0'0.00\"")
+                  ("(angtos 3.1415926536 1 6)" "180d0'0.00\"")
+                  ("(angtos 0.0 2 0)" "0g")
+                  ("(angtos 0.7853981634 2 0)" "50g")
+                  ("(angtos 1.5707963268 2 0)" "100g")
+                  ("(angtos 3.1415926536 2 0)" "200g")
+                  ("(angtos 0.0 2 2)" "0g")
+                  ("(angtos 0.7853981634 2 2)" "50g")
+                  ("(angtos 1.5707963268 2 2)" "100g")
+                  ("(angtos 3.1415926536 2 2)" "200g")
+                  ("(angtos 0.0 2 4)" "0g")
+                  ("(angtos 0.7853981634 2 4)" "50g")
+                  ("(angtos 1.5707963268 2 4)" "100g")
+                  ("(angtos 3.1415926536 2 4)" "200g")
+                  ("(angtos 0.0 2 6)" "0g")
+                  ("(angtos 0.7853981634 2 6)" "50g")
+                  ("(angtos 1.5707963268 2 6)" "100g")
+                  ("(angtos 3.1415926536 2 6)" "200g")
+                  ("(angtos 0.0 3 0)" "0r")
+                  ("(angtos 0.7853981634 3 0)" "1r")
+                  ("(angtos 1.5707963268 3 0)" "2r")
+                  ("(angtos 3.1415926536 3 0)" "3r")
+                  ("(angtos 0.0 3 2)" "0r")
+                  ("(angtos 0.7853981634 3 2)" "0.79r")
+                  ("(angtos 1.5707963268 3 2)" "1.57r")
+                  ("(angtos 3.1415926536 3 2)" "3.14r")
+                  ("(angtos 0.0 3 4)" "0r")
+                  ("(angtos 0.7853981634 3 4)" "0.7854r")
+                  ("(angtos 1.5707963268 3 4)" "1.5708r")
+                  ("(angtos 3.1415926536 3 4)" "3.1416r")
+                  ("(angtos 0.0 3 6)" "0r")
+                  ("(angtos 0.7853981634 3 6)" "0.785398r")
+                  ("(angtos 1.5707963268 3 6)" "1.570796r")
+                  ("(angtos 3.1415926536 3 6)" "3.141593r")
+                  ("(angtos 0.0 4 0)" "N 90d E")
+                  ("(angtos 0.7853981634 4 0)" "N 45d E")
+                  ("(angtos 1.5707963268 4 0)" "N 0d O")
+                  ("(angtos 3.1415926536 4 0)" "S 90d O")
+                  ("(angtos 0.0 4 2)" "E")
+                  ("(angtos 0.7853981634 4 2)" "N 45d0' E")
+                  ("(angtos 1.5707963268 4 2)" "N")
+                  ("(angtos 3.1415926536 4 2)" "O")
+                  ("(angtos 0.0 4 4)" "E")
+                  ("(angtos 0.7853981634 4 4)" "N 45d0'0\" E")
+                  ("(angtos 1.5707963268 4 4)" "N")
+                  ("(angtos 3.1415926536 4 4)" "O")
+                  ("(angtos 0.0 4 6)" "E")
+                  ("(angtos 0.7853981634 4 6)" "N 45d0'0.00\" E")
+                  ("(angtos 1.5707963268 4 6)" "N")
+                  ("(angtos 3.1415926536 4 6)" "O")))
+      (destructuring-bind (form expected) case
+        (let ((got (autolisp-string-value
+                    (%al (format nil "(progn (setvar \"DIMZIN\" 8) (setvar \"UNITMODE\" 0) ~A)" form)))))
+          (is (string= expected got) "~A => ~S, AutoCAD says ~S" form got expected))))))
+
+(test angtos-defaults-west-letter-and-angtof-round-trip
+  ;; MODE / PRECISION default to AUNITS / AUPREC; DIMZIN 0 keeps the zeros;
+  ;; English says W; ANGTOF reads every mode back.
+  (let ((clautolisp.autolisp-builtins-core::*edtime-language* :en))
+    (is (string= "180" (autolisp-string-value (%al "(angtos pi)"))) "AUNITS 0, AUPREC 0")
+    (is (string= "180.0000" (autolisp-string-value (%al "(angtos pi 0 4)"))) "DIMZIN 0")
+    (is (string= "270" (autolisp-string-value (%al "(angtos (- (/ pi 2)) 0 0)"))) "modulo 2 pi")
+    (is (string= "S 90d W" (autolisp-string-value (%al "(angtos 3.1415926536 4 0)"))))
+    (is (string= "N45dE" (autolisp-string-value
+                          (%al "(progn (setvar \"UNITMODE\" 1) (angtos (/ pi 4) 4 0))"))))
+    (dolist (case '(("(angtof \"90\" 0)" 90) ("(angtof \"45d30'\" 1)" 45.5)
+                    ("(angtof \"100g\" 2)" 90) ("(angtof \"1.5707963268r\" 3)" 90)
+                    ("(angtof \"N 45d E\" 4)" 45) ("(angtof \"N\" 4)" 90)
+                    ("(angtof \"S 90d W\" 4)" 180)))
+      (destructuring-bind (form degrees) case
+        (let ((got (%al form)))
+          (is (and got (< (abs (- got (* degrees (/ pi 180)))) 1d-6))
+              "~A => ~S, expected ~A degrees" form got degrees))))
+    (is (null (%al "(angtof \"abc\" 0)")))))
+
 (test rtos-unitmode-selects-display-vs-input-form
   ;; UNITMODE 0 (default) joins whole inches and the fraction with a
   ;; space; UNITMODE 1 uses a hyphen (the re-readable input form). Needs
@@ -4238,12 +4350,13 @@ OP=1 is logical-AND per the documented truth-table layout."
     (is (plusp (length (autolisp-string-value result))))))
 
 (test coverage-angtof-parses-string
-  "(angtof \"1.5708\") parses to a real."
+  "(angtof \"90\") is pi/2: mode 0 (the AUNITS default) is DEGREES; it used
+to read the string as radians (angtos-modes-wrong)."
   (reset-autolisp-symbol-table)
-  (let ((result (run-autolisp-string "(angtof \"1.5708\")"
+  (let ((result (run-autolisp-string "(angtof \"90\")"
                                      :setup-fn #'install-core-into)))
     (is (numberp result))
-    (is (< (abs (- 1.5708d0 result)) 1.0d-6))))
+    (is (< (abs (- (/ pi 2) result)) 1.0d-9))))
 
 (test coverage-distof-parses-string
   "(distof \"1.5\") parses to 1.5 as a real."

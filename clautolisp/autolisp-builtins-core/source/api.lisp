@@ -4472,20 +4472,161 @@ Canonical AutoCAD example: (rtos 17.5 5 2) => \"17 1/2\"."
        (5 (%format-fractional-real n p unitmode))
        (otherwise (%apply-dimzin-decimal (%format-decimal-real n p) dimzin))))))
 
+(defun %fixed-ticks (x places)
+  "X rounded to PLACES decimals, halves away from zero, as an integer count
+of 10^-PLACES units -- exact, so neither host's ~F rounding decides."
+  (%round-half-away (* (rational x) (expt 10 places))))
+
+(defun %ticks-text (ticks places)
+  "Fixed-point text of TICKS units of 10^-PLACES: (%ticks-text 785 3) => \"0.785\"."
+  (if (<= places 0)
+      (format nil "~D" ticks)
+      (multiple-value-bind (int frac) (floor (abs ticks) (expt 10 places))
+        (format nil "~:[~;-~]~D.~v,'0D" (minusp ticks) int places frac))))
+
+(defun %angtos-west-letter ()
+  "W, or the product language's: a French AutoCAD prints O (Ouest), measured
+(probe-results/autocad/ms-windows/20261003T091920Z); BricsCAD's English run
+printed W. The language is EDTIME's, the locale (*EDTIME-LANGUAGE*)."
+  (if (eq (%edtime-language) :fr) "O" "W"))
+
+(defun %angtos-dms-ticks (degrees p)
+  "DEGREES (non-negative) rounded at ANGTOS mode-1 precision P: (values
+TICKS UNIT-PER-DEGREE SECOND-DECIMALS), the rounding unit being the degree
+(P 0), the minute (P 1-2), the second (P 3-4) or a 10^-(P-4) second (P 5+)."
+  (cond ((<= p 0) (values (%round-half-away (rational degrees)) 1 0))
+        ((<= p 2) (values (%round-half-away (* (rational degrees) 60)) 60 0))
+        ((<= p 4) (values (%round-half-away (* (rational degrees) 3600)) 3600 0))
+        (t (let ((k (- p 4)))
+             (values (%round-half-away (* (rational degrees) 3600 (expt 10 k)))
+                     (* 3600 (expt 10 k)) k)))))
+
+(defun %angtos-dms-text (ticks unit k)
+  "Degrees/minutes/seconds text of TICKS units (see %ANGTOS-DMS-TICKS).
+Zero minutes and seconds are kept -- 45d0'0\" -- as measured; the seconds
+carry K decimals (45d0'0.00\" at precision 6)."
+  (multiple-value-bind (d rest) (floor ticks unit)
+    (case unit
+      (1 (format nil "~Dd" d))
+      (60 (format nil "~Dd~D'" d rest))
+      (t (multiple-value-bind (m s-ticks) (floor rest (/ unit 60))
+           (format nil "~Dd~D'~A\"" d m (%ticks-text s-ticks k)))))))
+
+(defun %angtos-surveyor (radians p unitmode)
+  "ANGTOS mode 4: a bearing, N/S then the angle off that axis then E/W.
+A direction that is EXACTLY a cardinal at precision P > 0 is its letter
+alone -- E, N, W -- but at precision 0 the full form stays (N 90d E for 0):
+both measured, on AutoCAD and BricsCAD. UNITMODE 1 drops the spaces."
+  (let* ((deg (* (rational radians) (/ 180 (rational pi))))
+         (north (<= 0 deg 180))
+         (off (abs (- (if north 90 270) deg)))
+         (east (if north (< deg 90) (> deg 270)))
+         (ns (if north "N" "S"))
+         (ew (if east "E" (%angtos-west-letter))))
+    (multiple-value-bind (ticks unit k) (%angtos-dms-ticks off p)
+      (cond
+        ((and (plusp p) (zerop ticks)) ns)
+        ((and (plusp p) (= ticks (* 90 unit))) ew)
+        (t (let ((text (%angtos-dms-text ticks unit k)))
+             (if (and unitmode (plusp unitmode))
+                 (format nil "~A~A~A" ns text ew)
+                 (format nil "~A ~A ~A" ns text ew))))))))
+
 (defun builtin-angtos (angle &optional mode precision)
-  ;; (angtos ANGLE [MODE [PRECISION]]) -> string in radians (MODE 0)
-  ;; or degrees (MODE 1) by default. Modes 2-4 (grad / surveyor /
-  ;; deg-min-sec) are not useful headlessly; we fall back to degrees.
+  ;; (angtos ANGLE [MODE [PRECISION]]) -> string. MODE and PRECISION default
+  ;; to AUNITS and AUPREC. Modes, measured on AutoCAD 2022 and BricsCAD
+  ;; (probe-results 20261003T091920Z / 20261003T092024Z, 80 cases each,
+  ;; identical but for the West letter):
+  ;;   0 decimal degrees  45        1 deg/min/sec  45d0'0.00"
+  ;;   2 grads            50g       3 radians      0.79r
+  ;;   4 surveyor         N 45d E   (E / N / W alone when exactly cardinal)
+  ;; The angle is taken modulo 2 pi. DIMZIN's decimal bits apply to modes
+  ;; 0, 2, 3 (the run had DIMZIN 8: 45, not 45.00); mode 1 and 4 keep their
+  ;; zero minutes and seconds. angtos-modes-wrong: this used to print mode 0
+  ;; in RADIANS and fold 1-4 into decimal degrees.
   (require-number angle "ANGTOS")
   (when mode (require-int32 mode "ANGTOS"))
   (when precision (require-int32 precision "ANGTOS"))
-  (let ((m (or mode 0))
-        (p (or precision 4))
-        (rad (coerce angle 'double-float)))
-    (make-autolisp-string
-     (case m
-       (0 (%format-decimal-real rad p))
-       (otherwise (%format-decimal-real (* rad (/ 180.0d0 pi)) p))))))
+  (let* ((m (or mode (%rtos-units-sysvar "AUNITS" 0)))
+         (p (max 0 (or precision (%rtos-units-sysvar "AUPREC" 0))))
+         (dimzin (%rtos-units-sysvar "DIMZIN" 0))
+         (unitmode (%rtos-units-sysvar "UNITMODE" 0))
+         (two-pi (* 2 (rational pi)))
+         (rad (mod (rational (coerce angle 'double-float)) two-pi))
+         (degrees (* rad (/ 180 (rational pi)))))
+    (flet ((decimal (x suffix)
+             (concatenate 'string
+                          (%apply-dimzin-decimal (%ticks-text (%fixed-ticks x p) p) dimzin)
+                          suffix)))
+      (make-autolisp-string
+       (case m
+         (1 (multiple-value-call #'%angtos-dms-text (%angtos-dms-ticks degrees p)))
+         (2 (decimal (* degrees 10/9) "g"))
+         (3 (decimal rad "r"))
+         (4 (%angtos-surveyor rad p unitmode))
+         (otherwise (decimal degrees "")))))))
+
+(defun %angtof-dms (text)
+  "Degrees in a d/m/s TEXT -- 45d30'15.5\" 45d 45d30' 45.5d -- or NIL."
+  (let* ((d-pos (position #\d text :test #'char-equal))
+         (m-pos (position #\' text))
+         (s-pos (position #\" text)))
+    (when d-pos
+      (let ((deg (%parse-unsigned-decimal-text (subseq text 0 d-pos)))
+            (min (if m-pos (%parse-unsigned-decimal-text (subseq text (1+ d-pos) m-pos)) 0))
+            (sec (if s-pos
+                     (%parse-unsigned-decimal-text (subseq text (1+ (or m-pos d-pos)) s-pos))
+                     0))
+            (end (1+ (or s-pos m-pos d-pos))))
+        (when (and deg min sec (= end (length text)))
+          (+ deg (/ min 60) (/ sec 3600)))))))
+
+(defun %parse-unsigned-decimal-text (text)
+  (let ((trimmed (string-trim " " text)))
+    (and (plusp (length trimmed))
+         (every (lambda (c) (or (digit-char-p c) (char= c #\.))) trimmed)
+         (%diesel-numeric-text-p trimmed)
+         (rational (parse-autolisp-real trimmed)))))
+
+(defun %angtof-surveyor (text)
+  "Radians of a bearing -- N 45d E, N45dE, E, N -- or NIL."
+  (let* ((s (remove #\Space (string-upcase text)))
+         (w (%angtos-west-letter)))
+    (flet ((radians (deg) (* deg (/ (rational pi) 180))))
+      (cond
+        ((string= s "E") 0)
+        ((string= s "N") (radians 90))
+        ((or (string= s "W") (string= s w)) (radians 180))
+        ((string= s "S") (radians 270))
+        ((and (>= (length s) 3) (find (char s 0) "NS"))
+         (let* ((last (char s (1- (length s))))
+                (east (char= last #\E))
+                (west (or (char= last #\W) (string= (string last) w)))
+                (off (and (or east west) (%angtof-dms (subseq s 1 (1- (length s)))))))
+           (when off
+             (radians (if (char= (char s 0) #\N)
+                          (if east (- 90 off) (+ 90 off))
+                          (if east (+ 270 off) (- 270 off)))))))))))
+
+(defun builtin-angtof (string &optional mode)
+  ;; (angtof STRING [MODE]) -> radians, or nil. ANGTOS's complement: MODE
+  ;; (default AUNITS) is 0 decimal degrees, 1 deg/min/sec, 2 grads, 3 radians
+  ;; (an `r' suffix allowed), 4 surveyor. angtos-modes-wrong: this read mode
+  ;; 0 as RADIANS.
+  (let* ((text (string-trim '(#\Space #\Tab)
+                            (autolisp-string-value (require-string string "ANGTOF"))))
+         (m (if mode (require-int32 mode "ANGTOF") (%rtos-units-sysvar "AUNITS" 0)))
+         (degrees->radians (/ (rational pi) 180))
+         (value
+           (case m
+             (1 (let ((deg (%angtof-dms text))) (and deg (* deg degrees->radians))))
+             (2 (let ((g (%parse-unsigned-decimal-text (string-right-trim "gG" text))))
+                  (and g (* g 9/10 degrees->radians))))
+             (3 (%parse-unsigned-decimal-text (string-right-trim "rR" text)))
+             (4 (%angtof-surveyor text))
+             (otherwise (let ((d (%parse-unsigned-decimal-text text)))
+                          (and d (* d degrees->radians)))))))
+    (and value (coerce value 'double-float))))
 
 (defun builtin-distof (string &optional mode)
   ;; (distof STRING [MODE]) -> real, or nil. MODE takes the LUNITS values and
@@ -4521,17 +4662,6 @@ Canonical AutoCAD example: (rtos 17.5 5 2) => \"17 1/2\"."
        (clautolisp.autolisp-runtime:parse-autolisp-distance value m))
       (t                                ; 1, 2, 5: number or fraction, no marks
        (or decimal (clautolisp.autolisp-runtime:parse-autolisp-distance value 5))))))
-
-(defun builtin-angtof (string &optional mode)
-  ;; (angtof STRING [MODE]) -> real angle. Mode 0 = radians, 1 = deg
-  ;; (default decimal). Anything else falls back to a decimal parse.
-  (let ((value (autolisp-string-value (require-string string "ANGTOF")))
-        (m (if mode (require-int32 mode "ANGTOF") 0)))
-    (let ((parsed (parse-autolisp-real value)))
-      (case m
-        (0 parsed)
-        (1 (* parsed (/ pi 180.0d0)))
-        (otherwise parsed)))))
 
 (defun %host-sysvar-integer (host name &optional (default 0))
   "Fetch an integer-valued sysvar from HOST as a CL integer, returning
