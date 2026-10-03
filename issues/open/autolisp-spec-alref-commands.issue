@@ -258,3 +258,19 @@ were cancelled with their child pipelines). Scope: LINEs edited; lines and
 circles / arcs as edges; OFFSET of circles and arcs; BREAK of circles.
 56 + 17 of 105. Left in S5: EXOFFSET BTRIM BEXTEND EXTRIM BREAKLINE MPEDIT
 SPLINEDIT TREX MOCORO (Express Tools / spline editing) and HELIX.
+
+## CORRECTION (2026-10-03, S5 vendor run)
+
+The S2-rest / S4 note above says ARRAY _R goes "column by column on AutoCAD":
+that was NOT measured. AutoCAD's run had derailed before the array cases, and
+the comparison tool silently skipped records with no value, so an absence read
+as agreement. The real AutoCAD answer (job 16915375455) is for -ARRAY:
+column by column on AutoCAD -- (0,0) (0,2) (3,0) ... -- while BricsCAD goes row
+by row; cador now follows each (it had -ARRAY row by row everywhere). ARRAY _R
+on AutoCAD is still unanswered (its ARRAY left the console waiting); column by
+column there follows -ARRAY and is marked UNVERIFIED in the code. Lesson kept
+in the comparison: a vendor record with no value is MISSING, not equal.
+
+The probe's command check now covers only a list of commands seen absent or
+from Express Tools (GETCNAME reported RECTANG unknown), and the S5 cases run
+ahead of the arrays, so an array derail cannot take them with it.

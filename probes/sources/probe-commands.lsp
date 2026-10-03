@@ -58,6 +58,13 @@
     (command)
     (setq n (1+ n))))
 
+(setq cad-probe--may-be-absent
+  ;; Commands seen missing on a headless engine (AutoCAD 2022's console has
+  ;; no MATCHPROP) or provided by Express Tools: only these are checked --
+  ;; GETCNAME does not know every command (it reported RECTANG unknown).
+  '("MATCHPROP" "ADDSELECTED" "SETBYLAYER" "COPYM" "FLATTEN" "XPLODE"
+    "3DROTATE" "-OVERKILL" "OVERKILL"))
+
 (defun cad-probe--known-command-p (name)
   ;; Whether this engine has the command NAME: built in (GETCNAME resolves
   ;; its "_" form) or a LISP command (Express Tools define C:NAME).
@@ -65,7 +72,8 @@
   ;; input reached the Command prompt and the job hung to its timeout.
   ;; An engine whose GETCNAME cannot even resolve _LINE (a stub, as on
   ;; clautolisp) tells nothing: then every command counts as known.
-  (or (not (getcname "_LINE"))
+  (or (not (member name cad-probe--may-be-absent))
+      (not (getcname "_LINE"))
       (getcname (strcat "_" name))
       (and (eval (read (strcat "c:" name))) t)))
 
@@ -194,45 +202,6 @@
   (cad-probe--cmd-case "SETBYLAYER color"
     '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "2" "" "_.SETBYLAYER" "_L" "" "_Y" "_Y"))
 
-  ;; S2, second batch (several are Express Tools: their absence on a
-  ;; headless engine is an answer too). Selection by ename throughout.
-  (cad-probe--cmd-case "DIVIDE by ename into 4"
-    (function (lambda ()
-      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
-      (cad-probe--cmd-args (list "_.DIVIDE" (entlast) "4")))))
-  (cad-probe--cmd-case "MEASURE by ename by 1.5"
-    (function (lambda ()
-      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
-      (cad-probe--cmd-args (list "_.MEASURE" (entlast) "1.5")))))
-  (cad-probe--cmd-case "ADDSELECTED a circle"
-    (function (lambda ()
-      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "1"))
-      (cad-probe--cmd-args (list "_.ADDSELECTED" (entlast) "5,5" "2")))))
-  (cad-probe--cmd-case "-ARRAY rectangular 2 rows 3 columns"
-    (function (lambda ()
-      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
-      (cad-probe--cmd-args (list "_.-ARRAY" (entlast) "" "_R" "2" "3" "2" "3")))))
-  (cad-probe--cmd-case "-ARRAY polar 4 items over 360"
-    (function (lambda ()
-      (cad-probe--cmd-args (list "_.CIRCLE" "2,0" "0.5"))
-      (cad-probe--cmd-args (list "_.-ARRAY" (entlast) "" "_P" "0,0" "4" "360" "_Y")))))
-  (cad-probe--cmd-case "ARRAYRECT non-associative 3x2"
-    (function (lambda ()
-      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
-      (cad-probe--cmd-args (list "_.ARRAYRECT" (entlast) "" "_AS" "_N" "_COU" "3" "2" "_S" "3" "2" "_X")))))
-  (cad-probe--cmd-case "ARRAYPOLAR non-associative 4 items"
-    (function (lambda ()
-      (cad-probe--cmd-args (list "_.CIRCLE" "2,0" "0.5"))
-      (cad-probe--cmd-args (list "_.ARRAYPOLAR" (entlast) "" "0,0" "_AS" "_N" "_I" "4" "_X")))))
-  (cad-probe--cmd-case "ARRAY rectangular non-associative"
-    (function (lambda ()
-      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
-      (cad-probe--cmd-args (list "_.ARRAY" (entlast) "" "_R" "_AS" "_N" "_COU" "2" "2" "_S" "3" "3" "_X")))))
-  (cad-probe--cmd-case "3DARRAY rectangular 2x2x2"
-    (function (lambda ()
-      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
-      (cad-probe--cmd-args (list "_.3DARRAY" (entlast) "" "_R" "2" "2" "2" "1" "1" "1")))))
-
   ;; S5 geometry: picks as (ename point); classic TRIM / EXTEND (edges
   ;; first, then the object), when the sysvar exists.
   (vl-catch-all-apply 'setvar (list "TRIMEXTENDMODE" 0))
@@ -275,6 +244,41 @@
       (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
       (cad-probe--cmd-args (list "_.PEDIT" (list (entlast) '(2.0 0.0 0.0)) "_Y" "_W" "0.5" "")))))
 
+  ;; S2, second batch (several are Express Tools: their absence on a
+  ;; headless engine is an answer too). Selection by ename throughout.
+  (cad-probe--cmd-case "DIVIDE by ename into 4"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.DIVIDE" (entlast) "4")))))
+  (cad-probe--cmd-case "MEASURE by ename by 1.5"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.MEASURE" (entlast) "1.5")))))
+  (cad-probe--cmd-case "ADDSELECTED a circle"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "1"))
+      (cad-probe--cmd-args (list "_.ADDSELECTED" (entlast) "5,5" "2")))))
+  (cad-probe--cmd-case "-ARRAY rectangular 2 rows 3 columns"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
+      (cad-probe--cmd-args (list "_.-ARRAY" (entlast) "" "_R" "2" "3" "2" "3")))))
+  (cad-probe--cmd-case "-ARRAY polar 4 items over 360"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "2,0" "0.5"))
+      (cad-probe--cmd-args (list "_.-ARRAY" (entlast) "" "_P" "0,0" "4" "360" "_Y")))))
+  (cad-probe--cmd-case "ARRAYRECT non-associative 3x2"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
+      (cad-probe--cmd-args (list "_.ARRAYRECT" (entlast) "" "_AS" "_N" "_COU" "3" "2" "_S" "3" "2" "_X")))))
+  (cad-probe--cmd-case "ARRAYPOLAR non-associative 4 items"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "2,0" "0.5"))
+      (cad-probe--cmd-args (list "_.ARRAYPOLAR" (entlast) "" "0,0" "_AS" "_N" "_I" "4" "_X")))))
+  (cad-probe--cmd-case "3DARRAY rectangular 2x2x2"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
+      (cad-probe--cmd-args (list "_.3DARRAY" (entlast) "" "_R" "2" "2" "2" "1" "1" "1")))))
+
   ;; Express Tools (COPYM FLATTEN XPLODE) and the 3DROTATE gizmo may be
   ;; missing on a headless engine: run them late, so a missing command
   ;; cannot spoil the cases above.
@@ -304,6 +308,11 @@
       (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
       (cad-probe--cmd-args (list "_.-OVERKILL" a (entlast) "" "")))))
 
+  ;; ARRAY _R left AutoCAD 2022's console waiting (job 16915375455): late.
+  (cad-probe--cmd-case "ARRAY rectangular non-associative"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
+      (cad-probe--cmd-args (list "_.ARRAY" (entlast) "" "_R" "_AS" "_N" "_COU" "2" "2" "_S" "3" "3" "_X")))))
   ;; LAST: from LISP, AutoCAD's EXPLODE takes one object and ends, so a
   ;; trailing "" repeats it and leaves it waiting -- it derailed every
   ;; later case on 2026-10-03 (job 16914186872). No trailing "".

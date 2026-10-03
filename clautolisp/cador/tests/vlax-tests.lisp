@@ -1176,9 +1176,15 @@ entirely silent under --dialect autocad."
     mock))
 
 (test command-arrays-make-their-copies-in-the-measured-order
-  ;; -ARRAY: row by row; ARRAYRECT: column by column; 3DARRAY: rows, columns, levels.
-  (is (equal '((0 0 0) (3 0 0) (6 0 0) (0 2 0) (3 2 0) (6 2 0))
-             (%ct-centers (%ct-array '("_.-ARRAY" "" "_R" "2" "3" "2" "3")))))
+  ;; -ARRAY: column by column on AutoCAD, row by row on BricsCAD;
+  ;; ARRAYRECT: column by column; 3DARRAY: rows, columns, levels.
+  (let ((args '("_.-ARRAY" "" "_R" "2" "3" "2" "3")))
+    (%with-dialect (:autocad)
+      (is (equal '((0 0 0) (0 2 0) (3 0 0) (3 2 0) (6 0 0) (6 2 0))
+                 (%ct-centers (%ct-array args)))))
+    (%with-dialect (:bricscad)
+      (is (equal '((0 0 0) (3 0 0) (6 0 0) (0 2 0) (3 2 0) (6 2 0))
+                 (%ct-centers (%ct-array args))))))
   (is (equal '((0 0 0) (0 2 0) (3 0 0) (3 2 0) (6 0 0) (6 2 0))
              (%ct-centers (%ct-array '("_.ARRAYRECT" "" "_AS" "_N" "_COU" "3" "2"
                                        "_S" "3" "2" "_X")))))
