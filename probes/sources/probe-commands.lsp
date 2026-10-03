@@ -154,6 +154,37 @@
   (cad-probe--cmd-case "SETBYLAYER color"
     '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "2" "" "_.SETBYLAYER" "_L" "" "_Y" "_Y"))
 
+  ;; S2, second batch (several are Express Tools: their absence on a
+  ;; headless engine is an answer too). Selection by ename throughout.
+  (cad-probe--cmd-case "DIVIDE by ename into 4"
+    (function (lambda ()
+      (command "_.LINE" "0,0" "4,0" "")
+      (command "_.DIVIDE" (entlast) "4"))))
+  (cad-probe--cmd-case "MEASURE by ename by 1.5"
+    (function (lambda ()
+      (command "_.LINE" "0,0" "4,0" "")
+      (command "_.MEASURE" (entlast) "1.5"))))
+  (cad-probe--cmd-case "ADDSELECTED a circle"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "1")
+      (command "_.ADDSELECTED" (entlast) "5,5" "2"))))
+  (cad-probe--cmd-case "COPYM two copies"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "1")
+      (command "_.COPYM" (entlast) "" "0,0" "3,0" "6,0" ""))))
+  (cad-probe--cmd-case "FLATTEN a 3D line"
+    (function (lambda ()
+      (command "_.LINE" "0,0,1" "2,0,3" "")
+      (command "_.FLATTEN" (entlast) "" "_N"))))
+  (cad-probe--cmd-case "3DROTATE a line 90 about Z"
+    (function (lambda ()
+      (command "_.LINE" "0,0" "2,0" "")
+      (command "_.3DROTATE" (entlast) "" "0,0,0" "_Z" "90"))))
+  (cad-probe--cmd-case "XPLODE a rectangle"
+    (function (lambda ()
+      (command "_.RECTANG" "0,0" "2,1")
+      (command "_.XPLODE" (entlast) "" "_E"))))
+
   ;; LAST: from LISP, AutoCAD's EXPLODE takes one object and ends, so a
   ;; trailing "" repeats it and leaves it waiting -- it derailed every
   ;; later case on 2026-10-03 (job 16914186872). No trailing "".

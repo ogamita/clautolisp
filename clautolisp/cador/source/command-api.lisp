@@ -958,6 +958,12 @@ tokens it did not consume.")
                         "GEOMAPIMAGE" "GEOMAPIMAGEUPDATE" "POINTCLOUDCROP"
                         "SKETCH")
                       '%cmd-recognised-noop)
+;; S2: draw order (DRAWORDER, TEXTTOFRONT, HATCHTOBACK, CDORDER) is
+;; display state, and TRANSPARENCY toggles a raster image's background --
+;; neither is held by the headless model.
+(define-cador-command '("DRAWORDER" "TEXTTOFRONT" "HATCHTOBACK" "CDORDER"
+                        "TRANSPARENCY")
+                      '%cmd-recognised-noop)
 
 (defun %execute-command-tokens (host tokens)
   "Interpret TOKENS — one HOST-COMMAND call's normalized sequence —
