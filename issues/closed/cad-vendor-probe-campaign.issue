@@ -1,5 +1,5 @@
 #+TITLE: CAD vendor-probe campaign (drive the real-CAD-gated CAD-runtime issues)
-#+STATUS: WIP
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: ci-campaign
 #+DEPENDS: -
@@ -104,3 +104,22 @@ freed (all macOS probes were green much earlier). Three findings:
   output IS captured (LogFilePath -> results.sexp, 1670 artifact files, princ
   output visible in accoreconsole stdout). The gap #3 targets is the REST / -x
   eval path specifically, a different code path needing headless investigation.
+
+** 2026-10-03 -- the SPEC-UNCERTAIN probes ran; campaign CLOSED
+
+The three targets are closed on their own evidence
+(autocad-runtime-vlax-sleep-and-rest, autocad-no-rest-output-capture,
+accoreconsole-deported-load-highbyte: issues/closed/). The residual --
+the four SPEC-UNCERTAIN block/COM behaviours -- had never actually been
+probed; probes/sources/probe-block-walk.lsp (MR !374) now asks them on
+AutoCAD and BricsCAD. Answers recorded in deferred-spec-research.issue.
+
+They revealed two clautolisp bugs, fixed before closing (pjb: "fix what's
+wrong before closing the campaign"), clautolisp 2.2.154 / MR !376:
+entmakex refused BLOCK/ENDBLK, and TEXTBOX / TEXT GetBoundingBox used a
+0.6 ratio (zero width for the box). Re-verified by running the same
+probe on clautolisp against the committed vendor runs.
+
+Left open, in deferred-spec-research: EffectiveName of a DYNAMIC block
+reference (needs a drawing carrying one; low value -- clautolisp has no
+dynamic blocks).
