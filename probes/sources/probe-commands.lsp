@@ -185,6 +185,33 @@
       (command "_.RECTANG" "0,0" "2,1")
       (command "_.XPLODE" (entlast) "" "_E"))))
 
+  ;; S4 arrays: classic -ARRAY, and the array commands made NON-associative
+  ;; (_AS _N) so the result is plain copies rather than an array object.
+  (cad-probe--cmd-case "-ARRAY rectangular 2 rows 3 columns"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "0.5")
+      (command "_.-ARRAY" (entlast) "" "_R" "2" "3" "2" "3"))))
+  (cad-probe--cmd-case "-ARRAY polar 4 items over 360"
+    (function (lambda ()
+      (command "_.CIRCLE" "2,0" "0.5")
+      (command "_.-ARRAY" (entlast) "" "_P" "0,0" "4" "360" "_Y"))))
+  (cad-probe--cmd-case "ARRAYRECT non-associative 3x2"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "0.5")
+      (command "_.ARRAYRECT" (entlast) "" "_AS" "_N" "_COU" "3" "2" "_S" "3" "2" "_X"))))
+  (cad-probe--cmd-case "ARRAYPOLAR non-associative 4 items"
+    (function (lambda ()
+      (command "_.CIRCLE" "2,0" "0.5")
+      (command "_.ARRAYPOLAR" (entlast) "" "0,0" "_AS" "_N" "_I" "4" "_X"))))
+  (cad-probe--cmd-case "ARRAY rectangular non-associative"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "0.5")
+      (command "_.ARRAY" (entlast) "" "_R" "_AS" "_N" "_COU" "2" "2" "_S" "3" "3" "_X"))))
+  (cad-probe--cmd-case "3DARRAY rectangular 2x2x2"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "0.5")
+      (command "_.3DARRAY" (entlast) "" "_R" "2" "2" "2" "1" "1" "1"))))
+
   ;; LAST: from LISP, AutoCAD's EXPLODE takes one object and ends, so a
   ;; trailing "" repeats it and leaves it waiting -- it derailed every
   ;; later case on 2026-10-03 (job 16914186872). No trailing "".
