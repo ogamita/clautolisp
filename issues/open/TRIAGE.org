@@ -121,7 +121,7 @@ Release / Windows (verification-bound to a Windows runner or a release tag):
 CAD (machine-bound):
 - DONE =alfe-autocad-createobject-fails-on-runner= — closed 2026-09-28 (pjb ok), merged into autocad-com-fails-in-disconnected-windows-session (suspended runner desktop); not reproduced in the afternoon. issues/closed/. Was: P1/machine (2026-09-28): every AutoCAD COM run on PF5S26B waits ~120 s and exits 4 with ATTACHED=0 CREATED=0 (BricsCAD fine on the same machine). The COM error was being dropped; alfe 2.2.146 prints it -- re-run, read it, then likely someone at the machine.
 - DONE =alfe-autocad-bridge-com-error-dropped-on-ansi= — alfe 2.2.146: the bridge's error file is CP1252 on the French runner; the UTF-8 read failed inside ignore-errors and the COM error vanished from the bootstrap message. Now decoded from octets, strict UTF-8 then CP1252 (CCL does not signal on bad UTF-8). issues/closed/
-- NEXT =probes-suite-crashes-bricscad= — P1, BLOCAGE LEVÉ 2026-09-29 (ménage de triage).
+- DONE =probes-suite-crashes-bricscad= — FERMÉ 2026-10-03 (MR !372) : la suite COMPLÈTE tourne sur BricsCAD macOS (605 résultats) et Windows (627), run-start à run-end, 12 suites sur 12. issues/closed/. Historique : P1, BLOCAGE LEVÉ 2026-09-29 (ménage de triage).
   La CAUSE est trouvée (2026-08-31) : un FOREACH SANS CORPS dans probe-foreach-scope.lsp,
   que BricsCAD refuse de charger (et tout le fichier avec) ; il porte désormais un corps
   (=(foreach e (list 1 2 3) nil)=) et la règle « syntaxe douteuse = dans une chaîne lue à
