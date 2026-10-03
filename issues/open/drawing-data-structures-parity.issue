@@ -152,3 +152,28 @@ clautolisp). This is the concrete AutoCAD end of the XData-fidelity work
 above — the REGAPP/1001-applist + full group-code round-trip is what is
 failing to surface. entity-lifecycle and selection probes PASS on the same
 run, so it is xdata-specific, not a general entget breakage.
+
+
+Answered 2026-10-03 -- the AutoCAD xdata "divergence" was the probe's handle
+---------------------------------------------------------------------------
+probes/sources/probe-xdata.lsp (MR !378) attached each group of the
+drawing-data payload alone. AutoCAD 2022 (20261003T142717Z) VALIDATES two
+groups on ENTMOD and rejects the whole call -- returns nil, attaches
+nothing -- when:
+  - a 1005 handle names no object (the drawing-data probe used "2A");
+  - a 1003 names a layer that does not exist.
+The payload without the dangling 1005 reads back all 7 pairs on AutoCAD.
+BricsCAD (20261003T142514Z) accepts the dangling handle, and for the
+missing layer returns the list but silently DROPS the xdata.
+
+So the probe, not AutoCAD's xdata support, was at fault, and clautolisp
+was wrong to accept everything. Fixed in clautolisp 2.2.157:
+  - cador ENTMOD vets xdata: AutoCAD's rule by default (and strict),
+    BricsCAD's under a BricsCAD dialect (deviant policy). probe-xdata
+    now equals AutoCAD 24/24 and, under --dialect bricscad-mac, BricsCAD
+    24/24. Test dd-xdata-entmod-checks-handles-and-layers-as-the-vendors-do.
+  - The drawing-data probe (.lsp + the three scenario .sexp copies) and the
+    dd-xdata-full-codeset test now use a handle that EXISTS (the circle's
+    own) and layer "0", so the round-trip is portable.
+LEFT before closing: one run of the fixed drawing-data probe on AutoCAD
+(its vendor family runs on the push), expecting the 8 pairs at last.

@@ -403,7 +403,11 @@ separate binary for tool integrators.
   error), any other type accepted permissively. ~entget~ takes the
   application filter (~(entget ename '("APP"))~) to surface xdata, which
   is otherwise suppressed; ~entmod~ replaces ordinary codes and edits
-  xdata per application; ~entdel~ is the within-session delete/restore
+  xdata per application, checking it as the vendors do — a 1005 handle
+  naming no object or a 1003 naming no layer makes ~entmod~ return ~nil~
+  and change nothing (AutoCAD); under a BricsCAD dialect the dangling
+  handle is accepted and a missing layer silently drops that
+  application's xdata; ~entdel~ is the within-session delete/restore
   toggle; ~entnext~/~entlast~ walk main entities and subentities, with a
   POLYLINE/INSERT stamping its VERTEX/ATTRIB/SEQEND pieces' owner (group
   330). A portable ~.lsp~ probe under

@@ -247,8 +247,8 @@ dots go to *standard-output*, so rebinding *error-output* is clean."
                   (list (list -3 (list \"APP\"
                                        (cons 1000 \"str\")
                                        (cons 1002 \"{\")
-                                       (cons 1003 \"LAYER0\")
-                                       (cons 1005 \"2A\")
+                                       (cons 1003 \"0\")
+                                       (cons 1005 (cdr (assoc 5 (entget e))))
                                        (cons 1040 1.5)
                                        (cons 1070 42)
                                        (cons 1071 100000)
@@ -256,6 +256,32 @@ dots go to *standard-output*, so rebinding *error-output* is clean."
   (setq xd (cdr (assoc -3 (entget e (list \"APP\")))))
   ;; xd = ((\"APP\" (1000 . str) (1002 . {) ...)); count the xdata pairs
   (length (cdr (car xd)))"))))
+
+(defun %xd-verdict (dialect-keyword pair-source)
+  "Under DIALECT-KEYWORD, ENTMOD a fresh CIRCLE with one xdata pair built by
+PAIR-SOURCE (AutoLISP text; E is the circle). Return (ENTMOD-RETURNED-P
+PAIRS-READ-BACK) as a two-digit integer: 10 * (entmod non-nil) + pairs."
+  (%d1-run (format nil "
+  (regapp \"APP\")
+  (setq e (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 0.0 0.0 0.0)) (cons 40 1.0))))
+  (setq r (entmod (append (entget e) (list (list -3 (list \"APP\" ~A))))))
+  (+ (if r 10 0) (length (cdr (car (cdr (assoc -3 (entget e (list \"APP\"))))))))" pair-source)
+           dialect-keyword))
+
+(test dd-xdata-entmod-checks-handles-and-layers-as-the-vendors-do
+  ;; probes/sources/probe-xdata.lsp, 2026-10-03. AutoCAD rejects the whole
+  ;; ENTMOD (nil, nothing attached) for a 1005 handle naming no object or a
+  ;; 1003 naming no layer; BricsCAD accepts the dangling handle and, for
+  ;; the missing layer, returns the list but drops the xdata.
+  (dolist (d '(:autocad :strict))
+    (is (eql 0  (%xd-verdict d "(cons 1005 \"2A\")")) "~S dangling 1005" d)
+    (is (eql 0  (%xd-verdict d "(cons 1003 \"NO_SUCH_LAYER\")")) "~S missing layer" d)
+    (is (eql 11 (%xd-verdict d "(cons 1005 (cdr (assoc 5 (entget e))))")) "~S live 1005" d)
+    (is (eql 11 (%xd-verdict d "(cons 1003 \"0\")")) "~S layer 0" d))
+  (dolist (d '(:bricscad :bricscad-mac))
+    (is (eql 11 (%xd-verdict d "(cons 1005 \"2A\")")) "~S dangling 1005" d)
+    (is (eql 10 (%xd-verdict d "(cons 1003 \"NO_SUCH_LAYER\")")) "~S missing layer" d)
+    (is (eql 11 (%xd-verdict d "(cons 1003 \"0\")")) "~S layer 0" d)))
 
 (test dd-xdata-preserves-order-and-multiplicity
   ;; Two 1000 strings in a set order must come back in the same order.
