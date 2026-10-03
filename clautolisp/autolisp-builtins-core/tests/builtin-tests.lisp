@@ -2368,6 +2368,39 @@ NIL when GETSTRING returns nil)."
       (let ((got (%al (format nil "(distof ~S ~D)" text mode))))
         (is (and got (< (abs (- got expected)) 1d-9)) "~A mode ~D => ~S" text mode got)))))
 
+(test distof-input-forms-per-vendor
+  ;; MEASURED 2026-10-03, and the vendors diverge: AutoCAD
+  ;; (20261003T091920Z) reads a whole decimal or a fraction in mode 2 and
+  ;; refuses feet/inch marks; BricsCAD (20261003T092024Z) reads every form in
+  ;; every mode. Both: "" and malformed text are nil -- never the ATOF
+  ;; leading-number reading ("1'-6\"" was 1.0).
+  (flet ((d (text mode &optional (dialect :strict))
+           (run-autolisp-string (format nil "(distof ~S ~D)" text mode)
+                                :setup-fn #'%install-cador-and-core
+                                :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                                          dialect))))
+    ;; AutoCAD (strict follows it)
+    (is (null (d "1'-6\"" 2)))
+    (is (null (d "1'" 2)))
+    (is (null (d "1.5'" 2)))
+    (is (null (d "1/2\"" 2)))
+    (is (= 0.5d0 (d "1/2" 2)))
+    (is (= 17.5d0 (d "17 1/2" 2)))
+    (is (= 17.5d0 (d "17-1/2" 2)))
+    (is (= 17.5d0 (d "17.5" 2)))
+    (is (null (d "" 2)))
+    (is (null (d "1'-x\"" 2)))
+    (is (null (d "1/2\"" 5)))
+    (is (null (d "1'-6\"" 5)))
+    ;; BricsCAD
+    (is (= 18.0d0 (d "1'-6\"" 2 :bricscad)))
+    (is (= 12.0d0 (d "1'" 2 :bricscad)))
+    (is (= 18.0d0 (d "1.5'" 5 :bricscad)))
+    (is (= -0.5d0 (d "-1/2\"" 2 :bricscad)))
+    (is (= 17.5d0 (d "17 1/2" 2 :bricscad)))
+    (is (null (d "" 2 :bricscad)))
+    (is (null (d "1'-x\"" 2 :bricscad)))))
+
 (test getdist-reads-architectural-input-under-lunits-4
   ;; getdist takes a distance in the CURRENT units: under LUNITS 4 the user
   ;; may type it as RTOS prints it. The result is always a real.

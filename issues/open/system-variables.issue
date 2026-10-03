@@ -439,12 +439,30 @@ probe family changed):
     this suite runs on AutoCAD only until that list is widened
     (probes-suite-crashes-bricscad).
 
+### The probes answered -- 2026-10-03 (clautolisp 2.2.150)
+
+AutoCAD 2022 (job 16824025450, probe-results/autocad/ms-windows/
+20261003T091920Z) and BricsCAD (job 16824025454, .../bricscad/ms-windows/
+20261003T092024Z):
+  - rtos-dimzin: EVERY case matches on both -- DIMZIN codes 0-3, the
+    decimal bits, exact feet, the engineering carry, -0.1 to zero. The
+    documented-only behaviour is now measured.
+  - distof modes 3-5 matched; mode 2 did not, and the vendors DIVERGE:
+    AutoCAD reads a whole decimal or a fraction ("17 1/2" 17.5) and refuses
+    feet/inch marks; BricsCAD reads every form in every mode. clautolisp
+    follows AutoCAD, and BricsCAD under a bricscad dialect; "" and
+    malformed text are nil (the old ATOF-like reading gave "1'-6\"" 1.0).
+  - DIESEL (AutoCAD; the BricsCAD jobs do not run that suite): the number
+    format matched; corrected to the engine's error strings (padded,
+    upper-cased: " $(NTH,??) "), out-of-range NTH as an error, (substr)
+    alone "", an unclosed $( -> menucmd nil, and EDTIME's names in the
+    product language ("Mardi, 29 Septembre 2026" on this French AutoCAD;
+    clautolisp takes the locale, *EDTIME-LANGUAGE*).
+  - Against AutoCAD the clautolisp run now differs in 2 of 337 cases:
+    $(getvar,dimzin) (a template default, not a bug) and $(angtos,...),
+    which is ANGTOS itself -- filed as angtos-modes-wrong.
+
 ### Still open
 
-  - Confirm or correct the documented-only behaviour against the new probe
-    results (DIMZIN codes 1-3, zero inches, DISTOF mode 2, DIESEL number
-    format).
-  - vports/setview remain headless stubs (single-viewport sentinel /
-    nil); a live viewport model needs a CAD host.
   - vports/setview remain headless stubs (single-viewport sentinel /
     nil); a live viewport model needs a CAD host.
