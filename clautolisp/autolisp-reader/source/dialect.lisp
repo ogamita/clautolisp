@@ -325,7 +325,12 @@ and/or a version (`autocad-2027', `autocad-mac-2027',
   '((:autocad . 2026) (:bricscad . 26))
   "The `latest known' release per product, used when --dialect names a
 bare product (or a platform variant) without a version. Bump these as
-newer AutoCAD / BricsCAD releases are characterised. Kept at the values
+newer AutoCAD / BricsCAD releases are characterised. AutoCAD 2026 is
+the BEHAVIOURAL TEMPLATE (the web reference the catalogue was built
+from); 2022 is the last version we can TEST (pjb, 2026-10-03: no bump
+to 2027). Version differences the vendor documents are implemented
+behind the version facet even when untestable -- see AGENTS.md
+'Dialect versions and products'. Kept at the values
 the enumerated aliases already resolve to so existing resolution does
 not shift.")
 

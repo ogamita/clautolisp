@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cador-3-host-interface-protocol-spec — D1 host-interface spec + formal autolisp↔host protocol + D2 cador spec
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: spec
 #+DEPENDS: cador-multidocument-host
@@ -59,8 +59,10 @@ flagged). Documents live under =clautolisp/documentation/=.
 - [X] The formal autolisp↔host protocol is defined precisely enough for
       cador-2 and a future wire host to implement against it (§13; its
       park/resume half is implemented by cador-2).
-- [ ] D2 Part I + Part II reach a stated decision on every §5 / §9 item.
-- [ ] Constraints C1–C8 each trace to a D2 section.
+- [X] D2 Part I + Part II reach a stated decision on every §5 / §9 item
+      (validated by pjb 2026-10-03).
+- [X] Constraints C1–C8 each trace to a D2 section (D2 Part IV,
+      "Constraint traceability", one table row per constraint).
 
 * Notes
 
@@ -100,3 +102,12 @@ blocks that review any more.
 pjb: "the Fidelity matrix is validated." D1 §19 records it (the §12 rows
 signed off). Still with pjb: the D1 section structure, and D2 Part II +
 the epic §5/§9 items (acceptance criteria 3 and 4).
+
+* CLOSED 2026-10-03
+
+pjb: "D1 and D2 are validated." With the fidelity matrix validated the same
+day, every acceptance criterion holds: D1 (with the matrix, §14/§15 decided)
+and the §13 protocol were already checked; D2 Part I + II are validated; the
+C1-C8 trace is D2 Part IV's table (each constraint maps to its sections).
+Both documents' DOCUMENT_VERSION line now reads "VALIDATED by pjb
+2026-10-03" (the number stays 0.3.0 -- a version bump is pjb's call).

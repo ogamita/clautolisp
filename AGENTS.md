@@ -964,6 +964,25 @@ default (`/tmp/` | `C:/Temp/`) via `apply-tempprefix-default`. Evidence:
 `autolisp-front-end/tests/scenarios/entities/pathname-probe.lsp`
 (`pathname:probe:*` CI jobs, `when: manual`).
 
+## Dialect versions and products
+
+**Dispatch on the PRODUCT, never on a dialect keyword with EQ.** A derived
+spelling (`--dialect bricscad-mac`, `bricscad-linux`, `bricscad-v25`,
+`autocad-mac`, `autocad-2022`) is its own descriptor, named after itself, so
+`(eq name :bricscad-v26)` silently treats it as AutoCAD. Fold the name first:
+`autolisp-dialect-template-name` (reader) maps any spelling of a product onto
+`:bricscad-v26` / `:autocad-2026`; or test `autolisp-dialect-product`.
+(clautolisp 2.2.156 fixed eleven call sites that got this wrong.)
+
+**Version differences documented by the vendor are implemented, even when no
+runner can test them** (pjb, 2026-10-03). Put the behaviour behind the
+dialect's version facet (`autolisp-dialect-version`, e.g. autocad-2022 vs
+autocad-2026) and write a probe in `probes/sources/` for it, so users on that
+version can contribute results later. AutoCAD 2022 is the last version we can
+TEST; 2026 stays the behavioural template (`*autolisp-dialect-latest-version*`,
+the web reference the catalogue was built from). No bump to 2027 until it is
+characterised.
+
 ## Documenting clautolisp deviations
 
 Whenever clautolisp deviates from / extends AutoCAD/BricsCAD, document in
