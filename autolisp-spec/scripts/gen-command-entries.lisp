@@ -30,7 +30,10 @@
     ;; S2 modify / property, S3 file / customisation
     "CHPROP" "CHANGE" "SCALE" "ALIGN" "EXPLODE" "STRETCH" "LENGTHEN"
     "MATCHPROP" "SETBYLAYER" "CONVERTPOLY"
-    "NEW" "OPEN" "MENULOAD" "CUILOAD"))
+    "NEW" "OPEN" "MENULOAD" "CUILOAD"
+    ;; S2 rest, S4 arrays
+    "-ARRAY" "ARRAYRECT" "ARRAYPOLAR" "ARRAY" "3DARRAY"
+    "DIVIDE" "MEASURE" "ADDSELECTED" "JOIN" "FLATTEN"))
 
 (defparameter *cador-recognised-noop*
   '("ZOOM" "UCS" "PEDIT" "BREAK" "BROWSER" "SHELL"

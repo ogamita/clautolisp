@@ -233,3 +233,16 @@ S3: NEW OPEN MENULOAD CUILOAD (cador; cadtui mirrors them through
 logic for the REPL-hosted and threaded consoles). Interactive prompting
 for missing input waits for host-command park points (D1 13.5).
 S4: the array cases are in the probe already.
+
+## Phase 4 S2 rest + S4 -- (2026-10-03)
+
+Built against the vendors (BricsCAD job 16914406700, AutoCAD 16914406699):
+-ARRAY, ARRAYRECT, ARRAYPOLAR, ARRAY, 3DARRAY (the copy ORDER measured:
+-ARRAY row by row, ARRAYRECT column by column, ARRAY column by column on
+AutoCAD / row by row on BricsCAD, 3DARRAY rows-columns-levels; modelled
+non-associative), DIVIDE, MEASURE, ADDSELECTED, JOIN (collinear lines),
+FLATTEN. COMMAND accepts the ENTSEL form (ename point). 47 + 19 of 105.
+Left in S2: MSTRETCH 3DROTATE CHSPACE XPLODE COPYM NCOPY UNGROUP (Express
+Tools / gizmo / layouts / groups: AutoCAD's console and BricsCAD answered
+nothing for the ones probed). S4: ARRAYPATH ARRAYEDIT ARRAYCLOSE (need
+associative arrays), ARRAYCLASSIC (dialog). S5's cases are in the probe.

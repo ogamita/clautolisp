@@ -1215,7 +1215,12 @@ separate binary for tool integrators.
   to BricsCAD's result for the same input (and to AutoCAD's where the
   headless AutoCAD could answer). Commands select by window (~_W~),
   crossing (~_C~) and by a point on the object, as users do. Draw-order
-  commands and ~TRANSPARENCY~ are recognised.
+  commands and ~TRANSPARENCY~ are recognised. Arrays (~-ARRAY~,
+  ~ARRAYRECT~, ~ARRAYPOLAR~, ~ARRAY~, ~3DARRAY~ -- copies made in the
+  vendors' order), ~DIVIDE~, ~MEASURE~, ~ADDSELECTED~, ~JOIN~ (collinear
+  lines) and ~FLATTEN~ too.
+- ~command~ accepts the ENTSEL form ~(list ename point)~ wherever a
+  command picks one object, as the vendors do.
 - ~NEW~ and ~OPEN~ open a drawing (a DXF or DWG file for ~OPEN~) and make
   it current; ~MENULOAD~ / ~CUILOAD~ load a cadtui menu / band description.
   Under ~--host cadtui~ the new drawing appears in the UI tree, and the
