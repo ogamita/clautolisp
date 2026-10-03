@@ -7639,3 +7639,16 @@ itself fails loudly."
         (is (< (abs (- (+ 2.0d0 y0) (second min-corner))) 1d-9))
         (is (< (abs (- (+ 1.0d0 x1) (first max-corner))) 1d-9))
         (is (< (abs (- (+ 2.0d0 y1) (second max-corner))) 1d-9))))))
+
+(test print-functions-without-argument-return-the-void-symbol
+  ;; Spec: (princ) / (prin1) / (print) return the VOID symbol -- empty
+  ;; name, a SYM, not nil -- so a command function's closing (princ)
+  ;; echoes nothing. (princ nil) still prints "nil" and returns nil.
+  (dolist (f '("princ" "prin1" "print"))
+    (reset-autolisp-symbol-table)
+    (is (equal "" (autolisp-string-value
+                   (run-autolisp-string (format nil "(vl-symbol-name (~A))" f)
+                                        :setup-fn #'install-core-into)))
+        "(~A) should return the void symbol" f))
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string "(princ nil)" :setup-fn #'install-core-into))))
