@@ -155,3 +155,7 @@ block, query, dimension, 3d, render, and a catch-all. Support tiers:
       decision. QUESTION FOR PJB: which commands are core-now? (A natural
       first cut: the DRAW + MODIFY commands both vendors share, plus
       NEW/OPEN/MENULOAD/CUILOAD for the cadtui tree layer.)
+    - DECIDED (pjb, 2026-10-03: "yes, you're correct"): core-now = the
+      DRAW + MODIFY commands both vendors share, plus NEW / OPEN /
+      MENULOAD / CUILOAD. Next: stamp :tier on the inventory accordingly,
+      then Phase 4.

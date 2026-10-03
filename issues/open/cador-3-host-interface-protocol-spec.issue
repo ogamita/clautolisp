@@ -53,10 +53,12 @@ flagged). Documents live under =clautolisp/documentation/=.
 
 * Acceptance criteria
 
-- [ ] D1 exists, backend-agnostic, with the fidelity matrix and the
-      capability-query + condition-taxonomy mechanisms.
-- [ ] The formal autolisp↔host protocol is defined precisely enough for
-      cador-2 and a future wire host to implement against it.
+- [X] D1 exists, backend-agnostic, with the fidelity matrix and the
+      capability-query + condition-taxonomy mechanisms (§14/§15 decided
+      2026-09-28; fidelity-matrix rows VALIDATED by pjb 2026-10-03).
+- [X] The formal autolisp↔host protocol is defined precisely enough for
+      cador-2 and a future wire host to implement against it (§13; its
+      park/resume half is implemented by cador-2).
 - [ ] D2 Part I + Part II reach a stated decision on every §5 / §9 item.
 - [ ] Constraints C1–C8 each trace to a D2 section.
 
@@ -92,3 +94,9 @@ to DOCUMENT_VERSION 0.2.0, still "draft for review":
 What remains for pjb's review: sign-off of the D1 fidelity-matrix rows and
 section structure, and the D2 Part II decisions + epic §5/§9 items. Nothing
 blocks that review any more.
+
+* Review progress — 2026-10-03
+
+pjb: "the Fidelity matrix is validated." D1 §19 records it (the §12 rows
+signed off). Still with pjb: the D1 section structure, and D2 Part II +
+the epic §5/§9 items (acceptance criteria 3 and 4).
