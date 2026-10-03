@@ -229,6 +229,7 @@
    (:file "cador/source/command-api")
    (:file "cador/source/command-geometry")
    (:file "cador/source/command-draw")
+   (:file "cador/source/command-modify")
    (:file "cador/source/com-progids")
    (:file "cador/source/vlax-api"))
   :in-order-to ((asdf:test-op

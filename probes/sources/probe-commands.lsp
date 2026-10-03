@@ -73,8 +73,11 @@
       (while (and marker (entnext marker)) (setq marker (entnext marker)))
       ;; ARGS is a token list, or a function that drives the commands
       ;; itself (to select by ename: a headless AutoCAD has no view, so
-      ;; window and point picks find nothing there).
-      (if (and (= (type args) 'LIST) (/= (car args) 'LAMBDA))
+      ;; window and point picks find nothing there). A function's TYPE
+      ;; depends on compilation -- the list (LAMBDA ...) interpreted, a
+      ;; USUBR / SUBR compiled -- so test the shape we control instead:
+      ;; a token list starts with the command name, a string.
+      (if (and (= (type args) 'LIST) (= (type (car args)) 'STR))
           (apply 'command args)
           (apply args '()))
       (cad-probe--cmd-cancel)

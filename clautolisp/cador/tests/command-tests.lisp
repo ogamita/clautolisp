@@ -536,3 +536,43 @@
     (is (equal '("LINE") (erased-after '("3,5"))))
     ;; A point on nothing ends the selection; nothing is erased.
     (is (equal '("LINE" "LINE") (erased-after '("9,9"))))))
+
+;;; --- alref Phase 4 S2: modify / property commands, as measured --------
+;;; AutoCAD 2022 (job 16914186872) and BricsCAD V26 (job 16914186873).
+
+(test command-scale-align-change-as-measured
+  (let ((d (%ct-last-data (%ct-run '("_.CIRCLE" "1,0" "1" "_.SCALE" "_L" "" "0,0" "2")))))
+    (is (%ct-near '(2 0 0) (%ct-group d 10)))
+    (is (%ct-near 2.0 (%ct-group d 40))))
+  (let ((d (%ct-last-data (%ct-run '("_.LINE" "0,0" "2,0" ""
+                                     "_.ALIGN" "_L" "" "0,0" "1,1" "2,0" "1,3" "" "_N")))))
+    (is (%ct-near '(1 1 0) (%ct-group d 10)))
+    (is (%ct-near '(1 3 0) (%ct-group d 11))))
+  (let ((d (%ct-last-data (%ct-run '("_.LINE" "0,0" "2,0" "" "_.CHANGE" "_L" "" "3,3")))))
+    (is (%ct-near '(0 0 0) (%ct-group d 10)))
+    (is (%ct-near '(3 3 0) (%ct-group d 11)))))
+
+(test command-chprop-matchprop-setbylayer-colour
+  (let ((d (%ct-last-data (%ct-run '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "1" "")))))
+    (is (eql 1 (%ct-group d 62)))
+    ;; The vendors list colour right after the layer.
+    (is (eql 62 (car (nth (1+ (position 8 d :key #'car)) d)))))
+  (let ((mock (%ct-run '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "3" ""
+                         "_.LINE" "5,5" "6,6" "" "_.MATCHPROP" "0.7071,0.7071" "5.5,5.5" ""))))
+    (is (eql 3 (%ct-group (%ct-last-data mock) 62))))
+  (let ((d (%ct-last-data (%ct-run '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "2" ""
+                                     "_.SETBYLAYER" "_L" "" "_Y" "_Y")))))
+    (is (null (assoc 62 d)))))
+
+(test command-explode-stretch-lengthen-convertpoly
+  (is (equal '("LINE" "LINE" "LINE" "LINE")
+             (%ct-types (%ct-run '("_.RECTANG" "0,0" "2,1" "_.EXPLODE" "_L" "")))))
+  (let ((d (%ct-last-data (%ct-run '("_.LINE" "0,0" "4,0" ""
+                                     "_.STRETCH" "_C" "3,-1" "5,1" "" "4,0" "6,1")))))
+    (is (%ct-near '(0 0 0) (%ct-group d 10)))
+    (is (%ct-near '(6 1 0) (%ct-group d 11))))
+  (let ((d (%ct-last-data (%ct-run '("_.LINE" "0,0" "4,0" "" "_.LENGTHEN" "_DE" "1" "4,0" "")))))
+    (is (%ct-near '(5 0 0) (%ct-group d 11))))
+  (is (equal '("POLYLINE" "VERTEX" "VERTEX" "VERTEX" "SEQEND")
+             (%ct-types (%ct-run '("_.PLINE" "0,0" "2,0" "2,1" ""
+                                   "_.CONVERTPOLY" "_H" "_L" ""))))))
