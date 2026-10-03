@@ -1045,3 +1045,30 @@ entirely silent under --dialect autocad."
            (is (eq :ac1027
                    (clautolisp.drawing:drawing-version (cador-active-drawing host)))))
       (ignore-errors (delete-file path)))))
+
+(test entmakex-builds-a-block-definition-as-the-vendors-do
+  ;; MEASURED (probes/sources/probe-block-walk.lsp; AutoCAD 2022 and BricsCAD,
+  ;; 2026-10-03): ENTMAKEX of BLOCK returns the block's ename, its members
+  ;; theirs, the block is defined, the entnext walk from TBLOBJNAME yields the
+  ;; members and NOT an ENDBLK. ENDBLK returns NIL on AutoCAD (strict follows
+  ;; it) and the block's NAME on BricsCAD. It used to refuse BLOCK and ENDBLK.
+  (dolist (case '((:strict nil) (:autocad nil) (:bricscad "SIGFIC_X") (:bricscad-mac "SIGFIC_X")))
+    (destructuring-bind (dialect endblk) case
+      (let ((mock (make-cador)))
+        (%with-dialect (dialect)
+          (let ((header (host-entmakex mock (list (cons 0 "BLOCK") (cons 2 "SIGFIC_X") (cons 70 0)
+                                                  (list 10 0.0d0 0.0d0 0.0d0)))))
+            (is (typep header 'autolisp-ename) "~A: BLOCK returns an ename" dialect)
+            (is (typep (host-entmakex mock (%tv-text-dxf "corps")) 'autolisp-ename))
+            (let ((closing (host-entmakex mock (list (cons 0 "ENDBLK")))))
+              (if endblk
+                  (is (and closing (string= endblk (autolisp-string-value closing))) "~A" dialect)
+                  (is (null closing) "~A: ENDBLK returns nil" dialect)))
+            (is (not (null (cador-find-table-record mock :block-record "SIGFIC_X"))))
+            ;; the ename BLOCK returned IS the one tblobjname gives
+            (is (eq header (host-tblobjname mock "BLOCK" "SIGFIC_X")))
+            (let ((first (host-entnext mock header)))
+              (is (not (null first)))
+              (is (null (host-entnext mock first)) "no ENDBLK in the walk"))
+            ;; nothing leaked into model space
+            (is (null (host-entnext mock nil)))))))))

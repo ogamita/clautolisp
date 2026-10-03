@@ -618,8 +618,19 @@ probed (deferred-spec-research.issue)."
                          (entity-handle-block entity)
                          (string-equal (entity-handle-block entity) name))
                  do (setf (entity-handle-deleted-p entity) t)))
-       (setf (cador-open-block-definition host) (cons name pure))
+       ;; (NAME HEADER RECORD). The block-record is created NOW and added to
+       ;; the table at ENDBLK: ENTMAKEX of the BLOCK must return the block's
+       ;; ename at once (measured on AutoCAD and BricsCAD), and it has to be
+       ;; the same ename TBLOBJNAME gives once the definition is closed.
+       (setf (cador-open-block-definition host)
+             (list name pure (make-symbol-table-record :kind :block-record
+                                                       :name name :data pure)))
        (pure->al-value pure)))))
+
+(defun %open-block-ename (host)
+  "The ename of the block definition being built, or NIL."
+  (let ((open (cador-open-block-definition host)))
+    (and open (table-record->ename host (third open)))))
 
 (defun %entmake-close-block (host)
   "ENTMAKE of (0 . \"ENDBLK\"): complete the open block definition.
@@ -628,11 +639,9 @@ registry, and returns the block's name (the vendor contract); NIL when
 no definition is open."
   (let ((open (cador-open-block-definition host)))
     (and open
-         (let ((name (car open))
-               (header (cdr open)))
-           (cador-add-table-record
-            host (make-symbol-table-record :kind :block-record
-                                           :name name :data header))
+         (let ((name (first open))
+               (header (second open)))
+           (cador-add-table-record host (third open))
            (clautolisp.drawing:add-block (cador-active-drawing host)
                                          name header)
            (setf (cador-open-block-definition host) nil)
@@ -660,17 +669,36 @@ no definition is open."
   ;; ENTMAKEX's distinguishing contract: return the new entity's ENAME
   ;; (feedable straight into entget/entmod/entdel), not the DXF list.
   ;; See issues/closed/entmakex-returns-list.issue.
-  ;; SPEC-UNCERTAIN: whether vendor entmakex can open/close a block
-  ;; definition (BLOCK / ENDBLK) as entmake does; clautolisp returns
-  ;; nil for both until probed (deferred-spec-research.issue).
+  ;;
+  ;; BLOCK / ENDBLK open and close a block definition exactly as ENTMAKE
+  ;; does -- MEASURED (probe-results 20261003T124252Z AutoCAD,
+  ;; 20261003T124144Z / 124441Z BricsCAD; probes/sources/probe-block-walk.lsp):
+  ;;   BLOCK  -> the block's ENAME on both vendors (the one TBLOBJNAME
+  ;;             returns once it is closed);
+  ;;   members-> their enames, inside the definition;
+  ;;   ENDBLK -> NIL on AutoCAD, the block's NAME on BricsCAD -- a
+  ;;             divergence, followed per the dialect's product.
+  ;; This used to refuse both (nil), so no block was ever defined and the
+  ;; members landed in model space.
   (let* ((pure (al-data->pure data 'entmakex))
          (type (%data-type-string pure)))
-    (if (and type (or (string-equal type "BLOCK")
-                      (string-equal type "ENDBLK")))
-        nil
-        (multiple-value-bind (entity ename) (%host-add-entity host data 'entmakex)
-          (declare (ignore entity))
-          ename))))
+    (cond
+      ((and type (string-equal type "BLOCK"))
+       (and (%entmake-open-block host pure)
+            (%open-block-ename host)))
+      ((and type (string-equal type "ENDBLK"))
+       (let ((name (%entmake-close-block host)))
+         (and name (%bricscad-dialect-for-entmakex-p) name)))
+      (t
+       (multiple-value-bind (entity ename) (%host-add-entity host data 'entmakex)
+         (declare (ignore entity))
+         ename)))))
+
+(defun %bricscad-dialect-for-entmakex-p ()
+  (let ((dialect (ignore-errors
+                  (clautolisp.autolisp-runtime:current-evaluation-dialect))))
+    (and dialect
+         (eq :bricscad (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
 
 ;;; --- Divergence D3: ENTMOD on a non-graphical object -----------
 ;;;
