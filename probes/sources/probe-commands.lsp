@@ -63,7 +63,7 @@
   ;; no MATCHPROP) or provided by Express Tools: only these are checked --
   ;; GETCNAME does not know every command (it reported RECTANG unknown).
   '("MATCHPROP" "ADDSELECTED" "SETBYLAYER" "COPYM" "FLATTEN" "XPLODE"
-    "3DROTATE" "-OVERKILL" "OVERKILL"))
+    "3DROTATE" "-OVERKILL" "OVERKILL" "3DARRAY"))
 
 (defun cad-probe--known-command-p (name)
   ;; Whether this engine has the command NAME: built in (GETCNAME resolves
@@ -311,8 +311,15 @@
   ;; ARRAY _R left AutoCAD 2022's console waiting (job 16915375455): late.
   (cad-probe--cmd-case "ARRAY rectangular non-associative"
     (function (lambda ()
-      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
-      (cad-probe--cmd-args (list "_.ARRAY" (entlast) "" "_R" "_AS" "_N" "_COU" "2" "2" "_S" "3" "3" "_X")))))
+      ;; AutoCAD 2022's console has ARRAY but leaves it waiting on this
+      ;; input, which hangs the whole job: skipped there.
+      (if (= cad-probe-product "autocad")
+          (setq cad-probe--unknown "ARRAY (SKIPPED-ON-AUTOCAD)")
+          (progn
+            (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
+            (cad-probe--cmd-args (list "_.ARRAY" (entlast) "" "_R" "_AS" "_N"
+                                       "_COU" "2" "2" "_S" "3" "3" "_X")))))))
+
   ;; LAST: from LISP, AutoCAD's EXPLODE takes one object and ends, so a
   ;; trailing "" repeats it and leaves it waiting -- it derailed every
   ;; later case on 2026-10-03 (job 16914186872). No trailing "".
