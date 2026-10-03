@@ -518,6 +518,22 @@ verify:trustedpaths-secureload2:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-trustedpaths-secureload2.ps1
 
+# Output printed by a function DEFINED with -l and CALLED with -x reaches alfe
+# on AutoCAD accoreconsole (autocad-no-rest-output-capture: the eval-request
+# path, native-loaded from protocol\alfe-eval.lsp, used to lose it). Manual:
+# a check for that ticket, played when the capture path changes.
+verify:autocad-x-output:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-autocad-x-output.ps1
+
 # The other half of the COM work: a REAL AutoCAD, launched through the
 # bridge, evaluating ActiveX. The registry probe above says which ProgID
 # alfe picks; only this says the bridge reaches READY and AutoLISP runs
