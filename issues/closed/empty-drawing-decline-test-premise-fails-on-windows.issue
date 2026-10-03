@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: empty-drawing-decline-test-premise-fails-on-windows — the unwritable-location fixture is writable on Windows
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
@@ -89,3 +89,15 @@ its own test now PASSES on Windows, and keeping it open for an unrelated red
 test would have misreported what was fixed. A lane that is red for two
 different reasons needs two tickets, or the second reason inherits the first
 one's conclusion.
+
+* CLOSED 2026-10-03 -- green on Windows since the 2.2.134 rework
+
+The instrumented test was meant to fail on the next Windows run and name
+the broken premise. It did not fail: AN-UNWRITABLE-DIRECTORY-DECLINES-
+RATHER-THAN-FAILS-THE-RUN passes on test:alfe:windows (job 16912990831,
+MR !376: 1378 checks, 0 failures; its 3 checks pass), and every
+test:alfe:windows run in the job history today succeeded (7 of 7; the
+others cancelled, none failed). So the cause was the FIXTURE premise --
+the temporary-file macro's file was not a file when the body ran on
+Windows -- and 2.2.134's explicit with-open-file blocker, written to fix
+exactly that ambiguity, fixed it. No :skip-on-os was needed.
