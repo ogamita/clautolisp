@@ -606,3 +606,79 @@
         (is (eq :menu-loaded event))
         (is (equal '(:band :menu-bar) (mapcar #'first forms)))
         (is (string= (namestring menu) path))))))
+
+;;; --- alref Phase 4 S5: geometry editing ------------------------------
+
+(defun %ct-lines (mock)
+  "The (start end) 2D pairs of MOCK's live LINEs, oldest first, rounded."
+  (let ((out '()) (e (host-entnext mock nil)))
+    (loop while e
+          do (let ((d (host-entget mock e)))
+               (when (string= "LINE" (autolisp-string-value (cdr (assoc 0 d))))
+                 (push (mapcar (lambda (p) (mapcar (lambda (x) (/ (round (* 1000 x)) 1000))
+                                                   (list (first p) (second p))))
+                               (list (cdr (assoc 10 d)) (cdr (assoc 11 d))))
+                       out)))
+             (setq e (host-entnext mock e)))
+    (nreverse out)))
+
+(defun %ct-two-lines (a1 a2 b1 b2)
+  "A host with LINE A then LINE B; returns (values HOST A-ENAME B-ENAME)."
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock (list "_.LINE" a1 a2 ""))
+    (let ((a (host-entlast mock)))
+      (clautolisp.autolisp-host:host-command mock (list "_.LINE" b1 b2 ""))
+      (values mock a (host-entlast mock)))))
+
+(test command-trim-and-extend-both-modes
+  ;; Classic (TRIMEXTENDMODE 0): edge, RETURN, then the pick.
+  (multiple-value-bind (mock a edge) (%ct-two-lines "0,0" "4,0" "2,-1" "2,1")
+    (host-setvar mock "TRIMEXTENDMODE" 0)
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.TRIM" edge "" (list a '(3.0d0 0.0d0 0.0d0)) ""))
+    (is (equal '(((0 0) (2 0)) ((2 -1) (2 1))) (%ct-lines mock))))
+  ;; Quick (TRIMEXTENDMODE 1, the default): every object is an edge.
+  (multiple-value-bind (mock a) (%ct-two-lines "0,0" "4,0" "2,-1" "2,1")
+    (host-setvar mock "TRIMEXTENDMODE" 1)
+    (clautolisp.autolisp-host:host-command mock (list "_.TRIM" (list a '(1.0d0 0.0d0 0.0d0)) ""))
+    (is (equal '((2 0) (4 0)) (first (%ct-lines mock)))))
+  (multiple-value-bind (mock a edge) (%ct-two-lines "0,0" "1,0" "3,-1" "3,1")
+    (host-setvar mock "TRIMEXTENDMODE" 0)
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.EXTEND" edge "" (list a '(1.0d0 0.0d0 0.0d0)) ""))
+    (is (equal '((0 0) (3 0)) (first (%ct-lines mock))))))
+
+(test command-fillet-chamfer-offset-break-pedit-overkill
+  (multiple-value-bind (mock a b) (%ct-two-lines "0,0" "4,0" "4,0" "4,4")
+    (clautolisp.autolisp-host:host-command mock '("_.FILLET" "_R" "1"))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.FILLET" (list a '(2.0d0 0.0d0 0.0d0)) (list b '(4.0d0 2.0d0 0.0d0))))
+    (is (equal '(((0 0) (3 0)) ((4 1) (4 4))) (%ct-lines mock)))
+    (let ((arc (%ct-last-data mock)))
+      (is (%ct-near '(3 1 0) (%ct-group arc 10)))
+      (is (%ct-near 1.0 (%ct-group arc 40)))))
+  (multiple-value-bind (mock a b) (%ct-two-lines "0,0" "4,0" "4,0" "4,4")
+    (clautolisp.autolisp-host:host-command mock '("_.CHAMFER" "_D" "1" "1"))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.CHAMFER" (list a '(2.0d0 0.0d0 0.0d0)) (list b '(4.0d0 2.0d0 0.0d0))))
+    (is (equal '(((0 0) (3 0)) ((4 1) (4 4)) ((3 0) (4 1))) (%ct-lines mock))))
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "4,0" ""))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.OFFSET" "1" (list (host-entlast mock) '(2.0d0 0.0d0 0.0d0)) "2,1" ""))
+    (is (equal '(((0 0) (4 0)) ((0 1) (4 1))) (%ct-lines mock))))
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "4,0" ""))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.BREAK" (list (host-entlast mock) '(1.0d0 0.0d0 0.0d0)) "3,0"))
+    (is (equal '(((0 0) (1 0)) ((3 0) (4 0))) (%ct-lines mock))))
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "4,0" ""))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.PEDIT" (list (host-entlast mock) '(2.0d0 0.0d0 0.0d0)) "_Y" "_W" "0.5" ""))
+    (let ((d (%ct-last-data mock)))
+      (is (string= "LWPOLYLINE" (autolisp-string-value (%ct-group d 0))))
+      (is (%ct-near 0.5 (%ct-group d 43)))))
+  (multiple-value-bind (mock a b) (%ct-two-lines "0,0" "4,0" "0,0" "4,0")
+    (clautolisp.autolisp-host:host-command mock (list "_.-OVERKILL" a b "" ""))
+    (is (= 1 (length (%ct-lines mock))))))

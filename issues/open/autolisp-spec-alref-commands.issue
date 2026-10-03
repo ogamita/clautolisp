@@ -246,3 +246,15 @@ Left in S2: MSTRETCH 3DROTATE CHSPACE XPLODE COPYM NCOPY UNGROUP (Express
 Tools / gizmo / layouts / groups: AutoCAD's console and BricsCAD answered
 nothing for the ones probed). S4: ARRAYPATH ARRAYEDIT ARRAYCLOSE (need
 associative arrays), ARRAYCLASSIC (dialog). S5's cases are in the probe.
+
+## Phase 4 S5 (core) -- 2026-10-03
+
+TRIM EXTEND (quick and classic modes) OFFSET BREAK FILLET CHAMFER PEDIT
+OVERKILL / -OVERKILL, in cador/source/command-edit.lisp. Implemented from
+the commands' geometry -- the CAD runners were asleep, so the S5 probe
+cases (in probe-commands.lsp since !382) have not been answered yet:
+CONFIRM against them on the next vendor run (the merged MRs' probe jobs
+were cancelled with their child pipelines). Scope: LINEs edited; lines and
+circles / arcs as edges; OFFSET of circles and arcs; BREAK of circles.
+56 + 17 of 105. Left in S5: EXOFFSET BTRIM BEXTEND EXTRIM BREAKLINE MPEDIT
+SPLINEDIT TREX MOCORO (Express Tools / spline editing) and HELIX.

@@ -967,7 +967,7 @@ tokens it did not consume.")
 ;; Recognised, but model-only no-ops (viewport / coordinate context /
 ;; external process / deferred edit): consume the input line and keep
 ;; flowing.
-(define-cador-command '("ZOOM" "UCS" "PEDIT" "BREAK" "BROWSER" "SHELL")
+(define-cador-command '("ZOOM" "UCS" "BROWSER" "SHELL")
                       '%cmd-recognised-noop)
 ;; Core-now commands (alref Phase 4 S1) whose subject the headless model
 ;; does not hold: a palette or dialog (PROPERTIES, MLSTYLE), raster /

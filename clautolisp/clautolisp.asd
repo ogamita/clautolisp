@@ -231,6 +231,7 @@
    (:file "cador/source/command-draw")
    (:file "cador/source/command-modify")
    (:file "cador/source/command-array")
+   (:file "cador/source/command-edit")
    (:file "cador/source/command-file")
    (:file "cador/source/com-progids")
    (:file "cador/source/vlax-api"))

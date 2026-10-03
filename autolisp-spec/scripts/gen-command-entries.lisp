@@ -33,10 +33,13 @@
     "NEW" "OPEN" "MENULOAD" "CUILOAD"
     ;; S2 rest, S4 arrays
     "-ARRAY" "ARRAYRECT" "ARRAYPOLAR" "ARRAY" "3DARRAY"
-    "DIVIDE" "MEASURE" "ADDSELECTED" "JOIN" "FLATTEN"))
+    "DIVIDE" "MEASURE" "ADDSELECTED" "JOIN" "FLATTEN"
+    ;; S5 geometry editing
+    "TRIM" "EXTEND" "OFFSET" "BREAK" "FILLET" "CHAMFER" "PEDIT"
+    "OVERKILL" "-OVERKILL"))
 
 (defparameter *cador-recognised-noop*
-  '("ZOOM" "UCS" "PEDIT" "BREAK" "BROWSER" "SHELL"
+  '("ZOOM" "UCS" "BROWSER" "SHELL"
     ;; alref Phase 4 S1: subject outside the headless model
     "PROPERTIES" "MLSTYLE" "IMAGEADJUST" "IMAGECLIP" "IMAGEEDIT" "CLIPIT"
     "PDFCLIP" "-PDFIMPORT" "GEOMAPIMAGE" "GEOMAPIMAGEUPDATE" "POINTCLOUDCROP"
