@@ -481,11 +481,12 @@ artefacts of the clautolisp baseline: pre-ANGTOS-fix, French locale):
 | edtime MSEC         | not a code: 9SEC      | milliseconds: 000          |
 |                     | (M month + SEC text)  |                            |
 
-clautolisp follows AutoCAD. Under a bricscad dialect it could follow
-BricsCAD, as DISTOF does since 2.2.150 -- not done yet.
+clautolisp follows AutoCAD -- and, since 2.2.153, BricsCAD under any
+dialect of that product (bricscad-mac included), as DISTOF does since
+2.2.150. Pinned by DIESEL-FOLLOWS-BRICSCAD-UNDER-A-BRICSCAD-DIALECT (each
+case under bricscad, bricscad-mac, autocad, strict).
 
 ### Still open
 
-  - DIESEL under a bricscad dialect: the five divergences above.
   - vports/setview remain headless stubs (single-viewport sentinel /
     nil); a live viewport model needs a CAD host.
