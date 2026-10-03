@@ -109,9 +109,17 @@
       (function (lambda ()
         (textbox (list '(0 . "TEXT") '(10 0.0 0.0 0.0) '(40 . 1.0) (cons 1 s))))))
     (setq code (1+ code)))
-  ;; and the single character, which separates the glyph from its spacing
-  (foreach code (list 77 105 48 32)
+  ;; and EVERY single character, which separates the glyph from its spacing:
+  ;; 10 copies give 9 advances + the last glyph's ink, 1 copy the ink alone.
+  (setq code 32)
+  (while (<= code 126)
     (cad-probe-capture "text-metrics" (strcat "textbox 1 x char " (itoa code))
       (function (lambda ()
-        (textbox (list '(0 . "TEXT") '(10 0.0 0.0 0.0) '(40 . 1.0) (cons 1 (chr code))))))))
+        (textbox (list '(0 . "TEXT") '(10 0.0 0.0 0.0) '(40 . 1.0) (cons 1 (chr code)))))))
+    (setq code (1+ code)))
+  ;; kerning: does a pair measure less than its two advances?
+  (foreach s (list "AV" "VA" "To" "AA" "VV" "oo")
+    (cad-probe-capture "text-metrics" (strcat "textbox pair " s)
+      (function (lambda ()
+        (textbox (list '(0 . "TEXT") '(10 0.0 0.0 0.0) '(40 . 1.0) (cons 1 s)))))))
   (princ))
