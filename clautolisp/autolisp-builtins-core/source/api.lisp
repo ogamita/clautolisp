@@ -9150,30 +9150,31 @@ the caller can fall back to a placeholder triple)."
     (list x y z)))
 
 (defun builtin-textbox (entity-list)
-  ;; (textbox '((1 . "TEXT") (40 . 2.5))) -> ((x1 y1 z1) (x2 y2 z2))
-  ;; Autodesk returns the bounding-box corners of a TEXT entity in
-  ;; the text's OCS. Without a font-metrics back-end we approximate:
-  ;; width = char-width × content-length, height = (40 . HEIGHT),
-  ;; char-width = 0.6 × height (a common monospace ratio).
-  ;; Returns ((0 0 0) (w h 0)). Stub-quality; full impl waits on
-  ;; an SHX/TTF font loader.
-  ;;
-  ;;; SPEC-UNCERTAIN: char-width-to-height ratio in real CADs;
-  ;;;   justification (DXF 72/73/40/41) effect on box origin;
-  ;;;   behaviour on entity-lists missing group 1 or 40. Probes
-  ;;;   queued in deferred-spec-research.issue § TEXTBOX.
+  ;; (textbox '((1 . "TEXT") (40 . 2.5))) -> ((x0 y0 0) (x1 y1 0)): the ink box
+  ;; of the text's glyphs, MEASURED -- the Standard style's metrics, per
+  ;; character, from AutoCAD 2022 and BricsCAD (text-metrics.lisp,
+  ;; TEXT-INK-BOX), with each vendor's rule for boxes off the baseline and for
+  ;; spaces, chosen by the dialect's product. 41 is the width factor. This
+  ;; used to be ((0 0 0) (0.6 x height x length, height 0)) for any string.
   (require-proper-list entity-list "TEXTBOX")
-  (let* ((text-pair (assoc 1 entity-list))
-         (height-pair (assoc 40 entity-list))
-         (text (cond ((and text-pair (typep (cdr text-pair) 'autolisp-string))
-                      (autolisp-string-value (cdr text-pair)))
-                     (t "")))
-         (height (cond ((and height-pair (numberp (cdr height-pair)))
-                        (coerce (cdr height-pair) 'double-float))
-                       (t 1.0d0)))
-         (width (* (length text) 0.6d0 height)))
-    (list (list 0.0d0 0.0d0 0.0d0)
-          (list width height 0.0d0))))
+  (flet ((group (code default)
+           (let ((pair (assoc code entity-list)))
+             (if (and pair (numberp (cdr pair)))
+                 (coerce (cdr pair) 'double-float)
+                 default))))
+    (let* ((text-pair (assoc 1 entity-list))
+           (text (if (and text-pair (typep (cdr text-pair) 'autolisp-string))
+                     (autolisp-string-value (cdr text-pair))
+                     ""))
+           (dialect (ignore-errors (current-evaluation-dialect)))
+           (bricscad (and dialect
+                          (eq :bricscad (clautolisp.autolisp-reader:autolisp-dialect-product
+                                         dialect)))))
+      (multiple-value-bind (x0 y0 x1 y1)
+          (clautolisp.autolisp-runtime:text-ink-box
+           text (group 40 1.0d0) :width-factor (group 41 1.0d0) :bricscad bricscad)
+        (list (list x0 y0 0.0d0)
+              (list x1 y1 0.0d0))))))
 
 (defparameter *vle-vector-tolerance* 1.0d-10
   "Tolerance used by VLE-VECTOR-* equality / parallelism /

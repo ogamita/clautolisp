@@ -1149,7 +1149,14 @@ provides that surface through the host backend:
   plain-LISP-data contract. Entity methods ~Move~ / ~Rotate~ /
   ~Copy~ / ~Delete~ / ~Erase~ / ~Update~ mutate the drawing, and
   ~(vla-getboundingbox obj 'll 'ur)~ assigns the two quoted output
-  symbols, as the vendors do.
+  symbols, as the vendors do. The box of a TEXT / ATTRIB / ATTDEF is
+  its glyph ink, the same box ~textbox~ returns, placed at the
+  alignment point and rotated. Both use the Standard font's metrics
+  measured on AutoCAD and BricsCAD: under the default dialects, spaces
+  carry no ink and a box that does not straddle the baseline is
+  reported touching it (AutoCAD); under a BricsCAD dialect the true
+  ink is reported and spaces count to their advance. Characters
+  outside ASCII are measured as =n=.
 
 Example (headless, against the mock host):
 

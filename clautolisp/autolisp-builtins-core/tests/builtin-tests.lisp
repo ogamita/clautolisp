@@ -3662,9 +3662,43 @@ in a headless engine where every coordinate space collapses to WCS."
     (is (= 2 (length result)))
     (is (= 3 (length (first  result))))    ; (x1 y1 z1)
     (is (= 3 (length (second result))))    ; (x2 y2 z2)
-    ;; Lower-left corner at origin in our stub.
-    (is (= 0.0d0 (first  (first result))))
-    (is (= 0.0d0 (second (first result))))))
+    ;; The measured Standard-font ink box (probe-block-walk.lsp):
+    ;; 'h' has a left bearing, the 'o' overshoots the baseline.
+    (is (< (abs (- 0.092087d0 (first  (first result)))) 1d-4))
+    (is (< (abs (- -0.016371d0 (second (first result)))) 1d-4))
+    (is (< (abs (- 2.899727d0 (first  (second result)))) 1d-4))
+    (is (< (abs (- 1.0d0 (second (second result)))) 1d-4))))
+
+(test textbox-measures-glyphs-as-autocad-reports-them
+  "10 x M / 10 x i as AutoCAD 2022 measures them; spaces carry no ink;
+a box that does not straddle the baseline is reported touching it."
+  (flet ((tb (string)
+           (reset-autolisp-symbol-table)
+           (run-autolisp-string
+            (format nil "(textbox (list (cons 1 ~S)))" string)
+            :setup-fn #'install-core-into)))
+    (let ((m (tb "MMMMMMMMMM")) (i (tb "iiiiiiiiii")))
+      (is (< (abs (- 0.103683d0 (first (first m)))) 1d-4))
+      (is (< (abs (- 11.531378d0 (first (second m)))) 1d-4))
+      (is (< (abs (- 0.092769d0 (first (first i)))) 1d-4))
+      (is (< (abs (- 3.008868d0 (first (second i)))) 1d-4)))
+    (is (equal '((0.0d0 0.0d0 0.0d0) (0.0d0 0.0d0 0.0d0)) (tb "   ")))
+    (let ((dash (tb "--")))
+      (is (= 0.0d0 (second (first dash))))
+      (is (< (abs (- 0.123465d0 (second (second dash)))) 1d-4)))))
+
+(test textbox-measures-glyphs-as-bricscad-reports-them
+  "Under a BricsCAD dialect: spaces are ink to their advance, and an
+off-baseline box keeps its true height."
+  (multiple-value-bind (x0 y0 x1 y1)
+      (clautolisp.autolisp-runtime:text-ink-box "   " 1.0d0 :bricscad t)
+    (is (= 0.0d0 x0 y0 y1))
+    (is (< (abs (- 1.164393d0 x1)) 1d-4)))
+  (multiple-value-bind (x0 y0 x1 y1)
+      (clautolisp.autolisp-runtime:text-ink-box "--" 1.0d0 :bricscad t)
+    (declare (ignore x0 x1))
+    (is (< (abs (- 0.300136d0 y0)) 1d-4))
+    (is (< (abs (- 0.423602d0 y1)) 1d-4))))
 
 (test m2-vle-g-vectol-returns-tolerance
   "(vle_g_vectol) returns the configured vector tolerance."
@@ -7543,7 +7577,11 @@ itself fails loudly."
     (is (consp result))
     (let ((min-corner (first result))
           (max-corner (second result)))
-      (is (= 1.0d0 (first min-corner)))
-      (is (= 2.0d0 (second min-corner)))
-      ;; The text height extends the box upward: 2.0 + 2.5.
-      (is (= 4.5d0 (second max-corner))))))
+      ;; The glyph ink box of "boite" (as TEXTBOX measures it),
+      ;; placed at the insertion point (1 2).
+      (multiple-value-bind (x0 y0 x1 y1)
+          (clautolisp.autolisp-runtime:text-ink-box "boite" 2.5d0)
+        (is (< (abs (- (+ 1.0d0 x0) (first min-corner))) 1d-9))
+        (is (< (abs (- (+ 2.0d0 y0) (second min-corner))) 1d-9))
+        (is (< (abs (- (+ 1.0d0 x1) (first max-corner))) 1d-9))
+        (is (< (abs (- (+ 2.0d0 y1) (second max-corner))) 1d-9))))))

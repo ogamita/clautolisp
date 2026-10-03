@@ -553,11 +553,36 @@ the shape of the SCHMS sigfic fixtures."
          (vla (host-vlax-ename->vla-object mock ename))
          (box (host-vlax-invoke-method mock vla "GetBoundingBox" '())))
     (is (consp box))
-    (let ((min-corner (first box)) (max-corner (second box)))
-      (is (%tv~= 0.0d0 (first min-corner)))
-      (is (%tv~= 0.0d0 (second min-corner)))
-      ;; The text height extends the box upward.
-      (is (%tv~= 2.5d0 (second max-corner))))))
+    ;; A TEXT at the origin is bounded by its glyph ink, exactly as
+    ;; TEXTBOX measures it (both vendors agree; the box is no longer
+    ;; the bare insertion point stretched by the height).
+    (multiple-value-bind (x0 y0 x1 y1)
+        (clautolisp.autolisp-runtime:text-ink-box "boite" 2.5d0)
+      (let ((min-corner (first box)) (max-corner (second box)))
+        (is (%tv~= x0 (first min-corner)))
+        (is (%tv~= y0 (second min-corner)))
+        (is (%tv~= x1 (first max-corner)))
+        (is (%tv~= y1 (second max-corner)))
+        ;; Real width: five glyphs at height 2.5, not zero.
+        (is (< 5.0d0 (first max-corner) 12.0d0))))))
+
+(test entity-getboundingbox-of-text-matches-the-vendor-measure
+  ;; probe-block-walk.lsp, AutoCAD 2022 and BricsCAD: 10 x M and
+  ;; 10 x i at height 1, TEXTBOX = GetBoundingBox at the origin.
+  (flet ((box-of (string)
+           (let* ((mock (make-cador))
+                  (view (host-entmake
+                         mock (list (cons 0 "TEXT") (cons 8 "0")
+                                    (list 10 0.0d0 0.0d0 0.0d0)
+                                    (cons 40 1.0d0) (cons 1 string))))
+                  (vla (host-vlax-ename->vla-object mock (cdr (first view)))))
+             (host-vlax-invoke-method mock vla "GetBoundingBox" '()))))
+    (let ((m (box-of "MMMMMMMMMM")) (i (box-of "iiiiiiiiii")))
+      (is (< (abs (- 0.103683d0 (first (first m)))) 1d-4))
+      (is (< (abs (- 11.531378d0 (first (second m)))) 1d-4))
+      (is (< (abs (- 1.0d0 (second (second m)))) 1d-4))
+      (is (< (abs (- 0.092769d0 (first (first i)))) 1d-4))
+      (is (< (abs (- 3.008868d0 (first (second i)))) 1d-4)))))
 
 ;;; --- The classic block-contents walk: tblsearch -2 + entget -------
 ;;; (Regression for the SCHMS "attendu 2 LINE dans le bloc sigfic,
@@ -637,8 +662,14 @@ the shape of the SCHMS sigfic fixtures."
          (ename (cdr (first view)))
          (vla (host-vlax-ename->vla-object mock ename))
          (box (host-vlax-invoke-method mock vla "GetBoundingBox" '())))
-    (is (%tv~= 2.5d0 (second (first box))))
-    (is (%tv~= 5.0d0 (second (second box))))))
+    ;; Baseline at 5 - 2.5: the ink of "tl" hangs below the anchor
+    ;; (its curve overshoots the baseline by a hair).
+    (multiple-value-bind (x0 y0 x1 y1)
+        (clautolisp.autolisp-runtime:text-ink-box "tl" 2.5d0)
+      (declare (ignore x0 x1))
+      (is (%tv~= (+ 2.5d0 y0) (second (first box))))
+      (is (%tv~= (+ 2.5d0 y1) (second (second box))))
+      (is (<= (second (second box)) 5.0d0)))))
 
 ;;; --- SCHME A1 object-model surface (cador-schme-a1-activex-coverage) ---
 ;;;

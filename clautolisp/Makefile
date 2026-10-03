@@ -142,6 +142,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard autolisp-*/documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
 
+.PHONY: text-metrics
 .PHONY: all test test-sbcl test-ccl test-compiler-equivalence \
         test-debug-compiled test-shipped-compiler test-shipped-compiler-ccl \
         check-docstrings spec-symbols operator-availability check-operator-availability \
@@ -414,6 +415,11 @@ operator-availability: spec-symbols  ## Regenerate the vendor-only operator tabl
 
 check-operator-availability: spec-symbols  ## Fail if the vendor-only operator table is stale w.r.t. the spec.
 	python3 tools/generate-operator-availability.py --check "$(SPEC_SYMBOLS)" "$(OPERATOR_AVAILABILITY)"
+
+TEXT_METRICS_BRICSCAD ?= ../probe-results/bricscad/macos/20261003T130100Z/results.sexp
+TEXT_METRICS_AUTOCAD  ?= ../probe-results/autocad/ms-windows/20261003T130228Z/results.sexp
+text-metrics:  ## Regenerate the Standard-font glyph metrics (TEXTBOX, TEXT bounding box) from the vendors' text-metrics probe runs.
+	python3 tools/generate-text-metrics.py "$(TEXT_METRICS_BRICSCAD)" "$(TEXT_METRICS_AUTOCAD)" autolisp-runtime/source/text-metrics.lisp
 
 dialect-warnings-annex:  ## Regenerate the manual's dialect-warnings annex from the register.
 	"$(SBCL)" --non-interactive --disable-debugger \

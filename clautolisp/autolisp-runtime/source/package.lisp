@@ -209,6 +209,7 @@
    #:emit-vendor-operator-warning
    #:autolisp-runtime-error
    #:autolisp-runtime-error-code
+   #:text-ink-box
    #:autolisp-runtime-error-class-for-code
    ;; the host condition taxonomy (D1 §15)
    #:host-error

@@ -3281,6 +3281,54 @@ Modes 1 and 2 (decimal, scientific) are the caller's own decimal parser.
     (when value
       (coerce (if negative (- value) value) 'double-float))))
 
+;;; --- text extents: TEXTBOX and the TEXT bounding box --------------------
+;;; Measured, not approximated: *STANDARD-GLYPH-METRICS* (text-metrics.lisp,
+;;; generated from TEXTBOX on AutoCAD 2022 and BricsCAD). It replaces one 0.6
+;;; width ratio for every character -- 10 x M and 10 x i measured alike, 6.0;
+;;; the vendors say 11.43 and 2.92.
+
+(defun %glyph-metrics (char)
+  "#(LEFT-BEARING INK-RIGHT ADVANCE INK-BOTTOM INK-TOP) of CHAR at height 1.
+A character outside printable ASCII takes `n''s metrics: the font is not
+known for it, and a lowercase letter's is the least surprising guess."
+  (let ((code (char-code char)))
+    (or (and (< 31 code 127) (aref *standard-glyph-metrics* code))
+        (aref *standard-glyph-metrics* (char-code #\n)))))
+
+(defun text-ink-box (string height &key (width-factor 1.0d0) bricscad)
+  "The TEXTBOX of STRING at HEIGHT and WIDTH-FACTOR, as (values X0 Y0 X1 Y1
+ADVANCE): the ink of its glyphs laid out by their advances, no kerning (the
+vendors apply none -- six pairs measured). ADVANCE is the pen's travel, what
+justification aligns.
+
+Two reporting rules differ between the vendors, both measured:
+- a box that does not straddle the baseline: BricsCAD reports the ink;
+  AutoCAD reports it TOUCHING the baseline -- \" is (0, 0.354), not
+  (0.646, 1.0); _ is (-0.278, 0), not (-0.278, -0.189);
+- spaces: AutoCAD gives them no ink (a string of spaces is a zero box),
+  BricsCAD ink up to their advance on the baseline.
+BRICSCAD selects the BricsCAD rules."
+  (let ((pen 0d0) (x0 nil) (y0 0d0) (x1 0d0) (y1 0d0))
+    (loop for char across string
+          for m = (%glyph-metrics char)
+          for space-p = (char= char #\Space)
+          do (when (or (not space-p) bricscad)
+               (let ((left (+ pen (aref m 0)))
+                     (right (+ pen (aref m 1))))
+                 (if (null x0)
+                     (setf x0 left x1 right y0 (aref m 3) y1 (aref m 4))
+                     (setf x0 (min x0 left) x1 (max x1 right)
+                           y0 (min y0 (aref m 3)) y1 (max y1 (aref m 4))))))
+             (incf pen (aref m 2)))
+    (unless x0
+      (setf x0 0d0 x1 0d0 y0 0d0 y1 0d0))
+    (unless bricscad
+      (cond ((plusp y0) (setf y1 (- y1 y0) y0 0d0))
+            ((minusp y1) (setf y1 0d0))))
+    (let ((h (coerce height 'double-float))
+          (w (coerce width-factor 'double-float)))
+      (values (* x0 h w) (* y0 h) (* x1 h w) (* y1 h) (* pen h w)))))
+
 (defun autolisp-path-has-forward-slash-ellipsis-p (path)
   "T iff PATH contains a `...' subfolder-recursion component (AutoCAD's
 support/trusted-path `...' wildcard — a directory and all of its
