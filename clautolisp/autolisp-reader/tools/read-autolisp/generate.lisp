@@ -271,6 +271,29 @@ trust the implementation to add the suffix; ask for it explicitly."
       (concatenate 'string program-name ".exe")
       program-name))
 
+;;; On Windows a running executable cannot be overwritten or deleted, only
+;;; renamed: on 2026-10-03 a process left behind by a cancelled CI job kept
+;;; alfe-sbcl.exe open on the Windows CAD runner, and every later build there
+;;; died in SAVE-LISP-AND-DIE with "Permission denied" (SB-IMPL::SAVE-ERROR).
+(defun %move-aside-old-executable (path)
+  "Make room for a new executable at PATH: delete the old one, or -- when
+Windows keeps it locked because it is running -- rename it to
+PATH.old-<time>. Earlier such leftovers are deleted once they are free."
+  (let ((stem (file-namestring path)))
+    (dolist (old (directory (make-pathname :name :wild :type :wild :defaults path)))
+      (let ((name (file-namestring old)))
+        (when (and (> (length name) (+ (length stem) 5))
+                   (string= stem name :end2 (length stem))
+                   (string= ".old-" name :start2 (length stem) :end2 (+ (length stem) 5)))
+          (ignore-errors (delete-file old))))))
+  (when (probe-file path)
+    (handler-case (delete-file path)
+      (error ()
+        (let ((aside (format nil "~A.old-~D" (namestring path) (get-universal-time))))
+          (rename-file path (pathname aside))
+          (format *error-output* "~&;; ~A is in use: moved aside to ~A~%"
+                  (namestring path) aside))))))
+
 (defun generate-program (&key program-name main-function system-name source-directory
                            asdf-directories release-directory asd-file)
   (declare (ignore source-directory))
@@ -288,6 +311,7 @@ trust the implementation to add the suffix; ask for it explicitly."
   ;; SB-IMPL::SAVE-ERROR.
   (ensure-directories-exist release-directory)
   (let ((program-name (executable-program-name program-name)))
+    (%move-aside-old-executable (merge-pathnames program-name release-directory nil))
     #+ccl
     (ccl:save-application
      (merge-pathnames program-name release-directory nil)
