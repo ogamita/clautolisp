@@ -122,3 +122,21 @@ Tests
   :autocad-only self-skipping). Every scan is fenced to the probe's own
   entities by an XData filter, so assertions hold on a non-empty drawing.
 Full `test-system "clautolisp"`: 5482 checks, Fail 0.
+
+
+CLOSED 2026-10-03 -- acceptance met on the vendor evidence
+===========================================================
+pjb asked to confirm the probe coverage against the acceptance and close.
+The portable probe (autolisp-front-end/tests/scenarios/entities/
+selection-probe.lsp) PASSED on BricsCAD (2026-08-14) and on AutoCAD 2022
+accoreconsole (vendor:probes:autocad, MR !292 child 2885828771,
+2026-09-26: "PASS selection (21 conforms)"). Against the acceptance:
+
+  - same logical membership under AutoCAD, BricsCAD and clautolisp: the
+    probe asserts membership fenced by an xdata filter -- conforms on all
+    three;
+  - filters have portable conformance tests: the probe's filter cases
+    (conjunction, absent groups, -3 xdata, malformed lists);
+  - erased entities / subentities: in the probe, conforming;
+  - no reliance on insertion order: the tests assert set membership;
+  - SBCL and CCL suites green (every CI run since).

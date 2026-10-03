@@ -53,6 +53,26 @@ TRUSTEDPATHS -- TRUSTEDPATHS-DIALECT-DEFAULT-IS-EMPTY read that user's paths
   (is (eql 0 (%getvar-int (%trust-host :lax) "SECURELOAD")))
   (is (eql 1 (%getvar-int (%trust-host :clautolisp) "SECURELOAD"))))
 
+(test every-product-spelling-gets-its-products-trust-defaults
+  ;; Regression 2026-10-03: the dialect was compared by NAME, so every
+  ;; derived spelling (--dialect bricscad-mac, ...) got AutoCAD's
+  ;; SECURELOAD 1, settable, and AutoCAD's sysvar set.
+  (dolist (d '(:bricscad-mac :bricscad-linux :bricscad-v25 :bricscad-mac-v26 :bricscad))
+    (is (eq :bricscad-v26
+            (clautolisp.autolisp-reader:autolisp-dialect-template-name d))
+        "~S should fold onto :bricscad-v26" d)
+    (is (eql 0 (%getvar-int (%trust-host d) "SECURELOAD")) "~S SECURELOAD" d)
+    (is (clautolisp.autolisp-builtins-core::secureload-read-only-for-dialect-p d)
+        "~S should make SECURELOAD read-only" d))
+  (dolist (d '(:autocad-mac :autocad-2022 :autocad))
+    (is (eq :autocad-2026
+            (clautolisp.autolisp-reader:autolisp-dialect-template-name d))
+        "~S should fold onto :autocad-2026" d)
+    (is (eql 1 (%getvar-int (%trust-host d) "SECURELOAD")) "~S SECURELOAD" d))
+  ;; Non-product dialects keep their own names.
+  (dolist (d '(:strict :lax :clautolisp))
+    (is (eq d (clautolisp.autolisp-reader:autolisp-dialect-template-name d)))))
+
 (test trustedpaths-dialect-default-is-empty
   (dolist (d '(:autocad-2026 :bricscad-v26 :strict :lax :clautolisp))
     (is (string= "" (%getvar-str (%trust-host d) "TRUSTEDPATHS")))))

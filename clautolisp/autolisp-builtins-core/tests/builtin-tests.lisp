@@ -2124,6 +2124,41 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
     (is (string= "0.0000E+00" (autolisp-string-value
                                (call-autolisp-function rtos-fn 0.0d0 1 4))))))
 
+(defun %rtos-in (dialect expression)
+  "EXPRESSION's string value under DIALECT (cador + core installed)."
+  (autolisp-string-value
+   (run-autolisp-string expression
+                        :setup-fn #'%install-cador-and-core
+                        :dialect (clautolisp.autolisp-reader:find-autolisp-dialect dialect))))
+
+(test rtos-scientific-precision-0-and-ties-as-measured
+  ;; probes/sources/probe-rtos.lsp, AutoCAD 2022 + BricsCAD, 2026-10-03:
+  ;; precision 0 prints no decimal point; a tie rounds away from zero on
+  ;; AutoCAD, to even on BricsCAD; mantissa carry renormalises.
+  (loop for (expression autocad bricscad)
+          in '(("(rtos 2.5 1 0)"        "3E+00"  "2E+00")
+               ("(rtos 3.14159 1 0)"    "3E+00"  "3E+00")
+               ("(rtos 0.5 1 0)"        "5E-01"  "5E-01")
+               ("(rtos -0.5 1 0)"       "-5E-01" "-5E-01")
+               ("(rtos 100.0 1 0)"      "1E+02"  "1E+02")
+               ("(rtos 123456.789 1 0)" "1E+05"  "1E+05")
+               ("(rtos 0.0 1 0)"        "0E+00"  "0E+00")
+               ("(rtos 2.5 1 2)"        "2.50E+00" "2.50E+00")
+               ("(rtos 9.99 1 1)"       "1.0E+01" "1.0E+01")
+               ("(rtos 0.0 1 4)"        "0.0000E+00" "0.0000E+00"))
+        do (is (equal autocad (%rtos-in :autocad expression)) "autocad ~A" expression)
+           (is (equal autocad (%rtos-in :strict expression)) "strict ~A" expression)
+           (is (equal bricscad (%rtos-in :bricscad-mac expression)) "bricscad ~A" expression)))
+
+(test angtos-bearing-a-hair-past-north-follows-the-product
+  ;; 1.5707963268 is a hair past 90 degrees: AutoCAD keeps the unrounded
+  ;; (west) side, BricsCAD calls a deviation that rounds to 0 east.
+  (let ((clautolisp.autolisp-builtins-core::*edtime-language* :en))
+    (is (equal "N 0d W" (%rtos-in :autocad "(angtos 1.5707963268 4 0)")))
+    (is (equal "N 0d E" (%rtos-in :bricscad-mac "(angtos 1.5707963268 4 0)")))
+    (is (equal "N 45d E" (%rtos-in :bricscad-mac "(angtos 0.7853981634 4 0)")))
+    (is (equal "S 90d W" (%rtos-in :bricscad-mac "(angtos 3.1415926536 4 0)")))))
+
 ;;;; ----- RTOS reads LUNITS / LUPREC / DIMZIN when args omitted -------
 ;;;;
 ;;;; system-variables.issue 'Coupling', step 2: with MODE / PRECISION

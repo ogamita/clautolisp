@@ -403,7 +403,11 @@ separate binary for tool integrators.
   error), any other type accepted permissively. ~entget~ takes the
   application filter (~(entget ename '("APP"))~) to surface xdata, which
   is otherwise suppressed; ~entmod~ replaces ordinary codes and edits
-  xdata per application; ~entdel~ is the within-session delete/restore
+  xdata per application, checking it as the vendors do — a 1005 handle
+  naming no object or a 1003 naming no layer makes ~entmod~ return ~nil~
+  and change nothing (AutoCAD); under a BricsCAD dialect the dangling
+  handle is accepted and a missing layer silently drops that
+  application's xdata; ~entdel~ is the within-session delete/restore
   toggle; ~entnext~/~entlast~ walk main entities and subentities, with a
   POLYLINE/INSERT stamping its VERTEX/ATTRIB/SEQEND pieces' owner (group
   330). A portable ~.lsp~ probe under
@@ -460,6 +464,16 @@ separate binary for tool integrators.
   Engine identity (~PROGRAM~ / ~ACADVER~ / …) and the dynamic codepage
   sysvars are unaffected. See
   ~issues/open/bricscad-dialect-sysvar-parity.issue~.
+- Under ~--bricscad~, 43 shared variables report BricsCAD's factory
+  default instead of AutoCAD's — ~PICKBOX~ 4, ~OSMODE~ 4135, ~MAXSORT~
+  200, ~DRAGP1~ 10, ~FONTMAP~ "default.fmp", … — each measured on a
+  clean BricsCAD V26 profile AND stated by the BricsCAD documentation.
+  Drawing-saved variables keep the template-neutral catalogue value.
+- Every spelling of a dialect now behaves as its product:
+  ~--dialect bricscad-mac~ / ~bricscad-linux~ / ~bricscad-v25~ get the
+  BricsCAD sysvar set, ~SECURELOAD~ 0 read-only, and the BricsCAD
+  divergence rules; before, only ~bricscad~ / ~bricscad-v26~ did and the
+  others behaved like AutoCAD.
 
 ** Dialect portability warnings (autolisp-spec ch.25)
 
@@ -1241,6 +1255,12 @@ separate binary for tool integrators.
 - ~(substr s start 0)~ returns ~""~.
 - Locale-insensitive numeric I/O (period decimal separator regardless
   of ~LC_NUMERIC~ / ~DIMDSEP~).
+- ~rtos~ scientific mode (1) at precision 0 prints no decimal point —
+  ~(rtos 2.5 1 0)~ is ~"3E+00"~, not ~"3.E+00"~ — and a tie rounds away
+  from zero (AutoCAD) or to even (~"2E+00"~, under a BricsCAD dialect),
+  as both vendors measure. ~angtos~ surveyor's mode under a BricsCAD
+  dialect calls a bearing whose deviation rounds to zero east
+  (~"N 0d E"~ a hair past north; AutoCAD keeps the west side).
 - ~vl-file-systime~ returns *eight* elements — year, month, day of
   week, day of month, hours, minutes, seconds, milliseconds — matching
   every engine probed (AutoCAD 2022, BricsCAD V25 and V26) rather than

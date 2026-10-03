@@ -413,7 +413,9 @@ the controller in autolisp-builtins-core/source/secureload.lisp."
          (lambda (host dialect-keyword)
            (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
             host dialect-keyword)
-           (when (eq dialect-keyword :bricscad-v26)
+           (when (eq (clautolisp.autolisp-reader:autolisp-dialect-template-name
+                      dialect-keyword)
+                     :bricscad-v26)
              (clautolisp.cador:apply-bricscad-dialect-sysvars host))))))))
 
 (defun transmit-dialect-keyword (bindings)
@@ -453,7 +455,11 @@ context), so this never touches a real CAD's sysvars.
 See issues/open/bricscad-dialect-sysvar-parity.issue."
   (when context
     (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
-      (when (and host (eq dialect-keyword :bricscad-v26))
+      ;; Any spelling of the product -- bricscad-mac, bricscad-linux,
+      ;; bricscad-v25 -- not only the template keyword (2026-10-03).
+      (when (and host
+                 (eq :bricscad-v26 (clautolisp.autolisp-reader:autolisp-dialect-template-name
+                                    dialect-keyword)))
         (clautolisp.cador:apply-bricscad-dialect-sysvars host)))))
 
 (defun call-with-dynamic-transmit-binding (context name value thunk)

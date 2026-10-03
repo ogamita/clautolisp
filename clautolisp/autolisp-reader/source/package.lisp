@@ -97,6 +97,7 @@
    #:autolisp-dialect-default-source-encoding
    #:autolisp-dialect-default-file-encoding
    #:find-autolisp-dialect
+   #:autolisp-dialect-template-name
    #:autolisp-dialect-names
    #:dialect-feature
    #:dialect-feature-for

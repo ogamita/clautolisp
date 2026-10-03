@@ -36,11 +36,21 @@ A file with no extension is not gated."
 
 ;;; --- dialect defaults ----------------------------------------------
 
+(defun %product-dialect-name (dialect-name)
+  "DIALECT-NAME with every spelling of a vendor product folded onto that
+product's template keyword: :bricscad-mac, :bricscad-linux, :bricscad-v25
+... -> :bricscad-v26; :autocad-mac, :autocad-2022 ... -> :autocad-2026.
+Comparing the NAME with EQ missed every derived spelling, so
+--dialect bricscad-mac got AutoCAD's SECURELOAD (2026-10-03)."
+  (if dialect-name
+      (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect-name)
+      dialect-name))
+
 (defun secureload-dialect-default (dialect-name)
   "The default SECURELOAD value for DIALECT-NAME (a keyword such as
-:autocad-2026 / :bricscad-v26 / :strict / :lax / :clautolisp). spec
-§ 'Dialect-dependent defaults'."
-  (case dialect-name
+:autocad-2026 / :bricscad-v26 / :strict / :lax / :clautolisp, or any
+derived spelling of a product). spec § 'Dialect-dependent defaults'."
+  (case (%product-dialect-name dialect-name)
     (:autocad-2026 1)
     (:bricscad-v26 0)
     ;; --strict means "the intersection of all dialects" (a program that
@@ -65,7 +75,7 @@ clautolisp controls it; real hosts derive it from the registry. spec
 BricsCAD makes both read-only (admin-configured); AutoCAD and the
 clautolisp dialects leave them settable so users / tests can opt in or
 out. spec § 'Dialect-dependent defaults'."
-  (eq dialect-name :bricscad-v26))
+  (eq (%product-dialect-name dialect-name) :bricscad-v26))
 
 ;;; --- trusted-path parsing ------------------------------------------
 

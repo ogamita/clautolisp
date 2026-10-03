@@ -116,6 +116,27 @@
 (defun find-autolisp-dialect (name)
   (clautolisp.autolisp-reader.internal::find-autolisp-dialect name))
 
+(defun autolisp-dialect-template-name (dialect-or-name)
+  "The name behaviour should dispatch on: any spelling of a vendor product
+-- :bricscad-mac, :bricscad-linux, :bricscad-v25, :autocad-mac,
+:autocad-2022 ... -- folds onto that product's template keyword
+(:bricscad-v26 / :autocad-2026); every other dialect keeps its own name.
+DIALECT-OR-NAME is a descriptor, a keyword or a string. Dispatching on
+AUTOLISP-DIALECT-NAME with EQ missed every derived spelling, so
+--dialect bricscad-mac behaved like AutoCAD for sysvars, SECURELOAD and
+the dialect warnings (2026-10-03)."
+  (let* ((dialect (if (or (keywordp dialect-or-name) (stringp dialect-or-name))
+                      (ignore-errors (find-autolisp-dialect dialect-or-name))
+                      dialect-or-name))
+         (product (and dialect (autolisp-dialect-product dialect))))
+    (case product
+      (:bricscad :bricscad-v26)
+      (:autocad  :autocad-2026)
+      (t (cond (dialect (autolisp-dialect-name dialect))
+               ((stringp dialect-or-name)
+                (intern (string-upcase dialect-or-name) "KEYWORD"))
+               (t dialect-or-name))))))
+
 (defun autolisp-dialect-names ()
   "Ordered list of selectable dialect-name strings (strict first, lax
 last); drives --list-dialects and validates --dialect."

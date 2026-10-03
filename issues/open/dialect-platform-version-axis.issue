@@ -148,3 +148,23 @@ beside it, at the cost of cross-OS clautolisp consistency. This is a
 platform-dependent path-semantics choice on the same platform axis as the
 "/..."-warns-on-autocad-windows case above, hence tracked here. Revisit if
 the Windows divergence proves a problem in practice; not scheduled now.
+
+
+Decision (pjb, 2026-10-03)
+--------------------------
+"we only have 2022 to test; more recent versions we only have the web
+reference, so for now, let's say 2022 is the last known." So: NO bump to
+2027 -- nothing newer than what we can test is declared characterised.
+
+Open point raised back to pjb the same day, before changing anything:
+*autolisp-dialect-latest-version* is (:autocad . 2026) today, and taking
+it to 2022 is not one constant. Bare --dialect autocad is an ENUMERATED
+alias of the :autocad-2026 descriptor (UTF-8 source default) and does not
+read the constant; only DERIVED spellings do (autocad-mac, ...), and a
+derived version < 2025 switches them to the ISO-8859-1 source default
+(dialect.lisp %synthesize-dialect). Lowering only the constant would make
+`autocad' and `autocad-mac' disagree. Choices: (a) record 2022 as the
+last TESTED release and keep 2026 as the behavioural template (the 2026
+web reference is what the catalogue was built from); or (b) make 2022 the
+latest known everywhere, bare `autocad' included -- a behaviour change
+(single-byte source default under --dialect autocad).

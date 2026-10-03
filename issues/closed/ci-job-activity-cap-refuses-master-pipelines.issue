@@ -1,11 +1,39 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: ci-job-activity-cap-refuses-master-pipelines — a merge can land on master with NO pipeline at all, and nothing says so
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: infra
 #+DEPENDS: -
 #+BRANCH: fix-ci-job-activity-cap
 #+DATE: 2026-09-27
+
+* CLOSED 2026-10-03 -- the three closing conditions, measured
+
+The section "What remains" named three conditions, chosen after the first
+premature closure precisely so that closing would need the STEADY STATE,
+not one good measurement. All three are now observed:
+
+- *The count stays under the threshold across a normal working day, with
+  the vendor probe campaigns running.* The sweep:stale-pipelines job logs
+  the active-job count on every master pipeline. 2026-10-03 was a full
+  working day with the probe campaign (block-walk/text-metrics, three
+  vendor probe rounds) and four MRs: 95, 50, 114, 58, 115, 115, 79, 67,
+  52 -- peak 115, under 150. Overnight it is 4. Before the gates
+  (2026-09-28) the same log read 245, 272, 284.
+- *A docs-only merge request spawns NO native child.* MR !377 (issues
+  only, pipeline 2909243724) has no bridge at all.
+- *--warn-at 150 reviewed against data.* The data says 150 is NOT the
+  cap: on 2026-09-28 the sweep counted 245, 272 and 284 active jobs and
+  every one of those pipelines was created. The refusal observed at 172
+  (2026-09-27) therefore did not come from a plain count of active jobs
+  (GitLab's limit is evidently counted some other way -- per pipeline
+  tree, or over a window). 150 is kept as a conservative EARLY WARNING,
+  which is what it is: it fires well before any refusal seen, and has
+  not fired since the gates landed.
+
+And the symptom itself, the reason the ticket exists: since
+2026-09-28 20:00Z, 61 pipelines, 7 failed, *zero* with no jobs -- no
+pipeline has been refused.
 
 * REOPENED 2026-09-27 12:19Z — closed too early, and the closure was my mistake
 

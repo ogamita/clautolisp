@@ -1202,8 +1202,9 @@ cador-2 built (closed 2026-09-28).
       capability question (§14) and condition taxonomy (§15) *decided*.
 - [X] The formal AutoLISP↔host protocol (§13) is defined, and its park/resume
       half is proven implementable — it is implemented (cador-2).
-- [ ] Sign-off of the §12 fidelity-matrix rows and of the section structure —
-      pjb's review.
+- [X] Sign-off of the §12 fidelity-matrix rows — *validated by pjb,
+      2026-10-03*.
+- [ ] Sign-off of the section structure — pjb's review (in progress).
 - [ ] D2 Part II and the §5/§9 items — pjb's review (see D2).
 
 ** 0.3.0 — cadtui, the command layer, the wire host (pjb, 2026-09-28)

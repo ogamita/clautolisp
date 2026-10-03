@@ -4329,7 +4329,7 @@ and AutoCAD) or :deviant (the list, per BricsCAD); WARN-P is true iff a
 portability warning is due.  lax -> deviant, silent; bricscad -> deviant
 + warn; strict -> normative + warn; autocad / clautolisp / unknown ->
 normative, silent."
-  (case dialect-name
+  (case (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect-name)
     ((:lax)                            (values :deviant   nil))
     ((:bricscad :bricscad-v25 :bricscad-v26 :bricscad-mac :bricscad-linux)
      (values :deviant   t))

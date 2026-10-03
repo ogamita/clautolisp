@@ -389,7 +389,7 @@ return two values:
 lax -> deviant, silent; bricscad -> deviant + warn; strict -> normative +
 warn (any divergence is unsafe); autocad / clautolisp / unknown ->
 normative, silent."
-  (case dialect-name
+  (case (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect-name)
     ((:lax)                    (values :deviant   nil))
     ((:bricscad-v26 :bricscad) (values :deviant   t))
     ((:strict)                 (values :normative t))
@@ -735,10 +735,59 @@ applies the change, but that divergence is not portable and not ~
 condoned: it is a no-op under autocad, clautolisp and strict.~%"
           type))
 
+(defun %xdata-pair-valid-p (host code value)
+  "Whether one xdata pair names something that exists, as the vendors
+check on ENTMOD: a 1005 handle must name an object, a 1003 layer name a
+layer. Other codes are not checked."
+  (let ((string (if (typep value 'clautolisp.autolisp-runtime:autolisp-string)
+                    (clautolisp.autolisp-runtime:autolisp-string-value value)
+                    value)))
+    (cond ((group-code-equal-p code 1005)
+           (and (stringp string)
+                (safe-find-entity (cador-active-drawing host) string)
+                t))
+          ((group-code-equal-p code 1003)
+           (and (stringp string)
+                (cador-find-table-record host :layer string)
+                t))
+          (t t))))
+
+(defun %vet-entmod-xdata (host pure)
+  "Apply the vendors' ENTMOD xdata checks to PURE. Measured
+(probes/sources/probe-xdata.lsp, 2026-10-03): AutoCAD REJECTS the whole
+ENTMOD -- returns nil, nothing changes -- when a 1005 handle names no
+object or a 1003 names no layer. BricsCAD accepts the dangling handle,
+and for the missing layer returns the list but silently drops that
+application's xdata. Returns PURE (possibly with groups dropped), or
+:REJECT."
+  (let ((cell (find-if #'xdata-cell-p pure)))
+    (if (null cell)
+        pure
+        (let* ((bricscad (eq :deviant
+                             (%resolved-divergence-policy
+                              (clautolisp.autolisp-runtime:current-evaluation-dialect-name))))
+               (kept '()))
+          (dolist (group (cdr cell))
+            (let ((bad-handle nil) (bad-layer nil))
+              (when (consp group)
+                (dolist (pair (cdr group))
+                  (when (and (consp pair)
+                             (not (%xdata-pair-valid-p host (car pair) (cdr pair))))
+                    (if (group-code-equal-p (car pair) 1005)
+                        (setf bad-handle t)
+                        (setf bad-layer t)))))
+              (cond ((and (not bricscad) (or bad-handle bad-layer))
+                     (return-from %vet-entmod-xdata :reject))
+                    ((and bricscad bad-layer))   ; dropped silently
+                    (t (push group kept)))))
+          (substitute (cons (car cell) (nreverse kept)) cell pure)))))
+
 (defmethod host-entmod ((host cador) data)
   (let* ((handle (extract-modified-handle data 'entmod))
-         (pure (al-data->pure data 'entmod))
+         (pure (%vet-entmod-xdata host (al-data->pure data 'entmod)))
          (drawing (cador-active-drawing host)))
+    (when (eq pure :reject)
+      (return-from host-entmod nil))
     ;; D3: entmod on a non-graphical object diverges — AutoCAD (normative)
     ;; no-ops, BricsCAD (deviant) applies. Apply the resolved policy first.
     (when (%entmod-target-nongraphical-p host handle)

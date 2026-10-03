@@ -52,6 +52,13 @@
         (:bricscad-only (format nil "BricsCAD ~A only. AutoCAD: not present." (v bcv)))
         (:clautolisp "clautolisp-specific.")))))
 
+(defun tier-line (pl)
+  "The Phase 3 support tier (autolisp-spec-alref-commands.issue)."
+  (ecase (getf pl :tier)
+    (:core-now "Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.")
+    (:package-specific "Support tier: package-specific -- one vendor's surface; specified and classified, not scheduled for implementation.")
+    (:deferred "Support tier: deferred -- in scope eventually, not scheduled now.")))
+
 (defun clautolisp-line (name)
   (cond
     ((member name *cador-implemented* :test #'string=)
@@ -75,7 +82,7 @@
     (format out "*** Description~%~A~%~%" (getf pl :description))
     (format out "*** Category~%~A~%~%" (category-name (getf pl :category)))
     (format out "*** Compatibility~%~A~%~%" (compatibility-line pl))
-    (format out "*** clautolisp~%~A~%~%" (clautolisp-line name))
+    (format out "*** clautolisp~%~A~%~A~%~%" (clautolisp-line name) (tier-line pl))
     (format out "*** Source Notes~%")
     (let ((ac (getf pl :source-autocad)) (bc (getf pl :source-bricscad)))
       (when ac (format out "- AutoCAD: ~A~%" ac))
