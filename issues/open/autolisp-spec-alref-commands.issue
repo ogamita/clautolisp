@@ -165,3 +165,32 @@ block, query, dimension, 3d, render, and a catch-all. Support tiers:
       *** clautolisp section; commands-coverage.md gains the table. Of the
       105, cador executes 13 and no-ops 2: Phase 4 = the other 90, plus the
       cadtui tree layer and the cad> bare-command dispatch.
+
+## Phase 4 plan (2026-10-03, pjb: "go ahead with alref Phase 4")
+
+The 90 core-now commands cador does not run yet, bucketed by what they
+need; one MR per stage, each command built against MEASURED vendor output
+(probes/sources/probe-commands.lsp drives (command ...) on AutoCAD and
+BricsCAD and records the entities it makes), not the documentation alone.
+
+  S1  infrastructure: a data-driven command table replacing the COND in
+      %execute-command-tokens; the vendor command probe; then the draw
+      constructions POINT RAY XLINE ELLIPSE POLYGON RECTANG SPLINE 3DPOLY
+      HELIX TRACE SHAPE REGION MLINE; and the headless no-ops (dialogs,
+      raster/PDF/geomap/point-cloud, SKETCH's freehand): PROPERTIES
+      IMAGEADJUST IMAGECLIP IMAGEEDIT CLIPIT PDFCLIP -PDFIMPORT GEOMAPIMAGE
+      GEOMAPIMAGEUPDATE POINTCLOUDCROP SKETCH MLSTYLE ADDSELECTED.
+  S2  modify / properties: SCALE STRETCH MSTRETCH ALIGN 3DROTATE CHPROP
+      CHANGE MATCHPROP SETBYLAYER TRANSPARENCY CHSPACE EXPLODE XPLODE COPYM
+      NCOPY FLATTEN DIVIDE MEASURE LENGTHEN JOIN CONVERTPOLY UNGROUP
+      DRAWORDER TEXTTOFRONT HATCHTOBACK CDORDER.
+  S3  cadtui: NEW OPEN MENULOAD CUILOAD (the tree layer) + spec 5.6 rule 3
+      (a bare command name at the cad> console dispatches).
+  S4  arrays: ARRAY -ARRAY ARRAYCLASSIC ARRAYRECT ARRAYPOLAR ARRAYPATH
+      ARRAYEDIT ARRAYCLOSE 3DARRAY.
+  S5  geometry: TRIM EXTEND FILLET CHAMFER OFFSET EXOFFSET BTRIM BEXTEND
+      EXTRIM BREAKLINE OVERKILL -OVERKILL MPEDIT SPLINEDIT TREX MOCORO
+      (and PEDIT / BREAK, today's no-ops).
+  S6  hatch / boundary: HATCH -HATCH HATCHEDIT -HATCHEDIT GRADIENT
+      SUPERHATCH BOUNDARY -BOUNDARY HATCHGENERATEBOUNDARY.
+Conformance records (autolisp-test) land with each stage.

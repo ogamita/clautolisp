@@ -1241,7 +1241,9 @@ separate binary for tool integrators.
   ~"\\"~ = PAUSE — the predefined ~pause~ variable is bound), and
   the sequence lands on the host command channel; MockHost records
   it and returns nil. ~vl-cmdf~ shares the routing and returns T on
-  success. See the user manual § /Host backend/.
+  success. ~command~ and ~command-s~ are also ordinary functions, as on
+  the vendors, so ~(apply 'command lst)~ and ~(mapcar 'command ...)~
+  work. See the user manual § /Host backend/.
 - ~(quit)~ and ~(exit)~ are catchable by ~VL-CATCH-ALL-APPLY~ — the
   vendor surface, needed by test frameworks like test-unitaire.lsp.
 - Source-level ~'NIL~ normalises to CL nil so ~(a b c . NIL)~ is a

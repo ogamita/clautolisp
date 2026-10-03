@@ -106,7 +106,7 @@
     "GETPROPERTYVALUE" "SETPROPERTYVALUE"
     "VL-LIST-LOADED-LISP" "VL-LIST-LOADED-VLX" "VL-VLX-LOADED-P"
     "VL-UNLOAD-VLX" "VL-LIST-EXPORTED-FUNCTIONS"
-    "VL-VBALOAD" "VL-VBARUN" "VL-CMDF"
+    "VL-VBALOAD" "VL-VBARUN" "VL-CMDF" "COMMAND" "COMMAND-S"
     "VL-ACAD-DEFUN" "VL-ACAD-UNDEFUN" "VL-GET-RESOURCE"
     "VL-GETGEOMEXTENTS" "VL-HIDEPROMPTMENU" "VL-SHOWPROMPTMENU"
     "VL-LOCAL-UNDO-CLEAR" "VL-LOCAL-UNDO-POP" "VL-LOCAL-UNDO-PUSH"
@@ -10587,6 +10587,17 @@ under it. A list of strings, nil when the key is absent or empty."
 (defun builtin-vl-list-exported-functions (&optional name) (declare (ignore name)) nil)
 (defun builtin-vl-vbaload  (file) (declare (ignore file)) nil)
 (defun builtin-vl-vbarun   (proc) (declare (ignore proc)) nil)
+(defun builtin-command-function (&rest arguments)
+  ;; The FUNCTION binding of COMMAND / COMMAND-S. A direct call
+  ;; (command ...) is still the special form (EVAL-COMMAND-FORM), but on
+  ;; AutoCAD and BricsCAD COMMAND is an ordinary function, so
+  ;; (apply 'command lst), (mapcar 'command ...) and (funcall ...) work
+  ;; there -- and failed here with "Undefined AutoLISP function COMMAND"
+  ;; (found by probes/sources/probe-commands.lsp, 2026-10-03). Same
+  ;; routing, same nil return.
+  (dispatch-autolisp-command arguments)
+  nil)
+
 (defun builtin-vl-cmdf (&rest arguments)
   ;; (vl-cmdf ...) — the Visual LISP COMMAND wrapper. As an ordinary
   ;; subr its arguments arrive already evaluated — exactly Autodesk's
@@ -11577,6 +11588,8 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "VL-VBALOAD"              #'builtin-vl-vbaload)
    (make-core-builtin-subr "VL-VBARUN"               #'builtin-vl-vbarun)
    (make-core-builtin-subr "VL-CMDF"                 #'builtin-vl-cmdf)
+   (make-core-builtin-subr "COMMAND"                 #'builtin-command-function)
+   (make-core-builtin-subr "COMMAND-S"               #'builtin-command-function)
    (make-core-builtin-subr "VL-ACAD-DEFUN"           #'builtin-vl-acad-defun)
    (make-core-builtin-subr "VL-ACAD-UNDEFUN"         #'builtin-vl-acad-undefun)
    (make-core-builtin-subr "VL-GET-RESOURCE"         #'builtin-vl-get-resource)

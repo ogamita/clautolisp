@@ -28,6 +28,7 @@ probe-foreach-scope.lsp       cad-probe-run-foreach-scope-probes
 probe-vlax-for-scope.lsp      cad-probe-run-vlax-for-scope-probes
 probe-block-walk.lsp          cad-probe-run-block-walk-probes
 probe-xdata.lsp               cad-probe-run-xdata-probes
+probe-commands.lsp            cad-probe-run-command-probes
 
 # QUARANTINED -- run alone and split, never as part of a normal run:
 #     PROBE_SUITES=load-refusal PROBE_SPLIT_SUITES=load-refusal
