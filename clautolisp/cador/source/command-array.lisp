@@ -5,8 +5,11 @@
 ;;;; Built against probes/sources/probe-commands.lsp (BricsCAD V26, job
 ;;;; 16914406700; AutoCAD 2022 alongside). The ORDER copies are created in
 ;;;; is part of what was measured -- ENTNEXT walks it:
-;;;;   -ARRAY rectangular  row by row    (0,0) (3,0) (6,0) (0,2) (3,2) (6,2)
-;;;;   ARRAYRECT          column by column (0,0) (0,2) (3,0) (3,2) ...
+;;;;   -ARRAY rectangular  column by column on AutoCAD (0,0) (0,2) (3,0) ...
+;;;;                       (job 16915375455), row by row on BricsCAD
+;;;;                       (0,0) (3,0) (6,0) (0,2) ...
+;;;;   ARRAYRECT          column by column (BricsCAD; AutoCAD's console run
+;;;;                       has not answered yet)
 ;;;;   3DARRAY            rows, then columns, then levels innermost
 ;;;;   polar              counter-clockwise from the original
 ;;;; The original stays the first item. The array commands are modelled
@@ -68,7 +71,8 @@ and itself rotated when ROTATE-ITEMS."
            (let ((row-gap (if (> rows 1) (%command-token-number (pop rest)) 0))
                  (col-gap (if (> cols 1) (%command-token-number (pop rest)) 0)))
              (%rect-array host entities (round rows) (round cols)
-                          (or row-gap 0) (or col-gap 0))))))
+                          (or row-gap 0) (or col-gap 0)
+                          :column-major (not (%command-bricscad-p)))))))
       ((%command-option-p (first rest) "p" "polar")
        (pop rest)
        (let ((center (%command-token-point (pop rest)))
@@ -146,9 +150,10 @@ and itself rotated when ROTATE-ITEMS."
     (cond ((%command-option-p (first rest) "r" "rectangular")
            (pop rest)
            (multiple-value-bind (opts rest) (%take-array-options rest)
-             ;; Measured: ARRAY _R makes its copies column by column on
-             ;; AutoCAD, row by row on BricsCAD (ARRAYRECT is column by
-             ;; column on both).
+             ;; Measured on BricsCAD: ARRAY _R makes its copies row by
+             ;; row. AutoCAD's console has not answered (its ARRAY left the
+             ;; session waiting); column by column there follows its
+             ;; -ARRAY -- UNVERIFIED.
              (%run-rect-array host entities opts
                               :column-major (not (%command-bricscad-p)))
              rest))

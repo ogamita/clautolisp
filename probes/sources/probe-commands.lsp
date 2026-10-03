@@ -58,6 +58,49 @@
     (command)
     (setq n (1+ n))))
 
+(setq cad-probe--may-be-absent
+  ;; Commands seen missing on a headless engine (AutoCAD 2022's console has
+  ;; no MATCHPROP) or provided by Express Tools: only these are checked --
+  ;; GETCNAME does not know every command (it reported RECTANG unknown).
+  '("MATCHPROP" "ADDSELECTED" "SETBYLAYER" "COPYM" "FLATTEN" "XPLODE"
+    "3DROTATE" "-OVERKILL" "OVERKILL" "3DARRAY"))
+
+(defun cad-probe--known-command-p (name)
+  ;; Whether this engine has the command NAME: built in (GETCNAME resolves
+  ;; its "_" form) or a LISP command (Express Tools define C:NAME).
+  ;; 2026-10-03: AutoCAD's console has no MATCHPROP; the case's remaining
+  ;; input reached the Command prompt and the job hung to its timeout.
+  ;; An engine whose GETCNAME cannot even resolve _LINE (a stub, as on
+  ;; clautolisp) tells nothing: then every command counts as known.
+  ;; On AutoCAD every listed command is skipped outright: neither GETCNAME
+  ;; nor C:NAME is reliable there (C:3DARRAY is an autoload stub for the
+  ;; AutoLISP add-on 3darray.lsp, which AutoCAD ships in its LOCALISED
+  ;; Support folder -- e.g. .../Support/@fr@/3darray.lsp (pjb) -- and the
+  ;; console did not find it: job 16915457382 hung on it), and one hang
+  ;; loses the whole run.
+  (cond ((not (member name cad-probe--may-be-absent)) T)
+        ((= cad-probe-product "autocad") nil)
+        ((not (getcname "_LINE")) T)
+        ((getcname (strcat "_" name)) T)
+        (T (and (eval (read (strcat "c:" name))) t))))
+
+(setq cad-probe--unknown nil)
+
+(defun cad-probe--cmd-args (args / name)
+  ;; Run (command . ARGS) when its command, "_.NAME" first, is known;
+  ;; otherwise note it and do nothing.
+  (setq name (substr (car args) 3))
+  (if (cad-probe--known-command-p name)
+      (apply 'command args)
+      (setq cad-probe--unknown name)))
+
+(defun cad-probe--token-list-commands (args / out)
+  ;; The "_.NAME" command names inside a token list.
+  (foreach a args
+    (if (and (= (type a) 'STR) (> (strlen a) 2) (= (substr a 1 2) "_."))
+      (setq out (cons (substr a 3) out))))
+  (reverse out))
+
 (defun cad-probe--cmd-case (name args / marker e out n)
   ;; Run (command . ARGS) and record what it made, as one probe result.
   ;; The case name goes to the console FIRST: on 2026-10-03 AutoCAD 2022
@@ -77,8 +120,13 @@
       ;; depends on compilation -- the list (LAMBDA ...) interpreted, a
       ;; USUBR / SUBR compiled -- so test the shape we control instead:
       ;; a token list starts with the command name, a string.
+      (setq cad-probe--unknown nil)
       (if (and (= (type args) 'LIST) (= (type (car args)) 'STR))
-          (apply 'command args)
+          (progn
+            (foreach c (cad-probe--token-list-commands args)
+              (if (and (not cad-probe--unknown) (not (cad-probe--known-command-p c)))
+                (setq cad-probe--unknown c)))
+            (if (not cad-probe--unknown) (apply 'command args)))
           (apply args '()))
       (cad-probe--cmd-cancel)
       (setq e (if marker (entnext marker) (entnext))
@@ -88,7 +136,9 @@
         (setq out (cons (cad-probe--cmd-summary e) out)
               n (1+ n)
               e (entnext e)))
-      (cons n (reverse out))))))
+      (if cad-probe--unknown
+          (strcat "UNKNOWN-COMMAND " cad-probe--unknown)
+          (cons n (reverse out)))))))
 
 (defun cad-probe-run-command-probes ( / osmode cmdecho)
   (setq osmode (getvar "OSMODE") cmdecho (getvar "CMDECHO"))
@@ -140,134 +190,142 @@
   ;; (2026-10-03: DIVIDE "_L" did exactly that, job 16914406699).
   (cad-probe--cmd-case "LENGTHEN a line by delta 1 at its end"
     (function (lambda ()
-      (command "_.LINE" "0,0" "4,0" "")
-      (command "_.LENGTHEN" "_DE" "1" (list (entlast) '(4.0 0.0 0.0)) ""))))
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.LENGTHEN" "_DE" "1" (list (entlast) '(4.0 0.0 0.0)) "")))))
   (cad-probe--cmd-case "JOIN two collinear lines"
     (function (lambda ( / e1)
-      (command "_.LINE" "0,0" "2,0" "")
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "2,0" ""))
       (setq e1 (entlast))
-      (command "_.LINE" "2,0" "4,0" "")
-      (command "_.JOIN" e1 (entlast) ""))))
+      (cad-probe--cmd-args (list "_.LINE" "2,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.JOIN" e1 (entlast) "")))))
   (cad-probe--cmd-case "CONVERTPOLY light to heavy"
     '("_.PLINE" "0,0" "2,0" "2,1" "" "_.CONVERTPOLY" "_H" "_L" ""))
   (cad-probe--cmd-case "MATCHPROP layer and color"
     (function (lambda ( / src)
-      (command "_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "3" "")
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "3" ""))
       (setq src (entlast))
-      (command "_.LINE" "5,5" "6,6" "")
-      (command "_.MATCHPROP" src (entlast) ""))))
+      (cad-probe--cmd-args (list "_.LINE" "5,5" "6,6" ""))
+      (cad-probe--cmd-args (list "_.MATCHPROP" src (entlast) "")))))
   (cad-probe--cmd-case "SETBYLAYER color"
     '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "2" "" "_.SETBYLAYER" "_L" "" "_Y" "_Y"))
-
-  ;; S2, second batch (several are Express Tools: their absence on a
-  ;; headless engine is an answer too). Selection by ename throughout.
-  (cad-probe--cmd-case "DIVIDE by ename into 4"
-    (function (lambda ()
-      (command "_.LINE" "0,0" "4,0" "")
-      (command "_.DIVIDE" (entlast) "4"))))
-  (cad-probe--cmd-case "MEASURE by ename by 1.5"
-    (function (lambda ()
-      (command "_.LINE" "0,0" "4,0" "")
-      (command "_.MEASURE" (entlast) "1.5"))))
-  (cad-probe--cmd-case "ADDSELECTED a circle"
-    (function (lambda ()
-      (command "_.CIRCLE" "0,0" "1")
-      (command "_.ADDSELECTED" (entlast) "5,5" "2"))))
-  (cad-probe--cmd-case "-ARRAY rectangular 2 rows 3 columns"
-    (function (lambda ()
-      (command "_.CIRCLE" "0,0" "0.5")
-      (command "_.-ARRAY" (entlast) "" "_R" "2" "3" "2" "3"))))
-  (cad-probe--cmd-case "-ARRAY polar 4 items over 360"
-    (function (lambda ()
-      (command "_.CIRCLE" "2,0" "0.5")
-      (command "_.-ARRAY" (entlast) "" "_P" "0,0" "4" "360" "_Y"))))
-  (cad-probe--cmd-case "ARRAYRECT non-associative 3x2"
-    (function (lambda ()
-      (command "_.CIRCLE" "0,0" "0.5")
-      (command "_.ARRAYRECT" (entlast) "" "_AS" "_N" "_COU" "3" "2" "_S" "3" "2" "_X"))))
-  (cad-probe--cmd-case "ARRAYPOLAR non-associative 4 items"
-    (function (lambda ()
-      (command "_.CIRCLE" "2,0" "0.5")
-      (command "_.ARRAYPOLAR" (entlast) "" "0,0" "_AS" "_N" "_I" "4" "_X"))))
-  (cad-probe--cmd-case "ARRAY rectangular non-associative"
-    (function (lambda ()
-      (command "_.CIRCLE" "0,0" "0.5")
-      (command "_.ARRAY" (entlast) "" "_R" "_AS" "_N" "_COU" "2" "2" "_S" "3" "3" "_X"))))
-  (cad-probe--cmd-case "3DARRAY rectangular 2x2x2"
-    (function (lambda ()
-      (command "_.CIRCLE" "0,0" "0.5")
-      (command "_.3DARRAY" (entlast) "" "_R" "2" "2" "2" "1" "1" "1"))))
 
   ;; S5 geometry: picks as (ename point); classic TRIM / EXTEND (edges
   ;; first, then the object), when the sysvar exists.
   (vl-catch-all-apply 'setvar (list "TRIMEXTENDMODE" 0))
   (cad-probe--cmd-case "TRIM a line at a cutting edge"
     (function (lambda ( / a)
-      (command "_.LINE" "0,0" "4,0" "") (setq a (entlast))
-      (command "_.LINE" "2,-1" "2,1" "")
-      (command "_.TRIM" (entlast) "" (list a '(3.0 0.0 0.0)) ""))))
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" "")) (setq a (entlast))
+      (cad-probe--cmd-args (list "_.LINE" "2,-1" "2,1" ""))
+      (cad-probe--cmd-args (list "_.TRIM" (entlast) "" (list a '(3.0 0.0 0.0)) "")))))
   (cad-probe--cmd-case "EXTEND a line to a boundary"
     (function (lambda ( / a)
-      (command "_.LINE" "0,0" "1,0" "") (setq a (entlast))
-      (command "_.LINE" "3,-1" "3,1" "")
-      (command "_.EXTEND" (entlast) "" (list a '(1.0 0.0 0.0)) ""))))
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "1,0" "")) (setq a (entlast))
+      (cad-probe--cmd-args (list "_.LINE" "3,-1" "3,1" ""))
+      (cad-probe--cmd-args (list "_.EXTEND" (entlast) "" (list a '(1.0 0.0 0.0)) "")))))
   (cad-probe--cmd-case "FILLET two lines radius 1"
     (function (lambda ( / a)
-      (command "_.LINE" "0,0" "4,0" "") (setq a (entlast))
-      (command "_.LINE" "4,0" "4,4" "")
-      (command "_.FILLET" "_R" "1")
-      (command "_.FILLET" (list a '(2.0 0.0 0.0)) (list (entlast) '(4.0 2.0 0.0))))))
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" "")) (setq a (entlast))
+      (cad-probe--cmd-args (list "_.LINE" "4,0" "4,4" ""))
+      (cad-probe--cmd-args (list "_.FILLET" "_R" "1"))
+      (cad-probe--cmd-args (list "_.FILLET" (list a '(2.0 0.0 0.0)) (list (entlast) '(4.0 2.0 0.0)))))))
   (cad-probe--cmd-case "CHAMFER two lines distances 1 1"
     (function (lambda ( / a)
-      (command "_.LINE" "0,0" "4,0" "") (setq a (entlast))
-      (command "_.LINE" "4,0" "4,4" "")
-      (command "_.CHAMFER" "_D" "1" "1")
-      (command "_.CHAMFER" (list a '(2.0 0.0 0.0)) (list (entlast) '(4.0 2.0 0.0))))))
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" "")) (setq a (entlast))
+      (cad-probe--cmd-args (list "_.LINE" "4,0" "4,4" ""))
+      (cad-probe--cmd-args (list "_.CHAMFER" "_D" "1" "1"))
+      (cad-probe--cmd-args (list "_.CHAMFER" (list a '(2.0 0.0 0.0)) (list (entlast) '(4.0 2.0 0.0)))))))
   (cad-probe--cmd-case "OFFSET a line by 1 to the left"
     (function (lambda ()
-      (command "_.LINE" "0,0" "4,0" "")
-      (command "_.OFFSET" "1" (list (entlast) '(2.0 0.0 0.0)) "2,1" ""))))
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.OFFSET" "1" (list (entlast) '(2.0 0.0 0.0)) "2,1" "")))))
   (cad-probe--cmd-case "OFFSET a circle by 1 outward"
     (function (lambda ()
-      (command "_.CIRCLE" "0,0" "2")
-      (command "_.OFFSET" "1" (list (entlast) '(2.0 0.0 0.0)) "5,0" ""))))
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "2"))
+      (cad-probe--cmd-args (list "_.OFFSET" "1" (list (entlast) '(2.0 0.0 0.0)) "5,0" "")))))
   (cad-probe--cmd-case "BREAK a line between two points"
     (function (lambda ()
-      (command "_.LINE" "0,0" "4,0" "")
-      (command "_.BREAK" (list (entlast) '(1.0 0.0 0.0)) "3,0"))))
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.BREAK" (list (entlast) '(1.0 0.0 0.0)) "3,0")))))
   (cad-probe--cmd-case "PEDIT a line into a polyline of width 0.5"
     (function (lambda ()
-      (command "_.LINE" "0,0" "4,0" "")
-      (command "_.PEDIT" (list (entlast) '(2.0 0.0 0.0)) "_Y" "_W" "0.5" ""))))
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.PEDIT" (list (entlast) '(2.0 0.0 0.0)) "_Y" "_W" "0.5" "")))))
+
+  ;; S2, second batch (several are Express Tools: their absence on a
+  ;; headless engine is an answer too). Selection by ename throughout.
+  (cad-probe--cmd-case "DIVIDE by ename into 4"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.DIVIDE" (entlast) "4")))))
+  (cad-probe--cmd-case "MEASURE by ename by 1.5"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.MEASURE" (entlast) "1.5")))))
+  (cad-probe--cmd-case "ADDSELECTED a circle"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "1"))
+      (cad-probe--cmd-args (list "_.ADDSELECTED" (entlast) "5,5" "2")))))
+  (cad-probe--cmd-case "-ARRAY rectangular 2 rows 3 columns"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
+      (cad-probe--cmd-args (list "_.-ARRAY" (entlast) "" "_R" "2" "3" "2" "3")))))
+  (cad-probe--cmd-case "-ARRAY polar 4 items over 360"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "2,0" "0.5"))
+      (cad-probe--cmd-args (list "_.-ARRAY" (entlast) "" "_P" "0,0" "4" "360" "_Y")))))
+  (cad-probe--cmd-case "ARRAYRECT non-associative 3x2"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
+      (cad-probe--cmd-args (list "_.ARRAYRECT" (entlast) "" "_AS" "_N" "_COU" "3" "2" "_S" "3" "2" "_X")))))
+  (cad-probe--cmd-case "ARRAYPOLAR non-associative 4 items"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "2,0" "0.5"))
+      (cad-probe--cmd-args (list "_.ARRAYPOLAR" (entlast) "" "0,0" "_AS" "_N" "_I" "4" "_X")))))
+  (cad-probe--cmd-case "3DARRAY rectangular 2x2x2"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
+      (cad-probe--cmd-args (list "_.3DARRAY" (entlast) "" "_R" "2" "2" "2" "1" "1" "1")))))
 
   ;; Express Tools (COPYM FLATTEN XPLODE) and the 3DROTATE gizmo may be
   ;; missing on a headless engine: run them late, so a missing command
   ;; cannot spoil the cases above.
   (cad-probe--cmd-case "COPYM two copies"
     (function (lambda ()
-      (command "_.CIRCLE" "0,0" "1")
-      (command "_.COPYM" (entlast) "" "0,0" "3,0" "6,0" ""))))
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "1"))
+      (cad-probe--cmd-args (list "_.COPYM" (entlast) "" "0,0" "3,0" "6,0" "")))))
   (cad-probe--cmd-case "FLATTEN a 3D line"
     (function (lambda ()
-      (command "_.LINE" "0,0,1" "2,0,3" "")
-      (command "_.FLATTEN" (entlast) "" "_N"))))
+      (cad-probe--cmd-args (list "_.LINE" "0,0,1" "2,0,3" ""))
+      (cad-probe--cmd-args (list "_.FLATTEN" (entlast) "" "_N")))))
   (cad-probe--cmd-case "3DROTATE a line 90 about Z"
     (function (lambda ()
-      (command "_.LINE" "0,0" "2,0" "")
-      (command "_.3DROTATE" (entlast) "" "0,0,0" "_Z" "90"))))
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "2,0" ""))
+      (cad-probe--cmd-args (list "_.3DROTATE" (entlast) "" "0,0,0" "_Z" "90")))))
   (cad-probe--cmd-case "XPLODE a rectangle"
     (function (lambda ()
-      (command "_.RECTANG" "0,0" "2,1")
-      (command "_.XPLODE" (entlast) "" "_E"))))
+      (cad-probe--cmd-args (list "_.RECTANG" "0,0" "2,1"))
+      (cad-probe--cmd-args (list "_.XPLODE" (entlast) "" "_E")))))
 
   ;; S4 arrays: classic -ARRAY, and the array commands made NON-associative
   ;; (_AS _N) so the result is plain copies rather than an array object.
 
   (cad-probe--cmd-case "OVERKILL two identical lines"
     (function (lambda ( / a)
-      (command "_.LINE" "0,0" "4,0" "") (setq a (entlast))
-      (command "_.LINE" "0,0" "4,0" "")
-      (command "_.-OVERKILL" a (entlast) "" ""))))
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" "")) (setq a (entlast))
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.-OVERKILL" a (entlast) "" "")))))
+
+  ;; ARRAY _R left AutoCAD 2022's console waiting (job 16915375455): late.
+  (cad-probe--cmd-case "ARRAY rectangular non-associative"
+    (function (lambda ()
+      ;; AutoCAD 2022's console has ARRAY but leaves it waiting on this
+      ;; input, which hangs the whole job: skipped there.
+      (if (= cad-probe-product "autocad")
+          (setq cad-probe--unknown "ARRAY (SKIPPED-ON-AUTOCAD)")
+          (progn
+            (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
+            (cad-probe--cmd-args (list "_.ARRAY" (entlast) "" "_R" "_AS" "_N"
+                                       "_COU" "2" "2" "_S" "3" "3" "_X")))))))
 
   ;; LAST: from LISP, AutoCAD's EXPLODE takes one object and ends, so a
   ;; trailing "" repeats it and leaves it waiting -- it derailed every

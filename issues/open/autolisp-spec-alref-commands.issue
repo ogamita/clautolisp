@@ -246,3 +246,68 @@ Left in S2: MSTRETCH 3DROTATE CHSPACE XPLODE COPYM NCOPY UNGROUP (Express
 Tools / gizmo / layouts / groups: AutoCAD's console and BricsCAD answered
 nothing for the ones probed). S4: ARRAYPATH ARRAYEDIT ARRAYCLOSE (need
 associative arrays), ARRAYCLASSIC (dialog). S5's cases are in the probe.
+
+## Phase 4 S5 (core) -- 2026-10-03
+
+TRIM EXTEND (quick and classic modes) OFFSET BREAK FILLET CHAMFER PEDIT
+OVERKILL / -OVERKILL, in cador/source/command-edit.lisp. Implemented from
+the commands' geometry -- the CAD runners were asleep, so the S5 probe
+cases (in probe-commands.lsp since !382) have not been answered yet:
+CONFIRM against them on the next vendor run (the merged MRs' probe jobs
+were cancelled with their child pipelines). Scope: LINEs edited; lines and
+circles / arcs as edges; OFFSET of circles and arcs; BREAK of circles.
+56 + 17 of 105. Left in S5: EXOFFSET BTRIM BEXTEND EXTRIM BREAKLINE MPEDIT
+SPLINEDIT TREX MOCORO (Express Tools / spline editing) and HELIX.
+
+## CORRECTION (2026-10-03, S5 vendor run)
+
+The S2-rest / S4 note above says ARRAY _R goes "column by column on AutoCAD":
+that was NOT measured. AutoCAD's run had derailed before the array cases, and
+the comparison tool silently skipped records with no value, so an absence read
+as agreement. The real AutoCAD answer (job 16915375455) is for -ARRAY:
+column by column on AutoCAD -- (0,0) (0,2) (3,0) ... -- while BricsCAD goes row
+by row; cador now follows each (it had -ARRAY row by row everywhere). ARRAY _R
+on AutoCAD is still unanswered (its ARRAY left the console waiting); column by
+column there follows -ARRAY and is marked UNVERIFIED in the code. Lesson kept
+in the comparison: a vendor record with no value is MISSING, not equal.
+
+The probe's command check now covers only a list of commands seen absent or
+from Express Tools (GETCNAME reported RECTANG unknown), and the S5 cases run
+ahead of the arrays, so an array derail cannot take them with it.
+
+## Note: AutoCAD's console and the AutoLISP add-on commands (2026-10-03)
+
+Several core-now commands are not built into AutoCAD but AutoLISP add-ons
+loaded on demand: 3DARRAY is 3darray.lsp in the LOCALISED Support folder
+(pjb: e.g. '/Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app/Contents/
+Resources/Support/@fr@/3darray.lsp'); C:3DARRAY is an autoload stub. The
+CI runner's accoreconsole did not find the file (no localised Support path),
+so the stub failed and the probe hung; MATCHPROP is absent from the console
+altogether. probe-commands now skips such commands on AutoCAD (BricsCAD
+answers them). To measure them on AutoCAD: give the console the localised
+Support folder on its search path (a runner setting -- not changed here).
+
+Policy (pjb, 2026-10-03): "We may provide an implementation, notably if
+bricscad has one, but if we are able to load autocad's code directly (with
+dialect autocad), it's good enough." So for an add-on command, being able to
+load and run the vendor's own .lsp under dialect autocad suffices; a native
+cador command is optional (3DARRAY has one, as BricsCAD has it built in).
+Probe recipe for the console (pjb): (vl-load-com) (load "3darray")
+(vlax-add-cmd "3darray" 'c:3darray), then (command "3darray" ...) --
+probe-commands follows it on AutoCAD (follow-up MR), finding the file in a
+subfolder of the support path when FINDFILE does not.
+
+## S5 confirmed against AutoCAD (2026-10-03, job 16915617788)
+
+The full commands suite ran on AutoCAD 2022's console (54 cases, no hang).
+TRIM EXTEND FILLET CHAMFER OFFSET (line, circle) BREAK PEDIT: geometry
+identical to clautolisp, as on BricsCAD (job 16914861740 era, 9/9).
+OVERKILL: skipped on AutoCAD (Express Tools), BricsCAD-confirmed.
+Other differences in that run, none S5:
+  - HELIX, REGION: deferred (see S1); MLINE: CMLSCALE (see S1);
+  - STRETCH: the console has no view, its crossing window selects nothing;
+  - ARRAYRECT: AutoCAD made an ASSOCIATIVE array (INSERT of *U3) despite
+    "_AS" "_N"; ARRAYPOLAR left only the source circle -- the probe's input
+    sequence does not fit AutoCAD's prompts for these two (UNANSWERED on
+    AutoCAD; cador follows BricsCAD's measured answer). To probe: drive
+    ARRAYASSOCIATIVITY 0 instead of the _AS option.
