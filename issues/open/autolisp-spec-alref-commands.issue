@@ -195,3 +195,24 @@ BricsCAD and records the entities it makes), not the documentation alone.
   S6  hatch / boundary: HATCH -HATCH HATCHEDIT -HATCHEDIT GRADIENT
       SUPERHATCH BOUNDARY -BOUNDARY HATCHGENERATEBOUNDARY.
 Conformance records (autolisp-test) land with each stage.
+
+## Phase 4 S1 -- done (2026-10-03, MR !380)
+
+Measured first: probes/sources/probe-commands.lsp on AutoCAD 2022 and
+BricsCAD V26 (21 cases; 16 identical across the two vendors). cador now:
+  - dispatches through a command table (*cador-commands*);
+  - draws POINT RAY XLINE ELLIPSE POLYGON RECTANG SPLINE 3DPOLY TRACE
+    MLINE -- 18 of 21 probe cases identical to AutoCAD under the default
+    dialect, and to BricsCAD under bricscad-mac; where the vendors differ
+    the dialect decides (TRACE: AutoCAD makes nothing; MLINE style
+    "STANDARD" vs "Standard"; SPLINE default tangents omitted on AutoCAD);
+  - recognises the 12 headless no-ops;
+  - lists the polyline default groups both vendors' ENTGET shows;
+  - (side fixes) COMMAND is also a function; fresh drawings get the
+    imperial-template sysvar values (sysvar-template-defaults-undocumented
+    for the 18 without a documented value -- CMLSCALE among them, the one
+    remaining MLINE difference).
+Deferred: HELIX -> S5 (each vendor approximates the helix with its own
+spline -- AutoCAD 46 control points for 3 turns, BricsCAD 27; matching
+either means reverse-engineering it). REGION -> S6 (needs ACIS SAT data).
+The probe hung AutoCAD twice before the CMDACTIVE fix (bit 4 = script).

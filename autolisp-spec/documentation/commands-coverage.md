@@ -78,9 +78,12 @@ Stamped as `:tier` in `commands-inventory.sexp` by
 | package-specific | a command only one vendor has | 1059 |
 | deferred | everything else | 457 |
 
-Of the 105 core-now, cador executes 13 today (ARC, CIRCLE, COPY, DONUT,
-ERASE, LINE, MIRROR, MOVE, PLINE, ROTATE, SOLID, TEXT, WIPEOUT) and
-recognises 2 as no-ops (BREAK, PEDIT): 90 to go in Phase 4.
+Of the 105 core-now, cador executes 23 (Phase 4 S1 added POINT, RAY,
+XLINE, ELLIPSE, POLYGON, RECTANG, SPLINE, 3DPOLY, TRACE, MLINE -- built
+against the vendors' measured output) and recognises 14 as no-ops (BREAK,
+PEDIT, and S1's PROPERTIES, MLSTYLE, IMAGEADJUST, IMAGECLIP, IMAGEEDIT,
+CLIPIT, PDFCLIP, -PDFIMPORT, GEOMAPIMAGE, GEOMAPIMAGEUPDATE, POINTCLOUDCROP,
+SKETCH): 68 to go (S2-S6, with HELIX in S5 and REGION in S6).
 
 ## Implemented in cador (`%execute-command-tokens`)
 

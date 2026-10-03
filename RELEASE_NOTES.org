@@ -1198,6 +1198,20 @@ separate binary for tool integrators.
   becomes the definition origin — they leave model space, the vendor
   contract; a same-name definition is redefined) complete the engine's
   block-factory path.
+- The command engine draws ~POINT~, ~RAY~, ~XLINE~, ~ELLIPSE~,
+  ~POLYGON~, ~RECTANG~, ~SPLINE~ (fit points), ~3DPOLY~, ~TRACE~ and
+  ~MLINE~, each built against what AutoCAD 2022 and BricsCAD MAKE for
+  the same input (measured, 18 of 21 probe cases identical on each): the
+  polygon's start vertex and order, the spline's chord-length natural
+  cubic, the multiline's miters. Where the vendors differ the dialect
+  decides (AutoCAD's ~TRACE~ makes nothing; its multiline style name is
+  "STANDARD"; its splines omit default tangents). Dialog / raster /
+  point-cloud commands (~PROPERTIES~, ~IMAGECLIP~, ~SKETCH~, ...) are
+  recognised and consumed. Polylines made any way now list the default
+  groups both vendors' ~entget~ shows (43 38 39, per-vertex 40 41 42 91).
+- A fresh drawing holds the documented imperial-template values in the
+  drawing-dependent system variables (~DIMASZ~ 0.18, ~DIMSTYLE~
+  "Standard", ~LIMMAX~ (12 9), ~TEXTSIZE~ 0.2, ...), no longer zeros.
 - Geometric transforms (translate / rotate — Move, Copy, -BLOCK
   absorption, the command ~ROTATE~) and ~GetBoundingBox~ now apply to
   *every* occurrence of a point group, not just the first: a

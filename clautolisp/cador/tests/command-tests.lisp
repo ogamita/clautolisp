@@ -474,17 +474,6 @@
     (is (every #'%ct-near '((3 2) (0 2) (0 0) (3 0))
                (verts '("_.RECTANG" "3,2" "0,0"))))))
 
-(test command-trace-mitres-its-segments-as-measured
-  (let* ((mock (%ct-run '("_.TRACE" "0.5" "0,0" "4,0" "4,3" "")))
-         (e1 (host-entnext mock nil))
-         (d1 (host-entget mock e1))
-         (d2 (host-entget mock (host-entnext mock e1))))
-    (is (equal '("TRACE" "TRACE") (%ct-types mock)))
-    (is (%ct-near '(0 0.25 0) (%ct-group d1 10)))
-    (is (%ct-near '(4.25 -0.25 0) (%ct-group d1 13)))
-    (is (%ct-near '(3.75 0.25 0) (%ct-group d2 10)))
-    (is (%ct-near '(4.25 3 0) (%ct-group d2 13)))))
-
 (test command-3dpoly-makes-a-3d-polyline-run
   (let ((mock (%ct-run '("_.3DPOLY" "0,0,0" "1,0,1" "1,1,2" ""))))
     (is (equal '("POLYLINE" "VERTEX" "VERTEX" "VERTEX" "SEQEND") (%ct-types mock)))

@@ -13,6 +13,13 @@
 
 (defun %pt2 (p) (list (first p) (second p)))
 
+(defun %command-bricscad-p ()
+  "True under a BricsCAD dialect (any spelling); the commands follow
+AutoCAD everywhere else, strict included."
+  (eq :bricscad-v26
+      (clautolisp.autolisp-reader:autolisp-dialect-template-name
+       (clautolisp.autolisp-runtime:current-evaluation-dialect-name))))
+
 (defun %v- (a b) (mapcar #'- a b))
 
 (defun %v+ (a b) (mapcar #'+ a b))
@@ -210,6 +217,11 @@ a command-made R13+ entity needs."
         (list (+ (first p) (* tt (first d))) (+ (second p) (* tt (second d))))))))
 
 (defun %cmd-trace (host tokens)
+  ;; AutoCAD 2022 makes NOTHING for this sequence (probe-commands, job
+  ;; 16914120564): its TRACE is not the old wide-line command. BricsCAD
+  ;; draws. So the command is consumed, and draws only under BricsCAD.
+  (unless (%command-bricscad-p)
+    (return-from %cmd-trace (%consume-through-return tokens)))
   (let ((w (%command-token-number (first tokens))))
     (unless w (return-from %cmd-trace tokens))
     (pop tokens)
@@ -367,9 +379,12 @@ of the spline's second derivative."
                        (cons 70 1064) (cons 71 3)
                        (cons 72 (length knots)) (cons 73 (length controls))
                        (cons 74 (length fit))
-                       (cons 42 1d-10) (cons 43 1d-10) (cons 44 0.0d0)
-                       (cons 12 (list 0.0d0 0.0d0 0.0d0))
-                       (cons 13 (list 0.0d0 0.0d0 0.0d0)))
+                       (cons 42 1d-10) (cons 43 1d-10) (cons 44 0.0d0))
+                 ;; Default tangents: BricsCAD lists 12 / 13 as (0 0 0),
+                 ;; AutoCAD omits them (measured).
+                 (when (%command-bricscad-p)
+                   (list (cons 12 (list 0.0d0 0.0d0 0.0d0))
+                         (cons 13 (list 0.0d0 0.0d0 0.0d0))))
                  (map 'list (lambda (k) (cons 40 k)) knots)
                  (mapcar (lambda (c) (cons 10 c)) controls)
                  (mapcar (lambda (f) (cons 11 f)) fit)))))
@@ -416,7 +431,10 @@ of the spline's second derivative."
              (data (list (cons 0 "MLINE")
                          (cons 100 "AcDbEntity") (cons 100 "AcDbMline")
                          (cons 8 (%current-layer-name host))
-                         (cons 2 (if (stringp style) style "Standard"))
+                         ;; Measured: AutoCAD names the style "STANDARD",
+                         ;; BricsCAD "Standard".
+                         (cons 2 (let ((name (if (stringp style) style "Standard")))
+                                   (if (%command-bricscad-p) name (string-upcase name))))
                          (cons 40 scale) (cons 70 just)
                          (cons 71 (if closed 3 1))
                          (cons 72 n) (cons 73 (length offsets))
