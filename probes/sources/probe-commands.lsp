@@ -84,6 +84,41 @@
         ((getcname (strcat "_" name)) T)
         (T (and (eval (read (strcat "c:" name))) t))))
 
+;; AutoCAD add-on commands (3darray.lsp...) live in a LOCALISED subfolder
+;; of Support (e.g. Support/en-us, Support/@fr@ on macOS -- pjb), which the
+;; console's search path may not list: look in the support path, then one
+;; level below each of its folders.
+(defun cad-probe--find-addon (file / path dirs i j d hit)
+  (setq hit (findfile file))
+  (if (not hit)
+    (progn
+      (setq path (strcat (getvar "ACADPREFIX") ";") i 1 dirs nil)
+      (while (setq j (vl-string-search ";" path (1- i)))
+        (setq d (substr path i (- (1+ j) i)) i (+ j 2))
+        (if (> (strlen d) 0) (setq dirs (cons d dirs))))
+      (foreach d (reverse dirs)
+        (if (not hit)
+          (foreach sub (cons "." (vl-directory-files d nil -1))
+            (if (and (not hit) (/= sub ".."))
+              (setq hit (findfile (strcat d "/" sub "/" file)))))))))
+  hit)
+
+(defun cad-probe--load-addon-command (name / file r)
+  ;; Load the add-on NAME.lsp and register C:NAME as the command NAME;
+  ;; true on success. Every step is guarded: a failure must not reach the
+  ;; Command prompt, where it would hang the console.
+  (setq file (cad-probe--find-addon (strcat name ".lsp")))
+  (if file
+    (progn
+      (princ (strcat "\ncad-probe: add-on " file "\n"))
+      (vl-catch-all-apply 'vl-load-com '())
+      (setq r (vl-catch-all-apply 'load (list file nil)))
+      (and r (not (vl-catch-all-error-p r))
+           (eval (read (strcat "c:" name)))
+           (not (vl-catch-all-error-p
+                  (vl-catch-all-apply 'vlax-add-cmd
+                    (list name (read (strcat "c:" name))))))))))
+
 (setq cad-probe--unknown nil)
 
 (defun cad-probe--cmd-args (args / name)
@@ -284,7 +319,15 @@
   (cad-probe--cmd-case "3DARRAY rectangular 2x2x2"
     (function (lambda ()
       (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5"))
-      (cad-probe--cmd-args (list "_.3DARRAY" (entlast) "" "_R" "2" "2" "2" "1" "1" "1")))))
+      (if (= cad-probe-product "autocad")
+          ;; AutoCAD: 3DARRAY is the AutoLISP add-on 3darray.lsp; its
+          ;; autoload stub hung the console (job 16915457382), so load the
+          ;; file explicitly and register its C: function as a command
+          ;; (pjb's recipe: vl-load-com, load, vlax-add-cmd).
+          (if (cad-probe--load-addon-command "3darray")
+              (command "3DARRAY" (entlast) "" "_R" "2" "2" "2" "1" "1" "1")
+              (setq cad-probe--unknown "3DARRAY (3darray.lsp not found)"))
+          (cad-probe--cmd-args (list "_.3DARRAY" (entlast) "" "_R" "2" "2" "2" "1" "1" "1"))))))
 
   ;; Express Tools (COPYM FLATTEN XPLODE) and the 3DROTATE gizmo may be
   ;; missing on a headless engine: run them late, so a missing command
