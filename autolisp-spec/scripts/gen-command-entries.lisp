@@ -36,7 +36,10 @@
     "DIVIDE" "MEASURE" "ADDSELECTED" "JOIN" "FLATTEN"
     ;; S5 geometry editing
     "TRIM" "EXTEND" "OFFSET" "BREAK" "FILLET" "CHAMFER" "PEDIT"
-    "OVERKILL" "-OVERKILL"))
+    "OVERKILL" "-OVERKILL"
+    ;; S6 hatch / boundary
+    "HATCH" "-HATCH" "HATCHEDIT" "-HATCHEDIT" "HATCHGENERATEBOUNDARY"
+    "BOUNDARY" "-BOUNDARY"))
 
 (defparameter *cador-recognised-noop*
   '("ZOOM" "UCS" "BROWSER" "SHELL"
@@ -45,7 +48,9 @@
     "PDFCLIP" "-PDFIMPORT" "GEOMAPIMAGE" "GEOMAPIMAGEUPDATE" "POINTCLOUDCROP"
     "SKETCH"
     ;; S2: display order / raster image background
-    "DRAWORDER" "TEXTTOFRONT" "HATCHTOBACK" "CDORDER" "TRANSPARENCY"))
+    "DRAWORDER" "TEXTTOFRONT" "HATCHTOBACK" "CDORDER" "TRANSPARENCY"
+    ;; S6: dialogs
+    "GRADIENT" "SUPERHATCH"))
 
 (defun read-inventory (path)
   (with-open-file (in path :external-format :utf-8)

@@ -1247,3 +1247,188 @@ entirely silent under --dialect autocad."
     (clautolisp.autolisp-host:host-command
      mock (list "_.LENGTHEN" "_DE" "1" (list (host-entlast mock) '(0.0d0 0.0d0 0.0d0)) ""))
     (is (%ct-near '(-1 0 0) (%ct-group (%ct-last-data mock) 10)))))
+
+;;; --- alref Phase 4 S6: hatch / boundary -- measured on AutoCAD 2022
+;;; (job 16916189663) and BricsCAD V26 (job 16916189664).
+
+(defun %ct-hatch-after (setup boundary-tokens hatch-builder &key (measurement 1) (hpassoc 1))
+  "A fresh host: SETUP's command, then HATCH-BUILDER's tokens on its
+entity; returns (values HATCH-DATA MOCK)."
+  (let ((mock (make-cador)))
+    (host-setvar mock "MEASUREMENT" measurement)
+    (host-setvar mock "HPASSOC" hpassoc)
+    (clautolisp.autolisp-host:host-command mock (append setup boundary-tokens))
+    (clautolisp.autolisp-host:host-command mock (funcall hatch-builder (host-entlast mock)))
+    (values (%ct-last-data mock) mock)))
+
+(defun %ct-str (data code)
+  "DATA's CODE group as a Lisp string (ENTGET gives AutoLISP strings)."
+  (autolisp-string-value (%ct-group data code)))
+
+(defun %ct-codes-after (data code)
+  "The (code . value) groups of DATA from the first CODE group on."
+  (member code data :key #'car))
+
+(test command-hatch-solid-loops-in-each-vendors-form
+  (flet ((solid-rect ()
+           (%ct-hatch-after '("_.RECTANG" "0,0" "4,2") '()
+                            (lambda (e) (list "_.-HATCH" "_P" "SOLID" "_S" e "" "")))))
+    (%with-dialect (:autocad)
+      ;; Edge loop: 92=1 93=4, each side 72=1 10 11; 75=1; one seed point.
+      (let ((d (solid-rect)))
+        (is (equal "HATCH" (%ct-str d 0)))
+        (is (equal "SOLID" (%ct-str d 2)))
+        (is (eql 1 (%ct-group d 70)))
+        (is (eql 1 (%ct-group d 71)))
+        (is (equal '(1 4 1) (list (%ct-group d 92) (%ct-group d 93) (%ct-group d 72))))
+        (let ((edges (%ct-codes-after d 72)))
+          (is (%ct-near '(0 0 0) (cdr (assoc 10 edges))))
+          (is (%ct-near '(4 0 0) (cdr (assoc 11 edges)))))
+        (is (eql 1 (%ct-group d 97)))
+        (is (eql 1 (%ct-group d 75)))
+        (is (eql 1 (%ct-group d 98)))
+        (is (null (%ct-group d 41)))))
+    (%with-dialect (:bricscad)
+      ;; Polyline loop: 92=3 72=0 73=1 93=4 then the vertices; 75=0; 98=0.
+      (let ((d (solid-rect)))
+        (is (equal '(3 0 1 4) (list (%ct-group d 92) (%ct-group d 72)
+                                    (%ct-group d 73) (%ct-group d 93))))
+        (is (equal '((0 0 0) (4 0 0) (4 2 0) (0 2 0))
+                   (mapcar (lambda (p) (mapcar #'round p))
+                           (subseq (%ct-vertices (%ct-codes-after d 93)) 0 4))))
+        (is (eql 0 (%ct-group d 75)))
+        (is (eql 0 (%ct-group d 98)))))))
+
+(test command-hatch-pattern-lines-and-circle-loops
+  ;; ANSI31 scale 2 angle 45 under MEASUREMENT 1: the line's offset
+  ;; (0, 3.175) scaled and turned by 45 + 45 -> 45=-6.35 46=0 (both vendors).
+  (flet ((ansi31-circle ()
+           (%ct-hatch-after '("_.CIRCLE" "0,0" "1") '()
+                            (lambda (e) (list "_.-HATCH" "_P" "ANSI31" "2" "45" "_S" e "" "")))))
+    (%with-dialect (:autocad)
+      (let ((d (ansi31-circle)))
+        (is (eql 0 (%ct-group d 70)))
+        ;; The circle is one arc edge: 72=2 centre radius 0..2pi ccw.
+        (is (equal '(1 1 2) (list (%ct-group d 92) (%ct-group d 93) (%ct-group d 72))))
+        (let ((edge (%ct-codes-after d 72)))
+          (is (%ct-near 1 (cdr (assoc 40 edge))))
+          (is (%ct-near (* 2 pi) (cdr (assoc 51 edge)))))
+        (is (%ct-near 2 (%ct-group d 41)))
+        (is (eql 1 (%ct-group d 78)))
+        (is (%ct-near -6.35 (%ct-group d 45)))
+        (is (%ct-near 0 (%ct-group d 46)))))
+    (%with-dialect (:bricscad)
+      (let ((d (ansi31-circle)))
+        ;; Two vertices of bulge 1 from (r, 0).
+        (is (equal '(3 1 1 2) (list (%ct-group d 92) (%ct-group d 72)
+                                    (%ct-group d 73) (%ct-group d 93))))
+        (is (%ct-near '(1 0 0) (cdr (assoc 10 (%ct-codes-after d 93)))))
+        (is (%ct-near 1 (cdr (assoc 42 (%ct-codes-after d 93)))))
+        (is (%ct-near -6.35 (%ct-group d 45)))))))
+
+(test command-hatch-associativity-and-hatchedit
+  (%with-dialect (:autocad)
+    (let ((d (%ct-hatch-after '("_.RECTANG" "0,0" "4,2") '()
+                              (lambda (e) (list "_.-HATCH" "_P" "SOLID" "_S" e "" ""))
+                              :hpassoc 0)))
+      (is (eql 0 (%ct-group d 71)))
+      (is (eql 0 (%ct-group d 97)))
+      (is (null (%ct-group d 330))))
+    ;; -HATCHEDIT to ANSI37 scale 1 angle 0: two lines, offsets
+    ;; (-2.245064, +-2.245064); the loops are kept.
+    (multiple-value-bind (d mock)
+        (%ct-hatch-after '("_.RECTANG" "0,0" "4,2") '()
+                         (lambda (e) (list "_.-HATCH" "_P" "SOLID" "_S" e "" "")))
+      (declare (ignore d))
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.-HATCHEDIT" (host-entlast mock) "_P" "ANSI37" "1" "0"))
+      (let ((d (%ct-last-data mock)))
+        (is (equal "ANSI37" (%ct-str d 2)))
+        (is (eql 0 (%ct-group d 70)))
+        (is (eql 4 (%ct-group d 93)))
+        (is (eql 2 (%ct-group d 78)))
+        (is (%ct-near '(-2.245064 2.245064 -2.245064 -2.245064)
+                      (loop for (code . value) in d
+                            when (member code '(45 46)) collect value)))))))
+
+(test command-hatchgenerateboundary-and-boundary
+  (%with-dialect (:bricscad)
+    ;; A non-associative hatch whose rectangle is gone: one closed
+    ;; LWPOLYLINE per loop, and the hatch now associative to it.
+    (let ((mock (make-cador)))
+      (host-setvar mock "HPASSOC" 0)
+      (clautolisp.autolisp-host:host-command mock '("_.RECTANG" "0,0" "4,2"))
+      (let ((r (host-entlast mock)))
+        (clautolisp.autolisp-host:host-command mock (list "_.-HATCH" "_P" "SOLID" "_S" r "" ""))
+        (let ((h (host-entlast mock)))
+          (host-entdel mock r)
+          (clautolisp.autolisp-host:host-command mock (list "_.HATCHGENERATEBOUNDARY" h ""))
+          (let ((p (%ct-last-data mock)))
+            (is (equal "LWPOLYLINE" (%ct-str p 0)))
+            (is (eql 1 (logand 1 (%ct-group p 70))))
+            (is (equal '((0 0) (4 0) (4 2) (0 2))
+                       (mapcar (lambda (v) (mapcar #'round v)) (%ct-vertices p)))))
+          (let ((hd (host-entget mock h)))
+            (is (eql 1 (%ct-group hd 71)))
+            (is (eql 1 (%ct-group hd 97))))))))
+  ;; -BOUNDARY: the rectangle around the point, as a new closed polyline.
+  (let ((mock (%ct-run '("_.RECTANG" "0,0" "4,2"))))
+    (clautolisp.autolisp-host:host-command mock '("_.-BOUNDARY" "2,1" ""))
+    (let ((p (%ct-last-data mock)))
+      (is (equal "LWPOLYLINE" (%ct-str p 0)))
+      (is (equal '((0 0) (4 0) (4 2) (0 2))
+                 (mapcar (lambda (v) (mapcar #'round v)) (%ct-vertices p))))
+      (is (= 2 (length (%ct-types mock)))))))
+
+(test command-hatch-island-on-autocad
+  ;; AutoCAD round 2 (job 16916238722): the island loop is 92=16 and keeps
+  ;; its own edge order.
+  (%with-dialect (:autocad)
+    (let ((mock (make-cador)))
+      (clautolisp.autolisp-host:host-command mock '("_.RECTANG" "0,0" "6,4"))
+      (let ((outer (host-entlast mock)))
+        (clautolisp.autolisp-host:host-command mock '("_.RECTANG" "2,1" "4,3"))
+        (clautolisp.autolisp-host:host-command
+         mock (list "_.-HATCH" "_P" "SOLID" "_S" outer (host-entlast mock) "" ""))
+        (let* ((d (%ct-last-data mock))
+               (island (member 16 (%ct-codes-after d 92) :key #'cdr)))
+          (is (eql 2 (%ct-group d 91)))
+          (is (eql 1 (%ct-group d 92)))
+          (is (consp island))
+          (is (%ct-near '(2 1 0) (cdr (assoc 10 island))))
+          (is (%ct-near '(4 1 0) (cdr (assoc 11 island)))))))))
+
+(test command-hatch-islands-angles-and-imperial-patterns
+  ;; Round 2 (BricsCAD job 16916238723).
+  (%with-dialect (:bricscad)
+    ;; Two nested rectangles: the outer loop 92=3, the island 92=18 walked
+    ;; backwards from its second vertex.
+    (let ((mock (make-cador)))
+      (host-setvar mock "MEASUREMENT" 1)
+      (clautolisp.autolisp-host:host-command mock '("_.RECTANG" "0,0" "6,4"))
+      (let ((outer (host-entlast mock)))
+        (clautolisp.autolisp-host:host-command mock '("_.RECTANG" "2,1" "4,3"))
+        (clautolisp.autolisp-host:host-command
+         mock (list "_.-HATCH" "_P" "SOLID" "_S" outer (host-entlast mock) "" ""))
+        (let* ((d (%ct-last-data mock))
+               (island (member 18 (%ct-codes-after d 92) :key #'cdr)))
+          (is (eql 2 (%ct-group d 91)))
+          (is (eql 3 (%ct-group d 92)))
+          (is (consp island))
+          (is (equal '((4 1) (2 1) (2 3) (4 3))
+                     (mapcar (lambda (p) (mapcar #'round (subseq p 0 2)))
+                             (subseq (%ct-vertices island) 0 4)))))))
+    ;; ANSI37 scale 2 angle 30: 52 = 30 deg, 53 = 75 / 165 deg (radians).
+    (let ((d (%ct-hatch-after '("_.RECTANG" "1,1" "5,3") '()
+                              (lambda (e) (list "_.-HATCH" "_P" "ANSI37" "2" "30" "_S" e "" "")))))
+      (is (%ct-near 0.523599 (%ct-group d 52)))
+      (is (%ct-near '(1.308997 2.879793)
+                    (loop for (code . value) in d when (eql code 53) collect value)))
+      (is (%ct-near '(-6.133629 1.643501 -1.643501 -6.133629)
+                    (loop for (code . value) in d when (member code '(45 46)) collect value))))
+    ;; MEASUREMENT 0: the imperial spacing 0.125.
+    (let ((d (%ct-hatch-after '("_.RECTANG" "0,0" "4,2") '()
+                              (lambda (e) (list "_.-HATCH" "_P" "ANSI31" "1" "0" "_S" e "" ""))
+                              :measurement 0)))
+      (is (%ct-near '(-0.088388 0.088388)
+                    (loop for (code . value) in d when (member code '(45 46)) collect value))))))
