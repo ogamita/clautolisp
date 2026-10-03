@@ -319,3 +319,33 @@ loaded, C:3DARRAY registered with vlax-add-cmd, (command "3DARRAY" ...) made
 the 8 circles. Its ORDER is column by column -- (0,0,0) (0,0,1) (0,1,0) ...
 (1,0,0) -- like AutoCAD's -ARRAY, where BricsCAD goes row by row; levels
 innermost on both. cador 2.2.165 follows each dialect (!385).
+
+## Phase 4 S6 (hatch / boundary) -- 2026-10-04
+
+Measured first, in two probe rounds (round 1: AutoCAD 16916189663,
+BricsCAD macOS 16916189664; round 2: BricsCAD 16916238723, AutoCAD
+16916238722). New cador/source/command-hatch.lisp:
+  - HATCH / -HATCH: _Properties (name; scale and angle unless SOLID),
+    _Select objects (closed LWPOLYLINEs, CIRCLEs), internal points (the
+    smallest enclosing boundary), RETURN. Vendor forms per dialect:
+    AutoCAD edge loops (92=1; island 92=16 in its own order; a circle one
+    arc edge 0..2pi), 75=1, a seed point 98=1 10=0,0,0; BricsCAD polyline
+    loops (92=3; island 92=18 walked back from its second vertex; a circle
+    two vertices of bulge 1), 75=0, 98=0. Associativity per HPASSOC
+    (71, 97, 330 to the source).
+  - Patterns: 52 = hatch angle, 53 = line angle + hatch angle (radians);
+    each line's base turned by the hatch angle, its offset scaled and
+    turned by the line angle. SOLID, ANSI31, ANSI37 measured in both units
+    (metric 3.175, imperial 0.125); any other name makes a hatch with no
+    pattern lines (to measure, or read from the vendor's .pat file).
+  - HATCHEDIT / -HATCHEDIT _Properties; HATCHGENERATEBOUNDARY (a closed
+    LWPOLYLINE per loop, hatch made associative -- BricsCAD; AutoCAD 2022's
+    console lacks it); BOUNDARY / -BOUNDARY (a closed LWPOLYLINE copy of the
+    boundary around each point -- BricsCAD); GRADIENT, SUPERHATCH no-ops.
+Against AutoCAD's round 2, every hatch case gives the same groups; the
+metric-pattern cases differ only in 45/46 because the vendors' fresh
+drawings have MEASUREMENT 1 and cador's 0 (sysvar-template-defaults
+question, not changed here).
+Open: BricsCAD's -HATCH by internal point made NO hatch in both rounds
+(-BOUNDARY at the same point works); cador makes one, as documented.
+63 + 19 of 105; 23 to go (S1 SHAPE REGION, S2/S4/S5 remainders).

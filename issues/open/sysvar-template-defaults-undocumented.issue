@@ -43,3 +43,13 @@ Not filled from memory (AGENTS.md: facts come from the cited vendor pages).
 Next: harvest each one's "Initial value" from its AutoCAD 2026 page into
 the inventory's :divergence (the generator then picks it up), or measure it
 on a fresh imperial drawing. CMLSCALE matters most (MLINE).
+
+* MEASUREMENT (2026-10-04, alref S6)
+
+Both vendors' probe drawings report MEASUREMENT 1 (AutoCAD 2022's
+accoreconsole and BricsCAD V26 macOS, sysvar suite, jobs 16916189663 /
+16916189664), while cador starts a drawing with 0 (the documented imperial
+acad.dwt value). It decides which pattern spacing HATCH uses (metric 3.175
+vs imperial 0.125 for ANSI31), so cador's hatches differ from the vendors'
+fresh-drawing hatches until this default is settled. Not changed: which
+template a "fresh drawing" stands for is pjb's call.

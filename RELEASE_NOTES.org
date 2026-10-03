@@ -1225,6 +1225,13 @@ separate binary for tool integrators.
   arc), ~FILLET~ / ~CHAMFER~ of two lines (~FILLETRAD~, ~CHAMFERA~ /
   ~CHAMFERB~), ~PEDIT~ (a line into a polyline; width, close, open) and
   ~OVERKILL~ (exact duplicates).
+- The command engine hatches: ~HATCH~ / ~-HATCH~ (closed polylines and
+  circles picked as boundaries, islands included; ~SOLID~, ~ANSI31~ and
+  ~ANSI37~ with the metric or imperial spacing per ~MEASUREMENT~, other
+  patterns name-only), ~HATCHEDIT~ / ~-HATCHEDIT~ (pattern, scale, angle),
+  ~HATCHGENERATEBOUNDARY~ and ~BOUNDARY~ / ~-BOUNDARY~. Each dialect stores
+  the hatch the way its vendor does: AutoCAD's edge loops, BricsCAD's
+  polyline loops.
 - ~3DARRAY~ makes its copies in each vendor's order: column by column
   under the AutoCAD dialects (as AutoCAD's own =3darray.lsp= does), row by
   row under BricsCAD's; levels innermost on both.

@@ -1,0 +1,35 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: entmake-duplicates-subclass-markers — validate-entity-dxf appends 100 markers the data already has
+#+STATUS: OPEN
+#+PRIORITY: P2
+#+TYPE: bug
+
+* Symptom
+
+ENTGET of an LWPOLYLINE made by RECTANG (or by any ENTMAKE whose data
+already carries its markers) ends with a second copy of its subclass
+markers:
+
+: ((-1 . <Entity name: 10>) (5 . "10") (0 . "LWPOLYLINE") (100 . "AcDbEntity")
+:  (100 . "AcDbPolyline") (8 . "0") (90 . 4) (70 . 1) ... (91 . 0)
+:  (100 . "AcDbEntity") (100 . "AcDbPolyline"))
+
+The vendors list each marker once, ahead of its subclass's groups.
+
+* Repro
+
+: (command "_.RECTANG" "0,0" "4,2") (entget (entlast))
+
+* Cause
+
+drawing/source/entity-families.lisp, VALIDATE-ENTITY-DXF: for a registered
+family it always appends (100 . base-marker) and every family subclass
+marker at the END of the data, whether or not the data already has them.
+The command-probe summaries never record group 100, so the vendor
+comparisons did not show it. Found 2026-10-04 while building alref S6.
+
+* Fix
+
+Append only the markers that are absent. For fidelity, also insert them
+where the vendors put them (AcDbEntity before 8, the class marker before
+the class's first group) instead of at the end.

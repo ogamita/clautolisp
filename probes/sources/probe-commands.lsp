@@ -29,7 +29,8 @@
 
 (defun cad-probe--cmd-keep-p (code)
   ;; The groups that describe what a command made.
-  (or (member code '(0 1 2 3 7 8 38 39 62))
+  ;; 52 / 53: a hatch's angle and its pattern lines' angles (S6).
+  (or (member code '(0 1 2 3 7 8 38 39 52 53 62))
       (and (>= code 10) (<= code 18))
       (and (>= code 40) (<= code 51))
       (and (>= code 70) (<= code 79))
@@ -63,7 +64,7 @@
   ;; no MATCHPROP) or provided by Express Tools: only these are checked --
   ;; GETCNAME does not know every command (it reported RECTANG unknown).
   '("MATCHPROP" "ADDSELECTED" "SETBYLAYER" "COPYM" "FLATTEN" "XPLODE"
-    "3DROTATE" "-OVERKILL" "OVERKILL" "3DARRAY"))
+    "3DROTATE" "-OVERKILL" "OVERKILL" "3DARRAY" "HATCHGENERATEBOUNDARY"))
 
 (defun cad-probe--known-command-p (name)
   ;; Whether this engine has the command NAME: built in (GETCNAME resolves
@@ -357,6 +358,93 @@
       (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" "")) (setq a (entlast))
       (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
       (cad-probe--cmd-args (list "_.-OVERKILL" a (entlast) "" "")))))
+
+  ;; S6 hatch / boundary. Selection by ename runs everywhere; an internal-
+  ;; point pick needs a view AutoCAD's console does not have, and the
+  ;; dialog-flavoured HATCH / HATCHEDIT are unmeasured there: BricsCAD only
+  ;; (one hang loses the whole AutoCAD run).
+  (cad-probe--cmd-case "-HATCH SOLID a rectangle by selection"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.RECTANG" "0,0" "4,2"))
+      (cad-probe--cmd-args (list "_.-HATCH" "_P" "SOLID" "_S" (entlast) "" "")))))
+  (cad-probe--cmd-case "-HATCH ANSI31 scale 2 angle 45 a circle by selection"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "1"))
+      (cad-probe--cmd-args (list "_.-HATCH" "_P" "ANSI31" "2" "45" "_S" (entlast) "" "")))))
+  (cad-probe--cmd-case "-HATCH SOLID non-associative (HPASSOC 0)"
+    (function (lambda ( / old)
+      (setq old (getvar "HPASSOC"))
+      (vl-catch-all-apply 'setvar (list "HPASSOC" 0))
+      (cad-probe--cmd-args (list "_.RECTANG" "0,0" "4,2"))
+      (cad-probe--cmd-args (list "_.-HATCH" "_P" "SOLID" "_S" (entlast) "" ""))
+      (if old (vl-catch-all-apply 'setvar (list "HPASSOC" old))))))
+  (cad-probe--cmd-case "-HATCH ANSI37 scale 2 angle 30 a rectangle"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.RECTANG" "1,1" "5,3"))
+      (cad-probe--cmd-args (list "_.-HATCH" "_P" "ANSI37" "2" "30" "_S" (entlast) "" "")))))
+  (cad-probe--cmd-case "-HATCH ANSI31 under MEASUREMENT 0 (imperial patterns)"
+    (function (lambda ( / old)
+      (setq old (getvar "MEASUREMENT"))
+      (vl-catch-all-apply 'setvar (list "MEASUREMENT" 0))
+      (cad-probe--cmd-args (list "_.RECTANG" "0,0" "4,2"))
+      (cad-probe--cmd-args (list "_.-HATCH" "_P" "ANSI31" "1" "0" "_S" (entlast) "" ""))
+      (cad-probe--cmd-args (list "_.RECTANG" "0,0" "4,2"))
+      (cad-probe--cmd-args (list "_.-HATCH" "_P" "ANSI37" "1" "0" "_S" (entlast) "" ""))
+      (if old (vl-catch-all-apply 'setvar (list "MEASUREMENT" old))))))
+  (cad-probe--cmd-case "-HATCH SOLID two nested rectangles by selection"
+    (function (lambda ( / a)
+      (cad-probe--cmd-args (list "_.RECTANG" "0,0" "6,4")) (setq a (entlast))
+      (cad-probe--cmd-args (list "_.RECTANG" "2,1" "4,3"))
+      (cad-probe--cmd-args (list "_.-HATCH" "_P" "SOLID" "_S" a (entlast) "" "")))))
+  (cad-probe--cmd-case "-HATCHEDIT pattern to ANSI37 scale 1 angle 0"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.RECTANG" "0,0" "4,2"))
+      (cad-probe--cmd-args (list "_.-HATCH" "_P" "SOLID" "_S" (entlast) "" ""))
+      (cad-probe--cmd-args (list "_.-HATCHEDIT" (entlast) "_P" "ANSI37" "1" "0")))))
+  (cad-probe--cmd-case "HATCHGENERATEBOUNDARY of a non-associative hatch"
+    (function (lambda ( / old r)
+      (setq old (getvar "HPASSOC"))
+      (vl-catch-all-apply 'setvar (list "HPASSOC" 0))
+      (cad-probe--cmd-args (list "_.RECTANG" "0,0" "4,2"))
+      (setq r (entlast))
+      (cad-probe--cmd-args (list "_.-HATCH" "_P" "SOLID" "_S" r "" ""))
+      (if old (vl-catch-all-apply 'setvar (list "HPASSOC" old)))
+      (entdel r)
+      (cad-probe--cmd-args (list "_.HATCHGENERATEBOUNDARY" (entlast) "")))))
+  (cad-probe--cmd-case "-BOUNDARY of a rectangle by internal point"
+    (function (lambda ()
+      (if (= cad-probe-product "autocad")
+          (setq cad-probe--unknown "-BOUNDARY (SKIPPED-ON-AUTOCAD)")
+          (progn
+            (cad-probe--cmd-args (list "_.RECTANG" "0,0" "4,2"))
+            (cad-probe--cmd-args (list "_.-BOUNDARY" "2,1" "")))))))
+  (cad-probe--cmd-case "-HATCH SOLID by internal point"
+    (function (lambda ()
+      (if (= cad-probe-product "autocad")
+          (setq cad-probe--unknown "-HATCH (SKIPPED-ON-AUTOCAD)")
+          (progn
+            (cad-probe--cmd-args (list "_.RECTANG" "0,0" "4,2"))
+            ;; 2026-10-03: with one RETURN BricsCAD made no hatch; a second
+            ;; RETURN ends the command.
+            (cad-probe--cmd-args (list "_.-HATCH" "_P" "SOLID" "2,1" "" "")))))))
+  (cad-probe--cmd-case "HATCH ANSI31 by selection (HPNAME)"
+    (function (lambda ( / old)
+      (if (= cad-probe-product "autocad")
+          (setq cad-probe--unknown "HATCH (SKIPPED-ON-AUTOCAD)")
+          (progn
+            (setq old (getvar "HPNAME"))
+            (vl-catch-all-apply 'setvar (list "HPNAME" "ANSI31"))
+            (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "1"))
+            (cad-probe--cmd-args (list "_.HATCH" "_S" (entlast) "" ""))
+            (if old (vl-catch-all-apply 'setvar (list "HPNAME" old))))))))
+  (cad-probe--cmd-case "HATCHEDIT pattern to ANSI37"
+    (function (lambda ()
+      (if (= cad-probe-product "autocad")
+          (setq cad-probe--unknown "HATCHEDIT (SKIPPED-ON-AUTOCAD)")
+          (progn
+            (cad-probe--cmd-args (list "_.RECTANG" "0,0" "4,2"))
+            (cad-probe--cmd-args (list "_.-HATCH" "_P" "SOLID" "_S" (entlast) "" ""))
+            (cad-probe--cmd-args (list "_.HATCHEDIT" (entlast) "_P" "ANSI37" "1" "0")))))))
 
   ;; ARRAY _R left AutoCAD 2022's console waiting (job 16915375455): late.
   (cad-probe--cmd-case "ARRAY rectangular non-associative"
