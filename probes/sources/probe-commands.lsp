@@ -73,9 +73,11 @@
   ;; An engine whose GETCNAME cannot even resolve _LINE (a stub, as on
   ;; clautolisp) tells nothing: then every command counts as known.
   ;; On AutoCAD every listed command is skipped outright: neither GETCNAME
-  ;; nor C:NAME is reliable there (C:3DARRAY is an autoload stub whose
-  ;; file the console cannot load -- job 16915457382 hung on it), and one
-  ;; hang loses the whole run.
+  ;; nor C:NAME is reliable there (C:3DARRAY is an autoload stub for the
+  ;; AutoLISP add-on 3darray.lsp, which AutoCAD ships in its LOCALISED
+  ;; Support folder -- e.g. .../Support/@fr@/3darray.lsp (pjb) -- and the
+  ;; console did not find it: job 16915457382 hung on it), and one hang
+  ;; loses the whole run.
   (cond ((not (member name cad-probe--may-be-absent)) T)
         ((= cad-probe-product "autocad") nil)
         ((not (getcname "_LINE")) T)

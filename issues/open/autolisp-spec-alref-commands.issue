@@ -274,3 +274,15 @@ in the comparison: a vendor record with no value is MISSING, not equal.
 The probe's command check now covers only a list of commands seen absent or
 from Express Tools (GETCNAME reported RECTANG unknown), and the S5 cases run
 ahead of the arrays, so an array derail cannot take them with it.
+
+## Note: AutoCAD's console and the AutoLISP add-on commands (2026-10-03)
+
+Several core-now commands are not built into AutoCAD but AutoLISP add-ons
+loaded on demand: 3DARRAY is 3darray.lsp in the LOCALISED Support folder
+(pjb: e.g. '/Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app/Contents/
+Resources/Support/@fr@/3darray.lsp'); C:3DARRAY is an autoload stub. The
+CI runner's accoreconsole did not find the file (no localised Support path),
+so the stub failed and the probe hung; MATCHPROP is absent from the console
+altogether. probe-commands now skips such commands on AutoCAD (BricsCAD
+answers them). To measure them on AutoCAD: give the console the localised
+Support folder on its search path (a runner setting -- not changed here).
