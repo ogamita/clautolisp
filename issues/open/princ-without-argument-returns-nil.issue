@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: princ-without-argument-returns-nil -- (princ) should return the null symbol, so the REPL echo is blank
-#+STATUS: TODO
+#+STATUS: WIP
 #+PRIORITY: P3
 #+TYPE: divergence
 #+DEPENDS: -
@@ -33,3 +33,20 @@ Make PRINC / PRIN1 / PRINT with no argument return the null symbol
 is NIL, and that no test relies on nil). The spec's PRINC entry should say
 so if it does not; verify against the vendor pages before changing it.
 Probe-confirmable: (vl-symbol-name (princ)) -> "" on both vendors.
+
+* Fixed per the spec (clautolisp 2.2.163, 2026-10-03)
+
+The spec's PRINC entry already said "(princ) returns the *void* symbol
+value"; clautolisp contradicted its own spec. PRINC / PRIN1 / PRINT with no
+argument now return the empty-named symbol (AUTOLISP-VOID-SYMBOL): the REPL
+echo is blank, (type (princ)) is SYM, (vl-symbol-name (princ)) is "", and
+(null (princ)) is nil. (princ nil) now prints "nil" (the old WHEN that kept
+the no-argument call silent also swallowed it).
+
+The corpus asserted the old behaviour without provenance
+(princ/prin1/print-no-arg-returns-nil): rewritten to the spec as
+*-no-arg-returns-the-void-symbol. autolisp-test strict deviations 164 -> 162.
+
+LEFT: probes/sources/probe-printer.lsp asks AutoCAD and BricsCAD directly
+(type, symbol name, null-ness for all three); close when they answer -- the
+CAD runners were asleep when this landed.

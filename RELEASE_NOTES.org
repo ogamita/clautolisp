@@ -1287,6 +1287,11 @@ separate binary for tool integrators.
 - Relational operators ~<~, ~<=~, ~>~, ~>=~ fold non-numeric args
   (including nil) to nil — matches AutoLISP loop-guard idioms.
 - ~(substr s start 0)~ returns ~""~.
+- ~(princ)~, ~(prin1)~ and ~(print)~ with no argument return the void
+  symbol (empty name, type ~SYM~, not ~nil~), as the spec states: a
+  command function ending in ~(princ)~ echoes nothing, and the ~cad>~
+  console no longer prints ~nil~ after a CAD command line. ~(princ nil)~
+  prints ~nil~.
 - Locale-insensitive numeric I/O (period decimal separator regardless
   of ~LC_NUMERIC~ / ~DIMDSEP~).
 - ~rtos~ scientific mode (1) at precision 0 prints no decimal point —

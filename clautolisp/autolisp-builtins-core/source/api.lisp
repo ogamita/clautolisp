@@ -3496,18 +3496,30 @@ time it is called."
 (defun builtin-vl-princ-to-string (object)
   (make-autolisp-string (autolisp-value->string object t)))
 
-(defun builtin-prin1 (object &optional file)
+(defun autolisp-void-symbol ()
+  "The VOID (null) symbol: the empty-named symbol (PRINC), (PRIN1) and
+\(PRINT) return with no argument -- the spec's \"void symbol value\" and the
+reason a command function ends in (princ): the console echoes nothing
+\(its name is empty), it is a SYM, and it is not nil. Returning nil made
+the REPL print nil (princ-without-argument-returns-nil, 2026-10-03)."
+  (intern-autolisp-symbol ""))
+
+(defun builtin-prin1 (&optional (object nil object-p) file)
+  (unless object-p (return-from builtin-prin1 (autolisp-void-symbol)))
   (write-string (autolisp-value->string object nil)
                 (output-stream-for-file file "PRIN1"))
   object)
 
-(defun builtin-princ (&optional object file)
-  (when object
-    (write-string (autolisp-value->string object t)
-                  (output-stream-for-file file "PRINC")))
+(defun builtin-princ (&optional (object nil object-p) file)
+  (unless object-p (return-from builtin-princ (autolisp-void-symbol)))
+  ;; (princ nil) writes "nil" like any other value: the old WHEN only kept
+  ;; the no-argument call silent, which now returns above.
+  (write-string (autolisp-value->string object t)
+                (output-stream-for-file file "PRINC"))
   object)
 
-(defun builtin-print (object &optional file)
+(defun builtin-print (&optional (object nil object-p) file)
+  (unless object-p (return-from builtin-print (autolisp-void-symbol)))
   ;; AutoLISP `print` is `prin1` with a leading newline AND a trailing
   ;; SPACE (not a trailing newline) — confirmed by the Phase-5 BricsCAD
   ;; V26 product test on 2026-04-26 (autolisp-spec/results/bricscad/

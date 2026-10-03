@@ -17,6 +17,9 @@
   '((operator . "PRIN1") (area . "printer") (profile . strict))
   '(prin1 'foo) 'foo)
 
-(deftest "prin1-no-arg-returns-nil"
+;; With no argument the vendors return the VOID (null) symbol -- the
+;; spec's "void symbol value", the reason a command function ends in
+;; (princ): its name is empty, so the console echoes nothing.
+(deftest "prin1-no-arg-returns-the-void-symbol"
   '((operator . "PRIN1") (area . "printer") (profile . strict))
-  '(prin1) nil)
+  '(vl-symbol-name (prin1)) "")
