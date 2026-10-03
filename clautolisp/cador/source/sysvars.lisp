@@ -406,6 +406,14 @@ with HOST-DERIVED-P defaulting to NIL for the :SEED list."
                                 :value default
                                 :read-only-p read-only-p
                                 :host-derived-p host-derived-p))))
+    ;; The catalogue can only stand in (a zero of the right type) for the
+    ;; drawing-dependent cells; a fresh drawing holds its template's
+    ;; values. Install the imperial-template ones the vendor documentation
+    ;; states (template-defaults.lisp, generated from the inventory).
+    (when (eq catalogue :full)
+      (loop for (name . value) in *imperial-template-defaults*
+            for cell = (gethash name table)
+            when cell do (setf (sysvar-cell-value cell) value)))
     ;; The clautolisp extension sysvars sit on top of either catalogue.
     (install-clautolisp-extension-sysvars mock)))
 

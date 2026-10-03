@@ -215,6 +215,7 @@
    (:file "cador/source/model")
    (:file "cador/source/document-api")
    (:file "cador/source/sysvar-catalogue")
+   (:file "cador/source/template-defaults")
    (:file "cador/source/sysvars")
    (:file "cador/source/api")
    (:file "cador/source/entity-api")

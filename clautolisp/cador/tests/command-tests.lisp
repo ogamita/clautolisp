@@ -494,3 +494,35 @@
   ;; Recognised (a following command in the same call still runs).
   (let ((mock (%ct-run '("_.PROPERTIES" "" "_.POINT" "5,5"))))
     (is (equal '("POINT") (%ct-types mock)))))
+
+(test command-spline-is-the-natural-chord-length-cubic-as-measured
+  ;; BricsCAD: knots 0 0 0 0 1.414214 2.828427 4.242641 x4, control points
+  ;; (0,0) (0.333333,0.555556) (1,1.666667) (2,-0.666667) (2.666667,0.444444) (3,1).
+  (let* ((d (%ct-last-data (%ct-run '("_.SPLINE" "0,0" "1,1" "2,0" "3,1" "" "" ""))))
+         (knots (loop for (c . v) in d when (eql c 40) collect v))
+         (ctrl (%ct-vertices d)))
+    (is (eql 1064 (%ct-group d 70)))
+    (is (= 10 (length knots)))
+    (is (%ct-near 1.414214 (fifth knots)))
+    (is (= 6 (length ctrl)))
+    (is (%ct-near '(0.333333 0.555556 0) (second ctrl)))
+    (is (%ct-near '(2 -0.666667 0) (fourth ctrl)))))
+
+(test command-mline-records-vertices-miters-and-element-distances
+  (let ((mock (make-cador)))
+    (host-setvar mock "CMLSCALE" 20.0d0)
+    (clautolisp.autolisp-host:host-command mock '("_.MLINE" "0,0" "4,0" "4,3" ""))
+    (let* ((d (%ct-last-data mock))
+           (distances (loop for (c . v) in d when (eql c 41) collect v)))
+      (is (eql 3 (%ct-group d 72)))
+      (is (%ct-near 20.0 (%ct-group d 40)))
+      ;; per vertex: element 1 (0, 0), element 2 (-20 | -28.28 at the corner, 0)
+      (is (%ct-near -20.0 (nth 2 distances)))
+      (is (%ct-near -28.284271 (nth 6 distances))))))
+
+(test fresh-drawing-holds-the-imperial-template-values
+  ;; Not the catalogue's zero stand-ins (sysvar-template-defaults-undocumented).
+  (let ((mock (make-cador)))
+    (is (%ct-near 0.18 (host-getvar mock "DIMASZ")))
+    (is (equal '(12.0d0 9.0d0) (host-getvar mock "LIMMAX")))
+    (is (eql 0 (host-getvar mock "MEASUREMENT")))))

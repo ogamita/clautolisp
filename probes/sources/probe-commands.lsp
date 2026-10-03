@@ -51,6 +51,11 @@
 
 (defun cad-probe--cmd-case (name args / marker e out n)
   ;; Run (command . ARGS) and record what it made, as one probe result.
+  ;; The case name goes to the console FIRST: on 2026-10-03 AutoCAD 2022
+  ;; broke into its LISP debugger ("Passage en mode debogage") somewhere
+  ;; in this suite and waited out the job timeout, leaving no results --
+  ;; the job log is then the only witness of which case it was.
+  (princ (strcat "\ncad-probe: commands case " name "\n"))
   (cad-probe-capture "commands" name
     (function (lambda ()
       ;; The REAL last entity: ENTLAST names the last MAIN entity, whose
