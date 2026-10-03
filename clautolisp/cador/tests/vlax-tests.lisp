@@ -1103,3 +1103,55 @@ entirely silent under --dialect autocad."
               (is (null (host-entnext mock first)) "no ENDBLK in the walk"))
             ;; nothing leaked into model space
             (is (null (host-entnext mock nil)))))))))
+
+;;; --- Command engine: vendor-specific results (alref Phase 4 S1) ------
+;;; Measured by probes/sources/probe-commands.lsp on AutoCAD 2022 (job
+;;; 16914120564) and BricsCAD V26 (job 16913723746): the commands follow
+;;; AutoCAD by default and under strict, BricsCAD under a BricsCAD dialect.
+
+(test command-trace-draws-mitred-segments-under-bricscad-only
+  (flet ((trace-run ()
+           (let ((mock (make-cador)))
+             (clautolisp.autolisp-host:host-command
+              mock '("_.TRACE" "0.5" "0,0" "4,0" "4,3" "" "_.POINT" "9,9"))
+             mock)))
+    (%with-dialect (:bricscad-mac)
+      (let* ((mock (trace-run))
+             (e1 (host-entnext mock nil))
+             (d1 (host-entget mock e1))
+             (d2 (host-entget mock (host-entnext mock e1))))
+        (is (equal '("TRACE" "TRACE" "POINT") (%ct-types mock)))
+        (is (%ct-near '(0 0.25 0) (%ct-group d1 10)))
+        (is (%ct-near '(4.25 -0.25 0) (%ct-group d1 13)))
+        (is (%ct-near '(3.75 0.25 0) (%ct-group d2 10)))
+        (is (%ct-near '(4.25 3 0) (%ct-group d2 13)))))
+    ;; AutoCAD 2022 makes nothing; the sequence is consumed and the
+    ;; following command still runs.
+    (%with-dialect (:autocad)
+      (is (equal '("POINT") (%ct-types (trace-run)))))))
+
+(test command-mline-style-name-and-spline-tangents-follow-the-product
+  (flet ((mline-style ()
+           (let ((mock (make-cador)))
+             (host-setvar mock "CMLSCALE" 20.0d0)
+             (clautolisp.autolisp-host:host-command mock '("_.MLINE" "0,0" "4,0" ""))
+             (autolisp-string-value (%ct-group (%ct-last-data mock) 2))))
+         (spline-has-tangents ()
+           (let ((mock (%ct-run '("_.SPLINE" "0,0" "1,1" "2,0" "3,1" "" "" ""))))
+             (and (assoc 12 (%ct-last-data mock)) t))))
+    (%with-dialect (:autocad)
+      (is (string= "STANDARD" (mline-style)))
+      (is (not (spline-has-tangents))))
+    (%with-dialect (:bricscad)
+      (is (string= "Standard" (mline-style)))
+      (is (spline-has-tangents)))))
+
+(test entmade-polylines-list-the-vendor-default-groups
+  ;; Both vendors' ENTGET (identical): LWPOLYLINE 43 38 39 and per vertex
+  ;; 40 41 42 91 (a constant width repeats in 40 / 41).
+  (let* ((mock (%ct-run '("_.DONUT" "1" "2" "5,5" "")))
+         (d (%ct-last-data mock))
+         (codes (mapcar #'car d)))
+    (is (every (lambda (c) (member c codes)) '(43 38 39 40 41 42 91)))
+    (is (%ct-near 0.5 (%ct-group d 40)))
+    (is (= 2 (count 91 codes)))))

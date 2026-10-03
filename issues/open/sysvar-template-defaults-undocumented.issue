@@ -1,0 +1,45 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: sysvar-template-defaults-undocumented -- 18 drawing-dependent sysvars still default to a zero stand-in
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-03
+
+* Observed
+
+The sysvar catalogue (cador/source/sysvar-catalogue.lisp, generated from
+autolisp-spec/documentation/system-variables-inventory.sexp) installs a
+kind-appropriate ZERO on every cell whose inventory :default is
+(:drawing): DIMASZ 0.0, DIMSTYLE "", GRIDUNIT (0 0), CMLSCALE 0.0, ... A
+fresh headless drawing therefore looked like no drawing a vendor makes
+(found while implementing MLINE, alref Phase 4 S1: CMLSCALE 0 collapses
+every multiline onto its path).
+
+* Done (clautolisp 2.2.159, alref Phase 4 S1)
+
+tools/generate-template-defaults.py reads the inventory's documented
+"default AutoCAD X (imperial)" (the :divergence text) and generates
+cador/source/template-defaults.lisp; populate-default-sysvars installs it
+over the stand-ins (full catalogue). 29 of the 47 (:drawing) cells now hold
+the acad.dwt value: DIMASZ 0.18, DIMTXT 0.18, DIMSTYLE "Standard", GRIDUNIT
+and SNAPUNIT (0.5 0.5), LIMMAX (12 9), TEXTSIZE 0.2, INSUNITS 1,
+MEASUREMENT 0, ...
+
+* Remaining
+
+18 cells whose inventory entry states NO imperial value (:divergence NIL
+or no "(imperial)" clause), left on the stand-in:
+
+  CIRCULARARROWHEADLENGTH CIRCULARARROWHEADWIDTH CIRCULARARROWLEADERRADIUS
+  CIRCULARARROWTHICKNESS CMLSCALE CVIEWDETAILSTYLE DEFAULTSPACEHEIGHT
+  DIMDSEP HPNAME INTERIORELEVATIONMINLENGTH INTERIORELEVATIONOFFSET
+  LINEARARROWHEADLENGTH LINEARARROWHEADWIDTH LINEARARROWTHICKNESS
+  SMDEFAULTTHICKNESS SMEXPORTOSMAPPROXIMATIONACCURACY
+  SMEXPORTOSMMINIMALEDGELENGTH UCSNAME
+
+Not filled from memory (AGENTS.md: facts come from the cited vendor pages).
+Next: harvest each one's "Initial value" from its AutoCAD 2026 page into
+the inventory's :divergence (the generator then picks it up), or measure it
+on a fresh imperial drawing. CMLSCALE matters most (MLINE).

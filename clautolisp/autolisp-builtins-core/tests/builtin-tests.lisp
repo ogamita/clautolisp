@@ -7461,6 +7461,25 @@ itself fails loudly."
                          (mapcar #'autolisp-string-value tokens))
                        result)))))
 
+(test command-is-also-a-function-for-apply-and-mapcar
+  ;; On the vendors COMMAND is an ordinary function: (apply 'command lst)
+  ;; is a common idiom. clautolisp's special form had no function binding
+  ;; ("Undefined AutoLISP function COMMAND", 2026-10-03).
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result mock)
+      (run-on-mock-command-host
+       "(apply 'command (list \"._LINE\" \"0,0\" \"1,1\" \"\"))
+        (apply 'command-s (list \"._CIRCLE\" \"1,2\" \"3\"))
+        (mapcar 'command (list \"._REGEN\"))
+        (clal-command-log)")
+    (declare (ignore mock))
+    (is (equal '(("._LINE" "0,0" "1,1" "")
+                 ("._CIRCLE" "1,2" "3")
+                 ("._REGEN"))
+               (mapcar (lambda (tokens)
+                         (mapcar #'autolisp-string-value tokens))
+                       result)))))
+
 ;;;; ====================================================================
 ;;;; ACAD_STRLSORT — Express Tools string-list sort
 ;;;; (issues/closed/acad-strlsort-returns-nil.issue)

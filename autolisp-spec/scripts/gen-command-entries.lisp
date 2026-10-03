@@ -23,10 +23,17 @@
 (defparameter *cador-implemented*
   '("LINE" "CIRCLE" "TEXT" "DONUT" "SOLID" "ERASE" "MOVE" "COPY" "ROTATE"
     "BLOCK" "-BLOCK" "ARC" "PLINE" "MTEXT" "WIPEOUT" "MIRROR"
-    "INSERT" "-INSERT" "LAYER" "-LAYER" "LINETYPE" "-LINETYPE"))
+    "INSERT" "-INSERT" "LAYER" "-LAYER" "LINETYPE" "-LINETYPE"
+    ;; alref Phase 4 S1 (built against the vendors' measured output)
+    "POINT" "RAY" "XLINE" "ELLIPSE" "POLYGON" "RECTANG" "SPLINE" "3DPOLY"
+    "TRACE" "MLINE"))
 
 (defparameter *cador-recognised-noop*
-  '("ZOOM" "UCS" "PEDIT" "BREAK" "BROWSER" "SHELL"))
+  '("ZOOM" "UCS" "PEDIT" "BREAK" "BROWSER" "SHELL"
+    ;; alref Phase 4 S1: subject outside the headless model
+    "PROPERTIES" "MLSTYLE" "IMAGEADJUST" "IMAGECLIP" "IMAGEEDIT" "CLIPIT"
+    "PDFCLIP" "-PDFIMPORT" "GEOMAPIMAGE" "GEOMAPIMAGEUPDATE" "POINTCLOUDCROP"
+    "SKETCH"))
 
 (defun read-inventory (path)
   (with-open-file (in path :external-format :utf-8)

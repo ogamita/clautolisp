@@ -419,3 +419,99 @@
     (clautolisp.autolisp-host:host-command
      mock '("._zoom" "_e" "._line" "0,0" "1,1" "" "._ucs" "_w" "._circle" "5,5" "2"))
     (is (equal '("LINE" "CIRCLE") (%ct-types mock)))))
+
+;;; --- alref Phase 4 S1: draw constructions, measured on the vendors ----
+;;;
+;;; Expected values are probes/sources/probe-commands.lsp's BricsCAD V26
+;;; results (20261003T151707Z); the geometry is what the vendor made.
+
+(defun %ct-run (tokens)
+  "A fresh host after one (command . TOKENS); returns it."
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock tokens)
+    mock))
+
+(defun %ct-near (a b)
+  (if (consp a)
+      (every (lambda (x y) (< (abs (- x y)) 1d-5)) a b)
+      (< (abs (- a b)) 1d-5)))
+
+(defun %ct-vertices (data)
+  (loop for (code . value) in data when (eql code 10) collect value))
+
+(test command-point-ray-xline-as-measured
+  (let ((d (%ct-last-data (%ct-run '("_.POINT" "1,2")))))
+    (is (string= "POINT" (autolisp-string-value (%ct-group d 0))))
+    (is (%ct-near '(1 2 0) (%ct-group d 10))))
+  (let ((d (%ct-last-data (%ct-run '("_.RAY" "0,0" "1,1" "")))))
+    (is (string= "RAY" (autolisp-string-value (%ct-group d 0))))
+    (is (%ct-near '(0.707107 0.707107 0) (%ct-group d 11))))
+  (let ((d (%ct-last-data (%ct-run '("_.XLINE" "0,0" "1,2" "")))))
+    (is (string= "XLINE" (autolisp-string-value (%ct-group d 0))))
+    (is (%ct-near '(0.447214 0.894427 0) (%ct-group d 11)))))
+
+(test command-ellipse-both-forms-as-measured
+  (let ((d (%ct-last-data (%ct-run '("_.ELLIPSE" "0,0" "4,0" "1")))))
+    (is (%ct-near '(2 0 0) (%ct-group d 10)))
+    (is (%ct-near '(-2 0 0) (%ct-group d 11)))
+    (is (%ct-near 0.5 (%ct-group d 40))))
+  (let ((d (%ct-last-data (%ct-run '("_.ELLIPSE" "_C" "0,0" "4,0" "1")))))
+    (is (%ct-near '(0 0 0) (%ct-group d 10)))
+    (is (%ct-near '(4 0 0) (%ct-group d 11)))
+    (is (%ct-near 0.25 (%ct-group d 40)))))
+
+(test command-polygon-and-rectang-vertex-order-as-measured
+  (flet ((verts (tokens) (%ct-vertices (%ct-last-data (%ct-run tokens)))))
+    (let ((v (verts '("_.POLYGON" "6" "0,0" "_I" "2"))))
+      (is (= 6 (length v)))
+      (is (%ct-near '(-1 1.732051) (first v)))
+      (is (%ct-near '(1 1.732051) (sixth v))))
+    (let ((v (verts '("_.POLYGON" "5" "0,0" "_C" "2"))))
+      (is (%ct-near '(0 2.472136) (first v)))
+      (is (%ct-near '(-1.453085 -2) (third v))))
+    (is (every #'%ct-near '((0 0) (2 0) (2 2) (0 2))
+               (verts '("_.POLYGON" "4" "_E" "0,0" "2,0"))))
+    (is (every #'%ct-near '((3 2) (0 2) (0 0) (3 0))
+               (verts '("_.RECTANG" "3,2" "0,0"))))))
+
+(test command-3dpoly-makes-a-3d-polyline-run
+  (let ((mock (%ct-run '("_.3DPOLY" "0,0,0" "1,0,1" "1,1,2" ""))))
+    (is (equal '("POLYLINE" "VERTEX" "VERTEX" "VERTEX" "SEQEND") (%ct-types mock)))
+    (is (eql 8 (%ct-group (%ct-last-data mock) 70)))))
+
+(test command-headless-noops-are-recognised
+  ;; Recognised (a following command in the same call still runs).
+  (let ((mock (%ct-run '("_.PROPERTIES" "" "_.POINT" "5,5"))))
+    (is (equal '("POINT") (%ct-types mock)))))
+
+(test command-spline-is-the-natural-chord-length-cubic-as-measured
+  ;; BricsCAD: knots 0 0 0 0 1.414214 2.828427 4.242641 x4, control points
+  ;; (0,0) (0.333333,0.555556) (1,1.666667) (2,-0.666667) (2.666667,0.444444) (3,1).
+  (let* ((d (%ct-last-data (%ct-run '("_.SPLINE" "0,0" "1,1" "2,0" "3,1" "" "" ""))))
+         (knots (loop for (c . v) in d when (eql c 40) collect v))
+         (ctrl (%ct-vertices d)))
+    (is (eql 1064 (%ct-group d 70)))
+    (is (= 10 (length knots)))
+    (is (%ct-near 1.414214 (fifth knots)))
+    (is (= 6 (length ctrl)))
+    (is (%ct-near '(0.333333 0.555556 0) (second ctrl)))
+    (is (%ct-near '(2 -0.666667 0) (fourth ctrl)))))
+
+(test command-mline-records-vertices-miters-and-element-distances
+  (let ((mock (make-cador)))
+    (host-setvar mock "CMLSCALE" 20.0d0)
+    (clautolisp.autolisp-host:host-command mock '("_.MLINE" "0,0" "4,0" "4,3" ""))
+    (let* ((d (%ct-last-data mock))
+           (distances (loop for (c . v) in d when (eql c 41) collect v)))
+      (is (eql 3 (%ct-group d 72)))
+      (is (%ct-near 20.0 (%ct-group d 40)))
+      ;; per vertex: element 1 (0, 0), element 2 (-20 | -28.28 at the corner, 0)
+      (is (%ct-near -20.0 (nth 2 distances)))
+      (is (%ct-near -28.284271 (nth 6 distances))))))
+
+(test fresh-drawing-holds-the-imperial-template-values
+  ;; Not the catalogue's zero stand-ins (sysvar-template-defaults-undocumented).
+  (let ((mock (make-cador)))
+    (is (%ct-near 0.18 (host-getvar mock "DIMASZ")))
+    (is (equal '(12.0d0 9.0d0) (host-getvar mock "LIMMAX")))
+    (is (eql 0 (host-getvar mock "MEASUREMENT")))))
