@@ -103190,7 +103190,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -112072,7 +112072,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Recognised by the cador host as a model-only no-op: its input is consumed so a driven command sequence keeps flowing, but it has no drawing-model effect (viewport/coordinate context or external process).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -112385,7 +112385,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -112489,7 +112489,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -114100,7 +114100,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -115471,7 +115471,7 @@ customization
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -120602,7 +120602,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Recognised by the cador host as a model-only no-op: its input is consumed so a driven command sequence keeps flowing, but it has no drawing-model effect (viewport/coordinate context or external process).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -122181,7 +122181,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -125872,7 +125872,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Recognised by the cador host as a model-only no-op: its input is consumed so a driven command sequence keeps flowing, but it has no drawing-model effect (viewport/coordinate context or external process).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -128669,7 +128669,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -129910,7 +129910,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -130392,7 +130392,7 @@ customization
 BricsCAD all only. AutoCAD: not present.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -132319,7 +132319,7 @@ file
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -132904,7 +132904,7 @@ file
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -140745,7 +140745,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -141536,7 +141536,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -144586,7 +144586,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Implemented in the cador host (executed against the drawing model).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -146137,7 +146137,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Recognised by the cador host as a model-only no-op: its input is consumed so a driven command sequence keeps flowing, but it has no drawing-model effect (viewport/coordinate context or external process).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes
@@ -147170,7 +147170,7 @@ modify
 AutoCAD all; BricsCAD all.
 
 *** clautolisp
-Not yet implemented; the command name is recorded on the command log without side effects.
+Recognised by the cador host as a model-only no-op: its input is consumed so a driven command sequence keeps flowing, but it has no drawing-model effect (viewport/coordinate context or external process).
 Support tier: core-now -- in scope for implementation in the cador and cadtui hosts.
 
 *** Source Notes

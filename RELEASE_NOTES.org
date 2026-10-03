@@ -1209,6 +1209,19 @@ separate binary for tool integrators.
   point-cloud commands (~PROPERTIES~, ~IMAGECLIP~, ~SKETCH~, ...) are
   recognised and consumed. Polylines made any way now list the default
   groups both vendors' ~entget~ shows (43 38 39, per-vertex 40 41 42 91).
+- The command engine also edits: ~SCALE~, ~ALIGN~, ~STRETCH~ (crossing
+  windows), ~LENGTHEN~, ~CHANGE~, ~CHPROP~, ~MATCHPROP~, ~SETBYLAYER~,
+  ~EXPLODE~ (polylines into lines and arcs) and ~CONVERTPOLY~ -- each equal
+  to BricsCAD's result for the same input (and to AutoCAD's where the
+  headless AutoCAD could answer). Commands select by window (~_W~),
+  crossing (~_C~) and by a point on the object, as users do. Draw-order
+  commands and ~TRANSPARENCY~ are recognised.
+- ~NEW~ and ~OPEN~ open a drawing (a DXF or DWG file for ~OPEN~) and make
+  it current; ~MENULOAD~ / ~CUILOAD~ load a cadtui menu / band description.
+  Under ~--host cadtui~ the new drawing appears in the UI tree, and the
+  ~cad>~ console runs a CAD command line: ~LINE 0,0 4,0~ draws a line
+  (space separates the inputs, as at the vendors' command line); an
+  unknown name answers "Unknown command".
 - A fresh drawing holds the documented imperial-template values in the
   drawing-dependent system variables (~DIMASZ~ 0.18, ~DIMSTYLE~
   "Standard", ~LIMMAX~ (12 9), ~TEXTSIZE~ 0.2, ...), no longer zeros.

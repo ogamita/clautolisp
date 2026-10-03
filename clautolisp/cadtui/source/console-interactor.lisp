@@ -45,54 +45,6 @@ console's type-ahead queue.
   (setf (cadtui-console-state-escape (activation-state *command-activation*))
         new-escape))
 
-;;; --- Spec 5.6 rule 3: a bare line is a CAD command line ----------------
-;;;
-;;; At REPL level a line beginning with "(" is Lisp (rule 2); the REPL's own
-;;; prefixes ("," commands, "!" shell) keep their meaning; anything else is a
-;;; CAD command line (rule 3): its first word is the command, and -- as at the
-;;; vendors' command line, where SPACE is ENTER -- the following words are its
-;;; inputs, the end of the line a final RETURN. (A program blocked in a read
-;;; never sees this reader: rule 1 is served inside the REPL's evaluation.)
-
-(defvar *cad-command-known-p* nil
-  "NIL, or a function (NAME) telling whether NAME is a CAD command the engine
-knows; the CLI sets it from the CAD core. NIL means every name is known.")
-
-(defun cad-command-line-p (line)
-  "Whether LINE, at REPL level, is a CAD command line (rule 3)."
-  (let ((text (string-left-trim '(#\Space #\Tab) line)))
-    (and (plusp (length text))
-         (not (find (char text 0) "(,!;'\"")))))
-
-(defun cad-command-line-name (line)
-  "The command name of the CAD command LINE: its first word, upcased, the
-\".\" / \"_\" prefixes removed."
-  (let* ((text (string-left-trim '(#\Space #\Tab) line))
-         (end (position-if (lambda (c) (member c '(#\Space #\Tab))) text)))
-    (string-upcase (string-left-trim "._" (subseq text 0 end)))))
-
-(defun %autolisp-string-literal (string)
-  (with-output-to-string (out)
-    (write-char #\" out)
-    (loop for c across string
-          do (when (member c '(#\" #\\)) (write-char #\\ out))
-             (write-char c out))
-    (write-char #\" out)))
-
-(defun cad-command-line-source (line)
-  "The AutoLISP source that runs the CAD command LINE: its words as the
-inputs of one (command ...), a final \"\" for the RETURN that ends the
-line, and (princ) so nothing is echoed -- as at the vendors' prompt."
-  (let ((words (loop with text = (string-trim '(#\Space #\Tab) line)
-                     with start = 0
-                     for pos = (position-if (lambda (c) (member c '(#\Space #\Tab)))
-                                            text :start start)
-                     for word = (subseq text start (or pos (length text)))
-                     when (plusp (length word)) collect word
-                     while pos do (setf start (1+ pos)))))
-    (format nil "(progn (command~{ ~A~} \"\") (princ))"
-            (mapcar #'%autolisp-string-literal words))))
-
 (defun %cadtui-console-reader (input-context)
   "READER of the cadtui console: read one physical line and classify it with the
 current activation's escape. A meta-command line (leading escape) always returns
