@@ -318,6 +318,17 @@ solid repeats the third corner, as the vendors do."
                                  (cons 12 p3) (cons 13 p4)))))))
   tokens)
 
+(defun %entsel-token-p (token)
+  "Whether TOKEN is the ENTSEL form (ename point) COMMAND passes live."
+  (and (consp token)
+       (typep (first token) 'clautolisp.autolisp-runtime:autolisp-ename)))
+
+(defun %entsel-entity (host token)
+  "The entity of an ENTSEL-form TOKEN (and, second value, its pick point)."
+  (values (cador-find-entity-by-handle
+           host (clautolisp.autolisp-runtime:autolisp-ename-value (first token)))
+          (second token)))
+
 (defun %command-selection (host tokens)
   "Consume object-selection input: live selection sets, entity-handle
 tokens and the _Last option, up to the closing RETURN. Returns
@@ -327,6 +338,17 @@ tokens and the _Last option, up to the closing RETURN. Returns
       (let ((token (first tokens)))
         (cond
           ((null tokens) (return))
+          ((%entsel-token-p token)
+           (let ((entity (%entsel-entity host token)))
+             (when entity (pushnew entity entities)))
+           (pop tokens))
+          ;; A raw ename (a host caller handing one straight in; COMMAND
+          ;; itself spells an ename as its handle string).
+          ((typep token 'clautolisp.autolisp-runtime:autolisp-ename)
+           (let ((entity (cador-find-entity-by-handle
+                          host (clautolisp.autolisp-runtime:autolisp-ename-value token))))
+             (when entity (pushnew entity entities)))
+           (pop tokens))
           ((typep token 'clautolisp.autolisp-runtime:autolisp-pickset)
            (let ((set (ignore-errors (ap->pickset host token 'command))))
              (when set

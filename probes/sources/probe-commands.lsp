@@ -134,12 +134,14 @@
     '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "1" ""))
   (cad-probe--cmd-case "CHANGE a line endpoint"
     '("_.LINE" "0,0" "2,0" "" "_.CHANGE" "_L" "" "3,3"))
-  (cad-probe--cmd-case "DIVIDE a line into 4"
-    '("_.LINE" "0,0" "4,0" "" "_.DIVIDE" "_L" "4"))
-  (cad-probe--cmd-case "MEASURE a line by 1.5"
-    '("_.LINE" "0,0" "4,0" "" "_.MEASURE" "_L" "1.5"))
+  ;; Object picks as (ename point), the entsel form: a headless AutoCAD has
+  ;; no view to resolve a bare point, and a pick it cannot resolve leaves
+  ;; the command waiting -- whose cancel then poisons every later case
+  ;; (2026-10-03: DIVIDE "_L" did exactly that, job 16914406699).
   (cad-probe--cmd-case "LENGTHEN a line by delta 1 at its end"
-    '("_.LINE" "0,0" "4,0" "" "_.LENGTHEN" "_DE" "1" "4,0" ""))
+    (function (lambda ()
+      (command "_.LINE" "0,0" "4,0" "")
+      (command "_.LENGTHEN" "_DE" "1" (list (entlast) '(4.0 0.0 0.0)) ""))))
   (cad-probe--cmd-case "JOIN two collinear lines"
     (function (lambda ( / e1)
       (command "_.LINE" "0,0" "2,0" "")
@@ -149,8 +151,11 @@
   (cad-probe--cmd-case "CONVERTPOLY light to heavy"
     '("_.PLINE" "0,0" "2,0" "2,1" "" "_.CONVERTPOLY" "_H" "_L" ""))
   (cad-probe--cmd-case "MATCHPROP layer and color"
-    '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "3" ""
-      "_.LINE" "5,5" "6,6" "" "_.MATCHPROP" "0.7071,0.7071" "5.5,5.5" ""))
+    (function (lambda ( / src)
+      (command "_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "3" "")
+      (setq src (entlast))
+      (command "_.LINE" "5,5" "6,6" "")
+      (command "_.MATCHPROP" src (entlast) ""))))
   (cad-probe--cmd-case "SETBYLAYER color"
     '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "2" "" "_.SETBYLAYER" "_L" "" "_Y" "_Y"))
 
@@ -168,25 +173,6 @@
     (function (lambda ()
       (command "_.CIRCLE" "0,0" "1")
       (command "_.ADDSELECTED" (entlast) "5,5" "2"))))
-  (cad-probe--cmd-case "COPYM two copies"
-    (function (lambda ()
-      (command "_.CIRCLE" "0,0" "1")
-      (command "_.COPYM" (entlast) "" "0,0" "3,0" "6,0" ""))))
-  (cad-probe--cmd-case "FLATTEN a 3D line"
-    (function (lambda ()
-      (command "_.LINE" "0,0,1" "2,0,3" "")
-      (command "_.FLATTEN" (entlast) "" "_N"))))
-  (cad-probe--cmd-case "3DROTATE a line 90 about Z"
-    (function (lambda ()
-      (command "_.LINE" "0,0" "2,0" "")
-      (command "_.3DROTATE" (entlast) "" "0,0,0" "_Z" "90"))))
-  (cad-probe--cmd-case "XPLODE a rectangle"
-    (function (lambda ()
-      (command "_.RECTANG" "0,0" "2,1")
-      (command "_.XPLODE" (entlast) "" "_E"))))
-
-  ;; S4 arrays: classic -ARRAY, and the array commands made NON-associative
-  ;; (_AS _N) so the result is plain copies rather than an array object.
   (cad-probe--cmd-case "-ARRAY rectangular 2 rows 3 columns"
     (function (lambda ()
       (command "_.CIRCLE" "0,0" "0.5")
@@ -211,6 +197,29 @@
     (function (lambda ()
       (command "_.CIRCLE" "0,0" "0.5")
       (command "_.3DARRAY" (entlast) "" "_R" "2" "2" "2" "1" "1" "1"))))
+
+  ;; Express Tools (COPYM FLATTEN XPLODE) and the 3DROTATE gizmo may be
+  ;; missing on a headless engine: run them late, so a missing command
+  ;; cannot spoil the cases above.
+  (cad-probe--cmd-case "COPYM two copies"
+    (function (lambda ()
+      (command "_.CIRCLE" "0,0" "1")
+      (command "_.COPYM" (entlast) "" "0,0" "3,0" "6,0" ""))))
+  (cad-probe--cmd-case "FLATTEN a 3D line"
+    (function (lambda ()
+      (command "_.LINE" "0,0,1" "2,0,3" "")
+      (command "_.FLATTEN" (entlast) "" "_N"))))
+  (cad-probe--cmd-case "3DROTATE a line 90 about Z"
+    (function (lambda ()
+      (command "_.LINE" "0,0" "2,0" "")
+      (command "_.3DROTATE" (entlast) "" "0,0,0" "_Z" "90"))))
+  (cad-probe--cmd-case "XPLODE a rectangle"
+    (function (lambda ()
+      (command "_.RECTANG" "0,0" "2,1")
+      (command "_.XPLODE" (entlast) "" "_E"))))
+
+  ;; S4 arrays: classic -ARRAY, and the array commands made NON-associative
+  ;; (_AS _N) so the result is plain copies rather than an array object.
 
   ;; LAST: from LISP, AutoCAD's EXPLODE takes one object and ends, so a
   ;; trailing "" repeats it and leaves it waiting -- it derailed every
