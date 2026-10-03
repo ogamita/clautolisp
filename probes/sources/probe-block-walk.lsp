@@ -92,4 +92,26 @@
       (vl-load-com)
       (vla-GetBoundingBox (vlax-ename->vla-object txt-narrow) 'mn 'mx)
       (list (vlax-safearray->list mn) (vlax-safearray->list mx)))))
+
+  ;; 5. The default font's width per character: TEXTBOX of each printable
+  ;; ASCII character repeated ten times, height 1, in the current style. A
+  ;; per-character table replaces clautolisp's single 0.6 ratio, which
+  ;; measures M and i alike. Ten copies so inter-character spacing counts.
+  (cad-probe-run-text-metrics)
+  (princ))
+
+(defun cad-probe-run-text-metrics ( / code s)
+  (setq code 32)
+  (while (<= code 126)
+    (setq s (strcat (chr code) (chr code) (chr code) (chr code) (chr code)
+                    (chr code) (chr code) (chr code) (chr code) (chr code)))
+    (cad-probe-capture "text-metrics" (strcat "textbox 10 x char " (itoa code))
+      (function (lambda ()
+        (textbox (list '(0 . "TEXT") '(10 0.0 0.0 0.0) '(40 . 1.0) (cons 1 s))))))
+    (setq code (1+ code)))
+  ;; and the single character, which separates the glyph from its spacing
+  (foreach code (list 77 105 48 32)
+    (cad-probe-capture "text-metrics" (strcat "textbox 1 x char " (itoa code))
+      (function (lambda ()
+        (textbox (list '(0 . "TEXT") '(10 0.0 0.0 0.0) '(40 . 1.0) (cons 1 (chr code))))))))
   (princ))
