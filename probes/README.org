@@ -101,6 +101,13 @@ The harness must run unchanged in AutoCAD, BricsCAD and clautolisp:
 - Wrap anything that might be missing or error in the probe body; the
   =cad-probe-capture= / =cad-probe-sysvar= helpers already run their
   argument under =vl-catch-all-apply= and record a =error= status.
+- *Syntax a host might refuse goes in a string, read at run time.* A probe
+  asks whether an engine accepts something; written directly in the file,
+  the engine answers by refusing to LOAD the file -- every case in it, and
+  on BricsCAD the whole run, die with it. One body-less
+  =(foreach e (list 1 2 3))= kept the full suite off BricsCAD for a month
+  (=issues/closed/probes-suite-crashes-bricscad.issue=). Held as text and
+  =read= when the case runs, a refusal is that one case's =error=.
 
 * Result format
 

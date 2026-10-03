@@ -1115,21 +1115,19 @@ probe:suite:autocad:windows:
 # engine, it does not gate anything. PROBE_NO_COMMIT because the CI
 # checkout is detached; results travel as an artefact.
 #
-# PROBE_SUITES is set because the FULL suite does not survive BricsCAD:
-# on both platforms it writes `wrapper-start' and then the engine dies
-# (segfault on macOS, silent exit on Windows) before a single record --
-# see issues/open/probes-suite-crashes-bricscad.issue. Narrowing to the
-# suite whose question is actually open gets that answer today instead of
-# waiting for the rest to be diagnosed. Widen it as suites are cleared.
+# The FULL suite runs on BricsCAD again (2026-10-03). It was narrowed
+# (PROBE_SUITES 'rtos foreach-scope ...') while it killed the engine on both
+# platforms -- `wrapper-start' and nothing more, a segfault on macOS, a
+# silent exit on Windows. The cause was one FORM: a body-less
+# (foreach e (list 1 2 3)) in probe-foreach-scope.lsp, which BricsCAD
+# refuses to LOAD, taking the whole file -- and the run -- with it. It now
+# has a body, and the rule is kept in probes/README.org: syntax a host might
+# refuse goes in a string, read at run time, so a refusal is one case's
+# `error', not a dead engine. See issues/closed/probes-suite-crashes-
+# bricscad.issue.
 #
-# The value is a PAIR, and deliberately: narrowing to foreach-scope alone
-# still segfaulted, which leaves three candidates -- probe-core's load,
-# the new suite's load, and CAD-PROBE-BEGIN-RUN -- and does not separate
-# them. `rtos foreach-scope' does: rtos is an ORIGINAL suite and runs
-# first, so run-start plus rtos records and no foreach records means the
-# new suite is at fault, while nothing beyond wrapper-start again means
-# the fault is in probe-core or begin-run and the new suite is
-# exonerated. The experiment is the job.
+# PROBE_SPLIT_SUITES stays: one form per file, so a load that HANGS still
+# names the form it hung on.
 probe:suite:bricscad:macos:
   extends: .gate-macos-cad-soft
   # a PROBE: automatic only when its family changed (and the runner is
@@ -1144,9 +1142,8 @@ probe:suite:bricscad:macos:
   variables:
     GIT_SUBMODULE_STRATEGY: none
     PROBE_NO_COMMIT: '1'
-    # vlax-for-scope (2026-09-28): the VLAX-FOR loop-variable question
-    # (vlax-for-binding-rule-unprobed) -- a suite not listed here never runs.
-    PROBE_SUITES: 'rtos foreach-scope vlax-for-scope'
+    # No PROBE_SUITES: the FULL suite (every non-quarantined manifest line)
+    # runs again -- probes-suite-crashes-bricscad, 2026-10-03.
     # One form per file, so a load that HANGS still names the form it
     # hung on -- see split_wanted in probes/scripts/run-probes.sh.
     PROBE_SPLIT_SUITES: 'foreach-scope vlax-for-scope'
@@ -1251,9 +1248,8 @@ probe:suite:bricscad:windows:
   variables:
     GIT_SUBMODULE_STRATEGY: none
     PROBE_NO_COMMIT: '1'
-    # vlax-for-scope (2026-09-28): the VLAX-FOR loop-variable question
-    # (vlax-for-binding-rule-unprobed) -- a suite not listed here never runs.
-    PROBE_SUITES: 'rtos foreach-scope vlax-for-scope'
+    # No PROBE_SUITES: the FULL suite (every non-quarantined manifest line)
+    # runs again -- probes-suite-crashes-bricscad, 2026-10-03.
     # One form per file, so a load that HANGS still names the form it
     # hung on -- see split_wanted in probes/scripts/run-probes.sh.
     PROBE_SPLIT_SUITES: 'foreach-scope vlax-for-scope'
