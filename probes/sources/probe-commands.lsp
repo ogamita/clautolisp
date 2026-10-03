@@ -72,10 +72,15 @@
   ;; input reached the Command prompt and the job hung to its timeout.
   ;; An engine whose GETCNAME cannot even resolve _LINE (a stub, as on
   ;; clautolisp) tells nothing: then every command counts as known.
-  (or (not (member name cad-probe--may-be-absent))
-      (not (getcname "_LINE"))
-      (getcname (strcat "_" name))
-      (and (eval (read (strcat "c:" name))) t)))
+  ;; On AutoCAD every listed command is skipped outright: neither GETCNAME
+  ;; nor C:NAME is reliable there (C:3DARRAY is an autoload stub whose
+  ;; file the console cannot load -- job 16915457382 hung on it), and one
+  ;; hang loses the whole run.
+  (cond ((not (member name cad-probe--may-be-absent)) T)
+        ((= cad-probe-product "autocad") nil)
+        ((not (getcname "_LINE")) T)
+        ((getcname (strcat "_" name)) T)
+        (T (and (eval (read (strcat "c:" name))) t))))
 
 (setq cad-probe--unknown nil)
 
