@@ -460,6 +460,16 @@ separate binary for tool integrators.
   Engine identity (~PROGRAM~ / ~ACADVER~ / …) and the dynamic codepage
   sysvars are unaffected. See
   ~issues/open/bricscad-dialect-sysvar-parity.issue~.
+- Under ~--bricscad~, 43 shared variables report BricsCAD's factory
+  default instead of AutoCAD's — ~PICKBOX~ 4, ~OSMODE~ 4135, ~MAXSORT~
+  200, ~DRAGP1~ 10, ~FONTMAP~ "default.fmp", … — each measured on a
+  clean BricsCAD V26 profile AND stated by the BricsCAD documentation.
+  Drawing-saved variables keep the template-neutral catalogue value.
+- Every spelling of a dialect now behaves as its product:
+  ~--dialect bricscad-mac~ / ~bricscad-linux~ / ~bricscad-v25~ get the
+  BricsCAD sysvar set, ~SECURELOAD~ 0 read-only, and the BricsCAD
+  divergence rules; before, only ~bricscad~ / ~bricscad-v26~ did and the
+  others behaved like AutoCAD.
 
 ** Dialect portability warnings (autolisp-spec ch.25)
 

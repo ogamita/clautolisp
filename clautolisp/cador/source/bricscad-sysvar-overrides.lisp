@@ -201,14 +201,65 @@ returns nil. See the file header for provenance.")
 ;;;; classified and human-vetted for locale/template rows.
 
 (defparameter *bricscad-factory-defaults*
+  ;; ADOPTED 2026-10-03 from harvest:sysvars:bricscad:macos (job
+  ;; 16913315157, BricsCAD V26 macOS, profile <<Profil sans nom>>), vetted
+  ;; row by row: only sysvars saved in the REGISTRY / preferences (never a
+  ;; drawing-saved one: the reference drawing came from a French metric
+  ;; template), never locale, identity, session or window state, and ONLY
+  ;; where the measured value equals the BricsCAD default the vendor
+  ;; documentation states (system-variables-inventory.sexp :divergence).
+  ;; Two independent sources per row. 32 more registry rows matched no
+  ;; documented default and are left out -- see bricscad-dialect-sysvar-
+  ;; parity.issue, "Phase 2 harvest (2026-10-03)".
   '(
-    ;; ("OSMODE" . 4135)   ; example row shape only — NOT adopted.
+    ("AUTOSNAP" . 127)
+    ("CLIPROMPTLINES" . 4)
+    ("CROSSINGAREACOLOR" . 91)
+    ("DELOBJ" . 1)
+    ("DRAGP1" . 10)
+    ("DRAGP2" . 25)
+    ("DWGCHECK" . 0)
+    ("FONTMAP" . "default.fmp")
+    ("GRIPHOT" . 240)
+    ("GRIPHOVER" . 150)
+    ("GRIPSIZE" . 4)
+    ("HPMAXAREAS" . 0)
+    ("HPOBJWARNING" . 10000)
+    ("INSUNITSDEFSOURCE" . 0)
+    ("INSUNITSDEFTARGET" . 0)
+    ("MAXSORT" . 200)
+    ("MENUBAR" . 1)
+    ("MTEXTCOLUMN" . 0)
+    ("NAVVCUBEORIENT" . 0)
+    ("OSMODE" . 4135)
+    ("PARAMETERCOPYMODE" . 3)
+    ("PICKADD" . 1)
+    ("PICKBOX" . 4)
+    ("PICKDRAG" . 0)
+    ("POLARMODE" . 1)
+    ("PROPOBJLIMIT" . 1000)
+    ("PUBLISHCOLLATE" . 0)
+    ("REVCLOUDMAXARCLENGTH" . 0.375d0)
+    ("REVCLOUDMINARCLENGTH" . 0.375d0)
+    ("RIBBONDOCKEDHEIGHT" . 0)
+    ("RTDISPLAY" . 0)
+    ("SAVETIME" . 20)
+    ("SMOOTHMESHCONVERT" . 2)
+    ("SNAPTYPE" . 2)
+    ("SSMPOLLTIME" . 15)
+    ("UCSORTHO" . 0)
+    ("WHIPARC" . 1)
+    ("WHIPTHREAD" . 0)
+    ("XDWGFADECTL" . 70)
+    ("XFADECTL" . 50)
+    ("XLOADCTL" . 1)
+    ("XREFNOTIFY" . 1)
+    ("ZOOMFACTOR" . 40)
     )
   "Alist of (SYSVAR-NAME-STRING . VALUE) BricsCAD factory-default value
 overrides, applied to the AutoCAD-derived catalogue under the bricscad
-dialect only. INTENTIONALLY EMPTY (inert) until the clean-profile harvest
-is classified — see this file's Phase-2 header and the issue's runbook.
-Rows naming an unknown or BricsCAD-absent sysvar are skipped harmlessly.")
+dialect only. Rows naming an unknown or BricsCAD-absent sysvar are skipped
+harmlessly.")
 
 (defun apply-bricscad-dialect-sysvars (host)
   "Launch-time bricscad-dialect sysvar overlay. Two effects, both

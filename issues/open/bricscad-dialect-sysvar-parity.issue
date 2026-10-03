@@ -229,3 +229,47 @@ Found by
 Manual diff of the alfe/clautolisp bricscad sysvar dumps, 2026-06-30.
 Related: clautolisp-host-product-still-bricscad.issue (identity),
 clautolisp-mock-host-getvar.issue (identity overlay).
+
+
+Phase 2 harvest (2026-10-03, clautolisp 2.2.156)
+------------------------------------------------
+
+harvest:sysvars:bricscad:macos played on MR !378's native child (job
+16913315157). BRICSCAD_PROFILE_CLEAN is not set, so it ran on BricsCAD's
+built-in "<<Profil sans nom>>" profile: untouched, but still French and
+metric (LOCALE fr_FR, WSCURRENT "Dessin 2D", DIMSTYLE ISO-25, INSUNITS 6)
+-- the caveat above held. classify-sysvar-diff.py: 1836 vars, 1424
+identical, 412 differing; bucket (b) 175.
+
+Vetting rule (.vet-sysvars.py logic, recorded here): a row is ADOPTED only
+when (1) the inventory says it is saved in the REGISTRY or preferences --
+never a drawing-saved variable, those came from the French metric
+template; (2) it is not locale, identity (pjb 2026-06-30: clautolisp keeps
+its own), session, window or runner state; and (3) the measured value
+EQUALS the BricsCAD default the vendor documentation states (inventory
+:divergence, e.g. PICKBOX "default AutoCAD 3, BricsCAD 4"). Two independent
+sources per row. 43 rows adopted into *BRICSCAD-FACTORY-DEFAULTS* (38 by
+value, 5 where the doc says On/Off for the measured 1/0).
+
+NOT adopted, 32 registry rows whose measured value matches no documented
+default -- probably factory, but nothing corroborates them, and several are
+UI state a runner could have toggled. Candidates for a second source
+(a BricsCAD doc page or a second clean machine):
+  3DOSMODE=11 BPARAMETERFONT="simplex.shx" CLIPBOARDFORMAT=1 COMMANDASSIST=1 CROSSHAIRDRAWMODE=3 DEFLPLSTYLE="ByColor" DRAWINGVIEWPRESET="None" DYNINFOTIPS=0 EXPORTGEOMETRYFLAGS=12 GEOLATLONGFORMAT=1 GLSWAPMODE=0 GRIDMAJORCOLOR=251 GROUPDISPLAYMODE=0 HPQUICKPREVIEW=0 LAYEREVALCTL=0 LAYERPMODE=1 LOOKFROMZOOMEXTENTS=1 MTEXTTOOLBAR=1 MTFLAGS=2048 NAVBARDISPLAY=0 PDFIMAGECOMPRESSION=0 PDFIMPORTJOINLINEANDARCSEGMENTS=1 PDFSHX=0 PREVIEWWNDINOPENDLG=1 RIBBONSELECTMODE=0 RIBBONSTATE=1 SELECTIONCYCLING=2 SMROLLEDEDGELINESDOWNLAYERLINETYPE="CONTINUOUS" SMROLLEDEDGELINESUPLAYERLINETYPE="CONTINUOUS" SMSMARTFEATURES=7 USECOMMUNICATOR=0 USENEWSTATUSBAR=1
+
+Also excluded: 55 drawing-saved rows (template), 45 locale / identity /
+session rows.
+
+FOUND ON THE WAY, fixed in the same change: the overlay was guarded on the
+dialect NAME :bricscad-v26, so --dialect bricscad-mac / bricscad-linux /
+bricscad-v25 got NONE of Phase 1 or Phase 2 (and AutoCAD's SECURELOAD 1,
+settable). Every product-keyed dispatch now goes through
+AUTOLISP-DIALECT-TEMPLATE-NAME (reader), which folds any spelling onto
+:bricscad-v26 / :autocad-2026: this overlay, SECURELOAD default and
+read-only-ness, the LOAD/OPEN encoding diagnostics, LISPSYS, the Sunday
+number of vl-file-systime, the entity divergence policy and the FOREACH
+divergence. Measured on the built executable: bricscad / bricscad-mac /
+bricscad-linux all report PICKBOX 4, MAXSORT 200, SECURELOAD 0, DYNPROMPT
+nil; autocad / autocad-mac 3, 1000, 1, 1.
+
+Remaining: Phase 3 (host-derived state), and the 32 candidates above.

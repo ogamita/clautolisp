@@ -560,7 +560,7 @@ The form is ALWAYS honoured at runtime regardless of dialect; only
 the diagnostic varies. encoding-dispatch.issue, section 'Per-dialect
 behavior'."
   (let* ((dialect (current-evaluation-dialect))
-         (name (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+         (name (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect)))
     (case name
       ((:strict)
        (clautolisp.autolisp-runtime:signal-encoding-diagnostic
@@ -590,7 +590,7 @@ extension; --~(~A~) has no per-call encoding control on LOAD."
 
 (defun %secureload-dialect-name ()
   (let ((d (ignore-errors (current-evaluation-dialect))))
-    (and d (clautolisp.autolisp-reader:autolisp-dialect-name d))))
+    (and d (clautolisp.autolisp-reader:autolisp-dialect-template-name d))))
 
 (defun %sysvar-host (host)
   "HOST, with its sysvar table rebuilt first when the dialect has moved
@@ -2578,7 +2578,7 @@ Informational — the runtime still attempts the open; downstream
 errors are the user's signal that the encoding is actually wrong."
   (when encoding-string
     (let* ((dialect (current-evaluation-dialect))
-           (name (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+           (name (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect)))
       ;; Dialect-level check: AutoCAD doesn't express UTF-16 / UTF-32.
       (when (and (eq name :autocad-2026)
                  (not (%autocad-supports-encoding-p encoding-string)))
@@ -2632,7 +2632,7 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
 | --strict   | extension-used      | extension-used        | extension  |
 "
   (let* ((dialect (current-evaluation-dialect))
-         (name (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+         (name (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect)))
     (flet ((foreign (sub-tag)
              (clautolisp.autolisp-runtime:signal-encoding-diagnostic
               :enc-foreign-dialect
@@ -3014,7 +3014,7 @@ return ends in 0 -- and which is what pjb licensed for the shape fix.
          (resolved (resolve-open-pathname value "VL-FILE-SYSTIME"))
          (write-date (ignore-errors (file-write-date resolved)))
          (dialect-name (ignore-errors
-                        (clautolisp.autolisp-reader:autolisp-dialect-name
+                        (clautolisp.autolisp-reader:autolisp-dialect-template-name
                          (current-evaluation-dialect)))))
     (if write-date
         (multiple-value-bind (second minute hour day month year day-of-week)
@@ -5311,7 +5311,7 @@ issue, section 'Per-dialect behavior / --strict / --bricscad /
 --clautolisp', and the user's answer to the LISPSYS open question
 ('warn loudly, do not forbid')."
   (let* ((dialect (current-evaluation-dialect))
-         (name (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+         (name (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect)))
     (case name
       ((:autocad-2026)
        nil) ; native; silent.

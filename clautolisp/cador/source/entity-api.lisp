@@ -389,7 +389,7 @@ return two values:
 lax -> deviant, silent; bricscad -> deviant + warn; strict -> normative +
 warn (any divergence is unsafe); autocad / clautolisp / unknown ->
 normative, silent."
-  (case dialect-name
+  (case (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect-name)
     ((:lax)                    (values :deviant   nil))
     ((:bricscad-v26 :bricscad) (values :deviant   t))
     ((:strict)                 (values :normative t))

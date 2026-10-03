@@ -186,6 +186,26 @@
       (is (null (cador-sysvar mock "DEFINITELYNOTASYSVAR")))
       (is (null (cador-sysvar mock "DYNPROMPT"))))))
 
+(test bricscad-shipped-factory-defaults-all-land-under-bricscad-only
+  ;; The ADOPTED table (2026-10-03 harvest, doc-corroborated rows): every
+  ;; row names a sysvar the overlay keeps, and lands with its value; a
+  ;; plain host keeps AutoCAD's catalogue default for the same names.
+  (is (<= 40 (length clautolisp.cador:*bricscad-factory-defaults*)))
+  (let ((mock (make-cador))
+        (plain (make-cador)))
+    (clautolisp.cador:apply-bricscad-dialect-sysvars mock)
+    (loop for (name . value) in clautolisp.cador:*bricscad-factory-defaults*
+          for got = (host-getvar mock name)
+          do (is (not (null (cador-sysvar mock name))) "~A dropped by the overlay" name)
+             (is (equal (if (typep got 'autolisp-string) (autolisp-string-value got) got)
+                        (if (stringp value) value value))
+                 "~A: expected ~S, got ~S" name value got))
+    ;; Spot values a BricsCAD user would notice, and AutoCAD's on a plain host.
+    (is (eql 4 (host-getvar mock "PICKBOX")))
+    (is (eql 3 (host-getvar plain "PICKBOX")))
+    (is (eql 200 (host-getvar mock "MAXSORT")))
+    (is (eql 1000 (host-getvar plain "MAXSORT")))))
+
 ;;; --- ERRNO bridge -------------------------------------------------
 ;;;
 ;;; (getvar "ERRNO") must reflect the live runtime errno, not the
