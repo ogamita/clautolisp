@@ -1111,8 +1111,14 @@ provides that surface through the host backend:
   non-empty of ~$LC_ALL~, ~$LC_NUMERIC~ and ~$LANG~; with none set (the C
   locale, or a Windows session) it is metric. ~MEASUREMENT~ picks the
   pattern file ~HATCH~ uses (ANSI31's lines 0.125 apart in imperial, 3.175
-  in metric). A drawing read from a file or created from a template keeps
-  the value in its own header, and ~setvar~ changes it as usual.
+  in metric). The other drawing variables follow suit, as a drawing made
+  from ~acad.dwt~ or ~acadiso.dwt~ would: ~DIMASZ~ 0.18 or 2.5, ~LIMMAX~
+  12,9 or 420,297, ~INSUNITS~ 1 or 4, ~DIMSTYLE~ ~Standard~ or ~ISO-25~,
+  ~CMLSCALE~ 1 or 20, ~HPNAME~ ~ANSI31~ or ~ANGLE~ -- the values the
+  AutoCAD documentation gives as "Initial value: X (imperial) or Y
+  (metric)" (BricsCAD's for its own variables). A drawing read from a
+  file or created from a template keeps the values in its own header,
+  and ~setvar~ changes them as usual.
 - ~ModelSpace.AddLine~ and ~Block.AddAttribute~ create entities through
   the object model: ~(vla-addline space start end)~ adds a LINE on the
   current layer, and ~(vla-addattribute block height mode prompt

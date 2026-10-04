@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: sysvar-template-defaults-undocumented -- 18 drawing-dependent sysvars still default to a zero stand-in
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
@@ -64,3 +64,26 @@ LOCALE-MEASUREMENT (first non-empty of LC_ALL, LC_NUMERIC, LANG; en_US ->
 0, anything else, unset included -> 1). The other imperial-template values
 (DIMASZ 0.18, LIMMAX 12,9, ...) are unchanged: a metric (acadiso.dwt)
 fresh drawing would carry metric ones too -- not measured, not done.
+
+* Done (clautolisp 2.2.177, 2026-10-04)
+
+Harvested from the vendor pages (curl of help.autodesk.com/cloudhelp/2026
+"Initial value:" and help.bricsys.com "Default value:", quoted verbatim)
+into the inventory's :divergence, then generated:
+
+- All 29 imperial values already installed match AutoCAD 2026; each page
+  also states the metric (acadiso.dwt) value, now installed when the
+  locale gives MEASUREMENT 1 (*metric-template-defaults*): DIMASZ 2.5,
+  DIMSTYLE ISO-25 (an ISO-25 DIMSTYLE record is made so the current style
+  names a record), DIMTAD 1, DIMZIN 8, LIMMAX 420,297, INSUNITS 4, ...
+- AutoCAD pages: CMLSCALE 1.0000 / 20.0000 (GUID-9E3E86FD-CBF7-4722-BED5-
+  17B12709C6F4, now in the inventory), CVIEWDETAILSTYLE Imperial24 /
+  Metric50, DIMDSEP . / , , HPNAME ANSI31 / ANGLE (the page says "Saved
+  in: Not-saved": a session value MEASUREMENT chooses -- installed with the
+  fresh drawing all the same).
+- 13 BricsCAD-only cells, from BricsCAD's pages (keyed on INSUNITS 1 / 4,
+  which the templates pair with MEASUREMENT 0 / 1): CIRCULARARROW*,
+  LINEARARROW*, DEFAULTSPACEHEIGHT, INTERIORELEVATION*, SMDEFAULTTHICKNESS,
+  SMEXPORTOSM*.
+- UCSNAME: the AutoCAD page states no initial value, only "Returns a null
+  string if the current UCS is unnamed"; the stand-in "" is that.

@@ -2543,7 +2543,10 @@ NIL when GETSTRING returns nil)."
   ;; English says W; ANGTOF reads every mode back.
   (let ((clautolisp.autolisp-builtins-core::*edtime-language* :en))
     (is (string= "180" (autolisp-string-value (%al "(angtos pi)"))) "AUNITS 0, AUPREC 0")
-    (is (string= "180.0000" (autolisp-string-value (%al "(angtos pi 0 4)"))) "DIMZIN 0")
+    ;; DIMZIN set here: a fresh drawing's is 8 under a metric locale (acadiso.dwt).
+    (is (string= "180.0000" (autolisp-string-value
+                             (%al "(progn (setvar \"DIMZIN\" 0) (angtos pi 0 4))")))
+        "DIMZIN 0")
     (is (string= "270" (autolisp-string-value (%al "(angtos (- (/ pi 2)) 0 0)"))) "modulo 2 pi")
     (is (string= "S 90d W" (autolisp-string-value (%al "(angtos 3.1415926536 4 0)"))))
     (is (string= "N45dE" (autolisp-string-value

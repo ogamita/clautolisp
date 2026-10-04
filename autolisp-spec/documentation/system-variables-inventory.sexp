@@ -2908,7 +2908,7 @@
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "default BricsCAD 1 (imperial) or 25 (metric): 1 if INSUNITS=1 (inches), 25 if INSUNITS=4 (millimeters), 2.5 if INSUNITS=5 (centimeters), 0.025 if INSUNITS=6 (meters)"
   :summary "Default head length: Sets the default head length of circular arrows. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/circulararrowheadlength-system-variable")
@@ -2925,7 +2925,7 @@
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "default BricsCAD 1.5 (imperial) or 37.5 (metric): 1.5 if INSUNITS=1 (inches), 37.5 if INSUNITS=4 (millimeters), 3.75 if INSUNITS=5 (centimeters), 0.0375 if INSUNITS=6 (meters)"
   :summary "Default head width: Sets the default head width of circular arrows. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/circulararrowheadwidth-system-variable")
@@ -2942,7 +2942,7 @@
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "default BricsCAD 2 (imperial) or 50 (metric): 2 if INSUNITS=1 (inches), 50 if INSUNITS=4 (millimeters), 5 if INSUNITS=5 (centimeters), 0.05 if INSUNITS=6 (meters)"
   :summary "Default leader radius: Sets the default leader radius of circular arrows. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/circulararrowleaderradius-system-variable")
@@ -2976,7 +2976,7 @@
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "default BricsCAD 0.5 (imperial) or 12.5 (metric): 0.5 if INSUNITS=1 (inches), 12.5 if INSUNITS=4 (millimeters), 1.25 if INSUNITS=5 (centimeters), 0.0125 if INSUNITS=6 (meters)"
   :summary "Default thickness: Sets the default thickness of circular arrows. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/circulararrowthickness-system-variable")
@@ -3775,10 +3775,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "default AutoCAD 1.0000 (imperial) or 20.0000 (metric), BricsCAD 1.0: If MEASUREMENT=0 and INSUNITS=inches 20.0: If MEASUREMENT=1 and INSUNITS=millimeters"
   :summary "Multiline scale: Controls the overall distance between lines created with the MLINE command. A negative value mirrors the offset lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmlscale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9E3E86FD-CBF7-4722-BED5-17B12709C6F4" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmlscale-system-variable")
 )
 
 (
@@ -5373,7 +5373,7 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad nil)
   :vendor :autocad
-  :divergence NIL
+  :divergence "default AutoCAD Imperial24 (imperial) or Metric50 (metric)"
   :summary "Sets the name of the current detail view style. The current detail view style controls the appearance of all new model documentation detail views, detail boundaries and leader lines you create."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A4691398-49AD-4CBF-A37E-3893F748775F" :bricscad NIL)
@@ -5815,7 +5815,7 @@
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "default BricsCAD 120 (imperial) or 3000 (metric): 120 for MEASUREMENT=0 (inches), 3000 for MEASUREMENT=1 (millimeters)"
   :summary "Default Space Height: Default height of a space. Used if there are no ceilings to connect to or walls to get the height from. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/defaultspaceheight-system-variable")
@@ -7039,7 +7039,7 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "default AutoCAD . (imperial) or , (metric); the page types it Single-character"
   :summary "Specifies a single-character decimal separator to use when creating dimensions whose unit format is decimal."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0CDD6AA6-CDD8-4C9D-A270-A3DA00DCE63E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimdsep-system-variable")
@@ -12547,7 +12547,7 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "default AutoCAD ANSI31 (imperial) or ANGLE (metric); Saved in: Not-saved (a session value chosen by MEASUREMENT)"
   :summary "Sets the default hatch pattern name in this session."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C562EB1D-239D-4AFC-BC77-48F174834EE5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpname-system-variable")
@@ -14009,7 +14009,7 @@
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "default BricsCAD 20 (imperial) or 500 (metric): 20 for MEASUREMENT=0 (inches), 500 for MEASUREMENT=1 (millimeters)"
   :summary "Interior Elevation Minimum Length: Minimum length of a wall for an Interior Elevation to generate. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/interiorelevationminlength-system-variable")
@@ -14026,7 +14026,7 @@
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "default BricsCAD 2 (imperial) or 50 (metric): 2 for MEASUREMENT=0 (inches), 50 for MEASUREMENT=1 (millimeters)"
   :summary "Interior Elevation Offset Distance: Offset distance, for an Interior Elevation volume, from wall surfaces. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/interiorelevationoffset-system-variable")
@@ -14740,7 +14740,7 @@
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "default BricsCAD 1 (imperial) or 25 (metric): 1 if INSUNITS=1 (inches), 25 if INSUNITS=4 (millimeters), 2.5 if INSUNITS=5 (centimeters), 0.025 if INSUNITS=6 (meters)"
   :summary "Default head length: Sets the default head length of linear arrows. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lineararrowheadlength-system-variable")
@@ -14757,7 +14757,7 @@
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "default BricsCAD 1.5 (imperial) or 37.5 (metric): 1.5 if INSUNITS=1 (inches), 37.5 if INSUNITS=4 (millimeters), 3.75 if INSUNITS=5 (centimeters), 0.0375 if INSUNITS=6 (meters)"
   :summary "Default head width: Sets the default head width of linear arrows. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lineararrowheadwidth-system-variable")
@@ -14774,7 +14774,7 @@
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "default BricsCAD 0.5 (imperial) or 12.5 (metric): 0.5 if INSUNITS=1 (inches), 12.5 if INSUNITS=4 (millimeters), 1.25 if INSUNITS=5 (centimeters), 0.0125 if INSUNITS=6 (meters)"
   :summary "Default thickness: Sets the default thickness of linear arrows. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lineararrowthickness-system-variable")
@@ -25076,7 +25076,7 @@
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "default BricsCAD 0.07874 (imperial) or 2.0 (metric): 2.0 for INSUNITS=4, 0.07874 for INSUNITS=1"
   :summary "Thickness value: Controls the default sheet metal thickness, in drawing units. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaultthickness-system-variable")
@@ -25093,7 +25093,7 @@
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "default BricsCAD 0.000393701 (imperial) or 0.01 (metric): 0.01 if MEASUREMENT=1 and INSUNITS=4, 0.000393701 if MEASUREMENT=0 and INSUNITS=1"
   :summary "Accuracy of the approximation: Controls absolute deviation between the smooth edge geometry of 3D part and its .osm representation with lines and arcs, during the SMEXPORTOSM command, in drawing units. The lower the value, the better the precision. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smexportosmapproximationaccuracy-system-variable")
@@ -25110,7 +25110,7 @@
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "default BricsCAD 0.001968505 (imperial) or 0.05 (metric): 0.05 if MEASUREMENT=1 and INSUNITS=4, 0.001968505 if MEASUREMENT=0 and INSUNITS=1"
   :summary "Minimal edge length: Controls the minimal edge length for the SMEXPORTOSM command, in drawing units. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smexportosmminimaledgelength-system-variable")
@@ -28867,7 +28867,7 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "AutoCAD states no initial value: \"Returns a null string if the current UCS is unnamed\""
   :summary "Stores the name of the current user coordinate system for the current viewport in the current space."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7F43D2F1-8AE0-4089-80B1-26EA037B0709" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsname-system-variable")

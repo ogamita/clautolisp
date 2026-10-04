@@ -25,27 +25,31 @@
 (defun populate-default-tables (mock)
   "Pre-populate MOCK with the standard empty AutoCAD symbol
 tables so tblsearch / tblnext have a sensible baseline."
-  (let ((tables (cador-tables mock)))
-    (dolist (entry *default-table-records*)
-      (let* ((kind  (car entry))
-             (names (cdr entry))
-             (per-kind (or (gethash kind tables)
-                           (setf (gethash kind tables)
-                                 (make-hash-table :test #'equalp)))))
-        (dolist (name names)
-          ;; FILL A GAP, never overwrite. A drawing created from the DXF
-          ;; template already carries these records WITH their handles and
-          ;; subclass markers, and replacing them with the bare pair below
-          ;; is what would lose the structure a DWG write needs
-          ;; (dwg-round-trip-loses-entities). The bare record remains the
-          ;; right thing when nothing supplied one.
-          (unless (gethash name per-kind)
-            (setf (gethash name per-kind)
-                  (make-symbol-table-record
-                   :kind kind :name name
-                   :data (list (cons 0 (substitute #\_ #\- (string-upcase (symbol-name kind))))
-                               (cons 2 name)))))))))
+  (dolist (entry *default-table-records*)
+    (destructuring-bind (kind . names) entry
+      ;; Make the (possibly empty) table exist.
+      (ensure-default-table-record mock kind nil)
+      (dolist (name names)
+        ;; FILL A GAP, never overwrite. A drawing created from the DXF
+        ;; template already carries these records WITH their handles and
+        ;; subclass markers, and replacing them with the bare pair below
+        ;; is what would lose the structure a DWG write needs
+        ;; (dwg-round-trip-loses-entities). The bare record remains the
+        ;; right thing when nothing supplied one.
+        (ensure-default-table-record mock kind name))))
   mock)
+
+(defun ensure-default-table-record (mock kind name)
+  "Install the bare NAME record in MOCK's KIND table unless one is there."
+  (let ((per-kind (or (gethash kind (cador-tables mock))
+                      (setf (gethash kind (cador-tables mock))
+                            (make-hash-table :test #'equalp)))))
+    (unless (or (null name) (string= name "") (gethash name per-kind))
+      (setf (gethash name per-kind)
+            (make-symbol-table-record
+             :kind kind :name name
+             :data (list (cons 0 (substitute #\_ #\- (string-upcase (symbol-name kind))))
+                         (cons 2 name)))))))
 
 ;;; --- Sysvar defaults --------------------------------------------
 
@@ -421,19 +425,30 @@ with HOST-DERIVED-P defaulting to NIL for the :SEED list."
                                 :host-derived-p host-derived-p))))
     ;; The catalogue can only stand in (a zero of the right type) for the
     ;; drawing-dependent cells; a fresh drawing holds its template's
-    ;; values. Install the imperial-template ones the vendor documentation
-    ;; states (template-defaults.lisp, generated from the inventory).
+    ;; values, which the vendor documentation states for both templates
+    ;; (template-defaults.lisp, generated from the inventory).
     (when (eq catalogue :full)
-      (loop for (name . value) in *imperial-template-defaults*
-            for cell = (gethash name table)
-            when cell do (setf (sysvar-cell-value cell) value))
       ;; MEASUREMENT (and MEASUREINIT, the setting that seeds it) follow the
-      ;; locale: imperial under en_US, metric anywhere else. A drawing read
-      ;; from a file or a template keeps its own header value.
+      ;; locale: imperial under en_US, metric anywhere else -- and so does
+      ;; the template: acad.dwt's values, or acadiso.dwt's (DIMASZ 2.5,
+      ;; LIMMAX 420,297, DIMSTYLE ISO-25, ...) where the documentation
+      ;; states a metric one. A drawing read from a file or a template
+      ;; keeps its own header values.
       (let ((measurement (locale-measurement)))
+        (dolist (defaults (if (eql measurement 1)
+                              (list *imperial-template-defaults* *metric-template-defaults*)
+                              (list *imperial-template-defaults*)))
+          (loop for (name . value) in defaults
+                for cell = (gethash name table)
+                when cell do (setf (sysvar-cell-value cell) value)))
         (dolist (name '("MEASUREMENT" "MEASUREINIT"))
           (let ((cell (gethash name table)))
-            (when cell (setf (sysvar-cell-value cell) measurement)))))
+            (when cell (setf (sysvar-cell-value cell) measurement))))
+        ;; The current dimension style names a record of the DIMSTYLE table
+        ;; (when the mock has tables at all).
+        (let ((cell (gethash "DIMSTYLE" table)))
+          (when (and cell (gethash :dimstyle (cador-tables mock)))
+            (ensure-default-table-record mock :dimstyle (sysvar-cell-value cell)))))
       ;; A fresh drawing is created now: TDCREATE = TDUPDATE = this instant
       ;; as a Julian date (measured on BricsCAD); a drawing read from a file
       ;; keeps its header's.
