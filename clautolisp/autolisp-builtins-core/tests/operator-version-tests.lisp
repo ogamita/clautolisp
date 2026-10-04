@@ -42,3 +42,9 @@
   ;; A dialect without a version is never gated.
   (is (not (search "[version-operator]"
                    (%version-notice :strict "(acet-load-expresstools)")))))
+
+(test vl-infp-and-vl-nanp-are-not-bricscad-only
+  ;; Measured on AutoCAD 2022 (probe-versions, job 16921684058): both exist,
+  ;; so the spec lists them for both vendors and --autocad does not warn.
+  (is (not (search "[vendor-operator]" (%version-notice :autocad-2022 "(vl-infp 1.0)"))))
+  (is (not (search "[vendor-operator]" (%version-notice :autocad-2022 "(vl-nanp 1.0)")))))

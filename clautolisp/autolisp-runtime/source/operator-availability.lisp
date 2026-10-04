@@ -8,7 +8,7 @@
 ;;;;     make -C clautolisp operator-availability
 ;;;; and `make -C clautolisp check-operator-availability' fails on drift.
 ;;;;
-;;;; 66 AutoCAD-only, 473 BricsCAD-only.
+;;;; 66 AutoCAD-only, 470 BricsCAD-only.
 
 (in-package #:clautolisp.autolisp-runtime)
 
@@ -375,7 +375,6 @@
     ("VL-GETGEOMEXTENTS" . :bricscad)
     ("VL-GETSTARTUPDIR" . :bricscad)
     ("VL-HIDEPROMPTMENU" . :bricscad)
-    ("VL-INFP" . :bricscad)
     ("VL-INIT" . :bricscad)
     ("VL-LAYERSTATES-DELETE" . :bricscad)
     ("VL-LAYERSTATES-GETDESCRIPTION" . :bricscad)
@@ -393,7 +392,6 @@
     ("VL-LOCAL-UNDO-PUSH" . :bricscad)
     ("VL-LOCAL-UNDO-RESET" . :bricscad)
     ("VL-LOCAL-UNDO-STEPS" . :bricscad)
-    ("VL-NANP" . :bricscad)
     ("VL-RMDIR" . :bricscad)
     ("VL-SETCURRENTDIR" . :bricscad)
     ("VL-SHOWPROMPTMENU" . :bricscad)
@@ -414,7 +412,6 @@
     ("VL-VPLAYER-SET-TRANSPARENCY" . :bricscad)
     ("VL-VPLAYER-SET-TRUECOLOR" . :bricscad)
     ("VLA-COLLECTION->LIST" . :bricscad)
-    ("VLA-POSTCOMMAND" . :bricscad)
     ("VLAX-2D-POINT" . :bricscad)
     ("VLAX-CURVE-GETPERIMETER" . :bricscad)
     ("VLAX-QUEUEEXPR" . :bricscad)
