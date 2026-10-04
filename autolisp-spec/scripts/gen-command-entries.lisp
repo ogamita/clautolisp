@@ -39,7 +39,9 @@
     "OVERKILL" "-OVERKILL"
     ;; S6 hatch / boundary
     "HATCH" "-HATCH" "HATCHEDIT" "-HATCHEDIT" "HATCHGENERATEBOUNDARY"
-    "BOUNDARY" "-BOUNDARY"))
+    "BOUNDARY" "-BOUNDARY"
+    ;; the built-ins after S6
+    "XPLODE" "ROTATE3D" "3DROTATE" "ARRAYPATH" "SPLINEDIT"))
 
 (defparameter *cador-recognised-noop*
   '("ZOOM" "UCS" "BROWSER" "SHELL"
@@ -50,7 +52,9 @@
     ;; S2: display order / raster image background
     "DRAWORDER" "TEXTTOFRONT" "HATCHTOBACK" "CDORDER" "TRANSPARENCY"
     ;; S6: dialogs
-    "GRADIENT" "SUPERHATCH"))
+    "GRADIENT" "SUPERHATCH"
+    ;; dialog on both vendors
+    "ARRAYCLASSIC"))
 
 (defun read-inventory (path)
   (with-open-file (in path :external-format :utf-8)

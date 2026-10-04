@@ -78,25 +78,27 @@ Stamped as `:tier` in `commands-inventory.sexp` by
 | package-specific | a command only one vendor has | 1059 |
 | deferred | everything else | 457 |
 
-Of the 105 core-now, cador executes 63 -- Phase 4 S1 added POINT, RAY,
+Of the 105 core-now, cador executes 67 -- Phase 4 S1 added POINT, RAY,
 XLINE, ELLIPSE, POLYGON, RECTANG, SPLINE, 3DPOLY, TRACE, MLINE; S2 CHPROP,
 CHANGE, SCALE, ALIGN, EXPLODE, STRETCH, LENGTHEN, MATCHPROP, SETBYLAYER,
 CONVERTPOLY, DIVIDE, MEASURE, ADDSELECTED, JOIN, FLATTEN; S3 NEW, OPEN,
 MENULOAD, CUILOAD; S4 -ARRAY, ARRAYRECT, ARRAYPOLAR, ARRAY, 3DARRAY; S5
 TRIM, EXTEND, OFFSET, BREAK, FILLET, CHAMFER, PEDIT, OVERKILL, -OVERKILL;
 S6 HATCH, -HATCH, HATCHEDIT, -HATCHEDIT, HATCHGENERATEBOUNDARY, BOUNDARY,
--BOUNDARY (all built against the vendors' measured output) -- and
-recognises 19 as no-ops (S1's PROPERTIES, MLSTYLE, IMAGEADJUST, IMAGECLIP,
+-BOUNDARY; then XPLODE, 3DROTATE, ARRAYPATH, SPLINEDIT (Reverse, Close;
+ROTATE3D too, outside the core-now set) (all built against the vendors'
+measured output) -- and recognises 20 as no-ops (S1's PROPERTIES, MLSTYLE, IMAGEADJUST, IMAGECLIP,
 IMAGEEDIT, CLIPIT, PDFCLIP, -PDFIMPORT, GEOMAPIMAGE, GEOMAPIMAGEUPDATE,
 POINTCLOUDCROP, SKETCH; S2's DRAWORDER, TEXTTOFRONT, HATCHTOBACK, CDORDER,
-TRANSPARENCY; S6's GRADIENT, SUPERHATCH): 23 to go. Of those, 11 are
+TRANSPARENCY; S6's GRADIENT, SUPERHATCH; ARRAYCLASSIC, a dialog on both
+vendors): 18 to go. Of those, 11 are
 AutoLISP add-ons on the vendors -- AutoCAD Express Tools, which BricsCAD
 reimplements in LISP (measured: MSTRETCH, COPYM, NCOPY, EXOFFSET, BTRIM,
 BEXTEND, EXTRIM, BREAKLINE, MPEDIT, TREX, MOCORO). They run by loading the
 vendor's own code: `command` runs a LISP command registered with
-`vlax-add-cmd` and feeds it its input (clautolisp 2.2.170). The 12 built-ins
-left: 3DROTATE, CHSPACE, XPLODE, UNGROUP, ARRAYPATH, ARRAYEDIT, ARRAYCLOSE,
-ARRAYCLASSIC, SPLINEDIT, HELIX, SHAPE, REGION.
+`vlax-add-cmd` and feeds it its input (clautolisp 2.2.170). Left (7):
+UNGROUP (needs GROUP objects), ARRAYEDIT and ARRAYCLOSE (associative
+arrays), CHSPACE (layouts with viewports), HELIX, SHAPE, REGION.
 
 ## Implemented in cador (`%execute-command-tokens`)
 

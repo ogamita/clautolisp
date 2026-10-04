@@ -375,3 +375,53 @@ commands. So the 11 LISP add-ons are covered by loading the vendor's code;
 no native cador implementation is planned for them. Native work left: the
 12 built-ins (HELIX, REGION, SHAPE deferred as before: vendor spline
 approximation, ACIS data, SHX shapes).
+
+AutoCAD 2022's console (job 16920579886, same case): BUILTIN 3DROTATE NCOPY
+UNGROUP ARRAYPATH ARRAYEDIT ARRAYCLOSE SPLINEDIT HELIX SHAPE REGION
+(3DARRAY: its autoload stub); ABSENT MSTRETCH CHSPACE XPLODE COPYM
+ARRAYCLASSIC EXOFFSET BTRIM BEXTEND EXTRIM BREAKLINE MPEDIT TREX MOCORO
+FLATTEN OVERKILL SUPERHATCH -- the Express Tools, not loaded by the console
+(GETCNAME there has been seen wrong before: indicative). NCOPY is built in
+on AutoCAD but a LISP add-on on BricsCAD; CHSPACE / XPLODE / ARRAYCLASSIC
+built in on BricsCAD, Express or GUI on AutoCAD.
+
+## The 12 built-ins: inputs from the documentation (2026-10-04)
+
+The prompts were researched in the AutoCAD 2022 help and the BricsCAD
+V17/V18/V26 command reference. Findings that shape the probe:
+  - XPLODE, CHSPACE, NCOPY are AutoCAD 2022 CORE commands, not Express
+    Tools; XPLODE is reported unavailable in the core console. XPLODE's
+    "do it" keyword differs: AutoCAD E(xplode), BricsCAD X(plode) -- the old
+    "_E" input explains BricsCAD doing nothing; RETURN takes the default on
+    both.
+  - 3DROTATE on AutoCAD takes its axis by gizmo pick only; BricsCAD's
+    accepts X / Y / Z keywords. ROTATE3D is the keyboard form on both.
+  - ARRAYCLASSIC is a dialog on both -> a recognised no-op.
+  - Deferred: ARRAYEDIT / ARRAYCLOSE (associative arrays, which the
+    headless model does not hold; ARRAYEDIT Source and ARRAYCLOSE open
+    modal dialogs), CHSPACE (needs a layout with viewports), NCOPY (nested
+    picks need a view; a LISP add-on on BricsCAD anyway).
+Probe round: XPLODE (BricsCAD), 3DROTATE by keyword (BricsCAD), ROTATE3D,
+-GROUP then UNGROUP (the GROUP object reported), ARRAYPATH divide 4
+non-associative, SPLINEDIT Reverse / Close.
+
+## Built-ins round 1 -- done (2026-10-04, clautolisp 2.2.171)
+
+Measured (BricsCAD 16920731857, AutoCAD 16920731856) and built in
+cador/source/command-builtins.lisp:
+  - XPLODE with the defaults = EXPLODE (BricsCAD: 4 LINEs).
+  - ROTATE3D (both) / 3DROTATE (BricsCAD, axis keyword): (1,0)-(3,0) 90
+    about Z -> (0,1)-(0,3); X / Y / 2-point axes turn the 3D point groups.
+  - ARRAYPATH divide 4 non-associative (BricsCAD): the source replaced by
+    copies at 0 3 6 9 along the path, listed after it; Measure too; Align
+    turns copies along a curved path. AutoCAD did nothing with this input.
+  - SPLINEDIT Reverse (BricsCAD; AutoCAD unchanged -- unanswered) and Close
+    (IDENTICAL on both: the closed cubic through the fit points and back,
+    chord-length clamped knots, equal first and second derivatives at the
+    join; 7 control points match to 1e-6; flags + 1 + 2 + 2048, fit data
+    dropped).
+  - ARRAYCLASSIC: a dialog on both -> recognised.
+67 executed + 20 recognised + 11 vendor-LISP of 105. Left: UNGROUP (needs
+-GROUP / GROUP objects; the probe's group report failed both times -- fix
+the helper, then measure), ARRAYEDIT / ARRAYCLOSE (associative arrays),
+CHSPACE (viewports), HELIX / SHAPE / REGION (deferred since S1).
