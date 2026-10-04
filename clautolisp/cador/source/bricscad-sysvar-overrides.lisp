@@ -288,6 +288,9 @@ returns nil. See the file header for provenance.")
     ("SMROLLEDEDGELINESUPLAYERLINETYPE" . "CONTINUOUS")
     ("SMSMARTFEATURES" . 7)
     ("USENEWSTATUSBAR" . 1)
+    ;; LISPSYS 0 on both BricsCAD V26 harvests (the documentation states no
+    ;; default; dialect-platform-version-axis, 2026-10-04).
+    ("LISPSYS" . 0)
     )
   "Alist of (SYSVAR-NAME-STRING . VALUE) BricsCAD factory-default value
 overrides, applied to the AutoCAD-derived catalogue under the bricscad

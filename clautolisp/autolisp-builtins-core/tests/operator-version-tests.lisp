@@ -1,0 +1,44 @@
+(in-package #:clautolisp.autolisp-builtins-core.tests)
+
+(in-suite autolisp-builtins-core-suite)
+
+;;;; Version-gated operators (dialect-platform-version-axis): an operator the
+;;;; vendor documentation says a release added or removed warns when called
+;;;; under a dialect of that product whose version lacks it.
+
+(defun %with-session-dialect (spelling thunk)
+  (let ((session (clautolisp.autolisp-runtime:evaluation-context-session
+                  (clautolisp.autolisp-runtime:current-evaluation-context))))
+    (unwind-protect
+         (progn
+           (clautolisp.autolisp-runtime:set-runtime-session-dialect
+            session (clautolisp.autolisp-reader:find-autolisp-dialect spelling))
+           (funcall thunk))
+      (clautolisp.autolisp-runtime:set-runtime-session-dialect
+       session (clautolisp.autolisp-reader:autolisp-dialect-strict)))))
+
+(defun %version-notice (spelling text)
+  "What evaluating TEXT under dialect SPELLING writes to *ERROR-OUTPUT*."
+  (%lisp-command-setup)
+  (let ((*error-output* (make-string-output-stream)))
+    (%with-session-dialect spelling
+      (lambda () (ignore-errors (%eval-here text))))
+    (get-output-stream-string *error-output*)))
+
+(test version-gated-operators-warn-only-where-the-version-lacks-them
+  ;; AutoCAD 2025 added ACET-LOAD-EXPRESSTOOLS.
+  (is (search "[version-operator]"
+              (%version-notice :autocad-2022 "(acet-load-expresstools)")))
+  (is (search "added in AutoCAD 2025"
+              (%version-notice :autocad-2022 "(acet-load-expresstools)")))
+  (is (not (search "[version-operator]"
+                   (%version-notice :autocad-2026 "(acet-load-expresstools)"))))
+  ;; BricsCAD V26.1.07 removed MOD.
+  (is (search "removed in BricsCAD V26"
+              (%version-notice :bricscad-v26 "(mod 7 3)")))
+  (is (not (search "[version-operator]" (%version-notice :bricscad-v25 "(mod 7 3)"))))
+  ;; BricsCAD V21 added VL-INFP.
+  (is (not (search "[version-operator]" (%version-notice :bricscad-v26 "(vl-infp 1.0)"))))
+  ;; A dialect without a version is never gated.
+  (is (not (search "[version-operator]"
+                   (%version-notice :strict "(acet-load-expresstools)")))))

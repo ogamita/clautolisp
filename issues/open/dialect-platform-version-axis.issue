@@ -180,3 +180,71 @@ contribute later probe results on their versions." Recorded in AGENTS.md,
 concrete: harvest the documented version differences (doc scans) into the
 feature/version matrix and implement each behind the version facet, with a
 probe per difference.
+
+
+Documented version differences: harvested and first implemented (2026-10-04, clautolisp 2.2.173)
+------------------------------------------------------------------------------------------------
+
+Doc scan (Autodesk "What's New or Changed with AutoLISP",
+help.autodesk.com/cloudhelp/<year>/ENU/AutoCAD-AutoLISP/files/GUID-037BF4D4-755E-4A5C-8136-80E85CCEDF3E.htm,
+"About AutoLISP Compatibility" GUID-31FD1A96...; BricsCAD release notes
+boa.bricscad.octave.com/common/releasenotes.jsp and the DevRef history
+pages V11-V22.htm). The documented differences, by release:
+
+AutoCAD: 2013 vlax-machine-product-key (vlax-product-key obsolete) / 2014
+findtrustedfile, showHTMLModalWindow, SECURELOAD + TRUSTEDPATHS +
+TRUSTEDDOMAINS + LEGACYCODESEARCH, findfile searches trusted paths / 2016
+osnap "qui" invalid -> nil; getcfg / setcfg obsolete; signed LSP/FAS/VLX /
+2017 CDATE / DATE / TD* no longer to the millisecond; EPDFSHX -> PDFSHX /
+2019 LOCALE ISO-639 ("en" in the doc; measured "FR" on 2022) instead of
+"ENU" / 2020 INSERT -> Blocks palette / 2021 LISPSYS (initial 1; 0 = MBCS VL
+IDE, 1 = Unicode VS Code, 2 = Unicode, MBCS FAS); Unicode LSP sources;
+(open f mode ["utf8"|"utf8-bom"]); Unicode semantics of ascii / chr /
+strlen / substr / read-char / vl-string-* / vl-list->string etc. under
+LISPSYS 1 / 2024 LT gets AutoLISP (no vlax-create-object & co.) / 2025
+acet-load-expresstools / 2015, 2017-2020, 2022, 2026, 2027: no new or
+changed functions. Mac: no ActiveX (vla- / vlax- / vlr- absent); the vl-
+string / file functions present since 2011.
+BricsCAD: V17 (open f "r,ccs=UTF-8|UTF-16LE|UNICODE") / V18.1 Unicode
+ascii / chr, (ver) "10.0", tiny doubles print "0.0", dos_command / V19.1
+(load "x.vlx"/"x.fas") as (load "x") / V19.2 vle-enableserverbusy / V20.1
+UTF-8 / UTF-16LE LSP with BOM, vle-vector-*, (div) removed / V21.1 property
+functions, vl-infp / vl-nanp, grvecs in DCS / V22 vla-PostCommand,
+vle-file-encoding, (vl-cmdf) returns T / nil / V23.1 LISPSYS (BOM-less
+UTF-8), vl-subent-*, vle-sunid / V24 vl-local-undo-*, UTF-8 DCL,
+vle-file->list UTF-8, findfile nil on trailing spaces / V25.1 menu-macro
+LISP always evaluated, vle-vector-to2d, LISPINIT=0 only with SDI=1 / V26.1
+(mod) and (round) REMOVED; 26.2 chars > 255 written as \U+nnnn to ANSI
+files.
+
+IMPLEMENTED in 2.2.173:
+  - autolisp-runtime/source/operator-versions.lisp: *VERSION-GATED-OPERATORS*
+    (19 rows, sources cited) and the `[version-operator]' notice (registered
+    tag; annex regenerated): a gated operator called under a dialect of its
+    product whose version lacks it warns, once per operator; :error mode
+    errors; versionless dialects never warn. E.g. acet-load-expresstools
+    under autocad-2022; mod / round under bricscad-v26. The nil stubs are
+    gated too.
+  - Feature matrix rows :lispsys (AutoCAD 2021+, BricsCAD 23+; GETVAR
+    "LISPSYS" -> nil before) and :locale-form (AutoCAD 2019+ upper-case
+    language "FR", measured; BricsCAD "fr_FR"). BricsCAD's LISPSYS default
+    0 (both harvests).
+  - probes/sources/probe-versions.lsp: the gated operators' presence,
+    LISPSYS, LOCALE, (ver) -- for AutoCAD 2022 / BricsCAD V26 now, and for
+    users of other versions to contribute.
+
+LEFT (larger, each its own slice):
+  - The 2021 Unicode string semantics (ascii / chr / strlen / substr /
+    vl-string-* ...) under LISPSYS 0 vs 1, and AutoCAD < 2021 behaving as
+    LISPSYS 0 (MBCS).
+  - OPEN's third argument "utf8" / "utf8-bom" (AutoCAD 2021+) vs BricsCAD's
+    "r,ccs=UTF-8" mode spelling.
+  - osnap "qui" -> nil from 2016; (vl-cmdf) -> T / nil from BricsCAD V22.2;
+    BricsCAD V18.1 tiny-double printing; LOCALE's pre-2019 three-letter form
+    (needs the code table measured).
+  - QUESTION FOR PJB, not changed: *autolisp-feature-matrix* says AutoLISP
+    source became UTF-8 by default in AutoCAD 2025 (:default-utf8-encoding,
+    citing autolisp-spec ch.7). The Autodesk 2021 pages say LISPSYS (initial
+    value 1 = Unicode) and Unicode LSP sources arrived in 2021. Moving the
+    boundary to 2021 would change the source default of the autocad-2021 ..
+    -2024 dialects -- an encoding-consolidation decision.

@@ -1225,6 +1225,12 @@ separate binary for tool integrators.
   arc), ~FILLET~ / ~CHAMFER~ of two lines (~FILLETRAD~, ~CHAMFERA~ /
   ~CHAMFERB~), ~PEDIT~ (a line into a polyline; width, close, open) and
   ~OVERKILL~ (exact duplicates).
+- Dialect versions carry the documented version differences: an operator
+  a release added or removed (~acet-load-expresstools~ is AutoCAD 2025+,
+  BricsCAD V26 removed ~mod~ / ~round~, ...) warns ~[version-operator]~ when
+  called under a dialect version that lacks it; ~LISPSYS~ exists from
+  AutoCAD 2021 / BricsCAD V23 (BricsCAD's default 0); ~LOCALE~ is the
+  upper-case language under AutoCAD 2019+.
 - Host-derived system variables are computed from the session: ~EXTMIN~ /
   ~EXTMAX~ (the drawing's extents), ~TDCREATE~ / ~TDUPDATE~ (when a new
   drawing was created), ~TDINDWG~ / ~TDUSRTIMER~, ~LOGINNAME~, ~DWGPREFIX~,

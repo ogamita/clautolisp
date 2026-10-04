@@ -434,6 +434,36 @@ customer's AutoCAD."
    ("clautolisp: the table (generated)" . "clautolisp/autolisp-runtime/source/operator-availability.lisp")
    ("clautolisp: the ticket" . "issues/closed/deferred-clautolisp-out-of-dialect-warnings.issue")))
 
+(register-dialect-warning
+ :tag "version-operator"
+ :title "operator not in the dialect's version of the product"
+ :kind :portability
+ :message "~A is not in ~(~A~): ~A"
+ :arguments "the operator's name, the dialect name, when the vendor added or removed it"
+ :example ": [version-operator] in LOAD-ET: ACET-LOAD-EXPRESSTOOLS is not in autocad-2022: added in AutoCAD 2025"
+ :dialects
+ "A dialect may name a VERSION of its product (autocad-2022, bricscad-v25;
+dialect-platform-version-axis). Some operators appeared, or were removed, in
+a given release, per the vendor's documentation -- the table in
+autolisp-runtime/source/operator-versions.lisp, each row citing its source
+(pjb 2026-10-03: documented version differences are implemented in the
+dialect versions even where they cannot be tested yet). A call of such an
+operator under a dialect of that product whose version lacks it warns;
+dialects without a version (strict, clautolisp, lax) never do.
+
+Once per operator per session, at its first CALL. (setq
+*AUTOLISP-WARN-OUT-OF-DIALECT* nil) silences it; portability-warning-mode
+:error makes it an error instead."
+ :rationale
+ "A program that calls ACET-LOAD-EXPRESSTOOLS runs on AutoCAD 2025 and fails
+with `no function definition' on AutoCAD 2022. Under --dialect autocad-2022
+the notice says so at the first call."
+ :references
+ '(("Autodesk: What's New or Changed with AutoLISP" . "https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-AutoLISP/files/GUID-037BF4D4-755E-4A5C-8136-80E85CCEDF3E.htm")
+   ("Bricsys: release notes" . "https://boa.bricscad.octave.com/common/releasenotes.jsp")
+   ("clautolisp: the table" . "clautolisp/autolisp-runtime/source/operator-versions.lisp")
+   ("clautolisp: the ticket" . "issues/open/dialect-platform-version-axis.issue")))
+
 ;;; ------------------------------------------------------------------
 ;;; :vendor-divergence — clautolisp follows the spec, a vendor does not
 ;;; ------------------------------------------------------------------

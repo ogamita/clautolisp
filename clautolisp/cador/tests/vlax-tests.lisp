@@ -1539,3 +1539,28 @@ entity; returns (values HATCH-DATA MOCK)."
       (is (eql 3015 (host-getvar mock "MTFLAGS")))
       ;; One of the 26 rows both platforms agree on.
       (is (eql 251 (host-getvar mock "GRIDMAJORCOLOR"))))))
+
+;;; --- dialect-platform-version-axis: sysvars by the dialect's version.
+
+(test lispsys-and-locale-follow-the-dialect-version
+  (let ((saved (mapcar (lambda (v) (cons v (uiop:getenv v))) '("LC_ALL" "LC_MESSAGES" "LANG"))))
+    (unwind-protect
+         (progn
+           (setf (uiop:getenv "LC_ALL") "" (uiop:getenv "LC_MESSAGES") ""
+                 (uiop:getenv "LANG") "fr_FR.UTF-8")
+           ;; LISPSYS: AutoCAD 2021+, BricsCAD V23+ (getvar -> nil before).
+           (%with-dialect (:autocad-2022)
+             (is (eql 1 (host-getvar (make-cador) "LISPSYS")))
+             ;; AutoCAD 2019+: LOCALE is the upper-case language (measured "FR").
+             (is (string= "FR" (autolisp-string-value (host-getvar (make-cador) "LOCALE")))))
+           (%with-dialect (:autocad-2020)
+             (is (null (host-getvar (make-cador) "LISPSYS"))))
+           (%with-dialect (:bricscad-v22)
+             (is (null (host-getvar (make-cador) "LISPSYS"))))
+           (%with-dialect (:bricscad-v26)
+             (let ((mock (make-cador)))
+               (clautolisp.cador:apply-bricscad-dialect-sysvars mock)
+               ;; BricsCAD's default, on both harvests.
+               (is (eql 0 (host-getvar mock "LISPSYS")))
+               (is (string= "fr_FR" (autolisp-string-value (host-getvar mock "LOCALE")))))))
+      (loop for (var . value) in saved do (setf (uiop:getenv var) (or value ""))))))

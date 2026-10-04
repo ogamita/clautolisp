@@ -236,6 +236,21 @@ clock."
          (let ((end (position-if (lambda (c) (member c '(#\. #\@))) locale)))
            (subseq locale 0 end)))))
 
+(defun %current-dialect-feature (feature)
+  "FEATURE's value in the active dialect's feature/version matrix cell
+\(dialect-platform-version-axis), and whether a row matched."
+  (let ((dialect (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-dialect))))
+    (if dialect
+        (clautolisp.autolisp-reader:dialect-feature-for dialect feature)
+        (values nil nil))))
+
+(defun %sysvar-absent-in-dialect-version-p (string)
+  "True when the active dialect's product VERSION predates sysvar STRING
+\(LISPSYS: AutoCAD 2021, BricsCAD V23) -- GETVAR answers nil there."
+  (and (string-equal string "LISPSYS")
+       (multiple-value-bind (value foundp) (%current-dialect-feature :lispsys)
+         (and foundp (null value)))))
+
 (defun compute-live-sysvar (host string cell)
   "The live value of the host-derived sysvar STRING, or the stored CELL value
 where the session cannot say."
@@ -261,11 +276,16 @@ where the session cannot say."
                            (uiop:getcwd)))))
         ((string-equal string "CMDACTIVE") (if *cador-in-lisp-command* 1 0))
         ((string-equal string "LOCALE")
-         (or (and (eq :bricscad-v26
-                      (clautolisp.autolisp-reader:autolisp-dialect-template-name
-                       (clautolisp.autolisp-runtime:current-evaluation-dialect-name)))
-                  (%locale-language-territory))
-             (stored)))
+         ;; The dialect's documented / measured form (feature :locale-form):
+         ;; BricsCAD "fr_FR"; AutoCAD 2019+ the upper-case language, "FR".
+         (let ((form (%current-dialect-feature :locale-form))
+               (code (%locale-language-territory)))
+           (or (and code
+                    (case form
+                      (:language-territory code)
+                      (:language (string-upcase (subseq code 0 (or (position #\_ code)
+                                                                   (length code)))))))
+               (stored))))
         (t (stored))))))
 
 ;;; --- Method definitions ------------------------------------------
@@ -284,6 +304,8 @@ does not exist on the vendor's product, where GETVAR answers nil."
     (cond
       ;; Unknown name -> nil (§16 normative rule on unknown names).
       ((null cell) nil)
+      ;; A sysvar the dialect's product version predates (LISPSYS).
+      ((%sysvar-absent-in-dialect-version-p string) nil)
       ;; ERRNO is sourced from the live runtime session.
       ((errno-name-p string)
        (let ((v (clautolisp.autolisp-runtime:autolisp-errno)))

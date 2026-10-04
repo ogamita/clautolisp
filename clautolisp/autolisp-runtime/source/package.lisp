@@ -204,6 +204,8 @@
    #:autolisp-catch-all-error-condition
    #:autolisp-catch-all-error-call-stack
    #:autolisp-subr-owner
+   #:autolisp-subr-version-gate
+   #:version-gated-operator-gates
    #:vendor-only-operator-owner
    #:*vendor-only-operators*
    #:emit-vendor-operator-warning

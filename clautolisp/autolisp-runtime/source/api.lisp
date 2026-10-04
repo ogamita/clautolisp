@@ -1677,6 +1677,14 @@ frame, where they can see them exactly as they would in the dynamic fork."
 (defun (setf autolisp-subr-owner) (value object)
   (setf (clautolisp.autolisp-runtime.internal::autolisp-subr-owner object) value))
 
+(declaim (inline autolisp-subr-version-gate))
+(defun autolisp-subr-version-gate (object)
+  "The (PRODUCT SINCE UNTIL) gates of a version-gated operator, or NIL."
+  (clautolisp.autolisp-runtime.internal::autolisp-subr-version-gate object))
+
+(defun (setf autolisp-subr-version-gate) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-subr-version-gate object) value))
+
 (defvar *vendor-only-operator-table*
   (let ((table (make-hash-table :test 'equalp)))
     (loop for (name . owner) in *vendor-only-operators*
@@ -3204,6 +3212,43 @@ instead, at every call. Silenced by *AUTOLISP-WARN-OUT-OF-DIALECT* = NIL."
             (unless (%vendor-operator-warning-seen-p name)
               (format *error-output* "~&~A~%" message))))))))
 
+(defun emit-version-operator-warning (subr gates)
+  "The `[version-operator]' notice for a call of SUBR when the active
+dialect's product version lacks it (GATES from operator-versions.lisp).
+Once per operator per session; :error mode signals :non-portable-construct.
+Silenced by *AUTOLISP-WARN-OUT-OF-DIALECT* = NIL."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (product (and dialect (ignore-errors
+                                (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+         (version (and dialect (ignore-errors
+                                (clautolisp.autolisp-reader:autolisp-dialect-version dialect))))
+         (gate (%version-gate-violation gates product version)))
+    (when gate
+      (let ((context (ignore-errors (current-evaluation-context))))
+        (when (%warn-out-of-dialect-p context)
+          (destructuring-bind (gate-product since until) gate
+            (let* ((name (autolisp-subr-name subr))
+                   (vendor (ecase gate-product (:autocad "AutoCAD") (:bricscad "BricsCAD")))
+                   (when-text (if (and since (< version since))
+                                  (format nil "added in ~A ~A~D" vendor
+                                          (if (eq gate-product :bricscad) "V" "") since)
+                                  (format nil "removed in ~A ~A~D" vendor
+                                          (if (eq gate-product :bricscad) "V" "") until)))
+                   (mode (or (ignore-errors
+                              (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                               dialect))
+                             :warn))
+                   (message (%portability-diagnostic
+                             "version-operator"
+                             (%portability-warning-location nil)
+                             name
+                             (clautolisp.autolisp-reader:autolisp-dialect-name dialect)
+                             when-text)))
+              (when (eq mode :error)
+                (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+              (unless (%vendor-operator-warning-seen-p (concatenate 'string "v:" name))
+                (format *error-output* "~&~A~%" message)))))))))
+
 ;;; --- feet / inch / fraction distance input (DISTOF, GETDIST) -------------
 ;;; system-variables.issue: DISTOF ignored its MODE and GETDIST read only
 ;;; decimals. Autodesk documents DISTOF as RTOS's complement, taking the
@@ -3722,6 +3767,10 @@ flag only."
                  (let ((owner (autolisp-subr-owner function)))
                    (when owner
                      (emit-vendor-operator-warning function owner)))
+                 ;; An operator the dialect's product VERSION lacks.
+                 (let ((gate (autolisp-subr-version-gate function)))
+                   (when gate
+                     (emit-version-operator-warning function gate)))
                  (handler-case
                      (apply (autolisp-subr-function function) arguments)
                    (autolisp-runtime-error (condition)
