@@ -1,13 +1,16 @@
 ;;;; clautolisp/cador/source/registry-api.lisp
 ;;;;
-;;;; VL-REGISTRY-* backing for the mock host (vl-registry.issue). On real
-;;;; hosts these functions reach the Windows registry, or the macOS defaults
-;;;; database (NSUserDefaults); the mock host emulates BOTH with one
-;;;; per-user persistent store — a readable sexp file under the XDG config
-;;;; directory — so vl-registry-write survives the process like it would on
-;;;; a real platform. Keys are registry-style backslash-separated paths,
-;;;; case-insensitive like the Windows registry; each key holds named
-;;;; values (the default value is the name "").
+;;;; VL-REGISTRY-* backing for the cador host (vl-registry.issue). Each
+;;;; platform's REAL persistent store: the Windows registry (through
+;;;; reg.exe), the macOS defaults database (through /usr/bin/defaults,
+;;;; domain org.clautolisp.vl-registry), and elsewhere a readable sexp file
+;;;; under the XDG configuration directory. Keys are registry-style
+;;;; backslash-separated paths, case-insensitive like the Windows registry;
+;;;; each key holds named values (the default value is the name "").
+;;;;
+;;;; CLAUTOLISP_REGISTRY_FILE, when set, forces the sexp store at that path
+;;;; on every platform -- the test suites set it, so a test never writes a
+;;;; developer's or a runner's real registry (lispsys persistence, 2026-10-04).
 
 (in-package #:clautolisp.cador)
 
@@ -24,11 +27,24 @@ file).")
   "The path *MOCK-REGISTRY* was loaded from — reloaded when the effective
 path changes (tests rebinding *MOCK-REGISTRY-PATH*).")
 
+(defun %nonempty-getenv (name)
+  "The environment variable NAME, or NIL when unset OR EMPTY (an exported
+but empty XDG_CONFIG_HOME must fall back to the default)."
+  (let ((value (uiop:getenv name)))
+    (and value (plusp (length value)) value)))
+
+(defun %registry-file-override ()
+  "CLAUTOLISP_REGISTRY_FILE: the sexp store every platform uses instead of
+its real one (the test suites' sandbox), or NIL."
+  (%nonempty-getenv "CLAUTOLISP_REGISTRY_FILE"))
+
 (defun %registry-store-path ()
   (or *mock-registry-path*
+      (let ((override (%registry-file-override)))
+        (and override (pathname override)))
       (merge-pathnames "clautolisp/registry.sexp"
                        (uiop:ensure-directory-pathname
-                        (or (uiop:getenv "XDG_CONFIG_HOME")
+                        (or (%nonempty-getenv "XDG_CONFIG_HOME")
                             (merge-pathnames ".config/" (user-homedir-pathname)))))))
 
 (defun %registry ()
@@ -312,8 +328,13 @@ persistent sexp file). Defaults to the platform; RUNTIME-dispatched so
 the unit tests can bind :UNIX and exercise the sexp store on any
 platform (the platform verify jobs cover the other two).")
 
+(defun %effective-registry-backend ()
+  "*VL-REGISTRY-BACKEND*, or :UNIX when CLAUTOLISP_REGISTRY_FILE sandboxes
+the store."
+  (if (%registry-file-override) :unix *vl-registry-backend*))
+
 (defmethod host-registry-read ((host cador) key value-name)
-  (ecase *vl-registry-backend*
+  (ecase (%effective-registry-backend)
     (:windows (%reg-read key value-name))
     (:darwin (%dflt-read key value-name))
     (:unix
@@ -321,7 +342,7 @@ platform (the platform verify jobs cover the other two).")
        (and values (gethash (%registry-value-name value-name) values))))))
 
 (defmethod host-registry-write ((host cador) key value-name value)
-  (ecase *vl-registry-backend*
+  (ecase (%effective-registry-backend)
     (:windows (%reg-write key value-name value))
     (:darwin (%dflt-write key value-name value))
     (:unix
@@ -334,7 +355,7 @@ platform (the platform verify jobs cover the other two).")
        value))))
 
 (defmethod host-registry-delete ((host cador) key value-name)
-  (ecase *vl-registry-backend*
+  (ecase (%effective-registry-backend)
     (:windows (%reg-delete key value-name))
     (:darwin (%dflt-delete key value-name))
     (:unix
@@ -349,7 +370,7 @@ platform (the platform verify jobs cover the other two).")
        deleted))))
 
 (defmethod host-registry-descendents ((host cador) key value-names-p)
-  (ecase *vl-registry-backend*
+  (ecase (%effective-registry-backend)
     (:windows (%reg-descendents key value-names-p))
     (:darwin (%dflt-descendents key value-names-p))
     (:unix

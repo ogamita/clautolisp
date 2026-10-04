@@ -48,3 +48,18 @@
   ;; so the spec lists them for both vendors and --autocad does not warn.
   (is (not (search "[vendor-operator]" (%version-notice :autocad-2022 "(vl-infp 1.0)"))))
   (is (not (search "[vendor-operator]" (%version-notice :autocad-2022 "(vl-nanp 1.0)")))))
+
+(test setvar-lispsys-persists-in-the-registry-per-product
+  ;; LISPSYS is saved in the registry (spec: clautolisp: LISPSYS, persisted
+  ;; and read at launch) -- here the CLAUTOLISP_REGISTRY_FILE sandbox.
+  (%lisp-command-setup)
+  (%with-session-dialect :autocad-2022
+    (lambda ()
+      (%eval-here "(setvar \"LISPSYS\" 0)")
+      (is (equal "0" (clautolisp.autolisp-host:host-registry-read
+                      (clautolisp.autolisp-runtime:current-evaluation-host)
+                      "HKEY_CURRENT_USER\\Software\\clautolisp\\Variables\\AutoCAD" "LISPSYS")))
+      (%eval-here "(setvar \"LISPSYS\" 1)")
+      (is (equal "1" (clautolisp.autolisp-host:host-registry-read
+                      (clautolisp.autolisp-runtime:current-evaluation-host)
+                      "HKEY_CURRENT_USER\\Software\\clautolisp\\Variables\\AutoCAD" "LISPSYS"))))))

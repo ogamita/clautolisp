@@ -23,6 +23,11 @@ endif
 # (uiop:getcwd), which is always spelled natively (c:/… on Windows).
 ASD_FILE := $(ROOT_DIR)/clautolisp.asd
 XDG_CACHE_HOME ?= $(ROOT_DIR)/.cache
+# The test suites never write a real registry / defaults database: SETVAR
+# of LISPSYS persists, and CLAUTOLISP_REGISTRY_FILE makes the host use this
+# sexp store instead, on every platform (lispsys persistence, 2026-10-04).
+TEST_REGISTRY_FILE ?= $(XDG_CACHE_HOME)/test-registry.sexp
+test test-sbcl test-ccl test-compiler-equivalence test-lexical-locals test-debug-compiled check-docstrings test-shipped-compiler test-shipped-compiler-ccl test-shipped-debug-flag test-shipped-debug-flag-ccl: export CLAUTOLISP_REGISTRY_FILE = $(TEST_REGISTRY_FILE)
 
 # Install destination. Override on the command line:
 #   make install PREFIX=/usr/local DESTDIR=/staging

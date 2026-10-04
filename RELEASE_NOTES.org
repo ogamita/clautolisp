@@ -1225,6 +1225,12 @@ separate binary for tool integrators.
   arc), ~FILLET~ / ~CHAMFER~ of two lines (~FILLETRAD~, ~CHAMFERA~ /
   ~CHAMFERB~), ~PEDIT~ (a line into a polyline; width, close, open) and
   ~OVERKILL~ (exact duplicates).
+- Under the AutoCAD dialects ~LISPSYS~ decides the default source and file
+  encoding, as on AutoCAD 2021+: 1 / 2 UTF-8, 0 windows-1252 (before 2021
+  windows-1252). ~(setvar "LISPSYS" n)~ is persisted in the registry (the
+  Windows registry, the macOS defaults, XDG on Linux), per product, and read
+  back at the next launch; ~-Esource~ still overrides it. The help text now
+  shows ~-Esource~ (the old ~-e~ no longer exists).
 - ~vl-infp~, ~vl-nanp~ and ~vla-postcommand~ no longer warn
   ~[vendor-operator]~ under the AutoCAD dialects: AutoCAD 2022 has all three
   (measured), so the spec now lists them for both vendors.
