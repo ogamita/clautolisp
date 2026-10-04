@@ -1238,6 +1238,12 @@ separate binary for tool integrators.
   is no Windows handle, and wrote nothing (EBADF). A redirected stream is
   now re-made over SBCL's own standard handle, and on a console the
   console's code page is set (UTF-8 is 65001), through kernel32 by CFFI.
+- The object model has the application properties EPUREE-style code uses:
+  ~Document.Layouts~ (with ~Item~ by name and ~vlax-for~), ~Document.Active~,
+  ~Preferences.Files.SupportPath~ (read and write: it is the support path
+  ~findfile~ and ~load~ search, and ~(getenv "ACAD")~ now returns it too) and
+  ~Preferences.Profiles.ActiveProfile~. ~:vlax-true~ / ~:vlax-false~ are
+  defined: before they read as ~nil~.
 - ~vl-registry-read~ / ~-write~ / ~-delete~ / ~-descendents~ (and the
   persisted ~LISPSYS~ / ~TEMPPREFIX~) reach the Windows registry through the
   advapi32 API and the macOS defaults database through CoreFoundation

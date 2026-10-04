@@ -1,0 +1,31 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vlax-boolean-properties-return-t -- COM boolean properties return T / nil, not :vlax-true / :vlax-false
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: divergence
+#+DEPENDS: -
+#+DATE: 2026-10-04
+
+* Observed
+
+cador's mock object model stores boolean properties as CL T / NIL:
+Application.Visible, Document.Saved, Document.ReadOnly, Block.IsLayout /
+IsXRef / IsDynamicBlock / Explodable, ... so (vla-get-visible app) returns T.
+ActiveX returns VARIANT_TRUE / VARIANT_FALSE, which Visual LISP presents as
+:VLAX-TRUE / :VLAX-FALSE (BricsCAD V26: Document.Active -> :VLAX-TRUE,
+probe-triage2). Code written for the vendors compares with :vlax-true
+(EPUREE: (= (vla-get-Active dwg) :vlax-true)) and therefore fails on every
+property but Document.Active.
+
+Until 2.2.179 :VLAX-TRUE / :VLAX-FALSE were not even defined (they read as
+nil, so the comparison happened to hold for T vs nil only by accident of
+nil). They are now predefined self-valued symbols, and Document.Active
+returns them (com-application-object-properties).
+
+* To do
+
+Probe a few boolean properties on BricsCAD (Application.Visible,
+Document.Saved, Block.IsLayout, Layer.LayerOn, Entity.Visible) and the put
+side (does vla-put-visible accept T / nil as well as :vlax-true?); then
+return :vlax-true / :vlax-false from every boolean property (one place:
+the property value conversion), accepting both on put.

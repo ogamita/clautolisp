@@ -8829,8 +8829,13 @@ defvar so the value survives multiple test-image reloads.")
   ;; flag-style env vars like NO_COLOR), so we preserve the
   ;; distinction: uiop:getenv returns nil for unset → we return
   ;; nil; uiop:getenv returns "" for set-to-empty → we return "".
+  ;; "ACAD" is the support path, not the process environment: both
+  ;; vendors answer (getenv "ACAD") with Preferences.Files.SupportPath
+  ;; (measured equal on BricsCAD V26, macOS and Windows).
   (let* ((var (autolisp-string-value (require-string name "GETENV")))
-         (value (uiop:getenv var)))
+         (value (if (string-equal var "ACAD")
+                    (clautolisp.autolisp-runtime:autolisp-support-path-string)
+                    (uiop:getenv var))))
     (if value
         (make-autolisp-string value)
         nil)))
@@ -8843,7 +8848,10 @@ defvar so the value survives multiple test-image reloads.")
   (let* ((var (autolisp-string-value (require-string name "SETENV")))
          (new (cond ((null value) "")
                     (t (autolisp-string-value (require-string value "SETENV"))))))
-    (setf (uiop:getenv var) new)
+    (if (string-equal var "ACAD")
+        ;; The support path (see BUILTIN-GETENV).
+        (clautolisp.autolisp-runtime:set-autolisp-support-path-string new)
+        (setf (uiop:getenv var) new))
     (if value (make-autolisp-string new) nil)))
 
 (defun builtin-getpid ()
@@ -11786,7 +11794,15 @@ variable convention below."
       (%clal-set-autolisp-var "PI" (coerce pi 'double-float))))
   (let ((sym (intern-autolisp-symbol "PAUSE")))
     (unless (autolisp-symbol-value-bound-p sym)
-      (%clal-set-autolisp-var "PAUSE" (make-autolisp-string "\\")))))
+      (%clal-set-autolisp-var "PAUSE" (make-autolisp-string "\\"))))
+  ;; :VLAX-TRUE / :VLAX-FALSE -- the ActiveX booleans (VARIANT_TRUE /
+  ;; VARIANT_FALSE) COM properties return and take, each a symbol whose
+  ;; value is itself, so (= (vla-get-active doc) :vlax-true) compares
+  ;; symbols (BricsCAD V26 returns :VLAX-TRUE for Document.Active).
+  (dolist (name '(":VLAX-TRUE" ":VLAX-FALSE"))
+    (let ((sym (intern-autolisp-symbol name)))
+      (unless (autolisp-symbol-value-bound-p sym)
+        (%clal-set-autolisp-var name sym)))))
 
 (defun install-core-builtins ()
   (dolist (builtin (core-builtins))
