@@ -207,6 +207,12 @@ maps a (DICT-KEY . PRIVATE-P) namespace string to an alist of
 (entry-key . value). DICT-KEY is the dictionary's identity (COM id or
 global-dictionary name). Survives for the host's lifetime — the headless
 CAD analogue of ldata stored in the drawing.")
+   (pending-input            :initform '()
+                             :accessor cador-pending-input
+                             :documentation "The COMMAND tokens a LISP
+command (registered with vlax-add-cmd) has not consumed yet: its get*,
+entsel and ssget calls take their input from here first, as the vendors
+feed a LISP command the rest of the (command ...) arguments.")
    (registered-commands      :initform '()
                              :accessor cador-registered-commands
                              :documentation "Reverse-order list of

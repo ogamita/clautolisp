@@ -73,6 +73,7 @@
                 #:host-entnext
                 #:host-handent
                 #:host-ssget
+                #:host-entsel
                 #:host-ssadd
                 #:host-ssdel
                 #:host-ssname

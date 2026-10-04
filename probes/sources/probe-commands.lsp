@@ -64,7 +64,8 @@
   ;; no MATCHPROP) or provided by Express Tools: only these are checked --
   ;; GETCNAME does not know every command (it reported RECTANG unknown).
   '("MATCHPROP" "ADDSELECTED" "SETBYLAYER" "COPYM" "FLATTEN" "XPLODE"
-    "3DROTATE" "-OVERKILL" "OVERKILL" "3DARRAY" "HATCHGENERATEBOUNDARY"))
+    "3DROTATE" "-OVERKILL" "OVERKILL" "3DARRAY" "HATCHGENERATEBOUNDARY"
+    "MPEDIT" "EXOFFSET" "EXTRIM" "BREAKLINE" "MOCORO"))
 
 (defun cad-probe--known-command-p (name)
   ;; Whether this engine has the command NAME: built in (GETCNAME resolves
@@ -122,13 +123,28 @@
 
 (setq cad-probe--unknown nil)
 
+(defun cad-probe--lisp-command-p (name)
+  ;; NAME is not built in but a LISP command (C:NAME) on this engine.
+  ;; 2026-10-04 (job 16920411987): BricsCAD's COPYM, MPEDIT, EXOFFSET,
+  ;; EXTRIM are; registered with VLAX-ADD-CMD they still ignored the input
+  ;; COMMAND passed on, and EXTRIM's own pick prompt ended the session. Such
+  ;; a command is recorded as "NAME (LISP COMMAND)" and not driven: which
+  ;; commands are vendor LISP add-ons is the answer clautolisp needs (pjb:
+  ;; loading the vendor's own code is good enough for those).
+  (and (getcname "_LINE")
+       (not (getcname (strcat "_" name)))
+       (eval (read (strcat "c:" name)))
+       T))
+
 (defun cad-probe--cmd-args (args / name)
   ;; Run (command . ARGS) when its command, "_.NAME" first, is known;
-  ;; otherwise note it and do nothing.
+  ;; otherwise note it and do nothing. A LISP command is noted as such.
   (setq name (substr (car args) 3))
-  (if (cad-probe--known-command-p name)
-      (apply 'command args)
-      (setq cad-probe--unknown name)))
+  (cond ((not (cad-probe--known-command-p name))
+         (setq cad-probe--unknown name))
+        ((cad-probe--lisp-command-p name)
+         (setq cad-probe--unknown (strcat name " (LISP COMMAND)")))
+        (T (apply 'command args))))
 
 (defun cad-probe--token-list-commands (args / out)
   ;; The "_.NAME" command names inside a token list.
@@ -349,6 +365,44 @@
     (function (lambda ()
       (cad-probe--cmd-args (list "_.RECTANG" "0,0" "2,1"))
       (cad-probe--cmd-args (list "_.XPLODE" (entlast) "" "_E")))))
+
+  ;; Which of the remaining core-now commands this engine has built in,
+  ;; as a LISP command (C:NAME), or not at all -- nothing is run.
+  (cad-probe--cmd-case "command classes of the Phase 4 remainder"
+    (function (lambda ( / out)
+      (setq out "CLASSES")
+      (foreach n '("MSTRETCH" "3DROTATE" "CHSPACE" "XPLODE" "COPYM" "NCOPY"
+                   "UNGROUP" "ARRAYPATH" "ARRAYEDIT" "ARRAYCLOSE" "ARRAYCLASSIC"
+                   "EXOFFSET" "BTRIM" "BEXTEND" "EXTRIM" "BREAKLINE" "MPEDIT"
+                   "SPLINEDIT" "TREX" "MOCORO" "HELIX" "SHAPE" "REGION"
+                   "FLATTEN" "3DARRAY" "OVERKILL" "SUPERHATCH")
+        (setq out (strcat out " " n "="
+                          (cond ((getcname (strcat "_" n)) "BUILTIN")
+                                ((eval (read (strcat "c:" n))) "LISP")
+                                (T "ABSENT")))))
+      (setq cad-probe--unknown out))))
+  ;; Phase 4 remainder, BricsCAD (Express Tools on AutoCAD: skipped there).
+  (cad-probe--cmd-case "MPEDIT two lines to polylines of width 0.5"
+    (function (lambda ( / a)
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" "")) (setq a (entlast))
+      (cad-probe--cmd-args (list "_.LINE" "0,2" "4,2" ""))
+      (cad-probe--cmd-args (list "_.MPEDIT" a (entlast) "" "_Y" "_W" "0.5" "")))))
+  (cad-probe--cmd-case "EXOFFSET a line by 1 to the left"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.EXOFFSET" "1" (list (entlast) '(2.0 0.0 0.0)) "2,1" "")))))
+  (cad-probe--cmd-case "EXTRIM lines crossing a circle, outside"
+    (function (lambda ( / c)
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "2")) (setq c (entlast))
+      (cad-probe--cmd-args (list "_.LINE" "-4,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.EXTRIM" (list c '(2.0 0.0 0.0)) "5,5")))))
+  (cad-probe--cmd-case "BREAKLINE between two points"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.BREAKLINE" "0,0" "10,0" "")))))
+  (cad-probe--cmd-case "MOCORO copy a circle"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "1"))
+      (cad-probe--cmd-args (list "_.MOCORO" (entlast) "" "0,0" "_C" "3,0" "" "")))))
 
   ;; S4 arrays: classic -ARRAY, and the array commands made NON-associative
   ;; (_AS _N) so the result is plain copies rather than an array object.

@@ -90,6 +90,18 @@ shared across all documents)."
         (clautolisp.autolisp-runtime:scheduler-park scheduler sc reader)
         (funcall reader))))
 
+(defun %pending-input-line (host)
+  "Pop the next pending COMMAND token (cador-pending-input) as the line a
+get* call would have read: RETURN as \"\", a number or point as text."
+  (let ((token (pop (cador-pending-input host))))
+    (flet ((num (x) (if (integerp x) (princ-to-string x) (format nil "~F" x))))
+      (cond ((or (null token) (equal token "")) "")
+            ((stringp token) token)
+            ((realp token) (num token))
+            ((and (consp token) (every #'realp token))
+             (format nil "~{~A~^ ~}" (mapcar #'num token)))
+            (t (princ-to-string token))))))
+
 (defun read-prompt-line (host)
   "Read one line from HOST's prompt-stream, returning the line as a CL string or
 :eof on end of stream / when no input was configured. At a real park point -- an
@@ -97,14 +109,17 @@ interactive stream with no input available yet -- yield to the scheduler driver
 (slice 3f); a scripted/batch string stream never blocks, so it is read
 synchronously exactly as before."
   (let ((stream (cador-prompt-stream host)))
-    (if (null stream)
-        :eof
+    (cond
+      ;; A LISP command run by COMMAND reads the rest of COMMAND's input first.
+      ((cador-pending-input host) (%pending-input-line host))
+      ((null stream) :eof)
+      (t
         (ecase (%prompt-input-status stream)
           (:eof :eof)
           (:ready (read-line stream nil :eof))
           (:would-block
            (%cador-maybe-park-read host
-                                   (lambda () (read-line stream nil :eof))))))))
+                                   (lambda () (read-line stream nil :eof)))))))))
 
 (defmethod host-grread ((host cador) track key-press cursor)
   "clautolisp keyboard grread (grread-keyboard-event-is-a-list-not-a-dotted-pair
@@ -233,7 +248,8 @@ nil if fewer than 2 valid numbers are present or any token is
 non-numeric."
   (let ((coords '())
         (failed nil))
-    (with-input-from-string (s (string-trim '(#\Space #\Tab #\Return) text))
+    ;; "3,4" (the way a point is typed at the command line) as "3 4".
+    (with-input-from-string (s (substitute #\Space #\, (string-trim '(#\Space #\Tab #\Return) text)))
       (loop for token = (read s nil nil)
             while token
             do (cond
@@ -362,6 +378,40 @@ getdist Notes). system-variables.issue."
               (clautolisp.autolisp-runtime:make-autolisp-string trimmed))
              (t
               (loop for keyword in kwords
-                    when (string-equal keyword trimmed)
+                    when (%keyword-input-matches-p trimmed keyword)
                       return (clautolisp.autolisp-runtime:make-autolisp-string keyword)
                     finally (return nil))))))))))
+
+(defun %keyword-input-matches-p (input keyword)
+  "Whether INPUT names KEYWORD the way the vendors accept a keyword: the
+whole keyword, or its abbreviation -- at least its leading capitals
+(\"R\" for Rectangular, \"LT\" for LType) -- with an optional \"_\"
+(language-independent) prefix."
+  (let* ((input (string-left-trim "_" input))
+         (capitals (or (position-if-not #'upper-case-p keyword) (length keyword))))
+    (and (plusp (length input))
+         (<= (length input) (length keyword))
+         (>= (length input) (max 1 capitals))
+         (string-equal input keyword :end2 (length input)))))
+
+;;; --- ENTSEL ------------------------------------------------------------
+
+(defmethod host-entsel ((host cador) prompt)
+  "Pick one object: from the input a LISP command was given by COMMAND
+(an (ename point) pick, an ename, or a point on an object), else from a
+typed point. Returns (ENAME POINT) or NIL; RETURN gives NIL."
+  (when prompt (host-prompt host prompt))
+  (flet ((result (entity point)
+           (list (handle->ename host (entity-handle-id entity))
+                 (if point
+                     (list (%num (first point)) (%num (second point))
+                           (%num (or (third point) 0.0d0)))
+                     (list 0.0d0 0.0d0 0.0d0)))))
+    (if (cador-pending-input host)
+        (multiple-value-bind (entity point rest) (%take-pick host (cador-pending-input host))
+          (cond (entity (setf (cador-pending-input host) rest) (result entity point))
+                (t (pop (cador-pending-input host)) nil)))
+        (let* ((line (read-prompt-line host))
+               (point (and (stringp line) (parse-coordinate-list line)))
+               (entity (and point (%pick-entity host (%xy point)))))
+          (and entity (result entity point))))))

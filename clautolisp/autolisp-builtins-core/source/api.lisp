@@ -5172,6 +5172,13 @@ most recent first."
           (errno-and-return 0 result)
           result))))
 
+(defun builtin-entsel (&optional prompt)
+  "(entsel [prompt]): the picked object as (ENAME POINT), or NIL. A
+headless host picks from the input a LISP command was given by COMMAND
+(the ENTSEL form, an ename, or a point on an object), or from a typed
+point."
+  (host-entsel (current-evaluation-host) prompt))
+
 (defun builtin-ssadd (&rest arguments)
   ;; (ssadd)              -> empty pickset
   ;; (ssadd ENAME)        -> singleton pickset
@@ -10890,7 +10897,7 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     ;; NAMEDOBJDICT/REGAPP are now real (drawing-data-structures parity);
     ;; the ones left here stay nil stubs (interactive picking, or the
     ;; xdata-room queries which the in-memory model does not bound).
-    "ENTSEL" "NENTSEL" "NENTSELP"
+    "NENTSEL" "NENTSELP"
     "SSNAMEX" "XDROOM" "XDSIZE"
     ;; DCL dialogs / tiles (3)
     "GET_ATTR" "INIT_DIALOG" "REDRAW_DIALOG"
@@ -11008,6 +11015,7 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "HANDENT"  #'builtin-handent)
    ;; Phase 11 — selection sets, table walkers, sysvars
    (make-core-builtin-subr "SSGET"      #'builtin-ssget)
+   (make-core-builtin-subr "ENTSEL"     #'builtin-entsel)
    (make-core-builtin-subr "SSADD"      #'builtin-ssadd)
    (make-core-builtin-subr "SSDEL"      #'builtin-ssdel)
    (make-core-builtin-subr "SSNAME"     #'builtin-ssname)

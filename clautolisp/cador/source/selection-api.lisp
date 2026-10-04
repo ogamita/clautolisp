@@ -306,6 +306,19 @@ than signalling (the builtin layer validates gross filter shape)."
   ;; signal :unsupported-ssget-mode for now.
   (let ((mode-string (and mode (mock-string-value mode))))
     (cond
+      ;; Inside a LISP command run by COMMAND, the selection comes from
+      ;; COMMAND's remaining input, up to its RETURN (as on the vendors).
+      ((and (null mode-string) (cador-pending-input host))
+       (multiple-value-bind (entities rest)
+           (%command-selection host (cador-pending-input host))
+         (setf (cador-pending-input host) rest)
+         (let ((members (remove-if-not (lambda (e) (or (null filter)
+                                                       (entity-matches-filter-p e filter)))
+                                       entities)))
+           (and members
+                (let ((set (make-pickset :members members)))
+                  (cador-register-pickset host set)
+                  (pickset->ap set))))))
       ((null mode-string)
        (signal-unavailable-in-headless host 'ssget))
       ((or (string-equal mode-string "X")
