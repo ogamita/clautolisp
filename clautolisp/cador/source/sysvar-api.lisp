@@ -193,6 +193,81 @@ clock."
 (defun compute-clock-sysvar (string)
   (%clock-sysvar-at string (%clock-now-millis)))
 
+;;; --- Host-derived sysvars computed live (Phase 3) -----------------
+;;;
+;;; bricscad-dialect-sysvar-parity, Phase 3: values the vendors fill from
+;;; the session rather than store. Measured on a fresh, untitled BricsCAD
+;;; drawing (harvest job 16913315157): EXTMIN (1e20 1e20 1e20) / EXTMAX
+;;; (-1e20 -1e20 -1e20) with no entities; TDCREATE = TDUPDATE = the
+;;; creation instant as a Julian date (set when the fresh drawing is
+;;; populated, see sysvars.lisp); TDINDWG = TDUSRTIMER = days elapsed since;
+;;; LOGINNAME the OS user; DWGPREFIX the working directory with a trailing
+;;; separator; LOCALE "fr_FR" (BricsCAD only -- AutoCAD's form is not
+;;; measured). CMDACTIVE: 1 while a LISP command runs from COMMAND (the
+;;; documented bit 1), 0 otherwise.
+
+(defparameter *live-sysvar-names*
+  '("EXTMIN" "EXTMAX" "TDINDWG" "TDUSRTIMER" "LOGINNAME" "DWGPREFIX"
+    "CMDACTIVE" "LOCALE"))
+
+(defvar *drawing-open-julian* (make-hash-table :test #'eq)
+  "Drawing -> the Julian date its session began (for TDINDWG / TDUSRTIMER).")
+
+(defun live-sysvar-name-p (string)
+  (and (stringp string) (member string *live-sysvar-names* :test #'string-equal)))
+
+(defun %drawing-extents (host)
+  (let ((boxes (loop for e in (%selectable-entities host)
+                     for box = (ignore-errors (%entity-bounding-box host e))
+                     when box collect box)))
+    (if (null boxes)
+        (values (list 1d20 1d20 1d20) (list -1d20 -1d20 -1d20))
+        (values (loop for i below 3
+                      collect (%num (reduce #'min (mapcar (lambda (b) (or (nth i (first b)) 0)) boxes))))
+                (loop for i below 3
+                      collect (%num (reduce #'max (mapcar (lambda (b) (or (nth i (second b)) 0)) boxes))))))))
+
+(defun %locale-language-territory ()
+  "\"fr_FR\" from the locale (LC_ALL, LC_MESSAGES, LANG), or NIL."
+  (let ((locale (loop for var in '("LC_ALL" "LC_MESSAGES" "LANG")
+                      for value = (uiop:getenv var)
+                      when (and value (string/= value "")) return value)))
+    (and locale
+         (let ((end (position-if (lambda (c) (member c '(#\. #\@))) locale)))
+           (subseq locale 0 end)))))
+
+(defun compute-live-sysvar (host string cell)
+  "The live value of the host-derived sysvar STRING, or the stored CELL value
+where the session cannot say."
+  (let ((now (compute-clock-sysvar "DATE"))
+        (drawing (cador-active-drawing host)))
+    (flet ((stored () (sysvar-cell-value cell)))
+      (cond
+        ((string-equal string "EXTMIN") (nth-value 0 (%drawing-extents host)))
+        ((string-equal string "EXTMAX") (nth-value 1 (%drawing-extents host)))
+        ((member string '("TDINDWG" "TDUSRTIMER") :test #'string-equal)
+         (let ((open (or (gethash drawing *drawing-open-julian*)
+                         (setf (gethash drawing *drawing-open-julian*) now))))
+           (+ (%num (or (stored) 0)) (max 0d0 (- now open)))))
+        ((string-equal string "LOGINNAME")
+         (or (loop for var in '("USER" "USERNAME" "LOGNAME")
+                   for value = (uiop:getenv var)
+                   when (and value (string/= value "")) return value)
+             (stored)))
+        ((string-equal string "DWGPREFIX")
+         (let ((path (ignore-errors (clautolisp.drawing:drawing-path drawing))))
+           (namestring (if path
+                           (uiop:pathname-directory-pathname path)
+                           (uiop:getcwd)))))
+        ((string-equal string "CMDACTIVE") (if *cador-in-lisp-command* 1 0))
+        ((string-equal string "LOCALE")
+         (or (and (eq :bricscad-v26
+                      (clautolisp.autolisp-reader:autolisp-dialect-template-name
+                       (clautolisp.autolisp-runtime:current-evaluation-dialect-name)))
+                  (%locale-language-territory))
+             (stored)))
+        (t (stored))))))
+
 ;;; --- Method definitions ------------------------------------------
 
 (defun %note-clautolisp-sysvar-access (string)
@@ -219,6 +294,10 @@ does not exist on the vendor's product, where GETVAR answers nil."
        (let ((v (compute-clock-sysvar string)))
          (setf (sysvar-cell-value cell) v)
          v))
+      ;; Host-derived state computed from the session (Phase 3).
+      ((live-sysvar-name-p string)
+       (present-sysvar-value (sysvar-cell-kind cell)
+                             (compute-live-sysvar host string cell)))
       (t
        (present-sysvar-value (sysvar-cell-kind cell)
                              (sysvar-cell-value cell))))))

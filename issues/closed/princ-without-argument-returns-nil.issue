@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: princ-without-argument-returns-nil -- (princ) should return the null symbol, so the REPL echo is blank
-#+STATUS: WIP
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: divergence
 #+DEPENDS: -
@@ -50,3 +50,15 @@ The corpus asserted the old behaviour without provenance
 LEFT: probes/sources/probe-printer.lsp asks AutoCAD and BricsCAD directly
 (type, symbol name, null-ness for all three); close when they answer -- the
 CAD runners were asleep when this landed.
+
+* Vendor answers -- closed (2026-10-04, clautolisp 2.2.172)
+
+probes/sources/probe-printer.lsp, type / symbol name / null-ness / value:
+  AutoCAD 2022 (job 16921381038): the void symbol from all three -- what
+    2.2.163 implemented and the spec says.
+  BricsCAD V26 (job 16921381039): (princ) and (print) return NIL, (prin1)
+    the STRING "nil".
+The BricsCAD dialects now follow BricsCAD (%NO-ARGUMENT-PRINTER-VALUE);
+every other dialect keeps the void symbol. Checked on the built executable
+(bricscad-v26 / bricscad-mac: (nil "nil" nil); autocad-2026: void symbols).
+Corpus: tests/divergent/printer-no-argument.lsp pins each vendor.

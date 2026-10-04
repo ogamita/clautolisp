@@ -255,11 +255,61 @@ returns nil. See the file header for provenance.")
     ("XLOADCTL" . 1)
     ("XREFNOTIFY" . 1)
     ("ZOOMFACTOR" . 40)
+    ;; ADOPTED 2026-10-04: 26 of the 32 registry rows above that matched no
+    ;; documented default, now with a SECOND, independent measurement --
+    ;; harvest:sysvars:bricscad:windows (job 16921381045, BricsCAD V26 on
+    ;; the Windows runner) agrees with the macOS harvest. The 6 that differ
+    ;; between the two platforms are left out (3DOSMODE 11/10,
+    ;; COMMANDASSIST 1/0, CROSSHAIRDRAWMODE 3/2, GLSWAPMODE 0/2, MTFLAGS
+    ;; 2048/3015, USECOMMUNICATOR 0/1).
+    ("BPARAMETERFONT" . "simplex.shx")
+    ("CLIPBOARDFORMAT" . 1)
+    ("DEFLPLSTYLE" . "ByColor")
+    ("DRAWINGVIEWPRESET" . "None")
+    ("DYNINFOTIPS" . 0)
+    ("EXPORTGEOMETRYFLAGS" . 12)
+    ("GEOLATLONGFORMAT" . 1)
+    ("GRIDMAJORCOLOR" . 251)
+    ("GROUPDISPLAYMODE" . 0)
+    ("HPQUICKPREVIEW" . 0)
+    ("LAYEREVALCTL" . 0)
+    ("LAYERPMODE" . 1)
+    ("LOOKFROMZOOMEXTENTS" . 1)
+    ("MTEXTTOOLBAR" . 1)
+    ("NAVBARDISPLAY" . 0)
+    ("PDFIMAGECOMPRESSION" . 0)
+    ("PDFIMPORTJOINLINEANDARCSEGMENTS" . 1)
+    ("PDFSHX" . 0)
+    ("PREVIEWWNDINOPENDLG" . 1)
+    ("RIBBONSELECTMODE" . 0)
+    ("RIBBONSTATE" . 1)
+    ("SELECTIONCYCLING" . 2)
+    ("SMROLLEDEDGELINESDOWNLAYERLINETYPE" . "CONTINUOUS")
+    ("SMROLLEDEDGELINESUPLAYERLINETYPE" . "CONTINUOUS")
+    ("SMSMARTFEATURES" . 7)
+    ("USENEWSTATUSBAR" . 1)
     )
   "Alist of (SYSVAR-NAME-STRING . VALUE) BricsCAD factory-default value
 overrides, applied to the AutoCAD-derived catalogue under the bricscad
 dialect only. Rows naming an unknown or BricsCAD-absent sysvar are skipped
 harmlessly.")
+
+(defparameter *bricscad-platform-factory-defaults*
+  ;; The registry rows the two BricsCAD V26 harvests (macOS job 16913315157,
+  ;; Windows job 16921381045) both answered but with DIFFERENT values: a
+  ;; platform default each, applied by the dialect's platform facet
+  ;; (bricscad-mac -> :macos; bricscad, bricscad-v26 -> :windows; Linux not
+  ;; measured -> none).
+  '((:macos ("3DOSMODE" . 11) ("COMMANDASSIST" . 1) ("CROSSHAIRDRAWMODE" . 3)
+            ("GLSWAPMODE" . 0) ("MTFLAGS" . 2048) ("USECOMMUNICATOR" . 0))
+    (:windows ("3DOSMODE" . 10) ("COMMANDASSIST" . 0) ("CROSSHAIRDRAWMODE" . 2)
+              ("GLSWAPMODE" . 2) ("MTFLAGS" . 3015) ("USECOMMUNICATOR" . 1)))
+  "Platform -> (SYSVAR . VALUE) BricsCAD factory defaults that differ by OS.")
+
+(defun %current-dialect-platform ()
+  (let ((dialect (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-dialect))))
+    (and dialect
+         (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-platform dialect)))))
 
 (defun apply-bricscad-dialect-sysvars (host)
   "Launch-time bricscad-dialect sysvar overlay. Two effects, both
@@ -285,5 +335,7 @@ Mock-host only; no-ops on hosts without a sysvar table. Returns HOST."
       ;; no-ops when the name is absent/unknown — so an unknown or
       ;; just-dropped name is skipped without error.
       (clautolisp.autolisp-host:host-set-derived-sysvar
-       host (car row) (cdr row))))
+       host (car row) (cdr row)))
+    (dolist (row (rest (assoc (%current-dialect-platform) *bricscad-platform-factory-defaults*)))
+      (clautolisp.autolisp-host:host-set-derived-sysvar host (car row) (cdr row))))
   host)

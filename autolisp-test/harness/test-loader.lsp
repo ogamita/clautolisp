@@ -149,6 +149,7 @@
         "tests/divergent/atof-hex-float.lsp"
         "tests/divergent/print-framing.lsp"
         "tests/divergent/and-or-return-value.lsp"
+        "tests/divergent/printer-no-argument.lsp"
         ;; --- Phase E: deferred families (mock-host pending) ----------
         "tests/deferred/dcl.lsp"
         "tests/deferred/com-vlax.lsp"

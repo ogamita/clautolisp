@@ -59,3 +59,15 @@ have.
 - Every property added carries its dialect classification and a
   round-trip test; unknown properties still raise =:unknown-com-property=
   rather than silently returning nil.
+
+* Demand scan (2026-10-04)
+
+.vla-demand.py over every .lsp / .mnl under /home/claude/src and the
+clautolisp tree (1416 files: the corpus, the probes, EPUREE and its SNCF
+upstream, outils-autolisp): NO entity property outside the table is called
+-- the table is complete for every consumer we have, so nothing is added
+(the ticket's own rule). The unmapped names found are all on application /
+document objects -- Layouts (vla-item by name), Document.Active,
+Preferences.Files.SupportPath, Profiles / ActiveProfile -- called by EPUREE
+(comu.lsp) and its SNCF upstream: a different gap, filed as
+com-application-object-properties.issue. Stays open, demand-driven.
