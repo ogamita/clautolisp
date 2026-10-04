@@ -330,6 +330,10 @@ really is the implementation this file names for it. NIL otherwise."
     (let ((owner (clautolisp.autolisp-runtime:vendor-only-operator-owner name)))
       (when owner
         (setf (clautolisp.autolisp-runtime:autolisp-subr-owner subr) owner)))
+    ;; An operator a product version added or removed (operator-versions.lisp).
+    (let ((gates (clautolisp.autolisp-runtime:version-gated-operator-gates name)))
+      (when gates
+        (setf (clautolisp.autolisp-runtime:autolisp-subr-version-gate subr) gates)))
     subr))
 
 (defun builtin-boundp (object)
@@ -10763,7 +10767,13 @@ issues/open/deferred-stubbed-functions.issue."
 (defun make-m6-stub-subr (name)
   "Build an autolisp-subr that registers NAME as a nil-returning
 stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
-  (make-autolisp-subr name #'%builtin-m6-stub))
+  (let ((subr (make-autolisp-subr name #'%builtin-m6-stub))
+        (gates (clautolisp.autolisp-runtime:version-gated-operator-gates name)))
+    ;; A stub's availability by product version is documented too
+    ;; (ACET-LOAD-EXPRESSTOOLS: AutoCAD 2025).
+    (when gates
+      (setf (clautolisp.autolisp-runtime:autolisp-subr-version-gate subr) gates))
+    subr))
 
 (defparameter *m6-stub-names*
   ;; The 411-item inventory from issues/closed/missing-functions.issue.

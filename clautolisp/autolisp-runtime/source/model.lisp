@@ -341,7 +341,11 @@ clautolisp-secureload-trust-model spec.")
   ;; one slot test for everything portable
   ;; (deferred-clautolisp-out-of-dialect-warnings). Set by
   ;; MAKE-CORE-BUILTIN-SUBR from the name at install time.
-  (owner nil))
+  (owner nil)
+  ;; The (PRODUCT SINCE UNTIL) gates of an operator that appeared or was
+  ;; removed in a given product version (operator-versions.lisp), else NIL:
+  ;; one more slot test per subr call. Set at install time.
+  (version-gate nil))
 
 (defstruct autolisp-usubr
   (name "" :type string)

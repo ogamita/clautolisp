@@ -487,7 +487,20 @@ platform+version spelling (dialect-platform-version-axis.issue):
     ;; forward-slash spelling. (First platform-gated consumer; see
     ;; EMIT-FORWARD-SLASH-ELLIPSIS-PORTABILITY-WARNING.)
     (:forward-slash-ellipsis-ok :autocad :macos   nil t)
-    (:forward-slash-ellipsis-ok :autocad :windows nil nil))
+    (:forward-slash-ellipsis-ok :autocad :windows nil nil)
+    ;; LISPSYS: AutoCAD 2021 "New sysvar LISPSYS" (initial value 1;
+    ;; help.autodesk.com 2021 GUID-1853092D...); BricsCAD V23.1.05 "Added
+    ;; support for (getvar "LISPSYS")". Absent before (getvar -> nil).
+    (:lispsys :autocad  t 2021 t)
+    (:lispsys :autocad  t nil  nil)
+    (:lispsys :bricscad t 23   t)
+    (:lispsys :bricscad t nil  nil)
+    ;; LOCALE: AutoCAD 2019 "now returns a code that contains a two or
+    ;; more-letter abbreviation" (ISO 639 language) instead of ENU / FRA;
+    ;; measured on AutoCAD 2022, French: "FR" (job 16921381038). BricsCAD
+    ;; returns "fr_FR" (harvests 16913315157 / 16921381045).
+    (:locale-form :autocad  t 2019 :language)
+    (:locale-form :bricscad t nil  :language-territory))
   "SEED feature/version matrix — see the block comment above for the row
 shape and the incremental-population contract. Query via
 DIALECT-FEATURE.")
