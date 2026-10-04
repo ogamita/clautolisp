@@ -425,3 +425,19 @@ cador/source/command-builtins.lisp:
 -GROUP / GROUP objects; the probe's group report failed both times -- fix
 the helper, then measure), ARRAYEDIT / ARRAYCLOSE (associative arrays),
 CHSPACE (viewports), HELIX / SHAPE / REGION (deferred since S1).
+
+## UNGROUP: first measurement, deferred (2026-10-04)
+
+-GROUP _C PROBEG "probe group" a b "" then UNGROUP _N PROBEG, with the
+GROUP object read back from ACAD_GROUP (jobs 16920779022 / 16920779021):
+  - BricsCAD: the group exists after -GROUP and is gone after UNGROUP (so
+    UNGROUP by name removes the GROUP from ACAD_GROUP), but the object read
+    back showed no 70 / 71 / 300 and no 340 member handle -- either
+    BricsCAD's GROUP data is not where the probe looks, or -GROUP took the
+    input differently. Not measured yet.
+  - AutoCAD: an empty answer -- presumably the -GROUP input left the
+    console waiting.
+UNGROUP needs GROUP objects (and -GROUP, outside the core-now set) in
+cador; deferred until a probe reads the GROUP object cleanly (next step:
+record (entget group) whole, and check CMDACTIVE after -GROUP on AutoCAD).
+Left: UNGROUP, ARRAYEDIT, ARRAYCLOSE, CHSPACE, HELIX, SHAPE, REGION.
