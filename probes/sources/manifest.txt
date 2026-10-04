@@ -32,6 +32,7 @@ probe-commands.lsp            cad-probe-run-command-probes
 probe-printer.lsp             cad-probe-run-printer-probes
 probe-cond.lsp                cad-probe-run-cond-probes
 probe-versions.lsp            cad-probe-run-version-probes
+probe-triage2.lsp             cad-probe-run-triage2-probes
 
 # QUARANTINED -- run alone and split, never as part of a normal run:
 #     PROBE_SUITES=load-refusal PROBE_SPLIT_SUITES=load-refusal
