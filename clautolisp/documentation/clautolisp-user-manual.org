@@ -1662,6 +1662,13 @@ correct a wrong guess — but it is not its purpose.
   documents opened later in the session. A drawing created from a template
   keeps its entities through a DWG round trip — see /The ActiveX / COM
   object model/ above for why.
+- ~$CLAUTOLISP_REGISTRY_FILE~ :: a file to use as the registry store
+  instead of the platform's real one -- the Windows registry, the macOS
+  defaults database, or ~$XDG_CONFIG_HOME/clautolisp/registry.sexp~ --
+  on every platform. ~vl-registry-read~ / ~-write~, the persisted
+  ~LISPSYS~ and ~TEMPPREFIX~ then read and write that file. The test suites
+  set it, so they never touch a real registry; use it the same way to try
+  a ~LISPSYS~ setting without changing your machine's.
 - ~$CLAUTOLISPDEFAULTDRAWINGFORMAT~ :: initial value of the system
   variable of the same name — the file format a drawing is *written* in
   when neither the destination extension nor the drawing itself selects
