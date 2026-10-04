@@ -1225,6 +1225,14 @@ separate binary for tool integrators.
   arc), ~FILLET~ / ~CHAMFER~ of two lines (~FILLETRAD~, ~CHAMFERA~ /
   ~CHAMFERB~), ~PEDIT~ (a line into a polyline; width, close, open) and
   ~OVERKILL~ (exact duplicates).
+- A new drawing holds its template's values: ~acadiso.dwt~'s when the
+  locale makes it metric (~DIMASZ~ 2.5, ~DIMTXT~ 2.5, ~TEXTSIZE~ 2.5,
+  ~LIMMAX~ 420,297, ~INSUNITS~ 4, ~DIMSTYLE~ ~ISO-25~, ~DIMDSEP~ ~,~,
+  ~CMLSCALE~ 20, ~HPNAME~ ~ANGLE~, ...), ~acad.dwt~'s under ~en_US~. It
+  used to get the imperial values with a metric ~MEASUREMENT~. ~CMLSCALE~,
+  ~DIMDSEP~, ~HPNAME~, ~CVIEWDETAILSTYLE~ and 13 BricsCAD-only drawing
+  variables (~LINEARARROWHEADLENGTH~, ~SMDEFAULTTHICKNESS~, ...) now start
+  on their documented value instead of 0 or "".
 - ~vl-registry-read~ / ~-write~ / ~-delete~ / ~-descendents~ (and the
   persisted ~LISPSYS~ / ~TEMPPREFIX~) reach the Windows registry through the
   advapi32 API and the macOS defaults database through CoreFoundation

@@ -509,13 +509,36 @@
       (is (%ct-near -20.0 (nth 2 distances)))
       (is (%ct-near -28.284271 (nth 6 distances))))))
 
-(test fresh-drawing-holds-the-imperial-template-values
-  ;; Not the catalogue's zero stand-ins (sysvar-template-defaults-undocumented).
-  (let ((mock (make-cador)))
-    (is (%ct-near 0.18 (host-getvar mock "DIMASZ")))
-    (is (equal '(12.0d0 9.0d0) (host-getvar mock "LIMMAX")))
-    ;; MEASUREMENT follows the locale (fresh-drawing-measurement-follows-the-locale).
-    (is (eql (clautolisp.cador::locale-measurement) (host-getvar mock "MEASUREMENT")))))
+(test fresh-drawing-holds-the-template-values
+  ;; Not the catalogue's zero stand-ins (sysvar-template-defaults-undocumented):
+  ;; acad.dwt's values under en_US, acadiso.dwt's elsewhere (AutoCAD 2026
+  ;; "Initial value: X (imperial) or Y (metric)"; BricsCAD's for its own cells).
+  (let ((saved (mapcar (lambda (v) (cons v (uiop:getenv v))) '("LC_ALL" "LC_NUMERIC" "LANG"))))
+    (flet ((fresh (lang)
+             (setf (uiop:getenv "LC_ALL") "" (uiop:getenv "LC_NUMERIC") ""
+                   (uiop:getenv "LANG") lang)
+             (make-cador)))
+      (unwind-protect
+           (let ((imperial (fresh "en_US.UTF-8"))
+                 (metric (fresh "fr_FR.UTF-8")))
+             (is (%ct-near 0.18 (host-getvar imperial "DIMASZ")))
+             (is (equal '(12.0d0 9.0d0) (host-getvar imperial "LIMMAX")))
+             (is (%ct-near 1.0 (host-getvar imperial "CMLSCALE")))
+             (is (string= "Standard" (autolisp-string-value (host-getvar imperial "DIMSTYLE"))))
+             (is (string= "." (autolisp-string-value (host-getvar imperial "DIMDSEP"))))
+             (is (eql 1 (host-getvar imperial "INSUNITS")))
+             (is (%ct-near 2.5 (host-getvar metric "DIMASZ")))
+             (is (equal '(420.0d0 297.0d0) (host-getvar metric "LIMMAX")))
+             (is (%ct-near 20.0 (host-getvar metric "CMLSCALE")))
+             (is (string= "ISO-25" (autolisp-string-value (host-getvar metric "DIMSTYLE"))))
+             (is (string= "," (autolisp-string-value (host-getvar metric "DIMDSEP"))))
+             (is (string= "ANGLE" (autolisp-string-value (host-getvar metric "HPNAME"))))
+             (is (eql 4 (host-getvar metric "INSUNITS")))
+             (is (eql 1 (host-getvar metric "MEASUREMENT")))
+             ;; The current dimension style is a record of the DIMSTYLE table.
+             (is (gethash "ISO-25" (gethash :dimstyle (clautolisp.cador::cador-tables metric)))))
+        (loop for (var . value) in saved
+              do (setf (uiop:getenv var) (or value "")))))))
 
 (test fresh-drawing-measurement-follows-the-locale
   ;; pjb 2026-10-04: imperial (0) under en_US, metric (1) otherwise; the
