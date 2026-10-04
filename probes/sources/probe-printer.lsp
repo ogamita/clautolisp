@@ -14,5 +14,8 @@
         (setq v (apply f '()))
         (if (= (type v) 'SYM) (strcat "[" (vl-symbol-name v) "]") "not a symbol"))))
     (cad-probe-capture "printer" (strcat "(null (" (vl-symbol-name f) "))")
-      (function (lambda () (if (null (apply f '())) "T" "nil")))))
+      (function (lambda () (if (null (apply f '())) "T" "nil"))))
+    ;; 2026-10-04: BricsCAD's (prin1) returned a STR -- which one?
+    (cad-probe-capture "printer" (strcat "value of (" (vl-symbol-name f) ")")
+      (function (lambda () (vl-prin1-to-string (apply f '()))))))
   (princ))
