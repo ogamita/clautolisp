@@ -62,15 +62,24 @@
   (foreach spec '(("REG_DWORD" "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced" "HideFileExt")
                   ("REG_MULTI_SZ" "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\ServiceGroupOrder" "List")
                   ("REG_EXPAND_SZ" "HKEY_CURRENT_USER\\Environment" "TEMP")
-                  ("REG_BINARY" "HKEY_CURRENT_USER\\Control Panel\\Desktop" "UserPreferencesMask"))
+                  ("REG_BINARY" "HKEY_CURRENT_USER\\Control Panel\\Desktop" "UserPreferencesMask")
+                  ;; Raw value "%SystemRoot%\TEMP" on every Windows: expanded or not?
+                  ("REG_EXPAND_SZ %SystemRoot%" "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" "TEMP")
+                  ;; 8 bytes (a FILETIME): AutoCAD's UserPreferencesMask read back as (3) only.
+                  ("REG_BINARY ShutdownTime" "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Windows" "ShutdownTime")
+                  ;; A nonzero REG_DWORD (1 on a default install).
+                  ("REG_DWORD ProtectionMode" "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager" "ProtectionMode"))
     (cad-probe--t2 "regtype" (strcat "vl-registry-read " (car spec))
       (function (lambda ( / v)
                   (if (getenv "WINDIR")
                       (progn
                         (setq v (vl-registry-read (cadr spec) (caddr spec)))
-                        (list (type v)
-                              (if (= (type v) 'STR) (substr v 1 40) v)))
+                        (list (type v) v))
                       "SKIPPED-OFF-WINDOWS")))))
+  (cad-probe--t2 "regtype" "(getenv \"SystemRoot\")"
+    (function (lambda () (getenv "SystemRoot"))))
+  (cad-probe--t2 "regtype" "(getenv \"USERPROFILE\")"
+    (function (lambda () (getenv "USERPROFILE"))))
   ;; --- version ----------------------------------------------------------
   (cad-probe--t2 "version" "getvar LISPSYS"
     (function (lambda () (getvar "LISPSYS"))))
@@ -84,7 +93,10 @@
     (function (lambda () (vl-string->list (strcat "1" (chr 128))))))
   (cad-probe--t2 "version" "(vl-string->list (chr 8364))"
     (function (lambda () (vl-string->list (chr 8364)))))
-  (vl-catch-all-apply 'command (list "_.LINE" "0,0" "10,0" ""))
+  ;; Never (vl-catch-all-apply 'command ...): AutoCAD 2022 refuses COMMAND
+  ;; through APPLY ("fonction d'ordre incorrecte: COMMAND", uncaught) and the
+  ;; whole run stopped there (job 16923765011). A lambda calling it is fine.
+  (vl-catch-all-apply (function (lambda () (command "_.LINE" "0,0" "10,0" ""))) '())
   (cad-probe--t2 "version" "(osnap '(10 0 0) \"_end\")"
     (function (lambda () (osnap '(10.0 0.0 0.0) "_end"))))
   (cad-probe--t2 "version" "(osnap '(10 0 0) \"_qui,_end\")"
