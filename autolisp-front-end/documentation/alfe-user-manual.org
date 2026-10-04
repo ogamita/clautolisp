@@ -692,7 +692,12 @@ still an error, but a fixed boundary is never silently wrong).
 - =terminal= — applied to alfe's OWN =*standard-output*= / =*standard-input*=
   / =*error-output*=. =-Eterminal-in= drives stdin, =-Eterminal-out= drives
   stdout+stderr; the bare form both. Settable everywhere (it is alfe's own
-  stream).
+  stream). On MS-Windows a redirected stream (a pipe, a file) is re-made in
+  the encoding; a console already receives alfe's text as Unicode, so
+  there the option sets the console's code page (=SetConsoleOutputCP= /
+  =SetConsoleCP=: UTF-8 65001, WINDOWS-1252 1252, ISO-8859-1 28591,
+  US-ASCII 20127, CP850, CP437), which is what other programs writing to
+  it are read in. An encoding without a code page is warned and ignored.
 - =source= — an explicit =-Esource= is forwarded into the CAD's native
   =(load)= so a =.lsp= with non-ASCII literals decodes correctly (BricsCAD
   =,ccs=…=, AutoCAD the =open= 3rd-arg at =LISPSYS= 1/2). Without it the CAD

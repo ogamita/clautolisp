@@ -193,6 +193,38 @@ bare -E) set BOTH directions — stdout+stderr for out, stdin for in;
                (terminal-encoding-plan (parse-arguments '("-E" "UTF-8")))))))
 
 
+(test cli-terminal-encoding-windows-console-code-pages
+  "-Eterminal on a Windows console sets its code page: the mandatory
+encodings (and the DOS code pages) have one, with or without a newline
+variant; an encoding without one is NIL (the caller warns)."
+  (flet ((cp (name)
+           (alfe.cli::windows-console-code-page
+            (clautolisp.autolisp-cli:encoding-keyword name))))
+    (is (eql 65001 (cp "utf-8")))
+    (is (eql 65001 (cp "utf-8-dos")))
+    (is (eql 1252 (cp "cp1252")))
+    (is (eql 28591 (cp "latin-1")))
+    (is (eql 20127 (cp "us-ascii")))
+    (is (null (alfe.cli::windows-console-code-page :no-such-code-page)))))
+
+#+sbcl
+(test cli-terminal-encoding-applies-without-warning
+  "-Eterminal utf-8 reconfigures alfe's own streams on SBCL -- POSIX by
+reopening the descriptors, Windows over SBCL's std HANDLEs or the console
+code page -- with no 'unavailable' warning
+(windows-terminal-encoding-fd-stream.issue: the Windows lane used to fall
+back to the warning). The streams are rebound, so the suite's own are
+restored."
+  (let ((*standard-output* *standard-output*)
+        (*error-output* *error-output*)
+        (*standard-input* *standard-input*)
+        (warnings '()))
+    (handler-bind ((warning (lambda (w)
+                              (push (princ-to-string w) warnings)
+                              (muffle-warning w))))
+      (alfe.cli::apply-terminal-encoding (parse-arguments '("-Eterminal-out" "utf-8"))))
+    (is (null warnings) "warnings: ~S" warnings)))
+
 (test cli-encoding-typo-rejected
   "A typo'd value signals cli-usage-error at parse time (encoding.issue's
 headline rule), and the dropped generic -e/-E are now unknown options."

@@ -1233,6 +1233,11 @@ separate binary for tool integrators.
   ~DIMDSEP~, ~HPNAME~, ~CVIEWDETAILSTYLE~ and 13 BricsCAD-only drawing
   variables (~LINEARARROWHEADLENGTH~, ~SMDEFAULTTHICKNESS~, ...) now start
   on their documented value instead of 0 or "".
+- alfe ~-Eterminal~ works on MS-Windows. It used to warn "unavailable"
+  and keep the default: the stream it re-made was over descriptor 1, which
+  is no Windows handle, and wrote nothing (EBADF). A redirected stream is
+  now re-made over SBCL's own standard handle, and on a console the
+  console's code page is set (UTF-8 is 65001), through kernel32 by CFFI.
 - ~vl-registry-read~ / ~-write~ / ~-delete~ / ~-descendents~ (and the
   persisted ~LISPSYS~ / ~TEMPPREFIX~) reach the Windows registry through the
   advapi32 API and the macOS defaults database through CoreFoundation
