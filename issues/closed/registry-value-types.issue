@@ -1,0 +1,48 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: registry-value-types -- what vl-registry-read returns for REG_DWORD, REG_MULTI_SZ, REG_EXPAND_SZ, REG_BINARY
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: divergence
+#+DEPENDS: -
+#+DATE: 2026-10-04
+
+* Question
+
+The registry reached through advapi32 (clautolisp 2.2.176) read REG_SZ and
+REG_EXPAND_SZ only, unexpanded, and NIL for every other type -- deliberately,
+until the vendors were measured (pjb: "probe -> autolisp-spec record ->
+implementation").
+
+* Measured (probe-triage2, Windows, PF5S26B)
+
+AutoCAD 2022 (accoreconsole, jobs 16923765011 / 16923993438) and BricsCAD
+V26 (jobs 16923716756 / 16923993442), standard values every Windows install has:
+
+| value                                         | type          | AutoCAD 2022            | BricsCAD V26                |
+|-----------------------------------------------+---------------+-------------------------+-----------------------------|
+| HKCU ...Explorer\Advanced HideFileExt         | REG_DWORD     | 0                       | 0                           |
+| HKLM ...Session Manager ProtectionMode        | REG_DWORD     | 1                       | 1                           |
+| HKLM ...ServiceGroupOrder List                | REG_MULTI_SZ  | (7 "System Reserved" ...) | (7 "System Reserved" ...)  |
+| HKCU Environment TEMP                         | REG_EXPAND_SZ | "C:/Users/.../Temp"     | "C:/Users/.../Temp"         |
+| HKLM ...Session Manager\Environment TEMP      | REG_EXPAND_SZ | "C:\\WINDOWS\\TEMP"     | "C:\\WINDOWS\\TEMP"         |
+| HKCU Control Panel\Desktop UserPreferencesMask | REG_BINARY  | (3)                     | (3 158 62 7 128 18 0 0 0)   |
+| HKLM ...Control\Windows ShutdownTime          | REG_BINARY    | (3)                     | (3 31 107 94 244 135 82 221 1) |
+
+The raw HKLM TEMP is %SystemRoot%\TEMP: AutoCAD returns it EXPANDED. (The
+forward slashes of the HKCU one are the runner's USERPROFILE,
+"C:/Users/PPBN02261", which (getenv "USERPROFILE") returned.) The two vendors
+differ only on REG_BINARY: AutoCAD 2022 drops the bytes.
+
+* Done (clautolisp 2.2.180)
+
+- Spec: Function Entry VL-REGISTRY-READ, Return Values (the table) and a
+  *** clautolisp note.
+- registry-native.lisp %reg-value: REG_SZ string; REG_EXPAND_SZ expanded
+  (ExpandEnvironmentStringsW, kernel32 by CFFI); REG_DWORD signed 32-bit
+  integer (signedness unmeasured); REG_MULTI_SZ (7 "s" ...); REG_BINARY
+  (3 byte ...); other types NIL.
+- builtin-vl-registry-read: (3) under the AutoCAD dialects.
+- scripts/verify-vl-registry.lisp checks the four types against the real
+  registry on the native Windows lane.
+
+Not done: vl-registry-write of an integer (REG_DWORD?) -- not measured.
