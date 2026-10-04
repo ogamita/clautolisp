@@ -121,7 +121,7 @@
                   (vl-catch-all-apply 'vlax-add-cmd
                     (list name (read (strcat "c:" name))))))))))
 
-(defun cad-probe--group-summary (name / dict grp out)
+(defun cad-probe--group-summary (name / dict grp out n)
   ;; The GROUP object NAME in the ACAD_GROUP dictionary, as
   ;; "70=..|71=..|300=..|340xN" (handles counted, not shown), or "NONE".
   (setq dict (dictsearch (namedobjdict) "ACAD_GROUP"))
@@ -134,9 +134,11 @@
           (if (member (car g) '(0 70 71 300))
             (setq out (strcat out (if (= out "") "" "|")
                               (itoa (car g)) "=" (cad-probe--cmd-fmt (cdr g))))))
-        (strcat out "|340x"
-                (itoa (length (vl-remove-if-not
-                                '(lambda (g) (= (car g) 340)) grp)))))))
+        ;; Count the 340 handles with FOREACH: the VL-REMOVE-IF-NOT form
+        ;; failed on BricsCAD ("bad argument type <T>"), job 16920731857.
+        (setq n 0)
+        (foreach g grp (if (= (car g) 340) (setq n (1+ n))))
+        (strcat out "|340x" (itoa n)))))
 
 (setq cad-probe--unknown nil)
 

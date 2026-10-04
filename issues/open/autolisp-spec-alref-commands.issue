@@ -404,3 +404,24 @@ V17/V18/V26 command reference. Findings that shape the probe:
 Probe round: XPLODE (BricsCAD), 3DROTATE by keyword (BricsCAD), ROTATE3D,
 -GROUP then UNGROUP (the GROUP object reported), ARRAYPATH divide 4
 non-associative, SPLINEDIT Reverse / Close.
+
+## Built-ins round 1 -- done (2026-10-04, clautolisp 2.2.171)
+
+Measured (BricsCAD 16920731857, AutoCAD 16920731856) and built in
+cador/source/command-builtins.lisp:
+  - XPLODE with the defaults = EXPLODE (BricsCAD: 4 LINEs).
+  - ROTATE3D (both) / 3DROTATE (BricsCAD, axis keyword): (1,0)-(3,0) 90
+    about Z -> (0,1)-(0,3); X / Y / 2-point axes turn the 3D point groups.
+  - ARRAYPATH divide 4 non-associative (BricsCAD): the source replaced by
+    copies at 0 3 6 9 along the path, listed after it; Measure too; Align
+    turns copies along a curved path. AutoCAD did nothing with this input.
+  - SPLINEDIT Reverse (BricsCAD; AutoCAD unchanged -- unanswered) and Close
+    (IDENTICAL on both: the closed cubic through the fit points and back,
+    chord-length clamped knots, equal first and second derivatives at the
+    join; 7 control points match to 1e-6; flags + 1 + 2 + 2048, fit data
+    dropped).
+  - ARRAYCLASSIC: a dialog on both -> recognised.
+67 executed + 20 recognised + 11 vendor-LISP of 105. Left: UNGROUP (needs
+-GROUP / GROUP objects; the probe's group report failed both times -- fix
+the helper, then measure), ARRAYEDIT / ARRAYCLOSE (associative arrays),
+CHSPACE (viewports), HELIX / SHAPE / REGION (deferred since S1).

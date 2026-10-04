@@ -1432,3 +1432,61 @@ entity; returns (values HATCH-DATA MOCK)."
                               :measurement 0)))
       (is (%ct-near '(-0.088388 0.088388)
                     (loop for (code . value) in d when (member code '(45 46)) collect value))))))
+
+;;; --- alref Phase 4 built-ins -- measured on BricsCAD V26 (job
+;;; 16920731857) and AutoCAD 2022 (job 16920731856).
+
+(defun %ct-spline-mock ()
+  (%ct-run '("_.SPLINE" "0,0" "1,1" "2,0" "3,1" "" "" "")))
+
+(test command-xplode-rotate3d-and-arraypath
+  (%with-dialect (:bricscad)
+    ;; XPLODE with the defaults: the rectangle's 4 LINEs.
+    (let ((mock (%ct-run '("_.RECTANG" "0,0" "2,1"))))
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.XPLODE" (host-entlast mock) "" "" ""))
+      (is (equal '("LINE" "LINE" "LINE" "LINE") (%ct-types mock)))))
+  ;; ROTATE3D (both) / 3DROTATE (BricsCAD): (1,0)-(3,0) 90 about Z -> (0,1)-(0,3).
+  (dolist (name '("_.ROTATE3D" "_.3DROTATE"))
+    (let ((mock (%ct-run '("_.LINE" "1,0" "3,0" ""))))
+      (clautolisp.autolisp-host:host-command
+       mock (list name (host-entlast mock) "" "_Z" "0,0,0" "90"))
+      (let ((d (%ct-last-data mock)))
+        (is (%ct-near '(0 1 0) (%ct-group d 10)))
+        (is (%ct-near '(0 3 0) (%ct-group d 11))))))
+  ;; ARRAYPATH along (0,0)-(9,0), divide 4, non-associative: the source
+  ;; replaced by circles at 0 3 6 9, after the path.
+  (let ((mock (%ct-run '("_.CIRCLE" "0,0" "0.5"))))
+    (let ((c (host-entlast mock)))
+      (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "9,0" ""))
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.ARRAYPATH" c "" (host-entlast mock) "_AS" "_N" "_M" "_D" "_I" "4" "_X"))
+      (is (equal '("LINE" "CIRCLE" "CIRCLE" "CIRCLE" "CIRCLE") (%ct-types mock)))
+      (is (equal '((0 0 0) (0 0 0) (3 0 0) (6 0 0) (9 0 0)) (%ct-centers mock))))))
+
+(test command-splinedit-reverse-and-close
+  ;; Reverse (BricsCAD): control and fit points reversed, 12 / 13 kept.
+  (%with-dialect (:bricscad)
+    (let ((mock (%ct-spline-mock)))
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.SPLINEDIT" (host-entlast mock) "_R" "_X"))
+      (let ((d (%ct-last-data mock)))
+        (is (%ct-near '(3 1 0) (%ct-group d 10)))
+        (is (%ct-near '(3 1 0) (%ct-group d 11)))
+        (is (%ct-group d 12)))))
+  ;; Close (both vendors identical): 7 control points, knots to 7.404918,
+  ;; no fit data, flags 1064 -> 3115.
+  (let ((mock (%ct-spline-mock)))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.SPLINEDIT" (host-entlast mock) "_C" "_X"))
+    (let* ((d (%ct-last-data mock))
+           (controls (loop for (c . v) in d when (eql c 10) collect v)))
+      (is (eql 3115 (%ct-group d 70)))
+      (is (eql 7 (%ct-group d 73)))
+      (is (eql 0 (%ct-group d 74)))
+      (is (null (%ct-group d 11)))
+      (is (%ct-near 7.404918 (car (last (loop for (c . v) in d when (eql c 40) collect v)))))
+      (is (%ct-near '(0 0.254644 0) (second controls)))
+      (is (%ct-near '(1.2 1.847214 0) (third controls)))
+      (is (%ct-near '(4.341641 2.525903 0) (fifth controls)))
+      (is (%ct-near '(0 -0.569401 0) (sixth controls))))))
