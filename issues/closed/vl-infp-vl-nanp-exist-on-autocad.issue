@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: vl-infp-vl-nanp-exist-on-autocad -- the spec lists them BricsCAD-only; AutoCAD 2022 has both
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: spec
 #+DATE: 2026-10-04
@@ -22,3 +22,12 @@ on 2022), regenerate (make -C clautolisp operator-availability), check that
 nothing else in the same family is mislabelled: the same probe shows
 VLA-POSTCOMMAND, DUMPALLPROPERTIES and GETPROPERTYVALUE present on AutoCAD
 2022 too (the last two as EXRXSUBR) -- verify their Availability rows.
+
+* Fixed (2026-10-04, clautolisp 2.2.174, MR !397)
+
+Probe -> spec record -> implementation (pjb): the VL-INFP, VL-NANP and
+VLA-POSTCOMMAND Function Entries list AutoCAD (present, undocumented,
+measured) with the status "both vendors"; operator-availability.lisp
+regenerated (473 -> 470 BricsCAD-only), so --autocad no longer warns on
+them. ISPROPERTYVALID is absent on AutoCAD 2022 (stays BricsCAD-only);
+DUMPALLPROPERTIES / GETPROPERTYVALUE were already listed for both.

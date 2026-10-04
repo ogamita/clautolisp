@@ -5137,7 +5137,7 @@ controls diagnostic emission. Per encoding-dispatch.issue:
 |------------------+----------------------------------|
 | ~--autocad-2026~ | silent (native dialect)          |
 | ~--strict~       | ~enc-extension-used~             |
-| ~--bricscad-v26~ | ~enc-foreign-dialect~ / bricscad |
+| ~--bricscad-v26~ | ~enc-foreign-dialect~ / bricscad (BricsCAD V23.1+ has LISPSYS too -- to revisit) |
 | ~--clautolisp~   | ~enc-foreign-dialect~ / clautolisp |
 
 Additionally, ~(setvar "LISPSYS" n)~ with ~n \notin {0,1,2}~ emits
@@ -7165,7 +7165,7 @@ File handling is part of the core AutoLISP runtime surface and is version-sensit
 *** Statement
 AutoLISP source files and host file streams have two independent encoding axes:
 
-1. *Source-file encoding* — the encoding the runtime uses when ~load~ (and any reader entry point that takes a filesystem path) reads bytes from disk. Historically AutoLISP ran on Windows with ANSI / MBCS source files, and that legacy default is observable in pre-2025 AutoCAD and pre-V25 BricsCAD. AutoCAD 2025 changed the default to UTF-8; BricsCAD V25/V26 followed suit. The value of the host system variable ~LISPSYS~ on Autodesk products selects between two engines: ~0~ keeps the legacy ANSI/MBCS reader, ~1~ and ~2~ enable Unicode and accept the optional ~encoding~ argument on ~open~. ~LISPSYS~ requires an AutoCAD restart to take effect.
+1. *Source-file encoding* — the encoding the runtime uses when ~load~ (and any reader entry point that takes a filesystem path) reads bytes from disk. Historically AutoLISP ran on Windows with ANSI / MBCS source files. On AutoCAD 2021 and later the default is decided by the host system variable ~LISPSYS~ (see /LISPSYS governs the AutoCAD source default/ below): ~0~ keeps the legacy ANSI/MBCS reader (the Windows ANSI code page, windows-1252 in the western locales), ~1~ and ~2~ select Unicode (UTF-8) and accept the optional ~encoding~ argument on ~open~. A new installation has ~LISPSYS~ = 1; users of windows-1252 code bases set it to 0. AutoCAD before 2021 has no ~LISPSYS~ and is always ANSI/MBCS. ~LISPSYS~ is saved in the registry and requires an AutoCAD restart to take effect.
 
 2. *File-stream encoding* — the encoding the runtime uses when ~open~ reads or writes the bytes of a host file the user is doing I/O on. This is the third (optional) argument to ~open~. When the argument is omitted, the per-host default applies — ANSI/MBCS for the legacy engine, UTF-8 for the modern engine.
 
@@ -7190,19 +7190,58 @@ Hosts derived from the BricsCAD codebase additionally accept the C-style ~ccs=NA
 *** Per-Dialect Defaults
 clautolisp resolves the absent third argument of ~open~ — and the absent ~:external-format~ keyword on ~load~ — using the active dialect descriptor:
 
-| Dialect          | Default source encoding | Default file encoding |
-|------------------+-------------------------+-----------------------|
-| ~:strict~        | ~:iso-8859-1~           | ~:iso-8859-1~         |
-| ~:autocad-2026~  | ~:utf-8~                | ~:utf-8~              |
-| ~:bricscad-v26~  | ~:utf-8~                | ~:utf-8~              |
+| Dialect                    | Default source encoding                     | Default file encoding |
+|----------------------------+---------------------------------------------+-----------------------|
+| ~:strict~                  | ~:iso-8859-1~                               | ~:iso-8859-1~         |
+| AutoCAD 2021+ (~autocad~, ~autocad-2022~, ~autocad-2026~ ...) | ~LISPSYS~ 0: ~:cp1252~; 1 / 2: ~:utf-8~ | same as source |
+| AutoCAD before 2021        | ~:cp1252~ (ANSI)                            | ~:cp1252~             |
+| ~:bricscad-v26~            | ~:utf-8~                                    | ~:utf-8~              |
 
 The strict choice is *deliberately permissive at the byte level*: a 1-1 byte coding never raises a decoding error on any input, and existing AutoLISP corpora produced under the legacy ANSI/MBCS engine remain loadable. Source code that needs Unicode characters in literals can either (a) use the explicit ~--dialect autocad-2026~ / ~--bricscad-v26~ flag, or (b) pass ~:external-format :utf-8~ on the call site.
 
 *** Vendor Evidence
 - Autodesk reference for ~open~ (AutoCAD 2024+) documents ~"utf8"~ and ~"utf8-bom"~ as the only accepted encoding strings; "When a value isn't provided for the argument, the file is assumed to contain multibyte character set (MBCS) which is the legacy behavior."
 - Autodesk LISPSYS sysvar reference: 0 = ASCII / no encoding arg, 1 = Unicode, 2 = Unicode-with-extra-COM. Restart required.
-- AutoCAD 2025 release-note quote: "In the previous versions of AutoCAD, the encoding of the file was 'ANSI', now it is 'UTF-8'." This applies to source files emitted by the Visual LISP IDE.
+- (Superseded as the rule for the default: an Autodesk Community post quoting AutoCAD 2025, "In the previous versions of AutoCAD, the encoding of the file was 'ANSI', now it is 'UTF-8'", describes files the Visual LISP IDE writes; the default for READING is governed by ~LISPSYS~ since 2021 -- see below.)
 - BricsCAD V26 honours the C-runtime ~ccs=NAME~ embedded mode-string as documented in earlier Phase-6 probe evidence (~open-ccs-mode-p~).
+
+*** LISPSYS governs the AutoCAD source default (2021 and later)
+*Reference.* Autodesk, LISPSYS system variable (AutoCAD 2021): type
+integer, saved in the REGISTRY, initial value 1. "0: ... AutoLISP functions
+don't fully support Unicode ... source files ... use the ASCII (MBCS)
+character set ... behavior of AutoCAD 2020 and earlier releases"; "1: ...
+fully support Unicode"; "2: ... Unicode, ... when compiled ... ASCII (MBCS)".
+A restart is required for a change to take effect. "Starting with AutoCAD
+2021-based products, AutoLISP source files can be saved in either ASCII or
+Unicode file formats ... AutoCAD 2020-based and earlier products, only
+support the ASCII file format."
+
+*Measured.* AutoCAD 2022 / accoreconsole on the CI's Windows machine, whose
+~LISPSYS~ is 0 (probes/sources/probe-versions.lsp, job 16921684058): source
+and ~open~ "w" in cp1252 (the encoding experiments above); with 1 / 2 the
+reader and writer are UTF-8.
+
+*Rule (normative for the AutoCAD dialects).* On AutoCAD 2021 and later the
+default source-file encoding -- and the default of ~open~ without an
+encoding argument -- is the one ~LISPSYS~ selects AT STARTUP: 0, the ANSI
+code page (windows-1252); 1 or 2, UTF-8. A ~(setvar "LISPSYS" n)~ is saved
+and governs the NEXT session, not the current one. Before 2021 the default
+is the ANSI code page.
+
+*** clautolisp: LISPSYS, persisted and read at launch
+clautolisp keeps ~LISPSYS~ where the vendor does -- in the host's
+persistent registry store (the Windows registry, the macOS defaults
+database, the XDG configuration file elsewhere; see ~vl-registry-read~),
+under =HKEY_CURRENT_USER\Software\clautolisp\Variables\<product>=, value
+=LISPSYS= -- and per product (an AutoCAD dialect's value does not leak into
+a BricsCAD one). ~(setvar "LISPSYS" n)~ writes it; every launch reads it
+back (default 1 for AutoCAD, BricsCAD's measured 0 for BricsCAD) and, under
+the AutoCAD 2021+ dialects, derives the default source and file encoding
+from it, ahead of the POSIX locale (AutoCAD does not consult the locale).
+An explicit ~-Esource~ / ~-e~ still wins: the user asked for that encoding.
+The ~:strict~, ~:clautolisp~, ~:lax~ and BricsCAD dialects keep their
+encoding defaults; BricsCAD's own ~LISPSYS~ (V23.1: "allows to use UTF-8
+(without BOM header) encoded Lisp files") is recorded, not yet acted on.
 
 *** Per-open, not per-read
 The encoding is fixed when the stream is *opened*, not chosen per ~read-char~

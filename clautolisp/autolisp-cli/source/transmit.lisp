@@ -395,7 +395,68 @@ Side effects:
     (install-runtime-dialect-sysvar-tracking
      context (transmit-dialect-keyword bindings))
     (apply-dialect-trust-defaults context (transmit-dialect-keyword bindings))
-    (apply-dialect-sysvar-defaults context (transmit-dialect-keyword bindings))))
+    (apply-dialect-sysvar-defaults context (transmit-dialect-keyword bindings))
+    (apply-persisted-lispsys context bindings)))
+
+;;; --- LISPSYS: persisted, read at launch, the AutoCAD source default -------
+;;; Spec, "LISPSYS governs the AutoCAD source default (2021 and later)" and
+;;; "clautolisp: LISPSYS, persisted and read at launch" (pjb 2026-10-04: "a
+;;; new autocad installation will have LISPSYS=1; the users typically set it
+;;; [to 0] when they have windows-1252 code bases ... we must read back the
+;;; LISPSYS setting from persistent memory (the registry)").
+
+(defun %lispsys-launch-value (host dialect)
+  "The LISPSYS saved for DIALECT's product, as 0 / 1 / 2, or NIL."
+  (let* ((stored (ignore-errors
+                  (clautolisp.autolisp-host:host-registry-read
+                   host (clautolisp.autolisp-builtins-core::lispsys-registry-key dialect) "LISPSYS")))
+         (n (and (stringp stored) (ignore-errors (parse-integer stored)))))
+    (and (member n '(0 1 2)) n)))
+
+(defun %autocad-default-file-encoding (version lispsys)
+  "The AutoCAD source / file default: before 2021 the ANSI code page;
+from 2021 the one LISPSYS selects (0: ANSI, 1 / 2: UTF-8)."
+  (if (or (not (integerp version)) (< version 2021) (eql lispsys 0))
+      "WINDOWS-1252"
+      "UTF-8"))
+
+(defun apply-persisted-lispsys-value (host dialect)
+  "Lay the LISPSYS saved for DIALECT's product onto HOST's sysvar table.
+Returns the value, or NIL when none is saved."
+  (let ((saved (and host (%lispsys-launch-value host dialect))))
+    (when saved
+      (clautolisp.autolisp-host:host-set-derived-sysvar host "LISPSYS" saved))
+    saved))
+
+(defun apply-persisted-lispsys (context bindings)
+  "Install the persisted LISPSYS (when one is saved for this product) and,
+under the AutoCAD dialects with no explicit -Esource / -e, make the
+encoding it selects the session's default for LOAD and OPEN -- ahead of the
+POSIX locale, which AutoCAD does not consult."
+  (when context
+    (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context))
+          (dialect (ignore-errors (clautolisp.autolisp-reader:find-autolisp-dialect
+                                   (transmit-dialect-keyword bindings)))))
+      (when host
+        (let ((saved (apply-persisted-lispsys-value host dialect)))
+          (let ((explicit (let ((entry (assoc "*AUTOLISP-CAD-LOAD-ENCODING*" bindings
+                                              :test #'string=)))
+                            (and entry (plusp (length (%autolisp-string->plain (second entry)))))))
+                (product (and dialect (ignore-errors
+                                       (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
+            (when (and (eq product :autocad) (not explicit))
+              (let* ((version (ignore-errors
+                               (clautolisp.autolisp-reader:autolisp-dialect-version dialect)))
+                     (lispsys (or saved
+                                  (let ((v (ignore-errors
+                                            (clautolisp.autolisp-host:host-getvar host "LISPSYS"))))
+                                    (and (integerp v) v))
+                                  1))
+                     (encoding (%autocad-default-file-encoding version lispsys)))
+                ;; The source / file default only: SYSCODEPAGE is the
+                ;; operating system's code page, which LISPSYS does not change.
+                (set-variable (intern-autolisp-symbol "*AUTOLISP-FILE-ENCODING*")
+                              (make-autolisp-string encoding) context)))))))))
 
 (defun install-runtime-dialect-sysvar-tracking (context dialect-keyword)
   "Make the host's sysvar table follow `(setq *AUTOLISP-DIALECT* …)'.
@@ -416,7 +477,13 @@ the controller in autolisp-builtins-core/source/secureload.lisp."
            (when (eq (clautolisp.autolisp-reader:autolisp-dialect-template-name
                       dialect-keyword)
                      :bricscad-v26)
-             (clautolisp.cador:apply-bricscad-dialect-sysvars host))))))))
+             (clautolisp.cador:apply-bricscad-dialect-sysvars host))
+           ;; The replay starts from a snapshot taken before the overlays:
+           ;; the persisted LISPSYS has to be laid on again, for the new
+           ;; dialect's product.
+           (apply-persisted-lispsys-value
+            host (ignore-errors (clautolisp.autolisp-reader:find-autolisp-dialect
+                                 dialect-keyword)))))))))
 
 (defun transmit-dialect-keyword (bindings)
   "Recover the dialect keyword (:strict / :autocad-2026 / :bricscad-v26

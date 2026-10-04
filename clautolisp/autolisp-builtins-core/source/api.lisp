@@ -5579,6 +5579,25 @@ never overwritten by a redundant (setvar \"CLAUTOLISPDROP\" 1)."
       (%dispatch-lispsys-foreign-dialect-diagnostic "GETVAR"))
     (host-getvar (%sysvar-host (current-evaluation-host)) string)))
 
+(defun lispsys-registry-key (&optional (dialect (ignore-errors (current-evaluation-dialect))))
+  "Where LISPSYS is persisted for DIALECT's product, the way the vendor keeps
+it in the registry: HKEY_CURRENT_USER\\Software\\clautolisp\\Variables\\<product>
+\(AutoCAD / BricsCAD / clautolisp) -- per product, so an AutoCAD dialect's
+setting does not leak into a BricsCAD one (spec: clautolisp: LISPSYS,
+persisted and read at launch)."
+  (let ((product (and dialect (ignore-errors
+                               (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
+    (concatenate 'string "HKEY_CURRENT_USER\\Software\\clautolisp\\Variables\\"
+                 (case product (:autocad "AutoCAD") (:bricscad "BricsCAD") (t "clautolisp")))))
+
+(defun %persist-lispsys (value)
+  "Save a valid (setvar \"LISPSYS\" n) in the host's registry store: like
+AutoCAD's, the value governs the NEXT session (restart-level)."
+  (when (member value '(0 1 2))
+    (ignore-errors
+     (host-registry-write (current-evaluation-host) (lispsys-registry-key) "LISPSYS"
+                          (princ-to-string value)))))
+
 (defun builtin-setvar (name value)
   (let ((string (autolisp-string-value (require-string name "SETVAR"))))
     (when (%lispsys-name-p string)
@@ -5586,6 +5605,8 @@ never overwritten by a redundant (setvar \"CLAUTOLISPDROP\" 1)."
       (%validate-lispsys-value value))
     (let ((result (host-setvar (%sysvar-host (current-evaluation-host))
                               string value)))
+      (when (%lispsys-name-p string)
+        (%persist-lispsys value))
       ;; Remember it, so a dialect that hides this sysvar MASKS the
       ;; setting instead of destroying it (pjb's ruling, recorded in
       ;; secureload.lisp's controller header).

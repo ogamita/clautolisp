@@ -1394,17 +1394,17 @@ no probing:
 #+END_SRC
 
 ** Source-file and terminal encoding
-- ~-e ENC~                :: Set the default source-file encoding for
+- ~-Esource ENC~          :: Set the default source-file encoding for
                              every ~load~ in the session, including
                              nested ~(load …)~ calls from init files.
                              ENC is one of ~utf-8~, ~iso-8859-1~,
                              ~latin-1~, ~windows-1252~, ~cp1252~.
-                             Overrides the dialect default and the
-                             POSIX-locale guess (~LC_ALL~ /
+                             Overrides LISPSYS, the dialect default and
+                             the POSIX-locale guess (~LC_ALL~ /
                              ~LC_CTYPE~ / ~LANG~). Surfaced to user
                              code as the ~*AUTOLISP-FILE-ENCODING*~
-                             global.
-- ~-E ENC~                :: Declared terminal-IO encoding for the
+                             global. (The old ~-e~ is gone.)
+- ~-Eterminal ENC~ / ~-E ENC~ :: Declared terminal-IO encoding for the
                              session. Surfaced to user code as the
                              ~*AUTOLISP-TERMINAL-ENCODING*~ global so
                              code that emits raw bytes can adapt. No
@@ -1413,6 +1413,28 @@ no probing:
                              tooling needs the declared encoding to
                              match what you actually emit. Same ENC
                              vocabulary as ~-e~.
+
+*** Under the AutoCAD dialects, LISPSYS decides
+As on AutoCAD 2021 and later, the default encoding of the source files
+~load~ reads -- and of the files ~open~ opens without an encoding argument
+-- is the one ~LISPSYS~ selects: ~1~ or ~2~ (a new installation's value),
+UTF-8; ~0~, the ANSI code page windows-1252, for code bases written in it.
+Before 2021 (~--dialect autocad-2020~ and earlier) there is no ~LISPSYS~
+and the default is windows-1252.
+
+And as on AutoCAD, ~LISPSYS~ is *persisted*: ~(setvar "LISPSYS" 0)~ saves
+it in the registry -- the Windows registry, the macOS defaults database, or
+~$XDG_CONFIG_HOME/clautolisp/registry.sexp~ on Linux, under
+~HKEY_CURRENT_USER\Software\clautolisp\Variables\AutoCAD~ -- and it
+takes effect at the *next* launch, which reads it back. Each product has its
+own value: an AutoCAD dialect's ~LISPSYS~ does not change the BricsCAD
+dialects. ~-Esource~ still overrides it, and the POSIX locale plays no part
+under the AutoCAD dialects (AutoCAD does not consult it).
+
+#+BEGIN_SRC autolisp
+(setvar "LISPSYS" 0)   ; this code base is windows-1252: from the next launch,
+                       ; (load ...) under --dialect autocad decodes cp1252
+#+END_SRC
 
 *** Writing sources that load on every engine
 If your sources are going to be loaded by a CAD host as well as by
@@ -1640,6 +1662,13 @@ correct a wrong guess — but it is not its purpose.
   documents opened later in the session. A drawing created from a template
   keeps its entities through a DWG round trip — see /The ActiveX / COM
   object model/ above for why.
+- ~$CLAUTOLISP_REGISTRY_FILE~ :: a file to use as the registry store
+  instead of the platform's real one -- the Windows registry, the macOS
+  defaults database, or ~$XDG_CONFIG_HOME/clautolisp/registry.sexp~ --
+  on every platform. ~vl-registry-read~ / ~-write~, the persisted
+  ~LISPSYS~ and ~TEMPPREFIX~ then read and write that file. The test suites
+  set it, so they never touch a real registry; use it the same way to try
+  a ~LISPSYS~ setting without changing your machine's.
 - ~$CLAUTOLISPDEFAULTDRAWINGFORMAT~ :: initial value of the system
   variable of the same name — the file format a drawing is *written* in
   when neither the destination extension nor the drawing itself selects

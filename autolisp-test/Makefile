@@ -40,6 +40,9 @@ esac
 endef
 
 ROOT_DIR := $(shell pwd)
+# The corpus never writes a real registry / defaults database (SETVAR of
+# LISPSYS persists): the host uses this sexp store on every platform.
+export CLAUTOLISP_REGISTRY_FILE ?= $(ROOT_DIR)/.cache/test-registry.sexp
 
 # Paths PASSED TO the clautolisp / alfe engine (as *autolisp-test-root*, the
 # harness `-l' path, TRUSTEDPATHS) must be NATIVE: on Windows those engines run

@@ -259,3 +259,14 @@ autocad dialects keep 1; a second AutoCAD machine would settle it.
 showhtmlmodalwindow is absent from AutoCAD 2022's CONSOLE (accoreconsole has
 no UI) -- not a contradiction of the 2014 gate. vl-infp / vl-nanp exist on
 AutoCAD 2022: filed as vl-infp-vl-nanp-exist-on-autocad.
+ANSWERED (pjb 2026-10-04): "the default source encoding depends on LISPSYS.
+Indeed, a new autocad installation will have LISPSYS=1; the users typically
+set it [to 0] when they have windows-1252 code bases. ... We can align to
+autocad, but we must read back the LISPSYS setting from persistent memory
+(the registry)." Done in 2.2.175: the spec's encoding rule is "LISPSYS
+decides, from 2021" (the forum-sourced 2025 note superseded); LISPSYS is
+persisted per product in the host registry store and read at launch; the
+AutoCAD dialects derive the source / file default from it, ahead of the
+locale (end-to-end on the executable: a cp1252 file decodes under LISPSYS 0,
+fails as UTF-8 under 1). The :default-utf8-encoding matrix row (unused by
+the runtime) is left for the encoding-consolidation cleanup.
