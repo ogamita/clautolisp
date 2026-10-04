@@ -372,6 +372,19 @@ dialect-dependent: under a BricsCAD dialect the vendor SAVEFORMAT integer
           (warn-clautolisp-sysvar-use +default-drawing-format-sysvar+)
           (values (or container :dxf-ascii) version)))))
 
+(defun locale-measurement ()
+  "MEASUREMENT for a fresh drawing from the locale (pjb 2026-10-04): 0
+(imperial) when the effective locale is en_US, 1 (metric) otherwise. The
+locale is the first non-empty of LC_ALL, LC_NUMERIC and LANG -- the POSIX
+order of precedence; with none set (C / POSIX, or a Windows session) it is
+metric."
+  (let ((locale (loop for var in '("LC_ALL" "LC_NUMERIC" "LANG")
+                      for value = (uiop:getenv var)
+                      when (and value (string/= value "")) return value)))
+    (if (and locale (>= (length locale) 5) (string= "en_US" locale :end2 5))
+        0
+        1)))
+
 (defun populate-default-sysvars (mock &key (catalogue :full))
   "Pre-populate MOCK's sysvar table.
 
@@ -413,7 +426,14 @@ with HOST-DERIVED-P defaulting to NIL for the :SEED list."
     (when (eq catalogue :full)
       (loop for (name . value) in *imperial-template-defaults*
             for cell = (gethash name table)
-            when cell do (setf (sysvar-cell-value cell) value)))
+            when cell do (setf (sysvar-cell-value cell) value))
+      ;; MEASUREMENT (and MEASUREINIT, the setting that seeds it) follow the
+      ;; locale: imperial under en_US, metric anywhere else. A drawing read
+      ;; from a file or a template keeps its own header value.
+      (let ((measurement (locale-measurement)))
+        (dolist (name '("MEASUREMENT" "MEASUREINIT"))
+          (let ((cell (gethash name table)))
+            (when cell (setf (sysvar-cell-value cell) measurement))))))
     ;; The clautolisp extension sysvars sit on top of either catalogue.
     (install-clautolisp-extension-sysvars mock)))
 

@@ -514,7 +514,29 @@
   (let ((mock (make-cador)))
     (is (%ct-near 0.18 (host-getvar mock "DIMASZ")))
     (is (equal '(12.0d0 9.0d0) (host-getvar mock "LIMMAX")))
-    (is (eql 0 (host-getvar mock "MEASUREMENT")))))
+    ;; MEASUREMENT follows the locale (fresh-drawing-measurement-follows-the-locale).
+    (is (eql (clautolisp.cador::locale-measurement) (host-getvar mock "MEASUREMENT")))))
+
+(test fresh-drawing-measurement-follows-the-locale
+  ;; pjb 2026-10-04: imperial (0) under en_US, metric (1) otherwise; the
+  ;; first non-empty of LC_ALL, LC_NUMERIC, LANG decides.
+  (let ((saved (mapcar (lambda (v) (cons v (uiop:getenv v))) '("LC_ALL" "LC_NUMERIC" "LANG"))))
+    (flet ((with-locale (all numeric lang)
+             (setf (uiop:getenv "LC_ALL") (or all "")
+                   (uiop:getenv "LC_NUMERIC") (or numeric "")
+                   (uiop:getenv "LANG") (or lang ""))
+             (let ((mock (make-cador)))
+               (list (host-getvar mock "MEASUREMENT") (host-getvar mock "MEASUREINIT")))))
+      (unwind-protect
+           (progn
+             (is (equal '(0 0) (with-locale nil nil "en_US.UTF-8")))
+             (is (equal '(1 1) (with-locale nil nil "fr_FR.UTF-8")))
+             (is (equal '(1 1) (with-locale nil "de_DE" "en_US.UTF-8")))
+             (is (equal '(0 0) (with-locale "en_US" "de_DE" "fr_FR")))
+             (is (equal '(1 1) (with-locale nil nil "en_GB.UTF-8")))
+             (is (equal '(1 1) (with-locale nil nil nil))))
+        (loop for (var . value) in saved
+              do (setf (uiop:getenv var) (or value "")))))))
 
 ;;; --- alref Phase 4 S2: selection by window, crossing and point --------
 

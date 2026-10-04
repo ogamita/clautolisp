@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: entmake-duplicates-subclass-markers — validate-entity-dxf appends 100 markers the data already has
-#+STATUS: OPEN
+#+STATUS: DEFERRED
 #+PRIORITY: P2
 #+TYPE: bug
 
@@ -41,3 +41,17 @@ DUPLICATES FIXED: VALIDATE-ENTITY-DXF adds only the markers the data lacks
 checked on the built executable). STILL OPEN, lower priority: a marker the
 data LACKS is still appended at the end instead of where the vendors put it
 (AcDbEntity before 8, the class marker before the class's first group).
+
+* Deferred (pjb 2026-10-04: "If we know all that is needed for the subclass
+  marker position, then do it now, otherwise defer the issue.")
+
+Not all of it is known. The entity-family registry
+(drawing/source/entity-families.lisp) records each family's marker NAMES,
+not which groups belong to which subclass, and the multi-marker families
+need that boundary: ARC (AcDbCircle, then AcDbArc ahead of 50), TEXT
+(AcDbText twice -- where the second goes), VERTEX (AcDbVertex /
+AcDb2dVertex), ATTRIB / ATTDEF (AcDbText + AcDbAttribute*). No vendor
+measurement shows the positions either: the command probes drop group 100.
+To unblock: a probe that records the FULL entget (100 included) of one
+entity per registered family on AutoCAD and BricsCAD, then a per-subclass
+"first group" table in the registry.
