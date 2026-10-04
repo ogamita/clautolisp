@@ -50,6 +50,7 @@
                "clautolisp/autolisp-host"
                "clautolisp/cador"
                "clautolisp/autolisp-init-files"
+               "cffi"
                "uiop")
   :serial t
   :components
