@@ -317,6 +317,28 @@ removes an entry from the symbol table, interning only ever adds.")
   (setf clautolisp.autolisp-runtime.internal::*autolisp-support-paths*
         (mapcar #'normalize-directory-path paths)))
 
+(defun autolisp-support-path-string ()
+  "The support path as the vendors show it -- Preferences.Files.SupportPath
+and (getenv \"ACAD\") -- the directories joined with \";\", without their
+trailing separator."
+  (format nil "~{~A~^;~}"
+          (mapcar (lambda (directory)
+                    (let ((end (length directory)))
+                      (if (and (> end 1) (find (char directory (1- end)) "/\\"))
+                          (subseq directory 0 (1- end))
+                          directory)))
+                  (autolisp-support-paths))))
+
+(defun set-autolisp-support-path-string (string)
+  "Set the support path from the vendors' \";\"-separated STRING (empty
+entries ignored)."
+  (set-autolisp-support-paths
+   (loop for start = 0 then (1+ end)
+         for end = (or (position #\; string :start start) (length string))
+         for entry = (string-trim " " (subseq string start end))
+         unless (string= entry "") collect entry
+         while (< end (length string)))))
+
 (defun autolisp-trusted-paths ()
   (copy-list clautolisp.autolisp-runtime.internal::*autolisp-trusted-paths*))
 

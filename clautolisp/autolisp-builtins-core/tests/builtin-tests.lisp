@@ -7655,3 +7655,51 @@ itself fails loudly."
         "(~A) should return the void symbol" f))
   (reset-autolisp-symbol-table)
   (is (null (run-autolisp-string "(princ nil)" :setup-fn #'install-core-into))))
+
+;;; --- com-application-object-properties (triage round 2, item 1) --------
+;;; The Application / Document properties EPUREE and its SNCF upstream call,
+;;; with the values BricsCAD V26 returned (probe-triage2, jobs 16923716753
+;;; macOS and 16923716756 Windows).
+
+(test com-application-layouts-active-and-preferences
+  (reset-autolisp-symbol-table)
+  (let ((saved (clautolisp.autolisp-runtime:autolisp-support-paths)))
+    (unwind-protect
+         (flet ((str (form) (autolisp-string-value (%al form))))
+           ;; :VLAX-TRUE / :VLAX-FALSE are symbols whose value is themselves.
+           (is (equal "(:VLAX-TRUE :VLAX-FALSE SYM)"
+                      (str "(vl-prin1-to-string (list :vlax-true :vlax-false (type :vlax-true)))")))
+           ;; Document.Active, compared as EPUREE does.
+           (is (equal "T" (str "(progn (vl-load-com)
+                                (vl-prin1-to-string
+                                 (= (vla-get-active (vla-get-activedocument (vlax-get-acad-object)))
+                                    :vlax-true)))")))
+           ;; Layouts: paper layouts first, then Model; Item by name; a missing
+           ;; name is an error (an Automation error on the vendors).
+           (is (equal "(2 (\"Layout1\" \"Model\") \"Model\" T)"
+                      (str "(progn (vl-load-com)
+                         (setq ls (vla-get-layouts (vla-get-activedocument (vlax-get-acad-object))))
+                         (setq names '())
+                         (vlax-for l ls (setq names (cons (vla-get-name l) names)))
+                         (vl-prin1-to-string
+                          (list (vla-get-count ls) (reverse names)
+                                (vla-get-name (vla-item ls \"model\"))
+                                (vl-catch-all-error-p
+                                 (vl-catch-all-apply 'vla-item (list ls \"NoSuchLayout\"))))))")))
+           ;; Preferences.Files.SupportPath is (getenv "ACAD"); setting it
+           ;; sets the support path findfile searches.
+           (is (equal "(T \"/tmp/a;/tmp/b\" \"/tmp/a;/tmp/b\")"
+                      (str "(progn (vl-load-com)
+                         (setq files (vla-get-files (vla-get-preferences (vlax-get-acad-object))))
+                         (setq before (= (vla-get-supportpath files) (getenv \"ACAD\")))
+                         (vla-put-supportpath files \"/tmp/a;/tmp/b/\")
+                         (vl-prin1-to-string
+                          (list before (vla-get-supportpath files) (getenv \"ACAD\"))))")))
+           (is (equal '("/tmp/a/" "/tmp/b/") (clautolisp.autolisp-runtime:autolisp-support-paths)))
+           ;; Profiles.ActiveProfile is CPROFILE, a string.
+           (is (equal "(STR T)"
+                      (str "(progn (vl-load-com)
+                         (setq p (vla-get-activeprofile
+                                  (vla-get-profiles (vla-get-preferences (vlax-get-acad-object)))))
+                         (vl-prin1-to-string (list (type p) (= p (getvar \"CPROFILE\")))))"))))
+      (clautolisp.autolisp-runtime:set-autolisp-support-paths saved))))

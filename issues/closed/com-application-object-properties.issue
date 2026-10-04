@@ -1,0 +1,70 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: com-application-object-properties -- Layouts, Document.Active, Preferences.Files.SupportPath, Profiles
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: cad-runtime
+#+DEPENDS: -
+#+DATE: 2026-10-04
+
+* Demand (measured)
+
+Found by the demand scan of vla-entity-property-table-on-demand
+(.vla-demand.py, 1416 AutoLISP files): code that runs today calls COM
+properties of the APPLICATION / DOCUMENT objects that cador does not have:
+
+  ActiveDocument (9 calls, has)   SupportPath (7)   Application (3)
+  Preferences (3)   Layers (2, has)   Layouts (2)   Blocks (2, has)
+  Files (2)   ActiveProfile (1)   Profiles (1)   Documents (1, has)
+  Active (1)
+
+Callers: EPUREE (src/comu.lsp -- epuree:delete-layout-by-name-safe walks
+vla-get-layouts / vla-item by name; a Documents walk tests vla-get-Active)
+and its SNCF upstream (SNCF_startup.lsp reads and sets
+Preferences -> Files -> SupportPath, reads Profiles / ActiveProfile).
+
+* To do (per the vla-entity-property-table-on-demand discipline)
+
+For each: classify against both vendors first (AGENTS.md, dialect
+divergence), probe what the vendor returns, then implement with a test:
+  - Document.Layouts collection + Item by name (needs layouts in the
+    headless model -- shared with alref's CHSPACE);
+  - Document.Active (T for the active document of the Documents
+    collection);
+  - Preferences -> Files -> SupportPath (the ACAD support path string --
+    which host value backs it: (getenv "ACAD"), SRCHPATH?) and its setter;
+  - Preferences -> Profiles -> ActiveProfile.
+
+* Measured (probe-triage2, 2026-10-04)
+
+BricsCAD V26 macOS (job 16923716753) and Windows (job 16923716756), the same:
+  type of (vlax-get-acad-object)               VLA-OBJECT
+  Layouts count                                3 (a French template)
+  Layouts names (vlax-for)                     ("Présentation1" "Présentation2" "Model")
+  Layouts Item "Model" name                    "Model"
+  Layouts Item "NoSuchLayout"                  error (Automation Error E_FAIL /
+                                               8020001a "Clé introuvable")
+  Document Active                              :VLAX-TRUE
+  Preferences Files SupportPath: type          STR
+  ... = (getenv "ACAD")                        T
+  Preferences Profiles ActiveProfile: type     STR
+AutoCAD 2022 (accoreconsole, job 16923765011): (vlax-get-acad-object) is nil
+headless -- no COM to measure; its documented object model is the same.
+
+* Done (clautolisp 2.2.179)
+
+- Document.Layouts: a live collection derived from the layout blocks
+  (*Paper_Space -> "Layout1", then *Model_Space -> "Model", BricsCAD's walk
+  order); Layout objects carry Name, ObjectName AcDbLayout, ModelType,
+  TabOrder, Block. Item by name, missing name -> :com-item-not-found.
+  A fresh cador drawing has ONE paper layout (one *Paper_Space record), so
+  Count is 2 where a vendor template gives 3.
+- Document.Active: :VLAX-TRUE for the Application's ActiveDocument,
+  :VLAX-FALSE otherwise. :VLAX-TRUE / :VLAX-FALSE are now predefined
+  self-valued symbols (they were unbound, i.e. nil) --
+  vlax-boolean-properties-return-t covers the other boolean properties.
+- Preferences.Files.SupportPath: the runtime support path joined with ";"
+  (read/write; findfile / load follow it). (getenv "ACAD") and
+  (setenv "ACAD" ...) are that same support path, as measured.
+- Preferences.Profiles.ActiveProfile: CPROFILE (read).
+Not done: Layout.Delete (EPUREE's epuree:delete-layout-by-name-safe catches
+the error) -- cador has no paper layout besides *Paper_Space to delete.

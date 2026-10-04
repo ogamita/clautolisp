@@ -1042,6 +1042,19 @@ provides that surface through the host backend:
   registers a linetype table record by name (the mock does not parse a
   ~.lin~ definition file — it registers the name so the linetype
   resolves).
+- The document's ~Layouts~ collection lists the drawing's layouts -- the
+  paper layout ~Layout1~, then ~Model~, the order ~vlax-for~ walks them in
+  on BricsCAD -- with ~Item~ by name; each ~Layout~ has ~Name~, ~ModelType~,
+  ~TabOrder~ and its ~Block~. ~(vla-get-active doc)~ is ~:vlax-true~ for the
+  active document. ~:vlax-true~ and ~:vlax-false~ are predefined: each is a
+  symbol whose value is itself, so ~(= (vla-get-active doc) :vlax-true)~
+  works as in Visual LISP.
+- ~Preferences~: ~(vla-get-supportpath (vla-get-files (vla-get-preferences
+  acad)))~ is the support path ~findfile~ and ~load~ search, its
+  directories joined with ~;~ -- the same string as ~(getenv "ACAD")~, as on
+  the vendors -- and ~vla-put-supportpath~ (or ~(setenv "ACAD" ...)~)
+  changes it. ~(vla-get-activeprofile (vla-get-profiles prefs))~ is the
+  current profile, the ~CPROFILE~ system variable.
 - Documents are created and saved through the object model:
   ~(vla-add documents)~ opens a document over the in-memory drawing
   (the mock is single-document) wired to the same live Blocks / Layers

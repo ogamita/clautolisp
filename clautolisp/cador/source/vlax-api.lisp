@@ -147,6 +147,52 @@ itself a live collection of the entities the block owns."
                                     :collection-p t
                                     :collection-kind :blocks))))
 
+(defun %vlax-boolean (generalized-boolean)
+  "The ActiveX boolean symbol :VLAX-TRUE or :VLAX-FALSE."
+  (clautolisp.autolisp-runtime:intern-autolisp-symbol
+   (if generalized-boolean ":VLAX-TRUE" ":VLAX-FALSE")))
+
+(defun %layout-name (block-name)
+  "The layout a layout block belongs to: *Model_Space is \"Model\",
+*Paper_Space the first paper layout, \"Layout1\" (a fresh drawing's)."
+  (if (string-equal block-name "*Model_Space") "Model" "Layout1"))
+
+(defun %layout-object (host block-name)
+  "The identity-stable AutoCAD.Layout COM object of layout block BLOCK-NAME."
+  (%live-com-object
+   host (concatenate 'string "LAYOUT:" (string-upcase block-name))
+   (lambda ()
+     (let* ((object (make-mock-com-object :progid "AutoCAD.Layout"))
+            (props (mock-com-object-properties object))
+            (model-p (string-equal block-name "*Model_Space")))
+       (setf (gethash "Name" props)       (%al-string (%layout-name block-name))
+             (gethash "ObjectName" props) (%al-string "AcDbLayout")
+             (gethash "ModelType" props)  (%vlax-boolean model-p)
+             (gethash "TabOrder" props)   (if model-p 0 1)
+             (gethash "Block" props)      (com-object->vla (%block-object host block-name)))
+       object))))
+
+(defun %layouts-collection (host)
+  "Document.Layouts: a live collection of the drawing's layouts."
+  (%live-com-object host "LAYOUTS"
+   (lambda () (make-mock-com-object :progid "AutoCAD.Layouts"
+                                    :collection-p t :collection-kind :layouts))))
+
+(defun %preferences-object (host)
+  "Application.Preferences, with its Files and Profiles objects."
+  (%live-com-object host "PREFERENCES"
+   (lambda ()
+     (let ((object (make-mock-com-object :progid "AutoCAD.Preferences")))
+       (setf (gethash "Files" (mock-com-object-properties object))
+             (com-object->vla
+              (%live-com-object host "PREFERENCES-FILES"
+               (lambda () (make-mock-com-object :progid "AutoCAD.PreferencesFiles"))))
+             (gethash "Profiles" (mock-com-object-properties object))
+             (com-object->vla
+              (%live-com-object host "PREFERENCES-PROFILES"
+               (lambda () (make-mock-com-object :progid "AutoCAD.PreferencesProfiles")))))
+       object))))
+
 (defun %layers-collection (host)
   "The document's live Layers collection object."
   (%live-com-object
@@ -181,6 +227,14 @@ the drawing for a live collection, the stored list for a static one."
       ((eq kind :blocks)
        (mapcar (lambda (name) (com-object->vla (%block-object host name)))
                (%block-names host)))
+      ;; Paper layouts first, then Model: the order vlax-for walks them in
+      ;; on BricsCAD V26 (macOS and Windows).
+      ((eq kind :layouts)
+       (mapcar (lambda (name) (com-object->vla (%layout-object host name)))
+               (append (remove "*Model_Space"
+                               (remove-if-not #'%layout-block-name-p (%block-names host))
+                               :test #'string-equal)
+                       (list "*Model_Space"))))
       ((eq kind :layers)
        (let ((names '()))
          (maphash (lambda (name record)
@@ -1015,11 +1069,54 @@ tblsearch \"LAYER\" and ActiveX read back the same value."
 (defun %document-object-p (object)
   (string-equal (mock-com-object-progid object) "AutoCAD.Document"))
 
+(defun %active-document-p (host document)
+  "True when DOCUMENT is the Application's ActiveDocument."
+  (let* ((app-id (cador-acad-application-id host))
+         (app (and app-id (cador-find-com-object host app-id)))
+         (active (and app (gethash "ActiveDocument" (mock-com-object-properties app)))))
+    (and (typep active 'clautolisp.autolisp-runtime:autolisp-vla-object)
+         (eql (clautolisp.autolisp-runtime:autolisp-vla-object-value active)
+              (mock-com-object-id document)))))
+
 (defun %document-com-property-get (host object name)
   "Document.ActiveLayer is the AutoCAD.Layer for the current CLAYER (dynamic,
-so it tracks setvar/ActiveLayer changes). Returns (values VALUE T) when handled."
-  (if (and (%document-object-p object) (string-equal name "ActiveLayer"))
-      (values (com-object->vla (%layer-object host (%current-layer-name host))) t)
+so it tracks setvar/ActiveLayer changes); Document.Active is :VLAX-TRUE for
+the Application's ActiveDocument, :VLAX-FALSE for another. Returns (values
+VALUE T) when handled."
+  (cond
+    ((not (%document-object-p object)) (values nil nil))
+    ((string-equal name "ActiveLayer")
+     (values (com-object->vla (%layer-object host (%current-layer-name host))) t))
+    ((string-equal name "Active")
+     (values (%vlax-boolean (%active-document-p host object)) t))
+    (t (values nil nil))))
+
+(defun %preferences-com-property-get (host object name)
+  "Preferences.Files.SupportPath is the support path findfile and load search
+(and (getenv \"ACAD\")); Preferences.Profiles.ActiveProfile is the current
+profile, CPROFILE. Returns (values VALUE T) when handled."
+  (let ((progid (mock-com-object-progid object)))
+    (cond
+      ((and (string-equal progid "AutoCAD.PreferencesFiles")
+            (string-equal name "SupportPath"))
+       (values (%al-string (clautolisp.autolisp-runtime:autolisp-support-path-string)) t))
+      ((and (string-equal progid "AutoCAD.PreferencesProfiles")
+            (string-equal name "ActiveProfile"))
+       (values (host-getvar host "CPROFILE") t))
+      (t (values nil nil)))))
+
+(defun %preferences-com-property-put (host object name value)
+  "Setting Preferences.Files.SupportPath sets the support path."
+  (declare (ignore host))
+  (if (and (string-equal (mock-com-object-progid object) "AutoCAD.PreferencesFiles")
+           (string-equal name "SupportPath"))
+      (let ((string (%com-string value)))
+        (unless string
+          (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+           :invalid-com-property-value
+           "SupportPath expects a string, got ~S." value))
+        (clautolisp.autolisp-runtime:set-autolisp-support-path-string string)
+        (values value t))
       (values nil nil)))
 
 (defun %document-com-property-put (host object name value)
@@ -1041,7 +1138,10 @@ so it tracks setvar/ActiveLayer changes). Returns (values VALUE T) when handled.
         (multiple-value-bind (value2 handled2) (%layer-com-property-get host object name)
           (if handled2
               (values value2 handled2)
-              (%document-com-property-get host object name))))))
+              (multiple-value-bind (value3 handled3) (%document-com-property-get host object name)
+                (if handled3
+                    (values value3 handled3)
+                    (%preferences-com-property-get host object name))))))))
 
 (defun %object-com-property-put (host object name value)
   (multiple-value-bind (result handled) (%entity-com-property-put host object name value)
@@ -1050,7 +1150,11 @@ so it tracks setvar/ActiveLayer changes). Returns (values VALUE T) when handled.
         (multiple-value-bind (result2 handled2) (%layer-com-property-put host object name value)
           (if handled2
               (values result2 handled2)
-              (%document-com-property-put host object name value))))))
+              (multiple-value-bind (result3 handled3)
+                  (%document-com-property-put host object name value)
+                (if handled3
+                    (values result3 handled3)
+                    (%preferences-com-property-put host object name value))))))))
 
 (defun %object-com-property-known-p (host object name)
   (or (%entity-com-property-known-p host object name)
@@ -1058,8 +1162,12 @@ so it tracks setvar/ActiveLayer changes). Returns (values VALUE T) when handled.
            (member name '("Color" "Linetype") :test #'string-equal)
            t)
       (and (%document-object-p object)
-           (string-equal name "ActiveLayer")
-           t)))
+           (member name '("ActiveLayer" "Active") :test #'string-equal)
+           t)
+      (and (string-equal (mock-com-object-progid object) "AutoCAD.PreferencesFiles")
+           (string-equal name "SupportPath"))
+      (and (string-equal (mock-com-object-progid object) "AutoCAD.PreferencesProfiles")
+           (string-equal name "ActiveProfile"))))
 
 ;;; --- Layer.Delete / Document lifecycle / AddLine / AddAttribute / Load ---
 
@@ -1121,7 +1229,8 @@ Save closures. Returns the new document's VLA-object."
           (gethash "Layers" props)     (com-object->vla (%layers-collection host))
           (gethash "Linetypes" props)  (com-object->vla (%linetypes-collection host))
           (gethash "ModelSpace" props) (com-object->vla (%block-object host "*Model_Space"))
-          (gethash "PaperSpace" props) (com-object->vla (%block-object host "*Paper_Space")))
+          (gethash "PaperSpace" props) (com-object->vla (%block-object host "*Paper_Space"))
+          (gethash "Layouts" props)    (com-object->vla (%layouts-collection host)))
     (%install-document-persistence host doc)
     (com-object->vla doc)))
 
@@ -1331,7 +1440,11 @@ document. Repeated calls return the same application object."
                   (gethash "ModelSpace" props)
                   (com-object->vla (%block-object host "*Model_Space"))
                   (gethash "PaperSpace" props)
-                  (com-object->vla (%block-object host "*Paper_Space"))))
+                  (com-object->vla (%block-object host "*Paper_Space"))
+                  (gethash "Layouts" props)
+                  (com-object->vla (%layouts-collection host))))
+          (setf (gethash "Preferences" (mock-com-object-properties app))
+                (com-object->vla (%preferences-object host)))
           ;; A Documents collection holding the one open document, so
           ;; vlax-for / vlax-map-collection have something to iterate,
           ;; and Documents.Add reaches the single-document mock.

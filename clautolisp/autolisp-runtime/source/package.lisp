@@ -343,6 +343,8 @@
    #:set-autolisp-current-directory
    #:autolisp-support-paths
    #:set-autolisp-support-paths
+   #:autolisp-support-path-string
+   #:set-autolisp-support-path-string
    #:synchronize-process-environment
    #:autolisp-trusted-paths
    #:set-autolisp-trusted-paths
