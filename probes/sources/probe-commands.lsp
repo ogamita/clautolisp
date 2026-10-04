@@ -123,33 +123,27 @@
 
 (setq cad-probe--unknown nil)
 
-(defun cad-probe--lisp-command-p (name / r)
-  ;; NAME is not built in but a LISP command (C:NAME) on this engine:
-  ;; register it with VLAX-ADD-CMD so COMMAND can run it. 2026-10-04:
-  ;; BricsCAD's COPYM / XPLODE / FLATTEN made nothing through
-  ;; (command "_.NAME" ...) -- COMMAND does not call a C: function -- the
-  ;; way AutoCAD's 3DARRAY add-on needed pjb's vlax-add-cmd recipe.
+(defun cad-probe--lisp-command-p (name)
+  ;; NAME is not built in but a LISP command (C:NAME) on this engine.
+  ;; 2026-10-04 (job 16920411987): BricsCAD's COPYM, MPEDIT, EXOFFSET,
+  ;; EXTRIM are; registered with VLAX-ADD-CMD they still ignored the input
+  ;; COMMAND passed on, and EXTRIM's own pick prompt ended the session. Such
+  ;; a command is recorded as "NAME (LISP COMMAND)" and not driven: which
+  ;; commands are vendor LISP add-ons is the answer clautolisp needs (pjb:
+  ;; loading the vendor's own code is good enough for those).
   (and (getcname "_LINE")
        (not (getcname (strcat "_" name)))
        (eval (read (strcat "c:" name)))
-       (progn
-         (vl-catch-all-apply 'vl-load-com '())
-         (setq r (vl-catch-all-apply 'vlax-add-cmd
-                   (list name (read (strcat "c:" name)))))
-         (princ (strcat "\ncad-probe: " name " is a LISP command: "
-                        (if (vl-catch-all-error-p r) "vlax-add-cmd FAILED" "registered")
-                        "\n"))
-         (not (vl-catch-all-error-p r)))))
+       T))
 
 (defun cad-probe--cmd-args (args / name)
   ;; Run (command . ARGS) when its command, "_.NAME" first, is known;
-  ;; otherwise note it and do nothing. A LISP command runs by its bare
-  ;; name once registered (no "_." -- that prefix names built-ins).
+  ;; otherwise note it and do nothing. A LISP command is noted as such.
   (setq name (substr (car args) 3))
   (cond ((not (cad-probe--known-command-p name))
          (setq cad-probe--unknown name))
         ((cad-probe--lisp-command-p name)
-         (apply 'command (cons name (cdr args))))
+         (setq cad-probe--unknown (strcat name " (LISP COMMAND)")))
         (T (apply 'command args))))
 
 (defun cad-probe--token-list-commands (args / out)
@@ -372,6 +366,21 @@
       (cad-probe--cmd-args (list "_.RECTANG" "0,0" "2,1"))
       (cad-probe--cmd-args (list "_.XPLODE" (entlast) "" "_E")))))
 
+  ;; Which of the remaining core-now commands this engine has built in,
+  ;; as a LISP command (C:NAME), or not at all -- nothing is run.
+  (cad-probe--cmd-case "command classes of the Phase 4 remainder"
+    (function (lambda ( / out)
+      (setq out "CLASSES")
+      (foreach n '("MSTRETCH" "3DROTATE" "CHSPACE" "XPLODE" "COPYM" "NCOPY"
+                   "UNGROUP" "ARRAYPATH" "ARRAYEDIT" "ARRAYCLOSE" "ARRAYCLASSIC"
+                   "EXOFFSET" "BTRIM" "BEXTEND" "EXTRIM" "BREAKLINE" "MPEDIT"
+                   "SPLINEDIT" "TREX" "MOCORO" "HELIX" "SHAPE" "REGION"
+                   "FLATTEN" "3DARRAY" "OVERKILL" "SUPERHATCH")
+        (setq out (strcat out " " n "="
+                          (cond ((getcname (strcat "_" n)) "BUILTIN")
+                                ((eval (read (strcat "c:" n))) "LISP")
+                                (T "ABSENT")))))
+      (setq cad-probe--unknown out))))
   ;; Phase 4 remainder, BricsCAD (Express Tools on AutoCAD: skipped there).
   (cad-probe--cmd-case "MPEDIT two lines to polylines of width 0.5"
     (function (lambda ( / a)
