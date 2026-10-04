@@ -989,17 +989,47 @@ tokens it did not consume.")
 
 (defun %execute-command-tokens (host tokens)
   "Interpret TOKENS — one HOST-COMMAND call's normalized sequence —
-executing the drawing commands the engine knows; the first unknown
-command name stops interpretation (the sequence stays recorded on the
-command log either way). Never signals."
-  (handler-case
-      (loop while tokens
-            do (let* ((name (%command-name (first tokens)))
-                      (handler (and name (gethash name *cador-commands*))))
-                 (unless handler (return))
-                 (setf tokens (funcall handler host (rest tokens)))))
-    (error () nil))
+executing the drawing commands the engine knows, and the LISP commands
+registered with vlax-add-cmd; the first unknown command name stops
+interpretation (the sequence stays recorded on the command log either way).
+An engine command never signals; a LISP command's own errors propagate."
+  (loop while tokens
+        do (let* ((name (%command-name (first tokens)))
+                  (handler (and name (gethash name *cador-commands*)))
+                  (lisp (and name (not handler) (%registered-lisp-command host name))))
+             (cond (handler
+                    (multiple-value-bind (rest ok)
+                        (handler-case (values (funcall handler host (rest tokens)) t)
+                          (error () (values nil nil)))
+                      (unless ok (return))
+                      (setf tokens rest)))
+                   ;; A LISP command: its own errors are the program's to see.
+                   (lisp (setf tokens (%run-lisp-command host lisp (rest tokens))))
+                   (t (return)))))
   nil)
+
+(defun %registered-lisp-command (host name)
+  "The function of the LISP command NAME registered with vlax-add-cmd (by
+its global or local name), or NIL. As on the vendors, a C: function is a
+command for COMMAND only once registered."
+  (loop for entry in (cador-registered-commands host)
+        when (and (eq (first entry) :cmd)
+                  (or (string-equal name (second entry))
+                      (string-equal name (third entry))))
+          return (fourth entry)))
+
+(defun %run-lisp-command (host function tokens)
+  "Run the LISP command FUNCTION with TOKENS as its pending input (its
+get* / entsel / ssget calls consume them); return the tokens it left, which
+go on as further commands."
+  (let ((saved (cador-pending-input host)))
+    (setf (cador-pending-input host) tokens)
+    (unwind-protect
+         (progn
+           (clautolisp.autolisp-runtime:call-autolisp-function
+            (clautolisp.autolisp-runtime:resolve-autolisp-function-designator function))
+           (cador-pending-input host))
+      (setf (cador-pending-input host) saved))))
 
 (defmethod host-command-log ((host cador))
   (reverse (cador-command-log host)))

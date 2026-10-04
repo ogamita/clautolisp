@@ -1225,6 +1225,11 @@ separate binary for tool integrators.
   arc), ~FILLET~ / ~CHAMFER~ of two lines (~FILLETRAD~, ~CHAMFERA~ /
   ~CHAMFERB~), ~PEDIT~ (a line into a polyline; width, close, open) and
   ~OVERKILL~ (exact duplicates).
+- ~command~ runs the LISP commands registered with ~vlax-add-cmd~, feeding
+  them the rest of its arguments through ~get*~, ~entsel~ (now real) and
+  ~ssget~ -- so a vendor's AutoLISP add-on command (AutoCAD's
+  ~3darray.lsp~) can be loaded and driven. ~getkword~ accepts keyword
+  abbreviations and the ~_~ prefix; typed points may use commas.
 - A new drawing's ~MEASUREMENT~ / ~MEASUREINIT~ follow the locale:
   imperial (0) under ~en_US~, metric (1) otherwise (~$LC_ALL~, then
   ~$LC_NUMERIC~, then ~$LANG~). It was always imperial. A drawing from a

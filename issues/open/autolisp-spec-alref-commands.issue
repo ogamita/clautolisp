@@ -349,3 +349,29 @@ question, not changed here).
 Open: BricsCAD's -HATCH by internal point made NO hatch in both rounds
 (-BOUNDARY at the same point works); cador makes one, as documented.
 63 + 19 of 105; 23 to go (S1 SHAPE REGION, S2/S4/S5 remainders).
+
+## Phase 4 remainder: which commands are vendor LISP add-ons (2026-10-04)
+
+pjb (2026-10-03): "We may provide an implementation, notably if bricscad has
+one, but if we are able to load autocad's code directly (with dialect
+autocad), it's good enough." pjb's recipe for AutoCAD's 3darray.lsp:
+(vl-load-com) (load "3darray") (vlax-add-cmd "3darray" 'c:3darray)
+(command "3darray" ...).
+
+Measured (BricsCAD V26 macOS, job 16920470455, case "command classes"):
+  LISP add-ons on BricsCAD -- its reimplementation of AutoCAD's Express
+  Tools: MSTRETCH COPYM NCOPY EXOFFSET BTRIM BEXTEND EXTRIM BREAKLINE MPEDIT
+  TREX MOCORO (and SUPERHATCH).
+  Built in: 3DROTATE CHSPACE XPLODE UNGROUP ARRAYPATH ARRAYEDIT ARRAYCLOSE
+  ARRAYCLASSIC SPLINEDIT HELIX SHAPE REGION.
+Driving the LISP ones through COMMAND did nothing on BricsCAD (job
+16920411987; EXTRIM's own pick prompt ended the session), so the probe
+records them as LISP commands instead of running them.
+
+clautolisp 2.2.170 makes pjb's rule hold: COMMAND runs a C: function
+registered with vlax-add-cmd, feeding it the rest of its arguments through
+get*, entsel (now real) and ssget, the leftover input going on as further
+commands. So the 11 LISP add-ons are covered by loading the vendor's code;
+no native cador implementation is planned for them. Native work left: the
+12 built-ins (HELIX, REGION, SHAPE deferred as before: vendor spline
+approximation, ACIS data, SHX shapes).

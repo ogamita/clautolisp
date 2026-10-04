@@ -1089,6 +1089,22 @@ provides that surface through the host backend:
   /Environment variables/). A value that cannot be read is reported on
   ~*error-output*~ and the document is created empty — a typo in a
   variable does not end the session, and does not pass unnoticed either.
+- *~command~ runs LISP commands.* A ~C:~ function registered with
+  ~vlax-add-cmd~ is a command ~command~ can run -- an unregistered one is
+  not, as on the vendors. The rest of the ~command~ arguments are its
+  input: its ~getint~, ~getreal~, ~getpoint~, ~getkword~ (which takes a
+  keyword's abbreviation and the ~_~ prefix), ~getstring~, ~entsel~ and
+  ~ssget~ calls consume them in order, ~""~ being RETURN; whatever it leaves
+  goes on as further commands. This is how an add-on command written in
+  AutoLISP -- AutoCAD's ~3darray.lsp~, a vendor's LISP Express Tools --
+  runs: load the file, register the command, and drive it:
+
+  #+begin_example
+  (load "3darray")
+  (vlax-add-cmd "3darray" 'c:3darray)
+  (command "3darray" ss "" "_R" 2 2 2 1 1 1)
+  #+end_example
+
 - *A new drawing's units follow the locale.* A drawing created from
   nothing gets ~MEASUREMENT~ (and ~MEASUREINIT~) 0, imperial, when the
   locale is ~en_US~, and 1, metric, otherwise -- the locale being the first

@@ -717,6 +717,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-builtins-core/tests/vendor-operator-tests")
    (:file "autolisp-builtins-core/tests/diesel-tests")
    (:file "autolisp-builtins-core/tests/clal-extensions-tests")
+   (:file "autolisp-builtins-core/tests/lisp-command-tests")
    (:file "autolisp-builtins-core/tests/secureload-dialect-tests")
    (:file "autolisp-builtins-core/tests/sysvar-dialect-tracking-tests")
    (:file "autolisp-builtins-core/tests/encoding-roundtrip-tests")

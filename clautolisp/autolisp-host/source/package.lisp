@@ -34,6 +34,7 @@
    #:host-handent
    ;; --- Selection-set API ----------------------------------------
    #:host-ssget
+   #:host-entsel
    #:host-ssadd
    #:host-ssdel
    #:host-ssname
