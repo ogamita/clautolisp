@@ -9,6 +9,10 @@
 (require :asdf)
 (let ((ql (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname))))
   (when (probe-file ql) (load ql)))
+;; cador reaches the registry through CFFI (registry-native.lisp): ASDF does
+;; not install a missing quicklisp dependency, so fetch them here.
+(when (find-package :ql)
+  (funcall (find-symbol "QUICKLOAD" :ql) '("babel" "cffi") :silent t))
 (handler-case
     (progn
       ;; resolve the repo root from $CI_PROJECT_DIR when set (a userinit or

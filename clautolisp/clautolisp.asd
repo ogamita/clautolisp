@@ -209,7 +209,7 @@
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-host" "clautolisp/autolisp-runtime"
-               "clautolisp/drawing")
+               "clautolisp/drawing" "cffi" "babel")
   :serial t
   :components
   ((:file "cador/source/package")
@@ -224,6 +224,7 @@
    (:file "cador/source/dictionary-api")
    (:file "cador/source/table-api")
    (:file "cador/source/sysvar-api")
+   (:file "cador/source/registry-native")
    (:file "cador/source/registry-api")
    (:file "cador/source/bricscad-sysvar-overrides")
    (:file "cador/source/prompt-api")
@@ -582,7 +583,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "cador/tests/vlax-tests")
    (:file "cador/tests/reactor-tests")
    (:file "cador/tests/sysvar-catalogue-tests")
-   (:file "cador/tests/subprocess-encoding-tests")
+   (:file "cador/tests/registry-native-tests")
    (:file "cador/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

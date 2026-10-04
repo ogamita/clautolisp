@@ -258,6 +258,7 @@ test-sbcl:  ## Run the alfe FiveAM suite under SBCL.
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "cffi" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
@@ -281,6 +282,7 @@ test-ccl:  ## Run the alfe FiveAM suite under CCL.
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "cffi" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
@@ -324,6 +326,7 @@ conformance: conformance-harness-tests  ## Run the alfe scenario corpus and exit
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "cffi" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
