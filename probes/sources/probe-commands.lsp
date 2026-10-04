@@ -121,6 +121,23 @@
                   (vl-catch-all-apply 'vlax-add-cmd
                     (list name (read (strcat "c:" name))))))))))
 
+(defun cad-probe--group-summary (name / dict grp out)
+  ;; The GROUP object NAME in the ACAD_GROUP dictionary, as
+  ;; "70=..|71=..|300=..|340xN" (handles counted, not shown), or "NONE".
+  (setq dict (dictsearch (namedobjdict) "ACAD_GROUP"))
+  (setq grp (and dict (dictsearch (cdr (assoc -1 dict)) name)))
+  (if (not grp)
+      "NONE"
+      (progn
+        (setq out "")
+        (foreach g grp
+          (if (member (car g) '(0 70 71 300))
+            (setq out (strcat out (if (= out "") "" "|")
+                              (itoa (car g)) "=" (cad-probe--cmd-fmt (cdr g))))))
+        (strcat out "|340x"
+                (itoa (length (vl-remove-if-not
+                                '(lambda (g) (= (car g) 340)) grp)))))))
+
 (setq cad-probe--unknown nil)
 
 (defun cad-probe--lisp-command-p (name)
@@ -381,6 +398,56 @@
                                 ((eval (read (strcat "c:" n))) "LISP")
                                 (T "ABSENT")))))
       (setq cad-probe--unknown out))))
+  ;; Phase 4 built-ins, round 1 (2026-10-04). Inputs from the vendors'
+  ;; documented prompts (research: AutoCAD 2022 help, BricsCAD V17/V18/V26
+  ;; command reference). RETURN takes a default where the vendors' keywords
+  ;; differ (XPLODE: AutoCAD E(xplode), BricsCAD X(plode)).
+  (cad-probe--cmd-case "XPLODE a rectangle with the defaults"
+    (function (lambda ()
+      (if (= cad-probe-product "autocad")
+          ;; Reported unavailable in the core console.
+          (setq cad-probe--unknown "XPLODE (SKIPPED-ON-AUTOCAD)")
+          (progn
+            (cad-probe--cmd-args (list "_.RECTANG" "0,0" "2,1"))
+            ;; select, RETURN; Separately/<All>: RETURN; <Xplode>: RETURN
+            (cad-probe--cmd-args (list "_.XPLODE" (entlast) "" "" "")))))))
+  (cad-probe--cmd-case "ROTATE3D a line 90 about Z through the origin"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.LINE" "1,0" "3,0" ""))
+      (cad-probe--cmd-args (list "_.ROTATE3D" (entlast) "" "_Z" "0,0,0" "90")))))
+  (cad-probe--cmd-case "3DROTATE a line 90 about Z by keyword"
+    (function (lambda ()
+      (if (= cad-probe-product "autocad")
+          ;; AutoCAD's axis is a gizmo pick only.
+          (setq cad-probe--unknown "3DROTATE (SKIPPED-ON-AUTOCAD)")
+          (progn
+            (cad-probe--cmd-args (list "_.LINE" "1,0" "3,0" ""))
+            (cad-probe--cmd-args (list "_.3DROTATE" (entlast) "" "_Z" "0,0,0" "90")))))))
+  (cad-probe--cmd-case "-GROUP then UNGROUP by name"
+    (function (lambda ( / a b before)
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "1,0" "")) (setq a (entlast))
+      (cad-probe--cmd-args (list "_.LINE" "0,1" "1,1" "")) (setq b (entlast))
+      (cad-probe--cmd-args (list "_.-GROUP" "_C" "PROBEG" "probe group" a b ""))
+      (setq before (cad-probe--group-summary "PROBEG"))
+      (cad-probe--cmd-args (list "_.UNGROUP" "_N" "PROBEG"))
+      (setq cad-probe--unknown
+            (strcat "GROUP-BEFORE " before
+                    " AFTER " (cad-probe--group-summary "PROBEG"))))))
+  (cad-probe--cmd-case "ARRAYPATH a circle along a line, divide 4, non-associative"
+    (function (lambda ( / c)
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5")) (setq c (entlast))
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "9,0" ""))
+      (cad-probe--cmd-args (list "_.ARRAYPATH" c "" (entlast)
+                                 "_AS" "_N" "_M" "_D" "_I" "4" "_X")))))
+  (cad-probe--cmd-case "SPLINEDIT reverse a spline"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.SPLINE" "0,0" "1,1" "2,0" "3,1" "" "" ""))
+      (cad-probe--cmd-args (list "_.SPLINEDIT" (entlast) "_R" "_X")))))
+  (cad-probe--cmd-case "SPLINEDIT close a spline"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.SPLINE" "0,0" "1,1" "2,0" "3,1" "" "" ""))
+      (cad-probe--cmd-args (list "_.SPLINEDIT" (entlast) "_C" "_X")))))
+
   ;; Phase 4 remainder, BricsCAD (Express Tools on AutoCAD: skipped there).
   (cad-probe--cmd-case "MPEDIT two lines to polylines of width 0.5"
     (function (lambda ( / a)
