@@ -1225,6 +1225,12 @@ separate binary for tool integrators.
   arc), ~FILLET~ / ~CHAMFER~ of two lines (~FILLETRAD~, ~CHAMFERA~ /
   ~CHAMFERB~), ~PEDIT~ (a line into a polyline; width, close, open) and
   ~OVERKILL~ (exact duplicates).
+- ~vl-registry-read~ / ~-write~ / ~-delete~ / ~-descendents~ (and the
+  persisted ~LISPSYS~ / ~TEMPPREFIX~) reach the Windows registry through the
+  advapi32 API and the macOS defaults database through CoreFoundation
+  CFPreferences, by CFFI, instead of running ~reg.exe~ / ~defaults~: no
+  console code page to guess, UTF-16 end to end on Windows. Values stored
+  before stay readable (same keys, same macOS domain).
 - Under the AutoCAD dialects ~LISPSYS~ decides the default source and file
   encoding, as on AutoCAD 2021+: 1 / 2 UTF-8, 0 windows-1252 (before 2021
   windows-1252). ~(setvar "LISPSYS" n)~ is persisted in the registry (the
