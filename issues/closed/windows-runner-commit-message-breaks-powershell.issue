@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: windows-runner-commit-message-breaks-powershell — a commit message with punctuation fails get_sources on the Windows runner
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: infra
 #+DEPENDS: -
@@ -131,3 +131,18 @@ before it was green.
 This does NOT close the ticket. The acceptance criterion is a Windows =get_sources=
 that survives an em dash, a section sign and a backtick, and that still needs the
 runner upgrade. What is closed is the gap between the rule and its observance.
+
+* Verified fixed -- gitlab-runner 19.0.1 (2026-10-05)
+
+The Windows runner (PF5S26B) now reports gitlab-runner 19.0.1 (19-0-stable,
+c2831b75). Acceptance test, throwaway MR !403 (closed unmerged, branch
+deleted): its HEAD commit e5e36795 carried an em dash, a section sign
+(SS11 written with the real sign), backticks (`n`t), "double" and 'single'
+quotes, $env:PATH, <angle brackets> and !402 in subject and body. Job
+test:clautolisp:windows 16924206635 parsed its job script, checked out
+e5e36795 ("Checking out e5e36795 as detached HEAD") and entered step_script
+-- no PowerShell parser error. Acceptance criterion met.
+
+The plain-ASCII commit-message rule (check-commit-message-ascii, documentation
+lane) is no longer needed for the runner's sake; it stays as the repository's
+convention (pjb's call whether to relax it).
