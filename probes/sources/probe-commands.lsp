@@ -64,7 +64,8 @@
   ;; no MATCHPROP) or provided by Express Tools: only these are checked --
   ;; GETCNAME does not know every command (it reported RECTANG unknown).
   '("MATCHPROP" "ADDSELECTED" "SETBYLAYER" "COPYM" "FLATTEN" "XPLODE"
-    "3DROTATE" "-OVERKILL" "OVERKILL" "3DARRAY" "HATCHGENERATEBOUNDARY"))
+    "3DROTATE" "-OVERKILL" "OVERKILL" "3DARRAY" "HATCHGENERATEBOUNDARY"
+    "MPEDIT" "EXOFFSET" "EXTRIM" "BREAKLINE" "MOCORO"))
 
 (defun cad-probe--known-command-p (name)
   ;; Whether this engine has the command NAME: built in (GETCNAME resolves
@@ -122,13 +123,34 @@
 
 (setq cad-probe--unknown nil)
 
+(defun cad-probe--lisp-command-p (name / r)
+  ;; NAME is not built in but a LISP command (C:NAME) on this engine:
+  ;; register it with VLAX-ADD-CMD so COMMAND can run it. 2026-10-04:
+  ;; BricsCAD's COPYM / XPLODE / FLATTEN made nothing through
+  ;; (command "_.NAME" ...) -- COMMAND does not call a C: function -- the
+  ;; way AutoCAD's 3DARRAY add-on needed pjb's vlax-add-cmd recipe.
+  (and (getcname "_LINE")
+       (not (getcname (strcat "_" name)))
+       (eval (read (strcat "c:" name)))
+       (progn
+         (vl-catch-all-apply 'vl-load-com '())
+         (setq r (vl-catch-all-apply 'vlax-add-cmd
+                   (list name (read (strcat "c:" name)))))
+         (princ (strcat "\ncad-probe: " name " is a LISP command: "
+                        (if (vl-catch-all-error-p r) "vlax-add-cmd FAILED" "registered")
+                        "\n"))
+         (not (vl-catch-all-error-p r)))))
+
 (defun cad-probe--cmd-args (args / name)
   ;; Run (command . ARGS) when its command, "_.NAME" first, is known;
-  ;; otherwise note it and do nothing.
+  ;; otherwise note it and do nothing. A LISP command runs by its bare
+  ;; name once registered (no "_." -- that prefix names built-ins).
   (setq name (substr (car args) 3))
-  (if (cad-probe--known-command-p name)
-      (apply 'command args)
-      (setq cad-probe--unknown name)))
+  (cond ((not (cad-probe--known-command-p name))
+         (setq cad-probe--unknown name))
+        ((cad-probe--lisp-command-p name)
+         (apply 'command (cons name (cdr args))))
+        (T (apply 'command args))))
 
 (defun cad-probe--token-list-commands (args / out)
   ;; The "_.NAME" command names inside a token list.
@@ -349,6 +371,29 @@
     (function (lambda ()
       (cad-probe--cmd-args (list "_.RECTANG" "0,0" "2,1"))
       (cad-probe--cmd-args (list "_.XPLODE" (entlast) "" "_E")))))
+
+  ;; Phase 4 remainder, BricsCAD (Express Tools on AutoCAD: skipped there).
+  (cad-probe--cmd-case "MPEDIT two lines to polylines of width 0.5"
+    (function (lambda ( / a)
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" "")) (setq a (entlast))
+      (cad-probe--cmd-args (list "_.LINE" "0,2" "4,2" ""))
+      (cad-probe--cmd-args (list "_.MPEDIT" a (entlast) "" "_Y" "_W" "0.5" "")))))
+  (cad-probe--cmd-case "EXOFFSET a line by 1 to the left"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.EXOFFSET" "1" (list (entlast) '(2.0 0.0 0.0)) "2,1" "")))))
+  (cad-probe--cmd-case "EXTRIM lines crossing a circle, outside"
+    (function (lambda ( / c)
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "2")) (setq c (entlast))
+      (cad-probe--cmd-args (list "_.LINE" "-4,0" "4,0" ""))
+      (cad-probe--cmd-args (list "_.EXTRIM" (list c '(2.0 0.0 0.0)) "5,5")))))
+  (cad-probe--cmd-case "BREAKLINE between two points"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.BREAKLINE" "0,0" "10,0" "")))))
+  (cad-probe--cmd-case "MOCORO copy a circle"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "1"))
+      (cad-probe--cmd-args (list "_.MOCORO" (entlast) "" "0,0" "_C" "3,0" "" "")))))
 
   ;; S4 arrays: classic -ARRAY, and the array commands made NON-associative
   ;; (_AS _N) so the result is plain copies rather than an array object.
