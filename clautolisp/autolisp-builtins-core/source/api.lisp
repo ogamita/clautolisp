@@ -2336,7 +2336,7 @@ forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
   ;; CODE is an integer character code; returns the 0-based position
   ;; of the first matching character, or nil.
   (let* ((code (require-int32 char-code "VL-STRING-POSITION"))
-         (target (code-char code))
+         (target (and (>= code 0) (%code->character code (%character-code-mode))))
          (s (autolisp-string-value (require-string source "VL-STRING-POSITION"))))
     (unless target
       (signal-builtin-argument-error
@@ -2431,11 +2431,12 @@ forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
        "VL-STRING-ELT"
        "VL-STRING-ELT index ~S is out of range for a string of length ~A."
        index (length s)))
-    (char-code (char s i))))
+    (%character->code (char s i) (%character-code-mode))))
 
 (defun builtin-vl-string->list (string)
-  (let ((s (autolisp-string-value (require-string string "VL-STRING->LIST"))))
-    (loop for c across s collect (char-code c))))
+  (let ((s (autolisp-string-value (require-string string "VL-STRING->LIST")))
+        (mode (%character-code-mode)))
+    (loop for c across s collect (%character->code c mode))))
 
 (defun builtin-vl-list->string (codes)
   ;; (vl-list->string LIST-OF-INTS) -> string built from those codes.
@@ -2447,15 +2448,17 @@ forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
      codes))
   (make-autolisp-string
    (with-output-to-string (out)
-     (dolist (code codes)
-       (let ((int (require-int32 code "VL-LIST->STRING")))
-         (unless (and (<= 0 int) (code-char int))
-           (signal-builtin-argument-error
-            :invalid-character-code
-            "VL-LIST->STRING"
-            "VL-LIST->STRING element ~S is not a valid character code."
-            code))
-         (write-char (code-char int) out))))))
+     (let ((mode (%character-code-mode)))
+       (dolist (code codes)
+         (let* ((int (require-int32 code "VL-LIST->STRING"))
+                (character (and (<= 0 int) (%code->character int mode))))
+           (unless character
+             (signal-builtin-argument-error
+              :invalid-character-code
+              "VL-LIST->STRING"
+              "VL-LIST->STRING element ~S is not a valid character code."
+              code))
+           (write-char character out)))))))
 
 (defun builtin-ascii (string)
   (let ((value (autolisp-string-value (require-string string "ASCII"))))
@@ -2464,7 +2467,66 @@ forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
        :invalid-empty-string
        "ASCII"
        "ASCII expects a non-empty string."))
-    (char-code (char value 0))))
+    (%character->code (char value 0) (%character-code-mode))))
+
+;;; --- Character codes under LISPSYS 0 (dialect-platform-version-axis) -------
+;;;
+;;; AutoCAD 2021 made AutoLISP strings Unicode -- under LISPSYS 1 / 2; LISPSYS
+;;; 0 keeps the MBCS engine, whose characters are ANSI-code-page bytes. Measured
+;;; on Windows at LISPSYS 0 (probe-triage2, 2026-10-04):
+;;;   AutoCAD 2022 (job 16923993438): (chr 8364) -> code 172 (8364 mod 256),
+;;;     (ascii (chr 128)) 128, (vl-string->list (chr 8364)) (172);
+;;;   BricsCAD V26 Windows (job 16923993442): (chr 8364) -> code 128 (the
+;;;     euro's windows-1252 byte), (ascii (chr 128)) 128;
+;;;   BricsCAD V26 macOS (job 16923993439): Unicode, 8364 throughout.
+;;; Characters stay Unicode inside clautolisp; what changes is the CODE a
+;;; character has and the character a code designates.
+
+(defun %lispsys-value ()
+  "The effective LISPSYS, or NIL when the host has none."
+  (ignore-errors (host-getvar (%sysvar-host (current-evaluation-host)) "LISPSYS")))
+
+(defun %dialect-windows-p (dialect)
+  "True when DIALECT is a Windows one -- its own platform, or the running
+system's when it names none."
+  (let ((platform (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-platform dialect))))
+    (if platform (eq platform :windows) (uiop:os-windows-p))))
+
+(defun %character-code-mode ()
+  "How character codes map under the current dialect: NIL -- Unicode code
+points; :BYTE -- AutoCAD's MBCS engine (before 2021, or LISPSYS 0, on
+Windows): a code is reduced to a byte, read as windows-1252; :CP1252 --
+BricsCAD at LISPSYS 0 on Windows: windows-1252 for the characters it has,
+Unicode beyond."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (product (and dialect (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+         (version (and dialect (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-version dialect)))))
+    (when (and product (%dialect-windows-p dialect))
+      (case product
+        (:autocad (when (or (and (integerp version) (< version 2021))
+                            (eql 0 (%lispsys-value)))
+                    :byte))
+        (:bricscad (when (eql 0 (%lispsys-value)) :cp1252))))))
+
+(defun %code->character (code mode)
+  "The character CODE (a non-negative integer) designates under MODE, or NIL."
+  (multiple-value-bind (decode) (clautolisp.autolisp-reader.internal:single-octet-tables :cp1252)
+    (flet ((byte-character (byte) (or (and decode (aref decode byte)) (code-char byte))))
+      (case mode
+        (:byte (byte-character (logand code 255)))
+        (:cp1252 (if (< code 256) (byte-character code) (code-char code)))
+        (t (code-char code))))))
+
+(defun %character->code (character mode)
+  "The code of CHARACTER under MODE."
+  (let ((code (char-code character)))
+    (if (member mode '(:byte :cp1252))
+        (multiple-value-bind (decode encode)
+            (clautolisp.autolisp-reader.internal:single-octet-tables :cp1252)
+          (declare (ignore decode))
+          (or (and encode (gethash code encode))
+              (if (eq mode :byte) (logand code 255) code)))
+        code)))
 
 (defun int32->character (code operator-name)
   (let ((int32 (require-int32 code operator-name)))
@@ -2475,7 +2537,7 @@ forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
        "~A code does not designate a valid character: ~S."
        operator-name
        code))
-    (let ((character (code-char int32)))
+    (let ((character (%code->character int32 (%character-code-mode))))
       (unless character
         (signal-builtin-argument-error
          :invalid-character-code
@@ -2688,6 +2750,22 @@ it never creates under a folded name."
       (#\a :prefer-existing)
       (t    :must-exist))))
 
+(defun %check-open-takes-an-encoding ()
+  "Refuse OPEN's third argument where AutoCAD's OPEN takes two: before 2021
+(the argument arrived with the Unicode engine), and under LISPSYS 0 on
+Windows -- AutoCAD 2022 at LISPSYS 0 answered (open f \"w\" \"utf8\") with
+\"too many arguments\" (probe-triage2, job 16923993438); BricsCAD V26
+accepts it."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (product (and dialect (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+         (version (and dialect (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-version dialect)))))
+    (when (and (eq product :autocad)
+               (or (and (integerp version) (< version 2021))
+                   (eq (%character-code-mode) :byte)))
+      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+       :wrong-number-of-arguments
+       "OPEN: too many arguments -- this AutoCAD's OPEN takes no encoding (before 2021, or LISPSYS 0)."))))
+
 (defun builtin-open (filename mode &optional encoding)
   ;; Documented to set ERRNO on failure (autolisp-spec §16 ERRNO
   ;; :coupled). Autodesk's enumerated code-set has no dedicated
@@ -2715,6 +2793,7 @@ it never creates under a folded name."
          (path (resolve-open-search-pathname
                 path-string "OPEN" (%open-mode-leaf-policy raw-mode-string)))
          (encoding-string (when encoding
+                            (%check-open-takes-an-encoding)
                             (autolisp-string-value
                              (require-string encoding "OPEN"))))
          (external-format nil))
@@ -3273,11 +3352,11 @@ time it is called."
       (let ((stream (require-open-file-stream file "READ-CHAR")))
         (let ((character (read-char stream nil nil)))
           (if character
-              (char-code character)
+              (%character->code character (%character-code-mode))
               nil)))
       (let ((character (read-char *standard-input* nil nil)))
         (if character
-            (char-code character)
+            (%character->code character (%character-code-mode))
             nil))))
 
 (defun builtin-write-line (string &optional file)
@@ -5337,31 +5416,28 @@ point."
 
 (defun %dispatch-lispsys-foreign-dialect-diagnostic (operator-name)
   "Emit enc-foreign-dialect when user code touches LISPSYS under a
-dialect that does not own it. LISPSYS is AutoCAD-only (introduced
-2021); BricsCAD does not expose it. clautolisp warns to flag
+dialect that does not own it. LISPSYS is AutoCAD's from 2021 and
+BricsCAD's from V23 (the :LISPSYS feature row; BricsCAD V26 measured at
+0): the vendor dialects that have it are silent. clautolisp warns to flag
 non-portable code, but still permits the access — encoding-dispatch.
 issue, section 'Per-dialect behavior / --strict / --bricscad /
 --clautolisp', and the user's answer to the LISPSYS open question
 ('warn loudly, do not forbid')."
   (let* ((dialect (current-evaluation-dialect))
          (name (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect)))
-    (case name
-      ((:autocad-2026)
+    (cond
+      ((ignore-errors (clautolisp.autolisp-reader:dialect-feature-for dialect :lispsys))
        nil) ; native; silent.
-      ((:strict)
+      ((eq name :strict)
        (clautolisp.autolisp-runtime:signal-encoding-diagnostic
         :enc-extension-used
-        "~A on LISPSYS: AutoCAD-only sysvar, foreign to --strict."
+        "~A on LISPSYS: a vendor sysvar, foreign to --strict."
         operator-name))
-      ((:bricscad-v26 :clautolisp)
+      ((eq name :clautolisp)
        (clautolisp.autolisp-runtime:signal-encoding-diagnostic
         :enc-foreign-dialect
-        "~A on LISPSYS: AutoCAD-only sysvar, foreign to --~(~A~)."
-        operator-name
-        (case name
-          (:bricscad-v26 "bricscad")
-          (:clautolisp   "clautolisp")
-          (t name))))
+        "~A on LISPSYS: a vendor sysvar, foreign to --clautolisp."
+        operator-name))
       (t nil))))
 
 (defun %validate-lispsys-value (raw-value)
@@ -10694,7 +10770,16 @@ under it. A list of strings, nil when the key is absent or empty."
   (handler-case
       (progn
         (dispatch-autolisp-command arguments)
-        (autolisp-true))
+        ;; BricsCAD's vl-cmdf returns T / nil from V22 (release notes);
+        ;; before, nil. AutoCAD 2022 and BricsCAD V26 return T (probe-triage2).
+        (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+               (product (and dialect (ignore-errors
+                                      (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+               (version (and dialect (ignore-errors
+                                      (clautolisp.autolisp-reader:autolisp-dialect-version dialect)))))
+          (if (and (eq product :bricscad) (integerp version) (< version 22))
+              nil
+              (autolisp-true))))
     (autolisp-runtime-error (condition)
       (if (eq :host-not-supported (autolisp-runtime-error-code condition))
           nil

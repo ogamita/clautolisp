@@ -5412,6 +5412,16 @@ Autodesk explicitly documents behavior changes after AutoCAD 2021 due to Unicode
 *** Notes
 This function is one of the clearest probes into the observable character model of a given host/version.
 
+*** Measured: character codes at LISPSYS 0
+probe-triage2, 2026-10-04 (strings built with ~chr~, never source literals):
+- AutoCAD 2022, Windows, LISPSYS 0 (job 16923993438): ~(chr 8364)~ is the character of code 172 -- 8364 reduced to a byte, the windows-1252 =¬= -- so ~(ascii (chr 8364))~ is 172 and ~(vl-string->list (chr 8364))~ is ~(172)~; ~(ascii (chr 128))~ is 128.
+- BricsCAD V26, Windows, LISPSYS 0 (job 16923993442): ~(chr 8364)~ is the euro, code 128 -- its windows-1252 byte: ~(ascii (chr 8364))~ 128, ~(vl-string->list (chr 8364))~ ~(128)~.
+- BricsCAD V26, macOS, LISPSYS 0 (job 16923993439): Unicode code points, 8364 throughout.
+- ~(strlen (chr 8364))~ is 1 on all three. Under LISPSYS 1 / 2 (AutoCAD 2021+, documented) codes are Unicode code points.
+
+*** clautolisp
+Characters are Unicode inside clautolisp; the dialect decides the CODE a character has and the character a code names -- for ~chr~, ~ascii~, ~vl-string->list~, ~vl-list->string~, ~vl-string-elt~, ~vl-string-position~, ~read-char~ and ~write-char~ alike. Under an AutoCAD Windows dialect before 2021, or at LISPSYS 0, a code is reduced to a byte read as windows-1252; under a BricsCAD Windows dialect at LISPSYS 0, windows-1252 for the characters it has and Unicode beyond; otherwise Unicode code points.
+
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
@@ -5451,6 +5461,16 @@ None.
 
 *** Compatibility
 Like `ascii`, `chr` is affected by the pre-Unicode / post-Unicode split.
+
+*** Measured: character codes at LISPSYS 0
+probe-triage2, 2026-10-04 (strings built with ~chr~, never source literals):
+- AutoCAD 2022, Windows, LISPSYS 0 (job 16923993438): ~(chr 8364)~ is the character of code 172 -- 8364 reduced to a byte, the windows-1252 =¬= -- so ~(ascii (chr 8364))~ is 172 and ~(vl-string->list (chr 8364))~ is ~(172)~; ~(ascii (chr 128))~ is 128.
+- BricsCAD V26, Windows, LISPSYS 0 (job 16923993442): ~(chr 8364)~ is the euro, code 128 -- its windows-1252 byte: ~(ascii (chr 8364))~ 128, ~(vl-string->list (chr 8364))~ ~(128)~.
+- BricsCAD V26, macOS, LISPSYS 0 (job 16923993439): Unicode code points, 8364 throughout.
+- ~(strlen (chr 8364))~ is 1 on all three. Under LISPSYS 1 / 2 (AutoCAD 2021+, documented) codes are Unicode code points.
+
+*** clautolisp
+Characters are Unicode inside clautolisp; the dialect decides the CODE a character has and the character a code names -- for ~chr~, ~ascii~, ~vl-string->list~, ~vl-list->string~, ~vl-string-elt~, ~vl-string-position~, ~read-char~ and ~write-char~ alike. Under an AutoCAD Windows dialect before 2021, or at LISPSYS 0, a code is reduced to a byte read as windows-1252; under a BricsCAD Windows dialect at LISPSYS 0, windows-1252 for the characters it has and Unicode beyond; otherwise Unicode code points.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -7564,6 +7584,12 @@ set: at
 files are never gated. Autodesk does not gate ~open~ — this is a
 clautolisp extension (1.2.18 / 1.2.20). See *Normative Rules: Secure File
 Loading and Trust Model* (this chapter).
+
+*** Measured: the encoding argument
+probe-triage2, 2026-10-04: AutoCAD 2022 at LISPSYS 0 (job 16923993438) answers ~(open f "w" "utf8")~ with "too many arguments" (/nombre d'arguments trop important/) -- the third argument belongs to the Unicode engine (LISPSYS 1 / 2, 2021+). BricsCAD V26 at LISPSYS 0 (jobs 16923993439 macOS, 16923993442 Windows) opens the file.
+
+*** clautolisp
+Under an AutoCAD dialect before 2021, or an AutoCAD Windows dialect at LISPSYS 0, a third argument signals the wrong-number-of-arguments error; elsewhere it is honoured.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -9736,6 +9762,9 @@ Invokes command processing.
 *** Compatibility
 Part of the Visual LISP command layer and related to `command` and `command-s`.
 
+*** Measured: the value
+probe-triage2, 2026-10-04: ~(vl-cmdf "_.LINE" "0,0" "1,1" "")~ returns ~T~ on AutoCAD 2022 (job 16923993438) and BricsCAD V26 (macOS and Windows). BricsCAD's release notes: vl-cmdf returns T / nil from V22.
+
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
@@ -9759,7 +9788,9 @@ success. When the active backend has no command channel (the bare
 NullHost) it returns ~nil~ instead of surfacing
 ~:host-not-supported~ — the T / nil success contract; other
 failures surface as runtime errors. See the ~command~ entry's
-clautolisp section for the token rules.
+clautolisp section for the token rules. Under a BricsCAD dialect
+before V22 it returns ~nil~ (BricsCAD's release notes: T / nil from
+V22).
 
 *** Compatibility
 Supported on Windows, macOS, and Web in current Autodesk documentation.
@@ -67163,6 +67194,12 @@ None specified.
 - Autodesk documents version changes
 - BricsCAD historically documented additional snap modes
 
+*** Measured: the "qui" mode
+probe-triage2, 2026-10-04: BricsCAD V26 returns the same point for ~(osnap pt "_qui,_end")~ as for ~(osnap pt "_end")~ (Windows job 16923993442) -- it accepts the QUIck modifier. AutoCAD 2022's headless console returns ~nil~ for both (no view), so it cannot confirm the documented 2016 change ("qui" no longer valid: ~nil~).
+
+*** clautolisp
+~osnap~ is a headless stub returning ~nil~ for every mode.
+
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
@@ -69824,6 +69861,16 @@ None.
 
 *** Compatibility
 Like `ascii`, `chr`, and `vl-string-elt`, this function exposes the host's observable character model.
+
+*** Measured: character codes at LISPSYS 0
+probe-triage2, 2026-10-04 (strings built with ~chr~, never source literals):
+- AutoCAD 2022, Windows, LISPSYS 0 (job 16923993438): ~(chr 8364)~ is the character of code 172 -- 8364 reduced to a byte, the windows-1252 =¬= -- so ~(ascii (chr 8364))~ is 172 and ~(vl-string->list (chr 8364))~ is ~(172)~; ~(ascii (chr 128))~ is 128.
+- BricsCAD V26, Windows, LISPSYS 0 (job 16923993442): ~(chr 8364)~ is the euro, code 128 -- its windows-1252 byte: ~(ascii (chr 8364))~ 128, ~(vl-string->list (chr 8364))~ ~(128)~.
+- BricsCAD V26, macOS, LISPSYS 0 (job 16923993439): Unicode code points, 8364 throughout.
+- ~(strlen (chr 8364))~ is 1 on all three. Under LISPSYS 1 / 2 (AutoCAD 2021+, documented) codes are Unicode code points.
+
+*** clautolisp
+Characters are Unicode inside clautolisp; the dialect decides the CODE a character has and the character a code names -- for ~chr~, ~ascii~, ~vl-string->list~, ~vl-list->string~, ~vl-string-elt~, ~vl-string-position~, ~read-char~ and ~write-char~ alike. Under an AutoCAD Windows dialect before 2021, or at LISPSYS 0, a code is reduced to a byte read as windows-1252; under a BricsCAD Windows dialect at LISPSYS 0, windows-1252 for the characters it has and Unicode beyond; otherwise Unicode code points.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).

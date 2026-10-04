@@ -270,3 +270,42 @@ AutoCAD dialects derive the source / file default from it, ahead of the
 locale (end-to-end on the executable: a cp1252 file decodes under LISPSYS 0,
 fails as UTF-8 under 1). The :default-utf8-encoding matrix row (unused by
 the runtime) is left for the encoding-consolidation cleanup.
+
+
+Remainder measured and implemented (2026-10-04, clautolisp 2.2.181)
+-------------------------------------------------------------------
+
+probe-triage2 (AutoCAD 2022 Windows job 16923993438, BricsCAD V26 Windows
+16923993442 and macOS 16923993439), all at LISPSYS 0:
+
+| form                                | AutoCAD 2022 | BricsCAD V26 Win | BricsCAD V26 macOS |
+|-------------------------------------+--------------+------------------+--------------------|
+| (ascii (chr 128))                   | 128          | 128              | 128                |
+| (ascii (chr 8364))                  | 172          | 128              | 8364               |
+| (strlen (chr 8364))                 | 1            | 1                | 1                  |
+| (vl-string->list (chr 8364))        | (172)        | (128)            | (8364)             |
+| (osnap p "_end") / "_qui,_end"      | nil / nil    | same point twice | nil / nil          |
+| (vl-cmdf "_.LINE" ... "")           | T            | T                | T                  |
+| (open f "w" "utf8")                 | ERROR "too many arguments" | FILE | FILE          |
+
+DONE:
+  - The 2021 Unicode string semantics: %character-code-mode -- :byte
+    (AutoCAD Windows, before 2021 or LISPSYS 0: a code reduced to a
+    windows-1252 byte), :cp1252 (BricsCAD Windows, LISPSYS 0), else
+    Unicode -- for chr / ascii / vl-string->list / vl-list->string /
+    vl-string-elt / vl-string-position / read-char / write-char.
+  - OPEN's third argument: refused (wrong number of arguments) under
+    AutoCAD before 2021 or the :byte mode; BricsCAD takes it.
+  - (vl-cmdf) -> nil under BricsCAD dialects before V22 (release notes);
+    T otherwise (measured on both).
+  - osnap "qui": BricsCAD measured to ignore it; AutoCAD headless cannot
+    tell (nil for every mode); clautolisp's osnap is a nil stub -- the
+    documented AutoCAD 2016 rule ("qui" -> nil) holds trivially.
+  - By the way: the LISPSYS foreign-dialect warning no longer fires under
+    the BricsCAD dialects (BricsCAD has LISPSYS from V23, measured 0).
+  Spec: *** Measured + *** clautolisp in ASCII, CHR, VL-STRING->LIST,
+  OPEN, VL-CMDF, OSNAP.
+
+LEFT: BricsCAD V18.1 tiny-double printing; LOCALE's pre-2019 three-letter
+form (needs the code table measured); AutoCAD at LISPSYS 1 measured (the CI
+machine is at 0) -- the Unicode side is documented, not measured.

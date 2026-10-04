@@ -5953,10 +5953,10 @@ sysvars."
 
 ;;;; ----- LISPSYS dispatch (Phase 6) ----------------------------------
 ;;;;
-;;;; LISPSYS is an AutoCAD-only sysvar (introduced 2021) that gates
-;;;; source-file encoding globally. BricsCAD does not expose it. The
-;;;; encoding-dispatch.issue answer to the open question is: warn
-;;;; loudly under all non-autocad dialects, do not forbid.
+;;;; LISPSYS is a vendor sysvar (AutoCAD 2021+, BricsCAD V23+) that gates
+;;;; source-file encoding globally. The encoding-dispatch.issue answer to
+;;;; the open question is: warn loudly under the dialects that do not
+;;;; have it (strict, clautolisp), do not forbid.
 ;;;;
 ;;;; Setvar with a value outside {0,1,2} additionally emits
 ;;;; enc-lispsys-out-of-range — the spec mandates the {0,1,2} domain.
@@ -5978,14 +5978,15 @@ sysvars."
     (is (search "[enc-foreign-dialect]" diagnostics))
     (is (search "--clautolisp" diagnostics))))
 
-(test lispsys-getvar-foreign-dialect-under-bricscad
+(test lispsys-getvar-silent-under-bricscad
+  ;; BricsCAD has LISPSYS from V23 (V26 measured: 0, probe-versions /
+  ;; probe-triage2), so the bricscad dialects own it.
   (multiple-value-bind (result diagnostics)
       (%capture-enc-diagnostics
        "(getvar \"LISPSYS\")"
        :dialect :bricscad-v26)
     (declare (ignore result))
-    (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "--bricscad" diagnostics))))
+    (is (string= "" diagnostics))))
 
 (test lispsys-getvar-extension-used-under-strict
   (multiple-value-bind (result diagnostics)
@@ -6524,11 +6525,20 @@ attempts the I/O."
     (is (search "[enc-foreign-dialect]" diagnostics))
     (is (search "bricscad-ccs" diagnostics))))
 
-(test clal-lint-detects-lispsys-getvar-under-bricscad
+(test clal-lint-accepts-lispsys-getvar-under-bricscad
+  ;; BricsCAD has LISPSYS from V23: not foreign to --bricscad.
   (multiple-value-bind (result diagnostics)
       (%capture-enc-diagnostics
        "(clal-lint-encoding-extensions '(getvar \"LISPSYS\"))"
        :dialect :bricscad-v26)
+    (declare (ignore result))
+    (is (not (search "LISPSYS" diagnostics)))))
+
+(test clal-lint-detects-lispsys-getvar-under-clautolisp
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(getvar \"LISPSYS\"))"
+       :dialect :clautolisp)
     (declare (ignore result))
     (is (search "[enc-foreign-dialect]" diagnostics))))
 
@@ -7703,3 +7713,55 @@ itself fails loudly."
                                   (vla-get-profiles (vla-get-preferences (vlax-get-acad-object)))))
                          (vl-prin1-to-string (list (type p) (= p (getvar \"CPROFILE\")))))"))))
       (clautolisp.autolisp-runtime:set-autolisp-support-paths saved))))
+;;; --- dialect-platform-version-axis remainder (triage round 2, item 5) ----
+;;; Character codes at LISPSYS 0 on Windows, OPEN's encoding argument and
+;;; VL-CMDF's value, as measured by probe-triage2 (AutoCAD 2022 job
+;;; 16923993438, BricsCAD V26 Windows 16923993442 / macOS 16923993439).
+
+(defun %axis (dialect lispsys form)
+  "FORM's value under DIALECT with LISPSYS set (NIL: left alone)."
+  (reset-autolisp-symbol-table)
+  (%al (format nil "(progn (setq *AUTOLISP-DIALECT* '~A) ~@[(setvar \"LISPSYS\" ~D)~] ~A)"
+               dialect lispsys form)))
+
+(test lispsys-0-character-codes-follow-the-vendor
+  (let ((forms '("(ascii (chr 128))" "(ascii (chr 8364))" "(strlen (chr 8364))"
+                 "(vl-string->list (strcat \"1\" (chr 128)))" "(vl-string->list (chr 8364))")))
+    (flet ((row (dialect lispsys) (mapcar (lambda (f) (%axis dialect lispsys f)) forms)))
+      ;; AutoCAD 2022, LISPSYS 0: a code is reduced to a byte.
+      (is (equal '(128 172 1 (49 128) (172)) (row "autocad-2022" 0)))
+      ;; AutoCAD before 2021 is the MBCS engine whatever LISPSYS says.
+      (is (equal '(128 172 1 (49 128) (172)) (row "autocad-2020" nil)))
+      ;; AutoCAD 2022, LISPSYS 1: Unicode.
+      (is (equal '(128 8364 1 (49 128) (8364)) (row "autocad-2022" 1)))
+      ;; BricsCAD V26 on Windows, LISPSYS 0: windows-1252.
+      (is (equal '(128 128 1 (49 128) (128)) (row "bricscad-v26" 0)))
+      ;; BricsCAD V26 on macOS: Unicode even at LISPSYS 0.
+      (is (equal '(128 8364 1 (49 128) (8364)) (row "bricscad-macos-v26" 0)))
+      ;; clautolisp: Unicode.
+      (is (equal '(128 8364 1 (49 128) (8364)) (row "clautolisp" nil))))
+    ;; The other direction: the character a code names.
+    (is (string= (string (code-char #x20AC))
+                 (autolisp-string-value (%axis "autocad-2022" 0 "(chr 128)"))))
+    (is (string= (string (code-char #xAC))
+                 (autolisp-string-value (%axis "autocad-2022" 0 "(vl-list->string '(8364))"))))
+    (is (eql 1 (%axis "bricscad-v26" 0 "(vl-string-position 8364 (strcat \"a\" (chr 128)))")))))
+
+(test open-encoding-argument-is-autocad-2021-unicode-only
+  (let ((path (namestring (merge-pathnames "clautolisp-open-utf8-axis.txt"
+                                           (uiop:temporary-directory)))))
+    (flet ((try (dialect lispsys)
+             (%axis dialect lispsys
+                    (format nil "(progn (setq r (vl-catch-all-apply 'open (list ~S \"w\" \"utf8\")))
+                                  (if (vl-catch-all-error-p r) \"ERROR\" (progn (close r) \"FILE\")))"
+                            path))))
+      (unwind-protect
+           (progn
+             ;; AutoCAD 2022 at LISPSYS 0: "too many arguments".
+             (is (string= "ERROR" (autolisp-string-value (try "autocad-2022" 0))))
+             (is (string= "ERROR" (autolisp-string-value (try "autocad-2020" nil))))
+             (is (string= "FILE" (autolisp-string-value (try "autocad-2022" 1))))
+             ;; BricsCAD V26 at LISPSYS 0 takes it.
+             (is (string= "FILE" (autolisp-string-value (try "bricscad-v26" 0)))))
+        (ignore-errors (delete-file path))))))
+
