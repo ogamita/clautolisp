@@ -1250,6 +1250,15 @@ separate binary for tool integrators.
   a ~REG_BINARY~ as ~(3 byte ...)~ -- ~(3)~ under the AutoCAD dialects, as
   AutoCAD 2022 returns it. It used to return ~nil~ for all but strings,
   and ~REG_EXPAND_SZ~ unexpanded.
+- Under the vendor dialects at ~LISPSYS~ 0 on Windows, character codes
+  are the vendor's: AutoCAD reduces a code to a windows-1252 byte (~(chr
+  8364)~ is code 172), BricsCAD uses windows-1252 where it can (~(ascii
+  (chr 8364))~ is 128) -- for ~chr~, ~ascii~, ~vl-string->list~,
+  ~vl-list->string~, ~vl-string-elt~, ~vl-string-position~, ~read-char~,
+  ~write-char~. AutoCAD dialects before 2021 or at ~LISPSYS~ 0 refuse
+  ~open~'s encoding argument, as AutoCAD 2022 does; ~vl-cmdf~ returns
+  ~nil~ under BricsCAD dialects before V22. ~LISPSYS~ no longer warns
+  "foreign" under the BricsCAD dialects: BricsCAD has it since V23.
 - ~vl-registry-read~ / ~-write~ / ~-delete~ / ~-descendents~ (and the
   persisted ~LISPSYS~ / ~TEMPPREFIX~) reach the Windows registry through the
   advapi32 API and the macOS defaults database through CoreFoundation

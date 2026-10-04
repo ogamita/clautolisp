@@ -783,7 +783,7 @@ situation with a different remedy."
  :arguments "varies by call site"
  :example ": [enc-lispsys-out-of-range] (setvar \"LISPSYS\" 3): valid values are 0 (legacy MBCS), 1, or 2 (Unicode)."
  :dialects
- "LISPSYS is an AutoCAD-only sysvar selecting how AutoLISP source files
+ "LISPSYS (AutoCAD 2021+, BricsCAD V23+) is the sysvar selecting how AutoLISP source files
 are decoded: 0 is legacy MBCS (the host codepage), 1 and 2 are Unicode.
 Any other value is out of range.
 

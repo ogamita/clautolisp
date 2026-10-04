@@ -811,6 +811,18 @@ operator under its ~*** clautolisp~ note.
   read the same everywhere (Windows): ~REG_SZ~ a string, ~REG_EXPAND_SZ~
   the string with its ~%NAME%~ references expanded, ~REG_DWORD~ an
   integer, ~REG_MULTI_SZ~ ~(7 "s1" "s2" ...)~.
+- *Character codes at ~LISPSYS~ 0.* Under ~autocad-2022~ (or ~-2026~) at
+  ~LISPSYS~ 0, and under every AutoCAD dialect before 2021, ~chr~ /
+  ~ascii~ / ~vl-string->list~ / ~vl-list->string~ / ~vl-string-elt~ /
+  ~vl-string-position~ / ~read-char~ / ~write-char~ treat a code as a byte
+  read in windows-1252, as AutoCAD's MBCS engine does: ~(chr 8364)~ is
+  code 172 (~¬~), ~(chr 128)~ the euro. Under ~bricscad-v25~ / ~-v26~ at
+  ~LISPSYS~ 0 the windows-1252 code wins where there is one: ~(ascii (chr
+  8364))~ is 128. A macOS dialect (~bricscad-macos-v26~), ~LISPSYS~ 1 / 2
+  and ~clautolisp~ use Unicode code points. Measured on the vendors.
+- ~open~'s third argument (~"utf8"~ ...) is "too many arguments" under an
+  AutoCAD dialect before 2021 or at ~LISPSYS~ 0, as on AutoCAD 2022;
+  BricsCAD takes it.
 - ~vl-file-systime~ — the day-of-week element (third position) is
   ~0~ for Sunday under ~strict~, ~clautolisp~, ~lax~ and the
   ~autocad-*~ dialects, and ~7~ under ~bricscad-v25~ /

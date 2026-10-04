@@ -799,7 +799,7 @@ each writing its own message. What is stable is the tag.
 
 *** How the dialects diverge
 
-LISPSYS is an AutoCAD-only sysvar selecting how AutoLISP source files
+LISPSYS (AutoCAD 2021+, BricsCAD V23+) is the sysvar selecting how AutoLISP source files
 are decoded: 0 is legacy MBCS (the host codepage), 1 and 2 are Unicode.
 Any other value is out of range.
 
