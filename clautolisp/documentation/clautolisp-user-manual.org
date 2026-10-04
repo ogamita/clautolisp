@@ -1089,6 +1089,14 @@ provides that surface through the host backend:
   /Environment variables/). A value that cannot be read is reported on
   ~*error-output*~ and the document is created empty — a typo in a
   variable does not end the session, and does not pass unnoticed either.
+- *A new drawing's units follow the locale.* A drawing created from
+  nothing gets ~MEASUREMENT~ (and ~MEASUREINIT~) 0, imperial, when the
+  locale is ~en_US~, and 1, metric, otherwise -- the locale being the first
+  non-empty of ~$LC_ALL~, ~$LC_NUMERIC~ and ~$LANG~; with none set (the C
+  locale, or a Windows session) it is metric. ~MEASUREMENT~ picks the
+  pattern file ~HATCH~ uses (ANSI31's lines 0.125 apart in imperial, 3.175
+  in metric). A drawing read from a file or created from a template keeps
+  the value in its own header, and ~setvar~ changes it as usual.
 - ~ModelSpace.AddLine~ and ~Block.AddAttribute~ create entities through
   the object model: ~(vla-addline space start end)~ adds a LINE on the
   current layer, and ~(vla-addattribute block height mode prompt

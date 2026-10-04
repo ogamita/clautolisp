@@ -1225,6 +1225,10 @@ separate binary for tool integrators.
   arc), ~FILLET~ / ~CHAMFER~ of two lines (~FILLETRAD~, ~CHAMFERA~ /
   ~CHAMFERB~), ~PEDIT~ (a line into a polyline; width, close, open) and
   ~OVERKILL~ (exact duplicates).
+- A new drawing's ~MEASUREMENT~ / ~MEASUREINIT~ follow the locale:
+  imperial (0) under ~en_US~, metric (1) otherwise (~$LC_ALL~, then
+  ~$LC_NUMERIC~, then ~$LANG~). It was always imperial. A drawing from a
+  file or template keeps its own value.
 - ~entget~ no longer lists an entity's ~100~ subclass markers twice when
   the data that made it already carried them (every polyline a command
   made, ~RECTANG~'s for one).

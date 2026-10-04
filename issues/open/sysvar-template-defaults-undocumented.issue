@@ -53,3 +53,14 @@ acad.dwt value). It decides which pattern spacing HATCH uses (metric 3.175
 vs imperial 0.125 for ANSI31), so cador's hatches differ from the vendors'
 fresh-drawing hatches until this default is settled. Not changed: which
 template a "fresh drawing" stands for is pjb's call.
+
+** Decided (pjb 2026-10-04)
+
+"We should initialize MEASUREMENT depending on the locale, if it's not set
+explicitly; locale in en_US (LANG, LC_NUMERIC, LC_ALL) would use imperial,
+and others would use metric." Done in clautolisp 2.2.169:
+populate-default-sysvars sets MEASUREMENT and MEASUREINIT from
+LOCALE-MEASUREMENT (first non-empty of LC_ALL, LC_NUMERIC, LANG; en_US ->
+0, anything else, unset included -> 1). The other imperial-template values
+(DIMASZ 0.18, LIMMAX 12,9, ...) are unchanged: a metric (acadiso.dwt)
+fresh drawing would carry metric ones too -- not measured, not done.
