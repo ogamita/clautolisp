@@ -433,7 +433,14 @@ with HOST-DERIVED-P defaulting to NIL for the :SEED list."
       (let ((measurement (locale-measurement)))
         (dolist (name '("MEASUREMENT" "MEASUREINIT"))
           (let ((cell (gethash name table)))
-            (when cell (setf (sysvar-cell-value cell) measurement))))))
+            (when cell (setf (sysvar-cell-value cell) measurement)))))
+      ;; A fresh drawing is created now: TDCREATE = TDUPDATE = this instant
+      ;; as a Julian date (measured on BricsCAD); a drawing read from a file
+      ;; keeps its header's.
+      (let ((now (compute-clock-sysvar "DATE")))
+        (dolist (name '("TDCREATE" "TDUPDATE"))
+          (let ((cell (gethash name table)))
+            (when cell (setf (sysvar-cell-value cell) now))))))
     ;; The clautolisp extension sysvars sit on top of either catalogue.
     (install-clautolisp-extension-sysvars mock)))
 

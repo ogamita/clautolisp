@@ -1225,6 +1225,16 @@ separate binary for tool integrators.
   arc), ~FILLET~ / ~CHAMFER~ of two lines (~FILLETRAD~, ~CHAMFERA~ /
   ~CHAMFERB~), ~PEDIT~ (a line into a polyline; width, close, open) and
   ~OVERKILL~ (exact duplicates).
+- Host-derived system variables are computed from the session: ~EXTMIN~ /
+  ~EXTMAX~ (the drawing's extents), ~TDCREATE~ / ~TDUPDATE~ (when a new
+  drawing was created), ~TDINDWG~ / ~TDUSRTIMER~, ~LOGINNAME~, ~DWGPREFIX~,
+  ~CMDACTIVE~ (1 inside a LISP command run by ~command~) and, under the
+  BricsCAD dialects, ~LOCALE~. The BricsCAD dialects also take 26 more
+  BricsCAD factory defaults (measured on two machines) and 6 that differ
+  between BricsCAD on macOS and on Windows, by the dialect's platform.
+- Under the BricsCAD dialects ~(princ)~ and ~(print)~ with no argument
+  return ~nil~ and ~(prin1)~ the string ~"nil"~, as BricsCAD does (measured);
+  AutoCAD and the other dialects keep the void symbol.
 - The command engine has ~XPLODE~, ~ROTATE3D~ / ~3DROTATE~ (about an axis:
   X, Y, Z or two points), ~ARRAYPATH~ (Divide / Measure, non-associative)
   and ~SPLINEDIT~ (Reverse; Close, giving the closed cubic both vendors

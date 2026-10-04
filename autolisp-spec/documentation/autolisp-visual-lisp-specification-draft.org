@@ -851,10 +851,19 @@ Side effects arise from:
 No later clause is evaluated after a successful clause is found.
 
 *** Exceptional Situations
-Malformed clause structure is erroneous.
+Malformed clause structure is erroneous. An empty clause `()` signals an
+error on both vendors; the message differs (AutoCAD 2022: "syntax error",
+localised; BricsCAD V26: "bad argument type <NIL> ; expected <LIST> at
+[cond]").
 
 *** Examples
 - `(cond ((> 2 1) 'YES) (T 'NO)) => YES`
+- `(cond ((= 1 1))) => T` -- a clause with no result form returns its test value
+- `(cond (42)) => 42`
+- `(cond (nil) ('ok)) => OK`
+- `(cond ((setq x 5))) => 5`
+- `(cond (nil)) => nil`, `(cond) => nil`
+- `(cond () (33))` -- error (empty clause)
 
 *** Compatibility
 Stable across vendors.
@@ -864,8 +873,10 @@ Stable across vendors.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- BricsCAD V26: compatible.
+- Status: verified on both -- probes/sources/probe-cond.lsp, every example
+  above identical on AutoCAD 2022 (job 16921381038) and BricsCAD V26
+  (job 16921381039), 2026-10-04 (autolisp-spec-questions).
 
 *** Source Notes
 - [cond (AutoLISP)](https://help.autodesk.com/cloudhelp/2018/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7BA45202-D95F-4F2D-8D83-965024826074.htm)
@@ -925,6 +936,10 @@ AutoLISP `and` and `or` are together the boolean special forms: both return only
 
 *** See Also
 - "Special Form Entry: OR" — the companion boolean special form; the same `T`/`nil`-only return rule applies.
+- Verified 2026-10-04 (probes/sources/probe-cond.lsp): `(and)` => T, `(or)` => nil,
+  `(and 1 2)` => T, `(and 'a "b")` => T, `(or nil 3)` => T, `(or nil 'a)` => T --
+  T / nil only, never the subexpression value -- on AutoCAD 2022 (job
+  16921381038) and BricsCAD V26 (job 16921381039).
 
 *** Source Notes
 - [About Special Forms (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP/files/GUID-F992EAA3-AFFC-425D-B7C9-6A9CB0EA2768.htm)
@@ -1243,6 +1258,10 @@ AutoLISP `and` and `or` are together the boolean special forms: both return only
 *** See Also
 - "Special Form Entry: AND" — the companion boolean special form; the same `T`/`nil`-only return rule applies.
 - [[file:../sources/probe-core.lsp][probe-core.lsp]] — uses an `if`-guarded init pattern explicitly because AutoLISP's `or` does not return the first non-`nil` value (the original `(setq x (or x default))` idiom was discovered to clobber `x` with `T` against BricsCAD V26 during Phase 5).
+- Verified 2026-10-04 (probes/sources/probe-cond.lsp): `(and)` => T, `(or)` => nil,
+  `(and 1 2)` => T, `(and 'a "b")` => T, `(or nil 3)` => T, `(or nil 'a)` => T --
+  T / nil only, never the subexpression value -- on AutoCAD 2022 (job
+  16921381038) and BricsCAD V26 (job 16921381039).
 
 *** Source Notes
 - [or (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-64ECF4D5-0714-45FD-8E27-284E9D2FC8B2.htm)

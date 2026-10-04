@@ -273,3 +273,31 @@ bricscad-linux all report PICKBOX 4, MAXSORT 200, SECURELOAD 0, DYNPROMPT
 nil; autocad / autocad-mac 3, 1000, 1, 1.
 
 Remaining: Phase 3 (host-derived state), and the 32 candidates above.
+
+
+Second source + Phase 3 (2026-10-04, clautolisp 2.2.172)
+--------------------------------------------------------
+
+harvest:sysvars:bricscad:windows (job 16921381045, BricsCAD V26 on the
+Windows runner) is the second, independent source the 32 candidates lacked:
+  - 26 AGREE with the macOS harvest -> adopted into
+    *BRICSCAD-FACTORY-DEFAULTS* (BPARAMETERFONT "simplex.shx",
+    CLIPBOARDFORMAT 1, DEFLPLSTYLE "ByColor", ... USENEWSTATUSBAR 1).
+  - 6 DIFFER between the platforms -> per-platform defaults,
+    *BRICSCAD-PLATFORM-FACTORY-DEFAULTS*, chosen by the dialect's platform
+    facet: 3DOSMODE 11/10, COMMANDASSIST 1/0, CROSSHAIRDRAWMODE 3/2,
+    GLSWAPMODE 0/2, MTFLAGS 2048/3015, USECOMMUNICATOR 0/1 (macOS/Windows;
+    bricscad-mac gets macOS, bricscad / bricscad-v26 Windows, Linux none).
+Phase 3, computed live from the session (cador sysvar-api,
+COMPUTE-LIVE-SYSVAR), as measured on the fresh BricsCAD drawing:
+EXTMIN / EXTMAX (the live entities' box; +-1e20 when empty), TDCREATE =
+TDUPDATE (set when a fresh drawing is populated; a file keeps its header's),
+TDINDWG / TDUSRTIMER (days since the session began), LOGINNAME (the OS
+user), DWGPREFIX (the drawing's folder, or the working directory), CMDACTIVE
+(1 while a LISP command runs from COMMAND), LOCALE ("fr_FR" form, BricsCAD
+dialects only -- AutoCAD's form is not measured).
+Left, by design: window / screen geometry (SCREENSIZE, WNDP*, VIEW*,
+VSMIN/VSMAX -- no window or view headless), install / profile paths
+(ACADPREFIX, SRCHPATH, *PATH: machine-specific, keep-as-difference), the
+template-saved drawing values (a BricsCAD fresh drawing comes from its
+locale's template; MEASUREMENT now follows the locale, 2.2.169).

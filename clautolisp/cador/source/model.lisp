@@ -312,3 +312,7 @@ that is not part of a drawing."))
 
 (defun (setf cador-named-object-dictionary) (new host)
   (setf (drawing-named-object-dictionary (cador-active-drawing host)) new))
+
+(defvar *cador-in-lisp-command* nil
+  "True while COMMAND runs a LISP command registered with vlax-add-cmd:
+CMDACTIVE reads 1 then (bricscad-dialect-sysvar-parity, Phase 3).")

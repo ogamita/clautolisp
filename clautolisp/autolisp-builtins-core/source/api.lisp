@@ -3504,14 +3504,24 @@ reason a command function ends in (princ): the console echoes nothing
 the REPL print nil (princ-without-argument-returns-nil, 2026-10-03)."
   (intern-autolisp-symbol ""))
 
+(defun %no-argument-printer-value (operator)
+  "What PRINC / PRIN1 / PRINT return called with no argument. Measured
+2026-10-04 (probes/sources/probe-printer.lsp): AutoCAD 2022 returns the void
+symbol from all three (job 16921381038); BricsCAD V26 returns nil from PRINC
+and PRINT and the STRING \"nil\" from PRIN1 (job 16921381039). The BricsCAD
+dialects follow BricsCAD; every other dialect AutoCAD and the spec."
+  (if (%bricscad-product-dialect-p)
+      (if (eq operator :prin1) (make-autolisp-string "nil") nil)
+      (autolisp-void-symbol)))
+
 (defun builtin-prin1 (&optional (object nil object-p) file)
-  (unless object-p (return-from builtin-prin1 (autolisp-void-symbol)))
+  (unless object-p (return-from builtin-prin1 (%no-argument-printer-value :prin1)))
   (write-string (autolisp-value->string object nil)
                 (output-stream-for-file file "PRIN1"))
   object)
 
 (defun builtin-princ (&optional (object nil object-p) file)
-  (unless object-p (return-from builtin-princ (autolisp-void-symbol)))
+  (unless object-p (return-from builtin-princ (%no-argument-printer-value :princ)))
   ;; (princ nil) writes "nil" like any other value: the old WHEN only kept
   ;; the no-argument call silent, which now returns above.
   (write-string (autolisp-value->string object t)
@@ -3519,7 +3529,7 @@ the REPL print nil (princ-without-argument-returns-nil, 2026-10-03)."
   object)
 
 (defun builtin-print (&optional (object nil object-p) file)
-  (unless object-p (return-from builtin-print (autolisp-void-symbol)))
+  (unless object-p (return-from builtin-print (%no-argument-printer-value :print)))
   ;; AutoLISP `print` is `prin1` with a leading newline AND a trailing
   ;; SPACE (not a trailing newline) — confirmed by the Phase-5 BricsCAD
   ;; V26 product test on 2026-04-26 (autolisp-spec/results/bricscad/

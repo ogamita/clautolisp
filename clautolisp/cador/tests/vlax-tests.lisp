@@ -1490,3 +1490,52 @@ entity; returns (values HATCH-DATA MOCK)."
       (is (%ct-near '(1.2 1.847214 0) (third controls)))
       (is (%ct-near '(4.341641 2.525903 0) (fifth controls)))
       (is (%ct-near '(0 -0.569401 0) (sixth controls))))))
+
+;;; --- bricscad-dialect-sysvar-parity, Phase 3: host-derived sysvars
+;;; computed live (measured on a fresh BricsCAD drawing, job 16913315157).
+
+(test host-derived-sysvars-are-computed-from-the-session
+  (let ((mock (make-cador)))
+    ;; No entity: the vendors' empty extents.
+    (is (equal '(1d20 1d20 1d20) (host-getvar mock "EXTMIN")))
+    (is (equal '(-1d20 -1d20 -1d20) (host-getvar mock "EXTMAX")))
+    (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "4,2" ""))
+    (is (%ct-near '(0 0 0) (host-getvar mock "EXTMIN")))
+    (is (%ct-near '(4 2 0) (host-getvar mock "EXTMAX")))
+    ;; Created now; TDINDWG counts the days since.
+    (let ((date (host-getvar mock "DATE")) (created (host-getvar mock "TDCREATE")))
+      (is (< (abs (- date created)) 0.01))
+      (is (= created (host-getvar mock "TDUPDATE")))
+      (is (<= 0 (host-getvar mock "TDINDWG") 0.01)))
+    (let ((user (or (uiop:getenv "USER") (uiop:getenv "USERNAME") (uiop:getenv "LOGNAME"))))
+      (when (and user (string/= user ""))
+        (is (string= user (autolisp-string-value (host-getvar mock "LOGINNAME"))))))
+    (is (eql 0 (host-getvar mock "CMDACTIVE")))
+    (let ((prefix (autolisp-string-value (host-getvar mock "DWGPREFIX"))))
+      (is (plusp (length prefix)))
+      (is (char= #\/ (char prefix (1- (length prefix))))))))
+
+(test locale-sysvar-follows-the-locale-under-bricscad
+  (let ((saved (mapcar (lambda (v) (cons v (uiop:getenv v))) '("LC_ALL" "LC_MESSAGES" "LANG"))))
+    (unwind-protect
+         (progn
+           (setf (uiop:getenv "LC_ALL") "" (uiop:getenv "LC_MESSAGES") ""
+                 (uiop:getenv "LANG") "fr_FR.UTF-8")
+           (%with-dialect (:bricscad)
+             (is (string= "fr_FR" (autolisp-string-value (host-getvar (make-cador) "LOCALE"))))))
+      (loop for (var . value) in saved do (setf (uiop:getenv var) (or value ""))))))
+
+(test bricscad-platform-factory-defaults-follow-the-dialect-platform
+  ;; Measured on both BricsCAD V26 platforms (jobs 16913315157 / 16921381045).
+  (%with-dialect (:bricscad-mac)
+    (let ((mock (make-cador)))
+      (clautolisp.cador:apply-bricscad-dialect-sysvars mock)
+      (is (eql 11 (host-getvar mock "3DOSMODE")))
+      (is (eql 2048 (host-getvar mock "MTFLAGS")))))
+  (%with-dialect (:bricscad)
+    (let ((mock (make-cador)))
+      (clautolisp.cador:apply-bricscad-dialect-sysvars mock)
+      (is (eql 10 (host-getvar mock "3DOSMODE")))
+      (is (eql 3015 (host-getvar mock "MTFLAGS")))
+      ;; One of the 26 rows both platforms agree on.
+      (is (eql 251 (host-getvar mock "GRIDMAJORCOLOR"))))))

@@ -1022,7 +1022,8 @@ command for COMMAND only once registered."
   "Run the LISP command FUNCTION with TOKENS as its pending input (its
 get* / entsel / ssget calls consume them); return the tokens it left, which
 go on as further commands."
-  (let ((saved (cador-pending-input host)))
+  (let ((saved (cador-pending-input host))
+        (*cador-in-lisp-command* t))
     (setf (cador-pending-input host) tokens)
     (unwind-protect
          (progn

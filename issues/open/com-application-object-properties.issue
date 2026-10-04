@@ -1,0 +1,35 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: com-application-object-properties -- Layouts, Document.Active, Preferences.Files.SupportPath, Profiles
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: cad-runtime
+#+DEPENDS: -
+#+DATE: 2026-10-04
+
+* Demand (measured)
+
+Found by the demand scan of vla-entity-property-table-on-demand
+(.vla-demand.py, 1416 AutoLISP files): code that runs today calls COM
+properties of the APPLICATION / DOCUMENT objects that cador does not have:
+
+  ActiveDocument (9 calls, has)   SupportPath (7)   Application (3)
+  Preferences (3)   Layers (2, has)   Layouts (2)   Blocks (2, has)
+  Files (2)   ActiveProfile (1)   Profiles (1)   Documents (1, has)
+  Active (1)
+
+Callers: EPUREE (src/comu.lsp -- epuree:delete-layout-by-name-safe walks
+vla-get-layouts / vla-item by name; a Documents walk tests vla-get-Active)
+and its SNCF upstream (SNCF_startup.lsp reads and sets
+Preferences -> Files -> SupportPath, reads Profiles / ActiveProfile).
+
+* To do (per the vla-entity-property-table-on-demand discipline)
+
+For each: classify against both vendors first (AGENTS.md, dialect
+divergence), probe what the vendor returns, then implement with a test:
+  - Document.Layouts collection + Item by name (needs layouts in the
+    headless model -- shared with alref's CHSPACE);
+  - Document.Active (T for the active document of the Documents
+    collection);
+  - Preferences -> Files -> SupportPath (the ACAD support path string --
+    which host value backs it: (getenv "ACAD"), SRCHPATH?) and its setter;
+  - Preferences -> Profiles -> ActiveProfile.

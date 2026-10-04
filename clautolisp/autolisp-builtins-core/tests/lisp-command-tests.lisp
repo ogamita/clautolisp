@@ -70,3 +70,12 @@
   ;; entsel by a point on an object.
   (%eval-here "(command \"countsel\" a \"\" \"6,0\")")
   (is (eq (%eval-here "b") (second (%eval-here "*counted*")))))
+
+(test lisp-command-sees-cmdactive-1
+  ;; CMDACTIVE bit 1 while a LISP command runs from COMMAND; 0 otherwise.
+  (%lisp-command-setup)
+  (%eval-here "(defun c:cmdstate () (setq *cmdstate* (getvar \"CMDACTIVE\")))")
+  (%eval-here "(vlax-add-cmd \"cmdstate\" 'c:cmdstate)")
+  (%eval-here "(command \"cmdstate\")")
+  (is (eql 1 (%eval-here "*cmdstate*")))
+  (is (eql 0 (%eval-here "(getvar \"CMDACTIVE\")"))))

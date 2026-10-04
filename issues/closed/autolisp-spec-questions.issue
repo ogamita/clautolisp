@@ -38,3 +38,20 @@ the implementations should be tested.
 UPDATE 2026-09-29 (triage housekeeping): the "needs cad-access" block is lifted -- the CI
 CAD runners (native child pipeline, cad tag) run probe jobs. Write the COND/AND/OR
 edge-case probes on Linux; play them on AutoCAD + BricsCAD.
+
+RESOLVED 2026-10-04 by measurement (probes/sources/probe-cond.lsp; AutoCAD
+2022 job 16921381038, BricsCAD V26 job 16921381039). Every expectation
+above holds, identically on both vendors and in clautolisp:
+  (cond ((= 1 1)))         => T     (a clause without body: its test value)
+  (cond (42))              => 42
+  (cond (nil) ('ok))       => OK
+  (cond ((setq x 5)))      => 5
+  (cond (nil)) / (cond)    => nil
+  (cond () (33))           => ERROR on both (AutoCAD "syntax error",
+                              BricsCAD "bad argument type <NIL> ; expected
+                              <LIST> at [cond]"; clautolisp its own wording)
+  AND / OR return only T or nil: (and) T, (or) nil, (and 1 2) T,
+  (and 'a "b") T, (or nil 3) T, (or nil 'a) T -- so they cannot stand in
+  for CL's value-returning AND / OR.
+The spec's COND / AND / OR entries already said so; they now carry the
+examples and the verification. Closed.
