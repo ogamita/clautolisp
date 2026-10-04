@@ -1,0 +1,24 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vl-infp-vl-nanp-exist-on-autocad -- the spec lists them BricsCAD-only; AutoCAD 2022 has both
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: spec
+#+DATE: 2026-10-04
+
+* Symptom
+
+probes/sources/probe-versions.lsp on AutoCAD 2022 (job 16921684058):
+(type vl-infp) and (type vl-nanp) are SUBR. The spec's Availability lists
+both as BricsCAD-only (BricsCAD release notes: added in V21.1.04), so
+autolisp-runtime/source/operator-availability.lisp (generated from the
+spec) gives them owner :bricscad and the `[vendor-operator]' notice fires
+under the AutoCAD dialects for operators AutoCAD has.
+
+* Fix
+
+Correct the two Function Entries' Availability in the autolisp-spec (both
+vendors; AutoCAD version of introduction not documented -- measured present
+on 2022), regenerate (make -C clautolisp operator-availability), check that
+nothing else in the same family is mislabelled: the same probe shows
+VLA-POSTCOMMAND, DUMPALLPROPERTIES and GETPROPERTYVALUE present on AutoCAD
+2022 too (the last two as EXRXSUBR) -- verify their Availability rows.

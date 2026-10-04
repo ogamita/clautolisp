@@ -248,3 +248,14 @@ LEFT (larger, each its own slice):
     value 1 = Unicode) and Unicode LSP sources arrived in 2021. Moving the
     boundary to 2021 would change the source default of the autocad-2021 ..
     -2024 dialects -- an encoding-consolidation decision.
+
+Measured (2026-10-04, probe-versions, AutoCAD 2022 job 16921684058, BricsCAD
+V26 job 16921684059): acet-load-expresstools ABSENT on AutoCAD 2022 (the
+2025 gate holds); mod / round ABSENT on BricsCAD V26 (the removal holds);
+LOCALE "FR" / "fr_FR"; BricsCAD LISPSYS 0. NOTE: AutoCAD 2022 reports LISPSYS
+0 on the CI machine where the doc says the initial value is 1 -- one machine
+(its registry may carry a changed value) against the documentation, so the
+autocad dialects keep 1; a second AutoCAD machine would settle it.
+showhtmlmodalwindow is absent from AutoCAD 2022's CONSOLE (accoreconsole has
+no UI) -- not a contradiction of the 2014 gate. vl-infp / vl-nanp exist on
+AutoCAD 2022: filed as vl-infp-vl-nanp-exist-on-autocad.
