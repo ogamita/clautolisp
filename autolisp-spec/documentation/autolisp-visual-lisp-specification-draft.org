@@ -79649,10 +79649,12 @@ Vendor-defined.
 Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 
 *** Availability
-- AutoCAD 2026: not documented.
-- BricsCAD V26: documented (since V22).
-- Status: BricsCAD-only.
-
+- AutoCAD 2022: present -- measured, (type vla-postcommand) => SUBR
+  (probes/sources/probe-versions.lsp, job 16921684058, 2026-10-04): the
+  Document.PostCommand ActiveX method.
+- BricsCAD V26: documented (BricsCAD-specific per its V22.1.04 release
+  notes, yet AutoCAD has it too).
+- Status: both vendors (AutoCAD measured).
 *** Source Notes
 - [vla-postcommand (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
@@ -81675,7 +81677,7 @@ always T
 `vl-infp`
 
 *** Class
-BricsCAD Visual LISP Extension Function
+Visual LISP Extension Function
 
 *** Syntax
 #+begin_example
@@ -81693,9 +81695,11 @@ T if the value is infinite,
 NIL otherwise
 
 *** Availability
-- AutoCAD 2026: not documented.
-- BricsCAD V26: documented.
-- Status: BricsCAD-only.
+- AutoCAD 2022: present (undocumented; AutoCAD 2026's reference does not
+  list it) -- measured, (type vl-infp) => SUBR (probes/sources/probe-versions.lsp,
+  job 16921684058, 2026-10-04); introduction release unknown.
+- BricsCAD V26: documented (added in V21.1.04, release notes).
+- Status: both vendors (AutoCAD undocumented, measured).
 
 *** Source Notes
 - [vl-infp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vl-infp.htm)
@@ -81741,7 +81745,7 @@ function)
 `vl-nanp`
 
 *** Class
-BricsCAD Visual LISP Extension Function
+Visual LISP Extension Function
 
 *** Syntax
 #+begin_example
@@ -81759,9 +81763,11 @@ T if the value is a valid
 number, NIL otherwise
 
 *** Availability
-- AutoCAD 2026: not documented.
-- BricsCAD V26: documented.
-- Status: BricsCAD-only.
+- AutoCAD 2022: present (undocumented; AutoCAD 2026's reference does not
+  list it) -- measured, (type vl-nanp) => SUBR (probes/sources/probe-versions.lsp,
+  job 16921684058, 2026-10-04); introduction release unknown.
+- BricsCAD V26: documented (added in V21.1.04, release notes).
+- Status: both vendors (AutoCAD undocumented, measured).
 
 *** Source Notes
 - [vl-nanp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vl-nanp.htm)
