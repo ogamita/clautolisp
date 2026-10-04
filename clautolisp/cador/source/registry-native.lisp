@@ -20,11 +20,12 @@
 ;;;;
 ;;;; The libraries are loaded on first use and every entry point is looked
 ;;;; up at RUN time (FOREIGN-SYMBOL-POINTER), so this file compiles and loads
-;;;; on every host; only the platform's own branch is ever called. The
-;;;; observable value types are unchanged: REG_SZ / REG_EXPAND_SZ (not
-;;;; expanded) and CFString / CFNumber read as strings, and values are
-;;;; written as strings -- what VL-REGISTRY-READ returns for REG_DWORD and
-;;;; the other types is to be measured on the vendors first.
+;;;; on every host; only the platform's own branch is ever called. Values
+;;;; are written as strings (REG_SZ); they are read by type, as both vendors
+;;;; return them (probe-triage2, 2026-10-04): REG_SZ a string, REG_EXPAND_SZ
+;;;; the string EXPANDED, REG_DWORD an integer, REG_MULTI_SZ (7 "s1" ...),
+;;;; REG_BINARY (3 byte ...) -- see %REG-VALUE. CFString / CFNumber read as
+;;;; strings.
 
 (in-package #:clautolisp.cador)
 
@@ -32,6 +33,9 @@
 
 (cffi:define-foreign-library advapi32
   (:windows "advapi32.dll"))
+
+(cffi:define-foreign-library kernel32
+  (:windows "kernel32.dll"))
 
 (cffi:define-foreign-library core-foundation
   (:darwin (:framework "CoreFoundation")))
@@ -53,6 +57,11 @@ convention on 64-bit)."
                                  (:convention :stdcall)
                                  ,@arguments ,return-type))
 
+(defmacro %kernel32 (name return-type &rest arguments)
+  `(cffi:foreign-funcall-pointer (%native-entry 'kernel32 ,name)
+                                 (:convention :stdcall)
+                                 ,@arguments ,return-type))
+
 (defmacro %cf (name return-type &rest arguments)
   `(cffi:foreign-funcall-pointer (%native-entry 'core-foundation ,name) ()
                                  ,@arguments ,return-type))
@@ -67,6 +76,9 @@ convention on 64-bit)."
 (defconstant +key-set-value+ #x0002)
 (defconstant +reg-sz+ 1)
 (defconstant +reg-expand-sz+ 2)
+(defconstant +reg-binary+ 3)
+(defconstant +reg-dword+ 4)
+(defconstant +reg-multi-sz+ 7)
 
 (defun %predefined-hkey (low32)
   "A predefined root key: the 32-bit constant SIGN-EXTENDED to a pointer, as
@@ -135,9 +147,57 @@ byte-count-including-terminator). Free with CFFI:FOREIGN-FREE."
      (when ,var
        (unwind-protect (progn ,@body) (%reg-close ,var)))))
 
+(defun %expand-environment-strings (string)
+  "STRING with its %NAME% references expanded (ExpandEnvironmentStringsW)."
+  (%with-wide (source string)
+    (let ((needed (%kernel32 "ExpandEnvironmentStringsW" :uint32
+                             :pointer source :pointer (cffi:null-pointer) :uint32 0)))
+      (if (zerop needed)
+          string
+          (let ((buffer (cffi:foreign-alloc :uint16 :count needed :initial-element 0)))
+            (unwind-protect
+                 (if (zerop (%kernel32 "ExpandEnvironmentStringsW" :uint32
+                                       :pointer source :pointer buffer :uint32 needed))
+                     string
+                     (%wide-to-string buffer (* 2 needed)))
+              (cffi:foreign-free buffer)))))))
+
+(defun %reg-value (type octets)
+  "The vl-registry-read value of registry data OCTETS of TYPE, as both
+vendors return it (probe-triage2: AutoCAD 2022 job 16923993438, BricsCAD V26
+job 16923716756): REG_SZ a string; REG_EXPAND_SZ the string expanded
+(\"%SystemRoot%\\TEMP\" read as \"C:\\WINDOWS\\TEMP\"); REG_DWORD an integer;
+REG_MULTI_SZ (7 \"s1\" \"s2\" ...); REG_BINARY (3 BYTE ...) -- the AutoCAD
+dialects keep the (3) alone, as AutoCAD does (BUILTIN-VL-REGISTRY-READ).
+Another type is NIL."
+  (flet ((text () (babel:octets-to-string octets :encoding :utf-16le :errorp nil)))
+    (cond
+      ((= type +reg-sz+)
+       (let ((s (text))) (subseq s 0 (or (position (code-char 0) s) (length s)))))
+      ((= type +reg-expand-sz+)
+       (let ((s (text)))
+         (%expand-environment-strings (subseq s 0 (or (position (code-char 0) s) (length s))))))
+      ((= type +reg-dword+)
+       (and (>= (length octets) 4)
+            (let ((u (logior (aref octets 0) (ash (aref octets 1) 8)
+                             (ash (aref octets 2) 16) (ash (aref octets 3) 24))))
+              ;; AutoLISP integers are signed 32-bit.
+              (if (>= u #x80000000) (- u #x100000000) u))))
+      ((= type +reg-multi-sz+)
+       (cons 7 (loop with s = (text)
+                     for start = 0 then (1+ end)
+                     for end = (or (position (code-char 0) s :start start) (length s))
+                     for item = (subseq s start end)
+                     until (string= item "")
+                     collect item
+                     while (< end (length s)))))
+      ((= type +reg-binary+)
+       (cons 3 (coerce octets 'list)))
+      (t nil))))
+
 (defun %reg-read (key value-name)
-  "The string stored at VALUE-NAME (NIL: the default value) under KEY, or
-NIL. REG_SZ and REG_EXPAND_SZ (returned unexpanded); other types NIL."
+  "The value stored at VALUE-NAME (NIL: the default value) under KEY, read
+by type (%REG-VALUE), or NIL."
   (%with-reg-key (hkey key +key-read+)
     (%with-wide (wname (or value-name ""))
       (cffi:with-foreign-objects ((type :uint32) (size :uint32))
@@ -145,8 +205,7 @@ NIL. REG_SZ and REG_EXPAND_SZ (returned unexpanded); other types NIL."
         (let ((status (%advapi "RegQueryValueExW" :long
                                :pointer hkey :pointer wname :pointer (cffi:null-pointer)
                                :pointer type :pointer (cffi:null-pointer) :pointer size)))
-          (when (and (= status +error-success+)
-                     (member (cffi:mem-ref type :uint32) (list +reg-sz+ +reg-expand-sz+)))
+          (when (= status +error-success+)
             ;; Read with a margin: a value can grow between the two calls.
             (loop for capacity = (+ (cffi:mem-ref size :uint32) 2) then (* 2 capacity)
                   repeat 4
@@ -161,8 +220,12 @@ NIL. REG_SZ and REG_EXPAND_SZ (returned unexpanded); other types NIL."
                                                      :pointer type :pointer buffer
                                                      :pointer size)))
                                 (cond ((= status +error-success+)
-                                       (return (%wide-to-string
-                                                buffer (cffi:mem-ref size :uint32))))
+                                       (return
+                                         (let* ((n (cffi:mem-ref size :uint32))
+                                                (octets (make-array n :element-type '(unsigned-byte 8))))
+                                           (dotimes (i n)
+                                             (setf (aref octets i) (cffi:mem-aref buffer :uint8 i)))
+                                           (%reg-value (cffi:mem-ref type :uint32) octets))))
                                       ((/= status +error-more-data+) (return nil)))))
                          (cffi:foreign-free buffer))))))))))
 

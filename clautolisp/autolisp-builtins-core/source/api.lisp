@@ -10541,17 +10541,38 @@ Survives only for the running process — see
 deferred-stubbed-functions.issue § GETCFG/SETCFG for the file-
 backed persistent upgrade path.")
 
+(defun %registry-value->autolisp (stored &optional
+                                           (product (ignore-errors
+                                                     (clautolisp.autolisp-reader:autolisp-dialect-product
+                                                      (current-evaluation-dialect)))))
+  "The AutoLISP value of a host registry value: a string, an integer
+(REG_DWORD), or (TYPE ITEM ...) -- REG_MULTI_SZ (7 \"s\" ...), REG_BINARY
+(3 BYTE ...), which the AutoCAD dialects read as (3) alone: AutoCAD 2022
+returns no bytes (probe-triage2, job 16923993438), BricsCAD V26 all of them
+(job 16923716756)."
+  (cond
+    ((stringp stored) (make-autolisp-string stored))
+    ((integerp stored) stored)
+    ((and (consp stored) (eql (car stored) 3) (eq product :autocad))
+     (list 3))
+    ((consp stored)
+     (mapcar (lambda (item) (if (stringp item) (make-autolisp-string item) item))
+             stored))
+    (t nil)))
+
 (defun builtin-vl-registry-read (key &optional value-name)
-  "(vl-registry-read reg-key [val-name]) — read the string stored at
-VAL-NAME (the key's default value when omitted) under REG-KEY, or nil.
-Delegates to the host (vl-registry.issue): the mock host emulates the
-Windows registry / macOS defaults with a persistent per-user store."
+  "(vl-registry-read reg-key [val-name]) — read the value stored at
+VAL-NAME (the key's default value when omitted) under REG-KEY, or nil:
+a string, an integer for a REG_DWORD, (7 \"s\" ...) for a REG_MULTI_SZ,
+(3 byte ...) for a REG_BINARY (%REGISTRY-VALUE->AUTOLISP). Delegates to the
+host (vl-registry.issue): the mock host reads the Windows registry / macOS
+defaults, or a persistent per-user store."
   (let* ((k (autolisp-string-value (require-string key "VL-REGISTRY-READ")))
          (v (and value-name
                  (autolisp-string-value
                   (require-string value-name "VL-REGISTRY-READ"))))
          (stored (host-registry-read (current-evaluation-host) k v)))
-    (and stored (make-autolisp-string stored))))
+    (%registry-value->autolisp stored)))
 
 (defun builtin-vl-registry-write (key &optional value-name value)
   "(vl-registry-write reg-key [val-name val-data]) — store VAL-DATA (a

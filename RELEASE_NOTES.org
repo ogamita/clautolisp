@@ -1244,6 +1244,12 @@ separate binary for tool integrators.
   ~findfile~ and ~load~ search, and ~(getenv "ACAD")~ now returns it too) and
   ~Preferences.Profiles.ActiveProfile~. ~:vlax-true~ / ~:vlax-false~ are
   defined: before they read as ~nil~.
+- ~vl-registry-read~ on Windows returns every registry type as the vendors
+  do: a ~REG_DWORD~ as an integer, a ~REG_MULTI_SZ~ as ~(7 "s1" ...)~, a
+  ~REG_EXPAND_SZ~ expanded (~%SystemRoot%\TEMP~ reads ~C:\WINDOWS\TEMP~),
+  a ~REG_BINARY~ as ~(3 byte ...)~ -- ~(3)~ under the AutoCAD dialects, as
+  AutoCAD 2022 returns it. It used to return ~nil~ for all but strings,
+  and ~REG_EXPAND_SZ~ unexpanded.
 - ~vl-registry-read~ / ~-write~ / ~-delete~ / ~-descendents~ (and the
   persisted ~LISPSYS~ / ~TEMPPREFIX~) reach the Windows registry through the
   advapi32 API and the macOS defaults database through CoreFoundation

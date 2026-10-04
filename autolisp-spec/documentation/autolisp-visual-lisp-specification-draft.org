@@ -75683,16 +75683,33 @@ Returns the data stored under the named value (or the default value) of a regist
 *** Return Values
 The stored data, typed as the registry value's data type, or `nil` if the key/value does not exist.
 
+Measured on Windows (probe-triage2, 2026-10-04; AutoCAD 2022 job 16923993438, BricsCAD V26 job 16923716756), by registry type:
+
+| Type            | Value returned                                   | Example                                       |
+|-----------------+--------------------------------------------------+-----------------------------------------------|
+| =REG_SZ=        | the string                                       | ="test data"=                                 |
+| =REG_EXPAND_SZ= | the string with its =%NAME%= references EXPANDED | =%SystemRoot%\TEMP= reads ="C:\\WINDOWS\\TEMP"= |
+| =REG_DWORD=     | an integer                                       | =0=, =1=                                      |
+| =REG_MULTI_SZ=  | a list: the type code 7, then the strings        | =(7 "System Reserved" "EMS" ...)=             |
+| =REG_BINARY=    | AutoCAD: =(3)= -- the type code only, no data;   | AutoCAD =(3)=;                                |
+|                 | BricsCAD: the type code 3, then the bytes        | BricsCAD =(3 158 62 7 128 18 0 0 0)=          |
+
+Both vendors agree except on =REG_BINARY=, where AutoCAD 2022 drops the bytes (for a 4-byte and an 8-byte value alike).
+
 *** Side Effects
 None.
 
 *** Examples
 - After ~(vl-registry-write "HKEY_CURRENT_USER\Test" "" "test data")~, ~(vl-registry-read "HKEY_CURRENT_USER\Test")~ returns `"test data"`.
+- ~(vl-registry-read "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager" "ProtectionMode")~ returns `1` (a =REG_DWORD=).
 
 *** Availability
 - AutoCAD 2026: documented (Windows + macOS).
-- BricsCAD V26: presumed compatible.
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- BricsCAD V26: measured on Windows and macOS.
+- Status: both vendors; value types measured on AutoCAD 2022 and BricsCAD V26 (Windows).
+
+*** clautolisp
+On Windows, clautolisp reads the registry by type as tabled above: under the AutoCAD dialects a =REG_BINARY= reads as =(3)=, otherwise as =(3 byte ...)=. A =REG_DWORD= is read as a signed 32-bit integer (an unmeasured choice: AutoLISP integers are 32-bit), and other types (=REG_QWORD=, ...) read as =nil=. The macOS defaults store and the sexp store hold strings only.
 
 *** Source Notes
 - [vl-registry-read (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0B9E26CF-2410-482E-B568-7FE05B9F013C.htm)
