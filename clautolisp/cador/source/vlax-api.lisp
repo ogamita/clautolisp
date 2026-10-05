@@ -172,6 +172,14 @@ itself a live collection of the entities the block owns."
              (gethash "Block" props)      (com-object->vla (%block-object host block-name)))
        object))))
 
+(defmethod clautolisp.autolisp-host:host-layout-names ((host cador))
+  "The paper layouts of the drawing, in tab order: one per paper-space
+layout block (*Paper_Space is a fresh drawing's \"Layout1\")."
+  (mapcar #'%layout-name
+          (remove "*Model_Space"
+                  (remove-if-not #'%layout-block-name-p (%block-names host))
+                  :test #'string-equal)))
+
 (defun %layouts-collection (host)
   "Document.Layouts: a live collection of the drawing's layouts."
   (%live-com-object host "LAYOUTS"
@@ -905,6 +913,9 @@ bridged, (values NIL NIL) otherwise."
        (values (%entity-alignment entity) t))
       ((%hasattributes-property-p entity name)
        (values (eql 1 (%entity-group-value entity 66)) t))
+      ;; Visible: group 60, 0 (or absent) visible, 1 invisible.
+      ((string-equal name "Visible")
+       (values (not (eql 1 (%entity-group-value entity 60))) t))
       (t
        (let ((descriptor (%entity-property-descriptor entity name)))
          (if (null descriptor)
@@ -939,6 +950,9 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
         "VLA-OBJECT property ~A is read-only." name))
       ((%alignment-property-p entity name)
        (values (setf (%entity-alignment entity) value) t))
+      ((string-equal name "Visible")
+       (%entity-set-group entity 60 (if value 0 1))
+       (values value t))
       (t
        (let ((descriptor (%entity-property-descriptor entity name)))
          (if (null descriptor)
@@ -973,6 +987,7 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
   (let ((entity (%resolve-backing-entity host object)))
     (and entity
          (or (string-equal name "ObjectName")
+             (string-equal name "Visible")
              (%alignment-property-p entity name)
              (%hasattributes-property-p entity name)
              (%entity-property-descriptor entity name))
@@ -1029,6 +1044,49 @@ tblsearch \"LAYER\" and ActiveX read back the same value."
 (defun %table-object-name (object)
   (%com-string (gethash "Name" (mock-com-object-properties object))))
 
+(defparameter *com-boolean-properties*
+  '("Visible" "Saved" "ReadOnly" "IsLayout" "IsXRef" "IsDynamicBlock"
+    "Explodable" "HasAttributes" "LayerOn" "Freeze" "Lock" "Plottable"
+    "Active" "ModelType")
+  "ActiveX properties of type Boolean (VARIANT_BOOL): read as :VLAX-TRUE /
+:VLAX-FALSE, written as those, T / nil, or -1 / 0 (probe-triage3, BricsCAD
+V26 macOS job 16931597044 and V25 Windows job 16931597047).")
+
+(defun %com-boolean-property-p (name)
+  (member name *com-boolean-properties* :test #'string-equal))
+
+(defun %com-symbol-named-p (value name)
+  (and (typep value 'clautolisp.autolisp-runtime:autolisp-symbol)
+       (string-equal (clautolisp.autolisp-runtime:autolisp-symbol-name value) name)))
+
+(defun %com-boolean-out (value)
+  "VALUE as the ActiveX boolean symbol: the CL generalized boolean of a
+mock property, or an already-converted :VLAX-TRUE / :VLAX-FALSE."
+  (cond ((or (%com-symbol-named-p value ":VLAX-TRUE")
+             (%com-symbol-named-p value ":VLAX-FALSE"))
+         value)
+        (t (%vlax-boolean value))))
+
+(defun %com-boolean-in (value name)
+  "The CL boolean a written VALUE means: :VLAX-TRUE, T or -1 true;
+:VLAX-FALSE, nil or 0 false (both measured on BricsCAD V25 Windows). V26
+macOS refuses the integers (E_INVALIDARG), so a macOS dialect does too.
+Anything else is an invalid argument, as on the vendors."
+  (flet ((invalid ()
+           (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+            :invalid-com-property-value
+            "Automation Error E_INVALIDARG; invalid argument for [~A] property: ~S."
+            (string-upcase name) value)))
+    (cond
+      ((null value) nil)
+      ((%com-symbol-named-p value ":VLAX-FALSE") nil)
+      ((or (%com-symbol-named-p value ":VLAX-TRUE") (%com-symbol-named-p value "T")) t)
+      ((and (integerp value) (member value '(0 -1)))
+       (if (eq :macos (%current-dialect-platform))
+           (invalid)
+           (eql value -1)))
+      (t (invalid)))))
+
 (defun %layer-com-property-get (host object name)
   "Read a mutable AutoCAD.Layer property (Color, Linetype) off the layer's
 :layer table record. Returns (values VALUE T) when handled."
@@ -1039,15 +1097,38 @@ tblsearch \"LAYER\" and ActiveX read back the same value."
            (values (or (%layer-record-group host layer 62) 7) t))
           ((string-equal name "Linetype")
            (values (%al-string (or (%layer-record-group host layer 6) "Continuous")) t))
+          ;; On: a non-negative colour (a layer is turned off by negating 62).
+          ((string-equal name "LayerOn")
+           (values (>= (or (%layer-record-group host layer 62) 7) 0) t))
+          ((string-equal name "Freeze")
+           (values (logbitp 0 (or (%layer-record-group host layer 70) 0)) t))
+          ((string-equal name "Lock")
+           (values (logbitp 2 (or (%layer-record-group host layer 70) 0)) t))
+          ((string-equal name "Plottable")
+           (values (not (eql 0 (%layer-record-group host layer 290))) t))
           (t (values nil nil))))
       (values nil nil)))
 
 (defun %layer-com-property-put (host object name value)
-  "Write a mutable AutoCAD.Layer property (Color, Linetype) into the layer's
-:layer table record. Returns (values VALUE T) when handled."
+  "Write a mutable AutoCAD.Layer property (Color, Linetype, LayerOn, Freeze,
+Lock, Plottable) into the layer's :layer table record. Returns (values VALUE
+T) when handled."
   (if (%layer-object-p object)
       (let ((layer (%table-object-name object)))
         (cond
+          ((string-equal name "LayerOn")
+           (let ((color (abs (or (%layer-record-group host layer 62) 7))))
+             (%set-layer-record-group host layer 62 (if value color (- color)))
+             (values value t)))
+          ((or (string-equal name "Freeze") (string-equal name "Lock"))
+           (let ((flags (or (%layer-record-group host layer 70) 0))
+                 (bit (if (string-equal name "Freeze") 1 4)))
+             (%set-layer-record-group host layer 70
+                                      (if value (logior flags bit) (logandc2 flags bit)))
+             (values value t)))
+          ((string-equal name "Plottable")
+           (%set-layer-record-group host layer 290 (if value 1 0))
+           (values value t))
           ((string-equal name "Color")
            (unless (integerp value)
              (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
@@ -1159,7 +1240,8 @@ profile, CPROFILE. Returns (values VALUE T) when handled."
 (defun %object-com-property-known-p (host object name)
   (or (%entity-com-property-known-p host object name)
       (and (%layer-object-p object)
-           (member name '("Color" "Linetype") :test #'string-equal)
+           (member name '("Color" "Linetype" "LayerOn" "Freeze" "Lock" "Plottable")
+                   :test #'string-equal)
            t)
       (and (%document-object-p object)
            (member name '("ActiveLayer" "Active") :test #'string-equal)
@@ -1331,6 +1413,14 @@ is available; the .lin file is not parsed (the mock has none). Returns nil."
     nil))
 
 (defmethod host-vlax-get-property ((host cador) vla name)
+  (let ((value (%host-vlax-get-property-raw host vla name)))
+    ;; ActiveX Boolean properties read as :VLAX-TRUE / :VLAX-FALSE
+    ;; (vlax-boolean-properties-return-t), never as CL T / NIL.
+    (if (%com-boolean-property-p (ensure-property-name-string name 'vlax-get-property))
+        (%com-boolean-out value)
+        value)))
+
+(defun %host-vlax-get-property-raw (host vla name)
   (let* ((object (resolve-vla-object host vla 'vlax-get-property))
          (string (ensure-property-name-string name 'vlax-get-property)))
     (multiple-value-bind (value present-p)
@@ -1355,7 +1445,10 @@ is available; the .lin file is not parsed (the mock has none). Returns nil."
 
 (defmethod host-vlax-put-property ((host cador) vla name value)
   (let* ((object (resolve-vla-object host vla 'vlax-put-property))
-         (string (ensure-property-name-string name 'vlax-put-property)))
+         (string (ensure-property-name-string name 'vlax-put-property))
+         (value (if (%com-boolean-property-p string)
+                    (%com-boolean-in value string)
+                    value)))
     (if (nth-value 1 (gethash string (mock-com-object-properties object)))
         (setf (gethash string (mock-com-object-properties object)) value)
         ;; Entity-backed objects write their properties into the

@@ -1259,6 +1259,12 @@ separate binary for tool integrators.
   ~bricscad-v26~ has ~SPLDEGREE~, ~SPLKNOTS~, ~SPLMETHOD~, ~APPAUTOLOAD~,
   ~CLAYOUT~ and the ~PDFSHX*~ variables, which ~bricscad-v25~ lacks, and
   switching between the two at run time rebuilds the table.
+- COM Boolean properties read as ~:vlax-true~ / ~:vlax-false~ (they came
+  back as a raw value ~type~ could not even name) and ~vlax-get~ gives ~-1~ /
+  ~0~; writes take ~:vlax-true~ / ~:vlax-false~, ~T~ / ~nil~ or ~-1~ / ~0~.
+  Layers gain ~LayerOn~, ~Freeze~, ~Lock~, ~Plottable~, entities ~Visible~.
+- ~(layoutlist)~ lists the paper layouts -- it used to return ~("Model")~,
+  which no vendor does -- sorted by name under the AutoCAD dialects.
 - Under the vendor dialects at ~LISPSYS~ 0 on Windows, character codes
   are the vendor's: AutoCAD reduces a code to a windows-1252 byte (~(chr
   8364)~ is code 172), BricsCAD uses windows-1252 where it can (~(ascii

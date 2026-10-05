@@ -805,6 +805,9 @@ the vendors themselves differ. These are behaviour differences, not
 warnings, and they are listed in the AutoLISP Spec entry for each
 operator under its ~*** clautolisp~ note.
 
+- ~(layoutlist)~ -- the paper layouts, never ~"Model"~: sorted by name under
+  the ~autocad-*~ dialects, as AutoCAD 2022 returns them, in tab order
+  otherwise, as BricsCAD does.
 - ~vl-registry-read~ of a ~REG_BINARY~ value — ~(3)~ under the
   ~autocad-*~ dialects, ~(3 byte ...)~ under the others: AutoCAD 2022
   returns the type code alone, BricsCAD V26 the bytes too. The other types
@@ -1067,6 +1070,13 @@ provides that surface through the host backend:
   active document. ~:vlax-true~ and ~:vlax-false~ are predefined: each is a
   symbol whose value is itself, so ~(= (vla-get-active doc) :vlax-true)~
   works as in Visual LISP.
+- *ActiveX Boolean properties* (~Visible~, ~Saved~, ~ReadOnly~, ~IsLayout~,
+  ~IsXRef~, ~HasAttributes~, ~LayerOn~, ~Freeze~, ~Lock~, ~Plottable~, ...)
+  read as ~:vlax-true~ / ~:vlax-false~ (as ~-1~ / ~0~ through ~vlax-get~) and
+  accept ~:vlax-true~ / ~:vlax-false~, ~T~ / ~nil~ or ~-1~ / ~0~ -- the integers
+  not under a macOS dialect, as BricsCAD V26 on macOS refuses them. A Layer
+  object has ~LayerOn~, ~Freeze~, ~Lock~ and ~Plottable~ (its record's 62 sign,
+  70 bits and 290), an entity ~Visible~ (group 60).
 - ~Preferences~: ~(vla-get-supportpath (vla-get-files (vla-get-preferences
   acad)))~ is the support path ~findfile~ and ~load~ search, its
   directories joined with ~;~ -- the same string as ~(getenv "ACAD")~, as on

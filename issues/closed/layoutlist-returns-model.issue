@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: layoutlist-returns-model -- (layoutlist) is a stub returning ("Model"); the vendors list the paper layouts only
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: divergence
 #+DEPENDS: -
@@ -24,3 +24,14 @@ Probe (layoutlist) on both vendors (a fresh drawing: AutoCAD headless can
 answer, it is not COM); then derive it from the host's layout blocks, the
 same source as Document.Layouts (a host protocol call: builtins-core cannot
 see cador's tables).
+
+* Measured and done (2026-10-05, clautolisp 2.2.183)
+
+probe-triage3, French templates: never "Model". AutoCAD 2022 (job
+16931597043): ("Présentation1" "Présentation2"), after LAYOUT New
+ProbeLayout ("ProbeLayout" "Présentation1" "Présentation2") -- sorted by
+name. BricsCAD V25 Windows / V26 macOS (jobs 16931597047 / 16931597044): the
+same two, then ProbeLayout last -- tab order. CTAB "Model" on all.
+Implemented: host-layout-names (autolisp-host protocol; cador: the paper
+layout blocks, *Paper_Space = "Layout1"), sorted under the AutoCAD dialects.
+Spec: LAYOUTLIST, Measured + clautolisp.

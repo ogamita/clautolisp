@@ -64,6 +64,7 @@
    #:host-snapshot-sysvars
    #:host-restore-sysvars
    #:host-sysvar-names
+   #:host-layout-names
    #:host-registry-read #:host-registry-write
    #:host-registry-delete #:host-registry-descendents
    ;; --- Command dispatch -----------------------------------------
