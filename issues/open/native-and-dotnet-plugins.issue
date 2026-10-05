@@ -137,3 +137,8 @@ schms_image_depose, cmd_set_cadres, ...), Editor.WriteMessage.
   Linux with a net8 build.
 - The study's decisions on WinForms / COM / Word recorded here, with the
   per-platform support matrix in the user manual.
+
+* Scheduling (pjb, 2026-10-05)
+
+"We'll do that after the next release": the study phase starts once the
+next clautolisp release is cut.

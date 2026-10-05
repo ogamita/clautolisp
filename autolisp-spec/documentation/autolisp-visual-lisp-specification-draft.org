@@ -11156,6 +11156,18 @@ None.
    (3 (0.0 0.5) (0.5 1.0))
    (4 (0.0 0.0) (0.5 0.5)))
   #+end_example
+- *The implementations do not match these examples* (the vendor page's,
+  kept as published; see /Source Notes/ and /Vendor Divergence/). Measured
+  on AutoCAD 2022 and BricsCAD V25/V26, a new drawing's only tiled viewport
+  is number 2, so the single-viewport answer is
+  `((2 (0.0 0.0) (1.0 1.0)))`; and =-VPORTS 4= on it numbers the pieces
+  differently on each product:
+  #+begin_example
+  AutoCAD 2022:  ((2 (0.5 0.0) (1.0 0.5)) (3 (0.5 0.5) (1.0 1.0))
+                  (4 (0.0 0.5) (0.5 1.0)) (5 (0.0 0.0) (0.5 0.5)))
+  BricsCAD:      ((2 (0.0 0.0) (0.5 0.5)) (3 (0.5 0.0) (1.0 0.5))
+                  (4 (0.0 0.5) (0.5 1.0)) (5 (0.5 0.5) (1.0 1.0)))
+  #+end_example
 
 *** Availability
 - AutoCAD 2026: documented.

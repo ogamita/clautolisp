@@ -1,6 +1,6 @@
 # AutoCAD / BricsCAD system variables: collect, specify, and implement
 
-Status: open
+Status: CLOSED 2026-10-05 (pjb)
 Baseline: origin/master @ 0dd68c8
 Spec: autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org (v0.8.2)
 
@@ -495,3 +495,9 @@ case under bricscad, bricscad-mac, autocad, strict).
     layout's viewport, setview returns the view. Recorded in the spec's
     VPORTS / SETVIEW entries. This was the last item listed as open here;
     closing the ticket is pjb's call.
+
+## Closed 2026-10-05 (pjb: "yes, close them")
+
+Every item this ticket listed is done; the last, vports / setview, in
+clautolisp 2.2.194 (MR !417), and the -VPORTS options in 2.2.196 (MR !418).
+Sysvars still to measure or implement are tracked by their own tickets.

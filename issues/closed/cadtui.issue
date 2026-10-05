@@ -14,3 +14,9 @@ d'avoir quelques sous-modules en commun.
 Effectuer une planification (y inclus des tâches de recherches pouvant
 utiliser le CI et les runners macos et windows pour obtenir les noms
 localisés des commandes), et implémenter le host cadtui.
+
+* Closed 2026-10-05 (pjb: "ok close it")
+
+The roadmap is delivered (phases 1-8, clautolisp 2.2.34-2.2.55; the
+multi-document wiring, 2.2.192). What remains is locale DATA harvested on
+localised CADs, tracked by the cadtui-locale-* tickets.
