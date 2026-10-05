@@ -36,6 +36,9 @@
   (format t "                         host on the cador core (menus/drawings/CAD view, DCL~%")
   (format t "                         dialogs mirrored into an inspectable tree); nihil = trivial.~%")
   (format t "                         mock=alias of cador; null/none=aliases of nihil. See --list-hosts.~%")
+  (format t "  --dwg FILE             Start on the drawing FILE (DXF or DWG): it is the first~%")
+  (format t "                         open drawing, current, in place of the untitled~%")
+  (format t "                         Drawing1.dwg -- as acad.exe FILE does.~%")
   (format t "  --mock-input PATH      Attach the file at PATH as the MockHost prompt-stream.~%")
   (format t "                         Lines are consumed by GETSTRING / GETPOINT / etc. in order.~%")
   (format t "  --gui CMD              DCL GUI driver: subprocess CMD speaking the sexp wire protocol.~%")
@@ -655,6 +658,17 @@ bare one-line condition. uiop:print-backtrace is the portable SBCL/CCL entry."
     (error (probe)
       (format *error-output* "  <unable to render host backtrace: ~A>~%" probe)))
   (finish-output *error-output*))
+
+(defun open-drawing-argument (host path)
+  "HOST, its first drawing read from PATH (--dwg) when PATH is given. An
+unreadable drawing, or a host without drawings, is a usage error."
+  (when (and host path)
+    (handler-case (clautolisp.autolisp-host:host-open-startup-drawing host path)
+      (error (condition)
+        (error 'clautolisp.autolisp-cli:cli-usage-error
+               :option "--dwg"
+               :message (format nil "cannot open the drawing ~A: ~A" path condition)))))
+  host)
 
 (defun setup-context (context host &optional mock-input)
   "Install the core builtins into the freshly created evaluation
@@ -2235,8 +2249,10 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                (quiet-p   (eq verbosity :warn))
                (dialect   (keyword->dialect
                            (clautolisp.autolisp-cli:cli-options-dialect options)))
-               (host      (keyword->host
-                           (clautolisp.autolisp-cli:cli-options-host options)))
+               (host      (open-drawing-argument
+                           (keyword->host
+                            (clautolisp.autolisp-cli:cli-options-host options))
+                           (clautolisp.autolisp-cli:cli-options-dwg options)))
                (actions   (clautolisp.autolisp-cli:cli-options-actions options))
                (mock-input (clautolisp.autolisp-cli:cli-options-mock-input options))
                (gui       (clautolisp.autolisp-cli:cli-options-gui options))

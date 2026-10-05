@@ -50,10 +50,12 @@ Windows + V26 macOS), then implemented, clautolisp 2.2.185 .. 2.2.192:
   on_doc_load, S::STARTUP); vl-load-all.
 - slice 7 (2.2.192): cadtui tree mirrors and drives the host documents.
 
-Still open here: the cooperative per-document coroutine scheduler (a routine
-that survives the switch and resumes in its own document -- AutoCAD's
-deferred switch is modelled at the read boundary instead), and everything
-under cador-4.
+- 2.2.193: --dwg FILE, the drawing argument: the session's first drawing.
+
+The cooperative scheduler itself (single runner, contexts parked as threads on
+a condition variable) is cador-2's, closed 2026-09-28; the lifecycle commands
+switch at the read boundary and do not need it to park a routine. Still open:
+everything under cador-4, including the wire-host items cador-2 handed over.
 
 ## 1. Decision record
 

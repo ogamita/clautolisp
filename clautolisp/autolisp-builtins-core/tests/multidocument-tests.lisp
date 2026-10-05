@@ -362,3 +362,41 @@ own; AutoCAD (job 16932759881) stays in the old drawing until the routine ends."
       (is (equal '("Drawing1.dwg") (clautolisp.autolisp-host:host-document-list host)))
       (is (equal '("Drawing1.dwg") (drawing-keys))))))
 
+
+;;; --- the drawing argument (--dwg): the session's first drawing --------------
+
+(test startup-drawing-replaces-the-untitled-drawing
+  (let* ((path (namestring (merge-pathnames (format nil "md-start-~D.dxf" (random 1000000))
+                                            (uiop:temporary-directory))))
+         (maker (clautolisp.cador:make-cador)))
+    (unwind-protect
+         (progn
+           (clautolisp.drawing:write-drawing (clautolisp.cador:cador-active-drawing maker) path)
+           (reset-autolisp-symbol-table)
+           (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+           (install-core-builtins)
+           (let* ((context (clautolisp.autolisp-runtime:default-evaluation-context))
+                  (session (clautolisp.autolisp-runtime:evaluation-context-session context))
+                  (host (clautolisp.cador:make-cador))
+                  (key (clautolisp.autolisp-host:host-open-startup-drawing host path)))
+             (clautolisp.autolisp-runtime:set-runtime-session-host session host)
+             (clautolisp.autolisp-host:link-runtime-session-to-host session host)
+             (is (equal (file-namestring path) key))
+             ;; The only open drawing, and the current one.
+             (is (equal (list key) (clautolisp.autolisp-host:host-document-list host)))
+             (is (equal key (autolisp-string-value (%md-turn context "(getvar \"DWGNAME\")"))))
+             (is (eql 1 (%md-turn context "(getvar \"DWGTITLED\")")))
+             (is (eql 0 (%md-turn context "(getvar \"DBMOD\")")))
+             ;; A NEW from there is a second drawing, with its own namespace.
+             (%md-turn context "(setq md-in-start 1)")
+             (%md-turn context "(command \"_.NEW\" \"\")")
+             (is (= 2 (length (clautolisp.autolisp-host:host-document-list host))))
+             (is (null (%md-turn context "md-in-start")))))
+      (ignore-errors (delete-file path)))))
+
+(test startup-drawing-that-cannot-be-read-signals
+  (is (eq t (handler-case
+                (progn (clautolisp.autolisp-host:host-open-startup-drawing
+                        (clautolisp.cador:make-cador) "/nonexistent/md-none.dxf")
+                       nil)
+              (error () t)))))

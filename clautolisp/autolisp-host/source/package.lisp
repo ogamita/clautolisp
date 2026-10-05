@@ -22,6 +22,7 @@
    #:host-activate-document
    #:host-current-document
    #:host-document-list
+   #:host-open-startup-drawing
    ;; --- Entity API (autolisp-spec ch.16) -------------------------
    #:host-entget
    #:host-entmod
