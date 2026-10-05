@@ -237,7 +237,10 @@ that is not part of a drawing."))
   (open-complex-handle nil)
   (open-block-definition nil)
   (ename-cache (make-hash-table :test #'equal))
-  (ename-cache-drawing nil))
+  (ename-cache-drawing nil)
+  ;; The tiled (model space) viewports, the current one first: a list of
+  ;; (ID LLX LLY URX URY). NIL until first asked: viewports.lisp.
+  (model-viewports nil))
 
 (defun cador-document-session (host &optional (key (cador-active-document-key host)))
   "The DOC-SESSION of document KEY (default: the current one), made on first use."
@@ -263,6 +266,7 @@ that is not part of a drawing."))
 (%define-document-session-accessor cador-open-block-definition doc-session-open-block-definition)
 (%define-document-session-accessor cador-ename-cache doc-session-ename-cache)
 (%define-document-session-accessor cador-ename-cache-drawing doc-session-ename-cache-drawing)
+(%define-document-session-accessor %cador-model-viewports doc-session-model-viewports)
 
 ;;; --- Active-drawing delegation ----------------------------------
 ;;;

@@ -118,6 +118,12 @@ has none open."))
 (defgeneric host-document-list (host)
   (:documentation "Return the list of open document KEYs, in the order they
 were opened (current or not)."))
+(defgeneric host-viewports (host)
+  (:documentation "The viewports of the current layout, as (VPORTS) returns
+them: a list of (ID (LLX LLY) (URX URY)), the current viewport first -- model
+space (TILEMODE 1): the tiled viewports, corners in [0,1] of the screen;
+paper space (TILEMODE 0): viewport 1 (the sheet) then the floating ones, in
+paper units."))
 (defgeneric host-open-startup-drawing (host path)
   (:documentation "Make the drawing file at PATH the host's FIRST document, in
 place of the untitled startup drawing -- the drawing argument of the command
@@ -253,6 +259,7 @@ when the file cannot be read."))
 (defmethod host-activate-document ((host host) key)           (declare (ignore key)) (signal-host-not-supported host 'activate-document))
 (defmethod host-current-document  ((host host))               (signal-host-not-supported host 'current-document))
 (defmethod host-document-list     ((host host))               (signal-host-not-supported host 'document-list))
+(defmethod host-viewports ((host host)) (signal-host-not-supported host 'viewports))
 (defmethod host-open-startup-drawing ((host host) path) (declare (ignore path)) (signal-host-not-supported host 'open-startup-drawing))
 (defmethod host-entget    ((host host) ename &optional applist) (declare (ignore ename applist)) (signal-host-not-supported host 'entget))
 (defmethod host-entmod    ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmod))

@@ -400,3 +400,43 @@ own; AutoCAD (job 16932759881) stays in the old drawing until the routine ends."
                         (clautolisp.cador:make-cador) "/nonexistent/md-none.dxf")
                        nil)
               (error () t)))))
+
+;;; --- viewports: -VPORTS, VPORTS, CVPORT, SETVIEW (probe-viewports) -----------
+
+(defun %vp-run (dialect &rest forms)
+  "The value of the last of FORMS in a fresh cador session under DIALECT."
+  (let ((context (%md-context)))
+    (%md-turn context (format nil "(setq *AUTOLISP-DIALECT* '~A)" dialect))
+    (let (value)
+      (dolist (form forms value)
+        (setq value (%md-turn context form))))))
+
+(test vports-split-and-single-follow-each-product
+  ;; AutoCAD 2022: the current viewport keeps the RIGHT half; SIngle keeps 3.
+  (is (equal '(2 ((2 (0.5d0 0d0) (1d0 1d0)) (3 (0d0 0d0) (0.5d0 1d0))))
+             (%vp-run "autocad-2022" "(command \"_.-VPORTS\" \"2\" \"_V\")"
+                      "(list (getvar \"CVPORT\") (vports))")))
+  (is (equal '(3 ((3 (0d0 0d0) (1d0 1d0))))
+             (%vp-run "autocad-2022" "(command \"_.-VPORTS\" \"2\" \"_V\")"
+                      "(command \"_.-VPORTS\" \"_SI\")"
+                      "(list (getvar \"CVPORT\") (vports))")))
+  ;; BricsCAD: the LEFT half; SIngle keeps the current one, 2.
+  (is (equal '(2 ((2 (0d0 0d0) (0.5d0 1d0)) (3 (0.5d0 0d0) (1d0 1d0))))
+             (%vp-run "bricscad-v25" "(command \"_.-VPORTS\" \"2\" \"_V\")"
+                      "(list (getvar \"CVPORT\") (vports))")))
+  (is (equal '(2 ((2 (0d0 0d0) (1d0 1d0))))
+             (%vp-run "bricscad-v25" "(command \"_.-VPORTS\" \"2\" \"_V\")"
+                      "(command \"_.-VPORTS\" \"_SI\")"
+                      "(list (getvar \"CVPORT\") (vports))"))))
+
+(test vports-in-paper-space-and-setview-nil
+  (is (equal '(1 ((1 (0d0 0d0) (15.8893d0 9d0)) (2 (25.7d0 19.5d0) (231.3d0 175.5d0))))
+             (%vp-run "autocad-2022" "(setvar \"TILEMODE\" 0)"
+                      "(list (getvar \"CVPORT\") (vports))")))
+  (is (equal '(1 ((1 (-28.613d0 -13.59d0) (285.613d0 208.59d0)) (2 (25.7d0 19.5d0) (231.3d0 175.5d0))))
+             (%vp-run "bricscad-v25" "(setvar \"TILEMODE\" 0)"
+                      "(list (getvar \"CVPORT\") (vports))")))
+  ;; (setview nil): nil under BricsCAD, a bad-argument error under AutoCAD.
+  (is (null (%vp-run "bricscad-v25" "(setview nil)")))
+  (is (eq t (handler-case (progn (%vp-run "autocad-2022" "(setview nil)") nil)
+              (error () t)))))

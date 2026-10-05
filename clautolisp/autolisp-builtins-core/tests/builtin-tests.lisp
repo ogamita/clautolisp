@@ -2661,17 +2661,21 @@ the host's prompt-output / command log after the run."
 ;;; --- TILEMODE / CVPORT -> vports / setview -------------------------
 
 (test coupling-tilemode-cvport-viewport-access
-  ;; TILEMODE / CVPORT round-trip, and vports reports the documented
-  ;; single-viewport sentinel headlessly (viewport 1); setview is a
-  ;; documented headless no-op returning nil.
+  ;; probe-viewports (AutoCAD 2022, BricsCAD V25/V26): one tiled viewport,
+  ;; number 2, is CVPORT; TILEMODE 0 makes CVPORT 1 (the sheet); SETVIEW
+  ;; returns the view for an existing viewport and nil for another.
   (reset-autolisp-symbol-table)
-  (is (eql 0 (%al "(progn (setvar \"TILEMODE\" 0) (getvar \"TILEMODE\"))")))
+  (is (eql 2 (%al "(car (car (vports)))")))
   (reset-autolisp-symbol-table)
-  (is (eql 3 (%al "(progn (setvar \"CVPORT\" 3) (getvar \"CVPORT\"))")))
+  (is (equal '(0 1 1)
+             (%al "(progn (setvar \"TILEMODE\" 0)
+                     (list (getvar \"TILEMODE\") (getvar \"CVPORT\") (car (car (vports)))))")))
   (reset-autolisp-symbol-table)
-  (is (eql 1 (%al "(car (car (vports)))")))
+  (is (equal '(1 2) (%al "(progn (setvar \"TILEMODE\" 1) (list (getvar \"TILEMODE\") (getvar \"CVPORT\")))")))
   (reset-autolisp-symbol-table)
-  (is (null (%al "(setview (list 0.0 0.0 0.0) 1)"))))
+  (is (consp (%al "(setview (list (cons 0 \"VIEW\")) 2)")))
+  (reset-autolisp-symbol-table)
+  (is (null (%al "(setview (list (cons 0 \"VIEW\")) 99)"))))
 
 ;;; --- SNAPANG / ANGBASE -> setvar takes radians, not display --------
 
@@ -3746,10 +3750,11 @@ off-baseline box keeps its true height."
     (is (plusp result))))
 
 (test m2-cli-noops-all-return-nil
-  "GRAPHSCR, TEXTSCR, TEXTPAGE, REDRAW, SETVIEW, TABLET return nil."
+  "GRAPHSCR, TEXTSCR, TEXTPAGE, REDRAW, TABLET return nil. (SETVIEW takes a
+view: coupling-tilemode-cvport-viewport-access.)"
   (reset-autolisp-symbol-table)
   (dolist (form '("(graphscr)" "(textscr)" "(textpage)"
-                  "(redraw)" "(setview)" "(tablet)"))
+                  "(redraw)" "(tablet)"))
     (is (null (run-autolisp-string form :setup-fn #'install-core-into)))))
 
 (test m2-cli-noops-string-return
@@ -5099,14 +5104,15 @@ BricsCAD V25 / V26, probe-triage3); with no drawing there are none."
                             (reverse n))")))))
 
 (test m5-vports-returns-single-default
-  "(vports) returns a list with one entry: id=1, full-screen corners."
+  "(vports) returns a list with one entry: viewport 2 (as AutoCAD and BricsCAD
+number a new drawing's only tiled viewport), full-screen corners."
   (reset-autolisp-symbol-table)
-  (let* ((result (run-autolisp-string "(vports)"
-                                      :setup-fn #'install-core-into))
+  ;; On cador: nihil has no viewports (it signals, as for every CAD operation).
+  (let* ((result (%vp-run "autocad-2022" "(vports)"))
          (first-entry (first result)))
     (is (consp result))
     (is (= 1 (length result)))
-    (is (eql 1 (first first-entry)))
+    (is (eql 2 (first first-entry)))
     (is (equal '(0.0d0 0.0d0) (second first-entry)))
     (is (equal '(1.0d0 1.0d0) (third first-entry)))))
 

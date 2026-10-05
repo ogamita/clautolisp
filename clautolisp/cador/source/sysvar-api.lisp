@@ -209,7 +209,7 @@ clock."
 (defparameter *live-sysvar-names*
   '("EXTMIN" "EXTMAX" "TDINDWG" "TDUSRTIMER" "LOGINNAME" "DWGPREFIX"
     "DWGNAME" "DWGTITLED" "DBMOD"
-    "CMDACTIVE" "LOCALE"))
+    "CMDACTIVE" "LOCALE" "CVPORT"))
 
 (defvar *drawing-open-julian* (make-hash-table :test #'eq)
   "Drawing -> the Julian date its session began (for TDINDWG / TDUSRTIMER).")
@@ -281,6 +281,8 @@ where the session cannot say."
         ((string-equal string "DWGTITLED")
          (if (ignore-errors (clautolisp.drawing:drawing-path drawing)) 1 0))
         ((string-equal string "DBMOD") (clautolisp.drawing:drawing-dbmod drawing))
+        ;; viewports.lisp: 1 in paper space, else the current tiled viewport.
+        ((string-equal string "CVPORT") (funcall 'cador-current-viewport-id host))
         ((string-equal string "LOCALE")
          ;; The dialect's documented / measured form (feature :locale-form):
          ;; BricsCAD "fr_FR"; AutoCAD 2019+ the upper-case language, "FR".

@@ -11166,6 +11166,32 @@ None.
 - [vports (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-929FC8B2-1235-4B2A-B330-FF2E219E072C.htm)
 - Status: documented (Phase 3 body fill).
 
+*** Vendor Divergence
+Measured 2026-10-05 by =probes/sources/probe-viewports.lsp= (AutoCAD 2022
+job 16937174509, BricsCAD V25 Windows job 16937174513, BricsCAD V26 macOS
+job 16937174510). Both products agree on:
+- a new drawing's only tiled viewport is number *2*, and =CVPORT= is 2:
+  =((2 (0.0 0.0) (1.0 1.0)))= -- not the =1= of the example above;
+- the current viewport comes first;
+- with =TILEMODE= 0, =CVPORT= is 1 and the list is the sheet, viewport 1,
+  then the layout's floating viewport, =(2 (25.7 19.5) (231.3 175.5))=.
+They differ on:
+- =-VPORTS 2 Vertical=: the current viewport keeps the *right* half under
+  AutoCAD (=((2 (0.5 0.0) (1.0 1.0)) (3 (0.0 0.0) (0.5 1.0)))=), the *left*
+  one under BricsCAD (=((2 (0.0 0.0) (0.5 1.0)) (3 (0.5 0.0) (1.0 1.0)))=);
+- =-VPORTS SIngle= after that split: AutoCAD keeps viewport *3* (=CVPORT=
+  becomes 3), BricsCAD keeps the current one, 2;
+- the sheet's corners with =TILEMODE= 0 (display extents): AutoCAD
+  =(0.0 0.0) (15.8893 9.0)=, BricsCAD =(-28.613 -13.59) (285.613 208.59)=.
+
+*** clautolisp
+=cador= keeps each drawing's tiled viewports and implements the measured
+=-VPORTS= options (=2= with =V=, =SI=); the others (3, 4, Horizontal, Save,
+Restore ...) were not measured and change nothing. The BricsCAD dialects
+follow BricsCAD; every other dialect follows AutoCAD. =CVPORT= is derived
+(1 in paper space, else the current tiled viewport). The host =nihil= has
+no viewports: =(vports)= signals =:host-not-supported= there.
+
 #+LATEX: \newpage
 
 ** Function Entry: SETVIEW
@@ -11204,6 +11230,19 @@ Not documented on the vendor page.
 *** Source Notes
 - [setview (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-EEABEF66-423A-4D2B-BE16-AA6A56B08FBD.htm)
 - Status: documented (Phase 3 body fill).
+
+*** Vendor Divergence
+Measured 2026-10-05 (=probe-viewports.lsp=, the jobs under =VPORTS=), with
+the list =(tblsearch "VIEW" name)= of a view saved by =-VIEW=: both
+products return that list unchanged with no viewport argument and with
+=(getvar "CVPORT")=, and =nil= for a viewport that does not exist (99). They
+differ on =(setview nil)=: AutoCAD 2022 signals "type d'argument incorrect:
+lresbp nil", BricsCAD (V25 and V26) returns =nil=.
+
+*** clautolisp
+Returns the view when the viewport is absent or one of =(vports)=, =nil=
+otherwise; a non-list view is a bad-argument error, except under the
+BricsCAD dialects (=nil=). Headless, no display changes.
 
 #+LATEX: \newpage
 

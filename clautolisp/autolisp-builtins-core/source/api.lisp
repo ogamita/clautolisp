@@ -9387,10 +9387,25 @@ later M3 (vector math) functions can pick it up from one place.")
 (defun builtin-redraw   (&rest _)
   (declare (ignore _))
   nil)
-;;; STUB: set viewport view. See deferred-stubbed-functions.issue § SETVIEW.
-(defun builtin-setview  (&rest _)
-  (declare (ignore _))
-  nil)
+;;; (setview view [vport]) -- probe-viewports (AutoCAD 2022, BricsCAD V25/V26):
+;;; returns VIEW (a TBLSEARCH "VIEW" list) when VPORT is absent or names an
+;;; existing viewport, nil for a viewport that does not exist; a nil VIEW is
+;;; a bad-argument error under AutoCAD ("type d'argument incorrect: lresbp
+;;; nil") and plain nil under BricsCAD. Headless: no display to change.
+(defun builtin-setview (view &optional vport)
+  (cond
+    ((not (consp view))
+     (if (eq :bricscad (ignore-errors
+                        (clautolisp.autolisp-reader:autolisp-dialect-product
+                         (current-evaluation-dialect))))
+         nil
+         (signal-builtin-argument-error
+          :bad-argument "SETVIEW" "Expected a view list, got ~S." view)))
+    ((and vport
+          (not (member vport (clautolisp.autolisp-host:host-viewports (current-evaluation-host))
+                       :key #'first :test #'eql)))
+     nil)
+    (t view)))
 ;;; STUB: tablet configuration. See deferred-stubbed-functions.issue § TABLET.
 ;;;
 ;;; Documented to set ERRNO on failure. Code 68 = "Digitizer is
@@ -10713,11 +10728,9 @@ ProbeLayout -- BricsCAD V25 / V26 in TAB order, the new one last."
   (autolisp-true))
 
 (defun builtin-vports ()
-  ;; (vports) — list of viewports. Without a drawing, return the
-  ;; documented single-viewport sentinel.
-  (list (list 1
-              (list 0.0d0 0.0d0)        ; lower-left corner (DCS)
-              (list 1.0d0 1.0d0))))     ; upper-right corner (DCS)
+  ;; (vports) -- the current layout's viewports, the current one first: the
+  ;; host's (cador: viewports.lisp, measured by probe-viewports).
+  (clautolisp.autolisp-host:host-viewports (current-evaluation-host)))
 
 ;;; ---- Session-state M5 (record-only registry / cfg) ----
 
