@@ -43,6 +43,7 @@
                 #:dictionary-entries
                 #:sysvar-cell
                 #:make-sysvar-cell
+                #:sysvar-cell-scope
                 #:copy-sysvar-cell
                 #:sysvar-cell-name
                 #:sysvar-cell-kind
@@ -65,6 +66,9 @@
                 #:host-document-list
                 #:host-open-startup-drawing
                 #:host-viewports
+                #:host-open-document-from-file
+                #:host-document-of
+                #:host-sysvar-scope
                 #:host-entget
                 #:host-entmod
                 #:host-entmake

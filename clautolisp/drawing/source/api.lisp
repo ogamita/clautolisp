@@ -68,7 +68,8 @@ string. Signals DRAWING-ERROR on a malformed string."
                     :value          (let ((v (sysvar-cell-value c)))
                                       (if (consp v) (copy-tree v) v))
                     :read-only-p    (sysvar-cell-read-only-p c)
-                    :host-derived-p (sysvar-cell-host-derived-p c)))
+                    :host-derived-p (sysvar-cell-host-derived-p c)
+                    :scope          (sysvar-cell-scope c)))
 
 (defun %copy-dictionary-tree (d)
   (let ((new (make-dictionary)))
@@ -452,4 +453,6 @@ defaults if absent. Loaders use this to populate the header."
       (setf (gethash name (drawing-header-variables drawing))
             (make-sysvar-cell :name name :kind kind :value value
                               :read-only-p read-only-p
-                              :host-derived-p host-derived-p))))
+                              :host-derived-p host-derived-p
+                              ;; A header variable read from a file.
+                              :scope :drawing))))

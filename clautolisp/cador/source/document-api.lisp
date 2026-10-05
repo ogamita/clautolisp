@@ -146,6 +146,46 @@ read. Returns the document KEY (the file's name)."
           (cador-active-document-key host) key)
     key))
 
+(defmethod host-open-document-from-file ((host cador) path &key format read-only)
+  "Read the drawing at PATH into a new open document -- prepared as every
+document is (default tables, full header) -- and return its KEY, the file's
+name made unique; the current document does not change. READ-ONLY marks it
+read-only. An unreadable file signals BACKEND-ERROR."
+  (let* ((drawing (handler-case (clautolisp.drawing:read-drawing path :format format)
+                    (error (condition)
+                      (clautolisp.autolisp-host:signal-backend-error
+                       host 'open-document-from-file condition))))
+         (key (%cador-fresh-document-key host (file-namestring path))))
+    (cador-prepare-document-drawing host drawing)
+    (setf (cador-documents host)
+          (append (cador-documents host) (list (cons key drawing))))
+    (when read-only
+      (setf (doc-session-read-only (cador-document-session host key)) t))
+    (when (fboundp '%notify-ui) (funcall '%notify-ui host :document-opened key))
+    key))
+
+(defmethod host-document-of ((host cador) handle)
+  "The KEY of the open document HANDLE belongs to: an entity name's drawing,
+a COM object's document; NIL otherwise (or when that document is closed)."
+  (typecase handle
+    (clautolisp.autolisp-runtime:autolisp-ename
+     (let ((drawing (clautolisp.autolisp-runtime:autolisp-ename-document handle)))
+       (and drawing (car (rassoc drawing (cador-documents host))))))
+    (mock-com-object
+     (let ((key (mock-com-object-document-key handle)))
+       (and key (assoc key (cador-documents host) :test #'string=) key)))
+    (clautolisp.autolisp-runtime:autolisp-vla-object
+     (let ((object (gethash (clautolisp.autolisp-runtime:autolisp-vla-object-value handle)
+                            (cador-com-objects host))))
+       (and object (host-document-of host object))))
+    (t nil)))
+
+(defmethod host-sysvar-scope ((host cador) name)
+  "The scope tier of NAME: its cell's, else the inventory's."
+  (let ((cell (ignore-errors (cador-sysvar host name))))
+    (or (and cell (sysvar-cell-scope cell))
+        (sysvar-scope-tier name))))
+
 (defmethod host-activate-document ((host cador) key)
   "Make KEY the current document: point ACTIVE-DRAWING at its drawing. Signals
 :no-such-document if KEY is not open."
@@ -168,11 +208,18 @@ read. Returns the document KEY (the file's name)."
   "The open document KEYs, in the order they were opened."
   (mapcar #'car (cador-documents host)))
 
-(defmethod host-close-document ((host cador) key)
+(defmethod host-close-document ((host cador) key &key save file)
   "Close the document KEY. Returns T when a document was closed, NIL when KEY
 was unknown. Refuses (signals :cannot-close-last-document) to close the only
 open document — a cador must always have a current drawing. Closing the
 current document activates the first remaining one."
+  ;; SAVE (D1 §3): write the drawing first -- to FILE, or its own file.
+  (when save
+    (let* ((drawing (cdr (assoc key (cador-documents host) :test #'string=)))
+           (path (and drawing
+                      (or file (let ((p (clautolisp.drawing:drawing-path drawing)))
+                                 (and p (namestring p)))))))
+      (when path (cador-save-drawing host drawing path))))
   (let ((cell (assoc key (cador-documents host) :test #'string=)))
     (cond
       ((null cell) nil)

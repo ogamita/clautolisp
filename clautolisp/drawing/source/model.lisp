@@ -64,7 +64,11 @@ rather than fixed."
   (kind           :integer :type keyword)
   (value          nil)
   (read-only-p    nil :type boolean)
-  (host-derived-p nil :type boolean))
+  (host-derived-p nil :type boolean)
+  ;; The scope tier (D1 §4, C4): :DRAWING (saved in the drawing, one per
+  ;; document), :REGISTRY (the application's, persisted in the profile) or
+  ;; :NOT-SAVED (the session's); NIL when unknown.
+  (scope          nil :type symbol))
 
 ;;; --- The drawing value object -----------------------------------
 

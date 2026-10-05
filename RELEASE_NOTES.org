@@ -37,6 +37,10 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Host interface (cador-4): open a document from a file without switching to
+  it, close with save, the document an entity or COM object belongs to, and
+  the scope tier of every system variable (drawing / registry / not saved);
+  ~OPEN~ and COM ~Documents.Open~ share the new open.
 - ~vports~, ~setview~, ~CVPORT~ and ~-VPORTS~ follow AutoCAD 2022 and
   BricsCAD V25/V26 as measured (probe-viewports): a new drawing's viewport is
   2, not 1; ~-VPORTS 2 V~ / ~SI~ split and join the tiled viewports per

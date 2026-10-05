@@ -440,3 +440,65 @@ own; AutoCAD (job 16932759881) stays in the old drawing until the routine ends."
   (is (null (%vp-run "bricscad-v25" "(setview nil)")))
   (is (eq t (handler-case (progn (%vp-run "autocad-2022" "(setview nil)") nil)
               (error () t)))))
+
+;;; --- cador-4 slice 1: the HAL document API (D1 §3) and the scope tier (C4) -----
+
+(test host-open-document-from-file-registers-without-switching
+  (let* ((path (namestring (merge-pathnames (format nil "md-hal-~D.dxf" (random 1000000))
+                                            (uiop:temporary-directory))))
+         (context (%md-context))
+         (host (%md-host context))
+         (first-key (clautolisp.autolisp-host:host-current-document host)))
+    (unwind-protect
+         (progn
+           (%md-turn context "(command \"_.LINE\" \"0,0\" \"1,1\" \"\")")
+           (%md-turn context (format nil "(command \"_.SAVEAS\" \"DXF\" ~S)" path))
+           (let ((key (clautolisp.autolisp-host:host-open-document-from-file
+                       host path :read-only t)))
+             (is (stringp key))
+             (is (member key (clautolisp.autolisp-host:host-document-list host) :test #'equal))
+             ;; Not made current.
+             (is (equal first-key (clautolisp.autolisp-host:host-current-document host)))
+             (is (clautolisp.cador::doc-session-read-only
+                  (clautolisp.cador::cador-document-session host key)))))
+      (ignore-errors (delete-file path)))
+    ;; An unreadable file is a backend error.
+    (is (eq t (handler-case
+                  (progn (clautolisp.autolisp-host:host-open-document-from-file
+                          host "/nonexistent/md-none.dxf")
+                         nil)
+                (error () t))))))
+
+(test host-close-document-with-save-writes-the-file
+  (let* ((path (namestring (merge-pathnames (format nil "md-close-~D.dxf" (random 1000000))
+                                            (uiop:temporary-directory))))
+         (context (%md-context))
+         (host (%md-host context)))
+    (unwind-protect
+         (let ((key (clautolisp.autolisp-host:host-open-document host)))
+           (clautolisp.autolisp-host:host-close-document host key :save t :file path)
+           (is (probe-file path))
+           (is (not (member key (clautolisp.autolisp-host:host-document-list host)
+                            :test #'equal))))
+      (ignore-errors (delete-file path)))))
+
+(test host-document-of-names-the-owning-document
+  (let* ((context (%md-context))
+         (host (%md-host context))
+         (first-key (clautolisp.autolisp-host:host-current-document host)))
+    (%md-turn context "(command \"_.LINE\" \"0,0\" \"1,1\" \"\")")
+    (let ((ename (%md-turn context "(entlast)")))
+      (is (equal first-key (clautolisp.autolisp-host:host-document-of host ename)))
+      ;; Still the first document's after a switch.
+      (%md-turn context "(command \"_.NEW\" \"\")")
+      (%md-turn context "nil")
+      (is (equal first-key (clautolisp.autolisp-host:host-document-of host ename)))
+      (is (null (clautolisp.autolisp-host:host-document-of host 42))))))
+
+(test host-sysvar-scope-gives-the-tier
+  (let ((host (%md-host (%md-context))))
+    (is (eq :drawing (clautolisp.autolisp-host:host-sysvar-scope host "LTSCALE")))
+    (is (eq :registry (clautolisp.autolisp-host:host-sysvar-scope host "OSMODE")))
+    (is (eq :not-saved (clautolisp.autolisp-host:host-sysvar-scope host "CMDACTIVE")))
+    (is (eq :drawing (clautolisp.drawing:sysvar-cell-scope
+                      (clautolisp.cador:cador-sysvar host "LTSCALE"))))))

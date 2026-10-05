@@ -1373,14 +1373,10 @@ and make it the active document (AutoCAD's documented behaviour) -- at the
 switch time of the dialect. Returns its VLA-object."
   (let* ((path (%require-com-string-argument args "Open"))
          (read-only (and (second args) (%com-true-p (second args))))
-         (drawing (handler-case (clautolisp.drawing:read-drawing path)
-                    (error (condition)
-                      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
-                       :com-open-failed "Open could not read ~A: ~A." path condition))))
-         (key (%cador-fresh-document-key host (file-namestring path))))
-    (cador-prepare-document-drawing host drawing)
-    (setf (cador-documents host) (append (cador-documents host) (list (cons key drawing))))
-    (setf (doc-session-read-only (cador-document-session host key)) read-only)
+         (key (handler-case (host-open-document-from-file host path :read-only read-only)
+                (error (condition)
+                  (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                   :com-open-failed "Open could not read ~A: ~A." path condition)))))
     (clautolisp.autolisp-host:request-host-document-activation host key)
     (com-object->vla (%document-object host key))))
 

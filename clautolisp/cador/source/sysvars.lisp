@@ -284,13 +284,15 @@ CLAUTOLISPDEFAULTDRAWINGFORMAT and CLAUTOLISPNEWDRAWINGTEMPLATE. Returns MOCK."
                           :kind :string
                           :value (%default-drawing-format-initial-value)
                           :read-only-p nil
-                          :host-derived-p nil))
+                          :host-derived-p nil
+                          :scope :not-saved))
   (setf (gethash +new-drawing-template-sysvar+ (cador-sysvars mock))
         (make-sysvar-cell :name +new-drawing-template-sysvar+
                           :kind :string
                           :value (%new-drawing-template-initial-value)
                           :read-only-p nil
-                          :host-derived-p nil))
+                          :host-derived-p nil
+                          :scope :not-saved))
   mock)
 
 (defun %sysvar-string (mock name)
@@ -422,7 +424,8 @@ with HOST-DERIVED-P defaulting to NIL for the :SEED list."
                                 :kind kind
                                 :value default
                                 :read-only-p read-only-p
-                                :host-derived-p host-derived-p))))
+                                :host-derived-p host-derived-p
+                                :scope (sysvar-scope-tier name)))))
     ;; The catalogue can only stand in (a zero of the right type) for the
     ;; drawing-dependent cells; a fresh drawing holds its template's
     ;; values, which the vendor documentation states for both templates

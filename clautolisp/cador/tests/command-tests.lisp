@@ -644,7 +644,8 @@
       (clautolisp.autolisp-host:host-command
        mock (list "_.OPEN" (namestring (clautolisp.drawing:drawing-template-path))))
       (is (= 3 (length (clautolisp.autolisp-host:host-document-list mock))))
-      (is (eq :document-opened (car (first events))))
+      ;; :DOCUMENT-OPENED, then the switch's :DOCUMENT-ACTIVATED.
+      (is (member :document-opened (mapcar #'car (subseq events 0 2))))
       ;; MENULOAD: only the UI forms reach the UI.
       (clautolisp.autolisp-host:host-command mock (list "_.MENULOAD" (namestring menu)))
       (destructuring-bind (event forms path) (first events)
