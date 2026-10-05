@@ -246,7 +246,7 @@ suffices for C5.
 | =host-open-document-from-file= | host path &key format read-only | a fresh key (the file's name, made unique) for the drawing read from =path= (=format=, or sniffed: DXF / DWG); does *not* change the current document; =read-only= marks it read-only | unreadable file ⇒ =backend-error= |
 | =host-document-of=         | host handle        | the key of the document an entity name or COM object belongs to, or =nil= | — |
 
-Built in cador-4 slice 1 (clautolisp 2.2.197): opening from a file, closing
+Built in cador-4 slice 1 (clautolisp 2.2.198): opening from a file, closing
 with =save=, =host-document-of=. The OPEN command and COM =Documents.Open= go
 through =host-open-document-from-file=. DWG reads through the libredwg codec
 when it is installed; without it the read fails, which is the
@@ -356,7 +356,7 @@ inconsistency noted for cleanup in D2 §II.15).
 *Scope tier (R4 / C4).* Epic §4.3 and constraint C4 require *every* system
 variable to carry its scope tier as data, one of *Drawing* / *Registry* /
 *Not-saved* [A, analysis §"System variable scopes"]. *Built* (cador-4 slice 1,
-clautolisp 2.2.197): the =sysvar-cell= has a =scope= slot -- =:drawing=,
+clautolisp 2.2.198): the =sysvar-cell= has a =scope= slot -- =:drawing=,
 =:registry= or =:not-saved= -- and =host-sysvar-scope (host name)= is the
 introspector. The tiers come from the inventory's =:saved-in=
 (=tools/generate-sysvar-scopes.py=): =:drawing= as is, =:registry= and
@@ -599,15 +599,22 @@ mutual exclusion (there is nothing to exclude, C8) but the *protocol violation*
 signalled*, because that is a bug that would otherwise surface only against a
 real backend. There is a HAL surface for this:
 
-| Operation (proposed generic) | Arguments        | Returns | Errors                                        |
+| Operation                    | Arguments        | Returns | Errors                                        |
 |------------------------------+------------------+---------+-----------------------------------------------|
-| =host-lock-document=         | host document    | a lock token | —                                        |
-| =host-unlock-document=       | host document lock-token | =t= | unbalanced unlock ⇒ =backend-error=      |
+| =host-lock-document=         | host key         | a lock token, =(key . depth)= on =cador= | unknown key ⇒ =:no-such-document= |
+| =host-unlock-document=       | host key lock-token | =t= | unbalanced unlock ⇒ =backend-error=      |
 
-On =cador= these maintain a per-document lock-held flag and signal when a
-cross-document mutation is attempted without it; on =nihil= they signal
-not-supported; on =<wire-host>= they forward to =lockDocument= /
-=unlockDocument=.
+*Built* (cador-4 slice 2, clautolisp 2.2.198). On =cador= the lock is a
+per-document count (locks nest). The check: while a COM call runs against a
+document that is not the current one (=call-with-cador-document=), every
+change its drawing records (=note-drawing-modified=, through
+=*drawing-modification-hook*=) is checked; from *application context* --
+Lisp code driving the host, no AutoLISP evaluation in progress -- without
+the lock held, it signals =:document-not-locked=. AutoLISP itself runs in
+document context and has no lock to take, so its COM calls into another
+document (=vla-addline= on that document's ModelSpace) are not checked. On
+=nihil= the two signal not-supported; on =<wire-host>= they will forward to
+=lockDocument= / =unlockDocument=.
 
 *C8 restated.* =cador= needs *no worker thread and must not require one*: a
 batch or single-document run spawns none. The threads that carry parked

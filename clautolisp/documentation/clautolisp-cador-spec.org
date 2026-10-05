@@ -674,9 +674,9 @@ locking for mutual exclusion (single runner, nothing to exclude, C8) but
 *detects and signals the protocol violation* of mutating a non-current document
 without holding its lock, because that catches bugs that would otherwise appear
 only against a real backend (epic §9.5, R20). The =host-lock-document= /
-=host-unlock-document= surface is D1 §10; it is =prop= — not built by cador-2,
-tracked in cador-4 ("Locking semantics"). Grade: design (the surface does not
-exist yet).
+=host-unlock-document= surface is D1 §10, built in cador-4 slice 2 (clautolisp
+2.2.198): a nesting per-document lock count, and the check on changes made
+to a non-current document from application context. Grade: S.
 
 ** 9.6 E1 and E2 outcomes
 *Resolution:* stated as assumptions A1 (symbol identity ⇒ global interning) and

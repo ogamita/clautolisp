@@ -37,6 +37,11 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Host interface (cador-4): document locking as the host interface
+  specifies it -- a checked no-op: tools driving the host that modify a
+  document other than the current one must take its lock
+  (~host-lock-document~), or the change is signalled; AutoLISP's own COM
+  calls are not affected.
 - Host interface (cador-4): open a document from a file without switching to
   it, close with save, the document an entity or COM object belongs to, and
   the scope tier of every system variable (drawing / registry / not saved);

@@ -1599,7 +1599,14 @@ or :APPLICATION. A closed document's object signals :document-closed."
            :document-closed
            "Automation error: the document ~A has been closed." key))
         (unwind-protect
-             (let ((*cador-current-document-key* (cador-current-document-key host)))
+             (let* ((*cador-current-document-key* (cador-current-document-key host))
+                    ;; D1 §10, the checked no-op: a change to this
+                    ;; non-current document is checked against its lock.
+                    (outer clautolisp.drawing:*drawing-modification-hook*)
+                    (clautolisp.drawing:*drawing-modification-hook*
+                      (lambda (target)
+                        (when (eq target (cdr cell)) (%check-document-lock host key))
+                        (when outer (funcall outer target)))))
                (setf (cador-active-drawing host) (cdr cell)
                      (cador-active-document-key host) key)
                (funcall thunk))

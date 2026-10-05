@@ -117,6 +117,14 @@ name or a COM object -- or NIL when HANDLE carries no document (D1 §3)."))
 the drawing, one value per document), :REGISTRY (the application's, persisted
 in the profile) or :NOT-SAVED (the session's); NIL when the host does not
 know NAME (D1 §4, C4)."))
+(defgeneric host-lock-document (host key)
+  (:documentation "Take document KEY's lock and return a lock token (D1 §10).
+Locks nest. On cador a checked no-op: nothing is excluded (one runner), but
+application-context code that modifies a document other than the current one
+without holding its lock is signalled -- the bug a real product would show."))
+(defgeneric host-unlock-document (host key token)
+  (:documentation "Release document KEY's lock taken as TOKEN; T. Releasing a
+lock that is not held signals BACKEND-ERROR (D1 §10)."))
 (defgeneric host-close-document (host key &key save file)
   (:documentation "Close the document identified by KEY. Returns T if a
 document was closed, NIL if KEY was unknown. Closing the current document is
@@ -276,6 +284,12 @@ when the file cannot be read."))
 (defmethod host-open-document-from-file ((host host) path &key format read-only)
   (declare (ignore path format read-only))
   (signal-host-not-supported host 'open-document-from-file))
+(defmethod host-lock-document ((host host) key)
+  (declare (ignore key))
+  (signal-host-not-supported host 'lock-document))
+(defmethod host-unlock-document ((host host) key token)
+  (declare (ignore key token))
+  (signal-host-not-supported host 'unlock-document))
 (defmethod host-document-of ((host host) handle)
   (declare (ignore handle))
   (signal-host-not-supported host 'document-of))
