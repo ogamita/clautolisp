@@ -599,3 +599,24 @@ entities/lispsys-bom-probe.lsp:
   - restores LISPSYS / SECURELOAD in every profile afterwards (finally).
 Report: dist/encoding/lispsys-bom-autocad-Windows.txt. Results go here when
 it has run.
+
+** E1 results (2026-10-05, job 16931781178, AutoCAD 2022 = ACADVER 24.1)
+
+LISPSYS was written into both profiles (<<Profil sans nom>>, Epure; both
+held "0", String) and each run reported the level it was given, so the
+profile write is how a level is set (no /isolate involved). AutoCAD's
+native load, (strlen (vl-string->list *e1-value*)) of "AéZ":
+
+| source file        | LISPSYS 0              | LISPSYS 1          | LISPSYS 2          |
+|--------------------+------------------------+--------------------+--------------------|
+| cp1252 (E9)        | (3 (65 233 90))        | (3 (65 233 90))    | (3 (65 233 90))    |
+| UTF-8 (C3 A9)      | (4 (65 195 169 90))    | (3 (65 233 90))    | (3 (65 233 90))    |
+| UTF-8 + BOM        | (4 (65 195 169 90))    | (3 (65 233 90))    | (3 (65 233 90))    |
+
+So, measured (it was pjb's statement before):
+  - LISPSYS 0: windows-1252, and the BOM is IGNORED (skipped, no error, no
+    effect: the UTF-8 bytes still read as two characters);
+  - LISPSYS 1 / 2: UTF-8, BOM or not -- and a file that is NOT valid UTF-8
+    (the lone E9) is read as windows-1252 instead: a FALLBACK, not an error.
+Profiles restored to "0" afterwards (report's last line).
+
