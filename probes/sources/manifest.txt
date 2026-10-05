@@ -34,6 +34,8 @@ probe-cond.lsp                cad-probe-run-cond-probes
 probe-versions.lsp            cad-probe-run-version-probes
 probe-triage2.lsp             cad-probe-run-triage2-probes
 probe-triage3.lsp             cad-probe-run-triage3-probes
+# LAST: a NEW / OPEN may end the run.
+probe-documents.lsp           cad-probe-run-document-probes
 
 # QUARANTINED -- run alone and split, never as part of a normal run:
 #     PROBE_SUITES=load-refusal PROBE_SPLIT_SUITES=load-refusal
