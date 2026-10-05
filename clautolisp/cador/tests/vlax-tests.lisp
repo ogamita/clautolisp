@@ -115,7 +115,7 @@
     (let ((doc (host-vlax-get-property mock app "ActiveDocument")))
       (is (typep doc 'clautolisp.autolisp-runtime:autolisp-vla-object))
       ;; It really is an AutoCAD.Document — its Name default proves it.
-      (is (string= "Drawing.dwg" (host-vlax-get-property mock doc "Name")))
+      (is (string= "Drawing1.dwg" (autolisp-string-value (host-vlax-get-property mock doc "Name"))))
       ;; And the back-link Document.Application points at the app.
       (let ((back (host-vlax-get-property mock doc "Application")))
         (is (typep back 'clautolisp.autolisp-runtime:autolisp-vla-object))
@@ -828,7 +828,9 @@ merely because an ATTDEF came back."
          (progn
            (host-vlax-invoke-method host doc "SaveAs" (list path))
            (is (probe-file path))
-           (is (string= path (host-vlax-get-property host doc "Name"))))
+           ;; Name is the file's name (DWGNAME), FullName its path.
+           (is (string= (file-namestring path)
+                        (autolisp-string-value (host-vlax-get-property host doc "Name")))))
       (ignore-errors (delete-file path)))))
 
 (test vlax-new-object-surface-is-reported-available

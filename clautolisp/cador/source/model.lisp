@@ -56,7 +56,12 @@ vlax-release-object."
   ;; NAME — *Model_Space / *Paper_Space / a user block). Their members
   ;; and Count are recomputed from the drawing on each access, so
   ;; entmake / DXF loads / Add / Delete are always reflected.
-  (collection-kind nil))
+  (collection-kind nil)
+  ;; The document this object belongs to (a document KEY), :APPLICATION for
+  ;; the application-level objects (Application, Documents, Preferences), or
+  ;; NIL before registration. Every access to the object runs with that
+  ;; document's drawing current (multi-document slice 5).
+  (document-key nil))
 
 ;;; --- MockHost ---------------------------------------------------
 
@@ -180,6 +185,10 @@ this records registrations/queued expressions for introspection.")
 per-document session state (picksets, pickfirst, iterators, initget, ldata,
 open entmake runs, the ename cache, the COM identity maps). Multi-document
 slice 2: they were host-global, shared by every drawing.")
+   (document-com-ids         :initform (make-hash-table :test #'equal)
+                             :reader   cador-document-com-ids
+                             :documentation "Document KEY -> COM id of its
+AutoCAD.Document object (identity-stable, one per open document).")
    (untitled-counter         :initform 1
                              :accessor cador-untitled-counter
                              :documentation "The number of the last untitled
@@ -216,6 +225,7 @@ that is not part of a drawing."))
 ;;; every caller follows the current document unchanged.
 
 (defstruct doc-session
+  (read-only nil)
   (picksets (make-hash-table :test #'eq))
   (pickfirst nil)
   (tblnext-iterators (make-hash-table :test #'eq))

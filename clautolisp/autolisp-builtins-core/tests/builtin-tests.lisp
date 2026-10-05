@@ -3119,17 +3119,16 @@ the host's prompt-output / command log after the run."
 
 (test vla-get-accessor-reads-a-property
   (let ((name (%vla "(vl-load-com)(vla-get-name (vla-get-activedocument (vlax-get-acad-object)))")))
-    (is (string= "Drawing.dwg"
+    (is (string= "Drawing1.dwg"
                  (if (typep name 'autolisp-string) (autolisp-string-value name) name)))))
 
 (test vla-put-accessor-writes-a-property
-  (let ((name (%vla (concatenate 'string
-                                 "(vl-load-com)"
-                                 "(setq d (vla-get-activedocument (vlax-get-acad-object)))"
-                                 "(vla-put-name d \"Renamed.dwg\")"
-                                 "(vla-get-name d)"))))
-    (is (string= "Renamed.dwg"
-                 (if (typep name 'autolisp-string) (autolisp-string-value name) name)))))
+  ;; Document.Name is read-only (the drawing's name); Application.Visible is not.
+  (is (null (%vla (concatenate 'string
+                               "(vl-load-com)"
+                               "(setq a (vlax-get-acad-object) v (vla-get-visible a))"
+                               "(vla-put-visible a :vlax-false)"
+                               "(equal v (vla-get-visible a))")))))
 
 (test vla-method-dispatch-routes-to-invoke-method
   ;; A non-get/put vla-<method> dispatches to vlax-invoke-method; an
@@ -3359,7 +3358,7 @@ Value as its TextString; both are read through the façade as well."
                     "  (setq n (+ n 1)))"
                     "n"))))
   ;; VAR is bound to each member (a document VLA-object) in turn.
-  (is (equal "Drawing.dwg"
+  (is (equal "Drawing1.dwg"
              (let ((v (%vla (concatenate 'string
                              "(vl-load-com)(setq nm nil)"
                              "(vlax-for d (vlax-get-property (vlax-get-acad-object) \"Documents\")"

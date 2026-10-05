@@ -235,6 +235,9 @@ the drawing for a live collection, the stored list for a static one."
       ((eq kind :blocks)
        (mapcar (lambda (name) (com-object->vla (%block-object host name)))
                (%block-names host)))
+      ((eq kind :documents)
+       (mapcar (lambda (key) (com-object->vla (%document-object host key)))
+               (host-document-list host)))
       ;; Paper layouts first, then Model: the order vlax-for walks them in
       ;; on BricsCAD (V26 macOS, V25 Windows).
       ((eq kind :layouts)
@@ -723,6 +726,13 @@ RESULT T) when NAME was handled, (values NIL NIL) otherwise."
        (values (%block-add-attribute host kind args) t))
       ((and (eq kind :documents) (string-equal name "Add"))
        (values (%documents-add host) t))
+      ((and (eq kind :documents) (string-equal name "Open"))
+       (values (%documents-open host args) t))
+      ((and (eq kind :documents) (string-equal name "Close"))
+       ;; Documents.Close: close them all (a session keeps one fresh drawing).
+       (dolist (key (host-document-list host))
+         (cador-close-document host key))
+       (values nil t))
       ((and (eq kind :linetypes) (string-equal name "Load"))
        (values (%linetypes-load host args) t))
       ((and (%layer-object-p object) (string-equal name "Delete"))
@@ -734,7 +744,8 @@ RESULT T) when NAME was handled, (values NIL NIL) otherwise."
   (let ((kind (mock-com-object-collection-kind object)))
     (or (and (mock-com-object-collection-p object) (string-equal name "Item"))
         (and (member kind '(:blocks :layers)) (string-equal name "Add") t)
-        (and (eq kind :documents) (string-equal name "Add") t)
+        (and (eq kind :documents)
+             (member name '("Add" "Open" "Close") :test #'string-equal) t)
         (and (eq kind :linetypes) (string-equal name "Load") t)
         (and (consp kind) (eq (car kind) :block-entities)
              (member name '("Delete" "InsertBlock" "AddLine" "AddAttribute")
@@ -1159,6 +1170,26 @@ T) when handled."
          (eql (clautolisp.autolisp-runtime:autolisp-vla-object-value active)
               (mock-com-object-id document)))))
 
+(defun %document-drawing (host object)
+  (cdr (assoc (mock-com-object-document-key object) (cador-documents host) :test #'equal)))
+
+(defun %application-com-property-get (host object name)
+  "Application.ActiveDocument: the current document's object."
+  (if (and (string-equal (mock-com-object-progid object) "AutoCAD.Application")
+           (string-equal name "ActiveDocument"))
+      (values (com-object->vla (%document-object host (cador-current-document-key host))) t)
+      (values nil nil)))
+
+(defun %application-com-property-put (host object name value)
+  "Setting Application.ActiveDocument activates that document."
+  (if (and (string-equal (mock-com-object-progid object) "AutoCAD.Application")
+           (string-equal name "ActiveDocument"))
+      (progn
+        (clautolisp.autolisp-host:request-host-document-activation
+         host (%document-key-of host value 'vlax-put-property))
+        (values value t))
+      (values nil nil)))
+
 (defun %document-com-property-get (host object name)
   "Document.ActiveLayer is the AutoCAD.Layer for the current CLAYER (dynamic,
 so it tracks setvar/ActiveLayer changes); Document.Active is :VLAX-TRUE for
@@ -1169,7 +1200,23 @@ VALUE T) when handled."
     ((string-equal name "ActiveLayer")
      (values (com-object->vla (%layer-object host (%current-layer-name host))) t))
     ((string-equal name "Active")
-     (values (%vlax-boolean (%active-document-p host object)) t))
+     (values (%vlax-boolean (equal (mock-com-object-document-key object)
+                                   (cador-current-document-key host)))
+             t))
+    ((member name '("Name" "FullName" "Path" "Saved" "ReadOnly") :test #'string-equal)
+     (let* ((drawing (%document-drawing host object))
+            (path (and drawing (clautolisp.drawing:drawing-path drawing))))
+       (values
+        (cond
+          ((string-equal name "Name") (%al-string (if drawing (clautolisp.drawing:drawing-name drawing) "")))
+          ((string-equal name "FullName") (%al-string (if path (namestring path) "")))
+          ((string-equal name "Path")
+           (%al-string (if path (namestring (uiop:pathname-directory-pathname path)) "")))
+          ((string-equal name "Saved")
+           (and drawing (zerop (clautolisp.drawing:drawing-dbmod drawing))))
+          (t (doc-session-read-only
+              (cador-document-session host (mock-com-object-document-key object)))))
+        t)))
     (t (values nil nil))))
 
 (defun %preferences-com-property-get (host object name)
@@ -1213,6 +1260,12 @@ profile, CPROFILE. Returns (values VALUE T) when handled."
 ;;; then the Document's dynamic properties.
 
 (defun %object-com-property-get (host object name)
+  (multiple-value-bind (value0 handled0) (%application-com-property-get host object name)
+    (if handled0
+        (values value0 handled0)
+        (%object-com-property-get-1 host object name))))
+
+(defun %object-com-property-get-1 (host object name)
   (multiple-value-bind (value handled) (%entity-com-property-get host object name)
     (if handled
         (values value handled)
@@ -1225,6 +1278,12 @@ profile, CPROFILE. Returns (values VALUE T) when handled."
                     (%preferences-com-property-get host object name))))))))
 
 (defun %object-com-property-put (host object name value)
+  (multiple-value-bind (result0 handled0) (%application-com-property-put host object name value)
+    (if handled0
+        (values result0 handled0)
+        (%object-com-property-put-1 host object name value))))
+
+(defun %object-com-property-put-1 (host object name value)
   (multiple-value-bind (result handled) (%entity-com-property-put host object name value)
     (if handled
         (values result handled)
@@ -1244,8 +1303,11 @@ profile, CPROFILE. Returns (values VALUE T) when handled."
                    :test #'string-equal)
            t)
       (and (%document-object-p object)
-           (member name '("ActiveLayer" "Active") :test #'string-equal)
+           (member name '("ActiveLayer" "Active" "Name" "FullName" "Path" "Saved" "ReadOnly")
+                   :test #'string-equal)
            t)
+      (and (string-equal (mock-com-object-progid object) "AutoCAD.Application")
+           (string-equal name "ActiveDocument"))
       (and (string-equal (mock-com-object-progid object) "AutoCAD.PreferencesFiles")
            (string-equal name "SupportPath"))
       (and (string-equal (mock-com-object-progid object) "AutoCAD.PreferencesProfiles")
@@ -1283,34 +1345,44 @@ actually persist. Returns DOC."
                   (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
                    :com-save-failed
                    "SaveAs could not write ~A: ~A." path condition)))
-              (let ((props (mock-com-object-properties object)))
-                (setf (gethash "Name" props) path
-                      (gethash "FullName" props) path
-                      (gethash "Saved" props) t))
               nil))
           (gethash "Save" methods)
           (lambda (host object args)
-            (declare (ignore host args))
-            (setf (gethash "Saved" (mock-com-object-properties object)) t)
+            (declare (ignore args))
+            (let ((drawing (cador-active-drawing host)))
+              (when (doc-session-read-only (cador-document-session host))
+                (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                 :com-save-failed "Save: ~A is open read-only; use SaveAs."
+                 (clautolisp.drawing:drawing-name drawing)))
+              (when (clautolisp.drawing:drawing-path drawing)
+                (cador-save-drawing host drawing (namestring (clautolisp.drawing:drawing-path drawing)))))
+            (setf (mock-com-object-released-p object) (mock-com-object-released-p object))
             nil)))
   doc)
 
 (defun %documents-add (host)
-  "AutoCAD.Documents.Add: a fresh AutoCAD.Document over the host's single
-in-memory drawing (the mock is single-document), wired to the live Blocks /
-Layers / Linetypes / ModelSpace / PaperSpace and to the persisting SaveAs /
-Save closures. Returns the new document's VLA-object."
-  (let* ((doc (%register-mock-com-object
-               host (build-mock-com-object host "AutoCAD.Document")))
-         (props (mock-com-object-properties doc)))
-    (setf (gethash "Blocks" props)     (com-object->vla (%blocks-collection host))
-          (gethash "Layers" props)     (com-object->vla (%layers-collection host))
-          (gethash "Linetypes" props)  (com-object->vla (%linetypes-collection host))
-          (gethash "ModelSpace" props) (com-object->vla (%block-object host "*Model_Space"))
-          (gethash "PaperSpace" props) (com-object->vla (%block-object host "*Paper_Space"))
-          (gethash "Layouts" props)    (com-object->vla (%layouts-collection host)))
-    (%install-document-persistence host doc)
-    (com-object->vla doc)))
+  "AutoCAD.Documents.Add: a new drawing with its own database, NOT made
+active (BricsCAD V26: the new document's Active is :vlax-false, ActiveDocument
+and DWGNAME unchanged, its ModelSpace empty -- probe-documents job
+16932759882). Returns the new document's VLA-object."
+  (com-object->vla (%document-object host (host-open-document host))))
+
+(defun %documents-open (host args)
+  "AutoCAD.Documents.Open(Name [, ReadOnly]): read the drawing, register it
+and make it the active document (AutoCAD's documented behaviour) -- at the
+switch time of the dialect. Returns its VLA-object."
+  (let* ((path (%require-com-string-argument args "Open"))
+         (read-only (and (second args) (%com-true-p (second args))))
+         (drawing (handler-case (clautolisp.drawing:read-drawing path)
+                    (error (condition)
+                      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                       :com-open-failed "Open could not read ~A: ~A." path condition))))
+         (key (%cador-fresh-document-key host (file-namestring path))))
+    (cador-prepare-document-drawing host drawing)
+    (setf (cador-documents host) (append (cador-documents host) (list (cons key drawing))))
+    (setf (doc-session-read-only (cador-document-session host key)) read-only)
+    (clautolisp.autolisp-host:request-host-document-activation host key)
+    (com-object->vla (%document-object host key))))
 
 (defun %model-add-line (host collection-kind args)
   "ModelSpace.AddLine(StartPoint, EndPoint): create a LINE on the current layer
@@ -1490,9 +1562,124 @@ is available; the .lin file is not parsed (the mock has none). Returns nil."
 
 (defun %register-mock-com-object (host object)
   "Store OBJECT in HOST's com-objects table (build-mock-com-object
-allocates but does not register). Returns OBJECT."
+allocates but does not register), attributing it to the current document
+unless it already names one (or :APPLICATION). Returns OBJECT."
+  (unless (mock-com-object-document-key object)
+    (setf (mock-com-object-document-key object) (cador-active-document-key host)))
   (setf (gethash (mock-com-object-id object) (cador-com-objects host))
         object))
+
+;;; --- Each object addresses its own document (multi-document slice 5) ----
+
+(defvar *cador-current-document-key* nil
+  "While CALL-WITH-CADOR-DOCUMENT makes another document's drawing current for
+an object access, the document that is REALLY current (Document.Active,
+Application.ActiveDocument); NIL otherwise.")
+
+(defun cador-current-document-key (host)
+  "The really current document of HOST, even inside an object's document binding."
+  (or *cador-current-document-key* (cador-active-document-key host)))
+
+(defun %com-true-p (value)
+  "A COM Boolean argument as a CL boolean: :vlax-true, T or -1 are true."
+  (or (eql value -1)
+      (and (typep value 'clautolisp.autolisp-runtime:autolisp-symbol)
+           (member (clautolisp.autolisp-runtime:autolisp-symbol-name value)
+                   '(":VLAX-TRUE" "T") :test #'string-equal)
+           t)))
+
+(defun call-with-cador-document (host key thunk)
+  "Call THUNK with document KEY's drawing current (HOST's ACTIVE-DRAWING and
+ACTIVE-DOCUMENT-KEY), restoring them after; directly when KEY is current, NIL
+or :APPLICATION. A closed document's object signals :document-closed."
+  (if (or (null key) (eq key :application)
+          (equal key (cador-active-document-key host)))
+      (funcall thunk)
+      (let ((cell (assoc key (cador-documents host) :test #'equal))
+            (drawing (cador-active-drawing host))
+            (active-key (cador-active-document-key host)))
+        (unless cell
+          (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+           :document-closed
+           "Automation error: the document ~A has been closed." key))
+        (unwind-protect
+             (let ((*cador-current-document-key* (cador-current-document-key host)))
+               (setf (cador-active-drawing host) (cdr cell)
+                     (cador-active-document-key host) key)
+               (funcall thunk))
+          (setf (cador-active-drawing host) drawing
+                (cador-active-document-key host) active-key)))))
+
+(defun %vla-document-key (host vla)
+  (let ((object (ignore-errors (resolve-vla-object host vla 'vlax))))
+    (and object (mock-com-object-document-key object))))
+
+(defmacro %define-document-bound-com-method (name (&rest args))
+  `(defmethod ,name :around ((host cador) vla ,@args)
+     (call-with-cador-document host (%vla-document-key host vla)
+                               (lambda () (call-next-method)))))
+
+(%define-document-bound-com-method host-vlax-get-property (name))
+(%define-document-bound-com-method host-vlax-put-property (name value))
+(%define-document-bound-com-method host-vlax-invoke-method (name args))
+(%define-document-bound-com-method host-vlax-collection-items ())
+(%define-document-bound-com-method host-vlax-property-available-p (name))
+(%define-document-bound-com-method host-vlax-method-applicable-p (name))
+
+;;; --- Documents: one AutoCAD.Document per open document ----------------------
+
+(defun %application-vla (host)
+  (com-object->vla (cador-find-com-object host (cador-acad-application-id host))))
+
+(defun %document-object (host key)
+  "The identity-stable AutoCAD.Document of open document KEY, its collections
+built against that document's drawing."
+  (let* ((ids (cador-document-com-ids host))
+         (cached (let ((id (gethash key ids)))
+                   (and id (cador-find-com-object host id)))))
+    (or cached
+        (let ((doc (build-mock-com-object host "AutoCAD.Document")))
+          (setf (mock-com-object-document-key doc) key)
+          (%register-mock-com-object host doc)
+          (setf (gethash key ids) (mock-com-object-id doc))
+          ;; Name / FullName / Path / Saved / ReadOnly are the drawing's
+          ;; (%document-com-property-get), not stored.
+          (dolist (name '("Name" "FullName" "Path" "Saved" "ReadOnly"))
+            (remhash name (mock-com-object-properties doc)))
+          (when (cador-acad-application-id host)
+            (setf (gethash "Application" (mock-com-object-properties doc))
+                  (%application-vla host)))
+          (%install-document-persistence host doc)
+          (call-with-cador-document
+           host key
+           (lambda ()
+             (let ((props (mock-com-object-properties doc)))
+               (setf (gethash "Blocks" props) (com-object->vla (%blocks-collection host))
+                     (gethash "Layers" props) (com-object->vla (%layers-collection host))
+                     (gethash "Linetypes" props) (com-object->vla (%linetypes-collection host))
+                     (gethash "ModelSpace" props) (com-object->vla (%block-object host "*Model_Space"))
+                     (gethash "PaperSpace" props) (com-object->vla (%block-object host "*Paper_Space"))
+                     (gethash "Layouts" props) (com-object->vla (%layouts-collection host))))))
+          (setf (gethash "Activate" (mock-com-object-methods doc))
+                (lambda (host object args)
+                  (declare (ignore args))
+                  (clautolisp.autolisp-host:request-host-document-activation
+                   host (mock-com-object-document-key object))
+                  nil)
+                (gethash "Close" (mock-com-object-methods doc))
+                (lambda (host object args)
+                  ;; Close([SaveChanges [, FileName]])
+                  (let ((save (and args (%com-true-p (first args))))
+                        (file (and (second args) (%com-string (second args)))))
+                    (cador-close-document host (mock-com-object-document-key object)
+                                          :save save :file file)
+                    (setf (mock-com-object-released-p object) t)
+                    nil)))
+          doc))))
+
+(defun %document-key-of (host vla operator)
+  (let ((object (resolve-vla-object host vla operator)))
+    (mock-com-object-document-key object)))
 
 (defmethod host-vlax-get-acad-object ((host cador))
   "Return the singleton AutoCAD.Application VLA-OBJECT, creating it — and
@@ -1503,49 +1690,28 @@ document. Repeated calls return the same application object."
          (cached (and cached-id (cador-find-com-object host cached-id))))
     (if (and cached (not (mock-com-object-released-p cached)))
         (com-object->vla cached)
-        (let ((app (%register-mock-com-object
-                    host (build-mock-com-object host "AutoCAD.Application")))
-              (doc (%register-mock-com-object
-                    host (build-mock-com-object host "AutoCAD.Document"))))
-          ;; Wire the object graph: Application.ActiveDocument -> the
-          ;; document, and Document.Application -> back to the app.
-          (setf (gethash "ActiveDocument" (mock-com-object-properties app))
-                (com-object->vla doc))
-          (setf (gethash "Application" (mock-com-object-properties doc))
-                (com-object->vla app))
-          ;; The active document persists to the live drawing on SaveAs.
-          (%install-document-persistence host doc)
-          ;; Drawing-backed collections: Blocks / Layers, and the
-          ;; ModelSpace / PaperSpace layout blocks (replacing the
-          ;; template's placeholder strings), so vla-get-blocks /
-          ;; vla-item / vlax-for resolve against the live drawing.
-          (let ((props (mock-com-object-properties doc)))
-            (setf (gethash "Blocks" props)
-                  (com-object->vla (%blocks-collection host))
-                  (gethash "Layers" props)
-                  (com-object->vla (%layers-collection host))
-                  (gethash "Linetypes" props)
-                  (com-object->vla (%linetypes-collection host))
-                  (gethash "ModelSpace" props)
-                  (com-object->vla (%block-object host "*Model_Space"))
-                  (gethash "PaperSpace" props)
-                  (com-object->vla (%block-object host "*Paper_Space"))
-                  (gethash "Layouts" props)
-                  (com-object->vla (%layouts-collection host))))
-          (setf (gethash "Preferences" (mock-com-object-properties app))
-                (com-object->vla (%preferences-object host)))
-          ;; A Documents collection holding the one open document, so
-          ;; vlax-for / vlax-map-collection have something to iterate,
-          ;; and Documents.Add reaches the single-document mock.
-          (let ((docs (%register-mock-com-object
-                       host (make-mock-com-object
-                             :progid "AutoCAD.Documents"
-                             :collection-p t
-                             :collection-kind :documents
-                             :collection-members (list (com-object->vla doc))))))
+        (let ((app (build-mock-com-object host "AutoCAD.Application")))
+          (setf (mock-com-object-document-key app) :application)
+          (%register-mock-com-object host app)
+          (setf (cador-acad-application-id host) (mock-com-object-id app))
+          ;; ActiveDocument is the host's current document's object, live
+          ;; (%application-com-property-get); not stored.
+          (remhash "ActiveDocument" (mock-com-object-properties app))
+          (let ((prefs (%preferences-object host)))
+            (setf (mock-com-object-document-key prefs) :application)
+            (setf (gethash "Preferences" (mock-com-object-properties app))
+                  (com-object->vla prefs)))
+          ;; Documents: a live collection over the open documents.
+          (let ((docs (make-mock-com-object :progid "AutoCAD.Documents"
+                                            :collection-p t
+                                            :collection-kind :documents
+                                            :document-key :application)))
+            (%register-mock-com-object host docs)
             (setf (gethash "Documents" (mock-com-object-properties app))
                   (com-object->vla docs)))
-          (setf (cador-acad-application-id host) (mock-com-object-id app))
+          ;; Every open document's object, so each has its Application.
+          (dolist (key (host-document-list host))
+            (%document-object host key))
           (com-object->vla app)))))
 
 (defmethod host-vlax-collection-items ((host cador) vla)

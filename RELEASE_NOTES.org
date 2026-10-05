@@ -37,6 +37,11 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Multi-document, slice 5: COM ~Documents~ is a live collection; ~Add~ opens
+  a separate, inactive drawing, ~Open~ / ~Activate~ / ~Close~ /
+  ~ActiveDocument~ work; each Document's objects address its own drawing;
+  ~Name~ / ~FullName~ / ~Path~ / ~Saved~ / ~ReadOnly~ are the drawing's. A
+  drawing read from a file is named after it.
 - Multi-document, slice 4: ~QSAVE~, ~SAVE~, ~SAVEAS~, ~CLOSE~ and ~CLOSEALL~
   commands (answers as with ~FILEDIA~ 0); saving names the drawing after its
   file; untitled drawings are numbered for the session (~Drawing2.dwg~ after

@@ -1117,13 +1117,22 @@ provides that surface through the host backend:
   LISP namespace goes with it. A session always keeps one drawing: closing
   the last opens a fresh untitled one (AutoCAD is left with none). Saving
   names the drawing after its file (~DWGNAME~), as ~vla-saveas~ does too.
-- Documents are created and saved through the object model:
-  ~(vla-add documents)~ opens a document over the in-memory drawing
-  (the mock is single-document) wired to the same live Blocks / Layers
-  / Linetypes / ModelSpace / PaperSpace; ~(vla-saveas doc "path.dwg")~
-  writes the drawing (the format follows the extension) and records the
-  new ~Name~; ~Save~ and ~Close~ are no-ops that mark the document
-  saved / released (the drawing stays in memory). When the path carries
+- Documents through the object model: ~(vla-get-documents app)~ is a live
+  collection of the open drawings (~Count~, ~Item~, ~vlax-for~).
+  ~(vla-add documents)~ opens a new drawing with its own database and does
+  *not* make it current (as measured on BricsCAD V26); ~(vla-open documents
+  "f.dwg" [:vlax-true])~ reads a file (read-only when asked) and makes it
+  current; ~(vla-activate doc)~ makes a document current; ~(vla-close doc
+  [save [file]])~ closes it; ~vla-get-activedocument~ follows the current
+  drawing and ~vla-put-activedocument~ changes it -- each switch at the
+  time ~NEW~ / ~OPEN~ would (see above). A document's objects -- its
+  ~ModelSpace~, ~Blocks~, ~Layers~, the entities reached through them --
+  address *that* drawing, current or not: ~(vla-addline (vla-get-modelspace
+  other-doc) ...)~ adds to the other drawing. ~Name~, ~FullName~, ~Path~,
+  ~Saved~ (~:vlax-true~ when ~DBMOD~ is 0) and ~ReadOnly~ are the drawing's;
+  ~(vla-saveas doc "path.dwg")~ writes that document's drawing (the format
+  follows the extension) and names it after the file; ~Save~ refuses a
+  read-only document. When the path carries
   no recognised drawing extension, the format (and version) falls back to
   the ~CLAUTOLISPDEFAULTDRAWINGFORMAT~ system variable — ~DXF~ by default,
   seedable from the environment (see /Environment variables/) — or, under

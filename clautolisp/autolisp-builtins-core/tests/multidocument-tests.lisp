@@ -211,3 +211,63 @@ own; AutoCAD (job 16932759881) stays in the old drawing until the routine ends."
     (is (null (%md-turn context "md-x")))
     (is (null (%md-turn context "(ssget \"_X\")")))))
 
+;;; --- slice 5: COM documents (BricsCAD V26, probe-documents job 16932759882) --
+
+(test com-documents-add-is-a-separate-inactive-drawing
+  (let ((context (%md-context)))
+    (%md-turn context "(vl-load-com)")
+    (%md-turn context "(setq app (vlax-get-acad-object) docs (vla-get-documents app))")
+    (%md-turn context "(entmake '((0 . \"LINE\") (10 0.0 0.0 0.0) (11 1.0 0.0 0.0)))")
+    (%md-turn context "(setq nd (vla-add docs))")
+    (is (equal "(\"Drawing2.dwg\" :VLAX-FALSE 2 \"Drawing1.dwg\" \"Drawing1.dwg\" 0 1)"
+               (autolisp-string-value
+                (%md-turn context
+                          "(vl-prin1-to-string
+                             (list (vla-get-name nd) (vla-get-active nd) (vla-get-count docs)
+                                   (vla-get-name (vla-get-activedocument app)) (getvar \"DWGNAME\")
+                                   (vla-get-count (vla-get-modelspace nd))
+                                   (vla-get-count (vla-get-modelspace (vla-get-activedocument app)))))"))))
+    ;; vlax-for walks the open documents.
+    (is (equal "(\"Drawing1.dwg\" \"Drawing2.dwg\")"
+               (autolisp-string-value
+                (%md-turn context "(progn (setq n '())
+                                          (vlax-for d docs (setq n (cons (vla-get-name d) n)))
+                                          (vl-prin1-to-string (reverse n)))"))))
+    ;; An entity added through the new document's ModelSpace goes there.
+    (%md-turn context "(vla-addline (vla-get-modelspace nd) (vlax-3d-point 0 0 0) (vlax-3d-point 5 5 0))")
+    (is (eql 1 (%md-turn context "(vla-get-count (vla-get-modelspace nd))")))
+    (is (eql 1 (%md-turn context "(sslength (ssget \"_X\"))")))
+    ;; Close: one document again.
+    (%md-turn context "(vla-close nd :vlax-false)")
+    (is (eql 1 (%md-turn context "(vla-get-count docs)")))))
+
+(test com-activate-and-open-switch-at-the-next-read
+  (let* ((context (%md-context))
+         (file (namestring (merge-pathnames (format nil "md-open-~D.dxf" (random 1000000))
+                                            (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (%md-turn context "(vl-load-com)")
+           (%md-turn context "(setq app (vlax-get-acad-object) docs (vla-get-documents app))")
+           (%md-turn context "(setq nd (vla-add docs))")
+           ;; SaveAs on the inactive document writes ITS drawing.
+           (%md-turn context "(vla-addline (vla-get-modelspace nd) (vlax-3d-point 0 0 0) (vlax-3d-point 5 5 0))")
+           (%md-turn context (format nil "(vla-saveas nd ~S)" file))
+           (is (probe-file file))
+           (%md-turn context "(vla-activate nd)")
+           (is (equal (file-namestring file)
+                      (autolisp-string-value (%md-turn context "(getvar \"DWGNAME\")"))))
+           (is (eql 1 (%md-turn context "(sslength (ssget \"_X\"))")))
+           ;; Now in the other document's namespace: its own variables.
+           (is (null (%md-turn context "nd")))
+           ;; Documents.Open: the file opens as another document, made current.
+           (%md-turn context (format nil "(progn (vl-load-com)
+                                          (setq docs (vla-get-documents (vlax-get-acad-object))
+                                                od (vla-open docs ~S)))" file))
+           ;; The next read is in the opened document (AutoCAD: Open activates).
+           (is (eql 3 (%md-turn context "(vla-get-count (vla-get-documents (vlax-get-acad-object)))")))
+           (is (equal (file-namestring file)
+                      (autolisp-string-value (%md-turn context "(getvar \"DWGNAME\")"))))
+           (is (eql 1 (%md-turn context "(sslength (ssget \"_X\"))"))))
+      (ignore-errors (delete-file file)))))
+

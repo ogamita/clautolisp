@@ -165,12 +165,7 @@ modified. Returns the remaining TOKENS."
              (cador-save-drawing host drawing (namestring (clautolisp.drawing:drawing-path drawing))))
             ((%file-answer-p (first tokens))
              (cador-save-drawing host drawing (pop tokens)))))))
-    (when (null (cdr (cador-documents host)))
-      ;; The last drawing: a session keeps one, a fresh untitled one.
-      (host-open-document host))
-    (host-close-document host key)
-    (clautolisp.autolisp-host:note-host-document-closed host key)
-    (%notify-ui host :document-closed key)
+    (cador-close-document host key)
     tokens))
 
 (defun %cmd-close (host tokens)

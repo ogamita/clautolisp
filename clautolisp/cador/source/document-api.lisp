@@ -95,6 +95,26 @@ DWGNAME then reports. Clears DBMOD (WRITE-DRAWING). Returns PATH."
   (setf (clautolisp.drawing:drawing-name drawing) (file-namestring path))
   path)
 
+(defun cador-close-document (host key &key save file)
+  "Close open document KEY -- after saving it when SAVE (to FILE, or its own
+file) -- making the next open drawing current and dropping the document's
+LISP namespace; a session keeps a drawing, so the last one is replaced by a
+fresh untitled one. Returns KEY."
+  (let ((drawing (cdr (assoc key (cador-documents host) :test #'equal))))
+    (when (and drawing save)
+      (let ((path (or file (let ((p (clautolisp.drawing:drawing-path drawing)))
+                             (and p (namestring p))))))
+        (when path (cador-save-drawing host drawing path))))
+    (when drawing
+      (when (null (cdr (cador-documents host)))
+        (host-open-document host))
+      (host-close-document host key)
+      (remhash key (cador-document-com-ids host))
+      (remhash key (cador-document-sessions host))
+      (clautolisp.autolisp-host:note-host-document-closed host key)
+      (when (fboundp '%notify-ui) (funcall '%notify-ui host :document-closed key)))
+    key))
+
 (defmethod host-open-document ((host cador) &optional name)
   "Open a new empty drawing named NAME (default \"Drawing.dwg\"), register it,
 and return its KEY. Does not change the current document."
