@@ -809,10 +809,13 @@ operator under its ~*** clautolisp~ note.
   2 (~CVPORT~ 2; ~TILEMODE~ 0: ~CVPORT~ 1, the sheet then the layout's
   viewport). ~(command "_.-VPORTS" "2" "_V")~ splits the current viewport:
   it keeps the right half under the AutoCAD (and every non-BricsCAD)
-  dialect, the left half under the BricsCAD dialects; ~"_SI"~ then keeps
-  viewport 3 (AutoCAD) or the current one (BricsCAD). Only those two
-  options are implemented. ~(setview nil)~ is an error, except under the
-  BricsCAD dialects (~nil~).
+  dialect, the left half under the BricsCAD dialects. Every other option
+  measured on the two products follows them too -- ~2~ / ~3~ with each
+  orientation, ~4~, ~SIngle~ (AutoCAD keeps the lowest-numbered viewport
+  other than the current one, BricsCAD the lowest-numbered), ~Toggle~,
+  ~Save~ / ~Restore~ / ~Delete~ -- and ~(setvar "CVPORT" n)~ makes viewport
+  n current. ~Join~ is not implemented. ~(setview nil)~ is an error, except
+  under the BricsCAD dialects (~nil~).
 - ~(layoutlist)~ -- the paper layouts, never ~"Model"~: sorted by name under
   the ~autocad-*~ dialects, as AutoCAD 2022 returns them, in tab order
   otherwise, as BricsCAD does.

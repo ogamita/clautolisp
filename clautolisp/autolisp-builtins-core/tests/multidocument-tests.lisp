@@ -440,3 +440,97 @@ own; AutoCAD (job 16932759881) stays in the old drawing until the routine ends."
   (is (null (%vp-run "bricscad-v25" "(setview nil)")))
   (is (eq t (handler-case (progn (%vp-run "autocad-2022" "(setview nil)") nil)
               (error () t)))))
+
+;;; --- viewports: the whole probe, against the vendors' answers -----------------
+
+;;; The vendors' answers to probes/sources/probe-viewports.lsp, suites vports and
+;;; vports-options, copied from the results of jobs 16941077236 (AutoCAD 2022) and
+;;; 16941077240 (BricsCAD V25; V26 macOS, job 16941077237, answers the same).
+;;; (CASE . VALUE-TEXT), the value text read as Lisp data. The two SETVIEW / -VIEW
+;;; cases are left out: their values carry each product's own view extents.
+(defparameter *vp-expected-autocad*
+  '(
+    ("fresh drawing: (TILEMODE CVPORT (vports))" . "(1 2 ((2 (0.0 0.0) (1.0 1.0))))")
+    ("after -VPORTS 2 vertical: (TILEMODE CVPORT (vports))" . "(1 2 ((2 (0.5 0.0) (1.0 1.0)) (3 (0.0 0.0) (0.5 1.0))))")
+    ("after -VPORTS SIngle: (TILEMODE CVPORT (vports))" . "(1 3 ((3 (0.0 0.0) (1.0 1.0))))")
+    ("TILEMODE 0: (TILEMODE CVPORT (vports))" . "(0 1 ((1 (0.0 0.0) (15.8893 9.0)) (2 (25.7 19.5) (231.3 175.5))))")
+    ("TILEMODE back to 1: (TILEMODE CVPORT (vports))" . "(1 3 ((3 (0.0 0.0) (1.0 1.0))))")
+    ("2 H" . "(3 ((3 (0.0 0.5) (1.0 1.0)) (2 (0.0 0.0) (1.0 0.5))))")
+    ("2 <default>" . "(2 ((2 (0.5 0.0) (1.0 1.0)) (3 (0.0 0.0) (0.5 1.0))))")
+    ("3 V" . "(3 ((3 (0.666667 0.0) (1.0 1.0)) (2 (0.0 0.0) (0.333333 1.0)) (4 (0.333333 0.0) (0.666667 1.0))))")
+    ("3 H" . "(2 ((2 (0.0 0.666667) (1.0 1.0)) (3 (0.0 0.0) (1.0 0.333333)) (4 (0.0 0.333333) (1.0 0.666667))))")
+    ("3 Above" . "(3 ((3 (0.0 0.5) (1.0 1.0)) (2 (0.0 0.0) (0.5 0.5)) (4 (0.5 0.0) (1.0 0.5))))")
+    ("3 Below" . "(2 ((2 (0.0 0.0) (1.0 0.5)) (3 (0.5 0.5) (1.0 1.0)) (4 (0.0 0.5) (0.5 1.0))))")
+    ("3 Left" . "(3 ((3 (0.0 0.0) (0.5 1.0)) (2 (0.5 0.5) (1.0 1.0)) (4 (0.5 0.0) (1.0 0.5))))")
+    ("3 Right" . "(2 ((2 (0.5 0.0) (1.0 1.0)) (3 (0.0 0.5) (0.5 1.0)) (4 (0.0 0.0) (0.5 0.5))))")
+    ("3 <default>" . "(3 ((3 (0.5 0.0) (1.0 1.0)) (2 (0.0 0.5) (0.5 1.0)) (4 (0.0 0.0) (0.5 0.5))))")
+    ("4" . "(2 ((2 (0.5 0.0) (1.0 0.5)) (3 (0.5 0.5) (1.0 1.0)) (4 (0.0 0.5) (0.5 1.0)) (5 (0.0 0.0) (0.5 0.5))))")
+    ("2 V, then 2 V again: (CVPORT (vports))" . "(3 ((3 (0.75 0.0) (1.0 1.0)) (2 (0.0 0.0) (0.5 1.0)) (4 (0.5 0.0) (0.75 1.0))))")
+    ("2 V, (setvar \"CVPORT\" 3): (CVPORT (vports))" . "(3 ((3 (0.0 0.0) (0.5 1.0)) (2 (0.5 0.0) (1.0 1.0))))")
+    ("2 V, Toggle, Toggle: ((CVPORT (vports)) (CVPORT (vports)))" . "((2 ((2 (0.0 0.0) (1.0 1.0)))) (2 ((2 (0.5 0.0) (1.0 1.0)) (3 (0.0 0.0) (0.5 1.0)))))")
+    ("4, Save PRBCFG, SIngle, Restore PRBCFG: (CVPORT (vports) VPORT-records)" . "(2 ((2 (0.5 0.0) (1.0 0.5)) (3 (0.5 0.5) (1.0 1.0)) (4 (0.0 0.5) (0.5 1.0)) (5 (0.0 0.0) (0.5 0.5))) \"PRBCFG-RECORD\")")
+    ("Delete PRBCFG: (tblsearch \"VPORT\" \"PRBCFG\")" . "nil")
+    ))
+(defparameter *vp-expected-bricscad*
+  '(
+    ("fresh drawing: (TILEMODE CVPORT (vports))" . "(1 2 ((2 (0.0 0.0) (1.0 1.0))))")
+    ("after -VPORTS 2 vertical: (TILEMODE CVPORT (vports))" . "(1 2 ((2 (0.0 0.0) (0.5 1.0)) (3 (0.5 0.0) (1.0 1.0))))")
+    ("after -VPORTS SIngle: (TILEMODE CVPORT (vports))" . "(1 2 ((2 (0.0 0.0) (1.0 1.0))))")
+    ("TILEMODE 0: (TILEMODE CVPORT (vports))" . "(0 1 ((1 (-28.613 -13.59) (285.613 208.59)) (2 (25.7 19.5) (231.3 175.5))))")
+    ("TILEMODE back to 1: (TILEMODE CVPORT (vports))" . "(1 2 ((2 (0.0 0.0) (1.0 1.0))))")
+    ("2 H" . "(2 ((2 (0.0 0.0) (1.0 0.5)) (3 (0.0 0.5) (1.0 1.0))))")
+    ("2 <default>" . "(2 ((2 (0.0 0.0) (0.5 1.0)) (3 (0.5 0.0) (1.0 1.0))))")
+    ("3 V" . "(2 ((2 (0.0 0.0) (0.333333333333333 1.0)) (3 (0.333333333333333 0.0) (0.666666666666667 1.0)) (4 (0.666666666666667 0.0) (1.0 1.0))))")
+    ("3 H" . "(2 ((2 (0.0 0.0) (1.0 0.333333333333333)) (3 (0.0 0.333333333333333) (1.0 0.666666666666667)) (4 (0.0 0.666666666666667) (1.0 1.0))))")
+    ("3 Above" . "(2 ((2 (0.0 0.5) (1.0 1.0)) (3 (0.0 0.0) (0.5 0.5)) (4 (0.5 0.0) (1.0 0.5))))")
+    ("3 Below" . "(2 ((2 (0.0 0.0) (1.0 0.5)) (3 (0.0 0.5) (0.5 1.0)) (4 (0.5 0.5) (1.0 1.0))))")
+    ("3 Left" . "(2 ((2 (0.0 0.0) (0.5 1.0)) (3 (0.5 0.0) (1.0 0.5)) (4 (0.5 0.5) (1.0 1.0))))")
+    ("3 Right" . "(2 ((2 (0.5 0.0) (1.0 1.0)) (3 (0.0 0.0) (0.5 0.5)) (4 (0.0 0.5) (0.5 1.0))))")
+    ("3 <default>" . "(2 ((2 (0.5 0.0) (1.0 1.0)) (3 (0.0 0.0) (0.5 0.5)) (4 (0.0 0.5) (0.5 1.0))))")
+    ("4" . "(2 ((2 (0.0 0.0) (0.5 0.5)) (3 (0.5 0.0) (1.0 0.5)) (4 (0.0 0.5) (0.5 1.0)) (5 (0.5 0.5) (1.0 1.0))))")
+    ("2 V, then 2 V again: (CVPORT (vports))" . "(2 ((2 (0.0 0.0) (0.25 1.0)) (3 (0.5 0.0) (1.0 1.0)) (4 (0.25 0.0) (0.5 1.0))))")
+    ("2 V, (setvar \"CVPORT\" 3): (CVPORT (vports))" . "(3 ((3 (0.5 0.0) (1.0 1.0)) (2 (0.0 0.0) (0.5 1.0))))")
+    ("2 V, Toggle, Toggle: ((CVPORT (vports)) (CVPORT (vports)))" . "((2 ((2 (0.0 0.0) (1.0 1.0)))) (2 ((2 (0.0 0.0) (0.5 1.0)) (3 (0.5 0.0) (1.0 1.0)))))")
+    ("4, Save PRBCFG, SIngle, Restore PRBCFG: (CVPORT (vports) VPORT-records)" . "(2 ((2 (0.0 0.0) (0.5 0.5)) (3 (0.5 0.0) (1.0 0.5)) (4 (0.0 0.5) (0.5 1.0)) (5 (0.5 0.5) (1.0 1.0))) \"PRBCFG-RECORD\")")
+    ("Delete PRBCFG: (tblsearch \"VPORT\" \"PRBCFG\")" . "nil")
+    ))
+
+(defun %vp-same-p (ours theirs)
+  "OURS (an AutoLISP value) answers like THEIRS (read from the vendor text):
+numbers within 1e-4, strings by content."
+  (cond ((and (numberp ours) (numberp theirs)) (< (abs (- ours theirs)) 1d-4))
+        ((typep ours 'autolisp-string) (and (stringp theirs) (string= (autolisp-string-value ours) theirs)))
+        ((and (consp ours) (consp theirs))
+         (and (%vp-same-p (car ours) (car theirs)) (%vp-same-p (cdr ours) (cdr theirs))))
+        (t (and (null ours) (null theirs)))))
+
+(defun %vp-probe-run (dialect)
+  "Run probe-viewports.lsp (both suites, in the vendors' order) under DIALECT;
+an alist CASE-NAME -> the raw value."
+  (let ((context (%md-context))
+        (probe (namestring (asdf:system-relative-pathname
+                            "clautolisp" "../probes/sources/probe-viewports.lsp"))))
+    (%md-turn context (format nil "(setq *AUTOLISP-DIALECT* '~A)" dialect))
+    (%md-turn context (format nil "(load ~S)" probe))
+    ;; Raw values instead of their printed form; an error stays a value.
+    (%md-turn context "(defun cad-probe--vp-show (th / r) (setq r (vl-catch-all-apply th '())) (if (vl-catch-all-error-p r) \"ERROR\" r))")
+    (%md-turn context "(setq vp-captured nil)")
+    (%md-turn context "(defun cad-probe-capture (s n f) (setq vp-captured (cons (list n (apply f nil)) vp-captured)))")
+    (%md-turn context "(cad-probe-run-viewport-probes)")
+    (mapcar (lambda (pair) (cons (autolisp-string-value (first pair)) (second pair)))
+            (%md-turn context "vp-captured"))))
+
+(defun %vp-mismatches (dialect expected)
+  (let ((ours (%vp-probe-run dialect))
+        (*read-default-float-format* 'double-float))
+    (loop for (name . text) in expected
+          for theirs = (read-from-string text)
+          for mine = (assoc name ours :test #'string=)
+          unless (and mine (%vp-same-p (cdr mine) theirs))
+            collect name)))
+
+(test viewport-probe-answers-like-autocad-2022
+  (is (null (%vp-mismatches "autocad-2022" *vp-expected-autocad*))))
+
+(test viewport-probe-answers-like-bricscad
+  (is (null (%vp-mismatches "bricscad-v25" *vp-expected-bricscad*))))

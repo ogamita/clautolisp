@@ -9,6 +9,7 @@
 ;;;;   - TILEMODE 0 (paper space): TILEMODE, CVPORT, (vports); back to 1;
 ;;;;   - SETVIEW with a saved view's TBLSEARCH list: without a viewport id,
 ;;;;     with CVPORT, with a viewport that does not exist; and with nil.
+;;;; and suite vports-options: the other -VPORTS options (below).
 ;;;; Every step under VL-CATCH-ALL-APPLY; COMMAND only from a lambda.
 
 (defun cad-probe--vp-show (cad-probe--vp-thunk / r)
@@ -56,4 +57,75 @@
     (function (lambda () (setview cad-probe--vp-view 99))))
   (cad-probe--vp "(setview nil)"
     (function (lambda () (setview nil))))
+  (cad-probe-run-viewport-option-probes)
   (princ))
+
+;;; --- suite vports-options: the -VPORTS options not measured above ------------
+;;; (pjb 2026-10-05: "probe and implement"). Each case starts from SIngle,
+;;; runs its options, and records (CVPORT (vports)). JOIN is left out: it
+;;; picks viewports, which a batch run cannot answer.
+
+(defun cad-probe--vpo (name cad-probe--vpo-options)
+  (cad-probe-capture "vports-options" name
+    (function (lambda ()
+                (cad-probe--vp-show
+                  (function (lambda ()
+                              (command "_.-VPORTS" "_SI")
+                              (apply 'command (cons "_.-VPORTS" cad-probe--vpo-options))
+                              (list (getvar "CVPORT") (vports)))))))))
+
+(defun cad-probe-run-viewport-option-probes ()
+  (cad-probe--vpo "2 H" '("2" "_H"))
+  (cad-probe--vpo "2 <default>" '("2" ""))
+  (cad-probe--vpo "3 V" '("3" "_V"))
+  (cad-probe--vpo "3 H" '("3" "_H"))
+  (cad-probe--vpo "3 Above" '("3" "_A"))
+  (cad-probe--vpo "3 Below" '("3" "_B"))
+  (cad-probe--vpo "3 Left" '("3" "_L"))
+  (cad-probe--vpo "3 Right" '("3" "_R"))
+  (cad-probe--vpo "3 <default>" '("3" ""))
+  (cad-probe--vpo "4" '("4"))
+  (cad-probe-capture "vports-options" "2 V, then 2 V again: (CVPORT (vports))"
+    (function (lambda ()
+                (cad-probe--vp-show
+                  (function (lambda ()
+                              (command "_.-VPORTS" "_SI")
+                              (command "_.-VPORTS" "2" "_V")
+                              (command "_.-VPORTS" "2" "_V")
+                              (list (getvar "CVPORT") (vports))))))))
+  (cad-probe-capture "vports-options" "2 V, (setvar \"CVPORT\" 3): (CVPORT (vports))"
+    (function (lambda ()
+                (cad-probe--vp-show
+                  (function (lambda ()
+                              (command "_.-VPORTS" "_SI")
+                              (command "_.-VPORTS" "2" "_V")
+                              (setvar "CVPORT" 3)
+                              (list (getvar "CVPORT") (vports))))))))
+  (cad-probe-capture "vports-options" "2 V, Toggle, Toggle: ((CVPORT (vports)) (CVPORT (vports)))"
+    (function (lambda ( / a)
+                (cad-probe--vp-show
+                  (function (lambda ()
+                              (command "_.-VPORTS" "_SI")
+                              (command "_.-VPORTS" "2" "_V")
+                              (command "_.-VPORTS" "_T")
+                              (setq a (list (getvar "CVPORT") (vports)))
+                              (command "_.-VPORTS" "_T")
+                              (list a (list (getvar "CVPORT") (vports)))))))))
+  (cad-probe-capture "vports-options" "4, Save PRBCFG, SIngle, Restore PRBCFG: (CVPORT (vports) VPORT-records)"
+    (function (lambda ()
+                (cad-probe--vp-show
+                  (function (lambda ()
+                              (command "_.-VPORTS" "_SI")
+                              (command "_.-VPORTS" "4")
+                              (command "_.-VPORTS" "_S" "PRBCFG")
+                              (command "_.-VPORTS" "_SI")
+                              (command "_.-VPORTS" "_R" "PRBCFG")
+                              (list (getvar "CVPORT") (vports)
+                                    (if (tblsearch "VPORT" "PRBCFG") "PRBCFG-RECORD" "NO-RECORD"))))))))
+  (cad-probe-capture "vports-options" "Delete PRBCFG: (tblsearch \"VPORT\" \"PRBCFG\")"
+    (function (lambda ()
+                (cad-probe--vp-show
+                  (function (lambda ()
+                              (command "_.-VPORTS" "_D" "PRBCFG")
+                              (tblsearch "VPORT" "PRBCFG")))))))
+  (command "_.-VPORTS" "_SI"))
