@@ -36,17 +36,31 @@ a closed drawing can never alias a fresh drawing's entities.
       (setf (cador-ename-cache-drawing host) drawing))
     (or (gethash handle cache)
         (setf (gethash handle cache)
-              (clautolisp.autolisp-runtime:make-autolisp-ename :value handle)))))
+              (clautolisp.autolisp-runtime:make-autolisp-ename
+               :value handle :document drawing)))))
 
-(defun ename->handle (ename operator-name)
+(defun ename->handle (ename operator-name &optional host)
   "Extract the hex handle string from an AutoLISP ENAME, signalling
-an :invalid-ename runtime error if ENAME is not an ename."
+an :invalid-ename runtime error if ENAME is not an ename, and -- given HOST --
+:cross-document-dereference when ENAME belongs to another open drawing
+(cador-multidocument-host C5: a handle is document-tagged; in AutoCAD an
+ename is only valid in the drawing it came from)."
   (unless (typep ename 'clautolisp.autolisp-runtime:autolisp-ename)
     (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
      :invalid-ename
      "~A expects an ENAME, got ~S."
      operator-name ename))
+  (when host (%check-ename-document host ename operator-name))
   (clautolisp.autolisp-runtime:autolisp-ename-value ename))
+
+(defun %check-ename-document (host ename operator-name)
+  (let ((document (clautolisp.autolisp-runtime:autolisp-ename-document ename)))
+    (when (and document (not (eq document (cador-active-drawing host))))
+      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+       :cross-document-dereference
+       "~A: ENAME ~A belongs to another drawing (~A), not the current one."
+       operator-name (clautolisp.autolisp-runtime:autolisp-ename-value ename)
+       (ignore-errors (clautolisp.drawing:drawing-name document))))))
 
 (defun group-code-equal-p (a b)
   "Equality predicate for DXF group-code keys: both are usually
@@ -151,14 +165,15 @@ supplies the ename intern cache for the (-1 . ename) head."
      (when kept
        (list (cons -3 (pure->al-value kept)))))))
 
-(defun extract-modified-handle (data operator-name)
+(defun extract-modified-handle (data operator-name &optional host)
   "Return the hex handle of the entity DATA refers to, from its
-(-1 . <ENAME>) entry, signalling :invalid-entity-data if missing."
+(-1 . <ENAME>) entry, signalling :invalid-entity-data if missing (and,
+given HOST, :cross-document-dereference for another drawing's ename)."
   (dolist (pair data)
     (when (and (consp pair) (group-code-equal-p (car pair) -1)
                (typep (cdr pair) 'clautolisp.autolisp-runtime:autolisp-ename))
       (return-from extract-modified-handle
-        (clautolisp.autolisp-runtime:autolisp-ename-value (cdr pair)))))
+        (ename->handle (cdr pair) operator-name host))))
   (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
    :invalid-entity-data
    "~A requires the modified entity's (-1 . <ENAME>) entry in the data list."
@@ -196,7 +211,7 @@ such entity exists or it has been deleted."
 ;;; --- Host method implementations ---------------------------------
 
 (defmethod host-entget ((host cador) ename &optional applist)
-  (let* ((handle (ename->handle ename 'entget))
+  (let* ((handle (ename->handle ename 'entget host))
          (entity (and (or (stringp handle) (integerp handle))
                       (safe-find-entity (cador-active-drawing host) handle))))
     (cond
@@ -783,7 +798,7 @@ application's xdata. Returns PURE (possibly with groups dropped), or
           (substitute (cons (car cell) (nreverse kept)) cell pure)))))
 
 (defmethod host-entmod ((host cador) data)
-  (let* ((handle (extract-modified-handle data 'entmod))
+  (let* ((handle (extract-modified-handle data 'entmod host))
          (pure (%vet-entmod-xdata host (al-data->pure data 'entmod)))
          (drawing (cador-active-drawing host)))
     (when (eq pure :reject)
@@ -811,7 +826,7 @@ application's xdata. Returns PURE (possibly with groups dropped), or
         (entity->al-view host entity)))))
 
 (defmethod host-entdel ((host cador) ename)
-  (let* ((handle (ename->handle ename 'entdel))
+  (let* ((handle (ename->handle ename 'entdel host))
          (drawing (cador-active-drawing host))
          (entity (safe-find-entity drawing handle :include-deleted t)))
     (when entity
@@ -828,7 +843,7 @@ application's xdata. Returns PURE (possibly with groups dropped), or
       ename)))
 
 (defmethod host-entupd ((host cador) ename)
-  (let* ((handle (ename->handle ename 'entupd)))
+  (let* ((handle (ename->handle ename 'entupd host)))
     (and (safe-find-entity (cador-active-drawing host) handle)
          ename)))
 
@@ -900,7 +915,7 @@ value from tblobjname), or NIL."
                    finally (return nil))))
       (if (null ename)
           (first-live-in order :main)
-          (let* ((needle (ename->handle ename 'entnext))
+          (let* ((needle (ename->handle ename 'entnext host))
                  ;; A table-record ename's value is not an entity
                  ;; handle (hex string) — don't feed it to the entity
                  ;; lookup, fall through to the block-record branch.

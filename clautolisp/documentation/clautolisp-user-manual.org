@@ -1083,13 +1083,77 @@ provides that surface through the host backend:
   the vendors -- and ~vla-put-supportpath~ (or ~(setenv "ACAD" ...)~)
   changes it. ~(vla-get-activeprofile (vla-get-profiles prefs))~ is the
   current profile, the ~CPROFILE~ system variable.
-- Documents are created and saved through the object model:
-  ~(vla-add documents)~ opens a document over the in-memory drawing
-  (the mock is single-document) wired to the same live Blocks / Layers
-  / Linetypes / ModelSpace / PaperSpace; ~(vla-saveas doc "path.dwg")~
-  writes the drawing (the format follows the extension) and records the
-  new ~Name~; ~Save~ and ~Close~ are no-ops that mark the document
-  saved / released (the drawing stays in memory). When the path carries
+- *Several drawings, each with its own LISP namespace.* ~(command "_.NEW"
+  "")~ and ~(command "_.OPEN" "file.dwg")~ open another drawing, and -- as
+  in AutoCAD -- the switch happens at the next top-level read: the routine
+  that ran the command finishes in its own drawing (its ~entmake~ and
+  ~ssget~ still address it, its variables are still there); the next form
+  typed (or the next ~-x~ / ~-l~) runs in the new drawing, in a namespace of
+  its own -- the built-in functions and variables are there, the previous
+  drawing's variables and ~defun~'s are not. ~vl-propagate~ copies a
+  variable into every drawing, the blackboard (~vl-bb-set~ / ~vl-bb-ref~) is
+  shared, and ~vl-doc-set~ / ~vl-doc-ref~ reach the document namespace.
+  Each drawing also keeps its own selection sets and pickfirst set,
+  ~tblnext~ / ~dictnext~ positions, pending ~initget~, ~vlax-ldata~ and open
+  ~entmake~ runs; and an entity name belongs to its drawing -- ~entget~,
+  ~entmod~, ~entdel~, ~entupd~, ~entnext~, the dictionary functions and
+  ~vlax-ename->vla-object~ given an ename from another open drawing signal
+  ~:cross-document-dereference~ instead of reaching a wrong entity.
+  System variables follow AutoCAD's split: those *saved in the drawing*
+  (520 of them: ~LTSCALE~, ~CLAYER~, the dimension variables, ...) are each
+  drawing's own, a new drawing starting from the template values; the
+  others -- registry, profile and session variables such as ~OSMODE~ -- are
+  the application's, one value for every drawing. ~DWGNAME~ is the
+  drawing's name (~Drawing1.dwg~, ~Drawing2.dwg~ ... until it is saved),
+  ~DWGTITLED~ 1 once it has a file, ~DBMOD~ 1 after a change, back to 0
+  when it is saved.
+  The file commands answer their prompts in order, as with ~FILEDIA~ 0:
+  ~(command "_.QSAVE")~ writes a titled drawing to its file (an untitled
+  one takes a file name), ~"_.SAVE"~ a file name (~""~: the current one),
+  ~"_.SAVEAS"~ an optional format (~"DXF"~ or a release, ~"2018"~ ... ~"2000"~)
+  then a file name; ~"_.CLOSE"~ and ~"_.CLOSEALL"~ take the "Save changes?"
+  answer (~"_Y"~, then a file name if untitled, or ~"_N"~) for a modified
+  drawing, and the next open drawing becomes current; the closed drawing's
+  LISP namespace goes with it. A session always keeps one drawing: closing
+  the last opens a fresh untitled one (AutoCAD is left with none). Saving
+  names the drawing after its file (~DWGNAME~), as ~vla-saveas~ does too.
+  *Startup files, per drawing.* After clautolisp's own init file, the
+  product's startup files found on the support path run as the product runs
+  them: under the AutoCAD dialects ~acad.lsp~ once and ~acaddoc.lsp~ for
+  every drawing (both per drawing when ~ACADLSPASDOC~ is 1), under the
+  BricsCAD dialects ~on_start.lsp~ / ~on_start_default.lsp~ once and
+  ~on_doc_load.lsp~ / ~on_doc_load_default.lsp~ per drawing, under
+  ~clautolisp~ / ~lax~ all of them (~strict~: none); then ~S::STARTUP~ when
+  defined. Each new drawing runs the per-drawing files in its own namespace,
+  plus every file ~(vl-load-all "file.lsp")~ loaded -- that function loads
+  a file into every open drawing and every drawing opened later. A new
+  drawing's namespace starts with the built-in functions and variables and
+  clautolisp's own settings (~*AUTOLISP-DIALECT*~ ...). ~--no-init~ skips the
+  startup files with the init file.
+  *Under ~--host cadtui~* the UI tree mirrors the open documents: every
+  open drawing is a ~drawing~ node under ~/application~ (with its console),
+  a drawing opened by ~NEW~, ~OPEN~ or ~vla-add~ appears at once, the
+  current one is ~/application/active-drawing~ (it changes at the switch
+  time above), and a closed drawing's node goes away. The tree also drives
+  the host: ~=activate(drawings[2])~ makes that drawing current (at the
+  next read, as ~NEW~ does) and ~=close(drawings[2])~ closes it, as the
+  ~CLOSE~ command would.
+- Documents through the object model: ~(vla-get-documents app)~ is a live
+  collection of the open drawings (~Count~, ~Item~, ~vlax-for~).
+  ~(vla-add documents)~ opens a new drawing with its own database and does
+  *not* make it current (as measured on BricsCAD V26); ~(vla-open documents
+  "f.dwg" [:vlax-true])~ reads a file (read-only when asked) and makes it
+  current; ~(vla-activate doc)~ makes a document current; ~(vla-close doc
+  [save [file]])~ closes it; ~vla-get-activedocument~ follows the current
+  drawing and ~vla-put-activedocument~ changes it -- each switch at the
+  time ~NEW~ / ~OPEN~ would (see above). A document's objects -- its
+  ~ModelSpace~, ~Blocks~, ~Layers~, the entities reached through them --
+  address *that* drawing, current or not: ~(vla-addline (vla-get-modelspace
+  other-doc) ...)~ adds to the other drawing. ~Name~, ~FullName~, ~Path~,
+  ~Saved~ (~:vlax-true~ when ~DBMOD~ is 0) and ~ReadOnly~ are the drawing's;
+  ~(vla-saveas doc "path.dwg")~ writes that document's drawing (the format
+  follows the extension) and names it after the file; ~Save~ refuses a
+  read-only document. When the path carries
   no recognised drawing extension, the format (and version) falls back to
   the ~CLAUTOLISPDEFAULTDRAWINGFORMAT~ system variable — ~DXF~ by default,
   seedable from the environment (see /Environment variables/) — or, under

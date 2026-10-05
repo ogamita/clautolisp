@@ -10588,7 +10588,95 @@ misspelling would hide a typo in a build script forever."
   (setf *com-loaded-p* t)
   (autolisp-true))
 (defun builtin-vl-load-reactors () (autolisp-true)) ; no reactors yet; success.
-(defun builtin-vl-load-all () (autolisp-true))      ; alias of the above.
+(defun builtin-vl-load-all (filename)
+  "(vl-load-all filename) -- load FILENAME into every open document and every
+document opened later in the session (pending-load list, D2 section I.9).
+Returns T."
+  (let* ((path (autolisp-string-value (require-string filename "VL-LOAD-ALL")))
+         (context (clautolisp.autolisp-runtime:current-evaluation-context))
+         (session (clautolisp.autolisp-runtime:evaluation-context-session context)))
+    (clautolisp.autolisp-runtime:add-runtime-session-pending-load session path)
+    (maphash (lambda (name namespace)
+               (declare (ignore name))
+               (%load-into-namespace context namespace path))
+             (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces session))
+    (autolisp-true)))
+
+;;; --- The startup hook chain (D2 section I.9; multi-document slice 6) -------
+;;;
+;;; What each product loads from the support path: SESSION-ONCE when it
+;;; starts, PER DOCUMENT for every drawing it opens (the first included).
+;;; AutoCAD: acad.lsp once (per document when ACADLSPASDOC is 1), acaddoc.lsp
+;;; per document. BricsCAD: on_start.lsp / on_start_default.lsp once,
+;;; on_doc_load.lsp / on_doc_load_default.lsp per document. clautolisp / lax:
+;;; both products' files. strict: none. Then the VL-LOAD-ALL files, then
+;;; S::STARTUP when defined. clautolisp's own init file (clautolisprc) is
+;;; separate and loads first, once.
+
+(defun %startup-hook-files (phase)
+  "File names the current dialect loads at PHASE (:SESSION or :DOCUMENT)."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (product (and dialect (ignore-errors
+                                (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+         (name (and dialect (ignore-errors
+                             (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+         (acad-per-document (eql 1 (ignore-errors
+                                    (host-getvar (current-evaluation-host) "ACADLSPASDOC"))))
+         (autocad (if acad-per-document
+                      (ecase phase (:session '()) (:document '("acad.lsp" "acaddoc.lsp")))
+                      (ecase phase (:session '("acad.lsp")) (:document '("acaddoc.lsp")))))
+         (bricscad (ecase phase
+                     (:session '("on_start.lsp" "on_start_default.lsp"))
+                     (:document '("on_doc_load.lsp" "on_doc_load_default.lsp")))))
+    (case product
+      (:autocad autocad)
+      (:bricscad bricscad)
+      (t (if (eq name :strict) '() (append autocad bricscad))))))
+
+(defun %find-on-support-path (name)
+  "NAME found in a support-path directory (the order findfile searches), or NIL."
+  (loop for directory in (clautolisp.autolisp-runtime:autolisp-support-paths)
+        for path = (probe-file (merge-pathnames name (uiop:ensure-directory-pathname directory)))
+        when path return (namestring path)))
+
+(defun %load-into-namespace (context namespace path)
+  "Load PATH with NAMESPACE as the current one (a document's own LISP
+environment); errors are reported, not propagated, as a startup file's are."
+  (let ((ctx (clautolisp.autolisp-runtime:make-evaluation-context
+              :session (clautolisp.autolisp-runtime:evaluation-context-session context)
+              :current-document namespace
+              :current-namespace namespace)))
+    (handler-case (clautolisp.autolisp-runtime:autolisp-load-file-in-context path ctx)
+      (error (condition)
+        (format *error-output* "~&; error loading ~A: ~A~%" path condition)))))
+
+(defun run-startup-files (context names)
+  (dolist (name names)
+    (let ((path (%find-on-support-path name)))
+      (when path
+        (%load-into-namespace context (clautolisp.autolisp-runtime:evaluation-context-current-namespace context) path)))))
+
+(defun run-document-startup-chain (context)
+  "The per-document hooks for CONTEXT's (new) document: the dialect's
+per-document files, the VL-LOAD-ALL files, then S::STARTUP when defined."
+  (run-startup-files context (%startup-hook-files :document))
+  (dolist (path (clautolisp.autolisp-runtime:runtime-session-pending-loads
+                 (clautolisp.autolisp-runtime:evaluation-context-session context)))
+    (%load-into-namespace context (clautolisp.autolisp-runtime:evaluation-context-current-namespace context) path))
+  (let ((startup (clautolisp.autolisp-runtime:intern-autolisp-symbol "S::STARTUP")))
+    (when (clautolisp.autolisp-runtime:autolisp-symbol-function-bound-p startup)
+      (handler-case
+          (clautolisp.autolisp-runtime:autolisp-eval-progn
+           (list (list startup)) context)
+        (error (condition)
+          (format *error-output* "~&; error in S::STARTUP: ~A~%" condition))))))
+
+(defun run-session-startup-chain (context)
+  "At launch: the session-once files, then the first document's chain."
+  (run-startup-files context (%startup-hook-files :session))
+  (run-document-startup-chain context))
+
+(setf clautolisp.autolisp-runtime:*document-namespace-created-hook* 'run-document-startup-chain)
 
 (defun builtin-vl-enable-user-cancel (flag)
   ;; (vl-enable-user-cancel T|nil) — toggle whether Ctrl-C

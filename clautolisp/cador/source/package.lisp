@@ -143,6 +143,7 @@
                 #:host-vlax-queueexpr
                 #:host-vlax-collection-items)
   (:export
+   #:cador-close-document
    #:*cador-command-ui-hook*
    #:cador-command-names
    ;; Class hierarchy

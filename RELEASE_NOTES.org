@@ -37,6 +37,41 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Multi-document, slice 7: under ~--host cadtui~ the UI tree follows the
+  open documents (a ~drawing~ node per document, ~active-drawing~ the
+  current one, closed ones removed), and ~=activate~ / ~=close~ on a drawing
+  node make that document current / close it.
+- Multi-document, slice 6: the product's startup chain runs -- ~acad.lsp~ /
+  ~acaddoc.lsp~ (AutoCAD dialects), ~on_start~ / ~on_doc_load~ (BricsCAD), then
+  ~S::STARTUP~ -- at launch and, per drawing, for every drawing opened;
+  ~(vl-load-all "file")~ loads into every open and later drawing (it used to
+  be a no-op). ~--no-init~ skips the chain.
+- Multi-document, slice 5: COM ~Documents~ is a live collection; ~Add~ opens
+  a separate, inactive drawing, ~Open~ / ~Activate~ / ~Close~ /
+  ~ActiveDocument~ work; each Document's objects address its own drawing;
+  ~Name~ / ~FullName~ / ~Path~ / ~Saved~ / ~ReadOnly~ are the drawing's. A
+  drawing read from a file is named after it.
+- Multi-document, slice 4: ~QSAVE~, ~SAVE~, ~SAVEAS~, ~CLOSE~ and ~CLOSEALL~
+  commands (answers as with ~FILEDIA~ 0); saving names the drawing after its
+  file; untitled drawings are numbered for the session (~Drawing2.dwg~ after
+  ~Drawing1.dwg~ even once that was saved).
+- When ~NEW~ / ~OPEN~ run inside a routine, the BricsCAD dialects switch the
+  *drawing* at once (the rest of the routine's ~getvar~ / ~entmake~ address
+  the new one, as measured on BricsCAD V26), the AutoCAD dialects at the
+  next top-level read; the LISP namespace changes at the next read on both.
+- Multi-document, slice 3: a new or opened drawing gets its full set of
+  system variables (a NEW drawing used to answer ~nil~ to every ~getvar~);
+  drawing-saved variables are per drawing, the others shared; ~DWGNAME~,
+  ~DWGTITLED~ and ~DBMOD~ follow the current drawing, which are named
+  ~Drawing1.dwg~, ~Drawing2.dwg~, ... as in AutoCAD.
+- Multi-document, slice 2: selection sets, pickfirst, iterators, ~initget~,
+  ~vlax-ldata~ and open ~entmake~ runs are per drawing, and an ename used in
+  another drawing signals ~:cross-document-dereference~.
+- Multi-document, slice 1: every drawing has its own LISP namespace, and
+  ~NEW~ / ~OPEN~ switch drawings at the next top-level read, as AutoCAD
+  does (the running routine finishes in its own drawing). The new drawing
+  starts with the built-in functions and variables; ~vl-propagate~d values
+  and the blackboard cross over.
 - *REPL comma-commands work again on CRLF input.* On MS-Windows (and
   in an Emacs shell buffer sending CRLF) the CR stayed at the end of the
   line, so =,help= was looked up as the unknown command =help<CR>= — which

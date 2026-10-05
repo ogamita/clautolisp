@@ -192,6 +192,11 @@ HOST-NAME would say \"cador\". NIL means use the backend's own HOST-NAME.")
 (defvar *cadtui-root* nil
   "The cadtui application tree when --host cadtui is active, else NIL.")
 
+(defun %session-host ()
+  (ignore-errors
+   (clautolisp.autolisp-runtime:runtime-session-host
+    (evaluation-context-session (clautolisp.autolisp-runtime:current-evaluation-context)))))
+
 (defun maybe-install-cadtui-host (host-keyword)
   "When --host cadtui is selected, build the full cadtui application tree and
 install the cadtui DCL renderer over it, so DCL dialogs (and CAD objects) are
@@ -212,7 +217,18 @@ every other host. Returns the tree or NIL."
             ;; CAD core does not run or recognise.
             clautolisp.cadtui:*cad-command-known-p*
             (lambda (name)
-              (member name (clautolisp.cador:cador-command-names) :test #'string=)))
+              (member name (clautolisp.cador:cador-command-names) :test #'string=))
+            ;; =activate / =close on a drawing node drive the host documents
+            ;; (multi-document slice 7).
+            clautolisp.cadtui:*cadtui-activate-document-function*
+            (lambda (key)
+              (let ((host (%session-host)))
+                (when host
+                  (clautolisp.autolisp-host:request-host-document-activation host key))))
+            clautolisp.cadtui:*cadtui-close-document-function*
+            (lambda (key)
+              (let ((host (%session-host)))
+                (when host (clautolisp.cador:cador-close-document host key)))))
       (setf *cadtui-root* root
             *active-host-label* "cadtui")
       root)))
@@ -513,6 +529,10 @@ $CLAUTOLISP_NO_INIT env var into one boolean."
     (append
      (loop for path in init-paths
            collect (cons :file (namestring path)))
+     ;; Then the product's startup chain (acad.lsp / acaddoc.lsp, on_start /
+     ;; on_doc_load, S::STARTUP) for the first drawing; each drawing opened
+     ;; later runs its per-document part (multi-document slice 6).
+     (list (cons :startup nil))
      actions)))
 
 ;;; --- Verbosity / debug flags -----------------------------------------
@@ -643,7 +663,18 @@ session. When MOCK-INPUT is supplied and HOST is a MockHost,
 attach the file at MOCK-INPUT as the host's prompt-stream so
 that subsequent get* calls read deterministic answers from it."
   (when host
-    (set-runtime-session-host (evaluation-context-session context) host))
+    (set-runtime-session-host (evaluation-context-session context) host)
+    ;; The startup drawing gets its LISP namespace: the context's (multi-
+    ;; document slice 1).
+    (clautolisp.autolisp-host:link-runtime-session-to-host
+     (evaluation-context-session context) host)
+    ;; cadtui shows the drawings open at launch (the startup one).
+    (when *cadtui-root*
+      (dolist (key (ignore-errors (clautolisp.autolisp-host:host-document-list host)))
+        (clautolisp.cadtui:ensure-drawing-node *cadtui-root* key))
+      (let ((current (ignore-errors (clautolisp.autolisp-host:host-current-document host))))
+        (when current
+          (clautolisp.cadtui:apply-file-command-event *cadtui-root* :document-activated current)))))
   (when (and mock-input
              (typep host 'clautolisp.cador:cador))
     (let ((stream (open mock-input :direction :input
@@ -1145,6 +1176,10 @@ printed; continuation lines get `   '). Returns (:SOURCE TEXT) or :EOF."
 read — under the dialect in force NOW (READ-CURRENT-SOURCE, design-revision
 D2) — record, bind :- , evaluate, print, rotate history, drain navigation.
 Calls EXIT (a closure returning from the REPL loop) on AUTOLISP-TERMINATION."
+  ;; A document switch a lifecycle command asked for (NEW / OPEN / ...) takes
+  ;; effect here, at the next top-level read: this turn reads and evaluates in
+  ;; the newly current drawing and its LISP namespace.
+  (clautolisp.autolisp-runtime:apply-pending-document-switch context)
   (handler-case
       (let* ((forms (read-current-source source :source-name "<repl>"
                                                 :context context))
@@ -1231,8 +1266,9 @@ text (filename or an excerpt of the expression)."
               "~&clautolisp: ~A ~A in ~,3F s~%"
               (ecase kind
                 (:file "loaded")
-                (:expression "evaluated"))
-              label
+                (:expression "evaluated")
+                (:startup "ran the startup chain"))
+              (or label "")
               elapsed))))
 
 (defun eval-action-in-context (context action dialect)
@@ -1246,6 +1282,9 @@ Dynamic *AUTOLISP-…* variables are bound for the action's duration:
 *AUTOLISP-LOAD-PATHNAME* for :file, *AUTOLISP-EXPRESSION* for
 :expression. Cleared on return (success or signal). (:interactive)
 is handled separately by the REPL wrapper in RUN-WITH-INPUT."
+  ;; Each action is a top-level read: a document switch requested by the
+  ;; previous one (NEW / OPEN ...) takes effect here.
+  (clautolisp.autolisp-runtime:apply-pending-document-switch context)
   (let ((kind (car action))
         (payload (cdr action)))
     (ecase kind
@@ -1268,6 +1307,8 @@ is handled separately by the REPL wrapper in RUN-WITH-INPUT."
             (call-with-autolisp-error-handler
              (lambda () (autolisp-eval-progn forms context))
              context)))))
+      (:startup
+       (clautolisp.autolisp-builtins-core:run-session-startup-chain context))
       (:interactive
        ;; The (:interactive . T) action is a placeholder so the
        ;; queue order is preserved when the user mixed -i in with

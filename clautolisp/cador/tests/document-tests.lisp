@@ -28,11 +28,11 @@
     (is (string= first-key (host-current-document host)))))
 
 (test host-open-document-uniquifies-colliding-names
-  ;; the initial document is "Drawing.dwg"; opening another by the same name
-  ;; must get a distinct key.
+  ;; the initial document is "Drawing1.dwg" (AutoCAD's first untitled
+  ;; name); opening another by the same name must get a distinct key.
   (let* ((host (make-cador))
-         (k2 (host-open-document host "Drawing.dwg")))
-    (is (not (string= "Drawing.dwg" k2)))
+         (k2 (host-open-document host "Drawing1.dwg")))
+    (is (not (string= "Drawing1.dwg" k2)))
     (is (= 2 (length (remove-duplicates (host-document-list host)
                                         :test #'string=))))))
 
@@ -117,20 +117,22 @@
 ;;; --- Sysvars are per-document (cador-2 slice 3c) ------------------
 
 (test cador-sysvars-are-per-document
-  ;; Sysvars live on the ACTIVE document's drawing header variables, so each
-  ;; document carries its own — a direct consequence of the document->drawing
-  ;; registry (slice 1a). A value set in document A does not leak to document B
-  ;; and survives a round-trip through B. (OSMODE is in the default sysvar set;
-  ;; CMDECHO likewise rides the active drawing, absent-means-on.)
+  ;; A variable SAVED IN THE DRAWING (LTSCALE) is each document's own; one the
+  ;; application keeps (OSMODE: registry) is shared by every document, as in
+  ;; AutoCAD (D2 §I.6; multi-document slice 3 -- this test used to assert OSMODE
+  ;; per document).
   (let* ((host (make-cador))
          (key-a (host-current-document host))
          (key-b (host-open-document host "B.dwg")))
-    (host-setvar host "OSMODE" 5)                     ; A's OSMODE := 5
-    (is (eql 5 (host-getvar host "OSMODE")))
+    (host-setvar host "LTSCALE" 5.0d0)                ; A's LTSCALE := 5
+    (host-setvar host "OSMODE" 5)                     ; the application's OSMODE := 5
     (host-activate-document host key-b)               ; B active (its own drawing)
-    (is (not (eql 5 (ignore-errors (host-getvar host "OSMODE")))))  ; A's 5 not in B
+    (is (not (eql 5.0d0 (host-getvar host "LTSCALE")))) ; A's 5 not in B
+    (is (eql 5 (host-getvar host "OSMODE")))           ; shared
+    (host-setvar host "OSMODE" 7)
     (host-activate-document host key-a)               ; back to A
-    (is (eql 5 (host-getvar host "OSMODE")))))        ; A still 5
+    (is (eql 5.0d0 (host-getvar host "LTSCALE")))     ; A still 5
+    (is (eql 7 (host-getvar host "OSMODE")))))        ; B's setting seen in A
 
 ;;; --- the template a NEW document is created from -------------------
 ;;;
@@ -226,6 +228,6 @@ variable has to be set in-process."
     (if (not (and template (probe-file template)))
         (is (null template) "no bundled template to start from")
         (let ((drawing (clautolisp.cador::%startup-drawing template)))
-          (is (equal "Drawing.dwg" (clautolisp.drawing:drawing-name drawing)))
+          (is (equal "Drawing1.dwg" (clautolisp.drawing:drawing-name drawing)))
           (is (plusp (hash-table-count (clautolisp.drawing:drawing-blocks drawing)))
               "with the template, the startup document carries its structure")))))

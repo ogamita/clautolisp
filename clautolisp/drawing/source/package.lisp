@@ -28,6 +28,8 @@ from the cador package before the Phase-17a extraction.")
    #:drawing-p
    #:drawing-name
    #:drawing-path
+   #:drawing-dbmod
+   #:note-drawing-modified
    #:drawing-format
    #:drawing-version
    #:drawing-codepage

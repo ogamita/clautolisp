@@ -65,6 +65,9 @@
    #:host-restore-sysvars
    #:host-sysvar-names
    #:host-layout-names
+   #:link-runtime-session-to-host
+   #:request-host-document-activation
+   #:note-host-document-closed
    #:host-registry-read #:host-registry-write
    #:host-registry-delete #:host-registry-descendents
    ;; --- Command dispatch -----------------------------------------

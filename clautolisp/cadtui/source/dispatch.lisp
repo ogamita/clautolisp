@@ -267,6 +267,13 @@ active-drawing (= drawings[1]) becomes DRAWING."
       ((null node)
        (make-command-result :status :error :verb :activate
                             :text "activate needs a target"))
+      ((and (eq :drawing (ui-role node)) *cadtui-activate-document-function*)
+       ;; The host's document becomes current (at the next read); the tree
+       ;; follows on :DOCUMENT-ACTIVATED.
+       (funcall *cadtui-activate-document-function* (ui-key node))
+       (make-command-result :status :ok :verb :activate
+                            :text (format nil "activating ~A:~A" (%role-name node) (ui-key node))
+                            :data node))
       (t
        (when (eq :drawing (ui-role node))
          (%activate-drawing node)                ; reorder: active-drawing = node
@@ -326,6 +333,12 @@ active-drawing (= drawings[1]) becomes DRAWING."
                                         :text "close needs a target"))
       ((null (ui-parent node)) (make-command-result :status :error :verb :close
                                                     :text "cannot close the root"))
+      ((and (eq :drawing (ui-role node)) *cadtui-close-document-function*)
+       ;; Closing a drawing closes the host document; the tree follows on
+       ;; :DOCUMENT-CLOSED.
+       (funcall *cadtui-close-document-function* (ui-key node))
+       (make-command-result :status :ok :verb :close
+                            :text (format nil "closed ~A:~A" (%role-name node) (ui-key node))))
       (t
        ;; Phase 3: closing a mirrored dialog ends it in the DCL runtime first
        ;; (done_dialog), so a blocked start_dialog would return; then detach.

@@ -80,6 +80,15 @@
    #:*document-activation-hook*
    #:session-scheduler
    #:document-namespace-host-document-key
+   #:runtime-session-document-for-host-key
+   #:link-runtime-session-current-document
+   #:request-runtime-document-switch
+   #:forget-runtime-session-document-for-host-key
+   #:runtime-session-pending-document-key
+   #:apply-pending-document-switch
+   #:*document-namespace-created-hook*
+   #:runtime-session-pending-loads
+   #:add-runtime-session-pending-load
    #:make-document-scheduler
    #:document-scheduler-p
    #:document-scheduler-contexts
@@ -131,6 +140,7 @@
    #:autolisp-ename
    #:autolisp-ename-value
    #:make-autolisp-ename
+   #:autolisp-ename-document
    #:autolisp-pickset
    #:autolisp-pickset-value
    #:make-autolisp-pickset
@@ -553,6 +563,7 @@
    #:autolisp-variant
    #:autolisp-vla-object
    #:make-autolisp-ename
+   #:autolisp-ename-document
    #:make-autolisp-file
    #:make-autolisp-pickset
    #:make-autolisp-safearray

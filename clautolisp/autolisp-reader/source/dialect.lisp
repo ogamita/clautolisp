@@ -500,7 +500,15 @@ platform+version spelling (dialect-platform-version-axis.issue):
     ;; measured on AutoCAD 2022, French: "FR" (job 16921381038). BricsCAD
     ;; returns "fr_FR" (harvests 16913315157 / 16921381045).
     (:locale-form :autocad  t 2019 :language)
-    (:locale-form :bricscad t nil  :language-territory))
+    (:locale-form :bricscad t nil  :language-territory)
+    ;; When a lifecycle command (NEW / OPEN) run inside a routine switches
+    ;; drawing (probe-documents, 2026-10-05). BricsCAD V26 macOS (job
+    ;; 16932759882): at once -- the same routine's DWGNAME is the new
+    ;; drawing's, its variables still its own namespace's. AutoCAD 2022
+    ;; (job 16932759881): the routine stays in its drawing (DWGNAME unchanged),
+    ;; the switch at the next top-level read, as documented for MDI.
+    (:document-switch :autocad  t nil  :deferred)
+    (:document-switch :bricscad t nil  :drawing-immediate))
   "SEED feature/version matrix — see the block comment above for the row
 shape and the incremental-population contract. Query via
 DIALECT-FEATURE.")

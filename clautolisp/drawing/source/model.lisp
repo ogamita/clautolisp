@@ -73,6 +73,12 @@ rather than fixed."
          :initform "Drawing.dwg"
          :accessor drawing-name
          :documentation "Drawing name (the DWGNAME the host reports).")
+   (dbmod :initform 0
+          :accessor drawing-dbmod
+          :documentation "The DBMOD bits: 1 when the database (entities,
+tables, blocks, objects) changed since the drawing was read, created or
+last written. Set by the mutation functions, cleared by READ-DRAWING /
+WRITE-DRAWING.")
    (path :initarg :path
          :initform nil
          :accessor drawing-path

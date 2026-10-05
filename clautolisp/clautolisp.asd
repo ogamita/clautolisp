@@ -217,6 +217,7 @@
    (:file "cador/source/document-api")
    (:file "cador/source/sysvar-catalogue")
    (:file "cador/source/template-defaults")
+   (:file "cador/source/sysvar-scopes")
    (:file "cador/source/sysvars")
    (:file "cador/source/api")
    (:file "cador/source/entity-api")
@@ -708,6 +709,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-builtins-core"
                "clautolisp/cador"
+               "clautolisp/cadtui"
                "fiveam")
   :serial t
   :components
@@ -728,6 +730,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-builtins-core/tests/path-dotdot-tests")
    (:file "autolisp-builtins-core/tests/case-insensitive-paths-tests")
    (:file "autolisp-builtins-core/tests/source-file-tests")
+   (:file "autolisp-builtins-core/tests/multidocument-tests")
    (:file "autolisp-builtins-core/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

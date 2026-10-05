@@ -3119,17 +3119,16 @@ the host's prompt-output / command log after the run."
 
 (test vla-get-accessor-reads-a-property
   (let ((name (%vla "(vl-load-com)(vla-get-name (vla-get-activedocument (vlax-get-acad-object)))")))
-    (is (string= "Drawing.dwg"
+    (is (string= "Drawing1.dwg"
                  (if (typep name 'autolisp-string) (autolisp-string-value name) name)))))
 
 (test vla-put-accessor-writes-a-property
-  (let ((name (%vla (concatenate 'string
-                                 "(vl-load-com)"
-                                 "(setq d (vla-get-activedocument (vlax-get-acad-object)))"
-                                 "(vla-put-name d \"Renamed.dwg\")"
-                                 "(vla-get-name d)"))))
-    (is (string= "Renamed.dwg"
-                 (if (typep name 'autolisp-string) (autolisp-string-value name) name)))))
+  ;; Document.Name is read-only (the drawing's name); Application.Visible is not.
+  (is (null (%vla (concatenate 'string
+                               "(vl-load-com)"
+                               "(setq a (vlax-get-acad-object) v (vla-get-visible a))"
+                               "(vla-put-visible a :vlax-false)"
+                               "(equal v (vla-get-visible a))")))))
 
 (test vla-method-dispatch-routes-to-invoke-method
   ;; A non-get/put vla-<method> dispatches to vlax-invoke-method; an
@@ -3359,7 +3358,7 @@ Value as its TextString; both are read through the façade as well."
                     "  (setq n (+ n 1)))"
                     "n"))))
   ;; VAR is bound to each member (a document VLA-object) in turn.
-  (is (equal "Drawing.dwg"
+  (is (equal "Drawing1.dwg"
              (let ((v (%vla (concatenate 'string
                              "(vl-load-com)(setq nm nil)"
                              "(vlax-for d (vlax-get-property (vlax-get-acad-object) \"Documents\")"
@@ -4688,9 +4687,9 @@ and returns T. Accepts both a single symbol and a list."
 ;;;; ----- M5 missing-functions: core/misc rest -----
 
 (test m5-native-vl-load-family-returns-t
-  "VL-INIT / VL-LOAD-COM / VL-LOAD-REACTORS / VL-LOAD-ALL all
-return T — no-op success on a system without VLX / COM /
-reactors."
+  "VL-INIT / VL-LOAD-COM / VL-LOAD-REACTORS return T -- no-op success on a
+system without VLX / COM / reactors. (VL-LOAD-ALL takes a file name and
+loads it into every document: multidocument-tests.)"
   (reset-autolisp-symbol-table)
   (flet ((true-p (form)
            (let ((r (run-autolisp-string form :setup-fn #'install-core-into)))
@@ -4698,8 +4697,7 @@ reactors."
                   (string= "T" (autolisp-symbol-name r))))))
     (is (true-p "(vl-init)"))
     (is (true-p "(vl-load-com)"))
-    (is (true-p "(vl-load-reactors)"))
-    (is (true-p "(vl-load-all)"))))
+    (is (true-p "(vl-load-reactors)"))))
 
 (test reactor-builtins-import-runtime-helpers
   "Regression for reactor-builtins-undefined-functions: the reactor
