@@ -1,0 +1,139 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: native-and-dotnet-plugins — load application DLLs (C ABI and .NET [LispFunction] assemblies such as EPURELIB) into clautolisp
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: epic
+#+DEPENDS: cador-multidocument-host (document reopen), a study phase (below)
+#+BRANCH: feature-native-and-dotnet-plugins
+#+DATE: 2026-10-05
+
+* Context
+
+pjb, 2026-10-05: "Concerning the application specific DLLs
+(dotnet/BricsCAD/EPURELIB.dll dotnet/AutoCAD/EPURELIB.dll, sources in
+EPURELIB), what would be required from clautolisp if we wanted to compile a
+DLL loadable in clautolisp to use these functions implemented in C#?" -- then:
+"Write a deferred epic for the whole thing (we still need to study it, and
+notably if we want to support windows API, like COM and other dependencies
+on windows for C# code)."
+
+The case: SCHMS+ (~pjb/src/fabrik/schms/) ships EPURELIB, ~4600 lines of C#
+(EPURELIB/EPURELIB.csproj), built twice from one source -- Framework=AutoCAD
+(AcCoreMgd / AcDbMgd / AcMgd 2022, #if ARX_APP) and Framework=BricsCAD
+(BrxMgd / TD_Mgd V25, #if BRX_APP) -- TargetFramework net48, UseWindowsForms,
+Costura.Fody-embedded dependencies (DocumentFormat.OpenXml, RestSharp,
+System.IdentityModel.Tokens.Jwt, OuranosClient). The CAD loads it with
+(command-s "._netload" path) from SCHMS+'s charge_dll.lsp; EPUREE's
+replacement skips the netload off Windows (epuree/post-deploy/schmsplus/
+src-vlx/charge_dll.lsp), so those call sites fail on macOS / Linux, and
+under clautolisp everywhere.
+
+Today clautolisp has NO plugin loading: ARXLOAD / ARX / AUTOARXLOAD /
+VL-ARX-IMPORT are nil stubs, there is no NETLOAD, and vlax-create-object only
+reaches cador's mock ProgID table (no real Windows COM; only the wire host
+forwards to a real CAD's COM server).
+
+* What EPURELIB uses (inventory, 2026-10-05)
+
+18 [LispFunction]s + 1 [CommandMethod]:
+
+| function(s)                                                     | needs beyond marshalling                         |
+|-----------------------------------------------------------------+--------------------------------------------------|
+| get_new_guid, nombre_aleatoire, Add, DivMod, HttpGet,           | nothing (pure .NET)                              |
+| parse_condition_itineraire                                      |                                                  |
+| ouranos_get_refgeo, ouranos_get_postes, ouranos_lake_upload     | network + RestSharp/JWT (pure .NET)              |
+| schms_generer_rapport_verification                              | OpenXml (pure .NET); PDF via Word COM interop    |
+|                                                                 | (Windows + Word installed)                       |
+| ouvre_liste_edit, actu_liste_edit                               | Editor.SelectAll(filter: INSERT + xdata app),    |
+|                                                                 | Transaction.GetObject, GetXDataForApplication,   |
+|                                                                 | WinForms                                         |
+| ouvre_suivi_modif, ouvre_editeur_voies, ouvre_condit,           | WinForms (Application.ShowModalDialog)           |
+| vers_presse_papiers                                             |                                                  |
+| schms_reouvrir_lecture_seule (+ SCHMS_REOUVRIR_LECTURE_SEULE_EXEC) | DocumentCollection.Open(path, readOnly),     |
+|                                                                 | CloseAndDiscard, IsReadOnly, SendStringToExecute |
+
+Also, throughout: ResultBuffer / TypedValue / LispDataType (182 TypedValue
+uses: Text, Int16, Int32, Double, Nil, T, ListBegin / ListEnd / DottedPair),
+LISP callbacks from C# (Application.Invoke / Bricscad.Global.Editor.Invoke),
+SendStringToExecute (9 uses: deferred commands cmd_set_suivi_modif,
+schms_image_depose, cmd_set_cadres, ...), Editor.WriteMessage.
+
+* Proposal (three layers -- to be confirmed by the study)
+
+1. *A native plugin ABI (language-neutral), the ADS layer.* C entry points
+   exported by clautolisp through CFFI callbacks, plus a loader:
+   - register a LISP-callable function / a command (acedDefun-like; the
+     command reuses vlax-add-cmd's path);
+   - resbuf marshalling AutoLISP <-> a linked list of (type-code . value),
+     with LispDataType's codes (5001 real, 5002 2D point, 5003 short, 5005
+     string, 5006 ename, 5007 pickset, 5009 3D point, 5010 long, 5014 void,
+     5016 list begin, 5017 list end, 5018 dotted pair, 5019 nil, 5021 T);
+   - call back into LISP (acedInvoke-like; the evaluator must allow nested
+     calls from foreign code);
+   - drawing services on handles: ssget with a filter, entget / entmod
+     incl. xdata, prompt / write-message;
+   - a deferred command queue (SendStringToExecute: run after the current
+     LISP call returns).
+   Useful without .NET: C / C++ / Rust / C#-NativeAOT plugins on every OS.
+2. *.NET hosting.* hostfxr / nethost (.NET 8, Windows / macOS / Linux) via
+   CFFI; or, Windows only, mscoree CLR hosting for unmodified net48
+   assemblies. A NETLOAD builtin (and (command "._netload" path)) that loads
+   the assembly, reflects on [LispFunction] / [CommandMethod] and registers
+   them through layer 1.
+3. *A managed shim of the CAD API subset above* -- ResultBuffer, TypedValue,
+   LispDataType, DxfCode, ObjectId, Transaction, OpenMode, Entity
+   (GetXDataForApplication), Editor (SelectAll, SelectionFilter,
+   PromptStatus, WriteMessage, Invoke), Application (DocumentManager,
+   MdiActiveDocument, SendStringToExecute, ShowModalDialog), DocumentCollection
+   (Open, CloseAndDiscard, IsReadOnly), the two attributes -- each forwarding
+   to layer 1. Preferably as a THIRD EPURELIB build flavour
+   (Framework=clautolisp, #if CLAUTOLISP_APP, next to ARX_APP / BRX_APP)
+   rather than assemblies impersonating Autodesk's / Bricsys's names.
+
+* Study questions (why this is DEFERRED)
+
+- *Windows API surface.* Do we support Windows-only dependencies of C# code
+  at all, and how far?
+  - WinForms dialogs (5 functions): need an STA thread with a message loop
+    beside SBCL's main thread (SBCL's thread is not COM-initialized STA);
+    modal ownership without a CAD main window. Not available on .NET 8
+    macOS / Linux (Mono's WinForms is partial).
+  - COM from C#: Word interop for the PDF report; more generally
+    out-of-process COM servers. Requires CoInitializeEx and apartment
+    rules on the hosting thread.
+  - COM from AutoLISP itself: should clautolisp's vlax-create-object reach
+    REAL Windows COM (Scripting.FileSystemObject, WinHttp.WinHttpRequest,
+    Excel / Word.Application -- all used by AutoLISP corpora) through an
+    IDispatch bridge (CoCreateInstance / IDispatch::Invoke via CFFI, or via
+    the .NET host's dynamic COM)? That is a sibling feature to this epic and
+    shares its threading model; decide jointly.
+  - Registry, clipboard, file dialogs, Process: which need shims, which
+    just work in .NET.
+- *net48 vs net8.* Host unmodified net48 on Windows (mscoree), or require a
+  retarget to net8.0 / net8.0-windows (hostfxr, cross-platform)? Costura
+  embedding vs net8's deps.json resolution.
+- *Shim vs impersonation.* Is a third build flavour acceptable for SCHMS+
+  (it is pjb's code), or must unmodified vendor-flavoured DLLs load (needs
+  assemblies with Autodesk / Bricsys names and types -- licensing and
+  trademark questions)?
+- *Reentrancy and threads.* LISP -> C# -> Invoke -> LISP nesting; C# code
+  calling back on another thread; error propagation (a .NET exception as a
+  LISP error, *error* semantics).
+- *Documents.* schms_reouvrir_lecture_seule needs a multi-document host
+  (cador-multidocument-host) with read-only open.
+- *Value.* For EPUREE, the alternative (epuree user manual, "Three
+  trajectories", option B) is reimplementing the ~10 portable functions in
+  AutoLISP; .NET hosting pays only if the C# must stay the single source
+  for AutoCAD, BricsCAD and clautolisp. Layer 1 has value on its own.
+
+* Acceptance criteria (for the epic, once un-deferred)
+
+- A C plugin built against the layer-1 header registers a LISP function
+  that clautolisp calls, with lists / strings / reals / points / nil / T
+  round-tripping, on Windows, macOS and Linux.
+- (netload "EPURELIB.dll") under clautolisp on Windows makes the pure-.NET
+  functions (get_new_guid ... parse_condition_itineraire, ouranos_*)
+  callable with the same results as under AutoCAD / BricsCAD; on macOS /
+  Linux with a net8 build.
+- The study's decisions on WinForms / COM / Word recorded here, with the
+  per-platform support matrix in the user manual.

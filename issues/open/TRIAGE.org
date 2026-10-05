@@ -693,6 +693,11 @@ opendcl-conformance. All =TODO=.
 |----------+--------+------|
 | compiler | TODO   | flagship epic (DRAFT): interpreter companion + AutoLISP→CL compiler |
 
+** Plugins (native / .NET)
+| Issue                      | Status   | Note |
+|----------------------------+----------+------|
+| native-and-dotnet-plugins  | DEFERRED | NOUVEAU 2026-10-05 (pjb, epic) : charger des DLL applicatives (ABI native facon ADS + hebergement .NET + shim de l API CAD) -- cas EPURELIB de SCHMS+ (18 LispFunction C#, net48, WinForms, Word COM). A ETUDIER d abord : support des API Windows (COM, WinForms, STA), net48 vs net8, shim vs imitation des assemblies vendeur. |
+
 ** Spec / docs
 | Issue                              | Status  | Note |
 |------------------------------------+---------+------|
