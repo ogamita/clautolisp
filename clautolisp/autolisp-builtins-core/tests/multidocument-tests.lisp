@@ -323,3 +323,42 @@ own; AutoCAD (job 16932759881) stays in the old drawing until the routine ends."
            (is (equal "here" (autolisp-string-value (%md-turn context "(md-everywhere)")))))
       (ignore-errors (delete-file file)))))
 
+;;; --- slice 7: cadtui mirrors and drives the host documents ------------------
+
+(test cadtui-tree-follows-and-drives-the-host-documents
+  (let* ((root (clautolisp.cadtui:make-application-tree))
+         (clautolisp.cador:*cador-command-ui-hook*
+           (lambda (host event &rest args)
+             (declare (ignore host))
+             (apply #'clautolisp.cadtui:apply-file-command-event root event args)))
+         (context (%md-context))
+         (host (%md-host context))
+         (clautolisp.cadtui:*cadtui-activate-document-function*
+           (lambda (key) (clautolisp.autolisp-host:request-host-document-activation host key)))
+         (clautolisp.cadtui:*cadtui-close-document-function*
+           (lambda (key) (clautolisp.cador:cador-close-document host key))))
+    (flet ((active-key ()
+             (clautolisp.cadtui:ui-key
+              (clautolisp.cadtui:resolve-target root "/application/active-drawing")))
+           (drawing-keys ()
+             (loop for node in (clautolisp.cadtui:ui-children root)
+                   when (eq :drawing (clautolisp.cadtui:ui-role node))
+                     collect (clautolisp.cadtui:ui-key node))))
+      ;; The startup drawing, as the CLI seeds it.
+      (clautolisp.cadtui:ensure-drawing-node root "Drawing1.dwg")
+      (clautolisp.cadtui:apply-file-command-event root :document-activated "Drawing1.dwg")
+      ;; NEW: a node at once, current at the next read.
+      (%md-turn context "(command \"_.NEW\" \"\")")
+      (is (= 2 (length (drawing-keys))))
+      (%md-turn context "nil")
+      (is (equal "Drawing2.dwg" (active-key)))
+      ;; =activate on the first drawing's node: the host switches back.
+      (clautolisp.cadtui:interpret-line "=activate(drawings[2])" root)
+      (%md-turn context "nil")
+      (is (equal "Drawing1.dwg" (autolisp-string-value (%md-turn context "(getvar \"DWGNAME\")"))))
+      (is (equal "Drawing1.dwg" (active-key)))
+      ;; =close on the other drawing's node closes the host document.
+      (clautolisp.cadtui:interpret-line "=close(drawings[2])" root)
+      (is (equal '("Drawing1.dwg") (clautolisp.autolisp-host:host-document-list host)))
+      (is (equal '("Drawing1.dwg") (drawing-keys))))))
+

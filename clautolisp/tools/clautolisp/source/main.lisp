@@ -192,6 +192,11 @@ HOST-NAME would say \"cador\". NIL means use the backend's own HOST-NAME.")
 (defvar *cadtui-root* nil
   "The cadtui application tree when --host cadtui is active, else NIL.")
 
+(defun %session-host ()
+  (ignore-errors
+   (clautolisp.autolisp-runtime:runtime-session-host
+    (evaluation-context-session (clautolisp.autolisp-runtime:current-evaluation-context)))))
+
 (defun maybe-install-cadtui-host (host-keyword)
   "When --host cadtui is selected, build the full cadtui application tree and
 install the cadtui DCL renderer over it, so DCL dialogs (and CAD objects) are
@@ -212,7 +217,18 @@ every other host. Returns the tree or NIL."
             ;; CAD core does not run or recognise.
             clautolisp.cadtui:*cad-command-known-p*
             (lambda (name)
-              (member name (clautolisp.cador:cador-command-names) :test #'string=)))
+              (member name (clautolisp.cador:cador-command-names) :test #'string=))
+            ;; =activate / =close on a drawing node drive the host documents
+            ;; (multi-document slice 7).
+            clautolisp.cadtui:*cadtui-activate-document-function*
+            (lambda (key)
+              (let ((host (%session-host)))
+                (when host
+                  (clautolisp.autolisp-host:request-host-document-activation host key))))
+            clautolisp.cadtui:*cadtui-close-document-function*
+            (lambda (key)
+              (let ((host (%session-host)))
+                (when host (clautolisp.cador:cador-close-document host key)))))
       (setf *cadtui-root* root
             *active-host-label* "cadtui")
       root)))
@@ -651,7 +667,14 @@ that subsequent get* calls read deterministic answers from it."
     ;; The startup drawing gets its LISP namespace: the context's (multi-
     ;; document slice 1).
     (clautolisp.autolisp-host:link-runtime-session-to-host
-     (evaluation-context-session context) host))
+     (evaluation-context-session context) host)
+    ;; cadtui shows the drawings open at launch (the startup one).
+    (when *cadtui-root*
+      (dolist (key (ignore-errors (clautolisp.autolisp-host:host-document-list host)))
+        (clautolisp.cadtui:ensure-drawing-node *cadtui-root* key))
+      (let ((current (ignore-errors (clautolisp.autolisp-host:host-current-document host))))
+        (when current
+          (clautolisp.cadtui:apply-file-command-event *cadtui-root* :document-activated current)))))
   (when (and mock-input
              (typep host 'clautolisp.cador:cador))
     (let ((stream (open mock-input :direction :input

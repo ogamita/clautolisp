@@ -28,6 +28,33 @@ This epic is decomposed into ordered sub-issues (owner's breakdown):
 - **cador-4-epic-remainder** (P3) — DB backend, command layer, §7.4
   interface adaptation, locking, conformance E1–E10, wire host.
 
+## 0.1 Progress: cador-2 multi-document runtime (branch `cador-multidocument`, MR !414)
+
+Measured first (probe-documents.lsp, AutoCAD 2022 console, BricsCAD V25
+Windows + V26 macOS), then implemented, clautolisp 2.2.185 .. 2.2.192:
+
+- slice 1 (2.2.185): one LISP namespace per drawing; a lifecycle command
+  switches at the next top-level read (`:document-switch` -- AutoCAD
+  `:deferred`, BricsCAD `:drawing-immediate`, measured in 2.2.188); vl-bb-*
+  and vl-propagate across the namespaces.
+- slice 2 (2.2.186): enames tagged with their drawing
+  (`:cross-document-dereference`); per-document session state (picksets, pickfirst, iterators,
+  initget, ldata, ename caches).
+- slice 3 (2.2.187): full sysvar header per new document; drawing-saved
+  (520, from the inventory) vs application scope; live DWGNAME/DWGTITLED/DBMOD.
+- slice 4 (2.2.189): QSAVE/SAVE/SAVEAS/CLOSE/CLOSEALL.
+- slice 5 (2.2.190): COM Documents live; Add (inactive, measured) / Open /
+  Activate / Close / ActiveDocument; each Document's objects bound to its
+  drawing.
+- slice 6 (2.2.191): startup chain per drawing (acad/acaddoc, on_start /
+  on_doc_load, S::STARTUP); vl-load-all.
+- slice 7 (2.2.192): cadtui tree mirrors and drives the host documents.
+
+Still open here: the cooperative per-document coroutine scheduler (a routine
+that survives the switch and resumes in its own document -- AutoCAD's
+deferred switch is modelled at the read boundary instead), and everything
+under cador-4.
+
 ## 1. Decision record
 
 The following is settled. Do not relitigate it in the deliverables; record it as

@@ -169,6 +169,28 @@ new ui-menubar."
 (defun %root-active-drawing (root)
   (find :drawing (ui-children root) :key #'ui-role))
 
+(defvar *cadtui-activate-document-function* nil
+  "NIL, or a function (KEY) the CLI installs: make host document KEY current
+(=activate on a drawing node). The switch takes effect at the next read, as a
+NEW does; the tree follows on :DOCUMENT-ACTIVATED.")
+
+(defvar *cadtui-close-document-function* nil
+  "NIL, or a function (KEY) the CLI installs: close host document KEY (=close on
+a drawing node); the tree follows on :DOCUMENT-CLOSED.")
+
+(defun %drawing-node (root key)
+  (find-if (lambda (node) (and (eq :drawing (ui-role node)) (equal key (ui-key node))))
+           (ui-children root)))
+
+(defun ensure-drawing-node (root key)
+  "ROOT's ui-drawing for host document KEY, made (with its console) if missing."
+  (or (%drawing-node root key)
+      (let ((drawing (make-instance 'ui-drawing :key key :filename key))
+            (console (make-instance 'ui-console :key "console")))
+        (add-child root drawing)
+        (add-child drawing console)
+        drawing)))
+
 (defun apply-file-command-event (root event &rest args)
   "Mirror a file command into ROOT. :DOCUMENT-OPENED KEY -- NEW / OPEN made
 document KEY current: a ui-drawing (with its console) is added and made the
@@ -177,13 +199,18 @@ active drawing. :MENU-LOADED FORMS PATH -- MENULOAD / CUILOAD read FORMS: a
 added to the active drawing (bands belong to a drawing; without one they
 are not installed). Returns the node(s) created."
   (ecase event
+    ;; A document opened (it becomes current at the switch time of the
+    ;; dialect: :DOCUMENT-ACTIVATED then puts it first).
     (:document-opened
-     (let ((drawing (make-instance 'ui-drawing :key (first args) :filename (first args)))
-           (console (make-instance 'ui-console :key "console")))
-       (add-child root drawing)
-       (add-child drawing console)
-       (%activate-drawing drawing)
-       drawing))
+     (ensure-drawing-node root (first args)))
+    (:document-activated
+     (%activate-drawing (ensure-drawing-node root (first args))))
+    (:document-closed
+     (let ((node (%drawing-node root (first args))))
+       (when node
+         (setf (ui-children root) (remove node (ui-children root))
+               (ui-parent node) nil))
+       node))
     (:menu-loaded
      (let ((target (%root-active-drawing root)))
        (loop for form in (first args)

@@ -1130,6 +1130,14 @@ provides that surface through the host backend:
   drawing's namespace starts with the built-in functions and variables and
   clautolisp's own settings (~*AUTOLISP-DIALECT*~ ...). ~--no-init~ skips the
   startup files with the init file.
+  *Under ~--host cadtui~* the UI tree mirrors the open documents: every
+  open drawing is a ~drawing~ node under ~/application~ (with its console),
+  a drawing opened by ~NEW~, ~OPEN~ or ~vla-add~ appears at once, the
+  current one is ~/application/active-drawing~ (it changes at the switch
+  time above), and a closed drawing's node goes away. The tree also drives
+  the host: ~=activate(drawings[2])~ makes that drawing current (at the
+  next read, as ~NEW~ does) and ~=close(drawings[2])~ closes it, as the
+  ~CLOSE~ command would.
 - Documents through the object model: ~(vla-get-documents app)~ is a live
   collection of the open drawings (~Count~, ~Item~, ~vlax-for~).
   ~(vla-add documents)~ opens a new drawing with its own database and does

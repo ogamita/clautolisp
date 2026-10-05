@@ -709,6 +709,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-builtins-core"
                "clautolisp/cador"
+               "clautolisp/cadtui"
                "fiveam")
   :serial t
   :components

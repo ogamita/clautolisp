@@ -139,6 +139,9 @@ and return its KEY. Does not change the current document."
        :no-such-document "cador has no open document with key ~S." key))
     (setf (cador-active-drawing host) (cdr cell)
           (cador-active-document-key host) key)
+    ;; A UI over cador (cadtui) mirrors which drawing is current.
+    (when (and (boundp '*cador-command-ui-hook*) (symbol-value '*cador-command-ui-hook*))
+      (funcall (symbol-value '*cador-command-ui-hook*) host :document-activated key))
     key))
 
 (defmethod host-current-document ((host cador))
