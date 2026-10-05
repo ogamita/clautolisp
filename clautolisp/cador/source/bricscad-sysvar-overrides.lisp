@@ -41,6 +41,13 @@
 ;;;; inventory still lists for BricsCAD (edition-/platform-specific
 ;;;; absences we must not assume hold on every BricsCAD build). Both
 ;;;; residues are tracked in the issue.
+;;;;
+;;;; 2026-10-05: 8 names were taken out of this list -- APPAUTOLOAD CLAYOUT
+;;;; PDFSHXBESTFONT PDFSHXLAYER PDFSHXTHRESHOLD SPLDEGREE SPLKNOTS SPLMETHOD:
+;;;; BricsCAD V26 defines them (macOS harvest, job 16913315157), V25 does not
+;;;; (Windows harvest, job 16921381045, ACADVER "25.0 BricsCAD"). They are
+;;;; V26 additions, dropped for the V25 dialects only
+;;;; (*BRICSCAD-V25-ABSENT-SYSVARS*).
 
 (defparameter *bricscad-absent-sysvars*
   '(
@@ -48,7 +55,7 @@
     "ACTIVITYINSIGHTSPATH" "ACTIVITYINSIGHTSSTATE" "ACTIVITYINSIGHTSSUPPORT"
     "ACTIVITYINSIGHTSVIEWEDLOGGING" "ACTPATH" "ACTRECORDERSTATE"
     "ACTRECPATH" "ACTUI" "ADCSTATE"
-    "ANNOSCALEZOOM" "APPAUTOLOAD" "APPLYGLOBALOPACITIES"
+    "ANNOSCALEZOOM" "APPLYGLOBALOPACITIES"
     "APSTATE" "ASSISTANTSTATE" "ATTIPE"
     "ATTMULTI" "AUTODWFPUBLISH" "AUTOMATICPUB"
     "AUTOPLACEMENT" "BCONSTATUSMODE" "BCONVERTLAYER"
@@ -58,7 +65,7 @@
     "BLOCKSTATE" "BLOCKSYNCFOLDER" "BLOCKTARGETCOLOR"
     "BSEARCHINCLUDEEXISTINGBLOCKS" "CACHEMAXFILES" "CACHEMAXTOTALSIZE"
     "CALCINPUT" "CAPTURETHUMBNAILS" "CBARTRANSPARENCY"
-    "CCONSTRAINTFORM" "CLAYOUT" "CMDINPUTHISTORYMAX"
+    "CCONSTRAINTFORM" "CMDINPUTHISTORYMAX"
     "CMFADECOLOR" "CMFADEOPACITY" "CMOSNAP"
     "COMMANDMACROSSTATE" "COMMENTHIGHLIGHT" "COMPARECOLOR1"
     "COMPARECOLOR2" "COMPARECOLORCOMMON" "COMPAREFRONT"
@@ -112,8 +119,8 @@
     "NAVVCUBESIZE" "OSNAPNODELEGACY" "OSNAPOVERRIDE"
     "PALETTEOPAQUE" "PARAMETERSSTATUS" "PASTESPECMODE"
     "PCMSTATE" "PDFIMPORTFILTER" "PDFIMPORTLAYERS"
-    "PDFIMPORTMODE" "PDFSHXBESTFONT" "PDFSHXLAYER"
-    "PDFSHXTHRESHOLD" "PERSPECTIVECLIP" "PLACEMENTSWITCH"
+    "PDFIMPORTMODE" 
+    "PERSPECTIVECLIP" "PLACEMENTSWITCH"
     "PLINEGCENMAX" "PLOTOFFSET" "POINTCLOUDAUTOUPDATE"
     "POINTCLOUDCACHESIZE" "POINTCLOUDCLIPFRAME" "POINTCLOUDDENSITY"
     "POINTCLOUDLIGHTING" "POINTCLOUDLIGHTSOURCE" "POINTCLOUDLOCK"
@@ -138,7 +145,6 @@
     "SHOWNEWSTATE" "SHOWPALETTESTATE" "SMOOTHMESHGRID"
     "SMOOTHMESHMAXFACE" "SMOOTHMESHMAXLEV" "SNAPGRIDLEGACY"
     "SOLIDHIST" "SORTORDER" "SPACESWITCH"
-    "SPLDEGREE" "SPLKNOTS" "SPLMETHOD"
     "SPLPERIODIC" "SSMOPENMODE" "STARTINFOLDER"
     "STUDENTDRAWING" "STYLUSFORCETHRESHOLD" "SUBOBJSELECTIONMODE"
     "SUNPROPERTIESSTATE" "SURFACEASSOCIATIVITY" "SURFACEASSOCIATIVITYDRAG"
@@ -200,6 +206,13 @@ returns nil. See the file header for provenance.")
 ;;;; values: leave this empty until the pristine-profile dump is
 ;;;; classified and human-vetted for locale/template rows.
 
+(defparameter *bricscad-v25-absent-sysvars*
+  '("APPAUTOLOAD" "CLAYOUT" "PDFSHXBESTFONT" "PDFSHXLAYER" "PDFSHXTHRESHOLD"
+    "SPLDEGREE" "SPLKNOTS" "SPLMETHOD")
+  "Sysvars BricsCAD V26 defines and V25 does not (V26 macOS harvest job
+16913315157 vs V25 Windows harvest job 16921381045): dropped under a BricsCAD
+dialect of version 25 or older, kept from V26.")
+
 (defparameter *bricscad-factory-defaults*
   ;; ADOPTED 2026-10-03 from harvest:sysvars:bricscad:macos (job
   ;; 16913315157, BricsCAD V26 macOS, profile <<Profil sans nom>>), vetted
@@ -220,6 +233,16 @@ returns nil. See the file header for provenance.")
     ("DRAGP2" . 25)
     ("DWGCHECK" . 0)
     ("FONTMAP" . "default.fmp")
+    ;; 2026-10-05 (probe-triage3 repr + both harvests, V25 Windows / V26 macOS):
+    ;; BricsCAD's own values where AutoCAD's differ or are doc text.
+    ("INETLOCATION" . "http://www.bricsys.com")
+    ("INTERFERECOLOR" . "BYLAYER")
+    ("RULERTEXTCOLOR" . "#C8C8C8")
+    ("HORIZONBKG_GROUNDHORIZON" . "#434A50")
+    ("HORIZONBKG_GROUNDORIGIN" . "#5F6770")
+    ("HORIZONBKG_SKYHIGH" . "#CCE5EA")
+    ("HORIZONBKG_SKYHORIZON" . "#EEF8FA")
+    ("HORIZONBKG_SKYLOW" . "#EEF8FA")
     ("GRIPHOT" . 240)
     ("GRIPHOVER" . 150)
     ("GRIPSIZE" . 4)
@@ -298,16 +321,24 @@ dialect only. Rows naming an unknown or BricsCAD-absent sysvar are skipped
 harmlessly.")
 
 (defparameter *bricscad-platform-factory-defaults*
-  ;; The registry rows the two BricsCAD V26 harvests (macOS job 16913315157,
-  ;; Windows job 16921381045) both answered but with DIFFERENT values: a
+  ;; The registry rows the two BricsCAD harvests (V26 macOS job 16913315157,
+  ;; V25 Windows job 16921381045) both answered but with DIFFERENT values: a
   ;; platform default each, applied by the dialect's platform facet
   ;; (bricscad-mac -> :macos; bricscad, bricscad-v26 -> :windows; Linux not
   ;; measured -> none).
+  ;; CAVEAT (2026-10-05): the Windows harvest is BricsCAD V25 (ACADVER "25.0
+  ;; BricsCAD"), not V26 as first recorded, so each difference may be the
+  ;; VERSION rather than the platform; a V26 Windows harvest would tell.
   '((:macos ("3DOSMODE" . 11) ("COMMANDASSIST" . 1) ("CROSSHAIRDRAWMODE" . 3)
             ("GLSWAPMODE" . 0) ("MTFLAGS" . 2048) ("USECOMMUNICATOR" . 0))
     (:windows ("3DOSMODE" . 10) ("COMMANDASSIST" . 0) ("CROSSHAIRDRAWMODE" . 2)
               ("GLSWAPMODE" . 2) ("MTFLAGS" . 3015) ("USECOMMUNICATOR" . 1)))
   "Platform -> (SYSVAR . VALUE) BricsCAD factory defaults that differ by OS.")
+
+(defun %current-dialect-version ()
+  (let ((dialect (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-dialect))))
+    (and dialect
+         (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-version dialect)))))
 
 (defun %current-dialect-platform ()
   (let ((dialect (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-dialect))))
@@ -332,6 +363,10 @@ Mock-host only; no-ops on hosts without a sysvar table. Returns HOST."
   (when host
     (dolist (name *bricscad-absent-sysvars*)
       (clautolisp.autolisp-host:host-undefine-sysvar host name))
+    (let ((version (%current-dialect-version)))
+      (when (and (integerp version) (<= version 25))
+        (dolist (name *bricscad-v25-absent-sysvars*)
+          (clautolisp.autolisp-host:host-undefine-sysvar host name))))
     (dolist (row *bricscad-factory-defaults*)
       ;; HOST-SET-DERIVED-SYSVAR coerces to the cell's kind, bypasses the
       ;; read-only flag (these are host-populated defaults), and silently

@@ -5415,7 +5415,7 @@ This function is one of the clearest probes into the observable character model 
 *** Measured: character codes at LISPSYS 0
 probe-triage2, 2026-10-04 (strings built with ~chr~, never source literals):
 - AutoCAD 2022, Windows, LISPSYS 0 (job 16923993438): ~(chr 8364)~ is the character of code 172 -- 8364 reduced to a byte, the windows-1252 =¬= -- so ~(ascii (chr 8364))~ is 172 and ~(vl-string->list (chr 8364))~ is ~(172)~; ~(ascii (chr 128))~ is 128.
-- BricsCAD V26, Windows, LISPSYS 0 (job 16923993442): ~(chr 8364)~ is the euro, code 128 -- its windows-1252 byte: ~(ascii (chr 8364))~ 128, ~(vl-string->list (chr 8364))~ ~(128)~.
+- BricsCAD V25, Windows, LISPSYS 0 (job 16923993442): ~(chr 8364)~ is the euro, code 128 -- its windows-1252 byte: ~(ascii (chr 8364))~ 128, ~(vl-string->list (chr 8364))~ ~(128)~.
 - BricsCAD V26, macOS, LISPSYS 0 (job 16923993439): Unicode code points, 8364 throughout.
 - ~(strlen (chr 8364))~ is 1 on all three. Under LISPSYS 1 / 2 (AutoCAD 2021+, documented) codes are Unicode code points.
 
@@ -5465,7 +5465,7 @@ Like `ascii`, `chr` is affected by the pre-Unicode / post-Unicode split.
 *** Measured: character codes at LISPSYS 0
 probe-triage2, 2026-10-04 (strings built with ~chr~, never source literals):
 - AutoCAD 2022, Windows, LISPSYS 0 (job 16923993438): ~(chr 8364)~ is the character of code 172 -- 8364 reduced to a byte, the windows-1252 =¬= -- so ~(ascii (chr 8364))~ is 172 and ~(vl-string->list (chr 8364))~ is ~(172)~; ~(ascii (chr 128))~ is 128.
-- BricsCAD V26, Windows, LISPSYS 0 (job 16923993442): ~(chr 8364)~ is the euro, code 128 -- its windows-1252 byte: ~(ascii (chr 8364))~ 128, ~(vl-string->list (chr 8364))~ ~(128)~.
+- BricsCAD V25, Windows, LISPSYS 0 (job 16923993442): ~(chr 8364)~ is the euro, code 128 -- its windows-1252 byte: ~(ascii (chr 8364))~ 128, ~(vl-string->list (chr 8364))~ ~(128)~.
 - BricsCAD V26, macOS, LISPSYS 0 (job 16923993439): Unicode code points, 8364 throughout.
 - ~(strlen (chr 8364))~ is 1 on all three. Under LISPSYS 1 / 2 (AutoCAD 2021+, documented) codes are Unicode code points.
 
@@ -7586,7 +7586,7 @@ clautolisp extension (1.2.18 / 1.2.20). See *Normative Rules: Secure File
 Loading and Trust Model* (this chapter).
 
 *** Measured: the encoding argument
-probe-triage2, 2026-10-04: AutoCAD 2022 at LISPSYS 0 (job 16923993438) answers ~(open f "w" "utf8")~ with "too many arguments" (/nombre d'arguments trop important/) -- the third argument belongs to the Unicode engine (LISPSYS 1 / 2, 2021+). BricsCAD V26 at LISPSYS 0 (jobs 16923993439 macOS, 16923993442 Windows) opens the file.
+probe-triage2, 2026-10-04: AutoCAD 2022 at LISPSYS 0 (job 16923993438) answers ~(open f "w" "utf8")~ with "too many arguments" (/nombre d'arguments trop important/) -- the third argument belongs to the Unicode engine (LISPSYS 1 / 2, 2021+). BricsCAD at LISPSYS 0 (V26 macOS job 16923993439, V25 Windows job 16923993442) opens the file.
 
 *** clautolisp
 Under an AutoCAD dialect before 2021, or an AutoCAD Windows dialect at LISPSYS 0, a third argument signals the wrong-number-of-arguments error; elsewhere it is honoured.
@@ -9763,7 +9763,7 @@ Invokes command processing.
 Part of the Visual LISP command layer and related to `command` and `command-s`.
 
 *** Measured: the value
-probe-triage2, 2026-10-04: ~(vl-cmdf "_.LINE" "0,0" "1,1" "")~ returns ~T~ on AutoCAD 2022 (job 16923993438) and BricsCAD V26 (macOS and Windows). BricsCAD's release notes: vl-cmdf returns T / nil from V22.
+probe-triage2, 2026-10-04: ~(vl-cmdf "_.LINE" "0,0" "1,1" "")~ returns ~T~ on AutoCAD 2022 (job 16923993438), BricsCAD V26 (macOS) and BricsCAD V25 (Windows). BricsCAD's release notes: vl-cmdf returns T / nil from V22.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -67195,7 +67195,7 @@ None specified.
 - BricsCAD historically documented additional snap modes
 
 *** Measured: the "qui" mode
-probe-triage2, 2026-10-04: BricsCAD V26 returns the same point for ~(osnap pt "_qui,_end")~ as for ~(osnap pt "_end")~ (Windows job 16923993442) -- it accepts the QUIck modifier. AutoCAD 2022's headless console returns ~nil~ for both (no view), so it cannot confirm the documented 2016 change ("qui" no longer valid: ~nil~).
+probe-triage2, 2026-10-04: BricsCAD V25 returns the same point for ~(osnap pt "_qui,_end")~ as for ~(osnap pt "_end")~ (Windows job 16923993442) -- it accepts the QUIck modifier. AutoCAD 2022's headless console returns ~nil~ for both (no view), so it cannot confirm the documented 2016 change ("qui" no longer valid: ~nil~).
 
 *** clautolisp
 ~osnap~ is a headless stub returning ~nil~ for every mode.
@@ -69865,7 +69865,7 @@ Like `ascii`, `chr`, and `vl-string-elt`, this function exposes the host's obser
 *** Measured: character codes at LISPSYS 0
 probe-triage2, 2026-10-04 (strings built with ~chr~, never source literals):
 - AutoCAD 2022, Windows, LISPSYS 0 (job 16923993438): ~(chr 8364)~ is the character of code 172 -- 8364 reduced to a byte, the windows-1252 =¬= -- so ~(ascii (chr 8364))~ is 172 and ~(vl-string->list (chr 8364))~ is ~(172)~; ~(ascii (chr 128))~ is 128.
-- BricsCAD V26, Windows, LISPSYS 0 (job 16923993442): ~(chr 8364)~ is the euro, code 128 -- its windows-1252 byte: ~(ascii (chr 8364))~ 128, ~(vl-string->list (chr 8364))~ ~(128)~.
+- BricsCAD V25, Windows, LISPSYS 0 (job 16923993442): ~(chr 8364)~ is the euro, code 128 -- its windows-1252 byte: ~(ascii (chr 8364))~ 128, ~(vl-string->list (chr 8364))~ ~(128)~.
 - BricsCAD V26, macOS, LISPSYS 0 (job 16923993439): Unicode code points, 8364 throughout.
 - ~(strlen (chr 8364))~ is 1 on all three. Under LISPSYS 1 / 2 (AutoCAD 2021+, documented) codes are Unicode code points.
 
@@ -75730,7 +75730,7 @@ Returns the data stored under the named value (or the default value) of a regist
 *** Return Values
 The stored data, typed as the registry value's data type, or `nil` if the key/value does not exist.
 
-Measured on Windows (probe-triage2, 2026-10-04; AutoCAD 2022 job 16923993438, BricsCAD V26 job 16923716756), by registry type:
+Measured on Windows (probe-triage2, 2026-10-04; AutoCAD 2022 job 16923993438, BricsCAD V25 jobs 16923716756 / 16923993442 -- the Windows runner has V25), by registry type:
 
 | Type            | Value returned                                   | Example                                       |
 |-----------------+--------------------------------------------------+-----------------------------------------------|
@@ -75753,7 +75753,7 @@ None.
 *** Availability
 - AutoCAD 2026: documented (Windows + macOS).
 - BricsCAD V26: measured on Windows and macOS.
-- Status: both vendors; value types measured on AutoCAD 2022 and BricsCAD V26 (Windows).
+- Status: both vendors; value types measured on AutoCAD 2022 and BricsCAD V25 (Windows).
 
 *** clautolisp
 On Windows, clautolisp reads the registry by type as tabled above: under the AutoCAD dialects a =REG_BINARY= reads as =(3)=, otherwise as =(3 byte ...)=. A =REG_DWORD= is read as a signed 32-bit integer (an unmeasured choice: AutoLISP integers are 32-bit), and other types (=REG_QWORD=, ...) read as =nil=. The macOS defaults store and the sexp store hold strings only.

@@ -130,16 +130,16 @@
         (is (eq :unknown-sysvar (autolisp-runtime-error-code c)))))))
 
 (test bricscad-overlay-removes-the-expected-count
-  ;; All 382 absent names are present in the AutoCAD-derived catalogue,
+  ;; All 374 absent names (382 until the 8 V26 additions moved to *bricscad-v25-absent-sysvars*, 2026-10-05) are present in the AutoCAD-derived catalogue,
   ;; and exactly that many cells disappear after the overlay.
   (let* ((mock (make-cador))
          (before (hash-table-count (cador-sysvars mock))))
-    (is (= 382 (length clautolisp.cador:*bricscad-absent-sysvars*)))
+    (is (= 374 (length clautolisp.cador:*bricscad-absent-sysvars*)))
     (dolist (name clautolisp.cador:*bricscad-absent-sysvars*)
       (is (typep (cador-sysvar mock name) 'sysvar-cell)
           "absent-list name ~A must exist in the base catalogue" name))
     (clautolisp.cador:apply-bricscad-dialect-sysvars mock)
-    (is (= (- before 382) (hash-table-count (cador-sysvars mock))))))
+    (is (= (- before 374) (hash-table-count (cador-sysvars mock))))))
 
 ;;; --- BricsCAD-dialect factory-default value overlay (Phase 2) ----
 ;;;

@@ -608,7 +608,10 @@ Cheap on the common path: one EQ inside
 ENSURE-SYSVAR-TABLE-MATCHES-DIALECT against the dialect the table
 already reflects."
   (when host
-    (ensure-sysvar-table-matches-dialect host (%secureload-dialect-name)))
+    (let ((d (ignore-errors (current-evaluation-dialect))))
+      (ensure-sysvar-table-matches-dialect
+       host (%secureload-dialect-name)
+       (and d (clautolisp.autolisp-reader:autolisp-dialect-name d)))))
   host)
 
 (defun %secureload-trusted-p (abs-namestring host dialect-name)
@@ -2476,7 +2479,8 @@ forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
 ;;; on Windows at LISPSYS 0 (probe-triage2, 2026-10-04):
 ;;;   AutoCAD 2022 (job 16923993438): (chr 8364) -> code 172 (8364 mod 256),
 ;;;     (ascii (chr 128)) 128, (vl-string->list (chr 8364)) (172);
-;;;   BricsCAD V26 Windows (job 16923993442): (chr 8364) -> code 128 (the
+;;;   BricsCAD V25 Windows (job 16923993442; V26 on Windows is unmeasured --
+;;;     the bricscad-v26 dialect assumes the same): (chr 8364) -> code 128 (the
 ;;;     euro's windows-1252 byte), (ascii (chr 128)) 128;
 ;;;   BricsCAD V26 macOS (job 16923993439): Unicode, 8364 throughout.
 ;;; Characters stay Unicode inside clautolisp; what changes is the CODE a
@@ -8907,7 +8911,7 @@ defvar so the value survives multiple test-image reloads.")
   ;; nil; uiop:getenv returns "" for set-to-empty → we return "".
   ;; "ACAD" is the support path, not the process environment: both
   ;; vendors answer (getenv "ACAD") with Preferences.Files.SupportPath
-  ;; (measured equal on BricsCAD V26, macOS and Windows).
+  ;; (measured equal on BricsCAD V26 macOS and V25 Windows).
   (let* ((var (autolisp-string-value (require-string name "GETENV")))
          (value (if (string-equal var "ACAD")
                     (clautolisp.autolisp-runtime:autolisp-support-path-string)
@@ -10624,7 +10628,7 @@ backed persistent upgrade path.")
   "The AutoLISP value of a host registry value: a string, an integer
 (REG_DWORD), or (TYPE ITEM ...) -- REG_MULTI_SZ (7 \"s\" ...), REG_BINARY
 (3 BYTE ...), which the AutoCAD dialects read as (3) alone: AutoCAD 2022
-returns no bytes (probe-triage2, job 16923993438), BricsCAD V26 all of them
+returns no bytes (probe-triage2, job 16923993438), BricsCAD V25 all of them
 (job 16923716756)."
   (cond
     ((stringp stored) (make-autolisp-string stored))

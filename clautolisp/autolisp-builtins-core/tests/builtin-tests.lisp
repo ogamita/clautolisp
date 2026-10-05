@@ -7669,7 +7669,7 @@ itself fails loudly."
 ;;; --- com-application-object-properties (triage round 2, item 1) --------
 ;;; The Application / Document properties EPUREE and its SNCF upstream call,
 ;;; with the values BricsCAD V26 returned (probe-triage2, jobs 16923716753
-;;; macOS and 16923716756 Windows).
+;;; V26 macOS and 16923716756 V25 Windows).
 
 (test com-application-layouts-active-and-preferences
   (reset-autolisp-symbol-table)
@@ -7716,7 +7716,7 @@ itself fails loudly."
 ;;; --- dialect-platform-version-axis remainder (triage round 2, item 5) ----
 ;;; Character codes at LISPSYS 0 on Windows, OPEN's encoding argument and
 ;;; VL-CMDF's value, as measured by probe-triage2 (AutoCAD 2022 job
-;;; 16923993438, BricsCAD V26 Windows 16923993442 / macOS 16923993439).
+;;; 16923993438, BricsCAD V25 Windows 16923993442 / V26 macOS 16923993439).
 
 (defun %axis (dialect lispsys form)
   "FORM's value under DIALECT with LISPSYS set (NIL: left alone)."

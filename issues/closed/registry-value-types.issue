@@ -16,7 +16,8 @@ implementation").
 * Measured (probe-triage2, Windows, PF5S26B)
 
 AutoCAD 2022 (accoreconsole, jobs 16923765011 / 16923993438) and BricsCAD
-V26 (jobs 16923716756 / 16923993442), standard values every Windows install has:
+V25 (jobs 16923716756 / 16923993442 -- the Windows runner has V25, not V26:
+corrected 2026-10-05), standard values every Windows install has:
 
 | value                                         | type          | AutoCAD 2022            | BricsCAD V26                |
 |-----------------------------------------------+---------------+-------------------------+-----------------------------|

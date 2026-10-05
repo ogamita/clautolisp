@@ -164,7 +164,7 @@ byte-count-including-terminator). Free with CFFI:FOREIGN-FREE."
 
 (defun %reg-value (type octets)
   "The vl-registry-read value of registry data OCTETS of TYPE, as both
-vendors return it (probe-triage2: AutoCAD 2022 job 16923993438, BricsCAD V26
+vendors return it (probe-triage2: AutoCAD 2022 job 16923993438, BricsCAD V25
 job 16923716756): REG_SZ a string; REG_EXPAND_SZ the string expanded
 (\"%SystemRoot%\\TEMP\" read as \"C:\\WINDOWS\\TEMP\"); REG_DWORD an integer;
 REG_MULTI_SZ (7 \"s1\" \"s2\" ...); REG_BINARY (3 BYTE ...) -- the AutoCAD
