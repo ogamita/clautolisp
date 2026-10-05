@@ -96,7 +96,11 @@ command table at ~105 spellings. The rest, in slices:
   CAD data).
 - Slice 5 -- conformance E1-E10 as vendor probes.
 - Slice 6 -- the accoreconsole / BricsCAD headless envelope, cited.
-- Slice 7 -- D1 / D2 refreshed (tagged handles built, DWG write, ...).
+- *Slice 7 DONE* -- D1 / D2 brought level with what is built: the
+  fidelity matrix (open from file, document-of, scope tier, locking,
+  dictobjname), DWG read AND write (libredwg writer caveat cited), the
+  "still not built" list down to the wire host, the cador-3 acceptance
+  items checked (pjb validated D1 / D2 on 2026-10-03).
 
 * Acceptance criteria
 

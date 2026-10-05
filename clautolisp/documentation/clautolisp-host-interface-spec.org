@@ -713,7 +713,8 @@ The =<wire-host>= column is a deferred feature (§2.2).
 | *Session/document* (§3)     | sig   | full  | full   | prop/fwd    | native A | native A |
 | =document-list/current=     | sig   | full  | full   | fwd         | A       | A        |
 | =open-document= (new, empty) | sig  | full  | full   | fwd         | A       | A        |
-| =open-document= (from file) | sig   | prop  | prop   | fwd         | A       | A        |
+| =open-document= (from file) | sig   | full  | full   | fwd         | A       | A        |
+| =document-of= (handle -> document) | sig | full | full | fwd        | —(clal ext) | —    |
 | =close-document=            | sig   | full  | full   | fwd         | A       | A        |
 | =activate-document=         | sig   | full  | full⁶  | fwd         | A       | A        |
 | *Entities* (§4.1)           |       |       |        |             |         |          |
@@ -730,11 +731,11 @@ The =<wire-host>= column is a deferred feature (§2.2).
 | *Tables/dicts* (§4.3)       |       |       |        |             |         |          |
 | =tblsearch/tblnext/tblobjname= | sig | full | full  | fwd         | A       | A        |
 | =namedobjdict/dict*=        | sig   | full  | full   | fwd         | A       | A        |
-| =dictobjname=               | sig¹  | full  | full   | fwd         | A       | A        |
+| =dictobjname=               | sig   | full  | full   | fwd         | A       | A        |
 | =regapp=                    | sig   | full  | full   | fwd         | A       | A        |
 | *Sysvars* (§5)              |       |       |        |             |         |          |
 | =getvar/setvar=             | sig   | full  | full   | fwd         | A       | A        |
-| =sysvar scope tier= (R4/C4) | n/a   | prop² | prop²  | fwd         | A       | A(cfg)   |
+| =sysvar scope tier= (R4/C4) | sig   | full² | full²  | fwd         | A       | A(cfg)   |
 | =set-derived/define/undefine-sysvar= | noop | full | full | sig    | n/a     | n/a      |
 | =sysvar-names=              | sig   | full  | full   | fwd         | —(clal ext) | —    |
 | *Registry* (§5.1)           |       |       |        |             |         |          |
@@ -763,7 +764,7 @@ The =<wire-host>= column is a deferred feature (§2.2).
 | *Concurrency/locking* (§10) |       |       |        |             |         |          |
 | park/resume                 | n/a   | full¹² | full¹² | prop       | A(fibers, historical) B | A B |
 | per-document console / namespace isolation | n/a | full | full | fwd | A       | B¹³      |
-| =lock/unlock-document=      | sig   | prop⁴ | prop⁴  | fwd         | A       | A        |
+| =lock/unlock-document=      | sig   | full⁴ | full⁴  | fwd         | A       | A        |
 | *ActiveX/COM* (§11)         |       |       |        |             |         |          |
 | =vlax-create/get/release-object= | sig | full | full | fwd(Win)   | A(Win)  | A(Win)   |
 | =vlax-get/put-property/invoke-method= | sig | full | full | fwd(Win) | A(Win) | A(Win) |
@@ -778,16 +779,15 @@ The =<wire-host>= column is a deferred feature (§2.2).
 | UI-tree meta-commands (==dump=, ==select=, ==click=, ==key=, ==locale= …) | sig | sig | full¹⁴ | — | —(clal ext) | —(clal ext) |
 
 Notes on the matrix:
-1. =dictobjname= on =nihil= inherits the *base-class* not-supported method
-   rather than an explicit override (nihil.lisp overrides through
-   =dictrename= only). Same observable result; flagged for cleanup (D2 §II.15).
-2. Scope tier is =prop= on =cador=: the data model must gain a =scope= slot on
-   =sysvar-cell= (§5, D2 §I.6). Until then C4 is not satisfiable.
+1. (Resolved, 2.2.198: =nihil= now spells out its =dictobjname= method.)
+2. Scope tier: the =scope= slot on =sysvar-cell= and =host-sysvar-scope=
+   (§5, D2 §I.6), built in cador-4 slice 1 (2.2.195); C4 is satisfied.
 3. =cador= registry is =full= via a persistent =registry.sexp= store (§5.1).
-4. Locking on =cador= is =prop= and, once landed, a *checked no-op* (§10, D2 §9.5).
-5. The command engine (§7): =full= for the commands it implements (LINE,
-   CIRCLE, ARC, TEXT, MTEXT, PLINE, INSERT, BLOCK, LAYER, … — the list is in
-   §7); an unimplemented command stops interpretation without signalling.
+4. Locking on =cador= is the *checked no-op* of §10 / D2 §9.5, built in
+   cador-4 slice 2 (2.2.197).
+5. The command engine (§7): =full= for the 83 commands it implements (the list
+   is in §7); an unimplemented or failing command stops interpretation
+   without signalling, with a =; cador:= console notice (2.2.199).
    Was =obs= in 0.1.0/0.2.0 — out of date, cador has had an engine since.
 6. =cadtui='s =activate= meta-command switches the console's runtime
    namespace (=console-runtime.lisp:160-171=); the host document it selects is
