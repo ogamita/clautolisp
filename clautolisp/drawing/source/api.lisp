@@ -259,6 +259,11 @@ is a host-layer concern."
          :format-control "entity data requires a (0 . \"TYPE\") marker, got ~S"
          :format-arguments (list data)))
 
+(defun note-drawing-modified (drawing &optional (bit 1))
+  "Record in DRAWING's DBMOD that its database changed (BIT 1 by default)."
+  (setf (drawing-dbmod drawing) (logior (drawing-dbmod drawing) bit))
+  drawing)
+
 (defun add-entity (drawing dxf &key handle block)
   "Add an entity from the DXF group-code list DXF to DRAWING. HANDLE,
 if supplied (a loader preserving file handles), fixes the handle;
@@ -276,6 +281,7 @@ greater than every used handle. Returns the new ENTITY-HANDLE."
       (setf (drawing-handle-seed drawing) (1+ int)))
     (setf (gethash key (drawing-entities drawing)) entity)
     (push key (drawing-creation-order drawing))
+    (note-drawing-modified drawing)
     entity))
 
 ;;; --- Block definitions ------------------------------------------
@@ -284,6 +290,7 @@ greater than every used handle. Returns the new ENTITY-HANDLE."
   "Register a block definition named NAME whose BLOCK header is the
 group-code list HEADER-DATA. The block's entities are ordinary
 entities added with :block NAME. Returns HEADER-DATA."
+  (note-drawing-modified drawing)
   (setf (gethash name (drawing-blocks drawing)) header-data))
 
 (defun find-block (drawing name)
@@ -312,6 +319,7 @@ Returns NIL."
   "Register a non-graphical OBJECTS-section object (an xrecord or other
 non-dictionary object) under its hex HANDLE string. OBJECT-DATA is its
 group-code list. Returns OBJECT-DATA."
+  (note-drawing-modified drawing)
   (setf (gethash (handle->key handle) (drawing-objects drawing)) object-data))
 
 (defun find-object (drawing handle)
@@ -358,6 +366,7 @@ carries a (-3 ...) xdata cell it is merged application-by-application
 (see %MERGE-XDATA); when DXF carries no xdata cell the entity's existing
 xdata is preserved untouched. NIL if no such live entity. Returns the
 ENTITY-HANDLE."
+  (note-drawing-modified drawing)
   (let* ((key (handle->key handle))
          (entity (gethash key (drawing-entities drawing))))
     (when (and entity (not (entity-handle-deleted-p entity)))
@@ -388,6 +397,7 @@ if no such entity exists."
 (defun set-entity-deleted-status (drawing handle deletedp)
   "Set the deleted flag of entity HANDLE to (and DELETEDP t); returns
 that boolean. Signals DRAWING-ERROR if no such entity exists."
+  (note-drawing-modified drawing)
   (let ((e (%entity-raw drawing handle)))
     (if e
         (setf (entity-handle-deleted-p e) (and deletedp t))
@@ -405,6 +415,7 @@ that boolean. Signals DRAWING-ERROR if no such entity exists."
 
 (defun add-table-record (drawing record)
   "Add (or replace) RECORD in DRAWING's table for its kind; returns it."
+  (note-drawing-modified drawing)
   (let* ((kind (symbol-table-record-kind record))
          (tbl (or (gethash kind (drawing-tables drawing))
                   (setf (gethash kind (drawing-tables drawing))

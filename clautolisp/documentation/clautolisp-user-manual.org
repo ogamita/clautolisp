@@ -1099,6 +1099,14 @@ provides that surface through the host backend:
   ~entmod~, ~entdel~, ~entupd~, ~entnext~, the dictionary functions and
   ~vlax-ename->vla-object~ given an ename from another open drawing signal
   ~:cross-document-dereference~ instead of reaching a wrong entity.
+  System variables follow AutoCAD's split: those *saved in the drawing*
+  (520 of them: ~LTSCALE~, ~CLAYER~, the dimension variables, ...) are each
+  drawing's own, a new drawing starting from the template values; the
+  others -- registry, profile and session variables such as ~OSMODE~ -- are
+  the application's, one value for every drawing. ~DWGNAME~ is the
+  drawing's name (~Drawing1.dwg~, ~Drawing2.dwg~ ... until it is saved),
+  ~DWGTITLED~ 1 once it has a file, ~DBMOD~ 1 after a change, back to 0
+  when it is saved.
 - Documents are created and saved through the object model:
   ~(vla-add documents)~ opens a document over the in-memory drawing
   (the mock is single-document) wired to the same live Blocks / Layers

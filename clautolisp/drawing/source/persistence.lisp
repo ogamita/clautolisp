@@ -128,6 +128,8 @@ reader, DRAWING-READ-ERROR on a codec parse failure."
           ;; file's sentinel); only fall back to the dispatched FMT.
           (unless (drawing-format drawing)
             (setf (drawing-format drawing) fmt))
+          ;; Loading is not modifying (DBMOD).
+          (setf (drawing-dbmod drawing) 0)
           drawing)
       (drawing-error (c) (error c))
       (error (c)
@@ -158,7 +160,8 @@ Signals DRAWING-FORMAT-ERROR / DRAWING-WRITE-ERROR."
         (progn
           (funcall (getf codec :writer) drawing destination :version ver)
           (setf (drawing-path drawing) (pathname destination)
-                (drawing-format drawing) fmt)
+                (drawing-format drawing) fmt
+                (drawing-dbmod drawing) 0)
           (when ver (setf (drawing-version drawing) ver))
           drawing)
       (drawing-error (c) (error c))

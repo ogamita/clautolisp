@@ -32,6 +32,19 @@ keys."
                 :return k)
         base)))
 
+(defun %cador-next-drawing-name (host)
+  "The next untitled drawing name, as AutoCAD numbers them: DrawingN.dwg, N
+one more than the highest open DrawingK.dwg."
+  (format nil "Drawing~D.dwg"
+          (1+ (loop for (nil . drawing) in (cador-documents host)
+                    for name = (clautolisp.drawing:drawing-name drawing)
+                    for n = (and (> (length name) 11)
+                                 (string-equal "Drawing" name :end2 7)
+                                 (string-equal ".dwg" name :start2 (- (length name) 4))
+                                 (ignore-errors (parse-integer name :start 7
+                                                                    :end (- (length name) 4))))
+                    maximize (or n 0)))))
+
 (defmethod initialize-instance :after ((host cador) &key)
   "Seed the document registry with the initial ACTIVE-DRAWING as the first,
 current document, so DOCUMENTS is never empty and HOST-CURRENT-DOCUMENT has an
@@ -41,16 +54,54 @@ answer from the start."
     (setf (cador-documents host) (list (cons key drawing))
           (cador-active-document-key host) key)))
 
+(defun cador-prepare-document-drawing (host drawing)
+  "Make DRAWING ready to be an open document of HOST, as the startup drawing
+is (MAKE-CADOR): the default symbol tables where it has none, a full header
+-- the catalogue with the template / locale values -- for the variables SAVED
+IN THE DRAWING, with a file's own header values kept on top; and, for every
+other variable (registry / preference / session: the application's), the
+SAME cell as the current document's, so a SETVAR of OSMODE is seen by every
+drawing (D2 §I.6). A drawing made by NEW used to have an empty header: every
+GETVAR answered nil there. Returns DRAWING."
+  (let ((file-cells (make-hash-table :test #'equalp))
+        (shared (cador-sysvars host))
+        (active (cador-active-drawing host)))
+    (maphash (lambda (name cell) (setf (gethash name file-cells) cell))
+             (clautolisp.drawing:drawing-header-variables drawing))
+    (unwind-protect
+         (progn
+           (setf (cador-active-drawing host) drawing)
+           (populate-default-tables host)
+           (populate-default-sysvars host)
+           (maphash (lambda (name cell)
+                      (when (drawing-saved-sysvar-p name)
+                        (let ((fresh (gethash name (cador-sysvars host))))
+                          (if fresh
+                              (setf (sysvar-cell-value fresh) (sysvar-cell-value cell))
+                              (setf (gethash name (cador-sysvars host)) cell)))))
+                    file-cells))
+      (setf (cador-active-drawing host) active))
+    (unless (eq shared (clautolisp.drawing:drawing-header-variables drawing))
+      (maphash (lambda (name cell)
+                 (unless (drawing-saved-sysvar-p name)
+                   (setf (gethash name (clautolisp.drawing:drawing-header-variables drawing))
+                         cell)))
+               shared))
+    ;; Preparing is not modifying.
+    (setf (clautolisp.drawing:drawing-dbmod drawing) 0)
+    drawing))
+
 (defmethod host-open-document ((host cador) &optional name)
   "Open a new empty drawing named NAME (default \"Drawing.dwg\"), register it,
 and return its KEY. Does not change the current document."
-  (let* ((dname (or name "Drawing.dwg"))
+  (let* ((dname (or name (%cador-next-drawing-name host)))
          (key (%cador-fresh-document-key host dname))
          ;; Empty unless CLAUTOLISPNEWDRAWINGTEMPLATE names a readable drawing
          ;; (pjb, 2026-09-26: the template is a sysvar, not a built-in change of
          ;; what `new document' means). CADOR-MAKE-NEW-DRAWING is the single
          ;; place that choice is made.
-         (drawing (cador-make-new-drawing host :name dname)))
+         (drawing (cador-prepare-document-drawing
+                   host (cador-make-new-drawing host :name dname))))
     (setf (cador-documents host)
           (append (cador-documents host) (list (cons key drawing))))
     key))

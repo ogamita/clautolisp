@@ -112,3 +112,29 @@ then evaluate TEXT. Returns the value."
     (%md-switch-to context first)
     (is (eql 1 (%md-turn context "(sslength (cadr (ssgetfirst)))")))
     (is (eql 1 (%md-turn context "(vlax-ldata-get \"MD\" \"k\")")))))
+
+;;; --- slice 3: DWGNAME / DWGTITLED / DBMOD follow each document ------------
+
+(test dwgname-dwgtitled-dbmod-follow-the-current-drawing
+  (let* ((context (%md-context))
+         (file (namestring (merge-pathnames (format nil "md-~D.dxf" (random 1000000))
+                                            (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (is (equal "Drawing1.dwg" (autolisp-string-value (%md-turn context "(getvar \"DWGNAME\")"))))
+           (is (eql 0 (%md-turn context "(getvar \"DWGTITLED\")")))
+           (is (eql 0 (%md-turn context "(getvar \"DBMOD\")")))
+           (%md-turn context "(entmake '((0 . \"LINE\") (10 0.0 0.0 0.0) (11 1.0 0.0 0.0)))")
+           (is (eql 1 (%md-turn context "(getvar \"DBMOD\")")))
+           ;; Saving titles the drawing and clears DBMOD.
+           (%md-turn context (format nil "(progn (vl-load-com)
+                                            (vla-saveas (vla-get-activedocument (vlax-get-acad-object)) ~S))"
+                                     file))
+           (is (eql 1 (%md-turn context "(getvar \"DWGTITLED\")")))
+           (is (eql 0 (%md-turn context "(getvar \"DBMOD\")")))
+           ;; A NEW drawing is the next untitled one, unmodified.
+           (%md-turn context "(command \"_.NEW\" \"\")")
+           (is (equal "Drawing2.dwg" (autolisp-string-value (%md-turn context "(getvar \"DWGNAME\")"))))
+           (is (eql 0 (%md-turn context "(getvar \"DWGTITLED\")")))
+           (is (eql 0 (%md-turn context "(getvar \"DBMOD\")"))))
+      (ignore-errors (delete-file file)))))

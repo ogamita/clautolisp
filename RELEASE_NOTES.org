@@ -37,6 +37,11 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Multi-document, slice 3: a new or opened drawing gets its full set of
+  system variables (a NEW drawing used to answer ~nil~ to every ~getvar~);
+  drawing-saved variables are per drawing, the others shared; ~DWGNAME~,
+  ~DWGTITLED~ and ~DBMOD~ follow the current drawing, which are named
+  ~Drawing1.dwg~, ~Drawing2.dwg~, ... as in AutoCAD.
 - Multi-document, slice 2: selection sets, pickfirst, iterators, ~initget~,
   ~vlax-ldata~ and open ~entmake~ runs are per drawing, and an ename used in
   another drawing signals ~:cross-document-dereference~.

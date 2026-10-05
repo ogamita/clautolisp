@@ -23,6 +23,7 @@ file commands: EVENT :DOCUMENT-OPENED (KEY), :MENU-LOADED (FORMS PATH).")
 top-level read when a LISP session drives HOST (the running routine finishes
 in its own drawing, as in AutoCAD: deferred-document-lifecycle-command-
 semantics, option A), at once otherwise."
+  (cador-prepare-document-drawing host drawing)
   (setf (cador-documents host)
         (append (cador-documents host) (list (cons key drawing))))
   (clautolisp.autolisp-host:request-host-document-activation host key)
@@ -35,7 +36,7 @@ semantics, option A), at once otherwise."
   (let ((template (first tokens)))
     (when (and (stringp template) (not (%command-name-p template)))
       (pop tokens))
-    (let* ((key (%cador-fresh-document-key host "Drawing.dwg"))
+    (let* ((key (%cador-fresh-document-key host (%cador-next-drawing-name host)))
            (drawing
              (if (and (stringp template) (plusp (length template))
                       (not (string= template ".")) (probe-file template))

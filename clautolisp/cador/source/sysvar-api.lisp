@@ -208,6 +208,7 @@ clock."
 
 (defparameter *live-sysvar-names*
   '("EXTMIN" "EXTMAX" "TDINDWG" "TDUSRTIMER" "LOGINNAME" "DWGPREFIX"
+    "DWGNAME" "DWGTITLED" "DBMOD"
     "CMDACTIVE" "LOCALE"))
 
 (defvar *drawing-open-julian* (make-hash-table :test #'eq)
@@ -275,6 +276,11 @@ where the session cannot say."
                            (uiop:pathname-directory-pathname path)
                            (uiop:getcwd)))))
         ((string-equal string "CMDACTIVE") (if *cador-in-lisp-command* 1 0))
+        ;; The current document's own (multi-document slice 3).
+        ((string-equal string "DWGNAME") (clautolisp.drawing:drawing-name drawing))
+        ((string-equal string "DWGTITLED")
+         (if (ignore-errors (clautolisp.drawing:drawing-path drawing)) 1 0))
+        ((string-equal string "DBMOD") (clautolisp.drawing:drawing-dbmod drawing))
         ((string-equal string "LOCALE")
          ;; The dialect's documented / measured form (feature :locale-form):
          ;; BricsCAD "fr_FR"; AutoCAD 2019+ the upper-case language, "FR".

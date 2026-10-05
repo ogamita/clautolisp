@@ -110,9 +110,9 @@ $CLAUTOLISPNEWDRAWINGTEMPLATE names, when that is readable -- else the empty
 shell clautolisp has always started with. TEMPLATE is an argument so the choice
 can be tested without setting an environment variable."
   (if template
-      (clautolisp.drawing:make-drawing-from-template :name "Drawing.dwg"
+      (clautolisp.drawing:make-drawing-from-template :name "Drawing1.dwg"
                                                      :template template)
-      (make-drawing :name "Drawing.dwg")))
+      (make-drawing :name "Drawing1.dwg")))
 
 (defclass cador (host)
   ((active-drawing           :initform (%startup-drawing)
