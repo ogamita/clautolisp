@@ -405,14 +405,20 @@ handle-addressed objects, symbol tables, dictionaries, header variables,
 classes) and a DXF codec (HEADER/TABLES/ENTITIES). [S:
 =clautolisp/drawing/source/model.lisp=, =dxf.lisp=] DWG is layered *behind the
 same in-memory model* as an *optional* backend via the =drawing-dwg= system
-(the LibreDWG binding lives in =clautolisp/drawing-dwg/=), used for *read* where
-available and *not required* for a working =cador=. [S: directory
-=clautolisp/drawing-dwg/= exists] This keeps the portable lanes green (native CL
-only) while allowing high-fidelity read where a DWG library is present.
+(the LibreDWG binding lives in =clautolisp/drawing-dwg/=), used for *read and
+write* where available -- the codec converts through DXF both ways -- and *not
+required* for a working =cador=. [S: =clautolisp/drawing-dwg/source/codec.lisp=,
+=register-drawing-codec :dwg=] LibreDWG's DWG *writer* is known-fragile (it writes an
+invalid DWG for an empty drawing) [S:
+=issues/open/libredwg-empty-dwg-write-invalid.issue=], so DXF stays the
+default save format unless a dialect or =CLAUTOLISPDEFAULTDRAWINGFORMAT= says
+otherwise. This keeps the portable lanes green (native CL only) while allowing
+high-fidelity DWG where the library is present.
 
 *Consequences for the fidelity matrix (D1 §12):* entity/table/dictionary
 operations are =full= on =cador= because the in-memory model backs them
-directly; file *format* fidelity is DXF-complete and DWG-read-optional; the
+directly; file *format* fidelity is DXF-complete and DWG read / write
+optional; the
 =native=/=:dwg= distinction is a =drawing-format= slot on the drawing. [S:
 model.lisp:81–90] Consequence for licensing: pure-CL core stays AGPL-clean; the
 optional LibreDWG binding is GPL-compatible and isolated in its own system.
@@ -838,22 +844,32 @@ condition classes named in §I.11).
   worktree" note above was mistaken, as cador-2 slice 3a established.
 - *C2/C8 now trace to code* (=scheduler.lisp=), not "code still to be written".
 
-** Still not built (tracked in cador-4)
+** Built since, in cador-4 and the multi-document work
 
 - Document-tagged handles and the cross-document dereference signal (C5,
-  §I.7), document locking (§9.5), the host condition hierarchy (D1 §15), the
-  wire-host half of parking (envelope, event loop, prompting =host-command=).
+  §I.7): clautolisp 2.2.186 (multi-document slice 2).
+- The host condition hierarchy (D1 §15): 2.2.146.
+- The HAL document API (open from a file, close with save, =document-of=)
+  and the sysvar scope tier (C4): 2.2.197 (cador-4 slice 1).
+- Document locking, the checked no-op (§9.5): 2.2.198 (slice 2).
+- The §II.15 clean-ups and the C6 boundary as a test: 2.2.199 (slice 3).
+- The command layer's console notice; the command lists as built: 2.2.200
+  (slice 4).
+
+** Still not built (tracked in cador-4)
+
+- The wire-host half of parking (envelope, event loop, prompting
+  =host-command=) -- deferred with the wire host (pjb, 2026-10-05).
 
 ** Acceptance-criteria status (cador-3, D2 half)
 
 - [X] Part I reaches a stated decision on each item, and the scheduler/parking
       decision (§I.2) is settled — and implemented.
-- [ ] Part II decisions + every §5/§9 open question resolved with a provenance
-      grade — pjb's review. Nothing blocks it any more: §9.6 has cador's side
-      pinned and a vendor run to do, which is a grade to record, not a
-      decision to take.
-- [X] Constraint traceability C1–C8 — C1/C2/C3/C8 trace to code, C5 to the
-      design still to build.
+- [X] Part II decisions + every §5/§9 open question resolved with a provenance
+      grade — validated by pjb on 2026-10-03 (cador-3 closed); §9.6's vendor
+      run is the conformance probe (cador-4 slice 5).
+- [X] Constraint traceability C1–C8 — C1/C2/C3/C4/C5/C6/C8 trace to code
+      (C5 since 2.2.186, C4 since 2.2.197, C6 a test since 2.2.199).
 
 ** 0.3.0 — decisions of pjb, 2026-09-28
 
