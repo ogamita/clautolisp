@@ -83,6 +83,7 @@
    #:runtime-session-document-for-host-key
    #:link-runtime-session-current-document
    #:request-runtime-document-switch
+   #:forget-runtime-session-document-for-host-key
    #:runtime-session-pending-document-key
    #:apply-pending-document-switch
    #:make-document-scheduler

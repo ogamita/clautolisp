@@ -1107,6 +1107,16 @@ provides that surface through the host backend:
   drawing's name (~Drawing1.dwg~, ~Drawing2.dwg~ ... until it is saved),
   ~DWGTITLED~ 1 once it has a file, ~DBMOD~ 1 after a change, back to 0
   when it is saved.
+  The file commands answer their prompts in order, as with ~FILEDIA~ 0:
+  ~(command "_.QSAVE")~ writes a titled drawing to its file (an untitled
+  one takes a file name), ~"_.SAVE"~ a file name (~""~: the current one),
+  ~"_.SAVEAS"~ an optional format (~"DXF"~ or a release, ~"2018"~ ... ~"2000"~)
+  then a file name; ~"_.CLOSE"~ and ~"_.CLOSEALL"~ take the "Save changes?"
+  answer (~"_Y"~, then a file name if untitled, or ~"_N"~) for a modified
+  drawing, and the next open drawing becomes current; the closed drawing's
+  LISP namespace goes with it. A session always keeps one drawing: closing
+  the last opens a fresh untitled one (AutoCAD is left with none). Saving
+  names the drawing after its file (~DWGNAME~), as ~vla-saveas~ does too.
 - Documents are created and saved through the object model:
   ~(vla-add documents)~ opens a document over the in-memory drawing
   (the mock is single-document) wired to the same live Blocks / Layers

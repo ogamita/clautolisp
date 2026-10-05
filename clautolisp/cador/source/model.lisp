@@ -180,6 +180,12 @@ this records registrations/queued expressions for introspection.")
 per-document session state (picksets, pickfirst, iterators, initget, ldata,
 open entmake runs, the ename cache, the COM identity maps). Multi-document
 slice 2: they were host-global, shared by every drawing.")
+   (untitled-counter         :initform 1
+                             :accessor cador-untitled-counter
+                             :documentation "The number of the last untitled
+drawing name handed out (Drawing1.dwg is the startup drawing's): AutoCAD numbers
+them for the whole session, so the next NEW after Drawing1 is Drawing2 even once
+Drawing1 has been saved under another name.")
    (documents                :initform '()
                              :accessor cador-documents
                              :documentation "Open documents as an ORDERED

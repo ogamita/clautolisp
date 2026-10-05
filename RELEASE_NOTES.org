@@ -37,6 +37,10 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Multi-document, slice 4: ~QSAVE~, ~SAVE~, ~SAVEAS~, ~CLOSE~ and ~CLOSEALL~
+  commands (answers as with ~FILEDIA~ 0); saving names the drawing after its
+  file; untitled drawings are numbered for the session (~Drawing2.dwg~ after
+  ~Drawing1.dwg~ even once that was saved).
 - When ~NEW~ / ~OPEN~ run inside a routine, the BricsCAD dialects switch the
   *drawing* at once (the rest of the routine's ~getvar~ / ~entmake~ address
   the new one, as measured on BricsCAD V26), the AutoCAD dialects at the

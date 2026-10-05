@@ -290,6 +290,19 @@ the startup drawing has its namespace like every later one."
     (when key
       (clautolisp.autolisp-runtime:link-runtime-session-current-document session key))))
 
+(defun note-host-document-closed (host key)
+  "HOST closed document KEY: drop its LISP namespace and, if the session was
+in it, move to HOST's (new) current document at the next top-level read."
+  (let* ((context (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-context)))
+         (session (and context
+                       (clautolisp.autolisp-runtime:evaluation-context-session context))))
+    (when (and session (eq host (clautolisp.autolisp-runtime:runtime-session-host session)))
+      (clautolisp.autolisp-runtime:forget-runtime-session-document-for-host-key session key)
+      (let ((current (ignore-errors (host-current-document host))))
+        (when current
+          (clautolisp.autolisp-runtime:request-runtime-document-switch session current))))
+    key))
+
 (defun request-host-document-activation (host key)
   "Make host document KEY current: deferred to the next top-level read when
 an evaluation session drives HOST, immediate otherwise. Returns KEY."

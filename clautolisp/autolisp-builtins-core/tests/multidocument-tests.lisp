@@ -158,3 +158,56 @@ own; AutoCAD (job 16932759881) stays in the old drawing until the routine ends."
                 (%md-turn context "(progn (command \"_.NEW\" \"\") (getvar \"DWGNAME\"))"))))
     (is (equal "Drawing2.dwg" (autolisp-string-value (%md-turn context "(getvar \"DWGNAME\")"))))))
 
+;;; --- slice 4: QSAVE / SAVE / SAVEAS / CLOSE / CLOSEALL --------------------
+
+(defun %md-temp (name)
+  (namestring (merge-pathnames (format nil "md-~D-~A" (random 1000000) name)
+                               (uiop:temporary-directory))))
+
+(test qsave-saveas-name-the-drawing-after-its-file
+  (let* ((context (%md-context))
+         (a (%md-temp "a.dxf"))
+         (b (%md-temp "b.dxf")))
+    (unwind-protect
+         (progn
+           (%md-turn context "(entmake '((0 . \"LINE\") (10 0.0 0.0 0.0) (11 1.0 0.0 0.0)))")
+           ;; Untitled: QSAVE takes a file name.
+           (%md-turn context (format nil "(command \"_.QSAVE\" ~S)" a))
+           (is (probe-file a))
+           (is (equal (file-namestring a)
+                      (autolisp-string-value (%md-turn context "(getvar \"DWGNAME\")"))))
+           (is (eql 1 (%md-turn context "(getvar \"DWGTITLED\")")))
+           (is (eql 0 (%md-turn context "(getvar \"DBMOD\")")))
+           ;; SAVEAS with a format answer, then the new file.
+           (%md-turn context (format nil "(command \"_.SAVEAS\" \"DXF\" ~S)" b))
+           (is (probe-file b))
+           (is (equal (file-namestring b)
+                      (autolisp-string-value (%md-turn context "(getvar \"DWGNAME\")")))))
+      (ignore-errors (delete-file a))
+      (ignore-errors (delete-file b)))))
+
+(test close-moves-to-the-next-drawing-and-forgets-its-namespace
+  (let* ((context (%md-context))
+         (host (%md-host context)))
+    (%md-turn context "(setq md-first 1)")
+    (%md-turn context "(command \"_.NEW\" \"\")")
+    (%md-turn context "(setq md-second 2)")
+    (%md-turn context "(entmake '((0 . \"LINE\") (10 0.0 0.0 0.0) (11 1.0 0.0 0.0)))")
+    ;; Modified: CLOSE asks "Save changes?" -- N.
+    (%md-turn context "(command \"_.CLOSE\" \"_N\")")
+    (is (eql 1 (length (clautolisp.autolisp-host:host-document-list host))))
+    (is (eql 1 (%md-turn context "md-first")))
+    (is (null (%md-turn context "md-second")))
+    (is (equal "Drawing1.dwg" (autolisp-string-value (%md-turn context "(getvar \"DWGNAME\")"))))))
+
+(test closeall-leaves-one-fresh-drawing
+  (let* ((context (%md-context))
+         (host (%md-host context)))
+    (%md-turn context "(command \"_.NEW\" \"\")")
+    (%md-turn context "(command \"_.NEW\" \"\")")
+    (%md-turn context "(setq md-x 1)")
+    (%md-turn context "(command \"_.CLOSEALL\")")
+    (is (eql 1 (length (clautolisp.autolisp-host:host-document-list host))))
+    (is (null (%md-turn context "md-x")))
+    (is (null (%md-turn context "(ssget \"_X\")")))))
+

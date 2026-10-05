@@ -33,17 +33,9 @@ keys."
         base)))
 
 (defun %cador-next-drawing-name (host)
-  "The next untitled drawing name, as AutoCAD numbers them: DrawingN.dwg, N
-one more than the highest open DrawingK.dwg."
-  (format nil "Drawing~D.dwg"
-          (1+ (loop for (nil . drawing) in (cador-documents host)
-                    for name = (clautolisp.drawing:drawing-name drawing)
-                    for n = (and (> (length name) 11)
-                                 (string-equal "Drawing" name :end2 7)
-                                 (string-equal ".dwg" name :start2 (- (length name) 4))
-                                 (ignore-errors (parse-integer name :start 7
-                                                                    :end (- (length name) 4))))
-                    maximize (or n 0)))))
+  "The next untitled drawing name, numbered for the session as AutoCAD does:
+Drawing2.dwg, Drawing3.dwg ... (Drawing1.dwg is the startup drawing)."
+  (format nil "Drawing~D.dwg" (incf (cador-untitled-counter host))))
 
 (defmethod initialize-instance :after ((host cador) &key)
   "Seed the document registry with the initial ACTIVE-DRAWING as the first,
@@ -90,6 +82,18 @@ GETVAR answered nil there. Returns DRAWING."
     ;; Preparing is not modifying.
     (setf (clautolisp.drawing:drawing-dbmod drawing) 0)
     drawing))
+
+(defun cador-save-drawing (host drawing path &key format version)
+  "Write DRAWING to PATH -- FORMAT / VERSION, then the drawing's own, the
+path's extension, and as a last resort the dialect's default (SAVEFORMAT /
+CLAUTOLISPDEFAULTDRAWINGFORMAT) -- and name it after the file, as AutoCAD's
+DWGNAME then reports. Clears DBMOD (WRITE-DRAWING). Returns PATH."
+  (multiple-value-bind (container default-version) (cador-default-drawing-format host)
+    (let ((clautolisp.drawing:*default-drawing-format* container)
+          (clautolisp.drawing:*default-drawing-version* default-version))
+      (clautolisp.drawing:write-drawing drawing path :format format :version version)))
+  (setf (clautolisp.drawing:drawing-name drawing) (file-namestring path))
+  path)
 
 (defmethod host-open-document ((host cador) &optional name)
   "Open a new empty drawing named NAME (default \"Drawing.dwg\"), register it,

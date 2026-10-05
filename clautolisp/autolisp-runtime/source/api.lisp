@@ -795,6 +795,9 @@ startup drawing), unless it is already linked to a document."
       (setf (clautolisp.autolisp-runtime.internal::document-namespace-host-document-key
              namespace)
             key)
+      ;; Registered, so RUNTIME-SESSION-DOCUMENT-FOR-HOST-KEY finds it again
+      ;; when the session comes back to the startup drawing.
+      (register-runtime-session-document session namespace :copy-propagated-p nil)
       ;; Linking happens at setup, before user code: what is bound now is
       ;; the system's, which every later document starts with.
       (unless (clautolisp.autolisp-runtime.internal::runtime-session-system-symbols session)
@@ -806,6 +809,17 @@ startup drawing), unless it is already linked to a document."
           (setf (clautolisp.autolisp-runtime.internal::runtime-session-system-symbols session)
                 system))))
     namespace))
+
+(defun forget-runtime-session-document-for-host-key (session key)
+  "Drop SESSION's namespace of the closed host document KEY (its variables and
+functions go with it). Returns T when one was dropped."
+  (let ((table (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
+                session)))
+    (loop for name being the hash-keys of table using (hash-value namespace)
+          when (equal key (clautolisp.autolisp-runtime.internal::document-namespace-host-document-key
+                           namespace))
+            do (remhash name table)
+               (return t))))
 
 (defun request-runtime-document-switch (session key)
   "Ask SESSION to make host document KEY current at the next top-level read

@@ -36,12 +36,13 @@ semantics, option A), at once otherwise."
   (let ((template (first tokens)))
     (when (and (stringp template) (not (%command-name-p template)))
       (pop tokens))
-    (let* ((key (%cador-fresh-document-key host (%cador-next-drawing-name host)))
+    (let* ((name (%cador-next-drawing-name host))
+           (key (%cador-fresh-document-key host name))
            (drawing
              (if (and (stringp template) (plusp (length template))
                       (not (string= template ".")) (probe-file template))
-                 (clautolisp.drawing:make-drawing-from-template :name key :template template)
-                 (cador-make-new-drawing host :name key))))
+                 (clautolisp.drawing:make-drawing-from-template :name name :template template)
+                 (cador-make-new-drawing host :name name))))
       (%open-and-activate host key drawing))
     tokens))
 
@@ -86,6 +87,104 @@ semantics, option A), at once otherwise."
   (let ((name (%command-name token)))
     (and name (gethash name *cador-commands*) t)))
 
+;;; --- Saving and closing (multi-document slice 4) -----------------------
+;;;
+;;; With FILEDIA 0 the vendors prompt on the command line, and a driven
+;;; command answers the prompts in order:
+;;;   QSAVE     -- a titled drawing is written to its file; an untitled one
+;;;                takes a file name;
+;;;   SAVE      -- "Save drawing as": a file name, RETURN for the current one;
+;;;   SAVEAS    -- an optional file format (DXF, or a release: 2018, 2013,
+;;;                2010, 2007, 2004, 2000), then the file name (RETURN: the
+;;;                current one);
+;;;   CLOSE     -- a modified drawing asks "Save changes?": Y (then a file name
+;;;                if untitled) or N; the next open drawing becomes current;
+;;;   CLOSEALL  -- the same question for each modified drawing.
+;;; A clautolisp session always has a drawing: closing the last one opens a
+;;; fresh untitled drawing first (AutoCAD is left with none).
+
+(defparameter *saveas-format-answers*
+  '(("DXF" :dxf-ascii nil) ("2018" nil :ac1032) ("2013" nil :ac1027) ("2010" nil :ac1024)
+    ("2007" nil :ac1021) ("2004" nil :ac1018) ("2000" nil :ac1015))
+  "SAVEAS file-format answers -> (FORMAT VERSION).")
+
+(defun %drawing-current-path (drawing)
+  (let ((path (clautolisp.drawing:drawing-path drawing)))
+    (if path
+        (namestring path)
+        (namestring (merge-pathnames (clautolisp.drawing:drawing-name drawing)
+                                     (uiop:getcwd))))))
+
+(defun %file-answer-p (token)
+  (and (stringp token) (plusp (length token)) (not (%command-name-p token))))
+
+(defun %cmd-qsave (host tokens)
+  (let ((drawing (cador-active-drawing host)))
+    (cond
+      ((clautolisp.drawing:drawing-path drawing)
+       (cador-save-drawing host drawing (namestring (clautolisp.drawing:drawing-path drawing))))
+      ((%file-answer-p (first tokens))
+       (cador-save-drawing host drawing (pop tokens)))))
+  tokens)
+
+(defun %cmd-save (host tokens)
+  (let* ((drawing (cador-active-drawing host))
+         (answer (and (stringp (first tokens)) (not (%command-name-p (first tokens)))
+                      (pop tokens)))
+         (path (if (and answer (plusp (length answer))) answer (%drawing-current-path drawing))))
+    (cador-save-drawing host drawing path))
+  tokens)
+
+(defun %cmd-saveas (host tokens)
+  (let* ((drawing (cador-active-drawing host))
+         (format-row (and (stringp (first tokens))
+                          (assoc (string-left-trim "_" (first tokens)) *saveas-format-answers*
+                                 :test #'string-equal))))
+    (when format-row (pop tokens))
+    (let* ((answer (and (stringp (first tokens)) (not (%command-name-p (first tokens)))
+                        (pop tokens)))
+           (path (if (and answer (plusp (length answer))) answer (%drawing-current-path drawing))))
+      (cador-save-drawing host drawing path
+                          :format (second format-row) :version (third format-row))))
+  tokens)
+
+(defun %yes-answer-p (token)
+  (and (stringp token)
+       (member (string-left-trim "_" token) '("Y" "YES" "O" "OUI") :test #'string-equal)))
+
+(defun %close-document (host key tokens)
+  "Close document KEY, answering \"Save changes?\" from TOKENS when it is
+modified. Returns the remaining TOKENS."
+  (let ((drawing (cdr (assoc key (cador-documents host) :test #'string=))))
+    (when (and drawing (plusp (clautolisp.drawing:drawing-dbmod drawing))
+               (stringp (first tokens)) (not (%command-name-p (first tokens))))
+      (let ((answer (pop tokens)))
+        (when (%yes-answer-p answer)
+          (cond
+            ((clautolisp.drawing:drawing-path drawing)
+             (cador-save-drawing host drawing (namestring (clautolisp.drawing:drawing-path drawing))))
+            ((%file-answer-p (first tokens))
+             (cador-save-drawing host drawing (pop tokens)))))))
+    (when (null (cdr (cador-documents host)))
+      ;; The last drawing: a session keeps one, a fresh untitled one.
+      (host-open-document host))
+    (host-close-document host key)
+    (clautolisp.autolisp-host:note-host-document-closed host key)
+    (%notify-ui host :document-closed key)
+    tokens))
+
+(defun %cmd-close (host tokens)
+  (%close-document host (cador-active-document-key host) tokens))
+
+(defun %cmd-closeall (host tokens)
+  (dolist (key (mapcar #'car (cador-documents host)) tokens)
+    (setf tokens (%close-document host key tokens))))
+
+(define-cador-command "QSAVE" '%cmd-qsave)
+(define-cador-command "SAVE" '%cmd-save)
+(define-cador-command "SAVEAS" '%cmd-saveas)
+(define-cador-command "CLOSE" '%cmd-close)
+(define-cador-command "CLOSEALL" '%cmd-closeall)
 (define-cador-command "NEW" '%cmd-new)
 (define-cador-command "OPEN" '%cmd-open)
 (define-cador-command '("MENULOAD" "CUILOAD") '%cmd-menuload)
