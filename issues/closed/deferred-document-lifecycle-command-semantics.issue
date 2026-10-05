@@ -95,6 +95,18 @@ switches at once under the BricsCAD dialects (dialect feature
 multidocument-tests.lisp (new-switches-document-at-the-next-top-level-read,
 bricscad-switches-the-drawing-at-once-the-namespace-at-the-next-read).
 Per-document namespaces: yes (faithful). entget / ssget after a switch see
-the active drawing only. Still open: the "drawing argument" naming the
-initial drawing (the CLI's --dwg), SAVE / CLOSE (slice 4).
+the active drawing only. SAVE / SAVEAS / QSAVE / CLOSE / CLOSEALL
+followed in 2.2.189 (slice 4).
+
+CLOSED 2026-10-05 (clautolisp 2.2.193 / alfe 2.2.149): the drawing argument
+is --dwg FILE, now a shared CLI option -- clautolisp starts on that drawing,
+the only open document and the current one, in place of the untitled
+Drawing1.dwg (host-open-startup-drawing, before the session is linked), as
+acad.exe FILE / accoreconsole /i FILE do; alfe's clautolisp backend honours
+its --dwg / $AUTOLISP_DWG (direct: the same call; subprocess: forwards
+--dwg). Tests: multidocument-tests startup-drawing-*, tool dwg-option-*;
+checked on the built executable. Every acceptance criterion is met: the
+semantics are implemented and pinned by tests, documented in the user
+manual (multi-document section, --dwg), the BricsCAD / AutoCAD timing
+difference recorded as a dialect feature.
 

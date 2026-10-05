@@ -118,6 +118,12 @@ has none open."))
 (defgeneric host-document-list (host)
   (:documentation "Return the list of open document KEYs, in the order they
 were opened (current or not)."))
+(defgeneric host-open-startup-drawing (host path)
+  (:documentation "Make the drawing file at PATH the host's FIRST document, in
+place of the untitled startup drawing -- the drawing argument of the command
+line (clautolisp --dwg FILE, as acad.exe FILE / accoreconsole /i FILE). Called
+before any LISP session is linked to HOST. Returns the document KEY; signals
+when the file cannot be read."))
 
 ;; Entity API (autolisp-spec ch.16)
 (defgeneric host-entget    (host ename &optional applist) (:documentation "Return the DXF group-code list for ENAME, or nil. With APPLIST (a list of registered application names, or the wildcard \"*\"), the matching xdata is appended as a trailing (-3 ...) cell; without it the xdata is suppressed."))
@@ -247,6 +253,7 @@ were opened (current or not)."))
 (defmethod host-activate-document ((host host) key)           (declare (ignore key)) (signal-host-not-supported host 'activate-document))
 (defmethod host-current-document  ((host host))               (signal-host-not-supported host 'current-document))
 (defmethod host-document-list     ((host host))               (signal-host-not-supported host 'document-list))
+(defmethod host-open-startup-drawing ((host host) path) (declare (ignore path)) (signal-host-not-supported host 'open-startup-drawing))
 (defmethod host-entget    ((host host) ename &optional applist) (declare (ignore ename applist)) (signal-host-not-supported host 'entget))
 (defmethod host-entmod    ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmod))
 (defmethod host-entmake   ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmake))

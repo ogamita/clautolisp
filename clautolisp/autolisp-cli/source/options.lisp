@@ -28,7 +28,7 @@
   (situation-encodings nil)           ; AC  alist (KEY . canonical-enc): KEY = "all" | "<situation>" | "<situation>/<dir>"
                                       ;     built by the -E<situation>[-<dir>] / --<situation>-encoding family
   ;; Drawing
-  (dwg              nil)              ; A
+  (dwg              nil)              ; AC  --dwg FILE: the first drawing
   ;; Plug-ins (alfe). The options a plug-in defines are parsed into
   ;; PLUGIN-OPTIONS, an alist (NAME . PLIST) of plug-in name -> plist of
   ;; option key -> value, resolved (command line, then environment, then

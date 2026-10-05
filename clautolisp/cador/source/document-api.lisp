@@ -130,6 +130,22 @@ and return its KEY. Does not change the current document."
           (append (cador-documents host) (list (cons key drawing))))
     key))
 
+(defmethod host-open-startup-drawing ((host cador) path)
+  "Read the drawing at PATH (DXF or DWG, sniffed) and make it the only open
+document, current, in place of the untitled startup drawing: what a vendor
+does with the drawing named on its command line. Signals when PATH cannot be
+read. Returns the document KEY (the file's name)."
+  (unless (probe-file path)
+    (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+     :file-not-found "no drawing file ~A." path))
+  (let ((drawing (clautolisp.drawing:read-drawing path))
+        (key (file-namestring path)))
+    (cador-prepare-document-drawing host drawing)
+    (setf (cador-documents host) (list (cons key drawing))
+          (cador-active-drawing host) drawing
+          (cador-active-document-key host) key)
+    key))
+
 (defmethod host-activate-document ((host cador) key)
   "Make KEY the current document: point ACTIVE-DRAWING at its drawing. Signals
 :no-such-document if KEY is not open."

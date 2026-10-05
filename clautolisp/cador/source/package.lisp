@@ -63,6 +63,7 @@
                 #:host-activate-document
                 #:host-current-document
                 #:host-document-list
+                #:host-open-startup-drawing
                 #:host-entget
                 #:host-entmod
                 #:host-entmake

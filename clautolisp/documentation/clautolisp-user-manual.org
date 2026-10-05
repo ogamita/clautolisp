@@ -991,6 +991,17 @@ Both axes are independent.
                             list with a one-line summary of each.
 - ~--list-hosts~         :: Print the ~--host~ backends, one per line
                             with a short summary, and exit.
+- ~--dwg FILE~          :: Start on the drawing FILE (DXF or DWG,
+                            sniffed): it is the first open drawing,
+                            current, in place of the untitled
+                            ~Drawing1.dwg~ -- ~DWGNAME~ is the file's
+                            name, ~DWGTITLED~ 1 -- as ~acad.exe FILE~ or
+                            ~accoreconsole /i FILE~ start on it. An
+                            unreadable file, or ~--host nihil~ (no
+                            drawings), is a usage error. Also read by
+                            ~alfe --clautolisp~ (~--dwg~ /
+                            ~$AUTOLISP_DWG~). ~*AUTOLISP-DRAWING*~ holds
+                            the name given.
 - ~--mock-input PATH~    :: Attach the file at PATH as the
                             MockHost's prompt-stream. Lines are
                             consumed in order by ~getstring~,

@@ -341,6 +341,16 @@ specs without mutating the shared template."
     :handler (lambda (opts value name)
                (setf (cli-options-dcl opts) (parse-dcl-mode value name))))
 
+   ;; --- drawing -----------------------------------------------------
+   ;; The drawing argument: the session's first drawing (clautolisp: in
+   ;; place of the untitled Drawing1.dwg; alfe: the drawing the CAD opens).
+   ;; alfe has its own --dwg spec ahead of this one.
+   (make-option-spec
+    :longs '("--dwg") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-dwg opts) value)))
+
    ;; --- actions ---------------------------------------------------
    (make-option-spec
     :longs '("--load") :shorts '("-l") :takes-arg-p t

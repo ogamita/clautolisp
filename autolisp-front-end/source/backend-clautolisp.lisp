@@ -365,7 +365,9 @@ resolved at START-ENGINE time."
   ;; the spawned engine, which records its OWN REPL (alfe-dribble.issue).
   ;; T = the engine's default timestamped file, a string = that file.
   (dribble nil)
-  (dribble-interactors nil))
+  (dribble-interactors nil)
+  ;; The drawing argument (--dwg / $AUTOLISP_DWG), forwarded as --dwg.
+  (dwg nil))
 
 ;;; --- START-ENGINE: direct variant ----------------------------------
 
@@ -401,7 +403,7 @@ SHUTDOWN."
   ;; freshly created runtime context (transmit-options.issue). The
   ;; subprocess variant ignores it — the spawned clautolisp-sbcl
   ;; installs its own from argv.
-  (declare (ignore mock-input bootstrap-phase io-encoding mode dwg))
+  (declare (ignore mock-input bootstrap-phase io-encoding mode))
   (ecase (clautolisp-backend-variant backend)
     (:direct
      (handler-case
@@ -410,6 +412,9 @@ SHUTDOWN."
                 (context        (make-default-runtime-context
                                  :dialect dialect-struct))
                 (session-handle (evaluation-context-session context)))
+           ;; The drawing argument (--dwg / $AUTOLISP_DWG): the first drawing.
+           (when dwg
+             (clautolisp.autolisp-host:host-open-startup-drawing host-instance dwg))
            (set-runtime-session-host session-handle host-instance)
            (install-core-builtins)
            ;; Anchor the engine to the live process: cwd AND run frame.
@@ -479,6 +484,7 @@ SHUTDOWN."
      (start-subprocess-engine backend workdir
                               :dialect dialect
                               :host host
+                              :dwg dwg
                               :interactive-p interactive-p
                               :load-encoding load-encoding
                               ;; Forwarded, not recorded here: the engine's own
@@ -558,7 +564,7 @@ engine: NIL when none was asked for, `--dribble' for the engine's default file,
          (when value (list (format nil "--dribble-interactors=~A" value))))))))
 
 (defun start-subprocess-engine (backend workdir &key dialect host interactive-p
-                                load-encoding dribble dribble-interactors)
+                                load-encoding dribble dribble-interactors dwg)
   ;; The Phase 1 subprocess variant defers the actual fork to
   ;; EVAL-PLAN so we can map every action to a clautolisp-sbcl CLI
   ;; flag and run the engine *once* with the right argv (rather than
@@ -588,7 +594,8 @@ engine: NIL when none was asked for, `--dribble' for the engine's default file,
                                    (open-output-file workdir "errors.txt"))
                     :load-encoding load-encoding
                     :dribble dribble
-                    :dribble-interactors dribble-interactors)))
+                    :dribble-interactors dribble-interactors
+                    :dwg dwg)))
       (session-state-set session :ready)
       session)))
 
@@ -869,6 +876,8 @@ subprocess variant."
             ;; it's in effect from the very first -l/-x in the queue.
             (let ((enc (clautolisp-subprocess-session-load-encoding session)))
               (when enc (list "-Esource" enc)))
+            (let ((dwg (clautolisp-subprocess-session-dwg session)))
+              (when dwg (list "--dwg" dwg)))
             ;; Forward the dribble request, the same way as -Esource above
             ;; (alfe-dribble.issue; pjb: "alfe --clautolisp surement
             ;; l'implemente deja dans clautolisp"). The ENGINE records its own

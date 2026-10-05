@@ -641,7 +641,9 @@ For =alfe --autocad --mode batch=, the drawing/template selection is:
 =--dwg FILE= first, then =AUTOLISP_DWG=, then a shipped
 =Template/acadiso.dwt= or =Template/acad.dwt= next to the discovered
 AutoCAD install. Only if all three miss does batch mode stop with a
-=NO-DWG= bootstrap error.
+=NO-DWG= bootstrap error. Under =--clautolisp=, =--dwg FILE= (or
+=AUTOLISP_DWG=) is the drawing the engine starts on, in place of its
+untitled =Drawing1.dwg=, as =clautolisp --dwg FILE= does.
 - Exit with any of: Ctrl-D (EOF), an empty line that equals =:quit=,
   =:q=, =:exit=, =(quit)=, =(exit)=, or by queuing a =--quit= action.
 
