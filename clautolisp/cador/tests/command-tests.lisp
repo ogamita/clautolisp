@@ -4,7 +4,7 @@
 
 ;;; --- Command dispatch (deferred-command-special-form issue) -------
 ;;;
-;;; MockHost has no command engine: HOST-COMMAND records the routed
+;;; cador has no command engine: HOST-COMMAND records the routed
 ;;; token sequence on the per-session command log, echoes one line to
 ;;; PROMPT-OUTPUT, and returns nil. HOST-COMMAND-LOG reads the log
 ;;; back oldest-first.
@@ -644,7 +644,8 @@
       (clautolisp.autolisp-host:host-command
        mock (list "_.OPEN" (namestring (clautolisp.drawing:drawing-template-path))))
       (is (= 3 (length (clautolisp.autolisp-host:host-document-list mock))))
-      (is (eq :document-opened (car (first events))))
+      ;; :DOCUMENT-OPENED, then the switch's :DOCUMENT-ACTIVATED.
+      (is (member :document-opened (mapcar #'car (subseq events 0 2))))
       ;; MENULOAD: only the UI forms reach the UI.
       (clautolisp.autolisp-host:host-command mock (list "_.MENULOAD" (namestring menu)))
       (destructuring-bind (event forms path) (first events)
@@ -727,3 +728,29 @@
   (multiple-value-bind (mock a b) (%ct-two-lines "0,0" "4,0" "0,0" "4,0")
     (clautolisp.autolisp-host:host-command mock (list "_.-OVERKILL" a b "" ""))
     (is (= 1 (length (%ct-lines mock))))))
+
+;;; --- cador-4 slice 4: a declined command leaves a notice ---------------------
+
+(test unknown-command-leaves-a-console-notice
+  (let ((host (make-cador)))
+    (clautolisp.autolisp-host:host-command host '("_.NOSUCHCMD" "1,1" "_.LINE" "0,0" "1,1" ""))
+    (let ((console (get-output-stream-string (cador-prompt-output host))))
+      (is (search "; cador: unknown command NOSUCHCMD -- the rest of the command sequence is ignored."
+                  console)))
+    ;; Interpretation stopped at it: the LINE after it was not drawn.
+    (is (null (clautolisp.autolisp-host:host-entlast host)))))
+
+(test failing-command-leaves-a-console-notice
+  (let ((host (make-cador)))
+    (setf (gethash "PRBFAIL" clautolisp.cador::*cador-commands*)
+          (lambda (host tokens) (declare (ignore host tokens)) (error "probe failure")))
+    (unwind-protect
+         (progn
+           (clautolisp.autolisp-host:host-command host '("_.PRBFAIL"))
+           (is (search "; cador: PRBFAIL failed: probe failure"
+                       (get-output-stream-string (cador-prompt-output host))))
+           ;; CMDECHO 0 silences the notice, as it does the echo.
+           (clautolisp.autolisp-host:host-setvar host "CMDECHO" 0)
+           (clautolisp.autolisp-host:host-command host '("_.PRBFAIL"))
+           (is (string= "" (get-output-stream-string (cador-prompt-output host)))))
+      (remhash "PRBFAIL" clautolisp.cador::*cador-commands*))))

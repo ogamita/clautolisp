@@ -2953,7 +2953,7 @@ the host's prompt-output / command log after the run."
   ;; The Phase-10 builtins (ENTGET/ENTMAKE/ENTLAST/ENTNEXT/HANDENT)
   ;; route through the active session's HAL backend. Under the
   ;; default NullHost they signal :host-not-supported; under a
-  ;; freshly-allocated MockHost they round-trip a DXF group-code
+  ;; freshly-allocated cador they round-trip a DXF group-code
   ;; list. We exercise both halves here.
   (reset-autolisp-symbol-table)
   (install-core-builtins)
@@ -2962,7 +2962,7 @@ the host's prompt-output / command log after the run."
     (handler-case (call-autolisp-function entlast-fn)
       (autolisp-runtime-error (condition)
         (is (eq :host-not-supported (autolisp-runtime-error-code condition))))))
-  ;; Swap the default context onto a MockHost-bearing session.
+  ;; Swap the default context onto a cador-bearing session.
   (let* ((mock (clautolisp.cador:make-cador))
          (session (clautolisp.autolisp-runtime:evaluation-context-session
                    (clautolisp.autolisp-runtime:default-evaluation-context))))
@@ -4870,7 +4870,7 @@ complete-unit-tests.issue."
     (is (stub-nil "(vl-subent-ssmemb nil nil nil)"))))
 
 (defun %get-with-mock-input (form-source input-line)
-  "Evaluate FORM-SOURCE under a MockHost whose prompt-stream yields
+  "Evaluate FORM-SOURCE under a cador whose prompt-stream yields
 INPUT-LINE; return the raw AutoLISP result. Generalises
 %GETSTRING-WITH-INPUT for the whole GET* family."
   (let ((mock (clautolisp.cador:make-cador)))
@@ -4908,7 +4908,7 @@ input returns nil rather than signalling."
 
 (test coverage-get-family-reads-parsed-value-from-host
   "The interactive GET* prompts delegate to the active host's prompt stream
-and return the parsed value of their type. Driven by a MockHost input line:
+and return the parsed value of their type. Driven by a cador input line:
 getint->integer, getreal->real, getkword->the matched keyword string,
 getangle/getorient->radians real, getcorner->point. (complete-unit-tests.issue
 GET* family; getstring/getdist/getpoint/getvar/initget already covered.)"
@@ -5134,8 +5134,8 @@ Windows registry / macOS defaults with a persistent per-user store
 descendents, delete, and persistence across a fresh store load."
   (reset-autolisp-symbol-table)
   (uiop:with-temporary-file (:pathname path :type "sexp")
-    (let ((clautolisp.cador:*mock-registry-path* path)
-          (clautolisp.cador::*mock-registry* nil)
+    (let ((clautolisp.cador:*cador-registry-path* path)
+          (clautolisp.cador::*cador-registry* nil)
           ;; force the sexp store: this unit test is about the :unix
           ;; backend — on darwin/windows the default backend talks to the
           ;; REAL platform store (covered by the verify:vl-registry jobs)
@@ -5172,7 +5172,7 @@ descendents, delete, and persistence across a fresh store load."
         (is (null (run-al "(vl-registry-read \"HKCU\\\\Soft\\\\App\")")))
         ;; Persistence: drop the in-memory table — the next call reloads
         ;; the store file written by the last write
-        (setf clautolisp.cador::*mock-registry* nil)
+        (setf clautolisp.cador::*cador-registry* nil)
         (is (s= "1" (run-al "(vl-registry-read \"HKCU\\\\Soft\\\\App\\\\Sub1\" \"x\")")))))))
 
 (test m5-getcfg-setcfg-roundtrip
@@ -5842,7 +5842,7 @@ written, as a list of (unsigned-byte 8)."
 ;;;; tests don't have to read real *error-output*.
 
 (defun %install-cador-and-core (context)
-  "Wire a fresh MockHost into CONTEXT and install the core builtins.
+  "Wire a fresh cador into CONTEXT and install the core builtins.
 Used by tests that exercise sysvar paths through GETVAR / SETVAR —
 the bare RUN-AUTOLISP-STRING uses nihil which signals
 :host-not-supported."
@@ -7364,13 +7364,13 @@ objects. The same list object twice for list-same, so identity can hold."
 
 ;;;; ----- COMMAND / COMMAND-S / VL-CMDF / CLAL-COMMAND-LOG -----------
 ;;;; (deferred-command-special-form issue) — the full stack on a
-;;;; MockHost: the runtime special form normalizes tokens, the HAL
-;;;; routes them, MockHost records them, CLAL-COMMAND-LOG reads them
+;;;; cador: the runtime special form normalizes tokens, the HAL
+;;;; routes them, cador records them, CLAL-COMMAND-LOG reads them
 ;;;; back as AutoLISP values.
 
 (defun run-on-mock-command-host (source)
   "Evaluate SOURCE with the core builtins installed and the default
-session pointed at a fresh MockHost. Returns (values result mock)."
+session pointed at a fresh cador. Returns (values result mock)."
   (let ((mock (clautolisp.cador:make-cador)))
     (values
      (run-autolisp-string
@@ -7384,7 +7384,7 @@ session pointed at a fresh MockHost. Returns (values result mock)."
 
 (test command-special-form-records-tokens-on-cador
   "(command \"._LINE\" pt1 pt2 \"\") returns nil and lands on the
-MockHost command log as normalized token strings."
+cador command log as normalized token strings."
   (reset-autolisp-symbol-table)
   (multiple-value-bind (result mock)
       (run-on-mock-command-host

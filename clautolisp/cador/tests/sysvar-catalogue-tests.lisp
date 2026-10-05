@@ -29,7 +29,7 @@
                     "USERI1" "USERR1" "USERS1"))
       (let ((cell (cador-sysvar mock name)))
         (is (typep cell 'sysvar-cell)
-            "expected MockHost to carry a sysvar cell for ~A" name)))))
+            "expected cador to carry a sysvar cell for ~A" name)))))
 
 (test full-sysvar-catalogue-count-matches-source
   ;; Sanity: every entry in *full-sysvar-catalogue* shows up in the

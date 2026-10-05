@@ -16,7 +16,7 @@
 ;;;;                              :host-not-supported runtime error.
 ;;;;                              Default for programs that exercise
 ;;;;                              only the language-level surface.
-;;;;   - MockHost  (Phase 9)   — in-memory deterministic CAD
+;;;;   - cador  (Phase 9)   — in-memory deterministic CAD
 ;;;;                              substrate.
 ;;;;   - LiveHost  (Phase 16)  — bridge to a live BricsCAD or
 ;;;;                              AutoCAD process.
@@ -104,7 +104,28 @@ failed, for REASON (a string or a condition): BACKEND-ERROR, code
   (:documentation "Open a new, empty document (optionally named NAME) and
 return an opaque document KEY identifying it. Does not change the current
 document."))
-(defgeneric host-close-document (host key)
+(defgeneric host-open-document-from-file (host path &key format read-only)
+  (:documentation "Read the drawing file at PATH (FORMAT, or sniffed: DXF / DWG)
+into a new open document and return its KEY, without making it current (D1
+§3). READ-ONLY marks the document read-only (Save refuses it). A file that
+cannot be read signals BACKEND-ERROR."))
+(defgeneric host-document-of (host handle)
+  (:documentation "The KEY of the open document HANDLE belongs to -- an entity
+name or a COM object -- or NIL when HANDLE carries no document (D1 §3)."))
+(defgeneric host-sysvar-scope (host name)
+  (:documentation "The scope tier of system variable NAME: :DRAWING (saved in
+the drawing, one value per document), :REGISTRY (the application's, persisted
+in the profile) or :NOT-SAVED (the session's); NIL when the host does not
+know NAME (D1 §4, C4)."))
+(defgeneric host-lock-document (host key)
+  (:documentation "Take document KEY's lock and return a lock token (D1 §10).
+Locks nest. On cador a checked no-op: nothing is excluded (one runner), but
+application-context code that modifies a document other than the current one
+without holding its lock is signalled -- the bug a real product would show."))
+(defgeneric host-unlock-document (host key token)
+  (:documentation "Release document KEY's lock taken as TOKEN; T. Releasing a
+lock that is not held signals BACKEND-ERROR (D1 §10)."))
+(defgeneric host-close-document (host key &key save file)
   (:documentation "Close the document identified by KEY. Returns T if a
 document was closed, NIL if KEY was unknown. Closing the current document is
 the host's decision to define (cador refuses to leave itself with none)."))
@@ -248,18 +269,33 @@ when the file cannot be read."))
 ;;;
 ;;; Every operation has a default method on the base `host` class
 ;;; that signals :host-not-supported. This lets newly-introduced
-;;; backends (e.g. MockHost in Phase 9) inherit a sensible "not
+;;; backends (e.g. cador in Phase 9) inherit a sensible "not
 ;;; yet implemented" failure shape, and lets future hosts override
 ;;; only the operations they support without writing an explicit
 ;;; not-supported method for the rest. NullHost overrides every
 ;;; method explicitly to pin its behaviour.
 
 (defmethod host-open-document     ((host host) &optional name) (declare (ignore name)) (signal-host-not-supported host 'open-document))
-(defmethod host-close-document    ((host host) key)           (declare (ignore key)) (signal-host-not-supported host 'close-document))
+(defmethod host-close-document    ((host host) key &key save file) (declare (ignore key save file)) (signal-host-not-supported host 'close-document))
 (defmethod host-activate-document ((host host) key)           (declare (ignore key)) (signal-host-not-supported host 'activate-document))
 (defmethod host-current-document  ((host host))               (signal-host-not-supported host 'current-document))
 (defmethod host-document-list     ((host host))               (signal-host-not-supported host 'document-list))
 (defmethod host-viewports ((host host)) (signal-host-not-supported host 'viewports))
+(defmethod host-open-document-from-file ((host host) path &key format read-only)
+  (declare (ignore path format read-only))
+  (signal-host-not-supported host 'open-document-from-file))
+(defmethod host-lock-document ((host host) key)
+  (declare (ignore key))
+  (signal-host-not-supported host 'lock-document))
+(defmethod host-unlock-document ((host host) key token)
+  (declare (ignore key token))
+  (signal-host-not-supported host 'unlock-document))
+(defmethod host-document-of ((host host) handle)
+  (declare (ignore handle))
+  (signal-host-not-supported host 'document-of))
+(defmethod host-sysvar-scope ((host host) name)
+  (declare (ignore name))
+  (signal-host-not-supported host 'sysvar-scope))
 (defmethod host-open-startup-drawing ((host host) path) (declare (ignore path)) (signal-host-not-supported host 'open-startup-drawing))
 (defmethod host-entget    ((host host) ename &optional applist) (declare (ignore ename applist)) (signal-host-not-supported host 'entget))
 (defmethod host-entmod    ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmod))

@@ -52,11 +52,9 @@ semantics, option A), at once otherwise."
   (let ((path (first tokens)))
     (when (and (stringp path) (plusp (length path)))
       (pop tokens)
-      (let ((drawing (ignore-errors (clautolisp.drawing:read-drawing path))))
-        (when drawing
-          (%open-and-activate host
-                              (%cador-fresh-document-key host (file-namestring path))
-                              drawing))))
+      (let ((key (ignore-errors (host-open-document-from-file host path))))
+        (when key
+          (clautolisp.autolisp-host:request-host-document-activation host key))))
     tokens))
 
 ;;; MENULOAD / CUILOAD: a customisation file. cadtui's format is the spec's

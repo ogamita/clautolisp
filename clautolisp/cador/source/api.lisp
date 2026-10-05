@@ -1,6 +1,6 @@
 (in-package #:clautolisp.cador)
 
-;;;; Constructor + snapshot helpers for MockHost.
+;;;; Constructor + snapshot helpers for cador.
 ;;;;
 ;;;; Phase 9 deliverable. The `cador` class itself is defined in
 ;;;; model.lisp; this file ties together the populate-* helpers and
@@ -11,18 +11,18 @@
                               (populate-tables-p t)
                               (populate-sysvars-p t)
                               prompt-stream)
-  "Build a fresh MockHost. By default the standard AutoCAD symbol
+  "Build a fresh cador. By default the standard AutoCAD symbol
 tables and the conservative sysvar subset are populated; pass
-:populate-tables-p nil or :populate-sysvars-p nil for a bare mock
+:populate-tables-p nil or :populate-sysvars-p nil for a bare
 host (e.g. for empty-fixture tests). PROMPT-STREAM, if supplied,
 is the input source the headless interactive prompts will read
 from."
-  (let ((mock (make-instance 'cador :name name)))
-    (when populate-tables-p (populate-default-tables mock))
-    (when populate-sysvars-p (populate-default-sysvars mock))
+  (let ((host (make-instance 'cador :name name)))
+    (when populate-tables-p (populate-default-tables host))
+    (when populate-sysvars-p (populate-default-sysvars host))
     (when prompt-stream
-      (setf (cador-prompt-stream mock) prompt-stream))
-    mock))
+      (setf (cador-prompt-stream host) prompt-stream))
+    host))
 
 ;;; --- Snapshot / restore ----------------------------------------
 ;;;
@@ -66,16 +66,17 @@ from."
         :kind (sysvar-cell-kind cell)
         :value (sysvar-cell-value cell)
         :read-only-p (sysvar-cell-read-only-p cell)
-        :host-derived-p (sysvar-cell-host-derived-p cell)))
+        :host-derived-p (sysvar-cell-host-derived-p cell)
+        :scope (sysvar-cell-scope cell)))
 
-(defun cador-snapshot (mock)
-  "Return a serialisable snapshot of MOCK's host-visible state. The
+(defun cador-snapshot (host)
+  "Return a serialisable snapshot of HOST's host-visible state. The
 value is a property list suitable for round-trip through ~prin1~ /
 ~read~ (with ~with-standard-io-syntax~)."
   (let* ((entity-snapshot
-          (snapshot-table (cador-entities mock) #'snapshot-entity))
+          (snapshot-table (cador-entities host) #'snapshot-entity))
          (pickset-snapshot
-          (snapshot-table (cador-picksets mock) #'snapshot-pickset))
+          (snapshot-table (cador-picksets host) #'snapshot-pickset))
          (tables-snapshot
           (let ((acc '()))
             (maphash
@@ -83,36 +84,36 @@ value is a property list suitable for round-trip through ~prin1~ /
                (push (cons kind
                            (snapshot-table per-kind #'snapshot-table-record))
                      acc))
-             (cador-tables mock))
+             (cador-tables host))
             (sort acc (lambda (a b) (string< (symbol-name (car a))
                                               (symbol-name (car b)))))))
          (sysvars-snapshot
-          (snapshot-table (cador-sysvars mock) #'snapshot-sysvar)))
-    (list :name (host-name mock)
+          (snapshot-table (cador-sysvars host) #'snapshot-sysvar)))
+    (list :name (host-name host)
           :entities entity-snapshot
           :picksets pickset-snapshot
           :tables tables-snapshot
           :sysvars sysvars-snapshot
-          :pickfirst (and (cador-pickfirst mock)
+          :pickfirst (and (cador-pickfirst host)
                           (princ-to-string
-                           (pickset-id (cador-pickfirst mock)))))))
+                           (pickset-id (cador-pickfirst host)))))))
 
-(defun cador-restore (mock snapshot)
-  "Restore MOCK from a snapshot produced by cador-snapshot.
-Mutates MOCK in place; returns MOCK. Existing state is *replaced*,
+(defun cador-restore (host snapshot)
+  "Restore HOST from a snapshot produced by cador-snapshot.
+Mutates HOST in place; returns HOST. Existing state is *replaced*,
 not merged: the entities / picksets / tables / sysvars hash-tables
 are cleared first."
   ;; Clear.
-  (clrhash (cador-entities mock))
-  (clrhash (cador-picksets mock))
-  (let ((tables (cador-tables mock)))
+  (clrhash (cador-entities host))
+  (clrhash (cador-picksets host))
+  (let ((tables (cador-tables host)))
     (maphash (lambda (k per-kind)
                (declare (ignore k))
                (clrhash per-kind))
              tables)
     (clrhash tables))
-  (clrhash (cador-sysvars mock))
-  (setf (cador-pickfirst mock) nil)
+  (clrhash (cador-sysvars host))
+  (setf (cador-pickfirst host) nil)
   ;; Restore.
   (let ((entity-by-id (make-hash-table :test #'equal)))
     (dolist (pair (getf snapshot :entities))
@@ -126,7 +127,7 @@ are cleared first."
                       :deleted-p (getf plist :deleted-p))))
         (setf (gethash id-string entity-by-id) handle
               (gethash (entity-handle-id handle)
-                       (cador-entities mock))
+                       (cador-entities host))
               handle)))
     (dolist (pair (getf snapshot :picksets))
       (let* ((plist   (cdr pair))
@@ -134,7 +135,7 @@ are cleared first."
                                 (gethash id entity-by-id))
                               (getf plist :members)))
              (set     (make-pickset :members members)))
-        (setf (gethash (pickset-id set) (cador-picksets mock)) set))))
+        (setf (gethash (pickset-id set) (cador-picksets host)) set))))
   (dolist (pair (getf snapshot :tables))
     (let ((kind (car pair)))
       (dolist (record-pair (cdr pair))
@@ -143,7 +144,7 @@ are cleared first."
                         :kind (or (getf plist :kind) kind)
                         :name (getf plist :name)
                         :data (getf plist :data))))
-          (cador-add-table-record mock record)))))
+          (cador-add-table-record host record)))))
   (dolist (pair (getf snapshot :sysvars))
     (let* ((plist (cdr pair))
            (cell  (make-sysvar-cell
@@ -151,6 +152,7 @@ are cleared first."
                    :kind           (getf plist :kind)
                    :value          (getf plist :value)
                    :read-only-p    (getf plist :read-only-p)
-                   :host-derived-p (getf plist :host-derived-p))))
-      (setf (gethash (sysvar-cell-name cell) (cador-sysvars mock)) cell)))
-  mock)
+                   :host-derived-p (getf plist :host-derived-p)
+                   :scope          (getf plist :scope))))
+      (setf (gethash (sysvar-cell-name cell) (cador-sysvars host)) cell)))
+  host)

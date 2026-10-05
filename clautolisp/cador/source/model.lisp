@@ -1,6 +1,6 @@
 (in-package #:clautolisp.cador)
 
-;;;; MockHost data carriers and the MockHost class.
+;;;; cador data carriers and the cador class.
 ;;;;
 ;;;; Phase 9 introduced these structures; Phase 17a extracted the
 ;;;; *drawing-resident* carriers — ENTITY-HANDLE, SYMBOL-TABLE-RECORD,
@@ -9,8 +9,8 @@
 ;;;; from this package) so older callers and tests are unaffected.
 ;;;;
 ;;;; What remains in this file are the *session / host* carriers that
-;;;; are not part of a drawing — PICKSET and MOCK-COM-OBJECT — and the
-;;;; MOCK-HOST class. MockHost now holds an ACTIVE-DRAWING and delegates
+;;;; are not part of a drawing — PICKSET and CADOR-COM-OBJECT — and the
+;;;; CADOR class (once MOCK-HOST). cador now holds an ACTIVE-DRAWING and delegates
 ;;;; its entity / table / sysvar surface to it; the historical
 ;;;; accessors (cador-entities, cador-tables, cador-sysvars,
 ;;;; cador-creation-order, cador-next-handle-counter,
@@ -26,13 +26,13 @@
 
 ;;; --- COM object (session state) ---------------------------------
 
-(defstruct mock-com-object
-  "In-memory COM-object record for MockHost. PROGID is the
+(defstruct cador-com-object
+  "In-memory COM-object record for cador. PROGID is the
 ProgID string the object was created from. PROPERTIES is a
 case-insensitive hash-table from name string to current value
 (populated initially from the *com-progids* template, mutated by
 vlax-put-property). METHODS is a case-insensitive hash-table from
-name string to a (lambda (mock object args) -> value) closure
+name string to a (lambda (host object args) -> value) closure
 that implements the method. RELEASED-P is set by
 vlax-release-object."
   (id          (gensym "COM-") :type t)
@@ -63,7 +63,7 @@ vlax-release-object."
   ;; document's drawing current (multi-document slice 5).
   (document-key nil))
 
-;;; --- MockHost ---------------------------------------------------
+;;; --- cador ---------------------------------------------------
 
 ;;; --- the template a new drawing is created from --------------------
 ;;;
@@ -155,7 +155,7 @@ grclear / redraw). Tests inspect this; production code does not.")
    (com-objects              :initform (make-hash-table :test #'equal)
                              :reader   cador-com-objects
                              :documentation "Hash-table mapping a
-unique COM-object id (string) to a MOCK-COM-OBJECT struct. The
+unique COM-object id (string) to a CADOR-COM-OBJECT struct. The
 AutoLISP-visible VLA-object wraps that id.")
    (next-com-counter         :initform 0
                              :accessor cador-next-com-counter
@@ -238,6 +238,8 @@ that is not part of a drawing."))
   (open-block-definition nil)
   (ename-cache (make-hash-table :test #'equal))
   (ename-cache-drawing nil)
+  ;; D1 §10: how many times the document's lock is held (a checked no-op).
+  (lock-count 0)
   ;; The tiled (model space) viewports, the current one first: a list of
   ;; (ID LLX LLY URX URY). NIL until first asked: viewports.lisp.
   (model-viewports nil)
@@ -270,13 +272,14 @@ that is not part of a drawing."))
 (%define-document-session-accessor cador-open-block-definition doc-session-open-block-definition)
 (%define-document-session-accessor cador-ename-cache doc-session-ename-cache)
 (%define-document-session-accessor cador-ename-cache-drawing doc-session-ename-cache-drawing)
+(%define-document-session-accessor %cador-lock-count doc-session-lock-count)
 (%define-document-session-accessor %cador-model-viewports doc-session-model-viewports)
 (%define-document-session-accessor %cador-viewport-toggle doc-session-viewport-toggle)
 (%define-document-session-accessor %cador-viewport-configurations doc-session-viewport-configurations)
 
 ;;; --- Active-drawing delegation ----------------------------------
 ;;;
-;;; Before Phase 17a these were slots on MOCK-HOST. They now forward
+;;; Before Phase 17a these were slots on MOCK-HOST, now CADOR. They now forward
 ;;; to the active drawing so every existing caller (entity-api,
 ;;; table-api, sysvar-api, api, and the test suite) keeps working
 ;;; unchanged. The names are deliberately preserved.

@@ -2,7 +2,7 @@
 
 (in-suite cador-suite)
 
-;;;; MockHost adapter tests for the named-object dictionary tree,
+;;;; cador adapter tests for the named-object dictionary tree,
 ;;;; xrecord lifecycle and REGAPP registration.
 
 (defun mk-str (s) (make-autolisp-string s))

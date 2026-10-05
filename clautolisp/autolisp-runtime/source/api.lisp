@@ -392,7 +392,7 @@ launch wiring after resolving the user init files (empty under
 (defparameter *default-runtime-host* nil
   "Process-wide fallback host backend for fresh runtime sessions.
 The autolisp-host module installs the NullHost singleton here when
-loaded; downstream callers (the CLI, MockHost-aware tests, etc.)
+loaded; downstream callers (the CLI, cador-aware tests, etc.)
 may rebind it to switch the default backend. Sessions whose `:host`
 keyword argument is not supplied inherit this value.")
 
@@ -425,7 +425,7 @@ keyword argument is not supplied inherit this value.")
 
 (defun set-runtime-session-host (session host)
   "Replace SESSION's HAL backend. Used by tools that swap the
-backend mid-session (e.g. switching from MockHost to LiveHost
+backend mid-session (e.g. switching from cador to LiveHost
 within a single run)."
   (setf (clautolisp.autolisp-runtime.internal::runtime-session-host session)
         host))

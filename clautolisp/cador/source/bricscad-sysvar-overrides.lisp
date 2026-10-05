@@ -2,7 +2,7 @@
 
 ;;;; BricsCAD-dialect sysvar overlay.
 ;;;;
-;;;; The mock host's sysvar catalogue (sysvar-catalogue.lisp) is
+;;;; cador's sysvar catalogue (sysvar-catalogue.lisp) is
 ;;;; generated from the AutoCAD-2026 system-variables inventory, so by
 ;;;; default `clautolisp --bricscad` reports the *AutoCAD* sysvar set —
 ;;;; every dialect answers GETVAR identically (see
@@ -359,7 +359,7 @@ bricscad-dialect only, never touching autocad/clautolisp:
   name a dropped sysvar simply no-ops (HOST-SET-DERIVED-SYSVAR skips
   unknown names). Empty until the clean harvest, so this is inert today.
 
-Mock-host only; no-ops on hosts without a sysvar table. Returns HOST."
+cador only; no-ops on hosts without a sysvar table. Returns HOST."
   (when host
     (dolist (name *bricscad-absent-sysvars*)
       (clautolisp.autolisp-host:host-undefine-sysvar host name))

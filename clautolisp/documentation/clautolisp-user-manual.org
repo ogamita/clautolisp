@@ -1014,7 +1014,7 @@ Both axes are independent.
                             ~$AUTOLISP_DWG~). ~*AUTOLISP-DRAWING*~ holds
                             the name given.
 - ~--mock-input PATH~    :: Attach the file at PATH as the
-                            MockHost's prompt-stream. Lines are
+                            cador's prompt-stream. Lines are
                             consumed in order by ~getstring~,
                             ~getreal~, ~getint~, ~getpoint~, etc.
                             so headless test rigs can feed
@@ -1022,14 +1022,20 @@ Both axes are independent.
                             scripts.
 
 The ~command~ special form (and ~command-s~ / ~vl-cmdf~) routes its
-token sequence through the selected backend's command channel. The
-MockHost has no CAD command engine: it *records* each normalized
-token sequence — strings verbatim, numbers and points in their
-command-line spellings (~"X,Y[,Z]"~ for points), ~""~ as the RETURN
-token, ~"\\"~ (the predefined variable ~pause~) as the PAUSE token —
-on a per-session log, echoes a ~Command: ...~ line, and returns
-~nil~. Read the log back with ~(clal-command-log)~ (see the
-~CLAL-~ extensions below). Under ~--host null~ every ~command~ call
+token sequence through the selected backend's command channel. cador
+*executes* the commands it implements (~LINE~, ~CIRCLE~, ~TRIM~,
+~HATCH~, ~-VPORTS~, ~NEW~ / ~OPEN~ / ~SAVE~ ...: the command chapter of
+the AutoLISP Spec), accepts a few that have no effect headless (~ZOOM~,
+~UCS~ ...) as no-ops, and stops interpreting the tokens, without an
+error, at a command it does not know or one that fails -- leaving a
+~; cador: ... -- the rest of the command sequence is ignored.~ line on the
+console (silenced by ~CMDECHO~ 0). Every normalized token sequence
+— strings verbatim, numbers and points in their command-line spellings
+(~"X,Y[,Z]"~ for points), ~""~ as the RETURN token, ~"\\"~ (the
+predefined variable ~pause~) as the PAUSE token — is also *recorded* on
+a per-session log; ~command~ returns ~nil~. Read the log back with
+~(clal-command-log)~ (see the ~CLAL-~ extensions below). Under
+~--host nihil~ every ~command~ call
 signals ~:host-not-supported~ (~vl-cmdf~ instead returns ~nil~, per
 its T / nil success contract).
 
@@ -1438,7 +1444,7 @@ drawing editor: a command-line prompt combined with pointer and keyboard
 interaction in the drawing window. That is implicitly a GUI.
 
 clautolisp is a terminal program with no drawing editor. Under the
-MockHost (the default) each ~get*~ call writes its prompt to standard
+cador (the default host) each ~get*~ call writes its prompt to standard
 output and reads one line of text from standard input — a TUI
 interaction. In the interactive REPL that line is what you type at the
 terminal after the calling form; with ~--mock-input PATH~ the lines are
@@ -2638,11 +2644,10 @@ The probing convention for portable code:
 ~command-s~ / ~vl-cmdf~ have routed through the host's command
 channel in this session, oldest first — a list of lists of strings,
 exactly as sent (~""~ = RETURN, ~"\\"~ = PAUSE, points as
-~"X,Y[,Z]"~). Under the MockHost, which has no command engine, this
-log is the whole observable effect of a ~command~ call — the
-deterministic assertion surface for headless test rigs. Raises
+~"X,Y[,Z]"~) — the deterministic assertion surface for headless test
+rigs, next to the drawing the executed commands changed. Raises
 ~:host-not-supported~ under a backend without a command log
-(~--host null~).
+(~--host nihil~).
 
 #+BEGIN_SRC autolisp
 $ clautolisp -x "(progn (command \"._LINE\" (list 0.0 0.0 0.0) (list 10.0 10.0 0.0) \"\") (print (clal-command-log)))"
@@ -2652,7 +2657,7 @@ $ clautolisp -x "(progn (command \"._LINE\" (list 0.0 0.0 0.0) (list 10.0 10.0 0
 *** ~CLAL-SYSVAR-LIST~ -- list every sysvar known to the host
 ~(clal-sysvar-list)~ returns a list of strings: the sysvar names
 the active host (mock or live) reports, sorted in case-sensitive
-ASCII order. On a default ~MockHost~ the list has 1836 entries --
+ASCII order. On a default cador the list has 1836 entries --
 the same universe as the autolisp-spec §16 *System Variables*
 catalogue.
 

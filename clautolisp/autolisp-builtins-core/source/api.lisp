@@ -5125,7 +5125,7 @@ most recent first."
 ;;; generic function on the active session's host backend
 ;;; (autolisp-spec ch.16). The current-evaluation-host helper
 ;;; resolves the backend through the active context; under NullHost
-;;; every call signals :host-not-supported, under MockHost it
+;;; every call signals :host-not-supported, under cador it
 ;;; reaches the methods in cador/source/entity-api.lisp.
 
 (defun require-ename (object operator-name)
@@ -5323,7 +5323,7 @@ point."
   (host-ssgetfirst (current-evaluation-host)))
 
 (defun builtin-sssetfirst (grip-list &optional pickset)
-  ;; AutoLISP signature: (sssetfirst GRIP-SET PICKSET). MockHost
+  ;; AutoLISP signature: (sssetfirst GRIP-SET PICKSET). cador
   ;; ignores the grip set; we route the pickset to the host.
   (declare (ignore grip-list))
   (host-sssetfirst (current-evaluation-host)
@@ -5717,7 +5717,7 @@ AutoCAD's, the value governs the NEXT session (restart-level)."
   "Return the host's recorded (command ...) token sequences, oldest
 first: a list of token lists, each token an AutoLISP string exactly
 as routed to the host command channel (\"\" = RETURN, \"\\\\\" =
-PAUSE). Under MockHost this is the session's full COMMAND record;
+PAUSE). Under cador this is the session's full COMMAND record;
 backends without a command log raise :host-not-supported."
   (mapcar (lambda (tokens)
             (mapcar #'make-autolisp-string tokens))
@@ -7181,7 +7181,7 @@ issues/open/clautolisp-module-app-extensions.issue."
 (defun getstring-terminate-at-space (result)
   ;; AutoLISP getstring with a nil CR flag terminates the input at the
   ;; first blank: (getstring) reading "hello world" yields "hello".
-  ;; Line-oriented hosts (e.g. the MockHost) hand back the whole line,
+  ;; Line-oriented hosts (e.g. the cador) hand back the whole line,
   ;; so we replicate the space-terminates-input semantics here. This is
   ;; a no-op for a live host that already stopped reading at the blank.
   (if (typep result 'autolisp-string)
@@ -8335,7 +8335,7 @@ arrays. Documented identical to vlax-safearray->list for 1D (spec 81442)."
 ;;; A reactor is a host-side event-callback subscription object.
 ;;; clautolisp's reactor surface dispatches against the runtime's
 ;;; per-document and per-application registries; the actual events
-;;; are emitted by MockHost (and, in Phase 16, LiveHost) via the
+;;; are emitted by cador (and, in Phase 16, LiveHost) via the
 ;;; runtime's signal-document-event / signal-application-event
 ;;; helpers. Reactors are the AutoLISP-visible piece of the
 ;;; observer pattern; the host-object ontology + lifecycle is

@@ -441,6 +441,103 @@ own; AutoCAD (job 16932759881) stays in the old drawing until the routine ends."
   (is (eq t (handler-case (progn (%vp-run "autocad-2022" "(setview nil)") nil)
               (error () t)))))
 
+;;; --- cador-4 slice 1: the HAL document API (D1 §3) and the scope tier (C4) -----
+
+(test host-open-document-from-file-registers-without-switching
+  (let* ((path (namestring (merge-pathnames (format nil "md-hal-~D.dxf" (random 1000000))
+                                            (uiop:temporary-directory))))
+         (context (%md-context))
+         (host (%md-host context))
+         (first-key (clautolisp.autolisp-host:host-current-document host)))
+    (unwind-protect
+         (progn
+           (%md-turn context "(command \"_.LINE\" \"0,0\" \"1,1\" \"\")")
+           (%md-turn context (format nil "(command \"_.SAVEAS\" \"DXF\" ~S)" path))
+           (let ((key (clautolisp.autolisp-host:host-open-document-from-file
+                       host path :read-only t)))
+             (is (stringp key))
+             (is (member key (clautolisp.autolisp-host:host-document-list host) :test #'equal))
+             ;; Not made current.
+             (is (equal first-key (clautolisp.autolisp-host:host-current-document host)))
+             (is (clautolisp.cador::doc-session-read-only
+                  (clautolisp.cador::cador-document-session host key)))))
+      (ignore-errors (delete-file path)))
+    ;; An unreadable file is a backend error.
+    (is (eq t (handler-case
+                  (progn (clautolisp.autolisp-host:host-open-document-from-file
+                          host "/nonexistent/md-none.dxf")
+                         nil)
+                (error () t))))))
+
+(test host-close-document-with-save-writes-the-file
+  (let* ((path (namestring (merge-pathnames (format nil "md-close-~D.dxf" (random 1000000))
+                                            (uiop:temporary-directory))))
+         (context (%md-context))
+         (host (%md-host context)))
+    (unwind-protect
+         (let ((key (clautolisp.autolisp-host:host-open-document host)))
+           (clautolisp.autolisp-host:host-close-document host key :save t :file path)
+           (is (probe-file path))
+           (is (not (member key (clautolisp.autolisp-host:host-document-list host)
+                            :test #'equal))))
+      (ignore-errors (delete-file path)))))
+
+(test host-document-of-names-the-owning-document
+  (let* ((context (%md-context))
+         (host (%md-host context))
+         (first-key (clautolisp.autolisp-host:host-current-document host)))
+    (%md-turn context "(command \"_.LINE\" \"0,0\" \"1,1\" \"\")")
+    (let ((ename (%md-turn context "(entlast)")))
+      (is (equal first-key (clautolisp.autolisp-host:host-document-of host ename)))
+      ;; Still the first document's after a switch.
+      (%md-turn context "(command \"_.NEW\" \"\")")
+      (%md-turn context "nil")
+      (is (equal first-key (clautolisp.autolisp-host:host-document-of host ename)))
+      (is (null (clautolisp.autolisp-host:host-document-of host 42))))))
+
+(test host-sysvar-scope-gives-the-tier
+  (let ((host (%md-host (%md-context))))
+    (is (eq :drawing (clautolisp.autolisp-host:host-sysvar-scope host "LTSCALE")))
+    (is (eq :registry (clautolisp.autolisp-host:host-sysvar-scope host "OSMODE")))
+    (is (eq :not-saved (clautolisp.autolisp-host:host-sysvar-scope host "CMDACTIVE")))
+    (is (eq :drawing (clautolisp.drawing:sysvar-cell-scope
+                      (clautolisp.cador:cador-sysvar host "LTSCALE"))))))
+
+;;; --- cador-4 slice 2: locking, the checked no-op (D1 §10) ----------------------
+
+(defun %lock-other-modelspace (host key)
+  "The ModelSpace VLA of document KEY, reached through its Document."
+  (clautolisp.autolisp-host:host-vlax-get-property
+   host (clautolisp.cador::com-object->vla (clautolisp.cador::%document-object host key))
+   "ModelSpace"))
+
+(test locking-is-checked-in-application-context
+  (let* ((host (%md-host (%md-context)))
+         (other (clautolisp.autolisp-host:host-open-document host))
+         (ms (%lock-other-modelspace host other))
+         (line (list (list 0d0 0d0 0d0) (list 1d0 1d0 0d0))))
+    ;; Lisp code driving the host (application context) modifies a document
+    ;; that is not the current one without its lock: signalled.
+    (is (eq :document-not-locked
+            (handler-case (progn (clautolisp.autolisp-host:host-vlax-invoke-method
+                                  host ms "AddLine" line)
+                                 nil)
+              (clautolisp.autolisp-runtime:autolisp-runtime-error (c)
+                (clautolisp.autolisp-runtime:autolisp-runtime-error-code c)))))
+    ;; With the lock, it goes through; locks nest and balance.
+    (let ((token (clautolisp.autolisp-host:host-lock-document host other)))
+      (is (consp token))
+      (is (clautolisp.autolisp-host:host-vlax-invoke-method host ms "AddLine" line))
+      (is (eq t (clautolisp.autolisp-host:host-unlock-document host other token))))
+    ;; An unbalanced unlock is a backend error.
+    (is (eq t (handler-case (progn (clautolisp.autolisp-host:host-unlock-document host other nil) nil)
+                (error () t))))))
+
+(test locking-on-nihil-is-not-supported
+  (is (eq t (handler-case (progn (clautolisp.autolisp-host:host-lock-document
+                                  (make-instance 'clautolisp.autolisp-host:nihil) "x")
+                                 nil)
+              (error () t)))))
 ;;; --- viewports: the whole probe, against the vendors' answers -----------------
 
 ;;; The vendors' answers to probes/sources/probe-viewports.lsp, suites vports and

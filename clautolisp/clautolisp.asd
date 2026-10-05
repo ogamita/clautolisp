@@ -205,7 +205,7 @@
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/cador"
-  :description "In-memory deterministic CAD-database backend (MockHost) for clautolisp."
+  :description "In-memory deterministic CAD-database backend (cador) for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-host" "clautolisp/autolisp-runtime"
@@ -568,7 +568,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/cador/tests"
-  :description "Tests for the clautolisp MockHost data carriers."
+  :description "Tests for the clautolisp cador data carriers."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/cador" "fiveam")

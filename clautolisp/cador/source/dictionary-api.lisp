@@ -1,7 +1,7 @@
 (in-package #:clautolisp.cador)
 
 ;;;; Named-object-dictionary, xrecord and REGAPP HAL methods on
-;;;; MockHost — the AutoLISP adapter over the pure-CL dictionary /
+;;;; cador — the AutoLISP adapter over the pure-CL dictionary /
 ;;;; appid layer in clautolisp.drawing (dictionary.lisp).
 ;;;;
 ;;;; Dictionaries and xrecords are stored in the ACTIVE-DRAWING's
@@ -38,7 +38,7 @@ an ename at all."
   (let* ((drawing (cador-active-drawing host))
          (dict-handle (%require-dict-handle host dict-ename 'dictsearch)))
     (when dict-handle
-      (let* ((key (mock-string-value name))
+      (let* ((key (cador-string-value name))
              (member (and key (clautolisp.drawing:dictionary-member-handle
                                drawing dict-handle key))))
         (when member
@@ -73,7 +73,7 @@ an ename at all."
   (let* ((drawing (cador-active-drawing host))
          (dict-handle (%require-dict-handle host dict-ename 'dictadd)))
     (when dict-handle
-      (let ((key (mock-string-value name))
+      (let ((key (cador-string-value name))
             (object-handle (ename->handle object-ename 'dictadd host)))
         (when (and key
                    (clautolisp.drawing:dictionary-add-entry
@@ -84,7 +84,7 @@ an ename at all."
   (let* ((drawing (cador-active-drawing host))
          (dict-handle (%require-dict-handle host dict-ename 'dictremove)))
     (when dict-handle
-      (let* ((key (mock-string-value name))
+      (let* ((key (cador-string-value name))
              (removed (and key (clautolisp.drawing:dictionary-remove-entry
                                 drawing dict-handle key))))
         (and removed (handle->ename host removed))))))
@@ -93,8 +93,8 @@ an ename at all."
   (let* ((drawing (cador-active-drawing host))
          (dict-handle (%require-dict-handle host dict-ename 'dictrename)))
     (when dict-handle
-      (let ((old-key (mock-string-value old))
-            (new-key (mock-string-value new)))
+      (let ((old-key (cador-string-value old))
+            (new-key (cador-string-value new)))
         (when (and old-key new-key
                    (clautolisp.drawing:dictionary-rename-entry
                     drawing dict-handle old-key new-key))
@@ -104,13 +104,13 @@ an ename at all."
   (let* ((drawing (cador-active-drawing host))
          (dict-handle (%require-dict-handle host dict-ename 'dictobjname)))
     (when dict-handle
-      (let* ((key (mock-string-value name))
+      (let* ((key (cador-string-value name))
              (member (and key (clautolisp.drawing:dictionary-member-handle
                                drawing dict-handle key))))
         (and member (safe-find-entity drawing member) (handle->ename host member))))))
 
 (defmethod host-regapp ((host cador) name)
-  (let ((app (mock-string-value name)))
+  (let ((app (cador-string-value name)))
     (and app
          (clautolisp.drawing:register-appid (cador-active-drawing host) app)
          (clautolisp.autolisp-runtime:make-autolisp-string app))))
