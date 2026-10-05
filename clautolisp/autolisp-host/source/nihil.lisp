@@ -117,6 +117,10 @@ backend share this instance.")
   (declare (ignore dict name next-after))
   (signal-host-not-supported host 'dictsearch))
 
+(defmethod host-dictobjname ((host nihil) dict name)
+  (declare (ignore dict name))
+  (signal-host-not-supported host 'dictobjname))
+
 (defmethod host-dictnext ((host nihil) dict &key rewind)
   (declare (ignore dict rewind))
   (signal-host-not-supported host 'dictnext))

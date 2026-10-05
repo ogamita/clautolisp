@@ -2,7 +2,7 @@
   (:use #:cl)
   (:import-from #:clautolisp.drawing
                 ;; Phase 17a: the drawing value object and its data
-                ;; carriers now live in clautolisp.drawing. MockHost
+                ;; carriers now live in clautolisp.drawing. cador
                 ;; holds a drawing and re-exports these so code/tests
                 ;; that imported the carriers from this package before
                 ;; the extraction keep resolving to the same symbols.
@@ -157,7 +157,7 @@
    ;; Class hierarchy
    #:cador
    #:make-cador
-   #:*mock-registry-path*
+   #:*cador-registry-path*
    ;; Drawing value object (re-exported from clautolisp.drawing) +
    ;; the host's active-drawing accessor.
    #:drawing
@@ -212,7 +212,7 @@
    ;; Generated full catalogue (1836 entries from
    ;; autolisp-spec/documentation/system-variables-inventory.sexp).
    #:*full-sysvar-catalogue*
-   ;; MockHost accessors
+   ;; cador accessors
    #:cador-entities
    #:cador-picksets
    #:cador-vla-objects
@@ -264,16 +264,16 @@
    #:initget-bits
    #:initget-keywords
    ;; COM bridge (Phase 13)
-   #:mock-com-object
-   #:make-mock-com-object
-   #:mock-com-object-id
-   #:mock-com-object-progid
-   #:mock-com-object-properties
-   #:mock-com-object-methods
-   #:mock-com-object-released-p
-   #:mock-com-object-collection-p
-   #:mock-com-object-collection-members
-   #:mock-com-object-collection-kind
+   #:cador-com-object
+   #:make-cador-com-object
+   #:cador-com-object-id
+   #:cador-com-object-progid
+   #:cador-com-object-properties
+   #:cador-com-object-methods
+   #:cador-com-object-released-p
+   #:cador-com-object-collection-p
+   #:cador-com-object-collection-members
+   #:cador-com-object-collection-kind
    #:cador-com-objects
    #:cador-next-com-counter
    #:cador-allocate-com-id

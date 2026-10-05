@@ -2,7 +2,7 @@
 
 (in-suite cador-suite)
 
-;;; --- Phase 13: COM bridge on MockHost ----------------------------
+;;; --- Phase 13: COM bridge on cador ----------------------------
 
 (test vlax-create-object-returns-vla-wrapping-id
   (let* ((mock (make-cador))
@@ -10,8 +10,8 @@
     (is (typep vla 'clautolisp.autolisp-runtime:autolisp-vla-object))
     (let* ((id (clautolisp.autolisp-runtime:autolisp-vla-object-value vla))
            (object (cador-find-com-object mock id)))
-      (is (typep object 'mock-com-object))
-      (is (string= "AutoCAD.Application" (mock-com-object-progid object))))))
+      (is (typep object 'cador-com-object))
+      (is (string= "AutoCAD.Application" (cador-com-object-progid object))))))
 
 (defun %tv-vlax-boolean-p (value name)
   "True when VALUE is the ActiveX boolean symbol NAME (:VLAX-TRUE / :VLAX-FALSE)."
@@ -756,7 +756,7 @@ comparison."
          (docs (host-vlax-get-property host app "Documents"))
          (new (host-vlax-invoke-method host docs "Add" '())))
     (is (string= "AutoCAD.Document"
-                 (mock-com-object-progid (cador-find-com-object
+                 (cador-com-object-progid (cador-find-com-object
                                           host
                                           (clautolisp.autolisp-runtime:autolisp-vla-object-value new)))))
     ;; Its Blocks / Layers are live collections (answer Count).

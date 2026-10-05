@@ -2,7 +2,7 @@
 
 (in-suite cador-suite)
 
-;;; --- Phase 11: selection sets, tables, sysvars on MockHost --------
+;;; --- Phase 11: selection sets, tables, sysvars on cador --------
 
 (defun ent-of (handle) (cdr (first handle)))
 

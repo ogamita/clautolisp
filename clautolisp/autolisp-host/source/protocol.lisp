@@ -16,7 +16,7 @@
 ;;;;                              :host-not-supported runtime error.
 ;;;;                              Default for programs that exercise
 ;;;;                              only the language-level surface.
-;;;;   - MockHost  (Phase 9)   — in-memory deterministic CAD
+;;;;   - cador  (Phase 9)   — in-memory deterministic CAD
 ;;;;                              substrate.
 ;;;;   - LiveHost  (Phase 16)  — bridge to a live BricsCAD or
 ;;;;                              AutoCAD process.
@@ -269,7 +269,7 @@ when the file cannot be read."))
 ;;;
 ;;; Every operation has a default method on the base `host` class
 ;;; that signals :host-not-supported. This lets newly-introduced
-;;; backends (e.g. MockHost in Phase 9) inherit a sensible "not
+;;; backends (e.g. cador in Phase 9) inherit a sensible "not
 ;;; yet implemented" failure shape, and lets future hosts override
 ;;; only the operations they support without writing an explicit
 ;;; not-supported method for the rest. NullHost overrides every

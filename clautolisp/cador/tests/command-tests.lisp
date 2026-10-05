@@ -4,7 +4,7 @@
 
 ;;; --- Command dispatch (deferred-command-special-form issue) -------
 ;;;
-;;; MockHost has no command engine: HOST-COMMAND records the routed
+;;; cador has no command engine: HOST-COMMAND records the routed
 ;;; token sequence on the per-session command log, echoes one line to
 ;;; PROMPT-OUTPUT, and returns nil. HOST-COMMAND-LOG reads the log
 ;;; back oldest-first.

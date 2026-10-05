@@ -1,7 +1,7 @@
 (in-package #:clautolisp.cador)
 
 ;;;; Default symbol-table records and sysvar cells installed in a
-;;;; freshly-constructed MockHost.
+;;;; freshly-constructed cador.
 ;;;;
 ;;;; The defaults track the conservative subset called out in the
 ;;;; implementation roadmap. They are deliberately small: real-world
@@ -22,13 +22,13 @@
     (:view         . ())
     (:appid        . ("ACAD"))))
 
-(defun populate-default-tables (mock)
-  "Pre-populate MOCK with the standard empty AutoCAD symbol
+(defun populate-default-tables (host)
+  "Pre-populate HOST with the standard empty AutoCAD symbol
 tables so tblsearch / tblnext have a sensible baseline."
   (dolist (entry *default-table-records*)
     (destructuring-bind (kind . names) entry
       ;; Make the (possibly empty) table exist.
-      (ensure-default-table-record mock kind nil)
+      (ensure-default-table-record host kind nil)
       (dolist (name names)
         ;; FILL A GAP, never overwrite. A drawing created from the DXF
         ;; template already carries these records WITH their handles and
@@ -36,13 +36,13 @@ tables so tblsearch / tblnext have a sensible baseline."
         ;; is what would lose the structure a DWG write needs
         ;; (dwg-round-trip-loses-entities). The bare record remains the
         ;; right thing when nothing supplied one.
-        (ensure-default-table-record mock kind name))))
-  mock)
+        (ensure-default-table-record host kind name))))
+  host)
 
-(defun ensure-default-table-record (mock kind name)
-  "Install the bare NAME record in MOCK's KIND table unless one is there."
-  (let ((per-kind (or (gethash kind (cador-tables mock))
-                      (setf (gethash kind (cador-tables mock))
+(defun ensure-default-table-record (host kind name)
+  "Install the bare NAME record in HOST's KIND table unless one is there."
+  (let ((per-kind (or (gethash kind (cador-tables host))
+                      (setf (gethash kind (cador-tables host))
                             (make-hash-table :test #'equalp)))))
     (unless (or (null name) (string= name "") (gethash name per-kind))
       (setf (gethash name per-kind)
@@ -152,7 +152,7 @@ dialect.")
   "The clautolisp-specific system variables with no vendor counterpart, which
 INSTALL-CLAUTOLISP-EXTENSION-SYSVARS adds on top of whichever vendor catalogue
 was loaded (SAVEFORMAT is NOT here — it is a BricsCAD sysvar already in the
-catalogue). Their count is why a populated mock carries
+catalogue). Their count is why a populated host carries
 (length *full-sysvar-catalogue*) + (length *clautolisp-extension-sysvar-names*)
 sysvar cells.")
 
@@ -275,34 +275,34 @@ document is actually created, not at start-up."
         (string-trim '(#\Space #\Tab) env)
         "")))
 
-(defun install-clautolisp-extension-sysvars (mock)
+(defun install-clautolisp-extension-sysvars (host)
   "Install the clautolisp-specific system variables that have no vendor
 counterpart, on top of whichever vendor catalogue was loaded:
-CLAUTOLISPDEFAULTDRAWINGFORMAT and CLAUTOLISPNEWDRAWINGTEMPLATE. Returns MOCK."
-  (setf (gethash +default-drawing-format-sysvar+ (cador-sysvars mock))
+CLAUTOLISPDEFAULTDRAWINGFORMAT and CLAUTOLISPNEWDRAWINGTEMPLATE. Returns HOST."
+  (setf (gethash +default-drawing-format-sysvar+ (cador-sysvars host))
         (make-sysvar-cell :name +default-drawing-format-sysvar+
                           :kind :string
                           :value (%default-drawing-format-initial-value)
                           :read-only-p nil
                           :host-derived-p nil
                           :scope :not-saved))
-  (setf (gethash +new-drawing-template-sysvar+ (cador-sysvars mock))
+  (setf (gethash +new-drawing-template-sysvar+ (cador-sysvars host))
         (make-sysvar-cell :name +new-drawing-template-sysvar+
                           :kind :string
                           :value (%new-drawing-template-initial-value)
                           :read-only-p nil
                           :host-derived-p nil
                           :scope :not-saved))
-  mock)
+  host)
 
-(defun %sysvar-string (mock name)
-  "MOCK's NAME sysvar as a trimmed string, or NIL when absent or empty."
-  (let* ((cell (cador-sysvar mock name))
+(defun %sysvar-string (host name)
+  "HOST's NAME sysvar as a trimmed string, or NIL when absent or empty."
+  (let* ((cell (cador-sysvar host name))
          (value (and cell (sysvar-cell-value cell)))
          (text (and (stringp value) (string-trim '(#\Space #\Tab) value))))
     (and text (plusp (length text)) text)))
 
-(defun cador-new-drawing-template (mock)
+(defun cador-new-drawing-template (host)
   "The template a NEW document is created from, as a pathname, or NIL for an
 empty document (the default).
 
@@ -316,13 +316,13 @@ than an error, following the project's out-of-reach-resource style: a new
 document is still created, empty, and the session says why it is not what was
 asked for. A silent empty document would be the worst of the three."
   (let* ((basefile (and (%bricscad-dialect-p (%current-dialect-name))
-                        (%sysvar-string mock +basefile-sysvar+)))
-         (name (or basefile (%sysvar-string mock +new-drawing-template-sysvar+))))
+                        (%sysvar-string host +basefile-sysvar+)))
+         (name (or basefile (%sysvar-string host +new-drawing-template-sysvar+))))
     ;; The clautolisp variable decided: say so, unless the dialect is ours.
     (when (and name (not basefile))
       (warn-clautolisp-sysvar-use +new-drawing-template-sysvar+))
     (when name
-      (let* ((folder (%sysvar-string mock +templatepath-sysvar+))
+      (let* ((folder (%sysvar-string host +templatepath-sysvar+))
              (candidates
                (remove nil
                        (list (ignore-errors
@@ -343,19 +343,19 @@ asked for. A silent empty document would be the worst of the three."
                       name folder)
               nil))))))
 
-(defun cador-make-new-drawing (mock &key (name "Drawing.dwg"))
-  "A drawing for a NEW document of MOCK: from CLAUTOLISPNEWDRAWINGTEMPLATE when
+(defun cador-make-new-drawing (host &key (name "Drawing.dwg"))
+  "A drawing for a NEW document of HOST: from CLAUTOLISPNEWDRAWINGTEMPLATE when
 that names a readable drawing, else empty. This is the one place the choice is
 made, so both creation sites agree."
-  (let ((template (ignore-errors (cador-new-drawing-template mock))))
+  (let ((template (ignore-errors (cador-new-drawing-template host))))
     (if template
         (clautolisp.drawing:make-drawing-from-template :name name
                                                        :template template)
         (make-drawing :name name))))
 
-(defun cador-default-drawing-format (mock)
+(defun cador-default-drawing-format (host)
   "Return (values CONTAINER VERSION) — the clautolisp.drawing codec keyword and
-the DXF $ACADVER version keyword (or NIL for the codec's newest) MOCK writes a
+the DXF $ACADVER version keyword (or NIL for the codec's newest) HOST writes a
 drawing in when nothing else determines the format. The source is
 dialect-dependent: under a BricsCAD dialect the vendor SAVEFORMAT integer
 (default 1 = DWG 2018); otherwise the CLAUTOLISPDEFAULTDRAWINGFORMAT string
@@ -364,14 +364,14 @@ dialect-dependent: under a BricsCAD dialect the vendor SAVEFORMAT integer
                    (clautolisp.autolisp-runtime:current-evaluation-dialect-name))))
     (if (%bricscad-dialect-p dialect)
         (multiple-value-bind (container version)
-            (%decode-saveformat (let ((cell (cador-sysvar mock +saveformat-sysvar+)))
+            (%decode-saveformat (let ((cell (cador-sysvar host +saveformat-sysvar+)))
                                   (and cell (sysvar-cell-value cell))))
           (if container
               (values container version)
               (values :dwg :ac1032)))       ; BricsCAD SAVEFORMAT default
         (multiple-value-bind (container version)
             (%parse-drawing-format-spec
-             (let ((cell (cador-sysvar mock +default-drawing-format-sysvar+)))
+             (let ((cell (cador-sysvar host +default-drawing-format-sysvar+)))
                (and cell (sysvar-cell-value cell))))
           ;; No vendor variable outside BricsCAD: the clautolisp one decides,
           ;; with the notice (silent under clautolisp / lax).
@@ -391,8 +391,8 @@ metric."
         0
         1)))
 
-(defun populate-default-sysvars (mock &key (catalogue :full))
-  "Pre-populate MOCK's sysvar table.
+(defun populate-default-sysvars (host &key (catalogue :full))
+  "Pre-populate HOST's sysvar table.
 
 CATALOGUE selects the table installed:
 
@@ -408,7 +408,7 @@ CATALOGUE selects the table installed:
 In both modes the entries are five-tuples
   (NAME KIND DEFAULT READ-ONLY-P [HOST-DERIVED-P])
 with HOST-DERIVED-P defaulting to NIL for the :SEED list."
-  (let ((table (cador-sysvars mock))
+  (let ((table (cador-sysvars host))
         (entries (ecase catalogue
                    (:full *full-sysvar-catalogue*)
                    (:seed *default-sysvars*))))
@@ -448,10 +448,10 @@ with HOST-DERIVED-P defaulting to NIL for the :SEED list."
           (let ((cell (gethash name table)))
             (when cell (setf (sysvar-cell-value cell) measurement))))
         ;; The current dimension style names a record of the DIMSTYLE table
-        ;; (when the mock has tables at all).
+        ;; (when the host has tables at all).
         (let ((cell (gethash "DIMSTYLE" table)))
-          (when (and cell (gethash :dimstyle (cador-tables mock)))
-            (ensure-default-table-record mock :dimstyle (sysvar-cell-value cell)))))
+          (when (and cell (gethash :dimstyle (cador-tables host)))
+            (ensure-default-table-record host :dimstyle (sysvar-cell-value cell)))))
       ;; A fresh drawing is created now: TDCREATE = TDUPDATE = this instant
       ;; as a Julian date (measured on BricsCAD); a drawing read from a file
       ;; keeps its header's.
@@ -460,31 +460,31 @@ with HOST-DERIVED-P defaulting to NIL for the :SEED list."
           (let ((cell (gethash name table)))
             (when cell (setf (sysvar-cell-value cell) now))))))
     ;; The clautolisp extension sysvars sit on top of either catalogue.
-    (install-clautolisp-extension-sysvars mock)))
+    (install-clautolisp-extension-sysvars host)))
 
 ;;; --- Convenience accessors -------------------------------------
 
-(defun cador-table (mock kind)
-  "Return the per-kind symbol-table hash-table for MOCK, creating
+(defun cador-table (host kind)
+  "Return the per-kind symbol-table hash-table for HOST, creating
 it on first reference."
-  (let ((tables (cador-tables mock)))
+  (let ((tables (cador-tables host)))
     (or (gethash kind tables)
         (setf (gethash kind tables)
               (make-hash-table :test #'equalp)))))
 
-(defun cador-find-table-record (mock kind name)
-  (gethash name (cador-table mock kind)))
+(defun cador-find-table-record (host kind name)
+  (gethash name (cador-table host kind)))
 
-(defun cador-add-table-record (mock record)
-  (let ((per-kind (cador-table mock (symbol-table-record-kind record))))
+(defun cador-add-table-record (host record)
+  (let ((per-kind (cador-table host (symbol-table-record-kind record))))
     (setf (gethash (symbol-table-record-name record) per-kind) record)
     record))
 
-(defun cador-sysvar (mock name)
-  (gethash name (cador-sysvars mock)))
+(defun cador-sysvar (host name)
+  (gethash name (cador-sysvars host)))
 
-(defun cador-set-sysvar (mock name value)
-  (let ((cell (cador-sysvar mock name)))
+(defun cador-set-sysvar (host name value)
+  (let ((cell (cador-sysvar host name)))
     (when cell
       ;; :SYSVAR-READ-ONLY, as HOST-SETVAR says it: a read-only variable is a
       ;; wrong argument, not a missing host capability (D1 §15, D2 §II.15 --
@@ -508,9 +508,9 @@ define / undefine / setvar."
              table)
     copy))
 
-(defun cador-remove-sysvar (mock name)
-  "Drop the sysvar cell NAME from MOCK. After this, getvar returns nil
+(defun cador-remove-sysvar (host name)
+  "Drop the sysvar cell NAME from HOST. After this, getvar returns nil
 \(unknown name) and setvar signals unknown-sysvar — the behaviour of a
 real CAD for a variable it does not define. Returns T when a cell was
 removed, nil when NAME was already absent."
-  (remhash name (cador-sysvars mock)))
+  (remhash name (cador-sysvars host)))

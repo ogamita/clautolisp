@@ -19,7 +19,7 @@
 ;;;; next sysvar access.
 
 (defun %sdt-context ()
-  "A fresh session on a clautolisp-dialect MockHost, with the dialect
+  "A fresh session on a clautolisp-dialect cador, with the dialect
 controller installed exactly as the CLI installs it at launch: the base
 snapshot FIRST, then the overlays for the launch dialect.
 

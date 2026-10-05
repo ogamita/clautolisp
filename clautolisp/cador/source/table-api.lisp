@@ -1,6 +1,6 @@
 (in-package #:clautolisp.cador)
 
-;;;; Symbol-table walker HAL methods on MockHost (Phase 11).
+;;;; Symbol-table walker HAL methods on cador (Phase 11).
 ;;;;
 ;;;; Implements: host-tblsearch, host-tblnext, host-tblobjname.
 ;;;;
@@ -12,7 +12,7 @@
 
 (defun resolve-table-kind (kind operator-name)
   "Coerce KIND from an AutoLISP-string / CL-string / keyword to
-the MockHost's per-kind keyword."
+the cador's per-kind keyword."
   (let ((string (cond
                   ((typep kind 'clautolisp.autolisp-runtime:autolisp-string)
                    (clautolisp.autolisp-runtime:autolisp-string-value kind))

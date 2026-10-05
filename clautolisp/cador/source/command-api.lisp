@@ -1,9 +1,9 @@
 (in-package #:clautolisp.cador)
 
-;;;; Command-dispatch HAL methods on MockHost
+;;;; Command-dispatch HAL methods on cador
 ;;;; (deferred-command-special-form issue).
 ;;;;
-;;;; The mock semantics of an AutoLISP (command ...) call:
+;;;; cador's semantics of an AutoLISP (command ...) call:
 ;;;;
 ;;;;   * the normalized token-string list the runtime routed here is
 ;;;;     recorded on the host's COMMAND-LOG (newest first, matching
@@ -884,7 +884,7 @@ are honoured (New/Off/... accept them)."
 
 (defun %cmd-linetype (host tokens)
   "LINETYPE / -LINETYPE: Load creates an :ltype record (its definition file is
-ignored — the mock has none); Set sets CELTYPE; Create is consumed. The loop
+ignored — cador has none); Set sets CELTYPE; Create is consumed. The loop
 ends at RETURN."
   (loop
     (let ((token (first tokens)))

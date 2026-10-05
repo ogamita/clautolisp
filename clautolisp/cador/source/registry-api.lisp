@@ -15,18 +15,18 @@
 
 (in-package #:clautolisp.cador)
 
-(defvar *mock-registry-path* nil
+(defvar *cador-registry-path* nil
   "Override for the registry store file (tests point it at a temp file);
 NIL means the XDG default $XDG_CONFIG_HOME/clautolisp/registry.sexp.")
 
-(defvar *mock-registry* nil
+(defvar *cador-registry* nil
   "The loaded registry: an EQUALP hash KEY-PATH -> (EQUALP hash
 VALUE-NAME -> string); NIL until first use (loaded lazily from the store
 file).")
 
-(defvar *mock-registry-loaded-from* nil
-  "The path *MOCK-REGISTRY* was loaded from — reloaded when the effective
-path changes (tests rebinding *MOCK-REGISTRY-PATH*).")
+(defvar *cador-registry-loaded-from* nil
+  "The path *CADOR-REGISTRY* was loaded from — reloaded when the effective
+path changes (tests rebinding *CADOR-REGISTRY-PATH*).")
 
 (defun %nonempty-getenv (name)
   "The environment variable NAME, or NIL when unset OR EMPTY (an exported
@@ -40,7 +40,7 @@ its real one (the test suites' sandbox), or NIL."
   (%nonempty-getenv "CLAUTOLISP_REGISTRY_FILE"))
 
 (defun %registry-store-path ()
-  (or *mock-registry-path*
+  (or *cador-registry-path*
       (let ((override (%registry-file-override)))
         (and override (pathname override)))
       (merge-pathnames "clautolisp/registry.sexp"
@@ -54,9 +54,9 @@ effective path changed). The on-disk form is an alist
 ((KEY . ((VALUE-NAME . VALUE) ...)) ...) of strings, read with
 *READ-EVAL* nil."
   (let ((path (%registry-store-path)))
-    (unless (and *mock-registry* (equal path *mock-registry-loaded-from*))
-      (setf *mock-registry* (make-hash-table :test #'equalp)
-            *mock-registry-loaded-from* path)
+    (unless (and *cador-registry* (equal path *cador-registry-loaded-from*))
+      (setf *cador-registry* (make-hash-table :test #'equalp)
+            *cador-registry-loaded-from* path)
       (when (probe-file path)
         (with-open-file (in path :direction :input :external-format :utf-8)
           (let* ((*read-eval* nil)
@@ -67,8 +67,8 @@ effective path changed). The on-disk form is an alist
                   (dolist (pair (cdr entry))
                     (when (and (consp pair) (stringp (car pair)))
                       (setf (gethash (car pair) values) (cdr pair))))
-                  (setf (gethash (car entry) *mock-registry*) values))))))))
-    *mock-registry*))
+                  (setf (gethash (car entry) *cador-registry*) values))))))))
+    *cador-registry*))
 
 (defun %registry-save ()
   "Write the registry back to the store file, PRIN1 (readable strings —
@@ -110,7 +110,7 @@ the aldo.conf princ-serialisation lesson), sorted for stable diffs."
   #+(or win32 windows mswindows os-windows) :windows
   #+(and darwin (not (or win32 windows mswindows os-windows))) :darwin
   #-(or win32 windows mswindows os-windows darwin) :unix
-  "Which vl-registry store the mock host talks to: :WINDOWS (the real
+  "Which vl-registry store cador talks to: :WINDOWS (the real
 registry via advapi32), :DARWIN (the defaults database via CFPreferences), :UNIX (the
 persistent sexp file). Defaults to the platform; RUNTIME-dispatched so
 the unit tests can bind :UNIX and exercise the sexp store on any
