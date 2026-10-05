@@ -73,22 +73,27 @@ An audit (2026-10-05) found persistence already built (DXF read/write, DWG
 through libredwg, the codec registry; D2 §5.12 records the decision) and the
 command table at ~105 spellings. The rest, in slices:
 
-- *Slice 1 DONE (2.2.199)* -- the HAL document API D1 §3 left design-ahead:
+- *Slice 1 DONE (2.2.200)* -- the HAL document API D1 §3 left design-ahead:
   host-open-document-from-file (OPEN and Documents.Open use it),
   host-close-document &key save file, host-document-of; and the sysvar scope
   tier (C4): a =scope= slot on every cell, host-sysvar-scope.
-- *Slice 2 DONE (2.2.199)* -- locking, the checked no-op of D1 §10:
+- *Slice 2 DONE (2.2.200)* -- locking, the checked no-op of D1 §10:
   host-lock-document / host-unlock-document (nesting count, unbalanced
   unlock = backend-error); changes to a non-current document from
   application context without its lock signal :document-not-locked
   (drawing *drawing-modification-hook*); AutoLISP's COM calls (document
   context) are not checked.
-- *Slice 3 DONE (2.2.199)* -- the §7.4 adaptation: the mock identifiers
+- *Slice 3 DONE (2.2.200)* -- the §7.4 adaptation: the mock identifiers
   renamed (cador-com-object, *cador-registry*, host parameters, the
   MockHost wording), nihil's explicit host-dictobjname, and the C6
   boundary as a test. The COM values "Mock AutoCAD" / "Mock 0.1" and
   PLATFORM "Mock CAD" are behaviour, left as they are.
-- Slice 4 -- command layer: handler errors, the D1 §7 / D2 §II.13 lists.
+- *Slice 4 DONE (2.2.200)* -- command layer: an unknown command or a
+  failing engine command still stops the sequence without a LISP error, but
+  leaves a "; cador: ..." console notice; D1 §7 / D2 §II.13 list the 83
+  commands and 24 no-ops as built. Localisation (LIGNE, .pgp aliases) and
+  getcname stay with the cadtui-locale-* tickets (they need the localised
+  CAD data).
 - Slice 5 -- conformance E1-E10 as vendor probes.
 - Slice 6 -- the accoreconsole / BricsCAD headless envelope, cited.
 - Slice 7 -- D1 / D2 refreshed (tagged handles built, DWG write, ...).

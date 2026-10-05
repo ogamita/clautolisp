@@ -37,6 +37,10 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- ~(command ...)~ with a command cador does not know, or one that fails, no
+  longer vanishes silently: a ~; cador: ... -- the rest of the command
+  sequence is ignored.~ line on the console says so (no AutoLISP error,
+  as before; ~CMDECHO~ 0 silences it).
 - cador's last "MockHost" names are gone (an unknown system variable now
   reads "cador has no system variable named ..."); a test keeps the
   interpreter core from naming a host package directly.
