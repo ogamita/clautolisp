@@ -10586,6 +10586,12 @@ None.
 *** Examples
 - `(layoutlist)` returns `("Layout1" "Layout2")` for a typical drawing.
 
+*** Measured: contents and order
+probe-triage3, 2026-10-05 (French templates): never ~"Model"~ -- only the paper layouts. AutoCAD 2022 (job 16931597043) sorts them by name: after ~LAYOUT New ProbeLayout~ it returns ~("ProbeLayout" "Présentation1" "Présentation2")~. BricsCAD V25 Windows (job 16931597047) and V26 macOS (job 16931597044) return TAB order, the new layout last: ~("Présentation1" "Présentation2" "ProbeLayout")~.
+
+*** clautolisp
+The host's paper layouts (a fresh clautolisp drawing has one, ~"Layout1"~), sorted by name under the AutoCAD dialects, in tab order otherwise; ~nil~ without a drawing.
+
 *** Availability
 - AutoCAD 2026: documented (Windows + macOS).
 - BricsCAD V26: presumed compatible.
@@ -70541,6 +70547,12 @@ Erroneous if the property does not exist, is inaccessible, or the automation lay
 
 *** Compatibility
 Core part of the ActiveX/VLA property access model.
+
+*** Measured: Boolean properties
+probe-triage3, 2026-10-05: ~(vlax-get layer 'LayerOn)~ returns the INTEGER ~-1~ (VARIANT_TRUE) on BricsCAD V25 and V26, where ~vla-get-layeron~ / ~vlax-get-property~ return the symbol ~:vlax-true~. ~(vlax-put line 'Visible 0)~ is taken by V25 Windows and refused (Automation Error E_INVALIDARG) by V26 macOS.
+
+*** clautolisp
+A Boolean property reads as ~-1~ / ~0~ through ~vlax-get~ and as ~:vlax-true~ / ~:vlax-false~ through ~vla-get-*~ and ~vlax-get-property~.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).

@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: vlax-boolean-properties-return-t -- COM boolean properties return T / nil, not :vlax-true / :vlax-false
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: divergence
 #+DEPENDS: -
@@ -29,3 +29,21 @@ Document.Saved, Block.IsLayout, Layer.LayerOn, Entity.Visible) and the put
 side (does vla-put-visible accept T / nil as well as :vlax-true?); then
 return :vlax-true / :vlax-false from every boolean property (one place:
 the property value conversion), accepting both on put.
+
+* Measured and done (2026-10-05, clautolisp 2.2.183)
+
+probe-triage3 (BricsCAD V26 macOS job 16931597044, V25 Windows job
+16931597047; AutoCAD's accoreconsole has no COM):
+  - vla-get-* / vlax-get-property of Visible, Saved, ReadOnly, IsLayout,
+    IsXRef, LayerOn, Freeze, Lock, Plottable, an entity's Visible:
+    :VLAX-TRUE / :VLAX-FALSE on both;
+  - vlax-get of a Boolean: the integer -1 / 0;
+  - put: :vlax-false, T, nil accepted on both; 0 / -1 accepted by V25
+    Windows, refused (E_INVALIDARG) by V26 macOS.
+Implemented in cador: *com-boolean-properties*, one conversion on get and
+one on put (host-vlax-get-property / -put-property), vlax-get's plain value
+-1 / 0, Layer LayerOn / Freeze / Lock / Plottable and entity Visible (they
+were missing), the integers refused under a macOS dialect.
+vlax-write-enabled-p reads ReadOnly through the new symbols.
+Noted, not done: AutoCAD prints the two symbols in lower case
+(":vlax-true", probe-triage3 job 16931597043), BricsCAD in upper case.

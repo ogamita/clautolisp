@@ -7408,6 +7408,14 @@ every other value passes through."
              (coerce (safearray-data-storage
                       (safearray-of value "VLAX-INVOKE"))
                      'list)))
+    ;; A VARIANT_BOOL is -1 / 0 as plain data: (vlax-get layer 'LayerOn)
+    ;; is -1 on BricsCAD V25 and V26 (probe-triage3).
+    ((and (typep value 'autolisp-symbol)
+          (string= (autolisp-symbol-name value) ":VLAX-TRUE"))
+     -1)
+    ((and (typep value 'autolisp-symbol)
+          (string= (autolisp-symbol-name value) ":VLAX-FALSE"))
+     0)
     (t value)))
 
 (defun builtin-vlax-invoke (vla name &rest args)
@@ -7472,8 +7480,9 @@ VLA-object or an ename. Writable = live and not flagged ReadOnly."
                   object)))
     (cond
       ((host-vlax-erased-p host vla) nil)
+      ;; ReadOnly is an ActiveX Boolean: :VLAX-TRUE / :VLAX-FALSE.
       ((and (host-vlax-property-available-p host vla "ReadOnly")
-            (host-vlax-get-property host vla "ReadOnly"))
+            (eql -1 (%plain-com-value (host-vlax-get-property host vla "ReadOnly"))))
        nil)
       (t (autolisp-true)))))
 
@@ -10595,9 +10604,19 @@ misspelling would hide a typo in a build script forever."
   (autolisp-true))
 
 (defun builtin-layoutlist ()
-  ;; (layoutlist) — list of layout-tab names. With no drawing
-  ;; loaded the only layout is "Model".
-  (list (make-autolisp-string "Model")))
+  "(layoutlist) -- the drawing's PAPER-SPACE layout names; \"Model\" is never
+one (the reference: \"a list of all paper space layouts\"). Measured
+(probe-triage3, 2026-10-05): AutoCAD 2022 lists them SORTED by name --
+(\"ProbeLayout\" \"Présentation1\" \"Présentation2\") right after LAYOUT New
+ProbeLayout -- BricsCAD V25 / V26 in TAB order, the new one last."
+  (let* ((names (clautolisp.autolisp-host:host-layout-names (current-evaluation-host)))
+         (dialect (ignore-errors (current-evaluation-dialect)))
+         (product (and dialect (ignore-errors
+                                (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
+    (mapcar #'make-autolisp-string
+            (if (eq product :autocad)
+                (sort (copy-list names) #'string<)
+                names))))
 
 (defun builtin-acdimenableupdate (&optional flag)
   ;; (acdimenableupdate [flag]) — toggle dimension-auto-update.

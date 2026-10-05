@@ -13,19 +13,24 @@
       (is (typep object 'mock-com-object))
       (is (string= "AutoCAD.Application" (mock-com-object-progid object))))))
 
+(defun %tv-vlax-boolean-p (value name)
+  "True when VALUE is the ActiveX boolean symbol NAME (:VLAX-TRUE / :VLAX-FALSE)."
+  (and (typep value 'clautolisp.autolisp-runtime:autolisp-symbol)
+       (string= name (clautolisp.autolisp-runtime:autolisp-symbol-name value))))
+
 (test vlax-get-property-reads-template-defaults
   (let* ((mock (make-cador))
          (vla (host-vlax-create-object mock "AutoCAD.Application"))
          (visible (host-vlax-get-property mock vla "Visible"))
          (name (host-vlax-get-property mock vla "Name")))
-    (is (eq t visible))
+    (is (%tv-vlax-boolean-p visible ":VLAX-TRUE"))
     (is (string= "Mock AutoCAD" name))))
 
 (test vlax-put-property-mutates-and-rejects-unknown-names
   (let* ((mock (make-cador))
          (vla (host-vlax-create-object mock "AutoCAD.Application")))
     (host-vlax-put-property mock vla "Visible" nil)
-    (is (null (host-vlax-get-property mock vla "Visible")))
+    (is (%tv-vlax-boolean-p (host-vlax-get-property mock vla "Visible") ":VLAX-FALSE"))
     (handler-case
         (host-vlax-put-property mock vla "NoSuch" 42)
       (autolisp-runtime-error (condition)
@@ -455,7 +460,7 @@ the shape of the SCHMS sigfic fixtures."
       (is (string= "SIGFIC_I"
                    (autolisp-string-value
                     (host-vlax-get-property mock insert "Name"))))
-      (is (eq t (host-vlax-get-property mock insert "HasAttributes")))
+      (is (%tv-vlax-boolean-p (host-vlax-get-property mock insert "HasAttributes") ":VLAX-TRUE"))
       ;; The reference (not its attribute run) is the space's member.
       (is (eql 1 (host-vlax-get-property mock modelspace "Count")))
       ;; GetAttributes: the ATTRIB clone of the definition's ATTDEF,

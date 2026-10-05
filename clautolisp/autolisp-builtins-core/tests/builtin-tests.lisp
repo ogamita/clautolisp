@@ -5083,15 +5083,22 @@ where it was broken, so it cannot come back unnoticed."
         "expected at least the greet / listpick / all-widgets examples, saw ~D"
         checked)))
 
-(test m5-layoutlist-returns-model-only
-  "(layoutlist) returns a single-element list with the autolisp-string \"Model\"."
+(test layoutlist-lists-paper-layouts-never-model
+  "(layoutlist) is the PAPER layouts only -- never \"Model\" (AutoCAD 2022,
+BricsCAD V25 / V26, probe-triage3); with no drawing there are none."
   (reset-autolisp-symbol-table)
-  (let ((result (run-autolisp-string "(layoutlist)"
-                                     :setup-fn #'install-core-into)))
-    (is (consp result))
-    (is (= 1 (length result)))
-    (is (typep (first result) 'autolisp-string))
-    (is (string= "Model" (autolisp-string-value (first result))))))
+  (is (null (run-autolisp-string "(layoutlist)" :setup-fn #'install-core-into)))
+  (reset-autolisp-symbol-table)
+  (let ((result (%al "(layoutlist)")))
+    (is (equal '("Layout1") (mapcar #'autolisp-string-value result))))
+  ;; The layouts COM collection and LAYOUTLIST agree.
+  (reset-autolisp-symbol-table)
+  (is (equal '("Layout1" "Model")
+             (mapcar #'autolisp-string-value
+                     (%al "(progn (vl-load-com) (setq n '())
+                            (vlax-for l (vla-get-layouts (vla-get-activedocument (vlax-get-acad-object)))
+                              (setq n (cons (vla-get-name l) n)))
+                            (reverse n))")))))
 
 (test m5-vports-returns-single-default
   "(vports) returns a list with one entry: id=1, full-screen corners."
@@ -7765,3 +7772,46 @@ itself fails loudly."
              (is (string= "FILE" (autolisp-string-value (try "bricscad-v26" 0)))))
         (ignore-errors (delete-file path))))))
 
+
+;;; --- vlax-boolean-properties-return-t (triage round 3, point 1) ---------
+;;; probe-triage3: BricsCAD V26 macOS job 16931597044, V25 Windows 16931597047.
+
+(test com-boolean-properties-are-vlax-true-and-vlax-false
+  (flet ((str (form) (autolisp-string-value (%al form))))
+    (reset-autolisp-symbol-table)
+    (is (equal "(:VLAX-TRUE :VLAX-FALSE :VLAX-TRUE :VLAX-TRUE -1)"
+               (str "(progn (vl-load-com)
+                  (setq doc (vla-get-activedocument (vlax-get-acad-object)))
+                  (setq lay (vla-item (vla-get-layers doc) \"0\"))
+                  (vl-prin1-to-string
+                   (list (vla-get-layeron lay) (vla-get-freeze lay)
+                         (vla-get-islayout (vla-get-modelspace doc))
+                         (vlax-get-property lay 'Plottable)
+                         (vlax-get lay 'LayerOn))))")))
+    ;; Put: :vlax-false, T, nil and -1 / 0 (a Windows dialect) all mean the
+    ;; boolean; reading back gives the symbols.
+    (reset-autolisp-symbol-table)
+    (is (equal "(:VLAX-FALSE :VLAX-TRUE :VLAX-FALSE :VLAX-TRUE :VLAX-TRUE)"
+               (str "(progn (vl-load-com)
+                  (setq lay (vla-item (vla-get-layers (vla-get-activedocument (vlax-get-acad-object))) \"0\"))
+                  (setq r '())
+                  (vla-put-layeron lay :vlax-false) (setq r (cons (vla-get-layeron lay) r))
+                  (vla-put-layeron lay T) (setq r (cons (vla-get-layeron lay) r))
+                  (vla-put-lock lay nil) (setq r (cons (vla-get-lock lay) r))
+                  (vla-put-lock lay -1) (setq r (cons (vla-get-lock lay) r))
+                  (setq r (cons (vla-get-layeron lay) r))
+                  (vl-prin1-to-string (reverse r)))")))
+    ;; Anything else is an invalid argument.
+    (reset-autolisp-symbol-table)
+    (is (equal "T" (str "(progn (vl-load-com)
+                  (setq lay (vla-item (vla-get-layers (vla-get-activedocument (vlax-get-acad-object))) \"0\"))
+                  (vl-prin1-to-string (vl-catch-all-error-p (vl-catch-all-apply 'vla-put-freeze (list lay 7)))))")))
+    ;; An entity's Visible is group 60.
+    (reset-autolisp-symbol-table)
+    (is (equal "(:VLAX-TRUE :VLAX-FALSE 1)"
+               (str "(progn (vl-load-com)
+                  (entmake '((0 . \"LINE\") (10 0.0 0.0 0.0) (11 1.0 0.0 0.0)))
+                  (setq o (vlax-ename->vla-object (entlast)))
+                  (setq a (vla-get-visible o))
+                  (vla-put-visible o :vlax-false)
+                  (vl-prin1-to-string (list a (vla-get-visible o) (cdr (assoc 60 (entget (entlast)))))))")))))

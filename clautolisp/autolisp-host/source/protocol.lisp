@@ -178,6 +178,12 @@ were opened (current or not)."))
 (defgeneric host-registry-delete (host key value-name) (:documentation "With VALUE-NAME, delete that value under KEY; with NIL, delete the whole KEY and its values. Returns true when something was deleted."))
 (defgeneric host-registry-descendents (host key value-names-p) (:documentation "With VALUE-NAMES-P, the value names stored under KEY; otherwise KEY's immediate sub-key names. A list of strings, or NIL."))
 
+(defgeneric host-layout-names (host)
+  (:documentation "The drawing's PAPER-SPACE layout names in tab order (never \"Model\"), or NIL."))
+(defmethod host-layout-names (host)
+  (declare (ignore host))
+  nil)
+
 ;; Command dispatch
 (defgeneric host-command (host arguments)             (:documentation "Issue an AutoLISP (command ...) sequence. ARGUMENTS is the normalized token-string list produced by the runtime's COMMAND special form: each element is command-line input text; the empty string \"\" is the RETURN token and the one-backslash string \"\\\\\" is the PAUSE token. Returns nil on success."))
 (defgeneric host-command-log (host)                   (:documentation "Return the session's recorded (command ...) token sequences, oldest first — a list of token-string lists as passed to HOST-COMMAND. Backends without a command log signal :host-not-supported. Consumed by the CLAL-COMMAND-LOG clautolisp extension."))
