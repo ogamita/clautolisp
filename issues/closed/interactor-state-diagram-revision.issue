@@ -43,3 +43,8 @@ commands; the stacking-legality matrix; where the cadtui console sits). It
 also shows =navi-double-quit= no longer reproduces under current code and
 recommends closing it, folding its one design question into item 1 here.
 This issue stays OPEN: the diagram is pjb's to decide.
+
+* Closed 2026-10-05 (pjb: "validated")
+
+pjb validated the state diagram in
+clautolisp/documentation/clautolisp-interactor-state-diagram.org.

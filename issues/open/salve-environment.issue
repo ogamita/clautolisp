@@ -223,3 +223,9 @@ This issue is intentionally a design sketch. It does not commit to an
 implementation until reviewed alongside
 debugger-public-interface-and-on-error.issue, whose Part C connection
 options SALVE extends.
+
+Scheduling (pjb, 2026-10-05)
+--------------------------------
+
+"We'll do that after the next release": SALVE is approved to start once the
+next clautolisp release is cut.
