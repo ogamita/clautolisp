@@ -728,6 +728,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-builtins-core/tests/path-dotdot-tests")
    (:file "autolisp-builtins-core/tests/case-insensitive-paths-tests")
    (:file "autolisp-builtins-core/tests/source-file-tests")
+   (:file "autolisp-builtins-core/tests/multidocument-tests")
    (:file "autolisp-builtins-core/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

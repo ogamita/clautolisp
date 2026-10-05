@@ -37,6 +37,11 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Multi-document, slice 1: every drawing has its own LISP namespace, and
+  ~NEW~ / ~OPEN~ switch drawings at the next top-level read, as AutoCAD
+  does (the running routine finishes in its own drawing). The new drawing
+  starts with the built-in functions and variables; ~vl-propagate~d values
+  and the blackboard cross over.
 - *REPL comma-commands work again on CRLF input.* On MS-Windows (and
   in an Emacs shell buffer sending CRLF) the CR stayed at the end of the
   line, so =,help= was looked up as the unknown command =help<CR>= — which

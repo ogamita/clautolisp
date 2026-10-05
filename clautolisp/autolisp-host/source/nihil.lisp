@@ -275,3 +275,30 @@ carries a HOST-DOCUMENT-KEY and SESSION carries a host."
 
 (setf clautolisp.autolisp-runtime:*document-activation-hook*
       #'activate-host-document-for-namespace)
+
+;;; Multi-document slice 1 (cador-multidocument-host, 2026-10-05): the other
+;;; direction. A host-side document change -- NEW / OPEN / Documents.Add --
+;;; does not switch the host directly: it asks the runtime, which switches at
+;;; the next top-level read (option A of deferred-document-lifecycle-command-
+;;; semantics) and then makes the host follow through the hook above. With no
+;;; evaluation session driving HOST (host-level tests), it activates at once.
+
+(defun link-runtime-session-to-host (session host)
+  "Link SESSION's startup document namespace to HOST's current document, so
+the startup drawing has its namespace like every later one."
+  (let ((key (ignore-errors (host-current-document host))))
+    (when key
+      (clautolisp.autolisp-runtime:link-runtime-session-current-document session key))))
+
+(defun request-host-document-activation (host key)
+  "Make host document KEY current: deferred to the next top-level read when
+an evaluation session drives HOST, immediate otherwise. Returns KEY."
+  (let* ((context (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-context)))
+         (session (and context
+                       (clautolisp.autolisp-runtime:evaluation-context-session context))))
+    (if (and session (eq host (clautolisp.autolisp-runtime:runtime-session-host session)))
+        (progn
+          (link-runtime-session-to-host session host)
+          (clautolisp.autolisp-runtime:request-runtime-document-switch session key))
+        (host-activate-document host key))
+    key))

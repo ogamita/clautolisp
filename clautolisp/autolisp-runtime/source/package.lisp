@@ -80,6 +80,11 @@
    #:*document-activation-hook*
    #:session-scheduler
    #:document-namespace-host-document-key
+   #:runtime-session-document-for-host-key
+   #:link-runtime-session-current-document
+   #:request-runtime-document-switch
+   #:runtime-session-pending-document-key
+   #:apply-pending-document-switch
    #:make-document-scheduler
    #:document-scheduler-p
    #:document-scheduler-contexts

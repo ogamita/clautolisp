@@ -212,6 +212,17 @@ clautolisp-secureload-trust-model spec.")
   ;; See issues/open/autolisp-set-status-and-quit-status.issue.
   (exit-status 0 :type integer)
   current-document
+  ;; The host document a lifecycle command (NEW / OPEN / Documents.Add ...)
+  ;; asked to switch to, applied at the next top-level read, as AutoCAD does:
+  ;; the running form finishes in the document it started in
+  ;; (deferred-document-lifecycle-command-semantics, option A).
+  (pending-document-key nil)
+  ;; The symbols bound in the startup document before any user code ran --
+  ;; builtins, T / PI / PAUSE, :VLAX-TRUE, the CLI-transmitted variables:
+  ;; what every document's namespace starts with (each AutoCAD drawing has
+  ;; the built-in functions and variables, not the user's). NIL until
+  ;; LINK-RUNTIME-SESSION-CURRENT-DOCUMENT records it.
+  (system-symbols nil)
   ;; Phase 6: every runtime session carries the dialect descriptor
   ;; that drove its instantiation. Builtins that have product-divergent
   ;; lex / mode behaviour (currently `atof` hex-float, `open` `ccs=`)

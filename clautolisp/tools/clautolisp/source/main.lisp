@@ -643,7 +643,11 @@ session. When MOCK-INPUT is supplied and HOST is a MockHost,
 attach the file at MOCK-INPUT as the host's prompt-stream so
 that subsequent get* calls read deterministic answers from it."
   (when host
-    (set-runtime-session-host (evaluation-context-session context) host))
+    (set-runtime-session-host (evaluation-context-session context) host)
+    ;; The startup drawing gets its LISP namespace: the context's (multi-
+    ;; document slice 1).
+    (clautolisp.autolisp-host:link-runtime-session-to-host
+     (evaluation-context-session context) host))
   (when (and mock-input
              (typep host 'clautolisp.cador:cador))
     (let ((stream (open mock-input :direction :input
@@ -1145,6 +1149,10 @@ printed; continuation lines get `   '). Returns (:SOURCE TEXT) or :EOF."
 read — under the dialect in force NOW (READ-CURRENT-SOURCE, design-revision
 D2) — record, bind :- , evaluate, print, rotate history, drain navigation.
 Calls EXIT (a closure returning from the REPL loop) on AUTOLISP-TERMINATION."
+  ;; A document switch a lifecycle command asked for (NEW / OPEN / ...) takes
+  ;; effect here, at the next top-level read: this turn reads and evaluates in
+  ;; the newly current drawing and its LISP namespace.
+  (clautolisp.autolisp-runtime:apply-pending-document-switch context)
   (handler-case
       (let* ((forms (read-current-source source :source-name "<repl>"
                                                 :context context))
@@ -1246,6 +1254,9 @@ Dynamic *AUTOLISP-…* variables are bound for the action's duration:
 *AUTOLISP-LOAD-PATHNAME* for :file, *AUTOLISP-EXPRESSION* for
 :expression. Cleared on return (success or signal). (:interactive)
 is handled separately by the REPL wrapper in RUN-WITH-INPUT."
+  ;; Each action is a top-level read: a document switch requested by the
+  ;; previous one (NEW / OPEN ...) takes effect here.
+  (clautolisp.autolisp-runtime:apply-pending-document-switch context)
   (let ((kind (car action))
         (payload (cdr action)))
     (ecase kind

@@ -19,9 +19,13 @@ file commands: EVENT :DOCUMENT-OPENED (KEY), :MENU-LOADED (FORMS PATH).")
     (apply *cador-command-ui-hook* host event args)))
 
 (defun %open-and-activate (host key drawing)
+  "Register DRAWING as document KEY and make it current -- at the next
+top-level read when a LISP session drives HOST (the running routine finishes
+in its own drawing, as in AutoCAD: deferred-document-lifecycle-command-
+semantics, option A), at once otherwise."
   (setf (cador-documents host)
         (append (cador-documents host) (list (cons key drawing))))
-  (host-activate-document host key)
+  (clautolisp.autolisp-host:request-host-document-activation host key)
   (%notify-ui host :document-opened key)
   key)
 

@@ -1083,6 +1083,16 @@ provides that surface through the host backend:
   the vendors -- and ~vla-put-supportpath~ (or ~(setenv "ACAD" ...)~)
   changes it. ~(vla-get-activeprofile (vla-get-profiles prefs))~ is the
   current profile, the ~CPROFILE~ system variable.
+- *Several drawings, each with its own LISP namespace.* ~(command "_.NEW"
+  "")~ and ~(command "_.OPEN" "file.dwg")~ open another drawing, and -- as
+  in AutoCAD -- the switch happens at the next top-level read: the routine
+  that ran the command finishes in its own drawing (its ~entmake~ and
+  ~ssget~ still address it, its variables are still there); the next form
+  typed (or the next ~-x~ / ~-l~) runs in the new drawing, in a namespace of
+  its own -- the built-in functions and variables are there, the previous
+  drawing's variables and ~defun~'s are not. ~vl-propagate~ copies a
+  variable into every drawing, the blackboard (~vl-bb-set~ / ~vl-bb-ref~) is
+  shared, and ~vl-doc-set~ / ~vl-doc-ref~ reach the document namespace.
 - Documents are created and saved through the object model:
   ~(vla-add documents)~ opens a document over the in-memory drawing
   (the mock is single-document) wired to the same live Blocks / Layers

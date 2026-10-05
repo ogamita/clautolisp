@@ -749,6 +749,92 @@ veto).")
     (ignore-errors (funcall *document-activation-hook* session document)))
   document)
 
+(defun runtime-session-document-for-host-key (session key)
+  "SESSION's document namespace linked to host document KEY -- one per open
+host document, as each AutoCAD drawing has its own LISP namespace -- created
+(and registered, the vl-propagate'd values copied in) on first need."
+  (or (loop for namespace being the hash-values
+              of (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
+                  session)
+            when (equal key (clautolisp.autolisp-runtime.internal::document-namespace-host-document-key
+                             namespace))
+              return namespace)
+      (let ((namespace (make-document-namespace :name key)))
+        (setf (clautolisp.autolisp-runtime.internal::document-namespace-host-document-key
+               namespace)
+              key)
+        (%seed-document-namespace session namespace)
+        (register-runtime-session-document session namespace :copy-propagated-p t)
+        namespace)))
+
+(defun %seed-document-namespace (session namespace)
+  "Give a new document NAMESPACE what every drawing starts with: the
+session's system symbols' bindings (builtins and predefined variables),
+copied from the current document; or, with no snapshot taken, every
+builtin (SUBR) binding of the current document."
+  (let* ((source (runtime-session-current-document session))
+         (table (and source (namespace-bindings-table source)))
+         (system (clautolisp.autolisp-runtime.internal::runtime-session-system-symbols session)))
+    (when table
+      (maphash (lambda (symbol cell)
+                 (when (and (binding-cell-bound-p cell)
+                            (if system
+                                (gethash symbol system)
+                                (typep (binding-cell-value cell)
+                                       'clautolisp.autolisp-runtime.internal::autolisp-subr)))
+                   (copy-value-cell-between-namespaces source namespace symbol)))
+               table))))
+
+(defun link-runtime-session-current-document (session key)
+  "Link SESSION's current document namespace to host document KEY (the
+startup drawing), unless it is already linked to a document."
+  (let ((namespace (runtime-session-current-document session)))
+    (when (and namespace
+               (null (clautolisp.autolisp-runtime.internal::document-namespace-host-document-key
+                      namespace)))
+      (setf (clautolisp.autolisp-runtime.internal::document-namespace-host-document-key
+             namespace)
+            key)
+      ;; Linking happens at setup, before user code: what is bound now is
+      ;; the system's, which every later document starts with.
+      (unless (clautolisp.autolisp-runtime.internal::runtime-session-system-symbols session)
+        (let ((system (make-hash-table :test #'eq)))
+          (maphash (lambda (symbol cell)
+                     (when (binding-cell-bound-p cell)
+                       (setf (gethash symbol system) t)))
+                   (namespace-bindings-table namespace))
+          (setf (clautolisp.autolisp-runtime.internal::runtime-session-system-symbols session)
+                system))))
+    namespace))
+
+(defun request-runtime-document-switch (session key)
+  "Ask SESSION to make host document KEY current at the next top-level read
+(APPLY-PENDING-DOCUMENT-SWITCH): the form running now completes in its own
+document, as in AutoCAD."
+  (setf (clautolisp.autolisp-runtime.internal::runtime-session-pending-document-key session)
+        key))
+
+(defun runtime-session-pending-document-key (session)
+  (clautolisp.autolisp-runtime.internal::runtime-session-pending-document-key session))
+
+(defun apply-pending-document-switch (&optional (context (current-evaluation-context)))
+  "At a top-level read: if a document switch is pending, make that document
+the session's current document (the host's active drawing follows through
+*DOCUMENT-ACTIVATION-HOOK*) and CONTEXT's namespace. Returns the namespace
+switched to, or NIL."
+  (let* ((session (and context (evaluation-context-session context)))
+         (key (and session (runtime-session-pending-document-key session))))
+    (when key
+      (setf (clautolisp.autolisp-runtime.internal::runtime-session-pending-document-key session)
+            nil)
+      (let ((namespace (runtime-session-document-for-host-key session key)))
+        (set-runtime-session-current-document session namespace)
+        (setf (clautolisp.autolisp-runtime.internal::evaluation-context-current-document context)
+              namespace
+              (clautolisp.autolisp-runtime.internal::evaluation-context-current-namespace context)
+              namespace)
+        namespace))))
+
 (defun autolisp-errno (&optional (context (current-evaluation-context)))
   (runtime-session-errno (evaluation-context-session context)))
 
