@@ -24,6 +24,9 @@
    #:host-document-list
    #:host-open-startup-drawing
    #:host-viewports
+   #:host-open-document-from-file
+   #:host-document-of
+   #:host-sysvar-scope
    ;; --- Entity API (autolisp-spec ch.16) -------------------------
    #:host-entget
    #:host-entmod

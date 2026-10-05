@@ -242,14 +242,17 @@ suffices for C5.
 | =host-current-document=    | host               | the current key, or =nil= if none is open | —                                                                      |
 | =host-open-document=       | host &optional name | a fresh key for a new, empty document (or one from the =CLAUTOLISPNEWDRAWINGTEMPLATE= template); does *not* change the current document | — |
 | =host-activate-document=   | host key           | =key=, now current                        | unknown key ⇒ =:no-such-document=                                      |
-| =host-close-document=      | host key           | =t=, or =nil= for an unknown key          | closing the *only* document ⇒ =:cannot-close-last-document= (=cador= keeps a current drawing); closing the current one activates the first remaining |
+| =host-close-document=      | host key &key save file | =t=, or =nil= for an unknown key     | closing the *only* document ⇒ =:cannot-close-last-document= (=cador= keeps a current drawing); closing the current one activates the first remaining. =save=: the drawing is written first, to =file= or its own file |
+| =host-open-document-from-file= | host path &key format read-only | a fresh key (the file's name, made unique) for the drawing read from =path= (=format=, or sniffed: DXF / DWG); does *not* change the current document; =read-only= marks it read-only | unreadable file ⇒ =backend-error= |
+| =host-document-of=         | host handle        | the key of the document an entity name or COM object belongs to, or =nil= | — |
 
-*Still design-ahead* (specified here, not built): an *active*-document query
+Built in cador-4 slice 1 (clautolisp 2.2.197): opening from a file, closing
+with =save=, =host-document-of=. The OPEN command and COM =Documents.Open= go
+through =host-open-document-from-file=. DWG reads through the libredwg codec
+when it is installed; without it the read fails, which is the
+=backend-error= above. *Still design-ahead*: an *active*-document query
 distinct from current (it collapses in a headless core, D2 §I.3, so nothing
-needs it yet), opening a document *from a file* (=pathname &key format=,
-=backend-error= on read failure, =not-yet-implemented= for DWG, D2 §II.12),
-closing with =&key save=, and =host-document-of= (the owning document of a
-handle). Each will take the §15 condition classes when it lands.
+needs it yet).
 
 *Per-host behaviour.*
 - =nihil= :: has no documents. =host-document-list= ⇒ the single default
@@ -352,14 +355,15 @@ inconsistency noted for cleanup in D2 §II.15).
 
 *Scope tier (R4 / C4).* Epic §4.3 and constraint C4 require *every* system
 variable to carry its scope tier as data, one of *Drawing* / *Registry* /
-*Not-saved* [A, analysis §"System variable scopes"]. This is *not yet
-implemented*: the =sysvar-cell= struct carries =name/kind/value/read-only-p/
-host-derived-p= and *no scope slot*. [S: =clautolisp/drawing/source/model.lisp:50–67=]
-D1 fixes the *contract*: =host-getvar='s companion introspector must expose the
-tier, and the cell must gain a =scope= slot. D2 §I.6 states the decision and
-§14/§9 record the gap. Until the slot exists, the tier is derivable only from
-the =host-derived-p= marker and the source inventory, which is insufficient for
-the debugger's scope-aware snapshot (R17).
+*Not-saved* [A, analysis §"System variable scopes"]. *Built* (cador-4 slice 1,
+clautolisp 2.2.197): the =sysvar-cell= has a =scope= slot -- =:drawing=,
+=:registry= or =:not-saved= -- and =host-sysvar-scope (host name)= is the
+introspector. The tiers come from the inventory's =:saved-in=
+(=tools/generate-sysvar-scopes.py=): =:drawing= as is, =:registry= and
+=:preference= (the profile lives in the registry) as =:registry=, =:session=
+as =:not-saved=; a header variable read from a file is =:drawing=; a
+variable defined at run time, and clautolisp's own, are =:not-saved=. On
+=nihil= the introspector signals not-supported.
 
 ** 5.1 Registry / persistent store (=vl-registry-*=)
 

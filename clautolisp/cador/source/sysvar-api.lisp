@@ -443,6 +443,8 @@ value."
                                       :kind effective-kind
                                       :value coerced
                                       :read-only-p (and read-only-p t)
-                                      :host-derived-p nil)))
+                                      :host-derived-p nil
+                                      ;; Defined at run time: the session's.
+                                      :scope :not-saved)))
           (setf (gethash string (cador-sysvars host)) new)
           coerced))))

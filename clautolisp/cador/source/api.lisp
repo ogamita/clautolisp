@@ -66,7 +66,8 @@ from."
         :kind (sysvar-cell-kind cell)
         :value (sysvar-cell-value cell)
         :read-only-p (sysvar-cell-read-only-p cell)
-        :host-derived-p (sysvar-cell-host-derived-p cell)))
+        :host-derived-p (sysvar-cell-host-derived-p cell)
+        :scope (sysvar-cell-scope cell)))
 
 (defun cador-snapshot (mock)
   "Return a serialisable snapshot of MOCK's host-visible state. The
@@ -151,6 +152,7 @@ are cleared first."
                    :kind           (getf plist :kind)
                    :value          (getf plist :value)
                    :read-only-p    (getf plist :read-only-p)
-                   :host-derived-p (getf plist :host-derived-p))))
+                   :host-derived-p (getf plist :host-derived-p)
+                   :scope          (getf plist :scope))))
       (setf (gethash (sysvar-cell-name cell) (cador-sysvars mock)) cell)))
   mock)
