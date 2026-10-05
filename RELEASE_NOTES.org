@@ -37,6 +37,11 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- ~vports~, ~setview~, ~CVPORT~ and ~-VPORTS~ follow AutoCAD 2022 and
+  BricsCAD V25/V26 as measured (probe-viewports): a new drawing's viewport is
+  2, not 1; ~-VPORTS 2 V~ / ~SI~ split and join the tiled viewports per
+  product; ~TILEMODE~ 0 lists the sheet and the layout's viewport; ~setview~
+  returns the view (it was a nil stub).
 - ~--dwg FILE~: clautolisp starts on that drawing -- the first open
   drawing, current, in place of the untitled ~Drawing1.dwg~ -- as
   ~acad.exe FILE~ does; ~alfe --clautolisp~ passes its ~--dwg~ /

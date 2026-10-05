@@ -64,6 +64,7 @@
                 #:host-current-document
                 #:host-document-list
                 #:host-open-startup-drawing
+                #:host-viewports
                 #:host-entget
                 #:host-entmod
                 #:host-entmake

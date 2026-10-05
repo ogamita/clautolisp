@@ -238,6 +238,7 @@
    (:file "cador/source/command-hatch")
    (:file "cador/source/command-builtins")
    (:file "cador/source/command-file")
+   (:file "cador/source/viewports")
    (:file "cador/source/com-progids")
    (:file "cador/source/vlax-api"))
   :in-order-to ((asdf:test-op

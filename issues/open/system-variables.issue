@@ -488,5 +488,10 @@ case under bricscad, bricscad-mac, autocad, strict).
 
 ### Still open
 
-  - vports/setview remain headless stubs (single-viewport sentinel /
-    nil); a live viewport model needs a CAD host.
+  - (DONE 2026-10-05, clautolisp 2.2.194) vports / setview: measured
+    (probe-viewports.lsp, AutoCAD 2022 + BricsCAD V25/V26) then
+    implemented -- cador keeps each drawing's tiled viewports, -VPORTS 2 V
+    and SI per product, CVPORT derived, TILEMODE 0 lists the sheet and the
+    layout's viewport, setview returns the view. Recorded in the spec's
+    VPORTS / SETVIEW entries. This was the last item listed as open here;
+    closing the ticket is pjb's call.

@@ -805,6 +805,14 @@ the vendors themselves differ. These are behaviour differences, not
 warnings, and they are listed in the AutoLISP Spec entry for each
 operator under its ~*** clautolisp~ note.
 
+- ~(vports)~ / ~-VPORTS~ -- a drawing starts with one tiled viewport, number
+  2 (~CVPORT~ 2; ~TILEMODE~ 0: ~CVPORT~ 1, the sheet then the layout's
+  viewport). ~(command "_.-VPORTS" "2" "_V")~ splits the current viewport:
+  it keeps the right half under the AutoCAD (and every non-BricsCAD)
+  dialect, the left half under the BricsCAD dialects; ~"_SI"~ then keeps
+  viewport 3 (AutoCAD) or the current one (BricsCAD). Only those two
+  options are implemented. ~(setview nil)~ is an error, except under the
+  BricsCAD dialects (~nil~).
 - ~(layoutlist)~ -- the paper layouts, never ~"Model"~: sorted by name under
   the ~autocad-*~ dialects, as AutoCAD 2022 returns them, in tab order
   otherwise, as BricsCAD does.
