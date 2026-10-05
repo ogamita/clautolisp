@@ -311,7 +311,11 @@ clautolisp-secureload-trust-model spec.")
   (mode nil))
 
 (defstruct autolisp-ename
-  value)
+  value
+  ;; The host drawing the handle belongs to (opaque to the runtime), or NIL:
+  ;; a host compares it with its active drawing so an ename from another
+  ;; document signals instead of aliasing (cador-multidocument-host C5).
+  document)
 
 (defstruct autolisp-pickset
   value)

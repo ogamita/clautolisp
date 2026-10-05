@@ -71,3 +71,44 @@ then evaluate TEXT. Returns the value."
                                  (sslength (ssget \"_X\")))")))
     ;; Next read: the new, empty drawing.
     (is (null (%md-turn context "(ssget \"_X\")")))))
+
+;;; --- slice 2: per-document session state; document-tagged enames (C5) ----
+
+(defun %md-switch-to (context key)
+  "Make host document KEY current at the next turn (as COM / cadtui will)."
+  (clautolisp.autolisp-host:request-host-document-activation (%md-host context) key))
+
+(defun %md-errors-p (context text)
+  (handler-case (progn (%md-turn context text) nil)
+    (clautolisp.autolisp-runtime:autolisp-runtime-error (e)
+      (clautolisp.autolisp-runtime:autolisp-runtime-error-code e))))
+
+(test an-ename-from-another-drawing-signals
+  (let* ((context (%md-context))
+         (host (%md-host context))
+         (first (clautolisp.autolisp-host:host-current-document host)))
+    (%md-turn context "(entmake '((0 . \"LINE\") (10 0.0 0.0 0.0) (11 1.0 0.0 0.0)))")
+    (%md-turn context "(vl-bb-set 'md-e (entlast))")
+    (%md-turn context "(command \"_.NEW\" \"\")")
+    (%md-turn context "(setq e (vl-bb-ref 'md-e))")
+    (is (eq :cross-document-dereference (%md-errors-p context "(entget e)")))
+    (is (eq :cross-document-dereference
+            (%md-errors-p context "(entmod (list (cons -1 e) '(8 . \"0\")))")))
+    ;; Back in its drawing, the same ename works.
+    (%md-switch-to context first)
+    (is (%md-turn context "(entget (vl-bb-ref (quote md-e)))"))))
+
+(test selection-sets-pickfirst-and-ldata-are-per-document
+  (let* ((context (%md-context))
+         (host (%md-host context))
+         (first (clautolisp.autolisp-host:host-current-document host)))
+    (%md-turn context "(entmake '((0 . \"LINE\") (10 0.0 0.0 0.0) (11 1.0 0.0 0.0)))")
+    (%md-turn context "(sssetfirst nil (ssget \"_X\"))")
+    (%md-turn context "(vl-load-com)")
+    (%md-turn context "(vlax-ldata-put \"MD\" \"k\" 1)")
+    (%md-turn context "(command \"_.NEW\" \"\")")
+    (is (null (cadr (%md-turn context "(ssgetfirst)"))))
+    (is (null (%md-turn context "(vlax-ldata-get \"MD\" \"k\")")))
+    (%md-switch-to context first)
+    (is (eql 1 (%md-turn context "(sslength (cadr (ssgetfirst)))")))
+    (is (eql 1 (%md-turn context "(vlax-ldata-get \"MD\" \"k\")")))))

@@ -1719,8 +1719,11 @@ binding. A no-op when SYMBOL has no namespace cell yet."
 (defun autolisp-ename-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-ename-value object))
 
-(defun make-autolisp-ename (&key value)
-  (clautolisp.autolisp-runtime.internal::make-autolisp-ename :value value))
+(defun make-autolisp-ename (&key value document)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-ename :value value :document document))
+
+(defun autolisp-ename-document (ename)
+  (clautolisp.autolisp-runtime.internal::autolisp-ename-document ename))
 
 (defun autolisp-pickset-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-pickset-value object))

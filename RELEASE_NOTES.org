@@ -37,6 +37,9 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Multi-document, slice 2: selection sets, pickfirst, iterators, ~initget~,
+  ~vlax-ldata~ and open ~entmake~ runs are per drawing, and an ename used in
+  another drawing signals ~:cross-document-dereference~.
 - Multi-document, slice 1: every drawing has its own LISP namespace, and
   ~NEW~ / ~OPEN~ switch drawings at the next top-level read, as AutoCAD
   does (the running routine finishes in its own drawing). The new drawing

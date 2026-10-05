@@ -23,7 +23,7 @@ plain ENTGET / DICTSEARCH. HOST supplies the ename intern cache."
   "Resolve DICT-ENAME to a live dictionary hex handle, or NIL when it
 is not a dictionary. Signals :invalid-ename only when DICT-ENAME is not
 an ename at all."
-  (let* ((handle (ename->handle dict-ename operator-name))
+  (let* ((handle (ename->handle dict-ename operator-name host))
          (drawing (cador-active-drawing host)))
     (and (clautolisp.drawing:find-dictionary drawing handle) handle)))
 
@@ -74,7 +74,7 @@ an ename at all."
          (dict-handle (%require-dict-handle host dict-ename 'dictadd)))
     (when dict-handle
       (let ((key (mock-string-value name))
-            (object-handle (ename->handle object-ename 'dictadd)))
+            (object-handle (ename->handle object-ename 'dictadd host)))
         (when (and key
                    (clautolisp.drawing:dictionary-add-entry
                     drawing dict-handle key object-handle))

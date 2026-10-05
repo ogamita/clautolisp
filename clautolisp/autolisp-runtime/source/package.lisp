@@ -136,6 +136,7 @@
    #:autolisp-ename
    #:autolisp-ename-value
    #:make-autolisp-ename
+   #:autolisp-ename-document
    #:autolisp-pickset
    #:autolisp-pickset-value
    #:make-autolisp-pickset
@@ -558,6 +559,7 @@
    #:autolisp-variant
    #:autolisp-vla-object
    #:make-autolisp-ename
+   #:autolisp-ename-document
    #:make-autolisp-file
    #:make-autolisp-pickset
    #:make-autolisp-safearray

@@ -1093,6 +1093,12 @@ provides that surface through the host backend:
   drawing's variables and ~defun~'s are not. ~vl-propagate~ copies a
   variable into every drawing, the blackboard (~vl-bb-set~ / ~vl-bb-ref~) is
   shared, and ~vl-doc-set~ / ~vl-doc-ref~ reach the document namespace.
+  Each drawing also keeps its own selection sets and pickfirst set,
+  ~tblnext~ / ~dictnext~ positions, pending ~initget~, ~vlax-ldata~ and open
+  ~entmake~ runs; and an entity name belongs to its drawing -- ~entget~,
+  ~entmod~, ~entdel~, ~entupd~, ~entnext~, the dictionary functions and
+  ~vlax-ename->vla-object~ given an ename from another open drawing signal
+  ~:cross-document-dereference~ instead of reaching a wrong entity.
 - Documents are created and saved through the object model:
   ~(vla-add documents)~ opens a document over the in-memory drawing
   (the mock is single-document) wired to the same live Blocks / Layers

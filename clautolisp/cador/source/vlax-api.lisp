@@ -1569,7 +1569,7 @@ document. Repeated calls return the same application object."
   "Wrap entity ENAME in an identity-stable COM object (progid
 \"AutoCAD.Entity\") carrying its hex handle, so vlax-vla-object->ename
 round-trips and vlax-curve-* can recover the entity."
-  (let* ((handle (ename->handle ename 'vlax-ename->vla-object))
+  (let* ((handle (ename->handle ename 'vlax-ename->vla-object host))
          (cached-id (gethash handle (cador-entity-vla-map host)))
          (cached (and cached-id (cador-find-com-object host cached-id))))
     (if (and cached (not (mock-com-object-released-p cached)))
