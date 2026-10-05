@@ -138,3 +138,23 @@ then evaluate TEXT. Returns the value."
            (is (eql 0 (%md-turn context "(getvar \"DWGTITLED\")")))
            (is (eql 0 (%md-turn context "(getvar \"DBMOD\")"))))
       (ignore-errors (delete-file file)))))
+
+(test bricscad-switches-the-drawing-at-once-the-namespace-at-the-next-read
+  "probe-documents: BricsCAD V26 (job 16932759882) -- after (command \"_.NEW\"
+\"\") the same routine's DWGNAME is the new drawing's, its variables still its
+own; AutoCAD (job 16932759881) stays in the old drawing until the routine ends."
+  (let ((context (%md-context)))
+    (%md-turn context "(setq *AUTOLISP-DIALECT* 'bricscad-v26)")
+    (%md-turn context "(setq md-marker \"first\")")
+    (is (equal "(\"Drawing2.dwg\" \"first\")"
+               (autolisp-string-value
+                (%md-turn context "(progn (command \"_.NEW\" \"\")
+                                          (vl-prin1-to-string (list (getvar \"DWGNAME\") md-marker)))"))))
+    (is (null (%md-turn context "md-marker"))))
+  (let ((context (%md-context)))
+    (%md-turn context "(setq *AUTOLISP-DIALECT* 'autocad-2022)")
+    (is (equal "Drawing1.dwg"
+               (autolisp-string-value
+                (%md-turn context "(progn (command \"_.NEW\" \"\") (getvar \"DWGNAME\"))"))))
+    (is (equal "Drawing2.dwg" (autolisp-string-value (%md-turn context "(getvar \"DWGNAME\")"))))))
+

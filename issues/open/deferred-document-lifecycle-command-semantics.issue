@@ -69,3 +69,32 @@ Acceptance criteria
     progn-sandwich behaviour, whichever way we chose).
   - The behaviour is documented in the user manual and, if it
     diverges from *CAD, called out explicitly as a divergence.
+
+Measured and decided (2026-10-05, clautolisp 2.2.185 / 2.2.188)
+----------------------------------------------------------------
+
+probe-documents.lsp (MR !414), one routine doing (setq marker ...) then
+(command "_.NEW" "") then reading DWGNAME, the marker, CMDACTIVE, and
+ActiveDocument.Name:
+
+  - BricsCAD V26 macOS (job 16932759882): ("Dessin1.dwg" "Dessin3.dwg"
+    "set-before-NEW" 0 "Dessin3.dwg") -- the DRAWING switched at once (the
+    same routine's DWGNAME and ActiveDocument are the new drawing's), the
+    routine kept running in its own LISP namespace (the marker is there).
+  - AutoCAD 2022 accoreconsole (job 16932759881): ("Dessin1.dwg"
+    "Dessin1.dwg" "set-before-NEW" 0 "NO-COM") -- the routine stays in its
+    drawing; consistent with the documented MDI rule (a LISP routine does
+    not continue into another document). The console is single-document,
+    so this is agreement more than proof.
+
+Implemented: option A for the NAMESPACE on every dialect (the switch takes
+effect at the next top-level read: REPL turn, -x / -l action); the DRAWING
+switches at once under the BricsCAD dialects (dialect feature
+:document-switch :drawing-immediate), at the next read otherwise
+(:deferred). The progn sandwich is pinned by
+multidocument-tests.lisp (new-switches-document-at-the-next-top-level-read,
+bricscad-switches-the-drawing-at-once-the-namespace-at-the-next-read).
+Per-document namespaces: yes (faithful). entget / ssget after a switch see
+the active drawing only. Still open: the "drawing argument" naming the
+initial drawing (the CLI's --dwg), SAVE / CLOSE (slice 4).
+

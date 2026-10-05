@@ -299,6 +299,16 @@ an evaluation session drives HOST, immediate otherwise. Returns KEY."
     (if (and session (eq host (clautolisp.autolisp-runtime:runtime-session-host session)))
         (progn
           (link-runtime-session-to-host session host)
+          ;; BricsCAD switches the DRAWING at once (the running routine's
+          ;; getvar / entmake already address the new one); AutoCAD -- and
+          ;; the other dialects -- at the next top-level read. The LISP
+          ;; namespace changes at the next top-level read on both.
+          (when (eq :drawing-immediate
+                    (ignore-errors
+                     (clautolisp.autolisp-reader:dialect-feature-for
+                      (clautolisp.autolisp-runtime:current-evaluation-dialect context)
+                      :document-switch)))
+            (host-activate-document host key))
           (clautolisp.autolisp-runtime:request-runtime-document-switch session key))
         (host-activate-document host key))
     key))
