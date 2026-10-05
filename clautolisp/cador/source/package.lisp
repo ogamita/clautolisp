@@ -69,6 +69,8 @@
                 #:host-open-document-from-file
                 #:host-document-of
                 #:host-sysvar-scope
+                #:host-lock-document
+                #:host-unlock-document
                 #:host-entget
                 #:host-entmod
                 #:host-entmake

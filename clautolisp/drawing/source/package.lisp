@@ -66,6 +66,7 @@ from the cador package before the Phase-17a extraction.")
    #:sysvar-cell
    #:make-sysvar-cell
    #:sysvar-cell-scope
+   #:*drawing-modification-hook*
    #:copy-sysvar-cell
    #:sysvar-cell-name
    #:sysvar-cell-kind

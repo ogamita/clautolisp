@@ -77,7 +77,12 @@ command table at ~105 spellings. The rest, in slices:
   host-open-document-from-file (OPEN and Documents.Open use it),
   host-close-document &key save file, host-document-of; and the sysvar scope
   tier (C4): a =scope= slot on every cell, host-sysvar-scope.
-- Slice 2 -- locking, the checked no-op of D1 §10.
+- *Slice 2 DONE (2.2.197)* -- locking, the checked no-op of D1 §10:
+  host-lock-document / host-unlock-document (nesting count, unbalanced
+  unlock = backend-error); changes to a non-current document from
+  application context without its lock signal :document-not-locked
+  (drawing *drawing-modification-hook*); AutoLISP's COM calls (document
+  context) are not checked.
 - Slice 3 -- the §7.4 adaptation: the remaining mock identifiers, nihil's
   host-dictobjname, the C6 boundary lint.
 - Slice 4 -- command layer: handler errors, the D1 §7 / D2 §II.13 lists.

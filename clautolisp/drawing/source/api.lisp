@@ -260,8 +260,15 @@ is a host-layer concern."
          :format-control "entity data requires a (0 . \"TYPE\") marker, got ~S"
          :format-arguments (list data)))
 
+(defvar *drawing-modification-hook* nil
+  "NIL, or a function of one argument, the DRAWING, called before every change
+NOTE-DRAWING-MODIFIED records -- a host's chance to refuse it (cador binds it
+to check document locking, D1 §10).")
+
 (defun note-drawing-modified (drawing &optional (bit 1))
   "Record in DRAWING's DBMOD that its database changed (BIT 1 by default)."
+  (when *drawing-modification-hook*
+    (funcall *drawing-modification-hook* drawing))
   (setf (drawing-dbmod drawing) (logior (drawing-dbmod drawing) bit))
   drawing)
 

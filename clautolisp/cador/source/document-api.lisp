@@ -180,6 +180,41 @@ a COM object's document; NIL otherwise (or when that document is closed)."
        (and object (host-document-of host object))))
     (t nil)))
 
+(defmethod host-lock-document ((host cador) key)
+  "Take document KEY's lock (they nest); the token is (KEY . DEPTH)."
+  (unless (assoc key (cador-documents host) :test #'equal)
+    (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+     :no-such-document "cador has no open document with key ~S." key))
+  (cons key (incf (doc-session-lock-count (cador-document-session host key)))))
+
+(defmethod host-unlock-document ((host cador) key token)
+  (declare (ignore token))
+  (let ((session (cador-document-session host key)))
+    (if (plusp (doc-session-lock-count session))
+        (progn (decf (doc-session-lock-count session)) t)
+        (clautolisp.autolisp-host:signal-backend-error
+         host 'unlock-document
+         (format nil "the lock of document ~A is not held (unbalanced unlock)" key)))))
+
+(defun cador-document-locked-p (host key)
+  (plusp (doc-session-lock-count (cador-document-session host key))))
+
+(defun %application-context-p ()
+  "True when no AutoLISP evaluation is in progress: the caller is Lisp code
+driving the host (a tool, a UI), the products' application context. AutoLISP
+itself runs in document context and has no lock to take."
+  (null (clautolisp.autolisp-runtime:current-autolisp-call-stack)))
+
+(defun %check-document-lock (host key)
+  "The checked no-op of D1 §10: modifying document KEY, which is not the
+current one, from application context without holding its lock signals
+:DOCUMENT-NOT-LOCKED."
+  (when (and (%application-context-p) (not (cador-document-locked-p host key)))
+    (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+     :document-not-locked
+     "Document ~A is not the current one and its lock is not held: take it with HOST-LOCK-DOCUMENT before modifying it."
+     key)))
+
 (defmethod host-sysvar-scope ((host cador) name)
   "The scope tier of NAME: its cell's, else the inventory's."
   (let ((cell (ignore-errors (cador-sysvar host name))))

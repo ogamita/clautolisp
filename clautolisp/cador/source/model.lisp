@@ -238,6 +238,8 @@ that is not part of a drawing."))
   (open-block-definition nil)
   (ename-cache (make-hash-table :test #'equal))
   (ename-cache-drawing nil)
+  ;; D1 §10: how many times the document's lock is held (a checked no-op).
+  (lock-count 0)
   ;; The tiled (model space) viewports, the current one first: a list of
   ;; (ID LLX LLY URX URY). NIL until first asked: viewports.lisp.
   (model-viewports nil))
@@ -266,6 +268,7 @@ that is not part of a drawing."))
 (%define-document-session-accessor cador-open-block-definition doc-session-open-block-definition)
 (%define-document-session-accessor cador-ename-cache doc-session-ename-cache)
 (%define-document-session-accessor cador-ename-cache-drawing doc-session-ename-cache-drawing)
+(%define-document-session-accessor %cador-lock-count doc-session-lock-count)
 (%define-document-session-accessor %cador-model-viewports doc-session-model-viewports)
 
 ;;; --- Active-drawing delegation ----------------------------------
