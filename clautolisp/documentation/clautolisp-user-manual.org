@@ -1469,6 +1469,12 @@ UTF-8; ~0~, the ANSI code page windows-1252, for code bases written in it.
 Before 2021 (~--dialect autocad-2020~ and earlier) there is no ~LISPSYS~
 and the default is windows-1252.
 
+Two details are AutoCAD's, measured on AutoCAD 2022: at UTF-8 a source file
+that is *not* valid UTF-8 -- an old windows-1252 file -- is read as
+windows-1252 instead of failing, and at windows-1252 a UTF-8 byte-order mark
+is skipped (the rest is still read as windows-1252). Both hold for ~load~
+without an encoding argument; ~(load "x" nil "utf-8")~ means exactly UTF-8.
+
 And as on AutoCAD, ~LISPSYS~ is *persisted*: ~(setvar "LISPSYS" 0)~ saves
 it in the registry -- the Windows registry, the macOS defaults database, or
 ~$XDG_CONFIG_HOME/clautolisp/registry.sexp~ on Linux, under

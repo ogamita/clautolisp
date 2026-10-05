@@ -7333,6 +7333,21 @@ character read from disk) follows from them.
   (e.g. cp1252) source *cannot be portably native-loaded* — on macOS
   ~SYSCODEPAGE = MAC_ROMAN~ mis-reads byte ~0xE9~ as ~È~ (U+00C8) instead of
   ~é~ (U+00E9).
+  *Measured on AutoCAD 2022* (encoding-situations experiment E1, 2026-10-05,
+  job 16931781178; LISPSYS set in the profile, AutoCAD restarted per level;
+  a file ~(setq v "AéZ")~ with é written three ways, ~(vl-string->list v)~):
+  | file                | LISPSYS 0       | LISPSYS 1 / 2 |
+  |---------------------+-----------------+---------------|
+  | windows-1252 (E9)   | (65 233 90)     | (65 233 90)   |
+  | UTF-8, no BOM       | (65 195 169 90) | (65 233 90)   |
+  | UTF-8 with BOM      | (65 195 169 90) | (65 233 90)   |
+  So the BOM is NOT mandatory under LISPSYS 1 / 2 (BOM-less UTF-8 reads
+  fine), a file that is not valid UTF-8 FALLS BACK to windows-1252 instead
+  of failing, and under LISPSYS 0 the BOM is skipped and ignored.
+  *clautolisp*: under the AutoCAD dialects, a ~load~ without an explicit
+  encoding follows this table (the encoding LISPSYS selected, then the
+  BOM skip at windows-1252 or the windows-1252 fallback at UTF-8); an
+  explicit encoding -- ~load~'s third argument -- is honoured as given.
 - ~open~ — *optional encoding argument* (AutoCAD 2021, BricsCAD V21 and
   higher; pre-2021 ~open~ has none). Signature
   ~(open fileName openMode [encoding])~; modes ~"r"~ ~"w"~ ~"a"~ plus binary

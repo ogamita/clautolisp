@@ -1265,6 +1265,11 @@ separate binary for tool integrators.
   Layers gain ~LayerOn~, ~Freeze~, ~Lock~, ~Plottable~, entities ~Visible~.
 - ~(layoutlist)~ lists the paper layouts -- it used to return ~("Model")~,
   which no vendor does -- sorted by name under the AutoCAD dialects.
+- Under the AutoCAD dialects ~load~ decodes sources as AutoCAD 2022 does:
+  at UTF-8 (~LISPSYS~ 1 / 2) a file that is not valid UTF-8 is read as
+  windows-1252 instead of failing; at windows-1252 (~LISPSYS~ 0) a UTF-8
+  byte-order mark is skipped. Measured with the new
+  ~encoding:experiment:lispsys-bom:autocad:windows~ job.
 - Under the vendor dialects at ~LISPSYS~ 0 on Windows, character codes
   are the vendor's: AutoCAD reduces a code to a windows-1252 byte (~(chr
   8364)~ is code 172), BricsCAD uses windows-1252 where it can (~(ascii

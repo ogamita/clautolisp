@@ -7815,3 +7815,53 @@ itself fails loudly."
                   (setq a (vla-get-visible o))
                   (vla-put-visible o :vlax-false)
                   (vl-prin1-to-string (list a (vla-get-visible o) (cdr (assoc 60 (entget (entlast)))))))")))))
+;;; --- AutoCAD's source decoding (encoding-situations E1, job 16931781178) ---
+
+(test autocad-load-decodes-as-autocad-2022-does
+  "LISPSYS 0 (windows-1252): a UTF-8 BOM is skipped and ignored; LISPSYS 1/2
+(UTF-8): BOM or not, and a file that is not UTF-8 reads as windows-1252.
+The same table AutoCAD 2022 returned for (strlen / vl-string->list) of AéZ."
+  (let ((dir (uiop:ensure-directory-pathname
+              (merge-pathnames (format nil "clautolisp-e1-~D/" (random 1000000))
+                               (uiop:temporary-directory)))))
+    (ensure-directories-exist dir)
+    (flet ((fixture (name prefix eacute)
+             (let ((path (merge-pathnames name dir)))
+               (with-open-file (out path :direction :output :if-exists :supersede
+                                         :element-type '(unsigned-byte 8))
+                 (write-sequence (concatenate '(vector (unsigned-byte 8))
+                                              prefix
+                                              (map 'vector #'char-code "(setq *e1-value* \"A")
+                                              eacute
+                                              (map 'vector #'char-code (format nil "Z\")~%")))
+                                 out))
+               (namestring path)))
+           (load-e1 (encoding path)
+             (reset-autolisp-symbol-table)
+             (autolisp-string-value
+              (%al (format nil "(progn (setq *AUTOLISP-DIALECT* 'autocad-2022)
+                                       (setq *AUTOLISP-FILE-ENCODING* ~S)
+                                       (load ~S)
+                                       (vl-prin1-to-string (vl-string->list *e1-value*)))"
+                           encoding path)))))
+      (unwind-protect
+           (let ((cp1252 (fixture "e1-cp1252.lsp" #() #(#xE9)))
+                 (utf8 (fixture "e1-utf8.lsp" #() #(#xC3 #xA9)))
+                 (bom (fixture "e1-utf8bom.lsp" #(#xEF #xBB #xBF) #(#xC3 #xA9))))
+             ;; LISPSYS 0
+             (is (equal "(65 233 90)" (load-e1 "WINDOWS-1252" cp1252)))
+             (is (equal "(65 195 169 90)" (load-e1 "WINDOWS-1252" utf8)))
+             (is (equal "(65 195 169 90)" (load-e1 "WINDOWS-1252" bom)))
+             ;; LISPSYS 1 / 2
+             (is (equal "(65 233 90)" (load-e1 "UTF-8" cp1252)))
+             (is (equal "(65 233 90)" (load-e1 "UTF-8" utf8)))
+             (is (equal "(65 233 90)" (load-e1 "UTF-8" bom)))
+             ;; An explicit LOAD encoding is honoured as given (no fallback).
+             (reset-autolisp-symbol-table)
+             (is (equal "(65 195 169 90)"
+                        (autolisp-string-value
+                         (%al (format nil "(progn (setq *AUTOLISP-DIALECT* 'autocad-2022)
+                                                  (load ~S \"ISO-8859-1\")
+                                                  (vl-prin1-to-string (vl-string->list *e1-value*)))"
+                                      utf8))))))
+        (uiop:delete-directory-tree dir :validate t)))))
