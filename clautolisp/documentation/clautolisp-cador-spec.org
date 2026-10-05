@@ -644,30 +644,61 @@ acceptance criterion).
 Each gets a stated resolution or a stated assumption, and a grade.
 
 ** 9.1 =accoreconsole= fidelity envelope
-*Resolution (stated, with an assumed boundary — A3).* =cador= is the analogue
-of AutoCAD Core Console, whose envelope we take to be: a *scripted, non-tty*
-console that runs the command line and AutoLISP/entity APIs headlessly;
-*input primitives* function against the scripted source (the get-family reads
-the script), *dialogs* do not appear (a DCL/modal request has no surface),
-*plotting* to a physical device does not function, and it is *driven by a
-script file* fed on the command line. Grade: the *existence and headless nature*
-of =accoreconsole= is A (Autodesk ships it); the *precise* per-primitive
-boundary (which get-* work, exact dialog behaviour, whether plot-to-file works)
-is *not established from citations here* and is graded V — it must be pinned
-from vendor documentation with citations before the analogy is asserted
-normatively (epic §9.1). =cador='s own boundary is §I.10/§I.11 regardless of
-where =accoreconsole='s falls; any gap is a documentation reconciliation, not a
-=cador= redesign. See A3.
+*Resolution (A3, now cited -- cador-4 slice 6, 2026-10-05).* =cador= is the
+analogue of AutoCAD Core Console. Its envelope, by source:
+
+- *What it is* [A]: "a version of AutoCAD without a graphical user interface
+  ... based on the AutoCAD 'core' (accore.dll)", for batch work "that don't
+  require user interaction, such as providing input in dialog boxes,
+  specifying values at user prompts, and selecting objects"; "any command that
+  displays a dialog box or palette will not be available" -- the command-line
+  variant is used instead. AutoCAD 2025 Developer and ObjectARX Help, "AutoCAD
+  Core Console" (help.autodesk.com/view/OARX/2025/ENU/?guid=AUTOCAD_CORE_CONSOLE).
+  /Wording taken from search excerpts: the page did not load when fetched;
+  check it before quoting it normatively./
+- *How it is driven* [A, same page]: =AcCoreConsole.exe [/i <dwg>] /s <script>
+  [/product ...] [/l <language>] [/isolate <userid> <folder>] [/readonly]
+  [/p[rofile] <profile>] [/loadmodule <module>]=.
+- *What loads* [B: Kean Walmsley, Autodesk, "The AutoCAD 2013 Core Console",
+  keanw.com 2012-02]: AutoLISP, DBX / CRX, and .NET assemblies built against
+  AcCoreMgd.dll; "certain (mostly GUI-oriented) capabilities will not be
+  available". Express Tools =.arx= modules do not load; of the commands tried,
+  573 are accepted, 23 crash the console (LAYER, PAN ...), a few show stray UI
+  [B: keanw.com 2012-03, "Commands that work in the AutoCAD 2013 Core
+  Console"].
+- *No COM / ActiveX* [B: same post, and blog.autodesk.io "Getting started with
+  AcCoreConsole"; *measured*: =vlax-get-acad-object= fails under accoreconsole
+  2022 -- probe-documents, job 16932759881, "NO-COM"].
+- *Loading is gated by =SECURELOAD= / =TRUSTEDPATHS=*, an untrusted file
+  failing silently [C: forum excerpt; S: alfe trusts its work directory in
+  every profile since 2.2.145, verified at =SECURELOAD= 2].
+- *Not established by any source* [V]: the per-primitive behaviour of the
+  get-family, =grread=, DCL and =entsel= picking; plotting / publishing;
+  whether =acad.lsp= / =acaddoc.lsp= / the startup suite load. These are
+  measured, case by case, by the vendor probes, not asserted here.
+
+=cador='s own boundary is §I.10/§I.11 regardless of where =accoreconsole='s
+falls; any gap is a documentation reconciliation, not a =cador= redesign.
 
 ** 9.2 BricsCAD headless equivalent
-*Resolution (stated assumption — A4).* We assume BricsCAD ships *no fully
-equivalent* dedicated headless console under a comparable name; BricsCAD's
-batch/hidden-UI automation is driven differently (see
-=feature-alfe-bricscad-batch-hidden-ui= and the alfe probe work). Grade C/V.
-*Consequence:* the "portable" claim for =cador= rests primarily on the AutoCAD
-=accoreconsole= analogy; if a BricsCAD console exists it becomes a *second*
-reference point (an upside, A4). This asymmetry is recorded so "portable" is not
-over-claimed.
+*Resolution (A4, now cited).* BricsCAD ships *no dedicated headless console*
+comparable to =accoreconsole=. The nearest is the full application started
+with =/Automation= -- "(Windows-only) Starts BricsCAD without displaying the
+main frame window (with hidden UI). This switch is intended for use by COM
+automation, but it can also be useful for batch processing tasks that don't
+use COM" -- and =/B= -- "Runs a script (*.scr) or lisp (*.lsp) at startup"
+[A: Bricsys, BricsCAD V26 "Startup options",
+help.bricsys.com/en-us/document/bricscad/customization/startup-options; the V22
+page says the same]. That a console variant does not exist is a forum answer
+("try using: bricscad.exe /automation") [C: forum.bricsys.com discussion
+36257, 2020; the poster's affiliation unconfirmed]. No windowless mode is
+documented for macOS or Linux [not found], and there COM does not exist
+(=/Automation= and =/regserver= are Windows-only) [A, same page]. Whether COM is
+reachable in a plain =/B= run without =/Automation= is not documented [V].
+*Consequence:* the "portable" claim for =cador= rests on the =accoreconsole=
+analogy; BricsCAD's reference point is its hidden-UI application (what alfe's
+batch mode drives), not a separate console. This asymmetry is recorded so
+"portable" is not over-claimed.
 
 ** 9.3 Database backend
 *Resolution:* native Common Lisp in-memory database with DXF read/write, DWG
@@ -850,9 +881,9 @@ condition classes named in §I.11).
   §I.7): clautolisp 2.2.186 (multi-document slice 2).
 - The host condition hierarchy (D1 §15): 2.2.146.
 - The HAL document API (open from a file, close with save, =document-of=)
-  and the sysvar scope tier (C4): 2.2.197 (cador-4 slice 1).
-- Document locking, the checked no-op (§9.5): 2.2.198 (slice 2).
-- The §II.15 clean-ups and the C6 boundary as a test: 2.2.199 (slice 3).
+  and the sysvar scope tier (C4): 2.2.198 (cador-4 slice 1).
+- Document locking, the checked no-op (§9.5): 2.2.199 (slice 2).
+- The §II.15 clean-ups and the C6 boundary as a test: 2.2.200 (slice 3).
 - The command layer's console notice; the command lists as built: 2.2.200
   (slice 4).
 
@@ -869,7 +900,7 @@ condition classes named in §I.11).
       grade — validated by pjb on 2026-10-03 (cador-3 closed); §9.6's vendor
       run is the conformance probe (cador-4 slice 5).
 - [X] Constraint traceability C1–C8 — C1/C2/C3/C4/C5/C6/C8 trace to code
-      (C5 since 2.2.186, C4 since 2.2.197, C6 a test since 2.2.199).
+      (C5 since 2.2.186, C4 since 2.2.198, C6 a test since 2.2.200).
 
 ** 0.3.0 — decisions of pjb, 2026-09-28
 

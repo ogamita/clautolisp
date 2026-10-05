@@ -95,7 +95,12 @@ command table at ~105 spellings. The rest, in slices:
   getcname stay with the cadtui-locale-* tickets (they need the localised
   CAD data).
 - Slice 5 -- conformance E1-E10 as vendor probes.
-- Slice 6 -- the accoreconsole / BricsCAD headless envelope, cited.
+- *Slice 6 DONE* -- the accoreconsole / BricsCAD headless envelope, cited
+  in D2 sections 9.1 / 9.2 (Autodesk OARX 2025 core-console page -- wording
+  to re-check, it did not load when fetched; Kean Walmsley's 2012 posts;
+  Bricsys V26 startup options /Automation and /B). What no source states
+  (get-family, grread, DCL, plotting, startup files headless) stays grade V,
+  for the probes.
 - *Slice 7 DONE* -- D1 / D2 brought level with what is built: the
   fidelity matrix (open from file, document-of, scope tier, locking,
   dictobjname), DWG read AND write (libredwg writer caveat cited), the
