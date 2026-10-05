@@ -9,6 +9,8 @@
 ;;;;                 vlax-get-property, through vlax-get; and the put side:
 ;;;;                 does vla-put-layeron take T / nil as well as :vlax-false?
 ;;;;                 (BricsCAD only: AutoCAD's accoreconsole has no COM.)
+;;;;   repr       -- GETVAR of sysvars whose catalogue value differs from
+;;;;                 BricsCAD only in representation, and V26-only ones;
 ;;;;   layoutlist -- (layoutlist) on a fresh drawing, after LAYOUT New, after
 ;;;;                 LAYOUT Delete (layoutlist-returns-model), and CTAB.
 ;;;; Every step runs under VL-CATCH-ALL-APPLY; COMMAND is only ever called
@@ -109,4 +111,12 @@
     (function (lambda ()
                 (command "_.LAYOUT" "_D" "ProbeLayout")
                 (layoutlist))))
+  ;; --- repr --------------------------------------------------------------
+  ;; Sysvars whose catalogue value differs from BricsCAD V26's only in
+  ;; representation (colour format, single-float noise, degrees vs radians),
+  ;; doc-text placeholders, and the 8 V26 has but V25 lacks -- typed, on both
+  ;; vendors (AutoCAD's headless console answers GETVAR).
+  (foreach cad-probe--t3-name '("CELTYPE" "CMATERIAL" "DEFPLSTYLE" "INTERFERECOLOR" "RULERTEXTCOLOR" "HORIZONBKG_GROUNDHORIZON" "HORIZONBKG_GROUNDORIGIN" "HORIZONBKG_SKYHIGH" "HORIZONBKG_SKYHORIZON" "HORIZONBKG_SKYLOW" "CMDLINEEDITBGCOLOR" "CMDLINEEDITFGCOLOR" "CMDLINELISTBGCOLOR" "GRADIENTCOLORTOP" "DIMJOGANG" "LOFTANG1" "LOFTANG2" "POLARANG" "AUTOCOMPLETEDELAY" "LATITUDE" "LONGITUDE" "LWDISPSCALE" "FONTMAP" "INETLOCATION" "MENUNAME" "APPAUTOLOAD" "CLAYOUT" "SPLDEGREE" "SPLKNOTS" "SPLMETHOD" "PDFSHXBESTFONT" "PDFSHXLAYER" "PDFSHXTHRESHOLD")
+    (cad-probe--t3 "repr" (strcat "(getvar \"" cad-probe--t3-name "\")")
+      (function (lambda () (cad-probe--t3-typed (getvar cad-probe--t3-name))))))
   (princ))
