@@ -94,4 +94,40 @@ Run-Knob -Label "chcp-437-oem"     -CodePage 437
 Run-Knob -Label "LANG=en_US.UTF-8" -EnvName "LANG" -EnvValue "en_US.UTF-8"
 Run-Knob -Label "LC_ALL=C"         -EnvName "LC_ALL" -EnvValue "C"
 
+# --- E3: the raw bytes of the batch drain (cadstdio) -------------------------
+# In batch mode the runtime's princ appends to protocol/stdout.txt with
+# (open path "a") + write-line (autolisp-remote-io.lsp), and alfe's drain
+# hands back DECODED text -- so the ENC lines above cannot show the bytes.
+# The probe writes its own file with that very call, the characters built
+# with CHR (nothing crosses another codec on the way in), and the file is
+# dumped here byte by byte (encoding-situations-cli-options, E3).
+if ($Backend -ne "clautolisp") {
+  $raw = (Join-Path $outDir "e3-raw-$Backend.txt") -replace '\\','/'
+  if (Test-Path $raw) { Remove-Item -Force $raw }
+  $e3 = '(progn (setq e3f (open "' + $raw + '" "a")) ' +
+        '(write-line (strcat "E3-233:" (chr 233)) e3f) ' +
+        '(write-line (strcat "E3-128:" (chr 128)) e3f) ' +
+        '(write-line (strcat "E3-8364:" (chr 8364)) e3f) ' +
+        '(close e3f) (princ "\nE3 WRITTEN\n") (princ))'
+  # A file, not -x: Windows PowerShell 5.1 passes the inner double quotes of
+  # a native argument unescaped, which would mangle the form.
+  $e3lsp = Join-Path $outDir "e3-probe.lsp"
+  Set-Content -Encoding ascii $e3lsp $e3
+  $e3args = @($bargs | Where-Object { $_ -ne "-l" -and $_ -ne $probe }) + @("-l",($e3lsp -replace '\\','/'))
+  "########## E3: raw drain bytes ##########" | Tee-Object -FilePath $report -Append
+  try {
+    (& $alfe @e3args 2>&1) |
+      Where-Object { "$_" -match 'E3 |BOOTSTRAP-FAILED|FAILED' } |
+      ForEach-Object { "[E3] $_" } |
+      Tee-Object -FilePath $report -Append
+  } catch { "[E3] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
+  if (Test-Path $raw) {
+    $bytes = [System.IO.File]::ReadAllBytes($raw)
+    ("[E3] {0} bytes: {1}" -f $bytes.Length, (($bytes | ForEach-Object { '{0:X2}' -f $_ }) -join ' ')) |
+      Tee-Object -FilePath $report -Append
+  } else {
+    "[E3] NO FILE: $raw" | Tee-Object -FilePath $report -Append
+  }
+}
+
 Write-Host "encoding experiment ($Backend) -> $report"
