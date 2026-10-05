@@ -37,6 +37,11 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Multi-document, slice 6: the product's startup chain runs -- ~acad.lsp~ /
+  ~acaddoc.lsp~ (AutoCAD dialects), ~on_start~ / ~on_doc_load~ (BricsCAD), then
+  ~S::STARTUP~ -- at launch and, per drawing, for every drawing opened;
+  ~(vl-load-all "file")~ loads into every open and later drawing (it used to
+  be a no-op). ~--no-init~ skips the chain.
 - Multi-document, slice 5: COM ~Documents~ is a live collection; ~Add~ opens
   a separate, inactive drawing, ~Open~ / ~Activate~ / ~Close~ /
   ~ActiveDocument~ work; each Document's objects address its own drawing;

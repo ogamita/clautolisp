@@ -513,6 +513,10 @@ $CLAUTOLISP_NO_INIT env var into one boolean."
     (append
      (loop for path in init-paths
            collect (cons :file (namestring path)))
+     ;; Then the product's startup chain (acad.lsp / acaddoc.lsp, on_start /
+     ;; on_doc_load, S::STARTUP) for the first drawing; each drawing opened
+     ;; later runs its per-document part (multi-document slice 6).
+     (list (cons :startup nil))
      actions)))
 
 ;;; --- Verbosity / debug flags -----------------------------------------
@@ -1239,8 +1243,9 @@ text (filename or an excerpt of the expression)."
               "~&clautolisp: ~A ~A in ~,3F s~%"
               (ecase kind
                 (:file "loaded")
-                (:expression "evaluated"))
-              label
+                (:expression "evaluated")
+                (:startup "ran the startup chain"))
+              (or label "")
               elapsed))))
 
 (defun eval-action-in-context (context action dialect)
@@ -1279,6 +1284,8 @@ is handled separately by the REPL wrapper in RUN-WITH-INPUT."
             (call-with-autolisp-error-handler
              (lambda () (autolisp-eval-progn forms context))
              context)))))
+      (:startup
+       (clautolisp.autolisp-builtins-core:run-session-startup-chain context))
       (:interactive
        ;; The (:interactive . T) action is a placeholder so the
        ;; queue order is preserved when the user mixed -i in with

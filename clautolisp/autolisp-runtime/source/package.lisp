@@ -86,6 +86,9 @@
    #:forget-runtime-session-document-for-host-key
    #:runtime-session-pending-document-key
    #:apply-pending-document-switch
+   #:*document-namespace-created-hook*
+   #:runtime-session-pending-loads
+   #:add-runtime-session-pending-load
    #:make-document-scheduler
    #:document-scheduler-p
    #:document-scheduler-contexts

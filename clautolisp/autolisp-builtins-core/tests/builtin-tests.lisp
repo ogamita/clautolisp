@@ -4687,9 +4687,9 @@ and returns T. Accepts both a single symbol and a list."
 ;;;; ----- M5 missing-functions: core/misc rest -----
 
 (test m5-native-vl-load-family-returns-t
-  "VL-INIT / VL-LOAD-COM / VL-LOAD-REACTORS / VL-LOAD-ALL all
-return T — no-op success on a system without VLX / COM /
-reactors."
+  "VL-INIT / VL-LOAD-COM / VL-LOAD-REACTORS return T -- no-op success on a
+system without VLX / COM / reactors. (VL-LOAD-ALL takes a file name and
+loads it into every document: multidocument-tests.)"
   (reset-autolisp-symbol-table)
   (flet ((true-p (form)
            (let ((r (run-autolisp-string form :setup-fn #'install-core-into)))
@@ -4697,8 +4697,7 @@ reactors."
                   (string= "T" (autolisp-symbol-name r))))))
     (is (true-p "(vl-init)"))
     (is (true-p "(vl-load-com)"))
-    (is (true-p "(vl-load-reactors)"))
-    (is (true-p "(vl-load-all)"))))
+    (is (true-p "(vl-load-reactors)"))))
 
 (test reactor-builtins-import-runtime-helpers
   "Regression for reactor-builtins-undefined-functions: the reactor

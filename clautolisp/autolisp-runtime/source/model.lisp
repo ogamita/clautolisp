@@ -223,6 +223,9 @@ clautolisp-secureload-trust-model spec.")
   ;; the built-in functions and variables, not the user's). NIL until
   ;; LINK-RUNTIME-SESSION-CURRENT-DOCUMENT records it.
   (system-symbols nil)
+  ;; Files VL-LOAD-ALL loaded: every document opened later loads them too
+  ;; (D2 section I.9, R9), oldest first.
+  (pending-loads '())
   ;; Phase 6: every runtime session carries the dialect descriptor
   ;; that drove its instantiation. Builtins that have product-divergent
   ;; lex / mode behaviour (currently `atof` hex-float, `open` `ccs=`)

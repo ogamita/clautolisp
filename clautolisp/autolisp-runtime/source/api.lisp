@@ -765,7 +765,27 @@ host document, as each AutoCAD drawing has its own LISP namespace -- created
               key)
         (%seed-document-namespace session namespace)
         (register-runtime-session-document session namespace :copy-propagated-p t)
-        namespace)))
+        (values namespace t))))
+
+(defparameter *document-namespace-created-hook* nil
+  "NIL, or a function (CONTEXT) called when APPLY-PENDING-DOCUMENT-SWITCH has
+just switched CONTEXT into a NEW document namespace: the builtins install the
+per-document startup chain here (acaddoc.lsp / on_doc_load.lsp, the
+VL-LOAD-ALL files, S::STARTUP), as AutoCAD runs it for each drawing opened.")
+
+(defun runtime-session-pending-loads (session)
+  (clautolisp.autolisp-runtime.internal::runtime-session-pending-loads session))
+
+(defun add-runtime-session-pending-load (session path)
+  (setf (clautolisp.autolisp-runtime.internal::runtime-session-pending-loads session)
+        (append (clautolisp.autolisp-runtime.internal::runtime-session-pending-loads session)
+                (list path))))
+
+(defun %application-setting-symbol-p (symbol)
+  (let ((name (ignore-errors (autolisp-symbol-name symbol))))
+    (and (stringp name)
+         (or (and (> (length name) 10) (string-equal "*AUTOLISP-" name :end2 10))
+             (and (> (length name) 12) (string-equal "*CLAUTOLISP-" name :end2 12))))))
 
 (defun %seed-document-namespace (session namespace)
   "Give a new document NAMESPACE what every drawing starts with: the
@@ -778,10 +798,14 @@ builtin (SUBR) binding of the current document."
     (when table
       (maphash (lambda (symbol cell)
                  (when (and (binding-cell-bound-p cell)
-                            (if system
-                                (gethash symbol system)
-                                (typep (binding-cell-value cell)
-                                       'clautolisp.autolisp-runtime.internal::autolisp-subr)))
+                            (or (if system
+                                    (gethash symbol system)
+                                    (typep (binding-cell-value cell)
+                                           'clautolisp.autolisp-runtime.internal::autolisp-subr))
+                                ;; clautolisp's own application settings --
+                                ;; *AUTOLISP-DIALECT*, the encodings ... --
+                                ;; whatever their current value.
+                                (%application-setting-symbol-p symbol)))
                    (copy-value-cell-between-namespaces source namespace symbol)))
                table))))
 
@@ -841,12 +865,14 @@ switched to, or NIL."
     (when key
       (setf (clautolisp.autolisp-runtime.internal::runtime-session-pending-document-key session)
             nil)
-      (let ((namespace (runtime-session-document-for-host-key session key)))
+      (multiple-value-bind (namespace new-p) (runtime-session-document-for-host-key session key)
         (set-runtime-session-current-document session namespace)
         (setf (clautolisp.autolisp-runtime.internal::evaluation-context-current-document context)
               namespace
               (clautolisp.autolisp-runtime.internal::evaluation-context-current-namespace context)
               namespace)
+        (when (and new-p *document-namespace-created-hook*)
+          (funcall *document-namespace-created-hook* context))
         namespace))))
 
 (defun autolisp-errno (&optional (context (current-evaluation-context)))

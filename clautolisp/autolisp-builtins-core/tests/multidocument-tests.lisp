@@ -271,3 +271,55 @@ own; AutoCAD (job 16932759881) stays in the old drawing until the routine ends."
            (is (eql 1 (%md-turn context "(sslength (ssget \"_X\"))"))))
       (ignore-errors (delete-file file)))))
 
+;;; --- slice 6: the startup chain per document; vl-load-all ------------------
+
+(defun %md-write (path text)
+  (with-open-file (out path :direction :output :if-exists :supersede)
+    (write-string text out))
+  path)
+
+(test acaddoc-and-on-doc-load-run-for-every-drawing
+  (let* ((dir (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "md-chain-~D/" (random 1000000))
+                                (uiop:temporary-directory))))
+         (saved (clautolisp.autolisp-runtime:autolisp-support-paths)))
+    (ensure-directories-exist dir)
+    (unwind-protect
+         (let ((context (%md-context)))
+           (%md-write (merge-pathnames "acad.lsp" dir) "(setq md-session-once 1)")
+           (%md-write (merge-pathnames "acaddoc.lsp" dir)
+                      "(setq md-per-doc (getvar \"DWGNAME\")) (defun s::startup () (setq md-started t))")
+           (clautolisp.autolisp-runtime:set-autolisp-support-paths (list (namestring dir)))
+           (%md-turn context "(setq *AUTOLISP-DIALECT* 'autocad-2022)")
+           (clautolisp.autolisp-builtins-core:run-session-startup-chain context)
+           (is (eql 1 (%md-turn context "md-session-once")))
+           (is (equal "Drawing1.dwg" (autolisp-string-value (%md-turn context "md-per-doc"))))
+           (is (%md-turn context "md-started"))
+           ;; A later drawing runs acaddoc.lsp (and S::STARTUP), not acad.lsp.
+           (%md-turn context "(command \"_.NEW\" \"\")")
+           (is (null (%md-turn context "md-session-once")))
+           (is (equal "Drawing2.dwg" (autolisp-string-value (%md-turn context "md-per-doc"))))
+           (is (%md-turn context "md-started")))
+      (clautolisp.autolisp-runtime:set-autolisp-support-paths saved)
+      (uiop:delete-directory-tree dir :validate t))))
+
+(test vl-load-all-loads-into-every-drawing-now-and-later
+  (let* ((file (namestring (merge-pathnames (format nil "md-all-~D.lsp" (random 1000000))
+                                            (uiop:temporary-directory))))
+         (context (%md-context))
+         (host (%md-host context))
+         (first (clautolisp.autolisp-host:host-current-document host)))
+    (unwind-protect
+         (progn
+           (%md-write file "(defun md-everywhere () \"here\")")
+           (%md-turn context "(command \"_.NEW\" \"\")")
+           (%md-turn context (format nil "(vl-load-all ~S)" file))
+           (is (equal "here" (autolisp-string-value (%md-turn context "(md-everywhere)"))))
+           ;; The other open drawing has it ...
+           (%md-switch-to context first)
+           (is (equal "here" (autolisp-string-value (%md-turn context "(md-everywhere)"))))
+           ;; ... and so does one opened later.
+           (%md-turn context "(command \"_.NEW\" \"\")")
+           (is (equal "here" (autolisp-string-value (%md-turn context "(md-everywhere)")))))
+      (ignore-errors (delete-file file)))))
+

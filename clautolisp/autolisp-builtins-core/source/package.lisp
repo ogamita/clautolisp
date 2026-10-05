@@ -208,6 +208,8 @@
                 #:host-vlax-queueexpr
                 #:host-vlax-collection-items)
   (:export
+   #:run-session-startup-chain
+   #:run-document-startup-chain
    #:*core-builtin-names*
    #:core-builtins
    #:find-core-builtin

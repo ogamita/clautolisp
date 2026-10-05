@@ -1117,6 +1117,19 @@ provides that surface through the host backend:
   LISP namespace goes with it. A session always keeps one drawing: closing
   the last opens a fresh untitled one (AutoCAD is left with none). Saving
   names the drawing after its file (~DWGNAME~), as ~vla-saveas~ does too.
+  *Startup files, per drawing.* After clautolisp's own init file, the
+  product's startup files found on the support path run as the product runs
+  them: under the AutoCAD dialects ~acad.lsp~ once and ~acaddoc.lsp~ for
+  every drawing (both per drawing when ~ACADLSPASDOC~ is 1), under the
+  BricsCAD dialects ~on_start.lsp~ / ~on_start_default.lsp~ once and
+  ~on_doc_load.lsp~ / ~on_doc_load_default.lsp~ per drawing, under
+  ~clautolisp~ / ~lax~ all of them (~strict~: none); then ~S::STARTUP~ when
+  defined. Each new drawing runs the per-drawing files in its own namespace,
+  plus every file ~(vl-load-all "file.lsp")~ loaded -- that function loads
+  a file into every open drawing and every drawing opened later. A new
+  drawing's namespace starts with the built-in functions and variables and
+  clautolisp's own settings (~*AUTOLISP-DIALECT*~ ...). ~--no-init~ skips the
+  startup files with the init file.
 - Documents through the object model: ~(vla-get-documents app)~ is a live
   collection of the open drawings (~Count~, ~Item~, ~vlax-for~).
   ~(vla-add documents)~ opens a new drawing with its own database and does
