@@ -620,3 +620,27 @@ So, measured (it was pjb's statement before):
     (the lone E9) is read as windows-1252 instead: a FALLBACK, not an error.
 Profiles restored to "0" afterwards (report's last line).
 
+* E3 results (2026-10-05, MR !416) -- the batch drain is the `file' situation
+
+run-encoding-experiment.ps1 now has the CAD write (chr 233), (chr 128) and
+(chr 8364) with the runtime's own drain call -- (open path "a") +
+write-line, which is how princ reaches protocol/stdout.txt in batch mode --
+and dumps the file's bytes:
+
+| target (batch)                          | (chr 233) | (chr 128) | (chr 8364) | line end |
+|-----------------------------------------+-----------+-----------+------------+----------|
+| BricsCAD V25 Windows -B (job 16936990755) | E9        | 80        | 80         | CR LF    |
+| AutoCAD 2022 accoreconsole (job 16936990756) | E9     | 80        | AC         | CR LF    |
+
+So:
+  - BricsCAD/Windows batch: windows-1252 -- U+20AC is written as its
+    cp1252 byte 0x80, as the GUI console does (section 7.2). There is no
+    separate "-B batch console" device: what alfe drains is the `file'
+    situation, already measured as ANSI_1252 (section 7.1). E3 CLOSED.
+  - AutoCAD/accoreconsole: same bytes for E9 / 80, but U+20AC keeps only
+    its low byte (0xAC) -- the truncation its console output shows (7.2).
+  - Both write CR LF.
+Consequence for the defaults table: `cadstdio' on both Windows CADs is
+windows-1252 + CR LF, product-fixed (0x80 / 0xAC are the CADs' own losses).
+
+Remaining in this ticket: the section 6 plumbing and E5.
