@@ -575,3 +575,27 @@ is the concrete unblock for E1 on accoreconsole.
 - Related issues: =alfe-cad-console-encoding.issue= (superseded in part),
   =cad-load-encoding-macos.issue= (the `source` situation),
   =test-file-encodings.issue=.
+
+* E1 automated (2026-10-05) -- and the /isolate premise corrected
+
+CORRECTION to §7.2 / §8: alfe does NOT pass `/isolate`.
+build-launch-argv (autolisp-front-end/source/backend-autocad.lisp) launches
+`accoreconsole /i <dwg> /s <run.scr>` and the git history has no `/isolate`
+ever. The LISPSYS 0 every batch probe reports therefore comes from the
+runner's AutoCAD PROFILE (the registry), not from a pinning option -- and a
+level written into the profile before launch is what a run sees.
+
+E1 is now a job: encoding:experiment:lispsys-bom:autocad:windows (manual;
+automatic when its files change -- probe family `lispsys-bom`), driving
+scripts/run-lispsys-bom-probe.ps1 + autolisp-front-end/tests/scenarios/
+entities/lispsys-bom-probe.lsp:
+  - writes three fixtures, (setq *e1-value* "AéZ") with é as E9 (cp1252),
+    C3 A9 (UTF-8), EF BB BF + C3 A9 (UTF-8 with BOM);
+  - for LISPSYS 0, 1, 2: writes the level (and SECURELOAD 0, so the
+    fixture folder needs no trust) into EVERY AutoCAD profile's Variables
+    key, starts a fresh alfe / accoreconsole, has AutoCAD's NATIVE load read
+    each fixture -- through (read "load"), since alfe rewrites a literal
+    (load ...) into its own deporting loader -- and prints (strlen codes);
+  - restores LISPSYS / SECURELOAD in every profile afterwards (finally).
+Report: dist/encoding/lispsys-bom-autocad-Windows.txt. Results go here when
+it has run.

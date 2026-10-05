@@ -675,6 +675,25 @@ encoding:experiment:autocad:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad
 
+# encoding-situations-cli-options experiment E1: AutoCAD's native (load) under
+# LISPSYS 0 / 1 / 2 x a windows-1252 / UTF-8 / UTF-8-with-BOM source. Writes
+# LISPSYS (and SECURELOAD 0) into every AutoCAD profile for the run, restarts
+# accoreconsole per level, restores both values at the end.
+encoding:experiment:lispsys-bom:autocad:windows:
+  extends: [.gate-windows-cad-soft, .encoding-artifacts]
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,lispsys-bom,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-lispsys-bom-probe.ps1
+
 # --- pathname "." / ".." probe (self-contained) ----------------------------
 # --- path-carrying system variables: what a real engine actually holds ------
 #

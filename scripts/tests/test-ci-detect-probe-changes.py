@@ -83,6 +83,7 @@ class Check(unittest.TestCase):
             f"{E}/encoding-probe.lsp", f"{E}/path-sysvars-probe.lsp",
             f"{E}/getcname-probe.lsp", f"{E}/pgp-probe.lsp",
             f"{E}/optkw-probe.lsp", f"{E}/pathname-probe.lsp",
+            f"{E}/lispsys-bom-probe.lsp",
             "autolisp-spec/autolisp/dump-sysvars.lsp", *pc.UNCLAIMED}
 
     def yml(self):
