@@ -240,7 +240,11 @@ that is not part of a drawing."))
   (ename-cache-drawing nil)
   ;; The tiled (model space) viewports, the current one first: a list of
   ;; (ID LLX LLY URX URY). NIL until first asked: viewports.lisp.
-  (model-viewports nil))
+  (model-viewports nil)
+  ;; -VPORTS Toggle: the layout the first Toggle maximised, or NIL.
+  (viewport-toggle nil)
+  ;; -VPORTS Save / Restore: name -> the saved layout, (vports) order.
+  (viewport-configurations (make-hash-table :test #'equalp)))
 
 (defun cador-document-session (host &optional (key (cador-active-document-key host)))
   "The DOC-SESSION of document KEY (default: the current one), made on first use."
@@ -267,6 +271,8 @@ that is not part of a drawing."))
 (%define-document-session-accessor cador-ename-cache doc-session-ename-cache)
 (%define-document-session-accessor cador-ename-cache-drawing doc-session-ename-cache-drawing)
 (%define-document-session-accessor %cador-model-viewports doc-session-model-viewports)
+(%define-document-session-accessor %cador-viewport-toggle doc-session-viewport-toggle)
+(%define-document-session-accessor %cador-viewport-configurations doc-session-viewport-configurations)
 
 ;;; --- Active-drawing delegation ----------------------------------
 ;;;

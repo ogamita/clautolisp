@@ -11179,15 +11179,40 @@ They differ on:
 - =-VPORTS 2 Vertical=: the current viewport keeps the *right* half under
   AutoCAD (=((2 (0.5 0.0) (1.0 1.0)) (3 (0.0 0.0) (0.5 1.0)))=), the *left*
   one under BricsCAD (=((2 (0.0 0.0) (0.5 1.0)) (3 (0.5 0.0) (1.0 1.0)))=);
-- =-VPORTS SIngle= after that split: AutoCAD keeps viewport *3* (=CVPORT=
-  becomes 3), BricsCAD keeps the current one, 2;
+- =-VPORTS SIngle=: AutoCAD keeps the *lowest-numbered viewport other than
+  the current one* (after the split above: 3, and =CVPORT= becomes 3),
+  BricsCAD the *lowest-numbered* one (2);
+- the other =-VPORTS= options (suite =vports-options=, jobs 16941077236 /
+  16941077240 / 16941077237) divide the current viewport the same way on
+  both, the current one keeping a different piece, and new viewports take
+  the smallest unused numbers; =(vports)= lists the current one, then the
+  others by number. Pieces, current one first:
+  | option   | AutoCAD 2022         | BricsCAD V25 / V26   |
+  |----------+----------------------+----------------------|
+  | 2 V      | right, left          | left, right          |
+  | 2 H      | top, bottom          | bottom, top          |
+  | 3 V      | right, left, middle  | left, middle, right  |
+  | 3 H      | top, bottom, middle  | bottom, middle, top  |
+  | 3 Above  | top, BL, BR          | top, BL, BR          |
+  | 3 Below  | bottom, TR, TL       | bottom, TL, TR       |
+  | 3 Left   | left, RT, RB         | left, RB, RT         |
+  | 3 Right  | right, LT, LB        | right, LB, LT        |
+  | 4        | BR, TR, TL, BL       | BL, BR, TL, TR       |
+  The default orientation is Vertical for 2 and Right for 3. Toggle
+  maximises the current viewport and a second Toggle restores the layout;
+  =(setvar "CVPORT" n)= makes viewport n current; Save NAME adds a VPORT
+  table record NAME, Restore NAME rebuilds the layout (the current number on
+  the saved current piece, the smallest unused ones on the rest), Delete
+  NAME removes the record;
 - the sheet's corners with =TILEMODE= 0 (display extents): AutoCAD
   =(0.0 0.0) (15.8893 9.0)=, BricsCAD =(-28.613 -13.59) (285.613 208.59)=.
 
 *** clautolisp
-=cador= keeps each drawing's tiled viewports and implements the measured
-=-VPORTS= options (=2= with =V=, =SI=); the others (3, 4, Horizontal, Save,
-Restore ...) were not measured and change nothing. The BricsCAD dialects
+=cador= keeps each drawing's tiled viewports and implements every measured
+=-VPORTS= option: 2, 3 and 4 with each orientation, SIngle, Toggle, Save,
+Restore and Delete, and =(setvar "CVPORT" n)=; the probe's answers are a
+regression test (=multidocument-tests=). Join was not measured (it picks
+viewports) and changes nothing. The BricsCAD dialects
 follow BricsCAD; every other dialect follows AutoCAD. =CVPORT= is derived
 (1 in paper space, else the current tiled viewport). The host =nihil= has
 no viewports: =(vports)= signals =:host-not-supported= there.
