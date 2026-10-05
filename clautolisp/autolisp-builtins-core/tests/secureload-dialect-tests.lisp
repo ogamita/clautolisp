@@ -5,7 +5,7 @@
 ;;;; SECURELOAD / TRUSTEDPATHS dialect-default overlay (Phase 2).
 ;;;;
 ;;;; Exercises APPLY-DIALECT-TRUST-SYSVAR-DEFAULTS directly against a
-;;;; fresh MockHost: the per-dialect SECURELOAD / TRUSTEDPATHS defaults
+;;;; fresh cador: the per-dialect SECURELOAD / TRUSTEDPATHS defaults
 ;;;; and read-only-ness, registration of the clautolisp-only trust
 ;;;; sysvars, and the environment-variable override (env > dialect
 ;;;; default). See documentation/clautolisp-secureload-trust-model-spec.org.
@@ -16,7 +16,7 @@
   "/work/proj")
 
 (defun %trust-host (dialect &optional (getenv (constantly nil)))
-  "A fresh MockHost with the dialect trust defaults applied. GETENV stubs the
+  "A fresh cador with the dialect trust defaults applied. GETENV stubs the
 environment lookups (a function NAME -> string-or-nil); by default it finds
 NOTHING, so the dialect defaults are what is tested. It used to fall back to
 the REAL environment, and on the macOS runner -- whose user exports

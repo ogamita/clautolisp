@@ -131,11 +131,11 @@
                 #:cador-pending-initget
                 #:cador-com-objects
                 #:cador-find-com-object
-                #:mock-com-object
-                #:mock-com-object-id
-                #:mock-com-object-progid
-                #:mock-com-object-properties
-                #:mock-com-object-released-p
+                #:cador-com-object
+                #:cador-com-object-id
+                #:cador-com-object-progid
+                #:cador-com-object-properties
+                #:cador-com-object-released-p
                 #:register-com-progid
                 #:cador-display-log
                 #:cador-pickfirst

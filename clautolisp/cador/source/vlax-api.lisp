@@ -1,6 +1,6 @@
 (in-package #:clautolisp.cador)
 
-;;;; Visual LISP COM-bridge HAL methods on MockHost (Phase 13).
+;;;; Visual LISP COM-bridge HAL methods on cador (Phase 13).
 ;;;;
 ;;;; Implements: host-vlax-create-object, host-vlax-get-object,
 ;;;; host-vlax-release-object, host-vlax-get-property,
@@ -9,7 +9,7 @@
 ;;;;
 ;;;; The AutoLISP-visible VLA-OBJECT (autolisp-runtime:autolisp-vla-object)
 ;;;; wraps the host-allocated COM-object id; the host stores the
-;;;; mock-com-object struct in cador-com-objects keyed on that
+;;;; cador-com-object struct in cador-com-objects keyed on that
 ;;;; same id.
 
 (defun ensure-progid-string (progid operator-name)
@@ -44,12 +44,12 @@
       "~A expects a property name, got ~S."
       operator-name name))))
 
-(defun com-object->vla (mock-com-object)
+(defun com-object->vla (cador-com-object)
   (clautolisp.autolisp-runtime:make-autolisp-vla-object
-   :value (mock-com-object-id mock-com-object)))
+   :value (cador-com-object-id cador-com-object)))
 
 (defun resolve-vla-object (host vla operator-name)
-  "Return the live mock-com-object referenced by VLA, signalling
+  "Return the live cador-com-object referenced by VLA, signalling
 :released-vla-object if the underlying COM object has been
 released and :unknown-vla-object if it never existed."
   (ensure-vla-object vla operator-name)
@@ -61,7 +61,7 @@ released and :unknown-vla-object if it never existed."
         :unknown-vla-object
         "~A: VLA-OBJECT ~A is not known to the active host."
         operator-name id))
-      ((mock-com-object-released-p object)
+      ((cador-com-object-released-p object)
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
         :released-vla-object
         "~A: VLA-OBJECT ~A has been released."
@@ -98,15 +98,15 @@ NIL when VALUE is not string-like."
 
 (defun %live-com-object (host key constructor)
   "Return the identity-stable live COM object registered under KEY,
-building it with CONSTRUCTOR (a thunk yielding a mock-com-object) and
+building it with CONSTRUCTOR (a thunk yielding a cador-com-object) and
 registering it on first reference."
   (let* ((ids (cador-live-collection-ids host))
          (id (gethash key ids))
          (cached (and id (cador-find-com-object host id))))
-    (if (and cached (not (mock-com-object-released-p cached)))
+    (if (and cached (not (cador-com-object-released-p cached)))
         cached
-        (let ((object (%register-mock-com-object host (funcall constructor))))
-          (setf (gethash key ids) (mock-com-object-id object))
+        (let ((object (%register-cador-com-object host (funcall constructor))))
+          (setf (gethash key ids) (cador-com-object-id object))
           object))))
 
 (defun %block-object (host name)
@@ -115,11 +115,11 @@ itself a live collection of the entities the block owns."
   (%live-com-object
    host (concatenate 'string "BLOCK:" (string-upcase name))
    (lambda ()
-     (let* ((object (make-mock-com-object
+     (let* ((object (make-cador-com-object
                      :progid "AutoCAD.Block"
                      :collection-p t
                      :collection-kind (cons :block-entities name)))
-            (props (mock-com-object-properties object)))
+            (props (cador-com-object-properties object)))
        (setf (gethash "Name" props)       (%al-string name)
              (gethash "ObjectName" props) (%al-string "AcDbBlockTableRecord")
              (gethash "IsLayout" props)   (%layout-block-name-p name)
@@ -133,8 +133,8 @@ itself a live collection of the entities the block owns."
   (%live-com-object
    host (concatenate 'string "LAYER:" (string-upcase name))
    (lambda ()
-     (let* ((object (make-mock-com-object :progid "AutoCAD.Layer"))
-            (props (mock-com-object-properties object)))
+     (let* ((object (make-cador-com-object :progid "AutoCAD.Layer"))
+            (props (cador-com-object-properties object)))
        (setf (gethash "Name" props)       (%al-string name)
              (gethash "ObjectName" props) (%al-string "AcDbLayerTableRecord"))
        object))))
@@ -143,7 +143,7 @@ itself a live collection of the entities the block owns."
   "The document's live Blocks collection object."
   (%live-com-object
    host "BLOCKS"
-   (lambda () (make-mock-com-object :progid "AutoCAD.Blocks"
+   (lambda () (make-cador-com-object :progid "AutoCAD.Blocks"
                                     :collection-p t
                                     :collection-kind :blocks))))
 
@@ -162,8 +162,8 @@ itself a live collection of the entities the block owns."
   (%live-com-object
    host (concatenate 'string "LAYOUT:" (string-upcase block-name))
    (lambda ()
-     (let* ((object (make-mock-com-object :progid "AutoCAD.Layout"))
-            (props (mock-com-object-properties object))
+     (let* ((object (make-cador-com-object :progid "AutoCAD.Layout"))
+            (props (cador-com-object-properties object))
             (model-p (string-equal block-name "*Model_Space")))
        (setf (gethash "Name" props)       (%al-string (%layout-name block-name))
              (gethash "ObjectName" props) (%al-string "AcDbLayout")
@@ -183,29 +183,29 @@ layout block (*Paper_Space is a fresh drawing's \"Layout1\")."
 (defun %layouts-collection (host)
   "Document.Layouts: a live collection of the drawing's layouts."
   (%live-com-object host "LAYOUTS"
-   (lambda () (make-mock-com-object :progid "AutoCAD.Layouts"
+   (lambda () (make-cador-com-object :progid "AutoCAD.Layouts"
                                     :collection-p t :collection-kind :layouts))))
 
 (defun %preferences-object (host)
   "Application.Preferences, with its Files and Profiles objects."
   (%live-com-object host "PREFERENCES"
    (lambda ()
-     (let ((object (make-mock-com-object :progid "AutoCAD.Preferences")))
-       (setf (gethash "Files" (mock-com-object-properties object))
+     (let ((object (make-cador-com-object :progid "AutoCAD.Preferences")))
+       (setf (gethash "Files" (cador-com-object-properties object))
              (com-object->vla
               (%live-com-object host "PREFERENCES-FILES"
-               (lambda () (make-mock-com-object :progid "AutoCAD.PreferencesFiles"))))
-             (gethash "Profiles" (mock-com-object-properties object))
+               (lambda () (make-cador-com-object :progid "AutoCAD.PreferencesFiles"))))
+             (gethash "Profiles" (cador-com-object-properties object))
              (com-object->vla
               (%live-com-object host "PREFERENCES-PROFILES"
-               (lambda () (make-mock-com-object :progid "AutoCAD.PreferencesProfiles")))))
+               (lambda () (make-cador-com-object :progid "AutoCAD.PreferencesProfiles")))))
        object))))
 
 (defun %layers-collection (host)
   "The document's live Layers collection object."
   (%live-com-object
    host "LAYERS"
-   (lambda () (make-mock-com-object :progid "AutoCAD.Layers"
+   (lambda () (make-cador-com-object :progid "AutoCAD.Layers"
                                     :collection-p t
                                     :collection-kind :layers))))
 
@@ -230,7 +230,7 @@ case-insensitively."
 (defun live-collection-members (host object)
   "The current member VLA-objects of collection OBJECT: computed from
 the drawing for a live collection, the stored list for a static one."
-  (let ((kind (mock-com-object-collection-kind object)))
+  (let ((kind (cador-com-object-collection-kind object)))
     (cond
       ((eq kind :blocks)
        (mapcar (lambda (name) (com-object->vla (%block-object host name)))
@@ -258,13 +258,13 @@ the drawing for a live collection, the stored list for a static one."
        (mapcar (lambda (handle)
                  (host-vlax-ename->vla-object host (handle->ename host handle)))
                (%block-entity-handles host (cdr kind))))
-      (t (copy-list (mock-com-object-collection-members object))))))
+      (t (copy-list (cador-com-object-collection-members object))))))
 
 (defun %collection-item (host object args operator-name)
   "Generic collection Item: ARGS is (INDEX-OR-NAME). An integer indexes
 the member list 0-based (the ActiveX convention); a string matches the
 members' Name property case-insensitively. A missing item signals
-:com-item-not-found — the mock's analogue of the ActiveX exception,
+:com-item-not-found — cador's analogue of the ActiveX exception,
 catchable through vl-catch-all-apply."
   (let ((key (first args))
         (members (live-collection-members host object)))
@@ -275,7 +275,7 @@ catchable through vl-catch-all-apply."
            (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
             :com-item-not-found
             "~A: index ~D is out of range for collection ~A (Count = ~D)."
-            operator-name key (mock-com-object-progid object) (length members))))
+            operator-name key (cador-com-object-progid object) (length members))))
       ((%com-string key)
        (let ((name (%com-string key)))
          (or (find-if (lambda (member-vla)
@@ -283,14 +283,14 @@ catchable through vl-catch-all-apply."
                                                            operator-name))
                                (member-name (%com-string
                                              (gethash "Name"
-                                                      (mock-com-object-properties
+                                                      (cador-com-object-properties
                                                        member)))))
                           (and member-name (string-equal member-name name))))
                       members)
              (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
               :com-item-not-found
               "~A: no item named ~A in collection ~A."
-              operator-name name (mock-com-object-progid object)))))
+              operator-name name (cador-com-object-progid object)))))
       (t
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
         :invalid-com-item-key
@@ -336,7 +336,7 @@ AutoCAD.Layer object."
 entities, its table records, and the COM object itself. The layout
 blocks *Model_Space / *Paper_Space cannot be deleted, as in vendor
 ActiveX."
-  (let ((name (cdr (mock-com-object-collection-kind object))))
+  (let ((name (cdr (cador-com-object-collection-kind object))))
     (when (%layout-block-name-p name)
       (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
        :com-cannot-delete-layout-block
@@ -348,7 +348,7 @@ ActiveX."
     (remhash name (drawing-blocks (cador-active-drawing host)))
     (remhash (concatenate 'string "BLOCK:" (string-upcase name))
              (cador-live-collection-ids host))
-    (setf (mock-com-object-released-p object) t)
+    (setf (cador-com-object-released-p object) t)
     nil))
 
 ;;; --- Entity methods: InsertBlock, GetAttributes, Move/Rotate/Copy… -
@@ -542,7 +542,7 @@ the new VLA-object."
 own point groups, its subentities', and — for an INSERT — the
 definition's transformed points. Text-bearing kinds extend max-y by the
 text height. SPEC-UNCERTAIN: vendor boxes account for glyph metrics;
-the mock approximates from the stored groups (deferred-spec-research)."
+cador approximates from the stored groups (deferred-spec-research)."
   (let ((points '()))
     (labels ((entity-points (e)
                ;; EVERY point-group occurrence — a LWPOLYLINE has one
@@ -704,9 +704,9 @@ handled, (values NIL NIL) otherwise."
   "Handle the generic collection methods (Item, Add, Delete) that live
 collections support without a per-object handler. Returns (values
 RESULT T) when NAME was handled, (values NIL NIL) otherwise."
-  (let ((kind (mock-com-object-collection-kind object)))
+  (let ((kind (cador-com-object-collection-kind object)))
     (cond
-      ((and (mock-com-object-collection-p object) (string-equal name "Item"))
+      ((and (cador-com-object-collection-p object) (string-equal name "Item"))
        (values (%collection-item host object args "Item") t))
       ((and (eq kind :blocks) (string-equal name "Add"))
        (values (%blocks-add host args) t))
@@ -741,8 +741,8 @@ RESULT T) when NAME was handled, (values NIL NIL) otherwise."
 
 (defun %collection-fallback-method-p (host object name)
   "Whether %COLLECTION-FALLBACK-METHOD would handle NAME on OBJECT."
-  (let ((kind (mock-com-object-collection-kind object)))
-    (or (and (mock-com-object-collection-p object) (string-equal name "Item"))
+  (let ((kind (cador-com-object-collection-kind object)))
+    (or (and (cador-com-object-collection-p object) (string-equal name "Item"))
         (and (member kind '(:blocks :layers)) (string-equal name "Add") t)
         (and (eq kind :documents)
              (member name '("Add" "Open" "Close") :test #'string-equal) t)
@@ -823,13 +823,13 @@ RESULT T) when NAME was handled, (values NIL NIL) otherwise."
     ("TextAlignmentPoint" :group 11  :type :point
                           :kinds (:text :attrib :attdef)))
   "Scalar / point entity COM properties bridged onto DXF groups.
-EffectiveName = Name headless — the mock has no dynamic blocks
+EffectiveName = Name headless — the host has no dynamic blocks
 (SPEC-UNCERTAIN; vla-entity-property-bridge.issue). ObjectName and
 Alignment are computed outside this table.")
 
 (defun %resolve-backing-entity (host object)
   "The live ENTITY-HANDLE behind an entity-backed COM object, or NIL."
-  (let ((handle (mock-com-object-backing-ename object)))
+  (let ((handle (cador-com-object-backing-ename object)))
     (and handle (safe-find-entity (cador-active-drawing host) handle))))
 
 (defun %entity-property-descriptor (entity name)
@@ -1017,8 +1017,8 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
   (%live-com-object
    host (concatenate 'string "LTYPE:" (string-upcase name))
    (lambda ()
-     (let* ((object (make-mock-com-object :progid "AutoCAD.Linetype"))
-            (props (mock-com-object-properties object)))
+     (let* ((object (make-cador-com-object :progid "AutoCAD.Linetype"))
+            (props (cador-com-object-properties object)))
        (setf (gethash "Name" props)       (%al-string name)
              (gethash "ObjectName" props) (%al-string "AcDbLinetypeTableRecord"))
        object))))
@@ -1027,7 +1027,7 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
   "The document's live Linetypes collection object."
   (%live-com-object
    host "LINETYPES"
-   (lambda () (make-mock-com-object :progid "AutoCAD.Linetypes"
+   (lambda () (make-cador-com-object :progid "AutoCAD.Linetypes"
                                     :collection-p t
                                     :collection-kind :linetypes))))
 
@@ -1050,10 +1050,10 @@ tblsearch \"LAYER\" and ActiveX read back the same value."
     value))
 
 (defun %layer-object-p (object)
-  (string-equal (mock-com-object-progid object) "AutoCAD.Layer"))
+  (string-equal (cador-com-object-progid object) "AutoCAD.Layer"))
 
 (defun %table-object-name (object)
-  (%com-string (gethash "Name" (mock-com-object-properties object))))
+  (%com-string (gethash "Name" (cador-com-object-properties object))))
 
 (defparameter *com-boolean-properties*
   '("Visible" "Saved" "ReadOnly" "IsLayout" "IsXRef" "IsDynamicBlock"
@@ -1072,7 +1072,7 @@ V26 macOS job 16931597044 and V25 Windows job 16931597047).")
 
 (defun %com-boolean-out (value)
   "VALUE as the ActiveX boolean symbol: the CL generalized boolean of a
-mock property, or an already-converted :VLAX-TRUE / :VLAX-FALSE."
+host property, or an already-converted :VLAX-TRUE / :VLAX-FALSE."
   (cond ((or (%com-symbol-named-p value ":VLAX-TRUE")
              (%com-symbol-named-p value ":VLAX-FALSE"))
          value)
@@ -1159,30 +1159,30 @@ T) when handled."
       (values nil nil)))
 
 (defun %document-object-p (object)
-  (string-equal (mock-com-object-progid object) "AutoCAD.Document"))
+  (string-equal (cador-com-object-progid object) "AutoCAD.Document"))
 
 (defun %active-document-p (host document)
   "True when DOCUMENT is the Application's ActiveDocument."
   (let* ((app-id (cador-acad-application-id host))
          (app (and app-id (cador-find-com-object host app-id)))
-         (active (and app (gethash "ActiveDocument" (mock-com-object-properties app)))))
+         (active (and app (gethash "ActiveDocument" (cador-com-object-properties app)))))
     (and (typep active 'clautolisp.autolisp-runtime:autolisp-vla-object)
          (eql (clautolisp.autolisp-runtime:autolisp-vla-object-value active)
-              (mock-com-object-id document)))))
+              (cador-com-object-id document)))))
 
 (defun %document-drawing (host object)
-  (cdr (assoc (mock-com-object-document-key object) (cador-documents host) :test #'equal)))
+  (cdr (assoc (cador-com-object-document-key object) (cador-documents host) :test #'equal)))
 
 (defun %application-com-property-get (host object name)
   "Application.ActiveDocument: the current document's object."
-  (if (and (string-equal (mock-com-object-progid object) "AutoCAD.Application")
+  (if (and (string-equal (cador-com-object-progid object) "AutoCAD.Application")
            (string-equal name "ActiveDocument"))
       (values (com-object->vla (%document-object host (cador-current-document-key host))) t)
       (values nil nil)))
 
 (defun %application-com-property-put (host object name value)
   "Setting Application.ActiveDocument activates that document."
-  (if (and (string-equal (mock-com-object-progid object) "AutoCAD.Application")
+  (if (and (string-equal (cador-com-object-progid object) "AutoCAD.Application")
            (string-equal name "ActiveDocument"))
       (progn
         (clautolisp.autolisp-host:request-host-document-activation
@@ -1200,7 +1200,7 @@ VALUE T) when handled."
     ((string-equal name "ActiveLayer")
      (values (com-object->vla (%layer-object host (%current-layer-name host))) t))
     ((string-equal name "Active")
-     (values (%vlax-boolean (equal (mock-com-object-document-key object)
+     (values (%vlax-boolean (equal (cador-com-object-document-key object)
                                    (cador-current-document-key host)))
              t))
     ((member name '("Name" "FullName" "Path" "Saved" "ReadOnly") :test #'string-equal)
@@ -1215,7 +1215,7 @@ VALUE T) when handled."
           ((string-equal name "Saved")
            (and drawing (zerop (clautolisp.drawing:drawing-dbmod drawing))))
           (t (doc-session-read-only
-              (cador-document-session host (mock-com-object-document-key object)))))
+              (cador-document-session host (cador-com-object-document-key object)))))
         t)))
     (t (values nil nil))))
 
@@ -1223,7 +1223,7 @@ VALUE T) when handled."
   "Preferences.Files.SupportPath is the support path findfile and load search
 (and (getenv \"ACAD\")); Preferences.Profiles.ActiveProfile is the current
 profile, CPROFILE. Returns (values VALUE T) when handled."
-  (let ((progid (mock-com-object-progid object)))
+  (let ((progid (cador-com-object-progid object)))
     (cond
       ((and (string-equal progid "AutoCAD.PreferencesFiles")
             (string-equal name "SupportPath"))
@@ -1236,7 +1236,7 @@ profile, CPROFILE. Returns (values VALUE T) when handled."
 (defun %preferences-com-property-put (host object name value)
   "Setting Preferences.Files.SupportPath sets the support path."
   (declare (ignore host))
-  (if (and (string-equal (mock-com-object-progid object) "AutoCAD.PreferencesFiles")
+  (if (and (string-equal (cador-com-object-progid object) "AutoCAD.PreferencesFiles")
            (string-equal name "SupportPath"))
       (let ((string (%com-string value)))
         (unless string
@@ -1306,11 +1306,11 @@ profile, CPROFILE. Returns (values VALUE T) when handled."
            (member name '("ActiveLayer" "Active" "Name" "FullName" "Path" "Saved" "ReadOnly")
                    :test #'string-equal)
            t)
-      (and (string-equal (mock-com-object-progid object) "AutoCAD.Application")
+      (and (string-equal (cador-com-object-progid object) "AutoCAD.Application")
            (string-equal name "ActiveDocument"))
-      (and (string-equal (mock-com-object-progid object) "AutoCAD.PreferencesFiles")
+      (and (string-equal (cador-com-object-progid object) "AutoCAD.PreferencesFiles")
            (string-equal name "SupportPath"))
-      (and (string-equal (mock-com-object-progid object) "AutoCAD.PreferencesProfiles")
+      (and (string-equal (cador-com-object-progid object) "AutoCAD.PreferencesProfiles")
            (string-equal name "ActiveProfile"))))
 
 ;;; --- Layer.Delete / Document lifecycle / AddLine / AddAttribute / Load ---
@@ -1323,7 +1323,7 @@ layer (CLAYER) cannot be deleted, as in vendor ActiveX. Returns nil."
                (not (string-equal name "0"))
                (not (string-equal name (%current-layer-name host))))
       (remhash name (cador-table host :layer))
-      (setf (mock-com-object-released-p object) t))
+      (setf (cador-com-object-released-p object) t))
     nil))
 
 (defun %install-document-persistence (host doc)
@@ -1332,7 +1332,7 @@ drawing: SaveAs writes the drawing to its FullName argument (and records
 the new Name, as the vendor object does), Save is a no-op that clears the
 dirty flag. The bare template's SaveAs only renames — a live document must
 actually persist. Returns DOC."
-  (let ((methods (mock-com-object-methods doc)))
+  (let ((methods (cador-com-object-methods doc)))
     (setf (gethash "SaveAs" methods)
           (lambda (host object args)
             (let ((path (%require-com-string-argument args "SaveAs")))
@@ -1356,7 +1356,7 @@ actually persist. Returns DOC."
                  (clautolisp.drawing:drawing-name drawing)))
               (when (clautolisp.drawing:drawing-path drawing)
                 (cador-save-drawing host drawing (namestring (clautolisp.drawing:drawing-path drawing)))))
-            (setf (mock-com-object-released-p object) (mock-com-object-released-p object))
+            (setf (cador-com-object-released-p object) (cador-com-object-released-p object))
             nil)))
   doc)
 
@@ -1431,7 +1431,7 @@ stored. The whole six are mapped here: 40 Height, 70 Mode, 3 Prompt,
 
 (defun %linetypes-load (host args)
   "Linetypes.Load(Name [, File]): register a :ltype table record so the linetype
-is available; the .lin file is not parsed (the mock has none). Returns nil."
+is available; the .lin file is not parsed (cador has none). Returns nil."
   (let ((name (%require-com-string-argument args "Linetypes.Load")))
     (unless (cador-find-table-record host :ltype name)
       (cador-add-table-record
@@ -1445,15 +1445,15 @@ is available; the .lin file is not parsed (the mock has none). Returns nil."
 
 (defmethod host-vlax-create-object ((host cador) progid)
   (let ((id-string (ensure-progid-string progid 'vlax-create-object)))
-    (let ((object (build-mock-com-object host id-string)))
+    (let ((object (build-cador-com-object host id-string)))
       (cond
         ((null object)
          (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
           :unknown-progid
-          "MockHost has no COM template registered for ProgID ~A."
+          "cador has no COM template registered for ProgID ~A."
           id-string))
         (t
-         (setf (gethash (mock-com-object-id object)
+         (setf (gethash (cador-com-object-id object)
                         (cador-com-objects host))
                object)
          (com-object->vla object))))))
@@ -1465,15 +1465,15 @@ is available; the .lin file is not parsed (the mock has none). Returns nil."
         (best nil))
     (maphash (lambda (id object)
                (declare (ignore id))
-               (when (and (not (mock-com-object-released-p object))
-                          (string-equal (mock-com-object-progid object) id-string))
+               (when (and (not (cador-com-object-released-p object))
+                          (string-equal (cador-com-object-progid object) id-string))
                  (setf best object)))
              (cador-com-objects host))
     (and best (com-object->vla best))))
 
 (defmethod host-vlax-release-object ((host cador) vla)
   (let ((object (resolve-vla-object host vla 'vlax-release-object)))
-    (setf (mock-com-object-released-p object) t)
+    (setf (cador-com-object-released-p object) t)
     nil))
 
 (defmethod host-vlax-get-property ((host cador) vla name)
@@ -1488,11 +1488,11 @@ is available; the .lin file is not parsed (the mock has none). Returns nil."
   (let* ((object (resolve-vla-object host vla 'vlax-get-property))
          (string (ensure-property-name-string name 'vlax-get-property)))
     (multiple-value-bind (value present-p)
-        (gethash string (mock-com-object-properties object))
+        (gethash string (cador-com-object-properties object))
       (cond
         (present-p value)
         ;; Collections answer Count from their (live) member list.
-        ((and (mock-com-object-collection-p object)
+        ((and (cador-com-object-collection-p object)
               (string-equal string "Count"))
          (length (live-collection-members host object)))
         (t
@@ -1505,7 +1505,7 @@ is available; the .lin file is not parsed (the mock has none). Returns nil."
                (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
                 :unknown-com-property
                 "VLA-OBJECT ~A has no property named ~A."
-                (mock-com-object-progid object) string))))))))
+                (cador-com-object-progid object) string))))))))
 
 (defmethod host-vlax-put-property ((host cador) vla name value)
   (let* ((object (resolve-vla-object host vla 'vlax-put-property))
@@ -1513,8 +1513,8 @@ is available; the .lin file is not parsed (the mock has none). Returns nil."
          (value (if (%com-boolean-property-p string)
                     (%com-boolean-in value string)
                     value)))
-    (if (nth-value 1 (gethash string (mock-com-object-properties object)))
-        (setf (gethash string (mock-com-object-properties object)) value)
+    (if (nth-value 1 (gethash string (cador-com-object-properties object)))
+        (setf (gethash string (cador-com-object-properties object)) value)
         ;; Entity-backed objects write their properties into the
         ;; entity's DXF groups.
         (multiple-value-bind (result handled-p)
@@ -1524,13 +1524,13 @@ is available; the .lin file is not parsed (the mock has none). Returns nil."
             (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
              :unknown-com-property
              "VLA-OBJECT ~A has no property named ~A."
-             (mock-com-object-progid object) string))))
+             (cador-com-object-progid object) string))))
     value))
 
 (defmethod host-vlax-invoke-method ((host cador) vla name args)
   (let* ((object (resolve-vla-object host vla 'vlax-invoke-method))
          (string (ensure-property-name-string name 'vlax-invoke-method))
-         (handler (gethash string (mock-com-object-methods object))))
+         (handler (gethash string (cador-com-object-methods object))))
     (if handler
         (funcall handler host object args)
         (multiple-value-bind (result handled-p)
@@ -1540,29 +1540,29 @@ is available; the .lin file is not parsed (the mock has none). Returns nil."
               (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
                :unknown-com-method
                "VLA-OBJECT ~A has no method named ~A."
-               (mock-com-object-progid object) string))))))
+               (cador-com-object-progid object) string))))))
 
 (defmethod host-vlax-property-available-p ((host cador) vla name)
   (let* ((object (resolve-vla-object host vla 'vlax-property-available-p))
          (string (ensure-property-name-string name 'vlax-property-available-p)))
-    (or (and (nth-value 1 (gethash string (mock-com-object-properties object))) t)
-        (and (mock-com-object-collection-p object)
+    (or (and (nth-value 1 (gethash string (cador-com-object-properties object))) t)
+        (and (cador-com-object-collection-p object)
              (string-equal string "Count"))
         (%object-com-property-known-p host object string))))
 
 (defmethod host-vlax-method-applicable-p ((host cador) vla name)
   (let* ((object (resolve-vla-object host vla 'vlax-method-applicable-p))
          (string (ensure-property-name-string name 'vlax-method-applicable-p)))
-    (or (and (gethash string (mock-com-object-methods object)) t)
+    (or (and (gethash string (cador-com-object-methods object)) t)
         (%collection-fallback-method-p host object string))))
 
-(defun %register-mock-com-object (host object)
-  "Store OBJECT in HOST's com-objects table (build-mock-com-object
+(defun %register-cador-com-object (host object)
+  "Store OBJECT in HOST's com-objects table (build-cador-com-object
 allocates but does not register), attributing it to the current document
 unless it already names one (or :APPLICATION). Returns OBJECT."
-  (unless (mock-com-object-document-key object)
-    (setf (mock-com-object-document-key object) (cador-active-document-key host)))
-  (setf (gethash (mock-com-object-id object) (cador-com-objects host))
+  (unless (cador-com-object-document-key object)
+    (setf (cador-com-object-document-key object) (cador-active-document-key host)))
+  (setf (gethash (cador-com-object-id object) (cador-com-objects host))
         object))
 
 ;;; --- Each object addresses its own document (multi-document slice 5) ----
@@ -1615,7 +1615,7 @@ or :APPLICATION. A closed document's object signals :document-closed."
 
 (defun %vla-document-key (host vla)
   (let ((object (ignore-errors (resolve-vla-object host vla 'vlax))))
-    (and object (mock-com-object-document-key object))))
+    (and object (cador-com-object-document-key object))))
 
 (defmacro %define-document-bound-com-method (name (&rest args))
   `(defmethod ,name :around ((host cador) vla ,@args)
@@ -1641,48 +1641,48 @@ built against that document's drawing."
          (cached (let ((id (gethash key ids)))
                    (and id (cador-find-com-object host id)))))
     (or cached
-        (let ((doc (build-mock-com-object host "AutoCAD.Document")))
-          (setf (mock-com-object-document-key doc) key)
-          (%register-mock-com-object host doc)
-          (setf (gethash key ids) (mock-com-object-id doc))
+        (let ((doc (build-cador-com-object host "AutoCAD.Document")))
+          (setf (cador-com-object-document-key doc) key)
+          (%register-cador-com-object host doc)
+          (setf (gethash key ids) (cador-com-object-id doc))
           ;; Name / FullName / Path / Saved / ReadOnly are the drawing's
           ;; (%document-com-property-get), not stored.
           (dolist (name '("Name" "FullName" "Path" "Saved" "ReadOnly"))
-            (remhash name (mock-com-object-properties doc)))
+            (remhash name (cador-com-object-properties doc)))
           (when (cador-acad-application-id host)
-            (setf (gethash "Application" (mock-com-object-properties doc))
+            (setf (gethash "Application" (cador-com-object-properties doc))
                   (%application-vla host)))
           (%install-document-persistence host doc)
           (call-with-cador-document
            host key
            (lambda ()
-             (let ((props (mock-com-object-properties doc)))
+             (let ((props (cador-com-object-properties doc)))
                (setf (gethash "Blocks" props) (com-object->vla (%blocks-collection host))
                      (gethash "Layers" props) (com-object->vla (%layers-collection host))
                      (gethash "Linetypes" props) (com-object->vla (%linetypes-collection host))
                      (gethash "ModelSpace" props) (com-object->vla (%block-object host "*Model_Space"))
                      (gethash "PaperSpace" props) (com-object->vla (%block-object host "*Paper_Space"))
                      (gethash "Layouts" props) (com-object->vla (%layouts-collection host))))))
-          (setf (gethash "Activate" (mock-com-object-methods doc))
+          (setf (gethash "Activate" (cador-com-object-methods doc))
                 (lambda (host object args)
                   (declare (ignore args))
                   (clautolisp.autolisp-host:request-host-document-activation
-                   host (mock-com-object-document-key object))
+                   host (cador-com-object-document-key object))
                   nil)
-                (gethash "Close" (mock-com-object-methods doc))
+                (gethash "Close" (cador-com-object-methods doc))
                 (lambda (host object args)
                   ;; Close([SaveChanges [, FileName]])
                   (let ((save (and args (%com-true-p (first args))))
                         (file (and (second args) (%com-string (second args)))))
-                    (cador-close-document host (mock-com-object-document-key object)
+                    (cador-close-document host (cador-com-object-document-key object)
                                           :save save :file file)
-                    (setf (mock-com-object-released-p object) t)
+                    (setf (cador-com-object-released-p object) t)
                     nil)))
           doc))))
 
 (defun %document-key-of (host vla operator)
   (let ((object (resolve-vla-object host vla operator)))
-    (mock-com-object-document-key object)))
+    (cador-com-object-document-key object)))
 
 (defmethod host-vlax-get-acad-object ((host cador))
   "Return the singleton AutoCAD.Application VLA-OBJECT, creating it — and
@@ -1691,26 +1691,26 @@ as VLA-OBJECT references so vla-get-activedocument yields a usable
 document. Repeated calls return the same application object."
   (let* ((cached-id (cador-acad-application-id host))
          (cached (and cached-id (cador-find-com-object host cached-id))))
-    (if (and cached (not (mock-com-object-released-p cached)))
+    (if (and cached (not (cador-com-object-released-p cached)))
         (com-object->vla cached)
-        (let ((app (build-mock-com-object host "AutoCAD.Application")))
-          (setf (mock-com-object-document-key app) :application)
-          (%register-mock-com-object host app)
-          (setf (cador-acad-application-id host) (mock-com-object-id app))
+        (let ((app (build-cador-com-object host "AutoCAD.Application")))
+          (setf (cador-com-object-document-key app) :application)
+          (%register-cador-com-object host app)
+          (setf (cador-acad-application-id host) (cador-com-object-id app))
           ;; ActiveDocument is the host's current document's object, live
           ;; (%application-com-property-get); not stored.
-          (remhash "ActiveDocument" (mock-com-object-properties app))
+          (remhash "ActiveDocument" (cador-com-object-properties app))
           (let ((prefs (%preferences-object host)))
-            (setf (mock-com-object-document-key prefs) :application)
-            (setf (gethash "Preferences" (mock-com-object-properties app))
+            (setf (cador-com-object-document-key prefs) :application)
+            (setf (gethash "Preferences" (cador-com-object-properties app))
                   (com-object->vla prefs)))
           ;; Documents: a live collection over the open documents.
-          (let ((docs (make-mock-com-object :progid "AutoCAD.Documents"
+          (let ((docs (make-cador-com-object :progid "AutoCAD.Documents"
                                             :collection-p t
                                             :collection-kind :documents
                                             :document-key :application)))
-            (%register-mock-com-object host docs)
-            (setf (gethash "Documents" (mock-com-object-properties app))
+            (%register-cador-com-object host docs)
+            (setf (gethash "Documents" (cador-com-object-properties app))
                   (com-object->vla docs)))
           ;; Every open document's object, so each has its Application.
           (dolist (key (host-document-list host))
@@ -1721,12 +1721,12 @@ document. Repeated calls return the same application object."
   "Return the collection's member VLA-objects as a CL list; signal
 :not-a-collection if VLA is not a collection object."
   (let ((obj (resolve-vla-object host vla 'vlax-collection-items)))
-    (if (mock-com-object-collection-p obj)
+    (if (cador-com-object-collection-p obj)
         (live-collection-members host obj)
         (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
          :not-a-collection
          "vlax-for / vlax-map-collection: ~A is not an ActiveX collection."
-         (mock-com-object-progid obj)))))
+         (cador-com-object-progid obj)))))
 
 ;;; --- Entity <-> VLA-object bridge + introspection ----------------
 
@@ -1737,24 +1737,24 @@ round-trips and vlax-curve-* can recover the entity."
   (let* ((handle (ename->handle ename 'vlax-ename->vla-object host))
          (cached-id (gethash handle (cador-entity-vla-map host)))
          (cached (and cached-id (cador-find-com-object host cached-id))))
-    (if (and cached (not (mock-com-object-released-p cached)))
+    (if (and cached (not (cador-com-object-released-p cached)))
         (com-object->vla cached)
-        (let ((obj (%register-mock-com-object
-                    host (make-mock-com-object :progid "AutoCAD.Entity"
+        (let ((obj (%register-cador-com-object
+                    host (make-cador-com-object :progid "AutoCAD.Entity"
                                                :backing-ename handle))))
           (setf (gethash handle (cador-entity-vla-map host))
-                (mock-com-object-id obj))
+                (cador-com-object-id obj))
           (com-object->vla obj)))))
 
 (defmethod host-vlax-vla-object->ename ((host cador) vla)
   (let* ((obj (resolve-vla-object host vla 'vlax-vla-object->ename))
-         (handle (mock-com-object-backing-ename obj)))
+         (handle (cador-com-object-backing-ename obj)))
     (if handle
         (handle->ename host handle)
         (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
          :not-an-entity-vla-object
          "vlax-vla-object->ename: ~A is not an entity-backed VLA-OBJECT."
-         (mock-com-object-progid obj)))))
+         (cador-com-object-progid obj)))))
 
 (defmethod host-vlax-erased-p ((host cador) vla)
   ;; Do NOT go through resolve-vla-object: a released object must report
@@ -1764,19 +1764,19 @@ round-trips and vlax-curve-* can recover the entity."
          (obj (cador-find-com-object host id)))
     (cond
       ((null obj) t)                    ; unknown -> gone
-      ((mock-com-object-backing-ename obj)
+      ((cador-com-object-backing-ename obj)
        (null (safe-find-entity (cador-active-drawing host)
-                               (mock-com-object-backing-ename obj))))
-      (t (mock-com-object-released-p obj)))))
+                               (cador-com-object-backing-ename obj))))
+      (t (cador-com-object-released-p obj)))))
 
 (defmethod host-vlax-describe-object ((host cador) vla)
   (let ((obj (resolve-vla-object host vla 'vlax-describe-object))
         (props '())
         (methods '()))
     (maphash (lambda (k v) (push (cons k v) props))
-             (mock-com-object-properties obj))
+             (cador-com-object-properties obj))
     (maphash (lambda (k v) (declare (ignore v)) (push k methods))
-             (mock-com-object-methods obj))
+             (cador-com-object-methods obj))
     (values (nreverse props) (nreverse methods))))
 
 ;;; --- LDATA (persistent extension-dictionary LISP data) -----------
@@ -1788,8 +1788,8 @@ keyspace. DICTIONARY is a VLA-object or a global-dictionary name string."
           (cond
             ((typep dictionary 'clautolisp.autolisp-runtime:autolisp-vla-object)
              (let ((obj (resolve-vla-object host dictionary operator-name)))
-               (or (mock-com-object-backing-ename obj)
-                   (princ-to-string (mock-com-object-id obj)))))
+               (or (cador-com-object-backing-ename obj)
+                   (princ-to-string (cador-com-object-id obj)))))
             ((typep dictionary 'clautolisp.autolisp-runtime:autolisp-string)
              (clautolisp.autolisp-runtime:autolisp-string-value dictionary))
             ((stringp dictionary) dictionary)

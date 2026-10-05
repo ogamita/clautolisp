@@ -5,7 +5,7 @@
 ;;;; End-to-end AutoLISP tests for the drawing-data + selection layer
 ;;;; (REGAPP, XData round-trip, the named-object-dictionary tree,
 ;;;; XRECORD lifecycle, symbol tables, and the ssget filter grammar)
-;;;; driven through the reader + evaluator against a fresh MockHost.
+;;;; driven through the reader + evaluator against a fresh cador.
 ;;;;
 ;;;; Each program returns an integer (a count, or 1/0 for a boolean)
 ;;;; so the CL-side assertion is a simple EQL — no wrapper unwrapping.

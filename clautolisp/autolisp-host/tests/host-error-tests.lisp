@@ -67,3 +67,24 @@
     (is (eq :caught
             (handler-case (funcall thunk)
               (clautolisp.autolisp-runtime:host-error () :caught))))))
+
+;;; --- C6: the core never reaches into a host ----------------------------------
+;;; (cador-4 slice 3, D2 section II.15.) The reader, runtime, host interface and
+;;; builtins name no host package: everything CAD goes through the host
+;;; generics. Prose may mention cador; a package-qualified reference may not.
+
+(test c6-core-sources-name-no-host-package
+  (let ((offenders '()))
+    (dolist (dir '("autolisp-reader/source/" "autolisp-runtime/source/"
+                   "autolisp-host/source/" "autolisp-builtins-core/source/"))
+      (dolist (file (directory (merge-pathnames
+                                "*.lisp" (asdf:system-relative-pathname "clautolisp" dir))))
+        (with-open-file (in file :external-format :utf-8)
+          (loop for line = (read-line in nil)
+                for n from 1
+                while line
+                when (let ((lower (string-downcase line)))
+                       (some (lambda (pkg) (search pkg lower))
+                             '("clautolisp.cador:" "clautolisp.drawing:" "clautolisp.cadtui:")))
+                  do (push (format nil "~A:~D" (file-namestring file) n) offenders)))))
+    (is (null offenders) "core sources reference a host package: ~{~A~^, ~}" offenders)))

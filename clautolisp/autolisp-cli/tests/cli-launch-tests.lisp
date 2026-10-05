@@ -8,7 +8,7 @@
 ;;;; transmit bindings and stamps a handful of host sysvars from them
 ;;;; (engine identity, TEMPPREFIX, launch codepage). Before this suite
 ;;;; existed those helpers were only exercised end-to-end by binary
-;;;; runs. Here we drive them directly against a fresh MockHost.
+;;;; runs. Here we drive them directly against a fresh cador.
 
 ;;; --- Engine identity stamping -----------------------------------
 ;;;
@@ -54,9 +54,9 @@ sexp file (UNIX backend), so registry reads/writes stay hermetic."
                             (random (expt 36 8)))
                     (uiop:temporary-directory)))
             (clautolisp.cador::*vl-registry-backend* :unix)
-            (clautolisp.cador::*mock-registry-path* ,path)
-            (clautolisp.cador::*mock-registry* nil)
-            (clautolisp.cador::*mock-registry-loaded-from* nil))
+            (clautolisp.cador::*cador-registry-path* ,path)
+            (clautolisp.cador::*cador-registry* nil)
+            (clautolisp.cador::*cador-registry-loaded-from* nil))
        (unwind-protect (progn ,@body)
          (ignore-errors (delete-file ,path))))))
 

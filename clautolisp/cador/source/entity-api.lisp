@@ -1,6 +1,6 @@
 (in-package #:clautolisp.cador)
 
-;;;; Entity-level HAL methods for MockHost.
+;;;; Entity-level HAL methods for cador.
 ;;;;
 ;;;; Phase 17b/(a): these methods are now a thin AutoLISP adapter over
 ;;;; the clautolisp.drawing CL API, operating on the host's
@@ -181,12 +181,12 @@ given HOST, :cross-document-dereference for another drawing's ename)."
 
 ;;; --- Compatibility helpers (kept; used by selection-api etc.) ----
 
-(defun cador-allocate-handle (mock)
-  "Allocate the next hex handle string for MOCK's active drawing and
+(defun cador-allocate-handle (host)
+  "Allocate the next hex handle string for HOST's active drawing and
 bump its seed. Retained for API compatibility; the entity methods now
 let clautolisp.drawing:ADD-ENTITY allocate internally."
   (format nil "~X" (clautolisp.drawing:allocate-handle
-                    (cador-active-drawing mock))))
+                    (cador-active-drawing host))))
 
 (defun safe-find-entity (drawing handle &key include-deleted)
   "Like clautolisp.drawing:find-entity, but a malformed handle (one
@@ -199,10 +199,10 @@ and set ERRNO, they do not raise."
                                       :include-deleted include-deleted)
     (clautolisp.drawing:drawing-error () nil)))
 
-(defun cador-find-entity-by-handle (mock handle)
+(defun cador-find-entity-by-handle (host handle)
   "Return the live ENTITY-HANDLE stored under HANDLE, or nil if no
 such entity exists or it has been deleted."
-  (safe-find-entity (cador-active-drawing mock) handle))
+  (safe-find-entity (cador-active-drawing host) handle))
 
 (defun current-document ()
   (clautolisp.autolisp-runtime:evaluation-context-current-document
@@ -367,7 +367,7 @@ wrapped group-code data, plus — for a BLOCK record — the vendors'
 (-2 . <first-entity ename>) group, the entry point of the classic
 block-contents walk ((entnext (cdr (assoc -2 (tblsearch \"BLOCK\" n)))).
 SPEC-UNCERTAIN: on the vendors an *empty* block's -2 names its ENDBLK
-entity; the mock stores no ENDBLK and omits the group
+entity; the host stores no ENDBLK and omits the group
 (deferred-spec-research.issue)."
   (let ((view (pure->al-value (symbol-table-record-data record))))
     (if (eq (symbol-table-record-kind record) :block-record)
@@ -902,7 +902,7 @@ value from tblobjname), or NIL."
   ;;                    "BLOCK" name): the block's first entity — the
   ;;                    canonical ATTDEF walk. SPEC-UNCERTAIN: whether
   ;;                    the vendor walk ends on an ENDBLK entity; the
-  ;;                    mock stores none and returns nil after the last
+  ;;                    cador stores none and returns nil after the last
   ;;                    owned entity (deferred-spec-research.issue).
   (let* ((drawing (cador-active-drawing host))
          (order (reverse (clautolisp.drawing:drawing-creation-order drawing))))

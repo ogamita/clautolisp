@@ -542,7 +542,7 @@ document namespace. [S: =cador/source/sysvar-api.lisp:245–254= raises
 | System / package                     | Owns                                                                 |
 |--------------------------------------+----------------------------------------------------------------------|
 | =clautolisp.autolisp-host= (=autolisp-host/=) | the =host= base class, the HAL *generics*, =signal-host-not-supported=, and =nihil= (the negative-contract host). [S: protocol.lisp, nihil.lisp] |
-| =clautolisp.cador= (=cador/=)         | the =cador= class + its HAL *methods*, session-side carriers (=pickset=, =mock-com-object=), sysvar/registry/prompt/command/vlax methods. [S: cador/source/package.lisp] |
+| =clautolisp.cador= (=cador/=)         | the =cador= class + its HAL *methods*, session-side carriers (=pickset=, =cador-com-object=), sysvar/registry/prompt/command/vlax methods. [S: cador/source/package.lisp] |
 | =clautolisp.drawing= (=drawing/=)     | the drawing value object + DXF codec + the drawing-resident carriers (=entity-handle=, =symbol-table-record=, =dictionary=, =sysvar-cell=), imported back into =cador=. [S: cador/source/package.lisp:3–48; drawing/source/model.lisp] |
 | (optional) =clautolisp.drawing-dwg= (=drawing-dwg/=) | the isolated LibreDWG binding for DWG read (§II.12).            |
 
@@ -555,13 +555,20 @@ symbol the core is allowed to reference; a grep for =cador::= /
 =cador= depends *downward* on =autolisp-host= (for the generics) and
 =drawing= (for the carriers), never *upward* on interpreter internals except
 the published runtime API. [S: cador/source/package.lisp import lists]
+The check is a test since cador-4 slice 3 (clautolisp 2.2.198):
+=c6-core-sources-name-no-host-package= (autolisp-host tests) fails on any
+package-qualified =clautolisp.cador:= / =clautolisp.drawing:= /
+=clautolisp.cadtui:= in the reader, runtime, host-interface or builtins
+sources.
 
-*Cleanups this spec mandates* (recorded so they are not lost):
-1. Rename the internal "MockHost" comments/identifiers to =cador= (cosmetic,
-   the class is already =cador=). [S: cador/source/model.lisp header]
-2. Give =nihil= an explicit =host-dictobjname= method (it currently inherits the
-   base not-supported method — benign but inconsistent). [S: nihil.lisp lacks
-   =host-dictobjname=]
+*Cleanups this spec mandates* (recorded so they are not lost) -- all done:
+1. Rename the internal "MockHost" comments/identifiers to =cador=. *Done*
+   (cador-4 slice 3, 2.2.198): =mock-com-object= is =cador-com-object=,
+   =*mock-registry*= =*cador-registry*=, the "MockHost" wording is gone, and
+   cador's functions take a =host=. The values a program can read --
+   Application.Name "Mock AutoCAD", Version "Mock 0.1", =PLATFORM= "Mock
+   CAD" -- are unchanged.
+2. Give =nihil= an explicit =host-dictobjname= method. *Done* (2.2.198).
 3. Change =cador-set-sysvar='s read-only path to raise =sysvar-read-only=, not
    =:host-not-supported= (D1 §15). [S: cador/source/sysvars.lisp:131–132]
 4. Introduce the three missing taxonomy classes and the capability query (D1

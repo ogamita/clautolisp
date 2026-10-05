@@ -142,9 +142,9 @@
     (push :grdraw-1 (cador-display-log mock))
     (is (equal '(:grdraw-1) (cador-display-log mock)))))
 
-;;; --- Phase-9 contract: host operations on a default MockHost -----
+;;; --- Phase-9 contract: host operations on a default cador -----
 ;;;
-;;; MockHost in Phase 9 has only the data carriers; all host
+;;; cador in Phase 9 has only the data carriers; all host
 ;;; operations still fall through to the base-class fallback methods
 ;;; on `host` and signal :host-not-supported. Phase 10 fills these
 ;;; in.

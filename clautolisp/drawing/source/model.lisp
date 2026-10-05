@@ -6,7 +6,7 @@
 ;;;; clautolisp.cador (model.lisp) so the in-memory
 ;;;; drawing database becomes a first-class CL value that can be held
 ;;;; outside any host, loaded from / written to a file (Phase 17b/c),
-;;;; and enumerated by pure-CL tools (Phase 17d). MockHost now holds
+;;;; and enumerated by pure-CL tools (Phase 17d). cador now holds
 ;;;; one of these and delegates its entity / table / sysvar surface to
 ;;;; the active drawing; it re-exports the carriers so older code and
 ;;;; tests that imported them from the cador package keep working.

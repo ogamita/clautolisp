@@ -39,7 +39,7 @@
   (format t "  --dwg FILE             Start on the drawing FILE (DXF or DWG): it is the first~%")
   (format t "                         open drawing, current, in place of the untitled~%")
   (format t "                         Drawing1.dwg -- as acad.exe FILE does.~%")
-  (format t "  --mock-input PATH      Attach the file at PATH as the MockHost prompt-stream.~%")
+  (format t "  --mock-input PATH      Attach the file at PATH as the cador prompt-stream.~%")
   (format t "                         Lines are consumed by GETSTRING / GETPOINT / etc. in order.~%")
   (format t "  --gui CMD              DCL GUI driver: subprocess CMD speaking the sexp wire protocol.~%")
   (format t "                         Also read from $CLAUTOLISP_GUI when --gui is omitted.~%")
@@ -673,7 +673,7 @@ unreadable drawing, or a host without drawings, is a usage error."
 (defun setup-context (context host &optional mock-input)
   "Install the core builtins into the freshly created evaluation
 context's namespace and attach the chosen HAL backend to its
-session. When MOCK-INPUT is supplied and HOST is a MockHost,
+session. When MOCK-INPUT is supplied and HOST is a cador,
 attach the file at MOCK-INPUT as the host's prompt-stream so
 that subsequent get* calls read deterministic answers from it."
   (when host
@@ -922,13 +922,13 @@ consume it (bug-aldo-nav-entry-and-breakpoint-flow)."
          (clautolisp.debug.ui:session-ui session) session request)))))
 
 (defun wire-cador-to-terminal (context)
-  "In an interactive REPL the MockHost has no prompt-stream, so every
+  "In an interactive REPL the cador has no prompt-stream, so every
 get* (GETSTRING, GETINT, …) reads EOF and returns nil. Point the
 host's prompt input at *standard-input* and its prompt output at
 *standard-output* — via synonym streams so the wiring follows any
 dynamic rebinding of those specials — so interactive get* calls read
 the line the user types after the form. Only applies when the active
-host is a MockHost that has no prompt-stream yet (i.e. --mock-input was
+host is a cador that has no prompt-stream yet (i.e. --mock-input was
 not supplied)."
   (let ((host (clautolisp.autolisp-runtime:runtime-session-host
                (evaluation-context-session context))))

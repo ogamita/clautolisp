@@ -1,6 +1,6 @@
 (in-package #:clautolisp.cador)
 
-;;;; Headless interaction-channel HAL methods on MockHost (Phase 12).
+;;;; Headless interaction-channel HAL methods on cador (Phase 12).
 ;;;;
 ;;;; Implements host-prompt, host-initget, host-getstring,
 ;;;; host-getint, host-getreal, host-getpoint, host-getcorner,
@@ -225,7 +225,7 @@ running totals are combined at the end."
         (cond
           (bad nil)
           ;; a lone number with no unit: radians, preserving the old
-          ;; MockHost contract.
+          ;; cador contract.
           ((and (null components) pending) (coerce pending 'double-float))
           ((null components) nil)
           ;; a number left dangling with no unit alongside united terms
@@ -349,7 +349,7 @@ getdist Notes). system-variables.issue."
 
 (defmethod host-getangle ((host cador) prompt &key base controls)
   ;; Parse the entered angle and return it in RADIANS. A bare number is
-  ;; radians (MockHost's dialect-neutral default); an explicit unit
+  ;; radians (cador's dialect-neutral default); an explicit unit
   ;; (deg / rd) or a D-M-S expression is honored -- see PARSE-ANGLE.
   (declare (ignore base controls))
   (multiple-value-bind (bits kwords) (cador-take-initget host)

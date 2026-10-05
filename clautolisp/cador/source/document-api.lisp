@@ -171,8 +171,8 @@ a COM object's document; NIL otherwise (or when that document is closed)."
     (clautolisp.autolisp-runtime:autolisp-ename
      (let ((drawing (clautolisp.autolisp-runtime:autolisp-ename-document handle)))
        (and drawing (car (rassoc drawing (cador-documents host))))))
-    (mock-com-object
-     (let ((key (mock-com-object-document-key handle)))
+    (cador-com-object
+     (let ((key (cador-com-object-document-key handle)))
        (and key (assoc key (cador-documents host) :test #'string=) key)))
     (clautolisp.autolisp-runtime:autolisp-vla-object
      (let ((object (gethash (clautolisp.autolisp-runtime:autolisp-vla-object-value handle)

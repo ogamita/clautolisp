@@ -1,6 +1,6 @@
 (in-package #:clautolisp.cador)
 
-;;;; Sysvar HAL methods on MockHost (Phase 11).
+;;;; Sysvar HAL methods on cador (Phase 11).
 ;;;;
 ;;;; Implements: host-getvar, host-setvar.
 ;;;;
@@ -21,7 +21,7 @@
       "~A expects a sysvar name string, got ~S."
       operator-name name))))
 
-(defun mock-string-of (value)
+(defun cador-string-of (value)
   (cond
     ((typep value 'clautolisp.autolisp-runtime:autolisp-string)
      (clautolisp.autolisp-runtime:autolisp-string-value value))
@@ -59,7 +59,7 @@
          "Sysvar ~A expects a real number, got ~S."
          cell-name value))))
     ((:string)
-     (let ((string (mock-string-of value)))
+     (let ((string (cador-string-of value)))
        (or string
            (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
             :invalid-sysvar-value
@@ -91,12 +91,12 @@ autolisp-string wrapper, others are returned as-is."
 ;;; that file/IO/entity/selection builtins set when they return
 ;;; nil-on-failure. The authoritative value lives on the runtime
 ;;; session (slot AUTOLISP-RUNTIME:RUNTIME-SESSION-ERRNO, accessed
-;;; via AUTOLISP-ERRNO / SET-AUTOLISP-ERRNO). The MockHost catalogue
+;;; via AUTOLISP-ERRNO / SET-AUTOLISP-ERRNO). The cador catalogue
 ;;; carries an ERRNO cell only so that snapshot/restore round-trips
 ;;; cleanly; the cell value is not the truth.
 ;;;
 ;;; (getvar "ERRNO") therefore reads the session value, and
-;;; (setvar "ERRNO" v) writes it. The mock cell's value is updated
+;;; (setvar "ERRNO" v) writes it. The host cell's value is updated
 ;;; on every read/write so it stays in sync for the next snapshot.
 
 (defun errno-name-p (string)
@@ -351,7 +351,7 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
       ((null cell)
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
         :unknown-sysvar
-        "MockHost has no system variable named ~A."
+        "cador has no system variable named ~A."
         string))
       ((sysvar-cell-read-only-p cell)
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error

@@ -2,7 +2,7 @@
 
 (in-suite cador-suite)
 
-;;; --- Phase 10: entity API on MockHost -----------------------------
+;;; --- Phase 10: entity API on cador -----------------------------
 
 (defun make-line-data (&key (layer "0") (start '(0.0d0 0.0d0 0.0d0)) (end '(1.0d0 1.0d0 0.0d0)))
   (list (cons 0 "LINE")
