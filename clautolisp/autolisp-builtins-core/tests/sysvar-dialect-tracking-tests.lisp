@@ -117,3 +117,34 @@ the user-value memory this is exactly what a rebuild would throw away."
     (is (eql 42 (%sdt-getvar context "USERI1")))
     (%sdt-eval context "(setq *AUTOLISP-DIALECT* 'strict)")
     (is (eql 42 (%sdt-getvar context "USERI1")))))
+
+(test bricscad-v26-defines-sysvars-v25-lacks
+  "APPAUTOLOAD, CLAYOUT, PDFSHX*, SPLDEGREE / SPLKNOTS / SPLMETHOD: BricsCAD
+V26 defines them (macOS harvest 16913315157, probe-triage3 16931597044), V25
+does not (Windows harvest 16921381045, ACADVER \"25.0 BricsCAD\")."
+  (let ((context (%sdt-context)))
+    (%sdt-eval context "(setq *AUTOLISP-DIALECT* 'bricscad-v26)")
+    (is (eql 3 (%sdt-getvar context "SPLDEGREE")))
+    (is (eql 95 (%sdt-getvar context "PDFSHXTHRESHOLD")))
+    (%sdt-eval context "(setq *AUTOLISP-DIALECT* 'bricscad-v25)")
+    (is (null (%sdt-getvar context "SPLDEGREE")))
+    (is (null (%sdt-getvar context "PDFSHXTHRESHOLD")))
+    (%sdt-eval context "(setq *AUTOLISP-DIALECT* 'autocad-2022)")
+    (is (eql 3 (%sdt-getvar context "SPLDEGREE")))))
+
+(test sysvar-values-as-the-vendors-return-them
+  "probe-triage3 repr suite (AutoCAD 2022 job 16931597043, BricsCAD V26
+16931597044): angles in radians on both, ByLayer spelled ByLayer, BricsCAD's
+own INETLOCATION / INTERFERECOLOR, colours as #RRGGBB, no single-float noise."
+  (let ((context (%sdt-context)))
+    (%sdt-eval context "(setq *AUTOLISP-DIALECT* 'autocad-2022)")
+    (is (< (abs (- (/ pi 2) (%sdt-getvar context "POLARANG"))) 1d-12))
+    (is (< (abs (- (/ pi 4) (%sdt-getvar context "DIMJOGANG"))) 1d-12))
+    (is (equal "ByLayer" (%sdt-getvar context "CELTYPE")))
+    (is (equal "1" (%sdt-getvar context "INTERFERECOLOR")))
+    (is (equal "http://www.autodesk.com" (%sdt-getvar context "INETLOCATION")))
+    (%sdt-eval context "(setq *AUTOLISP-DIALECT* 'bricscad-v26)")
+    (is (equal "BYLAYER" (%sdt-getvar context "INTERFERECOLOR")))
+    (is (equal "http://www.bricsys.com" (%sdt-getvar context "INETLOCATION")))
+    (is (equal "#323638" (%sdt-getvar context "CMDLINEEDITBGCOLOR")))
+    (is (eql 0.3d0 (%sdt-getvar context "AUTOCOMPLETEDELAY")))))

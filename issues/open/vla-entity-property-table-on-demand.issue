@@ -71,3 +71,13 @@ document objects -- Layouts (vla-item by name), Document.Active,
 Preferences.Files.SupportPath, Profiles / ActiveProfile -- called by EPUREE
 (comu.lsp) and its SNCF upstream: a different gap, filed as
 com-application-object-properties.issue. Stays open, demand-driven.
+
+* Demand scan (2026-10-05)
+
+Re-run after com-application-object-properties closed (2.2.179): 1416 files,
+still NO entity property outside the table; every unmapped name is an
+application / document property now implemented (ActiveDocument,
+SupportPath, Preferences, Files, Layouts, Active, ActiveProfile, Profiles,
+Documents). Nothing to add. Note: the scan sees vla-get-* / vla-put-* /
+vlax-get[-property] / vlax-put[-property] with a literal name only, not
+vlax-invoke methods nor names built at run time. Stays open, demand-driven.

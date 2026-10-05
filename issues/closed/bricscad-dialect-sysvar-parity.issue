@@ -272,7 +272,8 @@ divergence. Measured on the built executable: bricscad / bricscad-mac /
 bricscad-linux all report PICKBOX 4, MAXSORT 200, SECURELOAD 0, DYNPROMPT
 nil; autocad / autocad-mac 3, 1000, 1, 1.
 
-Remaining: Phase 3 (host-derived state), and the 32 candidates above.
+Remaining (as of 2026-10-03): Phase 3 (host-derived state), and the 32
+candidates above -- both resolved 2026-10-04, see below.
 
 
 Second source + Phase 3 (2026-10-04, clautolisp 2.2.172)
@@ -301,3 +302,50 @@ VSMIN/VSMAX -- no window or view headless), install / profile paths
 (ACADPREFIX, SRCHPATH, *PATH: machine-specific, keep-as-difference), the
 template-saved drawing values (a BricsCAD fresh drawing comes from its
 locale's template; MEASUREMENT now follows the locale, 2.2.169).
+
+
+V25 vs V26, representation fixes (2026-10-05, clautolisp 2.2.182)
+-----------------------------------------------------------------
+
+CORRECTION: the "Windows" harvest (job 16921381045) is BricsCAD **V25** --
+ACADVER "25.0 BricsCAD", profile folder V25x64; probe-triage2's (ver) on the
+same runner says "Version 25.0". Only the macOS runner has V26. So:
+  - the 26 rows adopted on agreement held across V25 AND V26 (still good);
+  - the 6 "platform" rows (*BRICSCAD-PLATFORM-FACTORY-DEFAULTS*) compare V26
+    macOS with V25 Windows: platform OR version -- caveat in the code; a V26
+    Windows harvest would settle it;
+  - 8 sysvars in *BRICSCAD-ABSENT-SYSVARS* exist in V26 (macOS harvest, and
+    probe-triage3 job 16931597044) but not V25: APPAUTOLOAD CLAYOUT
+    PDFSHXBESTFONT PDFSHXLAYER PDFSHXTHRESHOLD SPLDEGREE SPLKNOTS SPLMETHOD.
+    Moved to *BRICSCAD-V25-ABSENT-SYSVARS* (dropped only for a BricsCAD
+    dialect of version <= 25). The runtime dialect switch keyed its rebuild
+    on the TEMPLATE (v25 and v26 share :bricscad-v26), so bricscad-v26 ->
+    -v25 never rebuilt: the controller now also compares the dialect itself
+    (sdc applied-identity).
+  - inventory: 47 rows marked (:bricscad nil) are defined by BricsCAD -- 34
+    in V25 and V26, 13 in V26 only; their :versions / :vendor now say so.
+
+The three representation classes (colour format, single-float noise,
+radians), meant to become separate issues, are fixed here instead, from
+measurements (probe-triage3 repr suite: AutoCAD 2022 job 16931597043,
+BricsCAD V26 job 16931597044; harvests):
+  - single-float noise: 32 catalogue reals were the single-float rendering
+    of the inventory's decimal (AUTOCOMPLETEDELAY 0.30000001192092896 for
+    0.3); rewritten from the inventory literal.
+  - radians: DIMJOGANG, LOFTANG1 / 2, POLARANG -- GETVAR returns RADIANS on
+    BOTH vendors (AutoCAD 0.785398 / 1.5708); the catalogue held degrees.
+  - colour format: the 16 BricsCAD-only colour sysvars held doc text ("White
+    (Settings dialog) #FFFFFF (Command line)"): now the #RRGGBB both BricsCAD
+    harvests return. CELTYPE / CMATERIAL are "ByLayer" and DEFPLSTYLE
+    ByColor on both vendors (the doc spells BYLAYER / ByLayer).
+    INTERFERECOLOR "1" (AutoCAD) vs "BYLAYER" (BricsCAD), RULERTEXTCOLOR and
+    HORIZONBKG_* #RRGGBB on BricsCAD (absent from AutoCAD 2022's console):
+    BricsCAD overlay rows.
+  - doc-text placeholders: INETLOCATION "http://www.autodesk.com" (measured;
+    BricsCAD "http://www.bricsys.com"), FONTMAP "acad.fmp" (AutoCAD returns
+    its resolved path; BricsCAD "default.fmp"), MENUNAME "" (a machine path
+    on both, keep-as-difference), CMDLINEEDITBGCOLOR "#323638".
+
+Closed. Left by design (unchanged): window / screen state and install /
+profile paths. Open questions that would need another runner: V26 on
+Windows (settles the 6 platform rows), real V25 VALUES beyond existence.

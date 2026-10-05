@@ -50,8 +50,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Sets running 3D object snaps."
   :coupled ()
@@ -679,8 +679,8 @@
   :bitcoded T
   :scope :preference
   :saved-in :preference
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V26 (measured on V26 macOS; absent from V25 Windows)")
+  :vendor :both
   :divergence NIL
   :summary "Controls when plug-in applications are loaded."
   :coupled ()
@@ -1291,8 +1291,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V26 (measured on V26 macOS; absent from V25 Windows)")
+  :vendor :both
   :divergence NIL
   :summary "Indicates whether the action bars or the legacy action objects are displayed in the Block Editor."
   :coupled ()
@@ -1308,8 +1308,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Sets the text color of actions in the Block Editor."
   :coupled ()
@@ -1393,8 +1393,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls whether or not dependent objects are dependency highlighted when a parameter, action, or grip is selected in the Block Editor."
   :coupled ()
@@ -1444,8 +1444,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Sets the color of grips in the Block Editor."
   :coupled ()
@@ -1461,8 +1461,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Sets the display size of custom grips in the Block Editor relative to the screen display."
   :coupled ()
@@ -1920,8 +1920,8 @@
   :bitcoded NIL
   :scope :session
   :saved-in :session
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V26 (measured on V26 macOS; absent from V25 Windows)")
+  :vendor :both
   :divergence NIL
   :summary "Indicates whether or not a test block window is current."
   :coupled ()
@@ -2192,8 +2192,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Sets the color of parameters in the Block Editor."
   :coupled ()
@@ -2209,8 +2209,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Sets the font used for parameters and actions in the Block Editor."
   :coupled ()
@@ -2226,8 +2226,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Sets the size of parameter text and features in the Block Editor relative to the screen display."
   :coupled ()
@@ -2243,8 +2243,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Forces the text displayed for action parameters and constraint parameters in the Block Editor to be horizontal."
   :coupled ()
@@ -2294,8 +2294,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls whether or not value set markers are displayed for dynamic block references."
   :coupled ()
@@ -2568,7 +2568,7 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "measured GETVAR \"ByLayer\" on AutoCAD 2022 and BricsCAD V25 / V26 (the doc spells BYLAYER) (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Sets the linetype of new objects."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-28460EAB-7005-4E82-A97C-47A728F420E5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/celtype-system-variable")
@@ -2736,8 +2736,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls how grips stretch multiline text that is centered horizontally."
   :coupled ()
@@ -2770,8 +2770,8 @@
   :bitcoded NIL
   :scope :drawing
   :saved-in :drawing
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Stores the name of the GIS coordinate system assigned to the drawing file."
   :coupled ()
@@ -3008,8 +3008,8 @@
   :bitcoded NIL
   :scope :drawing
   :saved-in :drawing
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V26 (measured on V26 macOS; absent from V25 Windows)")
+  :vendor :both
   :divergence NIL
   :summary "Sets the current layout."
   :coupled ()
@@ -3110,8 +3110,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls whether the command line displays the messages and prompts generated while an AutoLISP or script file is being executed."
   :coupled ()
@@ -3316,7 +3316,7 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "measured GETVAR \"ByLayer\" on AutoCAD 2022 and BricsCAD V25 / V26 (the doc spells BYLAYER) (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Sets the material of new objects."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-28B84E0C-4C55-442B-A09C-7B71682481F3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmaterial-system-variable")
@@ -3401,7 +3401,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#323638\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Command line edit background color: The Command line edit field background color. Color may be represented as a name (for standard colors) or as RGB values. At the Command line, color may be entered as a name (for standard colors), RGB values, or HTML color. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdlineeditbgcolor-system-variable")
@@ -3418,7 +3418,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#ffffff\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Command line edit foreground color: The Command line edit field foreground color. Color may be represented as a name (for standard colors) or as RGB values. At the Command line, color may be entered as a name (for standard colors), RGB values, or HTML color. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdlineeditfgcolor-system-variable")
@@ -3435,7 +3435,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#323638\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Command line fade log background color: The Command line fade log background color. Color may be represented as a name (for standard colors) or as RGB values. At the Command line, color may be entered as a name (for standard colors), RGB values, or HTML color. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdlinefadinglogbgcolor-system-variable")
@@ -3469,7 +3469,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#ffffff\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Command line fade log foreground color: The Command line fade log foreground color. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdlinefadinglogfgcolor-system-variable")
@@ -3588,7 +3588,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#828282\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Command line list background color: The Command line history list background color. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdlinelistbgcolor-system-variable")
@@ -3605,7 +3605,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#ffffff\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Command line list foreground color: The Command line history list foreground color. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdlinelistfgcolor-system-variable")
@@ -3622,7 +3622,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#79848e\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Command line option background color: The Command line options background color. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdlineoptionbgcolor-system-variable")
@@ -3639,7 +3639,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#ffbb00\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Command line option shortcut color: The Command line option shortcut color. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdlineoptionshortcutcolor-system-variable")
@@ -4113,8 +4113,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls whether a preview of the possible outcome of certain commands is displayed."
   :coupled ()
@@ -5985,7 +5985,7 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "measured GETVAR ByColor on AutoCAD 2022 (localized \"ParCouleur\" in French) and BricsCAD V25 / V26 \"ByColor\" (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Specifies the default plot style for new objects in a drawing when opening a drawing that was created in a release prior to AutoCAD 2000, or when creating a new drawing from scratch without using a drawing template."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CAEBD2CD-DA0D-4C91-AB53-BCBFF7FA3D22" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/defplstyle-system-variable")
@@ -7175,7 +7175,7 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence "default AutoCAD 45, BricsCAD 45.0"
+  :divergence "default AutoCAD 45, BricsCAD 45.0; GETVAR returns RADIANS on both vendors: AutoCAD 2022 0.785398, BricsCAD V26 0.785398163397 (the doc shows 45 degrees) (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Determines the angle of the transverse segment of the dimension line in a jogged radius dimension."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9C23D722-0792-4585-A40A-B8E3A191999A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimjogang-system-variable")
@@ -9451,8 +9451,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls whether tips are displayed for using Shift and Ctrl when editing with grips."
   :coupled ()
@@ -10915,7 +10915,7 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence "default AutoCAD acad.fmp (AutoCAD) or acadlt.fmp (AutoCAD LT), BricsCAD default.fmp"
+  :divergence "default AutoCAD acad.fmp (AutoCAD) or acadlt.fmp (AutoCAD LT), BricsCAD default.fmp; measured AutoCAD 2022: the resolved path of its acad.fmp (machine-specific), BricsCAD V25 / V26 \"default.fmp\" (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Specifies the font mapping file to be used for substituting fonts."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FC45A5DC-31F5-4725-A482-C95769273C1C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fontmap-system-variable")
@@ -11134,8 +11134,8 @@
   :bitcoded NIL
   :scope :drawing
   :saved-in :drawing
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V26 (measured on V26 macOS; absent from V25 Windows)")
+  :vendor :both
   :divergence NIL
   :summary "Controls the style of the online map used in the current viewport."
   :coupled ()
@@ -11374,7 +11374,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#d2d2d2\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Background gradient color bottom: Controls the default bottom color for gradient backgrounds and the default for solid view backgrounds. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gradientcolorbottom-system-variable")
@@ -11391,7 +11391,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#fafafa\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Background gradient color middle: Controls the default middle color for gradient backgrounds. Applies only if the GRADIENTMODE system variable is set to Three-color gradient . BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gradientcolormiddle-system-variable")
@@ -11408,7 +11408,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#ffffff\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Background gradient color top: Controls the default top color for gradient backgrounds. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gradientcolortop-system-variable")
@@ -11695,8 +11695,8 @@
   :bitcoded T
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Specifies the access methods for multifunctional grip options."
   :coupled ()
@@ -11797,8 +11797,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls how grips are displayed when group selection is turned on and an object in a group is selected."
   :coupled ()
@@ -12122,7 +12122,7 @@
   :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "BricsCAD V25 / V26 GETVAR returns the #RRGGBB form; absent from AutoCAD 2022 accoreconsole (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Ground horizon: Controls the color of the ground horizon."
   :coupled ()
   :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_groundhorizon-system-variable")
@@ -12139,7 +12139,7 @@
   :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "BricsCAD V25 / V26 GETVAR returns the #RRGGBB form; absent from AutoCAD 2022 accoreconsole (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Ground origin: Controls the color of the ground."
   :coupled ()
   :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_groundorigin-system-variable")
@@ -12156,7 +12156,7 @@
   :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "BricsCAD V25 / V26 GETVAR returns the #RRGGBB form; absent from AutoCAD 2022 accoreconsole (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Sky high: Controls the color of the higher regions of the sky."
   :coupled ()
   :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_skyhigh-system-variable")
@@ -12173,7 +12173,7 @@
   :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "BricsCAD V25 / V26 GETVAR returns the #RRGGBB form; absent from AutoCAD 2022 accoreconsole (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Sky horizon: Controls the color at the lowest part of the sky at the horizon. This effect can be very subtle. This color is also used as the color of the \"sky\" when the camera is below the \"earth\"."
   :coupled ()
   :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_skyhorizon-system-variable")
@@ -12190,7 +12190,7 @@
   :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "BricsCAD V25 / V26 GETVAR returns the #RRGGBB form; absent from AutoCAD 2022 accoreconsole (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Sky low: Controls the color of the lower regions of the sky."
   :coupled ()
   :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_skylow-system-variable")
@@ -12528,8 +12528,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Sets the maximum number of hatch lines that are generated in a hatch operation."
   :coupled ()
@@ -12596,8 +12596,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls how the default hatch origin point is determined."
   :coupled ()
@@ -12664,8 +12664,8 @@
   :bitcoded NIL
   :scope :preference
   :saved-in :preference
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls whether a hatch preview is displayed when specifying a hatch area."
   :coupled ()
@@ -13754,7 +13754,7 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence "default AutoCAD https://www.autodesk.com/autocad (AutoCAD), https://www.autodesk.com/acltuser (AutoCAD LT), BricsCAD \"http://www.bricsys.com\""
+  :divergence "default AutoCAD https://www.autodesk.com/autocad (AutoCAD), https://www.autodesk.com/acltuser (AutoCAD LT), BricsCAD \"http://www.bricsys.com\"; measured AutoCAD 2022 \"http://www.autodesk.com\", BricsCAD V25 / V26 \"http://www.bricsys.com\" (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Stores the Internet location used by the BROWSER command and the Browse the Web dialog box."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-419EE66C-FDFE-4747-BACA-31525420015C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/inetlocation-system-variable")
@@ -13786,8 +13786,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Sets the number of milliseconds to delay before the command line suggestion list is displayed."
   :coupled ()
@@ -13924,7 +13924,7 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence "default AutoCAD 1, BricsCAD ByLayer"
+  :divergence "default AutoCAD 1, BricsCAD ByLayer; measured AutoCAD 2022 \"1\", BricsCAD V25 / V26 \"BYLAYER\" (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Sets the color for interference objects."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A4EE21EE-4F2B-4E2C-8715-6EAB714C56F8" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/interferecolor-system-variable")
@@ -14313,8 +14313,8 @@
   :bitcoded NIL
   :scope :preference
   :saved-in :preference
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls the Unreconciled New Layer filter list in the Layer Properties Manager, which is evaluated for new layers."
   :coupled ()
@@ -14891,8 +14891,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls the default AutoLISP development environment and, on AutoCAD for Windows only, the behavior of the VLISP command."
   :coupled ("ascii" "chr" "load" "open" "read-char" "read-line" "strlen" "substr" "vl-directory-files" "vl-file-copy" "vl-file-delete" "vl-file-directory-p" "vl-file-rename" "vl-file-size" "vl-file-systime")
@@ -14978,7 +14978,7 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence "default AutoCAD 90, BricsCAD 90.0"
+  :divergence "default AutoCAD 90, BricsCAD 90.0; GETVAR returns RADIANS on both vendors: AutoCAD 2022 1.5708, BricsCAD V26 1.570796326795 (the doc shows 90 degrees) (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Sets the draft angle through the first cross section in a loft operation."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AF30562B-CAF3-480C-A470-316E995AA084" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftang1-system-variable")
@@ -14995,7 +14995,7 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence "default AutoCAD 90, BricsCAD 90.0"
+  :divergence "default AutoCAD 90, BricsCAD 90.0; GETVAR returns RADIANS on both vendors: AutoCAD 2022 1.5708, BricsCAD V26 1.570796326795 (the doc shows 90 degrees) (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Sets the draft angle through the last cross section in a loft operation."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4947343A-BC69-4DB5-A1E9-F80F52996DC9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftang2-system-variable")
@@ -15930,7 +15930,7 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "measured: the full path of the loaded customization file on both vendors (machine-specific; clautolisp: \"\") (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Stores the customization file name, including the path for the file name."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9F0A50EB-0A85-473E-9AF5-184B25B81D40" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/menuname-system-variable")
@@ -16132,8 +16132,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V26 (measured on V26 macOS; absent from V25 Windows)")
+  :vendor :both
   :divergence NIL
   :summary "Controls autostacking for the MTEXT command."
   :coupled ()
@@ -16336,8 +16336,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls the display of the navigation bar in all viewports."
   :coupled ()
@@ -17866,8 +17866,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls whether text objects using SHX fonts are stored in PDF files as comments or hidden text when you export a drawing as a PDF file."
   :coupled ()
@@ -17883,8 +17883,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V26 (measured on V26 macOS; absent from V25 Windows)")
+  :vendor :both
   :divergence NIL
   :summary "When converting imported PDF geometry to text, controls whether the PDFSHXTEXT command uses the best matching font or uses the first selected font that exceeds the recognition threshold."
   :coupled ()
@@ -17900,8 +17900,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V26 (measured on V26 macOS; absent from V25 Windows)")
+  :vendor :both
   :divergence NIL
   :summary "Controls what layer is assigned to newly created text objects when converting SHX geometry to text objects."
   :coupled ()
@@ -17934,8 +17934,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V26 (measured on V26 macOS; absent from V25 Windows)")
+  :vendor :both
   :divergence NIL
   :summary "Sets the percentage of the selected geometry that must match a font before the geometry is converted to text objects."
   :coupled ()
@@ -18461,8 +18461,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V26 (measured on V26 macOS; absent from V25 Windows)")
+  :vendor :both
   :divergence NIL
   :summary "Controls the appearance of a polyline when its direction is reversed."
   :coupled ()
@@ -18580,8 +18580,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls the orientation of plots."
   :coupled ()
@@ -19092,7 +19092,7 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence "default AutoCAD 90, BricsCAD 90.0"
+  :divergence "default AutoCAD 90, BricsCAD 90.0; GETVAR returns RADIANS on both vendors: AutoCAD 2022 1.5708, BricsCAD V26 1.5707963267949 (the doc shows 90 degrees) (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Sets the polar angle increment."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0CF67F9E-F953-43D6-9227-0D56E0E693ED" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/polarang-system-variable")
@@ -20775,7 +20775,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#007AFF\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Edge color: Controls the color of an edge, when a whole entity is selected. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/redhilitefull_edge_color-system-variable")
@@ -20860,7 +20860,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#007AFF\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Face color: Controls the color of a face, when a whole entity is selected. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/redhilitefull_face_color-system-variable")
@@ -20894,7 +20894,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#FFFFFF\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Glow color: Controls the color of the glow effect on an edge, when selected. See also the REDHILITEPARTIAL_SELECTEDEDGE_SHOWGLOW system variable. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/redhilitepartial_selectededgeglow_color-system-variable")
@@ -20962,7 +20962,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#FF8000\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Edge color: Controls the color of an edge, when selected. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/redhilitepartial_selectededge_color-system-variable")
@@ -21132,7 +21132,7 @@
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
-  :divergence NIL
+  :divergence "BricsCAD GETVAR returns \"#FFFFFF\" (V25 Windows and V26 macOS harvests, jobs 16921381045 / 16913315157)"
   :summary "Hidden edge color: Controls the color of hidden edges, when a whole entity is selected, if the REDHILITEFULL_EDGE_SHOWHIDDEN system variable is on (1). BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/redhilite_hiddenedge_color-system-variable")
@@ -21844,8 +21844,8 @@
   :bitcoded NIL
   :scope :preference
   :saved-in :preference
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Determines whether a pickfirst selection set remains selected after a ribbon contextual tab is invoked and the command is completed."
   :coupled ()
@@ -22135,7 +22135,7 @@
   :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
+  :divergence "measured BricsCAD V25 / V26 \"#C8C8C8\"; absent from AutoCAD 2022 accoreconsole (probe-triage3 jobs 16931597043 / 16931597044; harvest 16921381045)"
   :summary "Ruler Text Color: Controls the text color of the Manipulator ruler. Applies only if the RULERDISPLAY system variable is on (1)."
   :coupled ()
   :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rulertextcolor-system-variable")
@@ -26162,8 +26162,8 @@
   :bitcoded NIL
   :scope :session
   :saved-in :session
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V26 (measured on V26 macOS; absent from V25 Windows)")
+  :vendor :both
   :divergence NIL
   :summary "Stores the last-used degree setting for splines and sets the default degree setting for the SPLINE command when specifying control vertices."
   :coupled ()
@@ -26230,8 +26230,8 @@
   :bitcoded NIL
   :scope :session
   :saved-in :session
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V26 (measured on V26 macOS; absent from V25 Windows)")
+  :vendor :both
   :divergence NIL
   :summary "Stores the default knot option for the SPLINE command when specifying fit points."
   :coupled ()
@@ -26247,8 +26247,8 @@
   :bitcoded NIL
   :scope :session
   :saved-in :session
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V26 (measured on V26 macOS; absent from V25 Windows)")
+  :vendor :both
   :divergence NIL
   :summary "Stores whether the default method used for the SPLINE command is fit points or control vertices."
   :coupled ()
@@ -26638,8 +26638,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls the display of the Start tab."
   :coupled ()
@@ -26842,8 +26842,8 @@
   :bitcoded NIL
   :scope :drawing
   :saved-in :drawing
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Turns on and off the lighting effects of the sun in the current viewport."
   :coupled ()
@@ -26859,8 +26859,8 @@
   :bitcoded NIL
   :scope :session
   :saved-in :session
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls alerts about potential data loss when opening and saving newer drawings in older versions of the product."
   :coupled ()
@@ -29783,8 +29783,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls whether layer property overrides for layout viewports are displayed and plotted."
   :coupled ()
@@ -30140,8 +30140,8 @@
   :bitcoded NIL
   :scope :drawing
   :saved-in :drawing
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls how faces, solid-fill hatches, and gradients are displayed in the current viewport."
   :coupled ()
@@ -31160,8 +31160,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls the default reference type when attaching or overlaying an external reference."
   :coupled ()
@@ -31211,8 +31211,8 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad nil)
-  :vendor :autocad
+  :versions (:autocad "all" :bricscad "V25+ (measured: V25 Windows, V26 macOS)")
+  :vendor :both
   :divergence NIL
   :summary "Controls the path(s) that are used for the Tool Palette Windows."
   :coupled ()

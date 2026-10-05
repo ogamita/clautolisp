@@ -228,7 +228,7 @@ the drawing for a live collection, the stored list for a static one."
        (mapcar (lambda (name) (com-object->vla (%block-object host name)))
                (%block-names host)))
       ;; Paper layouts first, then Model: the order vlax-for walks them in
-      ;; on BricsCAD V26 (macOS and Windows).
+      ;; on BricsCAD (V26 macOS, V25 Windows).
       ((eq kind :layouts)
        (mapcar (lambda (name) (com-object->vla (%layout-object host name)))
                (append (remove "*Model_Space"

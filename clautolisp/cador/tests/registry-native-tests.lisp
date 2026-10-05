@@ -41,7 +41,7 @@
 
 (test registry-values-read-by-type
   ;; What vl-registry-read returns per registry type, as AutoCAD 2022 and
-  ;; BricsCAD V26 do (probe-triage2, jobs 16923993438 / 16923716756).
+  ;; BricsCAD V25 do (probe-triage2, jobs 16923993438 / 16923716756).
   (flet ((utf16 (string)
            (babel:string-to-octets string :encoding :utf-16le))
          (octets (&rest bytes)

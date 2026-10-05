@@ -36,7 +36,8 @@ divergence), probe what the vendor returns, then implement with a test:
 
 * Measured (probe-triage2, 2026-10-04)
 
-BricsCAD V26 macOS (job 16923716753) and Windows (job 16923716756), the same:
+BricsCAD V26 macOS (job 16923716753) and BricsCAD V25 Windows (job 16923716756 --
+the Windows runner has V25, not V26: corrected 2026-10-05), the same:
   type of (vlax-get-acad-object)               VLA-OBJECT
   Layouts count                                3 (a French template)
   Layouts names (vlax-for)                     ("Présentation1" "Présentation2" "Model")

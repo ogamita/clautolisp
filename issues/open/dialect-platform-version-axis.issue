@@ -275,8 +275,10 @@ the runtime) is left for the encoding-consolidation cleanup.
 Remainder measured and implemented (2026-10-04, clautolisp 2.2.181)
 -------------------------------------------------------------------
 
-probe-triage2 (AutoCAD 2022 Windows job 16923993438, BricsCAD V26 Windows
-16923993442 and macOS 16923993439), all at LISPSYS 0:
+probe-triage2 (AutoCAD 2022 Windows job 16923993438, BricsCAD V25 Windows
+16923993442 and V26 macOS 16923993439), all at LISPSYS 0 -- the Windows
+runner has BricsCAD V25 (corrected 2026-10-05); V26 on Windows is unmeasured
+and the bricscad-v26 dialect assumes V25's cp1252 behaviour there:
 
 | form                                | AutoCAD 2022 | BricsCAD V26 Win | BricsCAD V26 macOS |
 |-------------------------------------+--------------+------------------+--------------------|
