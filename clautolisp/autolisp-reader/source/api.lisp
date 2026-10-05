@@ -414,12 +414,19 @@ PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
 (defun read-forms-from-file (path &key options (token-mode :strict)
                                        warn-on-integer-overflow-p source-name
                                        extended-string-escapes-p
-                                       external-format)
+                                       external-format
+                                       source-policy)
   (read-forms-from-string
-   (if external-format
-       (clautolisp.autolisp-reader.internal:decode-and-normalize-file
-        path :external-format external-format)
-       (clautolisp.autolisp-reader.internal:decode-and-normalize-file path))
+   (cond
+     ;; AutoCAD's own decoding rule (LISPSYS 0 / 1-2): see
+     ;; DECODE-AUTOCAD-SOURCE-OCTETS.
+     (source-policy
+      (clautolisp.autolisp-reader.internal:decode-and-normalize-file
+       path :source-policy source-policy))
+     (external-format
+      (clautolisp.autolisp-reader.internal:decode-and-normalize-file
+       path :external-format external-format))
+     (t (clautolisp.autolisp-reader.internal:decode-and-normalize-file path)))
    :options options
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p

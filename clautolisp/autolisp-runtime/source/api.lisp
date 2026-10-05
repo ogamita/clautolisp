@@ -5077,6 +5077,15 @@ arrives with the artefact writer."
         (with-compilation-unit (:override nil) (funcall thunk)))
       (funcall thunk)))
 
+(defun %autocad-source-policy (external-format)
+  "The AutoCAD source-decoding policy for EXTERNAL-FORMAT: :UNICODE for
+UTF-8, :ANSI for windows-1252, NIL (plain decoding) for anything else."
+  (let* ((base (if (consp external-format) (first external-format) external-format))
+         (name (and base (string-upcase (string base)))))
+    (cond ((member name '("UTF-8" "UTF8") :test #'equal) :unicode)
+          ((member name '("WINDOWS-1252" "CP1252" "WINDOWS1252") :test #'equal) :ansi)
+          (t nil))))
+
 (defun autolisp-load-file-in-context (path context &rest read-options)
   ;; Source-file encoding precedence, when the caller did NOT pass
   ;; an explicit :external-format:
@@ -5112,11 +5121,25 @@ arrives with the artefact writer."
             (session-encoding session-encoding)
             (t (clautolisp.autolisp-reader:autolisp-dialect-default-source-encoding
                 dialect))))
+         ;; Under an AutoCAD dialect, the default source decoding is
+         ;; AutoCAD's own rule, measured (E1, job 16931781178): at
+         ;; windows-1252 (LISPSYS 0) a UTF-8 BOM is skipped; at UTF-8
+         ;; (LISPSYS 1 / 2) a file that is not UTF-8 reads as
+         ;; windows-1252. An explicit encoding (LOAD's third argument)
+         ;; is honoured as given.
+         (source-policy
+          (and effective-encoding
+               (eq :autocad (ignore-errors
+                             (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))
+               (%autocad-source-policy effective-encoding)))
          (effective-options
-          (if effective-encoding
-              (append read-options
-                      (list :external-format effective-encoding))
-              read-options)))
+          (cond
+            (source-policy
+             (append read-options (list :source-policy source-policy)))
+            (effective-encoding
+             (append read-options
+                     (list :external-format effective-encoding)))
+            (t read-options))))
     (call-with-autolisp-error-handler
      (lambda ()
        ;; A file (re)load opens a new "load generation" for its FILE:LINE
