@@ -88,7 +88,12 @@ command table at ~105 spellings. The rest, in slices:
   MockHost wording), nihil's explicit host-dictobjname, and the C6
   boundary as a test. The COM values "Mock AutoCAD" / "Mock 0.1" and
   PLATFORM "Mock CAD" are behaviour, left as they are.
-- Slice 4 -- command layer: handler errors, the D1 §7 / D2 §II.13 lists.
+- *Slice 4 DONE (2.2.199)* -- command layer: an unknown command or a
+  failing engine command still stops the sequence without a LISP error, but
+  leaves a "; cador: ..." console notice; D1 §7 / D2 §II.13 list the 83
+  commands and 24 no-ops as built. Localisation (LIGNE, .pgp aliases) and
+  getcname stay with the cadtui-locale-* tickets (they need the localised
+  CAD data).
 - Slice 5 -- conformance E1-E10 as vendor probes.
 - Slice 6 -- the accoreconsole / BricsCAD headless envelope, cited.
 - Slice 7 -- D1 / D2 refreshed (tagged handles built, DWG write, ...).

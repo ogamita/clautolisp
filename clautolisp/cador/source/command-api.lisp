@@ -992,7 +992,11 @@ tokens it did not consume.")
 executing the drawing commands the engine knows, and the LISP commands
 registered with vlax-add-cmd; the first unknown command name stops
 interpretation (the sequence stays recorded on the command log either way).
-An engine command never signals; a LISP command's own errors propagate."
+An engine command never signals (a CAD rejects bad input to COMMAND without a
+LISP error); a LISP command's own errors propagate. An engine command that
+fails, and an unknown command, are reported on the console with a `; cador:'
+notice (subject to CMDECHO, as the echo is) instead of vanishing: either is
+clautolisp declining what the program asked for (cador-4 slice 4)."
   (loop while tokens
         do (let* ((name (%command-name (first tokens)))
                   (handler (and name (gethash name *cador-commands*)))
@@ -1000,13 +1004,26 @@ An engine command never signals; a LISP command's own errors propagate."
              (cond (handler
                     (multiple-value-bind (rest ok)
                         (handler-case (values (funcall handler host (rest tokens)) t)
-                          (error () (values nil nil)))
+                          (error (condition)
+                            (%command-notice host "~A failed: ~A" name condition)
+                            (values nil nil)))
                       (unless ok (return))
                       (setf tokens rest)))
                    ;; A LISP command: its own errors are the program's to see.
                    (lisp (setf tokens (%run-lisp-command host lisp (rest tokens))))
-                   (t (return)))))
+                   (t
+                    (when name (%command-notice host "unknown command ~A" name))
+                    (return)))))
   nil)
+
+(defun %command-notice (host control &rest arguments)
+  "Print `; cador: <message> -- the rest of the command sequence is ignored.'
+on HOST's console when the command echo is on."
+  (let ((sink (cador-prompt-output host)))
+    (when (and sink (%cador-cmdecho-on-p host))
+      (format sink "~&; cador: ~? -- the rest of the command sequence is ignored.~%"
+              control arguments)
+      (finish-output sink))))
 
 (defun %registered-lisp-command (host name)
   "The function of the LISP command NAME registered with vlax-add-cmd (by

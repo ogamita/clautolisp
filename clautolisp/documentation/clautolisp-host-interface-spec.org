@@ -478,14 +478,28 @@ each element is command-line input text; ="" = is the RETURN token and ="\\"=
   per-locale data (=clautolisp/cadtui/data/locale/<locale>/=, command names,
   option keywords, aliases), shared with =getcname=.
 
-*As built* [S: =command-api.lisp:13-20, 112-133, 884-936=]: the engine runs
-LINE, CIRCLE, ARC, TEXT, MTEXT, DONUT, SOLID, PLINE, WIPEOUT, ERASE, MOVE,
-COPY, ROTATE, MIRROR, BLOCK / -BLOCK, INSERT / -INSERT, LAYER / -LAYER and
-LINETYPE / -LINETYPE, accepts ZOOM, UCS, PEDIT, BREAK, BROWSER and SHELL as
-recognised no-ops, strips the =.= and =_= prefixes, keeps =-=; an *unknown*
-command stops the interpretation of the remaining tokens without signalling —
-a program that drives many commands still runs where only some exist. Every
-call is also recorded in the command log and echoed as ="Command: …"=.
+*As built* (clautolisp 2.2.199) [S: =cador/source/command-*.lisp=,
+=define-cador-command=; =viewports.lisp=]: the engine runs 83 commands --
+-ARRAY, -BLOCK, -BOUNDARY, -HATCH, -HATCHEDIT, -INSERT, -LAYER, -LINETYPE,
+-OVERKILL, -VPORTS, 3DARRAY, 3DPOLY, 3DROTATE, ADDSELECTED, ALIGN, ARC, ARRAY,
+ARRAYPATH, ARRAYPOLAR, ARRAYRECT, BLOCK, BOUNDARY, BREAK, CHAMFER, CHANGE,
+CHPROP, CIRCLE, CLOSE, CLOSEALL, CONVERTPOLY, COPY, CUILOAD, DIVIDE, DONUT,
+ELLIPSE, ERASE, EXPLODE, EXTEND, FILLET, FLATTEN, HATCH, HATCHEDIT,
+HATCHGENERATEBOUNDARY, INSERT, JOIN, LAYER, LENGTHEN, LINE, LINETYPE,
+MATCHPROP, MEASURE, MENULOAD, MIRROR, MLINE, MOVE, MTEXT, NEW, OFFSET, OPEN,
+OVERKILL, PEDIT, PLINE, POINT, POLYGON, QSAVE, RAY, RECTANG, ROTATE, ROTATE3D,
+SAVE, SAVEAS, SCALE, SETBYLAYER, SOLID, SPLINE, SPLINEDIT, STRETCH, TEXT,
+TRACE, TRIM, WIPEOUT, XLINE, XPLODE -- and accepts 24 as recognised no-ops (no effect
+headless) -- -PDFIMPORT, ARRAYCLASSIC, BROWSER, CDORDER, CLIPIT, DRAWORDER, GEOMAPIMAGE,
+GEOMAPIMAGEUPDATE, GRADIENT, HATCHTOBACK, IMAGEADJUST, IMAGECLIP, IMAGEEDIT,
+MLSTYLE, PDFCLIP, POINTCLOUDCROP, PROPERTIES, SHELL, SKETCH, SUPERHATCH,
+TEXTTOFRONT, TRANSPARENCY, UCS, ZOOM. It strips the =.= and =_= prefixes
+and keeps =-=. An *unknown* command, or an engine command that fails, stops the
+interpretation of the remaining tokens without signalling -- a program that
+drives many commands still runs where only some exist -- and leaves a
+=; cador: … -- the rest of the command sequence is ignored.= notice on the
+console (cador-4 slice 4; silenced by =CMDECHO= 0 like the echo). Every call is
+also recorded in the command log and echoed as ="Command: …"=.
 *Not yet built:* matching localised names and aliases (only English names are
 recognised; =_LINE= works because the =_= is stripped, =LIGNE= does not), and
 =getcname= (a =nil= stub in the builtins). The entity API

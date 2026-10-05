@@ -1024,7 +1024,9 @@ token sequence through the selected backend's command channel. cador
 ~HATCH~, ~-VPORTS~, ~NEW~ / ~OPEN~ / ~SAVE~ ...: the command chapter of
 the AutoLISP Spec), accepts a few that have no effect headless (~ZOOM~,
 ~UCS~ ...) as no-ops, and stops interpreting the tokens, without an
-error, at a command it does not know. Every normalized token sequence
+error, at a command it does not know or one that fails -- leaving a
+~; cador: ... -- the rest of the command sequence is ignored.~ line on the
+console (silenced by ~CMDECHO~ 0). Every normalized token sequence
 — strings verbatim, numbers and points in their command-line spellings
 (~"X,Y[,Z]"~ for points), ~""~ as the RETURN token, ~"\\"~ (the
 predefined variable ~pause~) as the PAUSE token — is also *recorded* on
