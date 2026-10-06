@@ -867,9 +867,30 @@ operator under its ~*** clautolisp~ note.
   ~LISPSYS~ 0 the windows-1252 code wins where there is one: ~(ascii (chr
   8364))~ is 128. A macOS dialect (~bricscad-macos-v26~), ~LISPSYS~ 1 / 2
   and ~clautolisp~ use Unicode code points. Measured on the vendors.
-- ~open~'s third argument (~"utf8"~ ...) is "too many arguments" under an
-  AutoCAD dialect before 2021 or at ~LISPSYS~ 0, as on AutoCAD 2022;
-  BricsCAD takes it.
+- ~open~'s third (encoding) argument and its ~",ccs=ENC"~ mode suffix are
+  always honoured, under every dialect (lenient, pjb 2026-10-06); where the
+  dialect's vendor would not do the same, ~open~ prints an out-of-dialect
+  warning (~[enc-foreign-dialect]~, or ~[enc-extension-used]~ under
+  ~strict~) saying what the vendor does, as measured by
+  ~probe-open-encoding~ (AutoCAD 2022 at ~LISPSYS~ 0, BricsCAD V25 Windows,
+  BricsCAD V26 macOS):
+
+  | dialect                                | ~(open f "w" "utf8")~     | ~(open f "w" "cp1252")~   | ~(open f "w,ccs=UTF-8")~ |
+  |----------------------------------------+---------------------------+---------------------------+--------------------------|
+  | ~autocad-*~ at ~LISPSYS~ 0, or < 2021  | warn: too many arguments  | warn: too many arguments  | warn: suffix ignored     |
+  | ~autocad-*~ (2021+) at ~LISPSYS~ 1 / 2 | silent (documented)       | warn: not documented      | warn: suffix ignored     |
+  | ~bricscad~ / ~-v25~ / ~-v26~ (Windows) | warn: accepted, no effect | warn: bad argument type   | silent (honoured)        |
+  | ~bricscad-mac~ / ~-linux~              | warn: accepted, no effect | warn: bad argument type   | warn: suffix ignored     |
+  | ~strict~                               | warn: not portable        | warn: not portable        | warn: not portable       |
+  | ~clautolisp~, ~lax~                    | silent                    | silent                    | silent                   |
+
+  Under the Windows BricsCAD dialects only ~,ccs=UTF-8~ and ~,ccs=UTF-16LE~
+  (measured) are silent; another ~ccs~ name warns as unmeasured. The
+  warning is printed at each call (the ~clal-lint-encoding-extensions~
+  lint reports the same); ~(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)~
+  silences it. ~"utf8"~ / ~"utf8-bom"~ at AutoCAD ~LISPSYS~ 1 / 2 are
+  documented by Autodesk but not yet measured. The file clautolisp writes
+  is the same under every dialect.
 - ~vl-file-systime~ — the day-of-week element (third position) is
   ~0~ for Sunday under ~strict~, ~clautolisp~, ~lax~ and the
   ~autocad-*~ dialects, and ~7~ under ~bricscad-v25~ /
@@ -2488,17 +2509,15 @@ Currently wired:
   ~--strict~ (~enc-extension-used~), ~--autocad~ /
   ~--bricscad~ (~enc-foreign-dialect~), silent under
   ~--clautolisp~.
-- ~OPEN~ encoding forms, all three routed:
-  - positional ~"utf8"~ / ~"utf8-bom"~ — native under
-    ~--autocad~; foreign under ~--bricscad~ / ~--clautolisp~;
-    extension-used under ~--strict~.
-  - positional ~"UTF-8"~ / ~"UTF-8-BOM"~ / ~"CP-NNNN"~ / … —
-    native under ~--clautolisp~; foreign under ~--autocad~ /
-    ~--bricscad~; extension-used under ~--strict~.
-  - ~,ccs=ENC~ mode-suffix — native under ~--bricscad~;
-    foreign under ~--autocad~ / ~--clautolisp~; extension-used
-    under ~--strict~. The suffix is stripped from the
-    mode-string before CL ~OPEN~ sees it.
+- ~OPEN~ encoding forms (the third argument and the ~,ccs=ENC~
+  mode suffix): ~enc-foreign-dialect~ under a vendor dialect whose
+  vendor would not do the same (measured: AutoCAD 2022 at
+  ~LISPSYS~ 0 rejects any third argument, BricsCAD ignores
+  ~"utf8"~ / ~"utf8-bom"~ and rejects other names, only BricsCAD on
+  Windows honours ~,ccs=~), ~enc-extension-used~ under ~--strict~,
+  silent under ~--clautolisp~ and ~--lax~; the per-dialect table is
+  under /Where the dialect changes a returned value/. The suffix is
+  stripped from the mode-string before CL ~OPEN~ sees it.
 - ~GETVAR~ / ~SETVAR~ on ~LISPSYS~ under every dialect except
   ~--autocad~ (the native dialect of ~LISPSYS~):
   - ~--strict~ -> ~enc-extension-used~.

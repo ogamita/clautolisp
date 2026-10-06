@@ -6240,25 +6240,25 @@ attempts the I/O."
     (is (string= "" diagnostics))))
 
 (test open-positional-clautolisp-foreign-under-autocad
-  ;; "UTF-8" with the dash is the clautolisp vocabulary — foreign to
-  ;; AutoCAD's "utf8" / "utf8-bom" set.
+  ;; "UTF-8" with the dash is the clautolisp vocabulary — AutoCAD
+  ;; documents only "utf8" / "utf8-bom".
   (multiple-value-bind (result diagnostics)
       (%capture-enc-diagnostics
        (%open-fixture-form "\"w\" \"UTF-8\"")
        :dialect :autocad-2026)
     (declare (ignore result))
     (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "clautolisp-positional" diagnostics))))
+    (is (search "documents only" diagnostics))))
 
-(test open-positional-autocad-foreign-under-clautolisp
-  ;; The AutoCAD lower-case literal is foreign to --clautolisp.
+(test open-positional-autocad-silent-under-clautolisp
+  ;; clautolisp's own dialect never warns about OPEN's encoding forms
+  ;; (pjb 2026-10-06: lenient, warn only in other dialects or strict).
   (multiple-value-bind (result diagnostics)
       (%capture-enc-diagnostics
        (%open-fixture-form "\"w\" \"utf8\"")
        :dialect :clautolisp)
     (declare (ignore result))
-    (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "autocad-positional" diagnostics))))
+    (is (string= "" diagnostics))))
 
 (test open-positional-extension-used-under-strict
   (multiple-value-bind (result diagnostics)
@@ -6283,16 +6283,15 @@ attempts the I/O."
        :dialect :autocad-2026)
     (declare (ignore result))
     (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "bricscad-ccs" diagnostics))))
+    (is (search "ignores the \",ccs=UTF-8\" mode suffix" diagnostics))))
 
-(test open-ccs-suffix-foreign-under-clautolisp
+(test open-ccs-suffix-silent-under-clautolisp
   (multiple-value-bind (result diagnostics)
       (%capture-enc-diagnostics
        (%open-fixture-form "\"w,ccs=UTF-8\"")
        :dialect :clautolisp)
     (declare (ignore result))
-    (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "bricscad-ccs" diagnostics))))
+    (is (string= "" diagnostics))))
 
 (test open-ccs-suffix-extension-used-under-strict
   (multiple-value-bind (result diagnostics)
@@ -6310,8 +6309,8 @@ attempts the I/O."
        (%open-fixture-form "\"w,ccs=UTF-8\" \"UTF-8\"")
        :dialect :strict)
     (declare (ignore result))
-    (is (search "bricscad-ccs" diagnostics))
-    (is (search "clautolisp-positional" diagnostics))))
+    (is (search ",ccs=UTF-8" diagnostics))
+    (is (search "third (encoding) argument" diagnostics))))
 
 (test open-no-encoding-arg-silent-under-every-dialect
   ;; Bare OPEN should not emit any encoding diagnostic regardless
@@ -6653,16 +6652,16 @@ attempts the I/O."
        :dialect :autocad-2026)
     (declare (ignore result))
     (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "clautolisp-positional" diagnostics))))
+    (is (search "documents only" diagnostics))))
 
-(test clal-lint-detects-ccs-suffix-under-clautolisp
+(test clal-lint-detects-ccs-suffix-under-autocad
   (multiple-value-bind (result diagnostics)
       (%capture-enc-diagnostics
        "(clal-lint-encoding-extensions '(open \"f.txt\" \"w,ccs=UTF-8\"))"
-       :dialect :clautolisp)
+       :dialect :autocad-2026)
     (declare (ignore result))
     (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "bricscad-ccs" diagnostics))))
+    (is (search ",ccs=UTF-8" diagnostics))))
 
 (test clal-lint-accepts-lispsys-getvar-under-bricscad
   ;; BricsCAD has LISPSYS from V23: not foreign to --bricscad.
@@ -7886,24 +7885,115 @@ itself fails loudly."
                  (autolisp-string-value (%axis "autocad-2022" 0 "(vl-list->string '(8364))"))))
     (is (eql 1 (%axis "bricscad-v26" 0 "(vl-string-position 8364 (strcat \"a\" (chr 128)))")))))
 
-(test open-encoding-argument-is-autocad-2021-unicode-only
+(test open-encoding-argument-is-taken-under-every-dialect
+  ;; pjb 2026-10-06: "open third argument: lenient, but dialect warn when
+  ;; it's used in other dialects or strict." AutoCAD 2022 at LISPSYS 0 and
+  ;; AutoCAD before 2021 say "too many arguments"; clautolisp opens the
+  ;; file anyway and warns (open-encoding-third-argument-warns-per-dialect).
   (let ((path (namestring (merge-pathnames "clautolisp-open-utf8-axis.txt"
                                            (uiop:temporary-directory)))))
     (flet ((try (dialect lispsys)
-             (%axis dialect lispsys
-                    (format nil "(progn (setq r (vl-catch-all-apply 'open (list ~S \"w\" \"utf8\")))
+             (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream*
+                     (make-broadcast-stream)))
+               (%axis dialect lispsys
+                      (format nil "(progn (setq r (vl-catch-all-apply 'open (list ~S \"w\" \"utf8\")))
                                   (if (vl-catch-all-error-p r) \"ERROR\" (progn (close r) \"FILE\")))"
-                            path))))
+                              path)))))
       (unwind-protect
-           (progn
-             ;; AutoCAD 2022 at LISPSYS 0: "too many arguments".
-             (is (string= "ERROR" (autolisp-string-value (try "autocad-2022" 0))))
-             (is (string= "ERROR" (autolisp-string-value (try "autocad-2020" nil))))
-             (is (string= "FILE" (autolisp-string-value (try "autocad-2022" 1))))
-             ;; BricsCAD V26 at LISPSYS 0 takes it.
-             (is (string= "FILE" (autolisp-string-value (try "bricscad-v26" 0)))))
+           (dolist (row '(("autocad-2022" 0) ("autocad-2020" nil) ("autocad-2022" 1)
+                          ("bricscad-v26" 0) ("bricscad-mac-v26" nil) ("strict" nil)))
+             (is (string= "FILE" (autolisp-string-value (apply #'try row)))
+                 "OPEN refused its third argument under ~S" row))
         (ignore-errors (delete-file path))))))
 
+;;; --- open-third-argument-dialect-divergence (pjb 2026-10-06) -----------
+;;; The measured vendor behaviour (probe-open-encoding, MR !432) decides the
+;;; diagnostic; the file clautolisp writes is the same under every dialect.
+
+(defun %open-encoding-run (dialect lispsys open-arguments &optional (prelude ""))
+  "Write \"A\" e-acute \"B\" through (open PATH OPEN-ARGUMENTS...) under
+DIALECT (LISPSYS set unless NIL), after the AutoLISP source PRELUDE. Returns (values DIAGNOSTICS OCTETS): the
+OPEN diagnostic lines and the file's first octets (up to 6)."
+  (let ((path (namestring (merge-pathnames "clautolisp-open-warn-axis.txt"
+                                           (uiop:temporary-directory))))
+        (sink (make-string-output-stream)))
+    (unwind-protect
+         (progn
+           (ignore-errors (delete-file path))
+           (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* sink))
+             (%axis dialect lispsys
+                    (format nil "(progn ~A (setq f (open ~S ~A)) (princ (strcat \"A\" (chr 233) \"B\") f) (close f) 0)"
+                            prelude path open-arguments)))
+           (values
+            (with-output-to-string (out)
+              (with-input-from-string (in (get-output-stream-string sink))
+                (loop :for line := (read-line in nil)
+                      :while line
+                      ;; The OPEN divergence notice, not the other enc-*
+                      ;; diagnostics (unsupported target, host-dependent).
+                      :when (or (search "clautolisp accepts" line)
+                                (search "clautolisp honours" line))
+                        :do (write-line line out))))
+            (with-open-file (in path :element-type '(unsigned-byte 8))
+              (loop :repeat 6
+                    :for b := (read-byte in nil)
+                    :while b :collect b))))
+      (ignore-errors (delete-file path)))))
+
+(test open-encoding-third-argument-warns-per-dialect
+  ;; (dialect lispsys) -> warns? for "utf8" / "cp1252" / ",ccs=UTF-8".
+  (let ((matrix
+          '((("autocad-2022" 0)     t   t   t)
+            (("autocad-2022" 1)     nil t   t)
+            (("autocad-2020" nil)   t   t   t)
+            (("bricscad-v25" nil)   t   t   nil)
+            (("bricscad-v26" nil)   t   t   nil)
+            (("bricscad-mac" nil)   t   t   t)
+            (("bricscad-mac-v26" nil) t t   t)
+            (("strict" nil)         t   t   t)
+            (("clautolisp" nil)     nil nil nil)
+            (("lax" nil)            nil nil nil)))
+        (forms '("\"w\" \"utf8\"" "\"w\" \"cp1252\"" "\"w,ccs=UTF-8\""))
+        (octets '((65 195 169 66) (65 233 66) (65 195 169 66))))
+    (dolist (row matrix)
+      (destructuring-bind ((dialect lispsys) . expected) row
+        (loop :for form :in forms
+              :for warn-p :in expected
+              :for bytes :in octets
+              :do (multiple-value-bind (diagnostics written)
+                      (%open-encoding-run dialect lispsys form)
+                    (is (eq warn-p (and (plusp (length diagnostics)) t))
+                        "~A LISPSYS ~A (open f ~A): expected ~:[silence~;a warning~], got ~S"
+                        dialect lispsys form warn-p diagnostics)
+                    ;; Behaviour unchanged: the same octets under every dialect.
+                    (is (equal bytes written)
+                        "~A (open f ~A) wrote ~S, expected ~S" dialect form written bytes)))))))
+
+(test open-encoding-warning-says-what-the-vendor-does
+  (flet ((diag (dialect lispsys form &optional (prelude ""))
+           (values (%open-encoding-run dialect lispsys form prelude))))
+    (is (search "AutoCAD 2022 (LISPSYS 0) rejects a third argument (too many arguments"
+                (diag "autocad-2022" 0 "\"w\" \"utf8\"")))
+    (is (search "[enc-foreign-dialect]" (diag "autocad-2022" 0 "\"w\" \"utf8\"")))
+    (is (search "documents only \"utf8\" and \"utf8-bom\""
+                (diag "autocad-2022" 1 "\"w\" \"cp1252\"")))
+    (is (search "has no effect there" (diag "bricscad-v25" nil "\"w\" \"utf8\"")))
+    (is (search "rejects \"cp1252\" as a third argument (bad argument type"
+                (diag "bricscad-v26" nil "\"w\" \"cp1252\"")))
+    (is (search "on macOS ignores the \",ccs=UTF-8\" mode suffix"
+                (diag "bricscad-mac" nil "\"w,ccs=UTF-8\"")))
+    (is (search "AutoCAD 2022 ignores the \",ccs=UTF-8\" mode suffix"
+                (diag "autocad-2022" 1 "\"w,ccs=UTF-8\"")))
+    ;; An unmeasured ccs name under BricsCAD Windows warns; UTF-16LE does not.
+    (is (search "is unmeasured there" (diag "bricscad-v25" nil "\"w,ccs=ISO-8859-1\"")))
+    (is (string= "" (diag "bricscad-v25" nil "\"w,ccs=UTF-16LE\"")))
+    (is (search "[enc-extension-used]" (diag "strict" nil "\"w\" \"utf8\"")))
+    ;; Silenced by *AUTOLISP-WARN-OUT-OF-DIALECT* = nil -- a global the
+    ;; symbol table keeps, so put it back for the tests that follow.
+    (unwind-protect
+         (is (string= "" (diag "autocad-2022" 0 "\"w\" \"utf8\""
+                               "(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)")))
+      (reset-autolisp-symbol-table))))
 
 ;;; --- vlax-boolean-properties-return-t (triage round 3, point 1) ---------
 ;;; probe-triage3: BricsCAD V26 macOS job 16931597044, V25 Windows 16931597047.

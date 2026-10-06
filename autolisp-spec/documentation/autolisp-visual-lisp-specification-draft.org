@@ -7603,8 +7603,48 @@ Loading and Trust Model* (this chapter).
 *** Measured: the encoding argument
 probe-triage2, 2026-10-04: AutoCAD 2022 at LISPSYS 0 (job 16923993438) answers ~(open f "w" "utf8")~ with "too many arguments" (/nombre d'arguments trop important/) -- the third argument belongs to the Unicode engine (LISPSYS 1 / 2, 2021+). BricsCAD at LISPSYS 0 (V26 macOS job 16923993439, V25 Windows job 16923993442) opens the file.
 
+probe-open-encoding, 2026-10-06 (MR !432: AutoCAD 2022 job 16967893842,
+BricsCAD V26 macOS job 16967893843, BricsCAD V25 Windows job 16968316289), writing "A"
+e-acute "B":
+
+| form                      | AutoCAD 2022 (LISPSYS 0) | BricsCAD V26 (macOS)             | BricsCAD V25 (Windows)  |
+|---------------------------+--------------------------+----------------------------------+-------------------------|
+| ~(open f "w")~            | 3 bytes (cp1252)         | 4 bytes (UTF-8, no BOM)          | cp1252                  |
+| ~(open f "w" "utf8")~     | error: too many arguments | accepted, no effect             | accepted, no effect     |
+| ~(open f "w" "utf8-bom")~ | error: too many arguments | accepted, no effect (no BOM)    | accepted, no effect     |
+| ~(open f "w" "cp1252")~   | error: too many arguments | error: bad argument type        | error: bad argument type |
+| ~(open f "w,ccs=UTF-8")~  | accepted, ignored        | accepted, ignored                | honoured (BOM)          |
+| ~(open f "w,ccs=UTF-16LE")~ | accepted, ignored      | accepted, ignored                | honoured (BOM)          |
+
+The documented ~"utf8"~ / ~"utf8-bom"~ at AutoCAD LISPSYS 1 / 2 are not
+measured yet (the runner's AutoCAD is at LISPSYS 0).
+
 *** clautolisp
-Under an AutoCAD dialect before 2021, or an AutoCAD Windows dialect at LISPSYS 0, a third argument signals the wrong-number-of-arguments error; elsewhere it is honoured.
+Non-normative (pjb, 2026-10-06: "open third argument: lenient, but dialect
+warn when it's used in other dialects or strict"). clautolisp's ~open~
+always honours its third argument (~"utf8"~, ~"utf8-bom"~ and the broader
+clautolisp encoding names: ~"UTF-8"~, ~"cp1252"~, ~"ISO-8859-1"~, ...) and
+the ~",ccs=ENC"~ mode suffix, under every dialect; the file it writes does
+not depend on the dialect. Where the dialect's vendor would not do the same,
+it emits an out-of-dialect warning (~[enc-foreign-dialect]~; under
+~strict~ ~[enc-extension-used]~) naming what the vendor does, as measured
+above:
+
+- AutoCAD dialects before 2021, or on Windows at LISPSYS 0: any third
+  argument (the vendor says "too many arguments"). At LISPSYS 1 / 2 (2021+)
+  ~"utf8"~ / ~"utf8-bom"~ are silent (documented), any other name warns.
+- BricsCAD dialects: ~"utf8"~ / ~"utf8-bom"~ warn (accepted, no effect),
+  any other name warns (bad argument type).
+- ~",ccs=ENC"~: warns under the AutoCAD dialects and the non-Windows
+  BricsCAD dialects (ignored there); silent under the Windows BricsCAD
+  dialects for ~UTF-8~ / ~UTF-16LE~ (honoured, measured), warns for any
+  other name there (unmeasured).
+- ~strict~ warns for every form (not portable); ~clautolisp~ and ~lax~ are
+  silent.
+
+The warning is printed at each call, through the encoding-diagnostic channel
+(pragma-suppressible; ~(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)~ silences
+it); ~clal-lint-encoding-extensions~ reports the same forms statically.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
