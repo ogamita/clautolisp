@@ -1,7 +1,7 @@
 debug-lambda-in-a-loop-reinstrumented -- under a debug session a LAMBDA in a loop is woven again per iteration and never compiled
 ==================================================================================================================
 
-Status: TODO
+Status: DONE (2026-10-06, clautolisp 2.2.208)
 Priority: P3
 Found: 2026-10-06, closing deferred-debugger-compiler-two-bodies.
 
@@ -42,3 +42,27 @@ Acceptance
 Under a session, a hot lambda in a loop is woven once and compiled once;
 breakpoints and stepping inside it behave as for a DEFUN; test in
 autolisp-compiler/tests/instrumented-tests.lisp.
+
+Resolution (2026-10-06, clautolisp 2.2.208)
+-------------------------------------------
+
+Breakpoints, the shadow stack and the navigator key on the FUNCTION ID and
+the metadata's form-ids; the metadata's usubr is read only for its name,
+lambda list and body (source-form-of-metadata), which every closure of one
+lambda form shares. So the debug record is now per CODE:
+
+- usubr-site gains instrumented-body, debug-metadata, debug-call-count and
+  compiled-instrumented-body (autolisp-runtime model.lisp);
+- instrument-usubr first ADOPTS the site's record (adopt-site-debug-record,
+  autolisp-debug instrument.lisp) -- only while that metadata is still
+  registered, so a new session (registry reset) weaves afresh -- else weaves
+  and stores the record on the site;
+- maybe-compile-instrumented-usubr counts on the site when the closure
+  shares its record, and publishes the compiled debugging body there; a
+  later closure adopts it.
+
+A breakpoint on a lambda's line now hits every closure of that lambda form.
+Test: a-lambda-in-a-loop-is-woven-once-and-compiled-once-under-a-session
+(one record for two closures, the registry does not grow, the debugging body
+compiles from calls spread over closures, a later closure starts compiled,
+a reset registry is not adopted).

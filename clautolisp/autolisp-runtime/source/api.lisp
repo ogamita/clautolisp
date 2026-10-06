@@ -1892,6 +1892,25 @@ closure -- which is the whole point (see the SITE slot's comment)."
 (defun usubr-site-compiled-body (site)
   (clautolisp.autolisp-runtime.internal::usubr-site-compiled-body site))
 
+(defun usubr-site-instrumented-body (site)
+  (clautolisp.autolisp-runtime.internal::usubr-site-instrumented-body site))
+
+(defun (setf usubr-site-instrumented-body) (value site)
+  (setf (clautolisp.autolisp-runtime.internal::usubr-site-instrumented-body site) value))
+
+(defun usubr-site-debug-metadata (site)
+  (clautolisp.autolisp-runtime.internal::usubr-site-debug-metadata site))
+
+(defun (setf usubr-site-debug-metadata) (value site)
+  (setf (clautolisp.autolisp-runtime.internal::usubr-site-debug-metadata site) value))
+
+(defun usubr-site-compiled-instrumented-body (site)
+  (clautolisp.autolisp-runtime.internal::usubr-site-compiled-instrumented-body site))
+
+(defun (setf usubr-site-compiled-instrumented-body) (value site)
+  (setf (clautolisp.autolisp-runtime.internal::usubr-site-compiled-instrumented-body site)
+        value))
+
 (defun (setf usubr-site-compiled-body) (value site)
   (setf (clautolisp.autolisp-runtime.internal::usubr-site-compiled-body site) value))
 
@@ -2599,7 +2618,13 @@ that matters: running to a breakpoint deep inside a loop."
                  *compile-instrumented-usubr-hook*))
        nil)
       ((null (autolisp-usubr-instrumented-body function)) nil)
-      ((< (incf (autolisp-usubr-call-count function))
+      ;; COUNT ON THE SITE when the closure shares the site's debug record
+      ;; (debug-lambda-in-a-loop-reinstrumented): a lambda in a loop is a new
+      ;; closure per iteration, and only its CODE can get hot.
+      ((< (if (%shares-site-debug-record-p function)
+              (incf (clautolisp.autolisp-runtime.internal::usubr-site-debug-call-count
+                     (autolisp-usubr-site function)))
+              (incf (autolisp-usubr-call-count function)))
           *autolisp-compilation-threshold*)
        nil)
       (t
@@ -2607,7 +2632,20 @@ that matters: running to a breakpoint deep inside a loop."
          (error () (setf (autolisp-usubr-compiled-instrumented-body function)
                          :failed)))
        (let ((result (autolisp-usubr-compiled-instrumented-body function)))
+         ;; Publish to the site, so the next closure starts compiled.
+         (when (and (functionp result) (%shares-site-debug-record-p function))
+           (setf (usubr-site-compiled-instrumented-body (autolisp-usubr-site function))
+                 result))
          (and (functionp result) result))))))
+
+(defun %shares-site-debug-record-p (function)
+  "True when FUNCTION's instrumented body is its site's: the debug record
+the closures of one lambda form share."
+  (let ((site (autolisp-usubr-site function)))
+    (and site
+         (autolisp-usubr-instrumented-body function)
+         (eq (autolisp-usubr-instrumented-body function)
+             (usubr-site-instrumented-body site)))))
 
 (defun maybe-instrument-usubr (function)
   "Lazily weave FUNCTION's instrumented fork on its first call under a debug

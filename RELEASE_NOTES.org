@@ -37,6 +37,10 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Under the debugger, a ~lambda~ evaluated in a loop is instrumented once,
+  not once per iteration: its closures share one debug record, and its
+  debugging body compiles once the loop is hot (it used to stay interpreted,
+  and every iteration added a record to the debugger's function table).
 - A function loaded from a compiled ~.lap~ is debuggable by line: the ~.lap~
   carries its source positions, registered when it is loaded under a debugger
   UI (an ordinary load records none). The compiled debugging body is now

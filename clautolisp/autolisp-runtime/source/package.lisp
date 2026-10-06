@@ -173,6 +173,9 @@
    #:autolisp-usubr-site
    #:usubr-site-call-count
    #:usubr-site-compiled-body
+   #:usubr-site-instrumented-body
+   #:usubr-site-debug-metadata
+   #:usubr-site-compiled-instrumented-body
    #:parse-let-binding
    #:emit-bricscad-undocumented-warning
    #:eval-function-form

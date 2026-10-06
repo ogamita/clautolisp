@@ -181,6 +181,7 @@ Idempotent — returns the existing metadata if already instrumented.
 USUBR's body conses must have been recorded by a tracked load
 (clautolisp.source) for source positions to resolve."
   (or (metadata-for-usubr usubr)
+      (adopt-site-debug-record usubr)
       (progn
         (ensure-poll-operator)
         (let* ((fid (next-function-id))
@@ -225,6 +226,13 @@ USUBR's body conses must have been recorded by a tracked load
           (setf (autolisp-usubr-instrumented-body usubr) instrumented-body
                 (autolisp-usubr-debug-metadata usubr) metadata)
           (register-metadata metadata)
+          ;; One record per lambda FORM: the next closure from the same site
+          ;; adopts it (ADOPT-SITE-DEBUG-RECORD).
+          (let ((site (autolisp-usubr-site usubr)))
+            (when site
+              (setf (usubr-site-instrumented-body site) instrumented-body
+                    (usubr-site-debug-metadata site) metadata
+                    (usubr-site-compiled-instrumented-body site) nil)))
           ;; Arm any virtual breakpoints recorded on this function before
           ;; its file was loaded (aldo-pre-debug.issue). Instrumentation
           ;; runs before any of the function's poll points, so the
@@ -236,6 +244,30 @@ USUBR's body conses must have been recorded by a tracked load
           ;; repl.issue).
           (materialize-line-breakpoints metadata)
           metadata))))
+
+(defun adopt-site-debug-record (usubr)
+  "When USUBR is a closure from a lambda form already instrumented, give it
+that form's instrumented body, debug metadata and compiled debugging body,
+and return the metadata; else NIL.
+
+The closures of one LAMBDA form are the same code: weaving each one again
+gave every iteration of a loop a new function id and a new metadata record
+(the registry grew by one per iteration) and kept the debugging body from
+ever compiling, since no closure lived long enough to get hot
+(debug-lambda-in-a-loop-reinstrumented). Only a record still registered is
+adopted: a new debug session resets the registry, and its first closure
+weaves afresh."
+  (let* ((site (autolisp-usubr-site usubr))
+         (metadata (and site (usubr-site-debug-metadata site))))
+    (when (and metadata
+               (eq metadata (metadata-for-function-id
+                             (function-debug-metadata-function-id metadata))))
+      (setf (autolisp-usubr-instrumented-body usubr) (usubr-site-instrumented-body site)
+            (autolisp-usubr-debug-metadata usubr) metadata)
+      (let ((compiled (usubr-site-compiled-instrumented-body site)))
+        (when (functionp compiled)
+          (setf (autolisp-usubr-compiled-instrumented-body usubr) compiled)))
+      metadata)))
 
 (defun ensure-metadata-for-name
     (name &optional (context (clautolisp.autolisp-runtime:current-evaluation-context)))
