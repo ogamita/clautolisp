@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cador-activex-enumeration-constants-unbound — provide the vendor ActiveX constants
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -197,3 +197,23 @@ Still open: whether the vendors bind the constants BEFORE any (vl-load-com)
 -- the first run measured it after another suite had loaded COM, so the
 probe now runs FIRST in the manifest; the next run settles it. Then the
 SCHME replay without its fallback (downstream).
+
+* Closed (2026-10-06, clautolisp 2.2.213)
+
+The last question settled, the probe now FIRST in the run: AutoCAD 2022
+(job 16978852020) has none of the constants before (vl-load-com) -- it binds
+them there; BricsCAD V26 (job 16978852021) has them from the start of the
+document. So under the BricsCAD dialects the document startup chain
+installs them (before on_doc_load.lsp and S::STARTUP), otherwise the first
+(vl-load-com) does. Checked on the built binary:
+  bricscad-v26: acAlignmentMiddleLeft before any (vl-load-com) = 9,
+                acVp1_10 = 6, (vl-load-com) = T;
+  autocad-2022: nil before, (vl-load-com) = nil, then 9, acVp1_10 = 7;
+  strict:       nil before, then 9, acVp1_10 unbound (not portable).
+Test activex-constants-are-there-from-document-start-under-bricscad.
+Acceptance: acAlignmentMiddleLeft is 9 under --dialect bricscad-v26 before
+application code runs; every AcAlignment value bound and accepted by the
+property bridge; the whole measured table, table-driven, per product; the
+same builtin on every path (standalone, alfe direct / subprocess). Left
+downstream: SCHME removes its conditional fallback and replays
+"creation insertion et mise a jour d'un bloc attribue".

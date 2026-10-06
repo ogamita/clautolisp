@@ -1116,10 +1116,14 @@ provides that surface through the host backend:
   BricsCAD's; under ~strict~ only the names both bind to the same value;
   under ~clautolisp~ / ~lax~ every name, AutoCAD's value where the two
   differ (30 names do: the ~AcViewportScale~ family is off by one,
-  ~acNative~ is 64 on AutoCAD and 60 on BricsCAD). As measured on all
-  three, the constants are installed by the first ~(vl-load-com)~ of a
-  document only: a later call re-binds nothing -- not even a name the
-  program set to nil -- and a value the program set is never replaced.
+  ~acNative~ is 64 on AutoCAD and 60 on BricsCAD). When, as measured:
+  BricsCAD has them from the start of every document, before any
+  ~(vl-load-com)~ (so under the BricsCAD dialects they are bound before
+  ~on_doc_load.lsp~ and ~S::STARTUP~ run); AutoCAD binds them at the
+  first ~(vl-load-com)~ (and so do ~strict~, ~clautolisp~ and ~lax~). On
+  all three a later ~(vl-load-com)~ re-binds nothing -- not even a name
+  the program set to nil -- and a value the program set is never
+  replaced.
   ~(vl-load-com)~ answers ~nil~ under the AutoCAD dialects, ~T~ otherwise.
 - The document's *collections* are live and drawing-backed:
   ~(vla-get-blocks doc)~, ~(vla-get-layers doc)~,

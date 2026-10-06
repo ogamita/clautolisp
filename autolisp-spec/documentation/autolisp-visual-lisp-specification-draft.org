@@ -69375,8 +69375,11 @@ nothing -- a name set to nil stays nil, a name set to 99 stays 99 -- and
 ~(vl-load-com)~ answers ~nil~ on AutoCAD 2022, ~T~ on BricsCAD. clautolisp
 binds the dialect's product's table (strict: the names both bind alike;
 clautolisp / lax: all, AutoCAD's value where they differ), once per
-document, never over a non-nil value. Whether the vendors bind them before
-any ~(vl-load-com)~ is still to settle (the probe now runs first).
+document, never over a non-nil value. With the probe first in the run:
+AutoCAD 2022 has none of them before ~(vl-load-com)~, BricsCAD has them
+from the start of the document -- so under the BricsCAD dialects clautolisp
+binds them when a document starts, otherwise at the first
+~(vl-load-com)~.
 
 #+LATEX: \newpage
 

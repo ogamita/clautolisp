@@ -10658,12 +10658,15 @@ misspelling would hide a typo in a build script forever."
 ;;; under clautolisp / lax every name, AutoCAD's value where they differ
 ;;; (Autodesk's type library is the one the API comes from).
 ;;;
-;;; WHEN: at the first (vl-load-com) of a document. Measured on all three: a
-;;; later (vl-load-com) re-binds nothing -- not even a name the program set
-;;; to nil -- and a value the program set (setq acRed 99) is kept. So the
-;;; constants are installed ONCE per document, and never over a non-nil user
-;;; value. (Whether the vendors bind them before any (vl-load-com) is not
-;;; settled: the probe ran after another suite had loaded COM.)
+;;; WHEN, measured with the probe FIRST in the run (before any suite loads
+;;; COM): AutoCAD 2022 binds them at the first (vl-load-com) -- unbound
+;;; before it (job 16978852020); BricsCAD has them from the start of the
+;;; document, before any (vl-load-com) (V26, job 16978852021). On all three a
+;;; later (vl-load-com) re-binds nothing -- not even a name the program set to
+;;; nil -- and a value the program set (setq acRed 99) is kept. So: under the
+;;; BricsCAD dialects at the start of every document (RUN-DOCUMENT-STARTUP-
+;;; CHAIN, before on_doc_load.lsp and S::STARTUP), otherwise at the first
+;;; (vl-load-com); ONCE per document either way, never over a non-nil value.
 
 (defvar *activex-constants-installed* (make-hash-table :test 'eq)
   "The documents (runtime document namespaces) whose (vl-load-com) has
@@ -10692,13 +10695,13 @@ the section header)."
                       (:clautolisp (or autocad bricscad)))
         when value collect (list name value)))
 
-(defun install-activex-enumeration-constants ()
+(defun install-activex-enumeration-constants
+    (&optional (context (clautolisp.autolisp-runtime:current-evaluation-context)))
   "Bind the ActiveX enumeration constants of the current dialect's product as
-AutoLISP global variables in the current document -- once per document, and
+AutoLISP global variables in CONTEXT's document -- once per document, and
 never over a name the program has given a non-nil value. Returns the number
 of names bound (0 on a later call)."
-  (let* ((context (clautolisp.autolisp-runtime:current-evaluation-context))
-         (document (or (ignore-errors
+  (let* ((document (or (ignore-errors
                         (clautolisp.autolisp-runtime:evaluation-context-current-document context))
                        :global))
          (count 0))
@@ -10706,8 +10709,8 @@ of names bound (0 on a later call)."
       (setf (gethash document *activex-constants-installed*) t)
       (loop for (name value) in (activex-enumeration-constants)
             for symbol = (intern-autolisp-symbol (string-upcase name))
-            when (null (autolisp-symbol-value symbol))
-              do (clautolisp.autolisp-runtime:set-autolisp-symbol-value symbol value)
+            when (null (clautolisp.autolisp-runtime:lookup-variable symbol context))
+              do (clautolisp.autolisp-runtime:set-variable symbol value context)
                  (incf count)))
     count))
 (defun builtin-vl-load-reactors () (autolisp-true)) ; no reactors yet; success.
@@ -10780,8 +10783,12 @@ environment); errors are reported, not propagated, as a startup file's are."
         (%load-into-namespace context (clautolisp.autolisp-runtime:evaluation-context-current-namespace context) path)))))
 
 (defun run-document-startup-chain (context)
-  "The per-document hooks for CONTEXT's (new) document: the dialect's
-per-document files, the VL-LOAD-ALL files, then S::STARTUP when defined."
+  "The per-document hooks for CONTEXT's (new) document: under the BricsCAD
+dialects the ActiveX enumeration constants (bound from the start of the
+document there, measured), the dialect's per-document files, the
+VL-LOAD-ALL files, then S::STARTUP when defined."
+  (when (eq (%activex-constants-product) :bricscad)
+    (install-activex-enumeration-constants context))
   (run-startup-files context (%startup-hook-files :document))
   (dolist (path (clautolisp.autolisp-runtime:runtime-session-pending-loads
                  (clautolisp.autolisp-runtime:evaluation-context-session context)))

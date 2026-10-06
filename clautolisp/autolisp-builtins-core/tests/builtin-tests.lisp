@@ -3209,6 +3209,31 @@ strict, the portable subset, has neither; clautolisp takes AutoCAD's."
   (is (equal '(nil nil 9) (%vla "(setq *AUTOLISP-DIALECT* 'strict) (vl-load-com) (list acVp1_10 acNative acAlignmentMiddleLeft)")))
   (is (equal '(7 64) (%vla "(setq *AUTOLISP-DIALECT* 'clautolisp) (vl-load-com) (list acVp1_10 acNative)"))))
 
+(test activex-constants-are-there-from-document-start-under-bricscad
+  "Measured with the probe first in the run: BricsCAD has the constants from
+the start of the document, before any (vl-load-com); AutoCAD 2022 binds them
+only at (vl-load-com). The document startup chain installs them under the
+BricsCAD dialects only."
+  (flet ((after-startup (dialect)
+           (let ((seen :unset))
+             (run-autolisp-string
+              "nil"
+              :setup-fn (lambda (context)
+                          (%install-cador-and-core context)
+                          (clautolisp.autolisp-runtime:set-runtime-session-dialect
+                           (clautolisp.autolisp-runtime:evaluation-context-session context)
+                           (clautolisp.autolisp-reader:find-autolisp-dialect dialect))
+                          (clautolisp.autolisp-builtins-core::run-document-startup-chain context)
+                          (setf seen (clautolisp.autolisp-runtime:lookup-variable
+                                      (clautolisp.autolisp-runtime:intern-autolisp-symbol
+                                       "ACALIGNMENTMIDDLELEFT")
+                                      context))))
+             seen)))
+    (reset-autolisp-symbol-table)
+    (is (eql 9 (after-startup :bricscad-v26)))
+    (reset-autolisp-symbol-table)
+    (is (null (after-startup :autocad-2022)))))
+
 (test activex-vl-load-com-answers-per-product
   "Measured: (vl-load-com) answers NIL on AutoCAD 2022, T on BricsCAD."
   (is (null (%vla "(setq *AUTOLISP-DIALECT* 'autocad-2022) (vl-load-com)")))
