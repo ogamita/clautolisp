@@ -26,8 +26,25 @@
 ;;;               (direct: in-process; subprocess: forwarded to the child);
 ;;;   :NO-EFFECT  accepted, and neither variant acts on it (CAD-only options);
 ;;;               identical by construction;
-;;;   :DIVERGENT  KNOWN to behave differently in the two variants -- the
-;;;               remaining work of the ticket. Each entry says how.
+;;;   :PROGRAM    needs the clautolisp PROGRAM's own machinery (its REPL,
+;;;               recorder, DCL renderers, cadtui), which alfe's image does
+;;;               not embed: the run IS the program's -- the default variant
+;;;               runs it as the subprocess (alfe.cli:clautolisp-program-
+;;;               requirement), --backend direct is a usage error. Identical
+;;;               by construction;
+;;; Each :ENGINE / :PROGRAM entry says, with :FORWARD, how the SUBPROCESS
+;;; variant hands the option to the child -- BUILD-SUBPROCESS-ARGV is derived
+;;; from this table, so an option cannot be added here without saying how
+;;; the child receives it, nor forwarded without being classified:
+;;;   (FN ...)      functions of the subprocess session returning the argv
+;;;                 fragment (one fragment per distinct function, in table
+;;;                 order, so the -E family is forwarded once);
+;;;   :PLAN         an action of the plan, forwarded as its -l / -x / -i;
+;;;   :ENVIRONMENT  through the child's environment ($NO_COLOR).
+;;;
+;;;   :DIVERGENT  KNOWN to behave differently in the two variants. None is
+;;;               left; the disposition stays so a future exception has to be
+;;;               written down here rather than discovered.
 
 (defparameter *clautolisp-option-contract*
   '(;; informational, answered before any engine exists
@@ -61,28 +78,50 @@
     ("--debug"              :front-end "alfe's log level; *AUTOLISP-DEBUG* via the shared bindings")
     ("--no-init"            :front-end "alfe resolves its init files into -l actions of the plan (the child runs --no-init)")
     ;; the engine
-    ("--dialect"            :engine "direct: RESOLVE-CLAUTOLISP-DIALECT; subprocess: --dialect NAME")
-    ("--strict"             :engine "as --dialect strict")
-    ("--lax"                :engine "as --dialect lax")
-    ("--host"               :engine "direct: RESOLVE-CLAUTOLISP-HOST; subprocess: --host NAME (cadtui: subprocess only, --backend direct is a usage error)")
-    ("--dwg"                :engine "direct: HOST-OPEN-STARTUP-DRAWING with the DWG codec loaded; subprocess: --dwg FILE; same message and status when unreadable")
-    ("--load"               :engine "direct: in-process load binding *AUTOLISP-LOAD-PATHNAME*; subprocess: -l")
-    ("--eval"               :engine "direct: in-process, binding *AUTOLISP-EXPRESSION*; subprocess: -x")
-    ("--main"               :engine "both: evaluated as -x \"(NAME)\"")
-    ("--quit"               :engine "ends the plan; implicit in the child")
-    ("--no-color"           :engine "direct: *COLOR-OUTPUT*; subprocess: $NO_COLOR")
-    ("--encoding"           :engine "every situation below")
-    ("--source-encoding"    :engine "direct: session default source encoding; subprocess: -Esource")
-    ("--file-encoding"      :engine "direct: *AUTOLISP-FILE-READ/WRITE-ENCODING*; subprocess: -Efile-read/-write")
-    ("--file-read-encoding" :engine "as --file-encoding, read side")
-    ("--file-write-encoding" :engine "as --file-encoding, write side")
-    ("--log-encoding"       :engine "direct: *AUTOLISP-LOG-ENCODING*; subprocess: -Elog")
-    ("--terminal-encoding"  :engine "direct: alfe's own streams; subprocess: -Eterminal-in/-out and the capture decoding")
-    ("--terminal-input-encoding"  :engine "as --terminal-encoding, input side")
-    ("--terminal-output-encoding" :engine "as --terminal-encoding, output side")
-    ("--console-encoding"   :engine "the engine's console IS its terminal: folded into --terminal-encoding")
-    ("--console-input-encoding"  :engine "folded into --terminal-input-encoding")
-    ("--console-output-encoding" :engine "folded into --terminal-output-encoding")
+    ("--dialect"            :engine "direct: RESOLVE-CLAUTOLISP-DIALECT; subprocess: --dialect NAME"
+     :forward (%forward-dialect))
+    ("--strict"             :engine "as --dialect strict"
+     :forward (%forward-dialect))
+    ("--lax"                :engine "as --dialect lax"
+     :forward (%forward-dialect))
+    ("--host"               :engine "direct: RESOLVE-CLAUTOLISP-HOST; subprocess: --host NAME (cadtui is :PROGRAM: the default variant runs it as the subprocess, --backend direct is a usage error)"
+     :forward (%forward-host))
+    ("--dwg"                :engine "direct: HOST-OPEN-STARTUP-DRAWING with the DWG codec loaded; subprocess: --dwg FILE; same message and status when unreadable"
+     :forward (%forward-dwg))
+    ("--load"               :engine "direct: in-process load binding *AUTOLISP-LOAD-PATHNAME*; subprocess: -l"
+     :forward :plan)
+    ("--eval"               :engine "direct: in-process, binding *AUTOLISP-EXPRESSION*; subprocess: -x"
+     :forward :plan)
+    ("--main"               :engine "both: evaluated as -x \"(NAME)\""
+     :forward :plan)
+    ("--quit"               :engine "ends the plan; implicit in the child"
+     :forward :plan)
+    ("--no-color"           :engine "direct: *COLOR-OUTPUT*; subprocess: $NO_COLOR"
+     :forward :environment)
+    ("--encoding"           :engine "every situation below"
+     :forward (%forward-source-encoding %situation-cli-flags))
+    ("--source-encoding"    :engine "direct: session default source encoding; subprocess: -Esource"
+     :forward (%forward-source-encoding))
+    ("--file-encoding"      :engine "direct: *AUTOLISP-FILE-READ/WRITE-ENCODING*; subprocess: -Efile-read/-write"
+     :forward (%situation-cli-flags))
+    ("--file-read-encoding" :engine "as --file-encoding, read side"
+     :forward (%situation-cli-flags))
+    ("--file-write-encoding" :engine "as --file-encoding, write side"
+     :forward (%situation-cli-flags))
+    ("--log-encoding"       :engine "direct: *AUTOLISP-LOG-ENCODING*; subprocess: -Elog"
+     :forward (%situation-cli-flags))
+    ("--terminal-encoding"  :engine "direct: alfe's own streams; subprocess: -Eterminal-in/-out and the capture decoding"
+     :forward (%situation-cli-flags))
+    ("--terminal-input-encoding"  :engine "as --terminal-encoding, input side"
+     :forward (%situation-cli-flags))
+    ("--terminal-output-encoding" :engine "as --terminal-encoding, output side"
+     :forward (%situation-cli-flags))
+    ("--console-encoding"   :engine "the engine's console IS its terminal: folded into --terminal-encoding"
+     :forward (%situation-cli-flags))
+    ("--console-input-encoding"  :engine "folded into --terminal-input-encoding"
+     :forward (%situation-cli-flags))
+    ("--console-output-encoding" :engine "folded into --terminal-output-encoding"
+     :forward (%situation-cli-flags))
     ;; accepted, acted on by neither variant
     ("--mode"               :no-effect "CAD launch mode")
     ("--bootstrap-phase"    :no-effect "CAD bootstrap truncation")
@@ -90,15 +129,35 @@
     ("--cadstdio-encoding"  :no-effect "no CAD subprocess pipes")
     ("--cadstdio-input-encoding"  :no-effect "no CAD subprocess pipes")
     ("--cadstdio-output-encoding" :no-effect "no CAD subprocess pipes")
-    ;; the remaining work
-    ("--interactive"        :divergent "direct: alfe's minimal `alfe> ' REPL; subprocess: the clautolisp REPL (interactors, comma commands, and the aldo debugger on an error)")
-    ("--dribble"            :divergent "direct: warns and records nothing; subprocess: forwarded, the engine records its REPL")
-    ("--dribble-interactors" :divergent "as --dribble")
-    ("--dcl"                :divergent "ignored by both variants, but only the subprocess engine has a DCL implementation (autolisp-dcl and its renderer selection are the clautolisp program's)"))
+    ;; the clautolisp program's own machinery: the run is the program's
+    ("--interactive"        :program "the clautolisp REPL (interactors, comma commands, the aldo debugger on an error); also a run with no action"
+     :forward :plan)
+    ("--dribble"            :program "the program's recorder of its REPL (nothing to record in a batch run, as with clautolisp)"
+     :forward (%dribble-cli-flags))
+    ("--dribble-interactors" :program "as --dribble"
+     :forward (%dribble-cli-flags))
+    ("--dcl"                :program "gui / ncurses: the program's renderers, on alfe's terminal; tui / auto: the line renderer in both variants (the child's captured stdout is no TTY), forwarded as --dcl"
+     :forward (%forward-dcl)))
   "The treatment of every option alfe accepts, under --clautolisp, by the two
-engine variants: (LONG-NAME DISPOSITION HOW). See the comment above.")
+engine variants: (LONG-NAME DISPOSITION HOW &key FORWARD). See the comment
+above.")
 
 (defun clautolisp-option-disposition (long-name)
   "The disposition of the option LONG-NAME in *CLAUTOLISP-OPTION-CONTRACT*,
 or NIL when the contract does not classify it."
   (second (assoc long-name *clautolisp-option-contract* :test #'string=)))
+
+(defun clautolisp-option-forward (long-name)
+  "The :FORWARD of the option LONG-NAME in *CLAUTOLISP-OPTION-CONTRACT*: a
+list of argv-fragment functions, :PLAN, :ENVIRONMENT, or NIL."
+  (getf (cdddr (assoc long-name *clautolisp-option-contract* :test #'string=))
+        :forward))
+
+(defun contract-subprocess-forwarders ()
+  "The argv-fragment functions of the contract, each once, in table order."
+  (let ((result '()))
+    (dolist (entry *clautolisp-option-contract* (nreverse result))
+      (let ((forward (getf (cdddr entry) :forward)))
+        (when (listp forward)
+          (dolist (fn forward)
+            (pushnew fn result)))))))

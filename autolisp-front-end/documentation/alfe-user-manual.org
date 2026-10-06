@@ -145,20 +145,36 @@ every option alfe accepts with =--clautolisp=:
   that cannot be opened is =--dwg: cannot open the drawing ...= with 66
   (missing) or 65 (not a drawing), and =--main FN= runs as =-x "(FN)"= does.
 
-Three options still behave differently, and are the remaining work of the
-parity ticket (=alfe-clautolisp-backend-semantic-parity=):
+Some of what =clautolisp= offers is not the engine but the =clautolisp=
+/program/ built around it: its REPL (interactors, comma commands, the aldo
+debugger an error breaks into, the Control-C policy), its recorder
+(=--dribble=), its full-screen and GUI DCL renderers, and the cadtui host.
+alfe does not carry a second, poorer copy of them. A run that needs one of
+them /is/ the program's, so alfe runs it as the child by itself -- the same
+command line, the same program, hence the same behaviour whether or not you
+wrote =--backend subprocess=:
 
-| Option                               | =--backend direct=                                 | =--backend subprocess=                                                         |
-|--------------------------------------+----------------------------------------------------+--------------------------------------------------------------------------------|
-| =-i= (and a bare =alfe=)             | alfe's minimal =alfe>= REPL                        | the clautolisp REPL: interactors, comma commands, the aldo debugger on errors  |
-| =--dribble=, =--dribble-interactors= | records nothing, and says so                       | forwarded: the engine records its REPL                                         |
-| =--dcl=                              | ignored; the in-process engine has no DCL renderer | ignored; the child chooses its renderer itself (=auto=)                        |
+| The run asks for                                          | Without =--backend=, or =--backend subprocess= | =--backend direct=                |
+|-----------------------------------------------------------+------------------------------------------------+-----------------------------------|
+| an interactive session: =-i=, or no =-l= / =-x= / =--main= / FILE (a bare =alfe=) | the clautolisp REPL, in the child | usage error (exit 64)|
+| =--dribble=, =--dribble=FILE=                              | the child records its REPL (a batch run has no REPL: nothing is recorded, as with =clautolisp=) | usage error (exit 64)|
+| =--dcl ncurses=, =--dcl gui=                               | the child, on alfe's terminal                  | usage error (exit 64)             |
+| =--host cadtui=                                           | the child                                      | usage error (exit 64)             |
+
+=--dcl tui= and =--dcl auto= (the default) stay in-process: both variants
+show a batch run's dialogs with the line renderer (the child's captured
+standard output is not a terminal, so its =auto= picks the line form too).
+The child reads alfe's standard input in every run, as the in-process
+engine does, so =printf '(princ 42)\n' | alfe -i= and a =GETSTRING= in a
+batch run see the same input under both variants.
 
 The treatment of every option is written down once, in
 =alfe.backend.clautolisp:*clautolisp-option-contract*=, and the test
 suite fails when an option alfe accepts is missing from it; a table of
 runs is executed under both variants and their output, diagnostics, exit
-status and written files compared.
+status and written files compared -- the REPL, dribble and DCL runs
+included (=--host cadtui=, =-i=, =--dribble= and =--dcl= are the
+=:program= entries of that contract).
 
 ** Why not auto-detect?
 
@@ -1599,19 +1615,15 @@ side:
 
 - Under =--autocad= / =--bricscad=, *alfe* records: those engines have no
   dribble of their own, so the transcript is what alfe sees of the conversation.
-- Under =--clautolisp --backend subprocess=, the request is *forwarded to the
-  engine*, which records its own REPL. That transcript is richer than anything
-  alfe could reconstruct from outside — it has the prompts, the interactor stack
-  and the values — and forwarding means one file per session rather than two
-  partial ones.
-- Under =--clautolisp= with the *in-process* engine (the default =--backend
-  direct=), *nothing is recorded*, and alfe says so on =*error-output*= rather
-  than leaving you to look for a file that is not there. The reason is not an
-  omission: clautolisp's dribble is a REPL tee that belongs to the clautolisp
-  *program* and attaches itself through an internal hook, so in alfe's
-  in-process engine =(clal-dribble …)= is a documented no-op. The two answers
-  alfe names are the honest ones — run the engine as a child
-  (=--backend subprocess=), or use =clautolisp= directly.
+- Under =--clautolisp=, the request is *forwarded to the engine program*,
+  which records its own REPL. That transcript is richer than anything alfe
+  could reconstruct from outside -- it has the prompts, the interactor stack
+  and the values -- and forwarding means one file per session rather than two
+  partial ones. The recorder is the =clautolisp= program's, so a =--dribble=
+  run is the program's: alfe runs it as the child even without =--backend
+  subprocess= (and =--backend direct --dribble= is a usage error). As with
+  =clautolisp=, the recording starts with the REPL: a batch run (=-x= /
+  =-l= only) records nothing.
 
 ** =--dribble-interactors=
 

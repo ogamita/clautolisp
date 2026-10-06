@@ -1,0 +1,55 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-ccl-parity-missing-load-file-message -- under alfe-ccl the two clautolisp variants word a missing -l file differently
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: none
+#+BRANCH: fix-alfe-ccl-parity-missing-load-file-message
+
+* Symptom
+
+=make -C autolisp-front-end test-ccl= fails one check (found 2026-10-06 while
+working on debugger-public-interface-and-on-error; untouched by that work):
+the parity row "missing load file" of
+CLAUTOLISP-BACKEND-VARIANTS-ARE-SEMANTICALLY-IDENTICAL.
+
+#+begin_example
+direct:     clautolisp: No such file or directory : "/nonexistent/parity-missing.lsp"
+subprocess: clautolisp: The file #P"/nonexistent/parity-missing.lsp" does not exist:
+              No such file or directory
+#+end_example
+
+* Repro
+
+#+begin_src sh
+make -C clautolisp build-clautolisp-sbcl
+make -C autolisp-front-end test-ccl
+#+end_src
+
+* Cause
+
+REPORT-ENGINE-ERROR prints the host Lisp's FILE-ERROR report. Under alfe-ccl
+the in-process engine runs on CCL, the subprocess child is the SBCL-built
+clautolisp-sbcl, and the two implementations word the condition differently.
+The SBCL lane passes because both sides are SBCL. Fix: have the engine report a
+missing load file in its own words (pathname + strerror), independent of the
+host Lisp's FILE-ERROR report.
+
+* Resolution (clautolisp 2.2.217 / alfe 2.2.161, 2026-10-06)
+
+REPORT-ENGINE-ERROR has a FILE-ERROR branch: FILE-ERROR-MESSAGE words it
+=PROGRAM: cannot open FILE: REASON=, REASON being what the file system says
+now (=no such file or directory=, or =permission denied= for a file that is
+there), the same text on every host Lisp. Both variants print it, so the
+parity row agrees under alfe-ccl too. Tests: the clautolisp exit-status test
+asserts the message; the actions-load-missing-file scenario asserts it on
+stderr.
+
+The same lane then showed a second CCL divergence, row "load file not in the
+source encoding" (from sysexits-exit-statuses): CCL's file streams REPLACE an
+invalid UTF-8 sequence with U+FFFD instead of signalling, so the in-process
+engine loaded a latin-1 file (exit 0) that clautolisp-sbcl refuses (EX_DATAERR
+65). The reader now checks a host-decoded source: a U+FFFD the file does not
+literally contain (EF BF BD) signals CLAUTOLISP.AUTOLISP-READER:
+SOURCE-DECODING-ERROR, reported and mapped exactly like the host's decoding
+error. Test: READ-FILE-WITH-INVALID-UTF-8-SIGNALS-ON-EVERY-HOST (both lanes).

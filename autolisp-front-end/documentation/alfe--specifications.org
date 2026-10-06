@@ -1575,18 +1575,40 @@ same file and drawing side effects.
    / =(quit N)= / =autolisp-set-status=, 1 for a runtime error, 2 for a
    =-l= file that cannot be opened, 1 with =--dwg: cannot open the drawing
    ...= for an unreadable drawing.
-5. *One contract.* =alfe.backend.clautolisp:*clautolisp-option-contract*=
+5. *The program's runs.* What the =clautolisp= /program/ adds around the
+   engine -- its REPL (interactors, comma commands, the aldo debugger,
+   the Control-C policy), its recorder (=--dribble=), its =ncurses= and
+   =gui= DCL renderers, the cadtui host -- is not in alfe's image. A run
+   that needs it is the program's (=alfe.cli:clautolisp-program-requirement=):
+   an interactive session (=-i=, or no =-l= / =-x= / =--main= / FILE
+   action), =--dribble= / =--dribble=FILE=, =--dcl ncurses= / =--dcl gui=,
+   =--host cadtui=. Without =--backend=, alfe runs it in the subprocess
+   mode; with =--backend subprocess= likewise; with =--backend direct= it
+   is a usage error (EX_USAGE, 64) reported before any engine starts. The two
+   accepted spellings thus run the same program with the same argv, and
+   cannot differ. =--dcl tui= / =--dcl auto= stay in-process: a batch
+   child's captured standard output is no terminal, so its =auto= selects
+   the line renderer the in-process engine uses. =--dcl= is forwarded to
+   the child when it is not =auto=.
+6. *Standard streams.* The child reads alfe's standard input in every
+   run. In a run of point 5 it is also given alfe's standard output and
+   error output (inherited when they are the process's own descriptors,
+   copied otherwise); in a batch run its output is captured, decoded with
+   the terminal-out encoding and replayed.
+7. *One contract.* =alfe.backend.clautolisp:*clautolisp-option-contract*=
    classifies every option alfe accepts as consumed by alfe before either
    engine starts (=:front-end=), consumed by both engines (=:engine=),
-   acted on by neither (=:no-effect=), or still different (=:divergent=).
-   The test suite fails when an accepted option is missing from it, and
-   runs a table of option combinations under both modes, comparing the
-   results.
-6. *Remaining divergences* (=:divergent=): =-i= (alfe's minimal REPL vs
-   the clautolisp REPL with its interactors and debugger), =--dribble= /
-   =--dribble-interactors= (recorded by the subprocess engine only) and
-   =--dcl= (the in-process engine has no DCL renderer). They are to be
-   made equal, or rejected identically before either engine starts.
+   the program's (=:program=, point 5), acted on by neither
+   (=:no-effect=), or different (=:divergent=, none at present). The test
+   suite fails when an accepted option is missing from it, and runs a
+   table of option combinations under both modes -- REPL, dribble and DCL
+   runs included -- comparing the results.
+8. *Plug-in action hooks.* With a =:pre-action= or =:post-action= hook
+   active, alfe evaluates the plan one action at a time. The subprocess
+   mode runs each such evaluation in a new child, so AutoLISP state does
+   not carry from one action to the next there, while it does in-process.
+   This is the one known difference left; it needs a persistent child
+   (actions sent to one engine over a framed stream) to be removed.
 
 ** Encodings
 
