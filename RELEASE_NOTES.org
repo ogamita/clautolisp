@@ -37,6 +37,18 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- alfe 2.2.158 / clautolisp 2.2.212: =alfe --clautolisp= behaves the same
+  under =--backend direct= (the default) and =--backend subprocess=. The
+  in-process engine now carries the DWG codec, so =--dwg FILE.dwg= no
+  longer fails with "no reader codec registered for format :DWG" (the
+  native library is still loaded lazily), and the compiler; the child
+  receives alfe's =*AUTOLISP-...*= values through the new clautolisp
+  option =--front-end-bindings FILE= (=*AUTOLISP-FRONTEND*= =ALFE=,
+  =PROGRAM= =alfe=); both report errors in the engine's words and exit
+  with the engine's status -- =(exit N)= / =autolisp-set-status= give
+  =N=, a =-l= file that cannot be opened gives 2 (it was 1 in-process).
+  =-i=, =--dribble= and =--dcl= still differ; see the alfe user manual,
+  /One engine, two transports/.
 - An installed ~alfe --clautolisp --backend subprocess~ (and ~--host
   cadtui~) finds the ~clautolisp-sbcl[.exe]~ installed with it, in
   ~PREFIX/libexec/clautolisp/binaries/OS/CPU/~, from where the running alfe

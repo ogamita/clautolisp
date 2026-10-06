@@ -52,7 +52,8 @@
                 #:eval-result-value
                 #:eval-result-output
                 #:eval-result-error-output
-                #:eval-result-condition)
+                #:eval-result-condition
+                #:eval-result-exit-code)
   (:import-from #:alfe.error
                 #:backend-error
                 #:backend-not-available
@@ -287,6 +288,9 @@ Backend selection (mutually exclusive):
 Mode and variant:
   --mode {auto,automation,batch}    How to launch the engine (default: auto).
   --backend {attach,launch}         Attach to a running CAD or launch a fresh one.
+  --backend {direct,subprocess}     --clautolisp: run the engine inside alfe (default)
+                                    or as the clautolisp executable. Same meaning for
+                                    every option either way (except -i, --dribble, --dcl).
 
 Actions (processed in order):
   -l, --load FILE        Load FILE (relative to alfe's invocation directory).
@@ -1471,7 +1475,8 @@ registered one of the two hooks."
        :output (apply #'concatenate 'string (mapcar #'eval-result-output results))
        :error-output (apply #'concatenate 'string
                             (mapcar #'eval-result-error-output results))
-       :condition (and last (eval-result-condition last))))))
+       :condition (and last (eval-result-condition last))
+       :exit-code (and last (eval-result-exit-code last))))))
 
 (defun run-plan (options backend &key version-text)
   "Drive a real backend through the action plan. Returns the exit code.
@@ -1563,10 +1568,15 @@ engine."
              (finish-output)
              (finish-output *error-output*)
              (let ((exit-code (run-hook :exit-code
-                                        (ecase (eval-result-status result)
-                                          (:success  0)
-                                          (:failed   1)
-                                          (:aborted  1))
+                                        ;; The engine's own status when it
+                                        ;; decided one (the clautolisp backend:
+                                        ;; (exit N), a file error), else the
+                                        ;; outcome's.
+                                        (or (eval-result-exit-code result)
+                                            (ecase (eval-result-status result)
+                                              (:success  0)
+                                              (:failed   1)
+                                              (:aborted  1)))
                                         :result result))
                    (elapsed (/ (float (- (get-internal-real-time) started-at))
                                internal-time-units-per-second)))

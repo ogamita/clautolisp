@@ -58,8 +58,23 @@ Drive AutoCAD via the file-IPC protocol.
 .BR \-\-mode " " \fI{auto,automation,batch}\fR
 How to launch the engine (default: auto).
 .TP
-.BR \-\-backend " " \fI{attach,launch}\fR
-Attach to a running CAD or launch a fresh one.
+.BR \-\-backend " " \fI{attach,launch,direct,subprocess}\fR
+CAD backends: attach to a running CAD or launch a fresh one.
+Under
+.BR \-\-clautolisp :
+.B direct
+(the default) runs the clautolisp engine inside alfe,
+.B subprocess
+runs the clautolisp executable as a child. The two are transports for one
+engine: every option accepted with
+.B \-\-clautolisp
+has the same meaning, output, diagnostics and exit status under both
+(the subprocess engine receives alfe's resolved
+.B *AUTOLISP\-...*
+values), except
+.BR \-i ,
+.BR \-\-dribble " and " \-\-dcl ,
+which still differ (see the user manual).
 .SS Actions (processed in order)
 .TP
 .BR \-l ", " \-\-load " " \fIFILE\fR
@@ -509,6 +524,19 @@ Success.
 .TP
 .B 1
 User script failure / unhandled condition.
+Under
+.B \-\-clautolisp
+(either engine variant) the status is the engine's own: the
+.I N
+of
+.BI "(exit " N )
+/
+.BI "(quit " N )
+or of
+.BR autolisp\-set\-status ,
+1 for a runtime error, 2 for a
+.B \-l
+file that cannot be opened (the clautolisp program's code).
 .TP
 .B 2
 Usage error

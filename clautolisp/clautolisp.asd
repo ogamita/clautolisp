@@ -379,7 +379,8 @@ application for headless interactive/scriptable testing (generalises cador)."
    (:file "autolisp-cli/source/spec")
    (:file "autolisp-cli/source/parser")
    (:file "autolisp-cli/source/terminal")
-   (:file "autolisp-cli/source/transmit"))
+   (:file "autolisp-cli/source/transmit")
+   (:file "autolisp-cli/source/engine"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-cli/tests")))
   :perform (asdf:test-op (op system)

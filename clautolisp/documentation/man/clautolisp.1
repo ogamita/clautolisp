@@ -103,6 +103,15 @@ TTY, so every headless or piped run gets the terminal form.
 .TP
 .B \-\-trace
 Print every AutoLISP call (entry args + exit value) on stderr.
+.TP
+.BR \-\-front-end-bindings " " \fIFILE\fR
+Install the
+.B *AUTOLISP\-...*
+values a driving front end resolved (FILE, written by it) instead of
+deriving them from this command line.
+.B "alfe \-\-clautolisp \-\-backend subprocess"
+passes it, so a program sees the same values as under alfe's in-process
+engine.
 .SS Debugger (aldo)
 .TP
 .BR \-\-on-error " " \fIPOLICY\fR

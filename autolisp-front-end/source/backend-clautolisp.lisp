@@ -97,7 +97,9 @@
            #:clautolisp-direct-session
            #:clautolisp-subprocess-session
            #:resolve-clautolisp-dialect
-           #:resolve-clautolisp-host))
+           #:resolve-clautolisp-host
+           #:*clautolisp-option-contract*
+           #:clautolisp-option-disposition))
 
 (in-package #:alfe.backend.clautolisp)
 
@@ -408,7 +410,15 @@ set $ALFE_CLAUTOLISP_BIN to the engine's pathname"
     :reader tee-stream-destinations
     :documentation
     "List of underlying streams every write is fanned to. The order
-is not observable from the outside."))
+is not observable from the outside.")
+   (column
+    :initform 0
+    :accessor tee-stream-column
+    :documentation
+    "Column of the next character, so FRESH-LINE (the ~& of the engine's
+diagnostics) behaves as on the real stream instead of always breaking the
+line: the in-process engine must print what the clautolisp program prints
+(alfe-clautolisp-backend-semantic-parity.issue)."))
   (:documentation
    "Character output stream that writes to every member of
 DESTINATIONS in order. Used in PHASE 1 to mirror the live stdout
@@ -417,17 +427,25 @@ into WORKDIR/output.txt and the live stderr into WORKDIR/errors.txt."))
 (defmethod trivial-gray-streams:stream-write-char ((stream tee-stream) ch)
   (dolist (dest (tee-stream-destinations stream))
     (write-char ch dest))
+  (setf (tee-stream-column stream)
+        (if (char= ch #\Newline) 0 (1+ (tee-stream-column stream))))
   ch)
 
 (defmethod trivial-gray-streams:stream-write-string
     ((stream tee-stream) string &optional (start 0) (end nil))
-  (dolist (dest (tee-stream-destinations stream))
-    (write-string string dest :start start :end (or end (length string))))
+  (let ((end (or end (length string))))
+    (dolist (dest (tee-stream-destinations stream))
+      (write-string string dest :start start :end end))
+    (let ((newline (position #\Newline string :start start :end end
+                                               :from-end t)))
+      (setf (tee-stream-column stream)
+            (if newline
+                (- end newline 1)
+                (+ (tee-stream-column stream) (- end start))))))
   string)
 
 (defmethod trivial-gray-streams:stream-line-column ((stream tee-stream))
-  ;; trivial-gray-streams requires this; we don't track columns.
-  nil)
+  (tee-stream-column stream))
 
 (defmethod trivial-gray-streams:stream-finish-output ((stream tee-stream))
   (dolist (dest (tee-stream-destinations stream))
@@ -465,7 +483,13 @@ underlying files we mirror live stdout/stderr into."
   ;; the session writes straight to the inherited streams.
   (captured-stdout-stream nil)
   (captured-stderr-stream nil)
-  (interrupt-requested-p nil))
+  (interrupt-requested-p nil)
+  ;; The --dwg drawing the host could not open, as the CLI-USAGE-ERROR the
+  ;; clautolisp program reports for it. EVAL-PLAN reports it and fails
+  ;; before the first action, exactly as the program does before its first
+  ;; one, so both variants print the same line and exit with the same status
+  ;; (alfe-clautolisp-backend-semantic-parity.issue).
+  (startup-error nil))
 
 (defstruct (clautolisp-subprocess-session
             (:include session)
@@ -500,9 +524,27 @@ resolved at START-ENGINE time."
   (dribble nil)
   (dribble-interactors nil)
   ;; The drawing argument (--dwg / $AUTOLISP_DWG), forwarded as --dwg.
-  (dwg nil))
+  (dwg nil)
+  ;; The *AUTOLISP-...* bindings alfe resolved -- the very list the direct
+  ;; variant installs -- forwarded through --front-end-bindings so the child
+  ;; engine shows user code the same values. NIL when START-ENGINE had no
+  ;; CLI-OPTIONS (then the child derives its own, as the direct variant
+  ;; installs none).
+  (front-end-bindings nil))
 
 ;;; --- START-ENGINE: direct variant ----------------------------------
+
+(defun direct-transmit-bindings (cli-options version-text)
+  "The *AUTOLISP-...* bindings of alfe's clautolisp engine for CLI-OPTIONS:
+installed in-process by the direct variant, handed to the child through
+--front-end-bindings by the subprocess variant -- ONE list, so user code sees
+the same values whichever variant runs it
+(alfe-clautolisp-backend-semantic-parity.issue)."
+  (alfe.cli:cli-options-transmit-bindings-for-alfe
+   cli-options
+   :backend "CLAUTOLISP"
+   :usage-text (alfe.cli:usage-string)
+   :version-text (or version-text "0.0.0")))
 
 (defun open-output-file (workdir basename)
   "Open WORKDIR/BASENAME for append-from-empty writes, in UTF-8.
@@ -562,11 +604,30 @@ SHUTDOWN."
                 (host-instance  (resolve-clautolisp-host host))
                 (context        (make-default-runtime-context
                                  :dialect dialect-struct))
-                (session-handle (evaluation-context-session context)))
-           ;; The drawing argument (--dwg / $AUTOLISP_DWG): the first drawing.
-           (when dwg
-             (clautolisp.autolisp-host:host-open-startup-drawing host-instance dwg))
+                (session-handle (evaluation-context-session context))
+                ;; The drawing argument (--dwg / $AUTOLISP_DWG): the first
+                ;; drawing. A drawing the host cannot open is reported by
+                ;; EVAL-PLAN, in the clautolisp program's words.
+                (startup-error
+                  (when (and dwg host-instance)
+                    (handler-case
+                        (progn
+                          (clautolisp.autolisp-host:host-open-startup-drawing
+                           host-instance dwg)
+                          nil)
+                      (error (condition)
+                        (make-condition
+                         'clautolisp.autolisp-cli:cli-usage-error
+                         :option "--dwg"
+                         :message (clautolisp.autolisp-cli:engine-drawing-error-message
+                                   dwg condition)))))))
+           ;; The host set-up of the clautolisp program (SETUP-CONTEXT): the
+           ;; session's host, then the startup drawing's LISP namespace --
+           ;; the context's (multi-document slice 1) -- then the builtins.
            (set-runtime-session-host session-handle host-instance)
+           (when host-instance
+             (clautolisp.autolisp-host:link-runtime-session-to-host
+              session-handle host-instance))
            (install-core-builtins)
            ;; Anchor the engine to the live process: cwd AND run frame.
            ;;
@@ -594,12 +655,7 @@ SHUTDOWN."
            ;; *AUTOLISP-MODE* / *AUTOLISP-DRAWING* / etc.
            (when cli-options
              (clautolisp.autolisp-cli:install-transmit-variables
-              context
-              (alfe.cli:cli-options-transmit-bindings-for-alfe
-               cli-options
-               :backend "CLAUTOLISP"
-               :usage-text (alfe.cli:usage-string)
-               :version-text (or version-text "0.0.0"))))
+              context (direct-transmit-bindings cli-options version-text)))
            ;; Effective default source-file encoding precedence:
            ;;   -Esource or the bare -E (SOURCE-ENCODING / LOAD-ENCODING) > LC_ALL/LC_CTYPE/LANG > NIL.
            ;; NIL falls through to the dialect default at load time.
@@ -618,6 +674,7 @@ SHUTDOWN."
                            :dialect dialect-struct
                            :context context
                            :host host-instance
+                           :startup-error startup-error
                            :output-file (when workdir
                                           (open-output-file workdir "output.txt"))
                            :errors-file (when workdir
@@ -656,7 +713,10 @@ SHUTDOWN."
                               :dribble-interactors
                               (when cli-options
                                 (clautolisp.autolisp-cli:cli-options-dribble-interactors
-                                 cli-options))))))
+                                 cli-options))
+                              :front-end-bindings
+                              (when cli-options
+                                (direct-transmit-bindings cli-options version-text))))))
 
 ;;; --- START-ENGINE: subprocess variant ------------------------------
 
@@ -728,7 +788,8 @@ engine: NIL when none was asked for, `--dribble' for the engine's default file,
                                 file-read-encoding file-write-encoding
                                 terminal-in-encoding terminal-out-encoding
                                 log-encoding
-                                dribble dribble-interactors dwg)
+                                dribble dribble-interactors dwg
+                                front-end-bindings)
   ;; The Phase 1 subprocess variant defers the actual fork to
   ;; EVAL-PLAN so we can map every action to a clautolisp-sbcl CLI
   ;; flag and run the engine *once* with the right argv (rather than
@@ -766,7 +827,8 @@ engine: NIL when none was asked for, `--dribble' for the engine's default file,
                     :log-encoding log-encoding
                     :dribble dribble
                     :dribble-interactors dribble-interactors
-                    :dwg dwg)))
+                    :dwg dwg
+                    :front-end-bindings front-end-bindings)))
       (session-state-set session :ready)
       session)))
 
@@ -822,42 +884,32 @@ time the backend reaches this helper the value is either a
 canonical alias or already-validated alphanumeric."
   (clautolisp.autolisp-cli:encoding-keyword encoding-string "-Esource"))
 
-(defun direct-eval (session action)
-  (let* ((text    (action-payload action))
-         (context (clautolisp-direct-session-context session))
+(defun direct-eval-text (session text)
+  "Evaluate the AutoLISP source TEXT as one -x action, as the clautolisp
+program does: *AUTOLISP-EXPRESSION* is bound to TEXT for the duration."
+  (let* ((context (clautolisp-direct-session-context session))
          (dialect (clautolisp-direct-session-dialect session))
          (options (derive-reader-options-for-dialect
                    dialect :source-name "<-x>"))
          (forms   (read-runtime-from-string text :options options)))
-    (call-with-autolisp-error-handler
-     (lambda () (autolisp-eval-progn forms context))
-     context)))
+    (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
+     context "*AUTOLISP-EXPRESSION*"
+     (clautolisp.autolisp-runtime:make-autolisp-string text)
+     (lambda ()
+       (call-with-autolisp-error-handler
+        (lambda () (autolisp-eval-progn forms context))
+        context)))))
+
+(defun direct-eval (session action)
+  (direct-eval-text session (action-payload action)))
 
 (defun direct-main (session action)
-  "Call the AutoLISP function named in ACTION's payload. Looks up
-the symbol via INTERN-AUTOLISP-SYMBOL (so the canonical case lookup
-is used) and invokes it with no arguments. Errors propagate through
-the standard autolisp-error-handler."
-  (let* ((name    (action-payload action))
-         (context (clautolisp-direct-session-context session))
-         (symbol  (intern-autolisp-symbol name))
-         (cell    (lookup-function symbol context)))
-    (unless cell
-      (error 'backend-eval-error
-             :backend :clautolisp
-             :code :main-undefined
-             :message (format nil "--main: function ~A is unbound" name)
-             :details (list :symbol name)))
-    (call-with-autolisp-error-handler
-     (lambda ()
-       (autolisp-eval-progn
-        (read-runtime-from-string
-         (format nil "(~A)" name)
-         :options (derive-reader-options-for-dialect
-                   (clautolisp-direct-session-dialect session)
-                   :source-name "<--main>"))
-        context))
-     context)))
+  "Call the AutoLISP function named in ACTION's payload, with no arguments.
+The clautolisp program has no --main, so the subprocess variant runs it as
+-x \"(NAME)\"; this variant does exactly the same, so an unbound NAME is
+the same UNDEFINED-FUNCTION runtime error in both
+(alfe-clautolisp-backend-semantic-parity.issue)."
+  (direct-eval-text session (format nil "(~A)" (action-payload action))))
 
 (defun direct-interactive (session)
   "Open an interactive REPL on SESSION's evaluation context. Multi-
@@ -946,6 +998,7 @@ another line or give up and surface the error."
         (effective-stderr *error-output*)
         (final-value nil)
         (status :success)
+        (exit-code nil)
         (captured-stdout-stream
           (or (clautolisp-direct-session-captured-stdout-stream session)
               (make-string-output-stream)))
@@ -965,38 +1018,66 @@ another line or give up and surface the error."
                                    captured-stderr-stream
                                    errors-file))))
     (let ((*standard-output* effective-stdout)
-          (*error-output*    effective-stderr))
+          (*error-output*    effective-stderr)
+          (context (clautolisp-direct-session-context session)))
+      ;; The outcome is reported, and the exit status chosen, exactly as the
+      ;; clautolisp program does in RUN-WITH-INPUT / MAIN -- the subprocess
+      ;; variant IS that program, and the two variants must not differ in
+      ;; diagnostics or status (alfe-clautolisp-backend-semantic-parity.issue).
       (handler-case
-          (dolist (action plan)
-            (when (clautolisp-direct-session-interrupt-requested-p session)
-              (setf status :aborted)
-              (return))
-            (case (action-kind action)
-              (:load        (setf final-value (direct-load session action)))
-              (:eval        (setf final-value (direct-eval session action)))
-              (:main        (setf final-value (direct-main session action)))
-              (:interactive (direct-interactive session)
-                            (setf final-value nil))
-              (:quit        (return))))
+          (progn
+            (let ((startup-error (clautolisp-direct-session-startup-error session)))
+              (when startup-error
+                (error startup-error)))
+            (dolist (action plan)
+              (when (clautolisp-direct-session-interrupt-requested-p session)
+                (setf status :aborted)
+                (return))
+              ;; Each action is a top-level read: a document switch the
+              ;; previous one requested (NEW / OPEN ...) takes effect here.
+              (when (member (action-kind action) '(:load :eval :main))
+                (clautolisp.autolisp-runtime:apply-pending-document-switch context))
+              (case (action-kind action)
+                (:load        (setf final-value (direct-load session action)))
+                (:eval        (setf final-value (direct-eval session action)))
+                (:main        (setf final-value (direct-main session action)))
+                (:interactive (direct-interactive session)
+                              (setf final-value nil))
+                (:quit        (return))))
+            ;; Normal completion: the status a script recorded with
+            ;; (autolisp-set-status N), 0 when it never did.
+            (unless (eq status :aborted)
+              (setf exit-code (clautolisp.autolisp-runtime:autolisp-exit-status
+                               context))))
         (autolisp-runtime-error (condition)
           (setf status :failed
-                final-value nil)
-          (format *error-output*
-                  "~&; clautolisp runtime error: ~A: ~A~%"
-                  (autolisp-runtime-error-code condition)
-                  (autolisp-runtime-error-message condition)))
+                final-value nil
+                exit-code 1)
+          ;; No host-Lisp backtrace: the child engine never prints one
+          ;; either (alfe spawns it --quiet, never --debug).
+          (clautolisp.autolisp-cli:report-autolisp-runtime-error condition))
         (autolisp-termination (condition)
-          (declare (ignore condition))
-          (setf status :success))
+          ;; (quit [N]) / (exit [N]): reported, and N is the status.
+          (clautolisp.autolisp-cli:report-autolisp-termination condition)
+          (setf exit-code (clautolisp.autolisp-runtime:autolisp-termination-status
+                           condition)))
+        (file-error (condition)
+          (setf status :failed
+                exit-code 2)
+          (clautolisp.autolisp-cli:report-engine-error condition))
         (backend-eval-error (condition)
           (setf status :failed)
           (format *error-output* "~&alfe: ~A~%" condition))
         (error (condition)
-          (setf status :failed)
-          (format *error-output* "~&; unexpected error: ~A~%" condition))))
+          (setf status :failed
+                exit-code 1)
+          (clautolisp.autolisp-cli:report-engine-error condition))))
+    (when (and (integerp exit-code) (/= 0 exit-code))
+      (setf status :failed))
     (session-state-set session :done)
     (make-eval-result
      :status status
+     :exit-code exit-code
      :value  (and final-value (render-runtime-value-safely final-value))
      :output (get-output-stream-string captured-stdout-stream)
      :error-output (get-output-stream-string captured-stderr-stream))))
@@ -1048,10 +1129,11 @@ write cp1252 into a pipe alfe read as UTF-8."
   (let ((enc (clautolisp-subprocess-session-terminal-out-encoding session)))
     (and enc (clautolisp.autolisp-cli:encoding-keyword enc "-Eterminal-out"))))
 
-(defun build-subprocess-argv (session plan)
+(defun build-subprocess-argv (session plan &key front-end-bindings-file)
   "Compose the clautolisp-sbcl argv from SESSION's per-engine flags
 plus one flag pair per action in PLAN. Used by EVAL-PLAN on the
-subprocess variant."
+subprocess variant. FRONT-END-BINDINGS-FILE, when given, is passed as
+--front-end-bindings so the child installs alfe's *AUTOLISP-...* values."
   (let* ((backend (session-backend session))
          (binary  (clautolisp-backend-executable-path backend))
          (dialect (session-dialect session))
@@ -1078,6 +1160,9 @@ subprocess variant."
             (%situation-cli-flags session)
             (let ((dwg (clautolisp-subprocess-session-dwg session)))
               (when dwg (list "--dwg" dwg)))
+            (when front-end-bindings-file
+              (list "--front-end-bindings"
+                    (namestring front-end-bindings-file)))
             ;; Forward the dribble request, the same way as -Esource above
             ;; (alfe-dribble.issue; pjb: "alfe --clautolisp surement
             ;; l'implemente deja dans clautolisp"). The ENGINE records its own
@@ -1091,12 +1176,42 @@ subprocess variant."
                   for flags = (action-to-cli-flags action)
                   when flags append flags))))
 
+(defun %front-end-bindings-pathname (session)
+  "Where EVAL-PLAN writes SESSION's front-end bindings for the child: in the
+workdir when there is one (kept with it under --keep-workdir), else a fresh
+temporary file. Second value: T when the file is temporary (deleted after
+the run)."
+  (let ((workdir (session-workdir session)))
+    (if workdir
+        (values (merge-pathnames "front-end-bindings.sexp"
+                                 (uiop:ensure-directory-pathname workdir))
+                nil)
+        (values (uiop:tmpize-pathname
+                 (merge-pathnames "alfe-front-end-bindings.sexp"
+                                  (uiop:temporary-directory)))
+                t))))
+
 (defmethod eval-plan ((session clautolisp-subprocess-session) plan)
+  (let ((bindings (clautolisp-subprocess-session-front-end-bindings session)))
+    (if (null bindings)
+        (%subprocess-eval-plan session plan nil)
+        (multiple-value-bind (file temporary-p) (%front-end-bindings-pathname session)
+          (unwind-protect
+               (progn
+                 (clautolisp.autolisp-cli:write-transmit-bindings-file file bindings)
+                 (%subprocess-eval-plan session plan file))
+            (when temporary-p
+              (ignore-errors (delete-file file))))))))
+
+(defun %subprocess-eval-plan (session plan front-end-bindings-file)
   (session-state-set session :running)
-  (let* ((argv (build-subprocess-argv session plan))
+  (let* ((argv (build-subprocess-argv session plan
+                                      :front-end-bindings-file
+                                      front-end-bindings-file))
          (captured-stdout (make-string-output-stream))
          (captured-stderr (make-string-output-stream))
-         (status :success))
+         (status :success)
+         (exit-status nil))
     (log-debug "backend CLAUTOLISP (subprocess): launching: ~{~A~^ ~}" argv)
     (handler-case
         (multiple-value-bind (stdout stderr exit-code)
@@ -1129,6 +1244,9 @@ subprocess variant."
             ;; Echo live, same contract as the direct variant.
             (write-string stdout *standard-output*)
             (write-string stderr *error-output*))
+          ;; The child's status is the engine's: (exit N), a file error's
+          ;; 2 -- passed on, as the direct variant does.
+          (setf exit-status exit-code)
           (unless (zerop exit-code)
             (setf status :failed)))
       (error (probe)
@@ -1153,6 +1271,7 @@ subprocess variant."
       ;; visible result there.
       (make-eval-result
        :status status
+       :exit-code exit-status
        :value nil
        :output stdout-text
        :error-output stderr-text))))

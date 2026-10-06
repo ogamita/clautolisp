@@ -51,6 +51,9 @@
   (format t "                         line TUI, so every headless / piped run gets the command-line form).~%")
   (format t "  --trace                Print every AutoLISP function call (entry args + exit value),~%")
   (format t "                         indented by call depth. Output goes to *trace-output* (stderr).~%")
+  (format t "  --front-end-bindings FILE  Install the *AUTOLISP-...* values a driving front end~%")
+  (format t "                         resolved (alfe --backend subprocess passes it), instead of~%")
+  (format t "                         deriving them from this command line.~%")
   (format t "Optimization:~%")
   (format t "  -O SPEC, --optimize SPEC   Set the optimization qualities before anything is~%")
   (format t "                         loaded — the command-line spelling of (clal-optimize '(...)).~%")
@@ -290,6 +293,17 @@ front-end."
              :handler (lambda (opts value name)
                         (declare (ignore name))
                         (setf (clautolisp.autolisp-cli:cli-options-gui opts) value)))
+            ;; --front-end-bindings FILE: for a front end that runs this
+            ;; program as its engine (alfe --backend subprocess). FILE holds
+            ;; the *AUTOLISP-...* bindings the front end resolved; they are
+            ;; installed instead of the ones derived from this argv
+            ;; (alfe-clautolisp-backend-semantic-parity.issue).
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--front-end-bindings") :shorts nil :takes-arg-p t
+             :handler (lambda (opts value name)
+                        (declare (ignore name))
+                        (setf (clautolisp.autolisp-cli:cli-options-front-end-bindings opts)
+                              value)))
             (clautolisp.autolisp-cli:make-option-spec
              :longs '("--trace") :shorts nil :takes-arg-p nil
              :handler (lambda (opts value name)
@@ -560,89 +574,18 @@ $CLAUTOLISP_NO_INIT env var into one boolean."
               (source-span-end-line span)
               (source-span-end-column span))))
 
-(defun render-autolisp-value-safely (object)
-  "Render OBJECT through the AutoLISP value printer, falling back to
-~S if that printer signals (e.g. when the structure is malformed in
-mid-error)."
-  (handler-case (autolisp-value->string object nil)
-    (error () (prin1-to-string object))))
-
-(defun render-frame-arguments (arguments)
-  "Render a list of AutoLISP argument values as a space-separated
-parenthesised list, matching how the source would have written
-them at the call site."
-  (with-output-to-string (out)
-    (write-char #\( out)
-    (loop for cell on arguments
-          for first-p = t then nil
-          do (unless first-p (write-char #\Space out))
-             (write-string (render-autolisp-value-safely (car cell)) out))
-    (write-char #\) out)))
-
-(defun format-call-stack-frame-for-cli (frame)
-  "Render one (KIND . PAYLOAD) backtrace frame as a single line."
-  (let ((kind (car frame))
-        (payload (cdr frame)))
-    (case kind
-      (:eval        (format nil "  in EVAL: ~A"
-                            (render-autolisp-value-safely payload)))
-      (:special-op  (format nil "  in SPECIAL: ~A"
-                            (render-autolisp-value-safely payload)))
-      (:subr        (format nil "  in SUBR ~A: ~A"
-                            (car payload)
-                            (render-frame-arguments (cdr payload))))
-      (:usubr       (format nil "  in USUBR ~A: ~A"
-                            (car payload)
-                            (render-frame-arguments (cdr payload))))
-      (otherwise    (format nil "  ~A: ~S" kind payload)))))
-
-(defun frame-is-noise-p (frame)
-  "True for backtrace frames that add no information — :eval frames
-whose form is a self-evaluating atom or a bare symbol. They dominate
-the printout when arguments to a call are themselves atoms; hiding
-them keeps the trace focused on actual call frames."
-  (and (eq :eval (car frame))
-       (let ((form (cdr frame)))
-         (not (consp form)))))
-
 (defun report-runtime-error (condition)
-  (format *error-output* "~&clautolisp: runtime error: ~A: ~A~%"
-          (autolisp-runtime-error-code condition)
-          (autolisp-runtime-error-message condition))
-  (let ((stack (autolisp-runtime-error-call-stack condition)))
-    (cond
-      ((null stack)
-       (format *error-output*
-               "AutoLISP backtrace: <no frames captured — signal raised outside an active evaluation context>~%"))
-      (t
-       (let ((interesting (remove-if #'frame-is-noise-p stack)))
-         (format *error-output*
-                 "AutoLISP backtrace (most recent call first, ~D frame~:P~@[, ~D atom frame~:P hidden~]):~%"
-                 (length interesting)
-                 (let ((hidden (- (length stack) (length interesting))))
-                   (when (plusp hidden) hidden)))
-         (dolist (frame interesting)
-           (format *error-output* "~A~%"
-                   (format-call-stack-frame-for-cli frame))))))
-    ;; --debug additionally dumps the host-Lisp backtrace. Useful when
-    ;; the runtime error is wrapping a deeper CL fault (e.g. an
-    ;; integer overflow inside a builtin) that the AutoLISP frames
-    ;; alone do not locate. uiop:print-backtrace is the portable
-    ;; entry point across SBCL and CCL.
-    (when *debug-p*
-      (format *error-output* "~&CL backtrace (host Lisp):~%")
-      (handler-case
-          (uiop:print-backtrace :stream *error-output* :condition condition)
-        (error (probe)
-          (format *error-output*
-                  "  <unable to render host backtrace: ~A>~%" probe))))))
+  "Report CONDITION the engine's way. The wording lives in the shared
+autolisp-cli library so alfe's in-process engine says exactly the same
+(alfe-clautolisp-backend-semantic-parity.issue)."
+  (clautolisp.autolisp-cli:report-autolisp-runtime-error
+   condition :debug-p *debug-p*))
 
 (defun report-termination (condition)
-  (format *error-output* "~&clautolisp: terminated by ~A~%"
-          (autolisp-termination-kind condition)))
+  (clautolisp.autolisp-cli:report-autolisp-termination condition))
 
 (defun report-error (condition)
-  (format *error-output* "~&clautolisp: ~A~%" condition))
+  (clautolisp.autolisp-cli:report-engine-error condition))
 
 (defun print-host-backtrace (condition)
   "Dump the host-Lisp backtrace for an UNHANDLED internal error. Called from a
@@ -667,7 +610,8 @@ unreadable drawing, or a host without drawings, is a usage error."
       (error (condition)
         (error 'clautolisp.autolisp-cli:cli-usage-error
                :option "--dwg"
-               :message (format nil "cannot open the drawing ~A: ~A" path condition)))))
+               :message (clautolisp.autolisp-cli:engine-drawing-error-message
+                         path condition)))))
   host)
 
 (defun setup-context (context host &optional mock-input)
@@ -2007,12 +1951,21 @@ machinery, not user intent)."
       (let* ((context (build-context dialect host mock-input
                                      (clautolisp.autolisp-cli:cli-options-load-encoding
                                       cli-options)))
-             (bindings (clautolisp.autolisp-cli:cli-options->transmit-bindings
-                        cli-options
-                        :backend "CLAUTOLISP"
-                        :frontend "CLAUTOLISP"
-                        :usage-text (usage-string)
-                        :version-text *version*))
+             ;; A driving front end (alfe --backend subprocess) hands over
+             ;; the bindings IT resolved, so the child engine shows user code
+             ;; the same *AUTOLISP-...* values (frontend ALFE, alfe's version,
+             ;; the user's actions) as alfe's in-process engine does
+             ;; (alfe-clautolisp-backend-semantic-parity.issue).
+             (bindings (let ((file (clautolisp.autolisp-cli:cli-options-front-end-bindings
+                                    cli-options)))
+                         (if file
+                             (clautolisp.autolisp-cli:read-transmit-bindings-file file)
+                             (clautolisp.autolisp-cli:cli-options->transmit-bindings
+                              cli-options
+                              :backend "CLAUTOLISP"
+                              :frontend "CLAUTOLISP"
+                              :usage-text (usage-string)
+                              :version-text *version*))))
              ;; The dribble tee/echo streams (dribble.issue) are
              ;; installed UNCONDITIONALLY — pure pass-throughs while no
              ;; dribble is active, so (clal-dribble) can start recording

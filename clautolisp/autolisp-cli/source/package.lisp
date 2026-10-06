@@ -71,6 +71,7 @@
    #:cli-options-dribble         ; C — --dribble / --dribble=FILE (t / string)
    #:cli-options-dribble-interactors ; C — --dribble-interactors=IS (:all / names)
    #:cli-options-positional      ; both — positional FILE arguments
+   #:cli-options-front-end-bindings ; C — --front-end-bindings FILE (alfe subprocess)
 
    ;; value parsers (one per option-value vocabulary)
    #:parse-mode
@@ -109,6 +110,15 @@
    #:cli-options->transmit-bindings
    #:install-transmit-variables
    #:call-with-dynamic-transmit-binding
+
+   ;; engine contract shared by the clautolisp program and alfe's
+   ;; in-process engine (alfe-clautolisp-backend-semantic-parity.issue)
+   #:write-transmit-bindings-file
+   #:read-transmit-bindings-file
+   #:report-autolisp-runtime-error
+   #:report-autolisp-termination
+   #:report-engine-error
+   #:engine-drawing-error-message
 
    ;; encoding registry + resolver
    #:*encoding-aliases*

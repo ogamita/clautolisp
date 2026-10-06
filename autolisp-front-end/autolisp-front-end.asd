@@ -75,10 +75,28 @@
                ;; running alfe executable (alfe-installed-subprocess-binary-
                ;; not-discovered), with the same prefix logic as the assets.
                "autolisp-front-end/backend-cad-common"
+               ;; Semantic parity with the standalone clautolisp program
+               ;; (alfe-clautolisp-backend-semantic-parity.issue): the
+               ;; in-process engine must carry every subsystem the
+               ;; clautolisp-tool assembles that changes what a program
+               ;; observes. Nothing below these two depends on them, so the
+               ;; program that embeds the engine has to name them, exactly as
+               ;; clautolisp/clautolisp-tool does:
+               ;;  - the AutoLISP-to-CL compiler: without it every hook stays
+               ;;    NIL and the default SPEED 2 silently interprets;
+               ;;  - the DWG codec: without it --dwg FILE.dwg failed with
+               ;;    "no reader codec registered for format :DWG" in the
+               ;;    default --backend direct while --backend subprocess
+               ;;    opened the drawing. The NATIVE library stays lazily
+               ;;    loaded (ensure-shim-loaded runs at the first DWG
+               ;;    conversion), so an alfe without libredwg still starts.
+               "clautolisp/autolisp-compiler"
+               "clautolisp/drawing-dwg"
                "trivial-gray-streams")
   :serial t
   :components
-  ((:file "source/backend-clautolisp")))
+  ((:file "source/backend-clautolisp")
+   (:file "source/clautolisp-option-contract")))
 
 (asdf:defsystem "autolisp-front-end/file-protocol"
   :description "alfe file-IPC protocol driver shared by the CAD backends."

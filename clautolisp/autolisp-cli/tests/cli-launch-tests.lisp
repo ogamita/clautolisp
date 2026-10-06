@@ -183,3 +183,61 @@ alongside tui/gui/auto; a typo is a usage error (dcl-ncurses-renderer.issue)."
   (is (eq :auto (clautolisp.autolisp-cli:parse-dcl-mode "auto" "--dcl")))
   (signals cli-usage-error
     (clautolisp.autolisp-cli:parse-dcl-mode "nope" "--dcl")))
+
+;;; --- front-end bindings (alfe-clautolisp-backend-semantic-parity) ---
+;;;
+;;; alfe --backend subprocess hands the child engine the *AUTOLISP-...*
+;;; bindings it resolved, through --front-end-bindings FILE, so user code sees
+;;; the same values as under the in-process engine. The file must carry every
+;;; value kind a binding can hold back unchanged: strings (non-ASCII, quotes,
+;;; backslashes, newlines -- *AUTOLISP-HELP* has them all), symbols, integers,
+;;; NIL and nested lists (*AUTOLISP-ACTIONS*).
+
+(test front-end-bindings-file-round-trips-every-value-kind
+  (let* ((text (format nil "caf~C \"quoted\" back\\slash~%second line"
+                       (code-char 233)))
+         (bindings
+           (list (list "*AUTOLISP-VERSION*" (clautolisp.autolisp-runtime:make-autolisp-string "9.9.9"))
+                 (list "*AUTOLISP-FRONTEND*" (clautolisp.autolisp-runtime:intern-autolisp-symbol "ALFE"))
+                 (list "*AUTOLISP-TIMEOUT*" 42)
+                 (list "*AUTOLISP-MAIN*" nil)
+                 (list "*AUTOLISP-HELP*" (clautolisp.autolisp-runtime:make-autolisp-string text))
+                 (list "*AUTOLISP-ACTIONS*"
+                       (list (list (clautolisp.autolisp-runtime:intern-autolisp-symbol "EVAL")
+                                   (clautolisp.autolisp-runtime:make-autolisp-string "(+ 1 2)"))))
+                 (list "*AUTOLISP-PAIR*"
+                       (cons 1 (clautolisp.autolisp-runtime:intern-autolisp-symbol "T")))))
+         (path (uiop:tmpize-pathname
+                (merge-pathnames "front-end-bindings-test.sexp"
+                                 (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (clautolisp.autolisp-cli:write-transmit-bindings-file path bindings)
+           (let ((back (clautolisp.autolisp-cli:read-transmit-bindings-file path)))
+             (is (equal (mapcar #'first bindings) (mapcar #'first back)))
+             (flet ((value (name) (second (assoc name back :test #'string=))))
+               (is (string= "9.9.9" (clautolisp.autolisp-runtime:autolisp-string-value
+                                     (value "*AUTOLISP-VERSION*"))))
+               (is (eq (clautolisp.autolisp-runtime:intern-autolisp-symbol "ALFE")
+                       (value "*AUTOLISP-FRONTEND*")))
+               (is (eql 42 (value "*AUTOLISP-TIMEOUT*")))
+               (is (null (value "*AUTOLISP-MAIN*")))
+               (is (string= text (clautolisp.autolisp-runtime:autolisp-string-value
+                                  (value "*AUTOLISP-HELP*"))))
+               (let ((action (first (value "*AUTOLISP-ACTIONS*"))))
+                 (is (eq (clautolisp.autolisp-runtime:intern-autolisp-symbol "EVAL")
+                         (first action)))
+                 (is (string= "(+ 1 2)" (clautolisp.autolisp-runtime:autolisp-string-value
+                                         (second action)))))
+               (is (eql 1 (car (value "*AUTOLISP-PAIR*"))))
+               (is (eq (clautolisp.autolisp-runtime:intern-autolisp-symbol "T")
+                       (cdr (value "*AUTOLISP-PAIR*")))))))
+      (ignore-errors (delete-file path)))))
+
+(test front-end-bindings-file-unreadable-is-a-usage-error
+  (is (eq :usage-error
+          (handler-case
+              (progn (clautolisp.autolisp-cli:read-transmit-bindings-file
+                      "/nonexistent/front-end-bindings.sexp")
+                     :no-error)
+            (cli-usage-error () :usage-error)))))
