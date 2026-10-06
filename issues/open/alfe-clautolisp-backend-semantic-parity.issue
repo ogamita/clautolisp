@@ -4,7 +4,7 @@
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
-#+BRANCH: fix-alfe-clautolisp-backend-semantic-parity
+#+BRANCH: fix-alfe-clautolisp-backend-semantic-parity, alfe-parity-interactive
 #+DATE: 2026-10-06
 
 * Context
@@ -176,11 +176,14 @@ the divergences listed under /Remaining/.
 | --log-encoding                                    | engine      | *AUTOLISP-LOG-ENCODING*                         | -Elog                                       |
 | --terminal[-input/-output]-encoding, --console-*  | engine      | alfe's own streams (console folded in)          | -Eterminal-in/-out + capture decoding       |
 | --mode --bootstrap-phase --timeout --cadstdio-*   | no-effect   | not acted on                                    | not acted on                                |
-| -i (and a bare alfe)                              | DIVERGENT   | alfe's minimal "alfe>" REPL                     | clautolisp REPL, interactors, aldo on error |
-| --dribble --dribble-interactors                   | DIVERGENT   | warns, records nothing                          | forwarded, the engine records its REPL      |
-| --dcl                                             | DIVERGENT   | ignored; no DCL implementation in-process       | ignored; the child picks its renderer       |
+| -i (and a bare alfe)                              | program     | default: the child; explicit: usage error (2)   | the clautolisp program (child)              |
+| --dribble --dribble-interactors                   | program     | the child records its REPL (batch: nothing)     | same                                        |
+| --dcl                                             | program     | tui/auto: line renderer; ncurses/gui: the child | forwarded as --dcl; same                    |
 
-** Remaining
+(See the 2026-10-06 second progress section: the last three rows were
+DIVERGENT until alfe 2.2.159.)
+
+** Remaining (as of alfe 2.2.158; items 1-3 and 5 done since, see below)
 
 1. =-i=: the direct REPL is alfe's own minimal loop; the subprocess is the
    clautolisp REPL (interactors, comma commands, aldo debugger on error by
@@ -206,3 +209,116 @@ the divergences listed under /Remaining/.
 8. The SCHME workaround (=--backend subprocess= on the cador suites) can be
    dropped once a release containing alfe 2.2.158 is consumed.
 
+
+* Progress (2026-10-06, second part: alfe 2.2.159, branch alfe-parity-interactive)
+
+** Approach chosen for -i / --dribble / --dcl: the program's runs are the program's
+
+Two ways were open: embed the clautolisp program's REPL, recorder and DCL
+renderer selection in alfe's image, or run those sessions in the clautolisp
+program, as =--host cadtui= already was.
+
+Embedding was examined and rejected. The REPL is not a library function of
+the program: =run-with-input= / =repl-loop= / =main= in
+=clautolisp/tools/clautolisp/source/main.lisp= weave together the dribble
+tee streams (installed before the debug session captures its streams), the
+aldo companion thread, the interrupt handler, the debugger UI selection
+(aldo.conf, ncurses, the aldb TCP / stdio transports), process-global hooks
+(=*dribble-hook*=, the REPL hooks) and =uiop:quit= on =,quit=. Pulling that
+into alfe means loading =clautolisp/clautolisp-tool= (cadtui, the debug UIs,
+usocket, bordeaux-threads) into alfe's image and refactoring the program's
+=main= into a callable that does not quit -- a second entry point into the
+same machinery, with its global state living inside alfe's process (and
+alfe's in-process test image). That is the duplication the ticket is about,
+moved rather than removed.
+
+Routing instead: =alfe.cli:clautolisp-program-requirement= names what makes a
+run the program's -- an interactive session (=-i=, or no -l / -x / --main /
+FILE), =--dribble=, =--dcl ncurses= / =gui=, =--host cadtui= -- and
+=%clautolisp-variant= picks the subprocess variant for it unless =--backend
+direct= was explicit, which is a usage error (exit 2) naming the reason, as
+cadtui was. The same program then runs with the same argv whichever way the
+user spelled it: identical by construction, no second REPL. alfe's own
+minimal =alfe>= loop (=direct-interactive=, =read-balanced-source=) and the
+"--dribble records nothing" warning are deleted; an =:interactive= action
+handed to a direct session by a caller bypassing alfe.cli is a
+=backend-eval-error= (=:interactive-needs-subprocess=).
+
+=--dcl tui= / =auto= stay in-process: in a batch run the child's stdout is a
+captured pipe, so its =auto= picks the line renderer, which is the renderer
+the in-process engine has (=autolisp-dcl= is already in alfe's image through
+=autolisp-builtins-core=; the "no DCL in-process" of the audit was wrong).
+=--dcl= is now forwarded to the child when not =auto=, and =ncurses= / =gui=
+runs get alfe's terminal like a REPL.
+
+Standard streams: the child now reads alfe's standard input in every run
+(batch included: a =GETSTRING= or a line DCL dialog reads the same input as
+in-process, instead of an empty one). A stream that is not a process stream
+(a test's or an embedder's string stream) is handed to uiop, which copies
+it; the process's own descriptors are inherited (=%child-stream=; SBCL
+=fd-stream=, CCL =stream-device=).
+
+** Item 5 done: the argv is derived from the contract
+
+Each =:engine= / =:program= entry of =*clautolisp-option-contract*= now says
+with =:forward= how the child receives it: argv-fragment functions of the
+session (=%forward-dialect=, =%forward-host=, =%forward-dwg=,
+=%forward-source-encoding=, =%situation-cli-flags=, =%dribble-cli-flags=,
+=%forward-dcl=), =:plan= (an action) or =:environment= ($NO_COLOR).
+=build-subprocess-argv= is the fixed prefix (=--quiet --no-init=), every
+distinct forwarder of the table in table order, the front-end bindings, then
+the actions. Tests: every engine/program entry has a usable =:forward= and no
+other entry has one; a fully configured session's argv carries each option
+once; the default argv is exactly =--quiet --no-init --dialect strict --host
+cador=.
+
+** Tests
+
+- Contract: new disposition =:program= (=--interactive=, =--dribble=,
+  =--dribble-interactors=, =--dcl=); =:divergent= is empty.
+- Parity table, now 27 rows: =-i= with stdin, a bare REPL, actions then REPL
+  (state carries), a REPL runtime error, dribble of a REPL (file compared
+  octet for octet and checked for the form and its output), dribble of a
+  batch run (no file in either), DCL with =--dcl tui=, DCL by default, and a
+  dialog answered on standard input (=(RESULT 1)= both ways). Program rows
+  compare the default with =--backend subprocess=.
+- =--backend direct= with =-i=, a bare run, =--dribble=, =--dcl ncurses=:
+  exit 2, nothing on stdout, the reason on stderr.
+- Routing unit tests (=cli-clautolisp-program-runs-go-to-the-clautolisp-
+  executable=); conformance scenarios =program-runs-dry-run=,
+  =program-runs-not-direct=, =repl-not-direct= (no engine needed, so they
+  hold in a CI lane without clautolisp-sbcl; the suite was also run with the
+  binary hidden: 0 failures). =dcl-and-dribble-accepted= keeps =--dcl tui=
+  and =--dribble-interactors= only (still in-process).
+
+Found on the way: =clautolisp-load-dialog-first-id-is-zero.issue= (the
+first =load_dialog= returns 0, not a positive handle).
+
+** Still remaining
+
+4. Plug-ins with =:pre-action= / =:post-action= hooks under the subprocess
+   variant: one child per action, so AutoLISP state does not carry from one
+   action to the next (it does in-process). Now also reached WITHOUT
+   =--backend subprocess= when such a plug-in is active and the run is a
+   REPL / =--dribble= one: the REPL child starts without what the earlier
+   actions (init files included) defined. A fix needs a persistent child
+   (actions sent to one engine over a framed channel, outputs and status
+   delimited per action) -- the "v2" design of start-subprocess-engine --
+   because the REPL's echo of values makes "-i and feed the forms" differ
+   from batch output. Documented in the spec (Semantic parity, point 8).
+6. Native Windows / macOS lanes, an INSTALLED alfe, and CCL: unchanged from
+   above. CCL: =make -C autolisp-front-end test-ccl= runs every new row
+   green (so the CCL branch of =%process-stream-p= works), but ONE row
+   that predates this branch fails there: "missing load file". A CCL alfe
+   in-process reports the =file-error= in CCL's words (=clautolisp: No such
+   file or directory : "/nonexistent/..."=), the SBCL child in SBCL's
+   (=clautolisp: The file #P"/nonexistent/..." does not exist: ...=).
+   =report-engine-error= (autolisp-cli) prints the host Lisp's condition
+   text; it should render a =file-error= itself (pathname + OS reason) so the
+   message does not depend on which Lisp built which program.
+7. pjb: the exit status of an unopenable =-l= file (see the NOTE above).
+8. The SCHME workaround can go once a release with alfe 2.2.158+ is consumed.
+9. =(clal-dribble ...)= CALLED from a batch script, without =--dribble=: a
+   no-op in-process (the recorder is the program's), recording in the
+   subprocess variant. Cannot be routed statically; it would need the
+   recorder in a library both load, or every run in the child.

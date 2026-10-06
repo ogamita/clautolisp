@@ -387,9 +387,9 @@ the embedded engine's: it asks for the clautolisp executable."
   "--host cadtui is transmitted to the clautolisp executable: alfe picks the
 subprocess variant for it, on its own. The other hosts stay in-process.
 Cadtui with an explicit --backend direct is a contradiction."
-  (is (eq :direct (%variant-for)))
-  (is (eq :direct (%variant-for "--host" "cador")))
-  (is (eq :direct (%variant-for "--host" "nihil")))
+  (is (eq :direct (%variant-for "-x" "(+ 1 2)")))
+  (is (eq :direct (%variant-for "--host" "cador" "-x" "(+ 1 2)")))
+  (is (eq :direct (%variant-for "--host" "nihil" "-x" "(+ 1 2)")))
   (is (eq :subprocess (%variant-for "--host" "cadtui")))
   (is (eq :subprocess (%variant-for "--host" "cadtui" "--backend" "subprocess")))
   (is (eq :subprocess (%variant-for "--host" "cador" "--backend" "subprocess")))
@@ -398,6 +398,40 @@ Cadtui with an explicit --backend direct is a contradiction."
     (cli-usage-error (condition)
       (is (search "--backend direct" (alfe.error:cli-usage-error-message condition)))
       (is (= clautolisp.sysexits:+ex-usage+ (exit-code-for-condition condition))))))
+
+(test cli-clautolisp-program-runs-go-to-the-clautolisp-executable
+  "A run that needs the clautolisp PROGRAM's own machinery -- its REPL (-i, or
+no action at all), its recorder (--dribble), its DCL renderers (--dcl gui /
+ncurses) -- is the program's: without --backend alfe picks the subprocess
+variant, and --backend direct is a usage error naming the reason. A batch run,
+or --dcl tui / auto, stays in-process
+(alfe-clautolisp-backend-semantic-parity.issue)."
+  (is (eq :subprocess (%variant-for)))
+  (is (eq :subprocess (%variant-for "-i")))
+  (is (eq :subprocess (%variant-for "-x" "(+ 1 2)" "-i")))
+  (is (eq :subprocess (%variant-for "--dribble" "-x" "(+ 1 2)")))
+  (is (eq :subprocess (%variant-for "--dribble=/tmp/x.log" "-x" "(+ 1 2)")))
+  (is (eq :subprocess (%variant-for "--dcl" "gui" "-x" "(+ 1 2)")))
+  (is (eq :subprocess (%variant-for "--dcl" "ncurses" "-x" "(+ 1 2)")))
+  (is (eq :subprocess (%variant-for "-i" "--backend" "subprocess")))
+  (is (eq :direct (%variant-for "--dcl" "tui" "-x" "(+ 1 2)")))
+  (is (eq :direct (%variant-for "--dcl" "auto" "-x" "(+ 1 2)")))
+  (is (eq :direct (%variant-for "--quit")))
+  (is (eq :direct (%variant-for "--dribble-interactors=t" "-x" "(+ 1 2)")))
+  (dolist (case '((("-i") "an interactive session")
+                  (() "an interactive session")
+                  (("--dribble" "-x" "1") "--dribble")
+                  (("--dcl" "ncurses" "-x" "1") "--dcl ncurses")))
+    (destructuring-bind (argv reason) case
+      (let ((message
+              (handler-case
+                  (progn (apply #'%variant-for "--backend" "direct" argv) nil)
+                (cli-usage-error (condition)
+                  (is (= 2 (exit-code-for-condition condition)))
+                  (alfe.error:cli-usage-error-message condition)))))
+        (is (and message (search reason message))
+            "~S with --backend direct: ~S" argv message)
+        (is (and message (search "--backend direct" message)))))))
 
 (test cli-host-changes-nothing-for-the-cad-backends
   "Under --bricscad and --autocad the CAD is the host: --host cadtui is

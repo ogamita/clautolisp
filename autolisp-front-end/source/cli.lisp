@@ -207,6 +207,7 @@
            #:windows-quote-argument
            ;; resolution
            #:resolve-backend
+           #:clautolisp-program-requirement
            #:plan-from-options
            ;; transmit-options bridge
            #:cli-options-transmit-bindings-for-alfe))
@@ -290,7 +291,11 @@ Mode and variant:
   --backend {attach,launch}         Attach to a running CAD or launch a fresh one.
   --backend {direct,subprocess}     --clautolisp: run the engine inside alfe (default)
                                     or as the clautolisp executable. Same meaning for
-                                    every option either way (except -i, --dribble, --dcl).
+                                    every option either way. A run needing the
+                                    clautolisp program itself (a REPL: -i or no
+                                    action; --dribble; --dcl gui|ncurses; --host
+                                    cadtui) runs as the executable by default and
+                                    is a usage error with --backend direct.
 
 Actions (processed in order):
   -l, --load FILE        Load FILE (relative to alfe's invocation directory).
@@ -371,6 +376,9 @@ Bootstrap and runtime:
                          interactors exist; the CAD backends have none and
                          record the whole session. Under --clautolisp the
                          recording is the ENGINE's own REPL transcript.
+  --dcl MODE             --clautolisp: the DCL renderer, as clautolisp's --dcl:
+                         tui (line form), ncurses, gui ($CLAUTOLISP_GUI driver)
+                         or auto (default).
   --dry-run              Print the resolved action plan and exit 0.
   --print-command        Stage the workdir exactly as a real run would, print
                          the CAD command line alfe would launch (one shell-ready
@@ -775,19 +783,55 @@ it here. USAGE-TEXT becomes *AUTOLISP-HELP*."
 
 ;;; --- backend resolution ---------------------------------------------
 
+(defun clautolisp-program-requirement (options)
+  "Why the run OPTIONS describe needs the clautolisp PROGRAM -- not only the
+engine alfe embeds -- as (VALUES OPTION REASON), or NIL when it does not.
+
+The embedded engine is the clautolisp runtime; some of what `clautolisp'
+offers is the program's own machinery, built around that runtime, and is not
+in alfe's image (alfe-clautolisp-backend-semantic-parity.issue):
+
+  --host cadtui         the UI-tree layer and its console interactor;
+  an interactive run    the REPL: interactors, comma commands, the aldo
+  (-i, or no action)    debugger an error breaks into, Control-C policy;
+  --dribble[-interactors]  the recorder, which tees that REPL;
+  --dcl gui / ncurses   the GUI and full-screen DCL renderers and their
+                        selection (tui / auto are the line renderer in
+                        both variants: the child's captured stdout is no TTY).
+
+Rather than a second, poorer copy of each in alfe, such a run IS the program's:
+the clautolisp backend runs it as the subprocess variant, so the default and
+--backend subprocess behave identically by construction."
+  (cond ((eq (cli-options-host options) :cadtui)
+         (values "--host" "the cadtui host (--host cadtui)"))
+        ((some (lambda (action) (eq (action-kind action) :interactive))
+               (plan-from-options options))
+         (values "--interactive"
+                 "an interactive session (-i, or no -l / -x / --main / FILE)"))
+        ((clautolisp.autolisp-cli:cli-options-dribble options)
+         (values "--dribble" "a recording (--dribble)"))
+        ((member (clautolisp.autolisp-cli:cli-options-dcl options) '(:gui :ncurses))
+         (values "--dcl"
+                 (format nil "the ~(~A~) DCL renderer (--dcl ~:*~(~A~))"
+                         (clautolisp.autolisp-cli:cli-options-dcl options))))
+        (t nil)))
+
 (defun %clautolisp-variant (options)
   "The clautolisp engine variant OPTIONS ask for: the --backend one, except
-that the cadtui host is the clautolisp executable's — it installs the UI-tree
-layer, which the embedded runtime does not have — so --host cadtui means the
-subprocess variant. Asking for cadtui and --backend direct together is a
+that a run needing the clautolisp PROGRAM's own machinery
+(CLAUTOLISP-PROGRAM-REQUIREMENT: --host cadtui, an interactive session,
+--dribble, --dcl gui/ncurses) is the program's, so it means the subprocess
+variant. Asking for one of those and --backend direct together is a
 contradiction, and a usage error."
   (let ((variant (cli-options-backend-variant options)))
-    (cond ((not (eq (cli-options-host options) :cadtui)) variant)
-          ((eq variant :direct)
-           (error 'cli-usage-error
-                  :option "--host"
-                  :message "--host cadtui runs in the clautolisp executable, not in alfe's embedded engine: it cannot be combined with --backend direct"))
-          (t :subprocess))))
+    (multiple-value-bind (option reason) (clautolisp-program-requirement options)
+      (cond ((null option) variant)
+            ((eq variant :direct)
+             (error 'cli-usage-error
+                    :option option
+                    :message (format nil "~A runs in the clautolisp executable, not in alfe's embedded engine: it cannot be combined with --backend direct (leave --backend out, or use --backend subprocess)"
+                                     reason)))
+            (t :subprocess)))))
 
 (defun resolve-backend (options &key (detect-p t))
   "Apply the spec's backend-defaulting algorithm to OPTIONS. Returns

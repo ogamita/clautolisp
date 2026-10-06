@@ -523,6 +523,9 @@ resolved at START-ENGINE time."
   ;; T = the engine's default timestamped file, a string = that file.
   (dribble nil)
   (dribble-interactors nil)
+  ;; The --dcl renderer selection (:tui / :ncurses / :gui / :auto), forwarded
+  ;; as --dcl when it is not the engine's own default (:auto).
+  (dcl nil)
   ;; The drawing argument (--dwg / $AUTOLISP_DWG), forwarded as --dwg.
   (dwg nil)
   ;; The *AUTOLISP-...* bindings alfe resolved -- the very list the direct
@@ -568,8 +571,8 @@ SHUTDOWN."
                               terminal-in-encoding terminal-out-encoding
                               cli-options version-text)
   ;; INTERACTIVE-P is forwarded to start-subprocess-engine below; the
-  ;; direct branch doesn't use it (the REPL is opened by EVAL-PLAN
-  ;; when the action plan carries an :interactive action). MOCK-INPUT
+  ;; direct branch doesn't use it (it has no REPL: an interactive run is
+  ;; the clautolisp program's, routed to the subprocess variant). MOCK-INPUT
   ;; and BOOTSTRAP-PHASE are reserved for future tickets.
   ;;
   ;; SOURCE-ENCODING (else the legacy LOAD-ENCODING mirror) is the
@@ -662,9 +665,8 @@ SHUTDOWN."
              (when effective
                (clautolisp.autolisp-runtime:set-default-source-encoding
                 context effective)))
-           ;; --dribble under the IN-PROCESS engine (alfe-dribble.issue).
-           (when cli-options
-             (%warn-direct-dribble-unavailable cli-options))
+           ;; No --dribble here: a run that asks for one is the clautolisp
+           ;; program's, so alfe.cli routed it to the subprocess variant.
            (let ((session (%make-direct-session
                            :backend backend
                            :workdir workdir
@@ -711,6 +713,9 @@ SHUTDOWN."
                               (when cli-options
                                 (clautolisp.autolisp-cli:cli-options-dribble-interactors
                                  cli-options))
+                              :dcl (when cli-options
+                                     (clautolisp.autolisp-cli:cli-options-dcl
+                                      cli-options))
                               :front-end-bindings
                               (when cli-options
                                 (direct-transmit-bindings cli-options version-text))))))
@@ -725,33 +730,6 @@ keyword name matches the reader's dialect registry, so :clautolisp ->
   (if dialect-keyword
       (string-downcase (symbol-name dialect-keyword))
       "strict"))
-
-(defun %warn-direct-dribble-unavailable (cli-options)
-  "Say why --dribble records nothing under the IN-PROCESS clautolisp engine, and
-what to do instead. Returns T when it warned.
-
-The recording clautolisp's --dribble performs is a REPL one: three Gray streams
-tee the REPL's own input/output character by character, and that implementation
-belongs to CLAUTOLISP.TOOLS.CLAUTOLISP -- the program, not the engine. It
-attaches itself through *DRIBBLE-HOOK*, and in alfe's :direct mode nothing
-attaches it, so (clal-dribble …) is a documented no-op there. alfe could not
-substitute its own recorder without producing something visibly poorer than what
-the same flag gives elsewhere.
-
-So the two honest answers are named, and the third -- recording nothing and
-saying nothing -- is the one avoided: a user who asked for a transcript must not
-discover its absence by looking for the file."
-  (let ((dribble (clautolisp.autolisp-cli:cli-options-dribble cli-options)))
-    (when dribble
-      (format *error-output*
-              "~&alfe: --dribble records nothing with the IN-PROCESS clautolisp ~
-engine: the recording is clautolisp's own REPL tee, which only the clautolisp ~
-program attaches.~%~
-alfe: for a transcript, either run the engine as a child -- `alfe --clautolisp ~
---backend subprocess --dribble …', which forwards the flag so the engine records ~
-itself -- or use clautolisp directly. Under --autocad / --bricscad, alfe records ~
-the session itself.~%")
-      t)))
 
 (defun %dribble-interactors-cli-value (interactors)
   "The --dribble-interactors value to forward for INTERACTORS (the parsed
@@ -785,7 +763,7 @@ engine: NIL when none was asked for, `--dribble' for the engine's default file,
                                 file-read-encoding file-write-encoding
                                 terminal-in-encoding terminal-out-encoding
                                 log-encoding
-                                dribble dribble-interactors dwg
+                                dribble dribble-interactors dwg dcl
                                 front-end-bindings)
   ;; The Phase 1 subprocess variant defers the actual fork to
   ;; EVAL-PLAN so we can map every action to a clautolisp-sbcl CLI
@@ -825,6 +803,7 @@ engine: NIL when none was asked for, `--dribble' for the engine's default file,
                     :dribble dribble
                     :dribble-interactors dribble-interactors
                     :dwg dwg
+                    :dcl dcl
                     :front-end-bindings front-end-bindings)))
       (session-state-set session :ready)
       session)))
@@ -908,82 +887,21 @@ the same UNDEFINED-FUNCTION runtime error in both
 (alfe-clautolisp-backend-semantic-parity.issue)."
   (direct-eval-text session (format nil "(~A)" (action-payload action))))
 
-(defun direct-interactive (session)
-  "Open an interactive REPL on SESSION's evaluation context. Multi-
-line forms are joined until the reader reports the source is
-parser-balanced (cf. clautolisp.tools.clautolisp's REPL). The loop
-exits on EOF or on a :quit control request."
-  (let* ((dialect (clautolisp-direct-session-dialect session))
-         (context (clautolisp-direct-session-context session))
-         (prompt        "alfe> ")
-         (continuation  "    > "))
-    (loop until (clautolisp-direct-session-interrupt-requested-p session)
-          do (write-string prompt) (finish-output)
-             (multiple-value-bind (source eof-p)
-                 (read-balanced-source dialect prompt continuation)
-               (cond
-                 (eof-p (terpri) (return))
-                 ((or (null source) (zerop (length source))) nil)
-                 (t
-                  (handler-case
-                      (let* ((options (derive-reader-options-for-dialect
-                                       dialect :source-name "<repl>"))
-                             (forms (read-runtime-from-string source
-                                                              :options options))
-                             (value (call-with-autolisp-error-handler
-                                     (lambda () (autolisp-eval-progn forms context))
-                                     context)))
-                        (format t "~A~%" (render-runtime-value-safely value)))
-                    (autolisp-runtime-error (condition)
-                      (format *error-output*
-                              "~&; runtime error: ~A: ~A~%"
-                              (autolisp-runtime-error-code condition)
-                              (autolisp-runtime-error-message condition)))
-                    (autolisp-termination ()
-                      (return)))))))))
+;; There is no REPL here. An interactive session is the clautolisp PROGRAM's
+;; (its interactors, comma commands, aldo debugger, Control-C policy, dribble),
+;; so alfe runs it as the subprocess variant (alfe.cli:clautolisp-program-
+;; requirement) and the two variants cannot differ. alfe's own minimal
+;; `alfe> ' loop, which used to stand in for it here, is gone
+;; (alfe-clautolisp-backend-semantic-parity.issue).
 
-(defun read-balanced-source (dialect prompt continuation)
-  "Read whole, parser-balanced AutoLISP source from *STANDARD-INPUT*,
-prompting between continuation lines. Returns (VALUES TEXT EOF-P).
-The parser is consulted via READ-RUNTIME-FROM-STRING; an unexpected
-EOF tells us the form isn't complete yet, so we ask for one more
-line and try again."
-  (declare (ignore prompt))
-  (let ((accumulated nil))
-    (loop
-      (when accumulated
-        (write-string continuation)
-        (finish-output))
-      (let ((line (read-line *standard-input* nil :eof)))
-        (cond
-          ((and (eq line :eof) (null accumulated))
-           (return (values nil t)))
-          ((eq line :eof)
-           (return (values accumulated nil)))
-          (t
-           (setf accumulated
-                 (if accumulated
-                     (concatenate 'string accumulated (string #\Newline) line)
-                     line))
-           (handler-case
-               (progn
-                 (read-runtime-from-string
-                  accumulated
-                  :options (derive-reader-options-for-dialect
-                            dialect :source-name "<repl>"))
-                 (return (values accumulated nil)))
-             (simple-error (condition)
-               (unless (incomplete-form-error-p condition)
-                 (return (values accumulated nil)))))))))))
-
-(defun incomplete-form-error-p (condition)
-  "True iff CONDITION carries a reader diagnostic flagging an
-unexpected end of input. We use this to know whether to prompt for
-another line or give up and surface the error."
-  (let* ((args (simple-condition-format-arguments condition))
-         (first (and args (first args))))
-    (and (typep first 'diagnostic)
-         (eq :unexpected-eof (diagnostic-code first)))))
+(defun direct-interactive-refused ()
+  "The error an :INTERACTIVE action meets in the direct variant: only a caller
+bypassing alfe.cli (which routes interactive runs to the subprocess variant)
+can get here."
+  (error 'backend-eval-error
+         :backend :clautolisp
+         :code :interactive-needs-subprocess
+         :message "An interactive session runs in the clautolisp executable, not in alfe's embedded engine (--backend subprocess)."))
 
 (defmethod eval-plan ((session clautolisp-direct-session) plan)
   ;; Tee live stdout/stderr into the workdir mirror files when a
@@ -1041,8 +959,7 @@ another line or give up and surface the error."
                 (:load        (setf final-value (direct-load session action)))
                 (:eval        (setf final-value (direct-eval session action)))
                 (:main        (setf final-value (direct-main session action)))
-                (:interactive (direct-interactive session)
-                              (setf final-value nil))
+                (:interactive (direct-interactive-refused))
                 (:quit        (return))))
             ;; Normal completion: the status a script recorded with
             ;; (autolisp-set-status N), 0 when it never did.
@@ -1131,49 +1048,57 @@ write cp1252 into a pipe alfe read as UTF-8."
   (let ((enc (clautolisp-subprocess-session-terminal-out-encoding session)))
     (and enc (clautolisp.autolisp-cli:encoding-keyword enc "-Eterminal-out"))))
 
+(defun %forward-dialect (session)
+  "--dialect NAME for the child (--dialect / --strict / --lax)."
+  (list "--dialect" (dialect-cli-name (session-dialect session))))
+
+(defun %forward-host (session)
+  "--host NAME for the child: clautolisp's three hosts by their own names
+(cador, cadtui, nihil); alfe hands the choice over unchanged."
+  (let ((host (clautolisp-subprocess-session-host session)))
+    (list "--host" (if host (string-downcase (symbol-name host)) "cador"))))
+
+(defun %forward-dwg (session)
+  "--dwg FILE for the child, when a drawing was asked for."
+  (let ((dwg (clautolisp-subprocess-session-dwg session)))
+    (when dwg (list "--dwg" dwg))))
+
+(defun %forward-source-encoding (session)
+  "-Esource ENC for the child: the user's `source' encoding, so the spawned
+engine reads source files in the encoding the user asked alfe for."
+  (let ((enc (clautolisp-subprocess-session-load-encoding session)))
+    (when enc (list "-Esource" enc))))
+
+(defun %forward-dcl (session)
+  "--dcl MODE for the child, when it is not the engine's own default (auto)."
+  (let ((dcl (clautolisp-subprocess-session-dcl session)))
+    (when (and dcl (not (eq dcl :auto)))
+      (list "--dcl" (string-downcase (symbol-name dcl))))))
+
 (defun build-subprocess-argv (session plan &key front-end-bindings-file)
-  "Compose the clautolisp-sbcl argv from SESSION's per-engine flags
-plus one flag pair per action in PLAN. Used by EVAL-PLAN on the
-subprocess variant. FRONT-END-BINDINGS-FILE, when given, is passed as
---front-end-bindings so the child installs alfe's *AUTOLISP-...* values."
-  (let* ((backend (session-backend session))
-         (binary  (clautolisp-backend-executable-path backend))
-         (dialect (session-dialect session))
-         (host    (clautolisp-subprocess-session-host session))
-         ;; The three hosts clautolisp has, by their own names: cador,
-         ;; cadtui, nihil. alfe hands the choice over unchanged.
-         (host-name (if host (string-downcase (symbol-name host)) "cador")))
+  "Compose the clautolisp-sbcl argv for SESSION and PLAN. Used by EVAL-PLAN on
+the subprocess variant. FRONT-END-BINDINGS-FILE, when given, is passed as
+--front-end-bindings so the child installs alfe's *AUTOLISP-...* values.
+
+The options come from the option contract, not from a list kept here: every
+argv-fragment function an :ENGINE / :PROGRAM entry of
+*CLAUTOLISP-OPTION-CONTRACT* names under :FORWARD, once each, in table order
+(dialect, host, drawing, encodings, dribble, DCL) -- so an option is forwarded
+exactly when the contract says so (alfe-clautolisp-backend-semantic-parity.issue).
+Then the front-end bindings, then one flag pair per action of PLAN, last, so
+every option is in effect from the first -l / -x."
+  (let ((binary (clautolisp-backend-executable-path (session-backend session))))
     (append (list binary
                   "--quiet"
                   ;; The front-end owns bootstrap/init policy.  Loading the
                   ;; spawned CLI's user rc files here makes subprocess runs
                   ;; differ from the direct backend and contaminates tests.
-                  "--no-init"
-                  "--dialect" (dialect-cli-name dialect)
-                  "--host"    host-name)
-            ;; Forward the user's `source' encoding so the spawned
-            ;; clautolisp-sbcl reads source files in the same encoding
-            ;; the user asked alfe for. Placed BEFORE the action flags so
-            ;; it's in effect from the very first -l/-x in the queue.
-            (let ((enc (clautolisp-subprocess-session-load-encoding session)))
-              (when enc (list "-Esource" enc)))
-            ;; ... and the other situations the child applies itself
-            ;; (section 6 point 1), each only when one was requested.
-            (%situation-cli-flags session)
-            (let ((dwg (clautolisp-subprocess-session-dwg session)))
-              (when dwg (list "--dwg" dwg)))
+                  "--no-init")
+            (loop for forwarder in (contract-subprocess-forwarders)
+                  append (funcall forwarder session))
             (when front-end-bindings-file
               (list "--front-end-bindings"
                     (namestring front-end-bindings-file)))
-            ;; Forward the dribble request, the same way as -Esource above
-            ;; (alfe-dribble.issue; pjb: "alfe --clautolisp surement
-            ;; l'implemente deja dans clautolisp"). The ENGINE records its own
-            ;; REPL, which is the transcript worth having -- alfe records
-            ;; nothing for this backend, so there is no second, poorer copy of
-            ;; the same session. --dribble-interactors only means anything
-            ;; where interactors exist, which is exactly here, so it is
-            ;; forwarded too.
-            (%dribble-cli-flags session)
             (loop for action in plan
                   for flags = (action-to-cli-flags action)
                   when flags append flags))))
@@ -1205,6 +1130,34 @@ the run)."
             (when temporary-p
               (ignore-errors (delete-file file))))))))
 
+(defun %process-stream-p (stream)
+  "True when STREAM (synonym streams followed) is one of this process's own
+file-descriptor streams -- the child can then simply inherit the descriptor."
+  (loop while (typep stream 'synonym-stream)
+        do (setf stream (symbol-value (synonym-stream-symbol stream))))
+  (or #+sbcl (typep stream 'sb-sys:fd-stream)
+      ;; CCL's standard streams are "basic" streams, not FD-STREAMs; they
+      ;; know their descriptor (a string stream answers -1).
+      #+ccl (let ((fd (ignore-errors
+                       (ccl::stream-device stream (if (output-stream-p stream)
+                                                      :output
+                                                      :input)))))
+              (and (integerp fd) (>= fd 0)))
+      #-(or sbcl ccl) t))
+
+(defun %child-stream (stream)
+  "The uiop:run-program designator giving the clautolisp child STREAM: the
+inherited descriptor (:INTERACTIVE) for a process stream, else STREAM itself
+(uiop copies it)."
+  (if (%process-stream-p stream) :interactive stream))
+
+(defun %subprocess-needs-terminal-p (session plan)
+  "True when the child must have alfe's terminal rather than captured pipes:
+an interactive session in PLAN, or a --dcl renderer that draws on the
+terminal (ncurses) or talks to a GUI driver (gui)."
+  (or (some (lambda (action) (eq (action-kind action) :interactive)) plan)
+      (member (clautolisp-subprocess-session-dcl session) '(:gui :ncurses))))
+
 (defun %subprocess-eval-plan (session plan front-end-bindings-file)
   (session-state-set session :running)
   (let* ((argv (build-subprocess-argv session plan
@@ -1217,22 +1170,29 @@ the run)."
     (log-debug "backend CLAUTOLISP (subprocess): launching: ~{~A~^ ~}" argv)
     (handler-case
         (multiple-value-bind (stdout stderr exit-code)
-            (if (some (lambda (action) (eq (action-kind action) :interactive))
-                      plan)
-                ;; A REPL — or the cadtui console — reads the keyboard and
-                ;; writes the screen, which captured pipes cannot serve: the
-                ;; child gets alfe's own terminal. Nothing is captured then,
-                ;; so OUTPUT / ERROR-OUTPUT of the result stay empty.
+            (if (%subprocess-needs-terminal-p session plan)
+                ;; A REPL, the cadtui console or a full-screen / GUI dialog
+                ;; reads the keyboard and writes the screen, which captured
+                ;; pipes cannot serve: the child gets alfe's own terminal.
+                ;; Nothing is captured then, so OUTPUT / ERROR-OUTPUT of the
+                ;; result stay empty. A stream that is NOT a process stream
+                ;; (an embedding caller's, a test's string stream) is handed
+                ;; over as such: uiop copies it, so the child reads what alfe
+                ;; would have read and alfe's caller sees what it wrote.
                 (progn
                   (finish-output *standard-output*)
                   (finish-output *error-output*)
                   (uiop:run-program argv
-                                    :input :interactive
-                                    :output :interactive
-                                    :error-output :interactive
+                                    :input (%child-stream *standard-input*)
+                                    :output (%child-stream *standard-output*)
+                                    :error-output (%child-stream *error-output*)
                                     :ignore-error-status t))
                 (let ((external-format (%subprocess-capture-external-format session)))
                   (apply #'uiop:run-program argv
+                         ;; The child reads alfe's standard input, as the
+                         ;; in-process engine does (GETSTRING, a line DCL
+                         ;; dialog), instead of an empty one.
+                         :input (%child-stream *standard-input*)
                          :output :string
                          :error-output :string
                          :ignore-error-status t

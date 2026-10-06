@@ -1,0 +1,44 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: clautolisp-load-dialog-first-id-is-zero -- (load_dialog f) returns 0 for the first dialog file
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-06
+
+* Symptom
+
+In a fresh clautolisp process the first successful =(load_dialog FILE)=
+returns =0=. (A missing or unparsable file correctly returns =-1=.)
+
+The Autodesk reference for =load_dialog= says: "A positive integer value
+(dcl_id) if successful, or a negative integer if load_dialog can't open
+the file." Code that checks =(> dcl_id 0)= -- or =(<= dcl_id 0)= for
+failure -- rejects the first dialog file that did load.
+
+* Repro
+
+#+begin_example
+$ printf 'p : dialog { label = "P"; ok_only; }\n' > /tmp/p.dcl
+$ clautolisp-sbcl --quiet --no-init -x '(princ (load_dialog "/tmp/p.dcl"))'
+0
+$ clautolisp-sbcl --quiet --no-init -x '(princ (load_dialog "/nonexistent.dcl"))'
+-1
+#+end_example
+
+* Cause
+
+=clautolisp/autolisp-dcl/source/runtime.lisp=: =*next-dcl-id*= starts at 0
+(=fresh-dcl-id= returns the counter before incrementing it).
+
+* Fix
+
+Start the handle counter at 1 (and check that the cadtui DCL bridge and the
+subprocess renderer do not assume handle 0). Record the positive-handle
+rule in the spec's LOAD_DIALOG entry, whose return value is only "under
+host semantics" today.
+
+Found while writing the DCL rows of the alfe parity table
+(alfe-clautolisp-backend-semantic-parity.issue): the rows test
+=(numberp id)= instead of =(> id 0)= because of this.

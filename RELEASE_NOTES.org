@@ -37,6 +37,16 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- alfe 2.2.160: the last =--backend direct= / =--backend subprocess=
+  differences are gone. A run that needs the clautolisp /program/ itself
+  -- a REPL (=-i=, or a bare =alfe=), =--dribble=, =--dcl ncurses= /
+  =gui=, =--host cadtui= -- now runs the clautolisp executable as a child
+  even without =--backend subprocess=: the clautolisp REPL with its
+  interactors and the aldo debugger replaces alfe's minimal =alfe>= loop,
+  and =--dribble= records the same transcript either way (a batch run
+  records nothing, as with =clautolisp=). With =--backend direct= such a
+  run is a usage error (EX_USAGE, 64). =--dcl= is forwarded to the child; the
+  child reads alfe's standard input in every run.
 - Exit statuses are the =<sysexits.h>= codes (clautolisp 2.2.215, alfe
   2.2.159, read-autolisp 1.9.2), with the same values on every system,
   MS-Windows included: 64 =EX_USAGE= for a usage error, 65 =EX_DATAERR=
@@ -84,8 +94,7 @@ separate binary for tool integrators.
   =PROGRAM= =alfe=); both report errors in the engine's words and exit
   with the engine's status -- =(exit N)= / =autolisp-set-status= give
   =N=, a =-l= file that cannot be opened gives 2 (it was 1 in-process).
-  =-i=, =--dribble= and =--dcl= still differ; see the alfe user manual,
-  /One engine, two transports/.
+  See the alfe user manual, /One engine, two transports/.
 - An installed ~alfe --clautolisp --backend subprocess~ (and ~--host
   cadtui~) finds the ~clautolisp-sbcl[.exe]~ installed with it, in
   ~PREFIX/libexec/clautolisp/binaries/OS/CPU/~, from where the running alfe

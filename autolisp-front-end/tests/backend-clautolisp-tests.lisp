@@ -750,8 +750,66 @@ and the contract names no option alfe no longer accepts."
         "an option is classified twice")
     (is (every (lambda (entry)
                  (member (second entry)
-                         '(:front-end :engine :no-effect :divergent)))
+                         '(:front-end :engine :no-effect :program :divergent)))
                alfe.backend.clautolisp:*clautolisp-option-contract*))))
+
+(test clautolisp-option-contract-says-how-the-child-receives-each-option
+  "Every option the engine consumes says, with :FORWARD, how the subprocess
+variant hands it to the child -- argv-fragment functions, :PLAN or
+:ENVIRONMENT -- and the options alfe consumes itself, or nobody does, forward
+nothing. BUILD-SUBPROCESS-ARGV is derived from these entries."
+  (dolist (entry alfe.backend.clautolisp:*clautolisp-option-contract*)
+    (destructuring-bind (name disposition how &key forward) entry
+      (declare (ignore how))
+      (if (member disposition '(:engine :program))
+          (is (or (member forward '(:plan :environment))
+                  (and (consp forward)
+                       (every (lambda (fn) (and (symbolp fn) (fboundp fn))) forward)))
+              "~A (~S) has no usable :forward: ~S" name disposition forward)
+          (is (null forward) "~A (~S) forwards ~S" name disposition forward)))))
+
+(test clautolisp-subprocess-argv-is-derived-from-the-contract
+  "With every forwarded slot set, the child's argv carries each option once,
+before the actions, and the -E family only once though many contract entries
+name it."
+  (let* ((backend (alfe.backend.clautolisp:make-clautolisp-backend
+                   :variant :subprocess :executable-path "/x/clautolisp-sbcl"))
+         (session (alfe.backend.clautolisp::%make-subprocess-session
+                   :backend backend :dialect :lax :host :nihil
+                   :dwg "/d/a.dwg" :load-encoding "utf-8"
+                   :file-read-encoding "iso-8859-1" :log-encoding "utf-8"
+                   :dribble "/tmp/d.log" :dribble-interactors :all
+                   :dcl :tui))
+         (argv (alfe.backend.clautolisp::build-subprocess-argv
+                session (list (alfe.backend:action-eval "(princ)")))))
+    (flet ((after (option)
+             (second (member option argv :test #'equal)))
+           (occurrences (option)
+             (count option argv :test #'equal)))
+      (is (equal "/x/clautolisp-sbcl" (first argv)))
+      (is (equal "lax" (after "--dialect")))
+      (is (equal "nihil" (after "--host")))
+      (is (equal "/d/a.dwg" (after "--dwg")))
+      (is (equal "utf-8" (after "-Esource")))
+      (is (equal "iso-8859-1" (after "-Efile-read")))
+      (is (equal "utf-8" (after "-Elog")))
+      (is (equal "tui" (after "--dcl")))
+      (is (member "--dribble=/tmp/d.log" argv :test #'equal))
+      (is (member "--dribble-interactors=t" argv :test #'equal))
+      (dolist (option '("--dialect" "--host" "--dwg" "-Esource" "-Efile-read"
+                        "-Elog" "--dcl" "--dribble=/tmp/d.log" "-x"))
+        (is (= 1 (occurrences option)) "~A occurs ~D times in ~S"
+            option (occurrences option) argv))
+      (is (equal '("-x" "(princ)") (last argv 2))))
+    ;; the defaults forward nothing optional
+    (let ((argv (alfe.backend.clautolisp::build-subprocess-argv
+                 (alfe.backend.clautolisp::%make-subprocess-session
+                  :backend backend :dialect nil :dcl :auto)
+                 nil)))
+      (is (equal '("/x/clautolisp-sbcl" "--quiet" "--no-init"
+                   "--dialect" "strict" "--host" "cador")
+                 argv)
+          "~S" argv))))
 
 (defun %parity-fixture (name content &key (external-format :utf-8))
   "Write CONTENT to a fresh temporary file named after NAME; return its
@@ -763,16 +821,20 @@ namestring."
       (write-string content out))
     (namestring path)))
 
-(defun %run-alfe-variant (variant arguments)
+(defun %run-alfe-variant (variant arguments &key input)
   "Run alfe in-process as `alfe --no-init --no-plugins --clautolisp --backend
-VARIANT ARGUMENTS...'. Returns (:EXIT code :STDOUT text :STDERR text)."
+VARIANT ARGUMENTS...' (VARIANT :DEFAULT: no --backend at all), reading INPUT
+(a string, else an empty stream) as its standard input. Returns (:EXIT code
+:STDOUT text :STDERR text)."
   (let* ((out (make-string-output-stream))
          (err (make-string-output-stream))
          (code (let ((*standard-output* out)
-                     (*error-output* err))
+                     (*error-output* err)
+                     (*standard-input* (make-string-input-stream (or input ""))))
                  (alfe.cli:run (append (list "--no-init" "--no-plugins"
-                                             "--clautolisp"
-                                             "--backend" (string-downcase variant))
+                                             "--clautolisp")
+                                       (unless (eq variant :default)
+                                         (list "--backend" (string-downcase variant)))
                                        arguments)
                                :version "9.9.9"))))
     (list :exit code
@@ -787,11 +849,16 @@ VARIANT ARGUMENTS...'. Returns (:EXIT code :STDOUT text :STDERR text)."
         (coerce octets 'list)))))
 
 (defun %parity-scenarios ()
-  "The parity table: (NAME ARGUMENTS &key SIDE-EFFECT EXPECT-STDOUT
-EXPECT-EXIT LENIENT).
-SIDE-EFFECT names a file the run writes, compared octet for octet.
+  "The parity table: (NAME ARGUMENTS &key SIDE-EFFECT EXPECT-FILE EXPECT-STDOUT
+EXPECT-EXIT LENIENT INPUT VARIANTS).
+SIDE-EFFECT names a file the run writes, compared octet for octet; EXPECT-FILE
+says what it must hold: a list of octets, a string it must contain, or :ABSENT.
 EXPECT-EXIT, when given, is the exit status both runs must have (the
 sysexits table, sysexits-exit-statuses.issue).
+INPUT is the run's standard input. VARIANTS are the two runs compared, by
+default (:DIRECT :SUBPROCESS); a run that needs the clautolisp PROGRAM (a REPL,
+--dribble, --dcl ncurses/gui) compares the default -- no --backend -- with
+--backend subprocess, --backend direct being a usage error for it.
 EXPECT-STDOUT, when given, must be a substring of both outputs (so a table
 entry also says what the run is FOR, not only that the two runs agree).
 LENIENT compares stderr only for a successful run: the DWG codec's error
@@ -818,7 +885,15 @@ names the native library candidates, which may legitimately differ."
                 "clautolisp/drawing" "drawing/template/empty-drawing.dxf")))
          (dwg (namestring
                (asdf:system-relative-pathname
-                "autolisp-front-end" "source/empty.dwg"))))
+                "autolisp-front-end" "source/empty.dwg")))
+         (dribble-file (namestring
+                        (uiop:tmpize-pathname
+                         (merge-pathnames "parity-dribble.log"
+                                          (uiop:temporary-directory)))))
+         (dcl (%parity-fixture
+               "parity.dcl"
+               (concatenate 'string
+                            "parity : dialog { label = \"Parity\"; ok_only; }" nl))))
     `(("host cador"
        ("--host" "cador" "-x" "(princ (list *autolisp-host* (getvar \"PROGRAM\")))")
        :expect-stdout "alfe")
@@ -867,7 +942,7 @@ names the native library candidates, which may legitimately differ."
        ("-Efile-write" "iso-8859-1"
         "-x" ,(format nil "(setq f (open ~S \"w\")) (write-line ~S f) (close f)"
                       written e-acute))
-       :side-effect ,written)
+       :side-effect ,written :expect-file (233 10))
       ("drawing dxf"
        ("--host" "cador" "--dwg" ,dxf "-x" "(princ (getvar \"DWGNAME\"))")
        :expect-stdout "empty-drawing.dxf")
@@ -876,54 +951,139 @@ names the native library candidates, which may legitimately differ."
        :expect-exit ,clautolisp.sysexits:+ex-noinput+)
       ("drawing dwg"
        ("--host" "cador" "--dwg" ,dwg "-x" "(princ (getvar \"DWGNAME\"))")
-       :lenient t))))
+       :lenient t)
+      ;; The clautolisp program's own machinery (the REPL, the recorder, the
+      ;; DCL renderer selection): the default and --backend subprocess.
+      ("interactive"
+       ("-i")
+       :input ,(concatenate 'string "(princ 42)" nl)
+       :variants (:default :subprocess)
+       :expect-stdout "_$ 4242")
+      ("no action is a REPL"
+       ()
+       :input ,(concatenate 'string "(princ 'bare)" nl)
+       :variants (:default :subprocess)
+       :expect-stdout "BARE")
+      ("actions then REPL"
+       ("-l" ,loaded "-x" "(setq parity-a 7)" "-i")
+       :input ,(concatenate 'string "(c:hello)" nl "(princ parity-a)" nl)
+       :variants (:default :subprocess)
+       :expect-stdout "hello")
+      ("REPL runtime error"
+       ("-i")
+       :input ,(concatenate 'string "(car 1)" nl "(princ 'after)" nl)
+       :variants (:default :subprocess)
+       :expect-stdout "AFTER")
+      ("dribble of a REPL"
+       (,(format nil "--dribble=~A" dribble-file) "-i")
+       :input ,(concatenate 'string "(princ 42)" nl)
+       :variants (:default :subprocess)
+       :side-effect ,dribble-file
+       :expect-file ,(concatenate 'string "(princ 42)" nl ";; O: 4242"))
+      ("dribble of a batch run"
+       (,(format nil "--dribble=~A" dribble-file) "-x" "(princ 1)")
+       :variants (:default :subprocess)
+       :side-effect ,dribble-file
+       :expect-file :absent
+       :expect-stdout "1")
+      ("dcl tui"
+       ("--dcl" "tui"
+        "-x" ,(format nil "(setq id (load_dialog ~S)) (princ (numberp id)) (princ (new_dialog \"parity\" id)) (unload_dialog id)"
+                      dcl))
+       :expect-stdout "TT")
+      ("dcl default"
+       ("-x" ,(format nil "(setq id (load_dialog ~S)) (princ (numberp id)) (unload_dialog id)"
+                      dcl))
+       :expect-stdout "T")
+      ;; The line renderer reads the user's answer on standard input: the
+      ;; child reads alfe's, as the in-process engine does.
+      ("dcl dialog answered on standard input"
+       ("--dcl" "tui"
+        "-x" ,(format nil "(setq id (load_dialog ~S)) (new_dialog \"parity\" id) (princ (list 'result (start_dialog))) (unload_dialog id)"
+                      dcl))
+       :input ,(concatenate 'string "accept" nl)
+       :expect-stdout "(RESULT 1)"))))
+
+(defun %parity-file-matches-p (octets expect)
+  "True when the side-effect file's OCTETS (NIL: no file) are what EXPECT says:
+a list of octets, a string it contains (UTF-8), or :ABSENT."
+  (cond ((eq expect :absent) (null octets))
+        ((stringp expect)
+         (and octets
+              (search expect (babel:octets-to-string
+                              (coerce octets '(vector (unsigned-byte 8)))
+                              :encoding :utf-8))
+              t))
+        (t (equal expect octets))))
 
 (test clautolisp-backend-variants-are-semantically-identical
   "Every row of the parity table gives the same stdout, stderr, exit status
-and file side effects under --backend direct and --backend subprocess.
-Skipped when no clautolisp-sbcl is built (the subprocess variant needs it)."
+and file side effects under its two variants (--backend direct and --backend
+subprocess, or the default and --backend subprocess for a run that is the
+clautolisp program's). Skipped when no clautolisp-sbcl is built (the
+subprocess variant needs it)."
   (if (not (subprocess-binary-available-p))
       (is (not (subprocess-binary-available-p))
           "clautolisp-sbcl not present; parity table skipped.")
       (dolist (row (%parity-scenarios))
-        (destructuring-bind (name arguments &key side-effect expect-stdout
-                                               expect-exit lenient)
+        (destructuring-bind (name arguments &key side-effect expect-file expect-stdout
+                                                 expect-exit
+                                                 lenient input
+                                                 (variants '(:direct :subprocess)))
             row
           (flet ((run-one (variant)
                    (when side-effect (ignore-errors (delete-file side-effect)))
-                   (let ((result (%run-alfe-variant variant arguments)))
+                   (let ((result (%run-alfe-variant variant arguments :input input)))
                      (append result
                              (list :side-effect
                                    (and side-effect
                                         (%file-octets-or-nil side-effect)))))))
-            (let ((direct (run-one :direct))
-                  (subprocess (run-one :subprocess)))
-              (is (eql (getf direct :exit) (getf subprocess :exit))
-                  "~A: exit ~S (direct) vs ~S (subprocess); stderr ~S vs ~S"
-                  name (getf direct :exit) (getf subprocess :exit)
-                  (getf direct :stderr) (getf subprocess :stderr))
-              (is (string= (getf direct :stdout) (getf subprocess :stdout))
-                  "~A: stdout ~S (direct) vs ~S (subprocess)"
-                  name (getf direct :stdout) (getf subprocess :stdout))
-              (unless (and lenient (not (eql 0 (getf direct :exit))))
-                (is (string= (getf direct :stderr) (getf subprocess :stderr))
-                    "~A: stderr ~S (direct) vs ~S (subprocess)"
-                    name (getf direct :stderr) (getf subprocess :stderr)))
-              (when side-effect
-                (is (equal (getf direct :side-effect) (getf subprocess :side-effect))
-                    "~A: file ~S (direct) vs ~S (subprocess)"
-                    name (getf direct :side-effect) (getf subprocess :side-effect))
-                (is (equal '(233 10) (getf direct :side-effect))
-                    "~A: wrote ~S" name (getf direct :side-effect))
-                (ignore-errors (delete-file side-effect)))
-              (when expect-exit
-                (is (eql expect-exit (getf direct :exit))
-                    "~A: exit ~S, expected ~S; stderr ~S"
-                    name (getf direct :exit) expect-exit (getf direct :stderr)))
-              (when expect-stdout
-                (is (search expect-stdout (getf direct :stdout))
-                    "~A: expected ~S in ~S" name expect-stdout
-                    (getf direct :stdout)))))))))
+            (destructuring-bind (first-variant second-variant) variants
+              (let ((first (run-one first-variant))
+                    (second (run-one second-variant)))
+                (is (eql (getf first :exit) (getf second :exit))
+                    "~A: exit ~S (~(~A~)) vs ~S (~(~A~)); stderr ~S vs ~S"
+                    name (getf first :exit) first-variant
+                    (getf second :exit) second-variant
+                    (getf first :stderr) (getf second :stderr))
+                (is (string= (getf first :stdout) (getf second :stdout))
+                    "~A: stdout ~S (~(~A~)) vs ~S (~(~A~))"
+                    name (getf first :stdout) first-variant
+                    (getf second :stdout) second-variant)
+                (unless (and lenient (not (eql 0 (getf first :exit))))
+                  (is (string= (getf first :stderr) (getf second :stderr))
+                      "~A: stderr ~S (~(~A~)) vs ~S (~(~A~))"
+                      name (getf first :stderr) first-variant
+                      (getf second :stderr) second-variant))
+                (when side-effect
+                  (is (equal (getf first :side-effect) (getf second :side-effect))
+                      "~A: file ~S (~(~A~)) vs ~S (~(~A~))"
+                      name (getf first :side-effect) first-variant
+                      (getf second :side-effect) second-variant)
+                  (is (%parity-file-matches-p (getf first :side-effect) expect-file)
+                      "~A: wrote ~S, expected ~S" name (getf first :side-effect)
+                      expect-file)
+                  (ignore-errors (delete-file side-effect)))
+                (when expect-exit
+                  (is (eql expect-exit (getf first :exit))
+                      "~A: exit ~S, expected ~S; stderr ~S"
+                      name (getf first :exit) expect-exit (getf first :stderr)))
+                (when expect-stdout
+                  (is (search expect-stdout (getf first :stdout))
+                      "~A: expected ~S in ~S" name expect-stdout
+                      (getf first :stdout))))))))))
+
+(test clautolisp-program-runs-refuse-the-direct-variant
+  "A run that is the clautolisp program's (a REPL, --dribble, --dcl ncurses)
+cannot be honoured in-process: --backend direct is a usage error (EX_USAGE),
+reported before any engine starts, rather than a different behaviour."
+  (dolist (arguments '(("-i") ()
+                       ("--dribble=/tmp/alfe-parity-refused.log" "-x" "(princ 1)")
+                       ("--dcl" "ncurses" "-x" "(princ 1)")))
+    (let ((result (%run-alfe-variant :direct arguments)))
+      (is (eql clautolisp.sysexits:+ex-usage+ (getf result :exit)) "~S: ~S" arguments result)
+      (is (search "--backend direct" (getf result :stderr)) "~S: ~S" arguments result)
+      (is (zerop (length (getf result :stdout))) "~S: ~S" arguments result))))
 
 (test clautolisp-terminal-encoding-resolves-identically-for-both-variants
   "-Eterminal-out: the direct variant re-encodes alfe's own streams, the

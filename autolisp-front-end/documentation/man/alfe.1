@@ -71,10 +71,19 @@ engine: every option accepted with
 has the same meaning, output, diagnostics and exit status under both
 (the subprocess engine receives alfe's resolved
 .B *AUTOLISP\-...*
-values), except
-.BR \-i ,
-.BR \-\-dribble " and " \-\-dcl ,
-which still differ (see the user manual).
+values). A run that needs the clautolisp program itself \(em a REPL
+.RB ( \-i ,
+or no action), a recording
+.RB ( \-\-dribble ),
+.B \-\-dcl ncurses
+or
+.BR gui ,
+.B \-\-host cadtui
+\(em runs the clautolisp executable as a child even without
+.BR "\-\-backend subprocess" ,
+so both spellings behave identically; with
+.B \-\-backend direct
+it is a usage error.
 .SS Actions (processed in order)
 .TP
 .BR \-l ", " \-\-load " " \fIFILE\fR
@@ -87,7 +96,10 @@ Evaluate EXPR.
 Call FN as the script entry point after loading.
 .TP
 .BR \-i ", " \-\-interactive
-Drop into a REPL after the action queue.
+Drop into a REPL after the action queue. Under
+.B \-\-clautolisp
+it is the clautolisp REPL (interactors, comma commands, the aldo debugger),
+run in the clautolisp executable.
 .TP
 .B \-\-quit
 Force the engine to shut down after the queue.
@@ -145,6 +157,17 @@ line. Lets a caller locate a
 .B \-\-keep-workdir
 workdir without scraping stdout. Honoured equivalently via
 .BR $AUTOLISP_WRITE_WORKDIR_PATH .
+.TP
+.BR \-\-dcl " " \fIMODE\fR
+.BR \-\-clautolisp :
+the DCL renderer, as clautolisp's
+.BR \-\-dcl :
+.BR tui " (the line form), " ncurses ", " gui " (the " $CLAUTOLISP_GUI " driver) or " auto
+(the default).
+.B ncurses
+and
+.B gui
+run the clautolisp executable on alfe's terminal.
 .SS Recording a session
 .TP
 .BR \-\-dribble " [=" \fIFILE\fR ]
@@ -164,8 +187,11 @@ that file, appended to when it exists. The header names both versions:
 .IP
 Under
 .B \-\-clautolisp
-the request is FORWARDED to the engine, which records its own REPL \(em a richer
-transcript than alfe could reconstruct, and only one file per session. Under
+the request is FORWARDED to the clautolisp executable, which records its own
+REPL \(em a richer transcript than alfe could reconstruct, and only one file
+per session; a batch run, having no REPL, records nothing, as with
+.BR clautolisp .
+Under
 .BR \-\-autocad / \-\-bricscad
 alfe records what it sees, because those engines have no dribble of their own.
 .TP
