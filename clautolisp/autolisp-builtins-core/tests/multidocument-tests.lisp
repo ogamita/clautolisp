@@ -670,3 +670,21 @@ an alist CASE-NAME -> the raw value."
   "T for AutoLISP's T, NIL for nil."
   (and value t))
 
+
+;;; --- encoding: the `file' situation reaches OPEN (-Efile[-read|-write]) ------
+
+(test efile-variables-drive-open-without-an-encoding
+  (let ((path (namestring (merge-pathnames (format nil "enc-file-~D.txt" (random 1000000))
+                                           (uiop:temporary-directory))))
+        (context (%md-context)))
+    (unwind-protect
+         (progn
+           (%md-turn context "(setq *AUTOLISP-FILE-WRITE-ENCODING* \"ISO-8859-1\")")
+           (%md-turn context (format nil "(setq f (open ~S \"w\")) (write-line (chr 233) f) (close f)" path))
+           ;; One byte for e-acute, then the line end.
+           (is (= #xE9 (with-open-file (in path :element-type '(unsigned-byte 8))
+                         (read-byte in))))
+           (%md-turn context "(setq *AUTOLISP-FILE-READ-ENCODING* \"ISO-8859-1\")")
+           (is (equal (list 233)
+                      (%md-turn context (format nil "(setq f (open ~S \"r\")) (setq l (read-line f)) (close f) (vl-string->list l)" path)))))
+      (ignore-errors (delete-file path)))))

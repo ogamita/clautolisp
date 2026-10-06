@@ -5,6 +5,10 @@
                 #:make-autolisp-string
                 #:set-variable)
   (:export
+   #:cli-situation-encoding-explicit
+   #:terminal-encoding-plan
+   #:apply-terminal-encoding
+   #:windows-console-code-page
    ;; conditions
    #:cli-usage-error
    #:cli-usage-error-option

@@ -517,6 +517,7 @@
    #:squeeze-encoding-name
    #:resolve-encoding-spelling-alias
    #:lookup-autolisp-file-encoding
+   #:lookup-autolisp-encoding-variable
    ;; Encoding-dispatch diagnostics (encoding-dispatch.issue Phase 4).
    #:*enc-diagnostic-stream*
    #:*enc-diagnostic-suppress-p*

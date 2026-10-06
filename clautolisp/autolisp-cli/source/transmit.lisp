@@ -145,6 +145,13 @@ derived value."
           (if (cli-options-load-encoding options)
               (canonical-encoding-name (cli-options-load-encoding options))
               "")))
+   ;; The `file' situation (-Efile[-read|-write]): what OPEN uses when the
+   ;; program names no encoding -- empty when not given (then OPEN keeps
+   ;; *AUTOLISP-FILE-ENCODING* / the dialect default).
+   (list "*AUTOLISP-FILE-READ-ENCODING*"
+         (make-autolisp-string (or (cli-situation-encoding options "file" "read") "")))
+   (list "*AUTOLISP-FILE-WRITE-ENCODING*"
+         (make-autolisp-string (or (cli-situation-encoding options "file" "write") "")))
    (list "*AUTOLISP-TERMINAL-ENCODING*"
          (make-autolisp-string
           (resolve-effective-encoding (cli-options-io-encoding options))))
