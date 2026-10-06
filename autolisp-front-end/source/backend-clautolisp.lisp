@@ -165,8 +165,9 @@ under uiop:launch-program. The CLI flips this via --backend
     :documentation
     "Absolute path to the clautolisp-sbcl binary used by the
 :subprocess variant. NIL means 'discover at start-engine time' —
-DETECT fills it in by probing $PATH and the well-known relative
-location next to this checkout (tools/clautolisp/bin/clautolisp-sbcl)."))
+DETECT fills it in from CANDIDATE-CLAUTOLISP-BINARIES:
+$ALFE_CLAUTOLISP_BIN, the engine installed beside the running alfe,
+the build checkout (when it still exists), $PATH, /usr/local/bin."))
   (:default-initargs
    :name :clautolisp
    :display-name "clautolisp (in-process)"))
@@ -208,29 +209,156 @@ checkout, captured at compile-read time so it survives
 save-lisp-and-die. Falls back to NIL when the source isn't co-located
 with the clautolisp subproject (e.g. an installed binary).")
 
-(defun walk-path-for (binary-name)
-  "Walk $PATH for BINARY-NAME and return the first absolute path that
-exists, or NIL. uiop's portable helpers don't expose a PATH walker on
-every supported Lisp; doing it inline keeps the dependency surface
-narrow."
-  (let ((path (uiop:getenv "PATH")))
-    (when path
-      (dolist (dir (uiop:split-string path :separator '(#\:)))
+(defun %path-separator (os)
+  "The $PATH list separator on OS: `;' on MS-Windows, where `:' is part
+of every drive-letter directory, `:' everywhere else."
+  (if (eq os :windows) #\; #\:))
+
+(defun walk-path-for (binary-name &key (path (uiop:getenv "PATH"))
+                                       (os (alfe.backend.cad-common:host-os)))
+  "Walk PATH (default $PATH) for BINARY-NAME and return the first
+absolute path that exists, or NIL. uiop's portable helpers don't expose
+a PATH walker on every supported Lisp; doing it inline keeps the
+dependency surface narrow."
+  (when (and path (plusp (length path)))
+    (dolist (dir (uiop:split-string path :separator (list (%path-separator os))))
+      (when (plusp (length dir))
         (let ((candidate (merge-pathnames binary-name
                                           (uiop:ensure-directory-pathname dir))))
           (when (probe-file candidate)
             (return-from walk-path-for (namestring candidate))))))))
 
-(defun candidate-clautolisp-binaries ()
-  "Where to look for clautolisp-sbcl, in priority order. The first
-existing file wins. Used by DETECT for the :subprocess variant."
-  (let ((from-env (uiop:getenv "ALFE_CLAUTOLISP_BIN")))
-    (remove nil
-            (list
-             (when (and from-env (plusp (length from-env))) from-env)
-             *checkout-sibling-clautolisp*
-             (walk-path-for "clautolisp-sbcl")
-             "/usr/local/bin/clautolisp-sbcl"))))
+;;; --- the installed engine ------------------------------------------
+;;;
+;;; alfe-installed-subprocess-binary-not-discovered: a release installs
+;;;
+;;;   PREFIX/bin/alfe, PREFIX/bin/clautolisp          (dispatchers)
+;;;   PREFIX/libexec/clautolisp/binaries/OS/CPU/alfe-sbcl[.exe]
+;;;   PREFIX/libexec/clautolisp/binaries/OS/CPU/clautolisp-sbcl[.exe]
+;;;
+;;; and the dispatcher EXECs the image, which therefore runs from that
+;;; libexec directory. The engine shipped with this alfe is found from
+;;; where the running executable itself lives -- never from the current
+;;; directory, and never from the build tree the image was dumped in.
+
+(defun distribution-os-name (os)
+  "The OS directory name of the release layout for the HOST-OS keyword
+OS. The SAME mapping as clautolisp/tools/packaging/dispatch.sh and
+dispatch.cmd, the top Makefile's REL_OS and drawing-dwg's %OS: linux,
+darwin, windows. NIL for an unknown OS."
+  (case os
+    (:linux   "linux")
+    (:macos   "darwin")
+    (:windows "windows")
+    (otherwise nil)))
+
+(defun distribution-arch-name (&optional (machine (machine-type)))
+  "The CPU directory name of the release layout for MACHINE (default:
+this Lisp's MACHINE-TYPE). The SAME mapping as dispatch.sh (uname -m:
+x86_64/amd64 -> x86-64, aarch64 -> arm64, lower case otherwise),
+dispatch.cmd (AMD64 -> x86-64, ARM64 -> arm64), the top Makefile's
+REL_ARCH and drawing-dwg's %ARCH."
+  (let ((m (string-downcase (string machine))))
+    (cond ((member m '("x86-64" "x86_64" "amd64" "x8664") :test #'string=) "x86-64")
+          ((member m '("arm64" "aarch64") :test #'string=) "arm64")
+          (t m))))
+
+(defun clautolisp-binary-name (os)
+  "The file name of the standalone engine on OS: clautolisp-sbcl, with
+the .exe suffix only on MS-Windows, as dispatch.sh and dispatch.cmd
+name it."
+  (if (eq os :windows) "clautolisp-sbcl.exe" "clautolisp-sbcl"))
+
+(defun %file-in (directory file-name)
+  "Namestring of FILE-NAME (a string, possibly with a type) in the
+directory pathname DIRECTORY."
+  (namestring
+   (merge-pathnames (make-pathname :name (pathname-name file-name)
+                                   :type (pathname-type file-name)
+                                   :defaults directory)
+                    directory)))
+
+(defun installed-clautolisp-binaries
+    (&key (exe (funcall alfe.backend.cad-common:*executable-pathname-function*))
+          (os (alfe.backend.cad-common:host-os))
+          (machine (machine-type)))
+  "The clautolisp-sbcl[.exe] the installation of the running alfe EXE
+ships, most specific first, as namestrings (whether they exist or not):
+
+  1. the sibling of EXE: the release puts alfe-sbcl and clautolisp-sbcl
+     in the same libexec/clautolisp/binaries/OS/CPU/ directory (and the
+     autolisp-front-end `make install' layout in the same bin/), so the
+     OS and CPU are the ones the dispatcher already chose;
+  2. PREFIX/libexec/clautolisp/binaries/OS/CPU/clautolisp-sbcl[.exe] for
+     every PREFIX of INSTALLATION-PREFIXES, OS and CPU named as the
+     dispatchers name them.
+
+NIL when EXE is not an alfe executable (a development image running as
+sbcl or ccl has no installation to speak of)."
+  (when (alfe.backend.cad-common:alfe-executable-p exe)
+    (let ((name (clautolisp-binary-name os))
+          (os-name (distribution-os-name os))
+          (arch-name (distribution-arch-name machine))
+          (result '()))
+      (push (%file-in (make-pathname :name nil :type nil :version nil
+                                     :defaults exe)
+                      name)
+            result)
+      (when os-name
+        (dolist (prefix (alfe.backend.cad-common:installation-prefixes exe))
+          (push (%file-in (merge-pathnames
+                           (make-pathname
+                            :directory (list :relative "libexec" "clautolisp"
+                                             "binaries" os-name arch-name)
+                            :name nil :type nil :version nil)
+                           prefix)
+                          name)
+                result)))
+      (remove-duplicates (nreverse result) :test #'equal :from-end t))))
+
+(defun candidate-clautolisp-binaries
+    (&key (env (uiop:getenv "ALFE_CLAUTOLISP_BIN"))
+          (exe (funcall alfe.backend.cad-common:*executable-pathname-function*))
+          (os (alfe.backend.cad-common:host-os))
+          (machine (machine-type))
+          (checkout *checkout-sibling-clautolisp*)
+          (path (uiop:getenv "PATH")))
+  "Where to look for clautolisp-sbcl, in priority order, as namestrings.
+The first existing file wins. Used by DETECT for the :subprocess
+variant, and listed by its NO-SUBPROCESS-BINARY diagnostic.
+
+  1. $ALFE_CLAUTOLISP_BIN (ENV), when set and non-empty: an explicit
+     instruction always wins;
+  2. the engine installed with the running alfe (EXE), see
+     INSTALLED-CLAUTOLISP-BINARIES;
+  3. the checkout path captured when alfe was compiled (CHECKOUT), ONLY
+     when that file exists: after packaging it names a build tree that
+     is usually gone, and must neither shadow the installed engine nor
+     clutter the diagnostic;
+  4. clautolisp-sbcl[.exe] found on PATH (default $PATH);
+  5. /usr/local/bin/clautolisp-sbcl (not on MS-Windows).
+
+Every argument defaults to the live process's value; the tests inject
+pretend ones."
+  (let ((name (clautolisp-binary-name os)))
+    (remove-duplicates
+     (remove nil
+             (append
+              (list (when (and env (plusp (length env))) env))
+              (installed-clautolisp-binaries :exe exe :os os :machine machine)
+              (list (when (and checkout (probe-file checkout))
+                      (namestring checkout))
+                    (walk-path-for name :path path :os os)
+                    (unless (eq os :windows)
+                      "/usr/local/bin/clautolisp-sbcl"))))
+     :test #'equal :from-end t)))
+
+(defun no-subprocess-binary-message (candidates)
+  "The NO-SUBPROCESS-BINARY diagnostic text: every candidate tried, in
+order, and the remedy."
+  (format nil "clautolisp-sbcl not found (looked in ~{~A~^, ~}, and on $PATH); ~
+set $ALFE_CLAUTOLISP_BIN to the engine's pathname"
+          candidates))
 
 (defmethod detect ((backend clautolisp-backend) &key)
   ;; The :direct variant is always available — alfe is itself a
@@ -239,21 +367,16 @@ existing file wins. Used by DETECT for the :subprocess variant."
   (ecase (clautolisp-backend-variant backend)
     (:direct backend)
     (:subprocess
-     (let ((found nil))
-       (dolist (candidate (candidate-clautolisp-binaries))
-         (when (and candidate
-                    (probe-file candidate))
-           (setf found (namestring (truename candidate)))
-           (return)))
+     (let* ((candidates (candidate-clautolisp-binaries))
+            (found (dolist (candidate candidates nil)
+                     (when (probe-file candidate)
+                       (return (namestring (truename candidate)))))))
        (unless found
          (error 'backend-not-available
                 :backend :clautolisp
                 :code :no-subprocess-binary
-                :message
-                (format nil "clautolisp-sbcl not found (looked in ~{~A~^, ~})"
-                        (candidate-clautolisp-binaries))
-                :details
-                (list :candidates (candidate-clautolisp-binaries))))
+                :message (no-subprocess-binary-message candidates)
+                :details (list :candidates candidates)))
        (setf (clautolisp-backend-executable-path backend) found)
        backend))))
 

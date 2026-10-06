@@ -37,6 +37,13 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- An installed ~alfe --clautolisp --backend subprocess~ (and ~--host
+  cadtui~) finds the ~clautolisp-sbcl[.exe]~ installed with it, in
+  ~PREFIX/libexec/clautolisp/binaries/OS/CPU/~, from where the running alfe
+  is: any prefix (spaces included), any current directory, no ~$PATH~ entry
+  and no ~$ALFE_CLAUTOLISP_BIN~ needed. Order: ~$ALFE_CLAUTOLISP_BIN~, the
+  installed engine, the build checkout (only if it still exists), ~$PATH~,
+  ~/usr/local/bin~; ~NO-SUBPROCESS-BINARY~ lists every place tried.
 - alfe: a file loaded on the CAD may ~setq~ any name at top level. A
   ~(setq f (open ...))~ (or ~line~, ~result~, ~path~, ~form~ ...) used to
   overwrite the loader's own variable -- AutoLISP scope is dynamic -- and the

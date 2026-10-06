@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-installed-subprocess-binary-not-discovered — find the distributed clautolisp engine
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -118,3 +118,58 @@ performs the same discovery itself.
   only source-tree binaries.
 - The alfe user manual, specifications and man page describe the installed
   discovery order.
+
+* Resolution (2026-10-06, alfe 2.2.157)
+
+=candidate-clautolisp-binaries= (autolisp-front-end/source/backend-clautolisp.lisp)
+now tries, in order:
+
+1. =$ALFE_CLAUTOLISP_BIN= (non-empty);
+2. =installed-clautolisp-binaries=: the =clautolisp-sbcl[.exe]= in the
+   directory of the RUNNING alfe executable (its truename, via
+   =alfe.backend.cad-common:*executable-pathname-function*=, the same
+   source the installed runtime assets use), then
+   =PREFIX/libexec/clautolisp/binaries/OS/CPU/clautolisp-sbcl[.exe]= for
+   every prefix =installation-prefixes= derives from it (deepest
+   =libexec= ancestor, or =bin/= parent). Only an alfe executable claims
+   an installation (not a dev image running as sbcl/ccl);
+3. the compile-time checkout path, only when that file exists;
+4. =$PATH= (split on =;= on Windows, =:= elsewhere; the walk looks for
+   the platform name, =.exe= on Windows);
+5. =/usr/local/bin/clautolisp-sbcl= (not on Windows).
+
+The sibling candidate needs no OS/CPU mapping at all: the dispatcher
+already chose the directory and EXECs the image from it, so discovery
+works when =alfe-sbcl= is run through =PREFIX/bin/alfe= and when it is
+run directly from =libexec=. For the =PREFIX/bin= layout the libexec
+candidate names OS/CPU with =distribution-os-name= /
+=distribution-arch-name=, documented as the same mapping as
+=dispatch.sh= / =dispatch.cmd= / the top Makefile's REL_OS/REL_ARCH /
+drawing-dwg's =%os= / =%arch=. The dispatcher was not changed (no
+exported prefix variable was needed).
+
+=NO-SUBPROCESS-BINARY= now lists every candidate tried and names
+=$ALFE_CLAUTOLISP_BIN= as the remedy. backend-clautolisp now depends on
+backend-cad-common (which exports =alfe-executable-p=).
+
+Tests (backend-clautolisp-tests.lisp, injected executable/OS/CPU/env/PATH):
+installed Linux x86-64 (no suffix, prefix with spaces), PREFIX/bin layout
+adds the libexec candidate (darwin/arm64), Windows x86-64 (=.exe=, no
+/usr/local/bin), dev image claims nothing, stale checkout ignored when
+absent and ranked after the installed engine when present,
+=$ALFE_CLAUTOLISP_BIN= wins, PATH separator per platform, diagnostic lists
+candidates, and an end-to-end DETECT against a pretend installation under
+a prefix with a space. alfe SBCL suite: 1511 checks, 0 failures.
+
+Installed-layout simulation (built alfe-sbcl + clautolisp-sbcl copied to
+=TMP/pre fix/libexec/clautolisp/binaries/linux/x86-64/=, checkout engine
+hidden, cwd unrelated, PATH=/usr/bin:/bin, no ALFE_CLAUTOLISP_BIN):
+=alfe-sbcl --clautolisp --backend subprocess --host cador -x '(princ 42)' --quit=
+printed 42, exit 0, both run directly and through =PREFIX/bin/alfe=
+(dispatch.sh); with the engine removed it exited 3 listing
+=TMP/pre fix/libexec/.../clautolisp-sbcl= and =/usr/local/bin/clautolisp-sbcl=.
+
+Not covered here: a native Windows run (the Windows candidate is unit
+tested from Linux with an injected executable), and a packaged-release
+CI verification lane launching the installed alfe subprocess backend
+(acceptance item; would belong to the release pipeline).

@@ -380,6 +380,182 @@ when not, DETECT signals BACKEND-NOT-AVAILABLE."
       (signals alfe.error:backend-not-available
         (alfe.backend:detect (make-fresh-clautolisp-backend :subprocess)))))
 
+;;; --- installed engine discovery (alfe-installed-subprocess-binary-
+;;; not-discovered) ----------------------------------------------------
+;;;
+;;; The running alfe executable, the OS, the processor, the environment
+;;; and $PATH are all injected, so a pretend installation is enough: no
+;;; image is dumped, and the host's own layout does not matter.
+
+(defun %disc-candidates (&key (env "") (exe nil) (os :linux)
+                              (machine "X86-64") (checkout nil) (path ""))
+  (alfe.backend.clautolisp::candidate-clautolisp-binaries
+   :env env :exe exe :os os :machine machine :checkout checkout :path path))
+
+(defun %disc-scratch-root (label)
+  "A fresh scratch directory whose name contains a space."
+  (uiop:ensure-directory-pathname
+   (format nil "~Aalfe ~A ~D-~D/"
+           (namestring (uiop:temporary-directory))
+           label (get-universal-time) (random 1000000))))
+
+(defun %disc-touch (path)
+  (ensure-directories-exist path)
+  (with-open-file (out path :direction :output :if-exists :supersede
+                            :if-does-not-exist :create)
+    (write-line "#!/bin/sh" out))
+  path)
+
+(test clautolisp-installed-engine-linux-x86-64
+  "Installed on Linux x86-64: the clautolisp-sbcl beside the running
+alfe-sbcl, without suffix, comes first -- before $PATH and
+/usr/local/bin -- and the prefix may contain spaces."
+  (let* ((dir "/opt/my tools/libexec/clautolisp/binaries/linux/x86-64/")
+         (cands (%disc-candidates
+                 :exe (pathname (concatenate 'string dir "alfe-sbcl")))))
+    (is (equal (concatenate 'string dir "clautolisp-sbcl") (first cands)))
+    (is (equal "/usr/local/bin/clautolisp-sbcl" (car (last cands))))
+    ;; the PREFIX/libexec/... candidate IS the sibling here: listed once
+    (is (= 2 (length cands)) "candidates: ~S" cands)
+    (is (notany (lambda (c) (search ".exe" c)) cands))))
+
+(test clautolisp-installed-engine-bin-layout-adds-libexec
+  "alfe-sbcl in PREFIX/bin (the autolisp-front-end `make install'
+layout): its sibling, then PREFIX/libexec/clautolisp/binaries/OS/CPU/,
+OS and CPU named as dispatch.sh names them (darwin, arm64)."
+  (let ((cands (%disc-candidates :exe #P"/opt/pre fix/bin/alfe-sbcl"
+                                 :os :macos :machine "ARM64")))
+    (is (equal '("/opt/pre fix/bin/clautolisp-sbcl"
+                 "/opt/pre fix/libexec/clautolisp/binaries/darwin/arm64/clautolisp-sbcl"
+                 "/usr/local/bin/clautolisp-sbcl")
+               cands))))
+
+(test clautolisp-installed-engine-windows-x86-64
+  "Installed on MS-Windows x86-64: clautolisp-sbcl.exe beside
+alfe-sbcl.exe; no /usr/local/bin fallback there. The CPU names are the
+ones dispatch.sh/dispatch.cmd use."
+  (let* ((exe (make-pathname
+               :directory '(:absolute "RunForestRun" "outils" "local" "libexec"
+                            "clautolisp" "binaries" "windows" "x86-64")
+               :name "alfe-sbcl" :type "exe"))
+         (cands (%disc-candidates :exe exe :os :windows :machine "X86-64")))
+    (is (= 1 (length cands)) "candidates: ~S" cands)
+    (let ((p (pathname (first cands))))
+      (is (equal "clautolisp-sbcl" (pathname-name p)))
+      (is (equal "exe" (pathname-type p)))
+      (is (equal (pathname-directory exe) (pathname-directory p))))
+    (is (equal "x86-64"
+               (alfe.backend.clautolisp::distribution-arch-name "AMD64")))
+    (is (equal "x86-64"
+               (alfe.backend.clautolisp::distribution-arch-name "x86_64")))
+    (is (equal "arm64"
+               (alfe.backend.clautolisp::distribution-arch-name "aarch64")))))
+
+(test clautolisp-installed-engine-not-claimed-by-a-development-image
+  "A development image runs as sbcl/ccl: its directory says nothing
+about where the engine is, so nothing is proposed from it."
+  (is (equal '("/usr/local/bin/clautolisp-sbcl")
+             (%disc-candidates :exe #P"/usr/local/bin/sbcl")))
+  (is (equal '("/usr/local/bin/clautolisp-sbcl") (%disc-candidates :exe nil))))
+
+(test clautolisp-stale-checkout-path-is-ignored-when-absent
+  "The checkout path captured at compile time is tried only when the
+file exists; a vanished build tree neither shadows the installed engine
+nor appears in the diagnostic. When it does exist, it comes after the
+installed engine."
+  (let* ((root (%disc-scratch-root "checkout"))
+         (stale (namestring (merge-pathnames "gone/clautolisp-sbcl" root)))
+         (present (namestring (merge-pathnames "build/clautolisp-sbcl" root)))
+         (exe #P"/opt/pre fix/libexec/clautolisp/binaries/linux/x86-64/alfe-sbcl"))
+    (unwind-protect
+         (progn
+           (%disc-touch present)
+           (let ((cands (%disc-candidates :exe exe :checkout stale)))
+             (is (not (member stale cands :test #'equal)) "candidates: ~S" cands))
+           (let ((cands (%disc-candidates :exe exe :checkout present)))
+             (is (equal "/opt/pre fix/libexec/clautolisp/binaries/linux/x86-64/clautolisp-sbcl"
+                        (first cands)))
+             (is (equal present (second cands)) "candidates: ~S" cands)))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
+
+(test clautolisp-env-override-wins
+  "$ALFE_CLAUTOLISP_BIN, when set, is the first candidate, before the
+installed engine; empty means unset."
+  (let ((exe #P"/opt/p/libexec/clautolisp/binaries/linux/x86-64/alfe-sbcl"))
+    (is (equal "/elsewhere/my-clautolisp"
+               (first (%disc-candidates :env "/elsewhere/my-clautolisp" :exe exe))))
+    (is (equal "/opt/p/libexec/clautolisp/binaries/linux/x86-64/clautolisp-sbcl"
+               (first (%disc-candidates :env "" :exe exe))))
+    (is (equal "/opt/p/libexec/clautolisp/binaries/linux/x86-64/clautolisp-sbcl"
+               (first (%disc-candidates :env nil :exe exe))))))
+
+(test clautolisp-path-walk-uses-the-platform-separator
+  "$PATH is split on `;' on MS-Windows (where `:' follows every drive
+letter) and on `:' elsewhere; the engine is looked for under its
+platform name."
+  (let* ((root (%disc-scratch-root "path"))
+         (bin (merge-pathnames "b i n/" root)))
+    (unwind-protect
+         (progn
+           (%disc-touch (merge-pathnames "clautolisp-sbcl" bin))
+           (%disc-touch (merge-pathnames "clautolisp-sbcl.exe" bin))
+           (is (equal (namestring (merge-pathnames "clautolisp-sbcl" bin))
+                      (first (%disc-candidates
+                              :path (format nil "/nonexistent:~A" (namestring bin))))))
+           (is (equal (namestring (merge-pathnames "clautolisp-sbcl.exe" bin))
+                      (first (%disc-candidates
+                              :os :windows
+                              :path (format nil "/nonexistent;~A" (namestring bin)))))))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
+
+(test clautolisp-no-subprocess-binary-diagnostic-lists-candidates
+  "NO-SUBPROCESS-BINARY names every candidate tried, the installed ones
+included, so an incomplete installation says where it looked."
+  (let* ((cands (%disc-candidates :exe #P"/opt/pre fix/bin/alfe-sbcl"))
+         (message (alfe.backend.clautolisp::no-subprocess-binary-message cands)))
+    (is (= 3 (length cands)))
+    (dolist (c cands)
+      (is (search c message) "~S missing from ~S" c message))
+    (is (search "ALFE_CLAUTOLISP_BIN" message))))
+
+(test clautolisp-detect-finds-the-installed-engine
+  "End to end through DETECT: an installation under a prefix with a
+space, the running alfe placed in it, $ALFE_CLAUTOLISP_BIN unset: the
+subprocess variant finds the engine shipped beside it -- and names it
+among the candidates when it is missing."
+  (let* ((root (%disc-scratch-root "detect"))
+         (dir (merge-pathnames "pre fix/libexec/clautolisp/binaries/linux/x86-64/"
+                               root))
+         (exe (merge-pathnames "alfe-sbcl" dir))
+         (engine (merge-pathnames "clautolisp-sbcl" dir))
+         (saved (uiop:getenv "ALFE_CLAUTOLISP_BIN")))
+    (unwind-protect
+         (let ((alfe.backend.cad-common:*executable-pathname-function*
+                 (lambda () exe))
+               (alfe.backend.cad-common:*host-os-override* :linux)
+               (alfe.backend.clautolisp::*checkout-sibling-clautolisp* nil))
+           (setf (uiop:getenv "ALFE_CLAUTOLISP_BIN") "")
+           (ensure-directories-exist dir)
+           ;; Missing: the diagnostic names the installed candidate. (A
+           ;; clautolisp-sbcl on this host's $PATH would be found instead.)
+           (let ((condition
+                   (handler-case
+                       (progn (alfe.backend:detect
+                               (make-fresh-clautolisp-backend :subprocess))
+                              nil)
+                     (alfe.error:backend-not-available (c) c))))
+             (when condition
+               (is (search (namestring engine) (princ-to-string condition))
+                   "~A" condition)))
+           (%disc-touch engine)
+           (let ((backend (make-fresh-clautolisp-backend :subprocess)))
+             (alfe.backend:detect backend)
+             (is (equal (namestring (truename engine))
+                        (alfe.backend.clautolisp::clautolisp-backend-executable-path
+                         backend)))))
+      (setf (uiop:getenv "ALFE_CLAUTOLISP_BIN") (or saved ""))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
+
 (test clautolisp-subprocess-eval-parity-with-direct
   "Acceptance: --backend subprocess -x '(+ 1 2)' produces the same
 final value as the direct variant. Skipped when clautolisp-sbcl
