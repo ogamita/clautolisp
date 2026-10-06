@@ -1337,6 +1337,25 @@ Documentation/chap-windows.tex] in a terminal:
 The layout is configurable; the user can collapse the stack pane or swap
 interactor and REPL.
 
+*** 19.1a Windows and interactor instances
+The four panes are the /default/ layout. A window runs an interactor
+instance; =M-x make-lisp-window=, =make-aldo-window=, =make-navi-window=,
+=make-sedit-window=, =make-inspector-window= and
+=make-stack-browser-window= open a new window over a new instance. The Lisp
+evaluator and the aldo debugger stay singletons of the Lisp image: every
+Lisp instance evaluates in the one image and every aldo instance drives the
+one debugger, while each instance keeps its own state — a Lisp instance its
+transcript and its =:-= / =:*= / =:/= history, an aldo instance its
+command-side state (display list, browse stack, step repeat). Instances are
+named =Lisp REPL=, =Lisp REPL<2>=, =Aldo debugger<2>=, ...
+
+=M-x save-layout NAME= records the window tree together with the
+make-*-window command and argument of every window the user made;
+=M-x load-layout NAME= closes the user's windows, replays those commands to
+recreate the windows and their interactors, and re-tiles. Layouts persist in
+=layouts.conf= by the explicit =M-x save-configuration=; the layout named
+=debugger= is applied at the first stop of every new ncurses debugger.
+
 *** 19.2 Inspector in ncurses
 Opening the inspector replaces the source pane with an inspector pane
 (push to stack of panes). =Esc= pops back. The component list is

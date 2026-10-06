@@ -1188,10 +1188,8 @@
            (act (clautolisp.ui.ncurses::window-lisp-activation w)))
       (is (eq :lisp-repl (clautolisp.ui.tui:window-role w)))
       (is (not (null act)))
-      ;; evaluate a form into THIS window's own scrollback
-      (setf (gethash w (clautolisp.ui.ncurses::ncurses-ui-lisp-lines ui))
-            (append (gethash w (clautolisp.ui.ncurses::ncurses-ui-lisp-lines ui))
-                    (clautolisp.ui.ncurses::%eval-in-lisp-activation act "42")))
+      ;; evaluate a form into THIS instance's own transcript
+      (clautolisp.ui.ncurses::lisp-window-eval act "42")
       (let ((buffer (clautolisp.ui.ncurses::window-content ui nil w)))
         (is (not (null (some (lambda (l) (search "42" (car l))) buffer)))))
       ;; q closes the window
@@ -1299,10 +1297,178 @@
            (act (clautolisp.ui.ncurses::window-aldo-view-activation w)))
       (is (eq :aldo-view (clautolisp.ui.tui:window-role w)))
       (is (not (null act)))
-      ;; the aldo-view carries its OWN backend (session + hit), not a UI global
-      (is (clautolisp.ui.ncurses::aldo-view-state-p
+      ;; the aldo window holds an instance of the ONE aldo interactor (made by
+      ;; the "aldo" template), carrying its OWN backend (session + hit)
+      (is (eq clautolisp.ui.dumb:*aldo* (clautolisp.interactor:activation-interactor act)))
+      (is (clautolisp.ui.dumb:aldo-state-p
            (clautolisp.interactor:activation-state act)))
       (is (>= (length (clautolisp.ui.ncurses::window-content ui nil w)) 1))
       ;; q on a stand-alone aldo window (role :aldo-view) closes it
       (clautolisp.ui.ncurses::aldo-view-window-key act ui #\q)
       (is (= n0 (length (clautolisp.ui.ncurses::ui-windows ui)))))))
+;;;; --- the singleton split: lisp / aldo instances (windows-and-interactor-templates) ---
+
+(test two-lisp-windows-are-independent-instances
+  ;; two make-lisp-window instances over the ONE evaluator: distinct instance
+  ;; names, and each its own transcript (per-instance state), while a variable
+  ;; set from one is seen from the other (the image is shared).
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen)))
+    (clautolisp.ui.ncurses::make-lisp-window ui nil nil "")
+    (let ((w1 (clautolisp.ui.ncurses::active-window ui)))
+      (clautolisp.ui.ncurses::make-lisp-window ui nil nil "")
+      (let* ((w2 (clautolisp.ui.ncurses::active-window ui))
+             (a1 (clautolisp.ui.ncurses::window-lisp-activation w1))
+             (a2 (clautolisp.ui.ncurses::window-lisp-activation w2)))
+        (is (not (eq w1 w2)))
+        (is (not (eq a1 a2)))
+        (is (not (string= (clautolisp.interactor:activation-label a1)
+                          (clautolisp.interactor:activation-label a2))))
+        (is (not (null (search "<" (clautolisp.interactor:activation-label a2)))))
+        ;; per-instance transcript
+        (clautolisp.ui.ncurses::lisp-window-eval a1 "(setq itpl-shared 4242)")
+        (flet ((shows (w text)
+                 (some (lambda (l) (search text (car l)))
+                       (clautolisp.ui.ncurses::window-content ui nil w))))
+          (is (shows w1 "4242"))
+          (is (not (shows w2 "4242")))
+          ;; the evaluator is shared: instance 2 reads instance 1's variable
+          (clautolisp.ui.ncurses::lisp-window-eval a2 "itpl-shared")
+          (is (shows w2 "4242")))))))
+
+(test two-aldo-windows-are-independent-instances-over-one-debugger
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen)))
+    (clautolisp.ui.ncurses::make-aldo-window ui :the-session :the-hit "")
+    (let ((a1 (clautolisp.ui.ncurses::window-aldo-view-activation
+               (clautolisp.ui.ncurses::active-window ui))))
+      (clautolisp.ui.ncurses::make-aldo-window ui :the-session :the-hit "")
+      (let* ((a2 (clautolisp.ui.ncurses::window-aldo-view-activation
+                  (clautolisp.ui.ncurses::active-window ui)))
+             (s1 (clautolisp.interactor:activation-state a1))
+             (s2 (clautolisp.interactor:activation-state a2)))
+        (is (not (eq a1 a2)))
+        (is (not (string= (clautolisp.interactor:activation-label a1)
+                          (clautolisp.interactor:activation-label a2))))
+        ;; one shared debugger backend ...
+        (is (eq :the-session (clautolisp.ui.dumb:aldo-state-session s1)))
+        (is (eq :the-session (clautolisp.ui.dumb:aldo-state-session s2)))
+        ;; ... but each instance its own command-side state
+        (is (not (eq (clautolisp.ui.dumb:aldo-state-ui s1)
+                     (clautolisp.ui.dumb:aldo-state-ui s2))))
+        (push "x" (clautolisp.ui.dumb:dumb-ui-displays (clautolisp.ui.dumb:aldo-state-ui s1)))
+        (is (null (clautolisp.ui.dumb:dumb-ui-displays (clautolisp.ui.dumb:aldo-state-ui s2))))))))
+
+(test aldo-pane-instance-persists-across-stops
+  ;; the interactor pane's aldo instance (and its command-side state) survives
+  ;; the next stop; only its backend (session/hit) is re-aimed.
+  (let* ((screen (clautolisp.ui.tui:make-mock-screen))
+         (ui (clautolisp.ui.ncurses::make-ncurses-ui :screen screen)))
+    (clautolisp.ui.ncurses::rebuild-shared-tail ui :s1 :h1)
+    (let ((a1 (clautolisp.ui.ncurses::window-aldo-view-activation (win-of ui :interactor))))
+      (clautolisp.ui.ncurses::rebuild-shared-tail ui :s2 :h2)
+      (let ((a2 (clautolisp.ui.ncurses::window-aldo-view-activation (win-of ui :interactor))))
+        (is (eq a1 a2))
+        (is (eq :s2 (clautolisp.ui.dumb:aldo-state-session
+                     (clautolisp.interactor:activation-state a2))))
+        (is (eq :h2 (clautolisp.ui.dumb:aldo-state-hit
+                     (clautolisp.interactor:activation-state a2))))))))
+
+;;;; --- layout persistence recreates user-defined interactors (Q5) ----------
+
+(defun %roles-of-windows (ui)
+  (mapcar #'clautolisp.ui.tui:window-role (clautolisp.ui.ncurses::ui-windows ui)))
+
+(test saved-layout-recreates-user-defined-interactors
+  ;; a frame with a sedit on a form and a lisp REPL, saved, persisted through
+  ;; the shared file format, then restored in a NEW debugger UI (the next
+  ;; start): the windows and their interactors are recreated by replaying the
+  ;; make-*-window commands with their recorded arguments.
+  (unwind-protect
+       (let* ((ui (clautolisp.ui.ncurses::make-ncurses-ui
+                   :screen (clautolisp.ui.tui:make-mock-screen))))
+         (clautolisp.ui.tui:reset-configs)
+         (clautolisp.ui.ncurses::make-sedit-window ui nil nil "(itpl-edited 1 2)")
+         (clautolisp.ui.ncurses::make-lisp-window ui nil nil "")
+         (clautolisp.ui.ncurses::save-layout ui "mine")
+         (let ((spec (cdr (assoc "mine" (clautolisp.ui.ncurses::saved-layouts)
+                                 :test #'string=))))
+           ;; the spec records the user windows' recipes
+           (is (not (null (search "make-sedit-window" (prin1-to-string spec)))))
+           (is (not (null (search "(itpl-edited 1 2)" (prin1-to-string spec)))))
+           (is (not (null (search "make-lisp-window" (prin1-to-string spec)))))
+           ;; round-trip through the layouts.conf format, as at the next start
+           (let ((text (with-output-to-string (s)
+                         (clautolisp.debug.ui:write-configuration-file
+                          s (clautolisp.ui.ncurses::%cascade-entries "layouts") '() '()
+                          :name "layouts.conf" :what "layouts"))))
+             (clautolisp.ui.tui:reset-configs)
+             (with-input-from-string (s text)
+               (clautolisp.ui.ncurses::%consume-cascade-entries
+                "layouts" (clautolisp.debug.ui:read-aldo-configuration s))))
+           (is (equal spec (cdr (assoc "mine" (clautolisp.ui.ncurses::saved-layouts)
+                                       :test #'string=)))))
+         ;; a fresh UI has only the four panes; restoring recreates the two
+         (let ((ui2 (clautolisp.ui.ncurses::make-ncurses-ui
+                     :screen (clautolisp.ui.tui:make-mock-screen))))
+           (is (null (member :sedit (%roles-of-windows ui2))))
+           (is (eq t (clautolisp.ui.ncurses::load-layout ui2 "mine")))
+           (let ((sedit (find :sedit (clautolisp.ui.ncurses::ui-windows ui2)
+                              :key #'clautolisp.ui.tui:window-role))
+                 (lisp (find :lisp-repl (clautolisp.ui.ncurses::ui-windows ui2)
+                             :key #'clautolisp.ui.tui:window-role)))
+             (is (not (null sedit)))
+             (is (not (null lisp)))
+             ;; real interactors: the sedit edits the recorded form
+             (is (not (null (clautolisp.ui.ncurses::window-sedit-activation sedit))))
+             (is (some (lambda (l) (search "itpl-edited" (car l)))
+                       (clautolisp.ui.ncurses::window-content ui2 nil sedit)))
+             (is (not (null (clautolisp.ui.ncurses::window-lisp-activation lisp))))
+             ;; and the tree is the saved one
+             (is (equal (ui-layout-roles ui)
+                        (ui-layout-roles ui2)))
+             ;; exactly one window carries the window manager: the active one
+             (is (= 1 (count-if (lambda (w) (member :window-manager
+                                                    (clautolisp.ui.tui:window-stack w)))
+                                (clautolisp.ui.ncurses::ui-windows ui2))))
+             ;; restoring again replaces (not duplicates) the user windows
+             (clautolisp.ui.ncurses::load-layout ui2 "mine")
+             (is (= 1 (count :sedit (%roles-of-windows ui2)))))))
+    (clautolisp.ui.tui:reset-configs)))
+
+(test startup-layout-named-debugger-opens-the-first-stop
+  (unwind-protect
+       (let ((ui (clautolisp.ui.ncurses::make-ncurses-ui
+                  :screen (clautolisp.ui.tui:make-mock-screen))))
+         (clautolisp.ui.tui:reset-configs)
+         (clautolisp.ui.ncurses::make-navi-window ui nil nil "(a (b c))")
+         (clautolisp.ui.ncurses::save-layout ui "debugger")
+         (let ((ui2 (clautolisp.ui.ncurses::make-ncurses-ui
+                     :screen (clautolisp.ui.tui:make-mock-screen))))
+           (is (clautolisp.ui.ncurses::apply-startup-layout ui2 nil nil))
+           (is (member :navi-view (%roles-of-windows ui2)))
+           ;; only once per UI
+           (is (null (clautolisp.ui.ncurses::apply-startup-layout ui2 nil nil))))
+         ;; without a "debugger" layout the default four panes stay
+         (clautolisp.ui.ncurses::delete-layout "debugger")
+         (let ((ui3 (clautolisp.ui.ncurses::make-ncurses-ui
+                     :screen (clautolisp.ui.tui:make-mock-screen))))
+           (is (null (clautolisp.ui.ncurses::apply-startup-layout ui3 nil nil)))
+           (is (equal +canonical-role-layout+ (ui-layout-roles ui3)))))
+    (clautolisp.ui.tui:reset-configs)))
+
+(test layout-replay-skips-a-window-that-cannot-be-recreated
+  ;; a stack browser needs a stop: replayed outside one it makes no window, and
+  ;; its leaf collapses out of the tree instead of breaking the restore.
+  (unwind-protect
+       (let ((ui (clautolisp.ui.ncurses::make-ncurses-ui
+                  :screen (clautolisp.ui.tui:make-mock-screen))))
+         (clautolisp.ui.tui:reset-configs)
+         (clautolisp.ui.tui:config-set-value
+          (clautolisp.ui.tui:ensure-config "layouts") :layouts
+          (list (cons "sb" '(:vertical 1/2 :interactor
+                             (:window :stack-browser "make-stack-browser-window" "")))))
+         (is (eq t (clautolisp.ui.ncurses::load-layout ui "sb")))
+         (is (null (member :stack-browser (%roles-of-windows ui))))
+         (is (eq :interactor (ui-layout-roles ui))))
+    (clautolisp.ui.tui:reset-configs)))

@@ -37,6 +37,18 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- ncurses debugger windows (2.2.219): every Lisp REPL and aldo window is
+  now an instance of its own over the one Lisp image -- ~M-x
+  make-lisp-window~ twice gives =Lisp REPL= and =Lisp REPL<2>=, each with
+  its own transcript and its own ~:*~ / ~:+~ / ~:/~ history, while a
+  ~setq~ in one is seen from the other; ~M-x make-aldo-window~ gives an
+  aldo instance with its own display list and browse stack, driving the
+  same debugger. ~M-x save-layout~ now records the windows you made with
+  the command and argument that made them, and ~M-x load-layout~ makes
+  them again (a sedit on the same form, an inspector on the same
+  expression); a layout named =debugger=, saved with ~M-x
+  save-configuration~, is the one the ncurses debugger opens with at the
+  next start.
 - Debugger options shared with alfe; =--on-interrupt= on CCL (clautolisp
   2.2.218 / alfe 2.2.162): =--on-error=, =--on-interrupt=, =--on-quit=,
   =--debugger-ui=, =--aldb-listen= and =--aldb-stdio= are now shared options,

@@ -1,10 +1,10 @@
 # -*- mode:org;coding:utf-8 -*-
 #+TITLE: windows-and-interactor-templates — variable windows backed by user-chosen interactors
-#+STATUS: DRAFT
+#+STATUS: DONE
 #+TYPE: enhancement
 #+DEPENDS: tui-module-specification.org (§11), interactor-design-revision.issue
 
-DRAFT — needs pjb's specification. This issue frames the generalisation of
+(Was DRAFT; specified by pjb (Q1-Q8 below) and DONE -- see Resolution at the end.) This issue frames the generalisation of
 the debugger window layout from the fixed four aldo panes to a variable
 number of windows, each backed by a user-chosen /interactor/. It lists the
 model, the commands, and the open questions; the answers become the spec.
@@ -464,3 +464,100 @@ model since they share the "interactor backs a window" structure.
 Once Q1–Q8 are answered, the implementation is: a template registry + picker,
 per-window interactor stacks, the =C-w= create/set/close commands, dynamic
 config cascade from the live stack, and layout persistence.
+
+* Resolution (2026-10-06, clautolisp 2.2.219, branch interactor-templates-finish)
+
+DONE. The earlier slices (1.9.37 - 1.9.56) landed the template registry, the
+dynamic config cascade, activation instance names, the make-*-window commands,
+the list selector, the per-window real-activation stacks with the genuinely
+shared (aldo lisp) tail, and named layouts that re-tiled the existing panes.
+This last step finishes the two remaining pieces.
+
+** The singleton split (lisp and aldo)
+
+The evaluator and the debugger stay the image's singletons; every lisp / aldo
+*instance* now owns its per-instance state, so the templates are truly
+instantiable N times:
+
+- lisp (=autolisp-repl=): =repl-state= gains =variables= and =transcript=.
+  =*repl-instance-variables*= names the AutoLISP variables that belong to an
+  instance (the tool installs the =:- :+ :++ :+++ :* :** :*** :/ :// :///=
+  history family); =call-with-repl-instance-variables= installs the instance's
+  values around each of its turns and restores the enclosing ones afterwards
+  (a hand-made dynamic binding, so a turn of one instance nested in another's,
+  e.g. at a debugger stop, leaves the outer history intact). Every other
+  variable is the shared image's (the slime-mrepl model of the issue: a =setq=
+  in one window is seen in the other). The *AUTOLISP* evaluator and the cadtui
+  pass-evaluator both go through it. A make-lisp-window's scrollback is now
+  the instance's own transcript (the UI-global per-window hash table is gone).
+- aldo (=autolisp-debug-ui-dumb=): the "aldo" template's constructor gives an
+  instance made without an explicit =:ui= a FRESH dumb-ui of its own (over the
+  target plist's =:input= / =:output=), i.e. its own command-side state:
+  prompt, =display= list, browse stack, navigation history, step repeat. The
+  ncurses UI no longer has a separate =*aldo-view*= interactor: its aldo panes
+  and make-aldo-window windows hold instances of the one =*aldo*= made by the
+  "aldo" template; the interactor pane's instance persists across stops (only
+  its session/hit are re-aimed), and =,= / M-x aldo command lines run on the
+  active window's instance's dumb-ui, so that state persists between commands.
+- Naming: ncurses instantiates every template through =instantiate-in-ui=,
+  uniquified against every live instance the UI sees (its windows, its repl
+  pane, and the tty =*interactor-stack*=). The tty REPL's lisp is named
+  "Lisp REPL", so the debugger's own lisp is "Lisp REPL<2>", as in point C.
+
+** Layout persistence that recreates user-defined interactors (Q5, Q7)
+
+- Each make-*-window command records its RECIPE on the window: the command
+  name and the argument TEXT it ran with (a prompted argument included).
+- =save-layout= serialises a user-made window with a recipe as the leaf
+  =(:window ROLE COMMAND ARG)=; debugger panes stay role keywords (the old
+  specs remain valid).
+- =load-layout= closes the current user-made windows, activates the
+  interactor pane (so a recreated window shares its (aldo lisp) bottom, as one
+  made from there would), replays each recipe -- the command with its
+  argument, never prompting (=*replaying-layout*=) -- and re-tiles by the
+  saved tree. A leaf whose command makes no window (a stack browser outside a
+  stop) collapses out of its split.
+- Persistence is explicit (pjb Q7): layouts live in the "layouts" config and
+  reach =layouts.conf= only by M-x save-configuration; layouts.conf is read at
+  the next start (already auto-loaded with the cascade-only configs).
+
+** Choices made where the ticket left a detail open (simplest consistent)
+
+- What is replayed is the user's own command + argument text, not the target
+  object: a recipe must be readable to persist, and re-running the command is
+  exactly "record their constructor parameters and replay them". Consequence:
+  an inspector window re-evaluates its expression at restore time; a lisp
+  window comes back as a fresh instance (empty history and transcript).
+- "Restored at the next start": a layout NAMED =debugger= is applied at the
+  first stop of every new ncurses debugger UI (once per UI; any failure leaves
+  the four panes). This is the issue's "the fixed four-pane aldo layout
+  becomes just the default layout the debugger opens with, expressed as a
+  saved layout": with no "debugger" layout saved, the four panes are the
+  default. Other layouts are called up with M-x load-layout (pjb Q5).
+- Loading a layout REPLACES the user-made windows (closes them first) rather
+  than adding to them, so loading twice does not duplicate windows.
+- Instance names are kind-based ("Lisp REPL", "Aldo debugger") and uniquified
+  per image. The document qualifier of the issue's naming scheme
+  ("lisp repl dessin 1#2<2>") is NOT added: the ncurses debugger serves the
+  one document whose evaluator it stopped in, so there is nothing to
+  disambiguate yet; it belongs with a UI showing several documents'
+  evaluators at once (multi-document UI work), where the qualifier is the
+  document's uniquified name.
+
+** Tests
+
+- autolisp-repl: two lisp instances keep independent histories over one
+  evaluator (incl. a nested turn and restoration of the enclosing values); the
+  evaluator swaps per turn and keeps a per-instance transcript.
+- dumb UI: two aldo instances share the session but not their dumb-ui state;
+  names "Aldo debugger" / "Aldo debugger<2>".
+- ncurses: two lisp windows (distinct names and transcripts, shared image);
+  two aldo windows over one debugger with distinct command state; the pane's
+  aldo instance persists across stops; a layout with a sedit and a lisp window
+  is saved, round-tripped through the layouts.conf format, and restored in a
+  NEW UI, recreating both interactors and the tree; the "debugger" layout
+  opens the first stop; an unrecreatable leaf collapses.
+- Full corpus green on SBCL and CCL (34 suites, every Fail: 0).
+
+Docs: user manual "ncurses windows and interactor instances"; debugger spec
+19.1a; RELEASE_NOTES.

@@ -382,6 +382,60 @@ When aldb is selected and Emacs is not yet connected, aldo prints the
 =M-x aldb-connect= line to the terminal and waits — you may instead pick
 the TUI or ncurses there.
 
+** ncurses windows and interactor instances
+
+The four panes are only the ncurses debugger's /default/ layout. Every
+window runs an /interactor/ — the Lisp REPL, the aldo debugger, the
+navigator, sedit, the inspector, the stack browser — and you can open more
+windows, each running a new /instance/ of one of them, with =M-x= (or =,=):
+
+| Command                            | Opens a window running                                       |
+|------------------------------------+--------------------------------------------------------------|
+| =M-x make-lisp-window=             | a new Lisp REPL instance (=e= evaluates, =q= closes)          |
+| =M-x make-aldo-window=             | a new aldo debugger instance on the current stop              |
+| =M-x make-navi-window FORM=        | a read-only structure navigator over FORM                     |
+| =M-x make-sedit-window FORM=       | sedit editing FORM                                            |
+| =M-x make-inspector-window EXPR=   | the inspector on the value of EXPR                            |
+| =M-x make-stack-browser-window=    | a browser over a copy of the current stop's backtrace         |
+
+A missing argument is read in the minibuffer. =M-x windows= lists the
+windows and =M-x interactors= the interactor kinds you can instantiate.
+
+*Instances share the Lisp image, not their state.* There is one Lisp
+evaluator and one debugger per Lisp image; every Lisp REPL instance
+evaluates in that one image, and every aldo instance drives that one
+debugger (as several =slime-mrepl= buffers share one inferior Lisp). So a
+variable you =setq= in one Lisp window is seen from every other, and a
+=c= (continue) typed in any aldo window resumes the program. What belongs
+to each instance is its own:
+
+- a Lisp instance has its own transcript and its own REPL history — =:-=,
+  =:+=, =:*=, =:/= and their =:++= / =:**= / =://= companions refer to the
+  forms and values of /that/ window's turns, not another's;
+- an aldo instance has its own command state — its =display= list, browse
+  stack and step repeat.
+
+Instances are named after their kind, numbered from the second on:
+=Lisp REPL=, =Lisp REPL<2>=, =Aldo debugger<2>=. The REPL you started in
+is =Lisp REPL=, so the debugger's own Lisp pane is =Lisp REPL<2>=.
+
+*Layouts.* =M-x save-layout NAME= records the current arrangement of the
+windows under NAME — including the windows you made, each with the
+command and the argument it was made with; =M-x load-layout NAME= closes
+the windows you made, makes the saved ones again by running those
+commands with those arguments (so a sedit window edits the same form
+again, an inspector window inspects the value of the same expression
+evaluated afresh) and tiles everything as saved. A window that cannot be
+made again — a stack browser when the program is not stopped — is left
+out and its neighbour takes its place. =M-x save-layout-as= asks before
+replacing a layout of the same name, =M-x delete-layout= removes one.
+
+Layouts are kept with the configuration, and saving it stays explicit:
+=M-x save-configuration= writes them to =layouts.conf= (beside
+=aldo.conf= and =lisp.conf=), which is read again at the next start. A
+layout named =debugger= is the one every new ncurses debugger opens with
+at its first stop; without one, you get the four panes.
+
 ** Common commands
 
 The same verbs work in every interface (typed as tokens in the TUI,
