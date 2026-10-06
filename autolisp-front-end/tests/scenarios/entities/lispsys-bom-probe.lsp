@@ -18,7 +18,7 @@
 (defun e1--line (text)
   (princ (strcat "\nENC E1 " text "\n")))
 
-(defun e1-run ( / dir r)
+(defun e1-run ( / dir r e1--path)
   (setq dir (getenv "E1_DIR"))
   (e1--line (strcat "LISPSYS " (vl-prin1-to-string (getvar "LISPSYS"))
                     " ACADVER " (vl-prin1-to-string (getvar "ACADVER"))
@@ -35,6 +35,36 @@
                     (vl-prin1-to-string (list (strlen *e1-value*)
                                               (vl-string->list *e1-value*))))
                    (t (strcat "NO-VALUE " (vl-prin1-to-string *e1-value*)))))))
+  ;; OPEN's third (encoding) argument at this LISPSYS level (open-third-
+  ;; argument-dialect-divergence: at LISPSYS 0 AutoCAD 2022 rejects it; at
+  ;; 1 / 2 it is documented, "utf8" / "utf8-bom", never measured). Writes
+  ;; "A" e-acute "B" and reports the file size (3 cp1252, 4 UTF-8, 7 UTF-8 +
+  ;; BOM) and what (open f "r") and (open f "r" "utf8") read back.
+  (foreach e1--case '(("default" "w") ("utf8" "w" "utf8") ("utf8bom" "w" "utf8-bom"))
+    (setq e1--path (strcat dir "/e1-open-" (car e1--case) ".txt"))
+    (setq r (vl-catch-all-apply
+             '(lambda ( / f)
+                (setq f (apply 'open (cons e1--path (cdr e1--case))))
+                (write-char 65 f) (write-char 233 f) (write-char 66 f)
+                (close f)
+                (vl-file-size e1--path))
+             '()))
+    (e1--line (strcat "open-w-" (car e1--case) " "
+                      (if (vl-catch-all-error-p r)
+                        (strcat "ERR " (vl-catch-all-error-message r))
+                        (strcat "SIZE " (vl-prin1-to-string r)))))
+    (foreach e1--read '(("r") ("r" "utf8"))
+      (setq r (vl-catch-all-apply
+               '(lambda ( / f c acc)
+                  (setq f (apply 'open (cons e1--path e1--read)))
+                  (while (setq c (read-char f)) (setq acc (cons c acc)))
+                  (close f)
+                  (reverse acc))
+               '()))
+      (e1--line (strcat "open-w-" (car e1--case) " read-" (apply 'strcat e1--read) " "
+                        (if (vl-catch-all-error-p r)
+                          (strcat "ERR " (vl-catch-all-error-message r))
+                          (vl-prin1-to-string r))))))
   (princ "\nENC-PROBE DONE\n")
   (princ))
 
