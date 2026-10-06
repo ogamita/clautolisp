@@ -52,7 +52,7 @@
 ;; every change that touches alref.lsp's behaviour. (alref-version)
 ;; returns this string — useful when a user reports a bug, so we
 ;; know which revision of the library they're running against.
-(setq *alref-version* "1.3.2")
+(setq *alref-version* "1.4.0")
 
 (defun alref-version ( )
   "Return the alref.lsp library version as a string (e.g. \"1.0.0\").
@@ -265,7 +265,10 @@ NIL or define it to make it findable."
   ;; Pass 1: spec catalog (preserves the canonical spec ordering).
   (foreach entry (alref-load-symbols)
     (setq name (car entry))
-    (if (alref-string-contains-p pattern name)
+    ;; A name documented twice (a function and a command) is listed once;
+    ;; alref-apropos prints a line per kind.
+    (if (and (alref-string-contains-p pattern name)
+             (not (member name matches)))
       (setq matches (cons name matches))))
   ;; Pass 2: runtime symbols not already in matches.
   (foreach name (alref-runtime-symbol-names)
@@ -300,7 +303,7 @@ portable across AutoCAD / BricsCAD / clautolisp."
       (= kind 'EXSUBR)
       (= kind 'EXTSUBR)))
 
-(defun alref-apropos (pattern / matches sysvars name sym)
+(defun alref-apropos (pattern / matches sysvars name sym cmd)
   "Print every symbol matching PATTERN with its current live
 state in the AutoLISP runtime:
 
@@ -310,6 +313,9 @@ state in the AutoLISP runtime:
                                        a callable stays Function.
     NAME<TAB>Variable<TAB>VALUE      — bound to a non-callable value.
     NAME<TAB>Variable<TAB>NIL        — symbol present but unbound.
+    NAME<TAB>Command                 — a CAD command the spec documents
+                                       (a name that is also a function or a
+                                       system variable gets this line too).
 
 The match set is the union of the documented spec catalog and the
 live image's bound symbols — see `alref-apropos-list' for the
@@ -327,11 +333,16 @@ Returns the count of matches printed."
   (setq sysvars (alref-sysvar-names-matching pattern))
   (foreach name matches
     (setq sym (read name))
+    (setq cmd (alref-command-entry-p (strcase name)))
     (princ name)
     (princ "\t")
     (cond
       ((and (boundp sym) (alref-function-value-p (eval sym)))
        (princ "Function"))
+      ((and cmd (not (boundp sym)) (not (member (strcase name) sysvars)))
+       ;; A CAD command (spec Command Entry): no binding to show.
+       (setq cmd nil)
+       (princ "Command"))
       ((member (strcase name) sysvars)
        (princ "Sysvar\t")
        (prin1 (getvar name)))
@@ -345,7 +356,10 @@ Returns the count of matches printed."
       (t
        (princ "Variable\t")
        (prin1 (eval sym))))
-    (terpri))
+    (terpri)
+    ;; The same name is also a CAD command (LOAD, OPEN, SNAP ...).
+    (if cmd
+      (progn (princ name) (princ "\tCommand") (terpri))))
   (length matches))
 
 (defun alref-symbol-name (key / )
@@ -389,6 +403,23 @@ titles; integers are interpreted as chapter numbers."
        ((alref-find-chapter-page key))
        (t nil)))
     (t nil)))
+
+(defun alref-command-entry-p (uppercased-name / found)
+  "T iff the spec documents a CAD command named UPPERCASED-NAME (a
+'Command' entry of pages/symbols.txt) -- a name that can also be a
+function's or a system variable's (LOAD, OPEN, SNAP ...)."
+  (foreach entry (alref-load-symbols)
+    (if (and (= (car entry) uppercased-name) (= (cadr entry) "Command"))
+      (setq found T)))
+  found)
+
+(defun alref-find-symbol-pages (uppercased-name / acc)
+  "Every page documenting UPPERCASED-NAME, in pages/symbols.txt order (the
+chapters' order: a function's page before a command's of the same name)."
+  (foreach entry (alref-load-symbols)
+    (if (= (car entry) uppercased-name)
+      (setq acc (cons (caddr entry) acc))))
+  (reverse acc))
 
 (defun alref-find-symbol-page (uppercased-name / entries entry)
   "Look up UPPERCASED-NAME in the cached symbols index. Returns
@@ -534,6 +565,13 @@ display family."
        (t
         (princ text)
         (terpri)
+        ;; The same name's other pages (a function's, then a command's).
+        (if (and (setq name (alref-key->name key))
+                 (cdr (alref-find-symbol-pages (strcase name))))
+          (foreach b (cdr (alref-find-symbol-pages (strcase name)))
+            (terpri)
+            (princ (alref-page-text b))
+            (terpri)))
         basename)))
     ((and (setq name (alref-key->name key))
           (setq doc (alref-runtime-doc name)))
@@ -570,6 +608,12 @@ as a string instead of printing. Lookup tiers:
   4. nil when KEY resolves to nothing."
   (setq basename (alref-resolve-key key))
   (cond
+    ((and basename (= (type key) 'STR) (cdr (alref-find-symbol-pages (strcase key))))
+     ;; A name with several pages (a function and a command): all of them.
+     (apply 'strcat
+            (cdr (apply 'append
+                        (mapcar '(lambda (b) (list "\n\n" (alref-page-text b)))
+                                (alref-find-symbol-pages (strcase key)))))))
     (basename (alref-page-text basename))
     (t
      (setq name (alref-key->name key))
