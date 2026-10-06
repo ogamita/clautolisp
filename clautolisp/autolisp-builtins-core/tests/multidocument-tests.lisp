@@ -631,3 +631,42 @@ an alist CASE-NAME -> the raw value."
 
 (test viewport-probe-answers-like-bricscad
   (is (null (%vp-mismatches "bricscad-v25" *vp-expected-bricscad*))))
+
+;;; --- cador-4 slice 5: what the conformance probe measured --------------------
+
+(defun %cf-run (dialect &rest forms)
+  (let ((context (%md-context)))
+    (%md-turn context (format nil "(setq *AUTOLISP-DIALECT* '~A)" dialect))
+    (let (value)
+      (dolist (form forms value)
+        (setq value (%md-turn context form))))))
+
+(test e1-a-symbol-on-the-blackboard-per-product
+  ;; AutoCAD 2022: the symbol comes back; BricsCAD V25 / V26: nil.
+  (is (eq t (%vp-run-truth (%cf-run "autocad-2022" "(vl-bb-set 'cfp 'my-symbol)"
+                                    "(eq (vl-bb-ref 'cfp) 'my-symbol)"))))
+  (is (null (%cf-run "bricscad-v25" "(vl-bb-set 'cfp 'my-symbol)" "(vl-bb-ref 'cfp)")))
+  ;; T is kept under BricsCAD (not measured; a flag value).
+  (is (%cf-run "bricscad-v25" "(vl-bb-set 'cfp t)" "(vl-bb-ref 'cfp)")))
+
+(test e2-vl-bb-set-copies-a-list
+  (is (equal '(nil t)
+             (mapcar #'%vp-run-truth
+                     (%cf-run "autocad-2022" "(setq l (list 1 2 3))" "(vl-bb-set 'cfp l)"
+                              "(list (eq l (vl-bb-ref 'cfp)) (equal l (vl-bb-ref 'cfp)))")))))
+
+(test e8-sdi-is-settable-on-bricscad-only
+  ;; The BricsCAD overlay is applied at launch (the CLI); a bare context applies
+  ;; it by hand, as sysvar-dialect-tracking-tests does.
+  (let ((context (%md-context)))
+    (%md-turn context "(setq *AUTOLISP-DIALECT* 'bricscad-v25)")
+    (clautolisp.cador:apply-bricscad-dialect-sysvars (%md-host context))
+    (%md-turn context "(setvar \"SDI\" 1)")
+    (is (eql 1 (%md-turn context "(getvar \"SDI\")"))))
+  (is (eq t (handler-case (progn (%cf-run "autocad-2022" "(setvar \"SDI\" 1)") nil)
+              (error () t)))))
+
+(defun %vp-run-truth (value)
+  "T for AutoLISP's T, NIL for nil."
+  (and value t))
+

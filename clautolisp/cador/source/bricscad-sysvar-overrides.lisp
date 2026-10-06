@@ -345,6 +345,12 @@ harmlessly.")
     (and dialect
          (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-platform dialect)))))
 
+(defparameter *bricscad-writable-sysvars*
+  ;; Read-only in the catalogue (AutoCAD's), settable on BricsCAD -- measured:
+  ;; (setvar "SDI" 1) => 1, read back 1, on V25 Windows and V26 macOS
+  ;; (probe-conformance E8); AutoCAD 2022 rejects it.
+  '("SDI"))
+
 (defun apply-bricscad-dialect-sysvars (host)
   "Launch-time bricscad-dialect sysvar overlay. Two effects, both
 bricscad-dialect only, never touching autocad/clautolisp:
@@ -375,5 +381,8 @@ cador only; no-ops on hosts without a sysvar table. Returns HOST."
       (clautolisp.autolisp-host:host-set-derived-sysvar
        host (car row) (cdr row)))
     (dolist (row (rest (assoc (%current-dialect-platform) *bricscad-platform-factory-defaults*)))
-      (clautolisp.autolisp-host:host-set-derived-sysvar host (car row) (cdr row))))
+      (clautolisp.autolisp-host:host-set-derived-sysvar host (car row) (cdr row)))
+    (dolist (name *bricscad-writable-sysvars*)
+      (let ((cell (ignore-errors (cador-sysvar host name))))
+        (when cell (setf (sysvar-cell-read-only-p cell) nil)))))
   host)

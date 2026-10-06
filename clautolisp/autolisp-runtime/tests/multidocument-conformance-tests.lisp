@@ -86,9 +86,10 @@
 
 ;;; --- E2: the blackboard shares by identity ------------------------
 
-(test e2-blackboard-shares-by-identity-across-documents
-  ;; vl-bb-set stores the object; vl-bb-ref returns the SAME object from another
-  ;; document; no copy. (eq l (vl-bb-ref 'probe)) is t.
+(test e2-blackboard-copies-a-list
+  ;; E2, measured on AutoCAD 2022 and BricsCAD V25 / V26 (probe-conformance):
+  ;; the blackboard holds a COPY -- (eq l (vl-bb-ref 'probe)) is nil, equal T --
+  ;; from the same document and from another. (D2 assumption A2 said share.)
   (let* ((session (make-runtime-session))
          (ns-a (make-document-namespace :name "E2-A"))
          (ns-b (make-document-namespace :name "E2-B"))
@@ -101,5 +102,7 @@
          (probe (intern-autolisp-symbol "E2-PROBE"))
          (l     (list 1 2 3)))
     (blackboard-set probe l ctx-a)
-    (is (eq l (blackboard-ref probe ctx-b)))    ; B reads the same object
-    (is (eq l (blackboard-ref probe ctx-a)))))  ; A still the same object
+    (is (not (eq l (blackboard-ref probe ctx-b))))   ; B reads a copy
+    (is (equal l (blackboard-ref probe ctx-b)))
+    (is (not (eq l (blackboard-ref probe ctx-a))))   ; so does A
+    (is (equal l (blackboard-ref probe ctx-a)))))

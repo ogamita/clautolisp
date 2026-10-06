@@ -94,7 +94,15 @@ command table at ~105 spellings. The rest, in slices:
   commands and 24 no-ops as built. Localisation (LIGNE, .pgp aliases) and
   getcname stay with the cadtui-locale-* tickets (they need the localised
   CAD data).
-- Slice 5 -- conformance E1-E10 as vendor probes.
+- *Slice 5 DONE (2.2.201)* -- conformance as vendor probes: probe-
+  conformance.lsp measured E1 / E2 / E8 / E10 on AutoCAD 2022 and BricsCAD
+  V25 / V26 (table in the analysis, section 9). Acted on: the blackboard
+  copies (A2 was wrong), BricsCAD drops a symbol value (E1), SDI is settable
+  under the BricsCAD dialects (E8); MTFLAGS already matched (E10; AutoCAD's
+  core console has none, the AutoCAD dialect models the full product). E3 /
+  E6 (a second document's namespace) and E4 / E5 (a live UI) are out of a
+  batch run's reach: they need alfe's automation mode driving documents
+  over COM, not built.
 - *Slice 6 DONE* -- the accoreconsole / BricsCAD headless envelope, cited
   in D2 sections 9.1 / 9.2 (Autodesk OARX 2025 core-console page -- wording
   to re-check, it did not load when fetched; Kean Walmsley's 2012 posts;

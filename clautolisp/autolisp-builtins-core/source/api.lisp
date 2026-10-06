@@ -352,7 +352,18 @@ really is the implementation this file names for it. NIL otherwise."
      "VL-BB-REF"
      "VL-BB-REF expects an AutoLISP symbol, got ~S."
      object))
-  (nth-value 0 (blackboard-ref object)))
+  (let ((value (nth-value 0 (blackboard-ref object))))
+    ;; E1, measured: BricsCAD (V25 and V26) answers nil for a symbol stored on
+    ;; the blackboard -- (vl-bb-set 'p 'my-symbol) (vl-bb-ref 'p) => nil, even
+    ;; in the same drawing -- where AutoCAD 2022 returns the symbol. T is kept
+    ;; (not measured; dropping it would break flag values).
+    (if (and (typep value 'autolisp-symbol)
+             (not (eq value (autolisp-true)))
+             (eq :bricscad (ignore-errors
+                            (clautolisp.autolisp-reader:autolisp-dialect-product
+                             (current-evaluation-dialect)))))
+        nil
+        value)))
 
 (defun builtin-vl-bb-set (symbol value)
   (unless (typep symbol 'autolisp-symbol)
