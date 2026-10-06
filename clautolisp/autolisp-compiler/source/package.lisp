@@ -57,7 +57,10 @@
                 #:split-usubr-lambda-list
                 #:*autolisp-lexical-locals-enabled*
                 #:check-usubr-arity
-                #:lookup-function)
+                #:lookup-function
+                #:set-binding-doc
+                #:*preceding-docs*
+                #:register-preceding-doc)
   (:export #:transpile-form
            #:transpile-body
            #:compile-autolisp-form

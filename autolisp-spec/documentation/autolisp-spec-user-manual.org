@@ -70,41 +70,63 @@ init file):
 
 Then call:
 
-- =(alref-lookup "pattern")= — print every documented symbol
-  whose name contains PATTERN (case-insensitive).
-- =(alref-apropos-list "pattern")= — same, but returns the
-  list of names rather than printing.
-- =(alref-apropos "pattern")= — print one symbol per line with
-  its live state and a five-column =[ABC]= coverage indicator:
+*Namespaces.* A name lives in up to four namespaces, each with its own
+meaning: =FUNCTION= (functions and special forms), =VARIABLE=, =SYSVAR=
+(system variables) and =COMMAND= (CAD commands). The same name can be
+in several: =LOAD= is a function and a command. A function =C:HELLO=
+is in the function namespace as =C:HELLO= /and/ is the command =HELLO=
+-- which is not the same thing as a function =HELLO=, if there is one.
+Every function below covers all four namespaces; each has four
+variants, suffixed =-function=, =-variable=, =-sysvar= and =-command=,
+that look in that namespace only.
 
-    NAME<TAB>Function<TAB>[ABC]
-    NAME<TAB>Operator<TAB>[ABC]
-    NAME<TAB>Variable<TAB>[ABC]<TAB>VALUE
-    NAME<TAB>Variable<TAB>[ABC]<TAB>NIL
-    NAME<TAB>Command
+- =(alref-apropos "pattern")= — print one line per name /and/
+  namespace whose name contains PATTERN (case-insensitive), from the
+  spec, the live image and the host's system variables; returns the
+  number of lines:
 
-  A CAD command the spec documents (chapter 28: every AutoCAD and
-  BricsCAD command, implemented in clautolisp or not) is listed as
-  =Command=; a name that is also a function or a system variable
-  (LOAD, OPEN, SNAP ...) gets its own line plus a =Command= line.
-  The indicator's letters mean: A=spec'd by AutoCAD,
-  B=spec'd by BricsCAD, C=implemented in this image (the
-  running runtime).
-- =(alref-describe NAME)= — print the spec page for NAME (a
-  symbol, a string name, a chapter number, or a chapter title).
-  When NAME isn't in the spec but is live in the image, prints
-  the single-line apropos display instead.
-- =(alref-documentation NAME)= — return the spec page text as a
-  string (instead of printing). Returns ="not documented"= for
-  image-only symbols and =nil= for names neither in the spec nor
-  in the image. A name with several pages -- a function and a
-  command, like LOAD -- returns all of them, the function's first;
-  =alref-describe= prints them all. A command's page gives its
+    NAME<TAB>Function
+    NAME<TAB>Variable<TAB>VALUE          (NIL when unbound)
+    NAME<TAB>Sysvar<TAB>VALUE
+    NAME<TAB>Command                     (a CAD command the spec documents)
+    NAME<TAB>Command<TAB>(C:NAME)        (the command a C:NAME function defines)
+    NAME<TAB><spec kind>                 (Reader Syntax, Type ...)
+
+  With =(defun c:hello ...)= and =(defun hello ...)= loaded,
+  =(alref-apropos "HELLO")= prints three lines: =C:HELLO Function=,
+  =HELLO Command (C:HELLO)= and =HELLO Function=. The spec documents
+  every AutoCAD and BricsCAD command (chapter 28), implemented in
+  clautolisp or not, and every system variable.
+  Variants: =alref-apropos-function=, =alref-apropos-variable=,
+  =alref-apropos-sysvar=, =alref-apropos-command=.
+- =(alref-apropos-list "pattern")= — the list of matching names,
+  each once. Variants: =alref-apropos-list-function= ...
+  =alref-apropos-list-command=.
+- =(alref-lookup "pattern")= — print the names of
+  =alref-apropos-list=, one per line.
+- =(alref-documentation NAME)= — the documentation of NAME (a symbol
+  or a string) as a string: its spec page, else the live binding's
+  documentation (the =;| ... |;= block before its =defun= or =setq=;
+  for a command =HELLO= defined by =C:HELLO=, that function's), else
+  ="not documented"=; =nil= when NAME is nothing. A name in several
+  namespaces gives all its pages, each live one under a header naming
+  its namespace (~=== Command: HELLO (function C:HELLO) ===~). A chapter
+  number or title gives the chapter. A command's page gives its
   /Availability/ -- AutoCAD and BricsCAD, with their versions, or
   "not documented" -- and its clautolisp status (implemented in the
   cador host, a recognised no-op, or not yet implemented).
-  In Emacs (=alref.el=) the command of such a name completes as
-  =NAME <Command>=.
+  Variants: =alref-documentation-function= ...
+  =alref-documentation-command=.
+- =(alref-describe NAME)= — print what =alref-documentation= returns,
+  every page, a live entry followed by its apropos line;
+  =NAME<TAB>Inexistant= when nothing matches. Variants:
+  =alref-describe-function= ... =alref-describe-command=.
+
+alref.lsp documents itself the same way: =(alref-documentation
+'alref-documentation)= returns its documentation, whether alref.lsp
+was loaded from source or from a compiled =.lap=.
+In Emacs (=alref.el=) the command of a name that is also a function
+completes as =NAME <Command>=.
 - =(alref-help "string")= — search the body of every documented
   page for STRING and return the list of matching page
   basenames.
@@ -115,8 +137,8 @@ The indicator surfaces in two places:
 
 - =alref.el='s =alref-autodoc-mode= shows it at the end of the
   minibuffer signature line.
-- =alref.lsp='s =alref-apropos= shows it as a fixed-width
-  five-character column.
+- (=alref.lsp='s =alref-apropos= does not print it: its lines carry
+  the namespace and the live value instead.)
 
   [A]    spec'd by AutoCAD only
   [B]    spec'd by BricsCAD only

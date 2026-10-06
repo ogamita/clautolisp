@@ -37,6 +37,18 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- alref separates the namespaces: ~(alref-apropos "HELLO")~ tags every
+  match ~Function~, ~Variable~, ~Sysvar~ or ~Command~ -- with
+  ~(defun c:hello ...)~ and ~(defun hello ...)~ it lists ~C:HELLO~ as a
+  Function, ~HELLO~ as a Command ~(C:HELLO)~ and ~HELLO~ as a Function --
+  and ~alref-describe~ / ~alref-documentation~ give every matching page.
+  Each has four variants for one namespace (~alref-apropos-command~,
+  ~alref-documentation-sysvar~ ...), and the system variable pages are
+  now in the index. alref documents itself: ~(alref-documentation
+  'alref-documentation)~ answers.
+- A compiled ~.lap~ keeps the source's documentation: the ~;| ... |;~
+  block before a ~defun~ or ~setq~ is installed when the ~.lap~ is loaded,
+  so ~clautolisp-documentation~ answers the same as from the source.
 - alref knows the CAD commands: ~(alref-apropos "CHSPACE")~ lists it as a
   ~Command~ and ~(alref-documentation "CHSPACE")~ gives its page -- every
   AutoCAD / BricsCAD command the spec documents (1621), each with its

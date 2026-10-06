@@ -1124,6 +1124,41 @@ has to happen when the artefact is loaded, in the same order."
                          (%eval-here "(greet)")))))
         (ignore-errors (delete-file lap))))))
 
+(defun %doc-of (name)
+  (clautolisp.autolisp-runtime:lookup-documentation
+   (clautolisp.autolisp-runtime:intern-autolisp-symbol name)
+   (clautolisp.autolisp-runtime:current-evaluation-context)))
+
+(test an-artefact-keeps-the-source-documentation
+  "The ;|...|; blocks are the documentation alref-documentation and
+clautolisp-documentation read. A .lap keeps them -- for a top-level DEFUN,
+a top-level SETQ, and a DEFUN nested in a PROGN (run by the interpreter
+from the artefact) -- so a function loaded from its .lap is as documented
+as one loaded from its source."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p ";| Square X. |;
+(defun docsq (x) (* x x))
+;| The greeting. |;
+(setq docgreeting \"hello\")
+(progn
+  ;| Nested. |;
+  (defun docnested () 1))
+(defun docnone () 2)")
+    (let ((lap (make-pathname :type "lap" :defaults p)))
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+              (%as-autolisp-path p))
+             (%fresh-builtin-context)
+             (%load-here lap)
+             (is (equal '(:function " Square X. ") (%doc-of "DOCSQ")))
+             (is (equal '(:variable " The greeting. ") (%doc-of "DOCGREETING")))
+             (is (equal '(:function " Nested. ") (%doc-of "DOCNESTED")))
+             (is (null (%doc-of "DOCNONE")))
+             (is (eql 49 (%eval-here "(docsq 7)"))))
+        (ignore-errors (delete-file lap))))))
+
 (test clal-compile-file-reports-a-missing-file-the-way-load-does
   (%fresh-builtin-context)
   (is (null (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
