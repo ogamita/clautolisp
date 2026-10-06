@@ -2243,6 +2243,8 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
         ;; renderer over the full application tree) atop the shared cador core,
         ;; before the session is built. A no-op for every other host.
         (maybe-install-cadtui-host (clautolisp.autolisp-cli:cli-options-host options))
+        ;; -Eterminal[-in|-out]: the REPL's own streams (shared with alfe).
+        (clautolisp.autolisp-cli:apply-terminal-encoding options :tool "clautolisp")
         (let* ((verbosity (clautolisp.autolisp-cli:cli-options-verbosity options))
                (verbose-p (member verbosity '(:verbose :debug)))
                (debug-p   (eq verbosity :debug))

@@ -1463,21 +1463,27 @@ robust :AUTO cascade by default — they are UTF-8/ASCII in practice (verified o
 real AutoCAD 2022) and self-describing, DISTINCT from accoreconsole's own console
 PIPE (UTF-16LE, handled by AUTOCAD-CONSOLE-EXTERNAL-FORMAT). Forcing :utf-16le
 here mangled UTF-8 payload into CJK mojibake (autocad-no-rest-output-capture). An
-explicit -Econsole / -Ecadstdio still forces a codec; the variant no longer
-matters for the file drain."
+explicit -Ecadstdio still forces a codec; -Econsole is ignored (the console is
+fixed by the product, encoding-situations section 4) and so is the bare -E; the
+variant no longer matters for the file drain."
   ;; accoreconsole batch, unset -> :AUTO (was wrongly forced to UTF-16LE)
   (is (eq :auto (alfe.backend.autocad::%autocad-console-decode-encoding
                  (parse-arguments '("--autocad")) :batch)))
-  ;; explicit -Econsole is now HONOURED on the file drain (no product-fixed override)
+  ;; an explicit -Ecadstdio forces the drain codec
   (is (string= "WINDOWS-1252"
                (alfe.backend.autocad::%autocad-console-decode-encoding
-                (parse-arguments '("--autocad" "-Econsole" "cp1252")) :batch)))
+                (parse-arguments '("--autocad" "-Ecadstdio" "cp1252")) :batch)))
   (is (eq :utf-16le (alfe.backend.autocad::%autocad-console-decode-encoding
-                     (parse-arguments '("--autocad" "-Econsole" "utf-16le")) :batch)))
+                     (parse-arguments '("--autocad" "-Ecadstdio" "utf-16le")) :batch)))
+  ;; -Econsole (product-fixed: warned, ignored) and the bare -E leave :AUTO
+  (is (eq :auto (alfe.backend.autocad::%autocad-console-decode-encoding
+                 (parse-arguments '("--autocad" "-Econsole" "cp1252")) :batch)))
+  (is (eq :auto (alfe.backend.autocad::%autocad-console-decode-encoding
+                 (parse-arguments '("--autocad" "-E" "UTF-8")) :batch)))
   ;; automation path: identical contract
   (is (string= "WINDOWS-1252"
                (alfe.backend.autocad::%autocad-console-decode-encoding
-                (parse-arguments '("--autocad" "-Econsole" "cp1252")) :automation)))
+                (parse-arguments '("--autocad" "-Ecadstdio" "cp1252")) :automation)))
   (is (eq :auto (alfe.backend.autocad::%autocad-console-decode-encoding
                  (parse-arguments '("--autocad")) :automation))))
 
@@ -1503,10 +1509,16 @@ absolute pathname even when no source transcoding was requested."
                                           :if-does-not-exist :ignore))))
 
 (test autocad-console-external-format-folds-cli-over-default
-  "G2 send half: an explicit -Econsole/-Ecadstdio drives the pipe external-
-format; with nothing requested (and no env) it stays the robust :ISO-8859-1."
+  "G2 send half: an explicit -Ecadstdio drives the pipe external-format; with
+nothing requested (and no env) it stays the robust :ISO-8859-1. -Econsole is
+ignored (the console is fixed by the product), and so is the bare -E."
   (is (eq :utf-16le (alfe.backend.autocad::autocad-console-external-format
-                     (parse-arguments '("--autocad" "-Econsole" "utf-16le")))))
+                     (parse-arguments '("--autocad" "-Ecadstdio" "utf-16le")))))
+  (unless (uiop:getenv "ALFE_AUTOCAD_CONSOLE_ENCODING")
+    (is (eq :iso-8859-1 (alfe.backend.autocad::autocad-console-external-format
+                         (parse-arguments '("--autocad" "-Econsole" "utf-16le")))))
+    (is (eq :iso-8859-1 (alfe.backend.autocad::autocad-console-external-format
+                         (parse-arguments '("--autocad" "-E" "UTF-8"))))))
   (is (eq :windows-1252 (alfe.backend.autocad::autocad-console-external-format
                          (parse-arguments '("--autocad" "-Ecadstdio" "cp1252")))))
   (unless (uiop:getenv "ALFE_AUTOCAD_CONSOLE_ENCODING")
@@ -3498,3 +3510,28 @@ the write does not signal. The mechanism is the same on both."
       "a body that succeeds returns its value")
   (is (equal "" (%mock-cad-failure-note))
       "and records nothing"))
+
+(test cad-source-staging-is-cp1252-for-autocad
+  "A -Esource cp1252 file staged for AutoCAD stays cp1252 without a BOM -- read
+right at every LISPSYS (E1: LISPSYS 0 ignores a BOM, 1 / 2 fall back to cp1252
+on invalid UTF-8) -- and becomes UTF-8 + BOM for the other CADs."
+  (let* ((workdir (uiop:ensure-directory-pathname
+                   (merge-pathnames (format nil "alfe-test-stage-~D/" (random 999999))
+                                    (uiop:temporary-directory))))
+         (protocol (alfe.protocol.file:init-session workdir))
+         (source (merge-pathnames "src.lsp" workdir)))
+    (unwind-protect
+         (flet ((bytes (path)
+                  (with-open-file (in path :element-type '(unsigned-byte 8))
+                    (let ((v (make-array (file-length in) :element-type '(unsigned-byte 8))))
+                      (read-sequence v in) (coerce v 'list)))))
+           (with-open-file (out source :direction :output :element-type '(unsigned-byte 8)
+                                       :if-exists :supersede)
+             (write-sequence #(34 65 #xE9 90 34) out))          ; "AéZ" in cp1252
+           (is (equal '(34 65 #xE9 90 34)
+                      (bytes (alfe.backend.cad-common::stage-source-as-utf8-bom
+                              protocol (namestring source) "cp1252" :autocad))))
+           (is (equal '(#xEF #xBB #xBF 34 65 #xC3 #xA9 90 34)
+                      (bytes (alfe.backend.cad-common::stage-source-as-utf8-bom
+                              protocol (namestring source) "cp1252" :bricscad)))))
+      (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))

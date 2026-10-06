@@ -1071,6 +1071,25 @@ page changes it). Named so the value lives in ONE place. The drain decodes
 the channel with it; the robust auto-detect cascade (:AUTO) stays as the
 safety net for any target that turns out NOT to be UTF-16LE.")
 
+(defvar *autocad-console-option-warned* nil
+  "True once the -Econsole-is-ignored warning was given this run.")
+
+(defun %autocad-requested-stdio-encoding (cli-options)
+  "The codec the user asked for on AutoCAD's stdio, or NIL. Only -Ecadstdio
+counts: the console is FIXED by the product (accoreconsole: UTF-16LE), so an
+explicit -Econsole is warned about and ignored (encoding-situations-cli-
+options, section 4), and the bare -E does not reach this boundary at all --
+a blanket -E UTF-8 used to make alfe read the UTF-16LE pipe as UTF-8."
+  (when cli-options
+    (when (and (or (clautolisp.autolisp-cli:cli-situation-encoding-explicit cli-options "console" "out")
+                   (clautolisp.autolisp-cli:cli-situation-encoding-explicit cli-options "console" "in"))
+               (not *autocad-console-option-warned*))
+      (setf *autocad-console-option-warned* t)
+      (log-warn "backend AUTOCAD: the console encoding is fixed by the product (accoreconsole: ~
+UTF-16LE); -Econsole is ignored. Use -Ecadstdio to force the codec alfe decodes with."))
+    (or (clautolisp.autolisp-cli:cli-situation-encoding-explicit cli-options "cadstdio" "out")
+        (clautolisp.autolisp-cli:cli-situation-encoding-explicit cli-options "cadstdio"))))
+
 (defun %autocad-console-decode-encoding (cli-options variant)
   "How the DRAIN decodes the protocol stdout/stderr FILES. These are written by
 the AutoLISP runtime (open + write-line), NOT by accoreconsole itself, so they
@@ -1081,26 +1100,25 @@ AUTOCAD-CONSOLE-EXTERNAL-FORMAT). The files are self-describing, so decode with
 the robust :AUTO cascade (it detects UTF-16LE via the interleaved NULs, else
 UTF-8/Latin-1, and never signals). Forcing :UTF-16LE here decoded the UTF-8
 payload as UTF-16 and turned every line into CJK mojibake -- the real cause of
-autocad-no-rest-output-capture. An explicit -Econsole / -Ecadstdio still forces
-a codec for a target that genuinely needs one."
+autocad-no-rest-output-capture. An explicit -Ecadstdio still forces a codec for
+a target that genuinely needs one; -Econsole is warned about and ignored."
   (declare (ignore variant))
-  (let ((requested (alfe.cli:resolved-console-encoding cli-options)))
-    (if (eq requested :auto)
-        :auto
-        (clautolisp.autolisp-cli:encoding-keyword requested))))
+  (let ((requested (%autocad-requested-stdio-encoding cli-options)))
+    (if requested
+        (clautolisp.autolisp-cli:encoding-keyword requested)
+        :auto)))
 
 (defun autocad-console-external-format (&optional cli-options)
   "The external-format for reading accoreconsole's own stdout/stderr PIPE
 (diagnostics). Precedence: an explicit -Econsole / -Ecadstdio in CLI-OPTIONS,
 then $ALFE_AUTOCAD_CONSOLE_ENCODING, then the robust default :ISO-8859-1 — a
 total decoder that never signals, so a non-UTF-8 Windows console cannot crash
-bootstrap; SLURP-PROCESS-STREAM strips UTF-16LE's interleaved NULs. The
+bootstrap; SLURP-PROCESS-STREAM strips UTF-16LE's interleaved NULs. -Econsole
+and the bare -E do not count here (%AUTOCAD-REQUESTED-STDIO-ENCODING). The
 protocol PAYLOAD is decoded separately by the drain (DECODE-CONSOLE-OCTETS,
 never signals) with %AUTOCAD-CONSOLE-DECODE-ENCODING — this is only the raw
 pipe read, so the default stays the robust total decoder (G2)."
-  (let ((requested (and cli-options
-                        (let ((e (alfe.cli:resolved-console-encoding cli-options)))
-                          (unless (eq e :auto) e))))
+  (let ((requested (%autocad-requested-stdio-encoding cli-options))
         (env (uiop:getenv "ALFE_AUTOCAD_CONSOLE_ENCODING")))
     (cond
       (requested (clautolisp.autolisp-cli:encoding-keyword requested))
@@ -1520,6 +1538,8 @@ unwind-protect that reaps the engine when it does not get there."
   (let* ((explicit-timeout (session-request-timeout session))
          (result (drive-protocol-actions
                   (autocad-session-protocol-session session) plan
+                  ;; -l sources re-encoded for AutoCAD's LISPSYS (cp1252).
+                  :staging-product :autocad
                   ;; See the BricsCAD eval-plan: --timeout bounds the DONE
                   ;; wait (hard cap when explicit), else a RUNNING eval is
                   ;; kept alive while accoreconsole lives

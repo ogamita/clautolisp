@@ -108,11 +108,11 @@ bare -E/--encoding that sets them all.")
 (defparameter *situation-backend-table*
   '((:clautolisp
      ("source"   "settable"        "-Esource / *AUTOLISP-FILE-ENCODING* / LC_*; default UTF-8")
-     ("file"     "settable"        "-Efile / *AUTOLISP-FILE-ENCODING*; default UTF-8")
+     ("file"     "settable"        "-Efile[-read|-write] -> *AUTOLISP-FILE-READ/WRITE-ENCODING*, OPEN's default")
      ("console"  "n/a"             "in-process — same stream as terminal")
      ("cadstdio" "n/a"             "no CAD subprocess")
      ("log"      "n/a"             "—")
-     ("terminal" "settable"        "-Eterminal — applied to alfe's own streams"))
+     ("terminal" "settable"        "-Eterminal — applied to the REPL's own streams"))
     (:bricscad
      ("source"   "locale/BOM"      "UTF-8 with a BOM / locale; -Esource forwarded to the native load")
      ("file"     "default+ccs"     "default from locale / SYSCODEPAGE; per-open ,ccs=UTF-8/UTF-16LE")
@@ -123,8 +123,8 @@ bare -E/--encoding that sets them all.")
     (:autocad
      ("source"   "LISPSYS"         "LISPSYS 0=cp1252, 1/2=UTF-8 (restart); -Esource forwarded at 1/2")
      ("file"     "LISPSYS / MBCS"  "MBCS at LISPSYS 0; ccs= ignored by accoreconsole")
-     ("console"  "product-fixed"   "accoreconsole UTF-16LE (fixed); GUI acad cp1252")
-     ("cadstdio" "product-fixed"   "accoreconsole UTF-16LE")
+     ("console"  "product-fixed"   "accoreconsole UTF-16LE; -Econsole warned and ignored")
+     ("cadstdio" "-Ecadstdio"      "drain: the CAD's file bytes (cp1252, E3), auto-detected; -Ecadstdio forces")
      ("log"      "unmeasured"      "—")
      ("terminal" "settable"        "-Eterminal — alfe's own stream")))
   "Per-backend encoding-situation provenance for --list-situations, distilled
@@ -146,9 +146,10 @@ with directions."
        (dolist (row rows)
          (destructuring-bind (name provenance note) row
            (format stream "  -E~11A~18A ~A~%" name provenance note)))
-       (format stream "~%A product-fixed situation still accepts -E<situation> ~
-but WARNS that it is ignored and keeps the product value. Full (os × version) ~
-defaults with byte evidence: the alfe user-manual Encoding section.~%"))
+       (format stream "~%A product-fixed situation (AutoCAD's console) still accepts ~
+-E<situation> but warns that it is ignored and keeps the product value; a bare ~
+-E does not reach it. Full (os × version) defaults with byte evidence: the alfe ~
+user-manual Encoding section.~%"))
       (t
        (format stream "Encoding situations — set with -E<situation>[-<dir>] ENC ~
 or --<situation>[-<dir>]-encoding ENC~%(a bare -E / --encoding sets them ~
@@ -167,11 +168,14 @@ all; --list-situations under a backend flag shows that backend's defaults):~%~%"
 
 (defun %encoding-store (opts key canon)
   "Record encoding CANON under KEY (\"all\" | \"<name>\" | \"<name>/<dir>\")
-in OPTS's situation table, and mirror the two legacy slots so existing
-downstream keeps working: source -> load-encoding, terminal -> io-encoding."
+in OPTS's situation table, and recompute the two legacy slots the downstream
+reads -- load-encoding (source) and io-encoding (terminal) -- through
+CLI-SITUATION-ENCODING, so the bare -E reaches them too, a specific option
+winning over it whatever the order (it used to set neither: -E UTF-8 left the
+source encoding alone)."
   (push (cons key canon) (cli-options-situation-encodings opts))
-  (cond ((string= key "source")   (setf (cli-options-load-encoding opts) canon))
-        ((string= key "terminal") (setf (cli-options-io-encoding opts) canon))))
+  (setf (cli-options-load-encoding opts) (cli-situation-encoding opts "source")
+        (cli-options-io-encoding opts) (cli-situation-encoding opts "terminal")))
 
 (defun cli-situation-encoding (opts situation &optional direction)
   "The user-requested encoding for SITUATION (and optional DIRECTION), by
@@ -183,6 +187,15 @@ then falls through to the variable/fixed default for that boundary)."
              (cdr (assoc (format nil "~A/~A" situation direction) tbl :test #'string=)))
         (cdr (assoc situation tbl :test #'string=))
         (cdr (assoc "all" tbl :test #'string=)))))
+
+(defun cli-situation-encoding-explicit (opts situation &optional direction)
+  "Like CLI-SITUATION-ENCODING without the bare -E fallback: only an option
+that names SITUATION. For the boundaries a bare -E must not reach -- a
+product-fixed device, where a blanket choice would silently override it."
+  (let ((tbl (cli-options-situation-encodings opts)))
+    (or (and direction
+             (cdr (assoc (format nil "~A/~A" situation direction) tbl :test #'string=)))
+        (cdr (assoc situation tbl :test #'string=)))))
 
 (defun %encoding-option-specs ()
   "Generate the -E<situation>[-<dir>] / --<situation>[-<longdir>]-encoding

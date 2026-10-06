@@ -460,11 +460,19 @@ is handled, not just the built-in cp1252 cascade."
       (read-sequence v in)
       v)))
 
-(defun stage-source-as-utf8-bom (protocol-session path encoding)
+(defun stage-source-as-utf8-bom (protocol-session path encoding &optional product)
   "Resolve PATH against alfe's invocation directory.  If ENCODING is a
 non-Unicode codepage, decode that absolute source with babel and write a
-UTF-8-with-BOM copy into the workdir, returning the copy's path for the CAD to
-(load); otherwise return the absolute source path itself.
+copy into the workdir the CAD's native load reads right, returning the copy's
+path for the CAD to (load); otherwise return the absolute source path itself.
+
+The copy is UTF-8 with a BOM -- except for PRODUCT :AUTOCAD, where it is
+windows-1252 without a BOM whenever the text fits: AutoCAD 2022 at LISPSYS 0
+IGNORES a BOM and reads the UTF-8 bytes as cp1252 (two characters for each
+accented one), and at LISPSYS 1 / 2 it reads a file that is not valid UTF-8 as
+cp1252 -- so cp1252 reads right at every level (E1, job 16931781178,
+encoding-situations-cli-options). Text cp1252 cannot hold keeps UTF-8 + BOM
+(right at LISPSYS 1 / 2 only).
 
 The absolutisation is required even without transcoding: CAD batch processes
 run from the generated workdir, not necessarily from alfe's current directory,
@@ -482,13 +490,21 @@ directory."
                       (uiop:ensure-directory-pathname
                        (alfe.protocol.file:protocol-session-workdir
                         protocol-session)))))
-        (with-open-file (out staged :direction :output :external-format :utf-8
-                                    :if-exists :supersede :if-does-not-exist :create)
-          (write-char (code-char #xFEFF) out)   ; UTF-8 BOM -> EF BB BF
-          (write-string text out))
-        (log-debug "cad-common: staged UTF-8+BOM ~A -> ~A (from ~A source)"
-                   (file-namestring (pathname absolute-path))
-                   (file-namestring staged) encoding)
+        (let ((cp1252 (and (eq product :autocad)
+                           (ignore-errors (babel:string-to-octets text :encoding :cp1252
+                                                                       :errorp t)))))
+          (if cp1252
+              (with-open-file (out staged :direction :output :element-type '(unsigned-byte 8)
+                                          :if-exists :supersede :if-does-not-exist :create)
+                (write-sequence cp1252 out))
+              (with-open-file (out staged :direction :output :external-format :utf-8
+                                          :if-exists :supersede :if-does-not-exist :create)
+                (write-char (code-char #xFEFF) out)   ; UTF-8 BOM -> EF BB BF
+                (write-string text out)))
+          (log-debug "cad-common: staged ~A ~A -> ~A (from ~A source)"
+                     (if cp1252 "cp1252" "UTF-8+BOM")
+                     (file-namestring (pathname absolute-path))
+                     (file-namestring staged) encoding))
         (namestring (truename staged))))))
 
 ;;; --- launcher liveness during the READY wait -------------------------
@@ -744,7 +760,8 @@ hook, carries. The mock launchers of the test suite ignore extra keys."
                                  (shutdown-timeout 10)
                                  (input-stream  *standard-input*)
                                  (output-stream *standard-output*)
-                                 (error-stream  *error-output*))
+                                 (error-stream  *error-output*)
+                                 (staging-product nil))
   "Drive a PLAN of actions through a connected PROTOCOL-SESSION,
 waiting for each transition to land. The CAD-side runtime is
 expected to walk READY N → RUNNING N → DONE N {OK,FAIL,QUIT} per
@@ -1026,7 +1043,8 @@ shows the error on stderr and the prompt comes back."
            (let* ((payload (alfe.backend:action-payload action))
                   (path (getf payload :path))
                   (load-path (stage-source-as-utf8-bom
-                              protocol-session path (getf payload :encoding))))
+                              protocol-session path (getf payload :encoding)
+                              staging-product)))
              (send-action (format nil "(load ~S)" load-path))))
           (:eval
            (send-action (alfe.backend:action-payload action)))

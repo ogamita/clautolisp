@@ -80,6 +80,13 @@ test-only knobs); the default is a fresh struct."
                                    head embedded-value)))
                   (funcall (option-spec-handler spec) options nil head)
                   t))))
+            ;; An unknown -E<name>: say which situations exist.
+            ((and (> (length arg) 2) (string= "-E" arg :end2 2)
+                  (boundp '*encoding-situations*))
+             (error 'cli-usage-error
+                    :option arg
+                    :message (format nil "Unknown encoding situation in ~A: the situations are ~{~A~^, ~} (-E<situation>[-<direction>] ENC; --list-situations)"
+                                     arg (mapcar #'car (symbol-value '*encoding-situations*)))))
             ;; Unknown -…
             ((%starts-with-dash-p arg)
              (error 'cli-usage-error

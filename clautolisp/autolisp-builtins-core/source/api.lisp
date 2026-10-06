@@ -2566,10 +2566,15 @@ Unicode beyond."
   (make-autolisp-string
    (string (int32->character code "CHR"))))
 
-(defun open-default-external-format ()
+(defun open-default-external-format (&optional direction)
   "Resolve the default file encoding for `open` when no explicit
 per-open encoding argument (or BricsCAD ,ccs= suffix) is supplied.
-Precedence mirrors the input/LOAD path (autolisp-runtime
+
+  0. the `file' situation (-Efile / -Efile-read / -Efile-write): the
+     AutoLISP globals *AUTOLISP-FILE-READ-ENCODING* (DIRECTION :input) and
+     *AUTOLISP-FILE-WRITE-ENCODING* (otherwise), empty when not given;
+
+Then the precedence mirrors the input/LOAD path (autolisp-runtime
 AUTOLISP-LOAD-FILE-IN-CONTEXT) so a value written and read back
 under the same encoding round-trips:
 
@@ -2584,7 +2589,9 @@ Before this consulted only tiers 2-3, so OPEN-for-write ignored
 *AUTOLISP-FILE-ENCODING* / -e and always wrote ANSI bytes while the
 read path honoured them — see open-write-ignores-file-encoding.issue."
   (let ((dialect (ignore-errors (current-evaluation-dialect))))
-    (or (ignore-errors (clautolisp.autolisp-runtime:lookup-autolisp-file-encoding))
+    (or (clautolisp.autolisp-runtime:lookup-autolisp-encoding-variable
+         (if (eq direction :input) "*AUTOLISP-FILE-READ-ENCODING*" "*AUTOLISP-FILE-WRITE-ENCODING*"))
+        (ignore-errors (clautolisp.autolisp-runtime:lookup-autolisp-file-encoding))
         (and dialect
              (clautolisp.autolisp-reader:autolisp-dialect-default-file-encoding
               dialect))
@@ -2838,7 +2845,11 @@ accepts it."
                (parse-open-external-format encoding-string))
               (ccs-encoding-string
                (parse-open-external-format ccs-encoding-string))
-              (t (open-default-external-format))))
+              (t (open-default-external-format
+                  (if (and (plusp (length mode-string))
+                           (char-equal #\r (char mode-string 0)))
+                      :input
+                      :output)))))
       (multiple-value-bind (direction if-exists if-does-not-exist)
           (open-direction-and-options mode-string)
         ;; ENC-HOST-DEPENDENT — writing under ANSI / MBCS yields

@@ -5159,6 +5159,18 @@ forms have unevaluated operands it must not instrument (spec §5.3)."
 (defun autolisp-read-from-file (path &rest options &key &allow-other-keys)
   (first (apply #'read-runtime-from-file path options)))
 
+(defun lookup-autolisp-encoding-variable (name &optional (context (current-evaluation-context)))
+  "The CL external-format the AutoLISP global NAME (a string naming an
+encoding) designates, or NIL when it is unbound, empty or not a string."
+  (handler-case
+      (multiple-value-bind (value boundp)
+          (lookup-variable (intern-autolisp-symbol name) context)
+        (and boundp
+             (typep value 'autolisp-string)
+             (plusp (length (autolisp-string-value value)))
+             (parse-locale-encoding-string (autolisp-string-value value))))
+    (error () nil)))
+
 (defun lookup-autolisp-file-encoding (&optional (context (current-evaluation-context)))
   "Resolve the AutoLISP-level *AUTOLISP-FILE-ENCODING* global to a
 CL external-format keyword, or NIL when the global isn't bound

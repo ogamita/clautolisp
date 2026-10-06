@@ -644,3 +644,31 @@ Consequence for the defaults table: `cadstdio' on both Windows CADs is
 windows-1252 + CR LF, product-fixed (0x80 / 0xAC are the CADs' own losses).
 
 Remaining in this ticket: the section 6 plumbing and E5.
+
+* Section 6 plumbing and E5 (2026-10-06, clautolisp 2.2.204 / alfe 2.2.150)
+
+An audit found most situations parsed and not acted on (only `source` reached
+every backend; `file` and `log` were read nowhere; the bare -E did not reach
+`source`; no warn-and-ignore existed although point 4 above said DONE).
+Done now:
+  - the bare -E / --encoding reaches `source` and `terminal` (the legacy
+    load-encoding / io-encoding slots are recomputed through
+    cli-situation-encoding; a specific option wins in any order);
+  - an unknown -E<name> is an error listing the situations;
+  - `terminal` in the clautolisp tool: the G1 code moved from alfe to the
+    shared autolisp-cli (terminal.lisp); clautolisp applies it at start-up;
+  - `file`: -Efile[-read|-write] -> *AUTOLISP-FILE-READ-ENCODING* /
+    *AUTOLISP-FILE-WRITE-ENCODING*, consulted first by OPEN's default;
+  - AutoCAD: -Econsole is warned about and ignored (console product-fixed);
+    the bare -E no longer reaches the console / pipe codecs (a blanket
+    -E UTF-8 read the UTF-16LE pipe as UTF-8); -Ecadstdio stays the explicit
+    override (by E3 the drain carries the CAD's file bytes);
+  - AutoCAD source staging: a -Esource code-page file is handed to AutoCAD
+    in cp1252 without a BOM (right at LISPSYS 0 / 1 / 2 by E1) instead of
+    UTF-8 + BOM (wrong at LISPSYS 0, which ignores the BOM);
+  - --list-situations rows corrected.
+E5 answered: -e is gone (rejected as an unknown option); -E / --encoding is the
+every-situation shorthand; -Eterminal exists with -in / -out.
+Still open: `log` (no reader of the CAD log exists yet), `console` -in and
+the CAD-side `file` default (the bootstrap `open` shim's default encoding,
+point 5), and one keyword per situation on start-engine (point 1).

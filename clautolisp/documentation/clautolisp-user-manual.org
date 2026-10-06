@@ -1543,15 +1543,25 @@ no probing:
                              ~LC_CTYPE~ / ~LANG~). Surfaced to user
                              code as the ~*AUTOLISP-FILE-ENCODING*~
                              global. (The old ~-e~ is gone.)
-- ~-Eterminal ENC~ / ~-E ENC~ :: Declared terminal-IO encoding for the
-                             session. Surfaced to user code as the
-                             ~*AUTOLISP-TERMINAL-ENCODING*~ global so
-                             code that emits raw bytes can adapt. No
-                             stream rebinding is performed at the CL
-                             level — set this when your downstream
-                             tooling needs the declared encoding to
-                             match what you actually emit. Same ENC
-                             vocabulary as ~-e~.
+- ~-Eterminal ENC~ (~-Eterminal-in~ / ~-Eterminal-out~) :: The
+                             encoding of the REPL's own standard
+                             input / output / error: clautolisp reopens
+                             them in ENC (on Windows it sets the console
+                             code page), as alfe does. Also surfaced to
+                             user code as ~*AUTOLISP-TERMINAL-ENCODING*~.
+- ~-Efile ENC~ (~-Efile-read~ / ~-Efile-write~) :: The encoding ~open~
+                             uses when the program names none (no
+                             encoding argument, no ~ccs=~), surfaced as
+                             ~*AUTOLISP-FILE-READ-ENCODING*~ and
+                             ~*AUTOLISP-FILE-WRITE-ENCODING*~ (empty when
+                             not given; ~setq~-able). They come before
+                             ~*AUTOLISP-FILE-ENCODING*~ and the dialect
+                             default.
+- ~-E ENC~ / ~--encoding ENC~ :: Every situation at once -- ~source~ and
+                             ~terminal~ included; an option naming a
+                             situation wins over it, whatever the order.
+                             An unknown ~-E<name>~ is an error listing
+                             the situations (~--list-situations~).
 
 *** Under the AutoCAD dialects, LISPSYS decides
 As on AutoCAD 2021 and later, the default encoding of the source files

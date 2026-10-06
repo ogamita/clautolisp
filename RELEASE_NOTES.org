@@ -37,6 +37,17 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Encoding options that were parsed but did nothing now act:
+  ~-E ENC~ reaches the source encoding (it used to leave it alone);
+  ~-Eterminal~ re-encodes clautolisp's own REPL streams (alfe already did);
+  ~-Efile~ / ~-Efile-read~ / ~-Efile-write~ set what ~open~ uses when the
+  program names no encoding (~*AUTOLISP-FILE-READ-ENCODING*~,
+  ~*AUTOLISP-FILE-WRITE-ENCODING*~); an unknown ~-E<name>~ lists the
+  situations. alfe: under ~--autocad~, ~-Econsole~ is warned about and ignored
+  (accoreconsole's console is fixed) and a bare ~-E~ no longer changes how the
+  CAD's output is read; a ~-Esource cp1252~ file is handed to AutoCAD in cp1252,
+  which reads right at every ~LISPSYS~ (it was UTF-8 with a BOM, which AutoCAD
+  ignores at ~LISPSYS~ 0).
 - ~(command "_.LOAD" "file.shx")~ loads a shape file into the drawing and
   ~(command "_.SHAPE" name point size rotation)~ makes the SHAPE entity, as
   AutoCAD 2022 and BricsCAD do (identical on both).

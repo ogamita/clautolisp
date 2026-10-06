@@ -703,13 +703,19 @@ still an error, but a fixed boundary is never silently wrong).
 - =source= — an explicit =-Esource= is forwarded into the CAD's native
   =(load)= so a =.lsp= with non-ASCII literals decodes correctly (BricsCAD
   =,ccs=…=, AutoCAD the =open= 3rd-arg at =LISPSYS= 1/2). Without it the CAD
-  keeps its own default decode.
+  keeps its own default decode. A =-l= file in a code page (=-Esource cp1252=)
+  is handed to AutoCAD as a cp1252 copy without a BOM -- read right at every
+  =LISPSYS= -- and to BricsCAD as UTF-8 with a BOM.
 - =file= — the default encoding of files the AutoLISP program itself opens.
-  On clautolisp it also drives =*AUTOLISP-FILE-ENCODING*=.
+  On clautolisp it sets =*AUTOLISP-FILE-READ-ENCODING*= /
+  =*AUTOLISP-FILE-WRITE-ENCODING*=, which =open= uses when the program names
+  no encoding; not yet forwarded to the CADs' own =open=.
 - =console= / =cadstdio= — how alfe DECODES the CAD's console/pipe output.
-  accoreconsole is UTF-16LE, *fixed by the product* — a conflicting
-  =-Econsole= is warned and ignored. For other targets the default is an
-  auto-detect cascade (UTF-16LE / UTF-8 / lenient) unless you name a codec.
+  accoreconsole is UTF-16LE, *fixed by the product* — =-Econsole= is warned
+  and ignored under =--autocad=, and a bare =-E= does not reach these
+  codecs there; =-Ecadstdio= forces the codec alfe decodes with. For other
+  targets the default is an auto-detect cascade (UTF-16LE / UTF-8 / lenient)
+  unless you name a codec.
 - =log= — alfe's own diagnostic stream.
 
 ** Per-target defaults (measured 2026-07)

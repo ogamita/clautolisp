@@ -366,7 +366,9 @@ application for headless interactive/scriptable testing (generalises cador)."
                ;; for APPLY-BRICSCAD-DIALECT-SYSVARS, the launch-time
                ;; bricscad-dialect sysvar overlay (drops the AutoCAD-only
                ;; catalogue entries BricsCAD does not define).
-               "clautolisp/cador")
+               "clautolisp/cador"
+               ;; terminal.lisp: the Windows console code page (-Eterminal).
+               "cffi")
   :serial t
   :components
   ((:file "autolisp-cli/source/package")
@@ -375,6 +377,7 @@ application for headless interactive/scriptable testing (generalises cador)."
    (:file "autolisp-cli/source/options")
    (:file "autolisp-cli/source/spec")
    (:file "autolisp-cli/source/parser")
+   (:file "autolisp-cli/source/terminal")
    (:file "autolisp-cli/source/transmit"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-cli/tests")))
@@ -492,6 +495,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "tools/clautolisp/tests/debugger-options-tests")
    (:file "tools/clautolisp/tests/optimize-option-tests")
    (:file "tools/clautolisp/tests/dwg-option-tests")
+   (:file "tools/clautolisp/tests/encoding-option-tests")
    (:file "tools/clautolisp/tests/transmit-tests")
    (:file "tools/clautolisp/tests/aldo-conf-tests")
    (:file "tools/clautolisp/tests/debugger-ui-switch-tests")
