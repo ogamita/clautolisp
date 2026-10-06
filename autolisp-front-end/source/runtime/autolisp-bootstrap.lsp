@@ -449,10 +449,10 @@
   (autolisp-source-pop-stack)
   (autolisp-raise msg))
 
-(defun autolisp-source-load-failure (onfailure)
-  (if (= (type onfailure) 'SYM)
-    (eval onfailure)
-    onfailure))
+(defun autolisp-source-load-failure (alfe--onfailure)
+  (if (= (type alfe--onfailure) 'SYM)
+    (eval alfe--onfailure)
+    alfe--onfailure))
 
 ;; T when PATH names a file that opens for reading. findfile searches the
 ;; CAD Support File Search Path, NOT the current directory -- on AutoCAD
@@ -496,16 +496,16 @@
 ;; *AUTOLISP-LOAD-PATHNAME* on the way out, even when the loaded
 ;; file errors part-way through. See
 ;; `issues/closed/autolisp-load-pathname.issue'.
-(defun autolisp-source-load-run-body (resolved /)
-  (setq *AUTOLISP_LOAD_STACK* (cons resolved *AUTOLISP_LOAD_STACK*))
-  (autolisp-source-load-run-body-impl resolved))
+(defun autolisp-source-load-run-body (alfe--resolved /)
+  (setq *AUTOLISP_LOAD_STACK* (cons alfe--resolved *AUTOLISP_LOAD_STACK*))
+  (autolisp-source-load-run-body-impl alfe--resolved))
 
-(defun autolisp-source-load-core-impl (path has-onfailure onfailure / resolved prev-load-pathname catch-result)
-  (setq resolved (autolisp-source-resolve-load-path path))
-  (if (not resolved)
-    (if has-onfailure
-      (autolisp-source-load-failure onfailure)
-      (autolisp-raise (strcat "LOAD failed: \"" path "\"")))
+(defun autolisp-source-load-core-impl (alfe--path alfe--has-onfailure alfe--onfailure / alfe--resolved alfe--prev-load-pathname alfe--catch-result)
+  (setq alfe--resolved (autolisp-source-resolve-load-path alfe--path))
+  (if (not alfe--resolved)
+    (if alfe--has-onfailure
+      (autolisp-source-load-failure alfe--onfailure)
+      (autolisp-raise (strcat "LOAD failed: \"" alfe--path "\"")))
     (progn
       ;; Bind *AUTOLISP-LOAD-PATHNAME* (both hyphen and underscore
       ;; spellings, per the project's convention) to the absolute
@@ -516,18 +516,18 @@
       ;; top level), so nested loads compose correctly and an error
       ;; in the loaded file doesn't leak a stale value back to the
       ;; caller. See `issues/closed/autolisp-load-pathname.issue'.
-      (setq prev-load-pathname
+      (setq alfe--prev-load-pathname
         (if (boundp '*AUTOLISP-LOAD-PATHNAME*) *AUTOLISP-LOAD-PATHNAME* nil))
-      (setq *AUTOLISP-LOAD-PATHNAME* resolved)
-      (setq *AUTOLISP_LOAD_PATHNAME* resolved)
-      (setq catch-result
+      (setq *AUTOLISP-LOAD-PATHNAME* alfe--resolved)
+      (setq *AUTOLISP_LOAD_PATHNAME* alfe--resolved)
+      (setq alfe--catch-result
         (vl-catch-all-apply 'autolisp-source-load-run-body
-                            (list resolved)))
-      (setq *AUTOLISP-LOAD-PATHNAME* prev-load-pathname)
-      (setq *AUTOLISP_LOAD_PATHNAME* prev-load-pathname)
-      (if (vl-catch-all-error-p catch-result)
-        (autolisp-raise (vl-catch-all-error-message catch-result))
-        catch-result))))
+                            (list alfe--resolved)))
+      (setq *AUTOLISP-LOAD-PATHNAME* alfe--prev-load-pathname)
+      (setq *AUTOLISP_LOAD_PATHNAME* alfe--prev-load-pathname)
+      (if (vl-catch-all-error-p alfe--catch-result)
+        (autolisp-raise (vl-catch-all-error-message alfe--catch-result))
+        alfe--catch-result))))
 
 ;; --- G3: native (load) honours the resolved `source' encoding -------------
 ;;
@@ -638,110 +638,110 @@
   (if (and (not found) started (= depth 0)) (setq found len))
   found)
 
-(defun autolisp-source-load-run-body-impl (resolved / f line line-no form-text form-start-line result form-read defun-name eval-result capture-old piece piece-end)
+(defun autolisp-source-load-run-body-impl (alfe--resolved / alfe--f alfe--line alfe--line-no alfe--form-text alfe--form-start-line alfe--result alfe--form-read alfe--defun-name alfe--eval-result alfe--capture-old alfe--piece alfe--piece-end)
   (progn
-      (setq f (autolisp-source-open-encoded resolved))
-      (if (not f)
-        (autolisp-source-raise resolved "unable to open source file" nil nil nil nil))
-      (setq line-no 0)
-      (setq form-text "")
-      (setq form-start-line nil)
-      (setq result nil)
-      (while (setq line (read-line f))
-        (setq line (vl-string-translate "\r" "" line))
-        (setq line-no (+ line-no 1))
-        (if (= form-text "")
-          (setq form-start-line line-no))
-        (if (= form-text "")
-          (setq form-text line)
-          (setq form-text (strcat form-text "\n" line)))
-        (autolisp-source-scan-text form-text)
+      (setq alfe--f (autolisp-source-open-encoded alfe--resolved))
+      (if (not alfe--f)
+        (autolisp-source-raise alfe--resolved "unable to open source file" nil nil nil nil))
+      (setq alfe--line-no 0)
+      (setq alfe--form-text "")
+      (setq alfe--form-start-line nil)
+      (setq alfe--result nil)
+      (while (setq alfe--line (read-line alfe--f))
+        (setq alfe--line (vl-string-translate "\r" "" alfe--line))
+        (setq alfe--line-no (+ alfe--line-no 1))
+        (if (= alfe--form-text "")
+          (setq alfe--form-start-line alfe--line-no))
+        (if (= alfe--form-text "")
+          (setq alfe--form-text alfe--line)
+          (setq alfe--form-text (strcat alfe--form-text "\n" alfe--line)))
+        (autolisp-source-scan-text alfe--form-text)
         (cond
           ((= *AUTOLISP_SOURCE_SCAN_STATE* 'extra)
-           (close f)
-           (autolisp-source-raise resolved
+           (close alfe--f)
+           (autolisp-source-raise alfe--resolved
                                   "extra right parenthesis on input"
                                   *AUTOLISP_SOURCE_SCAN_LINE*
                                   *AUTOLISP_SOURCE_SCAN_COL*
-                                  form-start-line
-                                  (autolisp-source-leading-defun-name form-text)))
+                                  alfe--form-start-line
+                                  (autolisp-source-leading-defun-name alfe--form-text)))
           ((= *AUTOLISP_SOURCE_SCAN_STATE* 'complete)
            ;; form-text can hold MORE THAN ONE form -- two forms on a line
            ;; is ordinary AutoLISP -- and READ returns only the first, so
            ;; take them one at a time and keep the remainder. Clearing the
            ;; buffer after the first is what silently discarded the rest
            ;; (alfe-cad-source-loader-drops-a-second-form-on-a-line).
-           (setq piece-end (autolisp-source-first-form-end form-text))
-           (while piece-end
-           (setq piece (substr form-text 1 piece-end))
-           (setq form-text (substr form-text (+ piece-end 1)))
-           (setq defun-name (autolisp-source-leading-defun-name piece))
-           (setq form-read
+           (setq alfe--piece-end (autolisp-source-first-form-end alfe--form-text))
+           (while alfe--piece-end
+           (setq alfe--piece (substr alfe--form-text 1 alfe--piece-end))
+           (setq alfe--form-text (substr alfe--form-text (+ alfe--piece-end 1)))
+           (setq alfe--defun-name (autolisp-source-leading-defun-name alfe--piece))
+           (setq alfe--form-read
                  (vl-catch-all-apply 'read
-                                     (list (autolisp-source-trim-leading-junk piece))))
-           (if (vl-catch-all-error-p form-read)
+                                     (list (autolisp-source-trim-leading-junk alfe--piece))))
+           (if (vl-catch-all-error-p alfe--form-read)
              (progn
-               (close f)
-               (autolisp-source-raise resolved
+               (close alfe--f)
+               (autolisp-source-raise alfe--resolved
                                       (autolisp-effective-error-message
-                                        (vl-catch-all-error-message form-read))
-                                      line-no
+                                        (vl-catch-all-error-message alfe--form-read))
+                                      alfe--line-no
                                       1
-                                      form-start-line
-                                      defun-name))
+                                      alfe--form-start-line
+                                      alfe--defun-name))
              (progn
                (if (and (boundp '*load-verbose*) *load-verbose*)
                  (autolisp-emit-user-line
-                   (strcat "LOADFORM " (autolisp-str form-read))))
-               (setq capture-old *AUTOLISP_CAPTURE_STDOUT*)
+                   (strcat "LOADFORM " (autolisp-str alfe--form-read))))
+               (setq alfe--capture-old *AUTOLISP_CAPTURE_STDOUT*)
                (setq *AUTOLISP_CAPTURE_STDOUT* T)
                ;; alfe-load drives this loop with *alfe-load-rewrite* set: it
                ;; rewrites native ops to alfe-* and evaluates DIRECTLY, so the
                ;; form is never re-serialised to alfe-eval.lsp and native-loaded
                ;; (which re-introduces a high byte that chokes AutoCAD). The
                ;; default protocol path keeps going through eval-request-form.
-               (setq eval-result
+               (setq alfe--eval-result
                  (vl-catch-all-apply
                    (if (and (boundp '*alfe-load-rewrite*) *alfe-load-rewrite*)
                      'alfe-eval-rewritten-form
                      'autolisp-eval-request-form)
-                   (list form-read)))
-               (setq *AUTOLISP_CAPTURE_STDOUT* capture-old)
-               (if (vl-catch-all-error-p eval-result)
+                   (list alfe--form-read)))
+               (setq *AUTOLISP_CAPTURE_STDOUT* alfe--capture-old)
+               (if (vl-catch-all-error-p alfe--eval-result)
                  (if (or *AUTOLISP_QUIT_REQUESTED*
                          (autolisp-quit-signal-p
-                           (vl-catch-all-error-message eval-result)))
+                           (vl-catch-all-error-message alfe--eval-result)))
                    (progn
-                     (close f)
+                     (close alfe--f)
                      (autolisp-source-pop-stack)
                      (autolisp-raise *AUTOLISP_QUIT_SIGNAL*))
                    (progn
-                     (close f)
-                     (autolisp-source-raise resolved
+                     (close alfe--f)
+                     (autolisp-source-raise alfe--resolved
                                             (autolisp-effective-error-message
-                                              (vl-catch-all-error-message eval-result))
-                                            form-start-line
+                                              (vl-catch-all-error-message alfe--eval-result))
+                                            alfe--form-start-line
                                             1
-                                            form-start-line
-                                            defun-name)))
-                 (setq result eval-result))))
+                                            alfe--form-start-line
+                                            alfe--defun-name)))
+                 (setq alfe--result alfe--eval-result))))
            ;; Another form on the same line?
-           (autolisp-source-scan-text form-text)
+           (autolisp-source-scan-text alfe--form-text)
            (if (= *AUTOLISP_SOURCE_SCAN_STATE* 'complete)
-             (setq piece-end (autolisp-source-first-form-end form-text))
-             (setq piece-end nil)))
+             (setq alfe--piece-end (autolisp-source-first-form-end alfe--form-text))
+             (setq alfe--piece-end nil)))
            ;; What is left is either nothing of substance -- whitespace or
            ;; a trailing comment -- or the start of a form the next lines
            ;; continue. Keep the latter, and let it own the current line.
            (if (= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete)
-             (setq form-start-line line-no)
+             (setq alfe--form-start-line alfe--line-no)
              (progn
-               (setq form-text "")
-               (setq form-start-line nil))))))
-      (close f)
-      (if (/= form-text "")
+               (setq alfe--form-text "")
+               (setq alfe--form-start-line nil))))))
+      (close alfe--f)
+      (if (/= alfe--form-text "")
         (progn
-          (autolisp-source-scan-text form-text)
+          (autolisp-source-scan-text alfe--form-text)
           ;; A non-empty form-text whose scan state is 'empty contains
           ;; only whitespace and/or comments -- not an unclosed form.
           ;; That happens whenever the source file's last non-blank
@@ -758,25 +758,25 @@
           ;; the encoding machinery, before *AUTOLISP-CAD-LOAD-ENCODING* even
           ;; exists, so they cannot rely on it for their own decode.
           (if (/= *AUTOLISP_SOURCE_SCAN_STATE* 'empty)
-            (autolisp-source-raise resolved
+            (autolisp-source-raise alfe--resolved
                                    (if (= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-string)
                                      "unexpected end of file while reading string"
                                      "unexpected end of file while reading form")
-                                   line-no
+                                   alfe--line-no
                                    1
-                                   form-start-line
-                                   (autolisp-source-leading-defun-name form-text)))))
+                                   alfe--form-start-line
+                                   (autolisp-source-leading-defun-name alfe--form-text)))))
       ;; The documented LOAD contract is to return the loaded filename on
       ;; success, not the last evaluated form.
-      (setq result resolved)
+      (setq alfe--result alfe--resolved)
       (autolisp-source-pop-stack)
-      result))
+      alfe--result))
 
-(defun autolisp-source-load (path /)
-  (autolisp-source-load-core-impl path nil nil))
+(defun autolisp-source-load (alfe--path /)
+  (autolisp-source-load-core-impl alfe--path nil nil))
 
-(defun autolisp-source-load-with-onfailure (path onfailure /)
-  (autolisp-source-load-core-impl path T onfailure))
+(defun autolisp-source-load-with-onfailure (alfe--path alfe--onfailure /)
+  (autolisp-source-load-core-impl alfe--path T alfe--onfailure))
 
 ;; --- alfe-* interface operators (fixed arity) -----------------------------
 ;;
@@ -838,30 +838,30 @@
 ;; emits). autolisp-source-load reads the file honouring its encoding
 ;; (autolisp-source-open-encoded) via read-line, and -- with *alfe-load-rewrite*
 ;; set -- the read loop evaluates each form through alfe-eval-rewritten-form.
-(defun alfe-load (path / prev result)
-  (setq prev (if (boundp '*alfe-load-rewrite*) *alfe-load-rewrite* nil))
+(defun alfe-load (alfe--path / alfe--prev alfe--result)
+  (setq alfe--prev (if (boundp '*alfe-load-rewrite*) *alfe-load-rewrite* nil))
   (setq *alfe-load-rewrite* T)
-  (setq result (vl-catch-all-apply 'autolisp-source-load (list path)))
-  (setq *alfe-load-rewrite* prev)
-  (if (vl-catch-all-error-p result)
-    (autolisp-raise (vl-catch-all-error-message result))
-    result))
+  (setq alfe--result (vl-catch-all-apply 'autolisp-source-load (list alfe--path)))
+  (setq *alfe-load-rewrite* alfe--prev)
+  (if (vl-catch-all-error-p alfe--result)
+    (autolisp-raise (vl-catch-all-error-message alfe--result))
+    alfe--result))
 
-(defun alfe-load-onfailure (path onfailure / prev result)
-  (setq prev (if (boundp '*alfe-load-rewrite*) *alfe-load-rewrite* nil))
+(defun alfe-load-onfailure (alfe--path alfe--onfailure / alfe--prev alfe--result)
+  (setq alfe--prev (if (boundp '*alfe-load-rewrite*) *alfe-load-rewrite* nil))
   (setq *alfe-load-rewrite* T)
-  (setq result
+  (setq alfe--result
         (vl-catch-all-apply 'autolisp-source-load-with-onfailure
-                            (list path onfailure)))
-  (setq *alfe-load-rewrite* prev)
-  (if (vl-catch-all-error-p result)
-    (autolisp-raise (vl-catch-all-error-message result))
-    result))
+                            (list alfe--path alfe--onfailure)))
+  (setq *alfe-load-rewrite* alfe--prev)
+  (if (vl-catch-all-error-p alfe--result)
+    (autolisp-raise (vl-catch-all-error-message alfe--result))
+    alfe--result))
 
-(defun alfe-load* (args)
-  (if (cdr args)
-    (alfe-load-onfailure (car args) (cadr args))
-    (alfe-load (car args))))
+(defun alfe-load* (alfe--args)
+  (if (cdr alfe--args)
+    (alfe-load-onfailure (car alfe--args) (cadr alfe--args))
+    (alfe-load (car alfe--args))))
 
 ;; -Efile-write forwarded to the CAD's OPEN (encoding-situations-cli-options
 ;; section 6 point 5). alfe sets *ALFE-OPEN-WRITE-CCS* in run-common.lsp ONLY
@@ -963,8 +963,8 @@
     (alfe-rewrite-form-impl form)
     form))
 
-(defun alfe-eval-rewritten-form (form)
-  (eval (alfe-rewrite-form form)))
+(defun alfe-eval-rewritten-form (alfe--form)
+  (eval (alfe-rewrite-form alfe--form)))
 
 (defun autolisp-internal-protocol-load-p (path)
   (and (= (type path) 'STR)
@@ -1085,7 +1085,7 @@
     (autolisp-normalize-princ-call-impl form)
     form))
 
-(defun autolisp-eval-load-form (form)
+(defun autolisp-eval-load-form (alfe--form)
   ;; The LOAD argument must be EVALUATED before it reaches the source loader:
   ;; (load p) / (load (strcat dir "f.lsp")) are as valid as (load "f.lsp").
   ;; Passing (cadr form) raw made findfile see the unevaluated expression and
@@ -1093,34 +1093,34 @@
   ;; string literal (alfe-load-form-argument-not-evaluated). (eval x) on a
   ;; string literal is the string itself, so literals keep working.
   (cond
-    ((and (= (length form) 2)
-          (autolisp-internal-protocol-load-p (cadr form)))
-     (eval form))
-    ((= (length form) 2)
-     (autolisp-source-load (eval (cadr form))))
-    ((and (= (length form) 3)
-          (autolisp-internal-protocol-load-p (cadr form)))
-     (eval form))
-    ((= (length form) 3)
-     (autolisp-source-load-with-onfailure (eval (cadr form)) (eval (caddr form))))
+    ((and (= (length alfe--form) 2)
+          (autolisp-internal-protocol-load-p (cadr alfe--form)))
+     (eval alfe--form))
+    ((= (length alfe--form) 2)
+     (autolisp-source-load (eval (cadr alfe--form))))
+    ((and (= (length alfe--form) 3)
+          (autolisp-internal-protocol-load-p (cadr alfe--form)))
+     (eval alfe--form))
+    ((= (length alfe--form) 3)
+     (autolisp-source-load-with-onfailure (eval (cadr alfe--form)) (eval (caddr alfe--form))))
     (T
-     (eval form))))
+     (eval alfe--form))))
 
-(defun autolisp-eval-request-form (form)
-  (setq form (autolisp-normalize-princ-call form))
-  (if (autolisp-load-form-p form)
-    (autolisp-eval-load-form form)
-    (eval form)))
+(defun autolisp-eval-request-form (alfe--form)
+  (setq alfe--form (autolisp-normalize-princ-call alfe--form))
+  (if (autolisp-load-form-p alfe--form)
+    (autolisp-eval-load-form alfe--form)
+    (eval alfe--form)))
 
-(defun autolisp-run-load (idx path / r olderr)
-  (autolisp-mark-begin "LOAD" idx)
-  (autolisp-log-out (strcat "LOAD " path))
+(defun autolisp-run-load (alfe--idx alfe--path / alfe--r alfe--olderr)
+  (autolisp-mark-begin "LOAD" alfe--idx)
+  (autolisp-log-out (strcat "LOAD " alfe--path))
   (setq *AUTOLISP_CAPTURE_STDOUT* T)
   (setq *AUTOLISP_ERROR_MSG* nil)
-  (setq olderr *error*)
+  (setq alfe--olderr *error*)
   (setq *error* autolisp-trap-error)
-  (setq r (autolisp-source-load path))
-  (setq *error* olderr)
+  (setq alfe--r (autolisp-source-load alfe--path))
+  (setq *error* alfe--olderr)
   (setq *AUTOLISP_CAPTURE_STDOUT* nil)
   (if *AUTOLISP_QUIT_REQUESTED*
     (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
@@ -1129,14 +1129,14 @@
     (if *AUTOLISP_ERROR_MSG*
       (progn
         (autolisp-log-err
-          (strcat "ERROR load " path ": "
+          (strcat "ERROR load " alfe--path ": "
                   (autolisp-effective-error-message *AUTOLISP_ERROR_MSG*)))
         (autolisp-clear-last-error-context)
-        (autolisp-mark-end "LOAD" idx 1)
+        (autolisp-mark-end "LOAD" alfe--idx 1)
         nil)
       (progn
-        (autolisp-log-out (strcat "LOADED " path))
-        (autolisp-mark-end "LOAD" idx 0)
+        (autolisp-log-out (strcat "LOADED " alfe--path))
+        (autolisp-mark-end "LOAD" alfe--idx 0)
         T)))))
 
 (defun autolisp-trap-error (msg)
@@ -1145,36 +1145,36 @@
     (setq *AUTOLISP_QUIT_REQUESTED* T))
   nil)
 
-(defun autolisp-run-eval-file (idx path / form-text form-read r olderr ok)
-  (autolisp-mark-begin "EXPR" idx)
-  (setq ok nil)
-  (setq form-text (autolisp-slurp-file path))
-  (if (null form-text)
+(defun autolisp-run-eval-file (alfe--idx alfe--path / alfe--form-text alfe--form-read alfe--r alfe--olderr alfe--ok)
+  (autolisp-mark-begin "EXPR" alfe--idx)
+  (setq alfe--ok nil)
+  (setq alfe--form-text (autolisp-slurp-file alfe--path))
+  (if (null alfe--form-text)
     (progn
-      (autolisp-log-err (strcat "ERROR read-file " path ": unable to open expression file"))
-      (autolisp-mark-end "EXPR" idx 1))
+      (autolisp-log-err (strcat "ERROR read-file " alfe--path ": unable to open expression file"))
+      (autolisp-mark-end "EXPR" alfe--idx 1))
     (progn
-      (autolisp-log-out (strcat "EVAL " form-text))
+      (autolisp-log-out (strcat "EVAL " alfe--form-text))
       (setq *AUTOLISP_ERROR_MSG* nil)
-      (setq olderr *error*)
+      (setq alfe--olderr *error*)
       (setq *error* autolisp-trap-error)
-      (setq form-read (read form-text))
-      (setq *error* olderr)
+      (setq alfe--form-read (read alfe--form-text))
+      (setq *error* alfe--olderr)
       (if *AUTOLISP_QUIT_REQUESTED*
         (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
         (if (autolisp-quit-signal-p *AUTOLISP_ERROR_MSG*)
           (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
         (if *AUTOLISP_ERROR_MSG*
           (progn
-            (autolisp-log-err (strcat "ERROR read " form-text ": " *AUTOLISP_ERROR_MSG*))
-            (autolisp-mark-end "EXPR" idx 1))
+            (autolisp-log-err (strcat "ERROR read " alfe--form-text ": " *AUTOLISP_ERROR_MSG*))
+            (autolisp-mark-end "EXPR" alfe--idx 1))
           (progn
             (setq *AUTOLISP_CAPTURE_STDOUT* T)
             (setq *AUTOLISP_ERROR_MSG* nil)
-            (setq olderr *error*)
+            (setq alfe--olderr *error*)
             (setq *error* autolisp-trap-error)
-            (setq r (autolisp-eval-request-form form-read))
-            (setq *error* olderr)
+            (setq alfe--r (autolisp-eval-request-form alfe--form-read))
+            (setq *error* alfe--olderr)
             (setq *AUTOLISP_CAPTURE_STDOUT* nil)
             (if *AUTOLISP_QUIT_REQUESTED*
               (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
@@ -1182,38 +1182,38 @@
                 (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
               (if *AUTOLISP_ERROR_MSG*
                 (progn
-                  (autolisp-log-err (strcat "ERROR eval " form-text ": " *AUTOLISP_ERROR_MSG*))
-                  (autolisp-mark-end "EXPR" idx 1))
+                  (autolisp-log-err (strcat "ERROR eval " alfe--form-text ": " *AUTOLISP_ERROR_MSG*))
+                  (autolisp-mark-end "EXPR" alfe--idx 1))
                 (progn
-                  (autolisp-log-out (strcat "RESULT " (autolisp-stdout-text r)))
-                  (autolisp-mark-end "EXPR" idx 0)
-                  (setq ok T)))))))))))
-  ok)
+                  (autolisp-log-out (strcat "RESULT " (autolisp-stdout-text alfe--r)))
+                  (autolisp-mark-end "EXPR" alfe--idx 0)
+                  (setq alfe--ok T)))))))))))
+  alfe--ok)
 
-(defun autolisp-run-main (idx main-name / sym-read r olderr)
-  (autolisp-mark-begin "MAIN" idx)
-  (autolisp-log-out (strcat "MAIN " main-name))
+(defun autolisp-run-main (alfe--idx alfe--main-name / alfe--sym-read alfe--r alfe--olderr)
+  (autolisp-mark-begin "MAIN" alfe--idx)
+  (autolisp-log-out (strcat "MAIN " alfe--main-name))
   (setq *AUTOLISP_ERROR_MSG* nil)
-  (setq olderr *error*)
+  (setq alfe--olderr *error*)
   (setq *error* autolisp-trap-error)
-  (setq sym-read (read main-name))
-  (setq *error* olderr)
+  (setq alfe--sym-read (read alfe--main-name))
+  (setq *error* alfe--olderr)
   (if *AUTOLISP_QUIT_REQUESTED*
     (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
     (if (autolisp-quit-signal-p *AUTOLISP_ERROR_MSG*)
       (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
     (if *AUTOLISP_ERROR_MSG*
       (progn
-        (autolisp-log-err (strcat "ERROR read-main " main-name ": " *AUTOLISP_ERROR_MSG*))
-        (autolisp-mark-end "MAIN" idx 1)
+        (autolisp-log-err (strcat "ERROR read-main " alfe--main-name ": " *AUTOLISP_ERROR_MSG*))
+        (autolisp-mark-end "MAIN" alfe--idx 1)
         nil)
       (progn
         (setq *AUTOLISP_CAPTURE_STDOUT* T)
         (setq *AUTOLISP_ERROR_MSG* nil)
-        (setq olderr *error*)
+        (setq alfe--olderr *error*)
         (setq *error* autolisp-trap-error)
-        (setq r (funcall sym-read))
-        (setq *error* olderr)
+        (setq alfe--r (funcall alfe--sym-read))
+        (setq *error* alfe--olderr)
         (setq *AUTOLISP_CAPTURE_STDOUT* nil)
         (if *AUTOLISP_QUIT_REQUESTED*
           (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
@@ -1221,12 +1221,12 @@
             (autolisp-raise *AUTOLISP_QUIT_SIGNAL*)
           (if *AUTOLISP_ERROR_MSG*
             (progn
-              (autolisp-log-err (strcat "ERROR main " main-name ": " *AUTOLISP_ERROR_MSG*))
-              (autolisp-mark-end "MAIN" idx 1)
+              (autolisp-log-err (strcat "ERROR main " alfe--main-name ": " *AUTOLISP_ERROR_MSG*))
+              (autolisp-mark-end "MAIN" alfe--idx 1)
               nil)
             (progn
-              (autolisp-log-out (strcat "MAIN-RESULT " (autolisp-stdout-text r)))
-              (autolisp-mark-end "MAIN" idx 0)
+              (autolisp-log-out (strcat "MAIN-RESULT " (autolisp-stdout-text alfe--r)))
+              (autolisp-mark-end "MAIN" alfe--idx 0)
               T)))))))))
 
 (defun autolisp-host-quit ()
@@ -1467,63 +1467,63 @@
     1
     0))
 
-(defun autolisp-run-repl-request (/ lines req-id form-text f form-read r)
-  (setq lines (autolisp-slurp-lines *AUTOLISP_INPFILE*))
-  (if (null lines)
+(defun autolisp-run-repl-request (/ alfe--lines alfe--req-id alfe--form-text alfe--f alfe--form-read alfe--r)
+  (setq alfe--lines (autolisp-slurp-lines *AUTOLISP_INPFILE*))
+  (if (null alfe--lines)
     nil
     (progn
-      (setq req-id "0")
-      (if (and lines (wcmatch (car lines) ";REQ *"))
-        (setq req-id (substr (car lines) 6)))
-      (setq form-text (autolisp-lines->text (cdr lines)))
+      (setq alfe--req-id "0")
+      (if (and alfe--lines (wcmatch (car alfe--lines) ";REQ *"))
+        (setq alfe--req-id (substr (car alfe--lines) 6)))
+      (setq alfe--form-text (autolisp-lines->text (cdr alfe--lines)))
       (autolisp-reset-file *AUTOLISP_OUTFILE*)
       (autolisp-reset-file *AUTOLISP_ERRFILE*)
       (autolisp-repl-reset-counters)
-      (if (= form-text "")
+      (if (= alfe--form-text "")
         (progn
           (autolisp-log-err "ERROR read repl request: empty input")
           (autolisp-note-fail)
           (autolisp-log-out (autolisp-summary-line))
-          (autolisp-set-status-text (strcat "READY " req-id))
+          (autolisp-set-status-text (strcat "READY " alfe--req-id))
           T)
         (progn
-          (setq form-read (vl-catch-all-apply 'read (list form-text)))
+          (setq alfe--form-read (vl-catch-all-apply 'read (list alfe--form-text)))
           (vl-file-delete *AUTOLISP_INPFILE*)
-          (if (vl-catch-all-error-p form-read)
+          (if (vl-catch-all-error-p alfe--form-read)
             (progn
-              (autolisp-log-err (strcat "ERROR read repl request: " (vl-catch-all-error-message form-read)))
+              (autolisp-log-err (strcat "ERROR read repl request: " (vl-catch-all-error-message alfe--form-read)))
               (autolisp-note-fail)
               (autolisp-log-out (autolisp-summary-line))
-              (autolisp-set-status-text (strcat "READY " req-id))
+              (autolisp-set-status-text (strcat "READY " alfe--req-id))
               T)
-            (if (equal form-read '__AUTOLISP_QUIT__)
+            (if (equal alfe--form-read '__AUTOLISP_QUIT__)
               (progn
-                (autolisp-set-status-text (strcat "STOP " req-id))
+                (autolisp-set-status-text (strcat "STOP " alfe--req-id))
                 nil)
               (progn
-                (autolisp-log-out (strcat "EVAL " form-text))
+                (autolisp-log-out (strcat "EVAL " alfe--form-text))
                 (setq *AUTOLISP_CAPTURE_STDOUT* T)
-                (setq r (vl-catch-all-apply 'autolisp-eval-request-form (list form-read)))
+                (setq alfe--r (vl-catch-all-apply 'autolisp-eval-request-form (list alfe--form-read)))
                 (setq *AUTOLISP_CAPTURE_STDOUT* nil)
-                (if (vl-catch-all-error-p r)
+                (if (vl-catch-all-error-p alfe--r)
                   (progn
-                    (autolisp-log-err (strcat "ERROR eval " form-text ": " (vl-catch-all-error-message r)))
+                    (autolisp-log-err (strcat "ERROR eval " alfe--form-text ": " (vl-catch-all-error-message alfe--r)))
                     (autolisp-note-fail))
                   (progn
-                    (autolisp-log-out (strcat "RESULT " (autolisp-stdout-text r)))
+                    (autolisp-log-out (strcat "RESULT " (autolisp-stdout-text alfe--r)))
                     (autolisp-note-ok)))
                 (autolisp-log-out (autolisp-summary-line))
-                (autolisp-set-status-text (strcat "READY " req-id))
+                (autolisp-set-status-text (strcat "READY " alfe--req-id))
                 T))))))))
 
-(defun autolisp-repl-loop (/ keep-going)
+(defun autolisp-repl-loop (/ alfe--keep-going)
   (autolisp-set-status-text "READY 0")
-  (setq keep-going T)
-  (while keep-going
+  (setq alfe--keep-going T)
+  (while alfe--keep-going
     (while (not (findfile *AUTOLISP_INPFILE*))
       (autolisp-sleep-ms 100))
     (if (not (autolisp-run-repl-request))
-      (setq keep-going nil)))
+      (setq alfe--keep-going nil)))
   ;; BricsCAD macOS batch quit can crash inside its own _QUIT handler.
   ;; Let the wrapper stop the launched process instead.
   (if *AUTOLISP_QUIT_ON_FINISH*

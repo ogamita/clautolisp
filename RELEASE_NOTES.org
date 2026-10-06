@@ -37,6 +37,11 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- alfe: a file loaded on the CAD may ~setq~ any name at top level. A
+  ~(setq f (open ...))~ (or ~line~, ~result~, ~path~, ~form~ ...) used to
+  overwrite the loader's own variable -- AutoLISP scope is dynamic -- and the
+  rest of the file was never read; the loader's variables now carry a
+  private ~alfe--~ prefix.
 - ~-Efile-write UTF-8~ / ~UTF-16LE~ reaches BricsCAD on Windows: a plain
   ~(open f "w")~ / ~"a"~ in code alfe loads is opened with ~,ccs=~ (the file
   gets a BOM, as BricsCAD writes it). Everywhere else -- AutoCAD (no encoding

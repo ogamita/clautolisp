@@ -1,6 +1,6 @@
 # alfe's CAD-side loader: a loaded file's (setq f ...) clobbers the loader's own F
 
-Status: TODO
+Status: DONE (2026-10-06, alfe 2.2.155)
 Priority: P2
 Found: 2026-10-06, while writing protocol-alfe-load-forwards-open-write-ccs
 (encoding-situations-cli-options section 6 point 5).
@@ -48,3 +48,19 @@ Give every local of the loader functions that are live while user code runs a
 name no user program will use (an alfe-private prefix, e.g. __alfe-src-f),
 and add a hosted test loading a file that setq's each common name (f, line,
 result, path, prev) at top level.
+
+## Resolution (2026-10-06, alfe 2.2.155)
+
+Every parameter and local of the 17 bootstrap functions live while user code
+runs -- the source loader (autolisp-source-load*, -run-body*, -core-impl,
+-load-failure), alfe-load / alfe-load-onfailure / alfe-load*, the request
+evaluators (alfe-eval-rewritten-form, autolisp-eval-load-form,
+autolisp-eval-request-form) and the protocol runners (autolisp-run-load,
+-run-eval-file, -run-main, -run-repl-request, autolisp-repl-loop) -- now
+carries an alfe-- prefix (58 names: f, line, result, path, prev, form, r,
+idx, args, resolved, onfailure, ...), renamed by a tokenizer that leaves
+strings and comments alone. Test protocol-a-loaded-file-may-setq-the-
+loaders-names (a loaded file setq's every one of those names and opens a
+file through F, then must reach its last form) -- seen red on the old
+bootstrap, green now; protocol-alfe-load-forwards-open-write-ccs is back to
+the natural names f / g.
