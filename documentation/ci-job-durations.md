@@ -53,6 +53,32 @@ critical path; `build:clautolisp-ci-image` only runs when its inputs change.
 Note CCL is 4× faster than SBCL on the same suites — it is not doing less
 work, it compiles less aggressively.
 
+### With the fasl cache (2026-10-06)
+
+The Lisp lanes above now carry `.fasl-cache` (see
+`scripts/ci-build-cache.sh`): when nothing compiled changed since the job's
+last successful run (an issues/docs/probe-results-only pipeline, a re-run),
+the project's fasls are reused and the compile disappears. Any change to a
+compiled input is a full miss, i.e. the figures above. Measured in the CI
+image on poseidon, the job's script run twice on the same tree, all ten
+lanes at once (so the cold column is inflated by contention):
+
+| job | cold | cache hit |
+|---|---|---|
+| `test:clautolisp:compiler:sbcl` | 240 s | 50 s |
+| `test:autolisp-test:sbcl` | 219 s | 34 s |
+| `test:alfe:sbcl` | 208 s | 25 s |
+| `test:clautolisp:sbcl` | 202 s | 20 s |
+| `test:alfe:conformance` | 184 s | 5 s |
+| `build:alfe:sbcl` | 182 s | 9 s |
+| `test:alfe:spec-coverage` | 178 s | 3 s |
+| `test:clautolisp:ccl` | 57 s | 43 s |
+| `test:alfe:ccl` | 45 s | 36 s |
+| `test:clautolisp:compiler:ccl` | 29 s | 14 s |
+
+`build:alfe:sbcl` alone, not contended: 131 s cold, 5 s hit. Add a second
+or two for the runner to unpack/pack the ~8 MB cache.
+
 ## Native Windows lanes (no CAD)
 
 | job | median | range | n |

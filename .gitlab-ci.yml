@@ -283,6 +283,44 @@ build:clautolisp-ci-image:
         -e '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "cffi" "usocket") :silent t)'
         -e '(ccl:quit)'
 
+# --- ASDF fasl cache (ci-cache-tool-builds.issue) ---------------------------
+#
+# Compiling the project's own Lisp is most of every Lisp lane on poseidon:
+# ~90 of build:alfe:sbcl's 104 s script, 82 of test:clautolisp:sbcl's 105.
+# This template carries the fasls from one run of a job to the next -- but
+# ONLY when they were compiled from exactly the same inputs.
+#
+# The GitLab key is deliberately NOT what decides that. It is one entry per
+# job (bounded storage on the runner's local cache), and every entry holds a
+# KEY file: a content hash of the source tree (git object ids of every
+# top-level entry but issues/, documentation/, probe-results/ and the prose
+# files), of the Lisp implementations, of the Quicklisp dist and releases,
+# and of the image's installed packages. scripts/ci-build-cache.sh compares
+# it with the checkout and either reuses the fasls whole (touching them, so
+# that ASDF -- which only compares file times -- takes them as current) or
+# discards them whole and the job compiles cold. A changed source can
+# therefore never meet an old fasl, which plain time-based reuse cannot
+# promise after a fresh clone (the script's header has the two failure
+# modes, both measured).
+#
+# So a hit happens when nothing compiled changed: a pipeline that touches
+# only issues, documentation or probe results, or a re-run. Measured in
+# the CI image on poseidon, build-alfe-sbcl: 131 s cold, 5 s on a hit.
+#
+# The restore runs in before_script; the save MUST be the last line of
+# `script', not after_script: on the docker executor after_script runs in
+# another container, where /root/.cache (the image's XDG_CACHE_HOME, where
+# the fasls are) is not the one the job wrote. The cache is uploaded only
+# for a successful job. Never used by release:* -- a release builds cold
+# from its tag, by policy, whatever any key says.
+.fasl-cache:
+  cache:
+    key: fasl-v1-$CI_JOB_NAME_SLUG
+    paths: [.ci-cache/fasl/]
+    when: on_success
+  before_script:
+    - sh scripts/ci-build-cache.sh restore fasl
+
 # Does a COMPLETE INSTALLED RELEASE find its native DWG libraries?
 #
 # clautolisp-distributed-native-libraries-not-loaded: an installation that
@@ -311,6 +349,7 @@ verify:packaged-dwg:linux:
     - bash scripts/verify-packaged-dwg.sh
 
 test:clautolisp:sbcl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
@@ -318,8 +357,10 @@ test:clautolisp:sbcl:
   script:
     - *pre-warm-quicklisp-sbcl
     - make -C clautolisp test-sbcl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:clautolisp:ccl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
@@ -327,8 +368,10 @@ test:clautolisp:ccl:
   script:
     - *pre-warm-quicklisp-ccl
     - make -C clautolisp test-ccl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:clautolisp:compiler:sbcl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
@@ -350,8 +393,10 @@ test:clautolisp:compiler:sbcl:
     # notices depends on what the prose happens to say, so the structural
     # check is the detector, not the suites.
     - make -C clautolisp check-docstrings
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:clautolisp:compiler:ccl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
@@ -362,6 +407,7 @@ test:clautolisp:compiler:ccl:
     # each has to be asked separately. 2.0.11 is the standing reason: a lane
     # that is not run is not evidence.
     - make -C clautolisp test-shipped-compiler-ccl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:clautolisp:file-compat:sbcl:
   rules:
@@ -401,44 +447,54 @@ test:clautolisp:file-compat:ccl:
 # here keeps both CIs symmetrical.
 
 test:autolisp-test:sbcl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
   stage: test
   script:
     - make -C autolisp-test test
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:alfe:sbcl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
   stage: test
   script:
     - make -C autolisp-front-end test-sbcl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:alfe:ccl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
   stage: test
   script:
     - make -C autolisp-front-end test-ccl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:alfe:conformance:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
   stage: test
   script:
     - make -C autolisp-front-end conformance
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:alfe:spec-coverage:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
   stage: test
   script:
     - make -C autolisp-front-end check-spec-coverage
+    - sh scripts/ci-build-cache.sh save fasl
 
 # --- SCHMS CAD corpus, headless on poseidon --------------------------------
 #
@@ -510,6 +566,7 @@ test:cad:schms:linux:
 # user / system init-file output so the captured stdout is just
 # the (princ) value.
 build:alfe:sbcl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
@@ -518,6 +575,7 @@ build:alfe:sbcl:
   stage: build
   script:
     - make -C autolisp-front-end build-alfe-sbcl
+    - sh scripts/ci-build-cache.sh save fasl
     - |
       declared=$(sed -n 's/.*\*version\* "\([^"]*\)".*/\1/p' \
                      autolisp-front-end/tools/alfe/source/version.lisp)
@@ -836,18 +894,17 @@ release:linux:arm64:
   # [linux,arm64,docker] runner is kept for optional native validation.
   tags: [linux, arm64, qemu]      # poseidon qemu (was thalassa native)
   image: $ARM64_BASE              # buildpack-deps bookworm, arm64 (digest-pinned)
-  # Cache the libredwg cmake build dir so the slow (emulated) C compile is
-  # reused across runs — cmake rebuilds only changed objects. Per-arch key
-  # (objects are arch-specific). Interim measure (b); the durable fix (a) is
-  # baking libredwg into a per-arch CI image. Bump -v2 to force a cold build.
-  cache:
-    key:
-      prefix: libredwg-arm64-v1
-      files:
-        - .gitmodules
-        - clautolisp/drawing-dwg/build-libredwg.sh
-    paths:
-      - clautolisp/third-party/libredwg/build/
+  # NO libredwg build cache here, and none on any release:* lane
+  # (ci-cache-tool-builds.issue). A release builds every product cold from
+  # its tag. This lane used to cache clautolisp/third-party/libredwg/build/
+  # under a key of .gitmodules + build-libredwg.sh, which does NOT pin the
+  # submodule commit -- and it never saved anything: on release-2.1.0 and
+  # release-2.2.1 the cache was "Successfully extracted" and all 27 C
+  # objects were recompiled anyway (29 minutes both times), because a fresh
+  # clone stamps every source newer than the restored objects. A cache that
+  # cannot help and can only be wrong is not kept. The durable answer for
+  # the emulated build stays (a): libredwg baked into a per-arch CI image.
+  cache: []
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
     - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
@@ -902,17 +959,8 @@ release:linux:arm32:
     - *on-release-arm32-absent
     - when: manual
       allow_failure: true
-  # Cache the libredwg cmake build dir (see arm64 lane) — the emulated armv7
-  # C compile is the slowest step; reusing objects across runs is the (b)
-  # time-saver until libredwg is baked into a per-arch CI image (a).
-  cache:
-    key:
-      prefix: libredwg-arm32-v1
-      files:
-        - .gitmodules
-        - clautolisp/drawing-dwg/build-libredwg.sh
-    paths:
-      - clautolisp/third-party/libredwg/build/
+  # No libredwg build cache: a release builds cold (see release:linux:arm64).
+  cache: []
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
     # CCL v1.13 32-bit ARM: the linuxarm tarball holds armcl/armcl.image at its

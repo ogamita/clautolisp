@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: ci-cache-tool-builds — cache the tool builds (clautolisp, alfe, read-autolisp, libredwg) across pipelines
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P3
 #+TYPE: infra
 #+DEPENDS: -
-#+BRANCH: feat-ci-cache-tool-builds
+#+BRANCH: ci-cache-tool-builds
 
 * Context
 
@@ -118,3 +118,107 @@ checks would not catch a stale image; nothing would.
      object: make may rebuild everything and the cache save nothing.
      Measure (a warm run's LibreDWG step against a cold one) before
      extending the pattern to other lanes.
+
+* Progress 2026-10-06 (branch ci-cache-tool-builds) -- piece 2 DONE, piece 1 BLOCKED, release lanes cleaned
+
+All measurements below were taken on poseidon in the real CI image
+(registry.gitlab.com/ogamita/clautolisp/clautolisp-ci:latest, SBCL 2.2.9 /
+CCL 1.13), running the jobs' own script lines in a fresh clone at
+/builds/ogamita/clautolisp, with the runner's cache behaviour reproduced
+(restored files keep the times they were saved with). No pipeline could be
+run: the workflow rules give a plain branch no pipeline, and no MR was to
+be opened.
+
+** The trap, measured
+
+Both answers to the note above are now measured, not argued:
+
+- the arm64 release cache saves NOTHING. release-2.1.0 (job 16331860975)
+  and release-2.2.1 (job 16386957160) both logged "Successfully extracted
+  cache" for libredwg-arm64-v1 and then recompiled all 27 C objects, 29
+  minutes each. Reproduced in the image (179 s, 27/27 objects).
+- the REVERSE case ships stale code. Fasls of an unchanged tree, made
+  newer than a checkout whose alfe version.lisp had changed: alfe-sbcl
+  built in 6 s and reported the OLD version. With the saved times instead,
+  everything recompiled (146 s): no gain at all.
+
+So file times are never trusted: scripts/ci-build-cache.sh reuses a build
+only when a KEY file stored with it equals a content hash of the inputs
+(git object ids of every top-level tree entry except issues/,
+documentation/, probe-results/, .github/ and the root prose files; the
+Lisps' versions; the Quicklisp dist + release directories; the image's
+dpkg list), touches the products so the build tool accepts them, and
+otherwise discards the cache WHOLE. No per-file reuse: ASDF's dependency
+graph does not see compile-time reads (#. of *compile-file-truename*,
+empty.dwg embedded by empty-drawing.lisp, cadtui's locale files).
+
+** (2) ASDF fasls -- DONE (Linux docker lanes + macOS unit lanes)
+
+.fasl-cache (.gitlab-ci.yml) on the ten Lisp lanes: build:alfe:sbcl,
+test:clautolisp:{sbcl,ccl}, test:clautolisp:compiler:{sbcl,ccl},
+test:autolisp-test:sbcl, test:alfe:{sbcl,ccl,conformance,spec-coverage}.
+The same template in .gitlab/native.yml on test:{clautolisp,autolisp-test,
+alfe}:macos (the macOS runner cleans -ffdx, so it compiles cold every job
+today). GitLab key fasl-v1-$CI_JOB_NAME_SLUG: one bounded entry per job;
+the KEY file, not the GitLab key, decides validity. The log says
+"ci-build-cache[fasl]: HIT ..." or "MISS -- <reason>" (criterion 1, for
+the fasls).
+
+Measured, cold -> hit, each job's script (ten at once, as on poseidon):
+compiler:sbcl 240->50 s, autolisp-test 219->34, alfe:sbcl 208->25,
+clautolisp:sbcl 202->20, alfe:conformance 184->5, build:alfe 182->9,
+spec-coverage 178->3, clautolisp:ccl 57->43, alfe:ccl 45->36,
+compiler:ccl 29->14. Uncontended build:alfe:sbcl: 131 s -> 5 s. A changed
+alfe version.lisp: MISS, 124 s, binary reports the new version. All ten
+jobs leave the checkout clean, so all ten save.
+
+A hit only happens when nothing hashed changed (issues/docs/probe-results
+pipelines, re-runs); any Lisp change is a full cold compile, exactly as
+today. That is the price of never reusing a fasl on faith.
+
+** (1) LibreDWG -- BLOCKED on libredwg-version-is-superproject-describe
+
+The libredwg kind of the script works as a key: same inputs HIT; CC=gcc
+instead of cc MISS; the submodule moved to its parent commit MISS
+(criterion 2, demonstrated in the image). But a HIT still recompiled 27/27
+objects (197 s vs 187 s cold): LibreDWG's CMakeLists runs `git describe' in
+cmake's working directory, which is the clautolisp checkout, so config.h --
+included by every object -- carries clautolisp's commit id and changes on
+every commit. New ticket libredwg-version-is-superproject-describe (it also
+means the shipped libredwg reports clautolisp's describe as its version).
+Kind left UNWIRED until that is fixed. Outside release lanes only the
+manual verify:packaged-dwg:{linux,windows} build LibreDWG anyway.
+
+** (3) Tool images -- not cached, by decision
+
+Images are always dumped by the job from fasls that are either compiled
+now or proven to come from the identical tree; caching the image itself
+would add nothing safe (the dump is seconds once fasls are warm).
+
+** Release lanes (criterion 3) -- DONE
+
+release:linux:arm64 / :arm32 lost their libredwg cache (cache: []): it did
+not pin the submodule commit and saved nothing (above). No release:* job
+uses a build cache; the rule is in the .fasl-cache comment, the script
+header and AGENTS.md "CI -- build caches". NOT touched, flagged for a
+decision: .release-common still carries the autolisp-spec/build/
+paged-split cache into release:documentation (keyed on the last commits
+of two files, reused by make on times) -- a documentation artefact, not
+one of this ticket's tools, but the same question applies.
+
+** Windows -- deliberately unchanged; criterion 4 open
+
+The Windows runner cleans -ffd, so its working tree (clautolisp/.cache,
+libredwg/build) survives between jobs: that is the ONE reuse path there,
+written down in native.yml and AGENTS.md. No GitLab cache added beside it.
+Its reuse remains ASDF's/make's time-based judgement for the non-release
+lanes (release-windows.sh clears it); guarding it with the same KEY check
+would turn every Lisp change into a ~20 min cold compile there, which is
+pjb's call. Criterion 4 (measured before/after on Windows) is NOT met.
+
+** Remaining
+- Windows: decide whether to KEY-guard the surviving tree; measure.
+- LibreDWG: fix libredwg-version-is-superproject-describe, wire the kind.
+- Watch the first master pipelines after merge for HIT/MISS lines and the
+  runner's local cache sharing (two poseidon runner registrations, each
+  with its own local cache, so hits are per registration).
