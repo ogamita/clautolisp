@@ -27,12 +27,44 @@ import sys
 
 BRACKET_RE = re.compile(r"\[([^\]]+)\]")
 
+# The CAD log's own header lines (probe-logfile): AutoCAD "[ AutoCAD - date ]---",
+# BricsCAD "---------- [ BricsCAD - date] ----------". Not a prompt.
+LOG_HEADER_RE = re.compile(r"^(?:-+ )?\[ (?:AutoCAD|BricsCAD|clautolisp) - ")
+
+NON_ASCII_RUN_RE = re.compile(r"[^\x00-\x7f]+")
+
+
+def repair_cp437_mojibake(text):
+    """The Windows wrapper captures alfe's UTF-8 output through PowerShell's
+    OEM code page, so an e-acute arrives as the two cp437 characters of its
+    UTF-8 bytes (U+251C U+2310 for C3 A9). Undo that per run of non-ASCII
+    characters; a run that does not round-trip is left as it is."""
+    def fix(m):
+        run = m.group(0)
+        try:
+            return run.encode("cp437").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            return run
+    return NON_ASCII_RUN_RE.sub(fix, text)
+
 
 def decode(path):
     with open(path, "rb") as fh:
         data = fh.read()
     if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
         return data.decode("utf-16")
+    # The Windows wrapper writes a UTF-8 BOM, a UTF-8 banner line, then the
+    # transcript in UTF-16LE (PowerShell Tee-Object): decode each part as such.
+    body = data[3:] if data[:3] == b"\xef\xbb\xbf" else data
+    if body.count(b"\x00") > len(body) // 4:
+        cut = body.find(b"\n") + 1   # the banner line is 8-bit
+        head, tail = body[:cut], body[cut:]
+        if len(tail) % 2:
+            tail = tail[:-1]
+        try:
+            return head.decode("utf-8", errors="replace") + tail.decode("utf-16-le", errors="replace")
+        except UnicodeDecodeError:
+            pass
     for enc in ("utf-8-sig", "utf-8", "utf-16-le", "utf-16-be"):
         try:
             text = data.decode(enc)
@@ -47,25 +79,37 @@ def decode(path):
 
 
 def parse(path):
-    engine, commands, current, buf = None, {}, None, []
+    """Collect the log lines of every block IN ORDER, then attribute each line
+    to the command whose ECHO precedes it. Not by block: BricsCAD writes its
+    log lazily, so a command's own log file starts with the previous command's
+    tail (measured: job 16981155888)."""
+    engine, order, lines = None, [], []
     for raw in decode(path).splitlines():
-        line = raw.rstrip("\r\n")
+        line = raw.rstrip("\r\n").replace("\x00", "")
         if line.startswith("OPTKW-ENGINE\t"):
             engine = line.split("\t")[1:]
         elif line.startswith("OPTKW-BEGIN\t"):
-            current, buf = line.split("\t", 1)[1].strip(), []
-        elif line.startswith("OPTKW-END\t"):
+            order.append(line.split("\t", 1)[1].strip())
+        elif line.startswith("OPTKW-LOG\t"):
+            text = line.split("\t", 1)[1]
+            if not LOG_HEADER_RE.match(text):
+                lines.append(repair_cp437_mojibake(text))
+    echo = {name: re.compile(r"(?:^|[:>] ?)_?\.?" + re.escape(name.lstrip("_")) + r"\s*$", re.I)
+            for name in order}
+    commands = {name: [] for name in order}
+    current = None
+    for text in lines:
+        for name in order:
+            if echo[name].search(text):
+                current = name
+                break
+        else:
             if current is not None:
-                kws = []
-                for m in BRACKET_RE.finditer("\n".join(buf)):
+                for m in BRACKET_RE.finditer(text):
                     for kw in m.group(1).split("/"):
                         kw = kw.strip()
-                        if kw and kw not in kws:
-                            kws.append(kw)
-                commands[current] = kws
-            current, buf = None, []
-        elif current is not None:
-            buf.append(line)
+                        if kw and kw not in commands[current]:
+                            commands[current].append(kw)
     return engine, commands
 
 
