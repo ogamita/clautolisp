@@ -712,7 +712,31 @@ still an error, but a fixed boundary is never silently wrong).
   =*AUTOLISP-FILE-WRITE-ENCODING*=, which =open= uses when the program names
   no encoding; =alfe --clautolisp= forwards them to the engine (in
   subprocess mode too, with =-Eterminal-in= / =-Eterminal-out= / =-Elog=).
-  Not yet forwarded to the CADs' own =open=.
+  On the CADs the variables are transmitted too, but the CAD's own =open=
+  takes an encoding in one case only, measured with the =open-encoding=
+  probe (writing =A=, e-acute, =B=):
+
+  | CAD                       | =(open f "w")= | an encoding requested                               | read           |
+  |---------------------------+----------------+-----------------------------------------------------+----------------|
+  | AutoCAD 2022, =LISPSYS= 0 | cp1252         | any 3rd argument is an error; ~,ccs=~ ignored       | decodes cp1252 |
+  | BricsCAD V25 / Windows    | cp1252         | 3rd argument ignored; ~w,ccs=UTF-8~ and ~w,ccs=UTF-16LE~ honoured, with a BOM | raw octets |
+  | BricsCAD V26 / macOS      | UTF-8, no BOM  | ignored (always UTF-8)                              | raw octets     |
+
+  So alfe forwards the WRITE direction on BricsCAD/Windows only: with
+  =-Efile-write= (or =-Efile=, or the bare =-E=) =UTF-8= or =UTF-16LE=, a
+  plain =(open f "w")= / =(open f "a")= in code loaded with =alfe-load=
+  becomes ~(open f "w,ccs=UTF-8")~ (or =UTF-16LE=), so the file is written
+  in that encoding *with a byte-order mark*; if BricsCAD refuses the mode,
+  the plain one is used. A call that already names an encoding (a ~,ccs=~
+  of its own, a third argument) or a read mode is left alone, and so is code
+  that is not loaded with =alfe-load= (the native =load=, =-x= forms).
+  =cp1252= / =windows-1252= is BricsCAD/Windows' default and needs nothing.
+  Every other request is warned about, once per run, with the measured
+  reason, and not forwarded: any other write encoding on BricsCAD/Windows,
+  any write encoding on AutoCAD except cp1252 (its documented ="utf8"=
+  argument at =LISPSYS= 1/2 is unmeasured), any write encoding on
+  BricsCAD/macOS except UTF-8, and any read encoding (the CADs' =open=
+  never decodes on read; cp1252 on AutoCAD is what it reads anyway).
 - =console= / =cadstdio= — how alfe DECODES the CAD's console/pipe output.
   accoreconsole is UTF-16LE, *fixed by the product* — =-Econsole= is warned
   and ignored under =--autocad=; =-Ecadstdio= forces the codec alfe decodes
@@ -736,8 +760,8 @@ LISPSYS-selected) is tracked in the project's encoding issues.
 |---------------------------+-------------------------+-------------------------------|
 | clautolisp (Linux)        | UTF-8 (settable, LC_*)  | UTF-8                         |
 | BricsCAD V26 / macOS      | UTF-8 under a UTF-8 locale (settable via =LC_ALL=); read needs a BOM | full Unicode (GUI) |
-| BricsCAD V25 / Windows    | ANSI_1252; per-open =,ccs=UTF-8/UTF-16LE= honoured | cp1252 (GUI) |
-| AutoCAD 2022 / accoreconsole | ANSI_1252 / MBCS; =LISPSYS= 1/2 → UTF-8 (restart); =ccs=~ ignored | UTF-16LE, fixed |
+| BricsCAD V25 / Windows    | ANSI_1252; per-open =,ccs=UTF-8/UTF-16LE= honoured on write (with a BOM; =-Efile-write= forwards it), read returns octets | cp1252 (GUI) |
+| AutoCAD 2022 / accoreconsole | ANSI_1252 / MBCS; =LISPSYS= 1/2 → UTF-8 (restart); =ccs=~ ignored; =open= takes no 3rd argument at =LISPSYS= 0 | UTF-16LE, fixed |
 
 * The =alfe-*= operators (for test and REPL code)
 

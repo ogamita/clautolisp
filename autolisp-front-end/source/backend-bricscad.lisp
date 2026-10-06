@@ -1680,7 +1680,10 @@ source is staged), the drain codec from
 ALFE.CLI:RESOLVED-CONSOLE-ENCODING (explicit -Econsole[-out] / -Ecadstdio only),
 and an explicit -Econsole-in is warned about and ignored
 (%WARN-BRICSCAD-CONSOLE-INPUT: the console device is product-fixed and alfe's
-input does not go through it). The terminal is alfe's own."
+input does not go through it). -Efile-write reaches the CAD's OPEN as ,ccs=
+where BricsCAD honours it (ALFE.BACKEND.CAD-COMMON:CAD-OPEN-WRITE-CCS ->
+*ALFE-OPEN-WRITE-CCS*), and is warned about elsewhere. The terminal is alfe's
+own."
   ;; DIALECT is currently irrelevant on the CAD side: the AutoLISP
   ;; dialect lives inside the CAD engine and is not swappable from
   ;; outside. HOST is meaningful only to clautolisp.
@@ -1733,7 +1736,11 @@ input does not go through it). The terminal is alfe's own."
                 :cli-options cli-options
                 :version-text version-text
                 :backend-name "BRICSCAD"
-                :variant (choose-effective-mode backend mode))))
+                :variant (choose-effective-mode backend mode)
+                ;; -Efile-write forwarded to OPEN as ,ccs= where BricsCAD
+                ;; honours it (Windows: UTF-8 / UTF-16LE); warned otherwise.
+                :open-write-ccs (alfe.backend.cad-common:cad-open-write-ccs
+                                 :bricscad cli-options))))
         ;; G2: how the drain decodes BricsCAD's console output. :AUTO
         ;; (default) keeps the robust cascade — behaviour-preserving.
         (setf (alfe.protocol.file:protocol-session-console-encoding protocol)

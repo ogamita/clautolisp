@@ -1550,6 +1550,95 @@ picks the drain codec."
       (is (eq t (alfe.backend.bricscad::%warn-bricscad-console-input opts)))
       (is (null (alfe.backend.bricscad::%warn-bricscad-console-input opts))))))
 
+;;; -Efile forwarded to the CAD's own OPEN (encoding-situations-cli-options
+;;; section 6 point 5): only BricsCAD on Windows honours a write encoding
+;;; (,ccs=UTF-8 / ,ccs=UTF-16LE, measured V25); every other request is warned.
+
+(defun %open-plan (backend platform write read)
+  "(list CCS WARNINGS) of CAD-FILE-ENCODING-PLAN."
+  (multiple-value-list
+   (alfe.backend.cad-common:cad-file-encoding-plan backend platform write read)))
+
+(test cad-file-encoding-plan-bricscad-windows-write
+  "BricsCAD on Windows: UTF-8 and UTF-16LE (any spelling) become the ,ccs=
+value, silently; cp1252 is the default and is no warning; anything else is not
+forwarded and is warned about."
+  (dolist (name '("UTF-8" "utf-8" "utf8" "UTF8" "utf_8"))
+    (is (equal '("UTF-8" nil) (%open-plan :bricscad :windows name nil))
+        "~S must forward as ,ccs=UTF-8" name))
+  (dolist (name '("UTF-16LE" "utf-16le" "utf16le"))
+    (is (equal '("UTF-16LE" nil) (%open-plan :bricscad :windows name nil))
+        "~S must forward as ,ccs=UTF-16LE" name))
+  (dolist (name '("WINDOWS-1252" "cp1252" "windows-1252"))
+    (is (equal '(nil nil) (%open-plan :bricscad :windows name nil))
+        "~S is BricsCAD's default: neither forwarded nor warned" name))
+  (destructuring-bind (ccs warnings) (%open-plan :bricscad :windows "ISO-8859-1" nil)
+    (is (null ccs))
+    (is (= 1 (length warnings)))
+    (is (search "backend BRICSCAD: -Efile-write ISO-8859-1 is not forwarded" (first warnings)))
+    (is (search "measured, V25" (first warnings))))
+  (is (equal '(nil nil) (%open-plan :bricscad :windows nil nil))))
+
+(test cad-file-encoding-plan-other-cads-warn
+  "AutoCAD (any platform) and BricsCAD on macOS honour no write encoding:
+NIL, with the measured reason -- except a request for what they do anyway."
+  (destructuring-bind (ccs warnings) (%open-plan :autocad :windows "UTF-8" nil)
+    (is (null ccs))
+    (is (= 1 (length warnings)))
+    (is (search "backend AUTOCAD: -Efile-write UTF-8 is not forwarded" (first warnings)))
+    (is (search "OPEN takes no encoding at LISPSYS 0 (measured, AutoCAD 2022)" (first warnings)))
+    (is (search "LISPSYS 1/2 is unmeasured" (first warnings))))
+  (is (equal '(nil nil) (%open-plan :autocad :windows "cp1252" nil)))
+  (destructuring-bind (ccs warnings) (%open-plan :bricscad :macos "UTF-16LE" nil)
+    (is (null ccs))
+    (is (= 1 (length warnings)))
+    (is (search "BricsCAD on macOS writes UTF-8 whatever the mode (measured, V26)"
+                (first warnings))))
+  (is (equal '(nil nil) (%open-plan :bricscad :macos "utf8" nil))))
+
+(test cad-file-encoding-plan-read-is-never-forwarded
+  "A read encoding is never forwarded: the CADs' OPEN never decodes on read.
+Warned on every CAD, except cp1252 on AutoCAD, which is what it reads."
+  (dolist (case '((:bricscad :windows) (:bricscad :macos) (:autocad :windows)))
+    (destructuring-bind (ccs warnings) (%open-plan (first case) (second case) nil "UTF-8")
+      (is (null ccs))
+      (is (= 1 (length warnings)) "~S: one warning" case)
+      (is (search "-Efile-read UTF-8 is not forwarded: the CAD's OPEN never decodes on read"
+                  (first warnings)))
+      (is (search "AutoCAD 2022 reads cp1252, BricsCAD returns octets" (first warnings)))))
+  (is (equal '(nil nil) (%open-plan :autocad :windows nil "cp1252")))
+  ;; both directions: the write is still forwarded, the read still warned
+  (destructuring-bind (ccs warnings) (%open-plan :bricscad :windows "UTF-8" "UTF-8")
+    (is (equal "UTF-8" ccs))
+    (is (= 1 (length warnings)))))
+
+(test cad-open-write-ccs-from-cli-options
+  "CAD-OPEN-WRITE-CCS reads -Efile-write / -Efile / the bare -E from the
+parsed options and logs each warning once per run."
+  (let ((alfe.backend.cad-common::*cad-file-encoding-warnings-given* '())
+        (*error-output* (make-string-output-stream)))
+    (is (equal "UTF-16LE"
+               (alfe.backend.cad-common:cad-open-write-ccs
+                :bricscad (parse-arguments '("--bricscad" "-Efile-write" "utf-16le"))
+                :platform :windows)))
+    (is (null (alfe.backend.cad-common:cad-open-write-ccs
+               :bricscad (parse-arguments '("--bricscad")) :platform :windows)))
+    (is (null (alfe.backend.cad-common:cad-open-write-ccs :bricscad nil :platform :windows)))
+    (is (null (alfe.backend.cad-common:cad-open-write-ccs
+               :autocad (parse-arguments '("--autocad" "-Efile-write" "UTF-8"))
+               :platform :windows)))
+    (is (= 1 (length alfe.backend.cad-common::*cad-file-encoding-warnings-given*)))
+    ;; the same warning again is not logged twice
+    (alfe.backend.cad-common:cad-open-write-ccs
+     :autocad (parse-arguments '("--autocad" "-Efile-write" "UTF-8")) :platform :windows)
+    (is (= 1 (length alfe.backend.cad-common::*cad-file-encoding-warnings-given*)))
+    ;; -Efile (both directions) on BricsCAD Windows: write forwarded, read warned
+    (is (equal "UTF-8"
+               (alfe.backend.cad-common:cad-open-write-ccs
+                :bricscad (parse-arguments '("--bricscad" "-Efile" "UTF-8"))
+                :platform :windows)))
+    (is (= 2 (length alfe.backend.cad-common::*cad-file-encoding-warnings-given*)))))
+
 (test bricscad-drain-codec-ignores-the-bare-e
   "RESOLVED-CONSOLE-ENCODING (the BricsCAD drain codec) counts only an option
 naming the console or cadstdio: the bare -E no longer reaches the drain (it

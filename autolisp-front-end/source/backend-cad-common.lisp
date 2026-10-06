@@ -17,7 +17,8 @@
                 #:make-eval-result)
   (:import-from #:alfe.logging
                 #:log-debug
-                #:log-verbose)
+                #:log-verbose
+                #:log-warn)
   (:export ;; OS detection
            #:host-os
            #:*host-os-override*
@@ -66,7 +67,10 @@
            #:discover-cad-programs
            #:autocad-release-in-path
            #:print-cad-programs
-           #:resolve-cad-denotation))
+           #:resolve-cad-denotation
+           ;; -Efile forwarded to the CAD's own OPEN
+           #:cad-file-encoding-plan
+           #:cad-open-write-ccs))
 
 (in-package #:alfe.backend.cad-common)
 
@@ -1354,3 +1358,115 @@ version pick the right one. The virtual =autocad[-VER]= maps to =acad= or
              (top (remove-if-not (lambda (p) (= (%cad-version-key p) top-version)) matches)))
         (first (stable-sort (copy-list top) #'<
                             :key (lambda (p) (%locale-rank p preferred-locales))))))))
+
+;;; --- -Efile forwarded to the CAD's own OPEN ------------------------
+;;;
+;;; encoding-situations-cli-options section 6 point 5. What the CADs' OPEN
+;;; does with an encoding was MEASURED (probes/sources/probe-open-encoding.lsp,
+;;; writing "A" e-acute "B"):
+;;;
+;;;   AutoCAD 2022 (LISPSYS 0)  write cp1252; ANY third argument is "too many
+;;;                             arguments"; ",ccs=" accepted and ignored.
+;;;                             Read decodes cp1252.
+;;;   BricsCAD V25 Windows      write cp1252; third argument accepted, no
+;;;                             effect; "w,ccs=UTF-8" writes UTF-8 WITH a BOM,
+;;;                             "w,ccs=UTF-16LE" UTF-16LE with a BOM. Read
+;;;                             never decodes (raw octets, BOM skipped).
+;;;   BricsCAD V26 macOS        writes UTF-8 without a BOM whatever the mode;
+;;;                             read returns raw octets.
+;;;
+;;; So the only request alfe can honour is the WRITE direction on BricsCAD
+;;; Windows, UTF-8 or UTF-16LE, by appending ",ccs=" to the user's "w"/"a"
+;;; mode (alfe-open* in the bootstrap). Everything else is warned about, never
+;;; silently dropped -- except a request for what the CAD does anyway.
+
+(defun %squashed-encoding-name (name)
+  "NAME (an encoding spelling) canonicalised through the CLI's alias table,
+upcased, with every - and _ removed: utf-8 / UTF8 / utf_8 -> \"UTF8\",
+cp1252 / windows-1252 -> \"WINDOWS1252\". A name the table rejects is squashed
+as typed."
+  (let ((canonical (or (ignore-errors
+                        (clautolisp.autolisp-cli:canonical-encoding-name name))
+                       name)))
+    (remove-if (lambda (ch) (member ch '(#\- #\_)))
+               (string-upcase canonical))))
+
+(defun %file-encoding-kind (name)
+  "Classify an encoding NAME as :UTF-8, :UTF-16LE, :CP1252, or :OTHER."
+  (let ((squashed (%squashed-encoding-name name)))
+    (cond ((string= squashed "UTF8") :utf-8)
+          ((string= squashed "UTF16LE") :utf-16le)
+          ((member squashed '("WINDOWS1252" "CP1252") :test #'string=) :cp1252)
+          (t :other))))
+
+(defun cad-file-encoding-plan (backend-name platform write-encoding read-encoding)
+  "How the -Efile-write / -Efile-read encodings reach a CAD's own OPEN.
+BACKEND-NAME is :BRICSCAD or :AUTOCAD, PLATFORM :WINDOWS / :MACOS (the CAD runs
+on alfe's host), WRITE-ENCODING / READ-ENCODING the resolved situation values
+(strings, or NIL when none was given).
+
+Returns (values CCS WARNINGS). CCS is the string alfe-open* appends as
+\",ccs=CCS\" to a plain \"w\"/\"a\" OPEN mode -- \"UTF-8\" or \"UTF-16LE\",
+only for BricsCAD on Windows -- or NIL. WARNINGS is the list of texts to log:
+one per request the CAD cannot honour, with the measured reason. A request for
+what the CAD does anyway (cp1252 on Windows, UTF-8 on BricsCAD macOS, a cp1252
+read on AutoCAD) is no warning."
+  (let ((prefix (format nil "backend ~A: " (symbol-name backend-name)))
+        (ccs nil)
+        (warnings '()))
+    (when write-encoding
+      (let ((kind (%file-encoding-kind write-encoding)))
+        (flet ((refuse (reason)
+                 (push (format nil "~A-Efile-write ~A is not forwarded to the CAD's ~
+OPEN: ~A." prefix write-encoding reason)
+                       warnings)))
+          (case backend-name
+            (:bricscad
+             (case platform
+               (:windows
+                (case kind
+                  (:utf-8 (setf ccs "UTF-8"))
+                  (:utf-16le (setf ccs "UTF-16LE"))
+                  (:cp1252)
+                  (t (refuse "BricsCAD on Windows honours only ,ccs=UTF-8 and ~
+,ccs=UTF-16LE (measured, V25); files are written in cp1252"))))
+               (:macos
+                (unless (eq kind :utf-8)
+                  (refuse "BricsCAD on macOS writes UTF-8 whatever the mode (measured, V26)")))
+               (t (refuse (format nil "OPEN's encoding is unmeasured on ~(~A~)" platform)))))
+            (:autocad
+             (unless (eq kind :cp1252)
+               (refuse "OPEN takes no encoding at LISPSYS 0 (measured, AutoCAD 2022); ~
+its documented \"utf8\" at LISPSYS 1/2 is unmeasured; files are written in cp1252")))
+            (t (refuse "this backend has no OPEN encoding forwarding"))))))
+    (when (and read-encoding
+               (not (and (eq backend-name :autocad)
+                         (eq (%file-encoding-kind read-encoding) :cp1252))))
+      (push (format nil "~A-Efile-read ~A is not forwarded: the CAD's OPEN never ~
+decodes on read (measured: AutoCAD 2022 reads cp1252, BricsCAD returns octets)."
+                    prefix read-encoding)
+            warnings))
+    (values ccs (nreverse warnings))))
+
+(defvar *cad-file-encoding-warnings-given* '()
+  "The CAD-FILE-ENCODING-PLAN warning texts already logged this run.")
+
+(defun cad-open-write-ccs (backend-name cli-options &key (platform (host-os)))
+  "Run CAD-FILE-ENCODING-PLAN on CLI-OPTIONS' -Efile-write / -Efile-read
+(bare -E included, as the transmitted *AUTOLISP-FILE-*-ENCODING* are), log each
+warning once per run, and return the ccs string for *ALFE-OPEN-WRITE-CCS*
+(or NIL)."
+  (if (null cli-options)
+      nil
+      (multiple-value-bind (ccs warnings)
+          (cad-file-encoding-plan
+           backend-name platform
+           (clautolisp.autolisp-cli:cli-situation-encoding cli-options "file" "write")
+           (clautolisp.autolisp-cli:cli-situation-encoding cli-options "file" "read"))
+        (dolist (text warnings)
+          (unless (member text *cad-file-encoding-warnings-given* :test #'string=)
+            (push text *cad-file-encoding-warnings-given*)
+            (log-warn "~A" text)))
+        (when ccs
+          (log-debug "backend ~A: OPEN \"w\"/\"a\" get ,ccs=~A" backend-name ccs))
+        ccs)))

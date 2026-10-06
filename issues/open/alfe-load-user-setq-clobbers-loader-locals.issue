@@ -1,0 +1,50 @@
+# alfe's CAD-side loader: a loaded file's (setq f ...) clobbers the loader's own F
+
+Status: TODO
+Priority: P2
+Found: 2026-10-06, while writing protocol-alfe-load-forwards-open-write-ccs
+(encoding-situations-cli-options section 6 point 5).
+
+## Symptom
+
+A file loaded through the bootstrap's source loader (alfe-load, and the
+runtime's own load path that drives the same read loop) whose top-level code
+does the most ordinary AutoLISP thing there is:
+
+    (setq f (open "out.txt" "w"))
+    (write-char 65 f)
+    (close f)
+
+fails on the NEXT read of the loop, under the hosted clautolisp engine:
+
+    ERROR protocol request 1: AutoLISP builtin READ-LINE signaled an error:
+    #<SB-SYS:FD-STREAM for "file .../out.txt"> is not a character input stream.
+
+and the rest of the file is never read.
+
+## Repro
+
+autolisp-front-end/tests/file-protocol-tests.lisp, %drive-open-ccs: change the
+user file's variable names ccsfd1 / ccsfd2 back to f / g and run
+protocol-alfe-load-forwards-open-write-ccs (needs clautolisp-sbcl built). The
+first request (alfe-load ...) publishes DONE 1 FAIL with the message above.
+
+## Cause
+
+AutoLISP is dynamically scoped. autolisp-source-load-run-body-impl
+(autolisp-front-end/source/runtime/autolisp-bootstrap.lsp) declares its locals
+as ordinary names -- (/ f line line-no form-text form-start-line result
+form-read defun-name eval-result capture-old piece piece-end) -- and evaluates
+each user form INSIDE that dynamic extent. A user (setq f ...) therefore
+assigns the loader's binding of F (the source file descriptor), and the loop's
+next (read-line f) reads the user's output file. Same for LINE, RESULT, PIECE,
+... Every CAD (AutoCAD, BricsCAD) has the same dynamic scope, so this is not
+clautolisp-specific; the other loader helpers (alfe-load: PREV, RESULT;
+autolisp-source-load-core-impl: RESOLVED, ...) have the same exposure.
+
+## Fix direction
+
+Give every local of the loader functions that are live while user code runs a
+name no user program will use (an alfe-private prefix, e.g. __alfe-src-f),
+and add a hosted test loading a file that setq's each common name (f, line,
+result, path, prev) at top level.

@@ -1289,6 +1289,7 @@ never signals."
 
 (defun emit-run-common-with-real-runtime (workdir &key assume-no-rest-p
                                                        dialect
+                                                       open-write-ccs
                                                        (explicit-no-rest-p t))
   "Emit run-common.lsp into WORKDIR with the REAL vendored bootstrap
 and runtime staged (the emit tests above use fakes). Returns the
@@ -1297,7 +1298,8 @@ AutoCAD takes instead of the one BricsCAD takes; with
 EXPLICIT-NO-REST-P NIL the keyword is not passed at all, so the
 emitter's target-derived default decides. DIALECT, a --dialect name,
 is stamped into the emitted file and is what the engine's
-portability warnings are judged against."
+portability warnings are judged against. OPEN-WRITE-CCS is passed to
+the emitter (*ALFE-OPEN-WRITE-CCS*)."
   (let ((session (alfe.protocol.file:init-session
                   workdir
                   :bootstrap-lsp-source (%vendored-runtime-source
@@ -1312,9 +1314,11 @@ portability warnings are judged against."
             (if explicit-no-rest-p
                 (alfe.protocol.file:emit-run-common-lsp
                  session :cli-options options
+                         :open-write-ccs open-write-ccs
                          :assume-no-rest-p assume-no-rest-p)
                 (alfe.protocol.file:emit-run-common-lsp
-                 session :cli-options options)))))
+                 session :cli-options options
+                         :open-write-ccs open-write-ccs)))))
 
 (defun clautolisp-engine-binary ()
   "First existing clautolisp-sbcl among the documented search paths,
@@ -1465,6 +1469,7 @@ before `make build-clautolisp-sbcl`)."
 
 (defun drive-hosted-engine (binary forms &key assume-no-rest-p dialect
                                               (explicit-no-rest-p t)
+                                              open-write-ccs
                                               forms-fn)
   "Host the emitted run-common.lsp in a clautolisp subprocess, send
 FORMS one at a time, and return (values statuses stdout stderr
@@ -1477,7 +1482,8 @@ EXPLICIT-NO-REST-P NIL passes no :assume-no-rest-p at all, so the
 emitter's own default — the target — decides the shadow path.
 FORMS-FN, a function of the workdir called once the session exists and
 before the engine starts, returns the forms to send instead of FORMS —
-for a test that has to stage files of its own next to the session."
+for a test that has to stage files of its own next to the session.
+OPEN-WRITE-CCS is emitted as *ALFE-OPEN-WRITE-CCS*."
   (let ((workdir (make-test-workdir (if assume-no-rest-p
                                         "hosted-norest"
                                         "hosted-rest")))
@@ -1488,6 +1494,7 @@ for a test that has to stage files of its own next to the session."
              (emit-run-common-with-real-runtime
               workdir
               :dialect dialect
+              :open-write-ccs open-write-ccs
               :assume-no-rest-p assume-no-rest-p
               :explicit-no-rest-p explicit-no-rest-p)
            ;; Declare alfe's own staged runtime trusted before starting
@@ -1812,6 +1819,113 @@ clautolisp-sbcl is not on disk."
           (is (search "ENCSRC-OK" (without-returns stdout))
               "alfe-load must set ENCSRC from the loaded file: ~S" stdout)
           (is (string= "" stderr))))))
+
+;;; --- -Efile-write forwarded to the CAD's OPEN ------------------------
+;;;
+;;; encoding-situations-cli-options section 6 point 5. alfe emits
+;;; *ALFE-OPEN-WRITE-CCS* only when the CAD honours it (BricsCAD on
+;;; Windows); the bootstrap then rewrites OPEN in alfe-loaded code into
+;;; alfe-open*, which appends ",ccs=" to a plain "w"/"a" mode. Unset, OPEN
+;;; is never rewritten -- the cons-identity guard.
+
+(test protocol-emit-run-common-lsp-open-write-ccs
+  "run-common.lsp carries (setq *ALFE-OPEN-WRITE-CCS* \"...\") when a ccs is
+given, and does not mention the variable otherwise (NIL or an empty string)."
+  (let ((workdir (make-test-workdir "emit-open-ccs")))
+    (unwind-protect
+         (let ((session (alfe.protocol.file:init-session workdir)))
+           (let ((content (alfe.protocol.file:read-file-as-string
+                           (alfe.protocol.file:emit-run-common-lsp
+                            session :open-write-ccs "UTF-16LE"))))
+             (is (search "(setq *ALFE-OPEN-WRITE-CCS* \"UTF-16LE\")" content)))
+           (dolist (ccs '(nil ""))
+             (let ((content (alfe.protocol.file:read-file-as-string
+                             (alfe.protocol.file:emit-run-common-lsp
+                              session :open-write-ccs ccs))))
+               (is (not (search "ALFE-OPEN-WRITE-CCS" content))
+                   "no ccs (~S) must emit no *ALFE-OPEN-WRITE-CCS*" ccs))))
+      (delete-workdir workdir))))
+
+(defun %file-octets (path)
+  (with-open-file (in path :element-type '(unsigned-byte 8))
+    (let ((v (make-array (file-length in) :element-type '(unsigned-byte 8))))
+      (read-sequence v in)
+      (coerce v 'list))))
+
+(defun %drive-open-ccs (binary ccs outdir)
+  "Host the real runtime with *ALFE-OPEN-WRITE-CCS* = CCS, alfe-load a file
+that writes \"A\" with (open P \"w\") into OUTDIR/plain.txt and with an
+explicit (open P \"w,ccs=UTF-8\") into OUTDIR/explicit.txt, then report
+whether an OPEN form needs rewriting and whether alfe-rewrite-form keeps its
+conses. Returns (values statuses stdout stderr)."
+  (let ((plain (merge-pathnames "plain.txt" outdir))
+        (explicit (merge-pathnames "explicit.txt" outdir)))
+    (drive-hosted-engine
+     binary nil
+     :open-write-ccs ccs
+     :forms-fn
+     (lambda (workdir)
+       (let ((user (merge-pathnames "user-open.lsp" workdir)))
+         (with-open-file (out user :direction :output
+                                   :if-exists :supersede
+                                   :if-does-not-exist :create
+                                   :external-format :utf-8)
+           ;; NOT `f': a top-level (setq f ...) in an alfe-loaded file
+           ;; clobbers the CAD-side loader's own dynamically-scoped F
+           ;; (alfe-load-user-setq-clobbers-loader-locals.issue).
+           (format out "(setq ccsfd1 (open ~S \"w\"))~%(write-char 65 ccsfd1)~%(close ccsfd1)~%"
+                   (namestring plain))
+           (format out "(setq ccsfd2 (open ~S \"w,ccs=UTF-8\"))~%(write-char 65 ccsfd2)~%(close ccsfd2)~%"
+                   (namestring explicit)))
+         (list (format nil "(alfe-load ~S)" (namestring user))
+               (concatenate 'string
+                            "(princ (if (alfe-form-needs-rewrite-p"
+                            " (quote (open \"x\" \"w\"))) \"NEEDS\" \"UNTOUCHED\"))")
+               (concatenate 'string
+                            "(progn (setq fm (quote (setq h (open \"x\" \"w\"))))"
+                            " (princ (if (eq fm (alfe-rewrite-form fm))"
+                            " \" SAME\" \" REBUILT\")))")))))))
+
+(test protocol-alfe-load-forwards-open-write-ccs
+  "Acceptance with the real bootstrap under a hosted clautolisp (which honours
+,ccs=): with *ALFE-OPEN-WRITE-CCS* \"UTF-16LE\" a loaded (open P \"w\") writes
+\"A\" as UTF-16LE (41 00, possibly after a BOM), while an explicit
+\"w,ccs=UTF-8\" is left alone. Without it the same file writes the single
+octet 41 and an OPEN form is neither flagged nor rebuilt. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; OPEN ccs forwarding test skipped.")
+        (let ((outdir (make-test-workdir "open-ccs-out")))
+          (unwind-protect
+               (progn
+                 ;; 1. forwarded
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-ccs binary "UTF-16LE" outdir)
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (is (member (%file-octets (merge-pathnames "plain.txt" outdir))
+                               '((65 0) (255 254 65 0)) :test #'equal)
+                       "(open P \"w\") must write UTF-16LE: ~S"
+                       (%file-octets (merge-pathnames "plain.txt" outdir)))
+                   (is (member (%file-octets (merge-pathnames "explicit.txt" outdir))
+                               '((65) (239 187 191 65)) :test #'equal)
+                       "an explicit ,ccs= must be left alone: ~S"
+                       (%file-octets (merge-pathnames "explicit.txt" outdir)))
+                   (is (search "NEEDS" (without-returns stdout)) "stdout ~S" stdout)
+                   (is (search "REBUILT" (without-returns stdout)) "stdout ~S" stdout))
+                 ;; 2. not forwarded: nothing rewritten
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-ccs binary nil outdir)
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (is (equal '(65) (%file-octets (merge-pathnames "plain.txt" outdir)))
+                       "unset, (open P \"w\") must write the default: ~S"
+                       (%file-octets (merge-pathnames "plain.txt" outdir)))
+                   (is (search "UNTOUCHED" (without-returns stdout)) "stdout ~S" stdout)
+                   (is (search "SAME" (without-returns stdout)) "stdout ~S" stdout)))
+            (delete-workdir outdir))))))
 
 (test protocol-failure-inside-a-loaded-file-fails-that-request
   "Acceptance: a form that fails inside a loaded file makes THAT request

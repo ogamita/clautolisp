@@ -37,6 +37,12 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- ~-Efile-write UTF-8~ / ~UTF-16LE~ reaches BricsCAD on Windows: a plain
+  ~(open f "w")~ / ~"a"~ in code alfe loads is opened with ~,ccs=~ (the file
+  gets a BOM, as BricsCAD writes it). Everywhere else -- AutoCAD (no encoding
+  argument at LISPSYS 0), BricsCAD on macOS (always UTF-8), and any read
+  direction (no CAD decodes on read) -- the option is warned about and
+  ignored, as measured (probe-open-encoding).
 - Encoding situations, the rest of the plumbing: ~alfe --clautolisp~ in
   subprocess mode now forwards ~-Efile-read~ / ~-Efile-write~ /
   ~-Eterminal-in~ / ~-Eterminal-out~ / ~-Elog~ to the engine (only ~-Esource~

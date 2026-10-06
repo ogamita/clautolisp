@@ -863,6 +863,36 @@
     (alfe-load-onfailure (car args) (cadr args))
     (alfe-load (car args))))
 
+;; -Efile-write forwarded to the CAD's OPEN (encoding-situations-cli-options
+;; section 6 point 5). alfe sets *ALFE-OPEN-WRITE-CCS* in run-common.lsp ONLY
+;; where the CAD honours it -- measured: BricsCAD on Windows, "w,ccs=UTF-8"
+;; (UTF-8 with a BOM) and "w,ccs=UTF-16LE" (with a BOM); AutoCAD 2022 at
+;; LISPSYS 0 and BricsCAD on macOS ignore any encoding. Unset, OPEN calls are
+;; never rewritten (see alfe-form-needs-rewrite-p).
+(defun alfe-open-ccs-active-p ()
+  (and (boundp '*ALFE-OPEN-WRITE-CCS*)
+       (= (type *ALFE-OPEN-WRITE-CCS*) 'STR)
+       (> (strlen *ALFE-OPEN-WRITE-CCS*) 0)))
+
+;; (open path mode [enc]) with its arguments as ONE list. A plain "w" / "a"
+;; mode (no ",ccs=" of its own, no third argument) gets ",ccs=<ccs>"
+;; appended; if the CAD refuses that, the plain mode is used. Every other
+;; call is passed to OPEN unchanged.
+(defun alfe-open* (args / f)
+  (if (and (alfe-open-ccs-active-p)
+           (= (length args) 2)
+           (= (type (cadr args)) 'STR)
+           (member (strcase (cadr args)) '("W" "A")))
+    (progn
+      (setq f (vl-catch-all-apply
+                'open
+                (list (car args)
+                      (strcat (cadr args) ",ccs=" *ALFE-OPEN-WRITE-CCS*))))
+      (if (or (null f) (vl-catch-all-error-p f))
+        (open (car args) (cadr args))
+        f))
+    (apply 'open args)))
+
 ;; T iff FORM contains a native princ/print/prin1/load CALL that needs
 ;; rewriting. Walks without consing; stops at QUOTE / FUNCTION so quoted
 ;; data never false-positives. This is the CONS-IDENTITY GUARD: unless a
@@ -872,7 +902,8 @@
 ;; lacks, and AutoCAD then fails eval'ing it (observed as "division par
 ;; zero" on accoreconsole for EVERY alfe-load, ASCII or not). The princ
 ;; normalizer (autolisp-normalize-princ-call) is written the same way for
-;; the same reason.
+;; the same reason. OPEN counts only while *ALFE-OPEN-WRITE-CCS* is set
+;; (alfe-open-ccs-active-p), so without -Efile-write nothing more is rebuilt.
 (defun alfe-form-needs-rewrite-p (form / head s)
   (cond
     ((atom form) nil)
@@ -886,7 +917,8 @@
                     (or (= s "QUOTE") (= s "FUNCTION"))))
         nil)
        ((and (= (type head) 'SYM)
-             (or (= s "PRINC") (= s "PRINT") (= s "PRIN1") (= s "LOAD")))
+             (or (= s "PRINC") (= s "PRINT") (= s "PRIN1") (= s "LOAD")
+                 (and (= s "OPEN") (alfe-open-ccs-active-p))))
         T)
        (T
         (cond
@@ -918,6 +950,8 @@
         (list 'alfe-prin1* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
        ((and (= (type head) 'SYM) (= s "LOAD"))
         (list 'alfe-load* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
+       ((and (= (type head) 'SYM) (= s "OPEN") (alfe-open-ccs-active-p))
+        (list 'alfe-open* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
        (T
         (mapcar 'alfe-rewrite-form form))))))
 

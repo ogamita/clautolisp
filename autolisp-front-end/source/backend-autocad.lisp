@@ -1304,8 +1304,9 @@ started is what ATTACHED/CREATED say.")
   ;; boundaries resolve their situations from CLI-OPTIONS where they are
   ;; applied (-Esource on each -l action for source staging,
   ;; %AUTOCAD-REQUESTED-STDIO-ENCODING for the
-  ;; console/cadstdio codecs, with the -Econsole warning), and the terminal
-  ;; is alfe's own (APPLY-TERMINAL-ENCODING).
+  ;; console/cadstdio codecs, with the -Econsole warning; CAD-OPEN-WRITE-CCS
+  ;; for -Efile, only warned: OPEN takes no encoding at LISPSYS 0), and the
+  ;; terminal is alfe's own (APPLY-TERMINAL-ENCODING).
   (declare (ignore dialect host mock-input load-encoding io-encoding
                    source-encoding file-read-encoding file-write-encoding
                    console-in-encoding console-out-encoding
@@ -1353,7 +1354,11 @@ started is what ATTACHED/CREATED say.")
                 :cli-options cli-options
                 :version-text version-text
                 :backend-name "AUTOCAD"
-                :variant variant)))
+                :variant variant
+                ;; -Efile-write/-read: AutoCAD's OPEN takes no encoding at
+                ;; LISPSYS 0, so this only warns (CAD-FILE-ENCODING-PLAN).
+                :open-write-ccs (alfe.backend.cad-common:cad-open-write-ccs
+                                 :autocad cli-options))))
         ;; G2: how the drain decodes AutoCAD's console output. accoreconsole
         ;; (batch) is UTF-16LE, product-fixed (conflicting -Econsole warned +
         ;; ignored); the GUI path honours the user's request, else :AUTO.
