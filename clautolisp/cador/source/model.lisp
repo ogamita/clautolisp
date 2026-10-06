@@ -240,6 +240,8 @@ that is not part of a drawing."))
   (ename-cache-drawing nil)
   ;; D1 §10: how many times the document's lock is held (a checked no-op).
   (lock-count 0)
+  ;; The shape files LOAD (the command) loaded into this drawing.
+  (shape-files '())
   ;; The tiled (model space) viewports, the current one first: a list of
   ;; (ID LLX LLY URX URY). NIL until first asked: viewports.lisp.
   (model-viewports nil)
@@ -273,6 +275,7 @@ that is not part of a drawing."))
 (%define-document-session-accessor cador-ename-cache doc-session-ename-cache)
 (%define-document-session-accessor cador-ename-cache-drawing doc-session-ename-cache-drawing)
 (%define-document-session-accessor %cador-lock-count doc-session-lock-count)
+(%define-document-session-accessor cador-shape-files doc-session-shape-files)
 (%define-document-session-accessor %cador-model-viewports doc-session-model-viewports)
 (%define-document-session-accessor %cador-viewport-toggle doc-session-viewport-toggle)
 (%define-document-session-accessor %cador-viewport-configurations doc-session-viewport-configurations)

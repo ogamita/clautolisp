@@ -447,3 +447,58 @@ of the spline's second derivative."
     tokens))
 
 (define-cador-command "MLINE" '%cmd-mline)
+
+;;; LOAD (the command, not the AutoLISP function) and SHAPE -- probe-commands,
+;;; "SHAPE TRACK1 from ltypeshp.shx" (AutoCAD 2022 job 16961057455, BricsCAD
+;;; V25 16961057459, V26 16961057456): after (command "_.LOAD" "ltypeshp.shx"),
+;;; (command "_.SHAPE" "TRACK1" "0,0" "1" "0") makes, IDENTICALLY on both,
+;;;   0=SHAPE 8=0 10=0,0,0 40=1 2=TRACK1 50=0 41=1 51=0
+;;; (size, name, rotation, relative x-scale 1, oblique 0). cador does not read
+;;; .shx files: once a shape file is loaded into the drawing any shape name is
+;;; accepted; with none loaded, SHAPE makes nothing.
+
+(defun %find-shape-file (name)
+  (let ((candidates (if (search "." (file-namestring name))
+                        (list name)
+                        (list (concatenate 'string name ".shx") name))))
+    (loop for candidate in candidates
+          thereis (or (probe-file candidate)
+                      (loop for dir in (ignore-errors
+                                        (clautolisp.autolisp-runtime:autolisp-support-paths))
+                            thereis (probe-file (merge-pathnames
+                                                 candidate
+                                                 (uiop:ensure-directory-pathname dir))))))))
+
+(defun %cmd-load (host tokens)
+  (let ((name (first tokens)))
+    (when (stringp name)
+      (pop tokens)
+      (let ((file (%find-shape-file name)))
+        (when file
+          (pushnew (namestring file) (cador-shape-files host) :test #'string=)))))
+  tokens)
+
+(defun %cmd-shape (host tokens)
+  (let ((name (first tokens)))
+    (when (and (stringp name) (plusp (length name)) (cador-shape-files host))
+      (pop tokens)
+      (let ((p (%command-token-point (first tokens))))
+        (when p
+          (pop tokens)
+          (let ((size (or (%command-token-number (first tokens)) 1)))
+            (pop tokens)
+            (let ((rotation (or (%command-token-number (first tokens)) 0)))
+              (pop tokens)
+              (%command-entity host (list (cons 0 "SHAPE")
+                                          (cons 8 (%current-layer-name host))
+                                          (cons 10 p)
+                                          (cons 40 (float size 1d0))
+                                          (cons 2 (string-upcase name))
+                                          (cons 50 (* (float rotation 1d0) (/ pi 180)))
+                                          (cons 41 1d0)
+                                          (cons 51 0d0)))))))))
+  tokens)
+
+(define-cador-command "LOAD"  '%cmd-load)
+(define-cador-command "SHAPE" '%cmd-shape)
+

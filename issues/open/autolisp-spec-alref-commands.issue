@@ -441,3 +441,33 @@ UNGROUP needs GROUP objects (and -GROUP, outside the core-now set) in
 cador; deferred until a probe reads the GROUP object cleanly (next step:
 record (entget group) whole, and check CMDACTIVE after -GROUP on AutoCAD).
 Left: UNGROUP, ARRAYEDIT, ARRAYCLOSE, CHSPACE, HELIX, SHAPE, REGION.
+
+## Final round, measured (2026-10-06, MR !423)
+
+probe-commands, the last cases (AutoCAD 2022 job 16961057455, BricsCAD V25
+16961057459, V26 16961057456):
+
+  - SHAPE -- after (command "_.LOAD" "ltypeshp.shx"), SHAPE TRACK1 at 0,0 size
+    1 rotation 0 makes, identically on both, 0=SHAPE 8=0 10=0,0,0 40=1
+    2=TRACK1 50=0 41=1 51=0. BUILT (clautolisp 2.2.203): LOAD records a shape
+    file found on disk or the support path, SHAPE makes that entity (cador
+    does not read .shx files: any name, once one is loaded).
+  - -GROUP / UNGROUP -- the GROUP object still reads back EMPTY on both
+    (BricsCAD: the dictionary entry is found and carries no groups; AutoCAD:
+    nothing). The DXF route does not see the GROUP; next probe: the COM
+    Groups collection (vla-get-groups) on BricsCAD. Deferred.
+  - HELIX -- a HELIX entity on both, but its spline differs by vendor
+    (AutoCAD 50 knots, BricsCAD 31): matching it means each vendor's spline
+    fit. Deferred.
+  - REGION -- a REGION carrying ACIS data: AutoCAD's encrypted, BricsCAD's
+    plain SAT 7.0 ("Open Design Alliance ACIS Builder"). Needs an ACIS
+    writer. Deferred.
+  - CHSPACE -- AutoCAD moves the SAME entity to paper space (67=1, 410 the
+    layout, the points through the viewport's view); BricsCAD makes a NEW
+    entity there. The points depend on the viewport's view (centre / height),
+    which cador's viewports do not model. Deferred.
+  - ARRAYRECT associative -- AutoCAD's core console left the circle alone;
+    BricsCAD makes an INSERT of an anonymous block (*U9). ARRAYEDIT /
+    ARRAYCLOSE act on that block and its association objects. Deferred.
+Left: UNGROUP, HELIX, REGION, CHSPACE, ARRAYEDIT, ARRAYCLOSE -- each needs
+the piece named above first.

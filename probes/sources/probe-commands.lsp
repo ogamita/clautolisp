@@ -140,6 +140,21 @@
         (foreach g grp (if (= (car g) 340) (setq n (1+ n))))
         (strcat out "|340x" (itoa n)))))
 
+(defun cad-probe--dxf-text (data / out)
+  ;; DATA (an entget list) as "code=value|..." with every ename shown as <E>:
+  ;; the whole object, comparable across runs.
+  (setq out "")
+  (foreach g data
+    (setq out (strcat out (if (= out "") "" "|") (itoa (car g)) "="
+                      (if (= (type (cdr g)) 'ENAME) "<E>" (cad-probe--cmd-fmt (cdr g))))))
+  out)
+
+(defun cad-probe--group-object (name / dict grp)
+  ;; The GROUP object NAME in ACAD_GROUP, whole (cad-probe--dxf-text), or "NONE".
+  (setq dict (dictsearch (namedobjdict) "ACAD_GROUP"))
+  (setq grp (and dict (dictsearch (cdr (assoc -1 dict)) name)))
+  (if grp (cad-probe--dxf-text grp) "NONE"))
+
 (setq cad-probe--unknown nil)
 
 (defun cad-probe--lisp-command-p (name)
@@ -586,6 +601,62 @@
   ;; later case on 2026-10-03 (job 16914186872). No trailing "".
   (cad-probe--cmd-case "EXPLODE a rectangle"
     '("_.RECTANG" "0,0" "2,1" "_.EXPLODE" "_L"))
+
+  ;; --- alref final round (2026-10-06): the last Phase 4 commands -------------
+  ;; -GROUP / UNGROUP again, recording the GROUP object WHOLE and CMDACTIVE
+  ;; after -GROUP (the 2026-10-04 summary saw no 70 / 71 / 300 / 340 on
+  ;; BricsCAD and an empty answer on AutoCAD).
+  (cad-probe--cmd-case "-GROUP: the GROUP object whole, CMDACTIVE after"
+    (function (lambda ( / a b)
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "1,0" "")) (setq a (entlast))
+      (cad-probe--cmd-args (list "_.LINE" "0,1" "1,1" "")) (setq b (entlast))
+      (cad-probe--cmd-args (list "_.-GROUP" "_C" "PROBEG2" "probe group" a b ""))
+      (setq cad-probe--unknown
+            (strcat "CMDACTIVE " (itoa (getvar "CMDACTIVE"))
+                    " GROUP " (cad-probe--group-object "PROBEG2"))))))
+  (cad-probe--cmd-case "UNGROUP by name, the GROUP object after"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.UNGROUP" "_N" "PROBEG2"))
+      (setq cad-probe--unknown
+            (strcat "CMDACTIVE " (itoa (getvar "CMDACTIVE"))
+                    " GROUP " (cad-probe--group-object "PROBEG2"))))))
+  (cad-probe--cmd-case "HELIX base 1 top 2, 3 turns, height 6"
+    '("_.HELIX" "0,0" "1" "2" "_T" "3" "6"))
+  (cad-probe--cmd-case "REGION from a closed rectangle"
+    (function (lambda ()
+      (cad-probe--cmd-args (list "_.RECTANG" "0,0" "2,1"))
+      (cad-probe--cmd-args (list "_.REGION" (entlast) "")))))
+  (cad-probe--cmd-case "CHSPACE a line from the layout viewport to paper space: 67 / 410 and points"
+    (function (lambda ( / e d)
+      (setvar "TILEMODE" 0)
+      (cad-probe--cmd-args (list "_.MSPACE"))
+      (cad-probe--cmd-args (list "_.LINE" "0,0" "10,0" "")) (setq e (entlast))
+      (cad-probe--cmd-args (list "_.CHSPACE" e "" ""))
+      (cad-probe--cmd-cancel)
+      (cad-probe--cmd-args (list "_.PSPACE"))
+      (setq d (entget (entlast)))
+      (setq cad-probe--unknown
+            (strcat "SAME-ENTITY " (if (equal (entlast) e) "T" "NIL")
+                    " " (cad-probe--dxf-text
+                          (vl-remove-if-not
+                            (function (lambda (g) (member (car g) '(0 67 410 10 11))))
+                            d))))
+      (setvar "TILEMODE" 1))))
+  (cad-probe--cmd-case "SHAPE TRACK1 from ltypeshp.shx (when found)"
+    (function (lambda ( / filedia)
+      (if (not (findfile "ltypeshp.shx"))
+          (setq cad-probe--unknown "SHAPE (NO-LTYPESHP-SHX)")
+          (progn
+            (setq filedia (getvar "FILEDIA"))
+            (setvar "FILEDIA" 0)
+            (cad-probe--cmd-args (list "_.LOAD" "ltypeshp.shx"))
+            (cad-probe--cmd-cancel)
+            (cad-probe--cmd-args (list "_.SHAPE" "TRACK1" "0,0" "1" "0"))
+            (setvar "FILEDIA" filedia))))))
+  (cad-probe--cmd-case "ARRAYRECT associative 2x2 (what ARRAYEDIT / ARRAYCLOSE act on)"
+    (function (lambda ( / c)
+      (cad-probe--cmd-args (list "_.CIRCLE" "0,0" "0.5")) (setq c (entlast))
+      (cad-probe--cmd-args (list "_.ARRAYRECT" c "" "_AS" "_Y" "_COU" "2" "2" "_X")))))
 
   (setvar "CMDECHO" cmdecho)
   (setvar "OSMODE" osmode)
