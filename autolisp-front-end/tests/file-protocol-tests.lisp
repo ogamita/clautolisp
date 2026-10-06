@@ -1870,12 +1870,9 @@ conses. Returns (values statuses stdout stderr)."
                                    :if-exists :supersede
                                    :if-does-not-exist :create
                                    :external-format :utf-8)
-           ;; NOT `f': a top-level (setq f ...) in an alfe-loaded file
-           ;; clobbers the CAD-side loader's own dynamically-scoped F
-           ;; (alfe-load-user-setq-clobbers-loader-locals.issue).
-           (format out "(setq ccsfd1 (open ~S \"w\"))~%(write-char 65 ccsfd1)~%(close ccsfd1)~%"
+           (format out "(setq f (open ~S \"w\"))~%(write-char 65 f)~%(close f)~%"
                    (namestring plain))
-           (format out "(setq ccsfd2 (open ~S \"w,ccs=UTF-8\"))~%(write-char 65 ccsfd2)~%(close ccsfd2)~%"
+           (format out "(setq g (open ~S \"w,ccs=UTF-8\"))~%(write-char 65 g)~%(close g)~%"
                    (namestring explicit)))
          (list (format nil "(alfe-load ~S)" (namestring user))
                (concatenate 'string
@@ -1925,6 +1922,43 @@ clautolisp-sbcl is not on disk."
                        (%file-octets (merge-pathnames "plain.txt" outdir)))
                    (is (search "UNTOUCHED" (without-returns stdout)) "stdout ~S" stdout)
                    (is (search "SAME" (without-returns stdout)) "stdout ~S" stdout)))
+            (delete-workdir outdir))))))
+
+(test protocol-a-loaded-file-may-setq-the-loaders-names
+  "alfe-load-user-setq-clobbers-loader-locals. AutoLISP is dynamically scoped
+and a loaded file's forms run INSIDE the loader, so a user's top-level
+(setq f ...) used to assign the loader's own F -- the source being read --
+and the next READ-LINE read the user's output file. The loader's locals now
+carry an alfe-- prefix: a file that sets every name the loader used (and
+opens a file through F) runs to its last form. Skipped when clautolisp-sbcl
+is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; loader-locals test skipped.")
+        (let ((outdir (make-test-workdir "loader-locals-out")))
+          (unwind-protect
+               (multiple-value-bind (statuses stdout stderr)
+                   (drive-hosted-engine
+                    binary nil
+                    :forms-fn
+                    (lambda (workdir)
+                      (let ((user (merge-pathnames "user-locals.lsp" workdir))
+                            (out-file (merge-pathnames "out.txt" outdir)))
+                        (with-open-file (out user :direction :output
+                                                  :if-exists :supersede
+                                                  :if-does-not-exist :create
+                                                  :external-format :utf-8)
+                          (format out "(setq f (open ~S \"w\"))~%(write-char 65 f)~%(close f)~%"
+                                  (namestring out-file))
+                          (format out "(setq line 1 result 2 path \"p\" prev 3 form 4 r 5 idx 6 args 7 resolved 8 onfailure 9)~%")
+                          (format out "(setq locals-reached-the-end T)~%"))
+                        (list (format nil "(alfe-load ~S)" (namestring user))
+                              "(princ (if locals-reached-the-end \"END-REACHED\" \"STOPPED\"))"))))
+                 (is (every (lambda (s) (search " OK" s)) statuses)
+                     "every request must succeed: ~S~%~A" statuses stderr)
+                 (is (search "END-REACHED" (without-returns stdout)) "stdout ~S" stdout)
+                 (is (equal '(65) (%file-octets (merge-pathnames "out.txt" outdir)))))
             (delete-workdir outdir))))))
 
 (test protocol-failure-inside-a-loaded-file-fails-that-request
