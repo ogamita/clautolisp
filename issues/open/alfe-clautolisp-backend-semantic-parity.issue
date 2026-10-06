@@ -1,0 +1,97 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-clautolisp-backend-semantic-parity — keep direct and subprocess clautolisp semantics identical
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-alfe-clautolisp-backend-semantic-parity
+#+DATE: 2026-10-06
+
+* Context
+
+=alfe --clautolisp= has two execution variants:
+
+- the default =--backend direct= embeds the clautolisp runtime in alfe;
+- =--backend subprocess= launches the standalone =clautolisp= program.
+
+These are two transports for the same engine, not two user-visible products.
+Selecting the subprocess variant for isolation must not change the meaning or
+availability of an option shared by alfe and clautolisp.
+
+The divergence was observed in SCHME job 527154 with alfe 2.2.150:
+
+#+begin_example
+alfe: alfe CLAUTOLISP backend error (phase BOOTSTRAP):
+Failed to initialise the clautolisp runtime:
+no reader codec registered for format :DWG [RUNTIME-INIT-FAILED]
+#+end_example
+
+The invocation already contained =--clautolisp --host cador --dwg
+Schema_Test.dwg=.  The temporary downstream workaround is to add =--backend
+subprocess= to the SCHME cador suites.
+
+* Problem
+
+The two variants do not contain the same runtime capabilities.
+
+=clautolisp/clautolisp-tool= depends on =clautolisp/drawing-dwg=, so the
+standalone program registers the =:DWG= reader/writer codec.  The alfe tool
+depends on =autolisp-front-end=, whose in-process clautolisp graph does not
+load that optional system.  Consequently the same =--dwg= option is parsed
+and forwarded to =host-open-startup-drawing= in direct mode, but fails before
+the action plan runs because no DWG codec is registered.
+
+This is a semantic difference, not merely an implementation detail:
+
+#+begin_example
+alfe --clautolisp --host cador --dwg file.dwg ...
+alfe --clautolisp --backend subprocess --host cador --dwg file.dwg ...
+#+end_example
+
+The first and second commands are expected to expose the same clautolisp
+features and observable results.  A caller must not need to know which ASDF
+systems happen to have been baked into the alfe image.
+
+The risk is broader than =--dwg=.  Shared CLI parsing, duplicated direct-mode
+initialisation and selective subprocess forwarding can let any present or
+future option work in only one variant, or use different defaults, environment
+variables, diagnostics, side effects or exit statuses.
+
+* Proposal
+
+1. Define one explicit capability and option contract for alfe's clautolisp
+   backend.  Both variants must consume the same resolved configuration.
+2. Make the direct alfe image load every clautolisp subsystem required to
+   implement that contract.  In particular, load =clautolisp/drawing-dwg= so
+   =--dwg= registers the same codec as the standalone program while preserving
+   lazy loading of the native library.
+3. Derive subprocess arguments and direct-mode initialisation from the same
+   option descriptors or resolved configuration, instead of maintaining two
+   independent lists.
+4. Audit every option accepted for =--clautolisp=, including host, dialect,
+   drawing, source/file/terminal encodings, init policy, action ordering,
+   debugger/error policy, dribble, DCL/UI selection, optimisation and future
+   shared options.  Remove documented direct/subprocess exceptions by
+   implementing equivalent behaviour rather than silently ignoring an option.
+5. When exact parity is structurally impossible, reject the option explicitly
+   and identically before starting either engine.  Do not accept it and then
+   silently change its meaning according to the backend variant.
+
+* Acceptance criteria
+
+- Both commands above open the same DWG and run the same action plan with the
+  same observable AutoLISP state, stdout, stderr and exit status.
+- =alfe --clautolisp --dwg FILE= works in the default direct variant whenever
+  the installed native DWG libraries support the subprocess variant.
+- A table-driven regression suite runs every option common to the clautolisp
+  backend once with =--backend direct= and once with =--backend subprocess=.
+- The parity suite compares resolved configuration, action ordering, output,
+  diagnostics, exit status and relevant file/drawing side effects.
+- Adding a new shared clautolisp option requires adding it once to the common
+  option contract; CI fails if either variant does not consume it.
+- =alfe --help=, the alfe user manual, man page and specifications state the
+  semantic-parity guarantee and no longer document backend-variant differences
+  for shared options.
+- The SCHME workaround (=--backend subprocess= on the cador suites) can be
+  removed after a release containing the fix is consumed.
+
