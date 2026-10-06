@@ -69361,6 +69361,22 @@ Enables the ActiveX/COM extension layer in environments that support it.
 - [AutoLISP Extensions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-07C3599E-EC87-4EC0-8F0B-8DE4BD150A64.htm)
 - Status: documented.
 
+*** clautolisp
+Non-normative. Besides enabling the ~vla-*~ accessors, ~(vl-load-com)~
+binds the ActiveX enumeration constants of the families clautolisp's
+ActiveX operations consume -- ~AcAlignment~, ~AcAttributeMode~, ~AcColor~,
+~AcLineWeight~ -- as AutoLISP global variables (~acAlignmentMiddleLeft~ is
+9). Autodesk's Visual LISP examples use these names right after
+~(vl-load-com)~ (e.g. ~(vla-put-Alignment textObj acAlignmentRight)~ on
+the [Alignment Property (ActiveX)](https://help.autodesk.com/cloudhelp/2025/ENU/AutoCAD-LT-ActiveX-Reference/files/GUID-27030E1C-6480-4A64-BE0A-E72C1FFF2023.htm)
+page) and BricsCAD lists them among its
+[AC constants](https://developer.bricsys.com/bricscad/help/en_US/V14/DevRef/source/Lisp_acCONSTANTS.html).
+A name already holding a non-nil value is not rebound, so repeated calls
+never reset a program's binding. Whether the vendors bind them before
+~(vl-load-com)~ (BricsCAD calls it at startup from its own
+~vle-extension.lsp~) and whether a second call re-asserts them is
+recorded by ~probes/sources/probe-activex-constants.lsp~, not yet measured.
+
 #+LATEX: \newpage
 
 ** Function Entry: VL-CATCH-ALL-APPLY

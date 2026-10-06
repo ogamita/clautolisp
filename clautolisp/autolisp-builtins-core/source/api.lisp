@@ -10630,7 +10630,107 @@ misspelling would hide a typo in a build script forever."
   ;; façade (RESOLVE-VLA-ACCESSOR), matching Visual LISP where vla-*
   ;; names become resolvable only after (vl-load-com).
   (setf *com-loaded-p* t)
+  ;; ... and bind the ActiveX enumeration constants (acAlignmentMiddleLeft,
+  ;; acByLayer, acLnWt025, ...) that the vendors' type library makes
+  ;; visible to AutoLISP once COM support is loaded.
+  (install-activex-enumeration-constants)
   (autolisp-true))
+
+;;; --- ActiveX enumeration constants (cador-activex-enumeration-constants-
+;;; unbound.issue) -------------------------------------------------------
+;;;
+;;; AutoCAD and BricsCAD expose the enumerations of their ActiveX type
+;;; library as AutoLISP global variables: Autodesk's own Visual LISP
+;;; examples write (vl-load-com) and then (vla-put-Alignment textObj
+;;; acAlignmentRight); BricsCAD's DevRef lists the same names ("AC...
+;;; (constants)", 935 of them). clautolisp binds the families its
+;;; implemented vla-* / vlax-* operations consume. Every value below is
+;;; documented -- see the SOURCE of each family -- and is checked on the
+;;; real products by probes/sources/probe-activex-constants.lsp.
+;;;
+;;; WHEN: at (vl-load-com), the documented point at which the ActiveX
+;;; surface appears (AutoCAD's examples all begin with it; vla-* names are
+;;; resolvable only after it, see *COM-LOADED-P*). A name the program has
+;;; already given a non-nil value is LEFT ALONE, so calling (vl-load-com)
+;;; again -- every acaddoc.lsp does -- neither erases nor replaces a user
+;;; binding. Whether the vendors protect or re-assert these values on a
+;;; second (vl-load-com) is not measured yet; the probe records it.
+
+(defparameter *activex-enumeration-constants*
+  '(;; AcAlignment -- Text / Attribute / AttributeRef .Alignment. Names and
+    ;; order: Autodesk "Alignment Property (ActiveX)"
+    ;; (help.autodesk.com/cloudhelp/2025/ENU/AutoCAD-LT-ActiveX-Reference/
+    ;; files/GUID-27030E1C-6480-4A64-BE0A-E72C1FFF2023.htm); the 0-14 values
+    ;; are the ones cador's property bridge already maps to DXF 72 + 73/74
+    ;; (cador/source/vlax-api.lisp, %ENTITY-ALIGNMENT).
+    (:ac-alignment
+     ("acAlignmentLeft" 0) ("acAlignmentCenter" 1) ("acAlignmentRight" 2)
+     ("acAlignmentAligned" 3) ("acAlignmentMiddle" 4) ("acAlignmentFit" 5)
+     ("acAlignmentTopLeft" 6) ("acAlignmentTopCenter" 7) ("acAlignmentTopRight" 8)
+     ("acAlignmentMiddleLeft" 9) ("acAlignmentMiddleCenter" 10)
+     ("acAlignmentMiddleRight" 11) ("acAlignmentBottomLeft" 12)
+     ("acAlignmentBottomCenter" 13) ("acAlignmentBottomRight" 14))
+    ;; AcAttributeMode -- AddAttribute's Mode argument and Attribute.Mode
+    ;; (DXF ATTDEF group 70 bit flags). Autodesk AddAttribute / Mode pages
+    ;; ("acAttributeModeInvisible + acAttributeModeConstant": additive flags).
+    (:ac-attribute-mode
+     ("acAttributeModeNormal" 0) ("acAttributeModeInvisible" 1)
+     ("acAttributeModeConstant" 2) ("acAttributeModeVerify" 4)
+     ("acAttributeModePreset" 8) ("acAttributeModeLockPosition" 16)
+     ("acAttributeModeMultipleLine" 32))
+    ;; AcColor -- the .Color property of entities and layers. Autodesk
+    ;; "ColorIndex Property (ActiveX)": "a color index number from 0 to 256,
+    ;; or one of the constants" acByBlock acByLayer acRed ... acWhite, i.e.
+    ;; the ACI values (0 BYBLOCK, 1-7 the standard colours, 256 BYLAYER).
+    (:ac-color
+     ("acByBlock" 0) ("acRed" 1) ("acYellow" 2) ("acGreen" 3) ("acCyan" 4)
+     ("acBlue" 5) ("acMagenta" 6) ("acWhite" 7) ("acByLayer" 256))
+    ;; AcLineWeight -- the .Lineweight property (DXF 370). Values verbatim
+    ;; from BricsCAD V26 DevRef vl-vplayer-set-lineweight
+    ;; (developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/
+    ;; vlvplayersetlineweight.htm), copied in the specification draft.
+    (:ac-line-weight
+     ("acLnWt000" 0) ("acLnWt005" 5) ("acLnWt009" 9) ("acLnWt013" 13)
+     ("acLnWt015" 15) ("acLnWt018" 18) ("acLnWt020" 20) ("acLnWt025" 25)
+     ("acLnWt030" 30) ("acLnWt035" 35) ("acLnWt040" 40) ("acLnWt050" 50)
+     ("acLnWt053" 53) ("acLnWt060" 60) ("acLnWt070" 70) ("acLnWt080" 80)
+     ("acLnWt090" 90) ("acLnWt100" 100) ("acLnWt106" 106) ("acLnWt120" 120)
+     ("acLnWt140" 140) ("acLnWt158" 158) ("acLnWt200" 200) ("acLnWt211" 211)
+     ("acLnWtByLayer" -1) ("acLnWtByBlock" -2) ("acLnWtByLwDefault" -3)))
+  "The ActiveX enumeration constants clautolisp binds at (vl-load-com):
+a list of (FAMILY (NAME VALUE)...). Every name of these four families is
+in BricsCAD's list of AC constants and in Autodesk's ActiveX reference, so
+they are bound under every dialect; a family one product lacks would be
+filtered by ACTIVEX-ENUMERATION-CONSTANT-AVAILABLE-P.")
+
+(defun activex-enumeration-constants ()
+  "A fresh list of (NAME VALUE FAMILY) for every ActiveX enumeration
+constant clautolisp knows, in table order."
+  (loop for (family . entries) in *activex-enumeration-constants*
+        nconc (loop for (name value) in entries
+                    collect (list name value family))))
+
+(defun activex-enumeration-constant-available-p (family)
+  "True when FAMILY is exposed under the current dialect. Every family in
+the table is documented on both AutoCAD and BricsCAD (see
+*ACTIVEX-ENUMERATION-CONSTANTS*), so this is T; it is the one place to
+narrow a family to a product once a measurement says so."
+  (declare (ignore family))
+  t)
+
+(defun install-activex-enumeration-constants ()
+  "Bind each ActiveX enumeration constant as an AutoLISP global variable in
+the current document's namespace, unless the program already gave that
+name a non-nil value (a user binding is never erased or replaced, so
+\(vl-load-com) is idempotent). Returns the number of names bound."
+  (let ((count 0))
+    (loop for (name value family) in (activex-enumeration-constants)
+          for symbol = (intern-autolisp-symbol (string-upcase name))
+          when (and (activex-enumeration-constant-available-p family)
+                    (null (autolisp-symbol-value symbol)))
+            do (clautolisp.autolisp-runtime:set-autolisp-symbol-value symbol value)
+               (incf count))
+    count))
 (defun builtin-vl-load-reactors () (autolisp-true)) ; no reactors yet; success.
 (defun builtin-vl-load-all (filename)
   "(vl-load-all filename) -- load FILENAME into every open document and every

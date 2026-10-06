@@ -38,6 +38,7 @@ probe-viewports.lsp           cad-probe-run-viewport-probes
 probe-conformance.lsp         cad-probe-run-conformance-probes
 probe-open-encoding.lsp       cad-probe-run-open-encoding-probes
 probe-logfile.lsp             cad-probe-run-logfile-probes
+probe-activex-constants.lsp   cad-probe-run-activex-constants-probes
 # LAST: a NEW / OPEN may end the run.
 probe-documents.lsp           cad-probe-run-document-probes
 

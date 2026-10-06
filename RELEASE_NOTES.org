@@ -37,6 +37,13 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- ActiveX enumeration constants (2.2.213): ~(vl-load-com)~ now binds the
+  ~AcAlignment~, ~AcAttributeMode~, ~AcColor~ and ~AcLineWeight~ constants
+  (~acAlignmentMiddleLeft~ is 9, ~acByLayer~ 256, ~acLnWt025~ 25, ...) as
+  AutoLISP globals, so ~(vla-put-Alignment att acAlignmentMiddleLeft)~ no
+  longer passes nil. Calling ~(vl-load-com)~ again never resets a value the
+  program set. New probe suite ~probe-activex-constants~ records the
+  vendors' values and BricsCAD's whole list of AC constants.
 - alfe 2.2.158 / clautolisp 2.2.212: =alfe --clautolisp= behaves the same
   under =--backend direct= (the default) and =--backend subprocess=. The
   in-process engine now carries the DWG codec, so =--dwg FILE.dwg= no

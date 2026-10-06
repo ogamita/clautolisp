@@ -1106,6 +1106,25 @@ provides that surface through the host backend:
   no fixed list of ~vla-get-Foo~ functions; any property/method name
   works. Before ~(vl-load-com)~ these names are undefined, and a user
   ~(defun vla-get-foo …)~ shadows the façade for that name.
+- The *ActiveX enumeration constants* are AutoLISP global variables once
+  ~(vl-load-com)~ has run, as on AutoCAD and BricsCAD, so vendor code such
+  as ~(vla-put-Alignment att acAlignmentMiddleLeft)~ needs no magic
+  numbers. clautolisp binds the families its ActiveX operations consume:
+  ~AcAlignment~ (~acAlignmentLeft~ 0 ... ~acAlignmentBottomRight~ 14, the
+  ~Alignment~ of a ~Text~ / ~Attribute~), ~AcAttributeMode~
+  (~acAttributeModeNormal~ 0, ~...Invisible~ 1, ~...Constant~ 2,
+  ~...Verify~ 4, ~...Preset~ 8, ~...LockPosition~ 16, ~...MultipleLine~ 32
+  -- additive, for ~AddAttribute~ and ~Mode~), ~AcColor~ (~acByBlock~ 0,
+  ~acRed~ 1 ... ~acWhite~ 7, ~acByLayer~ 256) and ~AcLineWeight~
+  (~acLnWt000~ ... ~acLnWt211~, ~acLnWtByLayer~ -1, ~acLnWtByBlock~ -2,
+  ~acLnWtByLwDefault~ -3), under every dialect and on every path
+  (standalone, ~alfe --clautolisp~ direct and subprocess). Before
+  ~(vl-load-com)~ they are unbound. ~(vl-load-com)~ may be called any
+  number of times: a name the program has already given a non-nil value
+  is left alone, never reset. The values are those of the vendors'
+  documentation; ~probes/sources/probe-activex-constants.lsp~ records them
+  on the real products. Other enumerations (~AcActiveSpace~,
+  ~AcRegenType~, ~AcSaveAsType~, ...) are not bound yet.
 
 - The document's *collections* are live and drawing-backed:
   ~(vla-get-blocks doc)~, ~(vla-get-layers doc)~,

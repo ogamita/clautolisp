@@ -105,3 +105,67 @@ is consumed.
   bindings for the same host and dialect.
 - AutoCAD/BricsCAD-compatible application code can use the symbolic constants
   without embedding numeric magic values.
+
+* Progress (2026-10-06, clautolisp 2.2.213)
+
+Branch =fix-cador-activex-enumeration-constants-unbound=.
+
+** Done
+
+- =(vl-load-com)= binds the ActiveX enumeration constants of the four
+  families consumed by cador's implemented =vla-*= / =vlax-*= operations
+  (table =*ACTIVEX-ENUMERATION-CONSTANTS*= in
+  =clautolisp/autolisp-builtins-core/source/api.lisp=, 58 names):
+  - =AcAlignment= 0-14 (Text / Attribute =Alignment=): names and order from
+    Autodesk "Alignment Property (ActiveX)"
+    (https://help.autodesk.com/cloudhelp/2025/ENU/AutoCAD-LT-ActiveX-Reference/files/GUID-27030E1C-6480-4A64-BE0A-E72C1FFF2023.htm),
+    values = the 0-14 range cador's property bridge already maps to DXF
+    72 + 73/74;
+  - =AcAttributeMode= (=AddAttribute= Mode, =Mode= property): 0, 1, 2, 4, 8,
+    16, 32 -- additive flags per Autodesk's AddAttribute documentation;
+  - =AcColor= (=Color=): acByBlock 0, acRed 1 ... acWhite 7, acByLayer 256 --
+    Autodesk "ColorIndex Property (ActiveX)"
+    (https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-LT-ActiveX-Reference/files/GUID-0C23C1B5-DA04-4A27-9EDD-26D5615C71D5.htm):
+    "a color index number from 0 to 256, or one of the constants";
+  - =AcLineWeight= (=Lineweight=): verbatim from BricsCAD V26 DevRef
+    =vl-vplayer-set-lineweight=, already copied in the spec draft.
+  Every name is in BricsCAD's list of AC constants
+  (https://developer.bricsys.com/bricscad/help/en_US/V14/DevRef/source/Lisp_acCONSTANTS.html)
+  and in Autodesk's reference, so no family is product-restricted. Neither
+  vendor page states the AcAttributeMode / AcColor numbers next to the
+  names; they agree with the DXF ATTDEF 70 flags and the ACI, and with
+  third-party type-library mirrors -- the probe settles them.
+- Binding time: at =(vl-load-com)= (Autodesk's examples always call it
+  first; =vla-*= names appear only after it). A name the program already
+  gave a non-nil value is left alone, so repeated calls neither erase nor
+  replace user bindings; a name set to nil is rebound.
+- Same code path for standalone clautolisp and both =alfe --clautolisp=
+  variants (they run the same builtin); checked under the autocad-2022,
+  bricscad-v26 and clautolisp dialects (tests) and in the built
+  =clautolisp-sbcl= under =--dialect bricscad-v26=.
+- Table-driven tests (autolisp-builtins-core builtin-tests.lisp,
+  =activex-constants-*=): every AcAlignment constant through
+  =vla-put-Alignment= on an ATTDEF created by =vla-AddAttribute= (the SCHME
+  call) and on a TEXT; every bound constant under three dialects;
+  Color / Lineweight / layer Color / AddAttribute Mode symbolically;
+  idempotence and user bindings.
+- Probe =probes/sources/probe-activex-constants.lsp= (in the manifest):
+  boundp + value before and after =(vl-load-com)=, each constant of the
+  four families with its documented value, a user binding across a second
+  =(vl-load-com)=, and the value of every one of the 934 names of
+  BricsCAD's AC constant list (two of which, =action_tile= and
+  =acdimenableupdate=, are functions).
+
+** Remains
+
+- Run the probe on AutoCAD 2022 and BricsCAD V25/V26 and reconcile:
+  values, whether the constants exist before =(vl-load-com)= (BricsCAD
+  calls it at startup from =vle-extension.lsp=), whether a second call
+  resets a user value (clautolisp: no), whether the names are protected.
+- Bind the other families from the inventory as operations consume them
+  (AcActiveSpace, AcRegenType, AcSaveAsType, AcAttachmentPoint, ...).
+- Multi-document: the constants are bound in the namespace that called
+  =(vl-load-com)=; a later document's namespace gets them at its own
+  =(vl-load-com)= (as acaddoc.lsp code does) -- vendor behaviour unmeasured.
+- SCHME: replay =creation insertion et mise a jour d'un bloc attribue=
+  without the conditional fallback.
