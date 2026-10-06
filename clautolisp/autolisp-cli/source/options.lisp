@@ -92,7 +92,12 @@
   (user-interface   nil)              ; C   --debugger-ui dumb|ncurses|aldb  → :dumb/:ncurses/:aldb (terminal/tui alias dumb; emacs aliases aldb)
   (aldb-address     nil)              ; C   --aldb-listen [HOST:]PORT — the HOST part (string)
   (aldb-port        nil)              ; C   --aldb-listen [HOST:]PORT — the PORT part (integer or service-name string)
-  (aldb-stdio-p     nil))             ; C   --aldb-stdio → t
+  (aldb-stdio-p     nil)              ; C   --aldb-stdio → t
+  ;; --front-end-bindings FILE: the *AUTOLISP-...* bindings a driving front
+  ;; end (alfe --backend subprocess) resolved, to install INSTEAD of the ones
+  ;; this program would derive from its own argv
+  ;; (alfe-clautolisp-backend-semantic-parity.issue).
+  (front-end-bindings nil))           ; C   --front-end-bindings FILE → FILE (string)
 
 ;;; --- value parsers ----------------------------------------------------
 ;;;

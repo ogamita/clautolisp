@@ -95,3 +95,114 @@ variables, diagnostics, side effects or exit statuses.
 - The SCHME workaround (=--backend subprocess= on the cador suites) can be
   removed after a release containing the fix is consumed.
 
+* Progress (2026-10-06, alfe 2.2.158 / clautolisp 2.2.212)
+
+Branch =fix-alfe-clautolisp-backend-semantic-parity=. The reported failure
+is fixed and most of the contract is in place; the ticket stays open for
+the divergences listed under /Remaining/.
+
+** Done
+
+- *Capabilities.* =autolisp-front-end/backend-clautolisp= now depends on
+  =clautolisp/drawing-dwg= and =clautolisp/autolisp-compiler=, as
+  =clautolisp/clautolisp-tool= does. =alfe --clautolisp --host cador --dwg
+  FILE.dwg= opens the drawing in the default direct variant; the native
+  LibreDWG shim stays lazily loaded (=ensure-shim-loaded= at the first
+  conversion), so an alfe without it still starts. Verified with the built
+  =alfe-sbcl= on =autolisp-front-end/source/empty.dwg=: =DWGNAME= printed
+  identically, exit 0, by =--backend direct= and =--backend subprocess=.
+- *One resolved configuration.* The =*AUTOLISP-...*= bindings are computed
+  once (=direct-transmit-bindings=). Direct installs them; subprocess
+  writes them to a file and passes the new clautolisp option
+  =--front-end-bindings FILE= (format in
+  =clautolisp/autolisp-cli/source/engine.lisp=), which the child installs
+  instead of its own. Before: =*AUTOLISP-FRONTEND*= CLAUTOLISP,
+  =*AUTOLISP-QUIET*= T, =*AUTOLISP-VERSION*= clautolisp's, =PROGRAM=
+  "clautolisp" in the child. Now only =*AUTOLISP-PROCESS*= differs (DIRECT
+  / SUBPROCESS), by design.
+- *Same run.* The direct variant now links the startup drawing's LISP
+  namespace (=link-runtime-session-to-host=, multi-document slice 1),
+  applies a pending document switch before each action, binds
+  =*AUTOLISP-EXPRESSION*= during =-x=, and runs =--main FN= as =-x
+  "(FN)"= -- all as the clautolisp program does.
+- *Same outcome.* The program's reporters moved to =autolisp-cli=
+  (=report-autolisp-runtime-error=, =report-autolisp-termination=,
+  =report-engine-error=, =engine-drawing-error-message=) and both variants
+  use them. =eval-result= gained =exit-code=: the engine's status passes
+  through in both variants (=(exit N)=, =(quit N)=, =autolisp-set-status=
+  -> N; runtime error 1; unopenable =-l= file 2; unreadable =--dwg= 1 with
+  =--dwg: cannot open the drawing ...=). Before, direct exited 0 on =(exit
+  3)= and subprocess squashed every status to 1. NOTE for pjb: an
+  unopenable =-l= file is now 2 in both variants (the clautolisp program's
+  documented code); it was 1 in-process. The conformance scenario
+  =actions-load-missing-file= was updated. If alfe's own table (2 = usage
+  error) must win, the child has to tell a file error from a user =(exit
+  2)=, which needs a channel it does not have today.
+- *Contract.* =alfe.backend.clautolisp:*clautolisp-option-contract*=
+  (=source/clautolisp-option-contract.lisp=) classifies every option alfe
+  accepts; =clautolisp-option-contract-classifies-every-accepted-option=
+  fails when one is missing or stale.
+- *Parity suite.* =clautolisp-backend-variants-are-semantically-identical=
+  runs 18 rows (host cador/nihil, --dialect, --lax, the bindings, --quiet
+  --timeout --mode --no-color, -l, -x, --main, runtime error, exit and
+  recorded status, missing -l file, -Esource, -Efile-write with the written
+  octets, --dwg on a DXF, a missing drawing, and empty.dwg) through
+  =alfe.cli:run= under both variants, comparing stdout, stderr, exit
+  status and written files. -Eterminal is compared on the resolved
+  configuration (it needs a real terminal fd).
+- *Docs.* alfe user manual (/One engine, two transports/), specification
+  (/Semantic parity of the two modes/), alfe(1), =alfe --help=,
+  clautolisp manual and clautolisp(1) for =--front-end-bindings=.
+
+** Option audit
+
+| Option(s)                                         | Disposition | Direct                                          | Subprocess                                  |
+|---------------------------------------------------+-------------+-------------------------------------------------+---------------------------------------------|
+| --help --version --list-* --compile-plugin        | front-end   | answered by alfe                                | answered by alfe                            |
+| --dry-run --print-command                         | front-end   | alfe; --print-command is a usage error          | same                                        |
+| --clautolisp --autocad --bricscad --cad --backend | front-end   | backend / variant selection                     | same                                        |
+| --workdir --keep-workdir --write-workdir-path     | front-end   | alfe workdir; *AUTOLISP-WORKDIR* via bindings   | same                                        |
+| --plugin --plugin-path --no-plugins               | front-end   | alfe plug-ins                                   | same (but see per-action hooks below)       |
+| --on-error                                        | front-end   | alfe's own conditions                           | same                                        |
+| -q -v -d                                          | front-end   | alfe log level; *AUTOLISP-QUIET* ... via bindings | child always --quiet; same bindings       |
+| --no-init                                         | front-end   | alfe init files become -l actions               | same; child always --no-init                |
+| --dialect --strict --lax                          | engine      | resolve-clautolisp-dialect                      | --dialect NAME                              |
+| --host                                            | engine      | resolve-clautolisp-host                         | --host NAME (cadtui: subprocess only)       |
+| --dwg                                             | engine      | host-open-startup-drawing (codec now loaded)    | --dwg FILE                                  |
+| -l -x --main --quit                               | engine      | in-process, same bindings and switches          | -l / -x / -x "(FN)" / implicit              |
+| --no-color                                        | engine      | *color-output*                                  | $NO_COLOR                                   |
+| -E --source-encoding                              | engine      | session default source encoding                 | -Esource                                    |
+| --file[-read/-write]-encoding                     | engine      | *AUTOLISP-FILE-READ/WRITE-ENCODING*             | -Efile-read / -Efile-write                  |
+| --log-encoding                                    | engine      | *AUTOLISP-LOG-ENCODING*                         | -Elog                                       |
+| --terminal[-input/-output]-encoding, --console-*  | engine      | alfe's own streams (console folded in)          | -Eterminal-in/-out + capture decoding       |
+| --mode --bootstrap-phase --timeout --cadstdio-*   | no-effect   | not acted on                                    | not acted on                                |
+| -i (and a bare alfe)                              | DIVERGENT   | alfe's minimal "alfe>" REPL                     | clautolisp REPL, interactors, aldo on error |
+| --dribble --dribble-interactors                   | DIVERGENT   | warns, records nothing                          | forwarded, the engine records its REPL      |
+| --dcl                                             | DIVERGENT   | ignored; no DCL implementation in-process       | ignored; the child picks its renderer       |
+
+** Remaining
+
+1. =-i=: the direct REPL is alfe's own minimal loop; the subprocess is the
+   clautolisp REPL (interactors, comma commands, aldo debugger on error by
+   the interactive =--on-error= default). Either embed the clautolisp REPL
+   (needs the tool's repl-loop / interactor / debugger systems in alfe) or
+   route =-i= to the subprocess as =--host cadtui= is.
+2. =--dribble=: only the subprocess records. Same two options as =-i=
+   (the recorder is the clautolisp program's).
+3. =--dcl= and DCL itself: =autolisp-dcl= and the renderer selection
+   (=select-and-install-dcl-renderer=) live in the clautolisp program; the
+   in-process engine has no DCL. alfe also does not forward =--dcl=.
+4. Plug-ins with =:pre-action= / =:post-action= hooks:
+   =%eval-plan-with-hooks= calls EVAL-PLAN once per action, and the
+   subprocess variant spawns one child per call, so state does not carry
+   from one action to the next there (it does in-process).
+5. The subprocess argv is still assembled by hand (=build-subprocess-argv=);
+   the contract table is checked for completeness, not used to derive the
+   argv.
+6. Verify on the native Windows / macOS lanes, with an INSTALLED alfe (the
+   DWG shim is searched from alfe's own prefix:
+   =<PREFIX>/lib/clautolisp/<os>/<arch>/=), and on CCL.
+7. Decide the exit status of an unopenable =-l= file (see the NOTE above).
+8. The SCHME workaround (=--backend subprocess= on the cador suites) can be
+   dropped once a release containing alfe 2.2.158 is consumed.
+

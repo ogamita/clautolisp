@@ -1053,6 +1053,19 @@ Both axes are independent.
                             so headless test rigs can feed
                             deterministic answers to interactive
                             scripts.
+- ~--front-end-bindings FILE~ :: For a front end that runs
+                            clautolisp as its engine: FILE holds the
+                            ~*AUTOLISP-...*~ values the front end
+                            resolved, installed in place of those
+                            this command line would give. ~alfe
+                            --clautolisp --backend subprocess~ passes
+                            it, so a program sees the same values
+                            (~*AUTOLISP-FRONTEND*~ ~ALFE~, alfe's
+                            version, the user's actions, ~PROGRAM~
+                            ~alfe~) as under alfe's in-process engine.
+                            The file is written by the front end;
+                            its format is internal. A missing or
+                            malformed FILE is a usage error.
 
 The ~command~ special form (and ~command-s~ / ~vl-cmdf~) routes its
 token sequence through the selected backend's command channel. cador

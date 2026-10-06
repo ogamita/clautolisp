@@ -711,3 +711,236 @@ clautolisp-sbcl that has cadtui is installed."
                           :version "9.9.9"))))
         (is (= 0 code) "stderr: ~A" (get-output-stream-string err))
         (is (search "CADTUI" (get-output-stream-string out))))))
+
+;;; --- semantic parity of the two variants ---------------------------
+;;;
+;;; alfe-clautolisp-backend-semantic-parity.issue: `--backend direct' and
+;;; `--backend subprocess' are transports for the same engine. Two checks:
+;;;
+;;;  1. the option CONTRACT (alfe.backend.clautolisp:*clautolisp-option-
+;;;     contract*) classifies exactly the options alfe's parser accepts --
+;;;     a new option cannot be added without deciding how both variants
+;;;     consume it;
+;;;  2. a TABLE of runs, each executed once per variant through alfe's own
+;;;     entry point, whose stdout, stderr, exit status and file side effects
+;;;     must be identical.
+
+(defun %alfe-accepted-long-options ()
+  "Every long option alfe's parser accepts (core options, no plug-ins)."
+  (remove-duplicates
+   (loop for spec in (append alfe.cli::*alfe-option-specs*
+                             clautolisp.autolisp-cli:*common-option-specs*)
+         append (clautolisp.autolisp-cli:option-spec-longs spec))
+   :test #'string=))
+
+(test clautolisp-option-contract-classifies-every-accepted-option
+  "Every option alfe accepts has ONE entry in the clautolisp option contract,
+and the contract names no option alfe no longer accepts."
+  (let ((accepted (%alfe-accepted-long-options))
+        (classified (mapcar #'first
+                            alfe.backend.clautolisp:*clautolisp-option-contract*)))
+    (is (null (set-difference accepted classified :test #'string=))
+        "options accepted by alfe but missing from the clautolisp contract: ~S"
+        (set-difference accepted classified :test #'string=))
+    (is (null (set-difference classified accepted :test #'string=))
+        "options in the clautolisp contract that alfe does not accept: ~S"
+        (set-difference classified accepted :test #'string=))
+    (is (= (length classified)
+           (length (remove-duplicates classified :test #'string=)))
+        "an option is classified twice")
+    (is (every (lambda (entry)
+                 (member (second entry)
+                         '(:front-end :engine :no-effect :divergent)))
+               alfe.backend.clautolisp:*clautolisp-option-contract*))))
+
+(defun %parity-fixture (name content &key (external-format :utf-8))
+  "Write CONTENT to a fresh temporary file named after NAME; return its
+namestring."
+  (let ((path (uiop:tmpize-pathname
+               (merge-pathnames name (uiop:temporary-directory)))))
+    (with-open-file (out path :direction :output :if-exists :supersede
+                              :external-format external-format)
+      (write-string content out))
+    (namestring path)))
+
+(defun %run-alfe-variant (variant arguments)
+  "Run alfe in-process as `alfe --no-init --no-plugins --clautolisp --backend
+VARIANT ARGUMENTS...'. Returns (:EXIT code :STDOUT text :STDERR text)."
+  (let* ((out (make-string-output-stream))
+         (err (make-string-output-stream))
+         (code (let ((*standard-output* out)
+                     (*error-output* err))
+                 (alfe.cli:run (append (list "--no-init" "--no-plugins"
+                                             "--clautolisp"
+                                             "--backend" (string-downcase variant))
+                                       arguments)
+                               :version "9.9.9"))))
+    (list :exit code
+          :stdout (get-output-stream-string out)
+          :stderr (get-output-stream-string err))))
+
+(defun %file-octets-or-nil (path)
+  (when (probe-file path)
+    (with-open-file (in path :element-type '(unsigned-byte 8))
+      (let ((octets (make-array (file-length in) :element-type '(unsigned-byte 8))))
+        (read-sequence octets in)
+        (coerce octets 'list)))))
+
+(defun %parity-scenarios ()
+  "The parity table: (NAME ARGUMENTS &key SIDE-EFFECT EXPECT-STDOUT LENIENT).
+SIDE-EFFECT names a file the run writes, compared octet for octet.
+EXPECT-STDOUT, when given, must be a substring of both outputs (so a table
+entry also says what the run is FOR, not only that the two runs agree).
+LENIENT compares stderr only for a successful run: the DWG codec's error
+names the native library candidates, which may legitimately differ."
+  (let* ((nl (string #\Newline))
+         (e-acute (string (code-char 233)))
+         (loaded (%parity-fixture
+                  "parity-load.lsp"
+                  (concatenate 'string
+                               "(defun c:hello () (princ \"hello\"))" nl
+                               "(princ (list 'loaded (= *autolisp-load-pathname* nil)))" nl)))
+         (latin1 (%parity-fixture
+                  "parity-latin1.lsp"
+                  (concatenate 'string "(princ (strlen \"" e-acute "t" e-acute "\"))" nl)
+                  :external-format :latin-1))
+         (written (namestring
+                   (uiop:tmpize-pathname
+                    (merge-pathnames "parity-written.txt" (uiop:temporary-directory)))))
+         (dxf (namestring
+               (asdf:system-relative-pathname
+                "clautolisp/drawing" "drawing/template/empty-drawing.dxf")))
+         (dwg (namestring
+               (asdf:system-relative-pathname
+                "autolisp-front-end" "source/empty.dwg"))))
+    `(("host cador"
+       ("--host" "cador" "-x" "(princ (list *autolisp-host* (getvar \"PROGRAM\")))")
+       :expect-stdout "alfe")
+      ("host nihil"
+       ("--host" "nihil" "-x" "(princ 'ok)")
+       :expect-stdout "OK")
+      ("dialect"
+       ("--dialect" "autocad-2022" "-x" "(princ *autolisp-dialect*)")
+       :expect-stdout "AUTOCAD-2022")
+      ("lax"
+       ("--lax" "-x" "(princ *autolisp-dialect*)")
+       :expect-stdout "LAX")
+      ("front-end bindings"
+       ("-x" "(princ (list *autolisp-frontend* *autolisp-backend* *autolisp-version* *autolisp-expression* *autolisp-actions* *autolisp-quiet* *autolisp-no-init*))")
+       :expect-stdout "ALFE")
+      ("quiet, timeout, mode, no-color"
+       ("--quiet" "--timeout" "7" "--mode" "batch" "--no-color"
+        "-x" "(princ (list *autolisp-quiet* *autolisp-timeout* *autolisp-mode* *autolisp-no-color*))")
+       :expect-stdout "7")
+      ("load then eval"
+       ("-l" ,loaded "-x" "(c:hello)")
+       :expect-stdout "hello")
+      ("main"
+       ("-l" ,loaded "--main" "c:hello")
+       :expect-stdout "hello")
+      ("main undefined" ("--main" "no-such-function"))
+      ("runtime error stops the plan"
+       ("-x" "(princ \"a\")" "-x" "(car 1)" "-x" "(princ \"b\")"))
+      ("exit status" ("-x" "(princ \"a\")" "-x" "(exit 3)"))
+      ("recorded status" ("-x" "(autolisp-set-status 5)"))
+      ("missing load file" ("-l" "/nonexistent/parity-missing.lsp"))
+      ("source encoding"
+       ("-Esource" "iso-8859-1" "-l" ,latin1)
+       :expect-stdout "3")
+      ("file-write encoding"
+       ("-Efile-write" "iso-8859-1"
+        "-x" ,(format nil "(setq f (open ~S \"w\")) (write-line ~S f) (close f)"
+                      written e-acute))
+       :side-effect ,written)
+      ("drawing dxf"
+       ("--host" "cador" "--dwg" ,dxf "-x" "(princ (getvar \"DWGNAME\"))")
+       :expect-stdout "empty-drawing.dxf")
+      ("drawing missing"
+       ("--host" "cador" "--dwg" "/nonexistent/parity-missing.dwg" "-x" "(princ 1)"))
+      ("drawing dwg"
+       ("--host" "cador" "--dwg" ,dwg "-x" "(princ (getvar \"DWGNAME\"))")
+       :lenient t))))
+
+(test clautolisp-backend-variants-are-semantically-identical
+  "Every row of the parity table gives the same stdout, stderr, exit status
+and file side effects under --backend direct and --backend subprocess.
+Skipped when no clautolisp-sbcl is built (the subprocess variant needs it)."
+  (if (not (subprocess-binary-available-p))
+      (is (not (subprocess-binary-available-p))
+          "clautolisp-sbcl not present; parity table skipped.")
+      (dolist (row (%parity-scenarios))
+        (destructuring-bind (name arguments &key side-effect expect-stdout lenient)
+            row
+          (flet ((run-one (variant)
+                   (when side-effect (ignore-errors (delete-file side-effect)))
+                   (let ((result (%run-alfe-variant variant arguments)))
+                     (append result
+                             (list :side-effect
+                                   (and side-effect
+                                        (%file-octets-or-nil side-effect)))))))
+            (let ((direct (run-one :direct))
+                  (subprocess (run-one :subprocess)))
+              (is (eql (getf direct :exit) (getf subprocess :exit))
+                  "~A: exit ~S (direct) vs ~S (subprocess); stderr ~S vs ~S"
+                  name (getf direct :exit) (getf subprocess :exit)
+                  (getf direct :stderr) (getf subprocess :stderr))
+              (is (string= (getf direct :stdout) (getf subprocess :stdout))
+                  "~A: stdout ~S (direct) vs ~S (subprocess)"
+                  name (getf direct :stdout) (getf subprocess :stdout))
+              (unless (and lenient (not (eql 0 (getf direct :exit))))
+                (is (string= (getf direct :stderr) (getf subprocess :stderr))
+                    "~A: stderr ~S (direct) vs ~S (subprocess)"
+                    name (getf direct :stderr) (getf subprocess :stderr)))
+              (when side-effect
+                (is (equal (getf direct :side-effect) (getf subprocess :side-effect))
+                    "~A: file ~S (direct) vs ~S (subprocess)"
+                    name (getf direct :side-effect) (getf subprocess :side-effect))
+                (is (equal '(233 10) (getf direct :side-effect))
+                    "~A: wrote ~S" name (getf direct :side-effect))
+                (ignore-errors (delete-file side-effect)))
+              (when expect-stdout
+                (is (search expect-stdout (getf direct :stdout))
+                    "~A: expected ~S in ~S" name expect-stdout
+                    (getf direct :stdout)))))))))
+
+(test clautolisp-terminal-encoding-resolves-identically-for-both-variants
+  "-Eterminal-out: the direct variant re-encodes alfe's own streams, the
+subprocess variant forwards it to the child and decodes the capture with it.
+Both come from the same resolved value. (Driving the streams themselves needs
+a real terminal file descriptor, so this compares the resolved configuration.)"
+  (let* ((options (alfe.cli:parse-arguments
+                   '("--clautolisp" "-Eterminal-out" "iso-8859-1" "-x" "(princ)")))
+         (keywords (alfe.cli:situation-engine-keywords options
+                                                        :console-is-terminal-p t))
+         (plan (alfe.cli:terminal-encoding-plan options))
+         (backend (alfe.backend.clautolisp:make-clautolisp-backend
+                   :variant :subprocess :executable-path "/x/clautolisp-sbcl"))
+         (session (alfe.backend.clautolisp::%make-subprocess-session
+                   :backend backend :dialect :strict
+                   :terminal-out-encoding (getf keywords :terminal-out-encoding)))
+         (argv (alfe.backend.clautolisp::build-subprocess-argv session nil)))
+    (is (getf keywords :terminal-out-encoding))
+    ;; direct: alfe's stdout is re-encoded with it
+    (is (find :output plan :key #'first))
+    ;; subprocess: forwarded verbatim, and the capture is decoded with it
+    (let ((tail (member "-Eterminal-out" argv :test #'equal)))
+      (is (equal (getf keywords :terminal-out-encoding) (second tail))))
+    (is (alfe.backend.clautolisp::%subprocess-capture-external-format session))))
+
+(test clautolisp-subprocess-forwards-the-front-end-bindings
+  "The subprocess variant passes --front-end-bindings FILE only when it has
+bindings to forward, before the actions."
+  (let* ((backend (alfe.backend.clautolisp:make-clautolisp-backend
+                   :variant :subprocess :executable-path "/x/clautolisp-sbcl"))
+         (session (alfe.backend.clautolisp::%make-subprocess-session
+                   :backend backend :dialect :strict))
+         (plan (list (alfe.backend:action-eval "(princ)"))))
+    (is (not (member "--front-end-bindings"
+                     (alfe.backend.clautolisp::build-subprocess-argv session plan)
+                     :test #'equal)))
+    (let* ((argv (alfe.backend.clautolisp::build-subprocess-argv
+                  session plan :front-end-bindings-file "/tmp/fe.sexp"))
+           (tail (member "--front-end-bindings" argv :test #'equal)))
+      (is (equal "/tmp/fe.sexp" (second tail)))
+      (is (< (position "--front-end-bindings" argv :test #'equal)
+             (position "-x" argv :test #'equal))))))

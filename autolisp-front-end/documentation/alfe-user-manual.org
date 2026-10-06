@@ -111,6 +111,54 @@ else:
     backend = clautolisp     ; default on every system
 #+end_example
 
+** One engine, two transports
+:PROPERTIES:
+:CUSTOM_ID: one-engine-two-transports
+:END:
+
+=--clautolisp= runs the clautolisp engine one of two ways:
+=--backend direct= (the default) embeds it in alfe, =--backend
+subprocess= runs the installed =clautolisp= executable as a child. They
+are two transports for the same engine, not two products: choosing the
+subprocess for isolation must not change what a program sees. So, for
+every option alfe accepts with =--clautolisp=:
+
+- the same features are present. alfe's image carries every part of the
+  engine the =clautolisp= program has that a program can observe -- in
+  particular the DWG codec, so =--dwg FILE.dwg= opens the drawing in the
+  default direct variant as it does in the subprocess one (the native
+  LibreDWG library is still loaded only when a DWG is first read or
+  written, so an alfe without it starts normally), and the AutoLISP
+  compiler, so the default optimization qualities compile as they do in
+  =clautolisp=;
+- user code sees the same values. The child is handed alfe's own
+  =*AUTOLISP-...*= values (with =--front-end-bindings=), so
+  =*AUTOLISP-FRONTEND*= is =ALFE=, =*AUTOLISP-VERSION*= is alfe's,
+  =*AUTOLISP-ACTIONS*= lists your actions, and =(getvar "PROGRAM")= is
+  =alfe= in both. Only =*AUTOLISP-PROCESS*= tells them apart (=DIRECT= /
+  =SUBPROCESS=), which is its purpose;
+- the diagnostics and the exit status are the same: a runtime error is
+  reported in the engine's words with its AutoLISP backtrace, =(exit N)=,
+  =(quit N)= and =autolisp-set-status= give exit status =N=, a =-l= file
+  that cannot be opened gives 2 (the =clautolisp= program's code), an
+  unreadable drawing is =--dwg: cannot open the drawing ...=, exit 1, and
+  =--main FN= runs as =-x "(FN)"= does.
+
+Three options still behave differently, and are the remaining work of the
+parity ticket (=alfe-clautolisp-backend-semantic-parity=):
+
+| Option                               | =--backend direct=                                 | =--backend subprocess=                                                         |
+|--------------------------------------+----------------------------------------------------+--------------------------------------------------------------------------------|
+| =-i= (and a bare =alfe=)             | alfe's minimal =alfe>= REPL                        | the clautolisp REPL: interactors, comma commands, the aldo debugger on errors  |
+| =--dribble=, =--dribble-interactors= | records nothing, and says so                       | forwarded: the engine records its REPL                                         |
+| =--dcl=                              | ignored; the in-process engine has no DCL renderer | ignored; the child chooses its renderer itself (=auto=)                        |
+
+The treatment of every option is written down once, in
+=alfe.backend.clautolisp:*clautolisp-option-contract*=, and the test
+suite fails when an option alfe accepts is missing from it; a table of
+runs is executed under both variants and their output, diagnostics, exit
+status and written files compared.
+
 ** Why not auto-detect?
 
 A host with both BricsCAD and AutoCAD installed got
@@ -409,10 +457,11 @@ application-and-console-only configuration.
 alfe does not embed cadtui: the clautolisp executable provides it. So
 =alfe --clautolisp --host cadtui …= runs the installed =clautolisp-sbcl=
 as a child process — alfe selects =--backend subprocess= by itself — and
-gives it the dialect, =--host cadtui=, the source encoding (=-Esource=)
-and one =-l= / =-x= / =-i= per action of the plan, plus =--quiet= and
-=--no-init= (alfe owns the init policy). Other alfe options are not passed
-on. Asking for cadtui together with =--backend direct=, the
+gives it the run alfe resolved -- the dialect, =--host cadtui=, the
+drawing, the encodings, alfe's =*AUTOLISP-...*= values and one =-l= /
+=-x= / =-i= per action of the plan, plus =--quiet= and =--no-init= (alfe
+owns the init policy) -- exactly as for any =--backend subprocess= run
+(see [[#one-engine-two-transports][One engine, two transports]]). Asking for cadtui together with =--backend direct=, the
 in-process engine, is a usage error.
 
 The engine executable, =clautolisp-sbcl= (=clautolisp-sbcl.exe= on

@@ -1466,6 +1466,9 @@ effective host changes (=nihil=, =cador=, =cadtui=, or the CAD itself).
 | =autolisp-builtins-core=  | Builtins (numeric, list, string, file, stream).                               |
 | =autolisp-host=           | HAL: backend contract.                                                        |
 | =cador=                   | The =cador= host, for =--host cador= (the default).                           |
+| =autolisp-cli=            | Shared options, the =*AUTOLISP-...*= bindings, the engine's reporting.        |
+| =autolisp-compiler=       | The AutoLISP-to-CL compiler, as in the =clautolisp= program.                  |
+| =drawing-dwg=             | The DWG codec, for =--dwg FILE.dwg= (native library loaded lazily).           |
 
 ** Dialect
 
@@ -1535,12 +1538,55 @@ is the clautolisp executable's — its UI-tree layer is installed by that tool
 — so =--host cadtui= selects the subprocess mode by itself, and combined
 with an explicit =--backend direct= is a usage error. In the subprocess mode
 the engine is started with =--quiet --no-init --dialect D --host H=, the
-source encoding and one flag per action; the CAD backends ignore =--host=,
+encodings, =--dwg=, the dribble request, =--front-end-bindings FILE= and
+one flag per action; the CAD backends ignore =--host=,
 the CAD being the host. In a batch run the child's output is captured and
 replayed when it exits; when the plan holds an =:interactive= action the
 child is given alfe's own terminal (input, output and error), so that a
 REPL or the cadtui console works. Nothing else arbitrates the terminal: a
 full-screen text UI and alfe's own terminal settings are not reconciled yet.
+
+** Semantic parity of the two modes
+
+The in-process (=--backend direct=) and the subprocess (=--backend
+subprocess=) modes are two transports for one engine. For every option
+alfe accepts with =--clautolisp=, both MUST give the same observable
+result: the same features, the same AutoLISP state, the same output on
+=stdout=, the same diagnostics on =stderr=, the same exit status and the
+same file and drawing side effects.
+
+1. *Capabilities.* alfe's image loads every =clautolisp= subsystem the
+   =clautolisp= program loads that a program can observe: the compiler
+   (=autolisp-compiler=) and the DWG codec (=drawing-dwg=, whose native
+   library stays lazily loaded).
+2. *One resolved configuration.* The =*AUTOLISP-...*= bindings are
+   computed once, by alfe, from its options. The in-process engine
+   installs them; the subprocess engine receives them through
+   =--front-end-bindings FILE= and installs them instead of the ones its
+   own argv would give. Only =*AUTOLISP-PROCESS*= differs (=DIRECT= /
+   =SUBPROCESS=).
+3. *Same run.* The in-process engine follows the =clautolisp= program's
+   run: host set-up (the startup drawing's namespace included), a pending
+   document switch applied before each action, =*AUTOLISP-EXPRESSION*=
+   bound during =-x=, =--main FN= evaluated as =-x "(FN)"=.
+4. *Same outcome.* Both report a runtime error, a termination and an
+   unexpected error in the engine's words (shared =autolisp-cli=
+   reporters), and both exit with the engine's status: =N= for =(exit N)=
+   / =(quit N)= / =autolisp-set-status=, 1 for a runtime error, 2 for a
+   =-l= file that cannot be opened, 1 with =--dwg: cannot open the drawing
+   ...= for an unreadable drawing.
+5. *One contract.* =alfe.backend.clautolisp:*clautolisp-option-contract*=
+   classifies every option alfe accepts as consumed by alfe before either
+   engine starts (=:front-end=), consumed by both engines (=:engine=),
+   acted on by neither (=:no-effect=), or still different (=:divergent=).
+   The test suite fails when an accepted option is missing from it, and
+   runs a table of option combinations under both modes, comparing the
+   results.
+6. *Remaining divergences* (=:divergent=): =-i= (alfe's minimal REPL vs
+   the clautolisp REPL with its interactors and debugger), =--dribble= /
+   =--dribble-interactors= (recorded by the subprocess engine only) and
+   =--dcl= (the in-process engine has no DCL renderer). They are to be
+   made equal, or rejected identically before either engine starts.
 
 ** Encodings
 

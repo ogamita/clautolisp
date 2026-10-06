@@ -69,7 +69,8 @@
            #:eval-result-value
            #:eval-result-output
            #:eval-result-error-output
-           #:eval-result-condition))
+           #:eval-result-condition
+           #:eval-result-exit-code))
 
 (in-package #:alfe.backend)
 
@@ -331,4 +332,10 @@ non-NIL, is the originating ALFE.ERROR:BACKEND-ERROR."
   (value         nil)
   (output        "" :type string)
   (error-output  "" :type string)
-  (condition     nil))
+  (condition     nil)
+  ;; The process exit status the ENGINE itself decided, or NIL to derive it
+  ;; from STATUS. Set by the clautolisp backend, both variants alike: (exit
+  ;; N) / (quit N) / an AUTOLISP-SET-STATUS, a file error (2) -- what the
+  ;; clautolisp program exits with (alfe-clautolisp-backend-semantic-
+  ;; parity.issue).
+  (exit-code     nil))
