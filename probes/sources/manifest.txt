@@ -19,6 +19,8 @@
 #
 # Blank lines and #-comments are ignored.
 
+# FIRST: measures whether the AC constants exist before any (vl-load-com).
+probe-activex-constants.lsp   cad-probe-run-activex-constants-probes
 probe-sysvars.lsp      cad-probe-run-sysvar-probes
 probe-rtos.lsp         cad-probe-run-rtos-probes
 probe-diesel.lsp       cad-probe-run-diesel-probes

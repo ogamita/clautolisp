@@ -10627,10 +10627,92 @@ misspelling would hide a typo in a build script forever."
 
 (defun builtin-vl-load-com ()
   ;; Flip the COM-loaded flag that gates the dynamic vla-* accessor
-  ;; façade (RESOLVE-VLA-ACCESSOR), matching Visual LISP where vla-*
+  ;; facade (RESOLVE-VLA-ACCESSOR), matching Visual LISP where vla-*
   ;; names become resolvable only after (vl-load-com).
   (setf *com-loaded-p* t)
-  (autolisp-true))
+  ;; ... and bind the ActiveX enumeration constants (acAlignmentMiddleLeft,
+  ;; acByLayer, acLnWt025, ...): INSTALL-ACTIVEX-ENUMERATION-CONSTANTS.
+  (install-activex-enumeration-constants)
+  ;; Measured (probe-activex-constants): AutoCAD 2022 answers NIL, BricsCAD
+  ;; V25 / V26 T.
+  (if (eq (%activex-constants-product) :autocad) nil (autolisp-true)))
+
+;;; --- ActiveX enumeration constants (cador-activex-enumeration-constants-
+;;; unbound.issue) -------------------------------------------------------
+;;;
+;;; AutoCAD and BricsCAD bind the enumerations of their ActiveX type library
+;;; as AutoLISP global variables (acAlignmentMiddleLeft = 9, acByLayer = 256,
+;;; acLnWt025 = 25 ...). MEASURED, every one: probes/sources/probe-activex-
+;;; constants.lsp on AutoCAD 2022, BricsCAD V25 (Windows) and V26 (macOS)
+;;; recorded (boundp value) for each of the 934 names of BricsCAD's list of
+;;; AC constants. The table, *ACTIVEX-MEASURED-CONSTANTS* in
+;;; activex-constants-table.lisp, is GENERATED from those runs: 932 integer
+;;; constants (the other two names of the list are functions), 832 bound on
+;;; AutoCAD, all 932 on BricsCAD; both BricsCAD builds agree, and 30 names
+;;; differ between the products (the AcViewportScale family is off by one,
+;;; acNative 64 vs 60).
+;;;
+;;; WHICH: the dialect's product's -- AutoCAD's names and values under the
+;;; AutoCAD dialects, BricsCAD's under the BricsCAD ones; under strict only
+;;; the names both products bind to the SAME value (the portable subset);
+;;; under clautolisp / lax every name, AutoCAD's value where they differ
+;;; (Autodesk's type library is the one the API comes from).
+;;;
+;;; WHEN, measured with the probe FIRST in the run (before any suite loads
+;;; COM): AutoCAD 2022 binds them at the first (vl-load-com) -- unbound
+;;; before it (job 16978852020); BricsCAD has them from the start of the
+;;; document, before any (vl-load-com) (V26, job 16978852021). On all three a
+;;; later (vl-load-com) re-binds nothing -- not even a name the program set to
+;;; nil -- and a value the program set (setq acRed 99) is kept. So: under the
+;;; BricsCAD dialects at the start of every document (RUN-DOCUMENT-STARTUP-
+;;; CHAIN, before on_doc_load.lsp and S::STARTUP), otherwise at the first
+;;; (vl-load-com); ONCE per document either way, never over a non-nil value.
+
+(defvar *activex-constants-installed* (make-hash-table :test 'eq)
+  "The documents (runtime document namespaces) whose (vl-load-com) has
+installed the ActiveX constants: the second call installs nothing.")
+
+(defun %activex-constants-product ()
+  "The current dialect's product for the constant table: :AUTOCAD,
+:BRICSCAD, :STRICT (the portable subset) or :CLAUTOLISP (everything)."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (name (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-dialect-name)))
+         (product (and dialect (ignore-errors
+                                (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
+    (cond ((eq product :autocad) :autocad)
+          ((eq product :bricscad) :bricscad)
+          ((eq name :strict) :strict)
+          (t :clautolisp))))
+
+(defun activex-enumeration-constants (&optional (product (%activex-constants-product)))
+  "A fresh list of (NAME VALUE) -- the ActiveX constants PRODUCT binds (see
+the section header)."
+  (loop for (name autocad bricscad) in *activex-measured-constants*
+        for value = (ecase product
+                      (:autocad autocad)
+                      (:bricscad bricscad)
+                      (:strict (and autocad bricscad (= autocad bricscad) autocad))
+                      (:clautolisp (or autocad bricscad)))
+        when value collect (list name value)))
+
+(defun install-activex-enumeration-constants
+    (&optional (context (clautolisp.autolisp-runtime:current-evaluation-context)))
+  "Bind the ActiveX enumeration constants of the current dialect's product as
+AutoLISP global variables in CONTEXT's document -- once per document, and
+never over a name the program has given a non-nil value. Returns the number
+of names bound (0 on a later call)."
+  (let* ((document (or (ignore-errors
+                        (clautolisp.autolisp-runtime:evaluation-context-current-document context))
+                       :global))
+         (count 0))
+    (unless (gethash document *activex-constants-installed*)
+      (setf (gethash document *activex-constants-installed*) t)
+      (loop for (name value) in (activex-enumeration-constants)
+            for symbol = (intern-autolisp-symbol (string-upcase name))
+            when (null (clautolisp.autolisp-runtime:lookup-variable symbol context))
+              do (clautolisp.autolisp-runtime:set-variable symbol value context)
+                 (incf count)))
+    count))
 (defun builtin-vl-load-reactors () (autolisp-true)) ; no reactors yet; success.
 (defun builtin-vl-load-all (filename)
   "(vl-load-all filename) -- load FILENAME into every open document and every
@@ -10701,8 +10783,12 @@ environment); errors are reported, not propagated, as a startup file's are."
         (%load-into-namespace context (clautolisp.autolisp-runtime:evaluation-context-current-namespace context) path)))))
 
 (defun run-document-startup-chain (context)
-  "The per-document hooks for CONTEXT's (new) document: the dialect's
-per-document files, the VL-LOAD-ALL files, then S::STARTUP when defined."
+  "The per-document hooks for CONTEXT's (new) document: under the BricsCAD
+dialects the ActiveX enumeration constants (bound from the start of the
+document there, measured), the dialect's per-document files, the
+VL-LOAD-ALL files, then S::STARTUP when defined."
+  (when (eq (%activex-constants-product) :bricscad)
+    (install-activex-enumeration-constants context))
   (run-startup-files context (%startup-hook-files :document))
   (dolist (path (clautolisp.autolisp-runtime:runtime-session-pending-loads
                  (clautolisp.autolisp-runtime:evaluation-context-session context)))

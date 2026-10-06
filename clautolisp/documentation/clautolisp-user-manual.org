@@ -1106,7 +1106,25 @@ provides that surface through the host backend:
   no fixed list of ~vla-get-Foo~ functions; any property/method name
   works. Before ~(vl-load-com)~ these names are undefined, and a user
   ~(defun vla-get-foo …)~ shadows the façade for that name.
-
+- The *ActiveX enumeration constants* are AutoLISP global variables once
+  ~(vl-load-com)~ has run, as on AutoCAD and BricsCAD, so vendor code such
+  as ~(vla-put-Alignment att acAlignmentMiddleLeft)~ needs no magic
+  numbers. The table is *measured* on AutoCAD 2022 and BricsCAD V25 / V26
+  (~probes/sources/probe-activex-constants.lsp~): 932 constants, 832 of
+  them bound on AutoCAD, all 932 on BricsCAD. Under the AutoCAD dialects
+  clautolisp binds AutoCAD's names and values, under the BricsCAD dialects
+  BricsCAD's; under ~strict~ only the names both bind to the same value;
+  under ~clautolisp~ / ~lax~ every name, AutoCAD's value where the two
+  differ (30 names do: the ~AcViewportScale~ family is off by one,
+  ~acNative~ is 64 on AutoCAD and 60 on BricsCAD). When, as measured:
+  BricsCAD has them from the start of every document, before any
+  ~(vl-load-com)~ (so under the BricsCAD dialects they are bound before
+  ~on_doc_load.lsp~ and ~S::STARTUP~ run); AutoCAD binds them at the
+  first ~(vl-load-com)~ (and so do ~strict~, ~clautolisp~ and ~lax~). On
+  all three a later ~(vl-load-com)~ re-binds nothing -- not even a name
+  the program set to nil -- and a value the program set is never
+  replaced.
+  ~(vl-load-com)~ answers ~nil~ under the AutoCAD dialects, ~T~ otherwise.
 - The document's *collections* are live and drawing-backed:
   ~(vla-get-blocks doc)~, ~(vla-get-layers doc)~,
   ~(vla-get-modelspace doc)~ and ~(vla-get-paperspace doc)~ return

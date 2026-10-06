@@ -3150,6 +3150,134 @@ the host's prompt-output / command log after the run."
   ;; A user (defun vla-get-foo …) shadows the façade for that name.
   (is (eql 42 (%vla "(vl-load-com)(defun vla-get-foo (x) 42)(vla-get-foo nil)"))))
 
+;;; --- ActiveX enumeration constants (cador-activex-enumeration-constants-
+;;; unbound.issue): (vl-load-com) binds acAlignmentMiddleLeft & co. ----------
+
+(defparameter *acalignment-constants*
+  '(("acAlignmentLeft" 0) ("acAlignmentCenter" 1) ("acAlignmentRight" 2)
+    ("acAlignmentAligned" 3) ("acAlignmentMiddle" 4) ("acAlignmentFit" 5)
+    ("acAlignmentTopLeft" 6) ("acAlignmentTopCenter" 7) ("acAlignmentTopRight" 8)
+    ("acAlignmentMiddleLeft" 9) ("acAlignmentMiddleCenter" 10)
+    ("acAlignmentMiddleRight" 11) ("acAlignmentBottomLeft" 12)
+    ("acAlignmentBottomCenter" 13) ("acAlignmentBottomRight" 14))
+  "The AcAlignment family, written out independently of the runtime table.")
+
+(test activex-constants-are-unbound-before-vl-load-com
+  (is (null (%vla "acAlignmentMiddleLeft")))
+  (is (eql 9 (%vla "(vl-load-com) acAlignmentMiddleLeft"))))
+
+(test activex-acalignment-constants-drive-vla-put-alignment
+  "Every AcAlignment value cador's property bridge accepts has its symbolic
+binding, and the symbol -- not a magic number -- goes through
+(vla-put-Alignment ...) on an ATTDEF made by vla-AddAttribute (the SCHME
+call that received NIL) and on a TEXT."
+  (dolist (entry *acalignment-constants*)
+    (destructuring-bind (name value) entry
+      (is (equal (list value value value)
+                 (%vla (format nil "(vl-load-com)
+                  (setq d (vla-get-activedocument (vlax-get-acad-object)))
+                  (setq b (vla-add (vla-get-blocks d) (vlax-3d-point 0.0 0.0 0.0) \"ALIGN\"))
+                  (setq a (vla-addattribute b 1.0 acAttributeModeNormal \"P\"
+                                            (vlax-3d-point 0.0 0.0 0.0) \"TAG\" \"V\"))
+                  (vla-put-Alignment a ~A)
+                  (entmake '((0 . \"TEXT\") (10 0.0 0.0 0.0) (40 1.0) (1 \"t\")))
+                  (setq o (vlax-ename->vla-object (entlast)))
+                  (vla-put-Alignment o ~A)
+                  (list ~A (vla-get-Alignment a) (vla-get-Alignment o))"
+                               name name name)))
+          name))))
+
+(test activex-constants-every-measured-constant-bound-per-product
+  "Table-driven over the MEASURED table (probe-activex-constants on AutoCAD
+2022, BricsCAD V25 / V26): after (vl-load-com) every name the dialect's
+product binds has that product's value -- 832 on AutoCAD, 932 on BricsCAD."
+  (dolist (case '(("autocad-2022" :autocad 832) ("bricscad-v26" :bricscad 932)))
+    (destructuring-bind (dialect product count) case
+      (let ((constants (clautolisp.autolisp-builtins-core:activex-enumeration-constants
+                        product)))
+        (is (= count (length constants)) dialect)
+        (let ((values (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com) (list ~{~A~^ ~})"
+                                    dialect (mapcar #'first constants)))))
+          (is (equal (mapcar #'second constants) values) dialect))))))
+
+(test activex-constants-follow-the-product-where-the-vendors-differ
+  "Measured: 30 names differ between the products -- the AcViewportScale
+family is off by one, acNative 64 / 60. Each vendor dialect has its own;
+strict, the portable subset, has neither; clautolisp takes AutoCAD's."
+  (is (equal '(7 64) (%vla "(setq *AUTOLISP-DIALECT* 'autocad-2022) (vl-load-com) (list acVp1_10 acNative)")))
+  (is (equal '(6 60) (%vla "(setq *AUTOLISP-DIALECT* 'bricscad-v26) (vl-load-com) (list acVp1_10 acNative)")))
+  (is (equal '(nil nil 9) (%vla "(setq *AUTOLISP-DIALECT* 'strict) (vl-load-com) (list acVp1_10 acNative acAlignmentMiddleLeft)")))
+  (is (equal '(7 64) (%vla "(setq *AUTOLISP-DIALECT* 'clautolisp) (vl-load-com) (list acVp1_10 acNative)"))))
+
+(test activex-constants-are-there-from-document-start-under-bricscad
+  "Measured with the probe first in the run: BricsCAD has the constants from
+the start of the document, before any (vl-load-com); AutoCAD 2022 binds them
+only at (vl-load-com). The document startup chain installs them under the
+BricsCAD dialects only."
+  (flet ((after-startup (dialect)
+           (let ((seen :unset))
+             (run-autolisp-string
+              "nil"
+              :setup-fn (lambda (context)
+                          (%install-cador-and-core context)
+                          (clautolisp.autolisp-runtime:set-runtime-session-dialect
+                           (clautolisp.autolisp-runtime:evaluation-context-session context)
+                           (clautolisp.autolisp-reader:find-autolisp-dialect dialect))
+                          (clautolisp.autolisp-builtins-core::run-document-startup-chain context)
+                          (setf seen (clautolisp.autolisp-runtime:lookup-variable
+                                      (clautolisp.autolisp-runtime:intern-autolisp-symbol
+                                       "ACALIGNMENTMIDDLELEFT")
+                                      context))))
+             seen)))
+    (reset-autolisp-symbol-table)
+    (is (eql 9 (after-startup :bricscad-v26)))
+    (reset-autolisp-symbol-table)
+    (is (null (after-startup :autocad-2022)))))
+
+(test activex-vl-load-com-answers-per-product
+  "Measured: (vl-load-com) answers NIL on AutoCAD 2022, T on BricsCAD."
+  (is (null (%vla "(setq *AUTOLISP-DIALECT* 'autocad-2022) (vl-load-com)")))
+  (is (%vla "(setq *AUTOLISP-DIALECT* 'bricscad-v26) (vl-load-com)")))
+
+(test activex-constants-pass-through-color-lineweight-and-mode
+  "The other families, symbolically through the operations that consume
+them: Color and Lineweight on an entity, Color on a layer, the Mode
+argument of AddAttribute (additive flags)."
+  (is (equal '(1 256 0 50 -2 -3 5 3)
+             (%vla "(vl-load-com)
+               (setq d (vla-get-activedocument (vlax-get-acad-object)))
+               (entmake '((0 . \"LINE\") (10 0.0 0.0 0.0) (11 1.0 0.0 0.0)))
+               (setq o (vlax-ename->vla-object (entlast)) r '())
+               (vla-put-Color o acRed) (setq r (cons (vla-get-Color o) r))
+               (vla-put-Color o acByLayer) (setq r (cons (vla-get-Color o) r))
+               (vla-put-Color o acByBlock) (setq r (cons (vla-get-Color o) r))
+               (vla-put-Lineweight o acLnWt050) (setq r (cons (vla-get-Lineweight o) r))
+               (vla-put-Lineweight o acLnWtByBlock) (setq r (cons (vla-get-Lineweight o) r))
+               (vla-put-Lineweight o acLnWtByLwDefault) (setq r (cons (vla-get-Lineweight o) r))
+               (setq lay (vla-item (vla-get-layers d) \"0\"))
+               (vla-put-Color lay acBlue) (setq r (cons (vla-get-Color lay) r))
+               (setq b (vla-add (vla-get-blocks d) (vlax-3d-point 0.0 0.0 0.0) \"MODES\"))
+               (setq a (vla-addattribute b 1.0 (+ acAttributeModeInvisible acAttributeModeConstant)
+                                         \"P\" (vlax-3d-point 0.0 0.0 0.0) \"TAG\" \"V\"))
+               (setq r (cons (vla-get-Mode a) r))
+               (reverse r)"))))
+
+(test activex-constants-vl-load-com-is-idempotent-and-keeps-user-bindings
+  ;; Twice is harmless; a value the program set first is neither erased nor
+  ;; replaced, before or after a later (vl-load-com).
+  (is (equal '(9 99 7)
+             (%vla "(vl-load-com) (vl-load-com)
+                    (setq acRed 99) (vl-load-com)
+                    (list acAlignmentMiddleLeft acRed acWhite)")))
+  (is (equal '(42 10)
+             (%vla "(setq acAlignmentMiddleLeft 42) (vl-load-com)
+                    (list acAlignmentMiddleLeft acAlignmentMiddleCenter)")))
+  ;; Set to nil after the first (vl-load-com): a later one does NOT restore
+  ;; it -- measured on AutoCAD 2022, BricsCAD V25 and V26: the constants are
+  ;; installed once.
+  (is (null (%vla "(vl-load-com) (setq acAlignmentMiddleLeft nil) (vl-load-com)
+                   acAlignmentMiddleLeft"))))
+
 (test vla-addattribute-passes-the-six-vendor-arguments-through
   "cador-addattribute-argument-order. The AutoLISP façade must hand
 Block.AddAttribute's six arguments to the host in the VENDOR order --

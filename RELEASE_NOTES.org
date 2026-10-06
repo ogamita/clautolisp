@@ -37,6 +37,15 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- ActiveX enumeration constants (2.2.213): ~(vl-load-com)~ now binds the ActiveX
+  enumeration constants (~acAlignmentMiddleLeft~ is 9, ~acByLayer~ 256,
+  ~acLnWt025~ 25, ...) -- the full table MEASURED on AutoCAD 2022 and
+  BricsCAD V25 / V26 (932 names, 832 on AutoCAD), each dialect with its
+  product's names and values -- so ~(vla-put-Alignment att
+  acAlignmentMiddleLeft)~ no longer passes nil. As measured: under the
+  BricsCAD dialects they are there from the start of each document, under
+  the others ~(vl-load-com)~ binds them; once per document, never over a
+  value the program set. ~(vl-load-com)~ answers nil under AutoCAD.
 - alfe 2.2.158 / clautolisp 2.2.212: =alfe --clautolisp= behaves the same
   under =--backend direct= (the default) and =--backend subprocess=. The
   in-process engine now carries the DWG codec, so =--dwg FILE.dwg= no

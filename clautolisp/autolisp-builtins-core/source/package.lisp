@@ -214,6 +214,8 @@
    #:core-builtins
    #:find-core-builtin
    #:install-core-builtins
+   #:activex-enumeration-constants
+   #:install-activex-enumeration-constants
    #:set-clal-optimization-levels
    #:autolisp-value->string
    #:live-event-policy
