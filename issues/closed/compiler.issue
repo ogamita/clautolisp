@@ -1,7 +1,7 @@
 compiler — minimal compiler (with the interpreter) + AutoLISP-to-Common-Lisp compiler
 =====================================================================================
 
-STATUS: DRAFT (collected from existing specs/issues for pjb to write up)
+STATUS: DONE (closed 2026-10-06; was DRAFT, collected from existing specs/issues)
 FILED: 2026-07-01
 VERSION AT DRAFT TIME: clautolisp 1.3.0 (interpreter only)
 
@@ -1943,3 +1943,26 @@ STILL OPEN after slice 27
     half is done (slice 11); this is the other half of the same item,
     and belongs with the deferred "gather options / getenv / defaults
     into the configuration module" work.
+
+
+CLOSED 2026-10-06 (pjb: "do ... 9", the triage review before the release)
+--------------------------------------------------------------------------
+
+Both tiers are delivered. Tier 1: LOAD / EVAL on a uniform instrumentable
+model, the clal-* compile API (CLAL-COMPILE, CLAL-COMPILE-FILE /
+CLAL-COMPILE-SYSTEM writing a .lap, CLAL-OPTIMIZE / CLAL-OPTIMIZATION,
+--optimize), VLISP-COMPILE writing a .lap. Tier 2: the AutoLISP-to-CL
+transpiler -- ordinary, lexical (SPEED 3 / DEBUG 0) and instrumented
+(debug, compiled at (debug 3)) forks; the transpiler-coverage thread closed
+(slices 20-25: no form taking a body falls back); per-site compilation of
+lambdas (debug side too: debug-lambda-in-a-loop-reinstrumented, 2.2.208); a
+.lap keeps the source documentation and positions (2.2.205 / 2.2.206); the
+two-bodies discipline closed (deferred-debugger-compiler-two-bodies,
+2.2.206). The "open questions for pjb" of the 1.3.0 draft were settled by the
+slices themselves (.lap is the compiled-app type; the full clal-* surface;
+warn-not-error out of dialect; the instrumented body shared with the
+loader's weave; version-pinned .lap header; VLISP-COMPILE's mode ignored as
+on BricsCAD).
+
+The "STILL OPEN after slice 27" list is optional performance work, moved to
+issues/open/compiler-performance-followups.issue (DEFERRED).

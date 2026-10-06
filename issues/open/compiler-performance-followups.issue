@@ -1,0 +1,33 @@
+compiler-performance-followups -- optional performance work left when the compiler epic closed
+=============================================================================================
+
+Status: DEFERRED
+Priority: P3
+From: issues/closed/compiler.issue (closed 2026-10-06), its "STILL OPEN after
+slice 27" list. None of these is a defect; each is a measured opportunity or
+a design choice to revisit with a measurement in hand.
+
+- A host-independent .lap. Deferred on purpose (closed
+  clal-compiled-artefact.issue): a .lap is the host's own FASL, so an
+  SBCL-built one does not load in CCL nor across clautolisp versions. CLISP
+  is the existence proof that a portable format is possible and the reason it
+  costs speed.
+- What a call still allocates (after slice 17): a dynamic-frame struct and a
+  dynamic-binding struct per parameter, the &rest list and the three-cons
+  call-stack entry in CALL-AUTOLISP-FUNCTION-IN-CONTEXT. Pooling needs the
+  ownership rules restated first (a closure captures its environment; the
+  debugger's snapshot reaches frames), as for the shadow-frame pool of
+  poll-point-restart-cost.
+- Reading the optimisation qualities from the configuration module, so a
+  project sets them once (the --optimize half is done, slice 11); belongs with
+  the "gather options / getenv / defaults into the configuration module" work.
+- A lambda in an INTERPRETED loop mints closures no site can share (the site
+  covers the compiled path only). Costs nothing today: the loop itself is
+  interpreted.
+- Poll points: what remains is the per-poll-point work the debugger needs
+  (two POLL-POINT calls, enter/exit bookkeeping, UNWIND-PROTECT).
+- Open-coding has reached diminishing returns for the operators; LENGTH, NTH,
+  MEMBER, ASSOC are the wrong shape for it (recorded so nobody adds them on
+  the grounds that they are frequent).
+
+Reopen an item with a measurement showing it matters.
