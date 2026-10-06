@@ -440,6 +440,71 @@ cador, cadtui or nihil — the names clautolisp has — cador when there is none
         (is (equal name (nth (1+ (position "--host" argv :test #'string=)) argv))
             "host ~S is passed as ~S" host name)))))
 
+(test clautolisp-subprocess-forwards-the-situation-encodings
+  "The subprocess variant forwards the file / terminal / log situations to the
+spawned clautolisp as -Efile-read / -Efile-write / -Eterminal-in /
+-Eterminal-out / -Elog (only those requested), next to -Esource; an explicit
+-Econsole reaches the child folded into the terminal pair (the engine's console
+is its terminal), and console / cadstdio are never forwarded as such."
+  (labels ((argv-for (args)
+             (let* ((backend (alfe.backend.clautolisp:make-clautolisp-backend
+                              :variant :subprocess
+                              :executable-path "/x/clautolisp-sbcl"))
+                    (keys (alfe.cli:situation-engine-keywords
+                           (alfe.cli:parse-arguments args)
+                           :console-is-terminal-p t))
+                    (session (alfe.backend.clautolisp::%make-subprocess-session
+                              :backend backend :dialect :strict :host :cador
+                              :load-encoding (getf keys :source-encoding)
+                              :file-read-encoding (getf keys :file-read-encoding)
+                              :file-write-encoding (getf keys :file-write-encoding)
+                              :terminal-in-encoding (getf keys :terminal-in-encoding)
+                              :terminal-out-encoding (getf keys :terminal-out-encoding)
+                              :log-encoding (getf keys :log-encoding))))
+               (alfe.backend.clautolisp::build-subprocess-argv
+                session (list (alfe.backend:action-eval "(+ 1 2)")))))
+           (value (argv option)
+             (let ((p (position option argv :test #'string=)))
+               (and p (nth (1+ p) argv)))))
+    ;; nothing requested: no encoding option at all
+    (let ((argv (argv-for '("-x" "1"))))
+      (is (notany (lambda (a) (and (> (length a) 2) (string= "-E" a :end2 2))) argv)
+          "argv ~S" argv))
+    ;; each situation, its own option
+    (let ((argv (argv-for '("-Efile-read" "cp1252" "-Efile-write" "utf-8"
+                            "-Eterminal-out" "latin-1" "-Elog" "us-ascii"))))
+      (is (equal "WINDOWS-1252" (value argv "-Efile-read")))
+      (is (equal "UTF-8" (value argv "-Efile-write")))
+      (is (equal "ISO-8859-1" (value argv "-Eterminal-out")))
+      (is (null (value argv "-Eterminal-in")))
+      (is (equal "US-ASCII" (value argv "-Elog")))
+      (is (null (value argv "-Esource")))
+      ;; before the action flags, so in effect from the first -x
+      (is (< (position "-Efile-read" argv :test #'string=)
+             (position "-x" argv :test #'string=))))
+    ;; the bare -E: source, file, terminal and log; never console / cadstdio
+    (let ((argv (argv-for '("-E" "UTF-8"))))
+      (dolist (option '("-Esource" "-Efile-read" "-Efile-write"
+                        "-Eterminal-in" "-Eterminal-out" "-Elog"))
+        (is (equal "UTF-8" (value argv option)) "~A in ~S" option argv))
+      (is (notany (lambda (a) (or (search "-Econsole" a) (search "-Ecadstdio" a))) argv)))
+    ;; -Econsole folds into the terminal pair
+    (let ((argv (argv-for '("-Econsole-in" "cp1252"))))
+      (is (equal "WINDOWS-1252" (value argv "-Eterminal-in")))
+      (is (null (value argv "-Eterminal-out")))
+      (is (notany (lambda (a) (search "-Econsole" a)) argv)))
+    ;; the captured pipe is decoded in the forwarded terminal-out encoding
+    (let* ((backend (alfe.backend.clautolisp:make-clautolisp-backend
+                     :variant :subprocess :executable-path "/x/clautolisp-sbcl"))
+           (session (alfe.backend.clautolisp::%make-subprocess-session
+                     :backend backend :dialect :strict
+                     :terminal-out-encoding "WINDOWS-1252")))
+      (is (equal (clautolisp.autolisp-cli:encoding-keyword "WINDOWS-1252")
+                 (alfe.backend.clautolisp::%subprocess-capture-external-format session)))
+      (is (null (alfe.backend.clautolisp::%subprocess-capture-external-format
+                 (alfe.backend.clautolisp::%make-subprocess-session
+                  :backend backend :dialect :strict)))))))
+
 (defun cadtui-binary-available-p ()
   "True iff a clautolisp-sbcl the subprocess variant can spawn exists AND
 knows the cadtui host (an old build does not)."

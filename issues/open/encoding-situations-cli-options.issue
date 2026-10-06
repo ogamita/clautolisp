@@ -673,7 +673,35 @@ Still open: `log` (no reader of the CAD log exists yet), `console` -in and
 the CAD-side `file` default (the bootstrap `open` shim's default encoding,
 point 5), and one keyword per situation on start-engine (point 1).
 
-* The `log' situation (2026-10-06, clautolisp 2.2.207)
+* Section 6 points 1 and 5, console -in (2026-10-06, clautolisp 2.2.210 / alfe 2.2.152, MR !432)
+
+- Point 1: start-engine takes one keyword per situation and direction
+  (situation-engine-keywords); alfe --clautolisp in subprocess mode forwards
+  -Efile-read / -Efile-write / -Eterminal-in / -Eterminal-out / -Elog.
+- console -in: clautolisp -- the console IS the terminal (-Econsole folds
+  into it unless -Eterminal is given); BricsCAD -- -Econsole-in warned and
+  ignored, a bare -E no longer reaches the drain codec.
+- Point 5, the CAD-side `file' default -- MEASURED first (probe-open-encoding:
+  AutoCAD 2022 job 16967893842, BricsCAD V25 Windows 16968316289, V26 macOS
+  16967893843), writing "A" e-acute "B":
+    AutoCAD 2022 (LISPSYS 0): default cp1252; ANY third argument "too many
+      arguments"; ,ccs= accepted and ignored; read decodes cp1252.
+    BricsCAD V25 Windows: default cp1252; "utf8"/"utf8-bom" accepted, no
+      effect; ,ccs=UTF-8 writes UTF-8 WITH a BOM, ,ccs=UTF-16LE UTF-16LE with a
+      BOM; read never decodes (octets, BOM skipped).
+    BricsCAD V26 macOS: always UTF-8 without a BOM; read returns octets.
+  So the only honourable case is WRITE on BricsCAD Windows: alfe-open* in the
+  bootstrap opens a plain "w"/"a" with ,ccs=UTF-8 / UTF-16LE, the loader
+  rewriting OPEN only when that is active (*ALFE-OPEN-WRITE-CCS*); every other
+  case is warned and ignored (cad-file-encoding-plan). clautolisp's own OPEN
+  diverges from the vendors on the third argument:
+  open-third-argument-dialect-divergence.
+- Found on the way: alfe-load-user-setq-clobbers-loader-locals.
+
+Still open here: `log' -- alfe reading the CAD's own log file (no reader
+exists; clautolisp now WRITES per-drawing logs, MR !428); AutoCAD's "utf8"
+third argument at LISPSYS 1 / 2 (unmeasured: the runner is at 0).
+* The `log' situation (2026-10-06, clautolisp 2.2.209)
 
 Measured (probe-logfile, MR !428): AutoCAD 2022 writes its LOGFILEMODE log in
 windows-1252 (an e-acute PRINCed reads back as 233). BricsCAD V25 logs only the

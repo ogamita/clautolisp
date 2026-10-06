@@ -1288,15 +1288,30 @@ started is what ATTACHED/CREATED say.")
                               interactive-p
                               load-encoding
                               io-encoding
+                              source-encoding
+                              file-read-encoding file-write-encoding
+                              console-in-encoding console-out-encoding
+                              cadstdio-in-encoding cadstdio-out-encoding
+                              log-encoding
+                              terminal-in-encoding terminal-out-encoding
                               cli-options version-text
                               (mode :auto)
                               (dwg nil)
                               (launcher #'uiop:launch-program)
                               (wait-for-ready t)
                               (ready-timeout 60))
-  ;; LOAD-ENCODING accepted but ignored: the AutoCAD-resident
-  ;; AutoLISP runtime owns the source-file encoding policy.
-  (declare (ignore dialect host mock-input load-encoding io-encoding))
+  ;; The encoding keywords are accepted but not read here: the AutoCAD
+  ;; boundaries resolve their situations from CLI-OPTIONS where they are
+  ;; applied (-Esource on each -l action for source staging,
+  ;; %AUTOCAD-REQUESTED-STDIO-ENCODING for the
+  ;; console/cadstdio codecs, with the -Econsole warning; CAD-OPEN-WRITE-CCS
+  ;; for -Efile, only warned: OPEN takes no encoding at LISPSYS 0), and the
+  ;; terminal is alfe's own (APPLY-TERMINAL-ENCODING).
+  (declare (ignore dialect host mock-input load-encoding io-encoding
+                   source-encoding file-read-encoding file-write-encoding
+                   console-in-encoding console-out-encoding
+                   cadstdio-in-encoding cadstdio-out-encoding
+                   log-encoding terminal-in-encoding terminal-out-encoding))
   (log-verbose "backend AUTOCAD: starting engine (mode ~A)" mode)
   (log-debug "backend AUTOCAD: workdir = ~A" workdir)
   ;; Parity with the BricsCAD backend: let --timeout / $AUTOLISP_WAIT_SECS
@@ -1339,7 +1354,11 @@ started is what ATTACHED/CREATED say.")
                 :cli-options cli-options
                 :version-text version-text
                 :backend-name "AUTOCAD"
-                :variant variant)))
+                :variant variant
+                ;; -Efile-write/-read: AutoCAD's OPEN takes no encoding at
+                ;; LISPSYS 0, so this only warns (CAD-FILE-ENCODING-PLAN).
+                :open-write-ccs (alfe.backend.cad-common:cad-open-write-ccs
+                                 :autocad cli-options))))
         ;; G2: how the drain decodes AutoCAD's console output. accoreconsole
         ;; (batch) is UTF-16LE, product-fixed (conflicting -Econsole warned +
         ;; ignored); the GUI path honours the user's request, else :AUTO.

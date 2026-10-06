@@ -149,6 +149,12 @@ pathname."))
                                           interactive-p mode dwg
                                           load-encoding
                                           io-encoding
+                                          source-encoding
+                                          file-read-encoding file-write-encoding
+                                          console-in-encoding console-out-encoding
+                                          cadstdio-in-encoding cadstdio-out-encoding
+                                          log-encoding
+                                          terminal-in-encoding terminal-out-encoding
                                           cli-options version-text)
   (:documentation
    "Bring BACKEND up to the READY state under WORKDIR, returning a
@@ -157,11 +163,24 @@ clautolisp this binds an evaluation context; for CAD backends this
 writes the runtime LSP, launches the engine, and polls status.txt
 until READY.
 
-LOAD-ENCODING, when non-nil, is the user-facing CLI string from
-`-e ENC' (e.g. \"utf-8\"). Backends that can honour a session-wide
-source-file encoding apply it to their runtime; backends that
-can't (CAD-resident engines whose AutoLISP runtime owns the
-encoding policy) ignore it.
+The encoding SITUATIONS (encoding-situations-cli-options.issue, section 6
+point 1) arrive one keyword per situation x direction, each the canonical
+encoding name the user asked for (e.g. \"UTF-8\") or NIL for the backend
+default: SOURCE-ENCODING (-Esource), FILE-READ-ENCODING / FILE-WRITE-ENCODING
+(-Efile[-read|-write]), CONSOLE-IN-ENCODING / CONSOLE-OUT-ENCODING
+(-Econsole[-in|-out]), CADSTDIO-IN-ENCODING / CADSTDIO-OUT-ENCODING
+(-Ecadstdio[-in|-out]), LOG-ENCODING (-Elog) and TERMINAL-IN-ENCODING /
+TERMINAL-OUT-ENCODING (-Eterminal[-in|-out]). ALFE.CLI:SITUATION-ENGINE-KEYWORDS
+builds them: the bare -E / --encoding reaches source, file, log and terminal
+but never console or cadstdio (product-fixed boundaries), and when the backend
+is the clautolisp engine an explicit -Econsole is folded into the terminal
+pair (its console is its terminal). A backend honours the situations it can
+and ignores (or warns about) the others.
+
+LOAD-ENCODING / IO-ENCODING are the legacy mirrors of SOURCE-ENCODING /
+TERMINAL-*-ENCODING (the `source' / `terminal' resolution with the bare -E),
+kept for compatibility with callers that pass only them; a backend prefers
+the per-situation keyword when it is given.
 
 CLI-OPTIONS is the fully-parsed CLAUTOLISP.AUTOLISP-CLI:CLI-OPTIONS
 struct (or NIL). When non-NIL, the backend installs the matching

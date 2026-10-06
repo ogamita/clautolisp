@@ -1168,6 +1168,7 @@ single place that knows the product behind a name (`autocad',
                                  version-text
                                  (backend-name "CLAUTOLISP")
                                  (variant nil)
+                                 (open-write-ccs nil)
                                  (assume-no-rest-p
                                   (autocad-target-p backend-name cli-options)))
   "Write the run-common.lsp init script the CAD-side runtime sources
@@ -1194,6 +1195,13 @@ could never have, and then warned five times about its own runtime.
 The dialect warnings are the instrument that says which construct
 needs a per-CAD alternative; honouring them here is what closes that
 loop. Pass the keyword explicitly to override in either direction.
+
+OPEN-WRITE-CCS, when a non-empty string (\"UTF-8\" / \"UTF-16LE\", from
+ALFE.BACKEND.CAD-COMMON:CAD-OPEN-WRITE-CCS), emits
+`(setq *ALFE-OPEN-WRITE-CCS* \"...\")': the bootstrap then rewrites the
+user's OPEN calls into alfe-open*, which appends \",ccs=...\" to a plain
+\"w\"/\"a\" mode (-Efile-write forwarded to the CAD's OPEN). NIL (the
+default) emits nothing, so OPEN calls are never rewritten.
 
 When CLI-OPTIONS is non-NIL, the CLI-derived *AUTOLISP-…* globals
 from transmit-options.issue are emitted at the *top* of the file
@@ -1238,6 +1246,11 @@ Returns the path of the emitted file."
                                             (or version-text "0.0.0")
                                             #'emit-var
                                             :backend-name backend-name))
+              ;; -Efile-write forwarded to the CAD's own OPEN (only when
+              ;; the CAD honours it: see CAD-FILE-ENCODING-PLAN). Absent,
+              ;; the bootstrap never rewrites OPEN.
+              (when (and (stringp open-write-ccs) (plusp (length open-write-ccs)))
+                (format out "(setq *ALFE-OPEN-WRITE-CCS* ~S)~%" open-write-ccs))
               (flet ((emit-path (hyphen underscore path)
                        (emit-var hyphen underscore
                                  (format nil "~S" (stringify-path path)))))

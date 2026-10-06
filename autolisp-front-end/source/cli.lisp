@@ -107,6 +107,7 @@
                 #:cli-options-io-encoding
                 #:cli-options-situation-encodings
                 #:cli-situation-encoding
+                #:cli-situation-encoding-explicit
                 #:encoding-keyword
                 #:cli-options-dwg
                 #:cli-options-plugin-options
@@ -165,6 +166,8 @@
            #:terminal-encoding-plan
            #:apply-terminal-encoding
            #:resolved-console-encoding
+           #:situation-engine-keywords
+           #:console-is-terminal-p
            #:cli-options-dwg
            #:cli-options-plugin-options
            #:cli-options-plugins-active
@@ -1048,11 +1051,79 @@ element quoted for OS. This is what --print-command writes to stdout."
 ;;; (clautolisp.autolisp-cli, terminal.lisp) since the clautolisp tool applies
 ;;; -Eterminal to its own streams too; these keep alfe's names.
 
+(defun console-is-terminal-p (options)
+  "True when the `console' situation of OPTIONS' run is alfe's own terminal:
+the selected backend is the clautolisp engine (the default, as in
+RESOLVE-BACKEND), whose console is in-process -- the same stream as the
+terminal. A CAD backend (--autocad / --bricscad, or --cad naming one, or an
+$ALFE_BACKEND_OVERRIDE) has a console DEVICE of its own, which -Econsole
+describes; it must not reconfigure alfe's terminal then. Decided from OPTIONS
+alone because the terminal is reconfigured before the backend is resolved."
+  (let ((selected
+          (or (cli-options-backend options)
+              ;; --cad is resolved later (apply-cad-selection); it names a
+              ;; CAD program, so treat it as one.
+              (and (cli-options-cad options) :cad)
+              (let ((override (env-default :override)))
+                (and override
+                     (ignore-errors
+                      (parse-backend-symbol override "$ALFE_BACKEND_OVERRIDE"))))
+              :clautolisp)))
+    (eq selected :clautolisp)))
+
 (defun terminal-encoding-plan (options)
-  (clautolisp.autolisp-cli:terminal-encoding-plan options))
+  (clautolisp.autolisp-cli:terminal-encoding-plan
+   options :fold-console (console-is-terminal-p options)))
 
 (defun apply-terminal-encoding (options)
-  (clautolisp.autolisp-cli:apply-terminal-encoding options :tool "alfe"))
+  (clautolisp.autolisp-cli:apply-terminal-encoding
+   options :tool "alfe" :fold-console (console-is-terminal-p options)))
+
+;;; --- section 6 point 1: one START-ENGINE keyword per situation -----------
+;;;
+;;; START-ENGINE used to receive only the two legacy mirrors (:load-encoding =
+;;; source, :io-encoding = terminal). SITUATION-ENGINE-KEYWORDS resolves every
+;;; situation x direction once, here, with the right resolver per boundary:
+;;;   - source / file / log / terminal: CLI-SITUATION-ENCODING -- the bare -E
+;;;     reaches them (they are ours, or follow our choice);
+;;;   - console / cadstdio: CLI-SITUATION-ENCODING-EXPLICIT -- only an option
+;;;     naming them; a bare -E must not reach a product-fixed boundary (a
+;;;     blanket -E UTF-8 once made alfe read accoreconsole's UTF-16LE pipe as
+;;;     UTF-8).
+;;; The terminal pair folds an explicit -Econsole in when the console IS the
+;;; terminal (CONSOLE-IS-TERMINAL-P: the clautolisp engine), with the same
+;;; precedence as the terminal plan, so what alfe applies to its own streams
+;;; and what it forwards to a clautolisp child agree.
+
+(defun situation-engine-keywords (options &key
+                                            (console-is-terminal-p
+                                             (and options
+                                                  (console-is-terminal-p options))))
+  "The START-ENGINE keyword plist for every encoding situation of OPTIONS (a
+cli-options record, or NIL -> every value NIL): :SOURCE-ENCODING
+:FILE-READ-ENCODING :FILE-WRITE-ENCODING :CONSOLE-IN-ENCODING
+:CONSOLE-OUT-ENCODING :CADSTDIO-IN-ENCODING :CADSTDIO-OUT-ENCODING
+:LOG-ENCODING :TERMINAL-IN-ENCODING :TERMINAL-OUT-ENCODING. Each value is the
+canonical encoding name the user asked for, or NIL (the backend default)."
+  (flet ((all (situation &optional direction)
+           (and options (cli-situation-encoding options situation direction)))
+         (explicit (situation &optional direction)
+           (and options
+                (cli-situation-encoding-explicit options situation direction)))
+         (terminal (direction)
+           (and options
+                (clautolisp.autolisp-cli:terminal-situation-encoding
+                 options direction :fold-console console-is-terminal-p))))
+    (list :source-encoding       (all "source")
+          :file-read-encoding    (all "file" "read")
+          :file-write-encoding   (all "file" "write")
+          :console-in-encoding   (explicit "console" "in")
+          :console-out-encoding  (explicit "console" "out")
+          :cadstdio-in-encoding  (explicit "cadstdio" "in")
+          :cadstdio-out-encoding (explicit "cadstdio" "out")
+          :log-encoding          (all "log")
+          :terminal-in-encoding  (terminal "in")
+          :terminal-out-encoding (terminal "out"))))
 
 (defun windows-console-code-page (external-format)
   (clautolisp.autolisp-cli:windows-console-code-page external-format))
@@ -1066,15 +1137,20 @@ element quoted for OS. This is what --print-command writes to stdout."
 ;;; auto-detect cascade — the behaviour-preserving default. A per-backend
 ;;; default (accoreconsole → true UTF-16LE) is deliberately NOT forced here
 ;;; yet: that flip waits on real-runner verification (Phase 2 plan).
+;;;
+;;; Only an option NAMING the console / cadstdio counts (the EXPLICIT
+;;; resolver): the bare -E / --encoding no longer reaches the BricsCAD drain.
+;;; It used to -- -E UTF-8, meant for the source files and alfe's terminal,
+;;; forced the drain to UTF-8 over the auto-detect cascade that reads a
+;;; BricsCAD/Windows cp1252 drain (E3) correctly. AutoCAD already had this
+;;; rule (%AUTOCAD-REQUESTED-STDIO-ENCODING); both CAD drains now agree.
 (defun resolved-console-encoding (options)
-  "The encoding alfe should decode the CAD console output AS — the resolved
-`console`-out / `console` / `cadstdio`-out / `cadstdio` situation, or :AUTO
-when none was requested."
+  "The encoding alfe should decode the CAD console output AS — the explicitly
+requested `console`-out / `console` / `cadstdio`-out / `cadstdio` situation,
+or :AUTO when none was requested (a bare -E does not count)."
   (or (and options
-           (or (cli-situation-encoding options "console" "out")
-               (cli-situation-encoding options "console")
-               (cli-situation-encoding options "cadstdio" "out")
-               (cli-situation-encoding options "cadstdio")))
+           (or (cli-situation-encoding-explicit options "console" "out")
+               (cli-situation-encoding-explicit options "cadstdio" "out")))
       :auto))
 
 ;;; --- backend selection: resolve --cad DENOTATION ---
@@ -1415,22 +1491,28 @@ engine."
                     (%write-workdir-path-file options wd)
                     (run-hook :workdir-prepared wd)
                     wd))
-         (session (start-engine backend workdir
-                                :dialect (effective-dialect options)
-                                :host (cli-options-host options)
-                                :mock-input nil
-                                :bootstrap-phase
-                                (cli-options-bootstrap-phase options)
-                                :interactive-p
-                                (cli-options-interactive-p options)
-                                :mode (cli-options-mode options)
-                                :dwg (cli-options-dwg options)
-                                :load-encoding
-                                (cli-options-load-encoding options)
-                                :io-encoding
-                                (cli-options-io-encoding options)
-                                :cli-options options
-                                :version-text version-text)))
+         (session (apply #'start-engine backend workdir
+                         :dialect (effective-dialect options)
+                         :host (cli-options-host options)
+                         :mock-input nil
+                         :bootstrap-phase
+                         (cli-options-bootstrap-phase options)
+                         :interactive-p
+                         (cli-options-interactive-p options)
+                         :mode (cli-options-mode options)
+                         :dwg (cli-options-dwg options)
+                         :load-encoding
+                         (cli-options-load-encoding options)
+                         :io-encoding
+                         (cli-options-io-encoding options)
+                         :cli-options options
+                         :version-text version-text
+                         ;; one keyword per encoding situation
+                         ;; (encoding-situations section 6 point 1)
+                         (situation-engine-keywords
+                          options
+                          :console-is-terminal-p
+                          (eq (alfe.backend:backend-name backend) :clautolisp)))))
     ;; Start recording, for the backends alfe records itself. The clautolisp
     ;; backend is NOT one of them: its flags were forwarded to the engine, which
     ;; records its own REPL, and a second alfe-side file would be a poorer copy
@@ -1575,7 +1657,7 @@ backend ~(~A~) runs in-process and has no external command line."
                      wd)))
       (unwind-protect
            (progn
-             (start-engine backend workdir
+             (apply #'start-engine backend workdir
                            :dialect (effective-dialect options)
                            :host (cli-options-host options)
                            :mock-input nil
@@ -1591,7 +1673,13 @@ backend ~(~A~) runs in-process and has no external command line."
                            :launcher (lambda (argv &rest keys)
                                        (setf captured argv
                                              directory (getf keys :directory))
-                                       nil))
+                                       nil)
+                           ;; one keyword per encoding situation (a CAD
+                           ;; backend here: its console is its own device)
+                           (situation-engine-keywords
+                            options
+                            :console-is-terminal-p
+                            (eq (alfe.backend:backend-name backend) :clautolisp)))
              (unless captured
                (error 'alfe.error:backend-bootstrap-error
                       :backend backend-name

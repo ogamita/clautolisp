@@ -37,6 +37,22 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- ~-Efile-write UTF-8~ / ~UTF-16LE~ reaches BricsCAD on Windows: a plain
+  ~(open f "w")~ / ~"a"~ in code alfe loads is opened with ~,ccs=~ (the file
+  gets a BOM, as BricsCAD writes it). Everywhere else -- AutoCAD (no encoding
+  argument at LISPSYS 0), BricsCAD on macOS (always UTF-8), and any read
+  direction (no CAD decodes on read) -- the option is warned about and
+  ignored, as measured (probe-open-encoding).
+- Encoding situations, the rest of the plumbing: ~alfe --clautolisp~ in
+  subprocess mode now forwards ~-Efile-read~ / ~-Efile-write~ /
+  ~-Eterminal-in~ / ~-Eterminal-out~ / ~-Elog~ to the engine (only ~-Esource~
+  reached it), and reads the engine's output in the forwarded terminal
+  encoding; in the clautolisp tool (and alfe in front of it) ~-Econsole~ is
+  the terminal, so ~-Econsole[-in|-out]~ applies there unless ~-Eterminal~ is
+  given; under ~--bricscad~ an explicit ~-Econsole-in~ is warned about and
+  ignored (the console is product-fixed and alfe's input does not go through
+  it), and a bare ~-E~ no longer changes the codec alfe decodes BricsCAD's
+  output with (as under ~--autocad~).
 - ~(setvar "LOGFILEMODE" 1)~ keeps a command-history log per drawing, as
   AutoCAD and BricsCAD do: ~LOGFILEPATH~ (default
   ~$XDG_STATE_HOME/clautolisp/logs/~) and ~LOGFILEMODE~ are saved preferences,

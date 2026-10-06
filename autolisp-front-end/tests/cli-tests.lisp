@@ -35,7 +35,8 @@
 (defmethod alfe.backend:start-engine ((backend capture-backend) workdir
                                       &key dialect host mock-input bootstrap-phase
                                            interactive-p load-encoding io-encoding
-                                           cli-options version-text mode dwg)
+                                           cli-options version-text mode dwg
+                                      &allow-other-keys)
   (declare (ignore backend workdir dialect host mock-input bootstrap-phase
                    interactive-p load-encoding io-encoding
                    cli-options version-text))
@@ -191,6 +192,92 @@ bare -E) set BOTH directions — stdout+stderr for out, stdin for in;
                      (list :error  2 :output (kw "UTF-8"))
                      (list :input  0 :input  (kw "UTF-8")))
                (terminal-encoding-plan (parse-arguments '("-E" "UTF-8")))))))
+
+(test cli-situation-engine-keywords
+  "Section 6 point 1: SITUATION-ENGINE-KEYWORDS gives START-ENGINE one keyword
+per situation x direction. The bare -E reaches source / file / log / terminal
+but NOT console / cadstdio (product-fixed boundaries); a specific option wins
+over the bare -E in any order."
+  (flet ((kws (args &rest keys)
+           (apply #'alfe.cli:situation-engine-keywords (parse-arguments args) keys)))
+    ;; nothing requested: every keyword present, every value NIL
+    (let ((plist (kws '("-x" "(+ 1 2)"))))
+      (is (= 20 (length plist)))
+      (is (every #'null (loop for (nil v) on plist by #'cddr collect v))))
+    ;; NIL options: the same all-NIL plist
+    (is (every #'null (loop for (nil v) on (alfe.cli:situation-engine-keywords nil)
+                            by #'cddr collect v)))
+    ;; the bare -E: source, file, log, terminal -- never console / cadstdio
+    (let ((plist (kws '("-E" "UTF-8"))))
+      (is (equal "UTF-8" (getf plist :source-encoding)))
+      (is (equal "UTF-8" (getf plist :file-read-encoding)))
+      (is (equal "UTF-8" (getf plist :file-write-encoding)))
+      (is (equal "UTF-8" (getf plist :log-encoding)))
+      (is (equal "UTF-8" (getf plist :terminal-in-encoding)))
+      (is (equal "UTF-8" (getf plist :terminal-out-encoding)))
+      (is (null (getf plist :console-in-encoding)))
+      (is (null (getf plist :console-out-encoding)))
+      (is (null (getf plist :cadstdio-in-encoding)))
+      (is (null (getf plist :cadstdio-out-encoding))))
+    ;; a specific option wins over the bare -E, whatever the order
+    (let ((plist (kws '("-Efile-write" "cp1252" "-E" "UTF-8" "-Ecadstdio-out" "latin-1"))))
+      (is (equal "WINDOWS-1252" (getf plist :file-write-encoding)))
+      (is (equal "UTF-8" (getf plist :file-read-encoding)))
+      (is (equal "ISO-8859-1" (getf plist :cadstdio-out-encoding)))
+      (is (null (getf plist :cadstdio-in-encoding))))
+    ;; -Econsole: both directions of the console, explicit
+    (let ((plist (kws '("--bricscad" "-Econsole" "cp1252"))))
+      (is (equal "WINDOWS-1252" (getf plist :console-in-encoding)))
+      (is (equal "WINDOWS-1252" (getf plist :console-out-encoding)))
+      ;; a CAD backend: the console is the CAD's device, not alfe's terminal
+      (is (null (getf plist :terminal-out-encoding))))
+    ;; the clautolisp engine: an explicit -Econsole folds into the terminal pair
+    (let ((plist (kws '("--clautolisp" "-Econsole-out" "cp1252"))))
+      (is (equal "WINDOWS-1252" (getf plist :terminal-out-encoding)))
+      (is (null (getf plist :terminal-in-encoding))))
+    ;; ... but an explicit -Eterminal wins over it
+    (let ((plist (kws '("--clautolisp" "-Econsole" "cp1252" "-Eterminal-in" "utf-8"))))
+      (is (equal "UTF-8" (getf plist :terminal-in-encoding)))
+      (is (equal "WINDOWS-1252" (getf plist :terminal-out-encoding))))
+    ;; the call site's override of the backend test
+    (let ((plist (kws '("-Econsole" "cp1252") :console-is-terminal-p nil)))
+      (is (null (getf plist :terminal-out-encoding))))))
+
+(test cli-console-folds-into-terminal-plan
+  "Under the clautolisp engine (the default backend) the console IS the
+terminal: an explicit -Econsole[-in|-out] stands in for a missing
+-Eterminal[-in|-out] in the terminal plan; an explicit -Eterminal wins; an
+explicit -Econsole wins over the bare -E. Under a CAD backend -Econsole is the
+CAD's console device and leaves alfe's terminal alone."
+  (flet ((kw (name) (clautolisp.autolisp-cli:encoding-keyword name)))
+    (is (alfe.cli:console-is-terminal-p (parse-arguments '("-x" "1"))))
+    (is (alfe.cli:console-is-terminal-p (parse-arguments '("--clautolisp"))))
+    (is (not (alfe.cli:console-is-terminal-p (parse-arguments '("--bricscad")))))
+    (is (not (alfe.cli:console-is-terminal-p (parse-arguments '("--autocad")))))
+    ;; -Econsole-out alone -> stdout + stderr in that encoding
+    (is (equal (list (list :output 1 :output (kw "cp1252"))
+                     (list :error  2 :output (kw "cp1252")))
+               (terminal-encoding-plan (parse-arguments '("-Econsole-out" "cp1252")))))
+    ;; -Econsole -> both directions
+    (is (equal (list (list :output 1 :output (kw "cp1252"))
+                     (list :error  2 :output (kw "cp1252"))
+                     (list :input  0 :input  (kw "cp1252")))
+               (terminal-encoding-plan (parse-arguments '("-Econsole" "cp1252")))))
+    ;; an explicit -Eterminal wins over -Econsole, in either order
+    (is (equal (list (list :output 1 :output (kw "UTF-8"))
+                     (list :error  2 :output (kw "UTF-8"))
+                     (list :input  0 :input  (kw "UTF-8")))
+               (terminal-encoding-plan
+                (parse-arguments '("-Eterminal" "UTF-8" "-Econsole" "cp1252")))))
+    ;; an explicit -Econsole wins over the bare -E
+    (is (equal (list (list :output 1 :output (kw "cp1252"))
+                     (list :error  2 :output (kw "cp1252"))
+                     (list :input  0 :input  (kw "cp1252")))
+               (terminal-encoding-plan
+                (parse-arguments '("-Econsole" "cp1252" "-E" "UTF-8")))))
+    ;; a CAD backend: -Econsole does not touch alfe's terminal
+    (is (null (terminal-encoding-plan
+               (parse-arguments '("--bricscad" "-Econsole" "cp1252")))))))
 
 
 (test cli-terminal-encoding-windows-console-code-pages
