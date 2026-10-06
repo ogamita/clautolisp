@@ -72,7 +72,6 @@
     ("--plugin"             :front-end "alfe plug-ins; *AUTOLISP-PLUGIN-OPTIONS* via the shared bindings")
     ("--plugin-path"        :front-end "alfe plug-ins")
     ("--no-plugins"         :front-end "alfe plug-ins")
-    ("--on-error"           :front-end "reporting of alfe's OWN unexpected conditions")
     ("--quiet"              :front-end "alfe's log level; *AUTOLISP-QUIET* via the shared bindings (the child runs --quiet)")
     ("--verbose"            :front-end "alfe's log level; *AUTOLISP-VERBOSE* via the shared bindings")
     ("--debug"              :front-end "alfe's log level; *AUTOLISP-DEBUG* via the shared bindings")
@@ -122,6 +121,24 @@
      :forward (%situation-cli-flags))
     ("--console-output-encoding" :engine "folded into --terminal-output-encoding"
      :forward (%situation-cli-flags))
+    ;; the debugger (aldo) options, shared with the clautolisp program
+    ;; (debugger-public-interface-and-on-error.issue, pjb 2026-10-06). The
+    ;; direct variant resolves and applies them with the program's own
+    ;; functions (CALL-WITH-DIRECT-DEBUGGER); the subprocess variant forwards
+    ;; the ones given verbatim (DEBUGGER-OPTION-ARGUMENTS) and, when they start
+    ;; a debugger, gives the child alfe's terminal.
+    ("--on-error"           :engine "direct: RESOLVE-DEBUGGER-SETTINGS + the aldo session; subprocess: --on-error POLICY (also: alfe's own unexpected conditions, under every backend)"
+     :forward (%debugger-cli-flags))
+    ("--on-interrupt"       :engine "direct: the program's SIGINT handler for the run; subprocess: --on-interrupt POLICY, Control-C left to (or passed on to) the child"
+     :forward (%debugger-cli-flags))
+    ("--on-quit"            :engine "direct: *CLAL-ON-QUIT* + a session under debug; subprocess: --on-quit POLICY"
+     :forward (%debugger-cli-flags))
+    ("--debugger-ui"        :engine "direct: the aldo session's UI; subprocess: --debugger-ui UI, the child on alfe's terminal"
+     :forward (%debugger-cli-flags))
+    ("--aldb-listen"        :engine "direct: the aldb listener in alfe's process; subprocess: --aldb-listen [HOST:]PORT, the listener in the child"
+     :forward (%debugger-cli-flags))
+    ("--aldb-stdio"         :engine "direct: aldb RPC over alfe's stdin/stdout; subprocess: --aldb-stdio, the child on alfe's terminal"
+     :forward (%debugger-cli-flags))
     ;; accepted, acted on by neither variant
     ("--mode"               :no-effect "CAD launch mode")
     ("--bootstrap-phase"    :no-effect "CAD bootstrap truncation")

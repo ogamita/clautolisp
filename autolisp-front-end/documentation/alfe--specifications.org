@@ -1543,7 +1543,8 @@ one flag per action; the CAD backends ignore =--host=,
 the CAD being the host. In a batch run the child's output is captured and
 replayed when it exits; when the plan holds an =:interactive= action the
 child is given alfe's own terminal (input, output and error), so that a
-REPL or the cadtui console works. Nothing else arbitrates the terminal: a
+REPL or the cadtui console works; so it is when the debugger options start a
+debugger in the child (see /Debugger options/ below). Nothing else arbitrates the terminal: a
 full-screen text UI and alfe's own terminal settings are not reconciled yet.
 
 ** Semantic parity of the two modes
@@ -1609,6 +1610,67 @@ same file and drawing side effects.
    not carry from one action to the next there, while it does in-process.
    This is the one known difference left; it needs a persistent child
    (actions sent to one engine over a framed stream) to be removed.
+
+** Debugger options
+
+alfe accepts the debugger (aldo) options of the =clautolisp= program,
+with the same spelling, values, parsing and meaning: their specs are the
+shared ones of =autolisp-cli= (=*common-option-specs*=), so a value one
+program refuses the other refuses with the same message
+(debugger-public-interface-and-on-error.issue; decided 2026-10-06).
+
+| Option                      | Values                                    | =--clautolisp= (both variants)                                           | =--autocad= / =--bricscad=       |
+|-----------------------------+-------------------------------------------+--------------------------------------------------------------------------+---------------------------------|
+| =--on-error POLICY=         | =quit= / =debug= / =ignore=               | uncaught AutoLISP error: report and exit 1 / stop in aldo / no debugger   | accepted (alfe's own reporting) |
+| =--on-interrupt POLICY=     | =debug= / =ignore= / =quit=               | Control-C: break into aldo / resume / exit 130                           | usage error, EX_USAGE 64        |
+| =--on-quit POLICY=          | =quit= / =debug=                          | =(quit)= / =(exit)=: quit / aldo before unwinding                         | usage error, EX_USAGE 64        |
+| =--debugger-ui UI=          | =dumb= (=terminal=, =tui=) / =ncurses= / =aldb= (=emacs=) | the aldo front end; selecting one debugs the run          | usage error, EX_USAGE 64        |
+| =--aldb-listen [HOST:]PORT= | HOST defaults to 127.0.0.1; PORT 0..65535 or a service name | the aldb listener address; implies =aldb=                | usage error, EX_USAGE 64        |
+| =--aldb-stdio=              | --                                        | aldb RPC over stdin/stdout; implies =aldb=                               | usage error, EX_USAGE 64        |
+
+1. *Defaults.* As in the =clautolisp= program: =--on-error= is =debug= for
+   an interactive plan (one holding =-i=, or no action -- run by the
+   =clautolisp= program itself, see point 5 of /Semantic parity/) and =quit=
+   for a batch plan; =--on-interrupt= is =debug=; =--on-quit= is =quit=; the UI
+   is the persisted =default-user-interface= aldo setting. A run is debugged
+   (an aldo session is started) when =--on-error= is =debug=, a UI or an aldb
+   transport is given, or =--on-quit= / =--on-interrupt= is EXPLICITLY
+   =debug=. =--aldb-stdio= with =--interactive= or with =--aldb-listen= is a
+   usage error (=EX_USAGE=, 64).
+2. *Direct variant.* The in-process engine applies them with the
+   =clautolisp= program's own functions (=resolve-debugger-settings=,
+   =with-debugger-settings=, =call-with-debug-session=): the event policies
+   and their AutoLISP mirrors (=*CLAL-ON-ERROR*=, =*CLAL-ON-INTERRUPT*=,
+   =*CLAL-ON-QUIT*=, =*CLAL-DEBUGGER-UI*=, =*CLAL-ALDB-LISTEN*=), the
+   =--on-interrupt= SIGINT handler for the duration of the run (alfe's own
+   Control-C behaviour is restored afterwards), and one aldo session whose UI
+   runs on the aldo companion thread, the batch actions running as one
+   debugging extent. (An interactive plan never reaches it: it is the
+   program's, run as the subprocess, whose REPL debugs each turn.)
+3. *Subprocess variant.* The options the user gave are forwarded verbatim
+   (=--on-error POLICY=, ..., =--aldb-listen [HOST]:PORT=, =--aldb-stdio=),
+   before the actions; the child applies its own defaults to the others. When
+   they start a debugger, the child is given alfe's terminal, as for =-i=.
+   While the child runs, Control-C belongs to it: alfe does not die of it,
+   and passes a SIGINT on to the child only when the child runs in another
+   process group (its input is not alfe's terminal); a child sharing alfe's
+   group already got the terminal's.
+4. *Same outcome.* Both variants print the same debugger dialogue and end
+   with the same status: aborting from the debugger ends the program with the
+   status recorded so far (0 by default); continuing from an error stop lets
+   the error take its course (reported, with the engine's status for it).
+5. *CAD backends.* A CAD runs AutoLISP itself and has no aldo: alfe refuses
+   =--on-interrupt=, =--on-quit=, =--debugger-ui=, =--aldb-listen= and
+   =--aldb-stdio= with a usage error naming them (=EX_USAGE=, 64), after the backend
+   is resolved and before anything is staged, =--dry-run= included. They are
+   never silently ignored.
+6. *=--on-error= and alfe itself.* Before alfe shared the option,
+   =--on-error= only governed how an unexpected condition in alfe ITSELF is
+   reported; that meaning is kept under every backend: =debug= and =ignore=
+   add the Common-Lisp backtrace (captured before the stack unwinds) to the
+   terse =alfe: <error>= line. The two meanings do not conflict: one is about
+   the user's AutoLISP, the other about a fault of alfe, and a user asking
+   for =debug= wants both.
 
 ** Encodings
 

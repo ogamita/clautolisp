@@ -988,7 +988,9 @@ the compiler or a transpilation itself; a genuine compilation *failure*
 is never suppressed, at any verbosity.
 
 ** Debugger (aldo)
-See § /Debugger/ for the semantics; the options in brief:
+See § /Debugger/ for the semantics; the options in brief (alfe accepts
+the same six options, spelled and meant the same, for its =--clautolisp=
+backend in both variants -- see the alfe user manual):
 
 - ~--on-error POLICY~    :: ~quit~ (report and exit — the batch
                             default), ~debug~ (break into aldo — the
@@ -1005,7 +1007,10 @@ See § /Debugger/ for the semantics; the options in brief:
                             Windows SBCL build the option has no effect:
                             that build lacks the POSIX-signal API, so
                             the native console Control-C behaviour is
-                            kept.
+                            kept. The CCL build applies it as the SBCL
+                            one does (since 2.2.218; before, a =C-c=
+                            under CCL fell into CCL's own break loop
+                            whatever the policy).
 - ~--on-quit POLICY~     :: What ~(quit)~ / ~(exit)~ does: ~quit~ (the
                             default) or ~debug~ (break into aldo before
                             the stack unwinds; continue quits, abort

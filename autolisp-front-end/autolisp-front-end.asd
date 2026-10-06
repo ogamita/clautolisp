@@ -92,6 +92,16 @@
                ;;    conversion), so an alfe without libredwg still starts.
                "clautolisp/autolisp-compiler"
                "clautolisp/drawing-dwg"
+               ;;  - the clautolisp program itself, for its debugger run
+               ;;    machinery: alfe shares the debugger options
+               ;;    (--on-error, --on-interrupt, --on-quit, --debugger-ui,
+               ;;    --aldb-listen, --aldb-stdio; debugger-public-interface-
+               ;;    and-on-error.issue, pjb 2026-10-06) and the in-process
+               ;;    engine starts the aldo session, its UIs and the aldb
+               ;;    listener exactly as the program does. It brings usocket
+               ;;    (the aldb TCP listener): a quicklisp dependency, loaded
+               ;;    explicitly by the Makefile and check-spec-coverage.
+               "clautolisp/clautolisp-tool"
                "trivial-gray-streams")
   :serial t
   :components

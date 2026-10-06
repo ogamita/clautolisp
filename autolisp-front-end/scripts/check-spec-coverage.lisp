@@ -33,7 +33,10 @@
   ;; backend-cad-common depends on babel (codepage transcode). ASDF does
   ;; not auto-install transitive quicklisp deps, so quickload it here.
   (funcall (find-symbol "QUICKLOAD" :ql) "babel" :silent t)
-  (funcall (find-symbol "QUICKLOAD" :ql) "cffi" :silent t))
+  (funcall (find-symbol "QUICKLOAD" :ql) "cffi" :silent t)
+  ;; backend-clautolisp depends on the clautolisp program (its debugger run
+  ;; machinery), which brings usocket (the aldb TCP listener).
+  (funcall (find-symbol "QUICKLOAD" :ql) "usocket" :silent t))
 
 (defun resolve-relative (relative)
   (let ((self (or *load-pathname* *load-truename*)))

@@ -484,6 +484,12 @@ underlying files we mirror live stdout/stderr into."
   (captured-stdout-stream nil)
   (captured-stderr-stream nil)
   (interrupt-requested-p nil)
+  ;; alfe's CLI-OPTIONS, for what EVAL-PLAN resolves per run: the debugger
+  ;; settings (--on-error, --on-interrupt, --on-quit, --debugger-ui,
+  ;; --aldb-listen, --aldb-stdio), whose defaults depend on whether the plan
+  ;; is interactive. NIL when START-ENGINE had none (then the engine runs
+  ;; with the runtime's defaults and no debugger, as before).
+  (cli-options nil)
   ;; The --dwg drawing the host could not open, as the CLI-USAGE-ERROR the
   ;; clautolisp program reports for it. EVAL-PLAN reports it and fails
   ;; before the first action, exactly as the program does before its first
@@ -528,6 +534,15 @@ resolved at START-ENGINE time."
   (dcl nil)
   ;; The drawing argument (--dwg / $AUTOLISP_DWG), forwarded as --dwg.
   (dwg nil)
+  ;; The debugger options the user gave, as the child's argv fragment
+  ;; (--on-error debug, --aldb-listen 127.0.0.1:0, ...): forwarded verbatim so
+  ;; the engine applies them -- and its own defaults to the others -- exactly
+  ;; as the in-process engine does.
+  (debugger-arguments nil)
+  ;; True when those options arm a debug session in the child: it will talk
+  ;; to the user (a DBG> prompt, the aldb connect prompt, stdio RPC), so it is
+  ;; given alfe's terminal instead of captured pipes, as for -i.
+  (debugger-session-p nil)
   ;; The *AUTOLISP-...* bindings alfe resolved -- the very list the direct
   ;; variant installs -- forwarded through --front-end-bindings so the child
   ;; engine shows user code the same values. NIL when START-ENGINE had no
@@ -557,7 +572,12 @@ SHUTDOWN."
         :direction :output
         :if-exists :supersede
         :if-does-not-exist :create
-        :external-format :utf-8))
+        :external-format :utf-8
+        ;; CCL makes a file stream PRIVATE to the thread that opened it by
+        ;; default; the aldo companion thread writes the debugger dialogue
+        ;; through the same tee (--on-error debug in the in-process engine),
+        ;; and got "Stream ... is private to ..." instead.
+        #+ccl :sharing #+ccl :lock))
 
 (defmethod start-engine ((backend clautolisp-backend) workdir
                          &key dialect host mock-input
@@ -673,6 +693,7 @@ SHUTDOWN."
                            :dialect dialect-struct
                            :context context
                            :host host-instance
+                           :cli-options cli-options
                            :startup-error startup-error
                            :output-file (when workdir
                                           (open-output-file workdir "output.txt"))
@@ -718,7 +739,15 @@ SHUTDOWN."
                                       cli-options))
                               :front-end-bindings
                               (when cli-options
-                                (direct-transmit-bindings cli-options version-text))))))
+                                (direct-transmit-bindings cli-options version-text))
+                              :debugger-arguments
+                              (when cli-options
+                                (clautolisp.autolisp-cli:debugger-option-arguments
+                                 cli-options))
+                              :debugger-session-p
+                              (and cli-options
+                                   (clautolisp.autolisp-cli:debugger-session-requested-p
+                                    cli-options))))))
 
 ;;; --- START-ENGINE: subprocess variant ------------------------------
 
@@ -764,7 +793,8 @@ engine: NIL when none was asked for, `--dribble' for the engine's default file,
                                 terminal-in-encoding terminal-out-encoding
                                 log-encoding
                                 dribble dribble-interactors dwg dcl
-                                front-end-bindings)
+                                front-end-bindings
+                                debugger-arguments debugger-session-p)
   ;; The Phase 1 subprocess variant defers the actual fork to
   ;; EVAL-PLAN so we can map every action to a clautolisp-sbcl CLI
   ;; flag and run the engine *once* with the right argv (rather than
@@ -804,7 +834,9 @@ engine: NIL when none was asked for, `--dribble' for the engine's default file,
                     :dribble-interactors dribble-interactors
                     :dwg dwg
                     :dcl dcl
-                    :front-end-bindings front-end-bindings)))
+                    :front-end-bindings front-end-bindings
+                    :debugger-arguments debugger-arguments
+                    :debugger-session-p debugger-session-p)))
       (session-state-set session :ready)
       session)))
 
@@ -903,6 +935,45 @@ can get here."
          :code :interactive-needs-subprocess
          :message "An interactive session runs in the clautolisp executable, not in alfe's embedded engine (--backend subprocess)."))
 
+(defun call-with-direct-debugger (session plan run-actions)
+  "Run the PLAN of the direct SESSION through RUN-ACTIONS (a function of the
+debug session and the break-on-error flag) under the debugger options alfe was
+given -- resolved, bound and acted on by the clautolisp program's own functions,
+so the in-process engine behaves as the program (and as the subprocess variant,
+which IS the program): the event policies and their defaults (--on-error
+debug for an interactive plan, quit for a batch one), the AutoLISP mirrors
+(*CLAL-ON-ERROR*, ...), the --on-interrupt Control-C handler (restored
+afterwards: Control-C is alfe's again), and, for a debugged run, ONE aldo
+session with its UI on the aldo companion thread -- the batch actions as one
+debugging extent, or each turn of the REPL when the plan is interactive.
+
+A session started without CLI options (a test driving the backend directly)
+runs RUN-ACTIONS plain, with no debugger, as before."
+  (let ((options (clautolisp-direct-session-cli-options session)))
+    (if (null options)
+        (funcall run-actions nil nil)
+        (let* ((context (clautolisp-direct-session-context session))
+               (interactive-p (some (lambda (action)
+                                      (eq (action-kind action) :interactive))
+                                    plan))
+               (settings (clautolisp.tools.clautolisp:resolve-debugger-settings
+                          options :interactive-p interactive-p)))
+          (clautolisp.tools.clautolisp:with-debugger-settings (settings)
+            (clautolisp.tools.clautolisp:sync-debugger-policy-mirrors)
+            (clautolisp.tools.clautolisp:call-with-interrupt-handler
+             (lambda ()
+               (clautolisp.tools.clautolisp:call-with-debug-session
+                (clautolisp.tools.clautolisp:debugger-settings-debug-ui settings)
+                (clautolisp.tools.clautolisp:debugger-settings-on-error settings)
+                context
+                (lambda (debug-session break)
+                  (if (and debug-session (not interactive-p))
+                      (clautolisp.tools.clautolisp:run-under-session-debugging
+                       debug-session
+                       (lambda () (funcall run-actions nil nil))
+                       break)
+                      (funcall run-actions debug-session break)))))))))))
+
 (defmethod eval-plan ((session clautolisp-direct-session) plan)
   ;; Tee live stdout/stderr into the workdir mirror files when a
   ;; workdir is present (i.e. when the CLI passed one). With no
@@ -944,23 +1015,26 @@ can get here."
             (let ((startup-error (clautolisp-direct-session-startup-error session)))
               (when startup-error
                 (error startup-error)))
-            (dolist (action plan)
-              (when (clautolisp-direct-session-interrupt-requested-p session)
-                ;; Interrupted: the status of a Control-C under the quit
-                ;; policy, as the clautolisp program gives it.
-                (setf status :aborted
-                      exit-code clautolisp.sysexits:+exit-interrupted+)
-                (return))
-              ;; Each action is a top-level read: a document switch the
-              ;; previous one requested (NEW / OPEN ...) takes effect here.
-              (when (member (action-kind action) '(:load :eval :main))
-                (clautolisp.autolisp-runtime:apply-pending-document-switch context))
-              (case (action-kind action)
-                (:load        (setf final-value (direct-load session action)))
-                (:eval        (setf final-value (direct-eval session action)))
-                (:main        (setf final-value (direct-main session action)))
-                (:interactive (direct-interactive-refused))
-                (:quit        (return))))
+            (flet ((run-actions (debug-session break)
+                     (declare (ignore debug-session break))
+                     (dolist (action plan)
+                       (when (clautolisp-direct-session-interrupt-requested-p session)
+                         ;; Interrupted: the status of a Control-C under the quit
+                         ;; policy, as the clautolisp program gives it.
+                         (setf status :aborted
+                               exit-code clautolisp.sysexits:+exit-interrupted+)
+                         (return))
+                       ;; Each action is a top-level read: a document switch the
+                       ;; previous one requested (NEW / OPEN ...) takes effect here.
+                       (when (member (action-kind action) '(:load :eval :main))
+                         (clautolisp.autolisp-runtime:apply-pending-document-switch context))
+                       (case (action-kind action)
+                         (:load        (setf final-value (direct-load session action)))
+                         (:eval        (setf final-value (direct-eval session action)))
+                         (:main        (setf final-value (direct-main session action)))
+                         (:interactive (direct-interactive-refused))
+                         (:quit        (return))))))
+              (call-with-direct-debugger session plan #'run-actions))
             ;; Normal completion: the status a script recorded with
             ;; (autolisp-set-status N), 0 when it never did.
             (unless (eq status :aborted)
@@ -1075,6 +1149,13 @@ engine reads source files in the encoding the user asked alfe for."
     (when (and dcl (not (eq dcl :auto)))
       (list "--dcl" (string-downcase (symbol-name dcl))))))
 
+(defun %debugger-cli-flags (session)
+  "The debugger options the user gave (--on-error POLICY, ..., --aldb-stdio),
+spelled as the child's parser reads them back
+(CLAUTOLISP.AUTOLISP-CLI:DEBUGGER-OPTION-ARGUMENTS, computed at START-ENGINE).
+The child applies its own defaults to the others, as the direct variant does."
+  (clautolisp-subprocess-session-debugger-arguments session))
+
 (defun build-subprocess-argv (session plan &key front-end-bindings-file)
   "Compose the clautolisp-sbcl argv for SESSION and PLAN. Used by EVAL-PLAN on
 the subprocess variant. FRONT-END-BINDINGS-FILE, when given, is passed as
@@ -1153,10 +1234,89 @@ inherited descriptor (:INTERACTIVE) for a process stream, else STREAM itself
 
 (defun %subprocess-needs-terminal-p (session plan)
   "True when the child must have alfe's terminal rather than captured pipes:
-an interactive session in PLAN, or a --dcl renderer that draws on the
+an interactive session in PLAN, a debugger the options start, or a --dcl renderer that draws on the
 terminal (ncurses) or talks to a GUI driver (gui)."
   (or (some (lambda (action) (eq (action-kind action) :interactive)) plan)
-      (member (clautolisp-subprocess-session-dcl session) '(:gui :ncurses))))
+      (member (clautolisp-subprocess-session-dcl session) '(:gui :ncurses))
+      ;; The debugger options start a debugger in the child (a DBG> prompt,
+      ;; the aldb connect prompt, stdio RPC): it talks to the user.
+      (clautolisp-subprocess-session-debugger-session-p session)))
+(defun %wait-for-engine-child (session process)
+  "Wait for the engine child PROCESS of SESSION to exit; return its status.
+While it runs, Control-C belongs to the CHILD, which applies its own
+--on-interrupt policy (the subprocess variant forwards that option): alfe's
+handler does not die of it, and passes the signal on only when the terminal
+did not deliver it -- the child is in another process group (its input is not
+alfe's terminal); a child sharing alfe's group got it already, and a second one
+would read as a second Control-C. PROCESS is the session's PROCESS-INFO
+meanwhile, so a :INTERRUPT control request reaches it."
+  (let ((pid (ignore-errors (uiop:process-info-pid process))))
+    (setf (clautolisp-subprocess-session-process-info session) process)
+    (unwind-protect
+         (clautolisp.autolisp-cli:call-with-sigint-handler
+          (lambda ()
+            (when pid
+              (ignore-errors (clautolisp.autolisp-cli:forward-sigint pid))))
+          (lambda () (uiop:wait-process process)))
+      (setf (clautolisp-subprocess-session-process-info session) nil))))
+
+(defun %temporary-file (name)
+  (uiop:tmpize-pathname (merge-pathnames name (uiop:temporary-directory))))
+
+(defun %copy-stream-to-file (stream path)
+  (with-open-file (out path :direction :output :if-exists :supersede
+                            :external-format uiop:*utf-8-external-format*)
+    (loop for line = (read-line stream nil nil)
+          while line do (write-line line out))))
+
+(defun %run-engine-child (session argv &key terminal external-format)
+  "Run the engine ARGV to completion, the way uiop:run-program would, but
+through LAUNCH-PROGRAM, so alfe knows the child while it runs (Control-C, see
+%WAIT-FOR-ENGINE-CHILD). The child reads alfe's standard input -- the
+descriptor itself when it is a process stream, else a copy of what the stream
+holds. TERMINAL: the child writes to alfe's own output and error streams
+(inherited when they are process streams, copied when the run ends otherwise)
+and nothing is captured. Otherwise its output and error output are captured in
+EXTERNAL-FORMAT (the default when NIL). Returns (VALUES STDOUT STDERR
+EXIT-CODE), STDOUT / STDERR NIL under TERMINAL."
+  (finish-output *standard-output*)
+  (finish-output *error-output*)
+  (let* ((format (or external-format uiop:*utf-8-external-format*))
+         (in-file (unless (%process-stream-p *standard-input*)
+                    (let ((path (%temporary-file "alfe-engine-stdin.txt")))
+                      (%copy-stream-to-file *standard-input* path)
+                      path)))
+         (input (or in-file :interactive))
+         (out-file (%temporary-file "alfe-engine-stdout.txt"))
+         (err-file (%temporary-file "alfe-engine-stderr.txt"))
+         (out-inherit (and terminal (%process-stream-p *standard-output*)))
+         (err-inherit (and terminal (%process-stream-p *error-output*))))
+    (unwind-protect
+         (let ((code (%wait-for-engine-child
+                      session
+                      (uiop:launch-program
+                       argv
+                       :input input
+                       :output (if out-inherit :interactive out-file)
+                       :if-output-exists :supersede
+                       :error-output (if err-inherit :interactive err-file)
+                       :if-error-output-exists :supersede
+                       :external-format format)))
+               (out (unless out-inherit
+                      (uiop:read-file-string out-file :external-format format)))
+               (err (unless err-inherit
+                      (uiop:read-file-string err-file :external-format format))))
+           (if terminal
+               (progn
+                 ;; A non-process stream (an embedding caller's, a test's)
+                 ;; receives what the child wrote, as uiop:run-program did.
+                 (when out (write-string out *standard-output*))
+                 (when err (write-string err *error-output*))
+                 (values nil nil code))
+               (values out err code)))
+      (dolist (file (list in-file out-file err-file))
+        (when file (ignore-errors (delete-file file)))))))
+
 
 (defun %subprocess-eval-plan (session plan front-end-bindings-file)
   (session-state-set session :running)
@@ -1170,34 +1330,10 @@ terminal (ncurses) or talks to a GUI driver (gui)."
     (log-debug "backend CLAUTOLISP (subprocess): launching: ~{~A~^ ~}" argv)
     (handler-case
         (multiple-value-bind (stdout stderr exit-code)
-            (if (%subprocess-needs-terminal-p session plan)
-                ;; A REPL, the cadtui console or a full-screen / GUI dialog
-                ;; reads the keyboard and writes the screen, which captured
-                ;; pipes cannot serve: the child gets alfe's own terminal.
-                ;; Nothing is captured then, so OUTPUT / ERROR-OUTPUT of the
-                ;; result stay empty. A stream that is NOT a process stream
-                ;; (an embedding caller's, a test's string stream) is handed
-                ;; over as such: uiop copies it, so the child reads what alfe
-                ;; would have read and alfe's caller sees what it wrote.
-                (progn
-                  (finish-output *standard-output*)
-                  (finish-output *error-output*)
-                  (uiop:run-program argv
-                                    :input (%child-stream *standard-input*)
-                                    :output (%child-stream *standard-output*)
-                                    :error-output (%child-stream *error-output*)
-                                    :ignore-error-status t))
-                (let ((external-format (%subprocess-capture-external-format session)))
-                  (apply #'uiop:run-program argv
-                         ;; The child reads alfe's standard input, as the
-                         ;; in-process engine does (GETSTRING, a line DCL
-                         ;; dialog), instead of an empty one.
-                         :input (%child-stream *standard-input*)
-                         :output :string
-                         :error-output :string
-                         :ignore-error-status t
-                         (when external-format
-                           (list :external-format external-format)))))
+            (%run-engine-child
+             session argv
+             :terminal (%subprocess-needs-terminal-p session plan)
+             :external-format (%subprocess-capture-external-format session))
           (log-verbose "backend CLAUTOLISP (subprocess): exit ~A" exit-code)
           (let ((stdout (or stdout ""))
                 (stderr (or stderr "")))

@@ -338,20 +338,87 @@ Suppress non-error output.
 Debug traces (implies
 .BR \-\-verbose ).
 .TP
+.SS Debugger (aldo)
+The debugger options of
+.BR clautolisp (1),
+with the same spelling, values and meaning. Under
+.B \-\-clautolisp
+both engine variants apply them: the in-process engine
+.RB ( "\-\-backend direct" )
+starts the aldo session exactly as the clautolisp program does, and the
+subprocess variant forwards them to the clautolisp child, which then runs on
+alfe's terminal when they start a debugger. The CAD backends have no aldo:
+.B \-\-autocad
+and
+.B \-\-bricscad
+refuse all of them but
+.B \-\-on-error
+with a usage error (EX_USAGE, 64).
+.TP
 .BI \-\-on-error " POLICY"
-How an unexpected Lisp condition escaping alfe itself is reported:
+An uncaught AutoLISP error under
+.BR \-\-clautolisp :
 .B quit
-(default \(em the terse
-.RB \(lq "alfe: <error>" \(rq
-line, then exit) or
-.BR debug / ignore ,
-which additionally dump the Common\-Lisp backtrace, captured before the stack
-unwinds.
-alfe has no debugger of its own, so
+reports it and exits 1 (the default of a batch run),
+.B debug
+stops in the aldo debugger at the error (the default of an interactive REPL),
+.B ignore
+uses no debugger (the AutoLISP
+.B *error*
+handler runs). Under every backend,
 .B debug
 and
 .B ignore
-behave the same here.
+also make alfe dump the Common\-Lisp backtrace of an unexpected condition in
+alfe itself, captured before the stack unwinds.
+.TP
+.BI \-\-on-interrupt " POLICY"
+Control\-C (SIGINT) under
+.BR \-\-clautolisp :
+.B debug
+(break into aldo at the interrupt point, the default),
+.B ignore
+(execution resumes) or
+.B quit
+(exit 130). A second Control\-C while one is being handled exits at once.
+In the subprocess variant alfe leaves Control\-C to the child (passing it on
+when the terminal did not deliver it).
+.TP
+.BI \-\-on-quit " POLICY"
+.B (quit)
+and
+.B (exit)
+under
+.BR \-\-clautolisp :
+.B quit
+(the default) or
+.B debug
+(enter aldo before the stack unwinds).
+.TP
+.BI \-\-debugger-ui " UI"
+The aldo front end:
+.B dumb
+(aliases
+.BR terminal ", " tui ),
+.BR ncurses ,
+or
+.B aldb
+(alias
+.BR emacs ).
+Selecting one debugs the run.
+.TP
+.BI \-\-aldb-listen " [HOST:]PORT"
+The address the aldb (Emacs) listener binds; HOST defaults to 127.0.0.1,
+PORT 0 picks a free port. Implies
+.BR "\-\-debugger-ui aldb" .
+.TP
+.B \-\-aldb-stdio
+aldb over the process's standard input and output. Implies
+.BR "\-\-debugger-ui aldb" ;
+excludes
+.B \-\-interactive
+and
+.BR \-\-aldb-listen .
 .SS Informational
 .TP
 .BR \-h ", " \-\-help

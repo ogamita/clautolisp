@@ -612,6 +612,54 @@ The environment variables =$AUTOLISP_WORKDIR=, =$AUTOLISP_BOOTSTRAP_PHASE=
 and, for the plug-in option =--epure=, =$AUTOLISP_EPURE= supply the
 defaults; an explicit option always wins.
 
+* The debugger (aldo)
+
+alfe takes the debugger options of the =clautolisp= program, spelled,
+parsed and meant exactly as there (the option specs are shared; the
+=clautolisp= user manual describes the debugger itself). Under
+=--clautolisp= they apply to both engine variants:
+
+- =--backend direct= (the in-process engine) resolves them and starts the
+  aldo session, its user interface and the aldb listener with the
+  =clautolisp= program's own functions;
+- =--backend subprocess= forwards the ones you gave to the =clautolisp=
+  child, which applies them -- and its own defaults to the others. When
+  they start a debugger (=--on-error debug=, =--debugger-ui=, an aldb
+  transport, an explicit =--on-quit debug= / =--on-interrupt debug=) the
+  child runs on alfe's own terminal, as for =-i=, so its prompts reach you.
+
+| Option                      | Under =--clautolisp=                                                                                         | Under =--autocad= / =--bricscad=                       |
+|-----------------------------+--------------------------------------------------------------------------------------------------------------+--------------------------------------------------------|
+| =--on-error POLICY=         | Uncaught AutoLISP error: =quit= reports it and exits 1 (batch default), =debug= stops in aldo at the error (default of an interactive REPL), =ignore= uses no debugger (the AutoLISP =*error*= handler runs). | Accepted: governs alfe's own reporting only (below). |
+| =--on-interrupt POLICY=     | Control-C: =debug= (break into aldo, the default), =ignore= (resume), =quit= (exit 130). A second Control-C while one is handled exits at once. | Usage error (EX_USAGE, 64).                            |
+| =--on-quit POLICY=          | =(quit)= / =(exit)=: =quit= (default) or =debug= (aldo before the stack unwinds).                            | Usage error (EX_USAGE, 64).                            |
+| =--debugger-ui UI=          | =dumb= (aliases =terminal=, =tui=), =ncurses=, =aldb= (alias =emacs=); selecting one debugs the run.        | Usage error (EX_USAGE, 64).                            |
+| =--aldb-listen [HOST:]PORT= | The aldb (Emacs) listener's address (HOST defaults to 127.0.0.1, PORT 0 = a free port); implies =aldb=.     | Usage error (EX_USAGE, 64).                            |
+| =--aldb-stdio=              | aldb over stdin/stdout; implies =aldb=; excludes =--interactive= and =--aldb-listen= (usage error).          | Usage error (EX_USAGE, 64).                            |
+
+The CAD backends run AutoLISP inside the CAD, which has no aldo: alfe
+refuses the options it could not honour rather than ignoring them,
+=--dry-run= included.
+
+=--on-error= also keeps its older meaning, under every backend: =debug=
+and =ignore= make alfe dump the Common-Lisp backtrace of an unexpected
+condition in alfe ITSELF (captured before the stack unwinds), after the
+terse =alfe: <error>= line; =quit=, or no =--on-error=, prints that line
+only. That reporting concerns a fault of alfe, never the user's AutoLISP.
+
+Control-C: under =--backend direct= the =--on-interrupt= policy applies to
+alfe's process for the run, then Control-C is alfe's again. Under
+=--backend subprocess= alfe leaves Control-C to the child, which applies the
+forwarded policy: alfe passes the signal on when the terminal did not deliver
+it to the child itself (a batch child runs in its own process group).
+
+#+begin_src sh
+alfe --clautolisp --on-error debug -l buggy.lsp          # stop in aldo at the error
+alfe --clautolisp --backend subprocess --on-error debug -l buggy.lsp   # same, in the child
+alfe --clautolisp --aldb-listen 0 -l buggy.lsp           # debug from Emacs (M-x aldb-connect)
+alfe --clautolisp --on-interrupt quit -l long-run.lsp    # Control-C exits 130
+#+end_src
+
 * Actions
 
 alfe accepts an ordered queue of actions on the command line. The
@@ -627,7 +675,7 @@ REPL with =-i=).
 | =--quit=               | Force engine shutdown after the queue.          |
 | =--dry-run=            | Print the resolved plan; don't run anything.    |
 | =--print-command=      | Stage the workdir for real, print the CAD command line that would be launched, launch nothing. CAD backends only. |
-| =--on-error POLICY=    | How an unexpected Lisp condition escaping alfe itself is reported: =quit= (default — the terse =alfe: <error>= line, then exit) or =debug= / =ignore=, which additionally dump the Common-Lisp backtrace (captured before the stack unwinds). alfe has no debugger of its own, so =debug= and =ignore= behave the same. |
+| =--on-error POLICY=    | What an uncaught AutoLISP error does under =--clautolisp= (=quit=, =debug=, =ignore=), and how alfe reports its own unexpected conditions. See "The debugger (aldo)" below. |
 
 Examples:
 
@@ -1702,7 +1750,7 @@ for 66 works everywhere.
 |    =0= | =EX_OK=          | Success.                                                                                                |
 |    =1= |                  | The AutoLISP program failed: a runtime error escaped it, on any backend (a CAD request that answered =FAIL=). |
 |    /N/ |                  | Under =--clautolisp=: the program's own =(exit N)=, =(quit N)= or =autolisp-set-status N=, unchanged.    |
-|   =64= | =EX_USAGE=       | The command line is wrong: an unknown option, a missing argument, an invalid value, conflicting options, a plug-in option without its plug-in, =--host cadtui --backend direct=, =--print-command= without a CAD backend, =--dwg= on a host without drawings, =--autocad --mode batch= without a drawing or with =--epure=. |
+|   =64= | =EX_USAGE=       | The command line is wrong: an unknown option, a missing argument, an invalid value, conflicting options, a plug-in option without its plug-in, =--host cadtui --backend direct=, =--print-command= without a CAD backend, =--dwg= on a host without drawings, =--autocad --mode batch= without a drawing or with =--epure=, an aldo option (=--on-interrupt=, =--on-quit=, =--debugger-ui=, =--aldb-listen=, =--aldb-stdio=) under a CAD backend, =--aldb-stdio= with =--interactive= or =--aldb-listen=. |
 |   =65= | =EX_DATAERR=     | An input is not well formed: a =-l= file or =-x= expression the reader refuses (unbalanced parenthesis, unterminated string, bytes not valid in the source encoding); a =--dwg= file that is not a drawing; a =--compile-plugin= source that does not compile. |
 |   =66= | =EX_NOINPUT=     | An input file does not exist or is not readable: the =-l= file, the =--dwg= drawing, the =--epuree-alpm= file, the =--compile-plugin= source. |
 |   =69= | =EX_UNAVAILABLE= | The backend, or something it needs, is not there or would not start: the CAD is not installed or not supported on this system, no clautolisp executable for =--backend subprocess=, no accoreconsole, EPURE or alpm.lsp not installed, the DWG native library missing, the CAD launcher died before READY. |

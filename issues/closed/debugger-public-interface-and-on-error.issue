@@ -1,4 +1,80 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: debugger-public-interface-and-on-error -- AutoLISP-facing debugger API + debugger CLI options (+ aldb connection options)
+#+STATUS: DONE (clautolisp 2.2.218 / alfe 2.2.162, 2026-10-06; --aldb-swank split out to deferred-aldb-swank)
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: none
+#+BRANCH: debugger-options-in-alfe
+
 * debugger-public-interface-and-on-error — AutoLISP-facing debugger API + --on-error CLI option (+ aldb connection options)
+
+** RESOLUTION (2026-10-06, clautolisp 2.2.218 / alfe 2.2.162, branch debugger-options-in-alfe)
+
+The three items left by the 2026-10-06 update:
+
+1. *Sharing the options with alfe* (pjb decided 2026-10-06: yes). The six
+   specs (--on-error, --on-interrupt, --on-quit, --debugger-ui,
+   --aldb-listen, --aldb-stdio) moved from the clautolisp program into
+   autolisp-cli's *common-option-specs*, with the pure helpers both programs
+   use (autolisp-cli/source/debugger.lisp: VALIDATE-DEBUGGER-OPTIONS,
+   EFFECTIVE-USER-INTERFACE, DEBUGGER-SESSION-REQUESTED-P,
+   DEBUGGER-OPTION-ARGUMENTS). The clautolisp program's run machinery was cut
+   into reusable functions (RESOLVE-DEBUGGER-SETTINGS, WITH-DEBUGGER-SETTINGS,
+   SYNC-DEBUGGER-POLICY-MIRRORS, CALL-WITH-INTERRUPT-HANDLER,
+   CALL-WITH-DEBUG-SESSION), which MAIN and alfe's in-process engine both
+   call, so the two cannot drift. alfe --clautolisp:
+   - direct: CALL-WITH-DIRECT-DEBUGGER resolves and applies them around
+     EVAL-PLAN (policies + AutoLISP mirrors, the SIGINT handler for the run
+     then restored, one aldo session on the companion thread). An interactive
+     run never reaches it: since the semantic-parity work it is the
+     clautolisp program's, run as the subprocess, whose REPL debugs each turn
+     under the interactive --on-error default;
+   - subprocess: the options given are forwarded verbatim; when they start a
+     debugger the child gets alfe's terminal (as for -i); the forwarding is the
+     contract's :FORWARD (%DEBUGGER-CLI-FLAGS); the child is run with
+     LAUNCH-PROGRAM so alfe knows it while it runs and leaves Control-C to it
+     (passed on only when the child is in another process group) instead of
+     dying on it.
+   - the option contract (*clautolisp-option-contract*) classifies all six
+     :ENGINE; the parity table gained four rows; the CAD backends REFUSE
+     --on-interrupt, --on-quit, --debugger-ui, --aldb-listen and --aldb-stdio
+     (usage error, EX_USAGE 64), dry run included; so is --aldb-stdio with
+     --interactive or --aldb-listen.
+   *Conflict and resolution*: alfe already had an --on-error of its own, with
+   another meaning -- how an unexpected Lisp condition in alfe ITSELF is
+   reported (debug|ignore add the CL backtrace). The clautolisp meaning (what
+   an uncaught AutoLISP error does) now applies under --clautolisp, in both
+   variants; the alfe meaning is KEPT under every backend, set from the same
+   parsed value. They do not collide: one is about the user's program, the
+   other about a fault of alfe, and a user asking for debug wants both. So
+   --on-error stays accepted by the CAD backends (where only the alfe meaning
+   applies) and existing alfe users see no change there. The usage text, man
+   page, user manual and spec say both.
+2. *--on-interrupt on CCL*. Cause: the handler was SBCL-only; on CCL the
+   kernel only flags a SIGINT, the housekeeping thread process-interrupts the
+   "interactive abort process" into CBREAK-LOOP, so every policy fell into
+   CCL's own `1 >' break loop (measured on the built clautolisp-ccl: quit,
+   ignore and debug alike). Fix: autolisp-cli/source/interrupt.lisp
+   INSTALL-SIGINT-HANDLER -- on CCL a CCL:*BREAK-HOOK* that, for an
+   INTERRUPT-SIGNAL-CONDITION, runs the handler (rebinding the hook so a second
+   Control-C comes back to it) and invokes the CONTINUE restart CBREAK-LOOP
+   provides, plus CCL::*SELECT-INTERACTIVE-PROCESS-HOOK* naming the installing
+   thread; on SBCL the previous signal handler, now stacked so it can be
+   restored (SB-SYS:ENABLE-INTERRUPT does not return the old one). Tests:
+   tools/clautolisp/tests/interrupt-tests.lisp sends a real SIGINT to the test
+   process (SBCL and CCL lanes), and tools/clautolisp/tests/
+   shipped-interrupt-test.sh drives the BUILT executables (quit -> 130,
+   ignore -> keeps running, debug -> aldo + `q' -> 0, second Control-C -> 130),
+   chained into test-shipped-compiler[-ccl] so the CI lanes run it; green on
+   both builds, red on the old CCL build.
+3. *--aldb-swank*: still deferred, split out to
+   issues/open/deferred-aldb-swank.issue (DEFERRED row in TRIAGE).
+
+Observed, not changed: --on-error ignore in a BATCH run reports the error and
+exits 1 like quit (the debugger is not armed, *error* runs) -- the clautolisp
+program's behaviour, which alfe now shares; the "continue to the next action"
+reading of B.1 was never implemented.
+
 
 ** STATUS (2026-07-23, clautolisp 1.6.3, branch fix-debugger-cli-options)
 

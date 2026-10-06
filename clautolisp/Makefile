@@ -27,7 +27,7 @@ XDG_CACHE_HOME ?= $(ROOT_DIR)/.cache
 # of LISPSYS persists, and CLAUTOLISP_REGISTRY_FILE makes the host use this
 # sexp store instead, on every platform (lispsys persistence, 2026-10-04).
 TEST_REGISTRY_FILE ?= $(XDG_CACHE_HOME)/test-registry.sexp
-test test-sbcl test-ccl test-compiler-equivalence test-lexical-locals test-debug-compiled check-docstrings test-shipped-compiler test-shipped-compiler-ccl test-shipped-debug-flag test-shipped-debug-flag-ccl: export CLAUTOLISP_REGISTRY_FILE = $(TEST_REGISTRY_FILE)
+test test-sbcl test-ccl test-compiler-equivalence test-lexical-locals test-debug-compiled check-docstrings test-shipped-compiler test-shipped-compiler-ccl test-shipped-debug-flag test-shipped-debug-flag-ccl test-shipped-interrupt test-shipped-interrupt-ccl: export CLAUTOLISP_REGISTRY_FILE = $(TEST_REGISTRY_FILE)
 
 # Install destination. Override on the command line:
 #   make install PREFIX=/usr/local DESTDIR=/staging
@@ -150,6 +150,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
 .PHONY: text-metrics
 .PHONY: all test test-sbcl test-ccl test-compiler-equivalence \
         test-debug-compiled test-shipped-compiler test-shipped-compiler-ccl \
+        test-shipped-interrupt test-shipped-interrupt-ccl \
         check-docstrings spec-symbols operator-availability check-operator-availability \
         build build-sbcl build-ccl probe-check \
         submodules build-libredwg test-libredwg-compiler-path \
@@ -272,16 +273,24 @@ check-docstrings:  ## Fail if any definition body holds dead forms — the signa
 test-shipped-compiler: build-clautolisp-sbcl  ## Assert the BUILT executable has a compiler in it: .lap round-trip + -O. Nothing else in the corpus runs the program that ships.
 	tools/clautolisp/tests/shipped-compiler-test.sh
 	"$(MAKE)" test-shipped-debug-flag
+	"$(MAKE)" test-shipped-interrupt
 
 test-shipped-compiler-ccl: build-clautolisp-ccl  ## Same, against the CCL executable. A .lap is a native host FASL, so each host ships its own compiler and each has to be asked.
 	tools/clautolisp/tests/shipped-compiler-test.sh tools/clautolisp/bin/clautolisp-ccl
 	"$(MAKE)" test-shipped-debug-flag-ccl
+	"$(MAKE)" test-shipped-interrupt-ccl
 
 test-shipped-debug-flag: build-clautolisp-sbcl  ## Assert the BUILT executable receives -d/--debug.
 	tools/clautolisp/tests/shipped-debug-flag-test.sh tools/clautolisp/bin/clautolisp-sbcl -x '(/ 1 0)'
 
 test-shipped-debug-flag-ccl: build-clautolisp-ccl  ## Same for CCL, whose kernel removes -d/--debug from argv (alfe-ccl-executable-drops-log-output).
 	tools/clautolisp/tests/shipped-debug-flag-test.sh tools/clautolisp/bin/clautolisp-ccl -x '(/ 1 0)'
+
+test-shipped-interrupt: build-clautolisp-sbcl  ## Assert the BUILT executable applies --on-interrupt quit/ignore/debug to a real SIGINT (no host break loop).
+	tools/clautolisp/tests/shipped-interrupt-test.sh tools/clautolisp/bin/clautolisp-sbcl
+
+test-shipped-interrupt-ccl: build-clautolisp-ccl  ## Same for CCL, which had no SIGINT handler before 2.2.218 (Control-C fell into CCL's break loop).
+	tools/clautolisp/tests/shipped-interrupt-test.sh tools/clautolisp/bin/clautolisp-ccl
 
 # CCL EXIT STATUS (issues/open/ccl-test-lanes-cannot-fail.issue).
 # Without --batch, CCL does not exit on an unhandled error in an --eval:

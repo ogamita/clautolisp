@@ -94,6 +94,23 @@
    #:parse-aldb-listen
    #:parse-dribble-interactors
 
+   ;; the debugger (aldo) options, shared by clautolisp and alfe
+   ;; (debugger-public-interface-and-on-error.issue)
+   #:*debugger-option-names*
+   #:validate-debugger-options
+   #:effective-user-interface
+   #:debugger-session-requested-p
+   #:aldb-listen-argument
+   #:debugger-option-arguments
+   #:given-debugger-options
+
+   ;; Control-C, portably (SBCL signal handler / CCL *break-hook*)
+   #:install-sigint-handler
+   #:restore-sigint-handler
+   #:call-with-sigint-handler
+   #:abrupt-exit
+   #:forward-sigint
+
    ;; option-spec + parser
    #:option-spec
    #:make-option-spec

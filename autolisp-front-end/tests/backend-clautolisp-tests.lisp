@@ -1002,7 +1002,25 @@ names the native library candidates, which may legitimately differ."
         "-x" ,(format nil "(setq id (load_dialog ~S)) (new_dialog \"parity\" id) (princ (list 'result (start_dialog))) (unload_dialog id)"
                       dcl))
        :input ,(concatenate 'string "accept" nl)
-       :expect-stdout "(RESULT 1)"))))
+       :expect-stdout "(RESULT 1)")
+      ;; The debugger options (debugger-public-interface-and-on-error.issue):
+      ;; the ones a batch run can show without a terminal. --on-error debug,
+      ;; --debugger-ui and the aldb transports talk to the user; they are
+      ;; covered by CLAUTOLISP-DIRECT-ON-ERROR-DEBUG-STOPS-IN-ALDO, the
+      ;; forwarding test, and the shell demonstration of the ticket.
+      ("on-error quit"
+       ("--on-error" "quit" "-x" "(princ \"a\")" "-x" "(/ 1 0)" "-x" "(princ \"after\")")
+       :expect-stdout "a")
+      ("on-error ignore"
+       ("--on-error" "ignore" "-x" "(princ \"a\")" "-x" "(/ 1 0)" "-x" "(princ \"after\")")
+       :expect-stdout "a")
+      ("debugger policies"
+       ("--on-error" "ignore" "--on-interrupt" "quit" "--on-quit" "quit"
+        "-x" "(princ (list *clal-on-error* *clal-on-interrupt* *clal-on-quit*))")
+       :expect-stdout "(IGNORE QUIT QUIT)")
+      ("debugger policy defaults"
+       ("-x" "(princ (list *clal-on-error* *clal-on-interrupt* *clal-on-quit*))")
+       :expect-stdout "(QUIT DEBUG QUIT)"))))
 
 (defun %parity-file-matches-p (octets expect)
   "True when the side-effect file's OCTETS (NIL: no file) are what EXPECT says:
@@ -1126,3 +1144,135 @@ bindings to forward, before the actions."
       (is (equal "/tmp/fe.sexp" (second tail)))
       (is (< (position "--front-end-bindings" argv :test #'equal)
              (position "-x" argv :test #'equal))))))
+
+;;; --- the debugger options (debugger-public-interface-and-on-error.issue) --
+;;;
+;;; alfe shares the clautolisp program's debugger options (pjb, 2026-10-06):
+;;; same spelling and parsing (the shared specs), same meaning in both
+;;; variants, and refused by the CAD backends, which have no aldo.
+
+(defun %run-alfe-argv (arguments &key (input ""))
+  "Run alfe in-process as `alfe --no-init --no-plugins ARGUMENTS...', with
+INPUT on its standard input. Returns (:EXIT code :STDOUT text :STDERR text)."
+  (let* ((out (make-string-output-stream))
+         (err (make-string-output-stream))
+         (code (let ((*standard-output* out)
+                     (*error-output* err)
+                     (*standard-input* (make-string-input-stream input)))
+                 (alfe.cli:run (append (list "--no-init" "--no-plugins") arguments)
+                               :version "9.9.9"))))
+    (list :exit code
+          :stdout (get-output-stream-string out)
+          :stderr (get-output-stream-string err))))
+
+(test clautolisp-direct-on-error-debug-stops-in-aldo
+  "--on-error debug under the in-process engine stops in aldo at the error,
+as the clautolisp program does: the dumb UI talks on alfe's streams, `q'
+aborts the program (the next action does not run) and the run exits 0."
+  (let* ((result (%run-alfe-argv
+                  '("--clautolisp" "--backend" "direct"
+                    "--on-error" "debug" "--debugger-ui" "dumb"
+                    "-x" "(princ \"before\")" "-x" "(/ 1 0)" "-x" "(princ \"after-marker\")")
+                  :input (format nil "q~%")))
+         (stdout (getf result :stdout)))
+    (is (eql 0 (getf result :exit)) "exit ~S, stderr ~S"
+        (getf result :exit) (getf result :stderr))
+    (is (search "DBG>" stdout) "no debugger prompt in ~S" stdout)
+    (is (search "before" stdout))
+    (is (not (search "after-marker" stdout)))))
+
+(test clautolisp-direct-debugger-continue-reports-the-error
+  "Continuing from the error stop lets the error take its course: reported
+in the engine's words, exit 1 -- the clautolisp program's outcome."
+  (let ((result (%run-alfe-argv
+                 '("--clautolisp" "--backend" "direct"
+                   "--on-error" "debug" "--debugger-ui" "dumb"
+                   "-x" "(/ 1 0)")
+                 :input (format nil "c~%"))))
+    (is (eql 1 (getf result :exit)))
+    (is (search "DIVISION-BY-ZERO" (getf result :stderr)))))
+
+(test clautolisp-subprocess-forwards-the-debugger-options
+  "The subprocess variant forwards the debugger options the user gave,
+spelled so that the child's parser reads back the same values, before the
+actions; and says when they arm a debug session (the child then gets alfe's
+terminal)."
+  (let* ((options (alfe.cli:parse-arguments
+                   '("--clautolisp" "--on-error" "debug" "--on-interrupt" "ignore"
+                     "--on-quit" "debug" "--debugger-ui" "ncurses"
+                     "--aldb-listen" "[::1]:4301" "-x" "(princ)")))
+         (arguments (clautolisp.autolisp-cli:debugger-option-arguments options)))
+    (is (equal '("--on-error" "debug" "--on-interrupt" "ignore" "--on-quit" "debug"
+                 "--debugger-ui" "ncurses" "--aldb-listen" "[::1]:4301")
+               arguments))
+    (is (eq t (clautolisp.autolisp-cli:debugger-session-requested-p options)))
+    (let ((child (clautolisp.tools.clautolisp::parse-arguments
+                  (append arguments '("-x" "1")))))
+      (is (eq :debug (clautolisp.autolisp-cli:cli-options-on-error child)))
+      (is (eq :ignore (clautolisp.autolisp-cli:cli-options-on-interrupt child)))
+      (is (eq :debug (clautolisp.autolisp-cli:cli-options-on-quit child)))
+      (is (eq :ncurses (clautolisp.autolisp-cli:cli-options-user-interface child)))
+      (is (equal "::1" (clautolisp.autolisp-cli:cli-options-aldb-address child)))
+      (is (eql 4301 (clautolisp.autolisp-cli:cli-options-aldb-port child))))
+    (let* ((backend (alfe.backend.clautolisp:make-clautolisp-backend
+                     :variant :subprocess :executable-path "/x/clautolisp-sbcl"))
+           (session (alfe.backend.clautolisp::%make-subprocess-session
+                     :backend backend :dialect :strict
+                     :debugger-arguments arguments :debugger-session-p t))
+           (argv (alfe.backend.clautolisp::build-subprocess-argv
+                  session (list (alfe.backend:action-eval "(princ)")))))
+      (is (search arguments argv :test #'equal))
+      (is (< (position "--on-error" argv :test #'equal)
+             (position "-x" argv :test #'equal))))))
+
+(test clautolisp-debugger-options-forwarded-only-when-given
+  "Nothing is forwarded when no debugger option was given (the child applies
+its own defaults, as the direct variant does), and only a debugging request
+gives the child the terminal: --on-error quit or --on-interrupt ignore do not."
+  (let ((none (alfe.cli:parse-arguments '("--clautolisp" "-x" "(princ)")))
+        (quiet (alfe.cli:parse-arguments
+                '("--clautolisp" "--on-error" "quit" "--on-interrupt" "ignore"
+                  "-x" "(princ)")))
+        (stdio (alfe.cli:parse-arguments
+                '("--clautolisp" "--aldb-stdio" "-x" "(princ)"))))
+    (is (null (clautolisp.autolisp-cli:debugger-option-arguments none)))
+    (is (null (clautolisp.autolisp-cli:debugger-session-requested-p none)))
+    (is (equal '("--on-error" "quit" "--on-interrupt" "ignore")
+               (clautolisp.autolisp-cli:debugger-option-arguments quiet)))
+    (is (null (clautolisp.autolisp-cli:debugger-session-requested-p quiet)))
+    (is (equal '("--aldb-stdio")
+               (clautolisp.autolisp-cli:debugger-option-arguments stdio)))
+    (is (eq t (clautolisp.autolisp-cli:debugger-session-requested-p stdio)))))
+
+(test alfe-aldb-stdio-excludes-interactive-as-clautolisp-does
+  "--aldb-stdio with --interactive (or --aldb-listen) is the same usage error
+in alfe as in the clautolisp program."
+  (let ((with-i (%run-alfe-argv '("--clautolisp" "--aldb-stdio" "-i")))
+        (with-listen (%run-alfe-argv '("--clautolisp" "--aldb-stdio"
+                                       "--aldb-listen" "4301" "-x" "1"))))
+    (is (eql clautolisp.sysexits:+ex-usage+ (getf with-i :exit)))
+    (is (search "mutually exclusive" (getf with-i :stderr)))
+    (is (eql clautolisp.sysexits:+ex-usage+ (getf with-listen :exit)))
+    (is (search "mutually exclusive" (getf with-listen :stderr)))))
+
+(test cad-backends-refuse-the-aldo-options
+  "--autocad / --bricscad refuse --on-interrupt, --on-quit, --debugger-ui,
+--aldb-listen and --aldb-stdio with a usage error (EX_USAGE 64) -- never ignore
+them -- dry run included; --on-error stays accepted (it also governs alfe's
+own unexpected conditions)."
+  (dolist (backend '("--bricscad" "--autocad"))
+    (dolist (option '(("--on-interrupt" "quit") ("--on-quit" "debug")
+                      ("--debugger-ui" "dumb") ("--aldb-listen" "4301")
+                      ("--aldb-stdio")))
+      (let ((result (%run-alfe-argv
+                     (append (list backend "--dry-run") option
+                             (list "-x" "(princ 1)")))))
+        (is (eql clautolisp.sysexits:+ex-usage+ (getf result :exit)) "~A ~A: exit ~S"
+            backend (first option) (getf result :exit))
+        (is (search "aldo" (getf result :stderr)) "~A ~A: stderr ~S"
+            backend (first option) (getf result :stderr))
+        (is (search (first option) (getf result :stderr)))))
+    (let ((result (%run-alfe-argv (list backend "--dry-run" "--on-error" "debug"
+                                        "-x" "(princ 1)"))))
+      (is (eql 0 (getf result :exit)) "~A --on-error: exit ~S, stderr ~S"
+          backend (getf result :exit) (getf result :stderr)))))
