@@ -321,3 +321,8 @@ obvious:
   and SAVEAS to .dwg is the right fallback IF a real =.dwg= is required
   rather than a =.dwt=. It is a one-shot runner task, not per-pipeline
   work.
+
+Note 2026-10-06 (triage refresh): all three divergences are resolved in
+clautolisp; what remains -- the cadaptor forks (an external repository) and the
+selection re-verify, blocked on regenerating a clean empty.dwg on the Windows
+runner -- is not clautolisp work. DEFERRED until one of those moves.
