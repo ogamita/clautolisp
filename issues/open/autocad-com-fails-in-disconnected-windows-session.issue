@@ -116,3 +116,14 @@ One thing to check here, noted when the two were compared:
 =benchmark:autocad:windows= runs =--mode batch= (accoreconsole, headless, no
 COM -- =autolisp-benchmark/Makefile=, =run-autocad-windows=), so its
 mid-suite death may need another explanation than the missing desktop.
+
+* Baseline run, desktop LIVE (2026-10-06, job 16959486114)
+
+probe:cad-session-state:windows ran with the desktop unlocked:
+"SESSION-STATE: transport=console connect=Active locked=no on-console=yes
+=> DESKTOP-LIVE". All nine cells OK -- {clautolisp, bricscad, autocad} x
+{batch, automation, epure} (clautolisp 5 / 0 / 0 s, bricscad 12 / 10 / 22 s,
+autocad 9 / 34 / 23 s). This is the control row; the disconnected / locked
+row is still to run (two attempts on 2026-10-05 were cancelled by master
+pipelines, then the runner slept). Play the job again with the session
+locked.

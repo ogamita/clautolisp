@@ -185,15 +185,13 @@ R3] The runtime already models it as a separate =blackboard-namespace= with its
 own bindings table. [S: =model.lisp:68–70=]
 
 *Copy versus share (R3, E2).* AutoLISP has no mutable conses, so sharing is
-largely unobservable — *except* through =eq=. *Decision:* =cador= *shares*
-(=vl-bb-set= stores the object, =vl-bb-ref= returns the same object, so
-=(eq l (vl-bb-ref 'probe))= is =t=). Rationale: sharing is the zero-copy
-default and is consistent with global symbol interning (§I.4). This is the
-*assumed* answer pending E2 (§III, grade V). *Cost of being wrong:* if a real
-product *copies*, code relying on =eq= identity through the blackboard would
-break on the real product but pass on =cador= — a false-negative in
-conformance. Because the analysis flags this exact risk, the E2 probe is a
-first-class conformance case (D4). Satisfies *C3* (§IV).
+largely unobservable — *except* through =eq=. *Decision (measured,
+2026-10-06): =cador= copies.* E2 ran on the products (probe-conformance, AutoCAD 2022 job 16959485595, BricsCAD V25 Windows job 16959485805, BricsCAD V26 macOS job 16942576104): after =(setq l (list 1 2 3))
+(vl-bb-set 'probe l)=, =(eq l (vl-bb-ref 'probe))= is =nil= and =equal= is =t=
+on all three, so the blackboard holds a *copy* of a list. =blackboard-set=
+stores a =copy-tree= since clautolisp 2.2.201 -- the remedy §III's A2 named.
+(A string reads back =eq= on all three; a copy of the list structure leaves
+atoms alone.) Grade A. Satisfies *C3* (§IV).
 
 ** I.6 System variable scope tiers
    :PROPERTIES:
@@ -592,12 +590,19 @@ V-graded claims of the analysis.
 
 - *A1 — Symbol identity across the blackboard (E1, §I.4).* Assumed:
   =(eq (vl-bb-ref 'probe) 'my-symbol)= is =t= across documents ⇒ global
-  interning is vendor-correct. Grade V. *Cost of being wrong:* if a real product
+  interning is vendor-correct. *Measured 2026-10-06 (within one drawing):*
+  AutoCAD 2022 answers =t= (=type= =SYM=) -- consistent with global interning;
+  BricsCAD V25 / V26 answer =nil= -- a symbol does not come back from its
+  blackboard at all, even in the same drawing, which says nothing about
+  interning; the BricsCAD dialects now return =nil= for a symbol value (=T=
+  kept, not measured). The cross-drawing case needs LISP in a second
+  document, out of a batch run's reach. Grade A for what was measured. *Cost of being wrong:* if a real product
   returns =nil=, =cador= must switch to per-document obarrays and quoted-symbol
   identity through the blackboard becomes =nil=; a moderate rework of the boxing
   strategy, localised to §I.4. The E1 probe (D4) settles it.
 - *A2 — Blackboard copy vs share (E2, §I.5).* Assumed: *share* ⇒
-  =(eq l (vl-bb-ref 'probe))= is =t=. Grade V. *Cost of being wrong:* if a real
+  =(eq l (vl-bb-ref 'probe))= is =t=. *WRONG -- measured 2026-10-06: both
+  products copy* (§I.5); flipped in 2.2.201 with the =copy-tree= below. *Cost of being wrong:* if a real
   product *copies*, =eq=-through-blackboard code passes on =cador= and fails on
   the product — a conformance false-negative. Cheap to flip (a =copy-tree= at
   =vl-bb-set=), so the risk is a *silent* mismatch, not a hard rework; the E2
@@ -724,7 +729,10 @@ to a non-current document from application context. Grade: S.
 
 ** 9.6 E1 and E2 outcomes
 *Resolution:* stated as assumptions A1 (symbol identity ⇒ global interning) and
-A2 (blackboard ⇒ share), each with the cost of being wrong (§III). Grade V;
+A2 (blackboard ⇒ share), each with the cost of being wrong (§III). *Measured
+2026-10-06* (probe-conformance, AutoCAD 2022 job 16959485595, BricsCAD V25 Windows job 16959485805, BricsCAD V26 macOS job 16942576104): A2 was wrong -- both copy,
+and cador now does; A1 holds on AutoCAD, BricsCAD drops a symbol value. See
+§III. Originally graded V;
 E1/E2 are first-class conformance probes (D4). *Status 2026-09-28:* E1/E2 run
 as deterministic tests *against cador* (cador-2 slice 3a,
 =autolisp-runtime/tests/multidocument-conformance-tests.lisp=), so cador's side
@@ -778,7 +786,7 @@ changes no normative text.
   =register-runtime-session-document=, =set-runtime-session-current-document=
   (=autolisp-runtime/source/api.lisp:632,665=), which already copies
   =propagated-symbols= cells between namespaces.
-- *The blackboard (I.5) shares by identity*: =blackboard-ref/blackboard-set=
+- *The blackboard (I.5) -- copies since 2.2.201, measured*: =blackboard-ref/blackboard-set=
   (=api.lisp:1012/1019=) over one table; =VL-BB-REF/VL-BB-SET=
   (=autolisp-builtins-core/source/api.lisp:288-304=) already reject functions
   (constraint C3). *E2 (blackboard sharing) largely holds already* — it is

@@ -1220,10 +1220,14 @@ CONTEXT's session. Returns VALUE."
             (and cell (binding-cell-bound-p cell)))))
 
 (defun blackboard-set (symbol value &optional (context (current-evaluation-context)))
+  ;; E2, measured (probe-conformance, AutoCAD 2022 job 16959485595, BricsCAD
+  ;; V25 16959485805, V26 16942576104): the blackboard stores a COPY of a list
+  ;; -- (eq l (vl-bb-ref 'x)) is nil, equal is T -- on both products. D2
+  ;; assumption A2 (share) was wrong; its stated remedy is this copy-tree.
   (let* ((namespace (runtime-session-blackboard-namespace
                      (evaluation-context-session context)))
          (cell (namespace-binding-cell namespace symbol)))
-    (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) value
+    (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) (copy-tree value)
           (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell) t
           (clautolisp.autolisp-runtime.internal::binding-cell-compatibility-definition
            cell)
