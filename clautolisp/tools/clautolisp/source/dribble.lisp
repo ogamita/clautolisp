@@ -162,6 +162,10 @@ input line completes is prompt text, which the dribble format omits)."
 
 (defmethod trivial-gray-streams:stream-write-char ((tee dribble-output-tee) character)
   (write-char character (tee-understream tee))
+  ;; The command-history log (LOGFILEMODE): standard output only, and only
+  ;; what cador's own console channel has not already logged.
+  (when (string= (tee-tag tee) "O")
+    (clautolisp.cador:command-log-output (string character)))
   (setf (tee-column tee)
         (if (char= character #\Newline) 0 (1+ (tee-column tee))))
   (when (%dribble-filter-passes-p)
@@ -225,6 +229,8 @@ dribble file."))
 passes. Any pending partial output line is DISCARDED, not emitted — the
 only output that can be left unterminated when the user finishes typing
 a line is the prompt, which the dribble format omits."
+  ;; The command-history log gets every line typed at the REPL.
+  (clautolisp.cador:command-log-input-line (copy-seq (echo-buffer echo)))
   (when (%dribble-filter-passes-p)
     (%dribble-terminate-open-line :discard t)
     (%dribble-write-raw-line (echo-buffer echo)))

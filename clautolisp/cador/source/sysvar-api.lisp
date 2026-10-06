@@ -209,7 +209,7 @@ clock."
 (defparameter *live-sysvar-names*
   '("EXTMIN" "EXTMAX" "TDINDWG" "TDUSRTIMER" "LOGINNAME" "DWGPREFIX"
     "DWGNAME" "DWGTITLED" "DBMOD"
-    "CMDACTIVE" "LOCALE" "CVPORT"))
+    "CMDACTIVE" "LOCALE" "CVPORT" "LOGFILENAME"))
 
 (defvar *drawing-open-julian* (make-hash-table :test #'eq)
   "Drawing -> the Julian date its session began (for TDINDWG / TDUSRTIMER).")
@@ -276,6 +276,8 @@ where the session cannot say."
                            (uiop:pathname-directory-pathname path)
                            (uiop:getcwd)))))
         ((string-equal string "CMDACTIVE") (if *cador-in-lisp-command* 1 0))
+        ;; command-log.lisp: the current document's log file name.
+        ((string-equal string "LOGFILENAME") (funcall 'command-log-name host))
         ;; The current document's own (multi-document slice 3).
         ((string-equal string "DWGNAME") (clautolisp.drawing:drawing-name drawing))
         ((string-equal string "DWGTITLED")
@@ -359,7 +361,8 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
         "Sysvar ~A is read-only."
         string))
       (t
-       (let* ((coerced (coerce-sysvar-value (sysvar-cell-kind cell) value string))
+       (let* ((coerced (funcall 'command-log-before-setvar host string
+                                (coerce-sysvar-value (sysvar-cell-kind cell) value string)))
               (document
                (clautolisp.autolisp-runtime:evaluation-context-current-document
                 (clautolisp.autolisp-runtime:current-evaluation-context)))
@@ -371,6 +374,8 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
          ;; viewport current, as on AutoCAD and BricsCAD (probe-viewports).
          (when (and (string-equal string "CVPORT") (integerp coerced))
            (funcall 'cador-set-current-viewport host coerced))
+         ;; LOGFILEMODE / LOGFILEPATH open, close or move the logs.
+         (funcall 'command-log-after-setvar host string coerced)
          (clautolisp.autolisp-runtime:signal-document-event
           document :sysvar :vlr-sysvarchanged (list rendered-name))
          (present-sysvar-value (sysvar-cell-kind cell) coerced))))))

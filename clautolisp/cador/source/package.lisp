@@ -252,6 +252,15 @@
    #:*bricscad-absent-sysvars*
    #:*bricscad-factory-defaults*
    #:apply-bricscad-dialect-sysvars
+   ;; command-log.lisp: the per-drawing command-history log
+   #:apply-command-log-preferences
+   #:command-log-state-directory
+   #:command-log-output
+   #:command-log-input-line
+   #:command-log-name
+   #:cador-open-command-log
+   #:cador-close-command-log
+   #:*command-log-channel-active*
    ;; Entity-allocation helpers (Phase 10)
    #:cador-creation-order
    #:cador-next-handle-counter

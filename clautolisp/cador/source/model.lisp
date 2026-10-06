@@ -248,7 +248,11 @@ that is not part of a drawing."))
   ;; -VPORTS Toggle: the layout the first Toggle maximised, or NIL.
   (viewport-toggle nil)
   ;; -VPORTS Save / Restore: name -> the saved layout, (vports) order.
-  (viewport-configurations (make-hash-table :test #'equalp)))
+  (viewport-configurations (make-hash-table :test #'equalp))
+  ;; command-log.lisp: the document's LOGFILENAME (kept until LOGFILEPATH
+  ;; changes) and its open log stream, or NIL.
+  (log-name nil)
+  (log-stream nil))
 
 (defun cador-document-session (host &optional (key (cador-active-document-key host)))
   "The DOC-SESSION of document KEY (default: the current one), made on first use."

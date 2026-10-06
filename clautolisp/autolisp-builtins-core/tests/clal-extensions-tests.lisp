@@ -1159,6 +1159,14 @@ as one loaded from its source."
              (is (eql 49 (%eval-here "(docsq 7)"))))
         (ignore-errors (delete-file lap))))))
 
+(test findfile-and-vl-file-size-of-the-empty-name-are-nil
+  "The empty name names no file: (findfile \"\") and (vl-file-size \"\") are
+nil on AutoCAD 2022, BricsCAD V25 and V26 (probe-logfile, MR !428). clautolisp
+resolved it to the current directory -- a path, and a size of 0."
+  (%fresh-builtin-context)
+  (is (null (%eval-here "(findfile \"\")")))
+  (is (null (%eval-here "(vl-file-size \"\")"))))
+
 (defun %body-of (name)
   (clautolisp.autolisp-runtime:autolisp-usubr-body
    (clautolisp.autolisp-runtime:lookup-function
