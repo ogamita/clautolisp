@@ -16,7 +16,7 @@
 (defpackage #:alfe.plugin.epuree
   (:use #:cl #:alfe.plugin)
   (:import-from #:alfe.error
-                #:cli-usage-error))
+                #:cli-error))
 
 (in-package #:alfe.plugin.epuree)
 
@@ -65,18 +65,22 @@ exist, else the first of the usual places that does."
   (let ((named (plugin-option :alpm)))
     (cond
       (named
+       ;; A file the user named that is not there: EX_NOINPUT.
        (unless (probe-file named)
-         (error 'cli-usage-error
+         (error 'cli-error
                 :option "--epuree-alpm"
-                :message (format nil "alpm.lsp not found: ~A" named)))
+                :message (format nil "alpm.lsp not found: ~A" named)
+                :status clautolisp.sysexits:+ex-noinput+))
        named)
       (t
+       ;; A support file that is not installed: EX_UNAVAILABLE.
        (let ((candidates (funcall *alpm-candidates-function*)))
          (or (find-if #'probe-file candidates)
-             (error 'cli-usage-error
+             (error 'cli-error
                     :option "--epuree-alpm"
                     :message (format nil "alpm.lsp not found (looked in ~{~A~^, ~}); pass --epuree-alpm FILE or set $ALPM_LSP"
-                                     candidates))))))))
+                                     candidates)
+                    :status clautolisp.sysexits:+ex-unavailable+)))))))
 
 (defvar *epuree-share-candidates-function* 'epuree-share-candidates
   "Function of no argument returning the directories where an installed

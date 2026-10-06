@@ -176,7 +176,8 @@ explicit automation, and refuses accoreconsole (batch)."
             (cli-usage-error (condition)
               (is (search "accoreconsole"
                           (alfe.error:cli-usage-error-message condition)))
-              (is (= 2 (exit-code-for-condition condition))))))))))
+              (is (= clautolisp.sysexits:+ex-usage+
+                     (exit-code-for-condition condition))))))))))
 
 (test epure-raises-the-ready-timeout
   "EPURE takes MINUTES to load -- 174 s to READY on the Windows runner
@@ -231,7 +232,9 @@ gives the default one."
               (is (search "not installed" message))
               (is (search "version changed" message))
               (is (search "--epure-script" message)))
-            (is (= 4 (exit-code-for-condition condition)))))
+            ;; EPURE is not installed: a support file that does not exist.
+            (is (= clautolisp.sysexits:+ex-unavailable+
+                   (exit-code-for-condition condition)))))
         (is (select '("--epure-script" "/no/such/control.scr") :dry-run-p t))
         ;; No name and no %APPDATA%: cannot guess.
         (with-plugin-env (("APPDATA" ""))
@@ -581,7 +584,8 @@ places the run is refused with the places tried."
         (%run-alfe "--epuree" "--epuree-alpm" "/nonexistent/alpm.lsp"
                    "--dry-run" "-x" "(+ 1 2)")
       (declare (ignore out))
-      (is (= 2 code))
+      ;; The file the user named is not there: EX_NOINPUT.
+      (is (= clautolisp.sysexits:+ex-noinput+ code))
       (is (search "alpm.lsp not found: /nonexistent/alpm.lsp" err)))
     ;; The plug-in's package does not exist until it is loaded, so its
     ;; variable is found at run time.
@@ -591,7 +595,8 @@ places the run is refused with the places tried."
         (multiple-value-bind (code out err)
             (%run-alfe "--epuree" "--dry-run" "-x" "(+ 1 2)")
           (declare (ignore out))
-          (is (= 2 code))
+          ;; None installed: a support file that does not exist.
+          (is (= clautolisp.sysexits:+ex-unavailable+ code))
           (is (search "/nowhere/a/alpm.lsp, /nowhere/b/alpm.lsp" err))
           (is (search "--epuree-alpm" err)))))))
 

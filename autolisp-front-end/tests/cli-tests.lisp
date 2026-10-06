@@ -358,7 +358,7 @@ the default, and the historical spellings are gone."
       (cli-usage-error (condition)
         (is (search "cador, cadtui, nihil"
                     (alfe.error:cli-usage-error-message condition)))
-        (is (= 2 (exit-code-for-condition condition)))))))
+        (is (= clautolisp.sysexits:+ex-usage+ (exit-code-for-condition condition)))))))
 
 (test cli-host-resolves-to-the-right-backend-under-clautolisp
   "resolve-clautolisp-host maps the host keyword to a cador / nihil
@@ -397,7 +397,7 @@ Cadtui with an explicit --backend direct is a contradiction."
                        (fail "cadtui with --backend direct was accepted"))
     (cli-usage-error (condition)
       (is (search "--backend direct" (alfe.error:cli-usage-error-message condition)))
-      (is (= 2 (exit-code-for-condition condition))))))
+      (is (= clautolisp.sysexits:+ex-usage+ (exit-code-for-condition condition))))))
 
 (test cli-host-changes-nothing-for-the-cad-backends
   "Under --bricscad and --autocad the CAD is the host: --host cadtui is
@@ -623,23 +623,23 @@ the test image), prints the resolved plan, and exits 0."
       (is (search "alfe --dry-run" output))
       (is (search "eval" output)))))
 
-(test cli-run-unknown-option-exits-two
-  "An unknown CLI option produces exit code 2 (CLI-USAGE-ERROR)."
+(test cli-run-unknown-option-exits-usage
+  "An unknown CLI option produces exit status EX_USAGE, 64 (CLI-USAGE-ERROR)."
   (let* ((stderr (make-string-output-stream))
          (exit-code
            (let ((*error-output* stderr))
              (run '("--no-such-option") :version "0.0.1"))))
-    (is (= 2 exit-code))
+    (is (= clautolisp.sysexits:+ex-usage+ exit-code))
     (is (search "Unknown option" (get-output-stream-string stderr)))))
 
-(test cli-run-no-backend-exits-three
-  "When the requested backend isn't registered, RUN returns exit code 3."
+(test cli-run-no-backend-exits-unavailable
+  "When the requested backend isn't registered, RUN returns EX_UNAVAILABLE (69)."
   (let* ((stderr (make-string-output-stream))
          (alfe.backend:*backends* (make-hash-table :test #'eql))
          (exit-code
            (let ((*error-output* stderr))
              (run '("--clautolisp" "-x" "(+ 1 2)") :version "0.0.1"))))
-    (is (= 3 exit-code))))
+    (is (= clautolisp.sysexits:+ex-unavailable+ exit-code))))
 
 (test cli-run-plan-forwards-mode-and-dwg-to-start-engine
   "Regression: RUN-PLAN must forward CLI --mode / --dwg into the
@@ -720,7 +720,7 @@ quotes around anything with a space, switches left bare."
                 :windows))))
 
 (test cli-run-print-command-rejects-non-cad-backend
-  "--print-command against a non-CAD backend is a usage error (exit 2),
+  "--print-command against a non-CAD backend is a usage error (EX_USAGE, 64),
 not a silent empty answer — `cmd=$(alfe --print-command …)` must fail
 loudly rather than yield an empty string."
   (let* ((stderr (make-string-output-stream))
@@ -730,5 +730,5 @@ loudly rather than yield an empty string."
              (alfe.backend:register-backend
               :echo (alfe.backend.echo:make-echo-backend))
              (run '("--print-command" "-x" "(princ)") :version "0.0.1"))))
-    (is (= 2 exit-code))
+    (is (= clautolisp.sysexits:+ex-usage+ exit-code))
     (is (search "--print-command" (get-output-stream-string stderr)))))

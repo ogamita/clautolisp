@@ -603,15 +603,15 @@ bare one-line condition. uiop:print-backtrace is the portable SBCL/CCL entry."
   (finish-output *error-output*))
 
 (defun open-drawing-argument (host path)
-  "HOST, its first drawing read from PATH (--dwg) when PATH is given. An
-unreadable drawing, or a host without drawings, is a usage error."
+  "HOST, its first drawing read from PATH (--dwg) when PATH is given. A
+drawing that cannot be opened is a CLI-ERROR whose status says why
+(ENGINE-DRAWING-ERROR: EX_NOINPUT for a missing or unreadable file,
+EX_DATAERR for one that is not a drawing, EX_UNAVAILABLE when the native
+library its format needs is absent)."
   (when (and host path)
     (handler-case (clautolisp.autolisp-host:host-open-startup-drawing host path)
       (error (condition)
-        (error 'clautolisp.autolisp-cli:cli-usage-error
-               :option "--dwg"
-               :message (clautolisp.autolisp-cli:engine-drawing-error-message
-                         path condition)))))
+        (error (clautolisp.autolisp-cli:engine-drawing-error path condition)))))
   host)
 
 (defun setup-context (context host &optional mock-input)
@@ -1050,7 +1050,15 @@ one, both listed)."
     ;; --dribble / --dribble=FILE: start recording now — after the
     ;; banner, before the first prompt.
     (when dribble
-      (clal-dribble (if (stringp dribble) dribble nil) dribble-interactors))
+      ;; A transcript that cannot be created is the option's fault, and
+      ;; exits EX_CANTCREAT (sysexits-exit-statuses.issue).
+      (handler-case
+          (clal-dribble (if (stringp dribble) dribble nil) dribble-interactors)
+        (file-error (condition)
+          (error 'clautolisp.autolisp-cli:cli-error
+                 :option "--dribble"
+                 :message (format nil "cannot create the transcript: ~A" condition)
+                 :status clautolisp.sysexits:+ex-cantcreat+))))
     (unwind-protect
          ;; Route sedit's `debug'/`aldo' prefix to the attached session's UI, so
          ;; debugger commands (e.g. `aldo help') work from inside (clal-sedit …).
@@ -1721,7 +1729,7 @@ enter)."
       (:quit
        (format *error-output* "~&clautolisp: interrupted.~%")
        (finish-output *error-output*)
-       (quit 130))
+       (quit clautolisp.sysexits:+exit-interrupted+))
       (otherwise                        ; :debug
        (cond
          ((and clautolisp.autolisp-runtime:*debugging*
@@ -1736,7 +1744,7 @@ enter)."
                   "~&clautolisp: interrupted (no debug session active; ~
                    the debug interrupt policy degrades to quit).~%")
           (finish-output *error-output*)
-          (quit 130)))))))
+          (quit clautolisp.sysexits:+exit-interrupted+)))))))
 
 (defun install-interrupt-handler ()
   "Install the process SIGINT handler implementing --on-interrupt /
@@ -1766,7 +1774,7 @@ that, degrading to the documented NIL."
              (ignore-errors
               (format *error-output* "~&clautolisp: second interrupt — exiting.~%")
               (finish-output *error-output*))
-             (sb-ext:exit :code 130 :abort t))
+             (sb-ext:exit :code clautolisp.sysexits:+exit-interrupted+ :abort t))
            (sb-thread:interrupt-thread thread #'handle-interrupt))))
     t)
   #-(and sbcl (not win32))
@@ -2050,16 +2058,19 @@ machinery, not user intent)."
         ;; Normal completion: exit with the status a script recorded via
         ;; (autolisp-set-status N) — 0 when it never touched the channel.
         (autolisp-exit-status context))
+    ;; The statuses are the shared table's (ENGINE-EXIT-STATUS, the same
+    ;; one alfe's in-process engine uses; sysexits-exit-statuses.issue).
     (autolisp-runtime-error (condition)
       (report-runtime-error condition)
-      1)
+      clautolisp.sysexits:+exit-autolisp-error+)
     (autolisp-termination (condition)
       (report-termination condition)
       ;; (quit [status]) / (exit [status]) carry their effective status.
       (autolisp-termination-status condition))
     (file-error (condition)
+      ;; The -l file, the --mock-input file: EX_NOINPUT.
       (report-error condition)
-      2)))
+      (clautolisp.autolisp-cli:engine-exit-status condition))))
 
 (defun %effective-gui-command (gui-command)
   "The configured GUI driver command: the explicit --gui value, else
@@ -2353,13 +2364,18 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                                     :dribble-interactors dribble-interactors)))))
               (finish-output)
               ;; RUN-WITH-INPUT returns the effective process exit status
-              ;; (autolisp-set-status / (quit N) / error → 1 / file → 2).
-              (quit (if (integerp status) status 0))))))
-    (clautolisp.autolisp-cli:cli-usage-error (condition)
+              ;; (autolisp-set-status / (quit N) / runtime error → 1 /
+              ;; input file → EX_NOINPUT).
+              (quit (if (integerp status) status clautolisp.sysexits:+ex-ok+))))))
+    ;; A usage error is EX_USAGE; a file or drawing an option names that
+    ;; cannot be used carries its own status (EX_NOINPUT, EX_DATAERR, ...).
+    (clautolisp.autolisp-cli:cli-error (condition)
       (format *error-output* "~&clautolisp: ~A~%" condition)
       (finish-output *error-output*)
-      (quit 1))
+      (quit (clautolisp.autolisp-cli:cli-error-status condition)))
+    ;; A source the reader refuses (-l / -x): EX_DATAERR; an I/O error:
+    ;; EX_IOERR; anything else is an internal error: EX_SOFTWARE.
     (error (error)
       (report-error error)
       (finish-output *error-output*)
-      (quit 1))))
+      (quit (clautolisp.autolisp-cli:engine-exit-status error)))))

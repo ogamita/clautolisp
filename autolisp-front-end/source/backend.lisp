@@ -335,7 +335,8 @@ non-NIL, is the originating ALFE.ERROR:BACKEND-ERROR."
   (condition     nil)
   ;; The process exit status the ENGINE itself decided, or NIL to derive it
   ;; from STATUS. Set by the clautolisp backend, both variants alike: (exit
-  ;; N) / (quit N) / an AUTOLISP-SET-STATUS, a file error (2) -- what the
+  ;; N) / (quit N) / an AUTOLISP-SET-STATUS, a file error (EX_NOINPUT) --
+  ;; the statuses of CLAUTOLISP.AUTOLISP-CLI:ENGINE-EXIT-STATUS, what the
   ;; clautolisp program exits with (alfe-clautolisp-backend-semantic-
   ;; parity.issue).
   (exit-code     nil))

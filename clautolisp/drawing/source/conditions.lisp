@@ -35,6 +35,14 @@ the error concerns, or NIL.")
                  (format stream "]")))))
   (:documentation "Base class for all clautolisp.drawing errors."))
 
+(define-condition drawing-library-unavailable (drawing-error)
+  ()
+  (:documentation "The native library a drawing format needs (libredwg's
+shim, for DWG) is not there, or none of the candidates is usable. Not a
+fault of the drawing: the program cannot read that format at all here.
+Its own class so that a front end can say so -- the clautolisp programs
+exit with EX_UNAVAILABLE for it (sysexits-exit-statuses.issue)."))
+
 (define-condition drawing-read-error (drawing-error)
   ((source        :initarg :source        :initform nil :reader drawing-error-source)
    (source-format :initarg :source-format :initform nil :reader drawing-error-source-format)

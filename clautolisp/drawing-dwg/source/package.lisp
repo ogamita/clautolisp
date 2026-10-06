@@ -10,6 +10,7 @@
                 ;; failed; verify:packaged-dwg:windows caught it, 2026-10-03.
                 #:drawing-version
                 #:drawing-error
+                #:drawing-library-unavailable
                 #:dxf-read-drawing
                 #:dxf-write-drawing)
   (:documentation "Phase 17e — the DWG codec for clautolisp.drawing,

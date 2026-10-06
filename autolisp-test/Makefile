@@ -373,7 +373,7 @@ test-clautolisp-all: test-clautolisp-sbcl-all test-clautolisp-ccl-all
 # The recipes assume alfe-sbcl is built (see autolisp-front-end's
 # build-alfe-sbcl). The actual real-CAD drive is itself gated by
 # the matching $BRICSCAD_EXE / $AUTOCAD_EXE; without those, alfe's
-# DETECT phase will exit 3 and the test reports the engine as
+# DETECT phase will exit 69 (EX_UNAVAILABLE) and the test reports the engine as
 # unavailable.
 
 # alfe driving the autolisp-test harness inside a CAD engine.

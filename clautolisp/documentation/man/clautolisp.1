@@ -309,15 +309,64 @@ User init files, loaded before any
 .B ~/.config/clautolisp/init\fR, \fB~/.config/autolisp/init
 XDG variant of the init files.
 .SH "EXIT STATUS"
+Apart from 1 and 130, the codes of
+.BR sysexits.h ,
+with the same values on every system, MS-Windows included:
 .TP
-.B 0
+.BR 0 " (EX_OK)"
 Success.
 .TP
 .B 1
-Runtime error or unhandled condition.
+The AutoLISP program failed: a runtime error escaped it.
 .TP
-.B 2
-File error (cannot open / read).
+.BR 64 " (EX_USAGE)"
+Command-line usage error: unknown option, missing argument, invalid
+value;
+.B \-\-dwg
+on a host without drawings.
+.TP
+.BR 65 " (EX_DATAERR)"
+A
+.B \-l
+file or
+.B \-x
+expression the reader refuses (unbalanced parenthesis, bytes not valid
+in the source encoding); a
+.B \-\-dwg
+file that is not a drawing.
+.TP
+.BR 66 " (EX_NOINPUT)"
+An input file does not exist or is not readable: the
+.B \-l
+file, the
+.B \-\-dwg
+drawing, the
+.B \-\-mock\-input
+file.
+.TP
+.BR 69 " (EX_UNAVAILABLE)"
+The DWG native library a
+.B \-\-dwg
+drawing needs is absent.
+.TP
+.BR 70 " (EX_SOFTWARE)"
+Internal error.
+.TP
+.BR 73 " (EX_CANTCREAT)"
+The
+.B \-\-dribble
+transcript cannot be created.
+.TP
+.BR 74 " (EX_IOERR)"
+Input/output error.
+.TP
+.B 130
+Interrupted (Control-C under the
+.B quit
+interrupt policy; 128 + SIGINT).
+.PP
+Before clautolisp 2.2.215 a file that could not be opened exited 2 and
+every other failure 1; a script testing for 2 must test for 66.
 .PP
 These are the codes
 .B clautolisp

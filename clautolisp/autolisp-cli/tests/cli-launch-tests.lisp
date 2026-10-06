@@ -234,10 +234,27 @@ alongside tui/gui/auto; a typo is a usage error (dcl-ncurses-renderer.issue)."
                        (cdr (value "*AUTOLISP-PAIR*")))))))
       (ignore-errors (delete-file path)))))
 
-(test front-end-bindings-file-unreadable-is-a-usage-error
-  (is (eq :usage-error
-          (handler-case
-              (progn (clautolisp.autolisp-cli:read-transmit-bindings-file
-                      "/nonexistent/front-end-bindings.sexp")
-                     :no-error)
-            (cli-usage-error () :usage-error)))))
+(test front-end-bindings-file-unreadable-is-a-noinput-cli-error
+  ;; The file is the option's input: missing is EX_NOINPUT, malformed
+  ;; EX_DATAERR (sysexits-exit-statuses.issue).
+  (is (eql clautolisp.sysexits:+ex-noinput+
+           (handler-case
+               (progn (clautolisp.autolisp-cli:read-transmit-bindings-file
+                       "/nonexistent/front-end-bindings.sexp")
+                      :no-error)
+             (clautolisp.autolisp-cli:cli-error (c)
+               (clautolisp.autolisp-cli:cli-error-status c)))))
+  (let ((path (uiop:tmpize-pathname
+               (merge-pathnames "front-end-bindings-bad.sexp"
+                                (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (with-open-file (out path :direction :output :if-exists :supersede)
+             (write-line "(:not-the-bindings 1 ())" out))
+           (is (eql clautolisp.sysexits:+ex-dataerr+
+                    (handler-case
+                        (progn (clautolisp.autolisp-cli:read-transmit-bindings-file path)
+                               :no-error)
+                      (clautolisp.autolisp-cli:cli-error (c)
+                        (clautolisp.autolisp-cli:cli-error-status c))))))
+      (ignore-errors (delete-file path)))))

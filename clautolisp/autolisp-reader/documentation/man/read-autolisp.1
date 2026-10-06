@@ -50,12 +50,31 @@ Show the
 .B \-\-help
 banner and exit.
 .SH "EXIT STATUS"
+The codes of
+.BR sysexits.h ,
+with the same values on every system:
 .TP
-.B 0
-All files parsed without error.
+.BR 0 " (EX_OK)"
+All files were read without a reader error.
 .TP
-.B 1
-One or more files reported a parse / lex diagnostic.
+.BR 64 " (EX_USAGE)"
+Command-line usage error: an unknown option, a missing argument, an
+invalid value, no input file.
+.TP
+.BR 65 " (EX_DATAERR)"
+A file has at least one reader error (an unbalanced parenthesis, a bad
+token), or bytes that are not valid in its encoding.
+.TP
+.BR 66 " (EX_NOINPUT)"
+A file does not exist or is not readable.
+.TP
+.BR 70 " (EX_SOFTWARE)"
+Internal error.
+.TP
+.BR 74 " (EX_IOERR)"
+Input/output error.
+.PP
+Before read-autolisp 1.9.2 every failure exited 1.
 .SH "SEE ALSO"
 .BR clautolisp (1),
 .BR alfe (1).

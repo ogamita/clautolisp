@@ -3,6 +3,6 @@
 are unknown."
  :classification :portable
  :argv ("--no-plugins" "--epure" "--dry-run" "-x" "(+ 1 2)")
- :expected-exit 2
+ :expected-exit 64
  :expected-stderr-includes ("Unknown option --epure")
  :covers-options ("--no-plugins"))

@@ -787,8 +787,11 @@ VARIANT ARGUMENTS...'. Returns (:EXIT code :STDOUT text :STDERR text)."
         (coerce octets 'list)))))
 
 (defun %parity-scenarios ()
-  "The parity table: (NAME ARGUMENTS &key SIDE-EFFECT EXPECT-STDOUT LENIENT).
+  "The parity table: (NAME ARGUMENTS &key SIDE-EFFECT EXPECT-STDOUT
+EXPECT-EXIT LENIENT).
 SIDE-EFFECT names a file the run writes, compared octet for octet.
+EXPECT-EXIT, when given, is the exit status both runs must have (the
+sysexits table, sysexits-exit-statuses.issue).
 EXPECT-STDOUT, when given, must be a substring of both outputs (so a table
 entry also says what the run is FOR, not only that the two runs agree).
 LENIENT compares stderr only for a successful run: the DWG codec's error
@@ -804,6 +807,9 @@ names the native library candidates, which may legitimately differ."
                   "parity-latin1.lsp"
                   (concatenate 'string "(princ (strlen \"" e-acute "t" e-acute "\"))" nl)
                   :external-format :latin-1))
+         (unbalanced (%parity-fixture
+                      "parity-unbalanced.lsp"
+                      (concatenate 'string "(princ \"a\")" nl "(defun f (" nl)))
          (written (namestring
                    (uiop:tmpize-pathname
                     (merge-pathnames "parity-written.txt" (uiop:temporary-directory)))))
@@ -840,10 +846,20 @@ names the native library candidates, which may legitimately differ."
        :expect-stdout "hello")
       ("main undefined" ("--main" "no-such-function"))
       ("runtime error stops the plan"
-       ("-x" "(princ \"a\")" "-x" "(car 1)" "-x" "(princ \"b\")"))
-      ("exit status" ("-x" "(princ \"a\")" "-x" "(exit 3)"))
-      ("recorded status" ("-x" "(autolisp-set-status 5)"))
-      ("missing load file" ("-l" "/nonexistent/parity-missing.lsp"))
+       ("-x" "(princ \"a\")" "-x" "(car 1)" "-x" "(princ \"b\")")
+       :expect-exit 1)
+      ("exit status" ("-x" "(princ \"a\")" "-x" "(exit 3)") :expect-exit 3)
+      ("recorded status" ("-x" "(autolisp-set-status 5)") :expect-exit 5)
+      ("missing load file" ("-l" "/nonexistent/parity-missing.lsp")
+       :expect-exit ,clautolisp.sysexits:+ex-noinput+)
+      ("load file the reader refuses" ("-l" ,unbalanced)
+       :expect-exit ,clautolisp.sysexits:+ex-dataerr+)
+      ("load file not in the source encoding" ("-Esource" "utf-8" "-l" ,latin1)
+       :expect-exit ,clautolisp.sysexits:+ex-dataerr+)
+      ("expression the reader refuses" ("-x" "(princ")
+       :expect-exit ,clautolisp.sysexits:+ex-dataerr+)
+      ("unknown option" ("--no-such-option")
+       :expect-exit ,clautolisp.sysexits:+ex-usage+)
       ("source encoding"
        ("-Esource" "iso-8859-1" "-l" ,latin1)
        :expect-stdout "3")
@@ -856,7 +872,8 @@ names the native library candidates, which may legitimately differ."
        ("--host" "cador" "--dwg" ,dxf "-x" "(princ (getvar \"DWGNAME\"))")
        :expect-stdout "empty-drawing.dxf")
       ("drawing missing"
-       ("--host" "cador" "--dwg" "/nonexistent/parity-missing.dwg" "-x" "(princ 1)"))
+       ("--host" "cador" "--dwg" "/nonexistent/parity-missing.dwg" "-x" "(princ 1)")
+       :expect-exit ,clautolisp.sysexits:+ex-noinput+)
       ("drawing dwg"
        ("--host" "cador" "--dwg" ,dwg "-x" "(princ (getvar \"DWGNAME\"))")
        :lenient t))))
@@ -869,7 +886,8 @@ Skipped when no clautolisp-sbcl is built (the subprocess variant needs it)."
       (is (not (subprocess-binary-available-p))
           "clautolisp-sbcl not present; parity table skipped.")
       (dolist (row (%parity-scenarios))
-        (destructuring-bind (name arguments &key side-effect expect-stdout lenient)
+        (destructuring-bind (name arguments &key side-effect expect-stdout
+                                               expect-exit lenient)
             row
           (flet ((run-one (variant)
                    (when side-effect (ignore-errors (delete-file side-effect)))
@@ -898,6 +916,10 @@ Skipped when no clautolisp-sbcl is built (the subprocess variant needs it)."
                 (is (equal '(233 10) (getf direct :side-effect))
                     "~A: wrote ~S" name (getf direct :side-effect))
                 (ignore-errors (delete-file side-effect)))
+              (when expect-exit
+                (is (eql expect-exit (getf direct :exit))
+                    "~A: exit ~S, expected ~S; stderr ~S"
+                    name (getf direct :exit) expect-exit (getf direct :stderr)))
               (when expect-stdout
                 (is (search expect-stdout (getf direct :stdout))
                     "~A: expected ~S in ~S" name expect-stdout

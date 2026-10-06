@@ -2072,24 +2072,54 @@ current build and the selected ~--dialect~ / ~--host~. Pass
 ~--quiet~ to suppress the banner.
 
 * Exit Codes
-~clautolisp~ uses the following exit codes. They are stable and may
-be relied upon by shell scripts.
+~clautolisp~ exits with the statuses below. They are stable and may be
+relied upon by shell scripts. Apart from 1 and 130, they are the
+semi-standard codes of ~<sysexits.h>~ (see ~sysexits.h(3head)~), used
+with the same values on *every* system, MS-Windows included -- a script
+that tests for 66 works everywhere.
 
-- ~0~  :: Successful completion (file or ~-x~ ran without error;
-          REPL exited cleanly via end-of-input; ~--help~ /
-          ~--version~ printed and exited; an AutoLISP ~exit~ /
-          ~quit~ termination was raised cleanly).
-- ~1~  :: A runtime error escaped the AutoLISP error-handling layer,
-          or the option parser rejected an unknown flag.
-- ~2~  :: The requested file could not be opened (caught Common-Lisp
-          ~file-error~).
+| Status | Name             | When                                                                                  |
+|--------+------------------+---------------------------------------------------------------------------------------|
+|    ~0~ | ~EX_OK~          | Success: every ~-l~ / ~-x~ ran; the REPL ended at end of input; ~--help~, ~--version~, the ~--list-...~ options. |
+|    ~1~ |                  | The AutoLISP program failed: a runtime error escaped it (~(/ 1 0)~, an undefined function...). |
+|    /N/ |                  | The program chose /N/: ~(exit N)~, ~(quit N)~, ~(autolisp-set-status N)~ -- passed through unchanged. |
+|   ~64~ | ~EX_USAGE~       | The command line is wrong: an unknown option, a missing argument, a bad option value (~--dialect nonsense~), ~--dwg~ given to a host without drawings (~--host nihil~). |
+|   ~65~ | ~EX_DATAERR~     | An input is not well formed: a ~-l~ file or a ~-x~ expression the reader refuses (unbalanced parenthesis, unterminated string, bytes that are not valid in the source encoding); a ~--dwg~ file that is not a drawing; a malformed ~--front-end-bindings~ file. |
+|   ~66~ | ~EX_NOINPUT~     | An input file cannot be opened -- it does not exist, or is not readable: the ~-l~ file, the ~--dwg~ drawing, the ~--mock-input~ file, the ~--front-end-bindings~ file. |
+|   ~69~ | ~EX_UNAVAILABLE~ | A support file is missing: the DWG native library a ~--dwg~ ~.dwg~ drawing needs. |
+|   ~70~ | ~EX_SOFTWARE~    | An internal error: a fault of clautolisp itself, not of the program it ran. Please report it. |
+|   ~73~ | ~EX_CANTCREAT~   | An output file cannot be created: the ~--dribble~ transcript. |
+|   ~74~ | ~EX_IOERR~       | An input/output error while reading or writing. |
+|  ~130~ |                  | Interrupted: Control-C under the ~quit~ interrupt policy (128 + SIGINT, the shell's own convention). |
+
+The other ~<sysexits.h>~ codes (67 ~EX_NOUSER~, 68 ~EX_NOHOST~, 71
+~EX_OSERR~, 72 ~EX_OSFILE~, 75 ~EX_TEMPFAIL~, 76 ~EX_PROTOCOL~, 77
+~EX_NOPERM~, 78 ~EX_CONFIG~) are never chosen by clautolisp: it looks up
+no user or host, an unreadable input file is ~EX_NOINPUT~ as
+~<sysexits.h>~ says, and a configuration file (~aldo.conf~, ~lisp.conf~)
+that cannot be read is ignored rather than fatal. alfe, which drives CAD
+programs, uses some of them (see the alfe manual).
+
+Why 1 for a failing program, and not a ~<sysexits.h>~ code: the
+~<sysexits.h>~ codes say what kept a program from running properly -- a
+bad command line, a missing input, a broken installation. When the
+command line was right, the files were there and clautolisp worked, but
+the AutoLISP program itself signalled an error, the /program/ failed,
+and 1 is what a failing program conventionally returns (a test runner,
+~false~, ~grep~ finding nothing). Keeping it at 1 also keeps the meaning
+of 1 that scripts and CI jobs already test for.
+
+Before clautolisp 2.2.215 the codes were 1 for a runtime error, a usage
+error and every other failure alike, and 2 for a file that cannot be
+opened. A script that tested for 2 must now test for 66 (and may tell a
+usage error, 64, apart from a failing program, 1).
 
 Within the REPL, individual evaluation errors are reported but do
 *not* terminate the loop; the binary will still exit 0 once stdin
 closes.
 
 ** Choosing your own exit status
-The three codes above are what clautolisp itself produces. An AutoLISP
+The codes above are what clautolisp itself produces. An AutoLISP
 program can also *choose* the status, through a small channel that
 mirrors the one the CAD engines' bootstrap provides — so a single
 ~run-tests.lsp~ or ~C:MAIN~ is portable across BricsCAD, AutoCAD and
@@ -2122,7 +2152,7 @@ STATUSFILE write — while ~autolisp-status~ has no vendor counterpart and
 is clautolisp's own way of letting ~quit~ consult the pending value.
 
 Because a program may pick any integer, the guarantee stated above is
-narrower than it looks: codes 0, 1 and 2 are stable *when clautolisp
+narrower than it looks: the codes above are stable *when clautolisp
 itself decides them*. A script that calls ~quit~ with its own status
 owns the meaning of that code, and a shell caller cannot tell the two
 apart from the exit status alone.

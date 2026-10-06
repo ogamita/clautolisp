@@ -27,6 +27,7 @@
 (defpackage #:alfe.plugin
   (:use #:cl)
   (:import-from #:alfe.error
+                #:cli-error
                 #:cli-usage-error
                 #:backend-error
                 #:plugin-error)
@@ -605,7 +606,9 @@ handler for the hook NAME."
     (unwind-protect
          (handler-bind
              ((error (lambda (condition)
-                       (unless (typep condition '(or cli-usage-error backend-error))
+                       ;; A CLI-ERROR (a usage error, a file an option
+                       ;; names) or a BACKEND-ERROR chose its exit status.
+                       (unless (typep condition '(or cli-error backend-error))
                          (error 'plugin-error
                                 :plugin (plugin-name plugin)
                                 :hook name

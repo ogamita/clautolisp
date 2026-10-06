@@ -15,16 +15,23 @@
   (is (null (clautolisp.autolisp-cli:cli-options-dwg
              (clautolisp.tools.clautolisp::parse-arguments '("-x" "1"))))))
 
-(test dwg-option-unreadable-drawing-is-a-usage-error
-  (is (typep (handler-case
-                 (clautolisp.tools.clautolisp::open-drawing-argument
-                  (clautolisp.cador:make-cador) "/nonexistent/none.dxf")
-               (clautolisp.autolisp-cli:cli-usage-error (c) c))
-             'clautolisp.autolisp-cli:cli-usage-error)))
+(test dwg-option-missing-drawing-is-a-cli-error-with-noinput
+  ;; Not a usage error any more: the option is fine, the file it names is
+  ;; not there -- EX_NOINPUT (sysexits-exit-statuses.issue).
+  (let ((condition (handler-case
+                       (clautolisp.tools.clautolisp::open-drawing-argument
+                        (clautolisp.cador:make-cador) "/nonexistent/none.dxf")
+                     (clautolisp.autolisp-cli:cli-error (c) c))))
+    (is (typep condition 'clautolisp.autolisp-cli:cli-error))
+    (is (= clautolisp.sysexits:+ex-noinput+
+           (clautolisp.autolisp-cli:cli-error-status condition)))))
 
 (test dwg-option-on-a-host-without-drawings-is-a-usage-error
   (is (typep (handler-case
                  (clautolisp.tools.clautolisp::open-drawing-argument
                   (make-instance 'clautolisp.autolisp-host:nihil) "a.dxf")
-               (clautolisp.autolisp-cli:cli-usage-error (c) c))
-             'clautolisp.autolisp-cli:cli-usage-error)))
+               (clautolisp.autolisp-cli:cli-error (c)
+                 (and (= clautolisp.sysexits:+ex-usage+
+                         (clautolisp.autolisp-cli:cli-error-status c))
+                      c)))
+             'clautolisp.autolisp-cli:cli-error)))

@@ -297,7 +297,8 @@ to load. By default it is looked for in
 .B /usr/local/share/autolisp/
 and
 .BR ~/.local/share/autolisp/ ;
-when it is nowhere, alfe exits 2 listing the places tried. Mirrors
+when it is nowhere, alfe exits 69 (EX_UNAVAILABLE) listing the places
+tried (66, EX_NOINPUT, when the file named is not there). Mirrors
 .BR $ALPM_LSP .
 .SS Diagnostics
 .TP
@@ -458,13 +459,13 @@ or its environment variable holds a true value, or
 names it, or
 .B $ALFE_PLUGINS
 lists it. With no plug-in active, alfe behaves as if plug-ins did not exist.
-An option of a plug-in that is not active is a usage error (exit status 2)
+An option of a plug-in that is not active is a usage error (exit status 64)
 naming the option that activates it.
 .B \-\-no-plugins
 loads none. A plug-in that fails to load is reported on standard error as
 .RB \(lq "alfe: warning: plug-in NAME (PATH): MESSAGE" \(rq
 and skipped; an error raised by one of its hooks during a run exits with
-status 4. A plug-in runs with alfe's own privileges: there is no sandbox.
+status 70 (EX_SOFTWARE). A plug-in runs with alfe's own privileges: there is no sandbox.
 .PP
 The plug-in
 .I NAME
@@ -518,15 +519,24 @@ plug-in has not been validated on real CAD installations.
 See the user manual for the complete description, and for how to write a
 plug-in.
 .SH "EXIT STATUS"
+Apart from 1,
+.I N
+and 130, the codes of
+.BR sysexits.h ,
+with the same values on every system, MS-Windows included. Under
+.B \-\-clautolisp
+both engine variants give the same status.
 .TP
-.B 0
+.BR 0 " (EX_OK)"
 Success.
 .TP
 .B 1
-User script failure / unhandled condition.
+The AutoLISP program failed: a runtime error, on any backend.
+.TP
+.I N
 Under
-.B \-\-clautolisp
-(either engine variant) the status is the engine's own: the
+.BR \-\-clautolisp ,
+the
 .I N
 of
 .BI "(exit " N )
@@ -534,20 +544,68 @@ of
 .BI "(quit " N )
 or of
 .BR autolisp\-set\-status ,
-1 for a runtime error, 2 for a
+unchanged.
+.TP
+.BR 64 " (EX_USAGE)"
+Usage error: unknown option, missing argument, invalid value,
+conflicting options, a plug-in option without its plug-in,
+.B \-\-dwg
+on a host without drawings.
+.TP
+.BR 65 " (EX_DATAERR)"
+A
 .B \-l
-file that cannot be opened (the clautolisp program's code).
+file or
+.B \-x
+expression the reader refuses; a
+.B \-\-dwg
+file that is not a drawing; a
+.B \-\-compile\-plugin
+source that does not compile.
 .TP
-.B 2
-Usage error
-.RB ( CLI-USAGE-ERROR ).
+.BR 66 " (EX_NOINPUT)"
+An input file does not exist or is not readable: the
+.B \-l
+file, the
+.B \-\-dwg
+drawing, the
+.B \-\-epuree\-alpm
+file, the
+.B \-\-compile\-plugin
+source.
 .TP
-.B 3
-Backend not available
-.RB ( BACKEND-NOT-AVAILABLE ).
+.BR 69 " (EX_UNAVAILABLE)"
+The backend or something it needs is not there: the CAD program, the
+clautolisp executable, accoreconsole, EPURE, alpm.lsp, the DWG native
+library; or the CAD could not be brought up.
 .TP
-.B 4
-Backend bootstrap or protocol error, or an error raised by a plug-in hook.
+.BR 70 " (EX_SOFTWARE)"
+Internal error, including an error raised by a plug-in hook.
+.TP
+.BR 71 " (EX_OSERR)"
+The clautolisp child process could not be started.
+.TP
+.BR 73 " (EX_CANTCREAT)"
+The workdir, or the
+.B \-\-dribble
+transcript, cannot be created.
+.TP
+.BR 74 " (EX_IOERR)"
+Input/output error.
+.TP
+.BR 75 " (EX_TEMPFAIL)"
+The CAD did not answer in time (READY, a request, the shutdown), or a
+protocol slot stayed busy; retrying may succeed.
+.TP
+.BR 76 " (EX_PROTOCOL)"
+The CAD runtime answered something the protocol does not allow.
+.TP
+.B 130
+Interrupted (Control-C, 128 + SIGINT).
+.PP
+Before alfe 2.2.159 the codes were 1, 2 (usage, or a file the engine
+could not open), 3 (backend not available) and 4 (bootstrap, protocol
+or plug-in error); scripts testing for them must be adapted.
 .SH "SEE ALSO"
 .BR clautolisp (1).
 .PP
